@@ -1,3 +1,4 @@
+use adventuresim_core::autoresolve::CombatProjectileKind;
 use adventuresim_core::prelude::*;
 use spacetimedb::{ReducerContext, Table, reducer, table};
 
@@ -432,6 +433,13 @@ impl StrategicEquipment {
             ranged_weapon: self.ranged_weapon.as_ref().map(combat_weapon),
             melee_weapon_id: self.melee_weapon_inventory_id,
             ranged_weapon_id: self.ranged_weapon_inventory_id,
+            ranged_projectile_kind: self.ranged_weapon.as_ref().map(|weapon| {
+                if weapon.id.contains("arquebus") {
+                    CombatProjectileKind::Ball
+                } else {
+                    CombatProjectileKind::Arrowhead
+                }
+            }),
             defense_item_id: self.shield_inventory_id.or(self.melee_weapon_inventory_id),
             ammunition: self.ammunition,
             holding_side: self.weapon_side.unwrap_or(BodySide::Right),

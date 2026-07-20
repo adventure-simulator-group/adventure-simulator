@@ -1,5 +1,5 @@
+use adventuresim_core::morale::fervor_event_occurs;
 use adventuresim_core::prelude::*;
-use adventuresim_core::{capability::aggregate_bounded_party_check, morale::fervor_event_occurs};
 use adventuresim_world_schema::{
     AgriculturalLimitation, AvailableWaterCapacity, CanopyDensity, CationExchangeCapacity,
     CrossingWatercourse, DominantLeafType, DroughtHistory, DroughtProfile, EdgeEndpoint,
@@ -37,23 +37,7 @@ const METERS_PER_KILOMETER: u64 = 1_000;
 const MINUTES_PER_HOUR: u64 = 60;
 const MIN_QUESTS_PER_SETTLEMENT: usize = 3;
 const MAX_QUESTS_PER_SETTLEMENT: usize = 5;
-const SURGERY_CHECK_PER_HEALTH_DAMAGE: f32 = 20.0;
 const COMPILED_DEV_BOOTSTRAP_TOKEN: Option<&str> = option_env!("ADVENTURESIM_DEV_BOOTSTRAP_TOKEN");
-
-/// Untreated autoresolve wounds can deteriorate by as much as their original
-/// damage. Every five percentage points of damage require one point of the
-/// party Surgery check to prevent deterioration completely.
-fn post_battle_wound_deterioration(damage: f32, surgery_check: f32) -> f32 {
-    let damage = damage.max(0.0);
-    let required_check = (damage * SURGERY_CHECK_PER_HEALTH_DAMAGE).clamp(0.0, 5.0);
-    if required_check == 0.0 {
-        return 0.0;
-    }
-    let untreated_fraction =
-        ((required_check - surgery_check.clamp(0.0, 5.0)) / required_check).clamp(0.0, 1.0);
-    damage * untreated_fraction
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum EnemyArchetype {
     Bandit,
@@ -239,6 +223,12 @@ fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Combatant {
     combatant.equipment.weapon = Some(weapon);
     if profile.ranged {
         combatant.equipment.ranged_weapon = Some(weapon);
+        combatant.equipment.ranged_projectile_kind =
+            Some(if enemy_type.to_ascii_lowercase().contains("arquebus") {
+                adventuresim_core::autoresolve::CombatProjectileKind::Ball
+            } else {
+                adventuresim_core::autoresolve::CombatProjectileKind::Arrowhead
+            });
         combatant.equipment.melee_weapon = Some(CombatWeapon {
             melee: true,
             slash: true,
@@ -352,19 +342,7 @@ fn record_autoresolve_report(
 
 #[cfg(test)]
 mod healing_tests {
-    use super::{EnemyArchetype, autoresolve_drop, post_battle_wound_deterioration};
-
-    #[test]
-    fn surgery_prevents_deterioration_when_it_meets_wound_severity() {
-        assert!((post_battle_wound_deterioration(0.20, 4.0)).abs() < f32::EPSILON);
-        assert!((post_battle_wound_deterioration(0.05, 1.0)).abs() < f32::EPSILON);
-    }
-
-    #[test]
-    fn surgery_shortfall_proportionally_worsens_the_wound() {
-        assert!((post_battle_wound_deterioration(0.20, 2.0) - 0.10).abs() < f32::EPSILON);
-        assert!((post_battle_wound_deterioration(0.20, 0.0) - 0.20).abs() < f32::EPSILON);
-    }
+    use super::{EnemyArchetype, autoresolve_drop};
 
     #[test]
     fn enemy_archetypes_keep_combat_and_loot_classification_together() {
@@ -1484,8 +1462,6 @@ pub struct Party {
     #[default(0.0)]
     pub medicine_target: f32,
     #[default(0.0)]
-    pub surgery_target: f32,
-    #[default(0.0)]
     pub charisma_target: f32,
     #[default(0.0)]
     pub religion_target: f32,
@@ -1910,7 +1886,6 @@ enum ApprovedPartyAction {
     },
     UpdatePartyCheckTargets {
         medicine: f32,
-        surgery: f32,
         charisma: f32,
         religion: f32,
     },
@@ -2006,10 +1981,9 @@ impl ApprovedPartyAction {
             Self::AutoresolveQuest { quest_id } => autoresolve_quest(ctx, leader_id, quest_id),
             Self::UpdatePartyCheckTargets {
                 medicine,
-                surgery,
                 charisma,
                 religion,
-            } => update_party_check_targets(ctx, leader_id, medicine, surgery, charisma, religion),
+            } => update_party_check_targets(ctx, leader_id, medicine, charisma, religion),
             Self::SetInventoryQuantityTarget { item_id, quantity } => {
                 set_inventory_quantity_target(ctx, leader_id, true, item_id, quantity)
             }
@@ -2435,7 +2409,6 @@ pub(crate) fn create_solo_party_for_character(
             camp_remaining_minutes: 0,
             pooled_water_ml: 0.0,
             medicine_target: 0.0,
-            surgery_target: 0.0,
             charisma_target: 0.0,
             religion_target: 0.0,
         });
@@ -2948,12 +2921,11 @@ pub fn update_party_check_targets(
     ctx: &ReducerContext,
     leader_id: u64,
     medicine: f32,
-    surgery: f32,
     charisma: f32,
     religion: f32,
 ) -> Result<(), String> {
     crate::character::require_living_character(ctx, leader_id)?;
-    if [medicine, surgery, charisma, religion]
+    if [medicine, charisma, religion]
         .into_iter()
         .any(|value| !value.is_finite() || !(0.0..=5.0).contains(&value) || value.fract() != 0.0)
     {
@@ -2976,7 +2948,6 @@ pub fn update_party_check_targets(
         return Err("Only the party leader can configure party checks".into());
     }
     party.medicine_target = medicine;
-    party.surgery_target = surgery;
     party.charisma_target = charisma;
     party.religion_target = religion;
     ctx.db.party().id().update(party);
@@ -6388,15 +6359,6 @@ pub fn autoresolve_quest(
     }
 
     let member_ids = living_party_member_ids(ctx, &party_id);
-    let surgery_checks = member_ids
-        .iter()
-        .map(|member_id| {
-            crate::capability::evaluate_character(ctx, *member_id)
-                .map(|capabilities| capabilities.surgery)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let surgery_check = aggregate_bounded_party_check(surgery_checks);
-
     let allies = member_ids
         .iter()
         .map(|member_id| {
@@ -6458,40 +6420,38 @@ pub fn autoresolve_quest(
 
     for member in &outcome.allies {
         consume_autoresolve_ammunition(ctx, member.id, member.ammunition_used);
-        let Some(mut limbs) = ctx.db.character_limbs().character_id().find(member.id) else {
-            continue;
-        };
-        let old_health = [
-            limbs.left_arm_health,
-            limbs.right_arm_health,
-            limbs.left_leg_health,
-            limbs.right_leg_health,
-            limbs.chest_health,
-            limbs.stomach_health,
-            limbs.head_health,
-        ];
-        let mut final_health = member.body.health;
-        let mut deterioration_blood_loss = 0.0;
-        for index in 0..final_health.len() {
-            let fresh_damage = (old_health[index] - final_health[index]).max(0.0);
-            let deterioration = post_battle_wound_deterioration(fresh_damage, surgery_check);
-            final_health[index] = (final_health[index] - deterioration).max(0.0);
-            deterioration_blood_loss += deterioration * 0.5;
+        for exchange in outcome
+            .log
+            .iter()
+            .filter(|exchange| exchange.defender_id == member.id && exchange.health_damage > 0.0)
+        {
+            let limb = match exchange.body_part {
+                BodyPart::LeftArm => crate::surgery::LimbRegion::LeftArm,
+                BodyPart::RightArm => crate::surgery::LimbRegion::RightArm,
+                BodyPart::LeftLeg => crate::surgery::LimbRegion::LeftLeg,
+                BodyPart::RightLeg => crate::surgery::LimbRegion::RightLeg,
+                BodyPart::Chest => crate::surgery::LimbRegion::Chest,
+                BodyPart::Stomach => crate::surgery::LimbRegion::Stomach,
+                BodyPart::Head => crate::surgery::LimbRegion::Head,
+            };
+            let projectile = exchange.projectile_kind.map(|kind| match kind {
+                adventuresim_core::autoresolve::CombatProjectileKind::Arrowhead => {
+                    crate::surgery::ProjectileKind::Arrowhead
+                }
+                adventuresim_core::autoresolve::CombatProjectileKind::Ball => {
+                    crate::surgery::ProjectileKind::Ball
+                }
+            });
+            crate::surgery::commit_hit_injury(
+                ctx,
+                member.id,
+                limb,
+                exchange.cut_damage,
+                exchange.blunt_damage,
+                projectile,
+            );
         }
-        limbs.left_arm_health = final_health[0];
-        limbs.right_arm_health = final_health[1];
-        limbs.left_leg_health = final_health[2];
-        limbs.right_leg_health = final_health[3];
-        limbs.chest_health = final_health[4];
-        limbs.stomach_health = final_health[5];
-        limbs.head_health = final_health[6];
-        ctx.db.character_limbs().character_id().update(limbs);
-        crate::condition::apply_blood_loss(
-            ctx,
-            member.id,
-            member.blood_loss_fraction + deterioration_blood_loss,
-        )?;
-        crate::disease::record_committed_cut(ctx, member.id, member.cut_damage, surgery_check)?;
+        crate::condition::apply_blood_loss(ctx, member.id, member.blood_loss_fraction)?;
         crate::capability::refresh_character_capability(ctx, member.id)?;
     }
 
@@ -6814,17 +6774,14 @@ fn ensure_npc_quest_parties(ctx: &ReducerContext, settlement_id: &str) -> Result
             party.name = format!("{}'s company", leader.name);
         }
         if party.medicine_target == 0.0
-            && party.surgery_target == 0.0
             && party.charisma_target == 0.0
             && party.religion_target == 0.0
         {
             party.medicine_target = 4.0;
-            party.surgery_target = 4.0;
             party.charisma_target = 5.0;
             party.religion_target = 4.0;
         }
         party.medicine_target = party.medicine_target.round().clamp(0.0, 5.0);
-        party.surgery_target = party.surgery_target.round().clamp(0.0, 5.0);
         party.charisma_target = party.charisma_target.round().clamp(0.0, 5.0);
         party.religion_target = party.religion_target.round().clamp(0.0, 5.0);
         ctx.db.party().id().update(party);
@@ -6871,7 +6828,6 @@ fn ensure_npc_quest_parties(ctx: &ReducerContext, settlement_id: &str) -> Result
         party.current_settlement_id = Some(settlement_id.to_string());
         party.active_quest_id = Some(quest.id.clone());
         party.medicine_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
-        party.surgery_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
         party.charisma_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
         party.religion_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
         ctx.db.party().id().update(party);

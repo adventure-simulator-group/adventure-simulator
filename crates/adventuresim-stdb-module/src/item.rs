@@ -835,6 +835,7 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
         });
     }
     define_item(ctx, "bandage", 0.05);
+    upsert_surgery_items(ctx);
     for (id, weight) in [
         ("honey", 0.25),
         ("sage", 0.05),
@@ -940,6 +941,31 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+pub(crate) fn upsert_surgery_items(ctx: &ReducerContext) {
+    for definition in [
+        Item {
+            id: "surgery_kit".into(),
+            weight: 2.5,
+            base_value: Some(60),
+            kind: ItemKind::Simple,
+            ..Item::default()
+        },
+        Item {
+            id: "splint".into(),
+            weight: 0.8,
+            base_value: Some(4),
+            kind: ItemKind::Simple,
+            ..Item::default()
+        },
+    ] {
+        if ctx.db.item().id().find(definition.id.clone()).is_some() {
+            ctx.db.item().id().update(definition);
+        } else {
+            ctx.db.item().insert(definition);
+        }
+    }
 }
 
 /// Applies recruitment precision calibration to databases created before the

@@ -31,9 +31,10 @@ use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
     CharacterLimbs, CharacterSkills, CharacterStats, CharacterStrategicCondition,
-    CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, ItemSlot, Party,
-    PartyInventoryItem, PartyJourney, PartyJourneyItinerary, Quest, ScheduleAllocation, Settlement,
-    SettlementAlias, SettlementCategory, SettlementDescription, SettlementDescriptionKind,
+    CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, ItemSlot, LimbInjury,
+    LimbRegion, Party, PartyInventoryItem, PartyJourney, PartyJourneyItinerary, ProjectileKind,
+    Quest, RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementCategory,
+    SettlementDescription, SettlementDescriptionKind,
 };
 
 #[derive(Clone, Debug)]
@@ -1455,18 +1456,17 @@ pub fn party_personal_page(
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
     medical: &MedicalPresentation,
     can_examine: bool,
+    injuries: &[LimbInjury],
+    projectiles: &[RetainedProjectile],
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
-            (character_summary_rail(capability))
-            (party_attributes_rail("Your attributes", attributes, limbs, medical))
-            @let schedule_action = format!("{}/party/{}/schedule", location.base_path(), active_character.id);
-            (party_skills_rail(
-                "Your skills", skills, limbs, schedule, Some(&schedule_action),
-                Some(activity_preview), religion_id.is_some(), prayer_religion_check,
-                religion_id.or(location.religion_id.as_deref()),
-                combat_profile,
-            ))
+            (party_attributes_rail("Your attributes", attributes, limbs, medical, Some(&format!("{}/party/{}/surgery", location.base_path(), active_character.id)), injuries, projectiles))
+            (strategic_condition_rail(condition, morale_sources))
+            (medical_rail(medical, &location.base_path(), active_character.id, active_character.id, true))
+            @if let Some(demand) = religious_demand {
+                (religious_demand_rail(demand, &location.base_path(), active_character.id))
+            }
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(
@@ -1478,15 +1478,18 @@ pub fn party_personal_page(
             ))
             (visual_stage("character", &active_character.name, "Your identity, condition, and capabilities"))
             (settlement_chat_area(&active_character.name, Some(active_character)))
-            (medical_examination_popup(medical, &location.base_path(), active_character.id, limbs))
+            (medical_examination_popup(medical, &location.base_path(), active_character.id, limbs, injuries, projectiles))
         }
         aside class="right-sidebar" {
-            (strategic_condition_rail(condition, morale_sources))
-            (medical_rail(medical, &location.base_path(), active_character.id, active_character.id, true))
-            @if let Some(demand) = religious_demand {
-                (religious_demand_rail(demand, &location.base_path(), active_character.id))
-            }
+            (character_summary_rail(capability))
             (character_bio_rail(active_character, religion_id, notoriety, personality, true, &location.base_path()))
+            @let schedule_action = format!("{}/party/{}/schedule", location.base_path(), active_character.id);
+            (party_skills_rail(
+                "Your skills", skills, limbs, schedule, Some(&schedule_action),
+                Some(activity_preview), religion_id.is_some(), prayer_religion_check,
+                religion_id.or(location.religion_id.as_deref()),
+                combat_profile,
+            ))
         }
     };
     location.render_layout("Party", content, Some(&active_character.name))
@@ -1538,18 +1541,16 @@ pub fn party_stats_page(
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
     medical: &MedicalPresentation,
     can_examine: bool,
+    injuries: &[LimbInjury],
+    projectiles: &[RetainedProjectile],
 ) -> Markup {
     let selected_attributes_title = format!("{}'s attributes", selected.name);
     let selected_skills_title = format!("{}'s skills", selected.name);
     let content = html! {
         aside class="left-sidebar" {
-            (character_summary_rail(capability))
-            (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs, medical))
-            (party_skills_rail(
-                &selected_skills_title, selected_skills, selected_limbs, None, None, None,
-                religion_id.is_some(), 0.0, religion_id.or(location.religion_id.as_deref()),
-                combat_profile,
-            ))
+            (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs, medical, Some(&format!("{}/party/{}/surgery", location.base_path(), selected.id)), injuries, projectiles))
+            (strategic_condition_rail(condition, morale_sources))
+            (medical_rail(medical, &location.base_path(), active_character.id, selected.id, true))
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(
@@ -1561,11 +1562,10 @@ pub fn party_stats_page(
             ))
             (visual_stage("character", &selected.name, "Party member identity and capabilities"))
             (player_chat_area(selected, active_character))
-            (medical_examination_popup(medical, &location.base_path(), selected.id, selected_limbs))
+            (medical_examination_popup(medical, &location.base_path(), selected.id, selected_limbs, injuries, projectiles))
         }
         aside class="right-sidebar" {
-            (strategic_condition_rail(condition, morale_sources))
-            (medical_rail(medical, &location.base_path(), active_character.id, selected.id, true))
+            (character_summary_rail(capability))
             (character_bio_rail(
                 selected,
                 religion_id,
@@ -1573,6 +1573,11 @@ pub fn party_stats_page(
                 personality,
                 selected.id == active_character.id,
                 &location.base_path(),
+            ))
+            (party_skills_rail(
+                &selected_skills_title, selected_skills, selected_limbs, None, None, None,
+                religion_id.is_some(), 0.0, religion_id.or(location.religion_id.as_deref()),
+                combat_profile,
             ))
             @if selected.id != active_character.id {
                 @if active_character.party_id == selected.party_id {
@@ -1604,6 +1609,252 @@ pub fn party_stats_page(
         }
     };
     location.render_layout("Party stats", content, Some(&active_character.name))
+}
+
+fn surgery_limb_name(limb: LimbRegion) -> &'static str {
+    match limb {
+        LimbRegion::LeftArm => "Left arm",
+        LimbRegion::RightArm => "Right arm",
+        LimbRegion::LeftLeg => "Left leg",
+        LimbRegion::RightLeg => "Right leg",
+        LimbRegion::Chest => "Chest",
+        LimbRegion::Stomach => "Stomach",
+        LimbRegion::Head => "Head",
+    }
+}
+
+fn surgery_limb_slug(limb: LimbRegion) -> &'static str {
+    match limb {
+        LimbRegion::LeftArm => "left-arm",
+        LimbRegion::RightArm => "right-arm",
+        LimbRegion::LeftLeg => "left-leg",
+        LimbRegion::RightLeg => "right-leg",
+        LimbRegion::Chest => "chest",
+        LimbRegion::Stomach => "stomach",
+        LimbRegion::Head => "head",
+    }
+}
+
+fn surgery_duration(procedure: &str, skill: f32, dc: f32) -> u64 {
+    adventuresim_core::surgery::procedure_duration_minutes(procedure, skill, dc)
+}
+
+#[derive(Clone, Copy)]
+enum SurgeryItemRequirement {
+    BandageConsumed,
+    SurgeryKitReusable,
+    SplintEquipped,
+}
+
+fn surgery_supply(label: &str, icon: &str, quantity: u32) -> Markup {
+    let description = format!("{label}: {quantity} available");
+    html! {
+        div class="surgery-supply" data-tooltip=(&description)
+            aria-label=(&description) tabindex="0" {
+            (decorative_game_icon(icon))
+            span class="surgery-item-overlay surgery-item-quantity" aria-hidden="true" { "x" (quantity) }
+        }
+    }
+}
+
+fn surgery_item_requirement(requirement: SurgeryItemRequirement) -> Markup {
+    let (label, accessible_label, icon) = match requirement {
+        SurgeryItemRequirement::BandageConsumed => {
+            ("Expend one bandage", "Expend one bandage", "bandage-roll")
+        }
+        SurgeryItemRequirement::SurgeryKitReusable => (
+            "Requires surgery kit",
+            "Requires surgery kit; reusable and not consumed",
+            "medical-pack",
+        ),
+        SurgeryItemRequirement::SplintEquipped => {
+            ("Equips 1 splint", "Equips 1 splint", "arm-bandage")
+        }
+    };
+    html! {
+        span class="surgery-item-requirement" data-tooltip=(label)
+            aria-label=(accessible_label) tabindex="0" {
+            (decorative_game_icon(icon))
+            @match requirement {
+                SurgeryItemRequirement::BandageConsumed => {
+                    span class="surgery-item-overlay surgery-item-quantity" aria-hidden="true" { "x1" }
+                }
+                SurgeryItemRequirement::SurgeryKitReusable => {}
+                SurgeryItemRequirement::SplintEquipped => {
+                    span class="surgery-item-overlay surgery-item-equipped" aria-hidden="true" {
+                        (decorative_game_icon("check-mark"))
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn surgery_difficulty_meter(procedure_label: &str, dc: f32, effective_skill: f32) -> Markup {
+    let difficulty = dc.max(0.0);
+    let over_cap = difficulty > 5.0;
+    let meter_label = format!("{procedure_label} Surgery difficulty");
+    let accessible_label = format!(
+        "{procedure_label}: requires {difficulty:.1} Surgery; current effective skill {:.1}",
+        effective_skill.max(0.0)
+    );
+    html! {
+        div class=(if over_cap { "surgery-difficulty surgery-difficulty-over-cap" } else { "surgery-difficulty" })
+            title=[over_cap.then_some("Difficulty exceeds the normal Surgery skill scale")] {
+            (stat_icon(&meter_label, "skills", "surgeon", true))
+            (skill_rank_bar(
+                difficulty,
+                effective_skill.min(difficulty),
+                &meter_label,
+                SkillRankBarOptions {
+                    show_value: false,
+                    extra_class: Some("surgery-difficulty-meter"),
+                    aria_label: Some(&accessible_label),
+                },
+            ))
+            @if over_cap {
+                span class="surgery-difficulty-over-cap-marker" aria-hidden="true" { "+" }
+            }
+        }
+    }
+}
+
+fn surgery_procedure_row(
+    action: &str,
+    label: &str,
+    icon: &str,
+    procedure: &str,
+    item_requirements: &[SurgeryItemRequirement],
+    duration: u64,
+    dc: f32,
+    effective_skill: f32,
+    unavailable: Option<&str>,
+    disabled: Option<&str>,
+    projectile_id: Option<u64>,
+) -> Markup {
+    let row_class = if unavailable.is_some() {
+        "surgery-procedure surgery-procedure-unavailable"
+    } else {
+        "surgery-procedure"
+    };
+    let unavailable_label = unavailable.map(|reason| format!("{label}: {reason}"));
+    html! {
+        form method="post" action=(action) class=(row_class)
+            data-tooltip=[unavailable] aria-label=[unavailable_label.as_deref()]
+            tabindex=[unavailable.map(|_| "0")] {
+            input type="hidden" name="procedure" value=(procedure);
+            @if let Some(projectile_id) = projectile_id {
+                input type="hidden" name="projectile_id" value=(projectile_id);
+            }
+            @if icon == "bullet-visual" {
+                span class="procedure-projectile-visual projectile-ball" role="img" aria-label=(label) {}
+            } @else {
+                (game_icon(label, icon))
+            }
+            div class="surgery-procedure-copy" {
+                strong { (label) }
+            }
+            dl class="surgery-procedure-facts" {
+                div { dt { "Time" } dd { (duration) " min" } }
+                div class="surgery-procedure-difficulty" {
+                    dt class="sr-only" { "Difficulty" }
+                    dd { (surgery_difficulty_meter(label, dc, effective_skill)) }
+                }
+            }
+            @if !item_requirements.is_empty() {
+                ul class="surgery-item-requirements" aria-label="Required items" {
+                    @for requirement in item_requirements {
+                        li { (surgery_item_requirement(*requirement)) }
+                    }
+                }
+            }
+            @if let Some(reason) = disabled {
+                button type="submit" class="btn btn-block" disabled title=(reason) aria-label=(format!("{label}: {reason}")) { (label) }
+            } @else {
+                button type="submit" class="btn btn-primary" { (label) }
+            }
+        }
+    }
+}
+
+/// Manual limb treatment replaces the ordinary right rail while retaining the
+/// portrait stage and a keyboard-navigable list of every limb on the left.
+#[allow(clippy::too_many_arguments)]
+pub fn surgery_page(
+    location: &LocationView,
+    active_character: &Character,
+    patient: &Character,
+    party_members: &[Character],
+    capability: Option<&CharacterCapability>,
+    attributes: Option<&CharacterAttributes>,
+    skills: Option<&CharacterSkills>,
+    limbs: Option<&CharacterLimbs>,
+    medical: &MedicalPresentation,
+    combat_profile: CombatTrainingProfile,
+    injuries: &[LimbInjury],
+    projectiles: &[RetainedProjectile],
+    selected_limb: LimbRegion,
+    bandages: u32,
+    surgery_kits: u32,
+    splints: u32,
+    surgery_skill: f32,
+) -> Markup {
+    let base = format!("{}/party/{}/surgery", location.base_path(), patient.id);
+    let action = format!("{base}/{}/procedure", surgery_limb_slug(selected_limb));
+    let selected = injuries.iter().find(|injury| injury.limb == selected_limb);
+    let cut = selected.map_or(0.0, |injury| injury.cut_damage.max(0.0));
+    let bruise = selected.map_or(0.0, |injury| injury.bruise_damage.max(0.0));
+    let fracture = selected.map_or(0.0, |injury| injury.fracture_damage.max(0.0));
+    let bandaged = selected.is_some_and(|injury| injury.bandaged);
+    let stitched = selected.is_some_and(|injury| injury.stitched);
+    let splinted = selected.is_some_and(|injury| injury.splint_inventory_item_id.is_some());
+    let has_kit = surgery_kits > 0;
+    let effective_skill = adventuresim_core::surgery::effective_skill(
+        surgery_skill,
+        active_character.id == patient.id,
+    );
+    let content = html! {
+        aside class="left-sidebar" {
+            (character_summary_rail(capability))
+            (party_attributes_rail(&format!("{}'s attributes", patient.name), attributes, limbs, medical, Some(&base), injuries, projectiles))
+            (party_skills_rail(&format!("{}'s skills", patient.name), skills, limbs, None, None, None, false, 0.0, None, combat_profile))
+        }
+        main class="center-content settlement-main party-member-stage" {
+            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(patient.id), false))
+            (visual_stage("npc", &patient.name, &format!("TODO: {} portrait", patient.name.to_lowercase())))
+            (player_chat_area(patient, active_character))
+        }
+        aside class="right-sidebar surgery-rail" {
+            (sidebar_section(&format!("{} — {}", patient.name, surgery_limb_name(selected_limb)), html! {
+                div class="surgery-supplies" aria-label="Surgery supplies" {
+                    (surgery_supply("Bandages", "bandage-roll", bandages))
+                    (surgery_supply("Surgery kits", "medical-pack", surgery_kits))
+                    (surgery_supply("Splints", "arm-bandage", splints))
+                }
+                div class="surgery-procedures" {
+                    @for projectile in projectiles.iter().filter(|projectile| projectile.limb == selected_limb) {
+                        @let requires_kit = adventuresim_core::surgery::extraction_requires_surgery_kit(projectile.extraction_dc);
+                        (surgery_procedure_row(&action, match projectile.kind { ProjectileKind::Arrowhead => "Remove arrowhead", ProjectileKind::Ball => "Remove ball" }, match projectile.kind { ProjectileKind::Arrowhead => "plain-arrow", ProjectileKind::Ball => "bullet-visual" }, "extract", if requires_kit { &[SurgeryItemRequirement::SurgeryKitReusable] } else { &[] }, surgery_duration("extract", effective_skill, projectile.extraction_dc), projectile.extraction_dc,
+                            effective_skill, None, if effective_skill < projectile.extraction_dc { Some("Insufficient Surgery skill") } else if requires_kit && !has_kit { Some("No surgery kit") } else { None }, Some(projectile.id)))
+                    }
+                    (surgery_procedure_row(&action, "Bandage", "bandage-roll", "bandage", &[SurgeryItemRequirement::BandageConsumed], surgery_duration("bandage", effective_skill, 0.0), 0.0,
+                        effective_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if bandaged { Some("Already bandaged") } else if bandages == 0 { Some("No bandages") } else { None }, None))
+                    (surgery_procedure_row(&action, "Stitch", "scalpel", "stitch", &[SurgeryItemRequirement::SurgeryKitReusable], surgery_duration("stitch", effective_skill, 2.0), 2.0,
+                        effective_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if stitched { Some("Already stitched") } else if effective_skill < 2.0 { Some("Insufficient Surgery skill") } else if !has_kit { Some("No surgery kit") } else { None }, None))
+                    @if splinted {
+                        (surgery_procedure_row(&action, "Remove splint", "arm-bandage", "remove-splint", &[], surgery_duration("remove-splint", effective_skill, 0.0), 0.0, effective_skill, None, None, None))
+                    } @else {
+                        (surgery_procedure_row(&action, "Splint", "arm-bandage", "splint", &[SurgeryItemRequirement::SplintEquipped], surgery_duration("splint", effective_skill, 1.0), 1.0,
+                            effective_skill, if fracture <= 0.0 { Some("No injury is present") } else { None }, if fracture <= 0.0 { Some("No injury is present") } else if effective_skill < 1.0 { Some("Insufficient Surgery skill") } else if splints == 0 { Some("No splints") } else { None }, None))
+                    }
+                    @if cut <= 0.0 && bruise > 0.0 && fracture <= 0.0 {
+                        p class="text-muted small-copy" { "Bruising must heal on its own." }
+                    }
+                }
+            }))
+        }
+    };
+    location.render_layout("Surgery", content, Some(&active_character.name))
 }
 
 fn service_page(
@@ -2433,7 +2684,7 @@ fn repair_custody_panel(
                 h3 { "In the smith's care" }
                 span class="repair-custody-skill" title=(format!("Smithing {smith_skill}")) {
                     (stat_icon("Smithing", "skills", "smithing", false))
-                    (skill_rank_bar(f32::from(smith_skill), f32::from(smith_skill), &format!("Smithing {smith_skill}")))
+                    (skill_rank_bar(f32::from(smith_skill), f32::from(smith_skill), &format!("Smithing {smith_skill}"), SkillRankBarOptions::default()))
                 }
             }
             div class="repair-custody-scroll" {
@@ -2724,12 +2975,14 @@ fn religion_skill_rows(
                         Skill::Religion.training_rank(primary_effective),
                         Skill::Religion.training_rank(primary_effective) * health.clamp(0.0, 1.0),
                         &format!("{primary_effective:.1} effective hours; {primary_direct:.1} directly studied hours"),
+                        SkillRankBarOptions::default(),
                     ))
                 } @else {
                     (skill_rank_bar(
                         Skill::Religion.training_rank(primary_effective),
                         Skill::Religion.training_rank(primary_effective) * health.clamp(0.0, 1.0),
                         &format!("{primary_effective:.1} effective hours; {primary_direct:.1} directly studied hours"),
+                        SkillRankBarOptions::default(),
                     ))
                 }
             }
@@ -2778,6 +3031,7 @@ fn religion_skill_rows(
                         Skill::Religion.training_rank(effective),
                         Skill::Religion.training_rank(effective) * health.clamp(0.0, 1.0),
                         &format!("{effective:.1} effective hours; {direct:.1} directly studied hours"),
+                        SkillRankBarOptions::default(),
                     ))
                 }
                 @if schedule.is_some() {
@@ -2869,7 +3123,7 @@ fn combat_skill_rows(
                 (stat_icon("Combat", "skills", "combat", false))
             }
             td class="party-skill-meter" colspan=[schedule.map(|_| "4")] {
-                (skill_rank_bar(rank, effective_rank, &format!("Relevant skills: {included}")))
+                (skill_rank_bar(rank, effective_rank, &format!("Relevant skills: {included}"), SkillRankBarOptions::default()))
             }
             @if schedule.is_some() {
                 td class="religion-auto-toggle-cell" {
@@ -2907,7 +3161,7 @@ fn combat_skill_rows(
                 }
                 td class="party-skill-meter" colspan=[schedule.map(|_| "4")] {
                     @let sub_rank = skill.training_rank(hours);
-                    (skill_rank_bar(sub_rank, sub_rank * health.clamp(0.0, 1.0), &format!("{:.0} hours invested", hours.max(0.0))))
+                    (skill_rank_bar(sub_rank, sub_rank * health.clamp(0.0, 1.0), &format!("{:.0} hours invested", hours.max(0.0)), SkillRankBarOptions::default()))
                 }
                 @if schedule.is_some() {
                     td class="religion-auto-toggle-cell" {}
@@ -2959,7 +3213,7 @@ fn party_skill_row(
                 (stat_icon(name, "skills", icon, false))
             }
             td class="party-skill-meter" colspan=[schedule_minutes.map(|_| "4")] {
-                (skill_rank_bar(rank, effective_rank, &format!("{invested_hours} hours invested")))
+                (skill_rank_bar(rank, effective_rank, &format!("{invested_hours} hours invested"), SkillRankBarOptions::default()))
             }
             @if let Some(minutes) = schedule_minutes {
                 td class="religion-auto-toggle-cell" {}
@@ -2970,11 +3224,40 @@ fn party_skill_row(
     }
 }
 
-fn skill_rank_bar(rank: f32, effective_rank: f32, title: &str) -> Markup {
+#[derive(Clone, Copy, Debug)]
+struct SkillRankBarOptions<'a> {
+    show_value: bool,
+    extra_class: Option<&'a str>,
+    aria_label: Option<&'a str>,
+}
+
+impl Default for SkillRankBarOptions<'_> {
+    fn default() -> Self {
+        Self {
+            show_value: true,
+            extra_class: None,
+            aria_label: None,
+        }
+    }
+}
+
+fn skill_rank_bar(
+    rank: f32,
+    effective_rank: f32,
+    title: &str,
+    options: SkillRankBarOptions<'_>,
+) -> Markup {
     let rank = rank.clamp(0.0, 5.0);
     let effective_rank = effective_rank.clamp(0.0, rank);
+    let class = options.extra_class.map_or_else(
+        || "skill-rank-bar".to_owned(),
+        |extra| format!("skill-rank-bar {extra}"),
+    );
+    let aria_label = options
+        .aria_label
+        .map_or_else(|| format!("{effective_rank:.1} out of 5"), str::to_owned);
     html! {
-        div class="skill-rank-bar" title=(title) aria-label=(format!("{effective_rank:.1} out of 5"))
+        div class=(class) title=(title) aria-label=(aria_label)
             role="meter" aria-valuemin="0" aria-valuemax="5" aria-valuenow=(format!("{effective_rank:.1}")) {
             span class="skill-rank-track" aria-hidden="true" {
                 @for tier in 1..=5 {
@@ -2988,7 +3271,9 @@ fn skill_rank_bar(rank: f32, effective_rank: f32, title: &str) -> Markup {
                     }
                 }
             }
-            span class="skill-rank-value" aria-hidden="true" { (format!("{effective_rank:.1}")) }
+            @if options.show_value {
+                span class="skill-rank-value" aria-hidden="true" { (format!("{effective_rank:.1}")) }
+            }
         }
     }
 }
@@ -3235,7 +3520,7 @@ pub(crate) fn character_stats_panel(
 ) -> Markup {
     html! {
         (character_summary_rail(capability))
-        (party_attributes_rail(&format!("{}'s attributes", character.name), attributes, limbs, medical))
+        (party_attributes_rail(&format!("{}'s attributes", character.name), attributes, limbs, medical, None, &[], &[]))
         (party_skills_rail(
             &format!("{}'s skills", character.name), skills, limbs, None, None, None,
             false, 0.0, None, CombatTrainingProfile::default(),
@@ -3483,7 +3768,7 @@ fn strategic_condition_rail(
         ("Fatigue", "night-sleep", "fatigue", condition.fatigue),
     ];
     html! {
-        (sidebar_section("Condition", html! {
+        (sidebar_section("Status", html! {
             div class=(if condition.fear > 0.0 { "morale-meter is-fearful" } else { "morale-meter" }) tabindex="0" style=(meter_style) aria-label=(format!(
                 "Morale {:.1}; fear {}; inspiration {:.1}%",
                 condition.morale,
@@ -3633,19 +3918,6 @@ fn medical_rail(
                 }
             }
         }))
-        @if medical.obvious_cut > 0.0 {
-            (sidebar_section("Visible injuries", html! {
-                div class="damage-family" {
-                    strong { "Cuts" }
-                    div class="damage-family-track" role="meter"
-                        aria-label=(format!("Visible cut impairment {:.0} percent", medical.obvious_cut * 100.0))
-                        aria-valuemin="0" aria-valuemax="100" aria-valuenow=(medical.obvious_cut * 100.0) {
-                        span class="damage-segment damage-physical obvious-cut"
-                            style=(format!("width:{:.0}%", medical.obvious_cut * 100.0)) {}
-                    }
-                }
-            }))
-        }
     }
 }
 
@@ -3654,6 +3926,8 @@ fn medical_examination_popup(
     location_path: &str,
     target_id: u64,
     limbs: Option<&CharacterLimbs>,
+    injuries: &[LimbInjury],
+    projectiles: &[RetainedProjectile],
 ) -> Markup {
     let Some(examination_id) = medical.examination_id else {
         return html! {};
@@ -3678,13 +3952,12 @@ fn medical_examination_popup(
                     div class="examination-region-bars" aria-label="Examined body regions" {
                         h3 { "Body regions" }
                         @let health = regional_health_values(limbs);
-                        @let cut_fraction = physical_cut_fraction(&health, medical.obvious_cut);
                         @for (index, name) in ["Left arm", "Right arm", "Left leg", "Right leg", "Chest", "Stomach", "Head"].into_iter().enumerate() {
                             @let reading = medical.regional_humours.map(|regions| regions[index]).unwrap_or_default();
                             @if health[index] < 1.0 || reading.sanguine + reading.phlegmatic + reading.choleric + reading.melancholic > 0.0 {
                                 div class="examination-region-row" {
                                     strong { (name) }
-                                    (regional_health_bar(name, health[index], cut_fraction, medical, index))
+                                    (regional_health_bar(name, health[index], medical, index, injuries, projectiles))
                                 }
                             }
                         }
@@ -3735,23 +4008,14 @@ fn regional_health_values(limbs: Option<&CharacterLimbs>) -> [f32; 7] {
     })
 }
 
-fn physical_cut_fraction(health: &[f32; 7], obvious_cut: f32) -> f32 {
-    let total = health
-        .iter()
-        .map(|health| (1.0 - health).max(0.0))
-        .sum::<f32>();
-    if total > 0.0 {
-        (obvious_cut / total).clamp(0.0, 1.0)
-    } else {
-        0.0
-    }
-}
-
 fn party_attributes_rail(
     title: &str,
     attributes: Option<&CharacterAttributes>,
     limbs: Option<&CharacterLimbs>,
     medical: &MedicalPresentation,
+    surgery_base: Option<&str>,
+    injuries: &[LimbInjury],
+    projectiles: &[RetainedProjectile],
 ) -> Markup {
     let Some(attributes) = attributes else {
         return html! {};
@@ -3763,48 +4027,38 @@ fn party_attributes_rail(
     let right_arm_health = limbs.map_or(1.0, |limbs| limbs.right_arm_health);
     let left_leg_health = limbs.map_or(1.0, |limbs| limbs.left_leg_health);
     let right_leg_health = limbs.map_or(1.0, |limbs| limbs.right_leg_health);
-    let health = [
-        left_arm_health,
-        right_arm_health,
-        left_leg_health,
-        right_leg_health,
-        chest_health,
-        stomach_health,
-        head_health,
-    ];
-    let cut_fraction = physical_cut_fraction(&health, medical.obvious_cut);
     html! {
         (sidebar_section(title, html! {
             div class="party-attributes-list" aria-label="Character attributes" {
-                (attribute_group("Head", head_health, cut_fraction, medical, 6, &[
+                (attribute_group("Head", "head", head_health, medical, 6, surgery_base, injuries, projectiles, &[
                     ("Intelligence", "intelligence", attributes.intelligence),
                     ("Instinct", "instinct", attributes.instinct),
                     ("Eyesight", "eyesight", attributes.eyesight),
                     ("Hearing", "hearing", attributes.hearing),
                 ]))
-                (attribute_group("Chest", chest_health, cut_fraction, medical, 4, &[
+                (attribute_group("Chest", "chest", chest_health, medical, 4, surgery_base, injuries, projectiles, &[
                     ("Endurance", "endurance", attributes.endurance),
                 ]))
-                (attribute_group("Stomach", stomach_health, cut_fraction, medical, 5, &[
+                (attribute_group("Stomach", "stomach", stomach_health, medical, 5, surgery_base, injuries, projectiles, &[
                     ("Immunity", "immunity", attributes.immunity),
                     ("Gut", "gut", attributes.gut),
                 ]))
                 div class="limb-attribute-pair" {
-                    (limb_attribute_column("Left arm", "limb-left", left_arm_health, cut_fraction, medical, 0, &[
+                    (limb_attribute_column("Left arm", "left-arm", "limb-left", left_arm_health, medical, 0, surgery_base, injuries, projectiles, &[
                         ("Strength", "strength-arm", attributes.left_arm_strength),
                         ("Agility", "agility-arm", attributes.left_arm_agility),
                     ]))
-                    (limb_attribute_column("Right arm", "limb-right", right_arm_health, cut_fraction, medical, 1, &[
+                    (limb_attribute_column("Right arm", "right-arm", "limb-right", right_arm_health, medical, 1, surgery_base, injuries, projectiles, &[
                         ("Strength", "strength-arm", attributes.right_arm_strength),
                         ("Agility", "agility-arm", attributes.right_arm_agility),
                     ]))
                 }
                 div class="limb-attribute-pair" {
-                    (limb_attribute_column("Left leg", "limb-left", left_leg_health, cut_fraction, medical, 2, &[
+                    (limb_attribute_column("Left leg", "left-leg", "limb-left", left_leg_health, medical, 2, surgery_base, injuries, projectiles, &[
                         ("Strength", "strength-leg", attributes.left_leg_strength),
                         ("Agility", "agility-leg", attributes.left_leg_agility),
                     ]))
-                    (limb_attribute_column("Right leg", "limb-right", right_leg_health, cut_fraction, medical, 3, &[
+                    (limb_attribute_column("Right leg", "right-leg", "limb-right", right_leg_health, medical, 3, surgery_base, injuries, projectiles, &[
                         ("Strength", "strength-leg", attributes.right_leg_strength),
                         ("Agility", "agility-leg", attributes.right_leg_agility),
                     ]))
@@ -3816,19 +4070,25 @@ fn party_attributes_rail(
 
 fn limb_attribute_column(
     name: &str,
+    slug: &str,
     side: &str,
     health: f32,
-    cut_fraction: f32,
     medical: &MedicalPresentation,
     region: usize,
+    surgery_base: Option<&str>,
+    injuries: &[LimbInjury],
+    projectiles: &[RetainedProjectile],
     rows: &[(&str, &str, f32)],
 ) -> Markup {
     attribute_group_with_labels(
         name,
+        slug,
         health,
-        cut_fraction,
         medical,
         region,
+        surgery_base,
+        injuries,
+        projectiles,
         rows,
         false,
         Some(side),
@@ -3837,18 +4097,24 @@ fn limb_attribute_column(
 
 fn attribute_group(
     name: &str,
+    slug: &str,
     health: f32,
-    cut_fraction: f32,
     medical: &MedicalPresentation,
     region: usize,
+    surgery_base: Option<&str>,
+    injuries: &[LimbInjury],
+    projectiles: &[RetainedProjectile],
     rows: &[(&str, &str, f32)],
 ) -> Markup {
     attribute_group_with_labels(
         name,
+        slug,
         health,
-        cut_fraction,
         medical,
         region,
+        surgery_base,
+        injuries,
+        projectiles,
         rows,
         true,
         None,
@@ -3857,10 +4123,13 @@ fn attribute_group(
 
 fn attribute_group_with_labels(
     name: &str,
+    slug: &str,
     health: f32,
-    cut_fraction: f32,
     medical: &MedicalPresentation,
     region: usize,
+    surgery_base: Option<&str>,
+    injuries: &[LimbInjury],
+    projectiles: &[RetainedProjectile],
     rows: &[(&str, &str, f32)],
     show_labels: bool,
     side: Option<&str>,
@@ -3871,8 +4140,11 @@ fn attribute_group_with_labels(
             Some(side) => format!("attribute-group limb-attribute-column {side}"),
             None => "attribute-group".to_owned(),
         }) {
+            @if let Some(base) = surgery_base {
+                a class="limb-surgery-link" href=(format!("{base}/{slug}")) aria-label=(format!("Treat {name}")) {}
+            }
             div class="attribute-group-heading" { (name) }
-            (regional_health_bar(name, health, cut_fraction, medical, region))
+            (regional_health_bar(name, health, medical, region, injuries, projectiles))
             @for (attribute_name, icon, value) in rows {
                 (attribute_row(attribute_name, icon, *value, health, show_labels))
             }
@@ -3883,14 +4155,42 @@ fn attribute_group_with_labels(
 fn regional_health_bar(
     name: &str,
     physical_health: f32,
-    cut_fraction: f32,
     medical: &MedicalPresentation,
     region: usize,
+    injuries: &[LimbInjury],
+    projectiles: &[RetainedProjectile],
 ) -> Markup {
     let physical_health = physical_health.clamp(0.0, 1.0);
     let physical_damage = 1.0 - physical_health;
-    let cut = physical_damage * cut_fraction;
-    let blunt = physical_damage - cut;
+    let limb = [
+        LimbRegion::LeftArm,
+        LimbRegion::RightArm,
+        LimbRegion::LeftLeg,
+        LimbRegion::RightLeg,
+        LimbRegion::Chest,
+        LimbRegion::Stomach,
+        LimbRegion::Head,
+    ][region];
+    let injury = injuries.iter().find(|injury| injury.limb == limb);
+    let cut = injury
+        .map_or(0.0, |row| row.cut_damage)
+        .min(physical_damage);
+    let total_blunt = injury
+        .map_or(physical_damage - cut, |row| {
+            row.bruise_damage.max(row.fracture_damage)
+        })
+        .min((physical_damage - cut).max(0.0));
+    let fracture = injury
+        .map_or(0.0, |row| row.fracture_damage)
+        .min(total_blunt);
+    let blunt = (total_blunt - fracture).max(0.0);
+    let bandaged = injury.is_some_and(|row| row.bandaged);
+    let splinted = injury.is_some_and(|row| row.splint_inventory_item_id.is_some());
+    let fracture_label = if splinted {
+        "splinted fracture"
+    } else {
+        "fracture"
+    };
     let humour = medical.regional_humours.map(|values| values[region]);
     let values = humour.unwrap_or_default();
     let humour_total = if humour.is_some() {
@@ -3933,10 +4233,11 @@ fn regional_health_bar(
     };
     let reading = if humour.is_some() {
         format!(
-            "{name}: {:.0}% sound, {:.0}% cut, {:.0}% blunt, {:.0}% sanguine, {:.0}% phlegmatic, {:.0}% choleric, {:.0}% melancholic impairment",
+            "{name}: {:.0}% sound, {:.0}% cut, {:.0}% blunt, {:.0}% {fracture_label}, {:.0}% sanguine, {:.0}% phlegmatic, {:.0}% choleric, {:.0}% melancholic impairment",
             okay * 100.0,
             cut * 100.0,
             blunt * 100.0,
+            fracture * 100.0,
             values.sanguine * scale * 100.0,
             values.phlegmatic * scale * 100.0,
             values.choleric * scale * 100.0,
@@ -3944,10 +4245,11 @@ fn regional_health_bar(
         )
     } else {
         format!(
-            "{name}: {:.0}% sound, {:.0}% cut, {:.0}% blunt, {:.0}% other impairment",
+            "{name}: {:.0}% sound, {:.0}% cut, {:.0}% blunt, {:.0}% {fracture_label}, {:.0}% other impairment",
             okay * 100.0,
             cut * 100.0,
             blunt * 100.0,
+            fracture * 100.0,
             other * 100.0,
         )
     };
@@ -3956,12 +4258,20 @@ fn regional_health_bar(
             aria-label=(reading)
             aria-valuemin="0" aria-valuemax="100" aria-valuenow=(okay * 100.0) {
             span class="attribute-health-current" title="Sound" style=(format!("width:{:.1}%", okay * 100.0)) {}
-            span class="attribute-health-cut" title="Cut damage" style=(format!("width:{:.1}%", cut * 100.0)) {}
+            span class=(if bandaged { "attribute-health-cut bandaged-cut" } else { "attribute-health-cut" }) title=(if bandaged { "Bandaged cut damage" } else { "Cut damage" }) style=(format!("width:{:.1}%", cut * 100.0)) {}
             span class="attribute-health-blunt" title="Blunt damage" style=(format!("width:{:.1}%", blunt * 100.0)) {}
+            span class=(if splinted { "attribute-health-fracture splinted-fracture" } else { "attribute-health-fracture" })
+                title=(if splinted { "Splinted fracture" } else { "Fracture" })
+                style=(format!("width:{:.1}%", fracture * 100.0)) {}
             @for (label, class, amount) in segments {
                 @if amount > 0.0 {
                     span class=(class) title=(label) style=(format!("width:{:.1}%", amount * 100.0)) {}
                 }
+            }
+            @for (projectile_index, projectile) in projectiles.iter().filter(|projectile| projectile.limb == limb).enumerate() {
+                span class=(match projectile.kind { ProjectileKind::Arrowhead => "surgery-projectile-icon projectile-arrowhead", ProjectileKind::Ball => "surgery-projectile-icon projectile-ball" })
+                    style=(format!("right:{:.2}rem", 0.2 + projectile_index as f32 * 0.75))
+                    title=(match projectile.kind { ProjectileKind::Arrowhead => "Retained arrowhead", ProjectileKind::Ball => "Retained ball" }) aria-hidden="true" {}
             }
         }
     }
@@ -4945,7 +5255,8 @@ mod tests {
 
     #[test]
     fn skill_meter_and_schedule_use_segmented_rank_and_text_time_controls() {
-        let meter = skill_rank_bar(3.5, 2.75, "Skill test").into_string();
+        let meter =
+            skill_rank_bar(3.5, 2.75, "Skill test", SkillRankBarOptions::default()).into_string();
         for tier in 1..=5 {
             assert!(meter.contains(&format!("skill-rank-segment-{tier}")));
         }
@@ -4960,6 +5271,88 @@ mod tests {
         assert!(!allocation.contains("data-schedule-step"));
         assert!(!allocation.contains("type=\"range\""));
         assert!(!allocation.contains("schedule-handle"));
+    }
+
+    #[test]
+    fn surgery_supplies_are_icon_counts_with_hover_labels() {
+        let supply = surgery_supply("Bandages", "bandage-roll", 8).into_string();
+        assert!(supply.contains("class=\"surgery-supply\""));
+        assert!(supply.contains("data-tooltip=\"Bandages: 8 available\""));
+        assert!(supply.contains("bandage-roll.svg"));
+        assert!(supply.contains(">x8</span>"));
+        assert!(!supply.contains(">Bandages</span>"));
+    }
+
+    #[test]
+    fn surgery_item_icons_explain_consumed_reusable_and_equipped_supplies() {
+        let bandage =
+            surgery_item_requirement(SurgeryItemRequirement::BandageConsumed).into_string();
+        assert!(bandage.contains("data-tooltip=\"Expend one bandage\""));
+        assert!(bandage.contains(">x1</span>"));
+
+        let kit =
+            surgery_item_requirement(SurgeryItemRequirement::SurgeryKitReusable).into_string();
+        assert!(kit.contains("data-tooltip=\"Requires surgery kit\""));
+        assert!(kit.contains("aria-label=\"Requires surgery kit; reusable and not consumed\""));
+        assert!(kit.contains("medical-pack.svg"));
+        assert!(!kit.contains("surgery-item-overlay"));
+
+        let splint = surgery_item_requirement(SurgeryItemRequirement::SplintEquipped).into_string();
+        assert!(splint.contains("data-tooltip=\"Equips 1 splint\""));
+        assert!(splint.contains("check-mark.svg"));
+    }
+
+    #[test]
+    fn surgery_difficulty_uses_shared_skill_meter_for_met_and_unmet_ranks() {
+        let meter = surgery_difficulty_meter("Remove ball", 4.0, 2.0).into_string();
+        assert!(meter.contains("stat-icon-surgeon"));
+        assert!(meter.contains("role=\"meter\""));
+        for tier in 1..=5 {
+            assert!(meter.contains(&format!("skill-rank-segment-{tier}")));
+        }
+        assert_eq!(
+            meter
+                .matches("class=\"rank-current\" style=\"width:100.0%\"")
+                .count(),
+            2
+        );
+        assert_eq!(meter.matches("left:0.0%;width:100.0%").count(), 2);
+        assert!(!meter.contains("skill-rank-value"));
+        assert!(!meter.contains(">4.0<"));
+        assert!(meter.contains(
+            "aria-label=\"Remove ball: requires 4.0 Surgery; current effective skill 2.0\""
+        ));
+        let over_cap = surgery_difficulty_meter("Remove ball", 7.2, 5.0).into_string();
+        assert!(over_cap.contains("surgery-difficulty-over-cap-marker"));
+        assert!(over_cap.contains("requires 7.2 Surgery; current effective skill 5.0"));
+        assert!(!adventuresim_core::surgery::extraction_requires_surgery_kit(1.0));
+        assert!(adventuresim_core::surgery::extraction_requires_surgery_kit(
+            1.01
+        ));
+    }
+
+    #[test]
+    fn unavailable_surgery_rows_are_greyed_and_buttons_keep_procedure_names() {
+        let row = surgery_procedure_row(
+            "/test",
+            "Stitch",
+            "scalpel",
+            "stitch",
+            &[SurgeryItemRequirement::SurgeryKitReusable],
+            10,
+            2.0,
+            0.0,
+            Some("No injury is present"),
+            Some("No injury is present"),
+            None,
+        )
+        .into_string();
+        assert!(row.contains("surgery-procedure-unavailable"));
+        assert!(row.contains("data-tooltip=\"No injury is present\""));
+        assert!(row.contains("aria-label=\"Stitch: No injury is present\" tabindex=\"0\""));
+        assert!(row.contains("disabled title=\"No injury is present\""));
+        assert!(row.contains(">Stitch</button>"));
+        assert!(!row.contains(">No injury is present</button>"));
     }
 
     #[test]
@@ -5975,7 +6368,6 @@ mod tests {
     fn low_medicine_medical_html_contains_no_hidden_payload() {
         let presentation = crate::medical::MedicalPresentation {
             unavailable: false,
-            obvious_cut: 0.0,
             symptoms: vec!["coughing"],
             diagnoses: Vec::new(),
             ..Default::default()
@@ -5983,6 +6375,7 @@ mod tests {
         let markup = medical_rail(&presentation, "/location", 1, 2, true).into_string();
         assert!(markup.contains("coughing"));
         assert!(!markup.contains("Examine"));
+        assert!(!markup.contains("Visible injuries"));
         for forbidden in ["Vitals", "influenza", "infection_id", "disease", "humour-"] {
             assert!(!markup.contains(forbidden), "leaked {forbidden}: {markup}");
         }
@@ -6053,7 +6446,8 @@ mod tests {
         assert!(!sidebar.contains("Possible ailments"));
         assert!(!sidebar.contains("Observed at personal minute"));
 
-        let popup = medical_examination_popup(&presentation, "/location", 2, None).into_string();
+        let popup =
+            medical_examination_popup(&presentation, "/location", 2, None, &[], &[]).into_string();
         assert!(popup.contains("medical-examination-overlay"));
         assert!(popup.contains("aria-modal=\"true\""));
         assert!(popup.contains("Possible ailments"));
@@ -6084,10 +6478,45 @@ mod tests {
             ),
             ..Default::default()
         };
-        let markup = regional_health_bar("Chest", 1.0, 0.0, &presentation, 4).into_string();
+        let markup = regional_health_bar("Chest", 1.0, &presentation, 4, &[], &[]).into_string();
         assert!(markup.contains("Phlegmatic"));
         assert!(markup.contains("role=\"meter\""));
         assert!(markup.contains("Chest:"));
+    }
+
+    #[test]
+    fn treated_cuts_and_fractures_expose_banded_health_bar_states() {
+        let injury = LimbInjury {
+            id: "1:chest".into(),
+            character_id: 1,
+            limb: LimbRegion::Chest,
+            cut_damage: 0.2,
+            bruise_damage: 0.2,
+            fracture_damage: 0.2,
+            bandaged: true,
+            stitched: false,
+            stitch_quality: 0.0,
+            splint_owner_id: Some(2),
+            splint_inventory_item_id: Some(3),
+            infection_exposure: 0.0,
+            infection_checks: 0,
+            infection_origin_minute: None,
+        };
+        let markup = regional_health_bar(
+            "Chest",
+            0.6,
+            &crate::medical::MedicalPresentation::default(),
+            4,
+            &[injury],
+            &[],
+        )
+        .into_string();
+
+        assert!(markup.contains("attribute-health-cut bandaged-cut"));
+        assert!(markup.contains("title=\"Bandaged cut damage\""));
+        assert!(markup.contains("attribute-health-fracture splinted-fracture"));
+        assert!(markup.contains("title=\"Splinted fracture\""));
+        assert!(markup.contains("20% splinted fracture"));
     }
 
     #[test]

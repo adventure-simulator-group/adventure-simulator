@@ -192,6 +192,9 @@ pub mod land_use_profile_type;
 pub mod land_water_crossing_type;
 pub mod leave_mission_reducer;
 pub mod leave_party_reducer;
+pub mod limb_injury_table;
+pub mod limb_injury_type;
+pub mod limb_region_type;
 pub mod liquidate_party_inventory_reducer;
 pub mod local_chat_message_table;
 pub mod local_chat_message_type;
@@ -249,6 +252,7 @@ pub mod potential_vegetation_type;
 pub mod pottery_commodity_type;
 pub mod pottery_industry_type;
 pub mod production_scale_type;
+pub mod projectile_kind_type;
 pub mod purchase_from_herbalist_reducer;
 pub mod quarry_commodity_type;
 pub mod quarrying_industry_type;
@@ -279,6 +283,8 @@ pub mod resolved_party_action_type;
 pub mod rest_at_camp_reducer;
 pub mod rest_at_settlement_hours_reducer;
 pub mod rest_at_settlement_reducer;
+pub mod retained_projectile_table;
+pub mod retained_projectile_type;
 pub mod retrieve_repaired_item_reducer;
 pub mod retrieve_repaired_items_reducer;
 pub mod river_access_type;
@@ -372,6 +378,7 @@ pub mod travel_edge_type;
 pub mod travel_route_type;
 pub mod travel_to_quest_reducer;
 pub mod travel_to_settlement_reducer;
+pub mod treat_limb_reducer;
 pub mod tree_species_id_type;
 pub mod tree_species_profile_type;
 pub mod turn_in_quest_reducer;
@@ -381,6 +388,7 @@ pub mod update_character_reducer;
 pub mod update_party_check_targets_reducer;
 pub mod update_recruitment_role_reducer;
 pub mod update_training_schedule_reducer;
+pub mod upgrade_manual_surgery_reducer;
 pub mod vote_for_party_leader_reducer;
 pub mod water_distance_meters_type;
 pub mod western_christian_arrangement_type;
@@ -582,6 +590,9 @@ pub use land_use_profile_type::LandUseProfile;
 pub use land_water_crossing_type::LandWaterCrossing;
 pub use leave_mission_reducer::leave_mission;
 pub use leave_party_reducer::leave_party;
+pub use limb_injury_table::*;
+pub use limb_injury_type::LimbInjury;
+pub use limb_region_type::LimbRegion;
 pub use liquidate_party_inventory_reducer::liquidate_party_inventory;
 pub use local_chat_message_table::*;
 pub use local_chat_message_type::LocalChatMessage;
@@ -639,6 +650,7 @@ pub use potential_vegetation_type::PotentialVegetation;
 pub use pottery_commodity_type::PotteryCommodity;
 pub use pottery_industry_type::PotteryIndustry;
 pub use production_scale_type::ProductionScale;
+pub use projectile_kind_type::ProjectileKind;
 pub use purchase_from_herbalist_reducer::purchase_from_herbalist;
 pub use quarry_commodity_type::QuarryCommodity;
 pub use quarrying_industry_type::QuarryingIndustry;
@@ -669,6 +681,8 @@ pub use resolved_party_action_type::ResolvedPartyAction;
 pub use rest_at_camp_reducer::rest_at_camp;
 pub use rest_at_settlement_hours_reducer::rest_at_settlement_hours;
 pub use rest_at_settlement_reducer::rest_at_settlement;
+pub use retained_projectile_table::*;
+pub use retained_projectile_type::RetainedProjectile;
 pub use retrieve_repaired_item_reducer::retrieve_repaired_item;
 pub use retrieve_repaired_items_reducer::retrieve_repaired_items;
 pub use river_access_type::RiverAccess;
@@ -762,6 +776,7 @@ pub use travel_edge_type::TravelEdge;
 pub use travel_route_type::TravelRoute;
 pub use travel_to_quest_reducer::travel_to_quest;
 pub use travel_to_settlement_reducer::travel_to_settlement;
+pub use treat_limb_reducer::treat_limb;
 pub use tree_species_id_type::TreeSpeciesId;
 pub use tree_species_profile_type::TreeSpeciesProfile;
 pub use turn_in_quest_reducer::turn_in_quest;
@@ -771,6 +786,7 @@ pub use update_character_reducer::update_character;
 pub use update_party_check_targets_reducer::update_party_check_targets;
 pub use update_recruitment_role_reducer::update_recruitment_role;
 pub use update_training_schedule_reducer::update_training_schedule;
+pub use upgrade_manual_surgery_reducer::upgrade_manual_surgery;
 pub use vote_for_party_leader_reducer::vote_for_party_leader;
 pub use water_distance_meters_type::WaterDistanceMeters;
 pub use western_christian_arrangement_type::WesternChristianArrangement;
@@ -1155,6 +1171,13 @@ pub enum Reducer {
         character_id: u64,
         settlement_id: String,
     },
+    TreatLimb {
+        actor_id: u64,
+        patient_id: u64,
+        limb_slug: String,
+        procedure: String,
+        projectile_id: Option<u64>,
+    },
     TurnInQuest {
         character_id: u64,
         quest_id: String,
@@ -1170,7 +1193,6 @@ pub enum Reducer {
     UpdatePartyCheckTargets {
         leader_id: u64,
         medicine: f32,
-        surgery: f32,
         charisma: f32,
         religion: f32,
     },
@@ -1187,6 +1209,7 @@ pub enum Reducer {
         downtime: ScheduleAllocation,
         travel: ScheduleAllocation,
     },
+    UpgradeManualSurgery,
     VoteForPartyLeader {
         voter_id: u64,
         candidate_id: u64,
@@ -1294,12 +1317,14 @@ impl __sdk::Reducer for Reducer {
             Reducer::TransferPartyItem { .. } => "transfer_party_item",
             Reducer::TravelToQuest { .. } => "travel_to_quest",
             Reducer::TravelToSettlement { .. } => "travel_to_settlement",
+            Reducer::TreatLimb { .. } => "treat_limb",
             Reducer::TurnInQuest { .. } => "turn_in_quest",
             Reducer::UnequipMedication { .. } => "unequip_medication",
             Reducer::UpdateCharacter { .. } => "update_character",
             Reducer::UpdatePartyCheckTargets { .. } => "update_party_check_targets",
             Reducer::UpdateRecruitmentRole { .. } => "update_recruitment_role",
             Reducer::UpdateTrainingSchedule { .. } => "update_training_schedule",
+            Reducer::UpgradeManualSurgery => "upgrade_manual_surgery",
             Reducer::VoteForPartyLeader { .. } => "vote_for_party_leader",
             Reducer::WithdrawPartyInventoryItem { .. } => "withdraw_party_inventory_item",
             _ => unreachable!(),
@@ -1951,6 +1976,19 @@ Reducer::CancelMissionRequest{
                 character_id: character_id.clone(),
                 settlement_id: settlement_id.clone(),
 }),
+            Reducer::TreatLimb{
+                actor_id,
+                patient_id,
+                limb_slug,
+                procedure,
+                projectile_id,
+}             => __sats::bsatn::to_vec(&treat_limb_reducer::TreatLimbArgs {
+                actor_id: actor_id.clone(),
+                patient_id: patient_id.clone(),
+                limb_slug: limb_slug.clone(),
+                procedure: procedure.clone(),
+                projectile_id: projectile_id.clone(),
+}),
             Reducer::TurnInQuest{
                 character_id,
                 quest_id,
@@ -1975,13 +2013,11 @@ Reducer::CancelMissionRequest{
             Reducer::UpdatePartyCheckTargets{
                 leader_id,
                 medicine,
-                surgery,
                 charisma,
                 religion,
 }             => __sats::bsatn::to_vec(&update_party_check_targets_reducer::UpdatePartyCheckTargetsArgs {
                 leader_id: leader_id.clone(),
                 medicine: medicine.clone(),
-                surgery: surgery.clone(),
                 charisma: charisma.clone(),
                 religion: religion.clone(),
 }),
@@ -2009,7 +2045,9 @@ Reducer::CancelMissionRequest{
                 downtime: downtime.clone(),
                 travel: travel.clone(),
 }),
-            Reducer::VoteForPartyLeader{
+            Reducer::UpgradeManualSurgery => __sats::bsatn::to_vec(&upgrade_manual_surgery_reducer::UpgradeManualSurgeryArgs {
+                }),
+Reducer::VoteForPartyLeader{
                 voter_id,
                 candidate_id,
 }             => __sats::bsatn::to_vec(&vote_for_party_leader_reducer::VoteForPartyLeaderArgs {
@@ -2065,6 +2103,7 @@ pub struct DbUpdate {
     inventory_quantity_target: __sdk::TableUpdate<InventoryQuantityTarget>,
     item: __sdk::TableUpdate<Item>,
     item_condition: __sdk::TableUpdate<ItemCondition>,
+    limb_injury: __sdk::TableUpdate<LimbInjury>,
     local_chat_message: __sdk::TableUpdate<LocalChatMessage>,
     morale_event: __sdk::TableUpdate<MoraleEvent>,
     party: __sdk::TableUpdate<Party>,
@@ -2083,6 +2122,7 @@ pub struct DbUpdate {
     quest_issuer: __sdk::TableUpdate<QuestIssuer>,
     religious_demand: __sdk::TableUpdate<ReligiousDemand>,
     repair_order: __sdk::TableUpdate<RepairOrder>,
+    retained_projectile: __sdk::TableUpdate<RetainedProjectile>,
     saved_recruitment_role: __sdk::TableUpdate<SavedRecruitmentRole>,
     settlement: __sdk::TableUpdate<Settlement>,
     settlement_alias: __sdk::TableUpdate<SettlementAlias>,
@@ -2201,6 +2241,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "item_condition" => db_update
                     .item_condition
                     .append(item_condition_table::parse_table_update(table_update)?),
+                "limb_injury" => db_update
+                    .limb_injury
+                    .append(limb_injury_table::parse_table_update(table_update)?),
                 "local_chat_message" => db_update
                     .local_chat_message
                     .append(local_chat_message_table::parse_table_update(table_update)?),
@@ -2255,6 +2298,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "repair_order" => db_update
                     .repair_order
                     .append(repair_order_table::parse_table_update(table_update)?),
+                "retained_projectile" => db_update
+                    .retained_projectile
+                    .append(retained_projectile_table::parse_table_update(table_update)?),
                 "saved_recruitment_role" => db_update.saved_recruitment_role.append(
                     saved_recruitment_role_table::parse_table_update(table_update)?,
                 ),
@@ -2443,6 +2489,9 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.item_condition = cache
             .apply_diff_to_table::<ItemCondition>("item_condition", &self.item_condition)
             .with_updates_by_pk(|row| &row.inventory_item_id);
+        diff.limb_injury = cache
+            .apply_diff_to_table::<LimbInjury>("limb_injury", &self.limb_injury)
+            .with_updates_by_pk(|row| &row.id);
         diff.local_chat_message = cache
             .apply_diff_to_table::<LocalChatMessage>("local_chat_message", &self.local_chat_message)
             .with_updates_by_pk(|row| &row.id);
@@ -2514,6 +2563,12 @@ impl __sdk::DbUpdate for DbUpdate {
             .with_updates_by_pk(|row| &row.id);
         diff.repair_order = cache
             .apply_diff_to_table::<RepairOrder>("repair_order", &self.repair_order)
+            .with_updates_by_pk(|row| &row.id);
+        diff.retained_projectile = cache
+            .apply_diff_to_table::<RetainedProjectile>(
+                "retained_projectile",
+                &self.retained_projectile,
+            )
             .with_updates_by_pk(|row| &row.id);
         diff.saved_recruitment_role = cache
             .apply_diff_to_table::<SavedRecruitmentRole>(
@@ -2696,6 +2751,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "item_condition" => db_update
                     .item_condition
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "limb_injury" => db_update
+                    .limb_injury
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "local_chat_message" => db_update
                     .local_chat_message
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -2749,6 +2807,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "repair_order" => db_update
                     .repair_order
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "retained_projectile" => db_update
+                    .retained_projectile
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "saved_recruitment_role" => db_update
                     .saved_recruitment_role
@@ -2901,6 +2962,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "item_condition" => db_update
                     .item_condition
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "limb_injury" => db_update
+                    .limb_injury
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "local_chat_message" => db_update
                     .local_chat_message
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -2954,6 +3018,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "repair_order" => db_update
                     .repair_order
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "retained_projectile" => db_update
+                    .retained_projectile
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "saved_recruitment_role" => db_update
                     .saved_recruitment_role
@@ -3046,6 +3113,7 @@ pub struct AppliedDiff<'r> {
     inventory_quantity_target: __sdk::TableAppliedDiff<'r, InventoryQuantityTarget>,
     item: __sdk::TableAppliedDiff<'r, Item>,
     item_condition: __sdk::TableAppliedDiff<'r, ItemCondition>,
+    limb_injury: __sdk::TableAppliedDiff<'r, LimbInjury>,
     local_chat_message: __sdk::TableAppliedDiff<'r, LocalChatMessage>,
     morale_event: __sdk::TableAppliedDiff<'r, MoraleEvent>,
     party: __sdk::TableAppliedDiff<'r, Party>,
@@ -3064,6 +3132,7 @@ pub struct AppliedDiff<'r> {
     quest_issuer: __sdk::TableAppliedDiff<'r, QuestIssuer>,
     religious_demand: __sdk::TableAppliedDiff<'r, ReligiousDemand>,
     repair_order: __sdk::TableAppliedDiff<'r, RepairOrder>,
+    retained_projectile: __sdk::TableAppliedDiff<'r, RetainedProjectile>,
     saved_recruitment_role: __sdk::TableAppliedDiff<'r, SavedRecruitmentRole>,
     settlement: __sdk::TableAppliedDiff<'r, Settlement>,
     settlement_alias: __sdk::TableAppliedDiff<'r, SettlementAlias>,
@@ -3239,6 +3308,7 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.item_condition,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<LimbInjury>("limb_injury", &self.limb_injury, event);
         callbacks.invoke_table_row_callbacks::<LocalChatMessage>(
             "local_chat_message",
             &self.local_chat_message,
@@ -3315,6 +3385,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<RepairOrder>(
             "repair_order",
             &self.repair_order,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<RetainedProjectile>(
+            "retained_projectile",
+            &self.retained_projectile,
             event,
         );
         callbacks.invoke_table_row_callbacks::<SavedRecruitmentRole>(
@@ -4067,6 +4142,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         inventory_quantity_target_table::register_table(client_cache);
         item_table::register_table(client_cache);
         item_condition_table::register_table(client_cache);
+        limb_injury_table::register_table(client_cache);
         local_chat_message_table::register_table(client_cache);
         morale_event_table::register_table(client_cache);
         party_table::register_table(client_cache);
@@ -4085,6 +4161,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         quest_issuer_table::register_table(client_cache);
         religious_demand_table::register_table(client_cache);
         repair_order_table::register_table(client_cache);
+        retained_projectile_table::register_table(client_cache);
         saved_recruitment_role_table::register_table(client_cache);
         settlement_table::register_table(client_cache);
         settlement_alias_table::register_table(client_cache);
@@ -4133,6 +4210,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "inventory_quantity_target",
         "item",
         "item_condition",
+        "limb_injury",
         "local_chat_message",
         "morale_event",
         "party",
@@ -4151,6 +4229,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "quest_issuer",
         "religious_demand",
         "repair_order",
+        "retained_projectile",
         "saved_recruitment_role",
         "settlement",
         "settlement_alias",

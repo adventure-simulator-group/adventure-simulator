@@ -18,6 +18,7 @@ use crate::{
     personality::character_personality,
     repair::{item_condition, repair_order},
     strategic::{inventory_quantity_target, party, party_member, settlement},
+    surgery::{limb_injury, retained_projectile},
     tactical::tactical_server,
     time::{character_notoriety, character_time, character_training_schedule},
 };
@@ -580,6 +581,15 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
     if ctx.db.character().id().find(DAMAGED_CHARACTER_ID).is_none() {
         insert_new_character(ctx, "Wounded Demo".to_string(), DAMAGED_CHARACTER_ID, false)?;
     }
+    for (id, name, role) in [
+        (9_000_001, "Mara", "Backup surgeon"),
+        (9_000_002, "Orrin", "Critical patient"),
+    ] {
+        if ctx.db.character().id().find(id).is_none() {
+            insert_new_npc_character(ctx, name.into(), id, false)?;
+        }
+        crate::strategic::attach_seeded_party_member(ctx, DAMAGED_CHARACTER_ID, id, role)?;
+    }
 
     let mut limbs = ctx
         .db
@@ -588,14 +598,142 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
         .find(DAMAGED_CHARACTER_ID)
         .ok_or_else(|| "Damaged demo character is missing limb data".to_string())?;
 
-    limbs.left_arm_health = 0.55;
-    limbs.right_arm_health = 0.80;
-    limbs.left_leg_health = 0.65;
-    limbs.right_leg_health = 0.90;
-    limbs.head_health = 0.75;
-    limbs.chest_health = 0.85;
-    limbs.stomach_health = 0.70;
+    // Surgery's durable injury rows are authoritative over the projection.
+    // Start clean so this reducer remains idempotent during UI iteration.
+    limbs.left_arm_health = 1.0;
+    limbs.right_arm_health = 1.0;
+    limbs.left_leg_health = 1.0;
+    limbs.right_leg_health = 1.0;
+    limbs.head_health = 1.0;
+    limbs.chest_health = 1.0;
+    limbs.stomach_health = 1.0;
     ctx.db.character_limbs().character_id().update(limbs);
+
+    for character_id in [DAMAGED_CHARACTER_ID, 9_000_001, 9_000_002] {
+        for injury in ctx
+            .db
+            .limb_injury()
+            .character_id()
+            .filter(character_id)
+            .collect::<Vec<_>>()
+        {
+            ctx.db.limb_injury().id().delete(injury.id);
+        }
+        for projectile in ctx
+            .db
+            .retained_projectile()
+            .character_id()
+            .filter(character_id)
+            .collect::<Vec<_>>()
+        {
+            ctx.db.retained_projectile().id().delete(projectile.id);
+        }
+    }
+    crate::surgery::commit_hit_injury(
+        ctx,
+        DAMAGED_CHARACTER_ID,
+        crate::surgery::LimbRegion::LeftArm,
+        0.22,
+        0.05,
+        Some(crate::surgery::ProjectileKind::Arrowhead),
+    );
+    crate::surgery::commit_hit_injury(
+        ctx,
+        DAMAGED_CHARACTER_ID,
+        crate::surgery::LimbRegion::RightArm,
+        0.18,
+        0.0,
+        None,
+    );
+    let mut bandaged = crate::surgery::injury_for(
+        ctx,
+        DAMAGED_CHARACTER_ID,
+        crate::surgery::LimbRegion::RightArm,
+    );
+    bandaged.bandaged = true;
+    bandaged.stitched = true;
+    bandaged.stitch_quality = 4.0;
+    ctx.db.limb_injury().id().update(bandaged);
+    crate::surgery::commit_hit_injury(
+        ctx,
+        DAMAGED_CHARACTER_ID,
+        crate::surgery::LimbRegion::LeftLeg,
+        0.0,
+        0.42,
+        None,
+    );
+    let mut splinted = crate::surgery::injury_for(
+        ctx,
+        DAMAGED_CHARACTER_ID,
+        crate::surgery::LimbRegion::LeftLeg,
+    );
+    splinted.splint_owner_id = Some(DAMAGED_CHARACTER_ID);
+    ctx.db.limb_injury().id().update(splinted);
+    crate::surgery::commit_hit_injury(
+        ctx,
+        DAMAGED_CHARACTER_ID,
+        crate::surgery::LimbRegion::Chest,
+        0.15,
+        0.08,
+        Some(crate::surgery::ProjectileKind::Ball),
+    );
+
+    crate::add_inventory_item(ctx, DAMAGED_CHARACTER_ID, "bandage", 8);
+    crate::add_inventory_item(ctx, DAMAGED_CHARACTER_ID, "surgery_kit", 1);
+    crate::add_inventory_item(ctx, DAMAGED_CHARACTER_ID, "splint", 3);
+
+    // A wounded primary surgeon, a less-skilled backup, and a second critical
+    // patient make clock alignment and parallel triage visible in one fixture.
+    let fixture_now = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(DAMAGED_CHARACTER_ID)
+        .ok_or("Surgery demo primary surgeon is missing time")?
+        .minutes
+        .max(200);
+    for (id, surgeon_hours, lag) in [
+        (DAMAGED_CHARACTER_ID, 20_000.0, 0),
+        (9_000_001, 3_333.0, 100),
+        (9_000_002, 500.0, 200),
+    ] {
+        let mut skills = ctx
+            .db
+            .character_skills()
+            .character_id()
+            .find(id)
+            .ok_or("Surgery demo character is missing skills")?;
+        skills.surgeon_hours = surgeon_hours;
+        ctx.db.character_skills().character_id().update(skills);
+        let mut time = ctx
+            .db
+            .character_time()
+            .character_id()
+            .find(id)
+            .ok_or("Surgery demo character is missing time")?;
+        time.minutes = fixture_now.saturating_sub(lag);
+        ctx.db.character_time().character_id().update(time);
+        crate::capability::refresh_character_capability(ctx, id)?;
+    }
+    crate::add_inventory_item(ctx, 9_000_001, "bandage", 6);
+    crate::add_inventory_item(ctx, 9_000_001, "surgery_kit", 1);
+    crate::add_inventory_item(ctx, 9_000_001, "splint", 2);
+    crate::surgery::commit_hit_injury(
+        ctx,
+        9_000_002,
+        crate::surgery::LimbRegion::RightLeg,
+        0.36,
+        0.08,
+        Some(crate::surgery::ProjectileKind::Arrowhead),
+    );
+    crate::surgery::commit_hit_injury(
+        ctx,
+        9_000_002,
+        crate::surgery::LimbRegion::LeftArm,
+        0.04,
+        0.50,
+        None,
+    );
 
     let equip = ctx
         .db

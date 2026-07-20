@@ -9,7 +9,6 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub(super) struct UpdatePartyCheckTargetsArgs {
     pub leader_id: u64,
     pub medicine: f32,
-    pub surgery: f32,
     pub charisma: f32,
     pub religion: f32,
 }
@@ -19,7 +18,6 @@ impl From<UpdatePartyCheckTargetsArgs> for super::Reducer {
         Self::UpdatePartyCheckTargets {
             leader_id: args.leader_id,
             medicine: args.medicine,
-            surgery: args.surgery,
             charisma: args.charisma,
             religion: args.religion,
         }
@@ -45,18 +43,10 @@ pub trait update_party_check_targets {
         &self,
         leader_id: u64,
         medicine: f32,
-        surgery: f32,
         charisma: f32,
         religion: f32,
     ) -> __sdk::Result<()> {
-        self.update_party_check_targets_then(
-            leader_id,
-            medicine,
-            surgery,
-            charisma,
-            religion,
-            |_, _| {},
-        )
+        self.update_party_check_targets_then(leader_id, medicine, charisma, religion, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `update_party_check_targets` to run as soon as possible,
@@ -69,7 +59,6 @@ pub trait update_party_check_targets {
         &self,
         leader_id: u64,
         medicine: f32,
-        surgery: f32,
         charisma: f32,
         religion: f32,
 
@@ -86,7 +75,6 @@ impl update_party_check_targets for super::RemoteReducers {
         &self,
         leader_id: u64,
         medicine: f32,
-        surgery: f32,
         charisma: f32,
         religion: f32,
 
@@ -100,7 +88,6 @@ impl update_party_check_targets for super::RemoteReducers {
             UpdatePartyCheckTargetsArgs {
                 leader_id,
                 medicine,
-                surgery,
                 charisma,
                 religion,
             },

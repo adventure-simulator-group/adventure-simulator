@@ -76,11 +76,10 @@ with Surgery reducing residual risk; blunt damage does not.
 Outbreak acquisition hashes each actual minute of presence. This keeps late
 arrival, departure and re-entry exact and makes one long stay identical to the
 same stay split among many actions without persisting disease state beyond an
-infection episode. Current committed combat provenance is an aggregate cut
-amount. The strategic display apportions that known cut share across regions
-that actually have physical damage and displays the remainder as blunt damage.
-Exact per-region source provenance remains a future tactical result-format
-improvement.
+infection episode. Autoresolve now commits each applied hit's limb, cut share,
+blunt share, and projectile kind. Those durable limb injury rows are the sole
+authority for physical health; `character_limbs` is refreshed once as their
+projection rather than healed independently.
 
 Ten percent or less remaining blood volume is terminal circulatory failure.
 Gut impairment contributes to Choleric/homeostatic failure through disease;
@@ -95,11 +94,23 @@ Below zero, you aren't any *less* effective, per-se, but the body part can conti
 
 ## Current strategic implementation
 
-For the current settlement-rest MVP, each body part recovers **1 percentage point plus 1 percentage point per point of the party Medicine check** per full game day. The bounded party check uses geometrically diminishing support and cannot exceed 5, so recovery ranges from 1% to 6% per day without clamping the aggregate. A character without a party uses their own Medicine check. The check is taken when the rest action begins and applies to the entire selected stay. Resting characters convalesce before they train.
+During recovery, the existing bounded party Medicine check supplies **1 percentage point plus 1 percentage point per Medicine point** of natural recovery per full game day, combined with the wound category's own rate. This modifier is applied to the authoritative cut, bruise, and splinted-fracture components rather than directly to `character_limbs`. A retained projectile multiplies every healing component on that limb by 0.6. Resting characters convalesce before they train.
 
-Autoresolve calculates each wound by running the shared melee and ranged combat exchanges until one side is incapacitated or the simulation reaches its bounded round limit. It then uses the party Surgery check to determine whether each fresh body-part wound deteriorates during immediate post-battle treatment. Every 5 percentage points of wound damage require 1 point of Surgery to stabilize fully. A shortfall adds a proportional amount of deterioration, up to doubling the wound at Surgery 0; meeting or exceeding the target prevents deterioration but never erases the original autoresolve damage. The Surgery check is taken before autoresolve wounds are applied, so the battle's injuries do not retroactively weaken the treatment roll. Deterioration also contributes to the final committed blood loss.
+Autoresolve calculates every hit through the shared melee and ranged exchanges and commits its body part, cut and blunt shares, and projectile kind. Strategic wounds are split per limb into cuts, bruising, and fracture severity. Fracture severity is a condition within blunt trauma and never adds a second copy of the hit's health damage. Cuts remain open after battle: they deteriorate at 2.5% health per day and drain blood in proportion to wound size until manually bandaged. Bandaging consumes one bandage and permanently stabilizes that wound; its health-bar segment changes from solid red to banded pink. Bruising heals without a procedure. A single blunt hit over 18% limb health creates fracture severity proportional to the excess. Untreated fractures are graphite grey, while splinted fractures use lighter grey bands so treatment state is not communicated by color alone.
 
-Characters also persist current and maximum blood volume. Maximum volume currently assumes a 70 kg body at 70 ml/kg. Autoresolve commits final blood loss alongside final body-part injuries, and settlement rest recovers 1% of maximum blood volume per day. The open-wound and bandaging model below is not implemented yet, so blood does not continue draining after the final strategic result is committed. Losing 30% of maximum blood volume contributes 100% strategic incapacitation.
+Clicking any limb preserves the character sheet and replaces its right rail with surgery. The normal limb bar and surgery view share the same per-limb cut, bruise, fracture, bandage, and projectile state. Procedures show supplies, time, and difficulty but keep infection odds hidden. The surgeon and patient must share a location, party, and personal character time; the lagging participant waits to the later clock, then only those participants advance by the procedure duration. Self-treatment applies a 2.5-point Surgery penalty. Bandaging is available at Surgery 0. Stitching is separate, requires Surgery 2 and a reusable surgery kit, and its quality accelerates healing. A splint's exact inventory row moves into a separate limb-applied slot while retaining its weight and owner, never displaces armor, and returns automatically when the fracture heals; anyone may remove it, while application requires Surgery training.
+
+Any unhealed cut accumulates deterministic standing wound exposure. Bandaging
+reduces that exposure and stitch quality reduces it further; a diseased surgeon
+also worsens contamination exposure during a procedure. Retained projectiles do
+not add a separate recurring complication roll.
+
+Retained arrowheads and balls appear inside the affected limb bar. Extraction DC combines the individual hit's damage with a seeded depth component and is deliberately uncapped: shallow projectiles can be removed at Surgery 0 while difficult positions may exceed DC 5. A procedure cannot be attempted until the surgeon meets its required Surgery skill. The procedure meter shows met skill brightly, unmet required skill darkly, and ranks beyond the requirement as empty. Retention imposes only a flat 40% healing-rate penalty. Successful extraction adds cut damage and bleeding, but it does not carry an additional recurring projectile complication. Projectile kind is an explicit extension point for later DC multipliers such as barbed arrows.
+
+Projectile extraction above DC 1 requires a reusable surgery kit. Shallower
+projectiles remain removable without one.
+
+Characters also persist current and maximum blood volume. Maximum volume currently assumes a 70 kg body at 70 ml/kg. Autoresolve commits immediate blood loss alongside final body-part injuries, open cuts continue draining blood on every authoritative personal-time path, and settlement rest recovers 1% of maximum blood volume per day. Losing 30% of maximum blood volume contributes 100% strategic incapacitation.
 
 ```rs
 const ML_BLOOD_VOLUME_PER_KG_BODY_WEIGHT = 70
@@ -118,7 +129,7 @@ fn update_scarred_damage:
 	// also convert bandaged wounds to scarred wounds at faster rate(?)
 
 fn bandage_wounds:
-	// todo - replace the current immediate post-battle Surgery check with detailed wound treatment
+	// manual, one selected limb and one bandage at a time
 
 const PERCENT_BLOOD_LOSS_UNCONSCIOUS = 0.3
 fn update_blood_loss_poise_factor(character):

@@ -303,18 +303,23 @@ pub fn seed_simulation_disease(
     // Advance through the same disease interval hooks as ordinary gameplay so
     // the simulator observes symptom onset instead of receiving hidden fixture
     // knowledge from the private infection row.
+    let injury_limit =
+        crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested, false)?;
     let (elapsed, terminal) =
-        crate::disease::clip_elapsed_for_disease(ctx, character_id, requested)?;
+        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit)?;
     let mut time = ctx
         .db
         .character_time()
         .character_id()
         .find(character_id)
         .ok_or("Simulation character time not found")?;
-    time.minutes = time.minutes.saturating_add(elapsed);
+    let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, false)?;
+    time.minutes = time.minutes.saturating_add(settled.elapsed);
     ctx.db.character_time().character_id().update(time);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
-    crate::require_living_character(ctx, character_id)?;
+    if terminal.is_some() || !settled.alive {
+        return Ok(());
+    }
     crate::capability::refresh_character_capability(ctx, character_id)?;
     crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     Ok(())

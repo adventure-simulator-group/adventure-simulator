@@ -31,6 +31,8 @@ pub fn item_icon_name(item_id: &str) -> &'static str {
         "torch" => "torch",
         "arrow" => "plain-arrow",
         "bandage" => "bandage-roll",
+        "surgery_kit" => "medical-pack",
+        "splint" => "arm-bandage",
         "travel_ration" => "bread",
         "waterskin" => "waterskin",
         "linen_tunic" => "shirt",

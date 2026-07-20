@@ -3044,6 +3044,7 @@ button.party-portrait-action {
 }
 
 .attribute-group {
+    position: relative;
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -3100,9 +3101,10 @@ button.party-portrait-action {
 }
 
 .attribute-health-bar {
+  position: relative;
   display: flex;
-  height: 0.35rem;
-  overflow: hidden;
+  height: 0.7rem;
+  overflow: visible;
   background: var(--bg-tertiary);
 }
 
@@ -3115,7 +3117,7 @@ button.party-portrait-action {
 .attribute-health-choleric,
 .attribute-health-melancholic { display: block; height: 100%; flex: 0 0 auto; }
 
-.attribute-health-current { background: #f4f1e8; }
+.attribute-health-current { background: #eee8dc; }
 .attribute-health-cut { background: #c63b3b; }
 .attribute-health-blunt { background: #c7a7e8; }
 .attribute-health-other { background: #5f9e55; }
@@ -3793,4 +3795,351 @@ body.chat-resizing {
     color: inherit;
     cursor: pointer;
     font-size: 1rem;
+}
+
+.limb-surgery-link {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    border-radius: .25rem;
+}
+
+.limb-surgery-link:hover,
+.limb-surgery-link:focus-visible {
+    outline: 2px solid var(--gold, #d8b36a);
+    outline-offset: 2px;
+    background: rgb(216 179 106 / 8%);
+}
+
+.surgery-limb-list,
+.surgery-procedures {
+    display: grid;
+    gap: .55rem;
+}
+
+.surgery-limb {
+    display: grid;
+    gap: .25rem;
+    color: inherit;
+    text-decoration: none;
+    padding: .45rem;
+    border: 1px solid rgb(255 255 255 / 12%);
+    border-radius: .25rem;
+    background: rgb(0 0 0 / 20%);
+}
+
+.surgery-limb:hover,
+.surgery-limb:focus-visible,
+.surgery-limb.selected {
+    border-color: var(--gold, #d8b36a);
+    outline: none;
+}
+
+.surgery-health-bar {
+    position: relative;
+    display: flex;
+    min-height: .75rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #221b1b;
+}
+
+.bandaged-cut {
+    background: repeating-linear-gradient(
+        135deg,
+        #e88eaa 0,
+        #e88eaa 4px,
+        #f3bacb 4px,
+        #f3bacb 7px
+    ) !important;
+}
+
+.attribute-health-fracture {
+    background: #666970;
+}
+
+.splinted-fracture {
+    background: repeating-linear-gradient(
+        135deg,
+        #a6b0ba 0,
+        #a6b0ba 4px,
+        #d2d8dd 4px,
+        #d2d8dd 7px
+    );
+}
+
+.surgery-projectile-icon {
+    position: absolute;
+    inset-block: 50% auto;
+    right: .2rem;
+    z-index: 2;
+    transform: translateY(-50%);
+}
+
+.projectile-ball,
+.projectile-arrowhead {
+    display: inline-block;
+    width: .58rem;
+    height: .58rem;
+    background: #1f2024;
+    border: 1px solid #f7e7c2;
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 55%);
+}
+
+.projectile-ball { border-radius: 50%; }
+
+.projectile-arrowhead {
+    width: .5rem;
+    height: .5rem;
+    border-radius: 0;
+    transform: translateY(-50%) rotate(45deg) skew(-8deg, -8deg);
+}
+
+.procedure-projectile-visual {
+    position: static;
+    width: 1rem;
+    height: 1rem;
+}
+
+.surgery-projectile-icon .game-icon {
+    width: 1rem;
+    height: 1rem;
+    color: #f7e7c2;
+}
+
+.surgery-supplies {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: .7rem;
+    margin-block-end: .75rem;
+}
+
+.surgery-supply {
+    position: relative;
+    display: grid;
+    min-height: 3.25rem;
+    place-items: center;
+    padding: .45rem;
+    border: 1px solid rgb(255 255 255 / 14%);
+    background: rgb(0 0 0 / 20%);
+}
+
+.surgery-supply::after,
+.surgery-item-requirement::after {
+    position: absolute;
+    z-index: 6;
+    right: 0;
+    bottom: calc(100% + .35rem);
+    max-width: 14rem;
+    padding: .3rem .45rem;
+    border: 1px solid rgb(255 255 255 / 20%);
+    background: var(--panel-bg, #241a15);
+    box-shadow: var(--shadow-sm);
+    color: var(--text-primary);
+    content: attr(data-tooltip);
+    font-size: .72rem;
+    line-height: 1.2;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(.2rem);
+    transition: opacity var(--transition-fast), transform var(--transition-fast);
+    white-space: nowrap;
+}
+
+.surgery-supply:hover::after,
+.surgery-supply:focus-visible::after,
+.surgery-item-requirement:hover::after,
+.surgery-item-requirement:focus-visible::after {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.surgery-supply:focus-visible,
+.surgery-item-requirement:focus-visible {
+    outline: 2px solid var(--gold, #d8b36a);
+    outline-offset: 2px;
+}
+
+.surgery-supply > .game-icon {
+    width: 2.25rem;
+    height: 2.25rem;
+}
+
+.surgery-item-overlay {
+    position: absolute;
+    z-index: 2;
+    right: -.25rem;
+    bottom: -.3rem;
+    display: grid;
+    min-width: 1.2rem;
+    min-height: 1.2rem;
+    place-items: center;
+    border: 1px solid rgb(255 255 255 / 22%);
+    border-radius: 999px;
+    background: var(--panel-bg, #241a15);
+    color: var(--text-primary);
+    font-size: .68rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.surgery-item-requirement {
+    position: relative;
+    display: grid;
+    width: 1.8rem;
+    height: 1.8rem;
+    place-items: center;
+}
+
+.surgery-item-requirement > .game-icon {
+    width: 1.55rem;
+    height: 1.55rem;
+}
+
+.surgery-item-requirement .surgery-item-overlay {
+    right: -.4rem;
+    bottom: -.4rem;
+}
+
+.surgery-item-requirements {
+    grid-column: 3;
+    grid-row: 1;
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.surgery-item-requirements li {
+    display: contents;
+}
+
+.surgery-item-equipped .game-icon {
+    width: .75rem;
+    height: .75rem;
+    color: var(--success);
+}
+
+.surgery-procedure {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: .5rem;
+    align-items: center;
+    padding: .6rem;
+    border: 1px solid rgb(255 255 255 / 12%);
+    background: rgb(0 0 0 / 18%);
+}
+
+.surgery-procedure-unavailable {
+    border-color: rgb(255 255 255 / 7%);
+    background: rgb(0 0 0 / 28%);
+    cursor: not-allowed;
+}
+
+.surgery-procedure-unavailable > * {
+    filter: grayscale(1);
+    opacity: .38;
+}
+
+.surgery-procedure-unavailable::after {
+    position: absolute;
+    z-index: 6;
+    right: .4rem;
+    bottom: calc(100% + .35rem);
+    max-width: 14rem;
+    padding: .3rem .45rem;
+    border: 1px solid rgb(255 255 255 / 20%);
+    background: var(--panel-bg, #241a15);
+    box-shadow: var(--shadow-sm);
+    color: var(--text-primary);
+    content: attr(data-tooltip);
+    font-size: .72rem;
+    line-height: 1.2;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(.2rem);
+    transition: opacity var(--transition-fast), transform var(--transition-fast);
+    white-space: nowrap;
+}
+
+.surgery-procedure-unavailable:hover::after,
+.surgery-procedure-unavailable:focus::after {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.surgery-procedure-unavailable:focus-visible {
+    outline: 2px solid var(--gold, #d8b36a);
+    outline-offset: 2px;
+}
+
+.surgery-procedure-copy,
+.surgery-procedure-facts {
+    display: grid;
+    gap: .2rem;
+}
+
+.surgery-procedure-copy {
+    grid-column: 2;
+}
+
+.surgery-procedure-facts {
+    grid-column: 1 / -1;
+    grid-template-columns: auto auto;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--text-muted, #b9b0a3);
+    font-size: .8rem;
+}
+
+.surgery-procedure-facts div {
+    display: flex;
+    gap: .3rem;
+    align-items: center;
+    white-space: nowrap;
+}
+
+.surgery-procedure-facts dt::after {
+    content: ":";
+}
+
+.surgery-procedure-difficulty dt::after { content: none; }
+
+.surgery-difficulty {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    min-width: 6rem;
+}
+
+.surgery-difficulty > .stat-icon {
+    width: 1rem;
+    height: 1rem;
+    flex: 0 0 auto;
+}
+
+.surgery-difficulty-meter {
+    width: 4.75rem;
+}
+
+.surgery-difficulty-meter .skill-rank-track {
+    width: 100%;
+}
+
+.surgery-difficulty-meter .skill-rank-segment {
+    background: #000;
+}
+
+.surgery-difficulty-over-cap-marker {
+    color: var(--danger);
+    font-size: .8rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.surgery-procedure > button {
+    grid-column: 1 / -1;
 }
