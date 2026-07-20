@@ -3,6 +3,10 @@ use std::{
     sync::OnceLock,
 };
 
+use axum::{
+    body::Body,
+    http::{Response, StatusCode, header::CONTENT_TYPE},
+};
 use maud::{Markup, html};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -17,9 +21,8 @@ const DEFAULT_VIEW_HEIGHT: f64 = DEFAULT_VIEW_WIDTH / VIEW_ASPECT_RATIO;
 const ROUTE_MIN_VIEW_WIDTH: f64 = 90.0;
 const ROUTE_MIN_VIEW_HEIGHT: f64 = ROUTE_MIN_VIEW_WIDTH / VIEW_ASPECT_RATIO;
 const PACKAGE_JSON: &str = include_str!("../static/map/strategic-map-v1.json");
-const WORLD_SVG_BYTES: &[u8] = include_bytes!("../static/map/strategic-map-world-v1.svg");
-pub(crate) const WORLD_SVG_PATH: &str = "/static/map/strategic-map-world-v1.svg";
-const WORLD_SVG_FRAGMENT: &str = "strategic-map-world-v1";
+const TILE_PACK_BYTES: &[u8] = include_bytes!("../static/map/strategic-map-tiles-v1.pack");
+pub(crate) const TILE_PATH_PREFIX: &str = "/map/tiles/";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct Package {
@@ -31,7 +34,27 @@ struct Package {
     water: Vec<Vec<[f64; 2]>>,
     elevation: ElevationLayer,
     forest: ForestLayer,
+    tiles: TilePyramid,
     package_sha256: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct TilePyramid {
+    format: String,
+    tile_size: u32,
+    max_zoom: u8,
+    content_sha256: String,
+    entries: Vec<TileEntry>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct TileEntry {
+    theme: String,
+    zoom: u8,
+    x: u16,
+    y: u16,
+    offset: u64,
+    length: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -95,7 +118,6 @@ struct ForestRegion {
 }
 
 static PACKAGE: OnceLock<Package> = OnceLock::new();
-static WORLD_SVG_SHA256: OnceLock<String> = OnceLock::new();
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct ViewBox {
@@ -150,19 +172,109 @@ fn package() -> &'static Package {
             actual, package.package_sha256,
             "strategic map package digest mismatch"
         );
+        assert_eq!(package.tiles.format, "avif", "unsupported map tile format");
+        assert!(package.tiles.tile_size.is_power_of_two());
+        assert!(package.tiles.max_zoom <= 8);
+        assert_eq!(
+            format!("{:x}", Sha256::digest(TILE_PACK_BYTES)),
+            package.tiles.content_sha256,
+            "strategic map tile-pack digest mismatch"
+        );
+        assert!(package.tiles.entries.iter().all(|entry| {
+            usize::try_from(entry.offset)
+                .ok()
+                .and_then(|start| start.checked_add(entry.length as usize))
+                .is_some_and(|end| end <= TILE_PACK_BYTES.len())
+        }));
         package
     })
 }
 
-pub(crate) fn is_current_world_svg(path: &str, query: Option<&str>) -> bool {
-    path == WORLD_SVG_PATH
-        && query.and_then(|value| value.strip_prefix("v=")) == Some(world_svg_sha256())
+pub(crate) fn is_current_world_tile(path: &str, query: Option<&str>) -> bool {
+    tile_coordinates(path).is_some()
+        && query.and_then(|value| value.strip_prefix("v="))
+            == Some(package().tiles.content_sha256.as_str())
 }
 
-fn world_svg_sha256() -> &'static str {
-    WORLD_SVG_SHA256
-        .get_or_init(|| format!("{:x}", Sha256::digest(WORLD_SVG_BYTES)))
-        .as_str()
+pub(crate) async fn world_tile(
+    axum::extract::Path((theme, zoom, x, tile)): axum::extract::Path<(String, u8, u16, String)>,
+) -> Response<Body> {
+    let Some(y) = tile
+        .strip_suffix(".avif")
+        .and_then(|value| value.parse::<u16>().ok())
+    else {
+        return Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::empty())
+            .expect("static tile response");
+    };
+    let package = package();
+    let Some(entry) =
+        package.tiles.entries.iter().find(|entry| {
+            entry.theme == theme && entry.zoom == zoom && entry.x == x && entry.y == y
+        })
+    else {
+        return Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::empty())
+            .expect("static tile response");
+    };
+    let start = usize::try_from(entry.offset).ok();
+    let end = start.and_then(|start| start.checked_add(entry.length as usize));
+    let Some(bytes) = start
+        .zip(end)
+        .and_then(|(start, end)| TILE_PACK_BYTES.get(start..end))
+    else {
+        return Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::empty())
+            .expect("static tile error response");
+    };
+    Response::builder()
+        .header(CONTENT_TYPE, "image/avif")
+        .body(Body::from(bytes))
+        .expect("static tile response")
+}
+
+fn tile_coordinates(path: &str) -> Option<(&str, u8, u16, u16)> {
+    let value = path.strip_prefix(TILE_PATH_PREFIX)?.strip_suffix(".avif")?;
+    let mut parts = value.split('/');
+    let theme = parts.next()?;
+    let zoom = parts.next()?.parse().ok()?;
+    let x = parts.next()?.parse().ok()?;
+    let y = parts.next()?.parse().ok()?;
+    if parts.next().is_some() || !matches!(theme, "atlas" | "paper") {
+        return None;
+    }
+    Some((theme, zoom, x, y))
+}
+
+fn tile_url(theme: &str, zoom: u8, x: u16, y: u16, version: &str) -> String {
+    format!("{TILE_PATH_PREFIX}{theme}/{zoom}/{x}/{y}.avif?v={version}")
+}
+
+fn initial_tile_zoom(view_width: f64, max_zoom: u8) -> u8 {
+    (768.0 / view_width)
+        .log2()
+        .ceil()
+        .clamp(0.0, f64::from(max_zoom)) as u8
+}
+
+fn visible_tiles(view: ViewBox, tile_size: u32, zoom: u8) -> Vec<(u16, u16, f64, f64)> {
+    let span = f64::from(tile_size) / f64::from(1_u32 << zoom);
+    let max_x = (WIDTH / span).ceil() as i32 - 1;
+    let max_y = (HEIGHT / span).ceil() as i32 - 1;
+    let start_x = (view.x / span).floor() as i32;
+    let end_x = ((view.x + view.width) / span).floor() as i32;
+    let start_y = (view.y / span).floor() as i32;
+    let end_y = ((view.y + view.height) / span).floor() as i32;
+    let mut tiles = Vec::new();
+    for y in start_y.max(0)..=end_y.min(max_y) {
+        for x in start_x.max(0)..=end_x.min(max_x) {
+            tiles.push((x as u16, y as u16, f64::from(x) * span, f64::from(y) * span));
+        }
+    }
+    tiles
 }
 
 pub(crate) fn has_geographic_source(settlement: &Settlement) -> bool {
@@ -198,14 +310,15 @@ pub fn strategic_map(
         initial_view.x, initial_view.y, initial_view.width, initial_view.height
     );
     let initial_pin_scale = initial_view.width / DEFAULT_VIEW_WIDTH;
-    let world_svg_href = format!(
-        "{WORLD_SVG_PATH}?v={}#{WORLD_SVG_FRAGMENT}",
-        world_svg_sha256()
-    );
+    let initial_tile_zoom = initial_tile_zoom(initial_view.width, package.tiles.max_zoom);
+    let initial_tiles = visible_tiles(initial_view, package.tiles.tile_size, initial_tile_zoom);
+    let tile_span = f64::from(package.tiles.tile_size) / f64::from(1_u32 << initial_tile_zoom);
 
     html! {
         section class="strategic-map" data-strategic-map data-map-theme="atlas"
             data-origin-x=(format!("{origin_x:.3}")) data-origin-y=(format!("{origin_y:.3}"))
+            data-map-tile-size=(package.tiles.tile_size) data-map-max-tile-zoom=(package.tiles.max_zoom)
+            data-map-tile-version=(&package.tiles.content_sha256) data-map-tile-root=(TILE_PATH_PREFIX)
             aria-label=(format!("Map around {}", current.map_or("the current settlement", |item| item.name.as_str()))) {
             div class="strategic-map-toolbar" role="toolbar" aria-label="Map controls" {
                 div class="strategic-map-theme" aria-label="Map appearance" {
@@ -223,8 +336,13 @@ pub fn strategic_map(
                 title id="strategic-map-title" { "Settlement road map" }
                 desc id="strategic-map-description" { "Use arrow keys or drag to pan. Use plus and minus controls or the mouse wheel to zoom. Activate a settlement pin to inspect it." }
                 g data-map-viewport {
-                    g class="map-world-layer" aria-hidden="true" {
-                        use href=(world_svg_href) {}
+                    g class="map-tile-layer" data-map-tile-layer aria-hidden="true" {
+                        @for (x, y, left, top) in initial_tiles {
+                            image x=(format!("{left:.3}")) y=(format!("{top:.3}"))
+                                width=(format!("{tile_span:.3}")) height=(format!("{tile_span:.3}"))
+                                preserveAspectRatio="none"
+                                href=(tile_url("atlas", initial_tile_zoom, x, y, &package.tiles.content_sha256)) {}
+                        }
                     }
                     g class="map-overlay-layer" {
                         @for settlement in settlements.iter().filter(|settlement| has_geographic_source(settlement)) {
@@ -384,7 +502,7 @@ mod tests {
     }
 
     #[test]
-    fn svg_has_two_themes_accessible_controls_and_canonical_pin_links() {
+    fn tiled_map_has_two_themes_accessible_controls_and_canonical_pin_links() {
         let mut source_less = settlement("demo", "Demo", 0.0, 0.0);
         source_less.source_node_id = None;
         let settlements = [
@@ -415,10 +533,11 @@ mod tests {
         assert!(markup.contains("aria-current=\"true\""));
         assert!(markup.contains("map-pin-selection"));
         assert!(markup.contains("data-map-pin-symbol"));
-        assert!(markup.contains("map-world-layer"));
+        assert!(markup.contains("map-tile-layer"));
         assert!(markup.contains("map-overlay-layer"));
-        assert!(markup.contains(WORLD_SVG_PATH));
-        assert!(markup.contains(world_svg_sha256()));
+        assert!(markup.contains(TILE_PATH_PREFIX));
+        assert!(markup.contains(&package().tiles.content_sha256));
+        assert!(markup.contains("image"));
         assert!(!markup.contains("class=\"map-elevation"));
         assert!(
             markup.len() < 50_000,
@@ -464,7 +583,7 @@ mod tests {
     }
 
     #[test]
-    fn base_map_url_is_content_versioned() {
+    fn base_map_tile_urls_are_content_versioned() {
         let markup = strategic_map(
             &[settlement("origin", "Origin", 10.0, 53.0)],
             "origin",
@@ -473,15 +592,43 @@ mod tests {
             "/locations/settlement/origin/map",
         )
         .into_string();
-        assert!(markup.contains(&format!(
-            "{WORLD_SVG_PATH}?v={}#{WORLD_SVG_FRAGMENT}",
-            world_svg_sha256()
-        )));
-        assert!(is_current_world_svg(
-            WORLD_SVG_PATH,
-            Some(&format!("v={}", world_svg_sha256()))
+        let package = package();
+        let entry = package.tiles.entries.first().expect("generated tile index");
+        let path = format!(
+            "{TILE_PATH_PREFIX}{}/{}/{}/{}.avif",
+            entry.theme, entry.zoom, entry.x, entry.y
+        );
+        assert!(markup.contains("data-map-tile-version"));
+        assert!(is_current_world_tile(
+            &path,
+            Some(&format!("v={}", package.tiles.content_sha256))
         ));
-        assert!(!is_current_world_svg(WORLD_SVG_PATH, None));
-        assert!(!is_current_world_svg(WORLD_SVG_PATH, Some("v=stale")));
+        assert!(!is_current_world_tile(&path, None));
+        assert!(!is_current_world_tile(&path, Some("v=stale")));
+        assert!(!is_current_world_tile("/map/tiles/atlas/0/0/0.png", None));
+        let start = usize::try_from(entry.offset).unwrap();
+        let end = start + entry.length as usize;
+        assert!(
+            TILE_PACK_BYTES[start..end]
+                .windows(8)
+                .any(|bytes| bytes == b"ftypavif")
+        );
+    }
+
+    #[test]
+    fn initial_tiles_cover_the_view_at_a_bounded_zoom() {
+        let view = ViewBox {
+            x: 590.0,
+            y: 390.0,
+            width: 90.0,
+            height: 60.0,
+        };
+        let zoom = initial_tile_zoom(view.width, 4);
+        let tiles = visible_tiles(view, 512, zoom);
+
+        assert_eq!(zoom, 4);
+        assert!(!tiles.is_empty());
+        assert!(tiles.len() <= 12);
+        assert!(tiles.iter().all(|(_, _, x, y)| *x < WIDTH && *y < HEIGHT));
     }
 }

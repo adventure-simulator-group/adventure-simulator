@@ -11,8 +11,8 @@ use sha2::{Digest, Sha256};
 
 #[path = "build-strategic-map/raster.rs"]
 mod raster;
-#[path = "build-strategic-map/svg.rs"]
-mod svg;
+#[path = "build-strategic-map/tiles.rs"]
+mod tiles;
 
 const PACKAGE_SCHEMA: u32 = 2;
 const YEAR: i32 = 1544;
@@ -22,7 +22,7 @@ const BOUNDS: [f64; 4] = [-11.0, 43.0, 31.0, 70.0];
 const MAX_SOURCE_FILES: usize = 64;
 
 #[derive(Parser)]
-#[command(about = "Build the bounded SVG strategic-map package from initialized Viabundus data")]
+#[command(about = "Build the bounded AVIF strategic-map package from initialized world data")]
 struct Args {
     #[arg(long, default_value = "viabundus")]
     viabundus_dir: PathBuf,
@@ -37,9 +37,9 @@ struct Args {
     output: PathBuf,
     #[arg(
         long,
-        default_value = "crates/strategic-web/static/map/strategic-map-world-v1.svg"
+        default_value = "crates/strategic-web/static/map/strategic-map-tiles-v1.pack"
     )]
-    svg_output: PathBuf,
+    tiles_output: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -78,7 +78,27 @@ struct Package {
     water: Vec<Vec<Point>>,
     elevation: ElevationLayer,
     forest: ForestLayer,
+    tiles: TilePyramid,
     package_sha256: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+struct TilePyramid {
+    format: &'static str,
+    tile_size: u32,
+    max_zoom: u8,
+    content_sha256: String,
+    entries: Vec<TileEntry>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+struct TileEntry {
+    theme: &'static str,
+    zoom: u8,
+    x: u16,
+    y: u16,
+    offset: u64,
+    length: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -94,23 +114,31 @@ struct Source {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let layers = raster::load(&args.elevation_dir, &args.forest_cover_dir, BOUNDS)?;
-    let package = build(&args.viabundus_dir, layers)?;
+    let mut package = build(&args.viabundus_dir, layers)?;
+    let (tile_manifest, tile_bytes) = tiles::build(&package, tiles::TileConfig::default())?;
+    package.tiles = tile_manifest;
+    package.package_sha256 = "0".repeat(64);
+    package.package_sha256 = package_digest(&package)?;
     let mut bytes = serde_json::to_vec(&package)?;
     bytes.push(b'\n');
     if let Some(parent) = args.output.parent() {
         fs::create_dir_all(parent)?;
     }
     fs::write(&args.output, bytes)?;
-    svg::write(&args.svg_output, &package)?;
+    if let Some(parent) = args.tiles_output.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&args.tiles_output, tile_bytes)?;
     println!(
-        "Wrote {} roads, {} water rings, {} elevation cells, {} contours, and {} forest regions to {} and {}",
+        "Wrote {} roads, {} water rings, {} elevation cells, {} contours, {} forest regions, and {} AVIF tiles to {} and {}",
         package.roads.len(),
         package.water.len(),
         package.elevation.cells.len(),
         package.elevation.contours.len(),
         package.forest.regions.len(),
+        package.tiles.entries.len(),
         args.output.display(),
-        args.svg_output.display()
+        args.tiles_output.display()
     );
     Ok(())
 }
@@ -178,7 +206,7 @@ fn build(root: &Path, layers: MapRasterLayers) -> Result<Package, Box<dyn std::e
         }
         let Some(wkt) = row.get("wkt") else { continue };
         for points in clip_polyline(&coordinates(wkt), BOUNDS) {
-            let points = simplify(&points, 0.012);
+            let points = simplify(&points, 0.001);
             if points.len() < 2 {
                 continue;
             }
@@ -205,7 +233,7 @@ fn build(root: &Path, layers: MapRasterLayers) -> Result<Package, Box<dyn std::e
         let row = row?;
         let Some(wkt) = row.get(0) else { continue };
         for ring in wkt_rings(wkt) {
-            let points = simplify(&clip_polygon(&ring, BOUNDS), 0.025);
+            let points = simplify(&clip_polygon(&ring, BOUNDS), 0.002);
             if points.len() >= 4 {
                 water.push(points);
             }
@@ -234,6 +262,13 @@ fn build(root: &Path, layers: MapRasterLayers) -> Result<Package, Box<dyn std::e
         water,
         elevation: layers.elevation,
         forest: layers.forest,
+        tiles: TilePyramid {
+            format: "avif",
+            tile_size: 0,
+            max_zoom: 0,
+            content_sha256: String::new(),
+            entries: Vec::new(),
+        },
         package_sha256: String::new(),
     };
     package.package_sha256 = "0".repeat(64);
@@ -600,9 +635,16 @@ mod tests {
         let first = build(&root, layers()).unwrap();
         let second = build(&root, layers()).unwrap();
         assert_eq!(first, second);
-        assert_eq!(svg::build(&first), svg::build(&second));
-        assert!(svg::build(&first).contains("id=\"strategic-map-world-v1\""));
-        assert!(!svg::build(&first).contains("map-pin"));
+        let config = tiles::TileConfig {
+            tile_size: 64,
+            max_zoom: 0,
+        };
+        let (first_manifest, first_tiles) = tiles::build(&first, config).unwrap();
+        let (second_manifest, second_tiles) = tiles::build(&second, config).unwrap();
+        assert_eq!(first_manifest, second_manifest);
+        assert_eq!(first_tiles, second_tiles);
+        assert!(first_tiles.windows(8).any(|bytes| bytes == b"ftypavif"));
+        assert_eq!(first_manifest.entries.len(), 494);
         assert_eq!(first.roads.len(), 1);
         assert_eq!(first.water.len(), 1);
         fs::write(root.join("edges.csv"), b"changed").unwrap();

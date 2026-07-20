@@ -68,3 +68,33 @@ test("pin links remain ordinary destination URLs", () => {
   helpers.initializeMap(document.querySelector("section"), null);
   assert.equal(document.querySelector("[data-map-pin]").getAttribute("href"), "/locations/settlement/a/map?destination=b");
 });
+
+test("tile zoom follows display density and respects the generated ceiling", () => {
+  const { helpers } = load();
+  assert.equal(helpers.tileZoom(400, 800, 1, 4), 1);
+  assert.equal(helpers.tileZoom(90, 1200, 1, 4), 4);
+  assert.equal(helpers.tileZoom(20, 1200, 2, 4), 4);
+});
+
+test("visible tile range is padded but clamped to the world", () => {
+  const { helpers } = load();
+  const range = helpers.visibleTileRange([0, 0, 90, 60], 512, 4);
+  assert.equal(range.span, 32);
+  assert.deepEqual(
+    [range.minX, range.maxX, range.minY, range.maxY],
+    [0, 3, 0, 2],
+  );
+});
+
+test("theme changes replace only the cached raster tile layer", () => {
+  const { document, helpers } = load();
+  document.body.innerHTML = `<section data-strategic-map data-map-theme="atlas" data-map-tile-size="512" data-map-max-tile-zoom="4" data-map-tile-version="abc123" data-map-tile-root="/map/tiles/"><button data-map-theme-choice="paper"></button><button data-map-theme-choice="atlas"></button><svg data-map-svg viewBox="590 390 90 60"><g data-map-tile-layer></g><g data-map-pin-symbol></g></svg></section>`;
+  const map = document.querySelector("section");
+  const svg = map.querySelector("svg");
+  svg.getBoundingClientRect = () => ({ width: 1200, height: 800 });
+  helpers.initializeMap(map, null);
+  assert.match(map.querySelector("[data-map-tile-layer] image").getAttribute("href"), /^\/map\/tiles\/atlas\/4\//);
+  map.querySelector('[data-map-theme-choice="paper"]').click();
+  assert.match(map.querySelector("[data-map-tile-layer] image").getAttribute("href"), /^\/map\/tiles\/paper\/4\//);
+  assert.equal(map.querySelectorAll("[data-map-pin-symbol]").length, 1);
+});
