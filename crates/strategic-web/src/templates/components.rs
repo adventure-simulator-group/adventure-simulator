@@ -98,7 +98,11 @@ pub fn item_type_icon(item_id: &str) -> Markup {
 }
 
 pub fn item_type_header() -> Markup {
-    html! { th scope="col" class="inventory-column-type" title="Item type" aria-label="Item type" { "T" } }
+    html! {
+        th scope="col" class="inventory-column-type" title="Item type" aria-label="Item type" {
+            (decorative_game_icon("knapsack"))
+        }
+    }
 }
 
 pub fn stat_game_icon_name(icon: &str) -> &'static str {

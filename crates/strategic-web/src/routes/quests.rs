@@ -343,7 +343,7 @@ async fn quest_location_base(
     State(state): State<AppState>,
     Path(id): Path<String>,
     session: Session,
-) -> Html<String> {
+) -> Response {
     render_quest_location(state, id, session, QuestLocationTab::Base).await
 }
 
@@ -352,7 +352,7 @@ async fn quest_location_map(
     Path(id): Path<String>,
     Query(query): Query<QuestMapQuery>,
     session: Session,
-) -> Html<String> {
+) -> Response {
     render_quest_location(state, id, session, QuestLocationTab::Map(query.destination)).await
 }
 
@@ -360,7 +360,7 @@ async fn quest_location_loot(
     State(state): State<AppState>,
     Path(id): Path<String>,
     session: Session,
-) -> Html<String> {
+) -> Response {
     render_quest_location(state, id, session, QuestLocationTab::Loot).await
 }
 
@@ -447,7 +447,7 @@ async fn render_quest_location(
     id: String,
     session: Session,
     tab: QuestLocationTab,
-) -> Html<String> {
+) -> Response {
     let matching_quests: Vec<Quest> = state
         .db
         .query(&format!(
@@ -457,7 +457,20 @@ async fn render_quest_location(
         .await
         .unwrap_or_default();
     let Some(quest) = matching_quests.first() else {
-        return Html("<h1>Quest location not found</h1>".to_string());
+        return (
+            StatusCode::NOT_FOUND,
+            Html(
+                crate::templates::strategic_notice_page(
+                    "Quest location not found",
+                    "The requested destination is no longer available.",
+                    "/characters",
+                    "Return to character select",
+                    None,
+                )
+                .into_string(),
+            ),
+        )
+            .into_response();
     };
     let character = match session.character_id_u64() {
         Some(character_id) => {
@@ -490,7 +503,21 @@ async fn render_quest_location(
         .as_ref()
         .is_some_and(|c| c.current_quest_location_id.as_deref() == Some(&quest.id));
     if !is_at_location {
-        return Html("<h1>Your party is not at this quest location</h1>".to_string());
+        let return_href = character
+            .as_ref()
+            .and_then(|character| character.current_settlement_id.as_deref())
+            .map(|settlement_id| format!("/locations/settlement/{settlement_id}"))
+            .unwrap_or_else(|| "/characters".to_string());
+        return (
+            StatusCode::FORBIDDEN,
+            Html(crate::templates::strategic_notice_page(
+                "Your party is elsewhere",
+                "Travel to this quest destination before opening its encounter, map, or loot views.",
+                &return_href,
+                "Return to your location",
+                character.as_ref().map(|character| character.name.as_str()),
+            ).into_string()),
+        ).into_response();
     }
     let settlements: Vec<Settlement> = state
         .db
@@ -717,7 +744,7 @@ async fn render_quest_location(
             logged_in_as,
         ),
     };
-    Html(page.into_string())
+    Html(page.into_string()).into_response()
 }
 
 async fn party_is_ready(state: &AppState, members: &[Character]) -> bool {

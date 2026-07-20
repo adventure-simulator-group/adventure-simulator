@@ -455,6 +455,8 @@
 
 .service-tab-icon-map { --service-tab-icon: url("/static/icons/settlement-services/travel.png"); }
 .service-tab-icon-loot { --service-tab-icon: url("/static/icons/game/open-chest.svg"); }
+.service-tab-icon-encounter { --service-tab-icon: url("/static/icons/game/sword-clash.svg"); }
+.service-tab-icon-camp { --service-tab-icon: url("/static/icons/game/campfire.svg"); }
 
 .settlement-services .nav-tab:hover .service-tab-icon,
 .settlement-services .nav-tab.active .service-tab-icon { background-color: var(--text-primary); }
@@ -703,32 +705,43 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
 }
 
 @media (max-width: 768px) {
-  body:has(.settlement-top-bar) .app {
-    height: 100vh;
-    min-height: 0;
+  .app {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
   }
   .main-grid {
     grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: auto auto auto;
+    grid-template-areas: "main" "left" "right";
   }
   .main-grid:has(.inventory-browser) {
     grid-template-columns: 1fr;
   }
-  body:has(.settlement-top-bar) .main-grid {
+  .main-grid {
     height: auto;
     min-height: 0;
     flex: 1;
+    overflow: visible;
   }
   .left-sidebar {
+    grid-area: left;
     border-right: none;
     border-bottom: 1px solid var(--border-color);
     height: auto;
-    max-height: 35vh;
-    overflow-y: auto;
+    max-height: none;
+    overflow: visible;
   }
   .right-sidebar {
-    display: none;
+    display: block;
+    grid-area: right;
+    height: auto;
+    min-height: 10rem;
+    overflow: visible;
+    border-top: 1px solid var(--border-color);
+    border-left: 0;
   }
+  .center-content { grid-area: main; min-height: 32rem; }
   .top-bar {
     padding: 0 0.75rem;
   }
@@ -767,14 +780,16 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
     overflow-x: auto;
     overflow-y: hidden;
     justify-content: flex-start;
-    scrollbar-width: none;
+    padding-bottom: 0.35rem;
+    scrollbar-width: thin;
+    mask-image: linear-gradient(to right, transparent, #000 0.75rem, #000 calc(100% - 0.75rem), transparent);
   }
   .settlement-top-bar[data-environment="settlement"] .settlement-services .nav-tab {
     width: 4.5rem;
     height: 6.25rem;
     flex-basis: 4.5rem;
   }
-  .settlement-services::-webkit-scrollbar { display: none; }
+  .settlement-services::-webkit-scrollbar { height: 0.35rem; }
   .entry-message {
     display: none;
   }
@@ -788,4 +803,7 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
     padding: 0.25rem 0.4rem;
     letter-spacing: 0;
   }
+  .center-content { min-height: 27rem; }
+  .left-sidebar,
+  .right-sidebar { padding: 0.85rem; }
 }

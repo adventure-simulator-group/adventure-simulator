@@ -245,6 +245,9 @@ function updateDiscardForm() {
     form.append(input);
   });
   const hasDraft = draft.size > 0;
+  const staged = [...draft.values()].reduce((total, quantity) => total + quantity, 0);
+  const confirmation = form.querySelector("[data-discard-confirmation]");
+  if (confirmation) confirmation.textContent = `Permanently discard ${staged} staged item${staged === 1 ? "" : "s"}?`;
   form.hidden = !hasDraft;
   form.querySelector("[type='submit']").disabled = !hasDraft;
   const table = document.querySelector("[data-discard-table]");

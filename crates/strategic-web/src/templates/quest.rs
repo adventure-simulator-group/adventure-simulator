@@ -68,7 +68,7 @@ pub fn quest_location_base_page(
         &quest.title,
         &quest.title,
         &quest.id,
-        "",
+        "encounter",
         content,
         logged_in_as,
     )
@@ -158,7 +158,7 @@ fn quest_location_center(
                 false,
             ))
             div class="quest-visual-wrap" {
-                (visual_stage("map", &quest.title, "TODO: quest location image"))
+                (visual_stage("quest", &quest.title, &quest.location_description))
                 @if can_fight || !resolved {
                 div class="quest-combat-actions" aria-label="Quest actions" {
                     @if can_fight {
@@ -299,7 +299,8 @@ fn inventory_target(targets: &[InventoryQuantityTarget], item_id: &str) -> u32 {
 
 fn loot_stage_form(quest_id: &str) -> Markup {
     html! {
-        form method="post" action=(format!("/quests/{quest_id}/loot/store")) id="loot-transfer-offer" class="party-offer loot-transfer-offer" hidden {
+        form method="post" action=(format!("/quests/{quest_id}/loot/store")) id="loot-transfer-offer" class="party-offer loot-transfer-offer" hidden
+            role="dialog" aria-modal="true" aria-label="Confirm collected loot" tabindex="-1" {
             span class="loot-transfer-prompt" data-loot-transfer-prompt { "Apply staged loot to the party inventory?" }
             button type="button" class="party-offer-cancel" data-cancel-loot { "Cancel" }
             button type="submit" disabled { "Apply" }

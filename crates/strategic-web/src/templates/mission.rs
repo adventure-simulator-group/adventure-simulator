@@ -11,18 +11,8 @@ pub fn mission_status_page(server: &TacticalServer, logged_in_as: Option<&str>) 
 
     let content = html! {
         aside class="left-sidebar" {
-            (sidebar_section("Mission Info", html! {
+            (sidebar_section("Mission", html! {
                 div class="flex flex-col gap-sm" {
-                    div {
-                        span class="detail-label" { "Mission ID" }
-                        p class="detail-value" style="font-size:var(--font-size-xs);word-break:break-all" {
-                            (server.mission_id)
-                        }
-                    }
-                    div {
-                        span class="detail-label" { "Scene" }
-                        p class="detail-value" { (server.scene_key) }
-                    }
                     div {
                         span class="detail-label" { "Status" }
                         div { (status_badge(status.label())) }
@@ -47,10 +37,19 @@ pub fn mission_status_page(server: &TacticalServer, logged_in_as: Option<&str>) 
         }
 
         aside class="right-sidebar" {
-            @if status == MissionStatus::Ready {
-                (sidebar_section("Connection", html! {
-                    (panel("", html! {
-                        div class="flex flex-col gap-sm" {
+            (sidebar_section("Details", html! {
+                details class="mission-diagnostics" {
+                    summary { "Technical details" }
+                    div class="flex flex-col gap-sm" {
+                        div {
+                            span class="detail-label" { "Mission ID" }
+                            p class="detail-value cert-digest" { (server.mission_id) }
+                        }
+                        div {
+                            span class="detail-label" { "Scene" }
+                            p class="detail-value" { (server.scene_key) }
+                        }
+                        @if status == MissionStatus::Ready {
                             div {
                                 span class="detail-label" { "Server" }
                                 p class="detail-value" style="font-size:var(--font-size-xs)" { (server.addr) }
@@ -62,18 +61,9 @@ pub fn mission_status_page(server: &TacticalServer, logged_in_as: Option<&str>) 
                                 }
                             }
                         }
-                    }))
-                }))
-            } @else {
-                (sidebar_section("Info", html! {
-                    (panel("", html! {
-                        p style="font-size:var(--font-size-sm)" {
-                            "Your tactical mission is being prepared. "
-                            "The page will update automatically."
-                        }
-                    }))
-                }))
-            }
+                    }
+                }
+            }))
         }
     };
 
@@ -85,9 +75,9 @@ fn pending_state(mission_id: &str) -> Markup {
         (panel("Waiting", html! {
             div {
                 div class="status-message" {
-                    div class="loading-spinner" { "Preparing server" }
-                    p class="status-detail mt-1" {
-                        "A tactical server is being prepared for your mission."
+                div class="loading-spinner" { "Allocating server" }
+                p class="status-detail mt-1" {
+                        "This page will update automatically when the mission is ready."
                     }
                 }
             }
@@ -182,5 +172,20 @@ pub fn mission_status_fragment(server: &TacticalServer) -> Markup {
                 MissionStatus::Pending => { (pending_state(&server.mission_id)) }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pending_state;
+
+    #[test]
+    fn pending_status_is_concise_and_diagnostics_are_collapsed() {
+        let pending = pending_state("mission-1").into_string();
+        assert!(pending.contains("Allocating server"));
+        assert_eq!(pending.matches("prepared").count(), 0);
+        let source = include_str!("mission.rs");
+        assert!(source.contains("details class=\"mission-diagnostics\""));
+        assert!(source.contains("Technical details"));
     }
 }

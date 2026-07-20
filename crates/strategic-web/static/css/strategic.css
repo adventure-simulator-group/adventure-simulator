@@ -1250,9 +1250,21 @@ body:has(.settlement-top-bar) .main-grid .settlement-card:hover {
 
 .rest-duration-control { display: grid; gap: 0.4rem; margin-bottom: 0.55rem; }
 .rest-duration-units { display: flex; overflow: hidden; border: 1px solid var(--border-light); border-radius: var(--radius); }
-.rest-duration-unit { flex: 1; padding: 0.38rem; color: var(--text-muted); cursor: pointer; font-size: var(--font-size-xs); text-align: center; }
+.rest-duration-unit { position: relative; flex: 1; padding: 0.38rem; color: var(--text-muted); cursor: pointer; font-size: var(--font-size-xs); text-align: center; }
 .rest-duration-unit + .rest-duration-unit { border-left: 1px solid var(--border-light); }
-.rest-duration-unit input { position: absolute; opacity: 0; pointer-events: none; }
+.rest-duration-unit input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.rest-duration-unit:focus-within { outline: 2px solid var(--accent); outline-offset: -2px; }
 .rest-duration-unit.active { background: var(--building-interactive-hover); color: var(--text-primary); }
 
 .rest-wake-time {
@@ -1438,46 +1450,116 @@ body:has(.settlement-top-bar) .main-grid .settlement-card:hover {
   box-shadow: var(--shadow-sm);
 }
 
-.service-visual-placeholder {
-  display: flex;
+.service-visual-scene {
+  position: relative;
   flex: 1;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-  min-height: 0;
-  color: var(--accent-dark);
+  min-height: 12rem;
+  overflow: hidden;
+  isolation: isolate;
+  color: #e9dfc8;
   background:
-    linear-gradient(135deg, transparent 49.5%, color-mix(in srgb, var(--accent) 10%, transparent) 50%, transparent 50.5%),
-    linear-gradient(45deg, transparent 49.5%, color-mix(in srgb, var(--accent) 10%, transparent) 50%, transparent 50.5%),
-    var(--bg-secondary);
-  background-size: 42px 42px;
+    radial-gradient(circle at 68% 18%, rgb(235 196 116 / 28%) 0 4%, transparent 13%),
+    linear-gradient(#293a43 0 48%, #18261f 48% 100%);
 }
 
-.service-visual-map .service-visual-placeholder {
-  background-color: color-mix(in srgb, var(--accent) 8%, var(--bg-secondary));
+.visual-scene-sky,
+.visual-scene-horizon,
+.visual-scene-route { position: absolute; pointer-events: none; }
+.visual-scene-sky { inset: 0 0 45%; background: linear-gradient(165deg, transparent 35%, rgb(255 235 180 / 8%)); }
+.visual-scene-horizon {
+  inset: 34% -5% 16%;
+  background: color-mix(in srgb, var(--active-building-tint) 74%, #0d1714);
+  clip-path: polygon(0 68%, 10% 42%, 21% 61%, 34% 26%, 48% 56%, 61% 31%, 75% 60%, 88% 36%, 100% 64%, 100% 100%, 0 100%);
 }
-
-.visual-symbol {
+.visual-scene-route {
+  z-index: 1;
+  inset: 52% 32% -25%;
+  border: 0.45rem solid rgb(209 178 121 / 36%);
+  border-block: 0;
+  transform: perspective(15rem) rotateX(34deg) rotate(7deg);
+}
+.visual-scene-emblem {
+  position: absolute;
+  z-index: 2;
   display: grid;
   place-items: center;
-  width: 7rem;
-  height: 7rem;
-  border: 2px solid var(--border-accent);
+  border: 1px solid rgb(239 218 170 / 45%);
   border-radius: 50%;
-  color: var(--accent-dark);
-  font-family: var(--font-display), serif;
-  font-size: 3.5rem;
-  line-height: 1;
+  background: rgb(12 18 16 / 76%);
+  box-shadow: 0 0.5rem 1.4rem #0009, inset 0 0 0 0.3rem rgb(255 255 255 / 4%);
 }
+.visual-scene-emblem .game-icon { width: 55%; height: 55%; }
+.visual-scene-emblem-primary { top: 21%; left: 50%; width: 8rem; height: 8rem; transform: translateX(-50%); }
+.visual-scene-emblem-secondary { top: 43%; left: calc(50% + 4rem); width: 3.1rem; height: 3.1rem; color: var(--accent-gold-light); }
+.visual-scene-caption {
+  position: absolute;
+  z-index: 3;
+  right: 1rem;
+  bottom: 1rem;
+  left: 1rem;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid rgb(239 218 170 / 25%);
+  background: rgb(7 11 10 / 78%);
+  box-shadow: 0 0.3rem 1rem #0008;
+}
+.visual-scene-caption strong { font-family: var(--font-display), serif; font-size: var(--font-size-lg); }
+.visual-scene-caption span { color: #c9bfa9; font-size: var(--font-size-xs); text-transform: uppercase; letter-spacing: 0.08em; }
+.service-visual-character .service-visual-scene { background: radial-gradient(circle at 50% 37%, #374a48, #172120 62%, #101513); }
+.service-visual-character .visual-scene-horizon { inset: 42% 28% -10%; border-radius: 48% 48% 0 0; clip-path: none; background: #111918; }
+.service-visual-character .visual-scene-route { display: none; }
+.service-visual-character .visual-scene-emblem-primary { top: 15%; width: 9rem; height: 9rem; border-radius: 45% 45% 38% 38%; }
 
-.visual-label {
-  color: var(--text-muted);
-  font-family: var(--font-display), serif;
-  font-size: var(--font-size-sm);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.service-visual-settlement .service-visual-scene { background: linear-gradient(#4d6570 0 40%, #28372d 40%); }
+.service-visual-settlement .visual-scene-horizon {
+  inset: 25% -2% 10%;
+  clip-path: polygon(0 66%, 8% 66%, 8% 38%, 18% 38%, 18% 61%, 28% 61%, 28% 22%, 42% 22%, 42% 55%, 51% 55%, 51% 31%, 64% 31%, 64% 62%, 78% 62%, 78% 42%, 91% 42%, 91% 66%, 100% 66%, 100% 100%, 0 100%);
 }
+.service-visual-settlement .visual-scene-emblem-primary { top: 27%; left: 27%; width: 6rem; height: 6rem; transform: none; }
+.service-visual-settlement .visual-scene-emblem-secondary { top: 13%; right: 18%; left: auto; border: 0; background: rgb(237 196 98 / 24%); }
+
+.service-visual-route .service-visual-scene {
+  background: repeating-linear-gradient(8deg, rgb(76 55 29 / 8%) 0 1px, transparent 1px 1.7rem), #b8a276;
+  color: #302313;
+}
+.service-visual-route .visual-scene-sky { display: none; }
+.service-visual-route .visual-scene-horizon { inset: 10%; clip-path: none; border: 2px solid rgb(55 39 20 / 35%); background: transparent; }
+.service-visual-route .visual-scene-route { inset: 5% 36% -20%; border-color: rgb(78 48 24 / 62%); border-width: 0.3rem; border-radius: 48%; transform: rotate(28deg); }
+.service-visual-route .visual-scene-emblem-primary { top: 16%; left: 22%; border-color: rgb(55 39 20 / 40%); background: rgb(216 199 157 / 82%); }
+.service-visual-route .visual-scene-emblem-secondary { top: auto; right: 17%; bottom: 23%; left: auto; background: #40301f; }
+
+.service-visual-service .service-visual-scene,
+.service-visual-alchemy .service-visual-scene { background: linear-gradient(165deg, #35291f, #17130f 70%); }
+.service-visual-service .visual-scene-horizon,
+.service-visual-alchemy .visual-scene-horizon { inset: 55% 0 0; clip-path: none; border-top: 0.75rem solid #100d0a; background: #241a12; }
+.service-visual-service .visual-scene-route,
+.service-visual-alchemy .visual-scene-route { display: none; }
+.service-visual-service .visual-scene-emblem-primary { top: 18%; left: 35%; }
+.service-visual-alchemy .visual-scene-emblem-primary { top: 14%; border-radius: 18%; }
+.service-visual-alchemy .visual-scene-emblem-secondary { top: 48%; left: calc(50% + 2.8rem); }
+
+.service-visual-camp .service-visual-scene { background: radial-gradient(circle at 50% 59%, #d58a38 0 2%, #59432b 9%, #25312d 25%, #111b21 58%); }
+.service-visual-camp .visual-scene-horizon { inset: 42% 8% 4%; clip-path: polygon(0 70%, 20% 48%, 32% 70%, 50% 25%, 68% 70%, 82% 50%, 100% 70%, 100% 100%, 0 100%); }
+.service-visual-camp .visual-scene-route { display: none; }
+.service-visual-camp .visual-scene-emblem-primary { top: 37%; width: 6rem; height: 6rem; border: 0; background: transparent; color: #f1a14b; box-shadow: none; }
+
+.service-visual-quest .service-visual-scene { background: radial-gradient(circle at 50% 42%, #67362e, #17231d 58%, #101513); }
+.service-visual-quest .visual-scene-horizon { inset: 28% 7% 8%; clip-path: polygon(0 72%, 16% 44%, 28% 58%, 42% 20%, 58% 55%, 74% 31%, 100% 69%, 100% 100%, 0 100%); }
+.service-visual-quest .visual-scene-route { border-color: rgb(124 43 35 / 48%); transform: perspective(15rem) rotateX(34deg) rotate(-4deg); }
+.service-visual-quest .visual-scene-emblem-primary { border-radius: 0.4rem; transform: translateX(-50%) rotate(4deg); }
+
+.service-visual-chest .service-visual-scene { background: repeating-linear-gradient(90deg, #4b301c 0 4.8rem, #2d1d12 4.8rem 5rem); }
+.service-visual-chest .visual-scene-sky,
+.service-visual-chest .visual-scene-route { display: none; }
+.service-visual-chest .visual-scene-horizon { inset: 60% 0 0; clip-path: none; border-top: 0.7rem solid #21140c; background: #382315; }
+.service-visual-chest .visual-scene-emblem-primary { top: 19%; width: 10rem; height: 7rem; border-radius: 0.45rem; background: #2d1b0e; color: #d6a64f; }
+.service-visual-chest .visual-scene-emblem-secondary { top: 48%; left: calc(50% + 4.5rem); }
+.service-offering-list { display: grid; gap: 0.45rem; margin: 0.7rem 0 0; padding: 0; list-style: none; }
+.service-offering-list li { display: flex; align-items: center; gap: 0.5rem; color: var(--text-muted); }
+.stage-context-link { position: absolute; z-index: 5; top: 0.75rem; right: 0.75rem; padding: 0.35rem 0.55rem; border: 1px solid var(--border-accent); background: rgb(7 11 10 / 78%); color: var(--text-primary); }
 
 .service-visual figcaption {
   padding: 0.65rem 0.85rem;
@@ -2942,6 +3024,15 @@ button.party-portrait-action {
 
 .skill-rank-bar {
   position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2rem;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 1rem;
+  overflow: visible;
+}
+
+.skill-rank-track {
   display: flex;
   height: 0.45rem;
   gap: 0.12rem;
@@ -2994,7 +3085,7 @@ button.party-portrait-action {
 
 .party-attribute-row {
   display: grid;
-  grid-template-columns: 1.15rem minmax(0, 1fr) minmax(3rem, 2fr);
+  grid-template-columns: 1.15rem minmax(0, 1fr) minmax(3rem, 2fr) 2rem;
   align-items: center;
   gap: 0.35rem;
   min-width: 0;
@@ -3003,7 +3094,7 @@ button.party-portrait-action {
 }
 
 .party-attribute-icon-only {
-  grid-template-columns: 1.15rem minmax(0, 1fr);
+  grid-template-columns: 1.15rem minmax(0, 1fr) 2rem;
 }
 
 .party-attribute-row .stat-icon {
@@ -3016,6 +3107,9 @@ button.party-portrait-action {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.attribute-rank-value,
+.skill-rank-value { color: var(--text-primary); font-size: var(--font-size-xs); font-variant-numeric: tabular-nums; text-align: right; }
 
 .limb-attribute-pair {
   display: grid;
@@ -3210,9 +3304,11 @@ body.chat-resizing {
   --channel-color: #fff;
   display: inline-flex;
   align-items: center;
+  gap: 0.2rem;
   cursor: pointer;
   user-select: none;
 }
+.chat-channel-filter > span { color: var(--channel-color); font-size: 0.65rem; font-weight: 800; line-height: 1; }
 
 .chat-channel-filter input {
   display: grid;
@@ -3235,6 +3331,9 @@ body.chat-resizing {
   box-shadow: inset 0 0 0 1px #0004, 0 0 0 2px var(--panel-bg);
 }
 .chat-channel-filter input:not(:checked) { opacity: 0.45; }
+.chat-channel-filter input::after { content: ""; width: 0.34rem; height: 0.18rem; border: solid #111; border-width: 0 0 2px 2px; opacity: 0; transform: translateY(-0.05rem) rotate(-45deg); }
+.chat-channel-filter input:checked::after { opacity: 1; }
+.chat-channel-filter:has(input:not(:checked)) > span { text-decoration: line-through; opacity: 0.65; }
 
 .chat-channel-filter-local { --channel-color: #fff; }
 .chat-channel-filter-party { --channel-color: #4a9eff; }
@@ -3275,6 +3374,8 @@ body.chat-resizing {
   text-decoration: underline;
   text-underline-offset: 0.14em;
 }
+.chat-quest-link[data-used],
+.chat-quest-link[aria-disabled="true"] { color: var(--text-muted); text-decoration: none; cursor: default; opacity: 0.8; }
 
 .chat-timestamp {
   color: var(--text-secondary);
@@ -3408,28 +3509,103 @@ body.chat-resizing {
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   gap: 0.75rem;
 }
-
-.skill-rank-value {
-  position: absolute;
-  z-index: 4;
-  bottom: calc(100% + 0.35rem);
-  padding: 0.1rem 0.3rem;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius);
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  font-size: var(--font-size-xs);
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateX(-50%);
-  transition: opacity var(--transition-fast);
-  white-space: nowrap;
+.character-select-grid .panel,
+.character-select-grid form { min-width: 0; }
+.character-select-action {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-height: 2.25rem;
+  height: auto;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+  text-align: center;
+  white-space: normal;
 }
 
-.skill-rank-bar:hover .skill-rank-value {
-  opacity: 1;
+.strategic-notice-main { display: grid; min-height: 28rem; place-items: center; background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 55%); }
+.strategic-notice { width: min(32rem, 100%); padding: 2rem; border: 1px solid var(--border-accent); background: var(--panel-bg); box-shadow: var(--shadow-lg); text-align: center; }
+.strategic-notice h2 { margin: 0.75rem 0 0.5rem; font-family: var(--font-display), serif; }
+.strategic-notice p { margin-bottom: 1.25rem; color: var(--text-secondary); }
+.strategic-notice-icon { display: inline-block; width: 3rem; height: 3rem; background: var(--accent); -webkit-mask: url('/static/icons/game/treasure-map.svg') center / contain no-repeat; mask: url('/static/icons/game/treasure-map.svg') center / contain no-repeat; }
+.form-error { margin: 0.6rem 0; padding: 0.55rem 0.7rem; border-left: 3px solid var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--text-primary); }
+.mission-diagnostics { font-size: var(--font-size-sm); }
+.mission-diagnostics summary { cursor: pointer; color: var(--text-secondary); }
+.mission-diagnostics[open] summary { margin-bottom: 0.75rem; }
+.party-offer-summary { flex: 1 1 auto; color: var(--text-secondary); }
+.role-inspection-back,
+.service-role-back { margin-bottom: 0.75rem; }
+
+@media (hover: none), (pointer: coarse) {
+  .inventory-row-actions,
+  .inventory-footer-actions,
+  .inventory-target-step:not([hidden]),
+  .party-portrait-actions,
+  .character-religion-action { opacity: 1; pointer-events: auto; transform: none; }
+  .party-portrait-actions { gap: 0.2rem; transform: translateX(-50%); }
+  .party-portrait-action,
+  button.party-portrait-action { width: 2.75rem; height: 2.75rem; min-width: 2.75rem; min-height: 2.75rem; }
+  .party-portrait-overlay { padding-bottom: 3.2rem; }
+}
+
+@media (max-width: 768px) {
+  .settlement-main { min-height: 32rem; }
+  .party-portrait-overlay {
+    right: 0.5rem;
+    left: 0.5rem;
+    max-width: none;
+    justify-content: flex-start;
+    gap: 0.65rem;
+    padding: 0.3rem 0.4rem 1.6rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    transform: none;
+    scrollbar-width: thin;
+  }
+  .party-portrait-overlay > [data-party-portrait-members] { display: contents; }
+  .party-role-group { flex: 0 0 auto; }
+  .service-visual-scene { min-height: 18rem; }
+  .party-offer { width: min(32rem, calc(100vw - 1rem)); flex-wrap: wrap; }
+  .party-offer-summary { flex-basis: 100%; }
+  .left-sidebar:has(.inventory-browser),
+  .right-sidebar:has(.inventory-browser) {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    direction: ltr;
+    overflow-x: hidden;
+  }
+  :is(.left-sidebar, .right-sidebar):has(.inventory-browser) .sidebar-section,
+  .inventory-browser,
+  .inventory-browser-table-frame {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .inventory-browser-table-frame { overflow-x: auto; overflow-y: visible; }
+  .smith-wares-scroll,
+  .left-sidebar .encumbrance-inventory-scroll,
+  .right-sidebar .encumbrance-inventory-scroll {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    margin-inline: 0;
+    padding-inline: 0;
+    direction: ltr;
+    overflow-x: visible;
+    overflow-y: visible;
+    scrollbar-gutter: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .settlement-main { min-height: 27rem; }
+  .service-visual-scene { min-height: 14rem; }
+  .visual-scene-emblem-primary { width: 6rem; height: 6rem; }
+  .visual-scene-emblem-secondary { left: calc(50% + 3rem); }
+  .visual-scene-caption { align-items: flex-start; flex-direction: column; gap: 0.15rem; }
+  .settlement-chat { --chat-panel-height: 9.5rem; min-height: 9.5rem; }
 }
 
 .party-skill-allocation {

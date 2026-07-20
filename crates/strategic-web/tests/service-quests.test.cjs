@@ -7,6 +7,7 @@ const source = fs.readFileSync(
   path.join(__dirname, "..", "static", "service-quests.js"),
   "utf8",
 );
+const { serviceQuestTabState } = require(path.join(__dirname, "..", "static", "service-quests.js"));
 
 test("herbalist greeting offers a clickable examination without replacing quest dialogue", () => {
   assert.match(source, /Greetings, traveler, what brings you to my humble shop/);
@@ -49,4 +50,24 @@ test("active quest state drives the red Map tab marker", () => {
   assert.match(source, /marker\.description/);
   assert.match(source, /queueStrategicInitialLoad\(refreshMapQuestMarker\)/);
   assert.match(source, /strategic-live-update", refreshMapQuestMarker/);
+});
+
+test("service quest badges keep tab names accessible and used dialogue links inert", () => {
+  assert.match(source, /dataServiceLabel|dataset\.serviceLabel/);
+  assert.match(source, /stateLabel \? `\$\{baseLabel\}, \$\{stateLabel\}` : baseLabel/);
+  assert.match(source, /anchor\.setAttribute\("aria-disabled", "true"\)/);
+  assert.match(source, /anchor\.removeAttribute\("href"\)/);
+  assert.match(source, /data-close-service-role-inspection/);
+});
+
+test("service tab state is appended only for actionable quest states", () => {
+  assert.equal(serviceQuestTabState([{ state: "ready" }]), "quest ready to report");
+  assert.equal(serviceQuestTabState([{ state: "available" }]), "quest available");
+  assert.equal(serviceQuestTabState([{ state: "recruiting" }]), "recruitment available");
+  assert.equal(serviceQuestTabState([{ state: "underway" }]), null);
+  assert.equal(serviceQuestTabState([]), null);
+  assert.equal(
+    serviceQuestTabState([{ state: "underway" }, { state: "available" }]),
+    "quest available",
+  );
 });
