@@ -305,10 +305,14 @@ current view and replaces them as it pans or crosses a zoom level. The deepest
 level uses a higher AVIF quality setting for close inspection. Every encoded
 tile includes a four-pixel gutter so independent AVIF edges overlap cleanly;
 close levels replace coarse tint cells and dense contours with deterministic
-profile hills and ridges, including engraved shadow hatching. Forest regions
-become irregular period-style groves with distinct rounded deciduous and
-angular conifer glyphs. These symbols are positioned in world coordinates so
-they remain stable across tile gutters and repeated builds.
+curved hill and ridge ranges, including engraved shadow hatching and secondary
+rows in high terrain. Forest regions become overlapping, irregular period-style
+groves with distinct rounded deciduous and angular conifer glyphs instead of
+evenly scattered individual trees. Historical road importance controls both
+zoom visibility and line weight, and a restrained deterministic parchment
+fiber/fleck layer prevents flat digital backgrounds. All procedural marks are
+positioned in the zoom's global map coordinates so they remain stable across
+tile gutters and repeated builds.
 Settlement pins, route availability, current location, and selection remain in
 the authenticated HTML/SVG overlay and are never cached as
 part of the world asset.
@@ -318,7 +322,7 @@ bundle, set `STRATEGIC_MAP_PREVIEW_PNG` to an output path and run the focused
 `representative_paper_tile_has_deterministic_png_preview_hook` test with the
 `strategic-map-renderer` feature.
 
-The deployment manifest is schema 3 with renderer revision 1. It contains only
+The deployment manifest is schema 3 with renderer revision 2. It contains only
 bounds, attribution/source metadata, coverage counts, the tile index, and
 content digests; source roads, water rings, elevation cells/contours, and
 forest regions stay in the offline compiler and are not shipped to

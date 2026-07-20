@@ -55,14 +55,16 @@ direct-route state, and pin links remain dynamic HTML/SVG and are served on
 every map response. A four-pixel encoded gutter prevents seams between lossy
 tiles, while the deepest level uses high-quality AVIF and contour/symbol terrain
 detail instead of magnifying the overview's generalized square cells. Close
-levels use deterministic period-style tree groves and profile hill/ridge stamps
-with engraved shadow hatching; far levels retain restrained tint and contour
-context for overview readability.
+levels use deterministic overlapping tree groves and curved profile hill/ridge
+ranges with engraved shadow hatching; far levels retain restrained tint and
+contour context for overview readability. Viabundus zoom importance also
+controls road visibility, weight, and ink strength, while a subtle globally
+positioned parchment texture keeps adjacent tile gutters identical.
 
 The stable `strategic-map-v1.json` and `strategic-map-tiles-v1.pack` filenames
 are versioned, not content-addressed; the pack digest query parameter is every
 tile route's cache key.
-The compact schema-3 deployment manifest carries renderer revision 1, reviewed
+The compact schema-3 deployment manifest carries renderer revision 2, reviewed
 source identities, coverage counts, and the indexed AVIF pyramid, but not the
 offline roads, compound water rings, elevation cells/contours, or forest
 regions used to render it. Its embedded SHA-256 covers every deployed field;
