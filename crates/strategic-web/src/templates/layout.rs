@@ -158,7 +158,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=wilderness-horizons-1";
                 link rel="stylesheet" href="/static/css/components.css?v=coin-currencies-3";
-                link rel="stylesheet" href="/static/css/strategic.css?v=strategic-ui-overhaul-1";
+                link rel="stylesheet" href="/static/css/strategic.css?v=strategic-ui-overhaul-1-svg-map-1";
                 link rel="stylesheet" href="/static/css/utilities.css?v=strategic-ui-overhaul-1";
 
                 // Datastar
@@ -182,6 +182,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}
                     script src="/static/building-state.js?v=village-building-tabs-1" defer {}
                     script src="/static/travel-planner.js?v=travel-polish-6" defer {}
+                    script src="/static/strategic-map.js?v=svg-map-1" defer {}
                     script src="/static/rest-duration.js?v=wake-time-3" defer {}
                 }
             }

@@ -9,6 +9,7 @@ mod medical;
 mod routes;
 mod session;
 mod spacetimedb;
+mod strategic_map;
 mod templates;
 
 use std::net::SocketAddr;
@@ -23,7 +24,7 @@ use axum::{
     response::Response,
 };
 use clap::Parser;
-use tower_http::services::ServeDir;
+use tower_http::{compression::CompressionLayer, services::ServeDir};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use config::Config;
@@ -76,7 +77,9 @@ async fn main() -> anyhow::Result<()> {
     // Add health check before the outer request tracing layer so it is logged too.
     let app = app.route("/health", axum::routing::get(health_check));
 
-    let app = app.layer(axum::middleware::from_fn(log_http_request));
+    let app = app
+        .layer(CompressionLayer::new())
+        .layer(axum::middleware::from_fn(log_http_request));
 
     // Parse bind address
     let addr: SocketAddr = config

@@ -63,6 +63,8 @@ pub fn quest_location_map_page(
         ))
         (map_destination_detail(
             selected,
+            None,
+            false,
             can_travel,
             false,
             None,
