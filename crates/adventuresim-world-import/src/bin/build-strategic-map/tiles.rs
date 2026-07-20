@@ -31,6 +31,8 @@ impl Default for TileConfig {
 #[derive(Clone, Copy)]
 struct Palette {
     land: [u8; 4],
+    paper_fiber: [u8; 4],
+    paper_fleck: [u8; 4],
     water: [u8; 4],
     water_edge: [u8; 4],
     road: [u8; 4],
@@ -45,11 +47,13 @@ struct Palette {
 
 const PAPER: Palette = Palette {
     land: [230, 225, 203, 255],
+    paper_fiber: [111, 91, 66, 10],
+    paper_fleck: [151, 125, 86, 7],
     water: [184, 201, 197, 255],
-    water_edge: [112, 124, 119, 255],
-    road: [110, 101, 79, 255],
-    ferry: [98, 95, 88, 255],
-    contour: [102, 91, 73, 135],
+    water_edge: [103, 119, 116, 190],
+    road: [92, 79, 57, 230],
+    ferry: [91, 88, 78, 180],
+    contour: [102, 91, 73, 105],
     forest: [115, 128, 106, 120],
     conifer: [88, 106, 93, 145],
     terrain_ink: [94, 81, 66, 205],
@@ -153,6 +157,7 @@ fn render(
         (origin.0 + f64::from(render_size)) / scale,
         (origin.1 + f64::from(render_size)) / scale,
     ];
+    draw_parchment_texture(&mut pixmap, scale, origin, palette);
 
     if scale < 16.0 {
         for cell in &package.elevation.cells {
@@ -247,6 +252,11 @@ fn render(
         );
     }
     for road in &package.roads {
+        let Some((shade, width)) =
+            road_style(road.importance, scale, road.kind == "ferry", palette)
+        else {
+            continue;
+        };
         stroke_source_path(
             &mut pixmap,
             &road.points,
@@ -254,12 +264,8 @@ fn render(
             scale,
             origin,
             logical_bounds,
-            if road.kind == "ferry" {
-                palette.ferry
-            } else {
-                palette.road
-            },
-            1.35,
+            shade,
+            width,
         );
     }
     let output_rect = IntRect::from_xywh(
@@ -272,6 +278,73 @@ fn render(
     pixmap
         .clone_rect(output_rect)
         .ok_or("invalid tile crop".into())
+}
+
+fn draw_parchment_texture(pixmap: &mut Pixmap, scale: f64, origin: (f64, f64), palette: Palette) {
+    let cell_size = 112.0;
+    let zoom = scale.log2().round().clamp(0.0, 8.0) as u8;
+    let right = origin.0 + f64::from(pixmap.width());
+    let bottom = origin.1 + f64::from(pixmap.height());
+    let first_x = (origin.0 / cell_size).floor() as i64 - 1;
+    let last_x = (right / cell_size).ceil() as i64 + 1;
+    let first_y = (origin.1 / cell_size).floor() as i64 - 1;
+    let last_y = (bottom / cell_size).ceil() as i64 + 1;
+
+    for cell_y in first_y..=last_y {
+        for cell_x in first_x..=last_x {
+            let mut random = grid_seed(cell_x, cell_y, zoom, "parchment");
+            let x = cell_x as f64 * cell_size + 8.0 + next_unit(&mut random) * 96.0 - origin.0;
+            let y = cell_y as f64 * cell_size + 8.0 + next_unit(&mut random) * 96.0 - origin.1;
+            let length = 3.0 + next_unit(&mut random) * 8.0;
+            let slope = (next_unit(&mut random) - 0.5) * 1.8;
+            let mut fiber = PathBuilder::new();
+            fiber.move_to(x as f32, y as f32);
+            fiber.line_to((x + length) as f32, (y + slope) as f32);
+            if let Some(fiber) = fiber.finish() {
+                stroke_pixmap_path(pixmap, &fiber, palette.paper_fiber, 0.55);
+            }
+
+            if next_random(&mut random) % 5 == 0
+                && let Some(fleck) = Rect::from_xywh(
+                    (x + next_unit(&mut random) * 13.0) as f32,
+                    (y + 3.0 + next_unit(&mut random) * 10.0) as f32,
+                    0.9,
+                    0.9,
+                )
+            {
+                pixmap.fill_rect(
+                    fleck,
+                    &symbol_paint(palette.paper_fleck),
+                    Transform::identity(),
+                    None,
+                );
+            }
+        }
+    }
+}
+
+fn road_style(importance: u8, scale: f64, ferry: bool, palette: Palette) -> Option<([u8; 4], f32)> {
+    let maximum_importance = if scale < 2.0 {
+        0
+    } else if scale < 4.0 {
+        1
+    } else if scale < 8.0 {
+        2
+    } else if scale < 16.0 {
+        3
+    } else {
+        4
+    };
+    if importance > maximum_importance {
+        return None;
+    }
+    if ferry {
+        return Some((with_alpha(palette.ferry, 165), 0.95));
+    }
+    let base_width = if scale >= 16.0 { 1.75 } else { 1.45 };
+    let width = (base_width - f32::from(importance) * 0.16).max(0.85);
+    let alpha = 225_u8.saturating_sub(importance.saturating_mul(18));
+    Some((with_alpha(palette.road, alpha), width))
 }
 
 fn fill_source_bounds(
@@ -297,6 +370,13 @@ fn fill_source_bounds(
         return;
     };
     pixmap.fill_rect(rect, &paint(shade), Transform::identity(), None);
+}
+
+struct TreeMark {
+    x: f32,
+    y: f32,
+    height: f32,
+    conifer: bool,
 }
 
 fn draw_forest_grove(
@@ -325,43 +405,144 @@ fn draw_forest_grove(
     ) {
         return;
     }
+    let density = density.clamp(1, 3);
     shade[3] = match density {
-        1 => 105,
-        2 => 145,
-        _ => 180,
+        1 => 120,
+        2 => 160,
+        _ => 190,
     };
-    let zoom_multiplier = if scale >= 64.0 {
-        3
-    } else if scale >= 32.0 {
-        2
-    } else {
-        1
-    };
-    let count = usize::from(density.clamp(1, 3)) * zoom_multiplier + 1;
     let mut random = feature_seed([west, south, east, north], density, kind);
-    for index in 0..count {
-        let relative_x = 0.10 + 0.80 * next_unit(&mut random);
-        let relative_y = 0.12 + 0.76 * next_unit(&mut random);
-        let size_jitter = 0.84 + 0.28 * next_unit(&mut random);
+    let cluster_count = usize::from(density) + if scale >= 64.0 { 2 } else { 1 };
+    let mut clusters = Vec::with_capacity(cluster_count);
+    for _ in 0..cluster_count {
+        clusters.push((
+            0.14 + 0.72 * next_unit(&mut random),
+            0.16 + 0.68 * next_unit(&mut random),
+            0.82 + 0.34 * next_unit(&mut random),
+        ));
+    }
+    for &(relative_x, relative_y, spread) in &clusters {
         let x = ((left + (right - left) * relative_x) * scale - origin.0) as f32;
         let y = ((top + (bottom - top) * relative_y) * scale - origin.1) as f32;
-        let height = (if scale >= 64.0 {
-            8.0
-        } else if scale >= 32.0 {
-            6.5
-        } else {
-            5.0
-        } * size_jitter) as f32;
+        draw_grove_shadow(
+            pixmap,
+            x,
+            y + 2.0,
+            ((right - left) * scale * 0.12 * spread) as f32,
+            ((bottom - top) * scale * 0.09 * spread) as f32,
+            with_alpha(shade, 24 + density * 3),
+        );
+    }
+
+    let count = if scale >= 64.0 {
+        usize::from(density) * 18 + 10
+    } else if scale >= 32.0 {
+        usize::from(density) * 11 + 7
+    } else {
+        usize::from(density) * 6 + 4
+    };
+    let base_height = if scale >= 64.0 {
+        9.0
+    } else if scale >= 32.0 {
+        7.2
+    } else {
+        5.4
+    };
+    let mut trees = Vec::with_capacity(count);
+    for index in 0..count {
+        let cluster = clusters[index % clusters.len()];
+        let offset_x = (next_unit(&mut random) + next_unit(&mut random) + next_unit(&mut random)
+            - 1.5)
+            * 0.115
+            * cluster.2;
+        let offset_y = (next_unit(&mut random) + next_unit(&mut random) + next_unit(&mut random)
+            - 1.5)
+            * 0.105
+            * cluster.2;
+        let relative_x = (cluster.0 + offset_x).clamp(0.035, 0.965);
+        let relative_y = (cluster.1 + offset_y).clamp(0.055, 0.955);
+        let size_jitter = 0.80 + 0.38 * next_unit(&mut random);
         let conifer = match kind {
             "conifer" => true,
             "mixed" => (next_random(&mut random) ^ index as u64) & 1 == 0,
             _ => false,
         };
-        if conifer {
-            draw_conifer(pixmap, x, y, height, shade, ink);
+        trees.push(TreeMark {
+            x: ((left + (right - left) * relative_x) * scale - origin.0) as f32,
+            y: ((top + (bottom - top) * relative_y) * scale - origin.1) as f32,
+            height: (base_height * size_jitter) as f32,
+            conifer,
+        });
+    }
+    trees.sort_by(|left, right| {
+        left.y
+            .total_cmp(&right.y)
+            .then_with(|| left.x.total_cmp(&right.x))
+    });
+    for tree in trees {
+        if tree.conifer {
+            draw_conifer(pixmap, tree.x, tree.y, tree.height, shade, ink);
         } else {
-            draw_deciduous_tree(pixmap, x, y, height, shade, ink);
+            draw_deciduous_tree(pixmap, tree.x, tree.y, tree.height, shade, ink);
         }
+    }
+}
+
+fn draw_grove_shadow(
+    pixmap: &mut Pixmap,
+    x: f32,
+    y: f32,
+    radius_x: f32,
+    radius_y: f32,
+    shade: [u8; 4],
+) {
+    if radius_x <= 0.0 || radius_y <= 0.0 {
+        return;
+    }
+    let control = 0.552_284_8;
+    let mut shadow = PathBuilder::new();
+    shadow.move_to(x - radius_x, y);
+    shadow.cubic_to(
+        x - radius_x,
+        y - radius_y * control,
+        x - radius_x * control,
+        y - radius_y,
+        x,
+        y - radius_y,
+    );
+    shadow.cubic_to(
+        x + radius_x * control,
+        y - radius_y,
+        x + radius_x,
+        y - radius_y * control,
+        x + radius_x,
+        y,
+    );
+    shadow.cubic_to(
+        x + radius_x,
+        y + radius_y * control,
+        x + radius_x * control,
+        y + radius_y,
+        x,
+        y + radius_y,
+    );
+    shadow.cubic_to(
+        x - radius_x * control,
+        y + radius_y,
+        x - radius_x,
+        y + radius_y * control,
+        x - radius_x,
+        y,
+    );
+    shadow.close();
+    if let Some(shadow) = shadow.finish() {
+        pixmap.fill_path(
+            &shadow,
+            &symbol_paint(shade),
+            FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
     }
 }
 
@@ -483,7 +664,7 @@ fn draw_elevation_stamps(
         let [west, south, east, north] = cell.bounds;
         let (left, top) = project(west, north, map_bounds);
         let (right, bottom) = project(east, south, map_bounds);
-        let stamp_margin = 12.0 / scale;
+        let stamp_margin = 16.0 / scale;
         if !intersects(
             [
                 left - stamp_margin,
@@ -495,45 +676,70 @@ fn draw_elevation_stamps(
         ) {
             continue;
         }
-        let mut random = feature_seed(cell.bounds, cell.band_m.clamp(0, 255) as u8, "hill");
-        let width = if scale >= 64.0 {
-            18.0
-        } else if scale >= 32.0 {
-            14.0
-        } else {
-            10.0
-        };
         let band_index = [50, 100, 250, 500, 1_000, 1_500, 2_000]
             .iter()
             .position(|value| *value == cell.band_m)
             .unwrap_or_default();
         let high_ridge = band_index >= 4;
-        let stamp_count = if scale >= 64.0 {
-            8 + usize::from(high_ridge) * 2
+        let base_count = if scale >= 64.0 {
+            14 + usize::from(high_ridge) * 4
         } else if scale >= 32.0 {
-            4 + usize::from(high_ridge)
+            7 + usize::from(high_ridge) * 2
         } else {
-            2 + usize::from(high_ridge)
+            3 + usize::from(high_ridge)
         };
-        for index in 0..stamp_count {
-            let progress = (index as f64 + 0.5) / stamp_count as f64;
-            let jitter_x = (next_unit(&mut random) - 0.5) * 0.14;
-            let jitter_y = (next_unit(&mut random) - 0.5) * 0.28;
-            let center_x = left + (right - left) * (0.10 + 0.80 * progress + jitter_x);
-            let center_y = top
-                + (bottom - top) * (0.50 + jitter_y + if index % 2 == 0 { -0.07 } else { 0.07 });
-            let width_jitter = 0.88 + 0.24 * next_unit(&mut random);
-            draw_hill_stamp(
-                pixmap,
-                (center_x * scale - origin.0) as f32,
-                (center_y * scale - origin.1) as f32,
-                (width * width_jitter) as f32,
-                band_index,
-                scale,
-                palette.elevation[band_index],
-                palette.terrain_ink,
-                palette.terrain_hatch,
+        let width = if scale >= 64.0 {
+            20.0
+        } else if scale >= 32.0 {
+            15.0
+        } else {
+            11.0
+        };
+        let block_x = ((west + 180.0) / 2.0).floor() as i64;
+        let block_y = ((south + 90.0) / 2.0).floor() as i64;
+        let mut range_random = grid_seed(block_x, block_y, band_index as u8, "ridge-range");
+        let phase = next_unit(&mut range_random) * std::f64::consts::TAU;
+        let slope = (next_unit(&mut range_random) - 0.5) * 0.42;
+        let rows = if high_ridge && scale >= 32.0 { 2 } else { 1 };
+        for row in 0..rows {
+            let row_offset = if rows == 1 {
+                0.0
+            } else if row == 0 {
+                -0.13
+            } else {
+                0.13
+            };
+            let stamp_count = base_count.saturating_sub(row * 3);
+            let mut random = feature_seed(
+                cell.bounds,
+                cell.band_m.clamp(0, 255) as u8,
+                if row == 0 {
+                    "hill-range"
+                } else {
+                    "hill-range-shadow"
+                },
             );
+            for index in 0..stamp_count {
+                let progress = (index as f64 + 0.5) / stamp_count as f64;
+                let jitter = (next_unit(&mut random) - 0.5) * 0.045;
+                let center_x = left + (right - left) * (0.07 + 0.86 * progress);
+                let wave = (center_x * 0.055 + phase).sin() * 0.09;
+                let relative_y =
+                    (0.5 + row_offset + wave + slope * (progress - 0.5) + jitter).clamp(0.07, 0.93);
+                let center_y = top + (bottom - top) * relative_y;
+                let width_jitter = 0.86 + 0.28 * next_unit(&mut random);
+                draw_hill_stamp(
+                    pixmap,
+                    (center_x * scale - origin.0) as f32,
+                    (center_y * scale - origin.1) as f32,
+                    (width * width_jitter) as f32,
+                    band_index,
+                    scale,
+                    palette.elevation[band_index],
+                    palette.terrain_ink,
+                    palette.terrain_hatch,
+                );
+            }
         }
     }
 }
@@ -618,6 +824,21 @@ fn feature_seed(bounds: [f64; 4], density: u8, kind: &str) -> u64 {
         .into_iter()
         .flat_map(|value| value.to_bits().to_le_bytes())
         .chain([density])
+        .chain(kind.bytes())
+    {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
+
+fn grid_seed(x: i64, y: i64, level: u8, kind: &str) -> u64 {
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in x
+        .to_le_bytes()
+        .into_iter()
+        .chain(y.to_le_bytes())
+        .chain([level])
         .chain(kind.bytes())
     {
         hash ^= u64::from(byte);
@@ -925,6 +1146,12 @@ mod tests {
         package
     }
 
+    fn flat_fixture() -> Package {
+        let mut package = paper_fixture("broadleaf", false);
+        package.elevation.cells.clear();
+        package
+    }
+
     fn pixel(tile: &Pixmap, x: usize, y: usize) -> [u8; 4] {
         let offset = (y * tile.width() as usize + x) * 4;
         tile.data()[offset..offset + 4].try_into().unwrap()
@@ -940,6 +1167,45 @@ mod tests {
         let broadleaf = paper_fixture("broadleaf", true);
         let broadleaf = render(&broadleaf, 64, TILE_GUTTER, 32.0, 0, 0, PAPER).unwrap();
         assert_ne!(first.data(), broadleaf.data());
+    }
+
+    #[test]
+    fn parchment_texture_is_deterministic_and_breaks_up_flat_land() {
+        let package = flat_fixture();
+        let first = render(&package, 128, TILE_GUTTER, 64.0, 0, 0, PAPER).unwrap();
+        let second = render(&package, 128, TILE_GUTTER, 64.0, 0, 0, PAPER).unwrap();
+        assert_eq!(first.data(), second.data());
+        let textured = first
+            .data()
+            .chunks_exact(4)
+            .filter(|pixel| *pixel != PAPER.land)
+            .count();
+        assert!(textured > 10, "parchment texture did not render");
+    }
+
+    #[test]
+    fn close_forest_groves_form_a_substantial_clustered_mass() {
+        let mut forest = paper_fixture("mixed", true);
+        forest.elevation.cells.clear();
+        let plain = flat_fixture();
+        let forest = render(&forest, 256, TILE_GUTTER, 64.0, 0, 0, PAPER).unwrap();
+        let plain = render(&plain, 256, TILE_GUTTER, 64.0, 0, 0, PAPER).unwrap();
+        let changed = forest
+            .data()
+            .chunks_exact(4)
+            .zip(plain.data().chunks_exact(4))
+            .filter(|(forest, plain)| forest != plain)
+            .count();
+        assert!(changed > 600, "forest grove is still too sparse: {changed}");
+    }
+
+    #[test]
+    fn road_hierarchy_filters_and_weights_minor_routes() {
+        assert!(road_style(4, 8.0, false, PAPER).is_none());
+        let major = road_style(0, 64.0, false, PAPER).unwrap();
+        let minor = road_style(4, 64.0, false, PAPER).unwrap();
+        assert!(major.1 > minor.1);
+        assert!(major.0[3] > minor.0[3]);
     }
 
     #[test]
@@ -969,7 +1235,7 @@ mod tests {
     }
 
     #[test]
-    fn close_elevation_uses_sparse_profile_stamp_instead_of_square_fill() {
+    fn close_elevation_uses_profile_ranges_instead_of_square_fill() {
         let package = paper_fixture("broadleaf", false);
         let tile = render(&package, 64, TILE_GUTTER, 32.0, 0, 0, PAPER).unwrap();
         let land = PAPER.land;

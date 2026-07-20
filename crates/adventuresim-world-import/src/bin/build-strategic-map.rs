@@ -15,7 +15,7 @@ mod raster;
 mod tiles;
 
 const PACKAGE_SCHEMA: u32 = 3;
-const RENDERER_REVISION: u32 = 1;
+const RENDERER_REVISION: u32 = 2;
 const YEAR: i32 = 1544;
 const VIABUNDUS_DOI: &str = "https://doi.org/10.5281/zenodo.16611998";
 const RECORD_URL: &str = "https://zenodo.org/api/records/16611998";
@@ -63,6 +63,7 @@ struct Point([f64; 2]);
 #[derive(Clone, Debug, PartialEq, Serialize)]
 struct Line {
     kind: String,
+    importance: u8,
     points: Vec<Point>,
 }
 
@@ -244,6 +245,7 @@ fn build(root: &Path, layers: MapRasterLayers) -> Result<Package, Box<dyn std::e
                     "land"
                 }
                 .into(),
+                importance: zoom,
                 points,
             });
         }
@@ -251,6 +253,7 @@ fn build(root: &Path, layers: MapRasterLayers) -> Result<Package, Box<dyn std::e
     roads.sort_by(|a, b| {
         a.kind
             .cmp(&b.kind)
+            .then_with(|| a.importance.cmp(&b.importance))
             .then_with(|| point_order(&a.points, &b.points))
     });
 

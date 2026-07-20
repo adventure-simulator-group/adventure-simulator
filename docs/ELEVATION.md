@@ -33,9 +33,11 @@ settlements without using a fallback.
 
 The settlement Map presentation separately samples the installed GLO-30 tiles
 on a coarse deterministic grid. Far Paper-map levels render generalized tint
-cells and restrained contour segments; close levels derive profile hill and
-ridge stamps with engraved shadow hatching from the same cells instead of
-magnifying their square boundaries. Browsers
+cells and restrained contour segments; close levels derive curved chains of
+profile hills and multi-row high ridges with engraved shadow hatching from the
+same cells instead of magnifying their square boundaries. Deterministic range
+orientation and curvature keep neighboring marks visually related without
+claiming precision beyond the generalized quarter-degree cells. Browsers
 receive only the compressed tiles covering their current view; raw DEM pixels
 are not served and the presentation layer is not persisted in SpacetimeDB.
 
