@@ -65,9 +65,13 @@ trips from it to the five nearest settlements use straight-line distance, requir
 no road connection, and advance strategic time at 1.25 km/h (one quarter of the
 MVP's normal walking speed). Both settlement and quest-destination travel use the
 shared Map tab. The leader configures integer-minute walking time as hours per
-day (eight by default), centered on solar noon. This is the daily cycle's only
-configuration: every minute outside the walking window is camp/downtime, so a
-full day's camp interval is 24 hours minus the configured walking hours. A
+day (eight by default) and whether the party travels by day or by night. Day
+travel centers the walking window on solar noon. Night travel centers its
+contiguous walking window on midnight, which equivalently centers the camp and
+downtime interval on noon. A sun/moon switch in the travel configuration saves
+this choice with the party and immediately recomputes the remaining forecast.
+Every minute outside the walking window is camp/downtime, so a full day's camp
+interval is 24 hours minus the configured walking hours. A
 member who cannot clear their fatigue in that interval carries it into the next
 day. The reducer and preview use the same itinerary function, including partial
 first and final walking days.
@@ -107,7 +111,7 @@ journey against Day 1 celestial chronology.
 - Placing a rest stop at an inn allows you to fully rest faster (no watch schedule or tent pitching) increasing the amount of time available each day for traveling. The inn also has a cost, but this is trivially cheap unless you are an impoverished mendicant.
 - The time between each rest stop *should be* 24 hours. Your cursor when placing points displays the expected arrival time, but the longer your characters go without resting the slower their travel speed and worse their combat abilities will be.
 
-### Camping and hourly rest
+### Camping, destination downtime, and hourly rest
 
 Camp rest advances every living member by one common interval and consumes
 provisions without settlement refill. Shared rations and water are used before
@@ -115,7 +119,12 @@ personal supplies. Each member rests until their own fatigue reaches zero; the
 remaining interval applies safe saved downtime proportionally. Labor,
 Thievery, and Raiding, including their rewards and incidents, are suppressed,
 while healing and field repair retain their priority. Disease boundaries clip
-the party to one common safe interval. Manual rest remains available.
+the party to one common safe interval. Manual rest remains available both at
+an en-route camp and after arriving at a quest destination, so a leader can
+clear fatigue or wait until a chosen time before beginning combat. Field rest
+is free. It reuses the wake-time control from settlement rest, but permits an
+exact sub-24-hour interval; choosing the current clock time means the next
+day's occurrence.
 
 At an inn or church, resting remains personal rather than party-wide. The rest
 control can switch between **Hours** and **Days**; its recommendation heals the

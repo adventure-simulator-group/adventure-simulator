@@ -1206,6 +1206,7 @@ pub enum Reducer {
     SetPartyTravelItinerary {
         character_id: u64,
         walking_minutes_per_day: u16,
+        travel_at_night: bool,
         automatic_camp_duration: bool,
         fixed_camp_minutes: u16,
     },
@@ -2097,11 +2098,13 @@ Reducer::SendLocalChatMessage{
             Reducer::SetPartyTravelItinerary{
                 character_id,
                 walking_minutes_per_day,
+                travel_at_night,
                 automatic_camp_duration,
                 fixed_camp_minutes,
 }             => __sats::bsatn::to_vec(&set_party_travel_itinerary_reducer::SetPartyTravelItineraryArgs {
                 character_id: character_id.clone(),
                 walking_minutes_per_day: walking_minutes_per_day.clone(),
+                travel_at_night: travel_at_night.clone(),
                 automatic_camp_duration: automatic_camp_duration.clone(),
                 fixed_camp_minutes: fixed_camp_minutes.clone(),
 }),

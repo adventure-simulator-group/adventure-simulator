@@ -620,6 +620,12 @@ pub(crate) fn map_destination_detail(
 ) -> Markup {
     let camp_fatigue_percent = party.map_or(50, |party| party.camp_fatigue_percent);
     let walking_hours = party.map_or(8.0, |party| f32::from(party.walking_minutes_per_day) / 60.0);
+    let travel_at_night = party.is_some_and(|party| party.travel_at_night);
+    let walking_hours_title = if travel_at_night {
+        "Walking is centered on midnight; shorter first and final days are forecast automatically."
+    } else {
+        "Walking is centered on solar noon; shorter first and final days are forecast automatically."
+    };
     let market_path = format!(
         "/settlements/{}/merchants",
         map_path
@@ -636,10 +642,20 @@ pub(crate) fn map_destination_detail(
                     (travel_planner_bar(selected, camp_fatigue_percent))
                 }
                 form method="post" action=(format!("{map_path}/travel-configuration")) class="travel-configuration-form" data-travel-configuration {
-                    label for="walking-hours" title="Walking is centered on solar noon; shorter first and final days are forecast automatically." { "Walking hours per day" }
+                    label for="walking-hours" title=(walking_hours_title) { "Walking hours per day" }
                     div class="travel-fatigue-control" {
                         input id="walking-hours" type="number" name="walking_hours" min="1" max="16" step="0.25" value=(walking_hours) data-walking-hours {}
                         span { "hours" }
+                    }
+                    div class="travel-period-control" {
+                        span { "Travel during" }
+                        label class="travel-period-toggle" title=(if travel_at_night { "Travel at night; camp time is centered on noon" } else { "Travel during the day; walking time is centered on noon" }) {
+                            input type="checkbox" name="travel_at_night" value="true" checked[travel_at_night]
+                                aria-label="Travel at night" data-travel-period-toggle;
+                            span class="travel-period-track" aria-hidden="true" {
+                                span class="travel-period-thumb" {}
+                            }
+                        }
                     }
                     p class="travel-cycle-summary" {
                         (format!("{} hours camp/downtime per full day", 24.0 - walking_hours))
@@ -1089,40 +1105,32 @@ pub fn camp_page(
                 p class="travel-action-status" data-travel-action-status role="alert" hidden {}
             }
             section class="rest-service-menu camp-rest-menu" aria-label="Camp rest" {
-                div class="rest-service-heading" { strong { "Rest at camp" } }
-                form action="/camp/rest" method="post" {
-                    (rest_duration_control("camp-rest", rest_hours, "hours", "Rest the party"))
-                    button type="submit" class="btn btn-primary btn-small btn-block" data-rest-submit
-                        disabled[rest_hours == 0] { "Rest party" }
-                }
+                (party_rest_menu("/camp/rest", "camp-rest", "Rest at camp", "Rest party", rest_hours))
             }
         }
     };
     quest_location_layout_with_session("Camp", "Camp", &party.id, "camp", content, logged_in_as)
 }
 
-fn rest_duration_control(_id_prefix: &str, value: u64, unit: &str, label: &str) -> Markup {
-    let hours_active = unit == "hours";
+pub(crate) fn party_rest_menu(
+    action: &str,
+    id_prefix: &str,
+    heading: &str,
+    submit_label: &str,
+    default_minutes: u64,
+) -> Markup {
     html! {
-        div class="rest-duration-control" data-rest-duration {
-            div class="rest-duration-units" role="radiogroup" aria-label=(label) {
-                label class=(if hours_active { "rest-duration-unit active" } else { "rest-duration-unit" }) {
-                    input type="radio" name="unit" value="hours" checked[hours_active] {}
-                    "Hours"
-                }
-                label class=(if !hours_active { "rest-duration-unit active" } else { "rest-duration-unit" }) {
-                    input type="radio" name="unit" value="days" checked[!hours_active] {}
-                    "Days"
-                }
-            }
-            div class="rest-days-control" {
-                button type="button" class="rest-days-step rest-days-decrease" aria-label="Decrease rest duration"
-                    onclick="const input=this.parentElement.querySelector('input'); input.value=Math.max(0, Number(input.value || 0)-1); input.dispatchEvent(new Event('input', {bubbles:true}));" { "−" }
-                input type="number" name="duration" value=(value) min="0" max="365" aria-label=(label)
-                    oninput="this.form.querySelector('[type=submit]').disabled=Number(this.value || 0) <= 0;";
-                span class="rest-days-unit" data-rest-unit-label { (unit) }
-                button type="button" class="rest-days-step rest-days-increase" aria-label="Increase rest duration"
-                    onclick="const input=this.parentElement.querySelector('input'); input.value=Math.min(Number(input.max || 365), Number(input.value || 0)+1); input.dispatchEvent(new Event('input', {bubbles:true}));" { "+" }
+        div class="rest-service-heading" { strong { (heading) } }
+        form action=(action) method="post" {
+            (wake_time_rest_duration_control(
+                id_prefix,
+                default_minutes.max(1),
+                "hours",
+                1,
+                Some(default_minutes.max(1)),
+            ))
+            button type="submit" class="btn btn-primary btn-small btn-block" data-rest-submit {
+                (submit_label)
             }
         }
     }
@@ -4235,8 +4243,8 @@ fn rest_service_menu(
         form action=(format!("/settlements/{settlement_id}/rest/{kind}")) method="post" {
                 @let minutes = default_minutes.unwrap_or(0);
                 @let unit = if minutes >= 1_440 { "days" } else { "hours" };
-                @let value = if unit == "days" { minutes.div_ceil(1_440).max(1) } else { 24 };
-                (settlement_rest_duration_control(value, unit))
+                @let initial_minutes = if minutes == 0 { 1_440 } else { minutes.max(1_440) };
+                (settlement_rest_duration_control(initial_minutes, unit))
                 /*
                 div class="rest-days-control" {
                     button type="button" class="rest-days-step rest-days-decrease" aria-label="Decrease rest days"
@@ -4279,10 +4287,28 @@ fn rest_service_menu(
     }
 }
 
-fn settlement_rest_duration_control(value: u64, unit: &str) -> Markup {
+fn settlement_rest_duration_control(initial_minutes: u64, unit: &str) -> Markup {
+    wake_time_rest_duration_control("settlement-rest", initial_minutes, unit, 1_440, None)
+}
+
+fn wake_time_rest_duration_control(
+    id_prefix: &str,
+    initial_minutes: u64,
+    unit: &str,
+    minimum_minutes: u64,
+    default_minutes: Option<u64>,
+) -> Markup {
     let hours_active = unit == "hours";
+    let wake_id = format!("{id_prefix}-wake-time");
+    let value = if hours_active {
+        format!("{:02}:{:02}", initial_minutes / 60, initial_minutes % 60)
+    } else {
+        initial_minutes.div_ceil(1_440).max(1).to_string()
+    };
     html! {
-        div class="rest-duration-control settlement-rest-duration" data-rest-duration data-wake-time {
+        div class="rest-duration-control settlement-rest-duration" data-rest-duration data-wake-time
+            data-rest-minimum-minutes=(minimum_minutes)
+            data-rest-default-minutes=[default_minutes] {
             div class="rest-duration-units" role="radiogroup" aria-label="Rest duration" {
                 label class=(if hours_active { "rest-duration-unit active" } else { "rest-duration-unit" }) {
                     input type="radio" name="unit" value="hours" checked[hours_active] {}
@@ -4295,16 +4321,16 @@ fn settlement_rest_duration_control(value: u64, unit: &str) -> Markup {
             }
             div class="rest-wake-time" data-wake-time-panel aria-disabled=(!hours_active) {
                 div class="rest-wake-heading" {
-                    label for="settlement-wake-time" { "Wake time" }
-                    output for="settlement-wake-time" data-wake-time-output { "08:00" }
+                    label for=(&wake_id) { "Wake time" }
+                    output for=(&wake_id) data-wake-time-output { "08:00" }
                 }
-                input id="settlement-wake-time" type="range" min="0" max="1380" step="60" value="480"
+                input id=(&wake_id) type="range" min="0" max="1439" step="60" value="480"
                     aria-label="Wake time" aria-valuetext="08:00" disabled[!hours_active] data-wake-time-slider;
             }
             div class="rest-days-control" {
                 button type="button" class="rest-days-step rest-days-decrease" aria-label="Decrease rest duration" data-rest-step="-1" { "−" }
                 input type=(if hours_active { "text" } else { "number" }) name="duration"
-                    value=(if hours_active { format!("{value:02}:00") } else { value.to_string() })
+                    value=(value)
                     inputmode=(if hours_active { "text" } else { "numeric" })
                     pattern="[0-9]+:[0-5][0-9]" min="1" max="365" step="1"
                     aria-label="Rest duration" data-rest-duration-input;
@@ -4556,7 +4582,7 @@ mod tests {
 
     #[test]
     fn settlement_wake_control_is_accessible_and_defaults_to_eight() {
-        let markup = settlement_rest_duration_control(24, "hours").into_string();
+        let markup = settlement_rest_duration_control(1_440, "hours").into_string();
         assert!(markup.contains("data-wake-time"));
         assert!(markup.contains("type=\"range\""));
         assert!(markup.contains("step=\"60\""));
@@ -4571,7 +4597,7 @@ mod tests {
 
     #[test]
     fn days_recommendation_keeps_slider_disabled_and_minimum_one() {
-        let markup = settlement_rest_duration_control(3, "days").into_string();
+        let markup = settlement_rest_duration_control(3 * 1_440, "days").into_string();
         assert!(markup.contains("value=\"days\" checked"));
         assert!(markup.contains("aria-disabled=\"true\""));
         assert!(
@@ -5970,6 +5996,7 @@ mod tests {
             total_elapsed_minutes: 2_040,
             completed_elapsed_minutes: 780,
             walking_minutes_per_day: 480,
+            travel_at_night: false,
             camp_duration_mode: crate::spacetimedb::CampDurationMode::Auto,
             fixed_camp_minutes: 0,
         };

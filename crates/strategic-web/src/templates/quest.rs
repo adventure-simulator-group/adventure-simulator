@@ -12,7 +12,7 @@ use crate::spacetimedb::{
 use crate::{
     spacetimedb::Character,
     templates::settlement::{
-        map_destination_detail, map_destination_list, party_portrait_overlay,
+        map_destination_detail, map_destination_list, party_portrait_overlay, party_rest_menu,
         settlement_chat_area_with_info, travel_planner_bar, visual_stage,
     },
 };
@@ -24,6 +24,7 @@ pub fn quest_location_base_page(
     can_fight: bool,
     resolved: bool,
     autoresolve_report: Option<&AutoresolveReport>,
+    default_rest_minutes: u64,
     logged_in_as: Option<&str>,
 ) -> Markup {
     let content = html! {
@@ -39,7 +40,17 @@ pub fn quest_location_base_page(
             autoresolve_report,
             None,
         ))
-        aside class="right-sidebar" aria-label="Location details" {}
+        aside class="right-sidebar" aria-label="Location details" {
+            section class="rest-service-menu quest-rest-menu" aria-label="Destination rest" {
+                (party_rest_menu(
+                    &format!("/locations/quest/{}/rest", quest.id),
+                    "quest-rest",
+                    "Rest before battle",
+                    "Rest party",
+                    default_rest_minutes,
+                ))
+            }
+        }
     };
     super::quest_location_layout_with_session(
         &quest.title,

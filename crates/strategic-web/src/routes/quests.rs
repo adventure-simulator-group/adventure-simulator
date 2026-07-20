@@ -13,7 +13,7 @@ use serde_json::json;
 use super::{
     AppState, PartyAction, PartyActionOutcome, execute_or_request_party_action,
     participates_in_party_readiness,
-    settlements::{get_active_party_members, living_party_members},
+    settlements::{RestForm, get_active_party_members, living_party_members, travel_rest_minutes},
     travel::{
         QuestMapMarkers, TravelDestination, TravelForm, active_quest_tooltip,
         populate_itinerary_forecasts, settlement_destination,
@@ -41,6 +41,7 @@ pub fn routes() -> Router<AppState> {
         .route("/locations/quest/{id}", get(quest_location_base))
         .route("/locations/quest/{id}/map", get(quest_location_map))
         .route("/locations/quest/{id}/loot", get(quest_location_loot))
+        .route("/locations/quest/{id}/rest", post(rest_at_quest_location))
         .route("/quests/{id}/autoresolve", post(autoresolve_quest))
         .route("/quests/{id}/loot/store", post(store_battle_loot))
 }
@@ -350,6 +351,51 @@ async fn quest_location_loot(
     render_quest_location(state, id, session, QuestLocationTab::Loot).await
 }
 
+async fn rest_at_quest_location(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+    Form(form): Form<RestForm>,
+) -> Response {
+    let Some(character_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    let character = state
+        .db
+        .query_one::<Character>(&format!(
+            "SELECT * FROM character WHERE id = {character_id}"
+        ))
+        .await
+        .ok()
+        .flatten();
+    if character
+        .as_ref()
+        .and_then(|row| row.current_quest_location_id.as_deref())
+        != Some(id.as_str())
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            "The party is not at this quest location",
+        )
+            .into_response();
+    }
+    let requested_minutes = match travel_rest_minutes(&form) {
+        Ok(minutes) => minutes,
+        Err(message) => return (StatusCode::BAD_REQUEST, message).into_response(),
+    };
+    match state
+        .db
+        .call(
+            "rest_at_camp",
+            &[json!(character_id), json!(requested_minutes)],
+        )
+        .await
+    {
+        Ok(()) => Redirect::to(&format!("/locations/quest/{id}")).into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
+}
+
 async fn render_quest_location(
     state: AppState,
     id: String,
@@ -498,6 +544,23 @@ async fn render_quest_location(
     };
     let party_members = get_active_party_members(&state, character.as_ref()).await;
     let living_party_members = living_party_members(&party_members);
+    let stats: Vec<CharacterStats> = state
+        .db
+        .query("SELECT * FROM character_stats")
+        .await
+        .unwrap_or_default();
+    let default_rest_minutes = living_party_members
+        .iter()
+        .filter_map(|member| stats.iter().find(|row| row.character_id == member.id))
+        .map(|row| {
+            (row.calories_used.max(0.0)
+                / adventuresim_core::provisioning::STRATEGIC_TRAVEL_KCAL_PER_DAY
+                * adventuresim_core::strategic_time::MINUTES_PER_DAY as f32)
+                .ceil() as u64
+        })
+        .max()
+        .unwrap_or(0)
+        .max(1);
     if let Some(party) = party.as_ref() {
         let attributes: Vec<CharacterAttributes> = state
             .db
@@ -507,11 +570,6 @@ async fn render_quest_location(
         let limbs: Vec<CharacterLimbs> = state
             .db
             .query("SELECT * FROM character_limbs")
-            .await
-            .unwrap_or_default();
-        let stats: Vec<CharacterStats> = state
-            .db
-            .query("SELECT * FROM character_stats")
             .await
             .unwrap_or_default();
         let times: Vec<CharacterTime> = state
@@ -567,6 +625,7 @@ async fn render_quest_location(
             can_fight,
             resolved,
             autoresolve_report.as_ref(),
+            default_rest_minutes,
             logged_in_as,
         ),
         QuestLocationTab::Map(selected) => quest_location_map_page(

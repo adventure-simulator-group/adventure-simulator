@@ -228,6 +228,7 @@ pub(crate) fn populate_itinerary_forecasts(
             departure,
             destination.forecast_minutes(),
             party.walking_minutes_per_day,
+            party.travel_at_night,
             policy,
             &members,
         ) {

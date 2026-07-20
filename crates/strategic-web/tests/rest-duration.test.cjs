@@ -5,6 +5,7 @@ const {
   formatClock,
   formatDuration,
   minutesUntilWake,
+  minutesUntilWakeWithMinimum,
   parseDuration,
   targetForDuration,
 } = require("../static/rest-duration.js");
@@ -20,6 +21,12 @@ test("wake arithmetic preserves arbitrary current and target minutes", () => {
   assert.equal(formatClock(6 * 60 + 12), "06:12");
 });
 
+test("field rest can target the next clock occurrence without a full-day minimum", () => {
+  assert.equal(minutesUntilWakeWithMinimum(7 * 60, 8 * 60, 1), 60);
+  assert.equal(minutesUntilWakeWithMinimum(8 * 60, 8 * 60, 1), 1440);
+  assert.equal(minutesUntilWakeWithMinimum(22 * 60, 2 * 60, 1), 240);
+});
+
 test("typed HH:MM durations preserve exact minutes and update target modulo day", () => {
   assert.equal(parseDuration("49:31"), 49 * 60 + 31);
   assert.equal(formatDuration(45 * 60 + 30), "45:30");
@@ -29,7 +36,7 @@ test("typed HH:MM durations preserve exact minutes and update target modulo day"
   assert.equal(parseDuration("24.5"), null);
 });
 
-test("markup keeps wake time settlement-only, accessible, and detached from days", () => {
+test("markup reuses the accessible wake-time control for settlement and field rest", () => {
   const source = require("node:fs").readFileSync("crates/strategic-web/src/templates/settlement.rs", "utf8");
   const settlementControl = source.slice(source.indexOf("fn settlement_rest_duration_control"));
   assert.match(settlementControl, /type="range"/);
@@ -37,7 +44,10 @@ test("markup keeps wake time settlement-only, accessible, and detached from days
   assert.match(settlementControl, /pattern="\[0-9\]\+:\[0-5\]\[0-9\]"/);
   assert.match(settlementControl, /aria-label="Wake time"/);
   assert.match(settlementControl, /disabled\[!hours_active\]/);
-  assert.doesNotMatch(source.slice(source.indexOf("pub fn camp_page"), source.indexOf("fn rest_duration_control")), /data-wake-time/);
+  const partyControl = source.slice(source.indexOf("pub(crate) fn party_rest_menu"), source.indexOf("pub(crate) fn settlement_description"));
+  assert.match(partyControl, /wake_time_rest_duration_control/);
+  assert.match(source, /data-rest-minimum-minutes/);
+  assert.match(source, /data-rest-default-minutes/);
 });
 
 test("controls remount after replacement and keep independent days state", () => {

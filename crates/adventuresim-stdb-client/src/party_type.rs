@@ -18,6 +18,7 @@ pub struct Party {
     pub is_solo: bool,
     pub camp_fatigue_percent: u8,
     pub walking_minutes_per_day: u16,
+    pub travel_at_night: bool,
     pub camp_duration_mode: CampDurationMode,
     pub fixed_camp_minutes: u16,
     pub camp_destination_id: Option<String>,
@@ -47,6 +48,7 @@ pub struct PartyCols {
     pub is_solo: __sdk::__query_builder::Col<Party, bool>,
     pub camp_fatigue_percent: __sdk::__query_builder::Col<Party, u8>,
     pub walking_minutes_per_day: __sdk::__query_builder::Col<Party, u16>,
+    pub travel_at_night: __sdk::__query_builder::Col<Party, bool>,
     pub camp_duration_mode: __sdk::__query_builder::Col<Party, CampDurationMode>,
     pub fixed_camp_minutes: __sdk::__query_builder::Col<Party, u16>,
     pub camp_destination_id: __sdk::__query_builder::Col<Party, Option<String>>,
@@ -84,6 +86,7 @@ impl __sdk::__query_builder::HasCols for Party {
                 table_name,
                 "walking_minutes_per_day",
             ),
+            travel_at_night: __sdk::__query_builder::Col::new(table_name, "travel_at_night"),
             camp_duration_mode: __sdk::__query_builder::Col::new(table_name, "camp_duration_mode"),
             fixed_camp_minutes: __sdk::__query_builder::Col::new(table_name, "fixed_camp_minutes"),
             camp_destination_id: __sdk::__query_builder::Col::new(

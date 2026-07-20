@@ -1458,6 +1458,10 @@ pub struct Party {
     /// Leader-selected daily walking budget. The itinerary centers it on noon.
     #[default(480u16)]
     pub walking_minutes_per_day: u16,
+    /// False travels in the daylight window centered on noon; true travels in
+    /// the night window centered on midnight.
+    #[default(false)]
+    pub travel_at_night: bool,
     /// Automatic camps clear every living member's carried fatigue. A fixed
     /// duration preserves the leader's deliberate shorter or longer override.
     #[default(CampDurationMode::Auto)]
@@ -1537,6 +1541,8 @@ pub struct PartyJourney {
     pub completed_elapsed_minutes: u64,
     #[default(480u16)]
     pub walking_minutes_per_day: u16,
+    #[default(false)]
+    pub travel_at_night: bool,
     #[default(CampDurationMode::Auto)]
     pub camp_duration_mode: CampDurationMode,
     #[default(0u16)]
@@ -2228,6 +2234,7 @@ pub(crate) fn create_solo_party_for_character(
             is_solo: true,
             camp_fatigue_percent: 50,
             walking_minutes_per_day: DEFAULT_WALKING_MINUTES_PER_DAY,
+            travel_at_night: false,
             camp_duration_mode: CampDurationMode::Auto,
             fixed_camp_minutes: 0,
             camp_destination_id: None,
@@ -4944,6 +4951,7 @@ fn party_next_walking_minutes(
         now,
         remaining_movement,
         party.walking_minutes_per_day,
+        party.travel_at_night,
         party_camp_policy(&party),
         &party_itinerary_members(ctx, party_id)?,
     )
@@ -5116,6 +5124,7 @@ fn start_party_journey(
         departure_minute,
         planned_movement,
         party.walking_minutes_per_day,
+        party.travel_at_night,
         party_camp_policy(party),
         &party_itinerary_members(ctx, &party.id)?,
     )
@@ -5141,6 +5150,7 @@ fn start_party_journey(
         total_elapsed_minutes: itinerary.total_elapsed_minutes,
         completed_elapsed_minutes: 0,
         walking_minutes_per_day: party.walking_minutes_per_day,
+        travel_at_night: party.travel_at_night,
         camp_duration_mode: party.camp_duration_mode,
         fixed_camp_minutes: party.fixed_camp_minutes,
     });
@@ -5230,6 +5240,7 @@ pub(crate) fn refresh_party_journey_forecast(
         start,
         remaining,
         party.walking_minutes_per_day,
+        party.travel_at_night,
         party_camp_policy(&party),
         &party_itinerary_members(ctx, party_id)?,
     )
@@ -5238,6 +5249,7 @@ pub(crate) fn refresh_party_journey_forecast(
         return Err("Journey requires too many itinerary checkpoints".into());
     }
     journey.walking_minutes_per_day = party.walking_minutes_per_day;
+    journey.travel_at_night = party.travel_at_night;
     journey.camp_duration_mode = party.camp_duration_mode;
     journey.fixed_camp_minutes = party.fixed_camp_minutes;
     journey.total_elapsed_minutes = journey
@@ -5889,6 +5901,7 @@ pub fn set_party_travel_itinerary(
     ctx: &ReducerContext,
     character_id: u64,
     walking_minutes_per_day: u16,
+    travel_at_night: bool,
     automatic_camp_duration: bool,
     fixed_camp_minutes: u16,
 ) -> Result<(), String> {
@@ -5916,6 +5929,7 @@ pub fn set_party_travel_itinerary(
         return Err("Only the party leader can configure travel".into());
     }
     party.walking_minutes_per_day = walking_minutes_per_day;
+    party.travel_at_night = travel_at_night;
     // The daily cycle has one degree of freedom: all time outside the
     // walking window is camp/downtime.
     party.camp_duration_mode = CampDurationMode::Fixed;

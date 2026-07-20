@@ -790,6 +790,8 @@ mod map_quest_tests {
 #[derive(Deserialize)]
 struct TravelConfigurationForm {
     walking_hours: f32,
+    #[serde(default)]
+    travel_at_night: bool,
 }
 
 async fn update_travel_configuration(
@@ -809,6 +811,7 @@ async fn update_travel_configuration(
             &[
                 json!(character_id),
                 json!(walking_minutes),
+                json!(form.travel_at_night),
                 json!(false),
                 json!((24 * 60_u16).saturating_sub(walking_minutes)),
             ],
@@ -1032,35 +1035,23 @@ async fn camp_settlement_destinations(
     destinations
 }
 
-#[derive(Deserialize)]
-struct CampRestForm {
-    duration: u64,
-    unit: String,
-}
-
-fn rest_duration_minutes(duration: u64, unit: &str) -> u64 {
-    match unit {
-        "days" => duration.saturating_mul(1_440),
-        _ => duration.saturating_mul(60),
-    }
-}
-
 async fn rest_at_camp(
     State(state): State<AppState>,
     session: Session,
-    Form(form): Form<CampRestForm>,
+    Form(form): Form<RestForm>,
 ) -> Response {
     let Some(character_id) = session.character_id_u64() else {
         return Redirect::to("/characters").into_response();
+    };
+    let requested_minutes = match travel_rest_minutes(&form) {
+        Ok(minutes) => minutes,
+        Err(message) => return (StatusCode::BAD_REQUEST, message).into_response(),
     };
     match state
         .db
         .call(
             "rest_at_camp",
-            &[
-                json!(character_id),
-                json!(rest_duration_minutes(form.duration, &form.unit)),
-            ],
+            &[json!(character_id), json!(requested_minutes)],
         )
         .await
     {
@@ -3118,11 +3109,11 @@ async fn inn(
 }
 
 #[derive(Deserialize)]
-struct RestForm {
-    duration: String,
-    unit: String,
+pub(crate) struct RestForm {
+    pub(crate) duration: String,
+    pub(crate) unit: String,
     #[serde(default, deserialize_with = "deserialize_optional_u64")]
-    requested_minutes: Option<u64>,
+    pub(crate) requested_minutes: Option<u64>,
 }
 
 fn deserialize_optional_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
@@ -3139,7 +3130,29 @@ where
 const MAX_SETTLEMENT_REST_MINUTES: u64 = 365 * 1_440;
 
 fn settlement_rest_minutes(form: &RestForm) -> Result<u64, &'static str> {
-    let minutes = match form.unit.as_str() {
+    let minutes = parsed_rest_minutes(form)?;
+    if minutes < 1_440 {
+        return Err("Settlement rest must last at least one day");
+    }
+    if minutes > MAX_SETTLEMENT_REST_MINUTES {
+        return Err("Settlement rest cannot exceed 365 days");
+    }
+    Ok(minutes)
+}
+
+pub(crate) fn travel_rest_minutes(form: &RestForm) -> Result<u64, &'static str> {
+    let minutes = parsed_rest_minutes(form)?;
+    if minutes == 0 {
+        return Err("Rest must last at least one minute");
+    }
+    if minutes > MAX_SETTLEMENT_REST_MINUTES {
+        return Err("Rest cannot exceed 365 days");
+    }
+    Ok(minutes)
+}
+
+fn parsed_rest_minutes(form: &RestForm) -> Result<u64, &'static str> {
+    Ok(match form.unit.as_str() {
         "hours" => {
             let (hours, minutes) = form
                 .duration
@@ -3176,14 +3189,7 @@ fn settlement_rest_minutes(form: &RestForm) -> Result<u64, &'static str> {
             days.saturating_mul(1_440)
         }
         _ => return Err("Unknown rest duration unit"),
-    };
-    if minutes < 1_440 {
-        return Err("Settlement rest must last at least one day");
-    }
-    if minutes > MAX_SETTLEMENT_REST_MINUTES {
-        return Err("Settlement rest cannot exceed 365 days");
-    }
-    Ok(minutes)
+    })
 }
 
 async fn rest(
@@ -4345,7 +4351,7 @@ pub(crate) async fn get_active_party_members(
 
 #[cfg(test)]
 mod rest_form_tests {
-    use super::{RestForm, settlement_rest_minutes};
+    use super::{RestForm, settlement_rest_minutes, travel_rest_minutes};
 
     fn form(duration: &str, unit: &str, requested_minutes: Option<u64>) -> RestForm {
         RestForm {
@@ -4362,6 +4368,15 @@ mod rest_form_tests {
             Ok(1_441)
         );
         assert!(settlement_rest_minutes(&form("23:59", "hours", Some(1_439))).is_err());
+    }
+
+    #[test]
+    fn field_rest_accepts_sub_day_wake_times() {
+        assert_eq!(
+            travel_rest_minutes(&form("01:30", "hours", Some(90))),
+            Ok(90)
+        );
+        assert!(travel_rest_minutes(&form("00:00", "hours", Some(0))).is_err());
     }
 
     #[test]

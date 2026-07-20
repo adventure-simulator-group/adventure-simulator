@@ -26,6 +26,7 @@ pub struct PartyJourney {
     pub total_elapsed_minutes: u64,
     pub completed_elapsed_minutes: u64,
     pub walking_minutes_per_day: u16,
+    pub travel_at_night: bool,
     pub camp_duration_mode: CampDurationMode,
     pub fixed_camp_minutes: u16,
 }
@@ -55,6 +56,7 @@ pub struct PartyJourneyCols {
     pub total_elapsed_minutes: __sdk::__query_builder::Col<PartyJourney, u64>,
     pub completed_elapsed_minutes: __sdk::__query_builder::Col<PartyJourney, u64>,
     pub walking_minutes_per_day: __sdk::__query_builder::Col<PartyJourney, u16>,
+    pub travel_at_night: __sdk::__query_builder::Col<PartyJourney, bool>,
     pub camp_duration_mode: __sdk::__query_builder::Col<PartyJourney, CampDurationMode>,
     pub fixed_camp_minutes: __sdk::__query_builder::Col<PartyJourney, u16>,
 }
@@ -92,6 +94,7 @@ impl __sdk::__query_builder::HasCols for PartyJourney {
                 table_name,
                 "walking_minutes_per_day",
             ),
+            travel_at_night: __sdk::__query_builder::Col::new(table_name, "travel_at_night"),
             camp_duration_mode: __sdk::__query_builder::Col::new(table_name, "camp_duration_mode"),
             fixed_camp_minutes: __sdk::__query_builder::Col::new(table_name, "fixed_camp_minutes"),
         }

@@ -6,8 +6,15 @@
   }
 
   function minutesUntilWake(currentMinutes, targetMinute) {
+    return minutesUntilWakeWithMinimum(currentMinutes, targetMinute, DAY_MINUTES);
+  }
+
+  function minutesUntilWakeWithMinimum(currentMinutes, targetMinute, minimumMinutes) {
     const currentTod = normalizeMinute(currentMinutes);
-    return DAY_MINUTES + ((normalizeMinute(targetMinute) - currentTod + DAY_MINUTES) % DAY_MINUTES);
+    let duration = (normalizeMinute(targetMinute) - currentTod + DAY_MINUTES) % DAY_MINUTES;
+    const minimum = Math.max(1, Math.round(Number(minimumMinutes) || 1));
+    if (duration < minimum) duration += Math.ceil((minimum - duration) / DAY_MINUTES) * DAY_MINUTES;
+    return duration;
   }
 
   function targetForDuration(currentMinutes, durationMinutes) {
@@ -37,6 +44,7 @@
     formatClock,
     formatDuration,
     minutesUntilWake,
+    minutesUntilWakeWithMinimum,
     normalizeMinute,
     parseDuration,
     targetForDuration,
@@ -58,6 +66,8 @@
     const panel = control.querySelector("[data-wake-time-panel]");
     const submit = form.querySelector("[data-rest-submit]");
     const radios = [...control.querySelectorAll("input[type=radio][name=unit]")];
+    const minimumMinutes = Math.max(1, Math.round(Number(control.dataset.restMinimumMinutes) || DAY_MINUTES));
+    const defaultMinutes = Math.max(0, Math.round(Number(control.dataset.restDefaultMinutes) || 0));
     let characterMinutes = Number.isFinite(Number(window.strategicCharacterMinutes))
       ? Number(window.strategicCharacterMinutes)
       : null;
@@ -74,7 +84,7 @@
       slider.setAttribute("aria-valuetext", clock);
     };
     const setHoursMinutes = (minutes) => {
-      const hoursMinutes = Math.max(DAY_MINUTES, Math.round(minutes));
+      const hoursMinutes = Math.max(minimumMinutes, Math.round(minutes));
       duration.value = formatDuration(hoursMinutes);
       exact.value = String(hoursMinutes);
       submit.disabled = false;
@@ -98,7 +108,7 @@
           exact.value = "";
           submit.disabled = true;
         } else {
-          setHoursMinutes(minutesUntilWake(characterMinutes, slider.value));
+          setHoursMinutes(minutesUntilWakeWithMinimum(characterMinutes, slider.value, minimumMinutes));
         }
       } else {
         duration.value = String(daysValue);
@@ -107,14 +117,16 @@
       }
     };
 
-    setTarget(480);
+    setTarget(characterMinutes !== null && defaultMinutes > 0
+      ? targetForDuration(characterMinutes, defaultMinutes)
+      : 480);
     slider.addEventListener("input", () => {
       dirty.add(control);
       const clock = formatClock(slider.value);
       output.value = clock;
       output.textContent = clock;
       slider.setAttribute("aria-valuetext", clock);
-      if (characterMinutes !== null) setHoursMinutes(minutesUntilWake(characterMinutes, slider.value));
+      if (characterMinutes !== null) setHoursMinutes(minutesUntilWakeWithMinimum(characterMinutes, slider.value, minimumMinutes));
     });
     slider.addEventListener("pointerdown", () => { slider.step = "60"; });
     slider.addEventListener("keydown", (event) => {
@@ -141,7 +153,7 @@
       }
       const durationMinutes = parseDuration(duration.value);
       if (characterMinutes === null || durationMinutes === null
-        || durationMinutes < DAY_MINUTES || durationMinutes > 365 * DAY_MINUTES) {
+        || durationMinutes < minimumMinutes || durationMinutes > 365 * DAY_MINUTES) {
         exact.value = "";
         submit.disabled = true;
         return;
@@ -153,7 +165,7 @@
     duration.addEventListener("change", () => {
       if (selectedUnit() === "hours") {
         const durationMinutes = parseDuration(duration.value);
-        duration.value = formatDuration(durationMinutes === null ? DAY_MINUTES : Math.max(DAY_MINUTES, durationMinutes));
+        duration.value = formatDuration(durationMinutes === null ? minimumMinutes : Math.max(minimumMinutes, durationMinutes));
       }
       if (selectedUnit() === "days" && Number(duration.value) < 1) duration.value = "1";
       duration.dispatchEvent(new Event("input", { bubbles: true }));
@@ -165,8 +177,8 @@
     control.querySelectorAll("[data-rest-step]").forEach((button) => button.addEventListener("click", () => {
       dirty.add(control);
       if (selectedUnit() === "hours") {
-        const current = parseDuration(duration.value) ?? DAY_MINUTES;
-        const next = Math.min(365 * DAY_MINUTES, Math.max(DAY_MINUTES, current + Number(button.dataset.restStep) * 60));
+        const current = parseDuration(duration.value) ?? minimumMinutes;
+        const next = Math.min(365 * DAY_MINUTES, Math.max(minimumMinutes, current + Number(button.dataset.restStep) * 60));
         duration.value = formatDuration(next);
       } else {
         duration.value = String(Number(duration.value || duration.min) + Number(button.dataset.restStep));
@@ -176,7 +188,14 @@
     states.set(control, {
       syncTime(minutes) {
         characterMinutes = Number(minutes);
-        if (selectedUnit() === "hours") setHoursMinutes(minutesUntilWake(characterMinutes, slider.value));
+        if (selectedUnit() === "hours") {
+          if (!dirty.has(control) && defaultMinutes > 0) {
+            setTarget(targetForDuration(characterMinutes, defaultMinutes));
+            setHoursMinutes(defaultMinutes);
+          } else {
+            setHoursMinutes(minutesUntilWakeWithMinimum(characterMinutes, slider.value, minimumMinutes));
+          }
+        }
       },
     });
     applyUnit();

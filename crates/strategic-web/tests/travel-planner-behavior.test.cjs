@@ -71,12 +71,18 @@ test("planner source covers midnight chronology, hidden fatigue detail, config b
   assert.match(source, /peak >= 1/);
   assert.doesNotMatch(template, /class="travel-resource-summary"/);
   assert.match(template, /name="walking_hours" min="1" max="16"/);
+  assert.match(template, /Travel during/);
+  assert.match(template, /name="travel_at_night" value="true"/);
+  assert.match(template, /data-travel-period-toggle/);
   assert.doesNotMatch(template, /name="fixed_camp_hours"/);
   assert.match(template, /hours camp\/downtime per full day/);
   assert.match(source, /TRACK_END - TRACK_START\) \* node\.duration \/ elapsedTotal/);
   assert.match(source, /M 11 0 C 3 0[\s\S]+3 100 11 100/);
   const css = fs.readFileSync(path.join(root, "static", "css", "strategic.css"), "utf8");
   assert.match(css, /\.travel-camp-tent \{[^}]*top: 50%[^}]*translateY\(-50%\)/);
+  assert.match(css, /\.travel-period-thumb \{[^}]*sun\.svg/);
+  assert.match(css, /\.travel-period-toggle input:checked \+ \.travel-period-track \.travel-period-thumb \{[^}]*translateX/);
+  assert.match(css, /box-shadow: inset/);
   assert.doesNotMatch(css, /\.travel-fatigue-segment\.camp\s*\{[^}]*opacity/);
   assert.match(template, /data-selected-round-trip/);
   assert.match(source, /planner\.dataset\.selectedRoundTrip === "true"/);

@@ -116,16 +116,48 @@ pub fn daylight_walking_window(walking_minutes: u16) -> Option<(u16, u16)> {
     Some((start, start + walking_minutes))
 }
 
-fn next_walking_start(absolute_minute: u64, walking_minutes: u16) -> Option<u64> {
-    let (start, end) = daylight_walking_window(walking_minutes)?;
+fn walking_window_at_or_after(
+    absolute_minute: u64,
+    walking_minutes: u16,
+    travel_at_night: bool,
+) -> Option<(u64, u64)> {
+    let (day_start, day_end) = daylight_walking_window(walking_minutes)?;
     let day = absolute_minute / MINUTES_PER_DAY;
-    let minute = (absolute_minute % MINUTES_PER_DAY) as u16;
-    if minute < start {
-        Some(day * MINUTES_PER_DAY + u64::from(start))
-    } else if minute < end {
-        Some(absolute_minute)
+    if !travel_at_night {
+        let start = day * MINUTES_PER_DAY + u64::from(day_start);
+        let end = day * MINUTES_PER_DAY + u64::from(day_end);
+        return if absolute_minute < start {
+            Some((start, end))
+        } else if absolute_minute < end {
+            Some((absolute_minute, end))
+        } else {
+            Some((start + MINUTES_PER_DAY, end + MINUTES_PER_DAY))
+        };
+    }
+
+    // Night travel uses one contiguous window centered on midnight. Looking
+    // at the windows around the current and following midnight avoids
+    // splitting a single march into two artificial calendar-day segments.
+    let before_midnight = u64::from(walking_minutes / 2);
+    let after_midnight = u64::from(walking_minutes) - before_midnight;
+    let current_midnight = day * MINUTES_PER_DAY;
+    let current_start = current_midnight.saturating_sub(before_midnight);
+    let current_end = current_midnight.saturating_add(after_midnight);
+    if absolute_minute >= current_start && absolute_minute < current_end {
+        return Some((absolute_minute, current_end));
+    }
+    let next_midnight = current_midnight.saturating_add(MINUTES_PER_DAY);
+    let next_start = next_midnight.saturating_sub(before_midnight);
+    let next_end = next_midnight.saturating_add(after_midnight);
+    if absolute_minute < next_start {
+        Some((next_start, next_end))
+    } else if absolute_minute < next_end {
+        Some((absolute_minute, next_end))
     } else {
-        Some((day + 1) * MINUTES_PER_DAY + u64::from(start))
+        Some((
+            next_start.saturating_add(MINUTES_PER_DAY),
+            next_end.saturating_add(MINUTES_PER_DAY),
+        ))
     }
 }
 
@@ -133,6 +165,7 @@ pub fn forecast_itinerary(
     start_minute: u64,
     movement_minutes: u64,
     walking_minutes_per_day: u16,
+    travel_at_night: bool,
     _camp_policy: CampDurationPolicy,
     members: &[ItineraryMember],
 ) -> Option<ItineraryForecast> {
@@ -150,7 +183,8 @@ pub fn forecast_itinerary(
             truncated = true;
             break;
         }
-        let walk_start = next_walking_start(absolute, walking_minutes_per_day)?;
+        let (walk_start, walk_end) =
+            walking_window_at_or_after(absolute, walking_minutes_per_day, travel_at_night)?;
         if walk_start > absolute {
             // Every minute outside the daily walking window is camp/downtime.
             // A complete post-walk interval is therefore exactly
@@ -178,11 +212,7 @@ pub fn forecast_itinerary(
             absolute = absolute.saturating_add(duration);
             continue;
         }
-        let (_, window_end) = daylight_walking_window(walking_minutes_per_day)?;
-        let day_start = absolute / MINUTES_PER_DAY * MINUTES_PER_DAY;
-        let available = day_start
-            .saturating_add(u64::from(window_end))
-            .saturating_sub(absolute);
+        let available = walk_end.saturating_sub(absolute);
         let duration = available.min(movement_minutes.saturating_sub(movement));
         if duration == 0 {
             absolute = absolute.saturating_add(1);
@@ -417,6 +447,7 @@ mod tests {
             8 * 60,
             12 * 60,
             8 * 60,
+            false,
             CampDurationPolicy::Auto,
             &[itinerary_member(0.0, 6_000.0)],
         )
@@ -443,6 +474,7 @@ mod tests {
             14 * 60,
             3 * 60,
             8 * 60,
+            false,
             CampDurationPolicy::Auto,
             &[itinerary_member(0.0, 6_000.0)],
         )
@@ -454,6 +486,32 @@ mod tests {
             .map(|segment| segment.elapsed_minutes)
             .collect();
         assert_eq!(walking, [2 * 60, 60]);
+    }
+
+    #[test]
+    fn night_travel_is_one_window_centered_on_midnight() {
+        let forecast = forecast_itinerary(
+            20 * 60,
+            10 * 60,
+            8 * 60,
+            true,
+            CampDurationPolicy::Auto,
+            &[itinerary_member(0.0, 6_000.0)],
+        )
+        .unwrap();
+        assert_eq!(forecast.total_elapsed_minutes, 26 * 60);
+        assert_eq!(
+            forecast
+                .segments
+                .iter()
+                .map(|segment| (segment.kind, segment.elapsed_minutes))
+                .collect::<Vec<_>>(),
+            [
+                (ItinerarySegmentKind::Walking, 8 * 60),
+                (ItinerarySegmentKind::Camp, 16 * 60),
+                (ItinerarySegmentKind::Walking, 2 * 60),
+            ]
+        );
     }
 
     #[test]
@@ -485,6 +543,7 @@ mod tests {
             8 * 60,
             outbound * 2,
             8 * 60,
+            false,
             CampDurationPolicy::Auto,
             &[itinerary_member(0.0, 6_000.0)],
         )
@@ -499,6 +558,7 @@ mod tests {
             8 * 60,
             10 * 60,
             8 * 60,
+            false,
             CampDurationPolicy::FixedMinutes(20 * 60),
             &[itinerary_member(0.0, 6_000.0)],
         )
@@ -530,6 +590,7 @@ mod tests {
             0,
             u64::MAX,
             MIN_WALKING_MINUTES_PER_DAY,
+            false,
             CampDurationPolicy::Auto,
             &[itinerary_member(0.0, 6_000.0)],
         )

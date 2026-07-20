@@ -221,6 +221,7 @@ pub struct Party {
     pub is_solo: bool,
     pub camp_fatigue_percent: u8,
     pub walking_minutes_per_day: u16,
+    pub travel_at_night: bool,
     pub camp_duration_mode: CampDurationMode,
     pub fixed_camp_minutes: u16,
     pub camp_destination_id: Option<String>,
@@ -258,6 +259,7 @@ pub struct PartyJourney {
     pub total_elapsed_minutes: u64,
     pub completed_elapsed_minutes: u64,
     pub walking_minutes_per_day: u16,
+    pub travel_at_night: bool,
     pub camp_duration_mode: CampDurationMode,
     pub fixed_camp_minutes: u16,
 }
