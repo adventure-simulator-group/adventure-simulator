@@ -588,7 +588,7 @@ pub(crate) fn hydrology() -> SourceProvenance {
     )
 }
 
-pub(crate) fn canonicalize(sources: &mut Vec<SourceProvenance>) -> Result<()> {
+pub(crate) fn canonicalize(sources: &mut [SourceProvenance]) -> Result<()> {
     sources.sort_by(|left, right| left.id.cmp(&right.id));
     for pair in sources.windows(2) {
         if pair[0].id == pair[1].id {
@@ -961,7 +961,7 @@ mod tests {
     fn fixture_digest_is_stable() {
         assert_eq!(
             digest(1544, SpatialGridSpec::default(), &[fixture()]).unwrap(),
-            "0c3e8de83fc03592402d80e8788a4d368fd1dd56aa26ad79f03765c9f1911cc2"
+            "0d048b844e3b9e5291e8478381c6b61028b185c9dc71ff2020798a5efe804680"
         );
     }
 

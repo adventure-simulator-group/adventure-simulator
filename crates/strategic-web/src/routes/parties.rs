@@ -11,6 +11,7 @@ use serde_json::json;
 
 use super::{AppState, PartyAction, approve_party_action, execute_or_request_party_action};
 use crate::session::Session;
+use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterSkills, Party,
     PartyActionRequest, PartyJoinRequest, PartyLeaderVote, PartyMember, PartyRecruitmentRole,
@@ -175,26 +176,6 @@ async fn create_recruitment_role(
         tracing::warn!("Failed to create recruitment role: {error:?}");
         return Redirect::to("/");
     }
-    if state.db.is_local() && matches!(outcome, Ok(super::PartyActionOutcome::Executed)) {
-        if let Some(character) = get_character(&state, actor_id).await {
-            if let Some(party_id) = character.party_id {
-                let roles: Vec<PartyRecruitmentRole> = state
-                    .db
-                    .query(&format!(
-                        "SELECT * FROM party_recruitment_role WHERE party_id = '{}'",
-                        party_id
-                    ))
-                    .await
-                    .unwrap_or_default();
-                if let Some(role) = roles.into_iter().max_by_key(|role| role.id) {
-                    let _ = state
-                        .db
-                        .call("seed_bot_join_requests", &[json!(role.id)])
-                        .await;
-                }
-            }
-        }
-    }
     Redirect::to("/")
 }
 
@@ -328,8 +309,8 @@ async fn join_party(
         let party = state
             .db
             .query::<Party>(&format!(
-                "SELECT * FROM party WHERE id = '{}'",
-                role.party_id
+                "SELECT * FROM party WHERE id = {}",
+                sql_string_literal(&role.party_id)
             ))
             .await
             .unwrap_or_default()
@@ -395,7 +376,10 @@ async fn recruitment_panel_fragment(
     };
     let Some(party) = state
         .db
-        .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+        .query::<Party>(&format!(
+            "SELECT * FROM party WHERE id = {}",
+            sql_string_literal(&party_id)
+        ))
         .await
         .unwrap_or_default()
         .into_iter()
@@ -406,24 +390,24 @@ async fn recruitment_panel_fragment(
     let roles: Vec<PartyRecruitmentRole> = state
         .db
         .query(&format!(
-            "SELECT * FROM party_recruitment_role WHERE party_id = '{}'",
-            party_id
+            "SELECT * FROM party_recruitment_role WHERE party_id = {}",
+            sql_string_literal(&party_id)
         ))
         .await
         .unwrap_or_default();
     let memberships: Vec<PartyMember> = state
         .db
         .query(&format!(
-            "SELECT * FROM party_member WHERE party_id = '{}'",
-            party_id
+            "SELECT * FROM party_member WHERE party_id = {}",
+            sql_string_literal(&party_id)
         ))
         .await
         .unwrap_or_default();
     let requests: Vec<PartyJoinRequest> = state
         .db
         .query(&format!(
-            "SELECT * FROM party_join_request WHERE party_id = '{}'",
-            party_id
+            "SELECT * FROM party_join_request WHERE party_id = {}",
+            sql_string_literal(&party_id)
         ))
         .await
         .unwrap_or_default();
@@ -628,7 +612,10 @@ async fn reject_join_request(
 async fn party_location_url(state: &AppState, party_id: &str) -> String {
     let parties: Vec<Party> = state
         .db
-        .query(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+        .query(&format!(
+            "SELECT * FROM party WHERE id = {}",
+            sql_string_literal(&party_id)
+        ))
         .await
         .unwrap_or_default();
     let Some(party) = parties.first() else {
@@ -698,7 +685,10 @@ async fn party_notifications(
     };
     let parties: Vec<Party> = state
         .db
-        .query(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+        .query(&format!(
+            "SELECT * FROM party WHERE id = {}",
+            sql_string_literal(&party_id)
+        ))
         .await
         .unwrap_or_default();
     let is_leader = parties
@@ -707,8 +697,8 @@ async fn party_notifications(
     let requests: Vec<PartyJoinRequest> = state
         .db
         .query(&format!(
-            "SELECT * FROM party_join_request WHERE party_id = '{}'",
-            party_id
+            "SELECT * FROM party_join_request WHERE party_id = {}",
+            sql_string_literal(&party_id)
         ))
         .await
         .unwrap_or_default();
@@ -720,8 +710,8 @@ async fn party_notifications(
         state
             .db
             .query::<PartyActionRequest>(&format!(
-                "SELECT * FROM party_action_request WHERE party_id = '{}'",
-                party_id
+                "SELECT * FROM party_action_request WHERE party_id = {}",
+                sql_string_literal(&party_id)
             ))
             .await
             .unwrap_or_default()
@@ -737,8 +727,8 @@ async fn party_notifications(
     let leader_votes = state
         .db
         .query::<PartyLeaderVote>(&format!(
-            "SELECT * FROM party_leader_vote WHERE party_id = '{}'",
-            party_id
+            "SELECT * FROM party_leader_vote WHERE party_id = {}",
+            sql_string_literal(&party_id)
         ))
         .await
         .unwrap_or_default();
@@ -785,17 +775,24 @@ async fn approve_action_request(
     let Some(leader_id) = session.character_id_u64() else {
         return Redirect::to("/characters");
     };
-    if let Some(request) = state
+    let requests = match state
         .db
         .query::<PartyActionRequest>(&format!(
             "SELECT * FROM party_action_request WHERE id = {id}"
         ))
         .await
-        .unwrap_or_default()
-        .into_iter()
-        .next()
     {
-        let _ = approve_party_action(&state, leader_id, &request).await;
+        Ok(requests) => requests,
+        Err(error) => {
+            tracing::error!(%error, request_id = id, "failed to load party action request");
+            return Redirect::to("/?party-action-error=unavailable");
+        }
+    };
+    if let Some(request) = requests.into_iter().next() {
+        if let Err(error) = approve_party_action(&state, leader_id, &request).await {
+            tracing::warn!(%error, request_id = id, "party action approval failed");
+            return Redirect::to("/?party-action-error=approval");
+        }
     }
     Redirect::to("/")
 }

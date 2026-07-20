@@ -21,8 +21,7 @@ use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table
 
 use crate::{
     character::{
-        character, character_attributes, character_equip, character_limbs, character_skills,
-        character_stats,
+        character, character_attributes, character_equip, character_limbs, character_stats,
     },
     condition::character_condition,
     item::{InventoryItem, inventory_item, item},
@@ -39,6 +38,7 @@ const MINUTES_PER_HOUR: u64 = 60;
 const MIN_QUESTS_PER_SETTLEMENT: usize = 3;
 const MAX_QUESTS_PER_SETTLEMENT: usize = 5;
 const SURGERY_CHECK_PER_HEALTH_DAMAGE: f32 = 20.0;
+const COMPILED_DEV_BOOTSTRAP_TOKEN: Option<&str> = option_env!("ADVENTURESIM_DEV_BOOTSTRAP_TOKEN");
 
 /// Untreated autoresolve wounds can deteriorate by as much as their original
 /// damage. Every five percentage points of damage require one point of the
@@ -924,6 +924,9 @@ pub fn import_settlements(
                 settlement.id
             ));
         }
+        if !adventuresim_world_schema::valid_settlement_name(&settlement.name) {
+            return Err(format!("Settlement {} has an invalid name", settlement.id));
+        }
         if ctx
             .db
             .world_node()
@@ -1741,7 +1744,7 @@ pub struct BattleParticipant {
     pub character_id: u64,
 }
 
-#[derive(SpacetimeType, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(SpacetimeType, serde::Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct RecruitmentRequirements {
     pub melee: bool,
     pub ranged: bool,
@@ -1847,6 +1850,179 @@ pub struct PartyActionRequest {
     pub action_kind: String,
     pub summary: String,
     pub payload: String,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = resolved_party_action)]
+struct ResolvedPartyAction {
+    #[primary_key]
+    id: u64,
+    party_id: String,
+    approved_by: u64,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+enum ApprovedPartyAction {
+    TravelToSettlement {
+        settlement_id: String,
+    },
+    TravelToQuest {
+        quest_id: String,
+    },
+    RemovePartyMember {
+        character_id: u64,
+    },
+    CreateRecruitmentRole {
+        name: String,
+        quantity: u32,
+        requirements: RecruitmentRequirements,
+        weapon_precision: f32,
+        save_role: bool,
+    },
+    UpdateRecruitmentRole {
+        role_id: u64,
+        name: String,
+        quantity: u32,
+        requirements: RecruitmentRequirements,
+        weapon_precision: f32,
+    },
+    DeleteRecruitmentRole {
+        role_id: u64,
+    },
+    AcceptJoinRequest {
+        request_id: u64,
+    },
+    RejectJoinRequest {
+        request_id: u64,
+    },
+    AcceptQuest {
+        quest_id: String,
+    },
+    AbandonQuest {
+        quest_id: String,
+    },
+    TurnInQuest {
+        quest_id: String,
+    },
+    AutoresolveQuest {
+        quest_id: String,
+    },
+    UpdatePartyCheckTargets {
+        medicine: f32,
+        surgery: f32,
+        charisma: f32,
+        religion: f32,
+    },
+    SetInventoryQuantityTarget {
+        item_id: String,
+        quantity: u32,
+    },
+    DisbandParty {
+        party_id: String,
+    },
+    RequestTacticalServer {
+        mission_id: String,
+        scene_key: String,
+    },
+    CancelMission {
+        mission_id: String,
+    },
+}
+
+impl ApprovedPartyAction {
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::TravelToSettlement { .. } | Self::TravelToQuest { .. } => "travel",
+            Self::RemovePartyMember { .. } => "kick",
+            Self::CreateRecruitmentRole { .. } => "add_role",
+            Self::UpdateRecruitmentRole { .. } => "edit_role",
+            Self::DeleteRecruitmentRole { .. } => "delete_role",
+            Self::AcceptJoinRequest { .. } => "accept_join",
+            Self::RejectJoinRequest { .. } => "reject_join",
+            Self::AcceptQuest { .. } => "accept_quest",
+            Self::AbandonQuest { .. } => "abandon_quest",
+            Self::TurnInQuest { .. } => "turn_in_quest",
+            Self::AutoresolveQuest { .. } => "autoresolve",
+            Self::UpdatePartyCheckTargets { .. } => "party_checks",
+            Self::SetInventoryQuantityTarget { .. } => "party_inventory",
+            Self::DisbandParty { .. } => "disband_party",
+            Self::RequestTacticalServer { .. } => "initiate_combat",
+            Self::CancelMission { .. } => "cancel_mission",
+        }
+    }
+
+    fn execute(self, ctx: &ReducerContext, leader_id: u64) -> Result<(), String> {
+        match self {
+            Self::TravelToSettlement { settlement_id } => {
+                travel_to_settlement(ctx, leader_id, settlement_id)
+            }
+            Self::TravelToQuest { quest_id } => travel_to_quest(ctx, leader_id, quest_id),
+            Self::RemovePartyMember { character_id } => {
+                remove_party_member(ctx, leader_id, character_id)
+            }
+            Self::CreateRecruitmentRole {
+                name,
+                quantity,
+                requirements,
+                weapon_precision,
+                save_role,
+            } => create_recruitment_role(
+                ctx,
+                leader_id,
+                name,
+                quantity,
+                requirements,
+                weapon_precision,
+                save_role,
+            ),
+            Self::UpdateRecruitmentRole {
+                role_id,
+                name,
+                quantity,
+                requirements,
+                weapon_precision,
+            } => update_recruitment_role(
+                ctx,
+                leader_id,
+                role_id,
+                name,
+                quantity,
+                requirements,
+                weapon_precision,
+            ),
+            Self::DeleteRecruitmentRole { role_id } => {
+                delete_recruitment_role(ctx, leader_id, role_id)
+            }
+            Self::AcceptJoinRequest { request_id } => {
+                accept_party_join_request(ctx, leader_id, request_id)
+            }
+            Self::RejectJoinRequest { request_id } => {
+                reject_party_join_request(ctx, leader_id, request_id)
+            }
+            Self::AcceptQuest { quest_id } => accept_quest(ctx, leader_id, quest_id),
+            Self::AbandonQuest { quest_id } => abandon_quest(ctx, leader_id, quest_id),
+            Self::TurnInQuest { quest_id } => turn_in_quest(ctx, leader_id, quest_id),
+            Self::AutoresolveQuest { quest_id } => autoresolve_quest(ctx, leader_id, quest_id),
+            Self::UpdatePartyCheckTargets {
+                medicine,
+                surgery,
+                charisma,
+                religion,
+            } => update_party_check_targets(ctx, leader_id, medicine, surgery, charisma, religion),
+            Self::SetInventoryQuantityTarget { item_id, quantity } => {
+                set_inventory_quantity_target(ctx, leader_id, true, item_id, quantity)
+            }
+            Self::DisbandParty { party_id } => disband_party(ctx, leader_id, party_id),
+            Self::RequestTacticalServer {
+                mission_id,
+                scene_key,
+            } => crate::tactical::request_tactical_server(ctx, leader_id, mission_id, scene_key),
+            Self::CancelMission { mission_id } => {
+                cancel_mission_request(ctx, leader_id, mission_id)
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -1957,37 +2133,6 @@ pub fn send_local_chat_message(
 }
 
 #[reducer]
-pub fn record_local_npc_message(
-    ctx: &ReducerContext,
-    actor_id: u64,
-    subject_id: String,
-    npc_name: String,
-    body: String,
-) -> Result<(), String> {
-    crate::character::require_living_character(ctx, actor_id)?;
-    let actor = ctx
-        .db
-        .character()
-        .id()
-        .find(actor_id)
-        .ok_or("Character not found")?;
-    let body = body.trim();
-    if body.is_empty() || body.chars().count() > 1000 {
-        return Err("NPC messages must contain 1 to 1000 characters".into());
-    }
-    let conversation_key = npc_conversation_key(&actor, &subject_id)?;
-    ctx.db.local_chat_message().insert(LocalChatMessage {
-        id: 0,
-        conversation_key,
-        sender_id: 0,
-        sender_name: npc_name.trim().to_string(),
-        body: body.to_string(),
-        created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
-    });
-    Ok(())
-}
-
-#[reducer]
 pub fn request_party_action(
     ctx: &ReducerContext,
     requester_id: u64,
@@ -2016,6 +2161,8 @@ pub fn request_party_action(
         "travel",
         "kick",
         "add_role",
+        "edit_role",
+        "delete_role",
         "accept_join",
         "reject_join",
         "accept_quest",
@@ -2079,6 +2226,52 @@ pub fn dismiss_party_action_request(
     if party.leader_id != leader_id {
         return Err("Only the party leader can resolve requests".into());
     }
+    ctx.db.party_action_request().id().delete(request_id);
+    Ok(())
+}
+
+/// Atomically execute and resolve a member's approved action. SpacetimeDB
+/// reducers are transactional, so a failed action leaves the request intact;
+/// a committed request id is recorded to make retries idempotent.
+#[reducer]
+pub fn approve_party_action_request(
+    ctx: &ReducerContext,
+    leader_id: u64,
+    request_id: u64,
+) -> Result<(), String> {
+    crate::character::require_living_character(ctx, leader_id)?;
+    if let Some(resolved) = ctx.db.resolved_party_action().id().find(request_id) {
+        if resolved.approved_by != leader_id {
+            return Err("Only the party leader can approve requests".into());
+        }
+        return Ok(());
+    }
+    let request = ctx
+        .db
+        .party_action_request()
+        .id()
+        .find(request_id)
+        .ok_or("Request not found")?;
+    let party = ctx
+        .db
+        .party()
+        .id()
+        .find(&request.party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != leader_id {
+        return Err("Only the party leader can approve requests".into());
+    }
+    let action: ApprovedPartyAction = serde_json::from_str(&request.payload)
+        .map_err(|error| format!("Invalid party action payload: {error}"))?;
+    if action.kind() != request.action_kind {
+        return Err("Party action kind does not match its typed payload".into());
+    }
+    action.execute(ctx, leader_id)?;
+    ctx.db.resolved_party_action().insert(ResolvedPartyAction {
+        id: request.id,
+        party_id: request.party_id,
+        approved_by: leader_id,
+    });
     ctx.db.party_action_request().id().delete(request_id);
     Ok(())
 }
@@ -2259,6 +2452,117 @@ pub(crate) fn create_solo_party_for_character(
     ctx.db.character().id().update(character);
     normalize_and_elect_party_leader(ctx, &party_id)?;
     Ok(party_id)
+}
+
+/// Remove the isolated party created for a temporary tactical character.
+/// Refuse to delete a party that has acquired any other member.
+pub(crate) fn delete_temporary_character_party(
+    ctx: &ReducerContext,
+    character_id: u64,
+    party_id: &str,
+) -> Result<(), String> {
+    let party_key = party_id.to_string();
+    let members: Vec<_> = ctx.db.party_member().party_id().filter(party_id).collect();
+    if members
+        .iter()
+        .any(|member| member.character_id != character_id)
+    {
+        return Err("Temporary character party contains another member".into());
+    }
+    for member in members {
+        ctx.db.party_member().id().delete(member.id);
+    }
+    for row in ctx
+        .db
+        .party_leader_vote()
+        .party_id()
+        .filter(party_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.party_leader_vote().id().delete(&row.id);
+    }
+    for row in ctx
+        .db
+        .party_stake()
+        .party_id()
+        .filter(party_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.party_stake().id().delete(row.id);
+    }
+    for row in ctx
+        .db
+        .party_inventory_item()
+        .party_id()
+        .filter(party_id)
+        .collect::<Vec<_>>()
+    {
+        if let Some(condition) = ctx
+            .db
+            .party_item_condition()
+            .party_inventory_item_id()
+            .find(row.id)
+        {
+            ctx.db
+                .party_item_condition()
+                .party_inventory_item_id()
+                .delete(condition.party_inventory_item_id);
+        }
+        ctx.db.party_inventory_item().id().delete(row.id);
+    }
+    if ctx
+        .db
+        .party_inventory_state()
+        .party_id()
+        .find(&party_key)
+        .is_some()
+    {
+        ctx.db.party_inventory_state().party_id().delete(&party_key);
+    }
+    if ctx.db.party_journey().party_id().find(&party_key).is_some() {
+        ctx.db.party_journey().party_id().delete(&party_key);
+    }
+    if ctx
+        .db
+        .party_journey_itinerary()
+        .party_id()
+        .find(&party_key)
+        .is_some()
+    {
+        ctx.db
+            .party_journey_itinerary()
+            .party_id()
+            .delete(&party_key);
+    }
+    for row in ctx
+        .db
+        .party_action_request()
+        .party_id()
+        .filter(party_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.party_action_request().id().delete(row.id);
+    }
+    for row in ctx
+        .db
+        .party_join_request()
+        .party_id()
+        .filter(party_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.party_join_request().id().delete(row.id);
+    }
+    for row in ctx
+        .db
+        .party_recruitment_role()
+        .party_id()
+        .filter(party_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.party_recruitment_role().id().delete(row.id);
+    }
+    ctx.db.party().id().delete(&party_key);
+    Ok(())
 }
 
 /// Move a deterministic development fixture into another fixture's party
@@ -2891,7 +3195,7 @@ pub fn accept_party_join_request(
         .filter(&source_party_id)
         .collect::<Vec<_>>()
     {
-        credit_party_stake(ctx, &request.party_id, stake.character_id, stake.value);
+        credit_party_stake(ctx, &request.party_id, stake.character_id, stake.value)?;
         ctx.db.party_stake().id().delete(stake.id);
     }
     if let Some(state) = ctx
@@ -2900,7 +3204,7 @@ pub fn accept_party_join_request(
         .party_id()
         .find(&source_party_id)
     {
-        credit_party_reserve(ctx, &request.party_id, state.reserve_value);
+        credit_party_reserve(ctx, &request.party_id, state.reserve_value)?;
         ctx.db
             .party_inventory_state()
             .party_id()
@@ -3040,109 +3344,6 @@ pub fn reject_party_join_request(
     Ok(())
 }
 
-#[reducer]
-pub fn seed_bot_join_requests(
-    ctx: &ReducerContext,
-    recruitment_role_id: u64,
-) -> Result<(), String> {
-    use petname::Generator;
-
-    let role = ctx
-        .db
-        .party_recruitment_role()
-        .id()
-        .find(recruitment_role_id)
-        .ok_or("Recruitment role not found")?;
-    let party = ctx
-        .db
-        .party()
-        .id()
-        .find(&role.party_id)
-        .ok_or("Party not found")?;
-    for _ in 0..role.quantity {
-        let name = petname::Petnames::default()
-            .generate(&mut ctx.rng(), 2, " ")
-            .ok_or("Could not generate bot applicant name")?;
-        let mut id = ctx.random::<u64>() | (1_u64 << 63);
-        while ctx.db.character().id().find(id).is_some() {
-            id = ctx.random::<u64>() | (1_u64 << 63);
-        }
-        crate::character::insert_new_npc_character(ctx, name, id, true)?;
-        let mut bot = ctx.db.character().id().find(id).unwrap();
-        bot.current_settlement_id = party.current_settlement_id.clone();
-        bot.current_quest_location_id = party.current_quest_location_id.clone();
-        let bot_party_id = bot.party_id.clone().ok_or("Bot party was not created")?;
-        ctx.db.character().id().update(bot);
-        // A new character starts in a solo party at a random settlement. The
-        // applicant and that source party must share the recruiting party's
-        // location before the normal party-merge validation can accept it.
-        let mut bot_party = ctx
-            .db
-            .party()
-            .id()
-            .find(&bot_party_id)
-            .ok_or("Bot party not found")?;
-        bot_party.current_settlement_id = party.current_settlement_id.clone();
-        bot_party.current_quest_location_id = party.current_quest_location_id.clone();
-        ctx.db.party().id().update(bot_party);
-        let mut attrs = ctx
-            .db
-            .character_attributes()
-            .character_id()
-            .find(id)
-            .unwrap();
-        attrs.endurance = 10.0;
-        attrs.left_arm_strength = 10.0;
-        attrs.right_arm_strength = 10.0;
-        attrs.left_arm_agility = 10.0;
-        attrs.right_arm_agility = 10.0;
-        attrs.left_leg_agility = 10.0;
-        attrs.right_leg_agility = 10.0;
-        attrs.intelligence = 10.0;
-        attrs.instinct = 10.0;
-        let mut skills = ctx.db.character_skills().character_id().find(id).unwrap();
-        skills.medicine_hours = 1_000_000.0;
-        skills.surgeon_hours = 1_000_000.0;
-        skills.charisma_hours = 1_000_000.0;
-        skills.religion_hours = adventuresim_world_schema::ReligionHours {
-            roman_catholic: 1_000_000.0,
-            ..Default::default()
-        };
-        crate::character::add_and_equip_item(ctx, id, "halberd", crate::ItemSlot::RightHolding)?;
-        if role.requirements.full_armor {
-            for (item, slot) in [
-                ("vambrace", crate::ItemSlot::LeftArm),
-                ("vambrace", crate::ItemSlot::RightArm),
-                ("greave", crate::ItemSlot::LeftLeg),
-                ("greave", crate::ItemSlot::RightLeg),
-                ("cuirass", crate::ItemSlot::Chest),
-                ("fauld", crate::ItemSlot::Stomach),
-                ("close_helmet", crate::ItemSlot::Head),
-            ] {
-                crate::character::add_and_equip_item(ctx, id, item, slot)?;
-            }
-        }
-
-        ctx.db.character_attributes().character_id().update(attrs);
-        ctx.db.character_skills().character_id().update(skills);
-        request_to_join_party(ctx, id, recruitment_role_id)?;
-        // This reducer is only invoked by the local-development web flow.
-        // Fill the requested slots directly so a solo tester can assemble a
-        // capable party without manually approving disposable bot requests.
-        if filled_role_slots(ctx, recruitment_role_id) < role.quantity {
-            let request = ctx
-                .db
-                .party_join_request()
-                .character_id()
-                .filter(id)
-                .find(|request| request.recruitment_role_id == recruitment_role_id)
-                .ok_or("Bot join request was not created")?;
-            accept_party_join_request(ctx, party.leader_id, request.id)?;
-        }
-    }
-    Ok(())
-}
-
 /// Transfer a stack of items between two members of the same party.
 #[reducer]
 pub fn transfer_party_item(
@@ -3193,6 +3394,16 @@ pub fn transfer_party_item(
         return Ok(());
     }
 
+    let destination_item = ctx
+        .db
+        .inventory_item()
+        .character_and_item_id()
+        .filter((to_character_id, &source_item.item_id))
+        .next();
+    let merged_quantity = destination_item
+        .as_ref()
+        .and_then(|destination| destination.quantity.checked_add(quantity));
+
     if source_item.quantity == quantity {
         ctx.db.inventory_item().id().delete(inventory_item_id);
     } else {
@@ -3200,14 +3411,9 @@ pub fn transfer_party_item(
         updated.quantity -= quantity;
         ctx.db.inventory_item().id().update(updated);
     }
-    if let Some(mut destination_item) = ctx
-        .db
-        .inventory_item()
-        .character_and_item_id()
-        .filter((to_character_id, &source_item.item_id))
-        .next()
+    if let (Some(mut destination_item), Some(merged_quantity)) = (destination_item, merged_quantity)
     {
-        destination_item.quantity = destination_item.quantity.saturating_add(quantity);
+        destination_item.quantity = merged_quantity;
         ctx.db.inventory_item().id().update(destination_item);
     } else {
         ctx.db.inventory_item().insert(InventoryItem {
@@ -3279,8 +3485,17 @@ pub(crate) fn add_to_party_inventory(
         .filter(party_id)
         .find(|stack| stack.item_id == item_id)
     {
-        stack.quantity = stack.quantity.saturating_add(quantity);
-        ctx.db.party_inventory_item().id().update(stack);
+        if let Some(merged) = stack.quantity.checked_add(quantity) {
+            stack.quantity = merged;
+            ctx.db.party_inventory_item().id().update(stack);
+        } else {
+            ctx.db.party_inventory_item().insert(PartyInventoryItem {
+                id: 0,
+                party_id: party_id.to_string(),
+                item_id: item_id.to_string(),
+                quantity,
+            });
+        }
     } else {
         ctx.db.party_inventory_item().insert(PartyInventoryItem {
             id: 0,
@@ -3291,9 +3506,14 @@ pub(crate) fn add_to_party_inventory(
     }
 }
 
-fn credit_party_stake(ctx: &ReducerContext, party_id: &str, character_id: u64, value: u64) {
+fn credit_party_stake(
+    ctx: &ReducerContext,
+    party_id: &str,
+    character_id: u64,
+    value: u64,
+) -> Result<(), String> {
     if value == 0 {
-        return;
+        return Ok(());
     }
     if let Some(mut stake) = ctx
         .db
@@ -3302,7 +3522,10 @@ fn credit_party_stake(ctx: &ReducerContext, party_id: &str, character_id: u64, v
         .filter(party_id)
         .find(|stake| stake.character_id == character_id)
     {
-        stake.value = stake.value.saturating_add(value);
+        stake.value = stake
+            .value
+            .checked_add(value)
+            .ok_or("Party stake overflow")?;
         ctx.db.party_stake().id().update(stake);
     } else {
         ctx.db.party_stake().insert(PartyStake {
@@ -3312,11 +3535,12 @@ fn credit_party_stake(ctx: &ReducerContext, party_id: &str, character_id: u64, v
             value,
         });
     }
+    Ok(())
 }
 
-fn credit_party_reserve(ctx: &ReducerContext, party_id: &str, value: u64) {
+fn credit_party_reserve(ctx: &ReducerContext, party_id: &str, value: u64) -> Result<(), String> {
     if value == 0 {
-        return;
+        return Ok(());
     }
     if let Some(mut state) = ctx
         .db
@@ -3324,7 +3548,10 @@ fn credit_party_reserve(ctx: &ReducerContext, party_id: &str, value: u64) {
         .party_id()
         .find(&party_id.to_string())
     {
-        state.reserve_value = state.reserve_value.saturating_add(value);
+        state.reserve_value = state
+            .reserve_value
+            .checked_add(value)
+            .ok_or("Party reserve overflow")?;
         ctx.db.party_inventory_state().party_id().update(state);
     } else {
         ctx.db.party_inventory_state().insert(PartyInventoryState {
@@ -3332,6 +3559,7 @@ fn credit_party_reserve(ctx: &ReducerContext, party_id: &str, value: u64) {
             reserve_value: value,
         });
     }
+    Ok(())
 }
 
 pub(crate) fn record_battle_result(
@@ -3508,9 +3736,9 @@ pub fn store_battle_loot(
     let participant_count = participants.len() as u64;
     let share = total_value / participant_count;
     for participant_id in participants {
-        credit_party_stake(ctx, &party_id, participant_id, share);
+        credit_party_stake(ctx, &party_id, participant_id, share)?;
     }
-    credit_party_reserve(ctx, &party_id, total_value % participant_count);
+    credit_party_reserve(ctx, &party_id, total_value % participant_count)?;
     Ok(())
 }
 
@@ -3586,7 +3814,7 @@ pub fn deposit_party_inventory_item(
             .inventory_item_id()
             .delete(inventory.id);
     }
-    credit_party_stake(ctx, &party_id, character_id, value);
+    credit_party_stake(ctx, &party_id, character_id, value)?;
     if inventory.quantity == quantity {
         ctx.db.inventory_item().id().delete(inventory.id);
     } else {
@@ -3852,11 +4080,16 @@ pub fn liquidate_party_inventory(
         {
             return Err("Invalid party asset liquidation".into());
         }
-        proceeds = proceeds.saturating_add(
-            objective_item_value(ctx, &entry.item_id)?.saturating_mul(u64::from(quantity)),
-        );
+        let line_value = objective_item_value(ctx, &entry.item_id)?
+            .checked_mul(u64::from(quantity))
+            .ok_or("Party asset liquidation line value overflow")?;
+        proceeds = proceeds
+            .checked_add(line_value)
+            .ok_or("Party asset liquidation total overflow")?;
         staged.push((entry, quantity));
     }
+    let proceeds =
+        u32::try_from(proceeds).map_err(|_| "Party asset liquidation exceeds currency limits")?;
     for (mut entry, quantity) in staged {
         if entry.quantity == quantity {
             ctx.db.party_inventory_item().id().delete(entry.id);
@@ -3869,7 +4102,7 @@ pub fn liquidate_party_inventory(
             ctx.db.party_inventory_item().id().update(entry);
         }
     }
-    credit_party_currency(ctx, &party_id, &settlement_id, proceeds as u32)?;
+    credit_party_currency(ctx, &party_id, &settlement_id, proceeds)?;
     Ok(())
 }
 
@@ -4010,66 +4243,17 @@ pub fn finalize_merchant_trade(
         return Err("Character must be at this settlement to trade".into());
     }
     let party_id = character.party_id.clone();
-    let mut net: HashMap<String, i64> = HashMap::new();
-    for (item_id, quantity) in buy_item_ids.iter().zip(&buy_quantities) {
-        *net.entry(item_id.clone()).or_default() += *quantity as i64;
-    }
-    for (inventory_id, quantity) in sell_inventory_ids.iter().zip(&sell_quantities) {
-        let item_id = if party_scope {
-            ctx.db
-                .party_inventory_item()
-                .id()
-                .find(*inventory_id)
-                .ok_or("Party inventory item not found")?
-                .item_id
-        } else {
-            ctx.db
-                .inventory_item()
-                .id()
-                .find(*inventory_id)
-                .ok_or("Inventory item not found")?
-                .item_id
-        };
-        *net.entry(item_id).or_default() -= *quantity as i64;
-    }
-    let buy_item_ids: Vec<String> = net
+    // Sales are inventory-instance operations. Preserve each submitted stack
+    // and quantity rather than netting by item ID, which can assign the whole
+    // net sale to every matching stack.
+    let mut seen_sale_ids = HashSet::new();
+    if !sell_inventory_ids
         .iter()
-        .filter(|(_, value)| **value > 0)
-        .map(|(item, _)| item.clone())
-        .collect();
-    let buy_quantities: Vec<u32> = buy_item_ids.iter().map(|item| net[item] as u32).collect();
-    let sell_inventory_ids: Vec<u64> = sell_inventory_ids
-        .into_iter()
-        .filter(|id| {
-            let item_id = if party_scope {
-                ctx.db
-                    .party_inventory_item()
-                    .id()
-                    .find(*id)
-                    .map(|v| v.item_id)
-            } else {
-                ctx.db.inventory_item().id().find(*id).map(|v| v.item_id)
-            };
-            item_id.is_some_and(|item_id| net.get(&item_id).copied().unwrap_or(0) < 0)
-        })
-        .collect();
-    let sell_quantities: Vec<u32> = sell_inventory_ids
-        .iter()
-        .map(|id| {
-            let item_id = if party_scope {
-                ctx.db
-                    .party_inventory_item()
-                    .id()
-                    .find(*id)
-                    .unwrap()
-                    .item_id
-            } else {
-                ctx.db.inventory_item().id().find(*id).unwrap().item_id
-            };
-            (-net[&item_id]) as u32
-        })
-        .collect();
-    let mut cost = 0_u32;
+        .all(|inventory_id| seen_sale_ids.insert(*inventory_id))
+    {
+        return Err("Merchant sale inventory IDs must be unique".into());
+    }
+    let mut cost = 0_u64;
     for (item_id, quantity) in buy_item_ids.iter().zip(&buy_quantities) {
         let Some(item) = ctx.db.item().id().find(item_id) else {
             return Err("Merchant item not found".into());
@@ -4081,12 +4265,15 @@ pub fn finalize_merchant_trade(
         {
             return Err("Invalid merchant purchase".into());
         }
-        cost = cost.saturating_add(
-            adventuresim_core::strategic_economy::merchant_buy_price(item.base_value.unwrap_or(1))
-                * quantity,
-        );
+        let line = adventuresim_core::strategic_economy::checked_merchant_line_total(
+            adventuresim_core::strategic_economy::merchant_buy_price(item.base_value.unwrap_or(1)),
+            *quantity,
+        )
+        .ok_or("Merchant purchase total overflow")?;
+        cost = adventuresim_core::strategic_economy::checked_add_merchant_total(cost, line)
+            .ok_or("Merchant purchase total overflow")?;
     }
-    let mut proceeds = 0_u32;
+    let mut proceeds = 0_u64;
     for (inventory_id, quantity) in sell_inventory_ids.iter().zip(&sell_quantities) {
         let (item_id, available) = if party_scope {
             let inventory = ctx
@@ -4133,18 +4320,26 @@ pub fn finalize_merchant_trade(
         {
             return Err("Unequip an item before selling it".into());
         }
-        proceeds = proceeds.saturating_add(
-            adventuresim_core::strategic_economy::merchant_sell_price(item.base_value.unwrap_or(1))
-                * quantity,
-        );
+        let line = adventuresim_core::strategic_economy::checked_merchant_line_total(
+            adventuresim_core::strategic_economy::merchant_sell_price(item.base_value.unwrap_or(1)),
+            *quantity,
+        )
+        .ok_or("Merchant sale total overflow")?;
+        proceeds = adventuresim_core::strategic_economy::checked_add_merchant_total(proceeds, line)
+            .ok_or("Merchant sale total overflow")?;
     }
     let coins = if party_scope {
         party_currency_total(ctx, party_id.as_ref().ok_or("Character has no party")?)
-            .saturating_add(crate::item::personal_currency_total(ctx, character_id))
+            .checked_add(crate::item::personal_currency_total(ctx, character_id))
+            .ok_or("Merchant balance overflow")?
     } else {
         crate::item::personal_currency_total(ctx, character_id)
     };
-    if coins.saturating_add(u64::from(proceeds)) < u64::from(cost) {
+    if coins
+        .checked_add(proceeds)
+        .ok_or("Merchant balance overflow")?
+        < cost
+    {
         return Err("Not enough coin".into());
     }
     for (inventory_id, quantity) in sell_inventory_ids.iter().zip(&sell_quantities) {
@@ -4205,92 +4400,54 @@ pub fn finalize_merchant_trade(
                         .is_some_and(|equip| equip.is_equiped(stack.id).is_some())
                 })
         {
-            stack.quantity = stack.quantity.saturating_add(*quantity);
-            ctx.db.inventory_item().id().update(stack);
+            if let Some(merged) = stack.quantity.checked_add(*quantity) {
+                stack.quantity = merged;
+                ctx.db.inventory_item().id().update(stack);
+            } else {
+                crate::add_inventory_item(ctx, character_id, item_id, *quantity);
+            }
         } else {
             crate::add_inventory_item(ctx, character_id, item_id, *quantity);
         }
     }
-    let net = proceeds as i64 - cost as i64;
-    if party_scope && net > 0 {
+    let (owes, receives) = if cost >= proceeds {
+        (cost - proceeds, 0)
+    } else {
+        (0, proceeds - cost)
+    };
+    if party_scope && receives > 0 {
         let party_id = party_id.as_ref().unwrap();
-        credit_party_currency(ctx, party_id, &settlement_id, net as u32)?;
-    } else if party_scope && net < 0 {
+        credit_party_currency(
+            ctx,
+            party_id,
+            &settlement_id,
+            u32::try_from(receives).map_err(|_| "Merchant proceeds exceed inventory capacity")?,
+        )?;
+    } else if party_scope && owes > 0 {
         let party_id = party_id.as_ref().unwrap();
-        let amount = (-net) as u64;
         let party_coins = party_currency_total(ctx, party_id);
         let personal_coins = crate::item::personal_currency_total(ctx, character_id);
         let (pooled, personal) =
             adventuresim_core::strategic_economy::split_party_purchase_payment(
                 party_coins,
                 personal_coins,
-                amount,
+                owes,
             )
             .ok_or("Not enough coin")?;
         consume_party_currency(ctx, party_id, pooled)?;
         consume_personal_gold(ctx, character_id, personal)?;
         if personal > 0 {
-            credit_party_stake(ctx, party_id, character_id, personal);
+            credit_party_stake(ctx, party_id, character_id, personal)?;
         }
-    } else if net < 0 {
-        consume_personal_gold(ctx, character_id, (-net) as u64)?;
-    } else if net > 0 {
-        crate::item::credit_personal_currency(ctx, character_id, &settlement_id, net as u32)?;
-    }
-    Ok(())
-}
-
-/// Adds two deterministic companions to the specified character's party for
-/// strategic UI development. Safe to call repeatedly.
-#[reducer]
-pub fn seed_party_companions(ctx: &ReducerContext, leader_id: u64) -> Result<(), String> {
-    crate::character::require_living_character(ctx, leader_id)?;
-    let leader = ctx
-        .db
-        .character()
-        .id()
-        .find(leader_id)
-        .ok_or("Leader not found")?;
-    let party_id = leader.party_id.clone().ok_or("Leader has no party")?;
-    let role = ctx
-        .db
-        .party_recruitment_role()
-        .insert(PartyRecruitmentRole {
-            id: 0,
-            party_id: party_id.clone(),
-            name: "Companion".into(),
-            requirements: RecruitmentRequirements::default(),
-            quantity: 2,
-            weapon_precision: 0.0,
-        });
-
-    for (id, name) in [(9_000_001_u64, "Mara"), (9_000_002_u64, "Orrin")] {
-        if ctx.db.character().id().find(id).is_none() {
-            crate::character::insert_new_npc_character(ctx, name.into(), id, false)?;
-        }
-        let mut companion = ctx.db.character().id().find(id).unwrap();
-        if companion.party_id.as_deref() == Some(&party_id) {
-            continue;
-        }
-        companion.current_settlement_id = leader.current_settlement_id.clone();
-        companion.current_quest_location_id = leader.current_quest_location_id.clone();
-        if let Some(source_party_id) = companion.party_id.as_ref() {
-            if let Some(mut source_party) = ctx.db.party().id().find(source_party_id) {
-                source_party.current_settlement_id = leader.current_settlement_id.clone();
-                source_party.current_quest_location_id = leader.current_quest_location_id.clone();
-                ctx.db.party().id().update(source_party);
-            }
-        }
-        ctx.db.character().id().update(companion);
-        request_to_join_party(ctx, id, role.id)?;
-        let request = ctx
-            .db
-            .party_join_request()
-            .character_id()
-            .filter(id)
-            .find(|request| request.recruitment_role_id == role.id)
-            .unwrap();
-        accept_party_join_request(ctx, leader_id, request.id)?;
+    } else if owes > 0 {
+        consume_personal_gold(ctx, character_id, owes)?;
+    } else if receives > 0 {
+        crate::item::credit_personal_currency(
+            ctx,
+            character_id,
+            &settlement_id,
+            u32::try_from(receives).map_err(|_| "Merchant proceeds exceed inventory capacity")?,
+        )?;
     }
     Ok(())
 }
@@ -6092,7 +6249,6 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
     Ok(())
 }
 
-#[reducer]
 pub fn complete_quest(ctx: &ReducerContext, quest_id: String) -> Result<(), String> {
     let Some(mut quest) = ctx.db.quest().id().find(&quest_id) else {
         return Err("Quest not found".into());
@@ -6118,7 +6274,7 @@ pub fn complete_quest(ctx: &ReducerContext, quest_id: String) -> Result<(), Stri
 
     for member_id in members {
         if let Some(mut character) = ctx.db.character().id().find(member_id) {
-            character.xp += xp_per_member;
+            character.xp = character.xp.saturating_add(xp_per_member);
             character.level = 1 + character.xp / 100;
             ctx.db.character().id().update(character);
         }
@@ -6173,9 +6329,9 @@ pub fn turn_in_quest(
         let recipient_count = recipients.len().max(1) as u64;
         let share = reward / recipient_count;
         for recipient in recipients {
-            credit_party_stake(ctx, &party_id, recipient, share);
+            credit_party_stake(ctx, &party_id, recipient, share)?;
         }
-        credit_party_reserve(ctx, &party_id, reward % recipient_count);
+        credit_party_reserve(ctx, &party_id, reward % recipient_count)?;
     }
 
     party.active_quest_id = None;
@@ -6367,7 +6523,31 @@ pub fn autoresolve_quest(
 }
 
 #[reducer]
-pub fn cancel_mission_request(ctx: &ReducerContext, mission_id: String) -> Result<(), String> {
+pub fn cancel_mission_request(
+    ctx: &ReducerContext,
+    character_id: u64,
+    mission_id: String,
+) -> Result<(), String> {
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    let party_id = character.party_id.ok_or("Character has no party")?;
+    let party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != character_id {
+        return Err("Only the party leader can cancel a mission request".into());
+    }
+    let request = ctx
+        .db
+        .tactical_server_request()
+        .mission_id()
+        .find(&mission_id)
+        .ok_or("Mission request not found")?;
+    if request.party_id != party_id {
+        return Err("Mission request belongs to another party".into());
+    }
     ctx.db
         .tactical_server_request()
         .mission_id()
@@ -6375,8 +6555,31 @@ pub fn cancel_mission_request(ctx: &ReducerContext, mission_id: String) -> Resul
     Ok(())
 }
 
+/// Seed the local demonstration world only when this module binary was built
+/// with a matching high-entropy development capability. Normal builds contain
+/// no usable token, so ordinary database and tactical identities cannot seed.
 #[reducer]
-pub fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
+pub fn bootstrap_development_world(
+    ctx: &ReducerContext,
+    bootstrap_token: String,
+    include_visual_demos: bool,
+) -> Result<(), String> {
+    if !adventuresim_core::simulation_security::simulation_bootstrap_authorized(
+        COMPILED_DEV_BOOTSTRAP_TOKEN,
+        &bootstrap_token,
+    ) {
+        return Err("Development bootstrap is disabled or unauthorized".into());
+    }
+    seed_world(ctx)?;
+    crate::disease::seed_sick_character(ctx)?;
+    if include_visual_demos {
+        crate::character::seed_damaged_character(ctx)?;
+        crate::character::seed_religion_scholar_character(ctx)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
     let settlements = [
         (
             "riverdale",

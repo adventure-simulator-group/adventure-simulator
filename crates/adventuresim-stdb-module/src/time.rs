@@ -26,6 +26,8 @@ pub const BASE_HEALTH_RECOVERED_PER_DAY: f32 = 0.01;
 /// check. Checks are capped at the five-point scale used by the strategic UI.
 pub const HEALTH_RECOVERED_PER_MEDICINE_CHECK_PER_DAY: f32 = 0.01;
 pub const INN_GOLD_PER_DAY: u32 = 1;
+const MIN_SETTLEMENT_REST_MINUTES: u64 = 60;
+const MAX_SETTLEMENT_REST_MINUTES: u64 = MINUTES_PER_YEAR;
 /// The current authoritative strategic time. `official_minutes` is absolute;
 /// calendar presentation wraps it into years without making comparisons wrap.
 #[derive(Clone, Debug)]
@@ -661,10 +663,18 @@ fn rest_for_minutes(
         return Ok(());
     }
 
-    let cost =
-        (requested_minutes.div_ceil(MINUTES_PER_DAY) as u32).saturating_mul(INN_GOLD_PER_DAY);
+    if !(MIN_SETTLEMENT_REST_MINUTES..=MAX_SETTLEMENT_REST_MINUTES).contains(&requested_minutes)
+        || requested_minutes % MIN_SETTLEMENT_REST_MINUTES != 0
+    {
+        return Err("Settlement rest must use whole hours between one hour and one year".into());
+    }
+
+    let cost = requested_minutes
+        .div_ceil(MINUTES_PER_DAY)
+        .checked_mul(u64::from(INN_GOLD_PER_DAY))
+        .ok_or("Inn cost overflow")?;
     if at_inn {
-        crate::item::consume_personal_currency(ctx, character_id, u64::from(cost))
+        crate::item::consume_personal_currency(ctx, character_id, cost)
             .map_err(|_| "Not enough coin to pay for the inn stay".to_string())?;
     }
 
@@ -741,7 +751,10 @@ fn rest_for_minutes(
         crate::strategic::maybe_trigger_activity_incident(ctx, character_id, risks)?;
     }
 
-    character_time.minutes += elapsed;
+    character_time.minutes = character_time
+        .minutes
+        .checked_add(elapsed)
+        .ok_or("Character clock overflow")?;
     ctx.db
         .character_time()
         .character_id()

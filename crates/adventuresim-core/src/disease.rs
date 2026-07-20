@@ -687,6 +687,31 @@ pub fn outbreak_exposure_seed(character_id: u64, outbreak_id: &str) -> u64 {
         .chain(character_id.to_le_bytes())
         .chain(outbreak_id.bytes()))
 }
+
+/// True while an episode of the same disease remains unresolved at the
+/// interval boundary. Outbreak acquisition uses this to make partitioned rest
+/// equivalent to a single interval and avoid duplicate active infections.
+pub fn has_unresolved_disease(
+    episodes: &[InfectionEpisode],
+    disease_id: DiseaseId,
+    at: u64,
+    immunity: f32,
+) -> bool {
+    episodes.iter().any(|episode| {
+        episode.disease_id == disease_id
+            && episode.contracted_at <= at
+            && !matches!(
+                evaluate(*episode, at, immunity).stage,
+                DiseaseStage::Resolved
+            )
+    })
+}
+
+/// Terminal interval boundaries are inclusive. Side effects strictly after
+/// `through` must not be committed when elapsed time is clipped by death.
+pub fn infection_occurs_through(episode: InfectionEpisode, through: u64) -> bool {
+    episode.contracted_at <= through
+}
 pub fn first_presence_exposure_minute(
     character_id: u64,
     outbreak_id: &str,
@@ -697,7 +722,47 @@ pub fn first_presence_exposure_minute(
     immunity: f32,
     prior_immunity: f32,
 ) -> Option<u64> {
+    if to <= from {
+        return None;
+    }
     ((from + 1)..=to).find(|minute| {
+        let key = format!("{outbreak_id}:{minute}");
+        acquisition_succeeds(
+            outbreak_exposure_seed(character_id, &key),
+            &DiseaseDefinition {
+                base_acquisition: base_acquisition / 1_440.0,
+                ..*definition(DiseaseId::Influenza)
+            },
+            immunity,
+            prior_immunity,
+            intensity,
+        )
+    })
+}
+
+/// First exposure minute at which the character is eligible to contract this
+/// disease. Eligibility and acquired immunity are evaluated at each candidate
+/// minute so a long interval behaves like equivalent smaller updates when an
+/// earlier episode resolves partway through it.
+pub fn first_eligible_presence_exposure_minute(
+    episodes: &[InfectionEpisode],
+    disease_id: DiseaseId,
+    character_id: u64,
+    outbreak_id: &str,
+    from: u64,
+    to: u64,
+    intensity: f32,
+    base_acquisition: f32,
+    immunity: f32,
+) -> Option<u64> {
+    if to <= from {
+        return None;
+    }
+    ((from + 1)..=to).find(|minute| {
+        if has_unresolved_disease(episodes, disease_id, *minute, immunity) {
+            return false;
+        }
+        let prior_immunity = acquired_immunity(episodes, disease_id, *minute, immunity);
         let key = format!("{outbreak_id}:{minute}");
         acquisition_succeeds(
             outbreak_exposure_seed(character_id, &key),
@@ -1327,5 +1392,77 @@ mod tests {
         assert!(evaluate(a, 100 + 4 * DAY, 3.0).terminal_failure.is_none());
         let at = first_combined_terminal(&[a, b, c, d], 100, 100 + 8 * DAY, 3.0);
         assert!(at.is_some());
+    }
+
+    #[test]
+    fn clipped_interval_commits_the_terminal_boundary_but_not_later_infections() {
+        let mut at_boundary = e(10, DiseaseId::Typhus);
+        at_boundary.contracted_at = 500;
+        let mut after_boundary = e(11, DiseaseId::Plague);
+        after_boundary.contracted_at = 501;
+        assert!(infection_occurs_through(at_boundary, 500));
+        assert!(!infection_occurs_through(after_boundary, 500));
+    }
+
+    #[test]
+    fn unresolved_disease_blocks_chunked_reinfection_until_resolution() {
+        let episode = e(12, DiseaseId::Influenza);
+        assert!(has_unresolved_disease(
+            &[episode],
+            DiseaseId::Influenza,
+            episode.contracted_at + DAY,
+            3.0,
+        ));
+        assert!(!has_unresolved_disease(
+            &[episode],
+            DiseaseId::Influenza,
+            episode.contracted_at + 60 * DAY,
+            3.0,
+        ));
+    }
+
+    #[test]
+    fn future_episode_is_not_unresolved_before_contraction() {
+        let mut future = e(13, DiseaseId::Influenza);
+        future.contracted_at = 10 * DAY;
+        assert!(!has_unresolved_disease(
+            &[future],
+            DiseaseId::Influenza,
+            DAY,
+            3.0,
+        ));
+    }
+
+    #[test]
+    fn eligible_exposure_is_chunk_invariant_across_resolution() {
+        let episode = e(14, DiseaseId::Influenza);
+        let from = episode.contracted_at + DAY;
+        let to = episode.contracted_at + 60 * DAY;
+        let whole = first_eligible_presence_exposure_minute(
+            &[episode],
+            DiseaseId::Influenza,
+            episode.character_id,
+            "continuous",
+            from,
+            to,
+            1_000_000.0,
+            definition(DiseaseId::Influenza).base_acquisition,
+            3.0,
+        );
+        let chunked = (from..to).step_by(DAY as usize).find_map(|chunk_from| {
+            first_eligible_presence_exposure_minute(
+                &[episode],
+                DiseaseId::Influenza,
+                episode.character_id,
+                "continuous",
+                chunk_from,
+                chunk_from.saturating_add(DAY).min(to),
+                1_000_000.0,
+                definition(DiseaseId::Influenza).base_acquisition,
+                3.0,
+            )
+        });
+        assert!(whole.is_some());
+        assert_eq!(whole, chunked);
     }
 }

@@ -231,11 +231,18 @@ and routine publishes should use `just publish`, all of which preserve data.
 flags manually against a public or player-bearing database unless data loss is
 explicitly approved and a verified recovery copy exists.
 
-`seed_world` is itself idempotent: it inserts only missing demo rows. The local
+`bootstrap_development_world` is itself idempotent: it inserts only missing demo rows. The local
 seed workflow then resets `Sick Demo` and its party of staggered patients plus a
 high-Medicine physician so symptoms, diagnosis, and treatment can be tested
 immediately. It propagates every reducer failure
 instead of treating arbitrary errors as evidence that seeding already happened.
+
+Individual fixture reducers are not published. The isolated profile launcher
+creates a 256-bit token, compiles it into that disposable module build,
+publishes, invokes the single development-bootstrap reducer, and removes the
+token from child-process environments. For a manual disposable publish, set
+`ADVENTURESIM_DEV_BOOTSTRAP_TOKEN` to a 64-character hexadecimal value while
+publishing, then pass the same value to `scripts/dev_stack.py seed --token`.
 
 Spawner metadata contains the resolved repository, profile, server/database,
 bind/port configuration, hashes of both tactical binaries, actual executable,
@@ -404,6 +411,12 @@ receive live state through the web server rather than connecting directly to
 SpacetimeDB. The tactical WASM page remains under
 `crates/adventuresim-stdb-module/static/tactical.html` and is served by
 `strategic-web` at `/tactical/tactical.html`.
+
+The local strategic UI is anonymous and single-user. Its cookie selects the
+active character; it does not establish a user identity. The default
+`127.0.0.1:8080` bind is therefore intentional. A non-loopback development bind
+must set `ALLOW_INSECURE_NON_LOOPBACK_BIND=true` and must remain on an isolated,
+trusted network.
 
 Test the server-rendered strategic browser through `https://localhost:8443`
 using `just web-secure`. Caddy terminates TLS and negotiates HTTP/2 or HTTP/3

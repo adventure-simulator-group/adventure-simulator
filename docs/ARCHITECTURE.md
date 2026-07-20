@@ -92,10 +92,13 @@ batches cannot mutate an already-loaded world.
 ## Strategic browser updates
 
 The strategic browser is server-authoritative. Browsers submit discrete commands
-to `strategic-web` over authenticated HTTP and never connect to SpacetimeDB
-directly. `strategic-web` owns a single generated-client WebSocket subscription
-to the mutable tables that invalidate strategic UI fragments and fans those
-database changes out to authenticated pages as Datastar server-sent events.
+to `strategic-web` and never connect to SpacetimeDB directly. The current web
+process is explicitly an anonymous, loopback-only, single-user development
+surface: its character cookie is a selector, not per-user authentication.
+Non-loopback binding requires the clearly named insecure-development opt-in.
+`strategic-web` owns a single generated-client WebSocket subscription to the
+mutable tables that invalidate strategic UI fragments and fans those database
+changes out to selected-character pages as Datastar server-sent events.
 Large static world tables, including settlements, routes, aliases, and source
 descriptions, stay out of this subscription and are queried on demand.
 
@@ -233,6 +236,12 @@ subscriptions never contain infection episodes, pending examination results, or
 disease notices.
 Public subscriptions never contain infection episodes or disease notices.
 
+Tactical requests bind the requesting leader and authoritative party to a
+one-use request row. Dispatcher-created servers inherit that party binding, and
+ordinary characters may enroll only when their current party matches it.
+Persistent quest XP is derived by the strategic quest completion path; tactical
+servers cannot supply an arbitrary XP award.
+
 ### Strategic tables
 
 | Table | Description |
@@ -295,6 +304,27 @@ tactical servers, and religious-demand ownership) validate `ctx.sender()` direct
 repair follows the existing strategic boundary until ownership is introduced consistently for all
 player-facing strategic reducers.
 
+Tactical registration is request-backed and bound to the authoritative party
+and quest. The registering identity becomes the sole authority for enrollment,
+temporary characters, departure, and completion; direct registration and
+replacement are not exposed. The local dispatcher-to-child launch currently
+retains one explicit internal-network assumption: the SDK launcher does not
+pre-provision an expected child identity or per-request bearer token, so an
+identity able to read a pending request could race the child for the first
+claim. Request deletion and identity checks prevent reuse and cross-server
+calls after that claim. Keep the database endpoint and request stream off
+untrusted networks until expected-identity provisioning is implemented.
+Client join messages currently name an existing character because the netcode
+does not yet carry a player-to-character credential. The tactical server never
+creates a character from that value, and the module admits only a living member
+of the mission's authoritative party. Until character ownership is added, the
+client connection remains an explicitly trusted mission-local boundary.
+
+Queued party actions deliberately have parallel Rust DTOs in strategic-web and
+the SpacetimeDB module: sharing the module type would couple the web process to
+the server-only SpacetimeDB macro/runtime surface. A cross-boundary contract test
+locks the complete variant-to-kind mapping so either side cannot drift silently.
+
 ## adventuresim-tactical-server
 
 The tactical server is a headless Bevy application that:
@@ -311,28 +341,31 @@ Strategic incapacitation deliberately excludes tactical imbalance, breath exhaus
 
 ```bash
 adventuresim-tactical-server \
-  --port 6000 \
+  --addr 127.0.0.1:6000 \
   --mission-id "mission-123" \
   --scene-key "town_a" \
-  --asset-path "assets/TownA.glb" \
+  --required-enemy-kills 4 \
   --spacetimedb-url "http://localhost:3000" \
-  --spacetimedb-module "adventuresim-stdb-module" \
-  --hmac-secret "shared-secret"
+  --spacetimedb-module "adventuresim-stdb-module"
 ```
 
 ### Mission End Flow
 
 When the tactical mission ends (timeout, victory, or defeat):
 
-1. Tactical server computes final results in memory:
-   - Total XP gained (based on enemies defeated, objectives completed)
-   - Items earned (loot from enemies, quest rewards)
-2. Tactical server calls SpacetimeDB `commit_mission` reducer:
+1. The dispatcher snapshots the quest's authoritative enemy count into the
+   request and launches the server with that required objective.
+2. The tactical server counts each mission enemy only from its internal,
+   authoritative death event and succeeds only after the entire objective.
+   The current combat prototype does not yet apply damage or emit that death
+   event, so timeouts fail closed rather than granting a false victory.
+3. Tactical server calls SpacetimeDB `end_tactical_server` reducer:
    ```rust
-   commit_mission(mission_id, success, xp_gained, items_gained_json)
+   end_tactical_server(success, reported_xp)
    ```
-3. SpacetimeDB applies rewards only to living party members
-4. Tactical server terminates
+4. SpacetimeDB derives persistent XP from the quest, records final loot, and
+   applies rewards only to living party members.
+5. Tactical server terminates.
 
 ## Running the MVP
 

@@ -397,7 +397,7 @@ impl Schema {
             ));
         }
         let time = nc(path, file.variable("time"))?;
-        require_hyde_time_axis(path, &time, &times)?;
+        require_hyde_time_axis(path, time, &times)?;
         Ok(Self {
             longitudes,
             latitudes,

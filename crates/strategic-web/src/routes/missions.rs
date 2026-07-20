@@ -11,7 +11,9 @@ use serde::Deserialize;
 
 use super::{AppState, PartyAction, PartyActionOutcome, execute_or_request_party_action};
 use crate::session::Session;
-use crate::spacetimedb::{BattleResult, Character, Party, TacticalServer, TacticalServerRequest};
+use crate::spacetimedb::{
+    BattleResult, Character, Party, TacticalServer, TacticalServerRequest, sql_string_literal,
+};
 use crate::templates::mission::{mission_status_fragment, mission_status_page};
 
 pub fn routes() -> Router<AppState> {
@@ -47,7 +49,10 @@ async fn enter_mission(State(state): State<AppState>, session: Session) -> Redir
 
     let parties: Vec<Party> = state
         .db
-        .query(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+        .query(&format!(
+            "SELECT * FROM party WHERE id = {}",
+            sql_string_literal(party_id)
+        ))
         .await
         .unwrap_or_default();
 
@@ -110,15 +115,39 @@ async fn mission_status(
         }
     };
 
-    let Some(server) = get_mission_for_viewer(&state, &mission_id, &viewer).await else {
-        let results: Vec<BattleResult> = state
+    let server = match get_mission_for_viewer(&state, &mission_id).await {
+        Ok(server) => server,
+        Err(error) => {
+            tracing::error!(%error, "failed to load mission");
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Strategic data is unavailable",
+            )
+                .into_response();
+        }
+    };
+    let Some(mut server) = server else {
+        let results: crate::spacetimedb::Result<Vec<BattleResult>> = state
             .db
             .query(&format!(
-                "SELECT * FROM battle_result WHERE mission_id = '{}'",
-                mission_id
+                "SELECT * FROM battle_result WHERE mission_id = {}",
+                sql_string_literal(&mission_id)
             ))
             .await
-            .unwrap_or_default();
+            .map_err(|error| {
+                tracing::error!(%error, "failed to load mission result");
+                error
+            });
+        let results = match results {
+            Ok(results) => results,
+            Err(_) => {
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Strategic data is unavailable",
+                )
+                    .into_response();
+            }
+        };
         if let Some(result) = results
             .first()
             .filter(|result| viewer.party_id.as_deref() == Some(&result.party_id))
@@ -132,6 +161,7 @@ async fn mission_status(
     if !can_view_mission(&viewer, &server) {
         return (StatusCode::FORBIDDEN, "Not authorized for this mission").into_response();
     }
+    present_mission_to_viewer(&mut server, &viewer);
 
     if query.fragment {
         Html(mission_status_fragment(&server).into_string()).into_response()
@@ -162,9 +192,23 @@ async fn cancel_mission(
         }
     };
 
-    let Some(_server) = get_mission_for_viewer(&state, &mission_id, &viewer).await else {
+    let server = match get_mission_for_viewer(&state, &mission_id).await {
+        Ok(server) => server,
+        Err(error) => {
+            tracing::error!(%error, "failed to load mission");
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Strategic data is unavailable",
+            )
+                .into_response();
+        }
+    };
+    let Some(server) = server else {
         return (StatusCode::NOT_FOUND, "Mission not found").into_response();
     };
+    if !can_view_mission(&viewer, &server) {
+        return (StatusCode::FORBIDDEN, "Not authorized for this mission").into_response();
+    }
 
     let _ = execute_or_request_party_action(
         &state,
@@ -179,7 +223,10 @@ async fn cancel_mission(
 async fn quest_scene_key(state: &AppState, quest_id: &str) -> Option<String> {
     let quests: Vec<crate::spacetimedb::Quest> = state
         .db
-        .query(&format!("SELECT * FROM quest WHERE id = '{}'", quest_id))
+        .query(&format!(
+            "SELECT * FROM quest WHERE id = {}",
+            sql_string_literal(quest_id)
+        ))
         .await
         .ok()?;
     let quest = quests.first()?;
@@ -189,52 +236,103 @@ async fn quest_scene_key(state: &AppState, quest_id: &str) -> Option<String> {
 async fn get_mission_for_viewer(
     state: &AppState,
     mission_id: &str,
-    viewer: &Character,
-) -> Option<TacticalServer> {
-    if let Some(mut server) = get_ready_mission(state, mission_id).await {
-        server.character_id = Some(viewer.id);
-        server.party_id = viewer.party_id.clone();
-        return Some(server);
+) -> crate::spacetimedb::Result<Option<TacticalServer>> {
+    if let Some(server) = get_ready_mission(state, mission_id).await? {
+        return Ok(Some(server));
     }
 
     let requests: Vec<TacticalServerRequest> = state
         .db
         .query(&format!(
-            "SELECT * FROM tactical_server_request WHERE mission_id = '{}'",
-            mission_id
+            "SELECT * FROM tactical_server_request WHERE mission_id = {}",
+            sql_string_literal(mission_id)
         ))
-        .await
-        .ok()?;
+        .await?;
 
-    requests.first().map(|request| {
+    Ok(requests.first().map(|request| {
         TacticalServer::pending(
             request.mission_id.clone(),
             request.scene_key.clone(),
-            viewer.id,
-            viewer.party_id.clone(),
+            request.quest_id.clone(),
+            request.party_id.clone(),
         )
-    })
+    }))
 }
 
-async fn get_ready_mission(state: &AppState, mission_id: &str) -> Option<TacticalServer> {
+async fn get_ready_mission(
+    state: &AppState,
+    mission_id: &str,
+) -> crate::spacetimedb::Result<Option<TacticalServer>> {
     let servers: Vec<TacticalServer> = state
         .db
         .query(&format!(
-            "SELECT * FROM tactical_server WHERE mission_id = '{}'",
-            mission_id
+            "SELECT * FROM tactical_server WHERE mission_id = {}",
+            sql_string_literal(mission_id)
         ))
-        .await
-        .ok()?;
-    servers.into_iter().next()
+        .await?;
+    Ok(servers.into_iter().next())
 }
 
 fn can_view_mission(viewer: &Character, server: &TacticalServer) -> bool {
-    if server.character_id == Some(viewer.id) {
-        return true;
+    viewer.party_id.as_deref() == Some(server.party_id.as_str())
+}
+
+fn present_mission_to_viewer(server: &mut TacticalServer, viewer: &Character) {
+    debug_assert!(can_view_mission(viewer, server));
+    server.character_id = Some(viewer.id);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn character(id: u64, party_id: &str) -> Character {
+        Character {
+            id,
+            name: "viewer".into(),
+            xp: 0,
+            level: 1,
+            gold: 0,
+            current_settlement_id: None,
+            current_quest_location_id: None,
+            party_id: Some(party_id.into()),
+            age_years: 18,
+            alive: true,
+            temporary: false,
+        }
     }
 
-    match (&viewer.party_id, &server.party_id) {
-        (Some(viewer_party), Some(server_party)) => viewer_party == server_party,
-        _ => false,
+    fn mission(party_id: &str) -> TacticalServer {
+        TacticalServer::pending(
+            "mission".into(),
+            "hills".into(),
+            "quest".into(),
+            party_id.into(),
+        )
+    }
+
+    #[test]
+    fn mission_visibility_denies_cross_party_viewers_without_relabeling() {
+        let server = mission("party-a");
+        assert!(can_view_mission(&character(2, "party-a"), &server));
+        assert!(!can_view_mission(&character(3, "party-b"), &server));
+        assert_eq!(server.party_id, "party-a");
+    }
+
+    #[test]
+    fn pending_and_ready_links_use_the_current_authorized_viewer() {
+        let viewer = character(42, "party-a");
+        for mut server in [
+            mission("party-a"),
+            TacticalServer {
+                status: crate::spacetimedb::MissionStatus::Ready,
+                ..mission("party-a")
+            },
+        ] {
+            assert_eq!(server.character_id, None);
+            present_mission_to_viewer(&mut server, &viewer);
+            assert_eq!(server.character_id, Some(42));
+            assert_eq!(server.party_id, "party-a");
+        }
     }
 }

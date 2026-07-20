@@ -60,7 +60,8 @@ use adventuresim_stdb_client::{
     retrieve_repaired_item_reducer::retrieve_repaired_item,
     seed_simulation_disease_reducer::seed_simulation_disease,
     seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage,
-    seed_world_reducer::seed_world, settlement_smith_table::SettlementSmithTableAccess,
+    seed_simulation_world_reducer::seed_simulation_world,
+    settlement_smith_table::SettlementSmithTableAccess,
     simulation_run_table::SimulationRunTableAccess, store_battle_loot_reducer::store_battle_loot,
     submit_item_for_repair_reducer::submit_item_for_repair,
     travel_to_quest_reducer::travel_to_quest, travel_to_settlement_reducer::travel_to_settlement,
@@ -76,7 +77,9 @@ const MAX_CAMPS_PER_LEG: u32 = 512;
 const MAX_DEFEAT_RETRIES: u32 = 2;
 /// Natural recovery is one percent per day without medicine, so a character
 /// reduced to zero may legitimately need roughly one hundred days.
-const MAX_RECOVERY_ACTIONS: u32 = 32;
+const MAX_RECOVERY_ACTIONS: u32 = 128;
+const MAX_CORE_LOOP_WORK: u64 = 100_000;
+const MAX_CORE_TRACE_EVENTS: usize = 100_000;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -109,6 +112,14 @@ impl CoreLoopConfig {
             || self.party_size > self.population
         {
             return Err("population 2..=32, party_size 2..=8, cycles 1..=10000, and duration_days 1..=36500 are required".into());
+        }
+        let work = u64::from(self.population)
+            .checked_mul(u64::from(self.cycles))
+            .ok_or("core-loop work overflow")?;
+        if work > MAX_CORE_LOOP_WORK {
+            return Err(format!(
+                "population * cycles must be <= {MAX_CORE_LOOP_WORK}"
+            ));
         }
         if !(16..=96).contains(&self.run_nonce.len())
             || !self
@@ -261,6 +272,8 @@ pub struct CoreLoopReport {
     pub profiles: Vec<AgentProfile>,
     pub metrics: CoreLoopMetrics,
     pub trace: Vec<CoreLoopEvent>,
+    pub trace_truncated: bool,
+    pub total_event_count: u64,
     pub final_agents: Vec<FinalAgentState>,
     pub elapsed_game_minutes: u64,
     pub policy_seed_note: String,
@@ -276,6 +289,12 @@ struct LiveRunner {
     last_semantic_event: Option<String>,
     recorded_deaths: HashSet<u64>,
     medically_paused_schedules: HashSet<u64>,
+}
+
+const SMITHING_DECISION_SCALE: f32 = 1_000.0;
+
+fn quantize_smithing_condition(value: f32) -> u32 {
+    (value.clamp(0.0, 1.0) * SMITHING_DECISION_SCALE).round() as u32
 }
 
 fn live_attributes(character_id: u64, profile: &AgentProfile) -> CharacterAttributes {
@@ -476,12 +495,14 @@ impl LiveRunner {
             self.metrics.duplicate_semantic_events += 1;
         }
         self.last_semantic_event = Some(semantic);
-        self.trace.push(CoreLoopEvent {
-            sequence: self.sequence,
-            agent_id,
-            kind,
-            detail,
-        });
+        if self.trace.len() < MAX_CORE_TRACE_EVENTS {
+            self.trace.push(CoreLoopEvent {
+                sequence: self.sequence,
+                agent_id,
+                kind,
+                detail,
+            });
+        }
     }
 
     fn call(&mut self, result: Result<(), String>) -> Result<(), String> {
@@ -538,7 +559,7 @@ impl LiveRunner {
     }
 
     fn observe_deaths(&mut self) {
-        let newly_dead = self
+        let mut newly_dead = self
             .connection
             .db
             .character()
@@ -546,6 +567,7 @@ impl LiveRunner {
             .filter(|row| !row.alive && self.character_ids.contains(&row.id))
             .filter_map(|row| self.recorded_deaths.insert(row.id).then_some(row.id))
             .collect::<Vec<_>>();
+        newly_dead.sort_unstable();
         for character_id in newly_dead {
             if let Some(agent) = self.character_ids.iter().position(|id| *id == character_id) {
                 let source = self
@@ -1092,15 +1114,20 @@ impl LiveRunner {
             .iter()
             .filter(|row| row.owner_character_id == character_id && row.settlement_id == settlement)
             .collect();
+        let mut reserved_quotes = self
+            .connection
+            .db
+            .repair_order()
+            .iter()
+            .filter(|order| order.owner_character_id == character_id)
+            .map(|order| (order.ready_at_minutes, order.id, order.quoted_cost))
+            .collect::<Vec<_>>();
+        reserved_quotes.sort_unstable();
         repair_budget = adventuresim_core::durability::repair_budget_after_reservations(
             repair_budget,
-            &self
-                .connection
-                .db
-                .repair_order()
-                .iter()
-                .filter(|order| order.owner_character_id == character_id)
-                .map(|order| order.quoted_cost)
+            &reserved_quotes
+                .into_iter()
+                .map(|(_, _, quote)| quote)
                 .collect::<Vec<_>>(),
         );
         if orders.is_empty() {
@@ -1111,13 +1138,14 @@ impl LiveRunner {
                 .iter()
                 .find(|row| row.settlement_id == settlement)
                 .ok_or("missing settlement smith services")?;
-            let inventory: Vec<_> = self
+            let mut inventory: Vec<_> = self
                 .connection
                 .db
                 .inventory_item()
                 .iter()
                 .filter(|row| row.character_id == character_id)
                 .collect();
+            inventory.sort_by_key(|row| row.id);
             for owned in inventory {
                 let Some(definition) = self
                     .connection
@@ -1149,16 +1177,17 @@ impl LiveRunner {
                     condition.tier_4,
                     condition.tier_5,
                 ];
-                let total: f32 = bins.iter().sum();
-                let red: f32 = bins[2..].iter().sum();
-                let repairable: f32 = bins.iter().take(skill as usize).sum();
+                let total = quantize_smithing_condition(bins.iter().sum());
+                let red = quantize_smithing_condition(bins[2..].iter().sum());
+                let repairable =
+                    quantize_smithing_condition(bins.iter().take(skill as usize).sum());
                 let quote = adventuresim_core::durability::repair_quote(
                     definition.base_value.unwrap_or(1),
-                    repairable,
+                    repairable as f32 / SMITHING_DECISION_SCALE,
                 );
                 // Mild yellow wear is handled automatically by ordinary rest.
-                if repairable > f32::EPSILON
-                    && (red >= 0.02 || total >= 0.35)
+                if repairable > 0
+                    && (red >= 20 || total >= 350)
                     && u64::from(quote) <= repair_budget
                 {
                     let result = reducer_call!(self, "submit_item_for_repair", |cb| self
@@ -1179,7 +1208,7 @@ impl LiveRunner {
                         format!(
                             "item={};condition={:.3};smith={skill};quote={quote}",
                             owned.item_id,
-                            1.0 - total
+                            1.0 - total as f32 / SMITHING_DECISION_SCALE
                         ),
                     );
                 }
@@ -1322,7 +1351,7 @@ impl LiveRunner {
 
     fn party_agents(&self, leader: u64) -> Result<Vec<u32>, String> {
         let party = self.party_for(leader)?;
-        Ok(self
+        let mut agents: Vec<_> = self
             .connection
             .db
             .party_member()
@@ -1342,7 +1371,36 @@ impl LiveRunner {
                     .position(|id| *id == member.character_id)
                     .map(|index| index as u32)
             })
-            .collect())
+            .collect();
+        agents.sort_unstable();
+        Ok(agents)
+    }
+
+    fn unsafe_party_agents(&self, agents: &[u32]) -> Vec<u32> {
+        let mut unsafe_agents = agents
+            .iter()
+            .copied()
+            .filter(|agent| {
+                let id = self.character_ids[*agent as usize];
+                let alive = self
+                    .connection
+                    .db
+                    .character()
+                    .iter()
+                    .find(|row| row.id == id)
+                    .is_some_and(|row| row.alive);
+                let ready = self
+                    .connection
+                    .db
+                    .character_strategic_condition()
+                    .iter()
+                    .find(|row| row.character_id == id)
+                    .is_some_and(|row| row.status == "ready");
+                !alive || !ready
+            })
+            .collect::<Vec<_>>();
+        unsafe_agents.sort_unstable();
+        unsafe_agents
     }
 
     fn cycle(&mut self, party_id: &str, cycle: u32) -> Result<(), String> {
@@ -1402,28 +1460,7 @@ impl LiveRunner {
 
         // Travel advances every member's disease clock. Re-observe public
         // life/condition state before attempting a living-only combat reducer.
-        let unsafe_after_travel = party_agents
-            .iter()
-            .copied()
-            .filter(|agent| {
-                let id = self.character_ids[*agent as usize];
-                let alive = self
-                    .connection
-                    .db
-                    .character()
-                    .iter()
-                    .find(|row| row.id == id)
-                    .is_some_and(|row| row.alive);
-                let ready = self
-                    .connection
-                    .db
-                    .character_strategic_condition()
-                    .iter()
-                    .find(|row| row.character_id == id)
-                    .is_some_and(|row| row.status == "ready");
-                !alive || !ready
-            })
-            .collect::<Vec<_>>();
+        let unsafe_after_travel = self.unsafe_party_agents(&party_agents);
         if !unsafe_after_travel.is_empty() {
             for &agent in &unsafe_after_travel {
                 self.metrics.quests_suppressed_for_health += 1;
@@ -1537,6 +1574,12 @@ impl LiveRunner {
             };
             leader = current;
             leader_agent = current_agent;
+            let retry_agents = self.party_agents(leader)?;
+            if !self.unsafe_party_agents(&retry_agents).is_empty() {
+                // Reuse the same post-travel health gate on retries; the next
+                // iteration must never call a living-only combat reducer.
+                break;
+            }
         }
         if !victory {
             let result = reducer_call!(self, "defeat_retreat_to_settlement", |cb| self
@@ -1790,7 +1833,12 @@ impl LiveRunner {
                 ))
             })
             .collect::<Vec<_>>();
-        candidates.sort_by(|left, right| right.0.total_cmp(&left.0));
+        candidates.sort_by(|left, right| {
+            right
+                .0
+                .total_cmp(&left.0)
+                .then_with(|| left.2.id.cmp(&right.2.id))
+        });
         let Some((improvement, cost, candidate)) = candidates.into_iter().next() else {
             return Ok(());
         };
@@ -2044,10 +2092,10 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
             cb,
         ));
     runner.call(result)?;
-    let result = reducer_call!(runner, "seed_world", |cb| runner
+    let result = reducer_call!(runner, "seed_simulation_world", |cb| runner
         .connection
         .reducers
-        .seed_world_then(cb));
+        .seed_simulation_world_then(config.run_nonce.clone(), cb));
     runner.call(result)?;
     let mut shared_settlement: Option<String> = None;
     for (agent, character_id) in runner.character_ids.clone().into_iter().enumerate() {
@@ -2122,7 +2170,12 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
         let result = reducer_call!(runner, "seed_simulation_equipment_damage", |cb| runner
             .connection
             .reducers
-            .seed_simulation_equipment_damage_then(character_id, fixture_item.id, cb));
+            .seed_simulation_equipment_damage_then(
+                config.run_nonce.clone(),
+                character_id,
+                fixture_item.id,
+                cb,
+            ));
         runner.call(result)?;
         if agent == 0 {
             let result = reducer_call!(runner, "seed_simulation_disease", |cb| runner
@@ -2280,7 +2333,7 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
                 equip.chest_armor_id,
                 equip.stomach_armor_id,
             ];
-            let equipment_item_ids = runner
+            let mut equipment_item_ids: Vec<String> = runner
                 .connection
                 .db
                 .inventory_item()
@@ -2289,6 +2342,7 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
                 .filter(|row| equipped_ids.contains(&Some(row.id)))
                 .map(|row| row.item_id)
                 .collect();
+            equipment_item_ids.sort();
             let capability = runner
                 .connection
                 .db
@@ -2395,6 +2449,8 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
         .map(|agent| agent.elapsed_minutes)
         .max()
         .unwrap_or(0);
+    let total_event_count = runner.sequence;
+    let trace_truncated = total_event_count > runner.trace.len() as u64;
     Ok(CoreLoopReport {
         backend_kind: "spacetimedb_authoritative_core_loop".into(),
         seed: config.seed,
@@ -2405,6 +2461,8 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
         profiles: runner.profiles,
         metrics: runner.metrics,
         trace: runner.trace,
+        trace_truncated,
+        total_event_count,
         final_agents,
         elapsed_game_minutes,
         policy_seed_note: "seed controls profiles and policy choices only; authoritative autoresolve seeds are server RNG values recorded in the trace".into(),
@@ -2511,5 +2569,13 @@ mod tests {
         );
         assert_eq!(live_schedule(&profile), saved);
         assert_ne!(saved, rest);
+    }
+
+    #[test]
+    fn smithing_decisions_quantize_float_noise_at_one_thousandth() {
+        assert_eq!(quantize_smithing_condition(0.020_000_1), 20);
+        assert_eq!(quantize_smithing_condition(0.019_999_9), 20);
+        assert_eq!(quantize_smithing_condition(f32::NAN), 0);
+        assert_eq!(quantize_smithing_condition(f32::INFINITY), 1_000);
     }
 }

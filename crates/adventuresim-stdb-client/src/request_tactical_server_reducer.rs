@@ -7,6 +7,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct RequestTacticalServerArgs {
+    pub character_id: u64,
     pub mission_id: String,
     pub scene_key: String,
 }
@@ -14,6 +15,7 @@ pub(super) struct RequestTacticalServerArgs {
 impl From<RequestTacticalServerArgs> for super::Reducer {
     fn from(args: RequestTacticalServerArgs) -> Self {
         Self::RequestTacticalServer {
+            character_id: args.character_id,
             mission_id: args.mission_id,
             scene_key: args.scene_key,
         }
@@ -35,8 +37,13 @@ pub trait request_tactical_server {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`request_tactical_server:request_tactical_server_then`] to run a callback after the reducer completes.
-    fn request_tactical_server(&self, mission_id: String, scene_key: String) -> __sdk::Result<()> {
-        self.request_tactical_server_then(mission_id, scene_key, |_, _| {})
+    fn request_tactical_server(
+        &self,
+        character_id: u64,
+        mission_id: String,
+        scene_key: String,
+    ) -> __sdk::Result<()> {
+        self.request_tactical_server_then(character_id, mission_id, scene_key, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `request_tactical_server` to run as soon as possible,
@@ -47,6 +54,7 @@ pub trait request_tactical_server {
     ///  and its status can be observed with the `callback`.
     fn request_tactical_server_then(
         &self,
+        character_id: u64,
         mission_id: String,
         scene_key: String,
 
@@ -61,6 +69,7 @@ pub trait request_tactical_server {
 impl request_tactical_server for super::RemoteReducers {
     fn request_tactical_server_then(
         &self,
+        character_id: u64,
         mission_id: String,
         scene_key: String,
 
@@ -72,6 +81,7 @@ impl request_tactical_server for super::RemoteReducers {
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
             RequestTacticalServerArgs {
+                character_id,
                 mission_id,
                 scene_key,
             },

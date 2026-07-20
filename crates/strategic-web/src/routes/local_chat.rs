@@ -2,7 +2,7 @@ use axum::{
     Form, Json, Router,
     extract::{Path, State},
     http::StatusCode,
-    routing::{get, post},
+    routing::get,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -10,18 +10,17 @@ use serde_json::json;
 use super::AppState;
 use crate::{
     session::Session,
-    spacetimedb::{Character, LocalChatMessage},
+    spacetimedb::{Character, LocalChatMessage, sql_string_literal},
 };
+
+const MAX_CHAT_HISTORY: usize = 200;
+const MAX_INCOMING_PLAYERS: usize = 50;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route(
             "/api/local-chat/{kind}/{subject_id}",
             get(messages).post(send_message),
-        )
-        .route(
-            "/api/local-chat/{kind}/{subject_id}/npc",
-            post(record_npc_message),
         )
         .route("/api/local-chat/incoming", get(incoming))
 }
@@ -34,8 +33,6 @@ struct LocalChatResponse {
 #[derive(Deserialize)]
 struct MessageForm {
     body: String,
-    #[serde(default)]
-    speaker: String,
 }
 
 async fn actor_and_key(
@@ -59,7 +56,10 @@ async fn actor_and_key(
                 .current_settlement_id
                 .as_deref()
                 .ok_or("NPC is not local")?;
-            if !subject_id.starts_with(&format!("{settlement}:")) {
+            if subject_id.chars().count() > 160
+                || subject_id.chars().any(char::is_control)
+                || !subject_id.starts_with(&format!("{settlement}:"))
+            {
                 return Err("NPC is not local".into());
             }
             format!("npc:{party_id}:{subject_id}")
@@ -108,12 +108,15 @@ async fn messages(
     let mut messages = state
         .db
         .query::<LocalChatMessage>(&format!(
-            "SELECT * FROM local_chat_message WHERE conversation_key = '{}'",
-            key
+            "SELECT * FROM local_chat_message WHERE conversation_key = {}",
+            sql_string_literal(&key)
         ))
         .await
-        .unwrap_or_default();
+        .map_err(|error| (StatusCode::SERVICE_UNAVAILABLE, error.to_string()))?;
     messages.sort_by_key(|message| (message.created_micros, message.id));
+    if messages.len() > MAX_CHAT_HISTORY {
+        messages.drain(..messages.len() - MAX_CHAT_HISTORY);
+    }
     Ok(Json(LocalChatResponse { messages }))
 }
 
@@ -134,36 +137,6 @@ async fn send_message(
                 json!(actor_id),
                 json!(kind),
                 json!(subject_id),
-                json!(form.body),
-            ],
-        )
-        .await
-    {
-        Ok(()) => StatusCode::NO_CONTENT,
-        Err(_) => StatusCode::BAD_REQUEST,
-    }
-}
-
-async fn record_npc_message(
-    State(state): State<AppState>,
-    Path((kind, subject_id)): Path<(String, String)>,
-    session: Session,
-    Form(form): Form<MessageForm>,
-) -> StatusCode {
-    if kind != "npc" {
-        return StatusCode::BAD_REQUEST;
-    }
-    let Some(actor_id) = session.character_id_u64() else {
-        return StatusCode::UNAUTHORIZED;
-    };
-    match state
-        .db
-        .call(
-            "record_local_npc_message",
-            &[
-                json!(actor_id),
-                json!(subject_id),
-                json!(form.speaker),
                 json!(form.body),
             ],
         )
@@ -199,8 +172,8 @@ async fn incoming(State(state): State<AppState>, session: Session) -> Json<Vec<I
     let memberships = state
         .db
         .query::<crate::spacetimedb::PartyMember>(&format!(
-            "SELECT * FROM party_member WHERE party_id = '{}'",
-            party_id
+            "SELECT * FROM party_member WHERE party_id = {}",
+            sql_string_literal(party_id)
         ))
         .await
         .unwrap_or_default();
@@ -236,6 +209,7 @@ async fn incoming(State(state): State<AppState>, session: Session) -> Json<Vec<I
                     && c.current_settlement_id == actor.current_settlement_id
                     && c.current_quest_location_id == actor.current_quest_location_id
             })
+            .take(MAX_INCOMING_PLAYERS)
             .map(|c| IncomingPlayer {
                 id: c.id.to_string(),
                 name: c.name,

@@ -7,6 +7,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct SeedSimulationEquipmentDamageArgs {
+    pub nonce: String,
     pub character_id: u64,
     pub inventory_item_id: u64,
 }
@@ -14,6 +15,7 @@ pub(super) struct SeedSimulationEquipmentDamageArgs {
 impl From<SeedSimulationEquipmentDamageArgs> for super::Reducer {
     fn from(args: SeedSimulationEquipmentDamageArgs) -> Self {
         Self::SeedSimulationEquipmentDamage {
+            nonce: args.nonce,
             character_id: args.character_id,
             inventory_item_id: args.inventory_item_id,
         }
@@ -37,10 +39,16 @@ pub trait seed_simulation_equipment_damage {
     /// /// Use [`seed_simulation_equipment_damage:seed_simulation_equipment_damage_then`] to run a callback after the reducer completes.
     fn seed_simulation_equipment_damage(
         &self,
+        nonce: String,
         character_id: u64,
         inventory_item_id: u64,
     ) -> __sdk::Result<()> {
-        self.seed_simulation_equipment_damage_then(character_id, inventory_item_id, |_, _| {})
+        self.seed_simulation_equipment_damage_then(
+            nonce,
+            character_id,
+            inventory_item_id,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `seed_simulation_equipment_damage` to run as soon as possible,
@@ -51,6 +59,7 @@ pub trait seed_simulation_equipment_damage {
     ///  and its status can be observed with the `callback`.
     fn seed_simulation_equipment_damage_then(
         &self,
+        nonce: String,
         character_id: u64,
         inventory_item_id: u64,
 
@@ -65,6 +74,7 @@ pub trait seed_simulation_equipment_damage {
 impl seed_simulation_equipment_damage for super::RemoteReducers {
     fn seed_simulation_equipment_damage_then(
         &self,
+        nonce: String,
         character_id: u64,
         inventory_item_id: u64,
 
@@ -76,6 +86,7 @@ impl seed_simulation_equipment_damage for super::RemoteReducers {
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
             SeedSimulationEquipmentDamageArgs {
+                nonce,
                 character_id,
                 inventory_item_id,
             },

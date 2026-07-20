@@ -9,10 +9,10 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub mod abandon_quest_reducer;
 pub mod accept_party_join_request_reducer;
 pub mod accept_quest_reducer;
-pub mod add_and_equip_item_reducer;
 pub mod agricultural_commodity_type;
 pub mod agricultural_limitation_type;
 pub mod agriculture_industry_type;
+pub mod approve_party_action_request_reducer;
 pub mod autoresolve_quest_reducer;
 pub mod autoresolve_report_table;
 pub mod autoresolve_report_type;
@@ -33,6 +33,7 @@ pub mod battle_participant_type;
 pub mod battle_result_table;
 pub mod battle_result_type;
 pub mod begin_world_data_import_reducer;
+pub mod bootstrap_development_world_reducer;
 pub mod built_settlement_cover_type;
 pub mod calibrate_weapon_precision_reducer;
 pub mod camp_duration_mode_type;
@@ -80,7 +81,6 @@ pub mod character_type;
 pub mod charcoal_burning_industry_type;
 pub mod claim_simulation_run_reducer;
 pub mod committed_cut_type;
-pub mod complete_quest_reducer;
 pub mod configure_simulation_character_reducer;
 pub mod connected_player_item_type;
 pub mod connected_player_type;
@@ -96,18 +96,12 @@ pub mod create_named_character_reducer;
 pub mod create_named_character_with_id_reducer;
 pub mod create_recruitment_role_reducer;
 pub mod create_tactical_server_for_request_reducer;
-pub mod create_tactical_server_reducer;
 pub mod create_temporary_character_reducer;
 pub mod cropland_cover_type;
 pub mod crossing_traversal_type;
 pub mod crossing_watercourse_type;
 pub mod death_cause_type;
 pub mod death_source_type;
-pub mod define_armor_reducer;
-pub mod define_clothing_reducer;
-pub mod define_item_reducer;
-pub mod define_shield_reducer;
-pub mod define_weapon_reducer;
 pub mod delete_recruitment_role_reducer;
 pub mod delete_saved_recruitment_role_reducer;
 pub mod deposit_party_inventory_item_reducer;
@@ -132,7 +126,6 @@ pub mod drought_profile_type;
 pub mod edge_endpoint_type;
 pub mod edge_progress_permille_type;
 pub mod elevation_meters_type;
-pub mod end_tactical_server_by_instance_reducer;
 pub mod end_tactical_server_reducer;
 pub mod ensure_settlement_activity_reducer;
 pub mod enter_mission_reducer;
@@ -181,7 +174,6 @@ pub mod inferred_industry_profile_type;
 pub mod inferred_tree_species_profile_type;
 pub mod inland_water_access_type;
 pub mod inland_water_size_type;
-pub mod insert_new_character_reducer;
 pub mod inventory_item_table;
 pub mod inventory_item_type;
 pub mod inventory_quantity_target_table;
@@ -265,7 +257,6 @@ pub mod quest_issuer_type;
 pub mod quest_status_type;
 pub mod quest_table;
 pub mod quest_type;
-pub mod record_local_npc_message_reducer;
 pub mod recruitment_requirements_type;
 pub mod refresh_capabilities_reducer;
 pub mod refresh_strategic_condition_reducer;
@@ -284,6 +275,7 @@ pub mod request_tactical_server_for_scene_reducer;
 pub mod request_tactical_server_reducer;
 pub mod request_to_join_party_reducer;
 pub mod resolve_religious_demand_reducer;
+pub mod resolved_party_action_type;
 pub mod rest_at_camp_reducer;
 pub mod rest_at_settlement_hours_reducer;
 pub mod rest_at_settlement_reducer;
@@ -316,14 +308,9 @@ pub mod saved_recruitment_role_table;
 pub mod saved_recruitment_role_type;
 pub mod schedule_allocation_type;
 pub mod sedimentary_rock_type;
-pub mod seed_bot_join_requests_reducer;
-pub mod seed_damaged_character_reducer;
-pub mod seed_party_companions_reducer;
-pub mod seed_religion_scholar_character_reducer;
-pub mod seed_sick_character_reducer;
 pub mod seed_simulation_disease_reducer;
 pub mod seed_simulation_equipment_damage_reducer;
-pub mod seed_world_reducer;
+pub mod seed_simulation_world_reducer;
 pub mod self_regard_type;
 pub mod send_local_chat_message_reducer;
 pub mod set_character_religion_reducer;
@@ -412,10 +399,10 @@ pub mod wrb_reference_group_type;
 pub use abandon_quest_reducer::abandon_quest;
 pub use accept_party_join_request_reducer::accept_party_join_request;
 pub use accept_quest_reducer::accept_quest;
-pub use add_and_equip_item_reducer::add_and_equip_item;
 pub use agricultural_commodity_type::AgriculturalCommodity;
 pub use agricultural_limitation_type::AgriculturalLimitation;
 pub use agriculture_industry_type::AgricultureIndustry;
+pub use approve_party_action_request_reducer::approve_party_action_request;
 pub use autoresolve_quest_reducer::autoresolve_quest;
 pub use autoresolve_report_table::*;
 pub use autoresolve_report_type::AutoresolveReport;
@@ -436,6 +423,7 @@ pub use battle_participant_type::BattleParticipant;
 pub use battle_result_table::*;
 pub use battle_result_type::BattleResult;
 pub use begin_world_data_import_reducer::begin_world_data_import;
+pub use bootstrap_development_world_reducer::bootstrap_development_world;
 pub use built_settlement_cover_type::BuiltSettlementCover;
 pub use calibrate_weapon_precision_reducer::calibrate_weapon_precision;
 pub use camp_duration_mode_type::CampDurationMode;
@@ -483,7 +471,6 @@ pub use character_type::Character;
 pub use charcoal_burning_industry_type::CharcoalBurningIndustry;
 pub use claim_simulation_run_reducer::claim_simulation_run;
 pub use committed_cut_type::CommittedCut;
-pub use complete_quest_reducer::complete_quest;
 pub use configure_simulation_character_reducer::configure_simulation_character;
 pub use connected_player_item_type::ConnectedPlayerItem;
 pub use connected_player_type::ConnectedPlayer;
@@ -499,18 +486,12 @@ pub use create_named_character_reducer::create_named_character;
 pub use create_named_character_with_id_reducer::create_named_character_with_id;
 pub use create_recruitment_role_reducer::create_recruitment_role;
 pub use create_tactical_server_for_request_reducer::create_tactical_server_for_request;
-pub use create_tactical_server_reducer::create_tactical_server;
 pub use create_temporary_character_reducer::create_temporary_character;
 pub use cropland_cover_type::CroplandCover;
 pub use crossing_traversal_type::CrossingTraversal;
 pub use crossing_watercourse_type::CrossingWatercourse;
 pub use death_cause_type::DeathCause;
 pub use death_source_type::DeathSource;
-pub use define_armor_reducer::define_armor;
-pub use define_clothing_reducer::define_clothing;
-pub use define_item_reducer::define_item;
-pub use define_shield_reducer::define_shield;
-pub use define_weapon_reducer::define_weapon;
 pub use delete_recruitment_role_reducer::delete_recruitment_role;
 pub use delete_saved_recruitment_role_reducer::delete_saved_recruitment_role;
 pub use deposit_party_inventory_item_reducer::deposit_party_inventory_item;
@@ -535,7 +516,6 @@ pub use drought_profile_type::DroughtProfile;
 pub use edge_endpoint_type::EdgeEndpoint;
 pub use edge_progress_permille_type::EdgeProgressPermille;
 pub use elevation_meters_type::ElevationMeters;
-pub use end_tactical_server_by_instance_reducer::end_tactical_server_by_instance;
 pub use end_tactical_server_reducer::end_tactical_server;
 pub use ensure_settlement_activity_reducer::ensure_settlement_activity;
 pub use enter_mission_reducer::enter_mission;
@@ -584,7 +564,6 @@ pub use inferred_industry_profile_type::InferredIndustryProfile;
 pub use inferred_tree_species_profile_type::InferredTreeSpeciesProfile;
 pub use inland_water_access_type::InlandWaterAccess;
 pub use inland_water_size_type::InlandWaterSize;
-pub use insert_new_character_reducer::insert_new_character;
 pub use inventory_item_table::*;
 pub use inventory_item_type::InventoryItem;
 pub use inventory_quantity_target_table::*;
@@ -668,7 +647,6 @@ pub use quest_issuer_type::QuestIssuer;
 pub use quest_status_type::QuestStatus;
 pub use quest_table::*;
 pub use quest_type::Quest;
-pub use record_local_npc_message_reducer::record_local_npc_message;
 pub use recruitment_requirements_type::RecruitmentRequirements;
 pub use refresh_capabilities_reducer::refresh_capabilities;
 pub use refresh_strategic_condition_reducer::refresh_strategic_condition;
@@ -687,6 +665,7 @@ pub use request_tactical_server_for_scene_reducer::request_tactical_server_for_s
 pub use request_tactical_server_reducer::request_tactical_server;
 pub use request_to_join_party_reducer::request_to_join_party;
 pub use resolve_religious_demand_reducer::resolve_religious_demand;
+pub use resolved_party_action_type::ResolvedPartyAction;
 pub use rest_at_camp_reducer::rest_at_camp;
 pub use rest_at_settlement_hours_reducer::rest_at_settlement_hours;
 pub use rest_at_settlement_reducer::rest_at_settlement;
@@ -719,14 +698,9 @@ pub use saved_recruitment_role_table::*;
 pub use saved_recruitment_role_type::SavedRecruitmentRole;
 pub use schedule_allocation_type::ScheduleAllocation;
 pub use sedimentary_rock_type::SedimentaryRock;
-pub use seed_bot_join_requests_reducer::seed_bot_join_requests;
-pub use seed_damaged_character_reducer::seed_damaged_character;
-pub use seed_party_companions_reducer::seed_party_companions;
-pub use seed_religion_scholar_character_reducer::seed_religion_scholar_character;
-pub use seed_sick_character_reducer::seed_sick_character;
 pub use seed_simulation_disease_reducer::seed_simulation_disease;
 pub use seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage;
-pub use seed_world_reducer::seed_world;
+pub use seed_simulation_world_reducer::seed_simulation_world;
 pub use self_regard_type::SelfRegard;
 pub use send_local_chat_message_reducer::send_local_chat_message;
 pub use set_character_religion_reducer::set_character_religion;
@@ -832,10 +806,9 @@ pub enum Reducer {
         character_id: u64,
         quest_id: String,
     },
-    AddAndEquipItem {
-        character_id: u64,
-        item_id: String,
-        destination: ItemSlot,
+    ApprovePartyActionRequest {
+        leader_id: u64,
+        request_id: u64,
     },
     AutoresolveQuest {
         character_id: u64,
@@ -852,8 +825,13 @@ pub enum Reducer {
         manifest_digest: String,
         sources: String,
     },
+    BootstrapDevelopmentWorld {
+        bootstrap_token: String,
+        include_visual_demos: bool,
+    },
     CalibrateWeaponPrecision,
     CancelMissionRequest {
+        character_id: u64,
         mission_id: String,
     },
     ChangeInventoryItem {
@@ -865,9 +843,6 @@ pub enum Reducer {
         bootstrap_token: String,
         nonce: String,
         policy_seed: u64,
-    },
-    CompleteQuest {
-        quest_id: String,
     },
     ConfigureSimulationCharacter {
         nonce: String,
@@ -905,12 +880,6 @@ pub enum Reducer {
         weapon_precision: f32,
         save_role: bool,
     },
-    CreateTacticalServer {
-        mission_id: String,
-        scene_key: String,
-        addr: String,
-        cert_digest: String,
-    },
     CreateTacticalServerForRequest {
         mission_id: String,
         addr: String,
@@ -918,43 +887,6 @@ pub enum Reducer {
     },
     CreateTemporaryCharacter {
         server: __sdk::Identity,
-    },
-    DefineArmor {
-        item_id: String,
-        weight: f32,
-        slot: ItemSlot,
-        coverage: f32,
-        resistance: f32,
-        padding: f32,
-        flexibility: f32,
-        range_of_motion: f32,
-    },
-    DefineClothing {
-        item_id: String,
-        weight: f32,
-    },
-    DefineItem {
-        item_id: String,
-        weight: f32,
-    },
-    DefineShield {
-        item_id: String,
-        weight: f32,
-        block: f32,
-    },
-    DefineWeapon {
-        item_id: String,
-        weight: f32,
-        accuracy: f32,
-        penetration: f32,
-        reach: f32,
-        balance: f32,
-        precise: bool,
-        melee: bool,
-        ranged: bool,
-        blunt: bool,
-        slash: bool,
-        pierce: bool,
     },
     DeleteRecruitmentRole {
         leader_id: u64,
@@ -993,12 +925,7 @@ pub enum Reducer {
     },
     EndTacticalServer {
         success: bool,
-        xp_gained: i32,
-    },
-    EndTacticalServerByInstance {
-        server: TacticalServer,
-        success: bool,
-        xp_gained: i32,
+        reported_xp_gained: i32,
     },
     EnsureSettlementActivity {
         settlement_id: String,
@@ -1057,11 +984,6 @@ pub enum Reducer {
     ImportWorldNodes {
         nodes: Vec<WorldNodeImport>,
     },
-    InsertNewCharacter {
-        name: String,
-        id: u64,
-        temporary: bool,
-    },
     KillSimulationCharacter {
         nonce: String,
         character_id: u64,
@@ -1083,12 +1005,6 @@ pub enum Reducer {
         settlement_id: String,
         item_ids: Vec<String>,
         quantities: Vec<u32>,
-    },
-    RecordLocalNpcMessage {
-        actor_id: u64,
-        subject_id: String,
-        npc_name: String,
-        body: String,
     },
     RefreshCapabilities {
         character_id: u64,
@@ -1120,10 +1036,12 @@ pub enum Reducer {
         payload: String,
     },
     RequestTacticalServer {
+        character_id: u64,
         mission_id: String,
         scene_key: String,
     },
     RequestTacticalServerForScene {
+        character_id: u64,
         scene_key: String,
     },
     RequestToJoinParty {
@@ -1165,24 +1083,18 @@ pub enum Reducer {
         requirements: RecruitmentRequirements,
         weapon_precision: f32,
     },
-    SeedBotJoinRequests {
-        recruitment_role_id: u64,
-    },
-    SeedDamagedCharacter,
-    SeedPartyCompanions {
-        leader_id: u64,
-    },
-    SeedReligionScholarCharacter,
-    SeedSickCharacter,
     SeedSimulationDisease {
         nonce: String,
         character_id: u64,
     },
     SeedSimulationEquipmentDamage {
+        nonce: String,
         character_id: u64,
         inventory_item_id: u64,
     },
-    SeedWorld,
+    SeedSimulationWorld {
+        nonce: String,
+    },
     SendLocalChatMessage {
         sender_id: u64,
         subject_kind: String,
@@ -1296,7 +1208,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::AbandonQuest { .. } => "abandon_quest",
             Reducer::AcceptPartyJoinRequest { .. } => "accept_party_join_request",
             Reducer::AcceptQuest { .. } => "accept_quest",
-            Reducer::AddAndEquipItem { .. } => "add_and_equip_item",
+            Reducer::ApprovePartyActionRequest { .. } => "approve_party_action_request",
             Reducer::AutoresolveQuest { .. } => "autoresolve_quest",
             Reducer::BackfillCharacterDeathsAndLeadership => {
                 "backfill_character_deaths_and_leadership"
@@ -1308,11 +1220,11 @@ impl __sdk::Reducer for Reducer {
             Reducer::BackfillSettlementHerbalists => "backfill_settlement_herbalists",
             Reducer::BackfillSoloParties => "backfill_solo_parties",
             Reducer::BeginWorldDataImport { .. } => "begin_world_data_import",
+            Reducer::BootstrapDevelopmentWorld { .. } => "bootstrap_development_world",
             Reducer::CalibrateWeaponPrecision => "calibrate_weapon_precision",
             Reducer::CancelMissionRequest { .. } => "cancel_mission_request",
             Reducer::ChangeInventoryItem { .. } => "change_inventory_item",
             Reducer::ClaimSimulationRun { .. } => "claim_simulation_run",
-            Reducer::CompleteQuest { .. } => "complete_quest",
             Reducer::ConfigureSimulationCharacter { .. } => "configure_simulation_character",
             Reducer::ContinueCampTravel { .. } => "continue_camp_travel",
             Reducer::CraftMedication { .. } => "craft_medication",
@@ -1320,14 +1232,8 @@ impl __sdk::Reducer for Reducer {
             Reducer::CreateNamedCharacter { .. } => "create_named_character",
             Reducer::CreateNamedCharacterWithId { .. } => "create_named_character_with_id",
             Reducer::CreateRecruitmentRole { .. } => "create_recruitment_role",
-            Reducer::CreateTacticalServer { .. } => "create_tactical_server",
             Reducer::CreateTacticalServerForRequest { .. } => "create_tactical_server_for_request",
             Reducer::CreateTemporaryCharacter { .. } => "create_temporary_character",
-            Reducer::DefineArmor { .. } => "define_armor",
-            Reducer::DefineClothing { .. } => "define_clothing",
-            Reducer::DefineItem { .. } => "define_item",
-            Reducer::DefineShield { .. } => "define_shield",
-            Reducer::DefineWeapon { .. } => "define_weapon",
             Reducer::DeleteRecruitmentRole { .. } => "delete_recruitment_role",
             Reducer::DeleteSavedRecruitmentRole { .. } => "delete_saved_recruitment_role",
             Reducer::DepositPartyInventoryItem { .. } => "deposit_party_inventory_item",
@@ -1337,7 +1243,6 @@ impl __sdk::Reducer for Reducer {
             Reducer::DismissMedicalExamination { .. } => "dismiss_medical_examination",
             Reducer::DismissPartyActionRequest { .. } => "dismiss_party_action_request",
             Reducer::EndTacticalServer { .. } => "end_tactical_server",
-            Reducer::EndTacticalServerByInstance { .. } => "end_tactical_server_by_instance",
             Reducer::EnsureSettlementActivity { .. } => "ensure_settlement_activity",
             Reducer::EnterMission { .. } => "enter_mission",
             Reducer::EquipItem { .. } => "equip_item",
@@ -1352,13 +1257,11 @@ impl __sdk::Reducer for Reducer {
             Reducer::ImportSettlements { .. } => "import_settlements",
             Reducer::ImportTravelEdges { .. } => "import_travel_edges",
             Reducer::ImportWorldNodes { .. } => "import_world_nodes",
-            Reducer::InsertNewCharacter { .. } => "insert_new_character",
             Reducer::KillSimulationCharacter { .. } => "kill_simulation_character",
             Reducer::LeaveMission { .. } => "leave_mission",
             Reducer::LeaveParty { .. } => "leave_party",
             Reducer::LiquidatePartyInventory { .. } => "liquidate_party_inventory",
             Reducer::PurchaseFromHerbalist { .. } => "purchase_from_herbalist",
-            Reducer::RecordLocalNpcMessage { .. } => "record_local_npc_message",
             Reducer::RefreshCapabilities { .. } => "refresh_capabilities",
             Reducer::RefreshStrategicCondition { .. } => "refresh_strategic_condition",
             Reducer::RejectPartyJoinRequest { .. } => "reject_party_join_request",
@@ -1376,14 +1279,9 @@ impl __sdk::Reducer for Reducer {
             Reducer::RetrieveRepairedItem { .. } => "retrieve_repaired_item",
             Reducer::RetrieveRepairedItems { .. } => "retrieve_repaired_items",
             Reducer::SaveRecruitmentRole { .. } => "save_recruitment_role",
-            Reducer::SeedBotJoinRequests { .. } => "seed_bot_join_requests",
-            Reducer::SeedDamagedCharacter => "seed_damaged_character",
-            Reducer::SeedPartyCompanions { .. } => "seed_party_companions",
-            Reducer::SeedReligionScholarCharacter => "seed_religion_scholar_character",
-            Reducer::SeedSickCharacter => "seed_sick_character",
             Reducer::SeedSimulationDisease { .. } => "seed_simulation_disease",
             Reducer::SeedSimulationEquipmentDamage { .. } => "seed_simulation_equipment_damage",
-            Reducer::SeedWorld => "seed_world",
+            Reducer::SeedSimulationWorld { .. } => "seed_simulation_world",
             Reducer::SendLocalChatMessage { .. } => "send_local_chat_message",
             Reducer::SetCharacterReligion { .. } => "set_character_religion",
             Reducer::SetInventoryQuantityTarget { .. } => "set_inventory_quantity_target",
@@ -1431,14 +1329,12 @@ impl __sdk::Reducer for Reducer {
                 character_id: character_id.clone(),
                 quest_id: quest_id.clone(),
 }),
-            Reducer::AddAndEquipItem{
-                character_id,
-                item_id,
-                destination,
-}             => __sats::bsatn::to_vec(&add_and_equip_item_reducer::AddAndEquipItemArgs {
-                character_id: character_id.clone(),
-                item_id: item_id.clone(),
-                destination: destination.clone(),
+            Reducer::ApprovePartyActionRequest{
+                leader_id,
+                request_id,
+}             => __sats::bsatn::to_vec(&approve_party_action_request_reducer::ApprovePartyActionRequestArgs {
+                leader_id: leader_id.clone(),
+                request_id: request_id.clone(),
 }),
             Reducer::AutoresolveQuest{
                 character_id,
@@ -1468,11 +1364,20 @@ Reducer::BeginWorldDataImport{
                 manifest_digest: manifest_digest.clone(),
                 sources: sources.clone(),
 }),
+            Reducer::BootstrapDevelopmentWorld{
+                bootstrap_token,
+                include_visual_demos,
+}             => __sats::bsatn::to_vec(&bootstrap_development_world_reducer::BootstrapDevelopmentWorldArgs {
+                bootstrap_token: bootstrap_token.clone(),
+                include_visual_demos: include_visual_demos.clone(),
+}),
             Reducer::CalibrateWeaponPrecision => __sats::bsatn::to_vec(&calibrate_weapon_precision_reducer::CalibrateWeaponPrecisionArgs {
                 }),
 Reducer::CancelMissionRequest{
+                character_id,
                 mission_id,
 }             => __sats::bsatn::to_vec(&cancel_mission_request_reducer::CancelMissionRequestArgs {
+                character_id: character_id.clone(),
                 mission_id: mission_id.clone(),
 }),
             Reducer::ChangeInventoryItem{
@@ -1492,11 +1397,6 @@ Reducer::CancelMissionRequest{
                 bootstrap_token: bootstrap_token.clone(),
                 nonce: nonce.clone(),
                 policy_seed: policy_seed.clone(),
-}),
-            Reducer::CompleteQuest{
-                quest_id,
-}             => __sats::bsatn::to_vec(&complete_quest_reducer::CompleteQuestArgs {
-                quest_id: quest_id.clone(),
 }),
             Reducer::ConfigureSimulationCharacter{
                 nonce,
@@ -1563,17 +1463,6 @@ Reducer::CancelMissionRequest{
                 weapon_precision: weapon_precision.clone(),
                 save_role: save_role.clone(),
 }),
-            Reducer::CreateTacticalServer{
-                mission_id,
-                scene_key,
-                addr,
-                cert_digest,
-}             => __sats::bsatn::to_vec(&create_tactical_server_reducer::CreateTacticalServerArgs {
-                mission_id: mission_id.clone(),
-                scene_key: scene_key.clone(),
-                addr: addr.clone(),
-                cert_digest: cert_digest.clone(),
-}),
             Reducer::CreateTacticalServerForRequest{
                 mission_id,
                 addr,
@@ -1587,75 +1476,6 @@ Reducer::CancelMissionRequest{
                 server,
 }             => __sats::bsatn::to_vec(&create_temporary_character_reducer::CreateTemporaryCharacterArgs {
                 server: server.clone(),
-}),
-            Reducer::DefineArmor{
-                item_id,
-                weight,
-                slot,
-                coverage,
-                resistance,
-                padding,
-                flexibility,
-                range_of_motion,
-}             => __sats::bsatn::to_vec(&define_armor_reducer::DefineArmorArgs {
-                item_id: item_id.clone(),
-                weight: weight.clone(),
-                slot: slot.clone(),
-                coverage: coverage.clone(),
-                resistance: resistance.clone(),
-                padding: padding.clone(),
-                flexibility: flexibility.clone(),
-                range_of_motion: range_of_motion.clone(),
-}),
-            Reducer::DefineClothing{
-                item_id,
-                weight,
-}             => __sats::bsatn::to_vec(&define_clothing_reducer::DefineClothingArgs {
-                item_id: item_id.clone(),
-                weight: weight.clone(),
-}),
-            Reducer::DefineItem{
-                item_id,
-                weight,
-}             => __sats::bsatn::to_vec(&define_item_reducer::DefineItemArgs {
-                item_id: item_id.clone(),
-                weight: weight.clone(),
-}),
-            Reducer::DefineShield{
-                item_id,
-                weight,
-                block,
-}             => __sats::bsatn::to_vec(&define_shield_reducer::DefineShieldArgs {
-                item_id: item_id.clone(),
-                weight: weight.clone(),
-                block: block.clone(),
-}),
-            Reducer::DefineWeapon{
-                item_id,
-                weight,
-                accuracy,
-                penetration,
-                reach,
-                balance,
-                precise,
-                melee,
-                ranged,
-                blunt,
-                slash,
-                pierce,
-}             => __sats::bsatn::to_vec(&define_weapon_reducer::DefineWeaponArgs {
-                item_id: item_id.clone(),
-                weight: weight.clone(),
-                accuracy: accuracy.clone(),
-                penetration: penetration.clone(),
-                reach: reach.clone(),
-                balance: balance.clone(),
-                precise: precise.clone(),
-                melee: melee.clone(),
-                ranged: ranged.clone(),
-                blunt: blunt.clone(),
-                slash: slash.clone(),
-                pierce: pierce.clone(),
 }),
             Reducer::DeleteRecruitmentRole{
                 leader_id,
@@ -1721,19 +1541,10 @@ Reducer::CancelMissionRequest{
 }),
             Reducer::EndTacticalServer{
                 success,
-                xp_gained,
+                reported_xp_gained,
 }             => __sats::bsatn::to_vec(&end_tactical_server_reducer::EndTacticalServerArgs {
                 success: success.clone(),
-                xp_gained: xp_gained.clone(),
-}),
-            Reducer::EndTacticalServerByInstance{
-                server,
-                success,
-                xp_gained,
-}             => __sats::bsatn::to_vec(&end_tactical_server_by_instance_reducer::EndTacticalServerByInstanceArgs {
-                server: server.clone(),
-                success: success.clone(),
-                xp_gained: xp_gained.clone(),
+                reported_xp_gained: reported_xp_gained.clone(),
 }),
             Reducer::EnsureSettlementActivity{
                 settlement_id,
@@ -1835,15 +1646,6 @@ Reducer::CancelMissionRequest{
 }             => __sats::bsatn::to_vec(&import_world_nodes_reducer::ImportWorldNodesArgs {
                 nodes: nodes.clone(),
 }),
-            Reducer::InsertNewCharacter{
-                name,
-                id,
-                temporary,
-}             => __sats::bsatn::to_vec(&insert_new_character_reducer::InsertNewCharacterArgs {
-                name: name.clone(),
-                id: id.clone(),
-                temporary: temporary.clone(),
-}),
             Reducer::KillSimulationCharacter{
                 nonce,
                 character_id,
@@ -1882,17 +1684,6 @@ Reducer::CancelMissionRequest{
                 settlement_id: settlement_id.clone(),
                 item_ids: item_ids.clone(),
                 quantities: quantities.clone(),
-}),
-            Reducer::RecordLocalNpcMessage{
-                actor_id,
-                subject_id,
-                npc_name,
-                body,
-}             => __sats::bsatn::to_vec(&record_local_npc_message_reducer::RecordLocalNpcMessageArgs {
-                actor_id: actor_id.clone(),
-                subject_id: subject_id.clone(),
-                npc_name: npc_name.clone(),
-                body: body.clone(),
 }),
             Reducer::RefreshCapabilities{
                 character_id,
@@ -1946,15 +1737,19 @@ Reducer::CancelMissionRequest{
                 payload: payload.clone(),
 }),
             Reducer::RequestTacticalServer{
+                character_id,
                 mission_id,
                 scene_key,
 }             => __sats::bsatn::to_vec(&request_tactical_server_reducer::RequestTacticalServerArgs {
+                character_id: character_id.clone(),
                 mission_id: mission_id.clone(),
                 scene_key: scene_key.clone(),
 }),
             Reducer::RequestTacticalServerForScene{
+                character_id,
                 scene_key,
 }             => __sats::bsatn::to_vec(&request_tactical_server_for_scene_reducer::RequestTacticalServerForSceneArgs {
+                character_id: character_id.clone(),
                 scene_key: scene_key.clone(),
 }),
             Reducer::RequestToJoinParty{
@@ -2027,23 +1822,7 @@ Reducer::CancelMissionRequest{
                 requirements: requirements.clone(),
                 weapon_precision: weapon_precision.clone(),
 }),
-            Reducer::SeedBotJoinRequests{
-                recruitment_role_id,
-}             => __sats::bsatn::to_vec(&seed_bot_join_requests_reducer::SeedBotJoinRequestsArgs {
-                recruitment_role_id: recruitment_role_id.clone(),
-}),
-            Reducer::SeedDamagedCharacter => __sats::bsatn::to_vec(&seed_damaged_character_reducer::SeedDamagedCharacterArgs {
-                }),
-Reducer::SeedPartyCompanions{
-                leader_id,
-}             => __sats::bsatn::to_vec(&seed_party_companions_reducer::SeedPartyCompanionsArgs {
-                leader_id: leader_id.clone(),
-}),
-            Reducer::SeedReligionScholarCharacter => __sats::bsatn::to_vec(&seed_religion_scholar_character_reducer::SeedReligionScholarCharacterArgs {
-                }),
-Reducer::SeedSickCharacter => __sats::bsatn::to_vec(&seed_sick_character_reducer::SeedSickCharacterArgs {
-                }),
-Reducer::SeedSimulationDisease{
+            Reducer::SeedSimulationDisease{
                 nonce,
                 character_id,
 }             => __sats::bsatn::to_vec(&seed_simulation_disease_reducer::SeedSimulationDiseaseArgs {
@@ -2051,15 +1830,20 @@ Reducer::SeedSimulationDisease{
                 character_id: character_id.clone(),
 }),
             Reducer::SeedSimulationEquipmentDamage{
+                nonce,
                 character_id,
                 inventory_item_id,
 }             => __sats::bsatn::to_vec(&seed_simulation_equipment_damage_reducer::SeedSimulationEquipmentDamageArgs {
+                nonce: nonce.clone(),
                 character_id: character_id.clone(),
                 inventory_item_id: inventory_item_id.clone(),
 }),
-            Reducer::SeedWorld => __sats::bsatn::to_vec(&seed_world_reducer::SeedWorldArgs {
-                }),
-Reducer::SendLocalChatMessage{
+            Reducer::SeedSimulationWorld{
+                nonce,
+}             => __sats::bsatn::to_vec(&seed_simulation_world_reducer::SeedSimulationWorldArgs {
+                nonce: nonce.clone(),
+}),
+            Reducer::SendLocalChatMessage{
                 sender_id,
                 subject_kind,
                 subject_id,

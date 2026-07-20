@@ -128,7 +128,10 @@ async fn accept_quest_api(
 ) -> Json<AcceptQuestResponse> {
     let title = state
         .db
-        .query::<Quest>(&format!("SELECT * FROM quest WHERE id = '{}'", id))
+        .query::<Quest>(&format!(
+            "SELECT * FROM quest WHERE id = {}",
+            sql_string_literal(&id)
+        ))
         .await
         .unwrap_or_default()
         .into_iter()
@@ -189,7 +192,10 @@ async fn turn_in_quest_api(
 ) -> Json<TurnInQuestResponse> {
     let reward = state
         .db
-        .query::<Quest>(&format!("SELECT * FROM quest WHERE id = '{}'", id))
+        .query::<Quest>(&format!(
+            "SELECT * FROM quest WHERE id = {}",
+            sql_string_literal(&id)
+        ))
         .await
         .unwrap_or_default()
         .into_iter()
@@ -228,7 +234,10 @@ async fn abandon_quest(
 
     let quests: Vec<Quest> = state
         .db
-        .query(&format!("SELECT * FROM quest WHERE id = '{}'", id))
+        .query(&format!(
+            "SELECT * FROM quest WHERE id = {}",
+            sql_string_literal(&id)
+        ))
         .await
         .unwrap_or_default();
     let settlement_id = quests.first().map(|quest| quest.settlement_id.clone());
@@ -441,7 +450,10 @@ async fn render_quest_location(
 ) -> Html<String> {
     let matching_quests: Vec<Quest> = state
         .db
-        .query(&format!("SELECT * FROM quest WHERE id = '{}'", id))
+        .query(&format!(
+            "SELECT * FROM quest WHERE id = {}",
+            sql_string_literal(&id)
+        ))
         .await
         .unwrap_or_default();
     let Some(quest) = matching_quests.first() else {
@@ -463,7 +475,10 @@ async fn render_quest_location(
     let party = if let Some(party_id) = character.as_ref().and_then(|c| c.party_id.as_ref()) {
         state
             .db
-            .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+            .query::<Party>(&format!(
+                "SELECT * FROM party WHERE id = {}",
+                sql_string_literal(party_id)
+            ))
             .await
             .unwrap_or_default()
             .into_iter()
@@ -513,8 +528,8 @@ async fn render_quest_location(
     let results: Vec<BattleResult> = state
         .db
         .query(&format!(
-            "SELECT * FROM battle_result WHERE quest_id = '{}'",
-            quest.id
+            "SELECT * FROM battle_result WHERE quest_id = {}",
+            sql_string_literal(&quest.id)
         ))
         .await
         .unwrap_or_default();
@@ -525,8 +540,9 @@ async fn render_quest_location(
         state
             .db
             .query::<AutoresolveReport>(&format!(
-                "SELECT * FROM autoresolve_report WHERE quest_id = '{}' AND party_id = '{}'",
-                quest.id, party.id
+                "SELECT * FROM autoresolve_report WHERE quest_id = {} AND party_id = {}",
+                sql_string_literal(&quest.id),
+                sql_string_literal(&party.id)
             ))
             .await
             .unwrap_or_default()
@@ -538,8 +554,8 @@ async fn render_quest_location(
     let loot: Vec<BattleLootItem> = state
         .db
         .query(&format!(
-            "SELECT * FROM battle_loot_item WHERE quest_id = '{}'",
-            quest.id
+            "SELECT * FROM battle_loot_item WHERE quest_id = {}",
+            sql_string_literal(&quest.id)
         ))
         .await
         .unwrap_or_default();
@@ -547,8 +563,8 @@ async fn render_quest_location(
         state
             .db
             .query(&format!(
-                "SELECT * FROM party_inventory_item WHERE party_id = '{}'",
-                party.id
+                "SELECT * FROM party_inventory_item WHERE party_id = {}",
+                sql_string_literal(&party.id)
             ))
             .await
             .unwrap_or_default()
@@ -559,8 +575,8 @@ async fn render_quest_location(
         state
             .db
             .query(&format!(
-                "SELECT * FROM party_stake WHERE party_id = '{}'",
-                party.id
+                "SELECT * FROM party_stake WHERE party_id = {}",
+                sql_string_literal(&party.id)
             ))
             .await
             .unwrap_or_default()
@@ -737,7 +753,10 @@ async fn party_is_ready(state: &AppState, members: &[Character]) -> bool {
 async fn party_targets(state: &AppState, party_id: &str) -> Vec<InventoryQuantityTarget> {
     let party = state
         .db
-        .query::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+        .query::<Party>(&format!(
+            "SELECT * FROM party WHERE id = {}",
+            sql_string_literal(party_id)
+        ))
         .await
         .unwrap_or_default()
         .into_iter()

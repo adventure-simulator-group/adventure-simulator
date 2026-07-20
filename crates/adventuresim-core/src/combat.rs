@@ -133,7 +133,8 @@ pub fn resolve_melee_attack_by_parts(
 
     // (2)-(5) Calculate defense of the defender depending on the response
     let defense = match defender_response {
-        DefenderResponse::None | DefenderResponse::Parry { .. } => {
+        DefenderResponse::None => 0.0,
+        DefenderResponse::Parry { .. } => {
             let block_skill = defender_skills.skill_check_by_parts(
                 Skill::Block,
                 defender_attr,
@@ -469,4 +470,32 @@ pub fn health_damage_from_attack(result: AttackResult, part: BodyPart) -> f32 {
         BodyPart::Stomach => 55.0,
     };
     ((cut_damage + blunt_damage * 0.75) / capacity_joules).max(0.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::stub::{StubAttributes, StubBody, StubEquipment, StubEssentials, StubSkills};
+
+    #[test]
+    fn no_defender_response_has_zero_defense() {
+        let none = defense_by_parts(
+            DefenderResponse::None,
+            &StubSkills,
+            &StubAttributes,
+            &StubBody,
+            &StubEssentials,
+            &StubEquipment,
+        );
+        let parry = defense_by_parts(
+            DefenderResponse::Parry { input_reflex: 1.0 },
+            &StubSkills,
+            &StubAttributes,
+            &StubBody,
+            &StubEssentials,
+            &StubEquipment,
+        );
+        assert_eq!(none, 0.0);
+        assert!(parry > 0.0);
+    }
 }

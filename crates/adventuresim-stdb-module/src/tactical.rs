@@ -7,8 +7,8 @@ use crate::{
     Character, CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, Item,
     ItemSlot, character::character, character__view, character_attributes__view, character_equip,
     character_equip__view, character_limbs__view, character_skills__view, character_stats__view,
-    complete_quest, inventory_item, inventory_item__view, item__view, party,
-    personality::character_personality, record_battle_result,
+    complete_quest, inventory_item, inventory_item__view, item__view, party, record_battle_result,
+    strategic::quest,
 };
 use std::collections::{HashMap, HashSet};
 use strum::VariantArray;
@@ -21,6 +21,11 @@ pub struct TacticalServerRequest {
     #[unique]
     pub mission_id: String,
     pub scene_key: String,
+    #[index(btree)]
+    pub quest_id: String,
+    pub party_id: String,
+    pub requested_by: u64,
+    pub required_enemy_kills: u32,
 }
 
 /// Active tactical server instance
@@ -33,8 +38,12 @@ pub struct TacticalServer {
     #[unique]
     pub mission_id: String,
     pub scene_key: String,
+    #[index(btree)]
+    pub quest_id: String,
+    pub party_id: String,
     pub addr: String,
     pub cert_digest: String,
+    pub required_enemy_kills: u32,
 }
 
 #[derive(SpacetimeType, Clone, Debug)]
@@ -149,6 +158,9 @@ pub fn enter_mission(
     character_id: u64,
     server: Identity,
 ) -> Result<(), String> {
+    if ctx.sender() != server {
+        return Err("Only the owning tactical server can enroll characters".into());
+    }
     crate::character::require_living_character(ctx, character_id)?;
     // Check character exists
     let mut character = ctx
@@ -157,18 +169,19 @@ pub fn enter_mission(
         .id()
         .find(&character_id)
         .ok_or_else(|| format!("Character {character_id} not found"))?;
-
-    // Check not already in a mission
-    if character.in_server {
-        if ctx
+    // An unassigned character may join. An assignment to this server is an
+    // idempotent retry, and a stale assignment whose server no longer exists
+    // may be reclaimed. Never steal a character from another active server.
+    if character.in_server
+        && character.server != server
+        && ctx
             .db
             .tactical_server()
             .identity()
             .find(character.server)
             .is_some()
-        {
-            log::warn!("Character {character_id} is already in a mission, ejecting..");
-        }
+    {
+        return Err("Character is already assigned to another active tactical server".into());
     }
 
     let server = ctx
@@ -177,6 +190,33 @@ pub fn enter_mission(
         .identity()
         .find(&server)
         .ok_or_else(|| format!("Server {server} not found"))?;
+
+    if !character.temporary {
+        let character_party = character
+            .party_id
+            .as_deref()
+            .ok_or("Character has no party")?;
+        if character_party != server.party_id {
+            return Err("Character is not a member of this mission's party".into());
+        }
+        let party = ctx
+            .db
+            .party()
+            .id()
+            .find(&server.party_id)
+            .ok_or("Mission party no longer exists")?;
+        let quest = ctx
+            .db
+            .quest()
+            .id()
+            .find(&server.quest_id)
+            .ok_or("Mission quest no longer exists")?;
+        if party.active_quest_id.as_deref() != Some(server.quest_id.as_str())
+            || quest.accepted_by.as_deref() != Some(server.party_id.as_str())
+        {
+            return Err("Mission party and quest binding changed before enrollment".into());
+        }
+    }
 
     character.server = server.identity;
     character.in_server = true;
@@ -188,20 +228,33 @@ pub fn enter_mission(
 /// Take out character from an existing [`TacticalServer`].
 #[reducer]
 pub fn leave_mission(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
-    let mut character = ctx
+    let server = ctx
+        .db
+        .tactical_server()
+        .identity()
+        .find(ctx.sender())
+        .ok_or("Only a registered tactical server can remove characters")?;
+    let character = ctx
         .db
         .character()
         .id()
         .find(&character_id)
         .ok_or_else(|| format!("Character {character_id} not found"))?;
+    leave_mission_for_server(ctx, character, server.identity)
+}
 
+fn leave_mission_for_server(
+    ctx: &ReducerContext,
+    mut character: Character,
+    server: Identity,
+) -> Result<(), String> {
+    if !character.in_server || character.server != server {
+        return Err("Only the character's owning tactical server can remove it".into());
+    }
+    let character_id = character.id;
     if character.temporary {
         log::info!("Leaving mission for character #{character_id}: removing temporary character..");
-        ctx.db
-            .character_personality()
-            .character_id()
-            .delete(character_id);
-        ctx.db.character().delete(character);
+        crate::character::delete_temporary_character(ctx, character)?;
     } else {
         log::info!("Leaving mission for character #{character_id}: resetting server info..");
         character.in_server = false;
@@ -217,10 +270,11 @@ pub fn leave_mission(ctx: &ReducerContext, character_id: u64) -> Result<(), Stri
 #[reducer]
 pub fn request_tactical_server_for_scene(
     ctx: &ReducerContext,
+    character_id: u64,
     scene_key: String,
 ) -> Result<(), String> {
     let mission_id = format!("{scene_key}-{}", ctx.timestamp.to_micros_since_unix_epoch());
-    request_tactical_server(ctx, mission_id, scene_key)
+    request_tactical_server(ctx, character_id, mission_id, scene_key)
 }
 
 /// Request a new [`TacticalServer`], unless there is already
@@ -228,14 +282,55 @@ pub fn request_tactical_server_for_scene(
 #[reducer]
 pub fn request_tactical_server(
     ctx: &ReducerContext,
+    character_id: u64,
     mission_id: String,
     scene_key: String,
 ) -> Result<(), String> {
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    let party_id = character.party_id.ok_or("Character has no party")?;
+    let party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != character_id {
+        return Err("Only the party leader can request a tactical server".into());
+    }
+    let quest_id = party
+        .active_quest_id
+        .clone()
+        .ok_or("Party has no active quest")?;
+    if party.current_quest_location_id.as_deref() != Some(quest_id.as_str()) {
+        return Err("Party must be at its active quest location".into());
+    }
+    let quest = ctx
+        .db
+        .quest()
+        .id()
+        .find(&quest_id)
+        .ok_or("Quest not found")?;
+    if quest.accepted_by.as_deref() != Some(&party_id) || quest.location_scene_key != scene_key {
+        return Err("Tactical scene does not match the party's active quest".into());
+    }
     if let Some(server) = ctx.db.tactical_server().mission_id().find(&mission_id) {
         return Err(format!(
             "Server for mission '{mission_id}' already exist: {}",
             server.identity
         ));
+    }
+    if ctx
+        .db
+        .tactical_server_request()
+        .iter()
+        .any(|request| request.quest_id == quest_id)
+        || ctx
+            .db
+            .tactical_server()
+            .iter()
+            .any(|server| server.quest_id == quest_id)
+    {
+        return Err("Party quest already has a pending or active tactical server".into());
     }
 
     log::info!("Tactical server for '{mission_id}' requested");
@@ -244,6 +339,11 @@ pub fn request_tactical_server(
         .insert(TacticalServerRequest {
             mission_id,
             scene_key,
+            quest_id,
+            party_id,
+            requested_by: character_id,
+            required_enemy_kills: u32::try_from(quest.enemy_count.max(0))
+                .map_err(|_| "Quest enemy count exceeds tactical limits")?,
         });
 
     Ok(())
@@ -277,10 +377,13 @@ pub fn create_tactical_server_for_request(
         .mission_id()
         .delete(&mission_id);
 
-    create_tactical_server(
+    insert_tactical_server(
         ctx,
         request.mission_id,
         request.scene_key,
+        request.quest_id,
+        request.party_id,
+        request.required_enemy_kills,
         addr,
         cert_digest,
     )
@@ -290,11 +393,13 @@ pub fn create_tactical_server_for_request(
 ///
 /// Should be called by a server instance, since its identity will be
 /// the identity of the [`TacticalServer`] in DB.
-#[reducer]
-pub fn create_tactical_server(
+fn insert_tactical_server(
     ctx: &ReducerContext,
     mission_id: String,
     scene_key: String,
+    quest_id: String,
+    party_id: String,
+    required_enemy_kills: u32,
     addr: String,
     cert_digest: String,
 ) -> Result<(), String> {
@@ -304,9 +409,14 @@ pub fn create_tactical_server(
             ctx.sender()
         ));
     }
-    if let Some(previous) = ctx.db.tactical_server().mission_id().find(&mission_id) {
-        log::info!("Ending previous server for mission '{mission_id}'...");
-        end_tactical_server_by_instance(ctx, previous, false, 0)?;
+    if ctx
+        .db
+        .tactical_server()
+        .mission_id()
+        .find(&mission_id)
+        .is_some()
+    {
+        return Err(format!("Server for mission '{mission_id}' already exists"));
     }
 
     log::info!("Tactical server for mission '{mission_id}' is ready on {addr}");
@@ -314,8 +424,11 @@ pub fn create_tactical_server(
         identity: ctx.sender(),
         mission_id,
         scene_key,
+        quest_id,
+        party_id,
         addr,
         cert_digest,
+        required_enemy_kills,
     };
     ctx.db.tactical_server().insert(server);
     Ok(())
@@ -326,7 +439,7 @@ pub fn create_tactical_server(
 pub fn end_tactical_server(
     ctx: &ReducerContext,
     success: bool,
-    xp_gained: i32,
+    _reported_xp_gained: i32,
 ) -> Result<(), String> {
     let Some(server) = ctx.db.tactical_server().identity().find(ctx.sender()) else {
         return Err(format!(
@@ -335,16 +448,16 @@ pub fn end_tactical_server(
         ));
     };
 
-    end_tactical_server_by_instance(ctx, server, success, xp_gained)
+    // Persistent progression is derived from the authoritative quest reward
+    // in complete_quest. Tactical processes cannot mint arbitrary XP.
+    end_tactical_server_by_instance(ctx, server, success)
 }
 
 /// End a [`TacticallServer`].
-#[reducer]
 fn end_tactical_server_by_instance(
     ctx: &ReducerContext,
     server: TacticalServer,
     success: bool,
-    xp_gained: i32,
 ) -> Result<(), String> {
     if ctx
         .db
@@ -366,63 +479,65 @@ fn end_tactical_server_by_instance(
         .filter(server.identity)
         .collect();
     if success {
+        let party = ctx
+            .db
+            .party()
+            .id()
+            .find(&server.party_id)
+            .ok_or("Mission party no longer exists")?;
+        let quest = ctx
+            .db
+            .quest()
+            .id()
+            .find(&server.quest_id)
+            .ok_or("Mission quest no longer exists")?;
+        if party.active_quest_id.as_deref() != Some(server.quest_id.as_str())
+            || quest.accepted_by.as_deref() != Some(server.party_id.as_str())
+        {
+            return Err("Mission party and quest binding changed before completion".into());
+        }
         if let Some(adventurer) = connected.iter().find(|character| !character.temporary) {
-            if let Some(party_id) = adventurer.party_id.as_ref() {
-                if let Some(party) = ctx.db.party().id().find(party_id) {
-                    if let Some(quest_id) = party.active_quest_id.as_ref() {
-                        let mut drops: HashMap<String, u32> = HashMap::new();
-                        for enemy in connected.iter().filter(|character| character.temporary) {
-                            let Some(equip) =
-                                ctx.db.character_equip().character_id().find(enemy.id)
-                            else {
-                                continue;
-                            };
-                            let mut seen = HashSet::new();
-                            for slot in ItemSlot::VARIANTS {
-                                let Some(inventory_id) = equip.get(*slot) else {
-                                    continue;
-                                };
-                                if !seen.insert(inventory_id) {
-                                    continue;
-                                }
-                                if let Some(inventory) =
-                                    ctx.db.inventory_item().id().find(inventory_id)
-                                {
-                                    *drops.entry(inventory.item_id).or_default() += 1;
-                                }
-                            }
+            if adventurer.party_id.as_deref() == Some(server.party_id.as_str()) {
+                let mut drops: HashMap<String, u32> = HashMap::new();
+                for enemy in connected.iter().filter(|character| character.temporary) {
+                    let Some(equip) = ctx.db.character_equip().character_id().find(enemy.id) else {
+                        continue;
+                    };
+                    let mut seen = HashSet::new();
+                    for slot in ItemSlot::VARIANTS {
+                        let Some(inventory_id) = equip.get(*slot) else {
+                            continue;
+                        };
+                        if !seen.insert(inventory_id) {
+                            continue;
                         }
-                        record_battle_result(
-                            ctx,
-                            party_id,
-                            quest_id,
-                            &server.mission_id,
-                            drops.into_iter().collect(),
-                            true,
-                        )?;
-                        complete_quest(ctx, quest_id.clone())?;
+                        if let Some(inventory) = ctx.db.inventory_item().id().find(inventory_id) {
+                            *drops.entry(inventory.item_id).or_default() += 1;
+                        }
                     }
                 }
+                record_battle_result(
+                    ctx,
+                    &server.party_id,
+                    &server.quest_id,
+                    &server.mission_id,
+                    drops.into_iter().collect(),
+                    true,
+                )?;
+                complete_quest(ctx, server.quest_id.clone())?;
             }
         }
     }
 
     // Apply persistent character progression. Loot is handled by the battle result.
-    for mut character in connected {
-        if xp_gained > 0 {
-            character.xp = character.xp.saturating_add_signed(xp_gained);
-            character.level = 1 + character.xp / 100;
-        }
-
-        let id = character.id;
-        ctx.db.character().id().update(character);
-        leave_mission(ctx, id)?;
+    for character in connected {
+        leave_mission_for_server(ctx, character, server.identity)?;
     }
 
     ctx.db.tactical_server().identity().delete(server.identity);
 
     log::info!(
-        "Tactical server for mission '{}' ended: success={success}, xp={xp_gained}",
+        "Tactical server for mission '{}' ended: success={success}",
         server.mission_id
     );
     Ok(())

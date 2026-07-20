@@ -87,7 +87,7 @@ pub fn claim_simulation_run(
     Ok(())
 }
 
-fn owned_run(ctx: &ReducerContext, nonce: &str) -> Result<SimulationRun, String> {
+pub(crate) fn owned_run(ctx: &ReducerContext, nonce: &str) -> Result<SimulationRun, String> {
     let run = ctx
         .db
         .simulation_run()
@@ -98,6 +98,12 @@ fn owned_run(ctx: &ReducerContext, nonce: &str) -> Result<SimulationRun, String>
         return Err("Simulation run is owned by a different identity or nonce".into());
     }
     Ok(run)
+}
+
+#[reducer]
+pub fn seed_simulation_world(ctx: &ReducerContext, nonce: String) -> Result<(), String> {
+    owned_run(ctx, &nonce)?;
+    crate::strategic::seed_world(ctx)
 }
 
 /// Deterministic death path available only in a capability-owned disposable

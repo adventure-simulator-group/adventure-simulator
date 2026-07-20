@@ -667,17 +667,19 @@ pub(crate) fn apply_impact(ctx: &ReducerContext, inventory_item_id: u64, stress:
 #[reducer]
 pub fn seed_simulation_equipment_damage(
     ctx: &ReducerContext,
+    nonce: String,
     character_id: u64,
     inventory_item_id: u64,
 ) -> Result<(), String> {
-    if ctx
+    let run = crate::simulation::owned_run(ctx, &nonce)?;
+    let simulation_character = ctx
         .db
         .simulation_character()
         .character_id()
         .find(character_id)
-        .is_none()
-    {
-        return Err("Only claimed simulation characters may use this fixture".into());
+        .ok_or("Only claimed simulation characters may use this fixture")?;
+    if simulation_character.run_id != run.id {
+        return Err("Simulation character belongs to a different run".into());
     }
     let inventory = ctx
         .db

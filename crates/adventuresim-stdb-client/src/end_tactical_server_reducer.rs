@@ -8,14 +8,14 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub(super) struct EndTacticalServerArgs {
     pub success: bool,
-    pub xp_gained: i32,
+    pub reported_xp_gained: i32,
 }
 
 impl From<EndTacticalServerArgs> for super::Reducer {
     fn from(args: EndTacticalServerArgs) -> Self {
         Self::EndTacticalServer {
             success: args.success,
-            xp_gained: args.xp_gained,
+            reported_xp_gained: args.reported_xp_gained,
         }
     }
 }
@@ -35,8 +35,8 @@ pub trait end_tactical_server {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`end_tactical_server:end_tactical_server_then`] to run a callback after the reducer completes.
-    fn end_tactical_server(&self, success: bool, xp_gained: i32) -> __sdk::Result<()> {
-        self.end_tactical_server_then(success, xp_gained, |_, _| {})
+    fn end_tactical_server(&self, success: bool, reported_xp_gained: i32) -> __sdk::Result<()> {
+        self.end_tactical_server_then(success, reported_xp_gained, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `end_tactical_server` to run as soon as possible,
@@ -48,7 +48,7 @@ pub trait end_tactical_server {
     fn end_tactical_server_then(
         &self,
         success: bool,
-        xp_gained: i32,
+        reported_xp_gained: i32,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -62,7 +62,7 @@ impl end_tactical_server for super::RemoteReducers {
     fn end_tactical_server_then(
         &self,
         success: bool,
-        xp_gained: i32,
+        reported_xp_gained: i32,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -70,7 +70,12 @@ impl end_tactical_server for super::RemoteReducers {
         ) + Send
         + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(EndTacticalServerArgs { success, xp_gained }, callback)
+        self.imp.invoke_reducer_with_callback(
+            EndTacticalServerArgs {
+                success,
+                reported_xp_gained,
+            },
+            callback,
+        )
     }
 }

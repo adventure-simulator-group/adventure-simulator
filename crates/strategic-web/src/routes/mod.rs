@@ -27,6 +27,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::live::LiveState;
 use crate::session::{CHARACTER_COOKIE, Session};
+use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
     Character, CharacterStrategicCondition, CharacterTime, Party, PartyActionRequest, PartyMember,
     SpacetimeClient, WorldClock,
@@ -118,7 +119,10 @@ pub(crate) async fn execute_or_request_party_action(
     let party_id = character.party_id.ok_or("Character has no party")?;
     let party = state
         .db
-        .query_one::<Party>(&format!("SELECT * FROM party WHERE id = '{}'", party_id))
+        .query_one::<Party>(&format!(
+            "SELECT * FROM party WHERE id = {}",
+            sql_string_literal(&party_id)
+        ))
         .await
         .map_err(|e| e.to_string())?
         .ok_or("Party not found")?;
@@ -126,8 +130,8 @@ pub(crate) async fn execute_or_request_party_action(
         let members = state
             .db
             .query::<PartyMember>(&format!(
-                "SELECT * FROM party_member WHERE party_id = '{}'",
-                party.id
+                "SELECT * FROM party_member WHERE party_id = {}",
+                sql_string_literal(&party.id)
             ))
             .await
             .map_err(|error| error.to_string())?;
@@ -207,8 +211,8 @@ pub(crate) async fn execute_or_request_party_action(
             let requests = state
                 .db
                 .query::<PartyActionRequest>(&format!(
-                    "SELECT * FROM party_action_request WHERE party_id = '{}'",
-                    party_id
+                    "SELECT * FROM party_action_request WHERE party_id = {}",
+                    sql_string_literal(&party_id)
                 ))
                 .await
                 .unwrap_or_default();
@@ -241,18 +245,10 @@ pub(crate) async fn approve_party_action(
     leader_id: u64,
     request: &PartyActionRequest,
 ) -> Result<(), String> {
-    let action: PartyAction = serde_json::from_str(&request.payload)
-        .map_err(|e| format!("Invalid party action payload: {e}"))?;
-    let (reducer, args) = action.reducer_call(leader_id);
-    state
-        .db
-        .call(reducer, &args)
-        .await
-        .map_err(|e| e.to_string())?;
     state
         .db
         .call(
-            "dismiss_party_action_request",
+            "approve_party_action_request",
             &[json!(leader_id), json!(request.id)],
         )
         .await

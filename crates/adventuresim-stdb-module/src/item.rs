@@ -954,7 +954,6 @@ pub fn calibrate_weapon_precision(ctx: &ReducerContext) {
     }
 }
 
-#[reducer]
 pub fn define_item(ctx: &ReducerContext, item_id: &str, weight: f32) {
     ctx.db.item().insert(Item {
         id: item_id.to_string(),
@@ -990,7 +989,6 @@ pub fn backfill_item_values(ctx: &ReducerContext) {
     }
 }
 
-#[reducer]
 pub fn define_weapon(
     ctx: &ReducerContext,
     item_id: &str,
@@ -1032,7 +1030,6 @@ pub fn define_weapon(
     });
 }
 
-#[reducer]
 pub fn define_shield(ctx: &ReducerContext, item_id: &str, weight: f32, block: f32) {
     ctx.db.item().insert(Item {
         id: item_id.to_string(),
@@ -1050,7 +1047,6 @@ pub fn define_shield(ctx: &ReducerContext, item_id: &str, weight: f32, block: f3
     });
 }
 
-#[reducer]
 pub fn define_clothing(ctx: &ReducerContext, item_id: &str, weight: f32) {
     ctx.db.item().insert(Item {
         id: item_id.to_string(),
@@ -1061,7 +1057,6 @@ pub fn define_clothing(ctx: &ReducerContext, item_id: &str, weight: f32) {
     });
 }
 
-#[reducer]
 pub fn define_armor(
     ctx: &ReducerContext,
     item_id: &str,
@@ -1225,16 +1220,20 @@ pub fn credit_personal_currency(
         .filter((character_id, &currency_id))
         .next()
     {
-        stack.quantity = merged_currency_quantity(stack.quantity, amount);
-        ctx.db.inventory_item().id().update(stack);
+        if let Some(quantity) = merged_currency_quantity(stack.quantity, amount) {
+            stack.quantity = quantity;
+            ctx.db.inventory_item().id().update(stack);
+        } else {
+            add_inventory_item(ctx, character_id, &currency_id, amount);
+        }
     } else {
         add_inventory_item(ctx, character_id, &currency_id, amount);
     }
     Ok(())
 }
 
-fn merged_currency_quantity(existing: u32, credit: u32) -> u32 {
-    existing.saturating_add(credit)
+fn merged_currency_quantity(existing: u32, credit: u32) -> Option<u32> {
+    existing.checked_add(credit)
 }
 
 #[reducer]
@@ -1309,21 +1308,47 @@ pub fn change_inventory_item(
         }
         return Ok(());
     }
-    let mut is_found = false;
-
-    for mut item in ctx
+    let mut items = ctx
         .db
         .inventory_item()
         .character_and_item_id()
         .filter((character_id, item_id))
-    {
-        item.quantity = item.quantity.saturating_add_signed(by_quantity);
-        ctx.db.inventory_item().id().update(item);
-        is_found = true;
-    }
-
-    if !is_found && by_quantity > 0 {
-        add_inventory_item(ctx, character_id, item_id, by_quantity as u32);
+        .collect::<Vec<_>>();
+    items.sort_by_key(|item| item.id);
+    if by_quantity > 0 {
+        let addition = by_quantity as u32;
+        if let Some(mut item) = items.into_iter().next() {
+            if let Some(quantity) = item.quantity.checked_add(addition) {
+                item.quantity = quantity;
+                ctx.db.inventory_item().id().update(item);
+            } else {
+                add_inventory_item(ctx, character_id, item_id, addition);
+            }
+        } else {
+            add_inventory_item(ctx, character_id, item_id, addition);
+        }
+    } else if by_quantity < 0 {
+        let available = items
+            .iter()
+            .map(|item| u64::from(item.quantity))
+            .sum::<u64>();
+        let mut remaining = u64::from(by_quantity.unsigned_abs());
+        if available < remaining {
+            return Err("not enough inventory quantity to remove".into());
+        }
+        for mut item in items {
+            let taken = remaining.min(u64::from(item.quantity)) as u32;
+            item.quantity -= taken;
+            remaining -= u64::from(taken);
+            if item.quantity == 0 {
+                ctx.db.inventory_item().id().delete(item.id);
+            } else {
+                ctx.db.inventory_item().id().update(item);
+            }
+            if remaining == 0 {
+                break;
+            }
+        }
     }
     Ok(())
 }
@@ -1363,8 +1388,8 @@ mod tests {
 
     #[test]
     fn repeated_same_denomination_credits_merge_safely() {
-        assert_eq!(merged_currency_quantity(40, 2), 42);
-        assert_eq!(merged_currency_quantity(u32::MAX, 1), u32::MAX);
+        assert_eq!(merged_currency_quantity(40, 2), Some(42));
+        assert_eq!(merged_currency_quantity(u32::MAX, 1), None);
     }
 
     #[test]

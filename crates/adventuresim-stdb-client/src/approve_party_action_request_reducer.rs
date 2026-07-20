@@ -4,61 +4,51 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::item_slot_type::ItemSlot;
-
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct AddAndEquipItemArgs {
-    pub character_id: u64,
-    pub item_id: String,
-    pub destination: ItemSlot,
+pub(super) struct ApprovePartyActionRequestArgs {
+    pub leader_id: u64,
+    pub request_id: u64,
 }
 
-impl From<AddAndEquipItemArgs> for super::Reducer {
-    fn from(args: AddAndEquipItemArgs) -> Self {
-        Self::AddAndEquipItem {
-            character_id: args.character_id,
-            item_id: args.item_id,
-            destination: args.destination,
+impl From<ApprovePartyActionRequestArgs> for super::Reducer {
+    fn from(args: ApprovePartyActionRequestArgs) -> Self {
+        Self::ApprovePartyActionRequest {
+            leader_id: args.leader_id,
+            request_id: args.request_id,
         }
     }
 }
 
-impl __sdk::InModule for AddAndEquipItemArgs {
+impl __sdk::InModule for ApprovePartyActionRequestArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `add_and_equip_item`.
+/// Extension trait for access to the reducer `approve_party_action_request`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait add_and_equip_item {
-    /// Request that the remote module invoke the reducer `add_and_equip_item` to run as soon as possible.
+pub trait approve_party_action_request {
+    /// Request that the remote module invoke the reducer `approve_party_action_request` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`add_and_equip_item:add_and_equip_item_then`] to run a callback after the reducer completes.
-    fn add_and_equip_item(
-        &self,
-        character_id: u64,
-        item_id: String,
-        destination: ItemSlot,
-    ) -> __sdk::Result<()> {
-        self.add_and_equip_item_then(character_id, item_id, destination, |_, _| {})
+    /// /// Use [`approve_party_action_request:approve_party_action_request_then`] to run a callback after the reducer completes.
+    fn approve_party_action_request(&self, leader_id: u64, request_id: u64) -> __sdk::Result<()> {
+        self.approve_party_action_request_then(leader_id, request_id, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `add_and_equip_item` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `approve_party_action_request` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn add_and_equip_item_then(
+    fn approve_party_action_request_then(
         &self,
-        character_id: u64,
-        item_id: String,
-        destination: ItemSlot,
+        leader_id: u64,
+        request_id: u64,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -68,12 +58,11 @@ pub trait add_and_equip_item {
     ) -> __sdk::Result<()>;
 }
 
-impl add_and_equip_item for super::RemoteReducers {
-    fn add_and_equip_item_then(
+impl approve_party_action_request for super::RemoteReducers {
+    fn approve_party_action_request_then(
         &self,
-        character_id: u64,
-        item_id: String,
-        destination: ItemSlot,
+        leader_id: u64,
+        request_id: u64,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -82,10 +71,9 @@ impl add_and_equip_item for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
-            AddAndEquipItemArgs {
-                character_id,
-                item_id,
-                destination,
+            ApprovePartyActionRequestArgs {
+                leader_id,
+                request_id,
             },
             callback,
         )

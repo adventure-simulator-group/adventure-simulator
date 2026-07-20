@@ -30,6 +30,16 @@ pub fn merchant_sell_price(base_value: u32) -> u32 {
     (base_value as f32 / MERCHANT_MARGIN).floor().max(1.0) as u32
 }
 
+/// Checked line extension used by every authoritative merchant total. A quote
+/// that cannot be represented is rejected instead of being silently capped.
+pub fn checked_merchant_line_total(unit_price: u32, quantity: u32) -> Option<u64> {
+    u64::from(unit_price).checked_mul(u64::from(quantity))
+}
+
+pub fn checked_add_merchant_total(total: u64, line: u64) -> Option<u64> {
+    total.checked_add(line)
+}
+
 /// Split a party purchase between shared coin and the acting character's coin.
 /// Shared funds are spent first so personal funds only cover the shortfall.
 pub fn split_party_purchase_payment(
@@ -96,6 +106,15 @@ mod tests {
         assert_eq!(split_party_purchase_payment(8, 20, 15), Some((8, 7)));
         assert_eq!(split_party_purchase_payment(20, 8, 15), Some((15, 0)));
         assert_eq!(split_party_purchase_payment(4, 5, 10), None);
+    }
+
+    #[test]
+    fn merchant_totals_are_checked_in_u64_space() {
+        assert_eq!(
+            checked_merchant_line_total(u32::MAX, u32::MAX),
+            Some(u64::from(u32::MAX) * u64::from(u32::MAX))
+        );
+        assert_eq!(checked_add_merchant_total(u64::MAX, 1), None);
     }
 
     #[test]

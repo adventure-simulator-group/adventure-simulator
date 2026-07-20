@@ -14,4 +14,6 @@ adventuresim-world-schema = { workspace = true, features = ["spacetimedb"] }
 log = "0.4"
 spacetimedb.workspace = true
 petname = { version = "2.0.2", default-features = false, features = ["default-words"] }
+serde.workspace = true
+serde_json.workspace = true
 strum = { version = "0.28", features = ["derive"] }

@@ -6,46 +6,53 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct SeedBotJoinRequestsArgs {
-    pub recruitment_role_id: u64,
+pub(super) struct BootstrapDevelopmentWorldArgs {
+    pub bootstrap_token: String,
+    pub include_visual_demos: bool,
 }
 
-impl From<SeedBotJoinRequestsArgs> for super::Reducer {
-    fn from(args: SeedBotJoinRequestsArgs) -> Self {
-        Self::SeedBotJoinRequests {
-            recruitment_role_id: args.recruitment_role_id,
+impl From<BootstrapDevelopmentWorldArgs> for super::Reducer {
+    fn from(args: BootstrapDevelopmentWorldArgs) -> Self {
+        Self::BootstrapDevelopmentWorld {
+            bootstrap_token: args.bootstrap_token,
+            include_visual_demos: args.include_visual_demos,
         }
     }
 }
 
-impl __sdk::InModule for SeedBotJoinRequestsArgs {
+impl __sdk::InModule for BootstrapDevelopmentWorldArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `seed_bot_join_requests`.
+/// Extension trait for access to the reducer `bootstrap_development_world`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait seed_bot_join_requests {
-    /// Request that the remote module invoke the reducer `seed_bot_join_requests` to run as soon as possible.
+pub trait bootstrap_development_world {
+    /// Request that the remote module invoke the reducer `bootstrap_development_world` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`seed_bot_join_requests:seed_bot_join_requests_then`] to run a callback after the reducer completes.
-    fn seed_bot_join_requests(&self, recruitment_role_id: u64) -> __sdk::Result<()> {
-        self.seed_bot_join_requests_then(recruitment_role_id, |_, _| {})
+    /// /// Use [`bootstrap_development_world:bootstrap_development_world_then`] to run a callback after the reducer completes.
+    fn bootstrap_development_world(
+        &self,
+        bootstrap_token: String,
+        include_visual_demos: bool,
+    ) -> __sdk::Result<()> {
+        self.bootstrap_development_world_then(bootstrap_token, include_visual_demos, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `seed_bot_join_requests` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `bootstrap_development_world` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn seed_bot_join_requests_then(
+    fn bootstrap_development_world_then(
         &self,
-        recruitment_role_id: u64,
+        bootstrap_token: String,
+        include_visual_demos: bool,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -55,10 +62,11 @@ pub trait seed_bot_join_requests {
     ) -> __sdk::Result<()>;
 }
 
-impl seed_bot_join_requests for super::RemoteReducers {
-    fn seed_bot_join_requests_then(
+impl bootstrap_development_world for super::RemoteReducers {
+    fn bootstrap_development_world_then(
         &self,
-        recruitment_role_id: u64,
+        bootstrap_token: String,
+        include_visual_demos: bool,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -67,8 +75,9 @@ impl seed_bot_join_requests for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
-            SeedBotJoinRequestsArgs {
-                recruitment_role_id,
+            BootstrapDevelopmentWorldArgs {
+                bootstrap_token,
+                include_visual_demos,
             },
             callback,
         )
