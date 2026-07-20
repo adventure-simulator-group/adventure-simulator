@@ -31,17 +31,21 @@ distributed.
 The settlement Map screen uses the separately generated
 `static/map/strategic-map-v1.json` presentation package. `just
 build-strategic-map` derives that versioned file with an embedded content digest from the
-initialized Viabundus v2 roads, ferries, and 1500 water polygons. It clips the
-view to the supported northern-European envelope and simplifies source WKT for
-an SVG overview; it does not change or replace canonical routing data. The
-current source bundle has no map-ready historical terrain or forest polygon
-layer, so the UI makes that limitation explicit rather than inferring one from
-unrelated environmental samples.
+initialized Viabundus v2 roads, ferries, and 1500 water polygons, generalized
+Copernicus GLO-30 elevation, and every available prepared Copernicus forest
+tile. It clips the view to the supported northern-European envelope and
+simplifies source geometry for an SVG overview; it does not change or replace
+canonical routing data. Elevation is emitted as bounded tint cells and contour
+segments. Forest coverage is deliberately partial: the generator renders only
+installed TCD/DLT tile pairs and records their exact bounds instead of filling
+missing regions with inferred vegetation.
 
 The stable `strategic-map-v1.json` filename is versioned, not content-addressed.
-Its embedded SHA-256 covers schema, year, bounds, source identity and status,
-roads, water, and the optional terrain field; strategic-web revalidates that
-digest before rendering. A legacy initializer sidecar without recorded byte
+Its embedded SHA-256 covers schema, year, bounds, all source identities and
+statuses, roads, water, elevation cells and contours, forest regions, and
+partial-coverage bounds; strategic-web revalidates that digest before
+rendering. A
+legacy initializer sidecar without recorded byte
 sizes is accepted only with the explicit
 `legacy-release-blocked-missing-sizes` package status.
 

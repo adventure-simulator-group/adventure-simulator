@@ -5,10 +5,14 @@ use std::{
 };
 
 use clap::Parser;
+use raster::{ElevationLayer, ForestLayer, MapRasterLayers};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-const PACKAGE_SCHEMA: u32 = 1;
+#[path = "build-strategic-map/raster.rs"]
+mod raster;
+
+const PACKAGE_SCHEMA: u32 = 2;
 const YEAR: i32 = 1544;
 const VIABUNDUS_DOI: &str = "https://doi.org/10.5281/zenodo.16611998";
 const RECORD_URL: &str = "https://zenodo.org/api/records/16611998";
@@ -20,6 +24,10 @@ const MAX_SOURCE_FILES: usize = 64;
 struct Args {
     #[arg(long, default_value = "viabundus")]
     viabundus_dir: PathBuf,
+    #[arg(long, default_value = "target/world-data-sources/raw/elevation")]
+    elevation_dir: PathBuf,
+    #[arg(long, default_value = "target/world-data-sources/raw/forest-cover")]
+    forest_cover_dir: PathBuf,
     #[arg(
         long,
         default_value = "crates/strategic-web/static/map/strategic-map-v1.json"
@@ -61,7 +69,8 @@ struct Package {
     source: Source,
     roads: Vec<Line>,
     water: Vec<Vec<Point>>,
-    terrain: Option<Vec<Vec<Point>>>,
+    elevation: ElevationLayer,
+    forest: ForestLayer,
     package_sha256: String,
 }
 
@@ -77,7 +86,8 @@ struct Source {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let package = build(&args.viabundus_dir)?;
+    let layers = raster::load(&args.elevation_dir, &args.forest_cover_dir, BOUNDS)?;
+    let package = build(&args.viabundus_dir, layers)?;
     let mut bytes = serde_json::to_vec(&package)?;
     bytes.push(b'\n');
     if let Some(parent) = args.output.parent() {
@@ -85,15 +95,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     fs::write(&args.output, bytes)?;
     println!(
-        "Wrote {} roads and {} water rings to {}",
+        "Wrote {} roads, {} water rings, {} elevation cells, {} contours, and {} forest regions to {}",
         package.roads.len(),
         package.water.len(),
+        package.elevation.cells.len(),
+        package.elevation.contours.len(),
+        package.forest.regions.len(),
         args.output.display()
     );
     Ok(())
 }
 
-fn build(root: &Path) -> Result<Package, Box<dyn std::error::Error>> {
+fn build(root: &Path, layers: MapRasterLayers) -> Result<Package, Box<dyn std::error::Error>> {
     let manifest: SourceManifest =
         serde_json::from_slice(&fs::read(root.join(".viabundus-source.json"))?)?;
     if manifest.version != "2" || manifest.record_url != RECORD_URL {
@@ -203,7 +216,6 @@ fn build(root: &Path) -> Result<Package, Box<dyn std::error::Error>> {
             "legacy-release-blocked-missing-sizes"
         },
     };
-    let terrain = None;
     let mut package = Package {
         schema: PACKAGE_SCHEMA,
         year: YEAR,
@@ -211,7 +223,8 @@ fn build(root: &Path) -> Result<Package, Box<dyn std::error::Error>> {
         source,
         roads,
         water,
-        terrain,
+        elevation: layers.elevation,
+        forest: layers.forest,
         package_sha256: String::new(),
     };
     package.package_sha256 = "0".repeat(64);
@@ -400,10 +413,42 @@ fn validate_geometry(package: &Package) -> Result<(), Box<dyn std::error::Error>
             .water
             .iter()
             .any(|ring| ring.len() < 4 || ring.iter().any(|point| !valid(point)))
+        || package.elevation.cells.iter().any(|cell| {
+            !valid_bounds(cell.bounds, package.bounds)
+                || ![50, 100, 250, 500, 1_000, 1_500, 2_000].contains(&cell.band_m)
+        })
+        || package.elevation.contours.iter().any(|line| {
+            line.points.len() != 2
+                || ![50, 100, 250, 500, 1_000, 1_500, 2_000].contains(&line.elevation_m)
+                || line.points.iter().any(|point| !valid(&Point(*point)))
+        })
+        || package
+            .forest
+            .coverage
+            .iter()
+            .any(|bounds| !valid_bounds(*bounds, package.bounds))
+        || package.forest.regions.iter().any(|region| {
+            !valid_bounds(region.bounds, package.bounds)
+                || !(1..=3).contains(&region.density)
+                || !matches!(region.kind.as_str(), "broadleaf" | "conifer" | "mixed")
+        })
     {
         return Err("strategic map geometry is non-finite or outside package bounds".into());
     }
     Ok(())
+}
+
+fn valid_bounds(
+    [west, south, east, north]: [f64; 4],
+    [map_west, map_south, map_east, map_north]: [f64; 4],
+) -> bool {
+    [west, south, east, north].into_iter().all(f64::is_finite)
+        && west >= map_west
+        && east <= map_east
+        && south >= map_south
+        && north <= map_north
+        && west < east
+        && south < north
 }
 
 fn simplify(points: &[Point], tolerance: f64) -> Vec<Point> {
@@ -487,6 +532,40 @@ mod tests {
         .unwrap();
         root
     }
+
+    fn layers() -> MapRasterLayers {
+        let layer_source = || raster::LayerSource {
+            name: "Fixture".into(),
+            version: "1".into(),
+            url: "https://example.invalid/source".into(),
+            license: "test-only".into(),
+            file_count: 1,
+            files_sha256: BTreeMap::new(),
+            verification_status: "fixture".into(),
+        };
+        MapRasterLayers {
+            elevation: ElevationLayer {
+                source: layer_source(),
+                cells: vec![raster::ElevationCell {
+                    bounds: [10.0, 53.0, 10.25, 53.25],
+                    band_m: 100,
+                }],
+                contours: vec![raster::ElevationContour {
+                    elevation_m: 100,
+                    points: vec![[10.0, 53.0], [10.25, 53.25]],
+                }],
+            },
+            forest: ForestLayer {
+                source: layer_source(),
+                coverage: vec![[10.0, 53.0, 11.0, 54.0]],
+                regions: vec![raster::ForestRegion {
+                    bounds: [10.0, 53.0, 10.05, 53.05],
+                    density: 2,
+                    kind: "mixed".into(),
+                }],
+            },
+        }
+    }
     #[test]
     fn simplification_is_deterministic_and_keeps_endpoints() {
         let points = vec![Point([0.0, 0.0]), Point([0.5, 0.01]), Point([1.0, 0.0])];
@@ -509,13 +588,13 @@ mod tests {
     #[test]
     fn fixture_build_is_deterministic_and_rejects_changed_source_bytes() {
         let root = fixture();
-        let first = build(&root).unwrap();
-        let second = build(&root).unwrap();
+        let first = build(&root, layers()).unwrap();
+        let second = build(&root, layers()).unwrap();
         assert_eq!(first, second);
         assert_eq!(first.roads.len(), 1);
         assert_eq!(first.water.len(), 1);
         fs::write(root.join("edges.csv"), b"changed").unwrap();
-        assert!(build(&root).is_err());
+        assert!(build(&root, layers()).is_err());
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -538,7 +617,7 @@ mod tests {
                 }
             }
             fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
-            assert!(build(&root).is_err());
+            assert!(build(&root, layers()).is_err());
             fs::remove_dir_all(root).unwrap();
         }
     }
