@@ -159,6 +159,7 @@
     planner.dataset.travelPlannerReady = "true";
     const route = planner.querySelector("[data-travel-planner-route]");
     const targetInput = document.querySelector("[data-target-surplus]");
+    const targetDisplay = document.querySelector("[data-target-surplus-display]");
     let currentPlan;
 
     const showPlan = ({ name, origin = "Start", oneWay, movementTotal, elapsedTotal, completedElapsed = 0, departure = 0, segments = [], description = "", roundTrip = movementTotal > oneWay }) => {
@@ -252,6 +253,41 @@
       }
     };
     targetInput?.addEventListener("input", refreshProvisioning);
+    const formatDays = (value) => String(Number(Number(value).toFixed(2)));
+    const parseDays = (value) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+    const editTargetSurplus = () => {
+      if (!targetInput || !targetDisplay || !window.StrategicNumericEditor) return;
+      window.StrategicNumericEditor.open({
+        display: targetDisplay,
+        initialValue: Number(targetInput.value || 0),
+        parse: parseDays,
+        format: formatDays,
+        step: .25,
+        minimum: -365,
+        maximum: 365,
+        groupLabel: "Edit target surplus",
+        inputLabel: "Target surplus in days",
+        increaseLabel: "Increase target surplus by one quarter day",
+        decreaseLabel: "Decrease target surplus by one quarter day",
+        saveLabel: "Save target surplus",
+        cancelLabel: "Cancel target surplus edit",
+        onCommit: (value) => {
+          targetInput.value = formatDays(value);
+          targetDisplay.textContent = formatDays(value);
+          targetInput.dispatchEvent(new Event("input", { bubbles: true }));
+        },
+      });
+    };
+    targetDisplay?.addEventListener("click", editTargetSurplus);
+    targetDisplay?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        editTargetSurplus();
+      }
+    });
     document.querySelector("[data-provision-buy]")?.addEventListener("click", (event) => {
       const status = document.querySelector("[data-provisioning-status]");
       if (event.currentTarget.dataset.unstageable === "true") { event.preventDefault(); if (status) status.textContent = "This target exceeds the maximum transaction quantity."; }
@@ -261,6 +297,11 @@
 
     const configuration = document.querySelector("form[data-travel-configuration]");
     if (configuration) {
+      const walkingHours = configuration.querySelector("[data-walking-hours]");
+      const walkingOutput = configuration.querySelector("[data-walking-hours-output]");
+      walkingHours?.addEventListener("input", () => {
+        if (walkingOutput) walkingOutput.textContent = formatDays(walkingHours.value);
+      });
       const save = async () => {
         const response = await fetch(configuration.action, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(new FormData(configuration)) });
         if (response.ok) window.location.reload();

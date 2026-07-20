@@ -97,10 +97,9 @@ use crate::spacetimedb::{
     HerbalistExaminationRow, InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget,
     ItemCondition, ItemDefinition, ItemKind, ItemSlot, MedicalExaminationRow, Party,
     PartyInventoryItem, PartyJourney, PartyJourneyItinerary, PartyMember, PartyRecruitmentRole,
-    PartyStake, Quest,
-    QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
-    ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription, SettlementSmith,
-    TravelEdge,
+    PartyStake, Quest, QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand,
+    RepairOrder, ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription,
+    SettlementSmith, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
@@ -803,7 +802,7 @@ async fn update_travel_configuration(
     let Some(character_id) = session.character_id_u64() else {
         return Redirect::to("/characters").into_response();
     };
-    let walking_minutes = (form.walking_hours.clamp(1.0, 16.0) * 60.0).round() as u16;
+    let walking_minutes = (form.walking_hours.clamp(0.0, 24.0) * 60.0).round() as u16;
     match state
         .db
         .call(

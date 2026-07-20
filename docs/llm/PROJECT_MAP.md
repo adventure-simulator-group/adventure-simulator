@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (826)
+## Files (830)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -585,6 +585,8 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/src/templates/components.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/inventory_browser.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/layout.rs` — Strategic web server-rendered template.
+- `crates/strategic-web/src/templates/layout.rs` — Strategic web server-rendered template.
+- `crates/strategic-web/src/templates/layout.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/mission.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/mod.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/quest.rs` — Strategic web server-rendered template.
@@ -753,6 +755,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/live-state.js` — Repository support file.
 - `crates/strategic-web/static/local-chat.js` — Repository support file.
 - `crates/strategic-web/static/medical-examination.js` — Repository support file.
+- `crates/strategic-web/static/numeric-editor.js` — Repository support file.
 - `crates/strategic-web/static/party-notifications.js` — Repository support file.
 - `crates/strategic-web/static/party-recruitment.js` — Repository support file.
 - `crates/strategic-web/static/party-trade.js` — Repository support file.
@@ -768,6 +771,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/tests/inventory-browser.dom.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/inventory-browser.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/local-chat.test.cjs` — Repository support file.
+- `crates/strategic-web/tests/numeric-editor.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/rest-duration.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/service-quests.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/training-schedule.test.cjs` — Repository support file.

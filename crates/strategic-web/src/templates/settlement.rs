@@ -621,6 +621,7 @@ pub(crate) fn map_destination_detail(
     let camp_fatigue_percent = party.map_or(50, |party| party.camp_fatigue_percent);
     let walking_hours = party.map_or(8.0, |party| f32::from(party.walking_minutes_per_day) / 60.0);
     let travel_at_night = party.is_some_and(|party| party.travel_at_night);
+    let travel_disabled = party.is_some_and(|party| party.walking_minutes_per_day == 0);
     let walking_hours_title = if travel_at_night {
         "Walking is centered on midnight; shorter first and final days are forecast automatically."
     } else {
@@ -644,7 +645,8 @@ pub(crate) fn map_destination_detail(
                 form method="post" action=(format!("{map_path}/travel-configuration")) class="travel-configuration-form" data-travel-configuration {
                     label for="walking-hours" title=(walking_hours_title) { "Walking hours per day" }
                     div class="travel-fatigue-control" {
-                        input id="walking-hours" type="number" name="walking_hours" min="1" max="16" step="0.25" value=(walking_hours) data-walking-hours {}
+                        input id="walking-hours" type="range" name="walking_hours" min="0" max="24" step="0.25" value=(walking_hours) data-walking-hours {}
+                        output for="walking-hours" data-walking-hours-output { (format!("{walking_hours}")) }
                         span { "hours" }
                     }
                     div class="travel-period-control" {
@@ -657,15 +659,15 @@ pub(crate) fn map_destination_detail(
                             }
                         }
                     }
-                    p class="travel-cycle-summary" {
-                        (format!("{} hours camp/downtime per full day", 24.0 - walking_hours))
-                    }
                 }
                 @if provisioning_available {
                     div class="travel-provisioning-control" data-provisioning-control {
-                        label for="target-surplus" { "Provisioning" }
+                        span { "Provisioning" }
                         div class="travel-provisioning-input" {
-                            input id="target-surplus" type="number" value="0" step="0.25" data-target-surplus aria-label="Target surplus in days" {}
+                            input type="hidden" value="0" data-target-surplus;
+                            span id="target-surplus" class="travel-provisioning-value" data-target-surplus-display
+                                role="button" tabindex="0" aria-label="Target surplus in days"
+                                title="Click to edit target surplus" { "0" }
                             span class="travel-provisioning-unit" { "days surplus" }
                             @if let Some(forecast) = provision_forecast {
                                 a class="btn btn-secondary" data-provision-buy
@@ -695,7 +697,11 @@ pub(crate) fn map_destination_detail(
                 (sidebar_section(&destination.name, html! {
                     @if can_travel {
                         form method="post" action=(&destination.travel_action) data-travel-submit {
-                            button type="submit" class="btn btn-primary btn-block" { "Begin journey" }
+                            button type="submit" class="btn btn-primary btn-block"
+                                disabled[travel_disabled]
+                                title=(if travel_disabled { "Increase walking hours above zero to begin the journey" } else { "Begin journey" }) {
+                                "Begin journey"
+                            }
                         }
                         p class="travel-action-status" data-travel-action-status role="alert" hidden {}
                     }
@@ -2483,7 +2489,7 @@ fn party_skills_rail(
                             button type="button" data-schedule-retry { "Retry" }
                         }
                     }
-                    script src="/static/training-schedule.js?v=floating-time-editor-1" {}
+                    script src="/static/training-schedule.js?v=shared-numeric-editor-1" {}
                 } @else {
                     (skills_table(
                         title, skills, head_health, upper_health, lower_health, None, None,
@@ -2491,7 +2497,7 @@ fn party_skills_rail(
                         training_religion_id.and_then(OfficialReligion::from_id),
                         combat_profile,
                     ))
-                    script src="/static/training-schedule.js?v=floating-time-editor-1" {}
+                    script src="/static/training-schedule.js?v=shared-numeric-editor-1" {}
                 }
             } @else {
                 h3 class="sidebar-header" { (title) }
@@ -5807,15 +5813,17 @@ mod tests {
     #[test]
     fn schedule_and_equipment_scripts_use_the_new_interactions() {
         let schedule = include_str!("../../static/training-schedule.js");
+        let numeric = include_str!("../../static/numeric-editor.js");
         let equipment = include_str!("../../static/equipment-toggle.js");
         let live_regions = include_str!("../../static/live-regions.js");
         let css = include_str!("../../static/css/strategic.css");
         assert!(schedule.contains("function parseClock(value)"));
-        assert!(schedule.contains("input.type = 'text'"));
-        assert!(schedule.contains("confirm.addEventListener('click', () => finish(true))"));
-        assert!(schedule.contains("cancel.addEventListener('click', () => finish(false))"));
-        assert!(schedule.contains("input.addEventListener('wheel'"));
-        assert!(!schedule.contains("document.addEventListener('wheel'"));
+        assert!(schedule.contains("window.StrategicNumericEditor.open"));
+        assert!(numeric.contains("input.type = 'text'"));
+        assert!(numeric.contains("confirm.addEventListener('click', () => finish(true))"));
+        assert!(numeric.contains("cancel.addEventListener('click', () => finish(false))"));
+        assert!(numeric.contains("input.addEventListener('wheel'"));
+        assert!(!numeric.contains("document.addEventListener('wheel'"));
         assert!(schedule.contains("/^\\d{3,4}$/"));
         assert!(schedule.contains("Math.round(wanted / STEP) * STEP"));
         assert!(schedule.contains("function renderActivityPreview(row, minutes)"));
@@ -5838,25 +5846,25 @@ mod tests {
         assert!(live_regions.contains("const scrollOffsets = (selector)"));
         assert!(live_regions.contains("region.scrollTop = offsets.top"));
         assert!(live_regions.contains("replaced.includes(\"left-sidebar\")"));
-        assert!(live_regions.contains("document.querySelector('.schedule-time-editor')"));
+        assert!(live_regions.contains("document.querySelector('.numeric-editor')"));
         assert!(live_regions.contains("scheduleEditorIsPending"));
         assert!(live_regions.contains("const schedulePendingAtStart = scheduleEditorIsPending()"));
         assert!(live_regions.contains("!schedulePendingAtStart && !scheduleEditorIsPending()"));
-        assert!(css.contains(".schedule-time-input {"));
+        assert!(css.contains(".numeric-editor-input {"));
         assert!(css.contains("position: fixed;"));
         assert!(css.contains("z-index: 80;"));
-        assert!(css.contains(".schedule-time-editor {"));
+        assert!(css.contains(".numeric-editor {"));
         assert!(css.contains("right: auto;"));
         assert!(css.contains("left: 50%;"));
         assert!(css.contains("transform: translate(-50%, -50%);"));
-        assert!(css.contains(".schedule-time-input::selection {"));
-        assert!(schedule.contains("document.body.append(editor)"));
-        assert!(schedule.contains("display.hidden = true"));
-        assert!(schedule.contains("window.addEventListener('resize', positionEditor)"));
+        assert!(css.contains(".numeric-editor-input::selection {"));
+        assert!(numeric.contains("document.body.append(editor)"));
+        assert!(numeric.contains("display.hidden = true"));
+        assert!(numeric.contains("window.addEventListener('resize', positionEditor)"));
         assert!(!css.contains(".party-skill-icon-column"));
-        assert!(css.contains(".schedule-time-editor-action {"));
-        assert!(css.contains(".schedule-time-confirm { background: #2f7d3d; }"));
-        assert!(css.contains(".schedule-time-cancel { background: #9c3434; }"));
+        assert!(css.contains(".numeric-editor-action {"));
+        assert!(css.contains(".numeric-editor-confirm { background: #2f7d3d; }"));
+        assert!(css.contains(".numeric-editor-cancel { background: #9c3434; }"));
         assert!(css.contains(".schedule-save-status"));
     }
 

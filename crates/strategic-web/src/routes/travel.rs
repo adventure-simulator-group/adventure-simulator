@@ -165,6 +165,8 @@ pub(crate) fn settlement_destination(
 /// the leader takes the recommended full-fatigue camp rest.
 fn camp_schedule(allocation: &ScheduleAllocation) -> DailySchedule {
     DailySchedule {
+        combat: allocation.combat_minutes,
+        combat_auto_train: allocation.combat_auto_train,
         melee: allocation.melee_minutes,
         dodge: allocation.dodge_minutes,
         block: allocation.block_minutes,

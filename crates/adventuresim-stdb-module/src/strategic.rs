@@ -4924,6 +4924,9 @@ fn party_travel_leg_minutes(
         .id()
         .find(&party_id.to_string())
         .ok_or("Party not found")?;
+    if party.walking_minutes_per_day == 0 {
+        return Err("The party is configured not to travel".into());
+    }
     if daylight_walking_window(party.walking_minutes_per_day).is_none() {
         return Err("Party walking hours are invalid".into());
     }
@@ -5906,8 +5909,11 @@ pub fn set_party_travel_itinerary(
     fixed_camp_minutes: u16,
 ) -> Result<(), String> {
     crate::character::require_living_character(ctx, character_id)?;
-    if daylight_walking_window(walking_minutes_per_day).is_none() {
-        return Err("Daily walking time must be between 1 and 16 hours".into());
+    if walking_minutes_per_day > 24 * 60
+        || (walking_minutes_per_day > 0
+            && daylight_walking_window(walking_minutes_per_day).is_none())
+    {
+        return Err("Daily walking time must be between 0 and 24 hours".into());
     }
     // Retain the reducer's wire shape for existing clients while the daily
     // walking window becomes the sole authoritative configuration.

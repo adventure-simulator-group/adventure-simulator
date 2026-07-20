@@ -64,8 +64,8 @@ stores an off-road point near its posting settlement. The trip to that point and
 trips from it to the five nearest settlements use straight-line distance, require
 no road connection, and advance strategic time at 1.25 km/h (one quarter of the
 MVP's normal walking speed). Both settlement and quest-destination travel use the
-shared Map tab. The leader configures integer-minute walking time as hours per
-day (eight by default) and whether the party travels by day or by night. Day
+shared Map tab. The leader configures walking time with a 0-24 hours-per-day
+slider (eight by default) and chooses whether the party travels by day or by night. Day
 travel centers the walking window on solar noon. Night travel centers its
 contiguous walking window on midnight, which equivalently centers the camp and
 downtime interval on noon. A sun/moon switch in the travel configuration saves
@@ -153,7 +153,9 @@ return journey home, including return-leg camp estimates because a quest
 location cannot resupply the party.
 
 The leader can set a transient target surplus, including a negative target, in
-Travel configuration. **Buy** opens the current settlement's General Market,
+Travel configuration. Its value uses the shared floating numeric editor also
+used by daily skill allocations: click or focus it to type, use the arrow
+buttons, keyboard arrows, or mouse wheel, then save or cancel. **Buy** opens the current settlement's General Market,
 selects Party inventory, and stages the exact whole rations and waterskins
 needed to reach that target. The transparent target rails are removed after
 departure, when the settlement merchant is no longer available. It does not

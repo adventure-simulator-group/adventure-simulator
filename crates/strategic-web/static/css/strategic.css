@@ -310,9 +310,9 @@
 .camp-destination-row { width: 100%; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
 .camp-destination-row:disabled { cursor: default; opacity: 1; }
 .travel-provisioning-input { display: flex; align-items: center; gap: .5rem; }
-.travel-provisioning-input input { min-width: 0; width: 7rem; }
+.travel-provisioning-value { min-width: 2.5rem; color: var(--text-primary); cursor: text; font-variant-numeric: tabular-nums; text-align: right; }
+.travel-provisioning-value:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 3px; }
 .travel-provisioning-unit { white-space: nowrap; }
-.travel-cycle-summary { margin: -.15rem 0 0; color: var(--text-muted); font-size: var(--font-size-xs); }
 
 .trade-transfer:not(:disabled) { cursor: pointer; }
 
@@ -3360,7 +3360,7 @@ body.chat-resizing {
 
 .party-skill-allocation [data-schedule-display] { position: relative; z-index: 3; cursor: text; }
 
-.schedule-time-editor {
+.numeric-editor {
   position: fixed;
   z-index: 80;
   top: 50%;
@@ -3377,7 +3377,7 @@ body.chat-resizing {
   transform: translate(-50%, -50%);
 }
 
-.schedule-time-input-stack {
+.numeric-editor-input-stack {
   display: grid;
   grid-template-rows: 0.7rem 1.5rem 0.7rem;
   overflow: hidden;
@@ -3386,7 +3386,7 @@ body.chat-resizing {
   background: #f3eee2;
 }
 
-.schedule-time-input {
+.numeric-editor-input {
   box-sizing: border-box;
   width: 100%;
   height: 1.5rem;
@@ -3401,17 +3401,17 @@ body.chat-resizing {
   text-align: center;
 }
 
-.schedule-time-input::selection {
+.numeric-editor-input::selection {
   background: #d8bd70;
   color: #17130f;
 }
 
-.schedule-time-input[aria-invalid="true"] {
+.numeric-editor-input[aria-invalid="true"] {
   outline: 2px solid var(--danger);
   outline-offset: -2px;
 }
 
-.schedule-time-editor-step {
+.numeric-editor-step {
   width: 100%;
   height: 0.7rem;
   padding: 0;
@@ -3423,10 +3423,10 @@ body.chat-resizing {
   cursor: pointer;
 }
 
-.schedule-time-editor-step:hover,
-.schedule-time-editor-step:focus-visible { background: #d7cbb7; }
+.numeric-editor-step:hover,
+.numeric-editor-step:focus-visible { background: #d7cbb7; }
 
-.schedule-time-editor-action {
+.numeric-editor-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3441,12 +3441,12 @@ body.chat-resizing {
   cursor: pointer;
 }
 
-.schedule-time-confirm { background: #2f7d3d; }
-.schedule-time-cancel { background: #9c3434; }
-.schedule-time-confirm:hover,
-.schedule-time-confirm:focus-visible { background: #3d9a4d; }
-.schedule-time-cancel:hover,
-.schedule-time-cancel:focus-visible { background: #bd4242; }
+.numeric-editor-confirm { background: #2f7d3d; }
+.numeric-editor-cancel { background: #9c3434; }
+.numeric-editor-confirm:hover,
+.numeric-editor-confirm:focus-visible { background: #3d9a4d; }
+.numeric-editor-cancel:hover,
+.numeric-editor-cancel:focus-visible { background: #bd4242; }
 
 .skill-schedule { display: grid; gap: 0.55rem; }
 .schedule-save-status {

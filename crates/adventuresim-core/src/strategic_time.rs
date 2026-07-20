@@ -8,8 +8,8 @@ use crate::{
 pub const MINUTES_PER_DAY: u64 = 24 * 60;
 pub const MINUTES_PER_YEAR: u64 = 365 * MINUTES_PER_DAY;
 pub const DEFAULT_WALKING_MINUTES_PER_DAY: u16 = 8 * 60;
-pub const MIN_WALKING_MINUTES_PER_DAY: u16 = 60;
-pub const MAX_WALKING_MINUTES_PER_DAY: u16 = 16 * 60;
+pub const MIN_WALKING_MINUTES_PER_DAY: u16 = 1;
+pub const MAX_WALKING_MINUTES_PER_DAY: u16 = 24 * 60;
 pub const LUNAR_CYCLE_MINUTES: u64 = 42_524;
 pub const MAX_ITINERARY_SEGMENTS: usize = 512;
 /// Natural recovery while taking full settlement downtime.
@@ -434,11 +434,13 @@ mod tests {
     }
 
     #[test]
-    fn walking_hours_are_bounded_and_centered_on_noon() {
+    fn walking_hours_cover_the_full_day_slider_range() {
         assert_eq!(daylight_walking_window(8 * 60), Some((8 * 60, 16 * 60)));
         assert_eq!(daylight_walking_window(7 * 60 + 1), Some((510, 931)));
-        assert_eq!(daylight_walking_window(59), None);
-        assert_eq!(daylight_walking_window(16 * 60 + 1), None);
+        assert_eq!(daylight_walking_window(15), Some((713, 728)));
+        assert_eq!(daylight_walking_window(24 * 60), Some((0, 24 * 60)));
+        assert_eq!(daylight_walking_window(0), None);
+        assert_eq!(daylight_walking_window(24 * 60 + 1), None);
     }
 
     #[test]
