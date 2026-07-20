@@ -24,14 +24,18 @@ test("shared numeric editor steps, clamps, and recovers invalid drafts", () => {
   assert.equal(stepNumericValue("invalid", -1, decimalOptions), "-0.25");
 });
 
-test("skill allocation and provisioning both use the shared numeric editor", () => {
+test("skill allocation, provisioning, and inventory targets use the shared numeric editor", () => {
   const root = path.join(__dirname, "..", "static");
   const schedule = fs.readFileSync(path.join(root, "training-schedule.js"), "utf8");
   const travel = fs.readFileSync(path.join(root, "travel-planner.js"), "utf8");
+  const trade = fs.readFileSync(path.join(root, "party-trade.js"), "utf8");
   assert.match(schedule, /StrategicNumericEditor\.open/);
   assert.match(travel, /StrategicNumericEditor\.open/);
+  assert.match(trade, /StrategicNumericEditor\.open/);
   assert.match(travel, /step: \.25/);
   assert.match(travel, /minimum: -365/);
+  assert.match(trade, /step: 1/);
+  assert.match(trade, /maximum: 4294967295/);
 });
 
 test("shared numeric editor keeps its trigger in layout while positioning", () => {
