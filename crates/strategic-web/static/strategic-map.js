@@ -2,9 +2,19 @@
   "use strict";
 
   const THEME_KEY = "adventuresim.map-theme";
+  const PIN_REFERENCE_WIDTH = 390;
   const THEMES = new Set(["paper", "atlas"]);
   const parseViewBox = (svg) => svg.getAttribute("viewBox").trim().split(/\s+/).map(Number);
-  const writeViewBox = (svg, view) => svg.setAttribute("viewBox", view.map((value) => value.toFixed(2)).join(" "));
+  const scalePins = (svg, width) => {
+    const scale = width / PIN_REFERENCE_WIDTH;
+    svg.querySelectorAll("[data-map-pin-symbol]").forEach((symbol) => {
+      symbol.setAttribute("transform", `scale(${scale.toFixed(5)})`);
+    });
+  };
+  const writeViewBox = (svg, view) => {
+    svg.setAttribute("viewBox", view.map((value) => value.toFixed(2)).join(" "));
+    scalePins(svg, view[2]);
+  };
   const zoomedView = ([x, y, width, height], factor, focusX = x + width / 2, focusY = y + height / 2) => {
     const nextWidth = Math.min(1200, Math.max(80, width * factor));
     const nextHeight = Math.min(800, Math.max(53.33, height * factor));
@@ -30,6 +40,7 @@
     const svg = map.querySelector("[data-map-svg]");
     if (!svg) return;
     const initial = parseViewBox(svg);
+    scalePins(svg, initial[2]);
     let stored = "atlas";
     try { stored = storage?.getItem(THEME_KEY) || "atlas"; } catch (_) { /* use default */ }
     applyTheme(map, stored, storage);
