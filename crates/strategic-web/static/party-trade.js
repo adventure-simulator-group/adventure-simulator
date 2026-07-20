@@ -132,7 +132,10 @@ function setTradeDraftCount(row, draftChange) {
 }
 
 function merchantRow(itemId, sidebar) {
-  return sidebar.querySelector(`tr[data-merchant-item="${CSS.escape(itemId)}"]`);
+  const inventoryRoot = sidebar?.matches?.(".right-sidebar")
+    ? sidebar.querySelector('[data-inventory-pane]:not([hidden])') || sidebar
+    : sidebar;
+  return inventoryRoot?.querySelector(`tr[data-merchant-item="${CSS.escape(itemId)}"]`) || null;
 }
 
 function ensureMerchantPlayerRow(itemId, sourceRow) {
@@ -555,6 +558,43 @@ document.addEventListener("wheel", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key === "Shift" || event.key === "Control") applyDynamicTransferModifiers(event);
 });
+
+function initializeProvisioningDraft() {
+  const params = new URLSearchParams(window.location.search);
+  const parseQuantity = (name) => {
+    const value = params.get(name);
+    if (!/^(?:0|[1-9]\d{0,9})$/.test(value || "")) return 0;
+    const quantity = Number(value);
+    return Number.isSafeInteger(quantity) && quantity <= 4294967295 ? quantity : 0;
+  };
+  const requested = new Map([
+    ["travel_ration", parseQuantity("provision_rations")],
+    ["waterskin", parseQuantity("provision_waterskins")],
+  ].filter(([, quantity]) => quantity > 0));
+  if (!requested.size || params.get("inventory_scope") !== "party") return;
+
+  const partyTab = document.querySelector('[data-inventory-tab="party"]');
+  if (!partyTab) return;
+  partyTab.click();
+  const draft = strategicTradeUi.state.merchantDraft ||= new Map();
+  requested.forEach((quantity, itemId) => {
+    const source = merchantRow(itemId, document.querySelector(".left-sidebar"));
+    const button = source?.querySelector("[data-merchant-buy]");
+    if (!source || !button) return;
+    draft.set(itemId, quantity);
+    (strategicTradeUi.state.merchantBuyPrices ||= new Map()).set(itemId, Number(button.dataset.merchantBuyPrice));
+    setTradeDraftCount(source, -quantity);
+    setTradeDraftCount(ensureMerchantPlayerRow(itemId, source), quantity);
+  });
+  updateMerchantGoldDraft();
+  updateMerchantOfferForm();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initializeProvisioningDraft, { once: true });
+} else {
+  initializeProvisioningDraft();
+}
 document.addEventListener("keyup", (event) => {
   if (event.key === "Shift" || event.key === "Control") applyDynamicTransferModifiers(event);
 });

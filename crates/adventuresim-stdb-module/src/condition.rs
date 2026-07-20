@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use crate::capability::StrategicEquipment;
 use crate::character::character;
 use crate::item::item;
-use crate::strategic::{quest, settlement};
+use crate::strategic::{party, party_inventory_item, quest, settlement};
 use crate::{
     CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, character_attributes,
     character_equip, character_limbs, character_skills, character_stats, character_time,
@@ -22,7 +22,6 @@ pub const TRAVEL_CALORIES_PER_DAY: f32 = STRATEGIC_TRAVEL_KCAL_PER_DAY;
 pub const TRAVEL_WATER_ML_PER_DAY: f32 = STRATEGIC_TRAVEL_WATER_ML_PER_DAY;
 pub const FOOD_RESERVE_KCAL: f32 = TRAVEL_CALORIES_PER_DAY;
 pub const HYDRATION_RESERVE_ML: f32 = TRAVEL_WATER_ML_PER_DAY;
-pub const PROVISION_BUFFER_PERCENT: u64 = STRATEGIC_PROVISION_BUFFER_PERCENT;
 pub const TRAVEL_RATION_ID: &str = STANDARD_TRAVEL_RATION_ID;
 pub const WATERSKIN_ID: &str = STANDARD_WATERSKIN_ID;
 
@@ -232,25 +231,89 @@ fn consume_inventory(
     requested - quantity
 }
 
-fn provision_units(
-    planning_minutes: u64,
-    food_balance_kcal: f32,
-    water_balance_ml: f32,
-    ration_kcal: f32,
-    waterskin_capacity_ml: u32,
-) -> (u32, u32) {
-    let units = ProvisioningInputs {
-        planning_minutes,
-        buffer_percent: PROVISION_BUFFER_PERCENT,
-        food_balance_kcal,
-        water_balance_ml,
-        travel_kcal_per_day: TRAVEL_CALORIES_PER_DAY,
-        travel_water_ml_per_day: TRAVEL_WATER_ML_PER_DAY,
-        ration_kcal,
-        waterskin_capacity_ml,
+fn consume_party_inventory(
+    ctx: &ReducerContext,
+    party_id: &str,
+    item_id: &str,
+    mut quantity: u32,
+) -> u32 {
+    let requested = quantity;
+    let stacks: Vec<_> = ctx
+        .db
+        .party_inventory_item()
+        .party_id()
+        .filter(party_id)
+        .filter(|row| row.item_id == item_id)
+        .collect();
+    for mut stack in stacks {
+        if quantity == 0 {
+            break;
+        }
+        let consumed = stack.quantity.min(quantity);
+        quantity -= consumed;
+        stack.quantity -= consumed;
+        if stack.quantity == 0 {
+            ctx.db.party_inventory_item().id().delete(stack.id);
+        } else {
+            ctx.db.party_inventory_item().id().update(stack);
+        }
     }
-    .required_units();
-    (units.rations, units.waterskins)
+    requested - quantity
+}
+
+pub fn prepare_party_waterskins(
+    ctx: &ReducerContext,
+    party_id: &str,
+    from_settlement: bool,
+) -> Result<(), String> {
+    let capacity = ctx
+        .db
+        .item()
+        .id()
+        .find(WATERSKIN_ID.to_string())
+        .map_or(0, |item| item.water_capacity_ml);
+    let skins: u32 = ctx
+        .db
+        .party_inventory_item()
+        .party_id()
+        .filter(party_id)
+        .filter(|row| row.item_id == WATERSKIN_ID)
+        .map(|row| row.quantity)
+        .sum();
+    let mut party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id.to_string())
+        .ok_or("Party not found")?;
+    party.pooled_water_ml = departure_water_volume(
+        party.pooled_water_ml,
+        skins.saturating_mul(capacity),
+        from_settlement,
+    );
+    ctx.db.party().id().update(party);
+    Ok(())
+}
+
+pub fn prepare_character_waterskins(
+    ctx: &ReducerContext,
+    character_id: u64,
+    from_settlement: bool,
+) -> Result<(), String> {
+    initialize_character_condition(ctx, character_id)?;
+    let mut needs = ctx
+        .db
+        .character_needs()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character needs not found")?;
+    needs.carried_water_ml = departure_water_volume(
+        needs.carried_water_ml,
+        water_capacity_ml(ctx, character_id),
+        from_settlement,
+    );
+    ctx.db.character_needs().character_id().update(needs);
+    Ok(())
 }
 
 pub fn replenish_needs_at_settlement(
@@ -271,77 +334,7 @@ pub fn replenish_needs_at_settlement(
     Ok(())
 }
 
-/// Purchase enough personal provisions for the supplied planning duration and
-/// fill all owned water containers. The duration should include the expected
-/// return leg where the destination cannot resupply the party.
-pub fn provision_character_for_travel(
-    ctx: &ReducerContext,
-    character_id: u64,
-    planning_minutes: u64,
-) -> Result<(), String> {
-    initialize_character_condition(ctx, character_id)?;
-    let needs = ctx
-        .db
-        .character_needs()
-        .character_id()
-        .find(character_id)
-        .ok_or("Character needs not found")?;
-    let ration = ctx
-        .db
-        .item()
-        .id()
-        .find(TRAVEL_RATION_ID.to_string())
-        .ok_or("Travel ration item is not defined")?;
-    let waterskin = ctx
-        .db
-        .item()
-        .id()
-        .find(WATERSKIN_ID.to_string())
-        .ok_or("Waterskin item is not defined")?;
-    let (required_rations, required_waterskins) = provision_units(
-        planning_minutes,
-        needs.food_balance_kcal,
-        needs.water_balance_ml,
-        ration.nutrition_kcal,
-        waterskin.water_capacity_ml,
-    );
-    let owned_rations = inventory_quantity(ctx, character_id, TRAVEL_RATION_ID);
-    let rations_to_buy = required_rations.saturating_sub(owned_rations);
-    let owned_waterskins = inventory_quantity(ctx, character_id, WATERSKIN_ID);
-    let waterskins_to_buy = required_waterskins.saturating_sub(owned_waterskins);
-
-    let cost = rations_to_buy
-        .saturating_mul(ration.base_value.unwrap_or(0))
-        .saturating_add(waterskins_to_buy.saturating_mul(waterskin.base_value.unwrap_or(0)));
-    let character = ctx
-        .db
-        .character()
-        .id()
-        .find(character_id)
-        .ok_or("Character not found")?;
-    let available = crate::item::personal_currency_total(ctx, character_id);
-    if available < u64::from(cost) {
-        return Err(format!(
-            "{} needs {cost} coin for food and water provisions but has only {available}",
-            character.name
-        ));
-    }
-    crate::item::consume_personal_currency(ctx, character_id, u64::from(cost))?;
-    crate::add_inventory_item(ctx, character_id, TRAVEL_RATION_ID, rations_to_buy);
-    crate::add_inventory_item(ctx, character_id, WATERSKIN_ID, waterskins_to_buy);
-
-    let mut needs = ctx
-        .db
-        .character_needs()
-        .character_id()
-        .find(character_id)
-        .ok_or("Character needs not found")?;
-    needs.carried_water_ml = water_capacity_ml(ctx, character_id) as f32;
-    ctx.db.character_needs().character_id().update(needs);
-    Ok(())
-}
-
-fn apply_travel_needs(
+pub fn apply_elapsed_needs(
     ctx: &ReducerContext,
     character_id: u64,
     elapsed_minutes: u64,
@@ -364,13 +357,59 @@ fn apply_travel_needs(
         .map_or(TRAVEL_CALORIES_PER_DAY, |item| item.nutrition_kcal);
     if needs.food_balance_kcal < 0.0 && ration_kcal > 0.0 {
         let wanted = ((-needs.food_balance_kcal) / ration_kcal).ceil() as u32;
-        let eaten = consume_inventory(ctx, character_id, TRAVEL_RATION_ID, wanted);
+        let shared_available = ctx
+            .db
+            .character()
+            .id()
+            .find(character_id)
+            .and_then(|row| row.party_id)
+            .map_or(0, |party_id| {
+                ctx.db
+                    .party_inventory_item()
+                    .party_id()
+                    .filter(&party_id)
+                    .filter(|row| row.item_id == TRAVEL_RATION_ID)
+                    .map(|row| row.quantity)
+                    .sum()
+            });
+        let (shared_wanted, personal_wanted) =
+            shared_then_personal_units(wanted, shared_available, u32::MAX);
+        let party_eaten = ctx
+            .db
+            .character()
+            .id()
+            .find(character_id)
+            .and_then(|row| row.party_id)
+            .map_or(0, |party_id| {
+                consume_party_inventory(ctx, &party_id, TRAVEL_RATION_ID, shared_wanted)
+            });
+        let eaten =
+            party_eaten + consume_inventory(ctx, character_id, TRAVEL_RATION_ID, personal_wanted);
         needs.food_balance_kcal += eaten as f32 * ration_kcal;
     }
 
     needs.water_balance_ml -= elapsed_days * TRAVEL_WATER_ML_PER_DAY;
     if needs.water_balance_ml < 0.0 {
-        let drunk = (-needs.water_balance_ml).min(needs.carried_water_ml);
+        if let Some(party_id) = ctx
+            .db
+            .character()
+            .id()
+            .find(character_id)
+            .and_then(|row| row.party_id)
+            && let Some(mut party) = ctx.db.party().id().find(&party_id)
+        {
+            let (pooled_drunk, _) = shared_then_personal_volume(
+                -needs.water_balance_ml,
+                party.pooled_water_ml,
+                needs.carried_water_ml,
+            );
+            party.pooled_water_ml -= pooled_drunk;
+            ctx.db.party().id().update(party);
+            needs.water_balance_ml += pooled_drunk;
+        }
+        let drunk = (-needs.water_balance_ml)
+            .max(0.0)
+            .min(needs.carried_water_ml);
         needs.carried_water_ml -= drunk;
         needs.water_balance_ml += drunk;
     }
@@ -1379,7 +1418,7 @@ pub fn apply_travel_condition(
     elapsed_minutes: u64,
     prayer_minutes: u16,
 ) -> Result<(), String> {
-    apply_travel_needs(ctx, character_id, elapsed_minutes)?;
+    apply_elapsed_needs(ctx, character_id, elapsed_minutes)?;
     let mut stats = ctx
         .db
         .character_stats()
@@ -1586,6 +1625,17 @@ pub fn apply_camp_rest_condition(
     elapsed_minutes: u64,
 ) -> Result<(), String> {
     initialize_character_condition(ctx, character_id)?;
+    apply_elapsed_needs(ctx, character_id, elapsed_minutes)?;
+    apply_camp_rest_recovery_condition(ctx, character_id, elapsed_minutes)
+}
+
+/// Apply only the recovery portion of camp rest. Callers that must process a
+/// disease terminal boundary consume needs first, then skip this after death.
+pub fn apply_camp_rest_recovery_condition(
+    ctx: &ReducerContext,
+    character_id: u64,
+    elapsed_minutes: u64,
+) -> Result<(), String> {
     let days = elapsed_minutes as f32 / (24.0 * 60.0);
     let mut condition = ctx
         .db

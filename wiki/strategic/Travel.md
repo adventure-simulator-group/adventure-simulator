@@ -64,19 +64,37 @@ stores an off-road point near its posting settlement. The trip to that point and
 trips from it to the five nearest settlements use straight-line distance, require
 no road connection, and advance strategic time at 1.25 km/h (one quarter of the
 MVP's normal walking speed). Both settlement and quest-destination travel use the
-shared Map tab: destinations are selected in the left rail while the right rail
-sets the fatigue threshold at which the first tiring member makes camp.
-Hovering or selecting a destination previews the route above chat with start,
-camp, destination, and animated party pins. The preview is calculated from the
-same least-rested-member fatigue and Endurance rule that advances travel, so it
-does not use a browser-only daily-march approximation. A journey longer than a
-leg stops at a persisted camp; the leader may rest the whole party for free and
-continue in instantaneous legs. The strategic layer persists the journey's
+shared Map tab. The leader configures walking time with a 0-24 hours-per-day
+slider (eight by default) and chooses whether the party travels by day or by night. Day
+travel centers the walking window on solar noon. Night travel centers its
+contiguous walking window on midnight, which equivalently centers the camp and
+downtime interval on noon. A sun/moon switch in the travel configuration saves
+this choice with the party and immediately recomputes the remaining forecast.
+These travel preferences remain available on the right side of the Map while
+the party is at a settlement, camp, or quest destination. Provision purchasing
+is shown only at settlements, where a market can actually fulfill it.
+Every minute outside the walking window is camp/downtime, so a full day's camp
+interval is 24 hours minus the configured walking hours. A
+member who cannot clear their fatigue in that interval carries it into the next
+day. The reducer and preview use the same itinerary function, including partial
+first and final walking days.
+
+The runner-track preview contains exactly four compact vertical rails: Food,
+Water, Fatigue, and Day/night. Camp brackets span elapsed rest time while their
+markers retain movement coordinates, and white progress advances through both
+walking and rest. The fatigue rail shows party average, range, highest member,
+and a warning at 100%. The Day/night rail follows absolute party time; midnight
+ticks protrude right and show accessible lunar phases from the canonical
+42,524-minute cycle, beginning with a new moon on Day 1. A journey longer than
+a walking window stops at a persisted camp. The strategic layer persists the journey's
 original endpoints, total duration, actual camp checkpoints, and the remaining
 forecast. SSE updates therefore keep every party member's tracker consistent
 across camp rests and page navigations. A shorter-than-recommended camp rest
 can legitimately add a future projected camp, but camps already reached never
-disappear. A party's
+disappear. While camped, the left rail keeps the journey's settlement endpoints
+available, so the leader can redirect the remaining journey or turn back before
+continuing. Choosing a different endpoint only changes the plan; the party can
+rest before attempting the new leg. A party's
 active quest destination is added to the settlement Map list only while the
 party is at the quest's posting settlement; it carries a red exclamation. From
 any other settlement, the Map traces the shortest road/ferry path to the
@@ -85,20 +103,36 @@ settlement is a non-traveling Map row; it shows available quests in gold or a
 completed active quest ready to report in red, with red taking priority. Once an active objective is
 resolved, its route or issuing settlement remains red until turn-in. Quest-offer
 dialogue itself never presents a separate travel action.
+
+Journey rows carry an itinerary plan version. A pre-version active journey is
+conservatively reconstructed from the party's current synchronized minute minus
+its completed movement, then upgraded before travel continues. This may omit
+unknown historical rest from an old row, but it never silently renders the
+journey against Day 1 celestial chronology.
 ### Rest Stops
 - A point may be made into a rest stop, at which you will rest for the day once you arrive.
 - Placing a rest stop at an inn allows you to fully rest faster (no watch schedule or tent pitching) increasing the amount of time available each day for traveling. The inn also has a cost, but this is trivially cheap unless you are an impoverished mendicant.
 - The time between each rest stop *should be* 24 hours. Your cursor when placing points displays the expected arrival time, but the longer your characters go without resting the slower their travel speed and worse their combat abilities will be.
 
-### Camping and hourly rest
+### Camping, destination downtime, and hourly rest
 
-The party leader chooses the fatigue percentage at which the first tiring party
-member should make camp. The map control is a slider and saves when released;
-the route preview updates immediately. Camp rest advances every member by the
-selected duration and removes their recoverable travel fatigue without
-settlement food, water, or a gold cost. The recommended camp duration is the
-longest time any party member needs to remove fatigue; it does not extend the
-rest to finish healing injuries.
+Camp rest advances every living member by one common interval and consumes
+provisions without settlement refill. Shared rations and water are used before
+personal supplies. Each member rests until their own fatigue reaches zero; the
+remaining interval applies safe saved downtime proportionally. Labor,
+Thievery, and Raiding, including their rewards and incidents, are suppressed,
+while healing and field repair retain their priority. Disease boundaries clip
+the party to one common safe interval. Manual rest remains pinned to the bottom
+of the Map's left sidebar at a settlement, an en-route camp, and a quest
+destination, so a leader can clear fatigue or wait until a chosen time before
+departing or beginning combat. Field rest is free. It reuses the wake-time
+control from settlement rest, but permits an exact sub-24-hour interval;
+choosing the current clock time means the next day's occurrence.
+At an en-route camp, the recommended duration always targets the next absolute
+start of the configured walking window rather than adding a fixed interval to
+the camp's arrival time. If another system advances party time, the
+recommendation shrinks toward that same scheduled wake time. Continue travel is
+disabled outside the walking window and becomes available once it opens.
 
 At an inn or church, resting remains personal rather than party-wide. The rest
 control can switch between **Hours** and **Days**; its recommendation heals the
@@ -118,20 +152,29 @@ Recommendations of a day or longer are shown in days.
 
 ### Current provisioning implementation
 
-Every destination offers **Provision and travel** or **Travel
-underprovisioned**. Provisioning purchases each party member's personal
-shortfall and fills their waterskins. Settlement journeys plan for the one-way
-duration plus 30%. Quest journeys plan for the outbound and expected return
-duration plus 30%, because quest locations cannot resupply the party. Existing
-rations and waterskins reduce the purchase.
+Travel has one **Begin journey** action. The route preview aggregates the
+physiological reserves and provisions of every living member together with the
+shared party inventory. Food and water rails show where each aggregate supply
+runs out. Settlement journeys end at the settlement; quest journeys place the
+quest destination partway down the rails and extend the estimate through the
+return journey home, including return-leg camp estimates because a quest
+location cannot resupply the party.
 
-Each party member pays for their own provisions. The reducer validates and
-performs every purchase and the travel atomically, so insufficient funds leave
-the entire party unchanged. A party member's travel request records whether
-provisioning was requested for the captain's eventual approval.
+The leader can set a transient target surplus, including a negative target, in
+Travel configuration. Its value uses the shared floating numeric editor also
+used by daily skill allocations: click or focus it to type, use the arrow
+buttons, keyboard arrows, or mouse wheel, then save or cancel. **Buy** opens the current settlement's General Market,
+selects Party inventory, and stages the exact whole rations and waterskins
+needed to reach that target. The transparent target rails are removed after
+departure, when the settlement merchant is no longer available. It does not
+submit the offer. Party gold pays when
+the leader accepts the normal merchant offer; the former fixed 30% buffer and
+automatic provisioning purchase no longer apply.
 
-Travel consumes personal rations and carried water automatically. Settlement
-arrival immediately clears hunger and thirst and refills owned containers;
-quest arrival does not. Foraging, intermediate freshwater stops, weather-based
-water use, spoilage, food quality, and manual eating or drinking remain future
-layers.
+Travel consumes shared party rations before personal rations and shared
+waterskin water before personal carried water. Every personal and party-held
+waterskin fills freely immediately before departure from a settlement. Quest
+locations do not refill water. Settlement arrival continues to clear hunger
+and thirst and refill personal containers. Foraging, intermediate freshwater
+stops, weather-based water use, spoilage, food quality, and manual eating or
+drinking remain future layers.

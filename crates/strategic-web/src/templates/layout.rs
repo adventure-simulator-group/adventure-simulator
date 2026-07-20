@@ -92,30 +92,31 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=left-rail-scrollbars-3";
                 link rel="stylesheet" href="/static/css/components.css?v=coin-currencies-3";
-                link rel="stylesheet" href="/static/css/strategic.css?v=inventory-browser-15-religion-5";
+                link rel="stylesheet" href="/static/css/strategic.css?v=inventory-browser-15-religion-5-travel-polish-9";
                 link rel="stylesheet" href="/static/css/utilities.css?v=inventory-browser-15";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
-                script src="/static/background-fetch.js?v=background-fetch-1" {}
+                script src="/static/background-fetch.js?v=background-fetch-2" {}
                 script src="/static/medical-examination.js?v=one-shot-1" defer {}
                 @if scripts != ScriptProfile::Entry {
                     script src="/static/live-state.js?v=sse-3" defer {}
                     script src="/static/live-regions.js?v=floating-time-editor-1" defer {}
                 }
                 @if scripts == ScriptProfile::Strategic {
+                    script src="/static/numeric-editor.js?v=shared-numeric-editor-2" defer {}
                     script src="/static/inventory-browser.js?v=coin-currencies-3" defer {}
-                    script src="/static/party-trade.js?v=coin-currencies-2" {}
+                    script src="/static/party-trade.js?v=coin-currencies-2-travel-provisioning-3" defer {}
                     script src="/static/equipment-toggle.js?v=functional-equipment-1" defer {}
                     script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}
                     script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
-                    script src="/static/service-quests.js?v=coin-currencies-2" defer {}
+                    script src="/static/service-quests.js?v=coin-currencies-2-quest-description-tooltip-1" defer {}
                     script src="/static/chat-resize.js?v=floating-chat-3" defer {}
                     script src="/static/local-chat.js?v=herbalist-private-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}
                     script src="/static/building-state.js?v=environment-2" defer {}
-                    script src="/static/travel-planner.js?v=journey-state-1" defer {}
-                    script src="/static/rest-duration.js?v=wake-time-1" defer {}
+                    script src="/static/travel-planner.js?v=travel-polish-6" defer {}
+                    script src="/static/rest-duration.js?v=wake-time-3" defer {}
                 }
             }
             body {

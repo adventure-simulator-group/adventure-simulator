@@ -44,6 +44,7 @@ use adventuresim_stdb_client::{
     party_inventory_item_table::PartyInventoryItemTableAccess,
     party_inventory_state_table::PartyInventoryStateTableAccess,
     party_join_request_table::PartyJoinRequestTableAccess,
+    party_journey_itinerary_table::PartyJourneyItineraryTableAccess,
     party_journey_table::PartyJourneyTableAccess,
     party_leader_vote_table::PartyLeaderVoteTableAccess,
     party_member_table::PartyMemberTableAccess,
@@ -135,6 +136,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.character_training_schedule());
         invalidate_on_changes!(state.0._connection.db.party());
         invalidate_on_changes!(state.0._connection.db.party_journey());
+        invalidate_on_changes!(state.0._connection.db.party_journey_itinerary());
         invalidate_on_changes!(state.0._connection.db.party_member());
         invalidate_on_changes!(state.0._connection.db.party_action_request());
         invalidate_on_changes!(state.0._connection.db.party_join_request());

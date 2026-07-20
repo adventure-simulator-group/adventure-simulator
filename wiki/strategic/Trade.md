@@ -31,6 +31,17 @@ quantity changes on both sides; inventory changes only persist after choosing
 **Offer**.
 Trades are bound to the settlement where the character is currently located;
 visiting another settlement's URL does not allow remote trading.
+Party-scoped purchases spend pooled coin first, then the active character's
+personal coin for any shortfall. The Party tab's collapsed Coin row therefore
+shows both sources while drafting a purchase. Personal coin contributed to a
+party purchase grants that buyer an equal amount of additional party stake;
+spending already-pooled coin does not create new stake.
+
+Multi-page workflows may pass a local absolute-path URL in `return_to`. A
+successful merchant offer returns to that exact path, query, and fragment;
+external and malformed destinations are rejected. Travel provisioning uses the
+query to preserve the selected destination and target surplus while visiting
+the market.
 
 Herbalists use a narrower authoritative purchase path. They offer unlimited
 ingredients plus all eight pre-prepared medication courses, but prepared

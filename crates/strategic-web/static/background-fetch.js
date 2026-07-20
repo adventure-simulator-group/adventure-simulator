@@ -10,6 +10,31 @@
   };
   window.reportStrategicError = reportError;
 
+  // Shared return-navigation contract for multi-page workflows. Callers may
+  // carry a local path (including its query and fragment) in `return_to`.
+  window.strategicLocalReturnUrl = (value) => {
+    if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return null;
+    try {
+      const parsed = new URL(value, location.origin);
+      return parsed.origin === location.origin ? `${parsed.pathname}${parsed.search}${parsed.hash}` : null;
+    } catch (_) {
+      return null;
+    }
+  };
+  window.strategicApplyReturnNavigation = (root = document) => {
+    const returnTo = window.strategicLocalReturnUrl(new URLSearchParams(location.search).get("return_to"));
+    if (!returnTo) return;
+    root.querySelectorAll?.('input[name="return_to"]').forEach((input) => { input.value = returnTo; });
+  };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => window.strategicApplyReturnNavigation(), { once: true });
+  } else {
+    window.strategicApplyReturnNavigation();
+  }
+  document.addEventListener("strategic-live-regions-refreshed", (event) => {
+    window.strategicApplyReturnNavigation(event.target);
+  });
+
   window.strategicFetch = async (input, init = {}) => {
     try {
       const response = await fetch(input, init);

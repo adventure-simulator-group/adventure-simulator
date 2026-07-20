@@ -220,13 +220,24 @@ pub struct Party {
     pub active_quest_id: Option<String>,
     pub is_solo: bool,
     pub camp_fatigue_percent: u8,
+    pub walking_minutes_per_day: u16,
+    pub travel_at_night: bool,
+    pub camp_duration_mode: CampDurationMode,
+    pub fixed_camp_minutes: u16,
     pub camp_destination_id: Option<String>,
     pub camp_destination_kind: Option<String>,
     pub camp_remaining_minutes: u64,
+    pub pooled_water_ml: f32,
     pub medicine_target: f32,
     pub surgery_target: f32,
     pub charisma_target: f32,
     pub religion_target: f32,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum CampDurationMode {
+    Auto,
+    Fixed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -243,6 +254,31 @@ pub struct PartyJourney {
     pub camp_stop_minutes: Vec<u64>,
     pub forecast_camp_stop_minutes: Vec<u64>,
     pub fatigue_percent: u8,
+    pub plan_version: u8,
+    pub departure_minute: u64,
+    pub total_elapsed_minutes: u64,
+    pub completed_elapsed_minutes: u64,
+    pub walking_minutes_per_day: u16,
+    pub travel_at_night: bool,
+    pub camp_duration_mode: CampDurationMode,
+    pub fixed_camp_minutes: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JourneyCampInterval {
+    pub movement_minute: u64,
+    pub elapsed_start_minute: u64,
+    pub elapsed_minutes: u64,
+    pub average_fatigue_start: f32,
+    pub average_fatigue_end: f32,
+    pub maximum_fatigue_end: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyJourneyItinerary {
+    pub party_id: String,
+    pub actual_camp_intervals: Vec<JourneyCampInterval>,
+    pub forecast_camp_intervals: Vec<JourneyCampInterval>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

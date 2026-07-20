@@ -394,114 +394,32 @@
   function beginEditing(root, state, display) {
     const name = nameFor(display);
     if (!name || !state.inputs[name] || !metaInputActive(state.inputs[name], root)
-      || display.dataset.editing || document.querySelector('.schedule-time-editor')) return;
-    display.dataset.editing = 'true';
+      || display.dataset.editing || !window.StrategicNumericEditor) return;
     const originalMinutes = Number(state.inputs[name].value);
-    const editor = document.createElement('span');
-    editor.className = 'schedule-time-editor';
-    editor.setAttribute('role', 'group');
-    editor.setAttribute('aria-label', 'Edit daily allocation');
-
-    const confirm = document.createElement('button');
-    confirm.type = 'button';
-    confirm.className = 'schedule-time-editor-action schedule-time-confirm';
-    confirm.setAttribute('aria-label', 'Save daily allocation');
-    confirm.title = 'Save';
-    confirm.textContent = '✓';
-
-    const inputStack = document.createElement('span');
-    inputStack.className = 'schedule-time-input-stack';
-    const increase = document.createElement('button');
-    increase.type = 'button';
-    increase.className = 'schedule-time-editor-step schedule-time-editor-increase';
-    increase.setAttribute('aria-label', 'Increase daily allocation by 15 minutes');
-    increase.textContent = '▲';
-    const input = document.createElement('input');
-    input.className = 'schedule-time-input';
-    input.type = 'text';
-    input.inputMode = 'numeric';
-    input.placeholder = 'hh:mm';
-    input.setAttribute('aria-label', 'Daily allocation in hours and minutes');
-    input.value = formatClock(originalMinutes);
-    const decrease = document.createElement('button');
-    decrease.type = 'button';
-    decrease.className = 'schedule-time-editor-step schedule-time-editor-decrease';
-    decrease.setAttribute('aria-label', 'Decrease daily allocation by 15 minutes');
-    decrease.textContent = '▼';
-    inputStack.append(increase, input, decrease);
-
-    const cancel = document.createElement('button');
-    cancel.type = 'button';
-    cancel.className = 'schedule-time-editor-action schedule-time-cancel';
-    cancel.setAttribute('aria-label', 'Cancel daily allocation edit');
-    cancel.title = 'Cancel';
-    cancel.textContent = '×';
-    editor.append(confirm, inputStack, cancel);
-
     const anchor = display.closest('.party-skill-allocation');
     const rail = display.closest('.left-sidebar');
-    const positionEditor = () => {
-      const rect = anchor.getBoundingClientRect();
-      editor.style.left = `${rect.left + rect.width / 2}px`;
-      editor.style.top = `${rect.top + rect.height / 2}px`;
-    };
-
-    let finished = false;
-    const finish = (commit) => {
-      if (finished) return;
-      const parsed = parseClock(input.value);
-      if (commit && parsed === null) {
-        input.setAttribute('aria-invalid', 'true');
-        input.focus();
-        return;
-      }
-      finished = true;
-      if (commit) {
+    window.StrategicNumericEditor.open({
+      display,
+      initialValue: originalMinutes,
+      parse: parseClock,
+      format: formatClock,
+      step: STEP,
+      minimum: 0,
+      maximum: DAY,
+      anchor,
+      rail,
+      groupLabel: 'Edit daily allocation',
+      inputLabel: 'Daily allocation in hours and minutes',
+      increaseLabel: 'Increase daily allocation by 15 minutes',
+      decreaseLabel: 'Decrease daily allocation by 15 minutes',
+      saveLabel: 'Save daily allocation',
+      cancelLabel: 'Cancel daily allocation edit',
+      onCommit: (parsed) => {
         setValue(root, state, name, parsed);
         save(root);
-      }
-      delete display.dataset.editing;
-      rail?.removeEventListener('scroll', positionEditor);
-      window.removeEventListener('resize', positionEditor);
-      editor.remove();
-      display.hidden = false;
-      render(root, state);
-      display.focus();
-    };
-    const adjust = (delta) => {
-      input.value = stepClockValue(input.value, delta, originalMinutes);
-      input.removeAttribute('aria-invalid');
-    };
-    input.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        finish(true);
-      } else if (event.key === 'Escape') {
-        event.preventDefault();
-        finish(false);
-      } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-        event.preventDefault();
-        adjust(event.key === 'ArrowUp' ? STEP : -STEP);
-      }
+        render(root, state);
+      },
     });
-    input.addEventListener('input', () => input.removeAttribute('aria-invalid'));
-    input.addEventListener('wheel', (event) => {
-      event.preventDefault();
-      adjust(event.deltaY < 0 ? STEP : -STEP);
-    }, { passive: false });
-    increase.addEventListener('click', () => adjust(STEP));
-    decrease.addEventListener('click', () => adjust(-STEP));
-    confirm.addEventListener('click', () => finish(true));
-    cancel.addEventListener('click', () => finish(false));
-    editor.addEventListener('click', (event) => event.stopPropagation());
-
-    display.hidden = true;
-    document.body.append(editor);
-    positionEditor();
-    rail?.addEventListener('scroll', positionEditor, { passive: true });
-    window.addEventListener('resize', positionEditor);
-    input.focus();
-    input.select();
   }
 
   if (typeof module !== 'undefined') module.exports = {

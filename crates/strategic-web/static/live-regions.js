@@ -3,6 +3,7 @@
 
   let generation = 0;
   let refreshTimer;
+  let navigating = false;
 
   const draftMaps = ["merchantDraft", "merchantSells", "partyTradeDraft",
     "inventoryDiscardDraft", "lootTransferDraft", "poolTransferDraft"];
@@ -21,7 +22,7 @@
     return hasStagedInventoryChanges()
       || Boolean(window.strategicRestDuration?.isDirty?.(document))
       || Boolean(document.querySelector("dialog[open], [data-role-inspection-panel], [data-service-role-inspection]"))
-      || Boolean(document.querySelector('.schedule-time-editor'))
+      || Boolean(document.querySelector('.numeric-editor'))
       || Boolean(editing);
   };
 
@@ -66,6 +67,7 @@
   };
 
   const refresh = async () => {
+    if (navigating) return;
     const currentGeneration = ++generation;
     const schedulePendingAtStart = scheduleEditorIsPending();
     const response = await window.strategicBackgroundFetch("live-regions", `${location.pathname}${location.search}`, {
@@ -103,9 +105,16 @@
   };
 
   const scheduleRefresh = () => {
+    if (navigating) return;
     window.clearTimeout(refreshTimer);
     refreshTimer = window.setTimeout(() => refresh().catch((error) => window.reportStrategicError(error, "live regions")), 40);
   };
+
+  document.addEventListener("strategic-navigation-start", () => {
+    navigating = true;
+    generation += 1;
+    window.clearTimeout(refreshTimer);
+  });
 
   document.addEventListener("strategic-live-update", scheduleRefresh);
   document.addEventListener("strategic-live-refresh-requested", scheduleRefresh);

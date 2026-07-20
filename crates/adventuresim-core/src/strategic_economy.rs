@@ -30,6 +30,20 @@ pub fn merchant_sell_price(base_value: u32) -> u32 {
     (base_value as f32 / MERCHANT_MARGIN).floor().max(1.0) as u32
 }
 
+/// Split a party purchase between shared coin and the acting character's coin.
+/// Shared funds are spent first so personal funds only cover the shortfall.
+pub fn split_party_purchase_payment(
+    party_coins: u64,
+    personal_coins: u64,
+    amount: u64,
+) -> Option<(u64, u64)> {
+    if party_coins.saturating_add(personal_coins) < amount {
+        return None;
+    }
+    let pooled = amount.min(party_coins);
+    Some((pooled, amount - pooled))
+}
+
 pub fn medicinal_ingredient_value(item_id: &str) -> Option<u32> {
     MEDICINAL_INGREDIENT_VALUES
         .iter()
@@ -75,6 +89,13 @@ mod tests {
     #[test]
     fn quotes_preserve_a_positive_spread() {
         assert!(merchant_buy_price(100) > merchant_sell_price(100));
+    }
+
+    #[test]
+    fn party_purchases_use_pooled_coin_then_personal_coin() {
+        assert_eq!(split_party_purchase_payment(8, 20, 15), Some((8, 7)));
+        assert_eq!(split_party_purchase_payment(20, 8, 15), Some((15, 0)));
+        assert_eq!(split_party_purchase_payment(4, 5, 10), None);
     }
 
     #[test]

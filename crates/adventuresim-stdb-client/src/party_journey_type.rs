@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::camp_duration_mode_type::CampDurationMode;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct PartyJourney {
@@ -19,6 +21,14 @@ pub struct PartyJourney {
     pub camp_stop_minutes: Vec<u64>,
     pub forecast_camp_stop_minutes: Vec<u64>,
     pub fatigue_percent: u8,
+    pub plan_version: u8,
+    pub departure_minute: u64,
+    pub total_elapsed_minutes: u64,
+    pub completed_elapsed_minutes: u64,
+    pub walking_minutes_per_day: u16,
+    pub travel_at_night: bool,
+    pub camp_duration_mode: CampDurationMode,
+    pub fixed_camp_minutes: u16,
 }
 
 impl __sdk::InModule for PartyJourney {
@@ -41,6 +51,14 @@ pub struct PartyJourneyCols {
     pub camp_stop_minutes: __sdk::__query_builder::Col<PartyJourney, Vec<u64>>,
     pub forecast_camp_stop_minutes: __sdk::__query_builder::Col<PartyJourney, Vec<u64>>,
     pub fatigue_percent: __sdk::__query_builder::Col<PartyJourney, u8>,
+    pub plan_version: __sdk::__query_builder::Col<PartyJourney, u8>,
+    pub departure_minute: __sdk::__query_builder::Col<PartyJourney, u64>,
+    pub total_elapsed_minutes: __sdk::__query_builder::Col<PartyJourney, u64>,
+    pub completed_elapsed_minutes: __sdk::__query_builder::Col<PartyJourney, u64>,
+    pub walking_minutes_per_day: __sdk::__query_builder::Col<PartyJourney, u16>,
+    pub travel_at_night: __sdk::__query_builder::Col<PartyJourney, bool>,
+    pub camp_duration_mode: __sdk::__query_builder::Col<PartyJourney, CampDurationMode>,
+    pub fixed_camp_minutes: __sdk::__query_builder::Col<PartyJourney, u16>,
 }
 
 impl __sdk::__query_builder::HasCols for PartyJourney {
@@ -62,6 +80,23 @@ impl __sdk::__query_builder::HasCols for PartyJourney {
                 "forecast_camp_stop_minutes",
             ),
             fatigue_percent: __sdk::__query_builder::Col::new(table_name, "fatigue_percent"),
+            plan_version: __sdk::__query_builder::Col::new(table_name, "plan_version"),
+            departure_minute: __sdk::__query_builder::Col::new(table_name, "departure_minute"),
+            total_elapsed_minutes: __sdk::__query_builder::Col::new(
+                table_name,
+                "total_elapsed_minutes",
+            ),
+            completed_elapsed_minutes: __sdk::__query_builder::Col::new(
+                table_name,
+                "completed_elapsed_minutes",
+            ),
+            walking_minutes_per_day: __sdk::__query_builder::Col::new(
+                table_name,
+                "walking_minutes_per_day",
+            ),
+            travel_at_night: __sdk::__query_builder::Col::new(table_name, "travel_at_night"),
+            camp_duration_mode: __sdk::__query_builder::Col::new(table_name, "camp_duration_mode"),
+            fixed_camp_minutes: __sdk::__query_builder::Col::new(table_name, "fixed_camp_minutes"),
         }
     }
 }

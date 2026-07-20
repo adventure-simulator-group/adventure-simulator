@@ -345,7 +345,7 @@ mod icon_tests {
             ("fauld", "belt-armor"),
             ("tassets", "pteruges"),
         ];
-        assert_eq!(mappings.len(), 62);
+        assert_eq!(mappings.len(), 67);
         for (item, icon) in mappings {
             assert_eq!(item_icon_name(item), icon, "{item}");
         }
