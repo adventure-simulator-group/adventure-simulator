@@ -265,9 +265,9 @@ fn visible_tiles(view: ViewBox, tile_size: u32, zoom: u8) -> Vec<(u16, u16, f64,
     let max_x = (WIDTH / span).ceil() as i32 - 1;
     let max_y = (HEIGHT / span).ceil() as i32 - 1;
     let start_x = (view.x / span).floor() as i32;
-    let end_x = ((view.x + view.width) / span).floor() as i32;
+    let end_x = ((view.x + view.width) / span).ceil() as i32 - 1;
     let start_y = (view.y / span).floor() as i32;
-    let end_y = ((view.y + view.height) / span).floor() as i32;
+    let end_y = ((view.y + view.height) / span).ceil() as i32 - 1;
     let mut tiles = Vec::new();
     for y in start_y.max(0)..=end_y.min(max_y) {
         for x in start_x.max(0)..=end_x.min(max_x) {

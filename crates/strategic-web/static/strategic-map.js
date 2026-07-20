@@ -22,16 +22,16 @@
     const density = Math.max(1, pixelWidth * pixelRatio / viewWidth);
     return Math.min(maxZoom, Math.max(0, Math.ceil(Math.log2(density))));
   };
-  const visibleTileRange = ([x, y, width, height], tileSize, zoom, padding = 1) => {
+  const visibleTileRange = ([x, y, width, height], tileSize, zoom) => {
     const span = tileSize / 2 ** zoom;
     const maxX = Math.ceil(1200 / span) - 1;
     const maxY = Math.ceil(800 / span) - 1;
     return {
       span,
-      minX: Math.max(0, Math.floor(x / span) - padding),
-      maxX: Math.min(maxX, Math.floor((x + width) / span) + padding),
-      minY: Math.max(0, Math.floor(y / span) - padding),
-      maxY: Math.min(maxY, Math.floor((y + height) / span) + padding),
+      minX: Math.max(0, Math.floor(x / span)),
+      maxX: Math.min(maxX, Math.ceil((x + width) / span) - 1),
+      minY: Math.max(0, Math.floor(y / span)),
+      maxY: Math.min(maxY, Math.ceil((y + height) / span) - 1),
     };
   };
   const renderTiles = (map, svg, view, theme = map.dataset.mapTheme) => {
