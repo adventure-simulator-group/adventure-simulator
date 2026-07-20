@@ -105,6 +105,16 @@ test("all settlement building backgrounds are normalized tintable RGBA assets", 
       assert.deepEqual([...tones].sort((a, b) => a - b), [24, 112, 220]);
       assert.ok(visible > width * height * 0.08, `${label} has useful visible coverage`);
       assert.ok(visible < width * height * 0.65, `${label} retains transparent padding`);
+      if (tier !== "village") {
+        let centralSupports = 0;
+        for (let y = 322; y < 450; y += 1) {
+          for (let x = 188; x < 324; x += 1) {
+            const offset = (y * width + x) * 4;
+            if (rgba[offset + 3] && rgba[offset] === 112) centralSupports += 1;
+          }
+        }
+        assert.equal(centralSupports, 0, `${label} keeps the overlaid icon field free of structural beams`);
+      }
       baselines.push(bottom);
     }
   }
@@ -136,6 +146,26 @@ test("all settlement horizons are standardized transparent panoramic assets", ()
       assert.ok(visible < width * height * 0.65, `${label} keeps sky transparent`);
       for (const x of [0, width - 1]) {
         assert.ok(rgba[((height - 1) * width + x) * 4 + 3] > 0, `${label} reaches bottom corner`);
+      }
+      for (const [side, startX, endX] of [
+        ["left", 0, Math.floor(width / 6)],
+        ["right", Math.floor(width * 5 / 6), width],
+      ]) {
+        let sideVisible = 0;
+        const sideTones = new Set();
+        const startY = 160;
+        const endY = 216;
+        for (let y = startY; y < endY; y += 1) {
+          for (let x = startX; x < endX; x += 1) {
+            const offset = (y * width + x) * 4;
+            if (!rgba[offset + 3]) continue;
+            sideVisible += 1;
+            sideTones.add(rgba[offset]);
+          }
+        }
+        const sideArea = (endX - startX) * (endY - startY);
+        assert.ok(sideVisible > sideArea * 0.25, `${label} has meaningful ${side} edge scenery above filler`);
+        assert.ok(sideTones.size >= 3, `${label} ${side} edge scenery has layered tonal detail`);
       }
     }
   }
