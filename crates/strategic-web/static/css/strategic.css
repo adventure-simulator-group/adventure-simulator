@@ -3217,6 +3217,7 @@ body.chat-resizing {
   --stat-icon-color: var(--icon-mental);
 }
 
+.stat-icon-combat,
 .stat-icon-melee,
 .stat-icon-ranged,
 .stat-icon-dodge,

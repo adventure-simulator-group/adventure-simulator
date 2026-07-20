@@ -228,6 +228,7 @@ impl PlayerSkills for CharacterSkills {
 }
 
 pub(crate) struct StrategicEquipment {
+    hands: [Option<Item>; 2],
     weapon: Option<Item>,
     weapon_side: Option<BodySide>,
     melee_weapon: Option<Item>,
@@ -364,6 +365,7 @@ impl StrategicEquipment {
             .find(character_id)
             .map_or(0.0, |needs| carried_water_weight_kg(needs.carried_water_ml));
         Self {
+            hands,
             weapon,
             weapon_side,
             melee_weapon,
@@ -378,6 +380,20 @@ impl StrategicEquipment {
             armor,
             inventory_weight: dry_inventory_weight + carried_water_weight,
         }
+    }
+
+    pub(crate) fn combat_training_profile(
+        &self,
+    ) -> adventuresim_core::strategic_schedule::CombatTrainingProfile {
+        use adventuresim_core::strategic_schedule::EquippedCombatItem;
+        adventuresim_core::strategic_schedule::CombatTrainingProfile::from_equipped_hands(
+            self.hands.iter().flatten().map(|item| EquippedCombatItem {
+                melee: item.kind == ItemKind::Weapon && item.melee,
+                ranged: item.kind == ItemKind::Weapon && item.ranged,
+                shield: item.kind == ItemKind::Shield,
+                balance: item.balance,
+            }),
+        )
     }
 
     fn armor_for(&self, part: BodyPart) -> Option<&Item> {

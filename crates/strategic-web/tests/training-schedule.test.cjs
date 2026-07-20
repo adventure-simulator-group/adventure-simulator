@@ -6,10 +6,41 @@ const {
   createLatestSaveQueue,
   parseClock,
   religionAllocationTotal,
+  metaInputActive,
+  setAllocationInteractive,
   religionInputActive,
   signedEffect,
   stepClockValue,
 } = require("../static/training-schedule.js");
+
+test("religion and combat independently select exactly one allocation branch", () => {
+  const root = {
+    querySelector(selector) {
+      if (selector.includes("religion")) return { checked: false };
+      if (selector.includes("combat")) return { checked: true };
+      return null;
+    },
+  };
+  assert.equal(metaInputActive({ dataset: { religionAutoBudget: "" } }, root), false);
+  assert.equal(metaInputActive({ dataset: { religionManualBudget: "" } }, root), true);
+  assert.equal(metaInputActive({ dataset: { combatAutoBudget: "" } }, root), true);
+  assert.equal(metaInputActive({ dataset: { combatManualBudget: "" } }, root), false);
+});
+
+test("Combat allocation controls become keyboard interactive in both toggle directions", () => {
+  const state = { inactive: null, ariaDisabled: null, tabindex: null };
+  const control = {
+    setAttribute(name, value) { state[name === "aria-disabled" ? "ariaDisabled" : name] = value; },
+  };
+  const allocation = {
+    classList: { toggle(_name, value) { state.inactive = value; } },
+    querySelectorAll() { return [control]; },
+  };
+  setAllocationInteractive(allocation, false);
+  assert.deepEqual(state, { inactive: true, ariaDisabled: "true", tabindex: "-1" });
+  setAllocationInteractive(allocation, true);
+  assert.deepEqual(state, { inactive: false, ariaDisabled: "false", tabindex: "0" });
+});
 
 test("Religion allocation counts either the auto budget or manual traditions exactly once", () => {
   const allocation = {

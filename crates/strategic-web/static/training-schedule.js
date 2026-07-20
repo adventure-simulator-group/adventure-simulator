@@ -226,6 +226,7 @@
     inputs.forEach((input) => { input.value = Math.round(Number(input.value) / STEP) * STEP; });
     const state = { inputs: Object.fromEntries(inputs.map((input) => [input.name, input])) };
     syncReligionControls(root, root.querySelector('[data-religion-auto-toggle]')?.checked ?? true);
+    syncCombatControls(root, root.querySelector('[data-combat-auto-toggle]')?.checked ?? true);
     state.saveQueue = createLatestSaveQueue(
       (snapshot) => window.strategicFetch(root.action, {
         method: 'POST',
@@ -251,16 +252,19 @@
     return state;
   }
 
-  function religionInputActive(input, autoTrain) {
-    if ('religionAutoBudget' in input.dataset) return autoTrain;
-    if ('religionManualBudget' in input.dataset) return !autoTrain;
+  function metaInputActive(input, root) {
+    const religionAuto = root.querySelector('[data-religion-auto-toggle]')?.checked ?? true;
+    const combatAuto = root.querySelector('[data-combat-auto-toggle]')?.checked ?? true;
+    if ('religionAutoBudget' in input.dataset) return religionAuto;
+    if ('religionManualBudget' in input.dataset) return !religionAuto;
+    if ('combatAutoBudget' in input.dataset) return combatAuto;
+    if ('combatManualBudget' in input.dataset) return !combatAuto;
     return true;
   }
 
   function values(root, state, activeOnly = true) {
-    const autoTrain = root.querySelector('[data-religion-auto-toggle]')?.checked ?? true;
     return Object.fromEntries(Object.entries(state.inputs)
-      .filter(([, input]) => !activeOnly || religionInputActive(input, autoTrain))
+      .filter(([, input]) => !activeOnly || metaInputActive(input, root))
       .map(([name, input]) => [name, Number(input.value)]));
   }
 
@@ -279,6 +283,25 @@
     });
     root.querySelectorAll('[data-religion-auto-control]').forEach((control) => { control.hidden = !autoTrain; });
     root.querySelectorAll('[data-religion-primary-manual-control]').forEach((control) => { control.hidden = autoTrain; });
+  }
+
+  function setAllocationInteractive(allocation, active) {
+    allocation?.classList.toggle('religion-allocation-inactive', !active);
+    allocation?.querySelectorAll('[data-schedule-display]').forEach((control) => {
+      control.setAttribute('aria-disabled', String(!active));
+      control.setAttribute('tabindex', active ? '0' : '-1');
+    });
+  }
+
+  function syncCombatControls(root, autoTrain) {
+    root.querySelectorAll('[data-combat-auto-budget]').forEach((input) => {
+      const allocation = input.closest('[data-schedule-value]');
+      setAllocationInteractive(allocation, autoTrain);
+    });
+    root.querySelectorAll('[data-combat-manual-budget]').forEach((input) => {
+      const allocation = input.closest('[data-schedule-value]');
+      setAllocationInteractive(allocation, !autoTrain);
+    });
   }
 
   function religionAllocationTotal(allocation, autoTrain) {
@@ -305,6 +328,15 @@
         output.setAttribute('aria-label', `Total Religion allocation ${formatClock(religionTotal)}`);
       });
     }
+    const combatAuto = root.querySelector('[data-combat-auto-toggle]')?.checked ?? true;
+    if (!combatAuto) {
+      const combatTotal = ['melee_minutes', 'ranged_minutes', 'dodge_minutes', 'block_minutes']
+        .reduce((sum, name) => sum + Number(allValues[name] || 0), 0);
+      root.querySelectorAll('[data-schedule-value="combat_minutes"] [data-schedule-display]').forEach((output) => {
+        output.textContent = format(combatTotal);
+        output.setAttribute('aria-label', `Total Combat allocation ${formatClock(combatTotal)}`);
+      });
+    }
     const leisure = Math.max(0, DAY - Object.values(allocation).reduce((sum, value) => sum + value, 0));
     root.querySelectorAll('[data-schedule-value="leisure_minutes"] [data-schedule-display]').forEach((output) => {
       output.textContent = format(leisure);
@@ -319,8 +351,7 @@
   }
 
   function setValue(root, state, target, wanted) {
-    const autoTrain = root.querySelector('[data-religion-auto-toggle]')?.checked ?? true;
-    if (!state.inputs[target] || !religionInputActive(state.inputs[target], autoTrain)) return;
+    if (!state.inputs[target] || !metaInputActive(state.inputs[target], root)) return;
     const allocation = values(root, state);
     const names = Object.keys(allocation);
     const current = allocation[target];
@@ -362,8 +393,7 @@
 
   function beginEditing(root, state, display) {
     const name = nameFor(display);
-    const autoTrain = root.querySelector('[data-religion-auto-toggle]')?.checked ?? true;
-    if (!name || !state.inputs[name] || !religionInputActive(state.inputs[name], autoTrain)
+    if (!name || !state.inputs[name] || !metaInputActive(state.inputs[name], root)
       || display.dataset.editing || document.querySelector('.schedule-time-editor')) return;
     display.dataset.editing = 'true';
     const originalMinutes = Number(state.inputs[name].value);
@@ -477,8 +507,14 @@
   if (typeof module !== 'undefined') module.exports = {
     calculateLeisurePreview,
     createLatestSaveQueue,
+    metaInputActive,
+    setAllocationInteractive,
     parseClock,
-    religionInputActive,
+    religionInputActive: (input, autoTrain) => {
+      if ('religionAutoBudget' in input.dataset) return autoTrain;
+      if ('religionManualBudget' in input.dataset) return !autoTrain;
+      return true;
+    },
     religionAllocationTotal,
     signedEffect,
     stepClockValue,
@@ -502,6 +538,14 @@
       root.querySelectorAll('.religion-detail-row').forEach((row) => { row.hidden = !expanded; });
       return;
     }
+    const combatExpand = event.target.closest?.('[data-combat-expand]');
+    if (combatExpand) {
+      const root = combatExpand.closest('[data-skill-schedule]') || combatExpand.closest('table');
+      const expanded = combatExpand.getAttribute('aria-expanded') !== 'true';
+      combatExpand.setAttribute('aria-expanded', String(expanded));
+      root.querySelectorAll('.combat-detail-row').forEach((row) => { row.hidden = !expanded; });
+      return;
+    }
     const retry = event.target.closest?.('[data-schedule-retry]');
     if (retry) {
       const root = retry.closest('[data-skill-schedule]');
@@ -514,9 +558,11 @@
   });
   document.addEventListener('change', (event) => {
     const toggle = event.target.closest?.('[data-religion-auto-toggle]');
-    if (!toggle) return;
-    const root = toggle.closest('[data-skill-schedule]');
-    syncReligionControls(root, toggle.checked);
+    const combatToggle = event.target.closest?.('[data-combat-auto-toggle]');
+    if (!toggle && !combatToggle) return;
+    const root = (toggle || combatToggle).closest('[data-skill-schedule]');
+    if (toggle) syncReligionControls(root, toggle.checked);
+    if (combatToggle) syncCombatControls(root, combatToggle.checked);
     render(root, stateFor(root));
     save(root);
   });

@@ -59,6 +59,8 @@ pub struct CharacterTime {
 /// One 24-hour daily budget. Leisure is always the unallocated remainder.
 #[derive(Clone, Debug, Default, SpacetimeType)]
 pub struct ScheduleAllocation {
+    pub combat_minutes: u16,
+    pub combat_auto_train: bool,
     pub melee_minutes: u16,
     pub dodge_minutes: u16,
     pub block_minutes: u16,
@@ -103,10 +105,14 @@ pub struct CharacterNotoriety {
 impl ScheduleAllocation {
     pub fn allocated_minutes(&self) -> u64 {
         allocated_schedule_minutes([
-            self.melee_minutes,
-            self.dodge_minutes,
-            self.block_minutes,
-            self.ranged_minutes,
+            if self.combat_auto_train {
+                self.combat_minutes
+            } else {
+                self.melee_minutes
+                    .saturating_add(self.dodge_minutes)
+                    .saturating_add(self.block_minutes)
+                    .saturating_add(self.ranged_minutes)
+            },
             self.will_minutes,
             self.charisma_minutes,
             self.medicine_minutes,
@@ -128,6 +134,7 @@ impl ScheduleAllocation {
 
     fn uses_quarter_hours(&self) -> bool {
         let mut values = vec![
+            self.combat_minutes,
             self.melee_minutes,
             self.dodge_minutes,
             self.block_minutes,
@@ -239,6 +246,7 @@ fn default_schedule(character_id: u64) -> CharacterTrainingSchedule {
     CharacterTrainingSchedule {
         character_id,
         downtime: ScheduleAllocation {
+            combat_auto_train: true,
             religion_auto_train: true,
             ..Default::default()
         },
@@ -278,15 +286,16 @@ fn activity_training_profile(
     ctx: &ReducerContext,
     character_id: u64,
 ) -> Result<adventuresim_core::strategic_schedule::ActivityTrainingProfile, String> {
-    let capability = crate::capability::evaluate_character(ctx, character_id)?;
+    let equip = ctx
+        .db
+        .character_equip()
+        .character_id()
+        .find(character_id)
+        .ok_or_else(|| "Character equipment not found".to_string())?;
+    let equipment = StrategicEquipment::load(ctx, character_id, &equip);
     Ok(
         adventuresim_core::strategic_schedule::ActivityTrainingProfile {
-            raiding_melee: capability.melee && !capability.ranged,
-            raiding_ranged: capability.ranged,
-            raiding_block: capability.half_armor
-                || capability.three_quarter_armor
-                || capability.full_armor,
-            raiding_dodge: !capability.full_armor && !capability.three_quarter_armor,
+            combat: equipment.combat_training_profile(),
         },
     )
 }
@@ -373,6 +382,8 @@ fn resolve_religion_training(
 
 pub(crate) fn core_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
     DailySchedule {
+        combat: schedule.combat_minutes,
+        combat_auto_train: schedule.combat_auto_train,
         melee: schedule.melee_minutes,
         dodge: schedule.dodge_minutes,
         block: schedule.block_minutes,
@@ -1024,6 +1035,8 @@ mod tests {
             smithing_hours: 0.0,
         };
         let allocation = ScheduleAllocation {
+            combat_minutes: 0,
+            combat_auto_train: false,
             melee_minutes: 90,
             dodge_minutes: 30,
             block_minutes: 0,

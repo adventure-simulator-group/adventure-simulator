@@ -9,9 +9,10 @@ use adventuresim_core::{
     equipment::EncumbranceSummary,
     prelude::Skill,
     strategic_schedule::{
-        BASELINE_FATIGUE_PER_DAY, DailySchedule, FATIGUE_RESERVOIR_PER_PREVIEW_POINT,
-        LABOR_FATIGUE_PER_HOUR, LEISURE_FATIGUE_RECOVERY_PER_HOUR, LEISURE_MORALE_LIMIT,
-        LEISURE_MORALE_SCALE_FATIGUE, LeisureOutcome, settlement_leisure_outcome,
+        BASELINE_FATIGUE_PER_DAY, CombatTrainingProfile, DailySchedule,
+        FATIGUE_RESERVOIR_PER_PREVIEW_POINT, LABOR_FATIGUE_PER_HOUR,
+        LEISURE_FATIGUE_RECOVERY_PER_HOUR, LEISURE_MORALE_LIMIT, LEISURE_MORALE_SCALE_FATIGUE,
+        LeisureOutcome, settlement_leisure_outcome,
     },
     strategic_time::MINUTES_PER_DAY,
 };
@@ -1063,6 +1064,7 @@ pub fn party_personal_page(
     religion_id: Option<&str>,
     prayer_religion_check: f32,
     schedule: Option<&CharacterTrainingSchedule>,
+    combat_profile: CombatTrainingProfile,
     activity_preview: ActivityPreviewRates,
     religious_demand: Option<&crate::spacetimedb::ReligiousDemand>,
     notoriety: f32,
@@ -1079,6 +1081,7 @@ pub fn party_personal_page(
                 "Your skills", skills, limbs, schedule, Some(&schedule_action),
                 Some(activity_preview), religion_id.is_some(), prayer_religion_check,
                 religion_id.or(location.religion_id.as_deref()),
+                combat_profile,
             ))
         }
         main class="center-content settlement-main party-member-stage" {
@@ -1141,6 +1144,7 @@ pub fn party_stats_page(
     selected_attributes: Option<&CharacterAttributes>,
     selected_skills: Option<&CharacterSkills>,
     selected_limbs: Option<&CharacterLimbs>,
+    combat_profile: CombatTrainingProfile,
     condition: Option<&CharacterStrategicCondition>,
     morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
     religion_id: Option<&str>,
@@ -1160,6 +1164,7 @@ pub fn party_stats_page(
             (party_skills_rail(
                 &selected_skills_title, selected_skills, selected_limbs, None, None, None,
                 religion_id.is_some(), 0.0, religion_id.or(location.religion_id.as_deref()),
+                combat_profile,
             ))
         }
         main class="center-content settlement-main party-member-stage" {
@@ -2140,6 +2145,7 @@ fn party_skills_rail(
     professes_religion: bool,
     prayer_religion_check: f32,
     training_religion_id: Option<&str>,
+    combat_profile: CombatTrainingProfile,
 ) -> Markup {
     let head_health = limbs.map_or(1.0, |limbs| limbs.head_health);
     let upper_health = limbs.map_or(1.0, |limbs| {
@@ -2158,6 +2164,7 @@ fn party_skills_rail(
                             title, skills, head_health, upper_health, lower_health, Some(schedule),
                             activity_preview, professes_religion, prayer_religion_check,
                             training_religion_id.and_then(OfficialReligion::from_id),
+                            combat_profile,
                         ))
                         div class="schedule-save-status" data-schedule-save-status role="status" aria-live="polite" hidden {
                             span { "Schedule could not be saved." }
@@ -2170,6 +2177,7 @@ fn party_skills_rail(
                         title, skills, head_health, upper_health, lower_health, None, None,
                         professes_religion, prayer_religion_check,
                         training_religion_id.and_then(OfficialReligion::from_id),
+                        combat_profile,
                     ))
                     script src="/static/training-schedule.js?v=floating-time-editor-1" {}
                 }
@@ -2192,6 +2200,7 @@ fn skills_table(
     professes_religion: bool,
     prayer_religion_check: f32,
     training_religion: Option<OfficialReligion>,
+    combat_profile: CombatTrainingProfile,
 ) -> Markup {
     html! {
             table class="party-skills-table" {
@@ -2225,17 +2234,14 @@ fn skills_table(
                             (schedule_header_icon("duration", "Daily allocation"))
                         }
                     }
-                    th scope="col" aria-label="Religion details" {}
+                    th scope="col" aria-label="Skill details" {}
                 } }
                 tbody {
                     (party_skill_row("Will", "will", Skill::Will, skills.will_hours, head_health, schedule.map(|s| s.downtime.will_minutes)))
                     (party_skill_row("Charisma", "charisma", Skill::Charisma, skills.charisma_hours, head_health, schedule.map(|s| s.downtime.charisma_minutes)))
                     (party_skill_row("Medicine", "medicine", Skill::Medicine, skills.medicine_hours, head_health, schedule.map(|s| s.downtime.medicine_minutes)))
                     (religion_skill_rows(skills, head_health, schedule, training_religion))
-                    (party_skill_row("Melee", "melee", Skill::Melee, skills.melee_hours, upper_health, schedule.map(|s| s.downtime.melee_minutes)))
-                    (party_skill_row("Ranged", "ranged", Skill::Ranged, skills.ranged_hours, upper_health, schedule.map(|s| s.downtime.ranged_minutes)))
-                    (party_skill_row("Dodge", "dodge", Skill::Dodge, skills.dodge_hours, lower_health, schedule.map(|s| s.downtime.dodge_minutes)))
-                    (party_skill_row("Block", "block", Skill::Block, skills.block_hours, upper_health, schedule.map(|s| s.downtime.block_minutes)))
+                    (combat_skill_rows(skills, upper_health, lower_health, schedule, combat_profile))
                     (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, upper_health, schedule.map(|s| s.downtime.stealth_minutes)))
                     (party_skill_row("Balance", "balance", Skill::Balance, skills.balance_hours, lower_health, schedule.map(|s| s.downtime.balance_minutes)))
                     (party_skill_row("Surgeon", "surgeon", Skill::Surgeon, skills.surgeon_hours, upper_health, schedule.map(|s| s.downtime.surgeon_minutes)))
@@ -2251,7 +2257,7 @@ fn skills_table(
                             th scope="col" title="Fatigue" { (schedule_header_icon("night-sleep", "Fatigue")) }
                             th scope="col" {}
                             th scope="col" title="Daily allocation" { (schedule_header_icon("duration", "Daily allocation")) }
-                            th scope="col" aria-label="Religion details" {}
+                            th scope="col" aria-label="Skill details" {}
                         }
                         (schedule_special_row(
                             if professes_religion { "Prayer" } else { "Meditate" },
@@ -2266,7 +2272,7 @@ fn skills_table(
                         ))
                         (schedule_special_row("Labor", "hammer-sickle", "labor_minutes", schedule.downtime.labor_minutes, true, ActivityEffectRates::linear(preview.labor_gold_per_hour, 0.0, 0.0, LABOR_FATIGUE_PER_HOUR / FATIGUE_RESERVOIR_PER_PREVIEW_POINT), None, "Earn gold during settlement downtime from Strength and Endurance checks; trains Will at 25% speed and generates fatigue."))
                         (schedule_special_row("Thievery", "lockpicks", "thievery_minutes", schedule.downtime.thievery_minutes, true, ActivityEffectRates::linear(preview.thievery_gold_per_hour, preview.thievery_virtue_per_hour, 0.0, 0.0), None, "Settlement downtime can earn gold and risk discovery while training Stealth at 25% speed."))
-                        (schedule_special_row("Raiding", "mounted-knight", "raiding_minutes", schedule.downtime.raiding_minutes, true, ActivityEffectRates::linear(preview.raiding_gold_per_hour, preview.raiding_virtue_per_hour, 0.0, 0.0), None, "Settlement downtime can earn gold and risk retaliation while training with equipped weapons and armor."))
+                        (schedule_special_row("Raiding", "mounted-knight", "raiding_minutes", schedule.downtime.raiding_minutes, true, ActivityEffectRates::linear(preview.raiding_gold_per_hour, preview.raiding_virtue_per_hour, 0.0, 0.0), None, "Settlement downtime can earn gold and risk retaliation while feeding the equipment-derived Combat training distribution at 25% speed."))
                         @let leisure = leisure_preview(&schedule.downtime, preview.current_fatigue);
                         (schedule_special_row("Leisure", "bed", "leisure_minutes", 0, false, ActivityEffectRates::default(), Some(leisure), "Unallocated downtime first offsets baseline and activity fatigue; only surplus recovery improves morale."))
                     }
@@ -2388,6 +2394,134 @@ fn religion_skill_rows(
     }
 }
 
+fn combat_skill_rows(
+    skills: &CharacterSkills,
+    upper_health: f32,
+    lower_health: f32,
+    schedule: Option<&CharacterTrainingSchedule>,
+    profile: CombatTrainingProfile,
+) -> Markup {
+    let weights = profile.weights();
+    let entries = [
+        (
+            "Melee",
+            "melee",
+            Skill::Melee,
+            skills.melee_hours,
+            upper_health,
+            weights[0],
+        ),
+        (
+            "Ranged",
+            "ranged",
+            Skill::Ranged,
+            skills.ranged_hours,
+            upper_health,
+            weights[3],
+        ),
+        (
+            "Dodge",
+            "dodge",
+            Skill::Dodge,
+            skills.dodge_hours,
+            lower_health,
+            weights[1],
+        ),
+        (
+            "Block",
+            "block",
+            Skill::Block,
+            skills.block_hours,
+            upper_health,
+            weights[2],
+        ),
+    ];
+    let relevant: Vec<_> = entries.iter().filter(|entry| entry.5 > 0.0).collect();
+    let rank = relevant
+        .iter()
+        .map(|entry| entry.2.training_rank(entry.3))
+        .sum::<f32>()
+        / relevant.len().max(1) as f32;
+    let effective_rank = relevant
+        .iter()
+        .map(|entry| entry.2.training_rank(entry.3) * entry.4.clamp(0.0, 1.0))
+        .sum::<f32>()
+        / relevant.len().max(1) as f32;
+    let included = relevant
+        .iter()
+        .map(|entry| entry.0)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let auto = schedule.is_none_or(|value| value.downtime.combat_auto_train);
+    let auto_minutes = schedule.map_or(0, |value| value.downtime.combat_minutes);
+    let manual_total = schedule.map_or(0, |value| {
+        value
+            .downtime
+            .melee_minutes
+            .saturating_add(value.downtime.ranged_minutes)
+            .saturating_add(value.downtime.dodge_minutes)
+            .saturating_add(value.downtime.block_minutes)
+    });
+    html! {
+        tr class="party-skill-row combat-primary-row" data-combat-primary {
+            th scope="row" class="party-skill-name party-skill-icon-cell" {
+                (stat_icon("Combat", "skills", "combat", false))
+            }
+            td class="party-skill-meter" colspan=[schedule.map(|_| "4")] {
+                (skill_rank_bar(rank, effective_rank, &format!("Relevant skills: {included}")))
+            }
+            @if schedule.is_some() {
+                td class="religion-auto-toggle-cell" {
+                    label class="religion-auto-toggle-label" title="Automatically equalize training among combat skills relevant to current equipped weapons and shields." {
+                        input type="checkbox" name="combat_auto_train" value="true" checked[auto]
+                            data-combat-auto-toggle aria-label="Auto-train Combat";
+                    }
+                }
+                td class="party-skill-allocation combat-primary-allocation" data-schedule-value="combat_minutes" {
+                    input type="hidden" name="combat_minutes" value=(auto_minutes)
+                        data-schedule-input data-combat-auto-budget;
+                    span data-schedule-display data-combat-auto-display tabindex="0" role="button" {
+                        (format_schedule_hours(if auto { auto_minutes } else { manual_total }))
+                    }
+                }
+            }
+            td class="religion-expand-cell" {
+                button type="button" class="religion-expand-button" data-combat-expand
+                    aria-expanded="false" aria-label="Expand Combat skills" title="Expand Combat" {
+                    span class="religion-expand-chevron" aria-hidden="true" { "›" }
+                }
+            }
+        }
+        @for (name, icon, skill, hours, health, weight) in entries {
+            @let minutes = schedule.map_or(0, |value| match skill {
+                Skill::Melee => value.downtime.melee_minutes,
+                Skill::Ranged => value.downtime.ranged_minutes,
+                Skill::Dodge => value.downtime.dodge_minutes,
+                Skill::Block => value.downtime.block_minutes,
+                _ => 0,
+            });
+            tr class="party-skill-row combat-detail-row" data-combat-detail data-combat-weight=(weight) hidden {
+                th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
+                    (stat_icon(name, "skills", icon, false))
+                }
+                td class="party-skill-meter" colspan=[schedule.map(|_| "4")] {
+                    @let sub_rank = skill.training_rank(hours);
+                    (skill_rank_bar(sub_rank, sub_rank * health.clamp(0.0, 1.0), &format!("{:.0} hours invested", hours.max(0.0))))
+                }
+                @if schedule.is_some() {
+                    td class="religion-auto-toggle-cell" {}
+                    td class="party-skill-allocation" data-schedule-value=(format!("{icon}_minutes")) {
+                        input type="hidden" name=(format!("{icon}_minutes")) value=(minutes)
+                            data-schedule-input data-combat-manual-budget;
+                        span data-schedule-display data-combat-manual-display tabindex="0" role="button" { (format_schedule_hours(minutes)) }
+                    }
+                }
+                td class="religion-expand-cell" {}
+            }
+        }
+    }
+}
+
 fn religion_expand_button(primary: OfficialReligion) -> Markup {
     html! {
         button type="button" class="religion-expand-button" data-religion-expand
@@ -2475,6 +2609,8 @@ struct LeisurePreview {
 
 fn core_daily_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
     DailySchedule {
+        combat: schedule.combat_minutes,
+        combat_auto_train: schedule.combat_auto_train,
         melee: schedule.melee_minutes,
         dodge: schedule.dodge_minutes,
         block: schedule.block_minutes,
@@ -2699,7 +2835,7 @@ pub(crate) fn character_stats_panel(
         (party_attributes_rail(&format!("{}'s attributes", character.name), attributes, limbs, medical))
         (party_skills_rail(
             &format!("{}'s skills", character.name), skills, limbs, None, None, None,
-            false, 0.0, None,
+            false, 0.0, None, CombatTrainingProfile::default(),
         ))
         (medical_rail(medical, "", 0, character.id, false))
     }
@@ -4415,6 +4551,8 @@ mod tests {
         let schedule = CharacterTrainingSchedule {
             character_id: 1,
             downtime: crate::spacetimedb::ScheduleAllocation {
+                combat_minutes: 90,
+                combat_auto_train: true,
                 religion_minutes: 120,
                 religion_auto_train: true,
                 religion_minutes_by_tradition: adventuresim_world_schema::ReligionMinutes {
@@ -4436,6 +4574,7 @@ mod tests {
             false,
             0.0,
             Some(OfficialReligion::Judaism),
+            CombatTrainingProfile::default(),
         )
         .into_string();
 
@@ -4460,6 +4599,21 @@ mod tests {
         assert!(rendered.contains("title=\"Judaism\""));
         assert!(rendered.contains("/static/icons/religion/fontawesome-star-of-david.svg"));
         assert!(rendered.contains("Auto-train"));
+        assert!(rendered.contains("name=\"combat_minutes\" value=\"90\""));
+        assert!(rendered.contains("data-combat-auto-toggle"));
+        assert!(rendered.contains("data-combat-expand"));
+        assert!(rendered.contains("data-combat-auto-display tabindex=\"0\" role=\"button\""));
+        assert_eq!(
+            rendered
+                .matches("data-combat-manual-display tabindex=\"0\" role=\"button\"")
+                .count(),
+            4
+        );
+        assert_eq!(rendered.matches("data-combat-detail").count(), 4);
+        assert!(rendered.contains("Relevant skills: Dodge"));
+        assert!(!rendered.contains("aria-label=\"Religion details\""));
+        assert!(rendered.contains("aria-label=\"Skill details\""));
+        assert!(rendered.contains("equipment-derived Combat training distribution at 25% speed"));
         assert_eq!(rendered.matches("data-religion-detail").count(), 1);
         assert!(!rendered.contains("title=\"Lutheranism\""));
         assert!(rendered.contains("religion_judaism_minutes"));
@@ -4510,6 +4664,7 @@ mod tests {
             false,
             0.0,
             Some("judaism"),
+            CombatTrainingProfile::default(),
         )
         .into_string();
         assert!(!rail.contains("class=\"sidebar-header\">Your skills"));
