@@ -964,6 +964,46 @@ pub fn record_committed_cut(
     Ok(())
 }
 
+/// Deterministic standing-wound exposure. The stable token is derived from a
+/// limb key and monotonically increasing exposure checkpoint, so changing the
+/// size of elapsed-time chunks cannot change acquisition outcomes.
+pub fn record_standing_cut_exposure(
+    ctx: &ReducerContext,
+    character_id: u64,
+    severity: f32,
+    surgery_check: f32,
+    token: &str,
+    contracted_at: u64,
+) -> Result<(), String> {
+    if severity <= 0.0 {
+        return Ok(());
+    }
+    let immunity = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(character_id)
+        .map_or(3.0, |a| a.immunity);
+    let residual = (1.0 - (surgery_check / 5.0).clamp(0.0, 1.0) * 0.8) * severity.clamp(0.0, 1.0);
+    for disease_id in [DiseaseId::Tetanus, DiseaseId::Erysipelas] {
+        let definition = disease::definition(disease_id);
+        let seed = disease::outbreak_exposure_seed(
+            character_id,
+            &format!("standing-cut-{token}-{disease_id:?}"),
+        );
+        if disease::acquisition_succeeds(seed, definition, immunity, 0.0, residual) {
+            ctx.db.infection_episode().insert(InfectionEpisodeRow {
+                id: 0,
+                character_id,
+                disease_id: format!("{disease_id:?}").to_ascii_lowercase(),
+                contracted_at,
+                treated_at: None,
+            });
+        }
+    }
+    Ok(())
+}
+
 /// Create or reset the diagnostic party used by the default development seed.
 /// It includes a healthy physician and patients with staggered disease ages.
 pub(crate) fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
@@ -1334,24 +1374,16 @@ fn advance_medical_participants(
     let elapsed = participants
         .iter()
         .try_fold(requested_minutes, |limit, character_id| {
-            preview_elapsed_for_disease(ctx, *character_id, limit).map(|safe| limit.min(safe))
+            let disease = preview_elapsed_for_disease(ctx, *character_id, limit)?;
+            let injury =
+                crate::surgery::preview_elapsed_for_injuries(ctx, *character_id, limit, true)?;
+            Ok::<u64, String>(limit.min(disease).min(injury))
         })?;
+    let mut completed = elapsed == requested_minutes;
     for character_id in participants {
-        let mut time = ctx
-            .db
-            .character_time()
-            .character_id()
-            .find(character_id)
-            .ok_or("Examination participant is missing time data")?;
-        let (_, terminal) = clip_elapsed_for_disease(ctx, character_id, elapsed)?;
-        time.minutes = time.minutes.saturating_add(elapsed);
-        ctx.db.character_time().character_id().update(time);
-        finish_disease_interval(ctx, character_id, terminal)?;
-        if terminal.is_none() {
-            crate::capability::refresh_character_capability(ctx, character_id)?;
-        }
+        completed &= crate::time::advance_character_wait_time(ctx, character_id, elapsed)?;
     }
-    Ok(elapsed == requested_minutes)
+    Ok(completed)
 }
 
 #[reducer]

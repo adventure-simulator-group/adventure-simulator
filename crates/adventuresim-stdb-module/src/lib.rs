@@ -7,6 +7,7 @@ pub mod personality;
 pub mod repair;
 pub mod simulation;
 pub mod strategic;
+pub mod surgery;
 pub mod tactical;
 pub mod time;
 
@@ -19,5 +20,6 @@ pub use personality::*;
 pub use repair::*;
 pub use simulation::*;
 pub use strategic::*;
+pub use surgery::*;
 pub use tactical::*;
 pub use time::*;

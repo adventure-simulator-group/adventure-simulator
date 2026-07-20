@@ -10,7 +10,6 @@ use crate::templates::stat_game_icon_name;
 #[derive(Clone, Copy, Default)]
 pub struct PartyCheckSummary {
     pub medicine: f32,
-    pub surgery: f32,
     pub charisma: f32,
     pub religion: f32,
 }
@@ -430,7 +429,6 @@ pub fn aggregate_check_bars(
             data-party-aggregate-checks {
             @for (label, icon, field, current, target, added) in [
                 ("Medicine", "medicine", "medicine", checks.medicine, party.medicine_target, contribution.map_or(0.0, |value| value.medicine)),
-                ("Surgery", "surgeon", "surgery", checks.surgery, party.surgery_target, contribution.map_or(0.0, |value| value.surgery)),
                 ("Charisma", "charisma", "charisma", checks.charisma, party.charisma_target, contribution.map_or(0.0, |value| value.charisma)),
                 ("Religion", "religion", "religion", checks.religion, party.religion_target, contribution.map_or(0.0, |value| value.religion)),
             ] {
@@ -490,7 +488,6 @@ fn party_check_target_form(
         form action="/party-recruitment/check-targets" method="post" class="party-check-target-form"
             data-party-check-target-form data-check-name=(field) {
             input type="hidden" name="medicine" value=(party.medicine_target.round().clamp(0.0, 5.0));
-            input type="hidden" name="surgery" value=(party.surgery_target.round().clamp(0.0, 5.0));
             input type="hidden" name="charisma" value=(party.charisma_target.round().clamp(0.0, 5.0));
             input type="hidden" name="religion" value=(party.religion_target.round().clamp(0.0, 5.0));
             div class=(if can_manage { "party-check-track party-check-track-editable" } else { "party-check-track" })

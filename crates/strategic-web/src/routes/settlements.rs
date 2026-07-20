@@ -97,18 +97,18 @@ use crate::spacetimedb::{
     CharacterPersonality, CharacterSkills, CharacterStats, CharacterStrategicCondition,
     CharacterTime, CharacterTrainingSchedule, CommittedCutRow, EquippedMedication,
     HerbalistExaminationRow, InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget,
-    ItemCondition, ItemDefinition, ItemKind, ItemSlot, MedicalExaminationRow, Party,
-    PartyInventoryItem, PartyJourney, PartyJourneyItinerary, PartyMember, PartyRecruitmentRole,
-    PartyStake, Quest, QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand,
-    RepairOrder, ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription,
-    SettlementSmith, TravelEdge,
+    ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury, LimbRegion,
+    MedicalExaminationRow, Party, PartyInventoryItem, PartyJourney, PartyJourneyItinerary,
+    PartyMember, PartyRecruitmentRole, PartyStake, Quest, QuestIssuer, QuestStatus,
+    RecruitmentRequirements, ReligiousDemand, RepairOrder, RetainedProjectile, ScheduleAllocation,
+    Settlement, SettlementAlias, SettlementDescription, SettlementSmith, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
     RestSummary, alchemy_page, camp_page, inn_page, live_merchant_shop_page, merchants_page,
     party_discard_page, party_inventory_page, party_personal_page, party_pool_page,
     party_stats_page, religion_page, rest_result_page, settlement_map_page,
-    settlement_overview_page,
+    settlement_overview_page, surgery_page,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -200,6 +200,14 @@ pub fn routes() -> Router<AppState> {
             get(party_stats),
         )
         .route(
+            "/locations/{kind}/{id}/party/{character_id}/surgery/{limb}",
+            get(surgery),
+        )
+        .route(
+            "/locations/{kind}/{id}/party/{character_id}/surgery/{limb}/procedure",
+            post(perform_surgery),
+        )
+        .route(
             "/locations/{kind}/{id}/party/{target_id}/examine",
             post(examine_patient),
         )
@@ -257,6 +265,175 @@ pub fn routes() -> Router<AppState> {
         .route("/settlements/{id}/religion", get(religion))
         .route("/settlements/{id}/rest/{kind}", post(rest))
         .route("/settlements/{id}/travel", post(travel))
+}
+
+fn parse_surgery_limb(slug: &str) -> Option<LimbRegion> {
+    Some(match slug {
+        "left-arm" => LimbRegion::LeftArm,
+        "right-arm" => LimbRegion::RightArm,
+        "left-leg" => LimbRegion::LeftLeg,
+        "right-leg" => LimbRegion::RightLeg,
+        "chest" => LimbRegion::Chest,
+        "stomach" => LimbRegion::Stomach,
+        "head" => LimbRegion::Head,
+        _ => return None,
+    })
+}
+
+async fn surgery(
+    State(state): State<AppState>,
+    Path((kind, id, patient_id, limb)): Path<(String, String, u64, String)>,
+    session: Session,
+) -> Html<String> {
+    let Some(actor_id) = session.character_id_u64() else {
+        return Html("<h1>Choose a character first</h1>".into());
+    };
+    let Some(selected_limb) = parse_surgery_limb(&limb) else {
+        return Html("<h1>Limb not found</h1>".into());
+    };
+    let location = match resolve_location(&state, &kind, &id).await {
+        LocationLookup::Found(location) => location,
+        LocationLookup::NotFound => return Html("<h1>Location not found</h1>".into()),
+        LocationLookup::Unavailable => {
+            return Html("<h1>Strategic data is unavailable</h1>".into());
+        }
+    };
+    let Some((active, _)) = get_active_character(&state, Some(actor_id)).await else {
+        return Html("<h1>Choose a character first</h1>".into());
+    };
+    let party_members = get_active_party_members(&state, Some(&active)).await;
+    let Some(patient) = party_members
+        .iter()
+        .find(|member| member.id == patient_id)
+        .cloned()
+    else {
+        return Html("<h1>Party member not found</h1>".into());
+    };
+    if !character_is_at_location(&active, &location)
+        || !character_is_at_location(&patient, &location)
+    {
+        return Html("<h1>Surgeon and patient must be together</h1>".into());
+    }
+    let injuries = state
+        .db
+        .query::<LimbInjury>(&format!(
+            "SELECT * FROM limb_injury WHERE character_id = {patient_id}"
+        ))
+        .await
+        .unwrap_or_default();
+    let projectiles = state
+        .db
+        .query::<RetainedProjectile>(&format!(
+            "SELECT * FROM retained_projectile WHERE character_id = {patient_id}"
+        ))
+        .await
+        .unwrap_or_default();
+    let inventory = state
+        .db
+        .query::<InventoryItem>(&format!(
+            "SELECT * FROM inventory_item WHERE character_id = {actor_id}"
+        ))
+        .await
+        .unwrap_or_default();
+    let actor_injuries = if actor_id == patient_id {
+        injuries.clone()
+    } else {
+        state
+            .db
+            .query::<LimbInjury>(&format!(
+                "SELECT * FROM limb_injury WHERE character_id = {actor_id}"
+            ))
+            .await
+            .unwrap_or_default()
+    };
+    let quantity = |item_id: &str| {
+        inventory
+            .iter()
+            .filter(|item| item.item_id == item_id)
+            .map(|item| item.qty)
+            .sum()
+    };
+    let skill = get_character_capability(&state, actor_id)
+        .await
+        .map_or(0.0, |capability| capability.surgery);
+    let available_splints = inventory
+        .iter()
+        .filter(|item| {
+            item.item_id == "splint"
+                && !actor_injuries
+                    .iter()
+                    .any(|injury| injury.splint_inventory_item_id == Some(item.id))
+        })
+        .map(|item| item.qty)
+        .sum();
+    let patient_capability = get_character_capability(&state, patient_id).await;
+    let patient_attributes =
+        query_single::<CharacterAttributes>(&state, "character_attributes", patient_id).await;
+    let patient_skills =
+        query_single::<CharacterSkills>(&state, "character_skills", patient_id).await;
+    let patient_limbs = query_single::<CharacterLimbs>(&state, "character_limbs", patient_id).await;
+    let medical = medical_presentation(&state, actor_id, patient_id).await;
+    let combat_profile = get_combat_training_profile(&state, patient_id).await;
+    Html(
+        surgery_page(
+            &location,
+            &active,
+            &patient,
+            &party_members,
+            patient_capability.as_ref(),
+            patient_attributes.as_ref(),
+            patient_skills.as_ref(),
+            patient_limbs.as_ref(),
+            &medical,
+            combat_profile,
+            &injuries,
+            &projectiles,
+            selected_limb,
+            quantity("bandage"),
+            quantity("surgery_kit") > 0,
+            available_splints,
+            skill,
+        )
+        .into_string(),
+    )
+}
+
+#[derive(Deserialize)]
+struct SurgeryProcedureForm {
+    procedure: String,
+    projectile_id: Option<u64>,
+}
+
+async fn perform_surgery(
+    State(state): State<AppState>,
+    Path((kind, id, patient_id, limb)): Path<(String, String, u64, String)>,
+    session: Session,
+    Form(form): Form<SurgeryProcedureForm>,
+) -> Redirect {
+    let destination = format!("/locations/{kind}/{id}/party/{patient_id}/surgery/{limb}");
+    let Some(actor_id) = session.character_id_u64() else {
+        return Redirect::to(&destination);
+    };
+    if parse_surgery_limb(&limb).is_none() {
+        return Redirect::to(&destination);
+    }
+    if let Err(error) = state
+        .db
+        .call(
+            "treat_limb",
+            &[
+                json!(actor_id),
+                json!(patient_id),
+                json!(limb),
+                json!(form.procedure),
+                json!(form.projectile_id),
+            ],
+        )
+        .await
+    {
+        tracing::warn!(?error, "Manual surgery procedure failed");
+    }
+    Redirect::to(&destination)
 }
 
 #[derive(Default, Deserialize)]
@@ -1968,6 +2145,20 @@ async fn party_personal(
     let personality =
         query_single::<CharacterPersonality>(&state, "character_personality", character_id).await;
     let medical = medical_presentation(&state, character_id, character_id).await;
+    let injuries = state
+        .db
+        .query::<LimbInjury>(&format!(
+            "SELECT * FROM limb_injury WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default();
+    let projectiles = state
+        .db
+        .query::<RetainedProjectile>(&format!(
+            "SELECT * FROM retained_projectile WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default();
     let religious_demand = state
         .db
         .query::<ReligiousDemand>(&format!(
@@ -1998,6 +2189,8 @@ async fn party_personal(
             personality.as_ref(),
             &medical,
             can_examine,
+            &injuries,
+            &projectiles,
         )
         .into_string(),
     )
@@ -2813,6 +3006,20 @@ async fn party_stats(
     let personality =
         query_single::<CharacterPersonality>(&state, "character_personality", character_id).await;
     let medical = medical_presentation(&state, active_character.id, character_id).await;
+    let injuries = state
+        .db
+        .query::<LimbInjury>(&format!(
+            "SELECT * FROM limb_injury WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default();
+    let projectiles = state
+        .db
+        .query::<RetainedProjectile>(&format!(
+            "SELECT * FROM retained_projectile WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default();
     Html(
         party_stats_page(
             &location,
@@ -2833,6 +3040,8 @@ async fn party_stats(
             personality.as_ref(),
             &medical,
             can_examine,
+            &injuries,
+            &projectiles,
         )
         .into_string(),
     )

@@ -21,6 +21,7 @@ pub mod strategic_schedule;
 pub mod strategic_time;
 #[doc(hidden)]
 pub mod stub;
+pub mod surgery;
 
 pub mod prelude {
     pub use crate::activity::*;

@@ -233,7 +233,7 @@ remain distinct without Medicine; all other sources, including burns, use the
 green lay category. Party Medicine still assists wound recovery, but party aggregation
 never grants medical visibility or diagnosis.
 
-Medicine and Surgery use the same bounded party-check equation. Individual checks are sorted strongest-first, the leader receives full weight, and successive contributors receive weights of `1/2`, `1/4`, `1/8`, and so on:
+Medicine uses a bounded party-check equation. Individual checks are sorted strongest-first, the leader receives full weight, and successive contributors receive weights of `1/2`, `1/4`, `1/8`, and so on:
 
 \[
 P = 5\left(1-\prod_{i=1}^{n}\left(1-\frac{x_i}{5}\right)^{(1/2)^{i-1}}\right)
@@ -317,7 +317,7 @@ Relevant both for poise in melee and speed in difficult terrain
 5. Graceful elf
 
 ### Surgeon (trained, 10000 hours)
-The party's bounded aggregate Surgery check uses the same geometric-support equation as Medicine and stabilizes fresh [autoresolve wounds](Health.md) after battle. Every 5% of wound damage requires 1 point of Surgery; missing the target worsens the wound in proportion to the shortfall, while meeting it prevents deterioration without undoing the original damage.
+Surgery is strictly individual. A character's check controls procedure time, projectile extraction, and stitching quality; party members never contribute a passive aggregate bonus. Backup surgeons instead matter when the primary surgeon is wounded or several critical patients need triage at once.
 
 0. Cannot reliably apply a bandage
 1. Can dress a wound or apply a tourniquet

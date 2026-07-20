@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (866)
+## Files (876)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -58,6 +58,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/strategic_schedule.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/strategic_time.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/stub.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/surgery.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-client/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-stdb-client/README.md` — Component overview and usage notes.
 - `crates/adventuresim-stdb-client/src/abandon_quest_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -247,6 +248,9 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/leave_mission_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/leave_party_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/lib.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-client/src/limb_injury_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/limb_injury_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/limb_region_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/liquidate_party_inventory_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/local_chat_message_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/local_chat_message_type.rs` — Generated SpacetimeDB data type.
@@ -305,6 +309,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/pottery_commodity_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/pottery_industry_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/production_scale_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/projectile_kind_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/purchase_from_herbalist_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/quarry_commodity_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/quarrying_industry_type.rs` — Generated SpacetimeDB data type.
@@ -335,6 +340,8 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/rest_at_camp_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/rest_at_settlement_hours_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/rest_at_settlement_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/retained_projectile_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/retained_projectile_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/retrieve_repaired_item_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/retrieve_repaired_items_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/river_access_type.rs` — Generated SpacetimeDB data type.
@@ -428,6 +435,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/travel_route_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/travel_to_quest_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/travel_to_settlement_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/treat_limb_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/tree_species_id_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/tree_species_profile_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/turn_in_quest_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -437,6 +445,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/update_party_check_targets_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/update_recruitment_role_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/update_training_schedule_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/upgrade_manual_surgery_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/vote_for_party_leader_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/water_distance_meters_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/western_christian_arrangement_type.rs` — Generated SpacetimeDB data type.
@@ -464,6 +473,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/repair.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/simulation.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/strategic.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-module/src/surgery.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/tactical.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/time.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/static/tactical.html` — Browser UI page.

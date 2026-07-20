@@ -229,7 +229,6 @@ pub struct Party {
     pub camp_remaining_minutes: u64,
     pub pooled_water_ml: f32,
     pub medicine_target: f32,
-    pub surgery_target: f32,
     pub charisma_target: f32,
     pub religion_target: f32,
 }
@@ -919,6 +918,51 @@ pub struct CharacterLimbs {
     pub head_health: f32,
     pub chest_health: f32,
     pub stomach_health: f32,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum LimbRegion {
+    LeftArm,
+    RightArm,
+    LeftLeg,
+    RightLeg,
+    Chest,
+    Stomach,
+    Head,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LimbInjury {
+    pub id: String,
+    pub character_id: u64,
+    pub limb: LimbRegion,
+    pub cut_damage: f32,
+    pub bruise_damage: f32,
+    pub fracture_damage: f32,
+    pub bandaged: bool,
+    pub stitched: bool,
+    pub stitch_quality: f32,
+    pub splint_owner_id: Option<u64>,
+    pub splint_inventory_item_id: Option<u64>,
+    pub infection_exposure: f32,
+    pub infection_checks: u32,
+    pub infection_origin_minute: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ProjectileKind {
+    Arrowhead,
+    Ball,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetainedProjectile {
+    pub id: u64,
+    pub character_id: u64,
+    pub limb: LimbRegion,
+    pub kind: ProjectileKind,
+    pub extraction_dc: f32,
+    pub source_damage: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

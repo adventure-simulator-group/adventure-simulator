@@ -196,6 +196,12 @@ pub struct CombatWeapon {
     pub ranged_force_joules: f32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CombatProjectileKind {
+    Arrowhead,
+    Ball,
+}
+
 #[derive(Clone, Debug)]
 pub struct CombatEquipment {
     /// Weapon selected for a particular pure attack calculation.
@@ -204,6 +210,7 @@ pub struct CombatEquipment {
     pub ranged_weapon: Option<CombatWeapon>,
     pub melee_weapon_id: Option<u64>,
     pub ranged_weapon_id: Option<u64>,
+    pub ranged_projectile_kind: Option<CombatProjectileKind>,
     /// Shield instance used for blocks, falling back to the melee weapon used to parry.
     pub defense_item_id: Option<u64>,
     pub ammunition: u32,
@@ -223,6 +230,7 @@ impl Default for CombatEquipment {
             ranged_weapon: None,
             melee_weapon_id: None,
             ranged_weapon_id: None,
+            ranged_projectile_kind: None,
             defense_item_id: None,
             ammunition: 0,
             holding_side: BodySide::Right,
@@ -468,6 +476,11 @@ pub struct BattleLogEntry {
     pub body_part: BodyPart,
     pub outcome: String,
     pub health_damage: f32,
+    /// Applied shares from this individual hit. These are durable combat facts
+    /// used by strategic bruising/fracture/wound generation.
+    pub cut_damage: f32,
+    pub blunt_damage: f32,
+    pub projectile_kind: Option<CombatProjectileKind>,
     /// Pre-absorption contact force; remains positive when armor absorbs all
     /// health damage.
     pub contact_stress: f32,
@@ -530,6 +543,7 @@ impl BattleRecorder {
         defender_id: u64,
         mode: AttackMode,
         weapon_inventory_item_id: Option<u64>,
+        projectile_kind: Option<CombatProjectileKind>,
         defender_contact_item_id: Option<u64>,
         part: BodyPart,
         result: AttackResult,
@@ -554,6 +568,23 @@ impl BattleRecorder {
             }
             AttackResult::ToDefender { .. } => "hit armor".to_string(),
         };
+        let (raw_cut, raw_blunt) = match result {
+            AttackResult::ToDefender {
+                cut_damage,
+                blunt_damage,
+                ..
+            } => (cut_damage.max(0.0), blunt_damage.max(0.0)),
+            _ => (0.0, 0.0),
+        };
+        let raw_total = raw_cut + raw_blunt;
+        let (cut_damage, blunt_damage) = if raw_total > 0.0 {
+            (
+                effect.health_damage * raw_cut / raw_total,
+                effect.health_damage * raw_blunt / raw_total,
+            )
+        } else {
+            (0.0, 0.0)
+        };
         self.log.push(BattleLogEntry {
             sequence: self.log.len() as u32,
             phase: phase.to_string(),
@@ -570,6 +601,10 @@ impl BattleRecorder {
             body_part: part,
             outcome,
             health_damage: effect.health_damage,
+            cut_damage,
+            blunt_damage,
+            projectile_kind: (mode == AttackMode::Ranged)
+                .then_some(projectile_kind.unwrap_or(CombatProjectileKind::Arrowhead)),
             contact_stress: match result {
                 AttackResult::ToDefender { contact_force, .. } => contact_force.max(0.0),
                 AttackResult::ToAttacker { contact_force, .. } => contact_force.max(0.0),
@@ -806,6 +841,13 @@ fn apply_pending_attacks(
                 AttackMode::Melee => attackers[attack.attacker_index].equipment.melee_weapon_id,
                 AttackMode::Ranged => attackers[attack.attacker_index].equipment.ranged_weapon_id,
             },
+            (attack.mode == AttackMode::Ranged)
+                .then_some(
+                    attackers[attack.attacker_index]
+                        .equipment
+                        .ranged_projectile_kind,
+                )
+                .flatten(),
             defender_contact_item_id(attack.result, &defenders[attack.target_index].equipment),
             attack.part,
             attack.result,
@@ -1002,6 +1044,7 @@ fn take_opening_volley_step(
             defenders[target_index].id,
             AttackMode::Ranged,
             attackers[attacker_index].equipment.ranged_weapon_id,
+            attackers[attacker_index].equipment.ranged_projectile_kind,
             defender_contact_item_id(result, &defenders[target_index].equipment),
             part,
             result,
@@ -1111,6 +1154,7 @@ fn take_side_turns(
             defenders[target_index].id,
             AttackMode::Melee,
             attackers[attacker_index].equipment.melee_weapon_id,
+            None,
             defender_contact_item_id(result, &defenders[target_index].equipment),
             part,
             result,
@@ -1711,6 +1755,7 @@ mod tests {
             2,
             AttackMode::Ranged,
             Some(101),
+            Some(CombatProjectileKind::Arrowhead),
             None,
             BodyPart::Chest,
             result,
@@ -1723,6 +1768,7 @@ mod tests {
             2,
             AttackMode::Melee,
             Some(202),
+            None,
             None,
             BodyPart::Chest,
             result,
@@ -1757,6 +1803,7 @@ mod tests {
             2,
             AttackMode::Melee,
             Some(202),
+            None,
             defender_contact_item_id(result, &defender),
             BodyPart::Chest,
             result,

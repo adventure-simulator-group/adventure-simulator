@@ -37,7 +37,7 @@ use adventuresim_stdb_client::{
     equipped_medication_table::EquippedMedicationTableAccess,
     inventory_item_table::InventoryItemTableAccess,
     inventory_quantity_target_table::InventoryQuantityTargetTableAccess,
-    item_condition_table::ItemConditionTableAccess,
+    item_condition_table::ItemConditionTableAccess, limb_injury_table::LimbInjuryTableAccess,
     local_chat_message_table::LocalChatMessageTableAccess,
     morale_event_table::MoraleEventTableAccess,
     party_action_request_table::PartyActionRequestTableAccess,
@@ -52,6 +52,7 @@ use adventuresim_stdb_client::{
     party_stake_table::PartyStakeTableAccess, party_table::PartyTableAccess,
     quest_issuer_table::QuestIssuerTableAccess, quest_table::QuestTableAccess,
     religious_demand_table::ReligiousDemandTableAccess, repair_order_table::RepairOrderTableAccess,
+    retained_projectile_table::RetainedProjectileTableAccess,
     saved_recruitment_role_table::SavedRecruitmentRoleTableAccess,
     settlement_alias_table::SettlementAliasTableAccess,
     settlement_description_table::SettlementDescriptionTableAccess,
@@ -133,6 +134,8 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.character_stats());
         invalidate_on_changes!(state.0._connection.db.character_skills());
         invalidate_on_changes!(state.0._connection.db.character_limbs());
+        invalidate_on_changes!(state.0._connection.db.limb_injury());
+        invalidate_on_changes!(state.0._connection.db.retained_projectile());
         invalidate_on_changes!(state.0._connection.db.character_training_schedule());
         invalidate_on_changes!(state.0._connection.db.party());
         invalidate_on_changes!(state.0._connection.db.party_journey());
@@ -199,6 +202,8 @@ impl LiveState {
             .add_query(|query| query.from.character_condition())
             .add_query(|query| query.from.character_equip())
             .add_query(|query| query.from.character_limbs())
+            .add_query(|query| query.from.limb_injury())
+            .add_query(|query| query.from.retained_projectile())
             .add_query(|query| query.from.character_morale_source())
             .add_query(|query| query.from.character_personality())
             .add_query(|query| query.from.character_needs())

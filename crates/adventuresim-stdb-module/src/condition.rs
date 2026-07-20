@@ -1494,25 +1494,10 @@ pub fn apply_travel_condition(
 pub fn apply_rest_condition(
     ctx: &ReducerContext,
     character_id: u64,
-    elapsed_minutes: u64,
+    _elapsed_minutes: u64,
 ) -> Result<(), String> {
     initialize_character_condition(ctx, character_id)?;
     replenish_needs_at_settlement(ctx, character_id)?;
-    let days = elapsed_minutes as f32 / (24.0 * 60.0);
-    let mut condition = ctx
-        .db
-        .character_condition()
-        .character_id()
-        .find(character_id)
-        .ok_or("Character condition not found")?;
-    condition.current_blood_ml = (condition.current_blood_ml
-        + condition.maximum_blood_ml * BLOOD_RECOVERY_FRACTION_PER_DAY * days)
-        .min(condition.maximum_blood_ml);
-    ctx.db
-        .character_condition()
-        .character_id()
-        .update(condition);
-
     refresh_character_strategic_condition(ctx, character_id).map(|_| ())
 }
 
@@ -1637,19 +1622,6 @@ pub fn apply_camp_rest_recovery_condition(
     elapsed_minutes: u64,
 ) -> Result<(), String> {
     let days = elapsed_minutes as f32 / (24.0 * 60.0);
-    let mut condition = ctx
-        .db
-        .character_condition()
-        .character_id()
-        .find(character_id)
-        .ok_or("Character condition not found")?;
-    condition.current_blood_ml = (condition.current_blood_ml
-        + condition.maximum_blood_ml * BLOOD_RECOVERY_FRACTION_PER_DAY * days)
-        .min(condition.maximum_blood_ml);
-    ctx.db
-        .character_condition()
-        .character_id()
-        .update(condition);
     let mut stats = ctx
         .db
         .character_stats()
@@ -1683,6 +1655,41 @@ pub fn apply_blood_loss(
         .character_id()
         .update(condition);
     if circulatory_failure {
+        crate::transition_character_to_dead(
+            ctx,
+            character_id,
+            crate::DeathCause::CirculatoryFailure,
+            crate::DeathSource::Strategic,
+            Some("critical-blood-loss".into()),
+        )?;
+        Ok(())
+    } else {
+        refresh_character_strategic_condition(ctx, character_id).map(|_| ())
+    }
+}
+
+/// Set the authoritative blood fraction after a combined bleeding/recovery
+/// interval and commit circulatory death at the caller's already-clipped clock.
+pub fn set_blood_fraction(
+    ctx: &ReducerContext,
+    character_id: u64,
+    fraction: f32,
+) -> Result<(), String> {
+    initialize_character_condition(ctx, character_id)?;
+    let mut condition = ctx
+        .db
+        .character_condition()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character condition not found")?;
+    condition.current_blood_ml = condition.maximum_blood_ml * fraction.clamp(0.0, 1.0);
+    let terminal = condition.maximum_blood_ml > 0.0
+        && condition.current_blood_ml / condition.maximum_blood_ml <= 0.10;
+    ctx.db
+        .character_condition()
+        .character_id()
+        .update(condition);
+    if terminal {
         crate::transition_character_to_dead(
             ctx,
             character_id,

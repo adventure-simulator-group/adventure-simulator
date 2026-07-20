@@ -31,9 +31,10 @@ use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
     CharacterLimbs, CharacterSkills, CharacterStats, CharacterStrategicCondition,
-    CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, ItemSlot, Party,
-    PartyInventoryItem, PartyJourney, PartyJourneyItinerary, Quest, ScheduleAllocation, Settlement,
-    SettlementAlias, SettlementCategory, SettlementDescription, SettlementDescriptionKind,
+    CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, ItemSlot, LimbInjury,
+    LimbRegion, Party, PartyInventoryItem, PartyJourney, PartyJourneyItinerary, ProjectileKind,
+    Quest, RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementCategory,
+    SettlementDescription, SettlementDescriptionKind,
 };
 
 #[derive(Clone, Debug)]
@@ -1455,11 +1456,13 @@ pub fn party_personal_page(
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
     medical: &MedicalPresentation,
     can_examine: bool,
+    injuries: &[LimbInjury],
+    projectiles: &[RetainedProjectile],
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
             (character_summary_rail(capability))
-            (party_attributes_rail("Your attributes", attributes, limbs, medical))
+            (party_attributes_rail("Your attributes", attributes, limbs, medical, Some(&format!("{}/party/{}/surgery", location.base_path(), active_character.id)), injuries, projectiles))
             @let schedule_action = format!("{}/party/{}/schedule", location.base_path(), active_character.id);
             (party_skills_rail(
                 "Your skills", skills, limbs, schedule, Some(&schedule_action),
@@ -1538,13 +1541,15 @@ pub fn party_stats_page(
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
     medical: &MedicalPresentation,
     can_examine: bool,
+    injuries: &[LimbInjury],
+    projectiles: &[RetainedProjectile],
 ) -> Markup {
     let selected_attributes_title = format!("{}'s attributes", selected.name);
     let selected_skills_title = format!("{}'s skills", selected.name);
     let content = html! {
         aside class="left-sidebar" {
             (character_summary_rail(capability))
-            (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs, medical))
+            (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs, medical, Some(&format!("{}/party/{}/surgery", location.base_path(), selected.id)), injuries, projectiles))
             (party_skills_rail(
                 &selected_skills_title, selected_skills, selected_limbs, None, None, None,
                 religion_id.is_some(), 0.0, religion_id.or(location.religion_id.as_deref()),
@@ -1604,6 +1609,150 @@ pub fn party_stats_page(
         }
     };
     location.render_layout("Party stats", content, Some(&active_character.name))
+}
+
+fn surgery_limb_name(limb: LimbRegion) -> &'static str {
+    match limb {
+        LimbRegion::LeftArm => "Left arm",
+        LimbRegion::RightArm => "Right arm",
+        LimbRegion::LeftLeg => "Left leg",
+        LimbRegion::RightLeg => "Right leg",
+        LimbRegion::Chest => "Chest",
+        LimbRegion::Stomach => "Stomach",
+        LimbRegion::Head => "Head",
+    }
+}
+
+fn surgery_limb_slug(limb: LimbRegion) -> &'static str {
+    match limb {
+        LimbRegion::LeftArm => "left-arm",
+        LimbRegion::RightArm => "right-arm",
+        LimbRegion::LeftLeg => "left-leg",
+        LimbRegion::RightLeg => "right-leg",
+        LimbRegion::Chest => "chest",
+        LimbRegion::Stomach => "stomach",
+        LimbRegion::Head => "head",
+    }
+}
+
+fn surgery_duration(procedure: &str, skill: f32, dc: f32) -> u64 {
+    adventuresim_core::surgery::procedure_duration_minutes(procedure, skill, dc)
+}
+
+fn surgery_procedure_row(
+    action: &str,
+    label: &str,
+    icon: &str,
+    procedure: &str,
+    requirement: &str,
+    duration: u64,
+    dc: f32,
+    disabled: Option<&str>,
+    projectile_id: Option<u64>,
+) -> Markup {
+    html! {
+        form method="post" action=(action) class="surgery-procedure" {
+            input type="hidden" name="procedure" value=(procedure);
+            @if let Some(projectile_id) = projectile_id {
+                input type="hidden" name="projectile_id" value=(projectile_id);
+            }
+            @if icon == "bullet-visual" {
+                span class="procedure-projectile-visual projectile-ball" role="img" aria-label=(label) {}
+            } @else {
+                (game_icon(label, icon))
+            }
+            div class="surgery-procedure-copy" {
+                strong { (label) }
+                span { (requirement) }
+            }
+            dl class="surgery-procedure-facts" {
+                div { dt { "Time" } dd { (duration) " min" } }
+                div { dt { "DC" } dd { (format!("{dc:.1}")) } }
+            }
+            @if let Some(reason) = disabled {
+                button type="submit" class="btn btn-block" disabled title=(reason) aria-label=(format!("{label}: {reason}")) { (reason) }
+            } @else {
+                button type="submit" class="btn btn-primary" { (label) }
+            }
+        }
+    }
+}
+
+/// Manual limb treatment replaces the ordinary right rail while retaining the
+/// portrait stage and a keyboard-navigable list of every limb on the left.
+#[allow(clippy::too_many_arguments)]
+pub fn surgery_page(
+    location: &LocationView,
+    active_character: &Character,
+    patient: &Character,
+    party_members: &[Character],
+    capability: Option<&CharacterCapability>,
+    attributes: Option<&CharacterAttributes>,
+    skills: Option<&CharacterSkills>,
+    limbs: Option<&CharacterLimbs>,
+    medical: &MedicalPresentation,
+    combat_profile: CombatTrainingProfile,
+    injuries: &[LimbInjury],
+    projectiles: &[RetainedProjectile],
+    selected_limb: LimbRegion,
+    bandages: u32,
+    has_kit: bool,
+    splints: u32,
+    surgery_skill: f32,
+) -> Markup {
+    let base = format!("{}/party/{}/surgery", location.base_path(), patient.id);
+    let action = format!("{base}/{}/procedure", surgery_limb_slug(selected_limb));
+    let selected = injuries.iter().find(|injury| injury.limb == selected_limb);
+    let cut = selected.map_or(0.0, |injury| injury.cut_damage.max(0.0));
+    let bruise = selected.map_or(0.0, |injury| injury.bruise_damage.max(0.0));
+    let fracture = selected.map_or(0.0, |injury| injury.fracture_damage.max(0.0));
+    let bandaged = selected.is_some_and(|injury| injury.bandaged);
+    let stitched = selected.is_some_and(|injury| injury.stitched);
+    let splinted = selected.is_some_and(|injury| injury.splint_inventory_item_id.is_some());
+    let effective_skill = adventuresim_core::surgery::effective_skill(
+        surgery_skill,
+        active_character.id == patient.id,
+    );
+    let content = html! {
+        aside class="left-sidebar" {
+            (character_summary_rail(capability))
+            (party_attributes_rail(&format!("{}'s attributes", patient.name), attributes, limbs, medical, Some(&base), injuries, projectiles))
+            (party_skills_rail(&format!("{}'s skills", patient.name), skills, limbs, None, None, None, false, 0.0, None, combat_profile))
+        }
+        main class="center-content settlement-main party-member-stage" {
+            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(patient.id), false))
+            (visual_stage("npc", &patient.name, &format!("TODO: {} portrait", patient.name.to_lowercase())))
+            (player_chat_area(patient, active_character))
+        }
+        aside class="right-sidebar surgery-rail" {
+            (sidebar_section(&format!("{} — {}", patient.name, surgery_limb_name(selected_limb)), html! {
+                div class="surgery-supplies" aria-label="Surgery supplies" {
+                    div { (game_icon("Bandages", "bandage-roll")) strong { (bandages) } span { "Bandages" } }
+                    div { (game_icon("Surgery kit", "medical-pack")) strong { (if has_kit { "Ready" } else { "None" }) } span { "Surgery kit" } }
+                    div { (game_icon("Splints", "arm-bandage")) strong { (splints) } span { "Splints" } }
+                }
+                div class="surgery-procedures" {
+                    @for projectile in projectiles.iter().filter(|projectile| projectile.limb == selected_limb) {
+                        (surgery_procedure_row(&action, match projectile.kind { ProjectileKind::Arrowhead => "Remove arrowhead", ProjectileKind::Ball => "Remove ball" }, match projectile.kind { ProjectileKind::Arrowhead => "plain-arrow", ProjectileKind::Ball => "bullet-visual" }, "extract", "No item consumed", surgery_duration("extract", effective_skill, projectile.extraction_dc), projectile.extraction_dc, None, Some(projectile.id)))
+                    }
+                    (surgery_procedure_row(&action, "Bandage", "bandage-roll", "bandage", "Consumes 1 bandage", surgery_duration("bandage", effective_skill, 0.0), 0.0,
+                        if cut <= 0.0 { Some("No open cut") } else if bandaged { Some("Already bandaged") } else if bandages == 0 { Some("No bandages") } else { None }, None))
+                    (surgery_procedure_row(&action, "Stitch", "scalpel", "stitch", "Requires reusable surgery kit", surgery_duration("stitch", effective_skill, 2.0), 2.0,
+                        if cut <= 0.0 { Some("No wound to stitch") } else if stitched { Some("Already stitched") } else if effective_skill < 2.0 { Some("Requires Surgery 2") } else if !has_kit { Some("No surgery kit") } else { None }, None))
+                    @if splinted {
+                        (surgery_procedure_row(&action, "Remove splint", "arm-bandage", "remove-splint", "Returns the equipped splint", surgery_duration("remove-splint", effective_skill, 0.0), 0.0, None, None))
+                    } @else {
+                        (surgery_procedure_row(&action, "Splint", "arm-bandage", "splint", "Equips 1 reusable splint", surgery_duration("splint", effective_skill, 1.0), 1.0,
+                            if fracture <= 0.0 { Some("No fracture") } else if effective_skill <= 0.0 { Some("Requires Surgery training") } else if splints == 0 { Some("No splints") } else { None }, None))
+                    }
+                    @if cut <= 0.0 && bruise > 0.0 && fracture <= 0.0 {
+                        p class="text-muted small-copy" { "Bruising must heal on its own." }
+                    }
+                }
+            }))
+        }
+    };
+    location.render_layout("Surgery", content, Some(&active_character.name))
 }
 
 fn service_page(
@@ -3235,7 +3384,7 @@ pub(crate) fn character_stats_panel(
 ) -> Markup {
     html! {
         (character_summary_rail(capability))
-        (party_attributes_rail(&format!("{}'s attributes", character.name), attributes, limbs, medical))
+        (party_attributes_rail(&format!("{}'s attributes", character.name), attributes, limbs, medical, None, &[], &[]))
         (party_skills_rail(
             &format!("{}'s skills", character.name), skills, limbs, None, None, None,
             false, 0.0, None, CombatTrainingProfile::default(),
@@ -3684,7 +3833,7 @@ fn medical_examination_popup(
                             @if health[index] < 1.0 || reading.sanguine + reading.phlegmatic + reading.choleric + reading.melancholic > 0.0 {
                                 div class="examination-region-row" {
                                     strong { (name) }
-                                    (regional_health_bar(name, health[index], cut_fraction, medical, index))
+                                    (regional_health_bar(name, health[index], cut_fraction, medical, index, &[], &[]))
                                 }
                             }
                         }
@@ -3752,6 +3901,9 @@ fn party_attributes_rail(
     attributes: Option<&CharacterAttributes>,
     limbs: Option<&CharacterLimbs>,
     medical: &MedicalPresentation,
+    surgery_base: Option<&str>,
+    injuries: &[LimbInjury],
+    projectiles: &[RetainedProjectile],
 ) -> Markup {
     let Some(attributes) = attributes else {
         return html! {};
@@ -3776,35 +3928,35 @@ fn party_attributes_rail(
     html! {
         (sidebar_section(title, html! {
             div class="party-attributes-list" aria-label="Character attributes" {
-                (attribute_group("Head", head_health, cut_fraction, medical, 6, &[
+                (attribute_group("Head", "head", head_health, cut_fraction, medical, 6, surgery_base, injuries, projectiles, &[
                     ("Intelligence", "intelligence", attributes.intelligence),
                     ("Instinct", "instinct", attributes.instinct),
                     ("Eyesight", "eyesight", attributes.eyesight),
                     ("Hearing", "hearing", attributes.hearing),
                 ]))
-                (attribute_group("Chest", chest_health, cut_fraction, medical, 4, &[
+                (attribute_group("Chest", "chest", chest_health, cut_fraction, medical, 4, surgery_base, injuries, projectiles, &[
                     ("Endurance", "endurance", attributes.endurance),
                 ]))
-                (attribute_group("Stomach", stomach_health, cut_fraction, medical, 5, &[
+                (attribute_group("Stomach", "stomach", stomach_health, cut_fraction, medical, 5, surgery_base, injuries, projectiles, &[
                     ("Immunity", "immunity", attributes.immunity),
                     ("Gut", "gut", attributes.gut),
                 ]))
                 div class="limb-attribute-pair" {
-                    (limb_attribute_column("Left arm", "limb-left", left_arm_health, cut_fraction, medical, 0, &[
+                    (limb_attribute_column("Left arm", "left-arm", "limb-left", left_arm_health, cut_fraction, medical, 0, surgery_base, injuries, projectiles, &[
                         ("Strength", "strength-arm", attributes.left_arm_strength),
                         ("Agility", "agility-arm", attributes.left_arm_agility),
                     ]))
-                    (limb_attribute_column("Right arm", "limb-right", right_arm_health, cut_fraction, medical, 1, &[
+                    (limb_attribute_column("Right arm", "right-arm", "limb-right", right_arm_health, cut_fraction, medical, 1, surgery_base, injuries, projectiles, &[
                         ("Strength", "strength-arm", attributes.right_arm_strength),
                         ("Agility", "agility-arm", attributes.right_arm_agility),
                     ]))
                 }
                 div class="limb-attribute-pair" {
-                    (limb_attribute_column("Left leg", "limb-left", left_leg_health, cut_fraction, medical, 2, &[
+                    (limb_attribute_column("Left leg", "left-leg", "limb-left", left_leg_health, cut_fraction, medical, 2, surgery_base, injuries, projectiles, &[
                         ("Strength", "strength-leg", attributes.left_leg_strength),
                         ("Agility", "agility-leg", attributes.left_leg_agility),
                     ]))
-                    (limb_attribute_column("Right leg", "limb-right", right_leg_health, cut_fraction, medical, 3, &[
+                    (limb_attribute_column("Right leg", "right-leg", "limb-right", right_leg_health, cut_fraction, medical, 3, surgery_base, injuries, projectiles, &[
                         ("Strength", "strength-leg", attributes.right_leg_strength),
                         ("Agility", "agility-leg", attributes.right_leg_agility),
                     ]))
@@ -3816,19 +3968,27 @@ fn party_attributes_rail(
 
 fn limb_attribute_column(
     name: &str,
+    slug: &str,
     side: &str,
     health: f32,
     cut_fraction: f32,
     medical: &MedicalPresentation,
     region: usize,
+    surgery_base: Option<&str>,
+    injuries: &[LimbInjury],
+    projectiles: &[RetainedProjectile],
     rows: &[(&str, &str, f32)],
 ) -> Markup {
     attribute_group_with_labels(
         name,
+        slug,
         health,
         cut_fraction,
         medical,
         region,
+        surgery_base,
+        injuries,
+        projectiles,
         rows,
         false,
         Some(side),
@@ -3837,18 +3997,26 @@ fn limb_attribute_column(
 
 fn attribute_group(
     name: &str,
+    slug: &str,
     health: f32,
     cut_fraction: f32,
     medical: &MedicalPresentation,
     region: usize,
+    surgery_base: Option<&str>,
+    injuries: &[LimbInjury],
+    projectiles: &[RetainedProjectile],
     rows: &[(&str, &str, f32)],
 ) -> Markup {
     attribute_group_with_labels(
         name,
+        slug,
         health,
         cut_fraction,
         medical,
         region,
+        surgery_base,
+        injuries,
+        projectiles,
         rows,
         true,
         None,
@@ -3857,10 +4025,14 @@ fn attribute_group(
 
 fn attribute_group_with_labels(
     name: &str,
+    slug: &str,
     health: f32,
     cut_fraction: f32,
     medical: &MedicalPresentation,
     region: usize,
+    surgery_base: Option<&str>,
+    injuries: &[LimbInjury],
+    projectiles: &[RetainedProjectile],
     rows: &[(&str, &str, f32)],
     show_labels: bool,
     side: Option<&str>,
@@ -3871,8 +4043,11 @@ fn attribute_group_with_labels(
             Some(side) => format!("attribute-group limb-attribute-column {side}"),
             None => "attribute-group".to_owned(),
         }) {
+            @if let Some(base) = surgery_base {
+                a class="limb-surgery-link" href=(format!("{base}/{slug}")) aria-label=(format!("Treat {name}")) {}
+            }
             div class="attribute-group-heading" { (name) }
-            (regional_health_bar(name, health, cut_fraction, medical, region))
+            (regional_health_bar(name, health, cut_fraction, medical, region, injuries, projectiles))
             @for (attribute_name, icon, value) in rows {
                 (attribute_row(attribute_name, icon, *value, health, show_labels))
             }
@@ -3886,11 +4061,34 @@ fn regional_health_bar(
     cut_fraction: f32,
     medical: &MedicalPresentation,
     region: usize,
+    injuries: &[LimbInjury],
+    projectiles: &[RetainedProjectile],
 ) -> Markup {
     let physical_health = physical_health.clamp(0.0, 1.0);
     let physical_damage = 1.0 - physical_health;
-    let cut = physical_damage * cut_fraction;
-    let blunt = physical_damage - cut;
+    let limb = [
+        LimbRegion::LeftArm,
+        LimbRegion::RightArm,
+        LimbRegion::LeftLeg,
+        LimbRegion::RightLeg,
+        LimbRegion::Chest,
+        LimbRegion::Stomach,
+        LimbRegion::Head,
+    ][region];
+    let injury = injuries.iter().find(|injury| injury.limb == limb);
+    let cut = injury
+        .map_or(physical_damage * cut_fraction, |row| row.cut_damage)
+        .min(physical_damage);
+    let total_blunt = injury
+        .map_or(physical_damage - cut, |row| {
+            row.bruise_damage.max(row.fracture_damage)
+        })
+        .min((physical_damage - cut).max(0.0));
+    let fracture = injury
+        .map_or(0.0, |row| row.fracture_damage)
+        .min(total_blunt);
+    let blunt = (total_blunt - fracture).max(0.0);
+    let bandaged = injury.is_some_and(|row| row.bandaged);
     let humour = medical.regional_humours.map(|values| values[region]);
     let values = humour.unwrap_or_default();
     let humour_total = if humour.is_some() {
@@ -3933,10 +4131,11 @@ fn regional_health_bar(
     };
     let reading = if humour.is_some() {
         format!(
-            "{name}: {:.0}% sound, {:.0}% cut, {:.0}% blunt, {:.0}% sanguine, {:.0}% phlegmatic, {:.0}% choleric, {:.0}% melancholic impairment",
+            "{name}: {:.0}% sound, {:.0}% cut, {:.0}% blunt, {:.0}% fracture, {:.0}% sanguine, {:.0}% phlegmatic, {:.0}% choleric, {:.0}% melancholic impairment",
             okay * 100.0,
             cut * 100.0,
             blunt * 100.0,
+            fracture * 100.0,
             values.sanguine * scale * 100.0,
             values.phlegmatic * scale * 100.0,
             values.choleric * scale * 100.0,
@@ -3944,10 +4143,11 @@ fn regional_health_bar(
         )
     } else {
         format!(
-            "{name}: {:.0}% sound, {:.0}% cut, {:.0}% blunt, {:.0}% other impairment",
+            "{name}: {:.0}% sound, {:.0}% cut, {:.0}% blunt, {:.0}% fracture, {:.0}% other impairment",
             okay * 100.0,
             cut * 100.0,
             blunt * 100.0,
+            fracture * 100.0,
             other * 100.0,
         )
     };
@@ -3956,12 +4156,18 @@ fn regional_health_bar(
             aria-label=(reading)
             aria-valuemin="0" aria-valuemax="100" aria-valuenow=(okay * 100.0) {
             span class="attribute-health-current" title="Sound" style=(format!("width:{:.1}%", okay * 100.0)) {}
-            span class="attribute-health-cut" title="Cut damage" style=(format!("width:{:.1}%", cut * 100.0)) {}
+            span class=(if bandaged { "attribute-health-cut bandaged-cut" } else { "attribute-health-cut" }) title=(if bandaged { "Bandaged cut damage" } else { "Cut damage" }) style=(format!("width:{:.1}%", cut * 100.0)) {}
             span class="attribute-health-blunt" title="Blunt damage" style=(format!("width:{:.1}%", blunt * 100.0)) {}
+            span class="attribute-health-fracture" title="Fracture" style=(format!("width:{:.1}%", fracture * 100.0)) {}
             @for (label, class, amount) in segments {
                 @if amount > 0.0 {
                     span class=(class) title=(label) style=(format!("width:{:.1}%", amount * 100.0)) {}
                 }
+            }
+            @for (projectile_index, projectile) in projectiles.iter().filter(|projectile| projectile.limb == limb).enumerate() {
+                span class=(match projectile.kind { ProjectileKind::Arrowhead => "surgery-projectile-icon projectile-arrowhead", ProjectileKind::Ball => "surgery-projectile-icon projectile-ball" })
+                    style=(format!("right:{:.2}rem", 0.2 + projectile_index as f32 * 0.75))
+                    title=(match projectile.kind { ProjectileKind::Arrowhead => "Retained arrowhead", ProjectileKind::Ball => "Retained ball" }) aria-hidden="true" {}
             }
         }
     }

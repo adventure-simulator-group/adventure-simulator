@@ -14,8 +14,8 @@ use crate::character::character;
 use crate::condition::character_condition as _;
 use crate::strategic::party;
 use crate::{
-    CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, character_attributes,
-    character_equip, character_limbs, character_skills, character_stats, settlement,
+    CharacterAttributes, CharacterSkills, CharacterStats, character_attributes, character_equip,
+    character_limbs, character_skills, character_stats, settlement,
 };
 use adventuresim_world_schema::{OfficialReligion, ReligionMinutes};
 
@@ -229,17 +229,65 @@ pub fn advance_character_time(
         .find(character_id)
         .ok_or_else(|| "Character time record not found".to_string())?;
     let starting_minute = character_time.minutes;
-    let (elapsed, terminal) = crate::disease::clip_elapsed_for_disease(ctx, character_id, minutes)?;
+    let injury_limit =
+        crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, false)?;
+    let (elapsed, terminal) =
+        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit)?;
+    let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, false)?;
+    let elapsed = settled.elapsed;
     character_time.minutes = character_time.minutes.saturating_add(elapsed);
     ctx.db
         .character_time()
         .character_id()
         .update(character_time);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
-    if terminal.is_some() {
+    if terminal.is_some() || !settled.alive {
         return Ok(false);
     }
     crate::condition::apply_travel_condition(ctx, character_id, starting_minute, elapsed, 0)?;
+    crate::capability::refresh_character_capability(ctx, character_id)?;
+    Ok(true)
+}
+
+/// Neutral/location-appropriate personal time for waiting and procedures. It
+/// advances disease, wounds, blood, and ordinary recovery without applying
+/// travel fatigue or travel needs.
+pub fn advance_character_wait_time(
+    ctx: &ReducerContext,
+    character_id: u64,
+    minutes: u64,
+) -> Result<bool, String> {
+    crate::character::require_living_character(ctx, character_id)?;
+    ensure_character_time(ctx, character_id)?;
+    let mut time = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character time record not found")?;
+    let injury_limit =
+        crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, true)?;
+    let (elapsed, terminal) =
+        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit)?;
+    let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, true)?;
+    time.minutes = time.minutes.saturating_add(settled.elapsed);
+    ctx.db.character_time().character_id().update(time);
+    crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    if terminal.is_some() || !settled.alive {
+        return Ok(false);
+    }
+    let at_settlement = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .is_some_and(|row| row.current_settlement_id.is_some());
+    if at_settlement {
+        crate::condition::apply_rest_condition(ctx, character_id, settled.elapsed)?;
+    } else {
+        crate::condition::apply_elapsed_needs(ctx, character_id, settled.elapsed)?;
+        crate::condition::apply_camp_rest_recovery_condition(ctx, character_id, settled.elapsed)?;
+    }
     crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(true)
 }
@@ -551,12 +599,12 @@ fn apply_activity_outcomes(
     })
 }
 
-fn health_recovered_per_day(medicine_check: f32) -> f32 {
+pub(crate) fn health_recovered_per_day(medicine_check: f32) -> f32 {
     BASE_HEALTH_RECOVERED_PER_DAY
         + medicine_check.clamp(0.0, 5.0) * HEALTH_RECOVERED_PER_MEDICINE_CHECK_PER_DAY
 }
 
-fn party_medicine_check(ctx: &ReducerContext, character_id: u64) -> Result<f32, String> {
+pub(crate) fn party_medicine_check(ctx: &ReducerContext, character_id: u64) -> Result<f32, String> {
     let character = ctx
         .db
         .character()
@@ -578,40 +626,8 @@ fn party_medicine_check(ctx: &ReducerContext, character_id: u64) -> Result<f32, 
     Ok(aggregate_bounded_party_check(checks))
 }
 
-fn heal_limbs(limbs: &mut CharacterLimbs, elapsed: u64, medicine_check: f32) {
-    let recovery =
-        elapsed as f32 / MINUTES_PER_DAY as f32 * health_recovered_per_day(medicine_check);
-    for health in [
-        &mut limbs.left_arm_health,
-        &mut limbs.right_arm_health,
-        &mut limbs.left_leg_health,
-        &mut limbs.right_leg_health,
-        &mut limbs.head_health,
-        &mut limbs.chest_health,
-        &mut limbs.stomach_health,
-    ] {
-        *health = (*health + recovery).min(1.0);
-    }
-}
-
-fn convalescence_minutes(limbs: &CharacterLimbs, medicine_check: f32) -> u64 {
-    let lowest_health = [
-        limbs.left_arm_health,
-        limbs.right_arm_health,
-        limbs.left_leg_health,
-        limbs.right_leg_health,
-        limbs.head_health,
-        limbs.chest_health,
-        limbs.stomach_health,
-    ]
-    .into_iter()
-    .fold(1.0_f32, f32::min);
-    if lowest_health >= 1.0 {
-        0
-    } else {
-        ((1.0 - lowest_health) / health_recovered_per_day(medicine_check) * MINUTES_PER_DAY as f32)
-            .ceil() as u64
-    }
+fn convalescence_minutes(ctx: &ReducerContext, character_id: u64, medicine_check: f32) -> u64 {
+    crate::surgery::convalescence_minutes(ctx, character_id, medicine_check)
 }
 
 /// Spend completed game days at a settlement. Injuries receive all selected
@@ -678,18 +694,27 @@ fn rest_for_minutes(
             .map_err(|_| "Not enough coin to pay for the inn stay".to_string())?;
     }
 
+    let injury_limit =
+        crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested_minutes, true)?;
     let (elapsed, terminal) =
-        crate::disease::clip_elapsed_for_disease(ctx, character_id, requested_minutes)?;
-    let mut limbs = ctx
-        .db
-        .character_limbs()
-        .character_id()
-        .find(character_id)
-        .ok_or_else(|| "Character limb record not found".to_string())?;
+        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit)?;
     let medicine_check = party_medicine_check(ctx, character_id)?;
-    let convalescing = convalescence_minutes(&limbs, medicine_check).min(elapsed);
-    heal_limbs(&mut limbs, elapsed, medicine_check);
-    ctx.db.character_limbs().character_id().update(limbs);
+    let convalescing = convalescence_minutes(ctx, character_id, medicine_check).min(elapsed);
+    let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, true)?;
+    let elapsed = settled.elapsed;
+    let starting_minute = character_time.minutes;
+    character_time.minutes = character_time
+        .minutes
+        .checked_add(elapsed)
+        .ok_or("Character clock overflow")?;
+    ctx.db
+        .character_time()
+        .character_id()
+        .update(character_time);
+    crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    if terminal.is_some() || !settled.alive {
+        return Ok(());
+    }
 
     let smithing_skill = ctx
         .db
@@ -708,7 +733,6 @@ fn rest_for_minutes(
         .saturating_sub(convalescing)
         .saturating_sub(maintenance_elapsed);
     let priority_rest_elapsed = elapsed.saturating_sub(training_elapsed);
-    let starting_minute = character_time.minutes;
     if priority_rest_elapsed > 0 {
         crate::condition::apply_settlement_leisure_condition(
             ctx,
@@ -751,18 +775,6 @@ fn rest_for_minutes(
         crate::strategic::maybe_trigger_activity_incident(ctx, character_id, risks)?;
     }
 
-    character_time.minutes = character_time
-        .minutes
-        .checked_add(elapsed)
-        .ok_or("Character clock overflow")?;
-    ctx.db
-        .character_time()
-        .character_id()
-        .update(character_time);
-    crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
-    if terminal.is_some() {
-        return Ok(());
-    }
     crate::condition::apply_rest_condition(ctx, character_id, elapsed)?;
     crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(())
@@ -842,12 +854,18 @@ fn advance_personal_camp_time(
         .find(member_id)
         .ok_or("Character time record not found")?;
     let starting_minute = time.minutes;
-    let (elapsed, terminal) = crate::disease::clip_elapsed_for_disease(ctx, member_id, elapsed)?;
+    let injury_limit = crate::surgery::preview_elapsed_for_injuries(ctx, member_id, elapsed, true)?;
+    let (elapsed, terminal) =
+        crate::disease::clip_elapsed_for_disease(ctx, member_id, injury_limit)?;
+    let convalescing =
+        convalescence_minutes(ctx, member_id, party_medicine_check(ctx, member_id)?).min(elapsed);
+    let settled = crate::surgery::settle_injuries(ctx, member_id, elapsed, true)?;
+    let elapsed = settled.elapsed;
     time.minutes = time.minutes.saturating_add(elapsed);
     ctx.db.character_time().character_id().update(time);
     crate::condition::apply_elapsed_needs(ctx, member_id, elapsed)?;
     crate::disease::finish_disease_interval(ctx, member_id, terminal)?;
-    if terminal.is_some() {
+    if terminal.is_some() || !settled.alive {
         return Ok(());
     }
     let starting_fatigue = ctx
@@ -867,7 +885,7 @@ fn advance_personal_camp_time(
         .find(member_id)
         .ok_or("Character training schedule not found")?;
     let allowed = allowed_camp_schedule(&schedule.downtime);
-    let downtime = elapsed.saturating_sub(fatigue_rest);
+    let downtime = elapsed.saturating_sub(fatigue_rest.max(convalescing));
     if downtime > 0 {
         let mut skills = ctx
             .db
@@ -921,13 +939,8 @@ pub(crate) fn rest_temporary_party_member_until_healed_at_settlement(
         return Ok(());
     }
 
-    let limbs = ctx
-        .db
-        .character_limbs()
-        .character_id()
-        .find(character_id)
-        .ok_or("Character limb record not found")?;
-    let recovery_minutes = convalescence_minutes(&limbs, party_medicine_check(ctx, character_id)?);
+    let recovery_minutes =
+        convalescence_minutes(ctx, character_id, party_medicine_check(ctx, character_id)?);
     if recovery_minutes > 0 {
         rest_for_minutes(ctx, character_id, recovery_minutes, false)?;
     }
@@ -973,8 +986,10 @@ pub fn rest_at_camp(
     let elapsed = members
         .iter()
         .try_fold(requested_minutes, |limit, member_id| {
-            crate::disease::preview_elapsed_for_disease(ctx, *member_id, limit)
-                .map(|safe| limit.min(safe))
+            let disease = crate::disease::preview_elapsed_for_disease(ctx, *member_id, limit)?;
+            let injury =
+                crate::surgery::preview_elapsed_for_injuries(ctx, *member_id, limit, true)?;
+            Ok::<u64, String>(limit.min(disease).min(injury))
         })?;
     let fatigue_before = party_fatigue_summary(ctx, &members)?;
     for member_id in members {
@@ -985,32 +1000,27 @@ pub fn rest_at_camp(
             .character_id()
             .find(member_id)
             .ok_or("Character time record not found")?;
-        let (_, terminal) = crate::disease::clip_elapsed_for_disease(ctx, member_id, elapsed)?;
-        time.minutes = time.minutes.saturating_add(elapsed);
-        let interval_end_minute = time.minutes;
-        ctx.db.character_time().character_id().update(time);
-        crate::condition::apply_elapsed_needs(ctx, member_id, elapsed)?;
-        crate::disease::finish_disease_interval(ctx, member_id, terminal)?;
-        if terminal.is_some() {
-            continue;
-        }
         let starting_fatigue = ctx
             .db
             .character_stats()
             .character_id()
             .find(member_id)
             .map_or(0.0, |stats| stats.calories_used.max(0.0));
-        crate::condition::apply_camp_rest_recovery_condition(ctx, member_id, elapsed)?;
-        let mut limbs = ctx
-            .db
-            .character_limbs()
-            .character_id()
-            .find(member_id)
-            .ok_or("Character limb record not found")?;
         let medicine_check = party_medicine_check(ctx, member_id)?;
-        let convalescing = convalescence_minutes(&limbs, medicine_check).min(elapsed);
-        heal_limbs(&mut limbs, elapsed, medicine_check);
-        ctx.db.character_limbs().character_id().update(limbs);
+        let convalescing = convalescence_minutes(ctx, member_id, medicine_check).min(elapsed);
+        let (_, terminal) = crate::disease::clip_elapsed_for_disease(ctx, member_id, elapsed)?;
+        let settled = crate::surgery::settle_injuries(ctx, member_id, elapsed, true)?;
+        let member_elapsed = settled.elapsed;
+        time.minutes = time.minutes.saturating_add(member_elapsed);
+        let interval_end_minute = time.minutes;
+        ctx.db.character_time().character_id().update(time);
+        crate::condition::apply_elapsed_needs(ctx, member_id, member_elapsed)?;
+        crate::disease::finish_disease_interval(ctx, member_id, terminal)?;
+        if terminal.is_some() || !settled.alive {
+            continue;
+        }
+        crate::condition::apply_camp_rest_recovery_condition(ctx, member_id, member_elapsed)?;
+        let convalescing = convalescing.min(member_elapsed);
         let smithing_skill = ctx
             .db
             .character_skills()
@@ -1022,13 +1032,13 @@ pub fn rest_at_camp(
             ctx,
             member_id,
             smithing_skill,
-            adventuresim_core::durability::remaining_after_priority(elapsed, convalescing),
+            adventuresim_core::durability::remaining_after_priority(member_elapsed, convalescing),
         );
         let fatigue_rest =
             adventuresim_core::strategic_time::minutes_until_fatigue_clears(starting_fatigue)
-                .min(elapsed);
+                .min(member_elapsed);
         let priority = fatigue_rest.max(convalescing.saturating_add(maintenance));
-        let downtime = elapsed.saturating_sub(priority);
+        let downtime = member_elapsed.saturating_sub(priority);
         if downtime > 0 {
             let schedule = ctx
                 .db
@@ -1141,8 +1151,24 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
     if requested_elapsed == 0 {
         return Ok(forced_catch_up);
     }
+    let injury_limit =
+        crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested_elapsed, true)?;
     let (elapsed, terminal) =
-        crate::disease::clip_elapsed_for_disease(ctx, character_id, requested_elapsed)?;
+        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit)?;
+    let convalescing =
+        convalescence_minutes(ctx, character_id, party_medicine_check(ctx, character_id)?)
+            .min(elapsed);
+    let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, true)?;
+    let elapsed = settled.elapsed;
+    character_time.minutes = character_time.minutes.saturating_add(elapsed);
+    ctx.db
+        .character_time()
+        .character_id()
+        .update(character_time);
+    crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    if terminal.is_some() || !settled.alive {
+        return Ok(forced_catch_up);
+    }
     let schedule = ctx
         .db
         .character_training_schedule()
@@ -1156,12 +1182,13 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         .find(character_id)
         .ok_or_else(|| "Character skill record not found".to_string())?;
     let activities = activity_training_profile(ctx, character_id)?;
+    let training_elapsed = elapsed.saturating_sub(convalescing);
     apply_training(
         ctx,
         character_id,
         &mut skills,
         &schedule.downtime,
-        elapsed,
+        training_elapsed,
         activities,
     );
     ctx.db.character_skills().character_id().update(skills);
@@ -1169,19 +1196,10 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         ctx,
         character_id,
         &schedule.downtime,
-        elapsed,
+        training_elapsed,
         target_minutes,
     )?;
     crate::strategic::maybe_trigger_activity_incident(ctx, character_id, risks)?;
-    character_time.minutes = character_time.minutes.saturating_add(elapsed);
-    ctx.db
-        .character_time()
-        .character_id()
-        .update(character_time);
-    crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
-    if terminal.is_some() {
-        return Ok(forced_catch_up);
-    }
     if ctx
         .db
         .character()
@@ -1291,37 +1309,6 @@ mod tests {
         assert_eq!(skills.dodge_hours, 1.0);
         assert_eq!(skills.will_hours, 4.0);
         assert_eq!(allocation.allocated_minutes(), 660);
-    }
-
-    #[test]
-    fn convalescence_blocks_training_until_the_slowest_limb_recovers() {
-        let limbs = CharacterLimbs {
-            character_id: 1,
-            left_arm_health: 0.9,
-            right_arm_health: 1.0,
-            left_leg_health: 1.0,
-            right_leg_health: 1.0,
-            head_health: 1.0,
-            chest_health: 1.0,
-            stomach_health: 1.0,
-        };
-        assert_eq!(convalescence_minutes(&limbs, 4.0), MINUTES_PER_DAY * 2);
-    }
-
-    #[test]
-    fn healing_is_capped_at_full_health() {
-        let mut limbs = CharacterLimbs {
-            character_id: 1,
-            left_arm_health: 0.98,
-            right_arm_health: 1.0,
-            left_leg_health: 1.0,
-            right_leg_health: 1.0,
-            head_health: 1.0,
-            chest_health: 1.0,
-            stomach_health: 1.0,
-        };
-        heal_limbs(&mut limbs, MINUTES_PER_DAY, 4.0);
-        assert_eq!(limbs.left_arm_health, 1.0);
     }
 
     #[test]
