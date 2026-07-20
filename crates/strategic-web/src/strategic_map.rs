@@ -12,6 +12,9 @@ use crate::spacetimedb::Settlement;
 const WIDTH: f64 = 1200.0;
 const HEIGHT: f64 = 800.0;
 const PACKAGE_JSON: &str = include_str!("../static/map/strategic-map-v1.json");
+const WORLD_SVG_BYTES: &[u8] = include_bytes!("../static/map/strategic-map-world-v1.svg");
+pub(crate) const WORLD_SVG_PATH: &str = "/static/map/strategic-map-world-v1.svg";
+const WORLD_SVG_FRAGMENT: &str = "strategic-map-world-v1";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct Package {
@@ -87,8 +90,7 @@ struct ForestRegion {
 }
 
 static PACKAGE: OnceLock<Package> = OnceLock::new();
-static GEOMETRY: OnceLock<GeometryPath> = OnceLock::new();
-
+static WORLD_SVG_SHA256: OnceLock<String> = OnceLock::new();
 fn package() -> &'static Package {
     PACKAGE.get_or_init(|| {
         let package: Package = serde_json::from_str(PACKAGE_JSON)
@@ -104,6 +106,17 @@ fn package() -> &'static Package {
         );
         package
     })
+}
+
+pub(crate) fn is_current_world_svg(path: &str, query: Option<&str>) -> bool {
+    path == WORLD_SVG_PATH
+        && query.and_then(|value| value.strip_prefix("v=")) == Some(world_svg_sha256())
+}
+
+fn world_svg_sha256() -> &'static str {
+    WORLD_SVG_SHA256
+        .get_or_init(|| format!("{:x}", Sha256::digest(WORLD_SVG_BYTES)))
+        .as_str()
 }
 
 pub(crate) fn has_geographic_source(settlement: &Settlement) -> bool {
@@ -133,7 +146,10 @@ pub fn strategic_map(
         origin_x - view_width / 2.0,
         origin_y - view_height / 2.0
     );
-    let geometry = GEOMETRY.get_or_init(|| geometry_path(package));
+    let world_svg_href = format!(
+        "{WORLD_SVG_PATH}?v={}#{WORLD_SVG_FRAGMENT}",
+        world_svg_sha256()
+    );
 
     html! {
         section class="strategic-map" data-strategic-map data-map-theme="atlas"
@@ -155,37 +171,28 @@ pub fn strategic_map(
                 title id="strategic-map-title" { "Settlement road map" }
                 desc id="strategic-map-description" { "Use arrow keys or drag to pan. Use plus and minus controls or the mouse wheel to zoom. Activate a settlement pin to inspect it." }
                 g data-map-viewport {
-                    rect class="map-land" x="0" y="0" width=(WIDTH) height=(HEIGHT) {}
-                    @for (band, path) in &geometry.elevation {
-                        path class=(format!("map-elevation map-elevation-{band}")) d=(path) {}
+                    g class="map-world-layer" aria-hidden="true" {
+                        use href=(world_svg_href) {}
                     }
-                    path class="map-water" d=(&geometry.water) fill-rule="evenodd" {}
-                    @for ((kind, density), path) in &geometry.forest {
-                        path class=(format!("map-forest map-forest-{kind} map-forest-density-{density}")) d=(path) {}
-                    }
-                    path class="map-forest-coverage" d=(&geometry.forest_coverage) {}
-                    @for (elevation, path) in &geometry.contours {
-                        path class=(format!("map-contour map-contour-{elevation}")) d=(path) {}
-                    }
-                    path class="map-road map-road-land" d=(&geometry.land) {}
-                    path class="map-road map-road-ferry" d=(&geometry.ferry) {}
-                    @for settlement in settlements.iter().filter(|settlement| has_geographic_source(settlement)) {
-                        @let (x, y) = project(settlement.coord_x, settlement.coord_y, package.bounds);
-                        @let is_current = settlement.id == current_id;
-                        @let is_connected = connected_ids.contains(settlement.id.as_str());
-                        @let is_selected = selected_id == Some(settlement.id.as_str());
-                        @let label = if is_current { format!("{}, current settlement", settlement.name) } else if is_connected { format!("{}, direct route available", settlement.name) } else { format!("{}, no direct route", settlement.name) };
-                        a href=(format!("{map_path}?destination={}", settlement.id))
-                            class="map-pin-link" aria-label=(label) aria-current=[is_selected.then_some("true")]
-                            data-map-pin data-settlement-id=(&settlement.id) data-connected=(is_connected) {
-                            g class=(format!("map-pin{}{}{}", if is_current { " current" } else { "" }, if is_connected { " connected" } else { "" }, if is_selected { " selected" } else { "" }))
-                                transform=(format!("translate({x:.3} {y:.3})")) {
-                                @if is_selected { circle class="map-pin-selection" r="10" {} }
-                                path class="map-pin-shape" d="M0,-7 C4,-7 7,-4 7,0 C7,5 0,11 0,11 C0,11 -7,5 -7,0 C-7,-4 -4,-7 0,-7 Z" {}
-                                circle class="map-pin-center" r="2.3" {}
-                                @if is_current { path class="map-pin-current-mark" d="M-3,0 H3 M0,-3 V3" {} }
-                                @if is_selected { path class="map-pin-selected-mark" d="M-4,14 H4" {} }
-                                title { (&settlement.name) }
+                    g class="map-overlay-layer" {
+                        @for settlement in settlements.iter().filter(|settlement| has_geographic_source(settlement)) {
+                            @let (x, y) = project(settlement.coord_x, settlement.coord_y, package.bounds);
+                            @let is_current = settlement.id == current_id;
+                            @let is_connected = connected_ids.contains(settlement.id.as_str());
+                            @let is_selected = selected_id == Some(settlement.id.as_str());
+                            @let label = if is_current { format!("{}, current settlement", settlement.name) } else if is_connected { format!("{}, direct route available", settlement.name) } else { format!("{}, no direct route", settlement.name) };
+                            a href=(format!("{map_path}?destination={}", settlement.id))
+                                class="map-pin-link" aria-label=(label) aria-current=[is_selected.then_some("true")]
+                                data-map-pin data-settlement-id=(&settlement.id) data-connected=(is_connected) {
+                                g class=(format!("map-pin{}{}{}", if is_current { " current" } else { "" }, if is_connected { " connected" } else { "" }, if is_selected { " selected" } else { "" }))
+                                    transform=(format!("translate({x:.3} {y:.3})")) {
+                                    @if is_selected { circle class="map-pin-selection" r="10" {} }
+                                    path class="map-pin-shape" d="M0,-7 C4,-7 7,-4 7,0 C7,5 0,11 0,11 C0,11 -7,5 -7,0 C-7,-4 -4,-7 0,-7 Z" {}
+                                    circle class="map-pin-center" r="2.3" {}
+                                    @if is_current { path class="map-pin-current-mark" d="M-3,0 H3 M0,-3 V3" {} }
+                                    @if is_selected { path class="map-pin-selected-mark" d="M-4,14 H4" {} }
+                                    title { (&settlement.name) }
+                                }
                             }
                         }
                     }
@@ -248,88 +255,6 @@ fn package_json_digest(json: &str, expected: &str) -> String {
     );
     let bytes = unsigned.as_bytes();
     format!("{:x}", Sha256::digest(bytes))
-}
-
-struct GeometryPath {
-    land: String,
-    ferry: String,
-    water: String,
-    elevation: BTreeMap<i16, String>,
-    contours: BTreeMap<i16, String>,
-    forest: BTreeMap<(String, u8), String>,
-    forest_coverage: String,
-}
-
-fn geometry_path(package: &Package) -> GeometryPath {
-    let mut geometry = GeometryPath {
-        land: String::new(),
-        ferry: String::new(),
-        water: String::new(),
-        elevation: BTreeMap::new(),
-        contours: BTreeMap::new(),
-        forest: BTreeMap::new(),
-        forest_coverage: String::new(),
-    };
-    for cell in &package.elevation.cells {
-        append_bounds(
-            geometry.elevation.entry(cell.band_m).or_default(),
-            cell.bounds,
-            package.bounds,
-        );
-    }
-    for line in &package.elevation.contours {
-        append_path(
-            geometry.contours.entry(line.elevation_m).or_default(),
-            &line.points,
-            false,
-            package.bounds,
-        );
-    }
-    for region in &package.forest.regions {
-        append_bounds(
-            geometry
-                .forest
-                .entry((region.kind.clone(), region.density))
-                .or_default(),
-            region.bounds,
-            package.bounds,
-        );
-    }
-    for bounds in &package.forest.coverage {
-        append_bounds(&mut geometry.forest_coverage, *bounds, package.bounds);
-    }
-    for line in &package.roads {
-        append_path(
-            if line.kind == "ferry" {
-                &mut geometry.ferry
-            } else {
-                &mut geometry.land
-            },
-            &line.points,
-            false,
-            package.bounds,
-        );
-    }
-    for ring in &package.water {
-        append_path(&mut geometry.water, ring, true, package.bounds);
-    }
-    geometry
-}
-
-fn append_bounds(output: &mut String, [west, south, east, north]: [f64; 4], bounds: [f64; 4]) {
-    let points = [[west, north], [east, north], [east, south], [west, south]];
-    append_path(output, &points, true, bounds);
-}
-
-fn append_path(output: &mut String, points: &[[f64; 2]], close: bool, bounds: [f64; 4]) {
-    for (index, point) in points.iter().enumerate() {
-        let (x, y) = project(point[0], point[1], bounds);
-        output.push_str(if index == 0 { "M" } else { "L" });
-        output.push_str(&format!("{x:.2},{y:.2}"));
-    }
-    if close {
-        output.push('Z');
-    }
 }
 
 fn project(longitude: f64, latitude: f64, [west, south, east, north]: [f64; 4]) -> (f64, f64) {
@@ -403,8 +328,16 @@ mod tests {
         assert!(!markup.contains("role=\"img\""));
         assert!(markup.contains("aria-current=\"true\""));
         assert!(markup.contains("map-pin-selection"));
-        assert!(markup.contains("map-elevation-"));
-        assert!(markup.contains("map-forest-"));
+        assert!(markup.contains("map-world-layer"));
+        assert!(markup.contains("map-overlay-layer"));
+        assert!(markup.contains(WORLD_SVG_PATH));
+        assert!(markup.contains(world_svg_sha256()));
+        assert!(!markup.contains("class=\"map-elevation"));
+        assert!(
+            markup.len() < 50_000,
+            "dynamic map markup grew to {} bytes",
+            markup.len()
+        );
         assert!(markup.contains("Higher ground"));
         assert!(markup.contains("Forest (partial)"));
     }
@@ -444,20 +377,24 @@ mod tests {
     }
 
     #[test]
-    fn immutable_geometry_is_cached_and_bounded() {
-        let first = GEOMETRY.get_or_init(|| geometry_path(package()));
-        let second = GEOMETRY.get_or_init(|| geometry_path(package()));
-        assert!(std::ptr::eq(first, second));
-        let bytes = first.land.len()
-            + first.ferry.len()
-            + first.water.len()
-            + first.forest_coverage.len()
-            + first.elevation.values().map(String::len).sum::<usize>()
-            + first.contours.values().map(String::len).sum::<usize>()
-            + first.forest.values().map(String::len).sum::<usize>();
-        assert!(
-            bytes < 4_000_000,
-            "formatted SVG geometry grew to {bytes} bytes"
-        );
+    fn base_map_url_is_content_versioned() {
+        let markup = strategic_map(
+            &[settlement("origin", "Origin", 10.0, 53.0)],
+            "origin",
+            &BTreeSet::new(),
+            None,
+            "/locations/settlement/origin/map",
+        )
+        .into_string();
+        assert!(markup.contains(&format!(
+            "{WORLD_SVG_PATH}?v={}#{WORLD_SVG_FRAGMENT}",
+            world_svg_sha256()
+        )));
+        assert!(is_current_world_svg(
+            WORLD_SVG_PATH,
+            Some(&format!("v={}", world_svg_sha256()))
+        ));
+        assert!(!is_current_world_svg(WORLD_SVG_PATH, None));
+        assert!(!is_current_world_svg(WORLD_SVG_PATH, Some("v=stale")));
     }
 }

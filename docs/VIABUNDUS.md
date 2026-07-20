@@ -29,8 +29,9 @@ dataset and must retain this attribution and CC BY-SA 4.0 licensing when
 distributed.
 
 The settlement Map screen uses the separately generated
-`static/map/strategic-map-v1.json` presentation package. `just
-build-strategic-map` derives that versioned file with an embedded content digest from the
+`static/map/strategic-map-v1.json` presentation package and
+`static/map/strategic-map-world-v1.svg` world-geometry asset. `just
+build-strategic-map` derives both versioned files with an embedded content digest from the
 initialized Viabundus v2 roads, ferries, and 1500 water polygons, generalized
 Copernicus GLO-30 elevation, and every available prepared Copernicus forest
 tile. It clips the view to the supported northern-European envelope and
@@ -40,7 +41,16 @@ segments. Forest coverage is deliberately partial: the generator renders only
 installed TCD/DLT tile pairs and records their exact bounds instead of filling
 missing regions with inferred vegetation.
 
-The stable `strategic-map-v1.json` filename is versioned, not content-addressed.
+The server renders the world asset as an external SVG layer beneath a small
+inline settlement overlay. The external URL includes the SVG's own SHA-256 and is
+served with `public, max-age=31536000, immutable`, so roads, water, elevation,
+and forests are downloaded once per generated package. Current and selected
+settlements, direct-route state, and pin links remain dynamic HTML/SVG and are
+served on every map response.
+
+The stable `strategic-map-v1.json` and `strategic-map-world-v1.svg` filenames
+are versioned, not content-addressed; the world SVG's digest query parameter is
+its cache key.
 Its embedded SHA-256 covers schema, year, bounds, all source identities and
 statuses, roads, water, elevation cells and contours, forest regions, and
 partial-coverage bounds; strategic-web revalidates that digest before

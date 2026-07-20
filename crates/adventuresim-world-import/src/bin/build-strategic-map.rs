@@ -11,6 +11,8 @@ use sha2::{Digest, Sha256};
 
 #[path = "build-strategic-map/raster.rs"]
 mod raster;
+#[path = "build-strategic-map/svg.rs"]
+mod svg;
 
 const PACKAGE_SCHEMA: u32 = 2;
 const YEAR: i32 = 1544;
@@ -33,6 +35,11 @@ struct Args {
         default_value = "crates/strategic-web/static/map/strategic-map-v1.json"
     )]
     output: PathBuf,
+    #[arg(
+        long,
+        default_value = "crates/strategic-web/static/map/strategic-map-world-v1.svg"
+    )]
+    svg_output: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -94,14 +101,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         fs::create_dir_all(parent)?;
     }
     fs::write(&args.output, bytes)?;
+    svg::write(&args.svg_output, &package)?;
     println!(
-        "Wrote {} roads, {} water rings, {} elevation cells, {} contours, and {} forest regions to {}",
+        "Wrote {} roads, {} water rings, {} elevation cells, {} contours, and {} forest regions to {} and {}",
         package.roads.len(),
         package.water.len(),
         package.elevation.cells.len(),
         package.elevation.contours.len(),
         package.forest.regions.len(),
-        args.output.display()
+        args.output.display(),
+        args.svg_output.display()
     );
     Ok(())
 }
@@ -591,6 +600,9 @@ mod tests {
         let first = build(&root, layers()).unwrap();
         let second = build(&root, layers()).unwrap();
         assert_eq!(first, second);
+        assert_eq!(svg::build(&first), svg::build(&second));
+        assert!(svg::build(&first).contains("id=\"strategic-map-world-v1\""));
+        assert!(!svg::build(&first).contains("map-pin"));
         assert_eq!(first.roads.len(), 1);
         assert_eq!(first.water.len(), 1);
         fs::write(root.join("edges.csv"), b"changed").unwrap();
