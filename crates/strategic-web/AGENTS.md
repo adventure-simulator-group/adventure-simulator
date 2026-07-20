@@ -249,6 +249,11 @@ cartoon village, a textured painting, or a detailed model building.
   the reserved facade field rather than floating above or obscuring the roof.
   Scale and space the buildings generously enough that the mark remains large
   and legible within that field at the final rendered tab size.
+- Give the service navigation the full horizontal header width. Place the
+  current location and time at the upper-left and the character profile control
+  at the upper-right as high-layer corner overlays; they must remain clickable
+  when service buildings pass underneath them and must not reserve flex space
+  beside the building row.
 - Apply the same time-of-day lighting value to both the tinted building raster
   and its service mark. Keep them as separate layers, but do not let the mark
   remain at full daytime brightness while the architecture darkens.

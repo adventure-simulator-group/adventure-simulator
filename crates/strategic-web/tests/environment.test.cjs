@@ -75,7 +75,10 @@ test("settlement tabs layer tiered tintable buildings and proportional horizons 
   assert.match(layoutCss, /\.service-notification-badge \{[\s\S]*z-index: 3/);
   assert.match(layoutCss, /\.nav-tab\.active \{[\s\S]*border-bottom: 3px solid var\(--accent-light\)/);
   assert.match(layoutCss, /\.nav-tab\.active::after \{[\s\S]*z-index: 4[\s\S]*bottom: 0[\s\S]*height: 3px/);
-  assert.match(layoutCss, /\.settlement-services \{[\s\S]*overflow: hidden/);
+  assert.match(layoutCss, /\.settlement-top-bar \{[\s\S]*padding-inline: 0/);
+  assert.match(layoutCss, /\.settlement-top-bar \.settlement-location \{[\s\S]*position: absolute;[\s\S]*z-index: 10;[\s\S]*top: 0\.5rem;[\s\S]*left: 0\.75rem/);
+  assert.match(layoutCss, /\.settlement-top-bar \.top-bar-right \{[\s\S]*position: absolute;[\s\S]*z-index: 10;[\s\S]*top: 0\.5rem;[\s\S]*right: 0\.75rem/);
+  assert.match(layoutCss, /\.settlement-services \{[\s\S]*width: 100%;[\s\S]*padding-inline: 0;[\s\S]*overflow: visible/);
   assert.match(layoutCss, /@media \(max-width: 1200px\)[\s\S]*data-environment="settlement"[\s\S]*width: 4\.25rem/);
   assert.match(layoutCss, /\.settlement-identity \{[\s\S]*background: var\(--building-surface\)/);
   assert.match(layoutCss, /\.settlement-time \{[\s\S]*border-top:/);
