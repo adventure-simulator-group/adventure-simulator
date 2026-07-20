@@ -13,11 +13,21 @@ function currencyRow(id, name, quantity, target = 0) {
   </tr>`;
 }
 
+function ordinaryRow(id, name, quantity) {
+  return `<tr class="trade-inventory-row" data-inventory-quantity="${quantity}" data-item-key="${id}">
+    <td class="inventory-item-type"></td>
+    <td class="inventory-item-name"><span data-item-name="${name}" data-item-kind="supply">${name}</span></td>
+    <td class="inventory-count">${quantity}</td>
+    <td class="inventory-weight">1</td><td class="inventory-gold">999</td>
+  </tr>`;
+}
+
 function fixture() {
   const { window, document } = parseHTML(`<html><body>
     <div data-inventory-browser="test" data-optional-columns="">
       <input data-inventory-search><div data-inventory-column-options></div>
       <table class="trade-inventory-table"><thead><tr><th>Name</th><th class="inventory-column-count">#</th></tr></thead><tbody>
+        ${ordinaryRow("apple", "Apple", 999)}
         ${currencyRow("lubeck_mark", "Lübeck mark", 3, 1)}
         ${currencyRow("danish_mark", "Danish mark", 2, 0)}
       </tbody></table>
@@ -43,7 +53,15 @@ test("mixed currency DOM stays one aggregate through normalization, staging, and
   assert.equal(parents[0].querySelector(".inventory-weight").textContent, "0.05");
   assert.equal(parents[0].querySelector(".game-icon").getAttribute("aria-label"), "Item type: Coin");
   assert.equal(parents[0].querySelector(".trade-transfer").dataset.labelAll, "Transfer all Coin");
+  assert.equal(parents[0].querySelector("[data-item-name]").nextElementSibling, parents[0].querySelector("[data-coin-toggle]"));
   assert.doesNotMatch(parents[0].outerHTML, /Lübeck|Danish/);
+  assert.equal(browser.querySelector("tbody > tr:not(.currency-component-row)"), parents[0]);
+
+  browser._inventoryState.sort = "quantity";
+  browser._inventoryState.direction = "desc";
+  inventory.refresh(browser);
+  parents = browser.querySelectorAll(".currency-parent-row");
+  assert.equal(browser.querySelector("tbody > tr:not(.currency-component-row)"), parents[0]);
 
   parents[0].querySelector("[data-coin-toggle]").click();
   const children = [...browser.querySelectorAll(".currency-component-row")];

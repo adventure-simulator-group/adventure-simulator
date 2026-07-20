@@ -266,7 +266,10 @@
       const toggle = document.createElement("button");
       toggle.type = "button"; toggle.className = "currency-disclosure"; toggle.dataset.coinToggle = "true";
       toggle.setAttribute("aria-label", "Show currency denominations"); toggle.setAttribute("aria-expanded", "false");
-      toggle.textContent = "›"; nameCell.prepend(toggle);
+      toggle.textContent = "›";
+      const coinLabel = nameCell.querySelector("[data-item-name]");
+      if (coinLabel) coinLabel.after(toggle);
+      else nameCell.append(toggle);
     }
     parent.querySelectorAll(".game-icon").forEach((icon) => {
       icon.setAttribute("aria-label", "Item type: Coin");
@@ -302,7 +305,10 @@
       if (row.getAttribute("aria-expanded") === "true" && !row._currencyComponents) createDetail(row, browser);
     });
     browser.querySelectorAll("thead [data-inventory-column]").forEach((header) => { header.hidden = !state.columns.includes(header.dataset.inventoryColumn); });
-    rows.map((row, index) => ({ row, index })).sort((a, b) => compareValues(rowValue(a.row, state.sort), rowValue(b.row, state.sort), state.direction) || a.index - b.index).forEach(({ row }) => {
+    rows.map((row, index) => ({ row, index })).sort((a, b) => {
+      const coinPriority = Number(!a.row.classList.contains("currency-parent-row")) - Number(!b.row.classList.contains("currency-parent-row"));
+      return coinPriority || compareValues(rowValue(a.row, state.sort), rowValue(b.row, state.sort), state.direction) || a.index - b.index;
+    }).forEach(({ row }) => {
       body.append(row);
       if (row._currencyComponents) row._currencyComponents.forEach((component) => body.append(component));
       const detail = row._inventoryDetail;
