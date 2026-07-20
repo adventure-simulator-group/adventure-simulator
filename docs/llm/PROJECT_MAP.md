@@ -799,10 +799,10 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/styles/timber-framed/building/village/merchants.png` — Binary game or UI asset.
 - `crates/strategic-web/static/styles/timber-framed/building/village/religion.png` — Binary game or UI asset.
 - `crates/strategic-web/static/styles/timber-framed/building/village/weapons.png` — Binary game or UI asset.
-- `crates/strategic-web/static/styles/timber-framed/ornament/wilderness/camp-firepit.png` — Binary game or UI asset.
-- `crates/strategic-web/static/styles/timber-framed/ornament/wilderness/encounter-boulders.png` — Binary game or UI asset.
-- `crates/strategic-web/static/styles/timber-framed/ornament/wilderness/loot-supply-cache.png` — Binary game or UI asset.
-- `crates/strategic-web/static/styles/timber-framed/ornament/wilderness/map-lookout-tree.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/ornament/camp-firepit/ornament.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/ornament/encounter-boulders/ornament.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/ornament/loot-supply-cache/ornament.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/ornament/map-lookout-tree/ornament.png` — Binary game or UI asset.
 - `crates/strategic-web/static/training-schedule.js` — Repository support file.
 - `crates/strategic-web/static/travel-planner.js` — Repository support file.
 - `crates/strategic-web/tests/building-assets.test.cjs` — Repository support file.

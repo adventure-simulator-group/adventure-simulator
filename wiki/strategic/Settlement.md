@@ -19,6 +19,14 @@ physical-tab language for their unchanged Encounter, Map, and Loot views: a
 boulder formation, lookout tree, and supply cache sit beneath the existing
 separate semantic marks. All effect and prop layers are noninteractive.
 
+The wilderness props follow the ornament anatomy at
+`styles/timber-framed/ornament/<variant>/ornament.png`. Each uses a 512-by-512
+transparent canvas, a bottom-center anchor on source row 487, and the shared
+top-bar scene scale range of 0.8473–1. The raster may overlap only the standard
+service-tab art bleed (0.65 rem inline, 0.45 rem above, and 0.5 rem below);
+animated effects may rise through its transparent upper field. These
+front-facing compositions must not be mirrored.
+
 Each settlement offers a number of services. Tentatively, these are all tabs of a unified trade page. Each tab corresponds to a different guild, represented by a single NPC. The left side is a list of everything offered by the NPC, the right side is everything offered by your party. It _may_ be a good idea to not only include _items_ in this menu, but also _services_.
 
 The location header reflects settlement scale through architecture and its

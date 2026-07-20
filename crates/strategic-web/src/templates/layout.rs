@@ -277,7 +277,9 @@ fn settlement_top_bar(
                     {
                         span class="service-tab-building" aria-hidden="true" {}
                         @if path == "weapons" {
-                            (smoke_effect("wilderness-smoke building-chimney-smoke"))
+                            span class="topbar-scene-effect-plane" aria-hidden="true" {
+                                (smoke_effect("wilderness-smoke building-chimney-smoke"))
+                            }
                         }
                         span
                             class=(format!("service-tab-icon service-tab-icon-{}", icon))
@@ -341,10 +343,12 @@ fn quest_location_top_bar(
                         data-location-view="camp"
                         aria-current="page" aria-label="Camp" title="Camp" {
                         span class="service-tab-building wilderness-tab-prop" aria-hidden="true" {}
-                        @if camp_fire_lit {
-                            (camp_flame_effect())
+                        span class="topbar-scene-effect-plane" aria-hidden="true" {
+                            @if camp_fire_lit {
+                                (camp_flame_effect())
+                            }
+                            (smoke_effect("wilderness-smoke campfire-smoke"))
                         }
-                        (smoke_effect("wilderness-smoke campfire-smoke"))
                     }
                 } @else {
                 a href=(format!("/locations/quest/{}", location_id))

@@ -277,6 +277,8 @@
 }
 
 .settlement-top-bar[data-environment="settlement"] .settlement-services .nav-tab {
+  --topbar-prop-baseline: -0.18rem;
+  --topbar-prop-scale: 1;
   width: 5.25rem;
   height: 6.75rem;
   flex: 0 0 5.25rem;
@@ -313,6 +315,8 @@
 /* Wilderness navigation uses the same physical composition as settlement
    buildings: a tintable raster prop underneath a separate semantic mark. */
 .quest-location-top-bar[data-environment="wilderness"] .settlement-services .nav-tab {
+  --topbar-prop-baseline: -0.18rem;
+  --topbar-prop-scale: 1;
   width: 5.25rem;
   height: 6.75rem;
   flex: 0 0 5.25rem;
@@ -353,25 +357,39 @@
 }
 
 .quest-location-top-bar .nav-tab[data-location-view="camp"] {
-  --wilderness-prop-image: url("/static/styles/timber-framed/ornament/wilderness/camp-firepit.png");
+  --wilderness-prop-image: url("/static/styles/timber-framed/ornament/camp-firepit/ornament.png");
 }
 
 .quest-location-top-bar .nav-tab[data-location-view="encounter"] {
-  --wilderness-prop-image: url("/static/styles/timber-framed/ornament/wilderness/encounter-boulders.png");
+  --wilderness-prop-image: url("/static/styles/timber-framed/ornament/encounter-boulders/ornament.png");
   --wilderness-icon-bottom: 1.55rem;
   --wilderness-icon-size: 1.6rem;
 }
 
 .quest-location-top-bar .nav-tab[data-location-view="map"] {
-  --wilderness-prop-image: url("/static/styles/timber-framed/ornament/wilderness/map-lookout-tree.png");
+  --wilderness-prop-image: url("/static/styles/timber-framed/ornament/map-lookout-tree/ornament.png");
   --wilderness-icon-bottom: 1.55rem;
   --wilderness-icon-size: 1.45rem;
 }
 
 .quest-location-top-bar .nav-tab[data-location-view="loot"] {
-  --wilderness-prop-image: url("/static/styles/timber-framed/ornament/wilderness/loot-supply-cache.png");
+  --wilderness-prop-image: url("/static/styles/timber-framed/ornament/loot-supply-cache/ornament.png");
   --wilderness-icon-bottom: 0.8rem;
   --wilderness-icon-size: 1.45rem;
+}
+
+.topbar-scene-effect-plane {
+  --smoke-rise-distance: -52px;
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  bottom: var(--topbar-prop-baseline);
+  width: 6.55rem;
+  height: 6.55rem;
+  overflow: visible;
+  transform: translateX(-50%) scale(var(--topbar-prop-scale));
+  transform-origin: center bottom;
+  pointer-events: none;
 }
 
 .wilderness-smoke,
@@ -392,23 +410,23 @@
 }
 
 .settlement-top-bar[data-building-tier="village"] .nav-tab[data-service-id="weapons"] {
-  --chimney-smoke-left: 19%;
-  --chimney-smoke-bottom: 4.1rem;
+  --chimney-smoke-left: 25%;
+  --chimney-smoke-bottom: 4.29rem;
 }
 
 .settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="weapons"] {
-  --chimney-smoke-left: 77%;
-  --chimney-smoke-bottom: 5.05rem;
+  --chimney-smoke-left: 71%;
+  --chimney-smoke-bottom: 5.27rem;
 }
 
 .settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="weapons"] {
-  --chimney-smoke-left: 69%;
-  --chimney-smoke-bottom: 5.25rem;
+  --chimney-smoke-left: 65%;
+  --chimney-smoke-bottom: 5.44rem;
 }
 
 .campfire-flame {
   left: 50%;
-  bottom: 1.35rem;
+  bottom: 1.53rem;
   width: 2.25rem;
   height: 3rem;
   transform: translateX(-50%);
@@ -416,7 +434,7 @@
 
 .campfire-smoke {
   left: 50%;
-  bottom: 3.55rem;
+  bottom: 3.73rem;
   width: 2.35rem;
   height: 3.9rem;
   transform: translateX(-50%);
@@ -471,7 +489,7 @@
   68% { opacity: 0.22; }
   100% {
     opacity: 0;
-    transform: translate(var(--smoke-drift), -52px) scale(1.65);
+    transform: translate(var(--smoke-drift), var(--smoke-rise-distance)) scale(1.65);
   }
 }
 
@@ -944,11 +962,15 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
     padding: 0;
   }
   .settlement-top-bar[data-environment="settlement"] .settlement-services .nav-tab {
+    --topbar-prop-baseline: -0.23rem;
+    --topbar-prop-scale: 0.8473;
     width: 4.25rem;
     height: 6.25rem;
     flex-basis: 4.25rem;
   }
   .quest-location-top-bar[data-environment="wilderness"] .settlement-services .nav-tab {
+    --topbar-prop-baseline: -0.23rem;
+    --topbar-prop-scale: 0.8473;
     width: 4.25rem;
     height: 6.25rem;
     flex-basis: 4.25rem;
@@ -1030,7 +1052,7 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
     order: 3;
     width: 100%;
     gap: 0.62rem;
-    padding-top: 1.2rem;
+    padding-top: 1.75rem;
     overflow-x: auto;
     overflow-y: hidden;
     justify-content: flex-start;
@@ -1039,14 +1061,21 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
     mask-image: linear-gradient(to right, transparent, #000 0.75rem, #000 calc(100% - 0.75rem), transparent);
   }
   .settlement-top-bar[data-environment="settlement"] .settlement-services .nav-tab {
+    --topbar-prop-baseline: -0.22rem;
+    --topbar-prop-scale: 0.8855;
     width: 4.5rem;
     height: 6.25rem;
     flex-basis: 4.5rem;
   }
   .quest-location-top-bar[data-environment="wilderness"] .settlement-services .nav-tab {
+    --topbar-prop-baseline: -0.22rem;
+    --topbar-prop-scale: 0.8855;
     width: 4.5rem;
     height: 6.25rem;
     flex-basis: 4.5rem;
+  }
+  .topbar-scene-effect-plane {
+    --smoke-rise-distance: -34px;
   }
   .settlement-services::-webkit-scrollbar { height: 0.35rem; }
   .entry-message {

@@ -31,14 +31,13 @@ const facadeIconFiles = {
   religion: path.join(religionIconRoot, "catholic-cross-bottony.png"),
 };
 const facadeIconPlacement = { left: 194, top: 254, size: 125 };
-const wildernessRoot = path.join(
+const ornamentRoot = path.join(
   __dirname,
   "..",
   "static",
   "styles",
   "timber-framed",
   "ornament",
-  "wilderness",
 );
 
 function decodeRgbaPng(file) {
@@ -191,19 +190,21 @@ test("generated settlement service and Catholic marks are compact tintable PNG m
 });
 
 test("wilderness tab props share the building raster and baseline contract", () => {
-  const files = [
-    "camp-firepit.png",
-    "encounter-boulders.png",
-    "map-lookout-tree.png",
-    "loot-supply-cache.png",
+  const variants = [
+    "camp-firepit",
+    "encounter-boulders",
+    "map-lookout-tree",
+    "loot-supply-cache",
   ];
   const baselines = [];
-  for (const filename of files) {
-    const { width, height, rgba } = decodeRgbaPng(path.join(wildernessRoot, filename));
-    assert.equal(width, 512, `${filename} width`);
-    assert.equal(height, 512, `${filename} height`);
+  for (const variant of variants) {
+    const variantRoot = path.join(ornamentRoot, variant);
+    assert.deepEqual(fs.readdirSync(variantRoot), ["ornament.png"], `${variant} follows ornament anatomy`);
+    const { width, height, rgba } = decodeRgbaPng(path.join(variantRoot, "ornament.png"));
+    assert.equal(width, 512, `${variant} width`);
+    assert.equal(height, 512, `${variant} height`);
     for (const offset of [0, (width - 1) * 4, (height - 1) * width * 4, (width * height - 1) * 4]) {
-      assert.equal(rgba[offset + 3], 0, `${filename} corner alpha`);
+      assert.equal(rgba[offset + 3], 0, `${variant} corner alpha`);
     }
 
     const tones = new Set();
@@ -211,18 +212,34 @@ test("wilderness tab props share the building raster and baseline contract", () 
     let bottom = -1;
     for (let i = 0; i < rgba.length; i += 4) {
       if (!rgba[i + 3]) continue;
-      assert.equal(rgba[i], rgba[i + 1], `${filename} is grayscale`);
-      assert.equal(rgba[i + 1], rgba[i + 2], `${filename} has no colored fringe`);
+      assert.equal(rgba[i], rgba[i + 1], `${variant} is grayscale`);
+      assert.equal(rgba[i + 1], rgba[i + 2], `${variant} has no colored fringe`);
       tones.add(rgba[i]);
       visible += 1;
       bottom = Math.max(bottom, Math.floor(i / 4 / width));
     }
-    assert.deepEqual([...tones].sort((a, b) => a - b), [24, 112, 220], `${filename} tone roles`);
-    assert.ok(visible > width * height * 0.06, `${filename} has useful visible coverage`);
-    assert.ok(visible < width * height * 0.55, `${filename} retains transparent padding`);
+    assert.deepEqual([...tones].sort((a, b) => a - b), [24, 112, 220], `${variant} tone roles`);
+    assert.ok(visible > width * height * 0.06, `${variant} has useful visible coverage`);
+    assert.ok(visible < width * height * 0.55, `${variant} retains transparent padding`);
     baselines.push(bottom);
   }
   assert.deepEqual([...new Set(baselines)], [487], "wilderness props share the bottom baseline");
+});
+
+test("camp logs keep broad flat faces without grain or crosshatching", () => {
+  const { width, rgba } = decodeRgbaPng(path.join(ornamentRoot, "camp-firepit", "ornament.png"));
+  let logFacePixels = 0;
+  let internalDarkMarks = 0;
+  for (let y = 270; y < 320; y += 1) {
+    for (let x = 105; x < 405; x += 1) {
+      const offset = (y * width + x) * 4;
+      if (!rgba[offset + 3]) continue;
+      if (rgba[offset] === 112) logFacePixels += 1;
+      if (rgba[offset] === 24) internalDarkMarks += 1;
+    }
+  }
+  assert.ok(logFacePixels > 1_000, "camp logs retain broad structural faces");
+  assert.equal(internalDarkMarks, 0, "camp logs contain no dark grain or hatch marks");
 });
 
 test("all settlement horizons are standardized transparent panoramic assets", () => {

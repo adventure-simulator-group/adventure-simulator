@@ -107,12 +107,16 @@ test("settlement smithies and wilderness tabs use independent non-interactive ef
   assert.match(layoutTemplate, /path == "weapons"[\s\S]*building-chimney-smoke/);
   assert.match(layoutTemplate, /class="wilderness-flame campfire-flame"[\s\S]*aria-hidden="true"/);
   assert.match(layoutTemplate, /smoke_effect\("wilderness-smoke campfire-smoke"\)/);
+  assert.match(layoutTemplate, /class="topbar-scene-effect-plane"/);
   assert.match(layoutTemplate, /svg class=\(class\)[\s\S]*aria-hidden="true"[\s\S]*focusable="false"/);
   assert.match(layoutCss, /\.wilderness-smoke,[\s\S]*\.wilderness-flame \{[\s\S]*z-index: 1;[\s\S]*pointer-events: none/);
   assert.match(layoutCss, /\.service-notification-badge \{[\s\S]*z-index: 3/);
   assert.match(layoutCss, /\.nav-tab\.active::after \{[\s\S]*z-index: 4/);
   assert.match(layoutCss, /@media \(prefers-reduced-motion: reduce\)[\s\S]*animation: none/);
   assert.doesNotMatch(layoutTemplate, /<filter|feTurbulence|feDisplacementMap/);
+  assert.match(layoutCss, /\.topbar-scene-effect-plane \{[\s\S]*bottom: var\(--topbar-prop-baseline\);[\s\S]*width: 6\.55rem;[\s\S]*height: 6\.55rem;[\s\S]*scale\(var\(--topbar-prop-scale\)\)/);
+  assert.match(layoutCss, /@media \(max-width: 1200px\)[\s\S]*--topbar-prop-scale: 0\.8473;[\s\S]*data-environment="wilderness"[\s\S]*--topbar-prop-scale: 0\.8473;/);
+  assert.match(layoutCss, /@media \(max-width: 768px\)[\s\S]*padding-top: 1\.75rem;[\s\S]*overflow-y: hidden;[\s\S]*--topbar-prop-scale: 0\.8855;[\s\S]*--smoke-rise-distance: -34px;/);
 
   const smokeFrames = layoutCss.match(/@keyframes wilderness-smoke-rise \{[\s\S]*?\n\}/)?.[0] ?? "";
   const flameFrames = layoutCss.match(/@keyframes wilderness-flame-flicker \{[\s\S]*?\n\}/)?.[0] ?? "";
@@ -124,14 +128,14 @@ test("settlement smithies and wilderness tabs use independent non-interactive ef
 });
 
 test("quest and camp headers keep their navigation while presenting physical wilderness props", () => {
-  for (const [view, asset] of [
-    ["camp", "camp-firepit.png"],
-    ["encounter", "encounter-boulders.png"],
-    ["map", "map-lookout-tree.png"],
-    ["loot", "loot-supply-cache.png"],
+  for (const [view, variant] of [
+    ["camp", "camp-firepit"],
+    ["encounter", "encounter-boulders"],
+    ["map", "map-lookout-tree"],
+    ["loot", "loot-supply-cache"],
   ]) {
     assert.match(layoutTemplate, new RegExp(`data-location-view="${view}"`));
-    assert.match(layoutCss, new RegExp(`ornament/wilderness/${asset.replace(".", "\\.")}`));
+    assert.match(layoutCss, new RegExp(`ornament/${variant}/ornament\\.png`));
   }
   assert.match(layoutTemplate, /aria-label="Encounter"[\s\S]*aria-label="Map"[\s\S]*aria-label="Loot"/);
   assert.match(layoutCss, /data-environment="wilderness"[\s\S]*\.wilderness-tab-prop \{[\s\S]*background-blend-mode: color, normal[\s\S]*pointer-events: none/);
