@@ -149,7 +149,11 @@ pub(crate) fn viabundus(directory: &Path) -> Result<SourceProvenance> {
             .copied()
             .map(str::to_owned)
             .collect::<std::collections::BTreeSet<_>>();
-        if sidecar.files.len() != VIABUNDUS_FILES.len() || names != expected_names {
+        // The official Viabundus release contains supplementary CSVs.  The
+        // importer has an intentionally smaller audited input subset, so the
+        // sidecar may inventory additional upstream files as long as it covers
+        // every CSV the importer actually consumes.
+        if !expected_names.is_subset(&names) {
             return Err(Error::Validation(
                 "Viabundus sidecar does not inventory every consumed CSV".into(),
             ));
@@ -251,34 +255,37 @@ pub(crate) fn elevation() -> SourceProvenance {
     )
 }
 
-pub(crate) fn luh1() -> SourceProvenance {
+pub(crate) fn hyde35() -> SourceProvenance {
     source(
-        "luh1-luha-u2-v1",
-        "LUH1 Harmonized Global Land Use LUHa_u2.v1",
+        "hyde-3-5-c9",
+        "History Database of the Global Environment 3.5",
         SourceRelease::Immutable {
-            version: "LUHa_u2.v1".into(),
-            released: "2012".into(),
+            version: "3.5 c9".into(),
+            released: "2025-03".into(),
         },
-        "https://doi.org/10.3334/ORNLDAAC/1248",
-        Some("10.3334/ORNLDAAC/1248"),
-        SourceLicense::RightsReserved,
-        &["Cite the LUH1 dataset and follow the current official acquisition terms."],
+        "https://landuse.sites.uu.nl/hyde-project/",
+        None,
+        SourceLicense::CcBy3_0,
+        &[
+            "HYDE 3.5 is licensed CC BY 3.0; retain attribution, the license link, and an indication of Adventure Simulator's interpolation and classification changes.",
+            "Cite the HYDE project and the HYDE 3.5 release README.",
+        ],
         SourceAccess::ManualPreparation,
         SourceSpatialCoverage::Geographic {
             crs: "EPSG:4326".into(),
-            resolution: "0.5 degrees".into(),
+            resolution: "5 arc-minutes".into(),
             coverage: "global land".into(),
         },
         SourceTemporalCoverage::Years {
-            first: 1500,
-            last: 2100,
+            first: -10_000,
+            last: 2023,
         },
-        "luh1-annual-netcdf-state-sampling",
+        "hyde35-netcdf-area-interpolation",
         1,
         SourceContentIdentity::ReleaseBlocked {
-            reason: "the five manually acquired LUH1 NetCDF files are not content-pinned".into(),
+            reason: "the four manually acquired HYDE 3.5 files are not yet checked into a content inventory".into(),
         },
-        "[LUH1 LUHa_u2.v1](https://doi.org/10.3334/ORNLDAAC/1248), sampled as a regional modelled baseline.",
+        "[HYDE 3.5](https://landuse.sites.uu.nl/hyde-project/), sampled as a regional historical reconstruction.",
     )
 }
 
@@ -489,12 +496,21 @@ pub(crate) fn religion(path: &Path) -> Result<SourceProvenance> {
 }
 
 pub(crate) fn drought(path: &Path) -> Result<SourceProvenance> {
+    let derived = path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("json"));
     Ok(source(
         "noaa-owda-v1",
         "NOAA Old World Drought Atlas v1.0",
-        SourceRelease::Immutable {
-            version: "1.0".into(),
-            released: "2015".into(),
+        if derived {
+            SourceRelease::Curated {
+                revision: "adventuresim-owda-1544-derived-v1".into(),
+            }
+        } else {
+            SourceRelease::Immutable {
+                version: "1.0".into(),
+                released: "2015".into(),
+            }
         },
         "https://www.ncei.noaa.gov/pub/data/paleo/drought/owda.nc",
         Some("10.25921/rjm6-mq74"),
@@ -503,20 +519,39 @@ pub(crate) fn drought(path: &Path) -> Result<SourceProvenance> {
             "Cite the NOAA/NCEI OWDA dataset DOI 10.25921/rjm6-mq74 and Cook et al. (2015), DOI 10.1126/sciadv.1500561.",
             "Only bounded per-settlement derived values are distributed; do not redistribute the source grid or annual series as part of the compiled world.",
         ],
-        SourceAccess::AnonymousDownload,
+        if derived {
+            SourceAccess::CuratedRepositoryAsset
+        } else {
+            SourceAccess::AnonymousDownload
+        },
         SourceSpatialCoverage::Geographic {
             crs: "EPSG:4326".into(),
-            resolution: "0.5 degree point grid".into(),
+            resolution: if derived {
+                "bounded per-settlement 20-year profiles".into()
+            } else {
+                "0.5 degree point grid".into()
+            },
             coverage: "Old World drought reconstruction domain".into(),
         },
         SourceTemporalCoverage::Years {
             first: 0,
             last: 2012,
         },
-        "owda-20-year-settlement-profile",
+        if derived {
+            "owda-bounded-settlement-profile-import"
+        } else {
+            "owda-20-year-settlement-profile"
+        },
         1,
-        SourceContentIdentity::RawSha256 {
-            sha256: sha256_file(path)?,
+        if derived {
+            SourceContentIdentity::CuratedRevision {
+                revision: "adventuresim-owda-1544-derived-v1".into(),
+                sha256: sha256_file(path)?,
+            }
+        } else {
+            SourceContentIdentity::RawSha256 {
+                sha256: sha256_file(path)?,
+            }
         },
         "[NOAA/NCEI OWDA v1.0](https://doi.org/10.25921/rjm6-mq74); compiled output is derived-only.",
     ))
@@ -771,8 +806,8 @@ mod tests {
 
     #[test]
     fn canonicalization_is_order_independent_and_rejects_duplicates() {
-        let mut first = vec![luh1(), elevation()];
-        let mut second = vec![elevation(), luh1()];
+        let mut first = vec![hyde35(), elevation()];
+        let mut second = vec![elevation(), hyde35()];
         canonicalize(&mut first).unwrap();
         canonicalize(&mut second).unwrap();
         assert_eq!(first, second);
@@ -889,7 +924,7 @@ mod tests {
         let sources = [
             viabundus(Path::new("missing")).unwrap(),
             elevation(),
-            luh1(),
+            hyde35(),
             forest(Path::new("missing")).unwrap(),
             geology(Path::new("manual.gpkg")),
             religion(
@@ -909,7 +944,7 @@ mod tests {
         for required in [
             "CC BY-SA",
             "liable",
-            "follow the current official acquisition terms",
+            "HYDE 3.5 is licensed CC BY 3.0",
             "modifications",
             "Malta",
             "not redistributed",
@@ -926,7 +961,7 @@ mod tests {
     fn fixture_digest_is_stable() {
         assert_eq!(
             digest(1544, SpatialGridSpec::default(), &[fixture()]).unwrap(),
-            "0d048b844e3b9e5291e8478381c6b61028b185c9dc71ff2020798a5efe804680"
+            "0c3e8de83fc03592402d80e8788a4d368fd1dd56aa26ad79f03765c9f1911cc2"
         );
     }
 
@@ -971,12 +1006,7 @@ mod tests {
             size: Some(1),
         });
         write_viabundus(&root, &sidecar);
-        assert!(
-            viabundus(&root)
-                .unwrap_err()
-                .to_string()
-                .contains("inventory")
-        );
+        assert!(viabundus(&root).unwrap().content_identity.is_reproducible());
         sidecar = viabundus_fixture(&root);
         sidecar.files[0].name = "../nodes.csv".into();
         write_viabundus(&root, &sidecar);

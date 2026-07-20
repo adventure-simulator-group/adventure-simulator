@@ -1,11 +1,13 @@
 //! NOAA Old World Drought Atlas (OWDA v1.0) summer PDSI sampling.
 
-use std::path::Path;
+use std::{collections::BTreeMap, fs, path::Path};
 
 use adventuresim_world_schema::{
     DroughtHistory, DroughtProfile, PalmerDroughtSeverityIndex, SummerHydroclimate,
 };
 use netcdf_reader::{NcFile, NcFormat, NcSliceInfo, NcSliceInfoElem, NcType};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::{
     Error, Result,
@@ -24,9 +26,9 @@ pub(crate) fn enrich(
     mut draft: WorldDraft<ReligionSettlementDraft>,
     netcdf_path: &Path,
 ) -> Result<WorldDraft<DroughtSettlementDraft>> {
-    let grid = OwdaGrid::open(netcdf_path, draft.year)?;
+    let grid = DroughtInput::open(netcdf_path, draft.year)?;
     if draft.settlements.is_empty() {
-        return finish(draft, Vec::new(), grid.valid_cells.len(), 0, 0, netcdf_path);
+        return finish(draft, Vec::new(), grid.sample_count(), 0, 0, netcdf_path);
     }
     let mut neighbor_samples = 0;
     let mut fallbacks = 0;
@@ -44,7 +46,11 @@ pub(crate) fn enrich(
                 .land
                 .elevated
                 .settlement;
-            match grid.sample(settlement.latitude, settlement.longitude) {
+            match grid.sample(
+                settlement.id.as_str(),
+                settlement.latitude,
+                settlement.longitude,
+            ) {
                 Some(sample) => {
                     neighbor_samples += usize::from(sample.used_neighbor);
                     push_source_note(religious, &source_note(year, sample));
@@ -62,7 +68,7 @@ pub(crate) fn enrich(
     finish(
         draft,
         profiles,
-        grid.valid_cells.len(),
+        grid.sample_count(),
         neighbor_samples,
         fallbacks,
         netcdf_path,
@@ -169,6 +175,288 @@ fn neutral_history() -> DroughtHistory {
 struct Sample {
     history: DroughtHistory,
     used_neighbor: bool,
+}
+
+enum DroughtInput {
+    RawGrid(OwdaGrid),
+    DerivedProfiles(DerivedProfiles),
+}
+
+impl DroughtInput {
+    fn open(path: &Path, year: i32) -> Result<Self> {
+        if path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+        {
+            DerivedProfiles::open(path, year).map(Self::DerivedProfiles)
+        } else {
+            OwdaGrid::open(path, year).map(Self::RawGrid)
+        }
+    }
+
+    fn sample(&self, settlement_id: &str, latitude: f64, longitude: f64) -> Option<Sample> {
+        match self {
+            Self::RawGrid(grid) => grid.sample(latitude, longitude),
+            Self::DerivedProfiles(profiles) => profiles.sample(settlement_id),
+        }
+    }
+
+    fn sample_count(&self) -> usize {
+        match self {
+            Self::RawGrid(grid) => grid.valid_cells.len(),
+            Self::DerivedProfiles(profiles) => profiles.by_settlement.len(),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DerivedProfileFile {
+    schema: u32,
+    source: String,
+    version: String,
+    year: i32,
+    viabundus_inventory_sha256: String,
+    viabundus_settlement_ids_sha256: String,
+    profiles: Vec<DerivedProfileRecord>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DerivedProfileRecord {
+    settlement_id: String,
+    sampling: String,
+    current_milli_pdsi: i16,
+    mean_milli_pdsi: i16,
+    drought_summers: u8,
+    wet_summers: u8,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SettlementInventory {
+    schema: u32,
+    year: i32,
+    settlement_ids: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct DerivedProfileOutput<'a> {
+    schema: u32,
+    source: &'a str,
+    version: &'a str,
+    year: i32,
+    viabundus_inventory_sha256: String,
+    viabundus_settlement_ids_sha256: String,
+    profiles: Vec<DerivedProfileOutputRecord>,
+}
+
+#[derive(Serialize)]
+struct DerivedProfileOutputRecord {
+    settlement_id: String,
+    sampling: &'static str,
+    current_milli_pdsi: i16,
+    mean_milli_pdsi: i16,
+    drought_summers: u8,
+    wet_summers: u8,
+}
+
+/// Produce the only OWDA form eligible for a source-separated developer bundle.
+/// The raw NetCDF remains local to the maintainer and is never copied into it.
+pub fn derive_profiles(
+    viabundus_directory: &Path,
+    raw_owda: &Path,
+    output: &Path,
+    year: i32,
+) -> Result<()> {
+    if year != 1544 {
+        return Err(Error::Validation(
+            "OWDA developer profiles are currently reviewed only for 1544".into(),
+        ));
+    }
+    let inventory = fs::read(viabundus_directory.join(".viabundus-source.json"))?;
+    let inventory_hash = format!("{:x}", Sha256::digest(&inventory));
+    let settlement_ids_path = viabundus_directory.join("settlement-ids-1544.json");
+    let grid = OwdaGrid::open(raw_owda, year)?;
+    let draft = crate::sources::viabundus::compile(
+        viabundus_directory,
+        year,
+        adventuresim_world_schema::SpatialGridSpec::default(),
+    )?;
+    let mut profiles = Vec::with_capacity(draft.settlements.len());
+    for settlement in draft.settlements {
+        let sample = grid
+            .sample(settlement.latitude, settlement.longitude)
+            .ok_or_else(|| {
+                Error::Validation(format!(
+                    "OWDA has no reconstructed or nearest profile for settlement {}",
+                    settlement.id
+                ))
+            })?;
+        profiles.push(DerivedProfileOutputRecord {
+            settlement_id: settlement.id,
+            sampling: if sample.used_neighbor {
+                "nearest"
+            } else {
+                "direct"
+            },
+            current_milli_pdsi: sample.history.current_summer().milli_units(),
+            mean_milli_pdsi: sample.history.twenty_year_mean().milli_units(),
+            drought_summers: sample.history.drought_summers(),
+            wet_summers: sample.history.wet_summers(),
+        });
+    }
+    profiles.sort_by(|left, right| left.settlement_id.cmp(&right.settlement_id));
+    if !settlement_ids_path.exists() {
+        let generated = serde_json::json!({
+            "schema": 1,
+            "year": year,
+            "settlement_ids": profiles.iter().map(|profile| profile.settlement_id.clone()).collect::<Vec<_>>(),
+        });
+        fs::write(&settlement_ids_path, serde_json::to_vec(&generated)?)?;
+    }
+    let settlement_ids = fs::read(&settlement_ids_path)?;
+    let settlement_ids_hash = format!("{:x}", Sha256::digest(&settlement_ids));
+    let declared: SettlementInventory =
+        serde_json::from_slice(&settlement_ids).map_err(|error| {
+            Error::Validation(format!(
+                "Viabundus settlement coverage inventory is invalid: {error}"
+            ))
+        })?;
+    if declared.schema != 1
+        || declared.year != year
+        || declared.settlement_ids.is_empty()
+        || declared
+            .settlement_ids
+            .windows(2)
+            .any(|pair| pair[0] >= pair[1])
+        || declared.settlement_ids
+            != profiles
+                .iter()
+                .map(|profile| profile.settlement_id.clone())
+                .collect::<Vec<_>>()
+    {
+        return Err(Error::Validation(
+            "Viabundus settlement coverage inventory does not exactly match derived OWDA profiles"
+                .into(),
+        ));
+    }
+    let value = serde_json::to_vec(&DerivedProfileOutput {
+        schema: 1,
+        source: "noaa-owda-v1-derived",
+        version: "1544",
+        year,
+        viabundus_inventory_sha256: inventory_hash,
+        viabundus_settlement_ids_sha256: settlement_ids_hash,
+        profiles,
+    })?;
+    let parent = output
+        .parent()
+        .ok_or_else(|| Error::Validation("OWDA derived output has no parent directory".into()))?;
+    fs::create_dir_all(parent)?;
+    let temporary = parent.join(format!(
+        ".{}.tmp",
+        output.file_name().unwrap_or_default().to_string_lossy()
+    ));
+    fs::write(&temporary, value)?;
+    fs::rename(&temporary, output)?;
+    Ok(())
+}
+
+struct DerivedProfiles {
+    by_settlement: BTreeMap<String, (DroughtHistory, bool)>,
+}
+
+impl DerivedProfiles {
+    fn open(path: &Path, year: i32) -> Result<Self> {
+        const MAX_DERIVED_BYTES: u64 = 8 * 1024 * 1024;
+        if !path.is_file() || fs::metadata(path)?.len() > MAX_DERIVED_BYTES {
+            return Err(Error::MissingSource(path.to_path_buf()));
+        }
+        let parsed: DerivedProfileFile =
+            serde_json::from_slice(&fs::read(path)?).map_err(|error| {
+                Error::Validation(format!(
+                    "{} is not a valid bounded OWDA derived-profile file: {error}",
+                    path.display()
+                ))
+            })?;
+        if parsed.schema != 1
+            || parsed.source != "noaa-owda-v1-derived"
+            || parsed.version != "1544"
+            || parsed.year != year
+            || parsed.viabundus_inventory_sha256.len() != 64
+            || !parsed
+                .viabundus_inventory_sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
+            || parsed.viabundus_settlement_ids_sha256.len() != 64
+            || !parsed
+                .viabundus_settlement_ids_sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
+            || parsed.profiles.is_empty()
+        {
+            return Err(Error::Validation(format!(
+                "{} has an unsupported OWDA derived-profile schema, source, version, year, or empty profile set",
+                path.display()
+            )));
+        }
+        let mut by_settlement = BTreeMap::new();
+        let mut previous = String::new();
+        for profile in parsed.profiles {
+            if profile.settlement_id.is_empty() || profile.settlement_id <= previous {
+                return Err(Error::Validation(format!(
+                    "{} OWDA derived profiles must have unique, sorted settlement IDs",
+                    path.display()
+                )));
+            }
+            previous = profile.settlement_id.clone();
+            let current =
+                PalmerDroughtSeverityIndex::new(profile.current_milli_pdsi).ok_or_else(|| {
+                    Error::Validation(format!(
+                        "{} has an out-of-range current OWDA derived value",
+                        path.display()
+                    ))
+                })?;
+            let mean =
+                PalmerDroughtSeverityIndex::new(profile.mean_milli_pdsi).ok_or_else(|| {
+                    Error::Validation(format!(
+                        "{} has an out-of-range mean OWDA derived value",
+                        path.display()
+                    ))
+                })?;
+            let history =
+                DroughtHistory::new(current, mean, profile.drought_summers, profile.wet_summers)
+                    .ok_or_else(|| {
+                        Error::Validation(format!(
+                            "{} has invalid OWDA derived seasonal counts",
+                            path.display()
+                        ))
+                    })?;
+            let used_neighbor = match profile.sampling.as_str() {
+                "direct" => false,
+                "nearest" => true,
+                _ => {
+                    return Err(Error::Validation(format!(
+                        "{} OWDA derived profiles must state direct or nearest sampling",
+                        path.display()
+                    )));
+                }
+            };
+            by_settlement.insert(profile.settlement_id, (history, used_neighbor));
+        }
+        Ok(Self { by_settlement })
+    }
+
+    fn sample(&self, settlement_id: &str) -> Option<Sample> {
+        self.by_settlement
+            .get(settlement_id)
+            .copied()
+            .map(|(history, used_neighbor)| Sample {
+                history,
+                used_neighbor,
+            })
+    }
 }
 
 struct OwdaGrid {
@@ -515,6 +803,33 @@ fn invalid(path: &Path, field: &'static str, value: String, message: &'static st
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bounded_derived_profiles_are_sorted_and_keyed_by_settlement() {
+        let directory = std::env::temp_dir().join(format!(
+            "adventuresim-owda-derived-profile-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("settlement-profiles-1544.json");
+        std::fs::write(
+            &path,
+            r#"{"schema":1,"source":"noaa-owda-v1-derived","version":"1544","year":1544,"viabundus_inventory_sha256":"0000000000000000000000000000000000000000000000000000000000000000","viabundus_settlement_ids_sha256":"0000000000000000000000000000000000000000000000000000000000000000","profiles":[{"settlement_id":"a","sampling":"nearest","current_milli_pdsi":-2000,"mean_milli_pdsi":-100,"drought_summers":1,"wet_summers":0}]}"#,
+        )
+        .unwrap();
+        let profiles = DerivedProfiles::open(&path, 1544).unwrap();
+        assert_eq!(
+            profiles
+                .sample("a")
+                .unwrap()
+                .history
+                .current_summer()
+                .milli_units(),
+            -2_000
+        );
+        assert!(profiles.sample("missing").is_none());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn pdsi_history_preserves_current_mean_and_extreme_counts() {

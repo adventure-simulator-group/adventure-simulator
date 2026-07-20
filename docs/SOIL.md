@@ -38,6 +38,15 @@ replaced, so a failed 207-file build cannot corrupt the prior generation. The
 Rust importer rechecks inventory, hashes, dimensions, nodata, Float32 band and
 compression shape, EPSG:3035 GeoKeys, transform, units, and canonical grid.
 
+Interrupted preparation preserves its private `.soilgrids-staging` directory.
+Each completed raster is validated and hash-checkpointed before the next layer
+begins, so rerunning the same `--prepare` command reuses only those verified
+layers and retries the remainder. An output from an interrupted `gdalwarp` that
+was not checkpointed is discarded; an incomplete staging directory is never
+included in a bundle or selected by the importer. Network retries use bounded
+exponential backoff (10 seconds, doubling to a five-minute cap) for both
+metadata retrieval and complete GDAL layer attempts.
+
 `latest` is a mutable rolling publication, not an immutable source pin. The
 manifest therefore records `source_reproducibility: unpinned-rolling-latest`,
 observational source SHA-256/size, ETag and Last-Modified when supplied, and
@@ -53,6 +62,12 @@ Preparation requires both `gdalwarp` and `gdalinfo`. Every staged TIFF must pass
 end-to-end JSON inspection (fixed size/extent, exact transform, EPSG:3035,
 single Float32 band, NaN nodata, and DEFLATE) plus a second prepared hash check
 before the active manifest is atomically replaced.
+
+The initializer configures GDAL `/vsicurl/` retries for transient HTTP 429/500/
+502/503/504 responses and retries a failed layer a bounded number of times after
+removing only that layer's incomplete staged TIFF. It never publishes a partial
+generation; after the bounded retries are exhausted, rerun `--prepare` once the
+official service is healthy.
 
 The fixed continental extent currently fits the importer's 32-million-pixel
 bound only at exactly dividing sizes of 1 km or coarser (for example 1 km and
@@ -87,5 +102,5 @@ layers are prepared. Plan and unit-test modes remain useful without GDAL.
    parent material.
 
 Rules are deterministic and versioned. A full prepared-source audit remains
-blocked by the absent official LUH1, forest, EU-Hydro, and prepared SoilGrids
+blocked by the absent official HYDE 3.5, forest, EU-Hydro, and prepared SoilGrids
 inputs; this repository does not claim full #67/#68 source coverage.

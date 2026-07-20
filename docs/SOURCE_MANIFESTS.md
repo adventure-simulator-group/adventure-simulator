@@ -46,9 +46,8 @@ against a malicious or noncanonical client.
   combined output remains unresolved.
 - **Copernicus DEM:** retain the prescribed Copernicus/WorldDEM production
   credit and European Commission/ESA no-liability notice.
-- **LUH1:** cite the ORNL DAAC record and follow its current acquisition
-  terms. The raw NetCDF state files are rights-reserved and are not
-  redistributed by this project.
+- **HYDE 3.5:** retain HYDE attribution, the CC BY 3.0 licence link, and an
+  indication that Adventure Simulator interpolates and classifies the source.
 - **Copernicus forest and EU-Hydro:** credit the European Union/Copernicus,
   identify project modifications, and do not imply endorsement.
 - **Jung PNV, SoilGrids, and EGDI:** retain CC BY 4.0 attribution and identify
@@ -61,7 +60,7 @@ against a malicious or noncanonical client.
   per-settlement derived data, not the grid or annual series.
 
 Current release blockers are explicit: GLO-30 tile selection, the manually
-acquired LUH1 NetCDF files, EGDI, and EU-Hydro lack checked complete content
+acquired HYDE 3.5 files, EGDI, and EU-Hydro lack checked complete content
 inventories. The forest marker pins only the preparation format, so forest
 remains non-reproducible until every consumed raster is inventoried and hashed.
 SoilGrids is a rolling service whose strict prepared manifest supplies the
@@ -82,3 +81,16 @@ The EU-Trees4F initializer pins the exact JRC ENS_CLIM archive. It retains the
 EU-Trees4F v2 Figshare citation and CC0 notice, but does not claim that a
 Figshare-hosted archive is byte-identical; confirming that relationship remains
 an explicit provenance blocker.
+
+## Source-separated developer bundles
+
+`scripts/world_data_bundle.py` provides a distinct distribution boundary for
+development inputs. Its ZIP is a manifest-and-notices collection: source
+components remain separately addressed and are installed into the compiler's
+existing source paths only after complete verification. It carries no compiled
+world artifact. The policy includes every active input but rejects LUH1,
+rights-reserved IEG map images, and raw OWDA grid/annual data; IEG's committed
+coarse CSV stays in the repository and OWDA may appear only as a bounded
+per-settlement derived profile. This engineering policy is fail-closed and does
+not itself resolve source-specific redistribution terms or the licence status of
+a future combined world-data release. See `docs/WORLD_DATA_BUNDLES.md`.

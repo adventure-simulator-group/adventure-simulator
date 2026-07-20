@@ -1452,7 +1452,7 @@ pub enum FallbackHistoricalVegetationCover {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
 pub enum DirectHistoricalVegetationMethod {
-    Luh1DominantLandUse,
+    Hyde35DominantLandUse,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -4161,14 +4161,14 @@ mod tests {
         let invalid_fraction = serde_json::json!({
             "Direct": {
                 "cover": { "Cropland": { "cultivated_fraction": { "basis_points": 10001 } } },
-                "method": "Luh1DominantLandUse"
+                "method": "Hyde35DominantLandUse"
             }
         });
         assert!(serde_json::from_value::<super::HistoricalVegetation>(invalid_fraction).is_err());
         for invalid in [
             serde_json::json!({ "Fallback": { "cover": { "BuiltSettlement": { "built_fraction": { "basis_points": 1000 } } }, "method": "PotentialEnvelopeV4" } }),
             serde_json::json!({ "Derived": { "cover": { "Cropland": { "cultivated_fraction": { "basis_points": 4000 } } }, "method": "MultiSourceRulesV4" } }),
-            serde_json::json!({ "Direct": { "cover": { "Wetland": { "water_regime": "LongSeasonWet" } }, "method": "Luh1DominantLandUse" } }),
+            serde_json::json!({ "Direct": { "cover": { "Wetland": { "water_regime": "LongSeasonWet" } }, "method": "Hyde35DominantLandUse" } }),
         ] {
             assert!(serde_json::from_value::<super::HistoricalVegetation>(invalid).is_err());
         }
@@ -4211,7 +4211,7 @@ mod tests {
         let direct = |cover| {
             HistoricalVegetation::Direct(DirectHistoricalVegetation {
                 cover,
-                method: DirectHistoricalVegetationMethod::Luh1DominantLandUse,
+                method: DirectHistoricalVegetationMethod::Hyde35DominantLandUse,
             })
         };
         assert!(!historical_vegetation_matches_context(

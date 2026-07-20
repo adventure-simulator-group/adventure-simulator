@@ -13,3 +13,4 @@ mod validation;
 
 pub use builder::WorldBuilder;
 pub use error::{Error, Result};
+pub use sources::drought::derive_profiles as derive_owda_profiles;

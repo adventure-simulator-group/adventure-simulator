@@ -785,6 +785,7 @@ development, or wiki document before changing a subsystem.
 - `docs/STRATEGIC_SIMULATION.md` — Project documentation.
 - `docs/TREE_SPECIES.md` — Project documentation.
 - `docs/VIABUNDUS.md` — Project documentation.
+- `docs/WORLD_DATA_BUNDLES.md` — Project documentation.
 - `docs/llm/README.md` — Component overview and usage notes.
 - `flake.lock` — Nix environment configuration or lockfile.
 - `flake.nix` — Nix environment configuration or lockfile.
@@ -796,12 +797,16 @@ development, or wiki document before changing a subsystem.
 - `scripts/init_owda.py` — Development or documentation automation script.
 - `scripts/init_soilgrids.py` — Development or documentation automation script.
 - `scripts/init_viabundus.py` — Development or documentation automation script.
+- `scripts/init_world_data.py` — Development or documentation automation script.
 - `scripts/test_init_jung_pnv.py` — Development or documentation automation script.
 - `scripts/test_init_owda.py` — Development or documentation automation script.
 - `scripts/test_init_soilgrids.py` — Development or documentation automation script.
+- `scripts/test_init_world_data.py` — Development or documentation automation script.
+- `scripts/test_world_data_bundle.py` — Development or documentation automation script.
 - `scripts/test_world_source_init.py` — Development or documentation automation script.
 - `scripts/tests/test_dev_stack.py` — Development or documentation automation script.
 - `scripts/update_project_map.py` — Development or documentation automation script.
+- `scripts/world_data_bundle.py` — Development or documentation automation script.
 - `scripts/world_source_init.py` — Development or documentation automation script.
 - `utils/generate_certificates.sh` — Development or documentation automation script.
 - `wiki/Implementation.md` — Project documentation.
@@ -831,3 +836,4 @@ development, or wiki document before changing a subsystem.
 - `wiki/strategic/Travel.md` — Project documentation.
 - `wiki/tactical/Combat.md` — Project documentation.
 - `wiki/tactical/Stealth.md` — Project documentation.
+- `world-data-release.lock.json` — Repository support file.

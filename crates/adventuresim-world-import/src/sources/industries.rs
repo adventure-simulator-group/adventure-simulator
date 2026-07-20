@@ -64,7 +64,7 @@ pub(crate) fn enrich(mut world: CompiledWorld) -> Result<CompiledWorld> {
         append_note(
             settlement,
             &format!(
-                "**Industry inference v6:** {} canonical production output(s) from LUH1 historical land use, finalized SoilGrids/EGDI evidence, OWDA moisture, EU-Hydro access, historical woodland, population, and {} incident finalized route(s); accessibility can only downgrade scale, never create a resource.",
+                "**Industry inference v6:** {} canonical production output(s) from HYDE 3.5 historical land use, finalized SoilGrids/EGDI evidence, OWDA moisture, EU-Hydro access, historical woodland, population, and {} incident finalized route(s); accessibility can only downgrade scale, never create a resource.",
                 profile.outputs().len(),
                 context.route_count
             ),

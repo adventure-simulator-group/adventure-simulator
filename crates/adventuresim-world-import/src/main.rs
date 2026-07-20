@@ -3,7 +3,7 @@ use std::{
     process::{Command, ExitCode},
 };
 
-use adventuresim_world_import::{Error, Result, WorldBuilder};
+use adventuresim_world_import::{Error, Result, WorldBuilder, derive_owda_profiles};
 use adventuresim_world_schema::{
     AgriculturalLimitation, AvailableWaterCapacity, CationExchangeCapacity, CompiledWorld,
     CrossingTraversal, CrossingWatercourse, DerivedHistoricalVegetationCover,
@@ -50,6 +50,12 @@ struct Args {
     religion_regions: PathBuf,
     #[arg(long, default_value_os_t = default_drought_netcdf())]
     drought_netcdf: PathBuf,
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "derive bounded OWDA developer profiles from the audited raw NetCDF and exit"
+    )]
+    derive_owda_profiles: Option<PathBuf>,
     #[arg(long, default_value_os_t = default_hydrology_directory())]
     hydrology_dir: PathBuf,
     #[arg(long, default_value_t = WORLD_YEAR)]
@@ -83,6 +89,9 @@ fn main() -> ExitCode {
 fn run(args: Args) -> Result<()> {
     if args.batch_size == 0 {
         return Err(Error::Validation("batch size must be positive".into()));
+    }
+    if let Some(output) = &args.derive_owda_profiles {
+        return derive_owda_profiles(&args.viabundus_dir, &args.drought_netcdf, output, args.year);
     }
     let world = WorldBuilder::new(args.year)
         .with_spatial_grid(SpatialGridSpec::new(args.grid_cell_size_meters))
@@ -839,7 +848,7 @@ fn encode_historical_vegetation(vegetation: HistoricalVegetation) -> Value {
     };
     match vegetation {
         HistoricalVegetation::Direct(v) => {
-            json!({ "Direct": { "cover": direct_cover(v.cover), "method": enum_unit(match v.method { R::Luh1DominantLandUse => "Luh1DominantLandUse" }) } })
+            json!({ "Direct": { "cover": direct_cover(v.cover), "method": enum_unit(match v.method { R::Hyde35DominantLandUse => "Hyde35DominantLandUse" }) } })
         }
         HistoricalVegetation::Derived(v) => {
             json!({ "Derived": { "cover": derived_cover(v.cover), "method": enum_unit(match v.method { D::MultiSourceRulesV4 => "MultiSourceRulesV4", D::MultiSourceRulesV4TieBreak => "MultiSourceRulesV4TieBreak" }) } })
@@ -967,7 +976,7 @@ fn default_elevation_directory() -> PathBuf {
 }
 
 fn default_land_use_directory() -> PathBuf {
-    repository_root().join("target/world-data-sources/raw/historical-land-use")
+    repository_root().join("target/world-data-sources/raw/hyde35-land-use")
 }
 
 fn default_forest_cover_directory() -> PathBuf {
@@ -995,7 +1004,7 @@ fn default_religion_regions() -> PathBuf {
 }
 
 fn default_drought_netcdf() -> PathBuf {
-    repository_root().join("target/world-data-sources/raw/climate/owda.nc")
+    repository_root().join("target/world-data-sources/prepared/owda/settlement-profiles-1544.json")
 }
 
 fn default_hydrology_directory() -> PathBuf {

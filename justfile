@@ -268,12 +268,12 @@ init-glo30:
 verify-glo30:
 	@python3 scripts/world_source_init.py glo30 --verify-only
 
-plan-luh1:
-	@python3 scripts/world_source_init.py luh1 --plan
-init-luh1:
-	@python3 scripts/world_source_init.py luh1 --init
-verify-luh1:
-	@python3 scripts/world_source_init.py luh1 --verify-only
+plan-hyde35:
+	@python3 scripts/world_source_init.py hyde35 --plan
+init-hyde35:
+	@python3 scripts/world_source_init.py hyde35 --init
+verify-hyde35:
+	@python3 scripts/world_source_init.py hyde35 --verify-only
 
 plan-forest-cover:
 	@python3 scripts/world_source_init.py forest --plan
@@ -309,6 +309,19 @@ init-hydrology:
 	@python3 scripts/world_source_init.py eu-hydro --init
 verify-hydrology:
 	@python3 scripts/world_source_init.py eu-hydro --verify-only
+
+# Verify or atomically install a downloaded source-separated world-data bundle.
+# `replace-world-data` first retains a recoverable backup under target/.
+init-world-data:
+	@{{python_bin}} scripts/init_world_data.py --repository .
+rebuild-world-data:
+	@{{python_bin}} scripts/init_world_data.py --repository . --rebuild
+verify-world-data-bundle archive descriptor descriptor_sha256:
+	@{{python_bin}} scripts/world_data_bundle.py verify {{quote(archive)}} --descriptor {{quote(descriptor)}} --descriptor-sha256 {{quote(descriptor_sha256)}}
+install-world-data archive descriptor descriptor_sha256:
+	@{{python_bin}} scripts/world_data_bundle.py install {{quote(archive)}} --descriptor {{quote(descriptor)}} --descriptor-sha256 {{quote(descriptor_sha256)}} --repository .
+replace-world-data archive descriptor descriptor_sha256:
+	@{{python_bin}} scripts/world_data_bundle.py install {{quote(archive)}} --descriptor {{quote(descriptor)}} --descriptor-sha256 {{quote(descriptor_sha256)}} --repository . --replace
 
 # Compile all initialized sources into the 1544 strategic world artifact.
 compile-world:

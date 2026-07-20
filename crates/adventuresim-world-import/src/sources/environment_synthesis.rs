@@ -51,14 +51,14 @@ pub(crate) fn finalize(mut draft: FinalizedSoilWorldDraft) -> Result<CompiledWor
             }
             tie_breaks += usize::from(tied);
             let method = match historical_vegetation {
-                HistoricalVegetation::Direct(_) => "direct LUH1 dominant land use",
+                HistoricalVegetation::Direct(_) => "direct HYDE 3.5 dominant land use",
                 HistoricalVegetation::Derived(DerivedHistoricalVegetation { method: DerivedHistoricalVegetationMethod::MultiSourceRulesV4TieBreak, .. }) => "derived multi-source rules v4 (coordinate/schema tie-break)",
                 HistoricalVegetation::Derived(_) => "derived multi-source rules v4",
                 HistoricalVegetation::Fallback(_) => "fallback potential envelope v4",
             };
             let land_evidence = match finalized.hydrologic.drought.religious.geologic.predicted.trees.vegetated.forest.land.evidence {
-                LandUseEvidence::Luh1Sampled { normalized: false } => "sampled LUH1 land-use fractions",
-                LandUseEvidence::Luh1Sampled { normalized: true } => "sampled and normalized LUH1 land-use fractions",
+                LandUseEvidence::Hyde35Sampled { normalized: false } => "sampled HYDE 3.5 land-use fractions",
+                LandUseEvidence::Hyde35Sampled { normalized: true } => "sampled and normalized HYDE 3.5 land-use fractions",
                 LandUseEvidence::DeterministicFallback => "deterministic land-use fallback",
             };
             push_source_note(
@@ -143,11 +143,11 @@ fn synthesize(s: &FinalizedSoilSettlementDraft) -> (HistoricalVegetation, bool) 
     let base = &land.elevated.settlement;
     let profile = land.land_use;
 
-    if let Some(cover) = direct_luh1_cover(profile, land.evidence) {
+    if let Some(cover) = direct_hyde35_cover(profile, land.evidence) {
         return (
             HistoricalVegetation::Direct(DirectHistoricalVegetation {
                 cover,
-                method: DirectHistoricalVegetationMethod::Luh1DominantLandUse,
+                method: DirectHistoricalVegetationMethod::Hyde35DominantLandUse,
             }),
             false,
         );
@@ -296,11 +296,11 @@ fn synthesize(s: &FinalizedSoilSettlementDraft) -> (HistoricalVegetation, bool) 
     )
 }
 
-fn direct_luh1_cover(
+fn direct_hyde35_cover(
     profile: adventuresim_world_schema::LandUseProfile,
     evidence: LandUseEvidence,
 ) -> Option<DirectHistoricalVegetationCover> {
-    if !matches!(evidence, LandUseEvidence::Luh1Sampled { .. }) {
+    if !matches!(evidence, LandUseEvidence::Hyde35Sampled { .. }) {
         return None;
     }
     let crop = profile.cropland().basis_points();
@@ -499,7 +499,7 @@ fn stable_hash(latitude: f64, longitude: f64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        CLOSE_MARGIN, NaturalCover, choose_from_scores, direct_luh1_cover, finalize,
+        CLOSE_MARGIN, NaturalCover, choose_from_scores, direct_hyde35_cover, finalize,
         safe_fallback_natural, stable_hash,
     };
     use crate::draft::{FinalizedSoilWorldDraft, LandUseEvidence};
@@ -581,51 +581,51 @@ mod tests {
     }
 
     #[test]
-    fn only_sampled_luh1_and_the_selected_threshold_can_be_direct() {
+    fn only_sampled_hyde35_and_the_selected_threshold_can_be_direct() {
         let larger_crop_below_threshold = land_use(2_000, 0, 1_000);
         assert!(
-            direct_luh1_cover(
+            direct_hyde35_cover(
                 larger_crop_below_threshold,
-                LandUseEvidence::Luh1Sampled { normalized: false }
+                LandUseEvidence::Hyde35Sampled { normalized: false }
             )
             .is_none()
         );
         let built_selected = land_use(500, 0, 1_000);
         assert!(matches!(
-            direct_luh1_cover(
+            direct_hyde35_cover(
                 built_selected,
-                LandUseEvidence::Luh1Sampled { normalized: false }
+                LandUseEvidence::Hyde35Sampled { normalized: false }
             ),
             Some(DirectHistoricalVegetationCover::BuiltSettlement(_))
         ));
         assert!(
-            direct_luh1_cover(built_selected, LandUseEvidence::DeterministicFallback).is_none()
+            direct_hyde35_cover(built_selected, LandUseEvidence::DeterministicFallback).is_none()
         );
         assert!(matches!(
-            direct_luh1_cover(
+            direct_hyde35_cover(
                 land_use(4_000, 0, 1_000),
-                LandUseEvidence::Luh1Sampled { normalized: false }
+                LandUseEvidence::Hyde35Sampled { normalized: false }
             ),
             Some(DirectHistoricalVegetationCover::Cropland(_))
         ));
         assert!(
-            direct_luh1_cover(
+            direct_hyde35_cover(
                 land_use(3_400, 0, 0),
-                LandUseEvidence::Luh1Sampled { normalized: false }
+                LandUseEvidence::Hyde35Sampled { normalized: false }
             )
             .is_none()
         );
         assert!(matches!(
-            direct_luh1_cover(
+            direct_hyde35_cover(
                 land_use(3_500, 0, 0),
-                LandUseEvidence::Luh1Sampled { normalized: true }
+                LandUseEvidence::Hyde35Sampled { normalized: true }
             ),
             Some(DirectHistoricalVegetationCover::Cropland(_))
         ));
         assert!(matches!(
-            direct_luh1_cover(
+            direct_hyde35_cover(
                 land_use(2_000, 3_500, 0),
-                LandUseEvidence::Luh1Sampled { normalized: false }
+                LandUseEvidence::Hyde35Sampled { normalized: false }
             ),
             Some(DirectHistoricalVegetationCover::Pasture(_))
         ));

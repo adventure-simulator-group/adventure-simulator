@@ -6,7 +6,7 @@ plausible local production in 1544; it is strategic world data, not a tactical
 simulation or a market inventory.
 
 Industry inference runs after route-terrain finalization. It consumes only the
-canonical LUH1 land-use reconstruction, historical vegetation, finalized
+canonical HYDE 3.5 land-use reconstruction, historical vegetation, finalized
 SoilGrids/EGDI soil and lithology, OWDA moisture, EU-Hydro access, settlement
 population, and incident finalized routes. Scores and thresholds use integers
 and basis points. Outputs are sorted, unique, and limited to 24 per settlement.

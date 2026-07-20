@@ -251,7 +251,7 @@ fn finish(
         let note = match potential_vegetation {
             PotentialVegetation::Posterior(_) => "**[Jung/IIASA European PNV v1.1](https://doi.org/10.5281/zenodo.14627466):** Six current-climate posterior mean rasters provide potential-vegetation suitability.",
             PotentialVegetation::Categorical(_) => "**Jung/IIASA categorical fallback:** Posterior coverage was incomplete; the pinned most-likely class raster provides the potential-vegetation class.",
-            PotentialVegetation::Inferred(_) => "**Potential-vegetation coverage inference:** Neither posterior nor categorical source data covered this cell; class is deterministically inferred from forest cover, elevation, latitude, and LUH1 context.",
+            PotentialVegetation::Inferred(_) => "**Potential-vegetation coverage inference:** Neither posterior nor categorical source data covered this cell; class is deterministically inferred from forest cover, elevation, latitude, and HYDE 3.5 context.",
         };
         push_source_note(&mut forest, note);
         PotentialVegetationSettlementDraft { forest, potential_vegetation }
@@ -941,7 +941,7 @@ mod tests {
                         elevation: ElevationMeters::new(0).unwrap(),
                     },
                     land_use,
-                    evidence: crate::draft::LandUseEvidence::Luh1Sampled { normalized: false },
+                    evidence: crate::draft::LandUseEvidence::Hyde35Sampled { normalized: false },
                 },
                 forest_cover: ForestCover::Open,
             })
