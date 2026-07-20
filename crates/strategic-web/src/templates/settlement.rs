@@ -4001,15 +4001,15 @@ fn stat_icon(label: &str, category: &str, icon: &str, decorative: bool) -> Marku
 }
 
 pub(crate) fn visual_stage(kind: &str, title: &str, description: &str) -> Markup {
-    let (primary_icon, secondary_icon, scene_label) = match kind {
-        "settlement" => ("house", "sun", "At the settlement gates"),
-        "map" | "route" => ("treasure-map", "plain-arrow", "Roads and destinations"),
-        "camp" => ("campfire", "night-sleep", "Camp beside the road"),
-        "quest" => ("sword-clash", "torch", "Encounter ground"),
-        "alchemy" => ("medical-pack", "water-bottle", "The apothecary workbench"),
-        "service" => ("conversation", "shop", "At the counter"),
-        "chest" => ("open-chest", "coins", "Shared party stores"),
-        _ => ("person", "shield", "Adventurer profile"),
+    let scene_label = match kind {
+        "settlement" => "At the settlement gates",
+        "map" | "route" => "Roads and destinations",
+        "camp" => "Camp beside the road",
+        "quest" => "Encounter ground",
+        "alchemy" => "The apothecary workbench",
+        "service" => "At the counter",
+        "chest" => "Shared party stores",
+        _ => "Adventurer profile",
     };
     html! {
         figure class=(format!("service-visual service-visual-{}", kind)) {
@@ -4017,12 +4017,6 @@ pub(crate) fn visual_stage(kind: &str, title: &str, description: &str) -> Markup
                 span class="visual-scene-sky" aria-hidden="true" {}
                 span class="visual-scene-horizon" aria-hidden="true" {}
                 span class="visual-scene-route" aria-hidden="true" {}
-                span class="visual-scene-emblem visual-scene-emblem-primary" aria-hidden="true" {
-                    (decorative_game_icon(primary_icon))
-                }
-                span class="visual-scene-emblem visual-scene-emblem-secondary" aria-hidden="true" {
-                    (decorative_game_icon(secondary_icon))
-                }
                 span class="visual-scene-caption" {
                     strong { (title) }
                     span { (scene_label) }
@@ -6164,6 +6158,8 @@ mod tests {
             assert!(markup.contains("role=\"img\""));
             assert!(!markup.contains("placeholder"));
             assert!(!markup.contains("TODO"));
+            assert!(!markup.contains("visual-scene-emblem"));
+            assert!(!markup.contains("/static/icons/game/"));
         }
     }
 
