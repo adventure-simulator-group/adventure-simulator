@@ -329,19 +329,13 @@
   filter: brightness(var(--building-light, 78%));
 }
 
-.settlement-top-bar[data-environment="settlement"] .service-tab-icon::before,
 .settlement-top-bar[data-environment="settlement"] .service-tab-icon::after {
   position: absolute;
   inset: 0;
-  background-color: var(--text-primary);
+  background-color: #fff;
   -webkit-mask: var(--service-tab-icon) center / contain no-repeat;
   mask: var(--service-tab-icon) center / contain no-repeat;
   content: "";
-}
-
-.settlement-top-bar[data-environment="settlement"] .service-tab-icon::before {
-  background-color: rgb(18 17 16 / 92%);
-  transform: scale(1.16);
 }
 
 .service-tab-icon-market { --service-tab-icon: url("/static/icons/game/scales.svg"); }

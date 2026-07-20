@@ -252,6 +252,9 @@ cartoon village, a textured painting, or a detailed model building.
 - Apply the same time-of-day lighting value to both the tinted building raster
   and its service mark. Keep them as separate layers, but do not let the mark
   remain at full daytime brightness while the architecture darkens.
+- Render the overlaid service SVG as one solid pale mask. Ignore any source SVG
+  fills, strokes, or internal black-and-white treatment; time-of-day lighting
+  may change the mask's brightness, but it must remain a single flat tone.
 - Prefer simple gable roofs: two pitched planes meeting at a ridge, like a
   precisely folded sheet of paper. Use hipped or pyramidal roofs sparingly for
   justified variation. A row should be predominantly gabled.

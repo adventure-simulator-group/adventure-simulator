@@ -66,8 +66,8 @@ test("settlement tabs layer tintable village buildings beneath service icons", (
   assert.doesNotMatch(layoutCss, /clip-path: polygon\(50% 0, 100% 100%, 0 100%\)/);
   assert.match(layoutCss, /\.service-tab-building \{[\s\S]*pointer-events: none/);
   assert.match(layoutCss, /\.service-tab-icon \{[\s\S]*z-index: 2/);
-  assert.match(layoutCss, /\.service-tab-icon::before[\s\S]*\.service-tab-icon::after[\s\S]*mask: var\(--service-tab-icon\)/);
-  assert.match(layoutCss, /\.service-tab-icon::before \{[\s\S]*rgb\(18 17 16 \/ 92%\)[\s\S]*scale\(1\.16\)/);
+  assert.match(layoutCss, /\.service-tab-icon::after \{[\s\S]*background-color: #fff[\s\S]*mask: var\(--service-tab-icon\)/);
+  assert.doesNotMatch(layoutCss, /\.service-tab-icon::before/);
   assert.match(layoutCss, /data-environment="settlement"[\s\S]*\.service-tab-icon \{[\s\S]*bottom: 0\.42rem[\s\S]*filter: brightness\(var\(--building-light, 78%\)\)/);
   assert.match(layoutCss, /data-environment="settlement"[\s\S]*\.settlement-services \.nav-tab \{[\s\S]*width: 4\.25rem[\s\S]*height: 5\.75rem/);
   assert.match(layoutCss, /\.service-notification-badge \{[\s\S]*z-index: 3/);
