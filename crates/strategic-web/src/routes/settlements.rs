@@ -3117,17 +3117,7 @@ fn rest_summary(
     let currency_total = |inventory: &[InventoryItem]| -> u32 {
         inventory
             .iter()
-            .filter(|item| {
-                matches!(
-                    item.item_id.as_str(),
-                    "rhenish_gulden"
-                        | "lubeck_mark"
-                        | "hamburg_mark"
-                        | "saxon_thaler"
-                        | "brandenburg_groschen"
-                        | "danish_mark"
-                )
-            })
+            .filter(|item| adventuresim_core::strategic_currency::is_currency_id(&item.item_id))
             .map(|item| item.qty)
             .sum()
     };

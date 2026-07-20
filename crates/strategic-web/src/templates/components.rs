@@ -24,16 +24,12 @@ pub fn decorative_game_icon(icon: &str) -> Markup {
 /// Exact icon name for a seeded item. Unknown/modded items get a real fallback
 /// asset rather than a URL derived from untrusted data.
 pub fn item_icon_name(item_id: &str) -> &'static str {
+    if adventuresim_core::strategic_currency::is_currency_id(item_id) || item_id == "coin" {
+        return "coins";
+    }
     match item_id {
         "torch" => "torch",
         "arrow" => "plain-arrow",
-        "rhenish_gulden"
-        | "lubeck_mark"
-        | "hamburg_mark"
-        | "saxon_thaler"
-        | "brandenburg_groschen"
-        | "danish_mark"
-        | "coin" => "coins",
         "bandage" => "bandage-roll",
         "travel_ration" => "bread",
         "waterskin" => "waterskin",

@@ -178,7 +178,7 @@
     line("npc", quest.npc_name, quest.turn_in_response);
     window.strategicChat?.appendInfo(
       chat,
-      `${result.reward} gold has been added to your party inventory.`,
+      `${result.reward} coin has been added to your party inventory.`,
     );
     setMapQuestActive(false);
     const tab = services.querySelector(`[data-service-id="${CSS.escape(quest.service_id)}"]`);
@@ -259,7 +259,7 @@
     greeting.append(link("Feeling ill", requestHerbalistExamination));
     const examFee = Number(chat.dataset.herbalistExamFee);
     greeting.append(document.createTextNode(
-      `? Or are you looking to purchase some ingredients? An examination costs ${examFee} gold.`,
+      `? Or are you looking to purchase some ingredients? An examination costs ${examFee} coin.`,
     ));
     if (quest?.state === "available" || quest?.state === "recruiting") {
       greeting.append(document.createTextNode(" I could also use your help concerning "));

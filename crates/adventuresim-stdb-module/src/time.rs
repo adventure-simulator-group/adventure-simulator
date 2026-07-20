@@ -519,7 +519,7 @@ fn apply_activity_outcomes(
             character_id,
             &settlement.id,
             outcome.gold_earned,
-        );
+        )?;
     }
     initialize_notoriety(ctx, character_id);
     let notoriety_gain = outcome.notoriety_gained;

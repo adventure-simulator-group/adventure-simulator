@@ -3322,7 +3322,10 @@ pub(crate) fn record_battle_result(
         let gold = 1 + (ctx.random::<u64>() % u64::from(maximum_gold)) as u32;
         if gold > 0 {
             *combined
-                .entry(crate::item::settlement_currency_id(&quest.settlement_id).into())
+                .entry(crate::item::currency_id_for_settlement(
+                    ctx,
+                    &quest.settlement_id,
+                )?)
                 .or_default() += gold;
         }
     }
@@ -3585,13 +3588,10 @@ pub(crate) fn credit_party_currency(
     party_id: &str,
     settlement_id: &str,
     amount: u32,
-) {
-    add_to_party_inventory(
-        ctx,
-        party_id,
-        crate::item::settlement_currency_id(settlement_id),
-        amount,
-    );
+) -> Result<(), String> {
+    let currency_id = crate::item::currency_id_for_settlement(ctx, settlement_id)?;
+    add_to_party_inventory(ctx, party_id, &currency_id, amount);
+    Ok(())
 }
 
 fn transfer_personal_currency_to_party(
@@ -3800,7 +3800,7 @@ pub fn liquidate_party_inventory(
             ctx.db.party_inventory_item().id().update(entry);
         }
     }
-    credit_party_currency(ctx, &party_id, &settlement_id, proceeds as u32);
+    credit_party_currency(ctx, &party_id, &settlement_id, proceeds as u32)?;
     Ok(())
 }
 
@@ -4144,14 +4144,14 @@ pub fn finalize_merchant_trade(
     let net = proceeds as i64 - cost as i64;
     if party_scope && net > 0 {
         let party_id = party_id.as_ref().unwrap();
-        credit_party_currency(ctx, party_id, &settlement_id, net as u32);
+        credit_party_currency(ctx, party_id, &settlement_id, net as u32)?;
     } else if party_scope && net < 0 {
         let party_id = party_id.as_ref().unwrap();
         consume_party_currency(ctx, party_id, (-net) as u64)?;
     } else if net < 0 {
         consume_personal_gold(ctx, character_id, (-net) as u64)?;
     } else if net > 0 {
-        crate::item::credit_personal_currency(ctx, character_id, &settlement_id, net as u32);
+        crate::item::credit_personal_currency(ctx, character_id, &settlement_id, net as u32)?;
     }
     Ok(())
 }
@@ -5534,7 +5534,7 @@ pub fn turn_in_quest(
 
     let reward = quest.gold_reward.max(0) as u64;
     if reward > 0 {
-        credit_party_currency(ctx, &party_id, &quest.settlement_id, reward as u32);
+        credit_party_currency(ctx, &party_id, &quest.settlement_id, reward as u32)?;
         let recipients = living_party_member_ids(ctx, &party_id);
         let recipient_count = recipients.len().max(1) as u64;
         let share = reward / recipient_count;

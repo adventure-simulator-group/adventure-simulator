@@ -26,7 +26,7 @@ is transient and has no effect on sorting, filtering, or bulk actions.
 The General Market, Weaponsmith, Armourer, and Tailor use the same live trade
 interface and transaction reducer. The specialist storefronts filter their
 unlimited displayed stock by item category, while all use the same pricing and
-buy/sell behavior. Drafting a trade immediately displays the item and gold
+buy/sell behavior. Drafting a trade immediately displays the item and coin
 quantity changes on both sides; inventory changes only persist after choosing
 **Offer**.
 Trades are bound to the settlement where the character is currently located;

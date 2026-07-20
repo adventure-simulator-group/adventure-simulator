@@ -18,17 +18,7 @@ use std::{
     time::Duration,
 };
 
-fn is_currency_id(item_id: &str) -> bool {
-    matches!(
-        item_id,
-        "rhenish_gulden"
-            | "lubeck_mark"
-            | "hamburg_mark"
-            | "saxon_thaler"
-            | "brandenburg_groschen"
-            | "danish_mark"
-    )
-}
+use adventuresim_core::strategic_currency::is_currency_id;
 use url::Url;
 
 use adventuresim_stdb_client::{

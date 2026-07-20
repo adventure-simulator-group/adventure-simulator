@@ -610,7 +610,7 @@ fn insert_character_with_origin(
     crate::personality::initialize_personality(ctx, id, npc);
 
     // Starter items
-    crate::item::credit_personal_currency(ctx, character.id, &start_settlement.id, 100);
+    crate::item::credit_personal_currency(ctx, character.id, &start_settlement.id, 100)?;
     add_inventory_item(ctx, character.id, "torch", 1);
     add_inventory_item(ctx, character.id, "bandage", 3);
 

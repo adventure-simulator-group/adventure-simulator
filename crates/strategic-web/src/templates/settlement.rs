@@ -1626,7 +1626,7 @@ pub fn party_pool_page(
                                 td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                                 td class="inventory-item-name" {
                                     (item_name_with_quality(&item.item_id, definition))
-                                    span class="inventory-row-actions" { button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="withdraw" data-transfer-mode="one" data-count=(item.quantity) data-current=(current) data-target=(target) data-label-one=(format!("Withdraw one {}", item.item_id)) data-label-target=(format!("Withdraw {} to target", item.item_id)) data-label-all=(format!("Withdraw all {}", item.item_id)) title=(if value > stake { format!("Withdraw one {}; {} personal gold required", item.item_id, value - stake) } else { format!("Withdraw one {} using your stake", item.item_id) }) aria-label=(format!("Withdraw one {}", item.item_id)) { (transfer_glyph(1)) } }
+                                span class="inventory-row-actions" { button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="withdraw" data-transfer-mode="one" data-count=(item.quantity) data-current=(current) data-target=(target) data-label-one=(format!("Withdraw one {}", item.item_id)) data-label-target=(format!("Withdraw {} to target", item.item_id)) data-label-all=(format!("Withdraw all {}", item.item_id)) title=(if value > stake { format!("Withdraw one {}; {} personal coin required", item.item_id, value - stake) } else { format!("Withdraw one {} using your stake", item.item_id) }) aria-label=(format!("Withdraw one {}", item.item_id)) { (transfer_glyph(1)) } }
                                 }
                                 td class="inventory-count" { (quantity_target_control(item.quantity, target_quantity(party_targets, &item.item_id), &item.item_id, true)) }
                                 td class="inventory-weight" { (item_weight(definition)) }
@@ -1761,15 +1761,7 @@ pub(super) fn item_name_with_quality(
     item_id: &str,
     definition: Option<&crate::spacetimedb::ItemDefinition>,
 ) -> Markup {
-    let currency_name = match item_id {
-        "rhenish_gulden" => Some("Rhenish gulden"),
-        "lubeck_mark" => Some("Lübeck mark"),
-        "hamburg_mark" => Some("Hamburg mark"),
-        "saxon_thaler" => Some("Saxon thaler"),
-        "brandenburg_groschen" => Some("Brandenburg groschen"),
-        "danish_mark" => Some("Danish mark"),
-        _ => None,
-    };
+    let currency_name = adventuresim_core::strategic_currency::currency_name(item_id);
     if let Some(currency_name) = currency_name {
         html! {
             span class="inventory-item-label" data-item-name="Coin"

@@ -1,29 +1,27 @@
-use crate::{character::character_equip, repair::item_condition};
+use crate::{character::character_equip, repair::item_condition, strategic::settlement};
 use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
 use strum::{EnumCount, VariantArray};
 
-/// Equal-value historical denominations used by the northern-German 1544
-/// setting.  Their exchange behavior is deliberately identical until the
-/// Mercantile system is introduced.
-pub const CURRENCY_IDS: [&str; 6] = [
-    "rhenish_gulden",
-    "lubeck_mark",
-    "hamburg_mark",
-    "saxon_thaler",
-    "brandenburg_groschen",
-    "danish_mark",
-];
+pub use adventuresim_core::strategic_currency::CURRENCY_IDS;
 
 pub fn settlement_currency_id(settlement_id: &str) -> &'static str {
-    // Repository-owned FNV-1a: unlike DefaultHasher this mapping is stable
-    // across Rust/toolchain releases and reproducible by import tooling.
-    let hash = settlement_id
-        .as_bytes()
-        .iter()
-        .fold(0xcbf29ce484222325_u64, |hash, byte| {
-            (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
-        });
-    CURRENCY_IDS[hash as usize % CURRENCY_IDS.len()]
+    adventuresim_core::strategic_currency::assigned_currency_id(settlement_id)
+}
+
+pub fn currency_id_for_settlement(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+) -> Result<String, String> {
+    match ctx.db.settlement().id().find(settlement_id.to_string()) {
+        Some(settlement) if CURRENCY_IDS.contains(&settlement.currency_id.as_str()) => {
+            Ok(settlement.currency_id)
+        }
+        Some(settlement) => Err(format!(
+            "Settlement {} has invalid currency {}",
+            settlement.id, settlement.currency_id
+        )),
+        None => Ok(settlement_currency_id(settlement_id).to_string()),
+    }
 }
 
 /// [`Item`] that is in the inventory
@@ -1215,13 +1213,28 @@ pub fn credit_personal_currency(
     character_id: u64,
     settlement_id: &str,
     amount: u32,
-) {
-    add_inventory_item(
-        ctx,
-        character_id,
-        settlement_currency_id(settlement_id),
-        amount,
-    );
+) -> Result<(), String> {
+    if amount == 0 {
+        return Ok(());
+    }
+    let currency_id = currency_id_for_settlement(ctx, settlement_id)?;
+    if let Some(mut stack) = ctx
+        .db
+        .inventory_item()
+        .character_and_item_id()
+        .filter((character_id, &currency_id))
+        .next()
+    {
+        stack.quantity = merged_currency_quantity(stack.quantity, amount);
+        ctx.db.inventory_item().id().update(stack);
+    } else {
+        add_inventory_item(ctx, character_id, &currency_id, amount);
+    }
+    Ok(())
+}
+
+fn merged_currency_quantity(existing: u32, credit: u32) -> u32 {
+    existing.saturating_add(credit)
 }
 
 #[reducer]
@@ -1346,6 +1359,12 @@ mod tests {
             Some(vec![(9, 2), (4, 2)])
         );
         assert_eq!(currency_withdrawal_plan(stacks, 6), None);
+    }
+
+    #[test]
+    fn repeated_same_denomination_credits_merge_safely() {
+        assert_eq!(merged_currency_quantity(40, 2), 42);
+        assert_eq!(merged_currency_quantity(u32::MAX, 1), u32::MAX);
     }
 
     #[test]
