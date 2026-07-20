@@ -254,6 +254,15 @@ cartoon village, a textured painting, or a detailed model building.
   at the upper-right as high-layer corner overlays; they must remain clickable
   when service buildings pass underneath them and must not reserve flex space
   beside the building row.
+- Position service marks with tier-level custom properties, never per-building
+  offsets. Every building in one village, town, or city set must share the same
+  mark baseline and size; taller, more prosperous sets may move the whole mark
+  row upward so centered-low doors remain clear beneath it.
+- Use the original monochrome PNG masks in `static/icons/settlement-services/`
+  for settlement services instead of generic inventory icon SVGs. Keep temple
+  marks denomination-specific by resolving the same religion asset used by the
+  skill menu. Travel architecture is always a gatehouse: a fence-gate shack in
+  villages, a civic gate in towns, and a fortified urban gate in cities.
 - Apply the same time-of-day lighting value to both the tinted building raster
   and its service mark. Keep them as separate layers, but do not let the mark
   remain at full daytime brightness while the architecture darkens.

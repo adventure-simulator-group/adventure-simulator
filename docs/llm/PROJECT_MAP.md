@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (868)
+## Files (876)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -736,6 +736,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/game/wood-club.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/religion/ATTRIBUTION.md` — Project documentation.
 - `crates/strategic-web/static/icons/religion/canterbury-cross.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/religion/catholic-cross-bottony.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/religion/catholic-crucifix.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/religion/fontawesome-cross.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/religion/fontawesome-star-and-crescent.svg` — Vector UI or texture asset.
@@ -743,6 +744,13 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/religion/huguenot-cross.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/religion/luther-rose.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/religion/orthodox-cross.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/settlement-services/armor.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/settlement-services/clothing.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/settlement-services/herbalist.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/settlement-services/inn.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/settlement-services/market.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/settlement-services/travel.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/settlement-services/weapons.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/attributes/agility-arm.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/attributes/agility-leg.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/attributes/immunity.png` — Binary game or UI asset.

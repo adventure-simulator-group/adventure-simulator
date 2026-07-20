@@ -18,6 +18,8 @@ const buildingRoot = path.join(
 const tiers = ["village", "town", "city"];
 const variants = ["inland", "coastal", "river"];
 const horizonRoot = path.join(buildingRoot, "..", "background");
+const serviceIconRoot = path.join(__dirname, "..", "static", "icons", "settlement-services");
+const religionIconRoot = path.join(__dirname, "..", "static", "icons", "religion");
 
 function decodeRgbaPng(file) {
   const png = fs.readFileSync(file);
@@ -133,6 +135,29 @@ test("all settlement building backgrounds are normalized tintable RGBA assets", 
     }
   }
   assert.ok(Math.max(...baselines) - Math.min(...baselines) <= 1, "shared bottom baseline");
+});
+
+test("generated settlement service and Catholic marks are compact tintable PNG masks", () => {
+  const iconFiles = [
+    ...["travel", "market", "weapons", "armor", "clothing", "herbalist", "inn"]
+      .map((name) => path.join(serviceIconRoot, `${name}.png`)),
+    path.join(religionIconRoot, "catholic-cross-bottony.png"),
+  ];
+  for (const file of iconFiles) {
+    const { width, height, rgba } = decodeRgbaPng(file);
+    assert.equal(width, 256, `${file} width`);
+    assert.equal(height, 256, `${file} height`);
+    const cornerOffsets = [0, (width - 1) * 4, (height - 1) * width * 4, (width * height - 1) * 4];
+    for (const offset of cornerOffsets) assert.equal(rgba[offset + 3], 0, `${file} corner alpha`);
+    let visible = 0;
+    for (let i = 0; i < rgba.length; i += 4) {
+      if (!rgba[i + 3]) continue;
+      assert.deepEqual([...rgba.subarray(i, i + 3)], [24, 24, 24], `${file} is a solid mask`);
+      visible += 1;
+    }
+    assert.ok(visible > width * height * 0.08, `${file} remains legible at compact size`);
+    assert.ok(visible < width * height * 0.65, `${file} retains transparent padding`);
+  }
 });
 
 test("all settlement horizons are standardized transparent panoramic assets", () => {

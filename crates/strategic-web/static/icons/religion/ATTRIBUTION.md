@@ -11,7 +11,8 @@ Vendored icon names: `cross`, `star-and-crescent`, and `star-of-david`.
 
 The Catholic crucifix, Luther rose, Reformed burning-bush cross, Anglican
 Compass Rose cross, and Orthodox cross are project-native, simplified
-monochrome renderings of long-established religious symbols. Their SVG source
-is distributed under the repository's AGPL-3.0 license.
+monochrome renderings of long-established religious symbols. The generated
+Catholic cross bottony PNG is also project-native. These assets are distributed
+under the repository's AGPL-3.0 license.
 
 CSS masks supply every icon's blue-purple mental-skill colour at runtime.

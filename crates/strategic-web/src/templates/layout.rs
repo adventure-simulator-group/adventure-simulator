@@ -90,7 +90,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/base.css?v=environment-14";
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=left-rail-scrollbars-3-settlement-city-foregrounds-3";
+                link rel="stylesheet" href="/static/css/layout.css?v=left-rail-scrollbars-3-settlement-service-art-4";
                 link rel="stylesheet" href="/static/css/components.css?v=coin-currencies-3";
                 link rel="stylesheet" href="/static/css/strategic.css?v=inventory-browser-15-religion-5-travel-polish-9";
                 link rel="stylesheet" href="/static/css/utilities.css?v=inventory-browser-15";
@@ -392,7 +392,7 @@ pub fn sidebar_section(title: &str, content: Markup) -> Markup {
 mod tests {
     use super::{
         HorizonVariant, building_tier, building_tint, horizon_variant, quest_location_top_bar,
-        settlement_layout_with_session, settlement_top_bar,
+        religion_icon_path, settlement_layout_with_session, settlement_top_bar,
     };
     use crate::spacetimedb::SettlementCategory;
     use maud::html;
@@ -493,7 +493,7 @@ mod tests {
         assert!(markup.contains("aria-label=\"Church\""));
         assert!(markup.contains("aria-current=\"page\""));
         assert!(markup.contains("--service-tab-icon: url("));
-        assert!(markup.contains("/static/icons/religion/catholic-crucifix.svg"));
+        assert!(markup.contains(religion_icon_path(Some("roman_catholic"))));
 
         let css = include_str!("../../static/css/layout.css");
         for service in [

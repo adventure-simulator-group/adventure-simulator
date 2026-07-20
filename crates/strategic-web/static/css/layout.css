@@ -143,6 +143,21 @@
   --settlement-horizon-image: url("/static/styles/timber-framed/background/city/river.png?v=urban-foregrounds-1");
 }
 
+.settlement-top-bar[data-building-tier="village"] {
+  --service-icon-bottom: 0.42rem;
+  --service-icon-size: 1.6rem;
+}
+
+.settlement-top-bar[data-building-tier="town"] {
+  --service-icon-bottom: 0.92rem;
+  --service-icon-size: 1.7rem;
+}
+
+.settlement-top-bar[data-building-tier="city"] {
+  --service-icon-bottom: 1.28rem;
+  --service-icon-size: 1.75rem;
+}
+
 .settlement-top-bar[data-environment="settlement"] > * {
   position: relative;
   z-index: 1;
@@ -325,7 +340,7 @@
    individual assets exist, so a missing higher-tier image never becomes a 404. */
 .settlement-top-bar:is([data-building-tier="village"], [data-building-tier="town"], [data-building-tier="city"])
   .nav-tab[data-service-id="map"] {
-  --service-building-image: url("/static/styles/timber-framed/building/village/map.png");
+  --service-building-image: url("/static/styles/timber-framed/building/village/map.png?v=gatehouse-1");
 }
 .settlement-top-bar:is([data-building-tier="village"], [data-building-tier="town"], [data-building-tier="city"])
   .nav-tab[data-service-id="merchants"] {
@@ -357,7 +372,7 @@
 }
 
 /* Higher tiers are complete sets; village remains the explicit fallback above. */
-.settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="map"] { --service-building-image: url("/static/styles/timber-framed/building/town/map.png"); }
+.settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="map"] { --service-building-image: url("/static/styles/timber-framed/building/town/map.png?v=gatehouse-1"); }
 .settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="merchants"] { --service-building-image: url("/static/styles/timber-framed/building/town/merchants.png"); }
 .settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="weapons"] { --service-building-image: url("/static/styles/timber-framed/building/town/weapons.png"); }
 .settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="armor"] { --service-building-image: url("/static/styles/timber-framed/building/town/armor.png"); }
@@ -366,7 +381,7 @@
 .settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="inn"] { --service-building-image: url("/static/styles/timber-framed/building/town/inn.png"); }
 .settlement-top-bar[data-building-tier="town"] .nav-tab[data-service-id="religion"] { --service-building-image: url("/static/styles/timber-framed/building/town/religion.png"); }
 
-.settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="map"] { --service-building-image: url("/static/styles/timber-framed/building/city/map.png"); }
+.settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="map"] { --service-building-image: url("/static/styles/timber-framed/building/city/map.png?v=gatehouse-1"); }
 .settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="merchants"] { --service-building-image: url("/static/styles/timber-framed/building/city/merchants.png"); }
 .settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="weapons"] { --service-building-image: url("/static/styles/timber-framed/building/city/weapons.png"); }
 .settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="armor"] { --service-building-image: url("/static/styles/timber-framed/building/city/armor.png"); }
@@ -411,9 +426,9 @@
 .settlement-top-bar[data-environment="settlement"] .service-tab-icon {
   position: absolute;
   left: 50%;
-  bottom: 0.34rem;
-  width: 1.65rem;
-  height: 1.65rem;
+  bottom: var(--service-icon-bottom, 0.42rem);
+  width: var(--service-icon-size, 1.6rem);
+  height: var(--service-icon-size, 1.6rem);
   transform: translateX(-50%);
   background-color: transparent;
   -webkit-mask: none;
@@ -430,15 +445,15 @@
   content: "";
 }
 
-.service-tab-icon-market { --service-tab-icon: url("/static/icons/game/scales.svg"); }
-.service-tab-icon-weapons { --service-tab-icon: url("/static/icons/game/sword-brandish.svg"); }
-.service-tab-icon-armor { --service-tab-icon: url("/static/icons/game/breastplate.svg"); }
-.service-tab-icon-clothing { --service-tab-icon: url("/static/icons/game/clothes.svg"); }
-.service-tab-icon-medical-pack { --service-tab-icon: url("/static/icons/game/medical-pack.svg"); }
-.service-tab-icon-inn { --service-tab-icon: url("/static/icons/game/beer-stein.svg"); }
+.service-tab-icon-market { --service-tab-icon: url("/static/icons/settlement-services/market.png"); }
+.service-tab-icon-weapons { --service-tab-icon: url("/static/icons/settlement-services/weapons.png"); }
+.service-tab-icon-armor { --service-tab-icon: url("/static/icons/settlement-services/armor.png"); }
+.service-tab-icon-clothing { --service-tab-icon: url("/static/icons/settlement-services/clothing.png"); }
+.service-tab-icon-medical-pack { --service-tab-icon: url("/static/icons/settlement-services/herbalist.png"); }
+.service-tab-icon-inn { --service-tab-icon: url("/static/icons/settlement-services/inn.png"); }
 .service-tab-icon-church { --service-tab-icon: url("/static/icons/game/church.svg"); }
 
-.service-tab-icon-map { --service-tab-icon: url("/static/icons/game/treasure-map.svg"); }
+.service-tab-icon-map { --service-tab-icon: url("/static/icons/settlement-services/travel.png"); }
 .service-tab-icon-loot { --service-tab-icon: url("/static/icons/game/open-chest.svg"); }
 
 .settlement-services .nav-tab:hover .service-tab-icon,
