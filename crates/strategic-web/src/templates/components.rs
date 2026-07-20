@@ -106,7 +106,7 @@ pub fn stat_game_icon_name(icon: &str) -> &'static str {
         "medicine" => "medical-pack",
         "faith" => "holy-symbol",
         "melee" => "crossed-swords",
-        "combat" => "crossed-swords",
+        "combat" => "helmet",
         "ranged" => "bullseye",
         "dodge" => "acrobatic",
         "block" => "shield",
@@ -241,6 +241,12 @@ mod icon_tests {
     #[test]
     fn requested_game_icon_replacements_and_faith_icons_are_exact() {
         assert_eq!(stat_game_icon_name("dodge"), "acrobatic");
+        assert_eq!(stat_game_icon_name("combat"), "helmet");
+        assert_ne!(
+            stat_game_icon_name("combat"),
+            stat_game_icon_name("melee"),
+            "the Combat aggregate needs a distinct icon from its Melee detail row"
+        );
         assert_eq!(
             religion_icon_path(Some("roman_catholic")),
             "/static/icons/religion/catholic-crucifix.svg"
