@@ -266,20 +266,29 @@ cartoon village, a textured painting, or a detailed model building.
   slopes visually balanced. Do not show side walls, receding ridges, or
   three-quarter perspective; silhouette variation must remain front-aligned.
 - Keep settlement horizon art in a separate transparent layer behind the
-  service buildings. Confine distant fields, fences, trees, cottages, and
-  church silhouettes to the lower portion so the runtime sky remains visible,
-  and apply the same time-of-day brightness variable to the horizon layer.
+  service buildings. Compose it from nearby settlement fabric in front of a
+  more distant skyline so the service row reads as part of the place, not as a
+  strip of buildings standing outside it. Confine roofs, lanes, quays, trees,
+  and church silhouettes to the lower portion so the runtime sky remains
+  visible, and apply the same time-of-day brightness variable to the horizon
+  layer.
 - Store horizon variants at
   `styles/timber-framed/background/<village|town|city>/<inland|coastal|river>.png`.
   Every horizon is a 2880-by-240 transparent RGBA panorama with subdued
-  grayscale scenery, a shared bottom baseline, and low terrain or water that
-  reaches both horizontal edges. Render it proportionally with `cover`,
-  centered at the bottom; never force it to `100% 100%`. Wider viewports may
-  clip the sides, but must not stretch landmarks.
-- Inland horizons use fields and roads; river horizons use a lateral water band
-  plus a tier-appropriate bridge, quay, or mill; coastal horizons use a Baltic
-  shoreline plus tier-appropriate sheds, wharves, masts, or warehouses. Keep
-  water shallow and the center quiet so the service tabs remain dominant.
+  grayscale scenery and a shared bottom baseline. Meaningful settlement
+  silhouettes must reach both horizontal edges above that baseline; do not
+  place the town on a central island and bridge the sides with flat terrain or
+  water filler. Render it proportionally with `cover`, centered at the bottom;
+  never force it to `100% 100%`. Wider viewports may clip the sides, but must
+  not stretch landmarks or expose visibly simpler edge bands.
+- Inland village horizons may use fields and roads beyond nearby buildings;
+  town and city horizons use rooflines, streets, and courtyards immediately
+  behind the service row. River horizons use a lateral water band plus a
+  tier-appropriate bridge, quay, or mill; coastal horizons use a Baltic
+  shoreline plus tier-appropriate sheds, wharves, masts, or warehouses. In a
+  city, water belongs behind a continuous built-up quay rather than between the
+  viewer and an isolated distant skyline. Keep water shallow and the center
+  quiet enough that the service tabs remain dominant.
 - Reserve the largest uninterrupted facade field for the overlaid service mark.
   Place doors beside that field, normally at a lower outer corner, rather than
   centered beneath it; this keeps the building low and the mark large.

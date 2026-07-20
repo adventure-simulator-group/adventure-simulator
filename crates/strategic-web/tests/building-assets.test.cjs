@@ -184,3 +184,32 @@ test("all settlement horizons are standardized transparent panoramic assets", ()
     }
   }
 });
+
+test("town and city horizons carry an irregular built skyline through both crop edges", () => {
+  for (const tier of ["town", "city"]) {
+    for (const variant of variants) {
+      const { width, rgba } = decodeRgbaPng(path.join(horizonRoot, tier, `${variant}.png`));
+      for (const [side, startX, endX] of [
+        ["left", 0, Math.floor(width / 6)],
+        ["right", Math.floor(width * 5 / 6), width],
+      ]) {
+        const roofline = [];
+        for (let x = startX; x < endX; x += 4) {
+          let top = 240;
+          for (let y = 48; y < 180; y += 1) {
+            if (rgba[(y * width + x) * 4 + 3]) {
+              top = y;
+              break;
+            }
+          }
+          roofline.push(top);
+        }
+        assert.ok(Math.min(...roofline) < 130, `${tier}/${variant} ${side} edge contains nearby roofs`);
+        assert.ok(
+          Math.max(...roofline) - Math.min(...roofline) > 35,
+          `${tier}/${variant} ${side} edge is architecture rather than a flat filler band`,
+        );
+      }
+    }
+  }
+});

@@ -124,22 +124,22 @@
   --settlement-horizon-image: url("/static/styles/timber-framed/background/village/river.png");
 }
 .settlement-top-bar[data-building-tier="town"][data-horizon-variant="inland"] {
-  --settlement-horizon-image: url("/static/styles/timber-framed/background/town/inland.png");
+  --settlement-horizon-image: url("/static/styles/timber-framed/background/town/inland.png?v=urban-foregrounds-1");
 }
 .settlement-top-bar[data-building-tier="town"][data-horizon-variant="coastal"] {
-  --settlement-horizon-image: url("/static/styles/timber-framed/background/town/coastal.png");
+  --settlement-horizon-image: url("/static/styles/timber-framed/background/town/coastal.png?v=urban-foregrounds-1");
 }
 .settlement-top-bar[data-building-tier="town"][data-horizon-variant="river"] {
-  --settlement-horizon-image: url("/static/styles/timber-framed/background/town/river.png");
+  --settlement-horizon-image: url("/static/styles/timber-framed/background/town/river.png?v=urban-foregrounds-1");
 }
 .settlement-top-bar[data-building-tier="city"][data-horizon-variant="inland"] {
-  --settlement-horizon-image: url("/static/styles/timber-framed/background/city/inland.png");
+  --settlement-horizon-image: url("/static/styles/timber-framed/background/city/inland.png?v=urban-foregrounds-1");
 }
 .settlement-top-bar[data-building-tier="city"][data-horizon-variant="coastal"] {
-  --settlement-horizon-image: url("/static/styles/timber-framed/background/city/coastal.png");
+  --settlement-horizon-image: url("/static/styles/timber-framed/background/city/coastal.png?v=urban-foregrounds-1");
 }
 .settlement-top-bar[data-building-tier="city"][data-horizon-variant="river"] {
-  --settlement-horizon-image: url("/static/styles/timber-framed/background/city/river.png");
+  --settlement-horizon-image: url("/static/styles/timber-framed/background/city/river.png?v=urban-foregrounds-1");
 }
 
 .settlement-top-bar[data-environment="settlement"] > * {
