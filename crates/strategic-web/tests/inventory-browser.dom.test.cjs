@@ -58,6 +58,7 @@ test("mixed currency DOM stays one aggregate through normalization, staging, and
   parents = browser.querySelectorAll(".currency-parent-row");
   assert.equal(parents.length, 1);
   assert.equal(parents[0].querySelector(".inventory-count").textContent, "4");
+  assert.equal(browser.querySelectorAll(".inventory-detail-row").length, 0);
 
   browser.querySelector("tbody").insertAdjacentHTML("beforeend", currencyRow("saxon_thaler", "Saxon thaler", 4));
   inventory.refresh(browser);

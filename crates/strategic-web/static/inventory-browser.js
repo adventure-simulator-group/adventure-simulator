@@ -299,7 +299,7 @@
       row.hidden = !name.includes(state.query.toLocaleLowerCase());
       Object.keys(OPTIONAL_COLUMNS).forEach((column) => optionalCell(row, column).hidden = !state.columns.includes(column));
       if (row._inventoryDetail) { row._inventoryDetail.remove(); row._inventoryDetail = null; }
-      if (row.getAttribute("aria-expanded") === "true") createDetail(row, browser);
+      if (row.getAttribute("aria-expanded") === "true" && !row._currencyComponents) createDetail(row, browser);
     });
     browser.querySelectorAll("thead [data-inventory-column]").forEach((header) => { header.hidden = !state.columns.includes(header.dataset.inventoryColumn); });
     rows.map((row, index) => ({ row, index })).sort((a, b) => compareValues(rowValue(a.row, state.sort), rowValue(b.row, state.sort), state.direction) || a.index - b.index).forEach(({ row }) => {
