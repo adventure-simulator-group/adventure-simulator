@@ -283,10 +283,12 @@ cartoon village, a textured painting, or a detailed model building.
 - Reserve the largest uninterrupted facade field for the overlaid service mark.
   Place doors beside that field, normally at a lower outer corner, rather than
   centered beneath it; this keeps the building low and the mark large.
-- Keep that central service-mark field free of structural supports. Horizontal
-  floor bands, tie beams, braces, columns, and other secondary-tone shapes may
-  frame the field but must not cross behind the overlaid mark. Preserve an
-  uninterrupted light-wall area across the full mark footprint.
+- Treat town and city service buildings as restrained backlit silhouettes.
+  Below the roofline, keep the facade as one uninterrupted wall plane: do not
+  add floor beams, half-timber grids, pilasters, moldings, or clipped support
+  fragments. Reserve secondary shading for continuous roof and outer-contour
+  shapes, and reserve the darkest tone for doors and windows. This prevents
+  structural lines from appearing to stop abruptly around the service mark.
 - Keep openings sparse: normally one doorway and at most one additional window.
   Market stalls may use open bays and supports instead of a door.
 - Vary silhouettes with a few historically grounded cues appropriate to circa

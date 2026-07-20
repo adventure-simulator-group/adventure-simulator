@@ -265,7 +265,7 @@
   background-blend-mode: color, normal;
   -webkit-mask: var(--service-building-image) center bottom / contain no-repeat;
   mask: var(--service-building-image) center bottom / contain no-repeat;
-  filter: brightness(var(--building-light, 78%)) brightness(0.7);
+  filter: brightness(var(--building-light, 78%)) brightness(0.55);
   pointer-events: none;
 }
 

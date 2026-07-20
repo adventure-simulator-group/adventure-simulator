@@ -114,6 +114,20 @@ test("all settlement building backgrounds are normalized tintable RGBA assets", 
           }
         }
         assert.equal(centralSupports, 0, `${label} keeps the overlaid icon field free of structural beams`);
+
+        for (let y = 260; y < bottom - 3; y += 1) {
+          for (let x = 0; x < width; x += 1) {
+            const offset = (y * width + x) * 4;
+            if (!rgba[offset + 3] || rgba[offset] !== 112) continue;
+            let touchesSilhouetteEdge = false;
+            for (let yy = Math.max(0, y - 24); yy <= Math.min(height - 1, y + 24); yy += 1) {
+              for (let xx = Math.max(0, x - 24); xx <= Math.min(width - 1, x + 24); xx += 1) {
+                if (!rgba[(yy * width + xx) * 4 + 3]) touchesSilhouetteEdge = true;
+              }
+            }
+            assert.ok(touchesSilhouetteEdge, `${label} has no interior secondary-tone beam at ${x},${y}`);
+          }
+        }
       }
       baselines.push(bottom);
     }

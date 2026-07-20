@@ -61,7 +61,7 @@ test("settlement tabs layer tiered tintable buildings and proportional horizons 
   assert.match(layoutCss, /background-blend-mode: color, normal/);
   assert.match(layoutCss, /mask: var\(--service-building-image\) center bottom \/ contain no-repeat/);
   assert.match(layoutCss, /data-environment="settlement"[\s\S]*\.service-tab-building \{[\s\S]*display: block/);
-  assert.match(layoutCss, /filter: brightness\(var\(--building-light, 78%\)\) brightness\(0\.7\)/);
+  assert.match(layoutCss, /filter: brightness\(var\(--building-light, 78%\)\) brightness\(0\.55\)/);
   assert.match(layoutCss, /inset: -0\.45rem -0\.65rem -0\.25rem/);
   assert.doesNotMatch(layoutCss, /clip-path: polygon\(50% 0, 100% 100%, 0 100%\)/);
   assert.match(layoutCss, /\.service-tab-building \{[\s\S]*pointer-events: none/);
