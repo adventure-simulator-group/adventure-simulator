@@ -22,9 +22,9 @@ use std::{collections::BTreeSet, fmt, str::FromStr};
 
 use super::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use super::{
-    decorative_game_icon, empty_state, game_icon, item_type_header, item_type_icon,
-    population_description, quest_location_layout_with_session, religion_icon,
-    settlement_layout_with_session, sidebar_section, stat_icon_path,
+    camp_location_layout_with_session, decorative_game_icon, empty_state, game_icon,
+    item_type_header, item_type_icon, population_description, quest_location_layout_with_session,
+    religion_icon, settlement_layout_with_session, sidebar_section, stat_icon_path,
 };
 use crate::medical::MedicalPresentation;
 use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
@@ -1124,6 +1124,20 @@ pub(crate) struct CampTravelDestination {
     pub current: bool,
 }
 
+fn camp_fire_is_lit(
+    journey: Option<&PartyJourney>,
+    itinerary: Option<&PartyJourneyItinerary>,
+) -> bool {
+    !matches!(
+        (journey, itinerary),
+        (Some(journey), Some(itinerary))
+            if itinerary
+                .actual_camp_intervals
+                .last()
+                .is_some_and(|interval| interval.movement_minute == journey.completed_minutes)
+    )
+}
+
 /// The transient strategic location between planned travel legs.
 pub fn camp_page(
     party: &Party,
@@ -1139,6 +1153,7 @@ pub fn camp_page(
     can_continue_travel: bool,
     logged_in_as: Option<&str>,
 ) -> Markup {
+    let camp_fire_lit = camp_fire_is_lit(journey, itinerary);
     let content = html! {
         aside class="left-sidebar map-rest-sidebar" {
             div class="map-rest-sidebar-content" {
@@ -1200,7 +1215,14 @@ pub fn camp_page(
             (sidebar_section("Travel preferences", travel_preferences_form(party, "/camp/travel-configuration")))
         }
     };
-    quest_location_layout_with_session("Camp", "Camp", &party.id, "camp", content, logged_in_as)
+    camp_location_layout_with_session(
+        "Camp",
+        "Camp",
+        &party.id,
+        camp_fire_lit,
+        content,
+        logged_in_as,
+    )
 }
 
 pub(crate) fn party_rest_menu(
@@ -6533,7 +6555,7 @@ mod tests {
 
     #[test]
     fn persisted_quest_camp_keeps_turnaround_movement_after_elapsed_rest() {
-        let journey = PartyJourney {
+        let mut journey = PartyJourney {
             party_id: "party".into(),
             origin_kind: "settlement".into(),
             origin_id: "home".into(),
@@ -6568,6 +6590,16 @@ mod tests {
             actual_camp_intervals: vec![camp(480, 300, 0.5, 0.2)],
             forecast_camp_intervals: vec![camp(780, 300, 0.2, 0.0)],
         };
+        assert!(
+            !camp_fire_is_lit(Some(&journey), Some(&itinerary)),
+            "resting at the current movement checkpoint leaves smoke-only embers"
+        );
+        journey.completed_minutes = 600;
+        assert!(
+            camp_fire_is_lit(Some(&journey), Some(&itinerary)),
+            "reaching a later camp relights the fire"
+        );
+        journey.completed_minutes = 480;
         let encoded = format_persisted_itinerary(&journey, &itinerary);
         assert!(encoded.contains("w,0,480,0,480"));
         assert!(encoded.contains("m,480,600,480,0"));

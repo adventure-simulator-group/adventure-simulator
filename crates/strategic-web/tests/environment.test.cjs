@@ -8,6 +8,8 @@ const buildingSource = fs.readFileSync("crates/strategic-web/static/building-sta
 const baseCss = fs.readFileSync("crates/strategic-web/static/css/base.css", "utf8");
 const layoutCss = fs.readFileSync("crates/strategic-web/static/css/layout.css", "utf8");
 const strategicCss = fs.readFileSync("crates/strategic-web/static/css/strategic.css", "utf8");
+const layoutTemplate = fs.readFileSync("crates/strategic-web/src/templates/layout.rs", "utf8");
+const settlementTemplate = fs.readFileSync("crates/strategic-web/src/templates/settlement.rs", "utf8");
 const window = {
   queueStrategicInitialLoad: () => new Promise(() => {}),
   strategicBackgroundFetch() {},
@@ -99,6 +101,43 @@ test("settlement tabs layer tiered tintable buildings and proportional horizons 
     assert.match(layoutCss, new RegExp(`settlement-services/${icon}\\.png`));
   }
   assert.match(buildingSource, /"clothing", "herbalist", "inn"/);
+});
+
+test("settlement smithies and wilderness tabs use independent non-interactive effect layers", () => {
+  assert.match(layoutTemplate, /path == "weapons"[\s\S]*building-chimney-smoke/);
+  assert.match(layoutTemplate, /class="wilderness-flame campfire-flame"[\s\S]*aria-hidden="true"/);
+  assert.match(layoutTemplate, /smoke_effect\("wilderness-smoke campfire-smoke"\)/);
+  assert.match(layoutTemplate, /svg class=\(class\)[\s\S]*aria-hidden="true"[\s\S]*focusable="false"/);
+  assert.match(layoutCss, /\.wilderness-smoke,[\s\S]*\.wilderness-flame \{[\s\S]*z-index: 1;[\s\S]*pointer-events: none/);
+  assert.match(layoutCss, /\.service-notification-badge \{[\s\S]*z-index: 3/);
+  assert.match(layoutCss, /\.nav-tab\.active::after \{[\s\S]*z-index: 4/);
+  assert.match(layoutCss, /@media \(prefers-reduced-motion: reduce\)[\s\S]*animation: none/);
+  assert.doesNotMatch(layoutTemplate, /<filter|feTurbulence|feDisplacementMap/);
+
+  const smokeFrames = layoutCss.match(/@keyframes wilderness-smoke-rise \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const flameFrames = layoutCss.match(/@keyframes wilderness-flame-flicker \{[\s\S]*?\n\}/)?.[0] ?? "";
+  for (const frames of [smokeFrames, flameFrames]) {
+    assert.match(frames, /transform:/);
+    assert.match(frames, /opacity:/);
+    assert.doesNotMatch(frames, /filter:|fill:|stroke:/);
+  }
+});
+
+test("quest and camp headers keep their navigation while presenting physical wilderness props", () => {
+  for (const [view, asset] of [
+    ["camp", "camp-firepit.png"],
+    ["encounter", "encounter-boulders.png"],
+    ["map", "map-lookout-tree.png"],
+    ["loot", "loot-supply-cache.png"],
+  ]) {
+    assert.match(layoutTemplate, new RegExp(`data-location-view="${view}"`));
+    assert.match(layoutCss, new RegExp(`ornament/wilderness/${asset.replace(".", "\\.")}`));
+  }
+  assert.match(layoutTemplate, /aria-label="Encounter"[\s\S]*aria-label="Map"[\s\S]*aria-label="Loot"/);
+  assert.match(layoutCss, /data-environment="wilderness"[\s\S]*\.wilderness-tab-prop \{[\s\S]*background-blend-mode: color, normal[\s\S]*pointer-events: none/);
+  assert.match(settlementTemplate, /actual_camp_intervals[\s\S]*movement_minute == journey\.completed_minutes/);
+  assert.match(settlementTemplate, /camp_location_layout_with_session\([\s\S]*camp_fire_lit/);
+  assert.doesNotMatch(settlementTemplate, /camp-fire|fire-state|rested=.*Query/);
 });
 
 test("settlement side panels use tint-derived beams and corner blocks", () => {

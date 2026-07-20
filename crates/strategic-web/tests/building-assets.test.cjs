@@ -31,6 +31,15 @@ const facadeIconFiles = {
   religion: path.join(religionIconRoot, "catholic-cross-bottony.png"),
 };
 const facadeIconPlacement = { left: 194, top: 254, size: 125 };
+const wildernessRoot = path.join(
+  __dirname,
+  "..",
+  "static",
+  "styles",
+  "timber-framed",
+  "ornament",
+  "wilderness",
+);
 
 function decodeRgbaPng(file) {
   const png = fs.readFileSync(file);
@@ -179,6 +188,41 @@ test("generated settlement service and Catholic marks are compact tintable PNG m
     assert.ok(visible > width * height * 0.08, `${file} remains legible at compact size`);
     assert.ok(visible < width * height * 0.65, `${file} retains transparent padding`);
   }
+});
+
+test("wilderness tab props share the building raster and baseline contract", () => {
+  const files = [
+    "camp-firepit.png",
+    "encounter-boulders.png",
+    "map-lookout-tree.png",
+    "loot-supply-cache.png",
+  ];
+  const baselines = [];
+  for (const filename of files) {
+    const { width, height, rgba } = decodeRgbaPng(path.join(wildernessRoot, filename));
+    assert.equal(width, 512, `${filename} width`);
+    assert.equal(height, 512, `${filename} height`);
+    for (const offset of [0, (width - 1) * 4, (height - 1) * width * 4, (width * height - 1) * 4]) {
+      assert.equal(rgba[offset + 3], 0, `${filename} corner alpha`);
+    }
+
+    const tones = new Set();
+    let visible = 0;
+    let bottom = -1;
+    for (let i = 0; i < rgba.length; i += 4) {
+      if (!rgba[i + 3]) continue;
+      assert.equal(rgba[i], rgba[i + 1], `${filename} is grayscale`);
+      assert.equal(rgba[i + 1], rgba[i + 2], `${filename} has no colored fringe`);
+      tones.add(rgba[i]);
+      visible += 1;
+      bottom = Math.max(bottom, Math.floor(i / 4 / width));
+    }
+    assert.deepEqual([...tones].sort((a, b) => a - b), [24, 112, 220], `${filename} tone roles`);
+    assert.ok(visible > width * height * 0.06, `${filename} has useful visible coverage`);
+    assert.ok(visible < width * height * 0.55, `${filename} retains transparent padding`);
+    baselines.push(bottom);
+  }
+  assert.deepEqual([...new Set(baselines)], [487], "wilderness props share the bottom baseline");
 });
 
 test("all settlement horizons are standardized transparent panoramic assets", () => {

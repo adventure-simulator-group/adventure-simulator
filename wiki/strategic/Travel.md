@@ -134,6 +134,14 @@ the camp's arrival time. If another system advances party time, the
 recommendation shrinks toward that same scheduled wake time. Continue travel is
 disabled outside the walking window and becomes available once it opens.
 
+The en-route header keeps its single Camp tab and existing rest and continue
+actions. The tab layers raster logs and stones with independent decorative SVG
+flame and smoke. A newly reached camp shows flame and smoke; after rest is
+recorded at that movement checkpoint, the flame is omitted and only smoke
+remains. Reaching a later checkpoint shows the flame again because the latest
+recorded rest no longer matches the journey's current movement minute.
+Reduced-motion clients receive static effects.
+
 At an inn or church, resting remains personal rather than party-wide. The rest
 control can switch between **Hours** and **Days**; its recommendation heals the
 active character's injuries first, or removes their fatigue when uninjured.

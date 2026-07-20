@@ -114,7 +114,31 @@ pub fn quest_location_layout_with_session(
 ) -> Markup {
     page_shell(
         title,
-        quest_location_top_bar(location_name, location_id, active_tab, logged_in_as),
+        quest_location_top_bar(location_name, location_id, active_tab, false, logged_in_as),
+        content,
+        ScriptProfile::Strategic,
+    )
+}
+
+/// Camp uses the wilderness location shell, while its current fire state is
+/// derived by the caller from the persisted journey itinerary.
+pub fn camp_location_layout_with_session(
+    title: &str,
+    location_name: &str,
+    location_id: &str,
+    camp_fire_lit: bool,
+    content: Markup,
+    logged_in_as: Option<&str>,
+) -> Markup {
+    page_shell(
+        title,
+        quest_location_top_bar(
+            location_name,
+            location_id,
+            "camp",
+            camp_fire_lit,
+            logged_in_as,
+        ),
         content,
         ScriptProfile::Strategic,
     )
@@ -132,7 +156,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/base.css?v=environment-14";
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=strategic-ui-overhaul-1";
+                link rel="stylesheet" href="/static/css/layout.css?v=wilderness-scenes-1";
                 link rel="stylesheet" href="/static/css/components.css?v=coin-currencies-3";
                 link rel="stylesheet" href="/static/css/strategic.css?v=strategic-ui-overhaul-1";
                 link rel="stylesheet" href="/static/css/utilities.css?v=strategic-ui-overhaul-1";
@@ -252,6 +276,9 @@ fn settlement_top_bar(
                         aria-current=(if active_service == path { "page" } else { "false" })
                     {
                         span class="service-tab-building" aria-hidden="true" {}
+                        @if path == "weapons" {
+                            (smoke_effect("wilderness-smoke building-chimney-smoke"))
+                        }
                         span
                             class=(format!("service-tab-icon service-tab-icon-{}", icon))
                             style=[(path == "religion").then(|| format!("--service-tab-icon: url('{}')", religion_icon_path(religion_id)))]
@@ -280,6 +307,7 @@ fn quest_location_top_bar(
     location_name: &str,
     location_id: &str,
     active_tab: &str,
+    camp_fire_lit: bool,
     logged_in_as: Option<&str>,
 ) -> Markup {
     let encounter_tint = "hsl(134 31% 20%)";
@@ -294,7 +322,8 @@ fn quest_location_top_bar(
     };
     html! {
         style { (format!(":root{{--active-building-tint:{active_tint};}}")) }
-        header class="top-bar settlement-top-bar quest-location-top-bar" data-environment="wilderness" {
+        header class="top-bar settlement-top-bar quest-location-top-bar" data-environment="wilderness"
+            data-camp-fire=[(active_tab == "camp").then_some(if camp_fire_lit { "lit" } else { "embers" })] {
             div class="top-bar-left settlement-location" {
                 div class="settlement-identity" {
                     @if active_tab == "camp" {
@@ -309,29 +338,40 @@ fn quest_location_top_bar(
                 @if active_tab == "camp" {
                     span class="nav-tab active quest-context-tab"
                         style=(format!("--building-tint:{encounter_tint}"))
+                        data-location-view="camp"
                         aria-current="page" aria-label="Camp" title="Camp" {
-                        span class="service-tab-icon service-tab-icon-camp" aria-hidden="true" {}
+                        span class="service-tab-building wilderness-tab-prop" aria-hidden="true" {}
+                        @if camp_fire_lit {
+                            (camp_flame_effect())
+                        }
+                        (smoke_effect("wilderness-smoke campfire-smoke"))
                     }
                 } @else {
                 a href=(format!("/locations/quest/{}", location_id))
                     class=(if active_tab == "encounter" { "nav-tab active" } else { "nav-tab" })
                     style=(format!("--building-tint:{encounter_tint}"))
+                    data-location-view="encounter"
                     aria-current=(if active_tab == "encounter" { "page" } else { "false" })
                     aria-label="Encounter" title="Encounter" {
+                    span class="service-tab-building wilderness-tab-prop" aria-hidden="true" {}
                     span class="service-tab-icon service-tab-icon-encounter" aria-hidden="true" {}
                 }
                 a href=(format!("/locations/quest/{}/map", location_id))
                     class=(if active_tab == "map" { "nav-tab active" } else { "nav-tab" })
                     style=(format!("--building-tint:{map_tint}"))
+                    data-location-view="map"
                     aria-current=(if active_tab == "map" { "page" } else { "false" })
                     aria-label="Map" title="Map" {
+                    span class="service-tab-building wilderness-tab-prop" aria-hidden="true" {}
                     span class="service-tab-icon service-tab-icon-map" aria-hidden="true" {}
                 }
                 a href=(format!("/locations/quest/{}/loot", location_id))
                     class=(if active_tab == "loot" { "nav-tab active" } else { "nav-tab" })
                     style=(format!("--building-tint:{loot_tint}"))
+                    data-location-view="loot"
                     aria-current=(if active_tab == "loot" { "page" } else { "false" })
                     aria-label="Loot" title="Loot" {
+                    span class="service-tab-building wilderness-tab-prop" aria-hidden="true" {}
                     span class="service-tab-icon service-tab-icon-loot" aria-hidden="true" {}
                 }
                 }
@@ -343,6 +383,28 @@ fn quest_location_top_bar(
             }
         }
         script src="/static/strategic-time.js?v=client-clock-2" {}
+    }
+}
+
+fn smoke_effect(class: &str) -> Markup {
+    html! {
+        svg class=(class) viewBox="0 0 64 96" aria-hidden="true" focusable="false" {
+            circle class="smoke-puff smoke-puff-one" cx="30" cy="76" r="8" {}
+            circle class="smoke-puff smoke-puff-two" cx="34" cy="76" r="7" {}
+            circle class="smoke-puff smoke-puff-three" cx="28" cy="76" r="9" {}
+        }
+    }
+}
+
+fn camp_flame_effect() -> Markup {
+    html! {
+        svg class="wilderness-flame campfire-flame" viewBox="0 0 64 80"
+            aria-hidden="true" focusable="false" {
+            path class="flame-shape flame-outer"
+                d="M32 74C17 74 11 64 15 51c3-10 12-15 13-29 10 7 16 16 14 27 5-4 7-9 7-14 7 8 10 17 7 25-3 9-11 14-24 14Z" {}
+            path class="flame-shape flame-inner"
+                d="M33 69c-8 0-13-6-11-14 1-6 7-10 8-18 7 6 10 12 7 18 3-2 5-5 6-8 3 5 4 11 1 16-2 4-6 6-11 6Z" {}
+        }
     }
 }
 
@@ -614,7 +676,7 @@ mod tests {
 
     #[test]
     fn wilderness_and_church_roots_match_the_active_tab_material() {
-        let wilderness = quest_location_top_bar("Ruins", "q", "loot", None).into_string();
+        let wilderness = quest_location_top_bar("Ruins", "q", "loot", false, None).into_string();
         assert!(wilderness.contains(":root{--active-building-tint:hsl(105 27% 19%);}"));
         let church = settlement_top_bar(
             "Smallville",
@@ -679,16 +741,65 @@ mod tests {
         .into_string();
         assert!(!overview.contains("aria-current=\"page\""));
 
-        let encounter = quest_location_top_bar("Ruins", "q", "encounter", None).into_string();
+        let encounter =
+            quest_location_top_bar("Ruins", "q", "encounter", false, None).into_string();
         assert!(encounter.contains("aria-label=\"Encounter\""));
         assert!(encounter.contains("href=\"/locations/quest/q\" class=\"nav-tab active\""));
 
-        let camp = quest_location_top_bar("Camp", "party-7", "camp", None).into_string();
+        let camp = quest_location_top_bar("Camp", "party-7", "camp", true, None).into_string();
         assert!(camp.contains("aria-label=\"Camp\""));
         assert!(camp.contains("href=\"/camp\""));
+        assert!(camp.contains("data-camp-fire=\"lit\""));
+        assert_eq!(
+            camp.matches("class=\"nav-tab active quest-context-tab\"")
+                .count(),
+            1
+        );
+        assert_eq!(camp.matches("campfire-flame").count(), 1);
+        assert_eq!(camp.matches("campfire-smoke").count(), 1);
         assert!(!camp.contains("/locations/quest/party-7"));
         assert!(!camp.contains("/locations/quest/party-7/map"));
         assert!(!camp.contains("/locations/quest/party-7/loot"));
+
+        let rested_camp =
+            quest_location_top_bar("Camp", "party-7", "camp", false, None).into_string();
+        assert!(rested_camp.contains("data-camp-fire=\"embers\""));
+        assert!(!rested_camp.contains("campfire-flame"));
+        assert_eq!(rested_camp.matches("campfire-smoke").count(), 1);
+    }
+
+    #[test]
+    fn wilderness_tabs_keep_the_existing_views_and_layer_physical_props() {
+        let markup = quest_location_top_bar("Ruins", "q", "map", false, None).into_string();
+        assert_eq!(markup.matches("data-location-view=").count(), 3);
+        assert_eq!(
+            markup
+                .matches("class=\"service-tab-building wilderness-tab-prop\"")
+                .count(),
+            3
+        );
+        assert!(markup.contains("href=\"/locations/quest/q\""));
+        assert!(markup.contains("href=\"/locations/quest/q/map\""));
+        assert!(markup.contains("href=\"/locations/quest/q/loot\""));
+        for label in ["Encounter", "Map", "Loot"] {
+            assert!(markup.contains(&format!("aria-label=\"{label}\"")));
+        }
+    }
+
+    #[test]
+    fn weapons_tabs_receive_decorative_smoke_without_changing_service_navigation() {
+        let markup = settlement_top_bar(
+            "Smallville",
+            "s",
+            &SettlementCategory::Village,
+            "weapons",
+            None,
+            None,
+        )
+        .into_string();
+        assert_eq!(markup.matches("building-chimney-smoke").count(), 1);
+        assert!(markup.contains("aria-hidden=\"true\""));
+        assert_eq!(markup.matches("class=\"nav-tab").count(), 8);
     }
 
     #[test]

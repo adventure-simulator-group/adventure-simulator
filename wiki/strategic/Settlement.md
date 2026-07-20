@@ -13,6 +13,12 @@ Settlement and quest destinations share the same strategic **location** shell. A
 
 The backend classifies every materialized settlement by population as Hamlet, Village, Town, City, or Capital, with population level as the fallback when no estimate exists. Each service tab layers its existing service SVG over a grayscale, CSS-tinted building background. Unknown settlements, hamlets, and villages use the village set; towns use town overrides when present; and cities or capitals use city overrides when present. A missing higher-tier image falls back to that service's village building. The location header is twice the height of compact application headers so the low silhouettes and large service marks remain legible. The tabs meet the lower edge of the sky and the active building is shown by an underline. The settlement name and saved character time share one carved or engraved rectangular sign island. The active tint carries through both interface rails, whose recessed interiors, edge beams, square corner blocks, and darker interactive rows are all derived from that tint, as well as through character inspection via the validated `building` URL parameter. Quest destinations use green environmental framing. The location header renders a continuously interpolated sky from the active character's saved time snapshot: daylight is bright blue, dawn and dusk are warm, and nighttime plus the building surfaces are darker still. The sun or moon follows an edge-to-edge arc that peaks over the center at noon or midnight, while other header text uses protected dark labels for reliable contrast.
 
+Weaponsmith chimneys add a subtle decorative SVG smoke layer without changing
+the raster building or service semantics. Quest destinations use the same
+physical-tab language for their unchanged Encounter, Map, and Loot views: a
+boulder formation, lookout tree, and supply cache sit beneath the existing
+separate semantic marks. All effect and prop layers are noninteractive.
+
 Each settlement offers a number of services. Tentatively, these are all tabs of a unified trade page. Each tab corresponds to a different guild, represented by a single NPC. The left side is a list of everything offered by the NPC, the right side is everything offered by your party. It _may_ be a good idea to not only include _items_ in this menu, but also _services_.
 
 The location header reflects settlement scale through architecture and its
