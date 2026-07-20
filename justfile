@@ -327,7 +327,7 @@ replace-world-data archive descriptor descriptor_sha256:
 compile-world:
 	@cargo run --package adventuresim-world-import --bin adventuresim-world-import --
 
-# Derive the bounded, deterministic SVG road/water package after Viabundus is initialized.
+# Derive the bounded SVG road, water, elevation, and partial-forest package.
 build-strategic-map:
 	@cargo run --package adventuresim-world-import --bin build-strategic-map --
 

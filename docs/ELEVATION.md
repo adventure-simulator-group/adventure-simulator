@@ -31,6 +31,12 @@ entirely void. The
 build report counts these fallbacks. The verified 1544 build sampled all 6,041
 settlements without using a fallback.
 
+The settlement Map presentation separately samples the installed GLO-30 tiles
+on a coarse deterministic grid. It emits generalized elevation tint cells and
+contour segments into the versioned SVG map package; raw raster pixels are not
+served to browsers and the presentation layer is not persisted in
+SpacetimeDB.
+
 Elevation is stored on settlements because it describes the settlement's own
 location and can directly influence scene selection, climate inference,
 agriculture, travel preparation, and UI presentation. A future source may add

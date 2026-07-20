@@ -1,4 +1,7 @@
-use std::{collections::BTreeSet, sync::OnceLock};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::OnceLock,
+};
 
 use maud::{Markup, html};
 use serde::{Deserialize, Serialize};
@@ -18,7 +21,8 @@ struct Package {
     source: Source,
     roads: Vec<Line>,
     water: Vec<Vec<[f64; 2]>>,
-    terrain: Option<Vec<Vec<[f64; 2]>>>,
+    elevation: ElevationLayer,
+    forest: ForestLayer,
     package_sha256: String,
 }
 
@@ -38,6 +42,50 @@ struct Line {
     points: Vec<[f64; 2]>,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct LayerSource {
+    name: String,
+    version: String,
+    url: String,
+    license: String,
+    file_count: usize,
+    files_sha256: BTreeMap<String, String>,
+    verification_status: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct ElevationLayer {
+    source: LayerSource,
+    cells: Vec<ElevationCell>,
+    contours: Vec<ElevationContour>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct ElevationCell {
+    bounds: [f64; 4],
+    band_m: i16,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct ElevationContour {
+    elevation_m: i16,
+    points: Vec<[f64; 2]>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct ForestLayer {
+    source: LayerSource,
+    coverage: Vec<[f64; 4]>,
+    regions: Vec<ForestRegion>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct ForestRegion {
+    bounds: [f64; 4],
+    density: u8,
+    kind: String,
+}
+
 static PACKAGE: OnceLock<Package> = OnceLock::new();
 static GEOMETRY: OnceLock<GeometryPath> = OnceLock::new();
 
@@ -46,7 +94,7 @@ fn package() -> &'static Package {
         let package: Package = serde_json::from_str(PACKAGE_JSON)
             .expect("generated strategic map package must be valid JSON");
         assert_eq!(
-            package.schema, 1,
+            package.schema, 2,
             "unsupported strategic map package schema"
         );
         let actual = package_json_digest(PACKAGE_JSON, &package.package_sha256);
@@ -108,7 +156,17 @@ pub fn strategic_map(
                 desc id="strategic-map-description" { "Use arrow keys or drag to pan. Use plus and minus controls or the mouse wheel to zoom. Activate a settlement pin to inspect it." }
                 g data-map-viewport {
                     rect class="map-land" x="0" y="0" width=(WIDTH) height=(HEIGHT) {}
+                    @for (band, path) in &geometry.elevation {
+                        path class=(format!("map-elevation map-elevation-{band}")) d=(path) {}
+                    }
                     path class="map-water" d=(&geometry.water) fill-rule="evenodd" {}
+                    @for ((kind, density), path) in &geometry.forest {
+                        path class=(format!("map-forest map-forest-{kind} map-forest-density-{density}")) d=(path) {}
+                    }
+                    path class="map-forest-coverage" d=(&geometry.forest_coverage) {}
+                    @for (elevation, path) in &geometry.contours {
+                        path class=(format!("map-contour map-contour-{elevation}")) d=(path) {}
+                    }
                     path class="map-road map-road-land" d=(&geometry.land) {}
                     path class="map-road map-road-ferry" d=(&geometry.ferry) {}
                     @for settlement in settlements.iter().filter(|settlement| has_geographic_source(settlement)) {
@@ -134,6 +192,8 @@ pub fn strategic_map(
                 }
             }
             p class="strategic-map-legend" {
+                span class="map-legend-elevation" aria-hidden="true" {} "Higher ground"
+                span class="map-legend-forest" aria-hidden="true" {} "Forest (partial)"
                 span class="map-legend-pin connected" aria-hidden="true" {} "Direct route"
                 span class="map-legend-pin" aria-hidden="true" {} "Other settlement"
                 span class="map-legend-selected" aria-hidden="true" {} "Selected"
@@ -143,7 +203,10 @@ pub fn strategic_map(
                 " (" (&package.source.license) "), adapted for " (package.year) ". Package "
                 code { (&package.package_sha256[..12]) }
                 @if package.source.verification_status != "verified" { ". Source status: legacy sidecar without byte sizes (release-blocked)." }
-                @if package.terrain.is_none() { ". Terrain and forest polygons are unavailable in the initialized map sources." }
+                " Elevation: " a href=(&package.elevation.source.url) { (&package.elevation.source.name) }
+                " (" (package.elevation.source.file_count) " tiles, generalized)."
+                " Forest: " a href=(&package.forest.source.url) { (&package.forest.source.name) }
+                " (" (package.forest.coverage.len()) " partial-coverage tiles)."
             }
         }
     }
@@ -191,6 +254,10 @@ struct GeometryPath {
     land: String,
     ferry: String,
     water: String,
+    elevation: BTreeMap<i16, String>,
+    contours: BTreeMap<i16, String>,
+    forest: BTreeMap<(String, u8), String>,
+    forest_coverage: String,
 }
 
 fn geometry_path(package: &Package) -> GeometryPath {
@@ -198,7 +265,39 @@ fn geometry_path(package: &Package) -> GeometryPath {
         land: String::new(),
         ferry: String::new(),
         water: String::new(),
+        elevation: BTreeMap::new(),
+        contours: BTreeMap::new(),
+        forest: BTreeMap::new(),
+        forest_coverage: String::new(),
     };
+    for cell in &package.elevation.cells {
+        append_bounds(
+            geometry.elevation.entry(cell.band_m).or_default(),
+            cell.bounds,
+            package.bounds,
+        );
+    }
+    for line in &package.elevation.contours {
+        append_path(
+            geometry.contours.entry(line.elevation_m).or_default(),
+            &line.points,
+            false,
+            package.bounds,
+        );
+    }
+    for region in &package.forest.regions {
+        append_bounds(
+            geometry
+                .forest
+                .entry((region.kind.clone(), region.density))
+                .or_default(),
+            region.bounds,
+            package.bounds,
+        );
+    }
+    for bounds in &package.forest.coverage {
+        append_bounds(&mut geometry.forest_coverage, *bounds, package.bounds);
+    }
     for line in &package.roads {
         append_path(
             if line.kind == "ferry" {
@@ -215,6 +314,11 @@ fn geometry_path(package: &Package) -> GeometryPath {
         append_path(&mut geometry.water, ring, true, package.bounds);
     }
     geometry
+}
+
+fn append_bounds(output: &mut String, [west, south, east, north]: [f64; 4], bounds: [f64; 4]) {
+    let points = [[west, north], [east, north], [east, south], [west, south]];
+    append_path(output, &points, true, bounds);
 }
 
 fn append_path(output: &mut String, points: &[[f64; 2]], close: bool, bounds: [f64; 4]) {
@@ -299,7 +403,10 @@ mod tests {
         assert!(!markup.contains("role=\"img\""));
         assert!(markup.contains("aria-current=\"true\""));
         assert!(markup.contains("map-pin-selection"));
-        assert!(markup.contains("Terrain and forest polygons are unavailable"));
+        assert!(markup.contains("map-elevation-"));
+        assert!(markup.contains("map-forest-"));
+        assert!(markup.contains("Higher ground"));
+        assert!(markup.contains("Forest (partial)"));
     }
 
     #[test]
@@ -325,7 +432,14 @@ mod tests {
         changed.source.license.push_str("-tampered");
         assert_ne!(original, package_digest(&changed));
         changed = package.clone();
-        changed.terrain = Some(vec![vec![[0.0, 0.0]; 4]]);
+        changed.elevation.cells[0].band_m += 50;
+        assert_ne!(original, package_digest(&changed));
+        changed = package.clone();
+        changed.forest.regions[0].density = if changed.forest.regions[0].density == 1 {
+            2
+        } else {
+            1
+        };
         assert_ne!(original, package_digest(&changed));
     }
 
@@ -334,9 +448,15 @@ mod tests {
         let first = GEOMETRY.get_or_init(|| geometry_path(package()));
         let second = GEOMETRY.get_or_init(|| geometry_path(package()));
         assert!(std::ptr::eq(first, second));
-        let bytes = first.land.len() + first.ferry.len() + first.water.len();
+        let bytes = first.land.len()
+            + first.ferry.len()
+            + first.water.len()
+            + first.forest_coverage.len()
+            + first.elevation.values().map(String::len).sum::<usize>()
+            + first.contours.values().map(String::len).sum::<usize>()
+            + first.forest.values().map(String::len).sum::<usize>();
         assert!(
-            bytes < 2_000_000,
+            bytes < 4_000_000,
             "formatted SVG geometry grew to {bytes} bytes"
         );
     }
