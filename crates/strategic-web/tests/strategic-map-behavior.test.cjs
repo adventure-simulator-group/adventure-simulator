@@ -76,13 +76,13 @@ test("tile zoom follows display density and respects the generated ceiling", () 
   assert.equal(helpers.tileZoom(20, 1200, 2, 4), 4);
 });
 
-test("visible tile range is padded but clamped to the world", () => {
+test("visible tile range loads exact intersections and clamps to the world", () => {
   const { helpers } = load();
   const range = helpers.visibleTileRange([0, 0, 90, 60], 512, 4);
   assert.equal(range.span, 32);
   assert.deepEqual(
     [range.minX, range.maxX, range.minY, range.maxY],
-    [0, 3, 0, 2],
+    [0, 2, 0, 1],
   );
 });
 
