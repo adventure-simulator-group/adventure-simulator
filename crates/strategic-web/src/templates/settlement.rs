@@ -1690,28 +1690,28 @@ fn surgery_item_requirement(requirement: SurgeryItemRequirement) -> Markup {
     }
 }
 
-fn surgery_difficulty_meter(procedure_label: &str, dc: f32) -> Markup {
+fn surgery_difficulty_meter(procedure_label: &str, dc: f32, effective_skill: f32) -> Markup {
     let difficulty = dc.max(0.0);
-    let scale_max = difficulty.max(5.0);
     let over_cap = difficulty > 5.0;
     let meter_label = format!("{procedure_label} Surgery difficulty");
+    let accessible_label = format!(
+        "{procedure_label}: requires {difficulty:.1} Surgery; current effective skill {:.1}",
+        effective_skill.max(0.0)
+    );
     html! {
         div class=(if over_cap { "surgery-difficulty surgery-difficulty-over-cap" } else { "surgery-difficulty" })
             title=[over_cap.then_some("Difficulty exceeds the normal Surgery skill scale")] {
             (stat_icon(&meter_label, "skills", "surgeon", true))
-            div class="skill-rank-bar surgery-difficulty-meter"
-                role="meter" aria-valuemin="0" aria-valuemax=(format!("{scale_max:.1}"))
-                aria-label=(&meter_label) aria-valuenow=(format!("{difficulty:.1}")) {
-                span class="skill-rank-track" aria-hidden="true" {
-                    @for tier in 1..=5 {
-                        @let offset = (tier - 1) as f32;
-                        @let current = (difficulty - offset).clamp(0.0, 1.0) * 100.0;
-                        span class=(format!("skill-rank-segment skill-rank-segment-{tier}")) {
-                            span class="rank-current" style=(format!("width:{current:.1}%")) {}
-                        }
-                    }
-                }
-            }
+            (skill_rank_bar(
+                difficulty,
+                effective_skill.min(difficulty),
+                &meter_label,
+                SkillRankBarOptions {
+                    show_value: false,
+                    extra_class: Some("surgery-difficulty-meter"),
+                    aria_label: Some(&accessible_label),
+                },
+            ))
             @if over_cap {
                 span class="surgery-difficulty-over-cap-marker" aria-hidden="true" { "+" }
             }
@@ -1727,11 +1727,21 @@ fn surgery_procedure_row(
     item_requirements: &[SurgeryItemRequirement],
     duration: u64,
     dc: f32,
+    effective_skill: f32,
+    unavailable: Option<&str>,
     disabled: Option<&str>,
     projectile_id: Option<u64>,
 ) -> Markup {
+    let row_class = if unavailable.is_some() {
+        "surgery-procedure surgery-procedure-unavailable"
+    } else {
+        "surgery-procedure"
+    };
+    let unavailable_label = unavailable.map(|reason| format!("{label}: {reason}"));
     html! {
-        form method="post" action=(action) class="surgery-procedure" {
+        form method="post" action=(action) class=(row_class)
+            data-tooltip=[unavailable] aria-label=[unavailable_label.as_deref()]
+            tabindex=[unavailable.map(|_| "0")] {
             input type="hidden" name="procedure" value=(procedure);
             @if let Some(projectile_id) = projectile_id {
                 input type="hidden" name="projectile_id" value=(projectile_id);
@@ -1747,8 +1757,8 @@ fn surgery_procedure_row(
             dl class="surgery-procedure-facts" {
                 div { dt { "Time" } dd { (duration) " min" } }
                 div class="surgery-procedure-difficulty" {
-                    dt class="visually-hidden" { "Difficulty" }
-                    dd { (surgery_difficulty_meter(label, dc)) }
+                    dt class="sr-only" { "Difficulty" }
+                    dd { (surgery_difficulty_meter(label, dc, effective_skill)) }
                 }
             }
             @if !item_requirements.is_empty() {
@@ -1759,7 +1769,7 @@ fn surgery_procedure_row(
                 }
             }
             @if let Some(reason) = disabled {
-                button type="submit" class="btn btn-block" disabled title=(reason) aria-label=(format!("{label}: {reason}")) { (reason) }
+                button type="submit" class="btn btn-block" disabled title=(reason) aria-label=(format!("{label}: {reason}")) { (label) }
             } @else {
                 button type="submit" class="btn btn-primary" { (label) }
             }
@@ -1825,17 +1835,17 @@ pub fn surgery_page(
                     @for projectile in projectiles.iter().filter(|projectile| projectile.limb == selected_limb) {
                         @let requires_kit = adventuresim_core::surgery::extraction_requires_surgery_kit(projectile.extraction_dc);
                         (surgery_procedure_row(&action, match projectile.kind { ProjectileKind::Arrowhead => "Remove arrowhead", ProjectileKind::Ball => "Remove ball" }, match projectile.kind { ProjectileKind::Arrowhead => "plain-arrow", ProjectileKind::Ball => "bullet-visual" }, "extract", if requires_kit { &[SurgeryItemRequirement::SurgeryKitReusable] } else { &[] }, surgery_duration("extract", effective_skill, projectile.extraction_dc), projectile.extraction_dc,
-                            if requires_kit && !has_kit { Some("No surgery kit") } else { None }, Some(projectile.id)))
+                            effective_skill, None, if effective_skill < projectile.extraction_dc { Some("Insufficient Surgery skill") } else if requires_kit && !has_kit { Some("No surgery kit") } else { None }, Some(projectile.id)))
                     }
                     (surgery_procedure_row(&action, "Bandage", "bandage-roll", "bandage", &[SurgeryItemRequirement::BandageConsumed], surgery_duration("bandage", effective_skill, 0.0), 0.0,
-                        if cut <= 0.0 { Some("No open cut") } else if bandaged { Some("Already bandaged") } else if bandages == 0 { Some("No bandages") } else { None }, None))
+                        effective_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if bandaged { Some("Already bandaged") } else if bandages == 0 { Some("No bandages") } else { None }, None))
                     (surgery_procedure_row(&action, "Stitch", "scalpel", "stitch", &[SurgeryItemRequirement::SurgeryKitReusable], surgery_duration("stitch", effective_skill, 2.0), 2.0,
-                        if cut <= 0.0 { Some("No wound to stitch") } else if stitched { Some("Already stitched") } else if effective_skill < 2.0 { Some("Requires Surgery 2") } else if !has_kit { Some("No surgery kit") } else { None }, None))
+                        effective_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if stitched { Some("Already stitched") } else if effective_skill < 2.0 { Some("Insufficient Surgery skill") } else if !has_kit { Some("No surgery kit") } else { None }, None))
                     @if splinted {
-                        (surgery_procedure_row(&action, "Remove splint", "arm-bandage", "remove-splint", &[], surgery_duration("remove-splint", effective_skill, 0.0), 0.0, None, None))
+                        (surgery_procedure_row(&action, "Remove splint", "arm-bandage", "remove-splint", &[], surgery_duration("remove-splint", effective_skill, 0.0), 0.0, effective_skill, None, None, None))
                     } @else {
                         (surgery_procedure_row(&action, "Splint", "arm-bandage", "splint", &[SurgeryItemRequirement::SplintEquipped], surgery_duration("splint", effective_skill, 1.0), 1.0,
-                            if fracture <= 0.0 { Some("No fracture") } else if effective_skill <= 0.0 { Some("Requires Surgery training") } else if splints == 0 { Some("No splints") } else { None }, None))
+                            effective_skill, if fracture <= 0.0 { Some("No injury is present") } else { None }, if fracture <= 0.0 { Some("No injury is present") } else if effective_skill < 1.0 { Some("Insufficient Surgery skill") } else if splints == 0 { Some("No splints") } else { None }, None))
                     }
                     @if cut <= 0.0 && bruise > 0.0 && fracture <= 0.0 {
                         p class="text-muted small-copy" { "Bruising must heal on its own." }
@@ -2674,7 +2684,7 @@ fn repair_custody_panel(
                 h3 { "In the smith's care" }
                 span class="repair-custody-skill" title=(format!("Smithing {smith_skill}")) {
                     (stat_icon("Smithing", "skills", "smithing", false))
-                    (skill_rank_bar(f32::from(smith_skill), f32::from(smith_skill), &format!("Smithing {smith_skill}")))
+                    (skill_rank_bar(f32::from(smith_skill), f32::from(smith_skill), &format!("Smithing {smith_skill}"), SkillRankBarOptions::default()))
                 }
             }
             div class="repair-custody-scroll" {
@@ -2965,12 +2975,14 @@ fn religion_skill_rows(
                         Skill::Religion.training_rank(primary_effective),
                         Skill::Religion.training_rank(primary_effective) * health.clamp(0.0, 1.0),
                         &format!("{primary_effective:.1} effective hours; {primary_direct:.1} directly studied hours"),
+                        SkillRankBarOptions::default(),
                     ))
                 } @else {
                     (skill_rank_bar(
                         Skill::Religion.training_rank(primary_effective),
                         Skill::Religion.training_rank(primary_effective) * health.clamp(0.0, 1.0),
                         &format!("{primary_effective:.1} effective hours; {primary_direct:.1} directly studied hours"),
+                        SkillRankBarOptions::default(),
                     ))
                 }
             }
@@ -3019,6 +3031,7 @@ fn religion_skill_rows(
                         Skill::Religion.training_rank(effective),
                         Skill::Religion.training_rank(effective) * health.clamp(0.0, 1.0),
                         &format!("{effective:.1} effective hours; {direct:.1} directly studied hours"),
+                        SkillRankBarOptions::default(),
                     ))
                 }
                 @if schedule.is_some() {
@@ -3110,7 +3123,7 @@ fn combat_skill_rows(
                 (stat_icon("Combat", "skills", "combat", false))
             }
             td class="party-skill-meter" colspan=[schedule.map(|_| "4")] {
-                (skill_rank_bar(rank, effective_rank, &format!("Relevant skills: {included}")))
+                (skill_rank_bar(rank, effective_rank, &format!("Relevant skills: {included}"), SkillRankBarOptions::default()))
             }
             @if schedule.is_some() {
                 td class="religion-auto-toggle-cell" {
@@ -3148,7 +3161,7 @@ fn combat_skill_rows(
                 }
                 td class="party-skill-meter" colspan=[schedule.map(|_| "4")] {
                     @let sub_rank = skill.training_rank(hours);
-                    (skill_rank_bar(sub_rank, sub_rank * health.clamp(0.0, 1.0), &format!("{:.0} hours invested", hours.max(0.0))))
+                    (skill_rank_bar(sub_rank, sub_rank * health.clamp(0.0, 1.0), &format!("{:.0} hours invested", hours.max(0.0)), SkillRankBarOptions::default()))
                 }
                 @if schedule.is_some() {
                     td class="religion-auto-toggle-cell" {}
@@ -3200,7 +3213,7 @@ fn party_skill_row(
                 (stat_icon(name, "skills", icon, false))
             }
             td class="party-skill-meter" colspan=[schedule_minutes.map(|_| "4")] {
-                (skill_rank_bar(rank, effective_rank, &format!("{invested_hours} hours invested")))
+                (skill_rank_bar(rank, effective_rank, &format!("{invested_hours} hours invested"), SkillRankBarOptions::default()))
             }
             @if let Some(minutes) = schedule_minutes {
                 td class="religion-auto-toggle-cell" {}
@@ -3211,11 +3224,40 @@ fn party_skill_row(
     }
 }
 
-fn skill_rank_bar(rank: f32, effective_rank: f32, title: &str) -> Markup {
+#[derive(Clone, Copy, Debug)]
+struct SkillRankBarOptions<'a> {
+    show_value: bool,
+    extra_class: Option<&'a str>,
+    aria_label: Option<&'a str>,
+}
+
+impl Default for SkillRankBarOptions<'_> {
+    fn default() -> Self {
+        Self {
+            show_value: true,
+            extra_class: None,
+            aria_label: None,
+        }
+    }
+}
+
+fn skill_rank_bar(
+    rank: f32,
+    effective_rank: f32,
+    title: &str,
+    options: SkillRankBarOptions<'_>,
+) -> Markup {
     let rank = rank.clamp(0.0, 5.0);
     let effective_rank = effective_rank.clamp(0.0, rank);
+    let class = options.extra_class.map_or_else(
+        || "skill-rank-bar".to_owned(),
+        |extra| format!("skill-rank-bar {extra}"),
+    );
+    let aria_label = options
+        .aria_label
+        .map_or_else(|| format!("{effective_rank:.1} out of 5"), str::to_owned);
     html! {
-        div class="skill-rank-bar" title=(title) aria-label=(format!("{effective_rank:.1} out of 5"))
+        div class=(class) title=(title) aria-label=(aria_label)
             role="meter" aria-valuemin="0" aria-valuemax="5" aria-valuenow=(format!("{effective_rank:.1}")) {
             span class="skill-rank-track" aria-hidden="true" {
                 @for tier in 1..=5 {
@@ -3229,7 +3271,9 @@ fn skill_rank_bar(rank: f32, effective_rank: f32, title: &str) -> Markup {
                     }
                 }
             }
-            span class="skill-rank-value" aria-hidden="true" { (format!("{effective_rank:.1}")) }
+            @if options.show_value {
+                span class="skill-rank-value" aria-hidden="true" { (format!("{effective_rank:.1}")) }
+            }
         }
     }
 }
@@ -5243,7 +5287,8 @@ mod tests {
 
     #[test]
     fn skill_meter_and_schedule_use_segmented_rank_and_text_time_controls() {
-        let meter = skill_rank_bar(3.5, 2.75, "Skill test").into_string();
+        let meter =
+            skill_rank_bar(3.5, 2.75, "Skill test", SkillRankBarOptions::default()).into_string();
         for tier in 1..=5 {
             assert!(meter.contains(&format!("skill-rank-segment-{tier}")));
         }
@@ -5290,21 +5335,56 @@ mod tests {
     }
 
     #[test]
-    fn surgery_difficulty_uses_an_unlabelled_value_skill_meter() {
-        let meter = surgery_difficulty_meter("Stitch", 2.5).into_string();
+    fn surgery_difficulty_uses_shared_skill_meter_for_met_and_unmet_ranks() {
+        let meter = surgery_difficulty_meter("Remove ball", 4.0, 2.0).into_string();
         assert!(meter.contains("stat-icon-surgeon"));
         assert!(meter.contains("role=\"meter\""));
-        assert!(meter.contains("skill-rank-segment-3"));
+        for tier in 1..=5 {
+            assert!(meter.contains(&format!("skill-rank-segment-{tier}")));
+        }
+        assert_eq!(
+            meter
+                .matches("class=\"rank-current\" style=\"width:100.0%\"")
+                .count(),
+            2
+        );
+        assert_eq!(meter.matches("left:0.0%;width:100.0%").count(), 2);
         assert!(!meter.contains("skill-rank-value"));
-        assert!(!meter.contains(">2.5<"));
-        assert!(meter.contains("aria-label=\"Stitch Surgery difficulty\""));
-        let over_cap = surgery_difficulty_meter("Remove ball", 7.2).into_string();
+        assert!(!meter.contains(">4.0<"));
+        assert!(meter.contains(
+            "aria-label=\"Remove ball: requires 4.0 Surgery; current effective skill 2.0\""
+        ));
+        let over_cap = surgery_difficulty_meter("Remove ball", 7.2, 5.0).into_string();
         assert!(over_cap.contains("surgery-difficulty-over-cap-marker"));
-        assert!(over_cap.contains("aria-valuenow=\"7.2\""));
+        assert!(over_cap.contains("requires 7.2 Surgery; current effective skill 5.0"));
         assert!(!adventuresim_core::surgery::extraction_requires_surgery_kit(1.0));
         assert!(adventuresim_core::surgery::extraction_requires_surgery_kit(
             1.01
         ));
+    }
+
+    #[test]
+    fn unavailable_surgery_rows_are_greyed_and_buttons_keep_procedure_names() {
+        let row = surgery_procedure_row(
+            "/test",
+            "Stitch",
+            "scalpel",
+            "stitch",
+            &[SurgeryItemRequirement::SurgeryKitReusable],
+            10,
+            2.0,
+            0.0,
+            Some("No injury is present"),
+            Some("No injury is present"),
+            None,
+        )
+        .into_string();
+        assert!(row.contains("surgery-procedure-unavailable"));
+        assert!(row.contains("data-tooltip=\"No injury is present\""));
+        assert!(row.contains("aria-label=\"Stitch: No injury is present\" tabindex=\"0\""));
+        assert!(row.contains("disabled title=\"No injury is present\""));
+        assert!(row.contains(">Stitch</button>"));
+        assert!(!row.contains(">No injury is present</button>"));
     }
 
     #[test]

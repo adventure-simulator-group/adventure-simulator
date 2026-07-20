@@ -3984,6 +3984,8 @@ body.chat-resizing {
 }
 
 .surgery-item-requirements {
+    grid-column: 3;
+    grid-row: 1;
     display: flex;
     align-items: center;
     gap: .35rem;
@@ -4003,13 +4005,57 @@ body.chat-resizing {
 }
 
 .surgery-procedure {
+    position: relative;
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     gap: .5rem;
     align-items: center;
     padding: .6rem;
     border: 1px solid rgb(255 255 255 / 12%);
     background: rgb(0 0 0 / 18%);
+}
+
+.surgery-procedure-unavailable {
+    border-color: rgb(255 255 255 / 7%);
+    background: rgb(0 0 0 / 28%);
+    cursor: not-allowed;
+}
+
+.surgery-procedure-unavailable > * {
+    filter: grayscale(1);
+    opacity: .38;
+}
+
+.surgery-procedure-unavailable::after {
+    position: absolute;
+    z-index: 6;
+    right: .4rem;
+    bottom: calc(100% + .35rem);
+    max-width: 14rem;
+    padding: .3rem .45rem;
+    border: 1px solid rgb(255 255 255 / 20%);
+    background: var(--panel-bg, #241a15);
+    box-shadow: var(--shadow-sm);
+    color: var(--text-primary);
+    content: attr(data-tooltip);
+    font-size: .72rem;
+    line-height: 1.2;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(.2rem);
+    transition: opacity var(--transition-fast), transform var(--transition-fast);
+    white-space: nowrap;
+}
+
+.surgery-procedure-unavailable:hover::after,
+.surgery-procedure-unavailable:focus::after {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.surgery-procedure-unavailable:focus-visible {
+    outline: 2px solid var(--gold, #d8b36a);
+    outline-offset: 2px;
 }
 
 .surgery-procedure-copy,
@@ -4018,7 +4064,15 @@ body.chat-resizing {
     gap: .2rem;
 }
 
+.surgery-procedure-copy {
+    grid-column: 2;
+}
+
 .surgery-procedure-facts {
+    grid-column: 1 / -1;
+    grid-template-columns: auto auto;
+    align-items: center;
+    justify-content: space-between;
     color: var(--text-muted, #b9b0a3);
     font-size: .8rem;
 }
@@ -4026,6 +4080,8 @@ body.chat-resizing {
 .surgery-procedure-facts div {
     display: flex;
     gap: .3rem;
+    align-items: center;
+    white-space: nowrap;
 }
 
 .surgery-procedure-facts dt::after {
@@ -4053,6 +4109,10 @@ body.chat-resizing {
 
 .surgery-difficulty-meter .skill-rank-track {
     width: 100%;
+}
+
+.surgery-difficulty-meter .skill-rank-segment {
+    background: #000;
 }
 
 .surgery-difficulty-over-cap-marker {

@@ -105,7 +105,7 @@ reduces that exposure and stitch quality reduces it further; a diseased surgeon
 also worsens contamination exposure during a procedure. Retained projectiles do
 not add a separate recurring complication roll.
 
-Retained arrowheads and balls appear inside the affected limb bar. Extraction DC combines the individual hit's damage with a seeded depth component and is deliberately uncapped: shallow projectiles can be attempted at Surgery 0 while difficult positions may exceed DC 5. Retention imposes only a flat 40% healing-rate penalty. Extraction adds cut damage and bleeding and may fail with extra trauma, but it does not carry an additional recurring projectile complication. Projectile kind is an explicit extension point for later DC multipliers such as barbed arrows.
+Retained arrowheads and balls appear inside the affected limb bar. Extraction DC combines the individual hit's damage with a seeded depth component and is deliberately uncapped: shallow projectiles can be removed at Surgery 0 while difficult positions may exceed DC 5. A procedure cannot be attempted until the surgeon meets its required Surgery skill. The procedure meter shows met skill brightly, unmet required skill darkly, and ranks beyond the requirement as empty. Retention imposes only a flat 40% healing-rate penalty. Successful extraction adds cut damage and bleeding, but it does not carry an additional recurring projectile complication. Projectile kind is an explicit extension point for later DC multipliers such as barbed arrows.
 
 Projectile extraction above DC 1 requires a reusable surgery kit. Shallower
 projectiles remain removable without one.

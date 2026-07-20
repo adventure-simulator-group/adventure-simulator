@@ -774,17 +774,19 @@ pub fn treat_limb(
         "extract" => return Err("Projectile not found in this limb".into()),
         _ => return Err("Unknown procedure".into()),
     };
-    if procedure == "stitch" && (skill < 2.0 || item_quantity(ctx, actor_id, "surgery_kit") == 0) {
-        return Err("Stitching requires Surgery 2 and a surgery kit".into());
+    if skill < dc {
+        return Err(format!(
+            "Insufficient Surgery skill: this procedure requires {dc:.1}"
+        ));
+    }
+    if procedure == "stitch" && item_quantity(ctx, actor_id, "surgery_kit") == 0 {
+        return Err("Stitching requires a surgery kit".into());
     }
     if procedure == "extract"
         && adventuresim_core::surgery::extraction_requires_surgery_kit(dc)
         && item_quantity(ctx, actor_id, "surgery_kit") == 0
     {
         return Err("Extracting a projectile above DC 1 requires a surgery kit".into());
-    }
-    if procedure == "splint" && skill <= 0.0 {
-        return Err("Applying a splint requires a trained surgeon".into());
     }
     if procedure == "bandage" && item_quantity(ctx, actor_id, "bandage") == 0 {
         return Err("Bandaging requires one bandage".into());
@@ -831,12 +833,7 @@ pub fn treat_limb(
         }
         "extract" => {
             let projectile = projectile.unwrap();
-            let success_margin = skill - projectile.extraction_dc;
-            let trauma = if success_margin >= 0.0 {
-                0.015
-            } else {
-                0.04 + (-success_margin * 0.01)
-            };
+            let trauma = 0.015;
             injury.cut_damage = (injury.cut_damage + trauma).min(1.0);
             injury.infection_origin_minute.get_or_insert_with(|| {
                 ctx.db
@@ -850,9 +847,7 @@ pub fn treat_limb(
             injury.stitch_quality = 0.0;
             crate::condition::apply_blood_loss(ctx, patient_id, trauma * 0.15)?;
             crate::disease::record_committed_cut(ctx, patient_id, trauma, clean_check)?;
-            if success_margin >= 0.0 {
-                ctx.db.retained_projectile().id().delete(projectile.id);
-            }
+            ctx.db.retained_projectile().id().delete(projectile.id);
         }
         _ => unreachable!(),
     }
