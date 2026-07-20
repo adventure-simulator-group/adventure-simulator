@@ -19,7 +19,7 @@ use std::time::Instant;
 
 use axum::{
     extract::Request,
-    http::{HeaderName, HeaderValue, StatusCode, header::CACHE_CONTROL},
+    http::{HeaderName, HeaderValue},
     middleware::Next,
     response::Response,
 };
@@ -63,13 +63,24 @@ async fn main() -> anyhow::Result<()> {
     )?;
 
     // Create app state
-    let state = AppState { db, live };
+    let strategic_map = match strategic_map::StrategicMap::load(&config.strategic_map_bundle_dir) {
+        Ok(map) => {
+            tracing::info!(bundle = %config.strategic_map_bundle_dir.display(), "loaded optional strategic map bundle");
+            Some(std::sync::Arc::new(map))
+        }
+        Err(error) => {
+            tracing::warn!(bundle = %config.strategic_map_bundle_dir.display(), %error, "strategic map bundle unavailable; continuing without raster map");
+            None
+        }
+    };
+    let state = AppState {
+        db,
+        live,
+        strategic_map,
+    };
 
     // Build router
-    let app = build_router(state).route(
-        "/map/tiles/{theme}/{zoom}/{x}/{tile}",
-        axum::routing::get(strategic_map::world_tile),
-    );
+    let app = build_router(state);
 
     // Add static file serving
     let static_path = PathBuf::from(&config.static_dir);
@@ -82,7 +93,6 @@ async fn main() -> anyhow::Result<()> {
 
     let app = app
         .layer(CompressionLayer::new())
-        .layer(axum::middleware::from_fn(cache_immutable_world_map))
         .layer(axum::middleware::from_fn(log_http_request));
 
     // Parse bind address
@@ -101,21 +111,6 @@ async fn main() -> anyhow::Result<()> {
 
 async fn health_check() -> &'static str {
     "OK"
-}
-
-async fn cache_immutable_world_map(request: Request, next: Next) -> Response {
-    let cacheable =
-        strategic_map::is_current_world_tile(request.uri().path(), request.uri().query());
-    let mut response = next.run(request).await;
-    if cacheable
-        && (response.status().is_success() || response.status() == StatusCode::NOT_MODIFIED)
-    {
-        response.headers_mut().insert(
-            CACHE_CONTROL,
-            HeaderValue::from_static("public, max-age=31536000, immutable"),
-        );
-    }
-    response
 }
 
 static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);

@@ -327,9 +327,9 @@ replace-world-data archive descriptor descriptor_sha256:
 compile-world:
 	@cargo run --package adventuresim-world-import --bin adventuresim-world-import --
 
-# Derive the bounded map package and cacheable world-geometry SVG.
+# Derive the bounded metadata package and offline Paper AVIF tile bundle.
 build-strategic-map:
-	@cargo run --package adventuresim-world-import --bin build-strategic-map --
+	@cargo run --package adventuresim-world-import --features strategic-map-renderer --bin build-strategic-map --
 
 # Compatibility name for the former Python normalizer.
 normalise-viabundus: compile-world

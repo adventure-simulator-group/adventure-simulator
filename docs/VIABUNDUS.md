@@ -29,8 +29,8 @@ dataset and must retain this attribution and CC BY-SA 4.0 licensing when
 distributed.
 
 The settlement Map screen uses the separately generated
-`static/map/strategic-map-v1.json` presentation package and
-`static/map/strategic-map-tiles-v1.pack` world-tile asset. `just
+`target/strategic-map/strategic-map-v1.json` presentation package and
+`target/strategic-map/strategic-map-tiles-v1.pack` world-tile asset. `just
 build-strategic-map` derives both versioned files with an embedded content digest from the
 initialized Viabundus v2 roads, ferries, and 1500 water polygons, generalized
 Copernicus GLO-30 elevation, and every available prepared Copernicus forest
@@ -45,18 +45,28 @@ The server exposes individual AVIF images from an indexed pack beneath a small
 inline SVG settlement overlay. Each tile URL includes the pack's SHA-256 and is
 served with `public, max-age=31536000, immutable`. The browser loads only tiles
 covering the current viewport at an appropriate zoom from the Paper pyramid.
+The offline raster compiler belongs to `adventuresim-world-import`, not the web
+server. `strategic-web` optionally loads `STRATEGIC_MAP_BUNDLE_DIR` (default
+`target/strategic-map`) at runtime and has no raster renderer or encoder
+dependency. A missing or invalid bundle does not prevent startup: settlement
+selection and direct travel continue through the surrounding HTML interface.
 Current and selected settlements,
 direct-route state, and pin links remain dynamic HTML/SVG and are served on
 every map response. A four-pixel encoded gutter prevents seams between lossy
 tiles, while the deepest level uses high-quality AVIF and contour/symbol terrain
-detail instead of magnifying the overview's generalized square cells.
+detail instead of magnifying the overview's generalized square cells. Close
+levels use deterministic period-style tree groves and profile hill/ridge stamps
+with engraved shadow hatching; far levels retain restrained tint and contour
+context for overview readability.
 
 The stable `strategic-map-v1.json` and `strategic-map-tiles-v1.pack` filenames
 are versioned, not content-addressed; the pack digest query parameter is every
 tile route's cache key.
-Its embedded SHA-256 covers schema, year, bounds, all source identities and
-statuses, roads, water, elevation cells and contours, forest regions, and
-partial-coverage bounds; strategic-web revalidates that digest before
+The compact schema-3 deployment manifest carries renderer revision 1, reviewed
+source identities, coverage counts, and the indexed AVIF pyramid, but not the
+offline roads, compound water rings, elevation cells/contours, or forest
+regions used to render it. Its embedded SHA-256 covers every deployed field;
+strategic-web revalidates that digest and the exact source URLs before
 rendering. A
 legacy initializer sidecar without recorded byte
 sizes is accepted only with the explicit

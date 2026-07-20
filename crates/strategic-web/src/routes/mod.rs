@@ -38,6 +38,7 @@ use crate::spacetimedb::{
 pub struct AppState {
     pub db: SpacetimeClient,
     pub live: LiveState,
+    pub strategic_map: Option<std::sync::Arc<crate::strategic_map::StrategicMap>>,
 }
 
 pub(crate) use party_actions::PartyAction;
@@ -259,6 +260,10 @@ pub(crate) async fn approve_party_action(
 /// Build the complete router
 pub fn build_router(state: AppState) -> Router {
     Router::new()
+        .route(
+            "/map/tiles/{theme}/{zoom}/{x}/{tile}",
+            get(crate::strategic_map::world_tile),
+        )
         .merge(characters::routes())
         .merge(
             Router::new()

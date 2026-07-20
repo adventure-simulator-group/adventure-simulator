@@ -1,6 +1,7 @@
 //! Configuration for strategic-web server
 
 use clap::Parser;
+use std::path::PathBuf;
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "strategic-web")]
@@ -55,6 +56,14 @@ pub struct Config {
         default_value = "crates/adventuresim-stdb-module/static"
     )]
     pub tactical_static_dir: String,
+
+    /// Optional runtime strategic-map bundle directory. Absence does not prevent startup.
+    #[arg(
+        long,
+        env = "STRATEGIC_MAP_BUNDLE_DIR",
+        default_value = "target/strategic-map"
+    )]
+    pub strategic_map_bundle_dir: PathBuf,
 }
 
 impl Config {
@@ -85,6 +94,7 @@ mod tests {
             allow_insecure_non_loopback_bind: allow,
             static_dir: String::new(),
             tactical_static_dir: String::new(),
+            strategic_map_bundle_dir: PathBuf::new(),
         }
     }
 

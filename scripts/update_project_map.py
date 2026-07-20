@@ -28,6 +28,8 @@ def tracked_files() -> list[str]:
     files = []
     for raw_path in result.stdout.splitlines():
         path = raw_path.replace("\\", "/")
+        if not (ROOT / path).is_file():
+            continue
         if any(part in EXCLUDED_PARTS for part in Path(path).parts):
             continue
         if path.endswith((".pyc", ".pyo")):

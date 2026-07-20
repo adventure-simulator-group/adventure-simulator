@@ -1033,6 +1033,7 @@ async fn settlement_map(
         settlement_map_page(
             settlement,
             &settlements,
+            state.strategic_map.as_deref(),
             &destinations,
             query.destination.as_deref(),
             active_character.as_ref().map(|(character, _)| character),
