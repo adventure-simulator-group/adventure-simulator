@@ -48,6 +48,7 @@ pub fn service_role_inspection(
 ) -> (String, String) {
     let left = html! {
         section class="role-inspection-panel role-inspection-content" data-service-role-inspection {
+            button type="button" class="btn btn-secondary btn-small service-role-back" data-close-service-role-inspection { "Back to service" }
             h3 class="sidebar-header" { (role_name) }
             div class="role-detail-list" {
                 @if requirements.is_empty() { div class="role-detail-row" { "No minimum recommendations" } }
@@ -57,6 +58,7 @@ pub fn service_role_inspection(
     };
     let right = html! {
         section class="role-inspection-panel role-inspection-content" data-service-role-inspection {
+            button type="button" class="btn btn-secondary btn-small service-role-back" data-close-service-role-inspection { "Back to service" }
             h3 class="sidebar-header" { (party_name) }
             p { "Led by " (leader_name) }
             p class=(format!("small-copy service-role-match service-role-match-{match_level}")) { (match_summary) }
@@ -177,7 +179,7 @@ pub fn recruitment_panel(
                                             aria-label=(format!("Edit {}", panel.role.name)) { "Edit" }
                                         form action=(format!("/party-recruitment/roles/{}/delete", panel.role.id)) method="post" class="saved-role-delete-form" {
                                             button type="submit" class="saved-role-action saved-role-delete"
-                                                aria-label=(format!("Delete {}", panel.role.name)) title=(format!("Delete {}", panel.role.name)) { "Ã—" }
+                                                aria-label=(format!("Delete {}", panel.role.name)) title=(format!("Delete {}", panel.role.name)) { "×" }
                                         }
                                     }
                                 }
@@ -243,7 +245,7 @@ pub fn recruitment_panel(
                             }
                         }
                         footer class="role-builder-footer" {
-                            span class="small-copy text-muted" data-role-builder-help { "Create one visually grouped portrait per slot." }
+                            span class="small-copy text-muted" data-role-builder-help { "Choose how many openings this role should advertise." }
                             button type="submit" class="btn btn-primary" data-role-builder-submit { "Add role" }
                         }
                     }

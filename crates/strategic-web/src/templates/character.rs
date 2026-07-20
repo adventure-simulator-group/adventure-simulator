@@ -41,7 +41,7 @@ pub fn characters_list_page(characters: &[Character], current_character_id: Opti
                                 }
                             }
                             form action=(format!("/characters/{}/select", character.id)) method="post" class="mt-1" {
-                                button type="submit" class="btn btn-primary btn-block" {
+                                button type="submit" class="btn btn-primary btn-block character-select-action" {
                                     @if !character.alive { "View " (&character.name) }
                                     @else if is_current { "Continue" }
                                     @else { "Play as " (&character.name) }
@@ -95,6 +95,10 @@ mod tests {
 
 /// Character creation form.
 pub fn character_new_page(_logged_in_as: Option<&str>) -> Markup {
+    character_new_page_with_error(None, None)
+}
+
+pub fn character_new_page_with_error(name: Option<&str>, error: Option<&str>) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
             (sidebar_section("Tips", html! {
@@ -111,7 +115,10 @@ pub fn character_new_page(_logged_in_as: Option<&str>) -> Markup {
             h2 class="page-title" { "Create Character" }
             (panel("Character Details", html! {
                 form # "character-form" action="/characters" method="post" {
-                    (input_field("name", "Character Name", "text", true, None))
+                    (input_field("name", "Character Name", "text", true, name))
+                    @if let Some(error) = error {
+                        p class="form-error" role="alert" { (error) }
+                    }
                     div class="form-actions" {
                         button type="submit" class="btn btn-primary" { "Create Character" }
                         a href="/characters" class="btn btn-secondary" { "Cancel" }

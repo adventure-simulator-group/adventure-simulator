@@ -1,4 +1,14 @@
+const serviceQuestTabState = (serviceQuests) => {
+  if (serviceQuests.some((quest) => quest.state === "ready")) return "quest ready to report";
+  if (serviceQuests.some((quest) => quest.state === "available")) return "quest available";
+  if (serviceQuests.some((quest) => quest.state === "recruiting")) return "recruitment available";
+  return null;
+};
+
+if (typeof module !== "undefined") module.exports = { serviceQuestTabState };
+
 (() => {
+  if (typeof document === "undefined") return;
   const services = document.querySelector("[data-settlement-id]");
   if (!services) return;
 
@@ -80,6 +90,8 @@
     const action = dialogueActions.get(anchor.dataset.questDialogueAction);
     if (!action) return;
     anchor.dataset.used = "true";
+    anchor.setAttribute("aria-disabled", "true");
+    anchor.removeAttribute("href");
     dialogueActions.delete(anchor.dataset.questDialogueAction);
     action();
   });
@@ -90,6 +102,10 @@
       element.classList.remove("service-role-inspection-hidden");
     });
   };
+
+  document.addEventListener("click", (event) => {
+    if (event.target.closest("[data-close-service-role-inspection]")) clearRoleInspection();
+  });
 
   const inspectRecruitingRole = (quest, role) => {
     clearRoleInspection();
@@ -405,6 +421,8 @@
           "service-turn-in-badge",
           "service-recruitment-badge",
         );
+        const tab = badge.closest("[data-service-id]");
+        if (tab) tab.setAttribute("aria-label", tab.dataset.serviceLabel || tab.title || "Service");
       });
       const serviceIds = new Set(quests.map((quest) => quest.service_id));
       serviceIds.forEach((serviceId) => {
@@ -429,6 +447,9 @@
               && !hasAvailableQuest
               && serviceQuests.some((quest) => quest.state === "recruiting"),
           );
+          const baseLabel = tab.dataset.serviceLabel || tab.title || "Service";
+          const stateLabel = serviceQuestTabState(serviceQuests);
+          tab.setAttribute("aria-label", stateLabel ? `${baseLabel}, ${stateLabel}` : baseLabel);
         }
       });
       if (!chat || chat.dataset.serviceQuestSettlement !== settlementId) return;

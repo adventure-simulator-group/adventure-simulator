@@ -11,6 +11,15 @@ const {
   refresh,
   syncPanelWidth,
 } = require("../static/inventory-browser.js");
+const { wrappedDialogFocusIndex } = require("../static/medical-examination.js");
+
+test("modal focus wraps forward and backward without leaving the dialog", () => {
+  assert.equal(wrappedDialogFocusIndex(3, 2, false), 0);
+  assert.equal(wrappedDialogFocusIndex(3, 0, true), 2);
+  assert.equal(wrappedDialogFocusIndex(3, -1, false), 0);
+  assert.equal(wrappedDialogFocusIndex(3, -1, true), 2);
+  assert.equal(wrappedDialogFocusIndex(0, -1, false), -1);
+});
 
 test("panel state is independently namespaced", () => {
   const search = "?inv.left.q=sword&inv.left.sort=weight&inv.left.dir=desc&inv.left.cols=reach,damage&inv.right.q=mail";

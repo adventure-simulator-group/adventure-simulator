@@ -86,7 +86,8 @@
 .inventory-target-control { display:inline-flex; align-items:center; justify-content:center; white-space:nowrap; }
 .inventory-target-denominator { display:inline-grid; grid-template-rows:.7rem 1.1rem .7rem; justify-items:center; align-items:center; min-width:1.4rem; }
 .inventory-target-step { opacity:0; border:0; background:transparent; color:var(--color-accent); line-height:.65rem; padding:0 .25rem; cursor:pointer; transition:opacity .12s; }
-.inventory-count:hover .inventory-target-step:not([hidden]) { opacity:1; }
+.inventory-count:hover .inventory-target-step:not([hidden]),
+.inventory-count:focus-within .inventory-target-step:not([hidden]) { opacity:1; }
 .inventory-target-value { grid-row:2; }
 .inventory-transfer-glyph { display:inline-flex; align-items:center; }
 .inventory-transfer-glyph i { display:block; width:.48rem; height:.48rem; border-top:2px solid currentColor; border-right:2px solid currentColor; transform:rotate(45deg); margin-left:-.16rem; }
@@ -101,6 +102,54 @@
 .inventory-footer-repair { display:block; width:1.35rem; height:1.35rem; }
 .inventory-footer-repair .repair-all-button { width:1.35rem; height:1.35rem; opacity:.8; }
 .right-sidebar .inventory-footer-transfer .inventory-transfer-glyph { transform:rotate(180deg); }
+
+@media (hover:none), (pointer:coarse) {
+  .inventory-row-actions,
+  .inventory-footer-actions,
+  .inventory-target-step:not([hidden]) { opacity:1; }
+  .inventory-row-actions {
+    top: 50%;
+    bottom: auto;
+    grid-template-columns: 2.75rem;
+    width: calc(2.75rem + var(--inventory-action-bridge));
+    min-height: 2.75rem;
+    transform: translateY(-50%);
+  }
+  .inventory-row-actions.smith-player-actions {
+    grid-template-columns: repeat(2, 2.75rem);
+    width: calc(5.5rem + var(--inventory-action-bridge));
+  }
+  .inventory-row-actions .trade-transfer,
+  .smith-player-actions .row-repair-form,
+  .inventory-footer-transfer,
+  .inventory-footer-repair,
+  .inventory-footer-repair .repair-all-button {
+    width: 2.75rem;
+    height: 2.75rem;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+  .inventory-footer-actions { min-height: 2.75rem; }
+  .inventory-target-denominator {
+    grid-template-columns: 2.75rem 1.4rem 2.75rem;
+    grid-template-rows: 2.75rem;
+  }
+  .inventory-target-step { width: 2.75rem; height: 2.75rem; padding: 0; }
+  .inventory-target-up { grid-column: 3; grid-row: 1; }
+  .inventory-target-down { grid-column: 1; grid-row: 1; }
+  .inventory-target-value { grid-column: 2; grid-row: 1; }
+}
+
+@media (max-width:480px) and (pointer:coarse) {
+  .inventory-column-actions,
+  .inventory-actions-cell,
+  .inventory-actions-header { width:2.75rem; min-width:2.75rem; }
+  .inventory-actions-cell > .inventory-row-actions {
+    position:static;
+    padding:0;
+    transform:none;
+  }
+}
 
 .party-portrait-overlay > .party-aggregate-checks {
   position:static;

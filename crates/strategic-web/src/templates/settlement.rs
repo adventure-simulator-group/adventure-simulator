@@ -291,7 +291,10 @@ pub fn alchemy_page(
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), Some(character.id), true))
-            (visual_stage("npc", "Alchemy", "Medication preparation"))
+            (visual_stage("alchemy", "Alchemy", "A working table of herbs, vessels, and prepared medicines"))
+            a class="stage-context-link" href=(format!("/settlements/{}/herbalist", settlement.id)) {
+                "Return to the herbalist"
+            }
             (settlement_chat_area_with_info("Alchemy", Some(character), &[format!("Selected recipe: {}", selected.name)]))
             form method="post" action=(format!("/locations/settlement/{}/alchemy/craft", settlement.id)) class="alchemy-craft-form" {
                 input type="hidden" name="disease_id" value=(format!("{:?}", selected.disease_id).to_ascii_lowercase());
@@ -339,7 +342,7 @@ pub fn alchemy_page(
         &settlement.name,
         &settlement.id,
         &settlement.category,
-        "alchemy",
+        "herbalist",
         Some(&settlement.religion_id),
         content,
         Some(&character.name),
@@ -375,7 +378,7 @@ pub fn settlement_overview_page(
         }
         main class="center-content settlement-main settlement-overview" {
             (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None, false))
-            (visual_stage("map", &settlement.name, "TODO: settlement image"))
+            (visual_stage("settlement", &settlement.name, "Streets, landmarks, and the settlement approach"))
             (settlement_chat_area(&settlement.name, active_character))
         }
         aside class="right-sidebar" {
@@ -493,7 +496,7 @@ pub fn settlement_map_page(
         ))
         main class="center-content settlement-main settlement-overview" {
             (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None, false))
-            (visual_stage("map", &settlement.name, "TODO: settlement map"))
+            (visual_stage("route", &settlement.name, "Roads and known destinations from this settlement"))
             (settlement_chat_area(&settlement.name, active_character))
         }
         (map_destination_detail(
@@ -1161,7 +1164,7 @@ pub fn camp_page(
         }
         main class="center-content settlement-main settlement-overview" {
             (party_portrait_overlay(party_members, active_character, "/camp", None, false))
-            (visual_stage("camp", "Camp", "The party is resting beside the road."))
+            (visual_stage("camp", "Camp", "A sheltered fire beside the party's onward route"))
             (settlement_chat_area("Camp", active_character))
         }
         aside class="right-sidebar camp-journey-sidebar" {
@@ -1259,8 +1262,7 @@ fn format_journey_time(minutes: u64) -> String {
     }
 }
 
-/// Market interface. Inventory and prices are intentionally UI-only placeholders
-/// until settlement-owned inventory and trade reducers exist.
+/// Market interface shown while settlement stock is unavailable.
 pub fn merchants_page(
     settlement: &Settlement,
     active_character: Option<&Character>,
@@ -1273,7 +1275,7 @@ pub fn merchants_page(
         "merchants",
         "Market Square",
         "Market Steward",
-        "Merchant stock and prices will appear here once the trade backend is available.",
+        "The market steward has no listed stock at present.",
         active_character,
         inventory,
         &[],
@@ -1284,7 +1286,7 @@ pub fn merchants_page(
     )
 }
 
-/// Inn interface placeholder.
+/// Inn interface.
 pub fn inn_page(
     settlement: &Settlement,
     active_character: Option<&Character>,
@@ -1303,7 +1305,7 @@ pub fn inn_page(
         "inn",
         "The Inn",
         "Innkeeper",
-        "Rest duration, recovery, training, and strategic time advancement are not connected yet.",
+        "Rest, recover, and manage your downtime from the lodging menu.",
         active_character,
         inventory,
         items,
@@ -1320,7 +1322,7 @@ pub fn inn_page(
     )
 }
 
-/// Church placeholder.
+/// Church interface.
 pub fn religion_page(
     settlement: &Settlement,
     active_character: Option<&Character>,
@@ -1378,9 +1380,11 @@ pub fn party_inventory_page(
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id), false))
-            (visual_stage("npc", &selected.name, &format!("TODO: {} portrait", selected.name.to_lowercase())))
+            (visual_stage("character", &selected.name, "Party member and trading companion"))
             (player_chat_area(selected, active_character))
-            form id="party-offer" class="party-offer" action=(format!("{}/party/{}/inventory/offer", location.base_path(), selected.id)) method="post" hidden {
+            form id="party-offer" class="party-offer" action=(format!("{}/party/{}/inventory/offer", location.base_path(), selected.id)) method="post" hidden
+                role="dialog" aria-modal="true" aria-label="Confirm party item offer" tabindex="-1" {
+                span class="party-offer-summary" { "Review and send the staged item offer." }
                 button type="button" class="party-offer-cancel" data-cancel-trade="party" { "Cancel" }
                 button type="submit" disabled { "Offer" }
             }
@@ -1413,11 +1417,12 @@ pub fn party_discard_page(
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(active_character.id), false))
-            (visual_stage("npc", &active_character.name, &format!("TODO: {} portrait", active_character.name.to_lowercase())))
+            (visual_stage("character", &active_character.name, "Your carried equipment and supplies"))
             (settlement_chat_area(&active_character.name, Some(active_character)))
             form id="inventory-discard" class="party-offer"
                 action=(format!("{}/party/{}/inventory/discard", location.base_path(), active_character.id))
-                method="post" hidden {
+                method="post" hidden role="dialog" aria-modal="true" aria-label="Confirm discarded items" tabindex="-1" {
+                span class="party-offer-summary" data-discard-confirmation { "Discard the staged items?" }
                 button type="button" class="party-offer-cancel" data-cancel-trade="discard" { "Cancel" }
                 button type="submit" disabled { "Discard" }
             }
@@ -1471,7 +1476,7 @@ pub fn party_personal_page(
                 Some(active_character.id),
                 can_examine,
             ))
-            (visual_stage("npc", &active_character.name, &format!("TODO: {} portrait", active_character.name.to_lowercase())))
+            (visual_stage("character", &active_character.name, "Your identity, condition, and capabilities"))
             (settlement_chat_area(&active_character.name, Some(active_character)))
             (medical_examination_popup(medical, &location.base_path(), active_character.id, limbs))
         }
@@ -1554,7 +1559,7 @@ pub fn party_stats_page(
                 Some(selected.id),
                 can_examine,
             ))
-            (visual_stage("npc", &selected.name, &format!("TODO: {} portrait", selected.name.to_lowercase())))
+            (visual_stage("character", &selected.name, "Party member identity and capabilities"))
             (player_chat_area(selected, active_character))
             (medical_examination_popup(medical, &location.base_path(), selected.id, selected_limbs))
         }
@@ -1606,7 +1611,7 @@ fn service_page(
     service_id: &str,
     title: &str,
     npc_name: &str,
-    todo: &str,
+    service_summary: &str,
     active_character: Option<&Character>,
     inventory: &[InventoryItem],
     items: &[crate::spacetimedb::ItemDefinition],
@@ -1661,18 +1666,14 @@ fn service_page(
             } @else if let Some((stock_title, offers)) = trade_offers {
                 (merchant_offers_rail(stock_title, offers))
             } @else {
-                (sidebar_section("Settlement offerings", html! {
-                    div class="service-placeholder-list" {
-                        span { "Inventory / offers" }
-                        span class="badge badge-warning" { "TODO" }
-                    }
-                    p class="text-muted small-copy" { (todo) }
+                (sidebar_section("Service", html! {
+                    p class="small-copy" { (service_summary) }
                 }))
             }
         }
         main class="center-content settlement-main" {
             (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None, false))
-            (visual_stage("npc", npc_name, &format!("TODO: {} portrait", npc_name.to_lowercase())))
+            (visual_stage("service", npc_name, &format!("{title} host and service counter")))
             (settlement_service_chat_area(
                 title,
                 active_character,
@@ -1686,7 +1687,7 @@ fn service_page(
                     active_character,
                     inventory,
                     items,
-                    Some(("Sell", "TODO: selling requires merchant pricing and trade reducers")),
+                    None,
                     matches!(service_id, "weapons" | "armor" | "clothing"),
                 ))
             } @else if service_id == "smith" {
@@ -1694,14 +1695,14 @@ fn service_page(
                     active_character,
                     inventory,
                     items,
-                    Some(("Repair", "TODO: repairs require durability, pricing, and smithing reducers")),
+                    None,
                     true,
                 ))
             } @else if service_id == "religion" {
                 (inventory_rail(active_character, inventory, items, None, false))
             } @else {
                 (sidebar_section("Service", html! {
-                    p class="text-muted small-copy" { (todo) }
+                    p class="small-copy" { (service_summary) }
                 }))
             }
         }
@@ -1881,7 +1882,7 @@ pub fn live_merchant_shop_page(
             (repair_custody_panel(settlement, shop, repair_orders, conditions, items, now_minutes, smith_skill))
         }
         }
-        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None, false)) (visual_stage("npc", title, &format!("TODO: {} portrait", title.to_lowercase()))) (settlement_service_chat_area(title, Some(character), &settlement.id, service_id)) form # "merchant-offer" class="party-offer" action=(if matches!(shop, MerchantShop::Herbalist) { format!("/settlements/{}/herbalist/purchase", settlement.id) } else { format!("/settlements/{}/merchants/offer", settlement.id) }) method="post" hidden { input type="hidden" name="return_to" value=(format!("/settlements/{}/{}", settlement.id, service_id)); input type="hidden" name="inventory_scope" value="player"; button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
+        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None, false)) (visual_stage("service", title, "Merchant counter and attending craftsperson")) (settlement_service_chat_area(title, Some(character), &settlement.id, service_id)) form # "merchant-offer" class="party-offer" action=(if matches!(shop, MerchantShop::Herbalist) { format!("/settlements/{}/herbalist/purchase", settlement.id) } else { format!("/settlements/{}/merchants/offer", settlement.id) }) method="post" hidden role="dialog" aria-modal="true" aria-label="Confirm merchant offer" tabindex="-1" { span class="party-offer-summary" { "Review and submit the staged trade." } input type="hidden" name="return_to" value=(format!("/settlements/{}/{}", settlement.id, service_id)); input type="hidden" name="inventory_scope" value="player"; button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
         aside class="right-sidebar inventory-owner-panel" data-inventory-tabs {
             nav class="inventory-owner-tabs" aria-label="Trading inventory" {
                 button type="button" class="inventory-owner-tab active" data-inventory-tab="player" { "Player" }
@@ -2031,7 +2032,7 @@ pub fn party_pool_page(
         }
         main class="center-content settlement-main" {
             (party_portrait_overlay(party_members, Some(character), &location.base_path(), None, false))
-            (visual_stage("npc", "Party chest", "Shared party inventory chest"))
+            (visual_stage("chest", "Party chest", "Shared supplies and each member's stake"))
             (settlement_chat_area("Party inventory", Some(character)))
         }
         aside class="right-sidebar" {
@@ -2066,7 +2067,7 @@ pub fn party_pool_page(
                 }, inventory_footer_controls("deposit", "Deposit to party targets", "Deposit everything"), personal_encumbrance))
             }))
         }
-        form method="post" action=(format!("{}/party-inventory/deposit", location.base_path())) id="pool-transfer-offer" class="party-offer" hidden { button type="button" data-cancel-pool class="party-offer-cancel" { "Cancel" } button type="submit" disabled { "Offer" } }
+        form method="post" action=(format!("{}/party-inventory/deposit", location.base_path())) id="pool-transfer-offer" class="party-offer" hidden role="dialog" aria-modal="true" aria-label="Confirm party inventory transfer" tabindex="-1" { span class="party-offer-summary" { "Apply the staged party inventory transfer?" } button type="button" data-cancel-pool class="party-offer-cancel" { "Cancel" } button type="submit" disabled { "Offer" } }
     };
     location.render_layout("Party inventory", content, Some(&character.name))
 }
@@ -2972,20 +2973,22 @@ fn party_skill_row(
 fn skill_rank_bar(rank: f32, effective_rank: f32, title: &str) -> Markup {
     let rank = rank.clamp(0.0, 5.0);
     let effective_rank = effective_rank.clamp(0.0, rank);
-    let value_left = (effective_rank / 5.0 * 100.0).clamp(2.0, 98.0);
     html! {
-        div class="skill-rank-bar" title=(title) aria-label=(format!("{effective_rank:.1} out of 5")) {
-            @for tier in 1..=5 {
-                @let offset = (tier - 1) as f32;
-                @let current = (effective_rank - offset).clamp(0.0, 1.0) * 100.0;
-                @let trained = (rank - offset).clamp(0.0, 1.0) * 100.0;
-                @let damaged = (trained - current).max(0.0);
-                span class=(format!("skill-rank-segment skill-rank-segment-{tier}")) {
-                    span class="rank-current" style=(format!("width:{current:.1}%")) {}
-                    span class="rank-damage" style=(format!("left:{current:.1}%;width:{damaged:.1}%")) {}
+        div class="skill-rank-bar" title=(title) aria-label=(format!("{effective_rank:.1} out of 5"))
+            role="meter" aria-valuemin="0" aria-valuemax="5" aria-valuenow=(format!("{effective_rank:.1}")) {
+            span class="skill-rank-track" aria-hidden="true" {
+                @for tier in 1..=5 {
+                    @let offset = (tier - 1) as f32;
+                    @let current = (effective_rank - offset).clamp(0.0, 1.0) * 100.0;
+                    @let trained = (rank - offset).clamp(0.0, 1.0) * 100.0;
+                    @let damaged = (trained - current).max(0.0);
+                    span class=(format!("skill-rank-segment skill-rank-segment-{tier}")) {
+                        span class="rank-current" style=(format!("width:{current:.1}%")) {}
+                        span class="rank-damage" style=(format!("left:{current:.1}%;width:{damaged:.1}%")) {}
+                    }
                 }
             }
-            span class="skill-rank-value" style=(format!("left:{value_left:.1}%")) { (format!("{effective_rank:.1}")) }
+            span class="skill-rank-value" aria-hidden="true" { (format!("{effective_rank:.1}")) }
         }
     }
 }
@@ -3242,11 +3245,7 @@ pub(crate) fn character_stats_panel(
 }
 
 pub(crate) fn character_visual_preview(character: &Character) -> Markup {
-    visual_stage(
-        "npc",
-        &character.name,
-        &format!("TODO: {} portrait", character.name.to_lowercase()),
-    )
+    visual_stage("character", &character.name, "Adventurer profile")
 }
 
 fn religion_name(religion_id: Option<&str>) -> &'static str {
@@ -3976,10 +3975,13 @@ fn attribute_row(name: &str, icon: &str, value: f32, health: f32, show_label: bo
         div class=(if show_label { "party-attribute-row" } else { "party-attribute-row party-attribute-icon-only" }) {
             (stat_icon(name, "attributes", icon, show_label))
             @if show_label { span class="party-attribute-name" { (name) } }
-            div class="attribute-rank-bar" title=(format!("{effective_value:.1}")) {
+            div class="attribute-rank-bar" title=(format!("{effective_value:.1}"))
+                role="meter" aria-valuemin="0" aria-valuemax="5" aria-valuenow=(format!("{effective_value:.1}"))
+                aria-label=(format!("{name}: {effective_value:.1} out of 5")) {
                 span class="rank-current" style=(format!("width:{current_width:.1}%")) {}
                 span class="rank-damage" style=(format!("left:{current_width:.1}%;width:{damage_width:.1}%")) {}
             }
+            span class="attribute-rank-value" aria-hidden="true" { (format!("{effective_value:.1}")) }
         }
     }
 }
@@ -3998,18 +4000,29 @@ fn stat_icon(label: &str, category: &str, icon: &str, decorative: bool) -> Marku
     }
 }
 
-pub(crate) fn visual_stage(kind: &str, title: &str, placeholder: &str) -> Markup {
+pub(crate) fn visual_stage(kind: &str, title: &str, description: &str) -> Markup {
+    let scene_label = match kind {
+        "settlement" => "At the settlement gates",
+        "map" | "route" => "Roads and destinations",
+        "camp" => "Camp beside the road",
+        "quest" => "Encounter ground",
+        "alchemy" => "The apothecary workbench",
+        "service" => "At the counter",
+        "chest" => "Shared party stores",
+        _ => "Adventurer profile",
+    };
     html! {
         figure class=(format!("service-visual service-visual-{}", kind)) {
-            div class="service-visual-placeholder" role="img" aria-label=(placeholder) {
-                @if kind == "map" {
-                    span class="visual-symbol" { (decorative_game_icon("treasure-map")) }
-                    span class="visual-label" { "Map placeholder" }
-                } @else {
-                    span class="visual-symbol" { (title.chars().next().unwrap_or('?')) }
-                    span class="visual-label" { "Portrait placeholder" }
+            div class="service-visual-scene" role="img" aria-label=(format!("{title}. {description}")) {
+                span class="visual-scene-sky" aria-hidden="true" {}
+                span class="visual-scene-horizon" aria-hidden="true" {}
+                span class="visual-scene-route" aria-hidden="true" {}
+                span class="visual-scene-caption" {
+                    strong { (title) }
+                    span { (scene_label) }
                 }
             }
+            figcaption { (description) }
         }
     }
 }
@@ -4076,7 +4089,9 @@ pub(crate) fn party_portrait_overlay(
                                     button type="submit" class="party-portrait-action party-medical-examine"
                                         title=(format!("Examine {} (15 minutes)", member.name))
                                         aria-label=(format!("Examine {} (15 minutes)", member.name)) {
-                                        span aria-hidden="true" { "⚕" }
+                                        span class="party-action-icon"
+                                            style="--party-action-icon: url('/static/icons/game/scalpel.svg')"
+                                            aria-hidden="true" {}
                                     }
                                 }
                             }
@@ -4170,17 +4185,18 @@ fn chat_area(
                 span aria-hidden="true" {}
             }
             div class="settlement-chat-filters" role="group" aria-label="Visible chat channels" {
-                @for (channel, label) in [
-                    ("local", "Local"),
-                    ("party", "Party"),
-                    ("settlement", "Settlement"),
-                    ("dm", "DMs"),
-                    ("guild", "Guild"),
-                    ("info", "Info"),
+                @for (channel, label, abbreviation) in [
+                    ("local", "Local", "L"),
+                    ("party", "Party", "P"),
+                    ("settlement", "Settlement", "S"),
+                    ("dm", "DMs", "D"),
+                    ("guild", "Guild", "G"),
+                    ("info", "Info", "I"),
                 ] {
                     label class=(format!("chat-channel-filter chat-channel-filter-{channel}")) title=(label) {
                         input type="checkbox" checked data-chat-filter=(channel)
                             aria-label=(label) title=(label);
+                        span aria-hidden="true" { (abbreviation) }
                     }
                 }
             }
@@ -4202,35 +4218,20 @@ fn chat_area(
                     placeholder=(format!("Message {location} (Local)"));
                 button type="button" class="btn btn-primary btn-icon" disabled[local_context.is_none()]
                     aria-label="Send message" {
-                    "➤"
+                    (decorative_game_icon("plain-arrow"))
                 }
             }
         }
     }
 }
 
-fn merchant_offers_rail(title: &str, placeholder_offers: &[&str]) -> Markup {
+fn merchant_offers_rail(title: &str, unavailable_offers: &[&str]) -> Markup {
     html! {
         (sidebar_section(title, html! {
-            p class="text-muted small-copy" { "TODO: merchant inventory and prices are not available yet." }
-            table class="trade-inventory-table" {
-                (trade_inventory_table_header(false, None))
-                tbody {
-                @for offer in placeholder_offers {
-                    tr class="trade-inventory-row trade-row-merchant"
-                        title="TODO: buying requires merchant inventory, pricing, and trade reducers" {
-                        td class="inventory-item-type" { (game_icon("Item type: placeholder", "help")) }
-                        td class="inventory-item-name" {
-                            (offer)
-                            button type="button" class="trade-transfer trade-transfer-right" disabled
-                                aria-label=(format!("Buy {}", offer))
-                                title="TODO: buying requires merchant inventory, pricing, and trade reducers" { "▶" }
-                        }
-                        td class="inventory-count" { "1" }
-                        td class="inventory-weight" { "—" }
-                        td class="inventory-gold" { "—" }
-                    }
-                }
+            p class="small-copy" { "No stock is listed at present." }
+            ul class="service-offering-list" aria-label="Expected offerings" {
+                @for offer in unavailable_offers {
+                    li { (decorative_game_icon("shop")) span { (offer) } }
                 }
             }
         }))
@@ -4242,7 +4243,7 @@ fn inventory_rail(
     inventory: &[InventoryItem],
     items: &[crate::spacetimedb::ItemDefinition],
     trade_action: Option<(&str, &str)>,
-    show_repair: bool,
+    _show_repair: bool,
 ) -> Markup {
     let title = active_character
         .map(|character| format!("{}'s inventory", character.name))
@@ -4266,13 +4267,6 @@ fn inventory_rail(
                                 button type="button" class="trade-transfer trade-transfer-left" disabled
                                     aria-label=(format!("{} {}", action, item.item_id))
                                     title=(tooltip) { "◀" }
-                                }
-                                @if show_repair {
-                                span class="repair-placeholder"
-                                    style="--repair-icon: url('/static/icons/game/hammer-nails.svg')"
-                                    role="img"
-                                    aria-label=(format!("Repair {}", item.item_id))
-                                    title="TODO: repairs require durability, pricing, and repair reducers" {}
                                 }
                             }
                             td class="inventory-count" { (item.qty) }
@@ -4955,6 +4949,10 @@ mod tests {
         for tier in 1..=5 {
             assert!(meter.contains(&format!("skill-rank-segment-{tier}")));
         }
+        assert!(meter.contains("role=\"meter\""));
+        assert!(meter.contains("aria-valuenow=\"2.8\""));
+        assert!(meter.contains("class=\"skill-rank-value\""));
+        assert!(!meter.contains("tabindex"));
         let allocation = schedule_allocation_cell("smithing_minutes", 75, true).into_string();
         assert!(allocation.contains("data-schedule-input"));
         assert!(allocation.contains("data-schedule-display"));
@@ -5823,7 +5821,8 @@ mod tests {
 
         assert!(fallback < enhanced);
         assert!(css.contains("background: color-mix(in srgb, var(--header-bg) 86%, transparent);"));
-        assert!(!css.contains(".chat-channel-filter input::after"));
+        assert!(css.contains(".chat-channel-filter input::after"));
+        assert!(css.contains("text-decoration: line-through"));
         assert!(css.contains("outline: 2px solid var(--text-primary);"));
         assert!(css.contains("0 0 0 2px var(--panel-bg)"));
         assert!(css.contains(
@@ -6069,6 +6068,9 @@ mod tests {
         let lifecycle = include_str!("../../static/medical-examination.js");
         assert!(lifecycle.contains("pagehide"));
         assert!(lifecycle.contains("navigator.sendBeacon"));
+        assert!(lifecycle.contains("event.key !== \"Escape\""));
+        assert!(lifecycle.contains("restoreFocus"));
+        assert!(lifecycle.contains(".party-offer[role='dialog']"));
     }
 
     #[test]
@@ -6137,5 +6139,54 @@ mod tests {
             1,
             "one physical camp marker"
         );
+    }
+
+    #[test]
+    fn intentional_stages_have_distinct_semantics_and_no_prototype_copy() {
+        for (kind, label) in [
+            ("settlement", "At the settlement gates"),
+            ("route", "Roads and destinations"),
+            ("camp", "Camp beside the road"),
+            ("character", "Adventurer profile"),
+            ("service", "At the counter"),
+            ("quest", "Encounter ground"),
+            ("alchemy", "The apothecary workbench"),
+            ("chest", "Shared party stores"),
+        ] {
+            let markup = visual_stage(kind, "A Place", "An intentional scene").into_string();
+            assert!(markup.contains(label));
+            assert!(markup.contains("role=\"img\""));
+            assert!(!markup.contains("placeholder"));
+            assert!(!markup.contains("TODO"));
+            assert!(!markup.contains("visual-scene-emblem"));
+            assert!(!markup.contains("/static/icons/game/"));
+        }
+    }
+
+    #[test]
+    fn responsive_and_hidden_control_rules_keep_content_available() {
+        let layout = include_str!("../../static/css/layout.css");
+        let strategic = include_str!("../../static/css/strategic.css");
+        let utilities = include_str!("../../static/css/utilities.css");
+        assert!(layout.contains("grid-template-areas: \"main\" \"left\" \"right\""));
+        assert!(layout.contains(".right-sidebar {\n    display: block;"));
+        assert!(strategic.contains("@media (hover: none), (pointer: coarse)"));
+        assert!(utilities.contains(".inventory-count:focus-within"));
+        assert!(utilities.contains("@media (hover:none), (pointer:coarse)"));
+        assert!(utilities.contains("width: 2.75rem"));
+        assert!(utilities.contains("height: 2.75rem"));
+        assert!(utilities.contains("grid-template-columns: 2.75rem 1.4rem 2.75rem"));
+        for scene in [
+            "settlement",
+            "route",
+            "camp",
+            "quest",
+            "character",
+            "service",
+            "alchemy",
+            "chest",
+        ] {
+            assert!(strategic.contains(&format!(".service-visual-{scene}")));
+        }
     }
 }

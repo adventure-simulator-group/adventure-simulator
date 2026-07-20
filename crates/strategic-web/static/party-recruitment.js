@@ -68,6 +68,12 @@
         const detail = document.createElement("div");
         detail.dataset.roleInspectionPanel = "true";
         detail.className = "role-inspection-panel";
+        const back = document.createElement("button");
+        back.type = "button";
+        back.className = "btn btn-secondary btn-small role-inspection-back";
+        back.textContent = "Back to party";
+        back.addEventListener("click", clearRoleInspection);
+        detail.append(back);
         detail.append(template.content.cloneNode(true));
         sidebar.append(detail);
       });
@@ -117,7 +123,7 @@
       roleBuilder.elements.quantity.value = "1";
       if (builderHeading) builderHeading.textContent = "Recruit party roles";
       if (builderSubmit) builderSubmit.textContent = "Add role";
-      if (builderHelp) builderHelp.textContent = "Create one visually grouped portrait per slot.";
+      if (builderHelp) builderHelp.textContent = "Choose how many openings this role should advertise.";
     };
     const populateBuilder = (source) => {
       if (!roleBuilder) return;

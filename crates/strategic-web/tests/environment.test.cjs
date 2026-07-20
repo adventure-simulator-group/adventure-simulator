@@ -138,6 +138,21 @@ test("skill schedule columns fit inside a framed left rail", () => {
   assert.match(strategicCss, /\.skill-schedule \.religion-expand-column \{ width: 1\.35rem; \}/);
 });
 
+test("character selection actions wrap long adventurer names inside their cards", () => {
+  assert.match(strategicCss, /\.character-select-action \{[\s\S]*max-width: 100%;[\s\S]*overflow-wrap: anywhere;[\s\S]*white-space: normal;/);
+});
+
+test("stacked inventory rails shed desktop overhang and scroll within the available width", () => {
+  assert.match(strategicCss, /@media \(max-width: 768px\)[\s\S]*:has\(\.inventory-browser\)[\s\S]*width: 100%;[\s\S]*direction: ltr;[\s\S]*overflow-x: hidden;/);
+  assert.match(strategicCss, /\.inventory-browser-table-frame \{ overflow-x: auto; overflow-y: visible; \}/);
+  assert.match(strategicCss, /\.smith-wares-scroll,[\s\S]*\.encumbrance-inventory-scroll[\s\S]*margin-inline: 0;[\s\S]*padding-inline: 0;/);
+});
+
+test("rest duration radios use a bounded accessible hiding technique", () => {
+  assert.match(strategicCss, /\.rest-duration-unit input \{[\s\S]*width: 1px;[\s\S]*height: 1px;[\s\S]*clip-path: inset\(50%\);/);
+  assert.match(strategicCss, /\.rest-duration-unit:focus-within \{ outline: 2px solid var\(--accent\)/);
+});
+
 test("building state is re-applied when live regions replace party links", () => {
   assert.match(buildingSource, /new MutationObserver/);
   assert.match(buildingSource, /mutation\.addedNodes/);

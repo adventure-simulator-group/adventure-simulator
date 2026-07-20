@@ -22,7 +22,7 @@ pub fn mission_layout(title: &str, content: Markup, logged_in_as: Option<&str>) 
     let header = html! {
         header class="top-bar entry-top-bar" {
             div class="top-bar-left" { h1 class="logo" { "Adventure Simulator" } }
-            div class="entry-message" { "Preparing tactical mission" }
+            div class="entry-message" { "Tactical mission" }
             div class="top-bar-right" {
                 @if let Some(name) = logged_in_as {
                     span class="player-name" { strong { (name) } }
@@ -31,6 +31,48 @@ pub fn mission_layout(title: &str, content: Markup, logged_in_as: Option<&str>) 
         }
     };
     page_shell(title, header, content, ScriptProfile::Live)
+}
+
+/// A complete strategic shell for guard and error states reached from ordinary
+/// navigation. Keeping these responses inside the application prevents a bad
+/// URL or stale action from dropping the player into raw browser text.
+pub fn strategic_notice_page(
+    title: &str,
+    message: &str,
+    return_href: &str,
+    return_label: &str,
+    logged_in_as: Option<&str>,
+) -> Markup {
+    let content = html! {
+        aside class="left-sidebar notice-rail" aria-hidden="true" {}
+        main class="center-content strategic-notice-main" {
+            section class="strategic-notice" role="alert" aria-labelledby="strategic-notice-title" {
+                span class="strategic-notice-icon" aria-hidden="true" {}
+                h2 id="strategic-notice-title" { (title) }
+                p { (message) }
+                a href=(return_href) class="btn btn-primary" { (return_label) }
+            }
+        }
+        aside class="right-sidebar notice-rail" aria-hidden="true" {}
+    };
+    page_shell(
+        title,
+        entry_top_bar_with_session(logged_in_as),
+        content,
+        ScriptProfile::Live,
+    )
+}
+
+fn entry_top_bar_with_session(logged_in_as: Option<&str>) -> Markup {
+    html! {
+        header class="top-bar entry-top-bar" {
+            div class="top-bar-left" { h1 class="logo" { "Adventure Simulator" } }
+            div class="entry-message" { "The road ahead" }
+            div class="top-bar-right" {
+                @if let Some(name) = logged_in_as { span class="player-name" { strong { (name) } } }
+            }
+        }
+    }
 }
 
 /// Settlement-specific layout. Settlement services replace the global navigation
@@ -90,15 +132,15 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/base.css?v=environment-14";
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=left-rail-scrollbars-3-settlement-watchtowers-10";
+                link rel="stylesheet" href="/static/css/layout.css?v=strategic-ui-overhaul-1";
                 link rel="stylesheet" href="/static/css/components.css?v=coin-currencies-3";
-                link rel="stylesheet" href="/static/css/strategic.css?v=inventory-browser-15-religion-5-travel-polish-9";
-                link rel="stylesheet" href="/static/css/utilities.css?v=inventory-browser-15";
+                link rel="stylesheet" href="/static/css/strategic.css?v=strategic-ui-overhaul-1";
+                link rel="stylesheet" href="/static/css/utilities.css?v=strategic-ui-overhaul-1";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
                 script src="/static/background-fetch.js?v=background-fetch-2" {}
-                script src="/static/medical-examination.js?v=one-shot-1" defer {}
+                script src="/static/medical-examination.js?v=strategic-dialogs-1" defer {}
                 @if scripts != ScriptProfile::Entry {
                     script src="/static/live-state.js?v=sse-3" defer {}
                     script src="/static/live-regions.js?v=floating-time-editor-1" defer {}
@@ -106,11 +148,11 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 @if scripts == ScriptProfile::Strategic {
                     script src="/static/numeric-editor.js?v=shared-numeric-editor-2" defer {}
                     script src="/static/inventory-browser.js?v=coin-currencies-3" defer {}
-                    script src="/static/party-trade.js?v=coin-currencies-2-travel-provisioning-3" defer {}
+                    script src="/static/party-trade.js?v=strategic-dialogs-1" defer {}
                     script src="/static/equipment-toggle.js?v=functional-equipment-1" defer {}
                     script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}
                     script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
-                    script src="/static/service-quests.js?v=coin-currencies-2-quest-description-tooltip-1" defer {}
+                    script src="/static/service-quests.js?v=strategic-ui-overhaul-1" defer {}
                     script src="/static/chat-resize.js?v=floating-chat-3" defer {}
                     script src="/static/local-chat.js?v=herbalist-private-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}
@@ -204,6 +246,7 @@ fn settlement_top_bar(
                         class=(if active_service == path { "nav-tab active" } else { "nav-tab" })
                         style=(format!("--building-tint:{tint}"))
                         data-service-id=(path)
+                        data-service-label=(label)
                         aria-label=(label)
                         title=(label)
                         aria-current=(if active_service == path { "page" } else { "false" })
@@ -239,10 +282,13 @@ fn quest_location_top_bar(
     active_tab: &str,
     logged_in_as: Option<&str>,
 ) -> Markup {
+    let encounter_tint = "hsl(134 31% 20%)";
     let map_tint = "hsl(126 30% 22%)";
     let loot_tint = "hsl(105 27% 19%)";
     let active_tint = if active_tab == "loot" {
         loot_tint
+    } else if active_tab == "encounter" || active_tab == "camp" {
+        encounter_tint
     } else {
         map_tint
     };
@@ -251,11 +297,29 @@ fn quest_location_top_bar(
         header class="top-bar settlement-top-bar quest-location-top-bar" data-environment="wilderness" {
             div class="top-bar-left settlement-location" {
                 div class="settlement-identity" {
-                    a href=(format!("/locations/quest/{}", location_id)) class="settlement-name" { (location_name) }
+                    @if active_tab == "camp" {
+                        a href="/camp" class="settlement-name" aria-current="page" { (location_name) }
+                    } @else {
+                        a href=(format!("/locations/quest/{}", location_id)) class="settlement-name" { (location_name) }
+                    }
                     span class="settlement-time" data-player-time { "1st of First Seed · 08:00" }
                 }
             }
             nav class="top-bar-center settlement-services" aria-label="Location views" {
+                @if active_tab == "camp" {
+                    span class="nav-tab active quest-context-tab"
+                        style=(format!("--building-tint:{encounter_tint}"))
+                        aria-current="page" aria-label="Camp" title="Camp" {
+                        span class="service-tab-icon service-tab-icon-camp" aria-hidden="true" {}
+                    }
+                } @else {
+                a href=(format!("/locations/quest/{}", location_id))
+                    class=(if active_tab == "encounter" { "nav-tab active" } else { "nav-tab" })
+                    style=(format!("--building-tint:{encounter_tint}"))
+                    aria-current=(if active_tab == "encounter" { "page" } else { "false" })
+                    aria-label="Encounter" title="Encounter" {
+                    span class="service-tab-icon service-tab-icon-encounter" aria-hidden="true" {}
+                }
                 a href=(format!("/locations/quest/{}/map", location_id))
                     class=(if active_tab == "map" { "nav-tab active" } else { "nav-tab" })
                     style=(format!("--building-tint:{map_tint}"))
@@ -269,6 +333,7 @@ fn quest_location_top_bar(
                     aria-current=(if active_tab == "loot" { "page" } else { "false" })
                     aria-label="Loot" title="Loot" {
                     span class="service-tab-icon service-tab-icon-loot" aria-hidden="true" {}
+                }
                 }
             }
             div class="top-bar-right" {
@@ -391,8 +456,9 @@ pub fn sidebar_section(title: &str, content: Markup) -> Markup {
 #[cfg(test)]
 mod tests {
     use super::{
-        HorizonVariant, building_tier, building_tint, horizon_variant, quest_location_top_bar,
-        religion_icon_path, settlement_layout_with_session, settlement_top_bar,
+        HorizonVariant, building_tier, building_tint, entry_layout, horizon_variant,
+        quest_location_top_bar, religion_icon_path, settlement_layout_with_session,
+        settlement_top_bar,
     };
     use crate::spacetimedb::SettlementCategory;
     use maud::html;
@@ -598,5 +664,67 @@ mod tests {
         assert!(!routes.contains("/theme/{name}"));
         assert!(!layout.contains("details class=\"theme-switcher\""));
         assert!(layout.contains("/static/css/base.css"));
+    }
+
+    #[test]
+    fn location_navigation_reports_only_truthful_active_contexts() {
+        let overview = settlement_top_bar(
+            "Smallville",
+            "s",
+            &SettlementCategory::Village,
+            "",
+            None,
+            None,
+        )
+        .into_string();
+        assert!(!overview.contains("aria-current=\"page\""));
+
+        let encounter = quest_location_top_bar("Ruins", "q", "encounter", None).into_string();
+        assert!(encounter.contains("aria-label=\"Encounter\""));
+        assert!(encounter.contains("href=\"/locations/quest/q\" class=\"nav-tab active\""));
+
+        let camp = quest_location_top_bar("Camp", "party-7", "camp", None).into_string();
+        assert!(camp.contains("aria-label=\"Camp\""));
+        assert!(camp.contains("href=\"/camp\""));
+        assert!(!camp.contains("/locations/quest/party-7"));
+        assert!(!camp.contains("/locations/quest/party-7/map"));
+        assert!(!camp.contains("/locations/quest/party-7/loot"));
+    }
+
+    #[test]
+    fn strategic_notice_is_a_complete_accessible_page() {
+        let markup = super::strategic_notice_page(
+            "Not here",
+            "Travel first.",
+            "/characters",
+            "Return",
+            Some("Ada"),
+        )
+        .into_string();
+        assert!(markup.contains("<!DOCTYPE html>"));
+        assert!(markup.contains("role=\"alert\""));
+        assert!(markup.contains("href=\"/characters\""));
+        assert!(markup.contains("Ada"));
+    }
+
+    #[test]
+    fn narrow_entry_layout_stacks_every_rail_without_clipping_document_scroll() {
+        let markup = entry_layout(
+            "Create",
+            html! {
+                aside class="left-sidebar" { "Help" }
+                main class="center-content" { "Form" }
+                aside class="right-sidebar" { "Equipment" }
+            },
+        )
+        .into_string();
+        assert!(markup.contains("class=\"main-grid\""));
+        assert!(markup.contains("class=\"right-sidebar\""));
+        let css = include_str!("../../static/css/layout.css");
+        let mobile = &css[css.find("@media (max-width: 768px)").unwrap()..];
+        assert!(mobile.contains(".app {\n    height: auto;"));
+        assert!(mobile.contains("overflow: visible;"));
+        assert!(mobile.contains("grid-template-areas: \"main\" \"left\" \"right\""));
+        assert!(!mobile.contains("body:has(.settlement-top-bar) .main-grid"));
     }
 }

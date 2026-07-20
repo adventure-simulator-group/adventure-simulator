@@ -3,7 +3,7 @@
 use axum::{
     Form, Router,
     extract::{Path, State},
-    response::{Html, IntoResponse, Redirect, Response},
+    response::{Html, IntoResponse, Response},
     routing::{get, post},
 };
 use serde::Deserialize;
@@ -12,7 +12,9 @@ use serde_json::json;
 use super::AppState;
 use crate::session::{Session, clear_character_cookie, set_character_cookie};
 use crate::spacetimedb::Character;
-use crate::templates::character::{character_new_page, characters_list_page};
+use crate::templates::character::{
+    character_new_page, character_new_page_with_error, characters_list_page,
+};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -65,7 +67,17 @@ async fn create_character(
         .await
     {
         tracing::error!("Failed to create character {id}: {error}");
-        return Redirect::to("/characters/new").into_response();
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Html(
+                character_new_page_with_error(
+                    Some(form.name.trim()),
+                    Some("That adventurer could not be created. Check the name and try again."),
+                )
+                .into_string(),
+            ),
+        )
+            .into_response();
     }
 
     // Auto-select the newly created character

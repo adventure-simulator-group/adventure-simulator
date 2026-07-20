@@ -277,20 +277,60 @@ async fn alchemy(
     Path(id): Path<String>,
     Query(query): Query<AlchemyQuery>,
     session: Session,
-) -> Html<String> {
+) -> Response {
     let Some((character, inventory)) =
         get_active_character(&state, session.character_id_u64()).await
     else {
-        return Html("<h1>Choose a character first</h1>".into());
+        return (
+            StatusCode::UNAUTHORIZED,
+            Html(
+                crate::templates::strategic_notice_page(
+                    "Choose an adventurer",
+                    "Select an adventurer before opening the alchemy workbench.",
+                    "/characters",
+                    "Choose an adventurer",
+                    None,
+                )
+                .into_string(),
+            ),
+        )
+            .into_response();
     };
     if character.current_settlement_id.as_deref() != Some(&id) {
-        return Html("<h1>Your character is not at this settlement</h1>".into());
+        let return_href = character
+            .current_settlement_id
+            .as_deref()
+            .map(|settlement_id| format!("/locations/settlement/{settlement_id}"))
+            .unwrap_or_else(|| "/characters".to_string());
+        return (
+            StatusCode::FORBIDDEN,
+            Html(
+                crate::templates::strategic_notice_page(
+                    "Alchemy is out of reach",
+                    "Your adventurer must be at this settlement to use its workbench.",
+                    &return_href,
+                    "Return to your location",
+                    Some(&character.name),
+                )
+                .into_string(),
+            ),
+        )
+            .into_response();
     }
     let medicine = get_character_capability(&state, character.id)
         .await
         .map_or(0.0, |capability| capability.medicine);
     if medicine < adventuresim_core::disease::MEDICINE_VITALS_THRESHOLD {
-        return Html("<h1>Medicine 2 is required to prepare medication</h1>".into());
+        return (
+            StatusCode::FORBIDDEN,
+            Html(crate::templates::strategic_notice_page(
+                "More Medicine training required",
+                "Alchemy requires Medicine 2. Visit the herbalist for prepared treatments and ingredients.",
+                &format!("/settlements/{id}/herbalist"),
+                "Return to the herbalist",
+                Some(&character.name),
+            ).into_string()),
+        ).into_response();
     }
     let settlement: Option<Settlement> = state
         .db
@@ -301,7 +341,20 @@ async fn alchemy(
         .await
         .unwrap_or_default();
     let Some(settlement) = settlement else {
-        return Html("<h1>Settlement not found</h1>".into());
+        return (
+            StatusCode::NOT_FOUND,
+            Html(
+                crate::templates::strategic_notice_page(
+                    "Settlement not found",
+                    "The requested settlement could not be found.",
+                    "/characters",
+                    "Return to character select",
+                    Some(&character.name),
+                )
+                .into_string(),
+            ),
+        )
+            .into_response();
     };
     let selected = query
         .recipe
@@ -337,6 +390,7 @@ async fn alchemy(
         )
         .into_string(),
     )
+    .into_response()
 }
 
 async fn craft_medication(
