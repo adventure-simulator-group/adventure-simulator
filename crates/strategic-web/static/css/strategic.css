@@ -3103,7 +3103,7 @@ button.party-portrait-action {
 .attribute-health-bar {
   position: relative;
   display: flex;
-  height: 0.35rem;
+  height: 0.7rem;
   overflow: visible;
   background: var(--bg-tertiary);
 }
@@ -3870,17 +3870,17 @@ body.chat-resizing {
 
 .surgery-projectile-icon {
     position: absolute;
-    inset-block: -.15rem;
+    inset-block: 50% auto;
     right: .2rem;
     z-index: 2;
+    transform: translateY(-50%);
 }
 
 .projectile-ball,
 .projectile-arrowhead {
     display: inline-block;
-    width: .65rem;
-    height: .65rem;
-    top: -.2rem;
+    width: .58rem;
+    height: .58rem;
     background: #1f2024;
     border: 1px solid #f7e7c2;
     box-shadow: 0 0 0 1px rgb(0 0 0 / 55%);
@@ -3889,8 +3889,10 @@ body.chat-resizing {
 .projectile-ball { border-radius: 50%; }
 
 .projectile-arrowhead {
+    width: .5rem;
+    height: .5rem;
     border-radius: 0;
-    transform: rotate(45deg) skew(-8deg, -8deg);
+    transform: translateY(-50%) rotate(45deg) skew(-8deg, -8deg);
 }
 
 .procedure-projectile-visual {
