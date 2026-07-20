@@ -89,7 +89,7 @@ test("travel provisioning keeps target math without forecast prose", () => {
   assert.match(template, /"travel-planner-vertical no-destination"/);
   assert.doesNotMatch(template, /Break camp to travel the next planned leg|The whole party rests/);
   assert.match(css, /\.camp-journey-section[^}]+flex: 1 1 auto/);
-  assert.match(css, /\.travel-plan-node[^}]+width: calc\(var\(--travel-rail-width\) \* var\(--travel-rail-count\)\)/);
+  assert.match(css, /\.travel-plan-node[^}]+width: var\(--travel-rails-width\)/);
   assert.match(css, /\.travel-camp-brace path[^}]+vector-effect: non-scaling-stroke/);
 });
 

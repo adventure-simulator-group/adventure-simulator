@@ -80,6 +80,7 @@ test("planner source covers midnight chronology, hidden fatigue detail, config b
   assert.doesNotMatch(template, /class="travel-resource-summary"/);
   assert.match(template, /type="range" name="walking_hours" min="0" max="24"/);
   assert.match(template, /data-walking-hours-output/);
+  assert.match(template, /travel-setting-heading/);
   assert.match(source, /walkingHours\?\.addEventListener\("wheel"/);
   assert.match(template, /Travel during/);
   assert.match(template, /name="travel_at_night" value="true"/);
@@ -92,8 +93,14 @@ test("planner source covers midnight chronology, hidden fatigue detail, config b
   assert.match(source, /M 11 0 C 3 0[\s\S]+3 100 11 100/);
   const css = fs.readFileSync(path.join(root, "static", "css", "strategic.css"), "utf8");
   assert.match(css, /\.travel-camp-tent \{[^}]*top: 50%[^}]*translateY\(-50%\)/);
-  assert.match(css, /\.travel-period-thumb \{[^}]*sun\.svg/);
+  assert.match(css, /\.travel-period-thumb::after \{[^}]*sun\.svg/);
   assert.match(css, /\.travel-period-toggle input:checked \+ \.travel-period-track \.travel-period-thumb \{[^}]*translateX/);
+  assert.match(css, /--travel-rail-gap: \.22rem/);
+  assert.match(css, /gap: var\(--travel-rail-gap\)/);
+  assert.match(css, /\.travel-resource-path\.base/);
+  assert.match(template, /travel-period-option travel-period-day/);
+  assert.match(template, /travel-period-option travel-period-night/);
+  assert.match(template, /travel-destination-caption/);
   assert.match(css, /box-shadow: inset/);
   assert.doesNotMatch(css, /\.travel-fatigue-segment\.camp\s*\{[^}]*opacity/);
   assert.match(template, /data-selected-round-trip/);

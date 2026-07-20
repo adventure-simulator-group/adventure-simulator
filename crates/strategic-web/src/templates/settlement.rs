@@ -643,11 +643,15 @@ pub(crate) fn map_destination_detail(
                     (travel_planner_bar(selected, camp_fatigue_percent))
                 }
                 form method="post" action=(format!("{map_path}/travel-configuration")) class="travel-configuration-form" data-travel-configuration {
-                    label for="walking-hours" title=(walking_hours_title) { "Walking hours per day" }
+                    div class="travel-setting-heading" title=(walking_hours_title) {
+                        label for="walking-hours" { "Walking hours per day" }
+                        span class="travel-walking-value" {
+                            output for="walking-hours" data-walking-hours-output { (format!("{walking_hours}")) }
+                            span aria-hidden="true" { " h" }
+                        }
+                    }
                     div class="travel-fatigue-control" {
                         input id="walking-hours" type="range" name="walking_hours" min="0" max="24" step="0.25" value=(walking_hours) data-walking-hours {}
-                        output for="walking-hours" data-walking-hours-output { (format!("{walking_hours}")) }
-                        span { "hours" }
                     }
                     div class="travel-period-control" {
                         span { "Travel during" }
@@ -655,6 +659,8 @@ pub(crate) fn map_destination_detail(
                             input type="checkbox" name="travel_at_night" value="true" checked[travel_at_night]
                                 aria-label="Travel at night" data-travel-period-toggle;
                             span class="travel-period-track" aria-hidden="true" {
+                                span class="travel-period-option travel-period-day" {}
+                                span class="travel-period-option travel-period-night" {}
                                 span class="travel-period-thumb" {}
                             }
                         }
@@ -665,10 +671,12 @@ pub(crate) fn map_destination_detail(
                         span { "Provisioning" }
                         div class="travel-provisioning-input" {
                             input type="hidden" value="0" data-target-surplus;
-                            span id="target-surplus" class="travel-provisioning-value" data-target-surplus-display
-                                role="button" tabindex="0" aria-label="Target surplus in days"
-                                title="Click to edit target surplus" { "0" }
-                            span class="travel-provisioning-unit" { "days surplus" }
+                            span class="travel-provisioning-target" {
+                                span id="target-surplus" class="travel-provisioning-value" data-target-surplus-display
+                                    role="button" tabindex="0" aria-label="Target surplus in days"
+                                    title="Click to edit target surplus" { "0" }
+                                span class="travel-provisioning-unit" { "days surplus" }
+                            }
                             @if let Some(forecast) = provision_forecast {
                                 a class="btn btn-secondary" data-provision-buy
                                     data-market-path=(&market_path)
@@ -694,7 +702,11 @@ pub(crate) fn map_destination_detail(
                 }))
             }
             @if let Some(destination) = selected {
-                (sidebar_section(&destination.name, html! {
+                (sidebar_section("", html! {
+                    p class="travel-destination-caption"
+                        title=(&destination.name) {
+                        (&destination.name)
+                    }
                     @if can_travel {
                         form method="post" action=(&destination.travel_action) data-travel-submit {
                             button type="submit" class="btn btn-primary btn-block"
@@ -853,6 +865,7 @@ pub(crate) fn travel_planner_bar_for(
                     div class="travel-resource-row food" aria-label="Food provisions" {
                         span class="travel-resource-icon" { (game_icon("Food", "meal")) }
                         svg class="travel-resource-track" viewBox="0 0 32 100" preserveAspectRatio="none" aria-hidden="true" {
+                            path class="travel-resource-path base" d="M 16 3 V 97" pathLength="100" {}
                             path class="travel-resource-path target" data-resource-target pathLength="100" {}
                             path class="travel-resource-path actual" data-resource-fill pathLength="100" {}
                         }
@@ -861,6 +874,7 @@ pub(crate) fn travel_planner_bar_for(
                     div class="travel-resource-row water" aria-label="Water provisions" {
                         span class="travel-resource-icon" { (game_icon("Water", "water-drop")) }
                         svg class="travel-resource-track" viewBox="0 0 32 100" preserveAspectRatio="none" aria-hidden="true" {
+                            path class="travel-resource-path base" d="M 16 3 V 97" pathLength="100" {}
                             path class="travel-resource-path target" data-resource-target pathLength="100" {}
                             path class="travel-resource-path actual" data-resource-fill pathLength="100" {}
                         }

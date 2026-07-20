@@ -105,8 +105,8 @@
       const daylight = hour >= 6 && hour < 18;
       const progress = daylight ? (hour - 6) / 12 : ((hour + 6) % 24) / 12;
       const color = daylight
-        ? `color-mix(in srgb, #f5cc68 ${Math.round((1 - Math.abs(progress - .5) * 2) * 75 + 25)}%, #77a8ca)`
-        : `color-mix(in srgb, #13233f ${Math.round((1 - Math.abs(progress - .5) * 2) * 70 + 30)}%, #465b78)`;
+        ? `color-mix(in srgb, #d9b95f ${Math.round((1 - Math.abs(progress - .5) * 2) * 62 + 20)}%, #718a9d)`
+        : `color-mix(in srgb, #14223a ${Math.round((1 - Math.abs(progress - .5) * 2) * 62 + 32)}%, #34465d)`;
       stops.push(`${color} ${(index / samples * 100).toFixed(2)}%`);
     }
     track.style.background = `linear-gradient(to bottom, ${stops.join(",")})`;
