@@ -80,7 +80,7 @@ pub fn build(
                     let chunk_height =
                         (height - chunk_y * u32::from(CHUNK_SIDE)).min(u32::from(CHUNK_SIDE));
                     let mut decoded =
-                        Vec::with_capacity(chunk_width as usize * chunk_height as usize * 4);
+                        Vec::with_capacity(chunk_width as usize * chunk_height as usize * 5);
                     for local_y in 0..chunk_height {
                         let y = chunk_y * u32::from(CHUNK_SIDE) + local_y;
                         for local_x in 0..chunk_width {
@@ -98,6 +98,7 @@ pub fn build(
                             let canopy = forest
                                 .as_ref()
                                 .map_or(0, |pixels| pixels[forest_y * 1_000 + forest_x]);
+                            let canopy = if canopy <= 100 { canopy } else { 0 };
                             let pixel_index = y as usize * width as usize + x as usize;
                             let on_road = roads.contains(&(x as u16, y as u16));
                             let on_water = water[pixel_index] != 0;
@@ -114,7 +115,12 @@ pub fn build(
                             };
                             decoded.extend_from_slice(&metres.to_le_bytes());
                             decoded.push(surface as u8);
-                            decoded.push(u8::from(on_road && (on_water || synthetic_water)));
+                            let crossing = on_road && (on_water || synthetic_water);
+                            let hilly = elevations.as_ref().is_some_and(|pixels| {
+                                native_cell_is_hilly(pixels, x, y, width, height, south)
+                            });
+                            decoded.push(u8::from(crossing) | (u8::from(hilly) << 1));
+                            decoded.push(canopy);
                         }
                     }
                     let mut encoder = DeflateEncoder::new(Vec::new(), Compression::new(6));
@@ -160,6 +166,53 @@ pub fn build(
     fs::write(pack_path, pack)?;
     fs::write(manifest_path, json)?;
     Ok(manifest)
+}
+
+fn native_cell_is_hilly(
+    elevations: &[f32],
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+    south: i16,
+) -> bool {
+    const TAN_FIFTEEN_DEGREES: f64 = 0.267_949_192_431_122_7;
+    const METRES_PER_DEGREE: f64 = 111_320.0;
+    let center = elevations[y as usize * width as usize + x as usize];
+    if !center.is_finite() || !(-500.0..=9_000.0).contains(&center) {
+        return false;
+    }
+    let latitude = f64::from(south + 1) - (f64::from(y) + 0.5) / f64::from(height);
+    let north_step = METRES_PER_DEGREE / f64::from(height);
+    let east_step = METRES_PER_DEGREE * latitude.to_radians().cos() / f64::from(width);
+    for offset_y in -1_i32..=1 {
+        for offset_x in -1_i32..=1 {
+            if offset_x == 0 && offset_y == 0 {
+                continue;
+            }
+            let neighbour_x = x as i32 + offset_x;
+            let neighbour_y = y as i32 + offset_y;
+            if neighbour_x < 0
+                || neighbour_y < 0
+                || neighbour_x >= width as i32
+                || neighbour_y >= height as i32
+            {
+                continue;
+            }
+            let neighbour =
+                elevations[neighbour_y as usize * width as usize + neighbour_x as usize];
+            if !neighbour.is_finite() || !(-500.0..=9_000.0).contains(&neighbour) {
+                continue;
+            }
+            let run = (f64::from(offset_x).powi(2) * east_step.powi(2)
+                + f64::from(offset_y).powi(2) * north_step.powi(2))
+            .sqrt();
+            if f64::from((center - neighbour).abs()) > run * TAN_FIFTEEN_DEGREES {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn masks(
@@ -403,5 +456,32 @@ mod tests {
         assert!(is_known_offshore_gap(55, 7));
         assert!(!is_known_offshore_gap(53, 5));
         assert!(!is_known_offshore_gap(55, 8));
+    }
+
+    #[test]
+    fn native_hill_threshold_is_fifteen_degrees() {
+        let width = 2_400;
+        let height = 3;
+        let center = width + 1;
+        let mut gentle = vec![0.0_f32; width * height];
+        gentle[center + 1] = 7.0;
+        assert!(!native_cell_is_hilly(
+            &gentle,
+            1,
+            1,
+            width as u32,
+            height as u32,
+            53,
+        ));
+
+        gentle[center + 1] = 9.0;
+        assert!(native_cell_is_hilly(
+            &gentle,
+            1,
+            1,
+            width as u32,
+            height as u32,
+            53,
+        ));
     }
 }

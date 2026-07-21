@@ -274,9 +274,9 @@ build-strategic-map` to regenerate
 the initialized v2 edge and water files against
 their recorded SHA-256 identities, retains only active 1544 overview roads and
 ferries for presentation, and separately rasterizes every active full-precision
-Viabundus road into the routing pack. It samples installed GLO-30 tiles into elevation bands and
-contours, and reduces every available prepared forest tile into bounded density
-and leaf-type regions. Missing forest tiles remain absent and their coverage is
+Viabundus road into the routing pack. It classifies installed native GLO-30
+slopes and multi-scale relief, and reduces every available prepared forest tile
+into bounded canopy-density and leaf-type regions. Missing forest tiles remain absent and their coverage is
 reported as partial; they do not block map generation. The command clips and
 simplifies presentation geometry, renders a Paper AVIF pyramid through zoom
 level 7 (native detail at 5–16°E, 50–56°N), concatenates the independently addressable images into one pack,
@@ -309,13 +309,14 @@ detail coverage, a missing deepest-level image is deterministically replaced by
 the correctly cropped complete parent tile, so the map never goes blank without
 inflating the pack with redundant generalized tiles. Every encoded
 tile includes a four-pixel gutter so independent AVIF edges overlap cleanly;
-close levels replace coarse tint cells and dense contours with deterministic
-curved hill and ridge ranges, including engraved shadow hatching and secondary
-rows in high terrain. Forest density cells become two translucent green coverage
-bands: canopy bands 1-2 form Sparse woods, while band 3 adds Deep woods. Each
-tile samples one continuous canopy field whose categorical boundaries use
-deterministic, domain-warped four-octave noise and four-sample edge antialiasing
-instead of exposing the source pixel grid.
+close levels use the native terrain pack to classify 15-degree slopes and
+20-percent canopy cover. Open hilly ground is light brown, forest is green, and
+their overlap is dark green. A multi-scale mountain classifier combines robust
+seven-kilometre relief, one-kilometre relief or sustained steepness, and a
+minimum connected area before adding engraved ridge marks; absolute elevation
+alone never makes a mountain. Each tile samples continuous, domain-warped
+coverage fields with four-sample edge antialiasing instead of exposing source
+pixels.
 Historical road importance controls both
 zoom visibility and line weight, and a restrained deterministic parchment
 fiber/fleck layer prevents flat digital backgrounds. All procedural marks are
@@ -343,7 +344,7 @@ bundle, set `STRATEGIC_MAP_PREVIEW_PNG` to an output path and run the focused
 `representative_paper_tile_has_deterministic_png_preview_hook` test with the
 `strategic-map-renderer` feature.
 
-The deployment manifest is schema 3 with renderer revision 4. It contains only
+The deployment manifest is schema 3 with renderer revision 5. It contains only
 bounds, attribution/source metadata, coverage counts, the tile index, and
 content digests; source roads, water rings, elevation cells/contours, and
 forest regions stay in the offline compiler and are not shipped to

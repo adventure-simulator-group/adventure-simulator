@@ -18,12 +18,13 @@ use std::{
     time::Instant,
 };
 
-pub const SCHEMA: u32 = 1;
+pub const SCHEMA: u32 = 2;
 pub const CHUNK_SIDE: u16 = 256;
 pub const MAX_ENTRIES: usize = 20_000;
 pub const MAX_PACK_BYTES: usize = 2 * 1024 * 1024 * 1024;
 pub const MAX_MANIFEST_BYTES: u64 = 8 * 1024 * 1024;
-pub const MAX_DECODED_CHUNK_BYTES: usize = 256 * 256 * 4;
+const CELL_BYTES: usize = 5;
+pub const MAX_DECODED_CHUNK_BYTES: usize = 256 * 256 * CELL_BYTES;
 pub const CACHE_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_ROUTE_NODES: usize = 750_000;
 pub const MAX_ROUTE_POINTS: usize = 512;
@@ -77,6 +78,10 @@ pub struct Cell {
     pub surface: Surface,
     /// Roads over water are valid bridges/ferries/fords.
     pub crossing: bool,
+    /// Copernicus TCD canopy cover, retained independently of routing classes.
+    pub canopy_percent: u8,
+    /// At least one native neighbour forms a slope steeper than 15 degrees.
+    pub hilly: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -254,7 +259,7 @@ impl TerrainPack {
             }
         }
         let entry = &self.manifest.entries[index];
-        let expected = entry.width as usize * entry.height as usize * 4;
+        let expected = entry.width as usize * entry.height as usize * CELL_BYTES;
         if expected > MAX_DECODED_CHUNK_BYTES {
             return Err(Error::Validation("decoded chunk exceeds bound".into()));
         }
@@ -276,7 +281,7 @@ impl TerrainPack {
             return Err(Error::Validation("chunk is corrupt or truncated".into()));
         }
         let cells: Arc<[Cell]> = decoded
-            .chunks_exact(4)
+            .chunks_exact(CELL_BYTES)
             .map(|bytes| Cell {
                 elevation_m: i16::from_le_bytes([bytes[0], bytes[1]]),
                 surface: match bytes[2] {
@@ -286,7 +291,9 @@ impl TerrainPack {
                     3 => Surface::DeepWoods,
                     _ => Surface::Water,
                 },
-                crossing: bytes[3] != 0,
+                crossing: bytes[3] & 1 != 0,
+                hilly: bytes[3] & 2 != 0,
+                canopy_percent: bytes[4],
             })
             .collect::<Vec<_>>()
             .into();
@@ -311,7 +318,7 @@ impl TerrainPack {
                 .map(|(key, _)| *key)
                 .ok_or_else(|| Error::Validation("cache cannot admit chunk".into()))?;
             let removed = cache.chunks.remove(&victim).expect("cache victim exists");
-            cache.bytes -= removed.1.len() * 4;
+            cache.bytes -= removed.1.len() * CELL_BYTES;
         }
         cache.bytes += decoded.len();
         cache.chunks.insert(index, (clock, cells.clone()));
@@ -446,6 +453,8 @@ impl TerrainPack {
                             elevation_m: 0,
                             surface: Surface::Water,
                             crossing: false,
+                            canopy_percent: 0,
+                            hilly: false,
                         }),
                 );
             }
@@ -490,6 +499,12 @@ fn aggregate_cells(cells: &[Cell]) -> Cell {
             elevation_m: road.elevation_m,
             surface: Surface::Road,
             crossing: cells.iter().any(|cell| cell.crossing),
+            canopy_percent: cells
+                .iter()
+                .map(|cell| cell.canopy_percent)
+                .max()
+                .unwrap_or_default(),
+            hilly: cells.iter().any(|cell| cell.hilly),
         };
     }
     let passable = cells
@@ -501,6 +516,8 @@ fn aggregate_cells(cells: &[Cell]) -> Cell {
             elevation_m: 0,
             surface: Surface::Water,
             crossing: false,
+            canopy_percent: 0,
+            hilly: false,
         };
     }
     let mut counts = [0_usize; 3];
@@ -526,6 +543,12 @@ fn aggregate_cells(cells: &[Cell]) -> Cell {
             / passable.len() as i64) as i16,
         surface,
         crossing: passable.iter().any(|cell| cell.crossing),
+        canopy_percent: (passable
+            .iter()
+            .map(|cell| u64::from(cell.canopy_percent))
+            .sum::<u64>()
+            / passable.len() as u64) as u8,
+        hilly: passable.iter().any(|cell| cell.hilly),
     }
 }
 
@@ -1067,6 +1090,7 @@ mod tests {
             surface: Surface::Road,
             elevation_m: 17,
             crossing: true,
+            ..Cell::default()
         };
         assert_eq!(
             aggregate_cells(&cells),
@@ -1074,6 +1098,7 @@ mod tests {
                 surface: Surface::Road,
                 elevation_m: 17,
                 crossing: true,
+                ..Cell::default()
             }
         );
     }

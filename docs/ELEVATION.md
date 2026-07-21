@@ -31,15 +31,21 @@ entirely void. The
 build report counts these fallbacks. The verified 1544 build sampled all 6,041
 settlements without using a fallback.
 
-The settlement Map presentation separately samples the installed GLO-30 tiles
-on a coarse deterministic grid. Far Paper-map levels render generalized tint
-cells and restrained contour segments; close levels derive curved chains of
-profile hills and multi-row high ridges with engraved shadow hatching from the
-same cells instead of magnifying their square boundaries. Deterministic range
-orientation and curvature keep neighboring marks visually related without
-claiming precision beyond the generalized quarter-degree cells. Browsers
-receive only the compressed tiles covering their current view; raw DEM pixels
-are not served and the presentation layer is not persisted in SpacetimeDB.
+The settlement Map presentation classifies a native cell as hilly when its
+elevation difference to any of its eight neighbours implies a slope steeper
+than 15 degrees using the latitude-correct source-cell distance. Hilly open
+ground is light brown; hilly ground with at least 20 percent canopy is dark
+green. Low zooms use a naturalized aggregate of the same classifications.
+
+Mountains are deliberately not an elevation band. A one-kilometre summary
+grid median-filters native samples, then requires at least 300 metres of local
+relief in a seven-kilometre radius together with either 150 metres of local
+one-kilometre relief or at least 15 percent steep terrain. Connected components
+smaller than roughly ten square kilometres are removed before engraved ridge
+marks are emitted. This excludes high plains and isolated DEM spikes while
+retaining low but rugged ranges. Browsers receive only compressed tiles; raw
+DEM pixels are not served and the presentation layer is not persisted in
+SpacetimeDB.
 
 Elevation is stored on settlements because it describes the settlement's own
 location and can directly influence scene selection, climate inference,
@@ -54,7 +60,8 @@ into `terrain-routing-v1.json` and `terrain-routing-v1.pack`. The pack preserves
 each source tile's native 1,800/2,400/3,600 by 3,600 grid instead of expanding
 it into database rows or `ElevationCell` structs. Independently deflated
 256×256 chunks carry signed elevation, road/open/sparse-woods/deep-woods/water
-surface, and an explicit infrastructure-crossing bit.
+surface, exact bounded canopy percentage, a native 15-degree hill bit, and an
+explicit infrastructure-crossing bit.
 
 The manifest and pack are separately SHA-256 addressed. Readers reject wrong
 dimensions, overlapping or truncated chunks, digest mismatches, excess

@@ -371,12 +371,9 @@ fn append_forest_regions(
                 continue;
             }
             let average = (density_sum / density_count) as u8;
-            let density = match average {
-                ..=9 => continue,
-                10..=34 => 1,
-                35..=64 => 2,
-                _ => 3,
-            };
+            if average == 0 {
+                continue;
+            }
             let kind = if leaf_counts[2] >= leaf_counts[0] && leaf_counts[2] >= leaf_counts[1] {
                 "mixed"
             } else if leaf_counts[1] > leaf_counts[0] {
@@ -388,7 +385,7 @@ fn append_forest_regions(
             let north = f64::from(tile.south + 1) - row as f64 * geographic_step;
             output.push(ForestRegion {
                 bounds: [west, north - geographic_step, west + geographic_step, north],
-                density,
+                density: average,
                 kind: kind.into(),
             });
         }
@@ -534,7 +531,7 @@ mod tests {
         );
         assert_eq!(regions.len(), 1);
         assert_eq!(regions[0].kind, "conifer");
-        assert_eq!(regions[0].density, 3);
+        assert_eq!(regions[0].density, 80);
         assert_eq!(regions[0].bounds, [9.0, 53.95, 9.05, 54.0]);
     }
 }
