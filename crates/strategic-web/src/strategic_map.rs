@@ -528,6 +528,20 @@ pub fn strategic_map(
                                 }
                             }
                         }
+                        // Settlement symbols take pointer priority when a generated quest happens
+                        // to overlap them. The visible/accessibility link remains above; this
+                        // transparent duplicate is mouse-only and is rendered last in SVG order.
+                        @for settlement in settlements.iter().filter(|settlement| has_geographic_source(settlement)) {
+                            @let (x, y) = project(settlement.coord_x, settlement.coord_y, package.bounds);
+                            a href=(format!("{map_path}?destination={}", settlement.id))
+                                class="map-settlement-hit-link" aria-hidden="true" tabindex="-1" {
+                                g transform=(format!("translate({x:.3} {y:.3})")) {
+                                    g data-map-pin-symbol transform=(format!("scale({initial_pin_scale:.5})")) {
+                                        circle class="map-settlement-hit-area map-settlement-hit-overlay" r="13" {}
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -839,6 +853,12 @@ mod tests {
         assert!(!markup.contains("map-legacy-route"));
         assert!(markup.contains("Computed terrain route, 74.5 kilometres"));
         assert!(markup.contains("aria-current=\"true\""));
+        assert!(markup.contains("map-settlement-hit-overlay"));
+        assert!(
+            markup.rfind("map-settlement-hit-overlay").unwrap()
+                > markup.rfind("map-quest-shape").unwrap(),
+            "settlement pointer overlay must render after quest pins"
+        );
     }
 
     #[test]
