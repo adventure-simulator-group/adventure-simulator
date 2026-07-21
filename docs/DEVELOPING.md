@@ -332,6 +332,11 @@ optional terrain pack is absent. At startup it claims (or renews, using the same
 identity) the singleton strategic-gateway authority and pins the loaded terrain
 package digest. Keep a new database private until this registration succeeds;
 the first authenticated claim establishes the trusted gateway identity.
+The isolated `web-isolated` recipes read the current token from
+`spacetime login show --token`, pass it only in the child process environment,
+and never print or persist it. Run `spacetime login` before starting an isolated
+profile. Canonical deployments must continue to provide `SPACETIMEDB_TOKEN`
+through their secret manager.
 
 For a small deterministic renderer preview without building the production
 bundle, set `STRATEGIC_MAP_PREVIEW_PNG` to an output path and run the focused
