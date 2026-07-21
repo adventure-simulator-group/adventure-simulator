@@ -138,7 +138,8 @@ The en-route header keeps its single Camp tab and existing rest and continue
 actions. The raster scene combines a cut-paper tent with a small stone-and-log
 firepit, while flame and smoke remain independent decorative SVG layers. A
 newly reached camp shows flame, rising yellow-to-orange-to-red-to-grey fire
-particles, and smoke; after rest is recorded at that movement checkpoint, the
+particles, and a denser smoke column that rises through the full height of the
+location header; after rest is recorded at that movement checkpoint, the
 flame and fire particles are omitted and only smoke remains. Reaching a later
 checkpoint shows the fire again because the latest recorded rest no longer
 matches the journey's current movement minute. Reduced-motion clients receive

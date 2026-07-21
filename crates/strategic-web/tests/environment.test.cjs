@@ -116,7 +116,8 @@ test("settlement smithies and wilderness tabs use independent non-interactive ef
   assert.doesNotMatch(layoutTemplate, /<filter|feTurbulence|feDisplacementMap/);
   assert.match(layoutCss, /\.topbar-scene-effect-plane \{[\s\S]*bottom: var\(--topbar-prop-baseline\);[\s\S]*width: 6\.55rem;[\s\S]*height: 6\.55rem;[\s\S]*scale\(var\(--topbar-prop-scale\)\)/);
   assert.match(layoutCss, /@media \(max-width: 1200px\)[\s\S]*--topbar-prop-scale: 0\.8473;[\s\S]*data-environment="wilderness"[\s\S]*--topbar-prop-scale: 0\.8473;/);
-  assert.match(layoutCss, /@media \(max-width: 768px\)[\s\S]*padding-top: 1\.75rem;[\s\S]*overflow-y: hidden;[\s\S]*--topbar-prop-scale: 0\.8855;[\s\S]*--smoke-rise-distance: -34px;/);
+  assert.match(layoutCss, /\.campfire-smoke \{[\s\S]*--smoke-rise-distance: -180px;/);
+  assert.match(layoutCss, /@media \(max-width: 768px\)[\s\S]*padding-top: 1\.75rem;[\s\S]*overflow-y: hidden;[\s\S]*--topbar-prop-scale: 0\.8855;[\s\S]*\.campfire-smoke \{[\s\S]*--smoke-rise-distance: -110px;/);
 
   const smokeFrames = layoutCss.match(/@keyframes wilderness-smoke-rise \{[\s\S]*?\n\}/)?.[0] ?? "";
   const flameFrames = layoutCss.match(/@keyframes wilderness-flame-flicker \{[\s\S]*?\n\}/)?.[0] ?? "";
@@ -150,6 +151,14 @@ test("quest and camp headers share the tent while keeping fire and enemy layers 
   assert.match(settlementTemplate, /actual_camp_intervals[\s\S]*movement_minute == journey\.completed_minutes/);
   assert.match(settlementTemplate, /camp_location_layout_with_session\([\s\S]*camp_fire_lit/);
   assert.doesNotMatch(settlementTemplate, /camp-fire|fire-state|rested=.*Query/);
+});
+
+test("wilderness headers select a tintable physical horizon", () => {
+  assert.match(layoutTemplate, /data-wilderness-variant=\(wilderness_variant\(location_id\)\.as_str\(\)\)/);
+  assert.match(layoutCss, /data-environment="wilderness"\]::before \{[\s\S]*background-image: var\(--wilderness-horizon-image\);[\s\S]*background-position: center bottom;[\s\S]*background-size: cover;[\s\S]*brightness\(var\(--building-light/);
+  for (const variant of ["forest", "grassland", "hills"]) {
+    assert.match(layoutCss, new RegExp(`data-wilderness-variant="${variant}"[\\s\\S]*background/wilderness/${variant}\\.png`));
+  }
 });
 
 test("settlement side panels use tint-derived beams and corner blocks", () => {

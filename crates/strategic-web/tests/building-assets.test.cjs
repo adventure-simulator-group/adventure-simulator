@@ -291,6 +291,46 @@ test("all settlement horizons are standardized transparent panoramic assets", ()
   }
 });
 
+test("wilderness horizons are distinct standardized transparent panoramic assets", () => {
+  const wildernessRoot = path.join(horizonRoot, "wilderness");
+  const wildernessVariants = ["forest", "grassland", "hills"];
+  assert.deepEqual(
+    fs.readdirSync(wildernessRoot).filter((file) => file.endsWith(".png")).sort(),
+    wildernessVariants.map((variant) => `${variant}.png`).sort(),
+  );
+
+  const signatures = new Set();
+  for (const variant of wildernessVariants) {
+    const { width, height, rgba } = decodeRgbaPng(path.join(wildernessRoot, `${variant}.png`));
+    assert.equal(width, 2880, `${variant} width`);
+    assert.equal(height, 240, `${variant} height`);
+    let visible = 0;
+    const tones = new Set();
+    let firstVisibleRow = height;
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const offset = (y * width + x) * 4;
+        const alpha = rgba[offset + 3];
+        if (y === 0) assert.equal(alpha, 0, `${variant} upper sky is transparent`);
+        if (!alpha) continue;
+        assert.equal(rgba[offset], rgba[offset + 1], `${variant} has no colored fringe`);
+        assert.equal(rgba[offset + 1], rgba[offset + 2], `${variant} is grayscale`);
+        tones.add(rgba[offset]);
+        firstVisibleRow = Math.min(firstVisibleRow, y);
+        visible += 1;
+      }
+    }
+    assert.ok(visible > width * height * 0.08, `${variant} has useful scenery`);
+    assert.ok(visible < width * height * 0.8, `${variant} keeps sky transparent`);
+    assert.ok(tones.size > 32, `${variant} preserves layered tonal detail`);
+    for (const x of [0, width - 1]) {
+      assert.ok(rgba[((height - 1) * width + x) * 4 + 3] > 0, `${variant} reaches bottom corner`);
+    }
+    signatures.add(`${firstVisibleRow}:${visible}:${tones.size}`);
+  }
+  assert.equal(signatures.size, wildernessVariants.length, "each terrain has a distinct silhouette");
+});
+
 test("town and city horizons carry an irregular built skyline through both crop edges", () => {
   for (const tier of ["town", "city"]) {
     for (const variant of variants) {

@@ -115,6 +115,32 @@
   pointer-events: none;
 }
 
+.quest-location-top-bar[data-environment="wilderness"]::before {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  background-image: var(--wilderness-horizon-image);
+  background-position: center bottom;
+  background-size: cover;
+  background-repeat: no-repeat;
+  content: "";
+  filter: brightness(var(--building-light, 78%));
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.quest-location-top-bar[data-wilderness-variant="forest"] {
+  --wilderness-horizon-image: url("/static/styles/timber-framed/background/wilderness/forest.png?v=wilderness-horizons-1");
+}
+
+.quest-location-top-bar[data-wilderness-variant="grassland"] {
+  --wilderness-horizon-image: url("/static/styles/timber-framed/background/wilderness/grassland.png?v=wilderness-horizons-1");
+}
+
+.quest-location-top-bar[data-wilderness-variant="hills"] {
+  --wilderness-horizon-image: url("/static/styles/timber-framed/background/wilderness/hills.png?v=wilderness-horizons-1");
+}
+
 .settlement-top-bar[data-building-tier="village"][data-horizon-variant="inland"] {
   --settlement-horizon-image: url("/static/styles/timber-framed/background/village/inland.png");
 }
@@ -425,6 +451,7 @@
 }
 
 .campfire-smoke {
+  --smoke-rise-distance: -180px;
   left: 84.5%;
   bottom: 2.16rem;
   width: 1.8rem;
@@ -1078,6 +1105,9 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
   }
   .topbar-scene-effect-plane {
     --smoke-rise-distance: -34px;
+  }
+  .campfire-smoke {
+    --smoke-rise-distance: -110px;
   }
   .settlement-services::-webkit-scrollbar { height: 0.35rem; }
   .entry-message {

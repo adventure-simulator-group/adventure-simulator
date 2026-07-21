@@ -156,7 +156,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/base.css?v=environment-14";
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=wilderness-camp-2";
+                link rel="stylesheet" href="/static/css/layout.css?v=wilderness-horizons-1";
                 link rel="stylesheet" href="/static/css/components.css?v=coin-currencies-3";
                 link rel="stylesheet" href="/static/css/strategic.css?v=strategic-ui-overhaul-1";
                 link rel="stylesheet" href="/static/css/utilities.css?v=strategic-ui-overhaul-1";
@@ -322,6 +322,7 @@ fn quest_location_top_bar(
     html! {
         style { (format!(":root{{--active-building-tint:{active_tint};}}")) }
         header class="top-bar settlement-top-bar quest-location-top-bar" data-environment="wilderness"
+            data-wilderness-variant=(wilderness_variant(location_id).as_str())
             data-camp-fire=[(active_tab == "camp").then_some(if camp_fire_lit { "lit" } else { "embers" })] {
             div class="top-bar-left settlement-location" {
                 div class="settlement-identity" {
@@ -379,18 +380,24 @@ fn quest_location_top_bar(
 
 fn smoke_effect(class: &str) -> Markup {
     let puffs = [
-        (30, 76, 5, -8, -0.0, 6.2),
-        (35, 76, 4, 7, -0.6, 7.1),
-        (27, 76, 6, -3, -1.2, 6.7),
-        (33, 76, 4, 10, -1.8, 7.6),
-        (29, 76, 5, -9, -2.4, 6.4),
-        (36, 76, 3, 5, -3.0, 7.0),
-        (26, 76, 4, -6, -3.6, 7.8),
-        (32, 76, 6, 9, -4.2, 6.6),
-        (37, 76, 4, 3, -4.8, 7.3),
-        (28, 76, 3, -10, -5.4, 6.9),
-        (34, 76, 5, 6, -6.0, 7.5),
-        (25, 76, 4, -4, -6.6, 6.3),
+        (30, 76, 5, -8, -0.0, 7.0),
+        (35, 76, 4, 7, -0.4, 7.9),
+        (27, 76, 6, -3, -0.8, 7.5),
+        (33, 76, 4, 10, -1.2, 8.4),
+        (29, 76, 5, -9, -1.6, 7.2),
+        (36, 76, 3, 5, -2.0, 7.8),
+        (26, 76, 4, -6, -2.4, 8.6),
+        (32, 76, 6, 9, -2.8, 7.4),
+        (37, 76, 4, 3, -3.2, 8.1),
+        (28, 76, 3, -10, -3.6, 7.7),
+        (34, 76, 5, 6, -4.0, 8.3),
+        (25, 76, 4, -4, -4.4, 7.1),
+        (31, 76, 3, 12, -4.8, 8.0),
+        (38, 76, 5, -7, -5.2, 8.5),
+        (24, 76, 4, 4, -5.6, 7.3),
+        (33, 76, 6, -11, -6.0, 8.2),
+        (29, 76, 4, 8, -6.4, 7.6),
+        (36, 76, 3, -2, -6.8, 8.7),
     ];
     html! {
         svg class=(class) viewBox="0 0 64 96" aria-hidden="true" focusable="false" {
@@ -487,6 +494,23 @@ enum HorizonVariant {
     River,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum WildernessVariant {
+    Forest,
+    Grassland,
+    Hills,
+}
+
+impl WildernessVariant {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Forest => "forest",
+            Self::Grassland => "grassland",
+            Self::Hills => "hills",
+        }
+    }
+}
+
 impl HorizonVariant {
     fn as_str(self) -> &'static str {
         match self {
@@ -509,6 +533,21 @@ fn horizon_variant(settlement_id: &str) -> HorizonVariant {
         0 => HorizonVariant::Inland,
         1 => HorizonVariant::Coastal,
         _ => HorizonVariant::River,
+    }
+}
+
+/// Temporary stable terrain selection. World terrain data can replace this
+/// selector without changing the shared camp and quest-location header.
+fn wilderness_variant(location_id: &str) -> WildernessVariant {
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in location_id.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    match hash % 3 {
+        0 => WildernessVariant::Forest,
+        1 => WildernessVariant::Grassland,
+        _ => WildernessVariant::Hills,
     }
 }
 
@@ -546,9 +585,9 @@ pub fn sidebar_section(title: &str, content: Markup) -> Markup {
 #[cfg(test)]
 mod tests {
     use super::{
-        HorizonVariant, building_tier, building_tint, entry_layout, horizon_variant,
-        quest_location_top_bar, religion_icon_path, settlement_layout_with_session,
-        settlement_top_bar,
+        HorizonVariant, WildernessVariant, building_tier, building_tint, entry_layout,
+        horizon_variant, quest_location_top_bar, religion_icon_path,
+        settlement_layout_with_session, settlement_top_bar, wilderness_variant,
     };
     use crate::spacetimedb::SettlementCategory;
     use maud::html;
@@ -631,6 +670,28 @@ mod tests {
         .into_string();
         assert!(markup.contains("data-building-tier=\"town\""));
         assert!(markup.contains(&format!("data-horizon-variant=\"{expected}\"")));
+    }
+
+    #[test]
+    fn wilderness_variants_are_stable_reachable_and_emitted() {
+        assert_eq!(wilderness_variant("party-7"), wilderness_variant("party-7"));
+        let variants = (0..128)
+            .map(|id| wilderness_variant(&format!("location-{id}")))
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(
+            variants,
+            [
+                WildernessVariant::Forest,
+                WildernessVariant::Grassland,
+                WildernessVariant::Hills,
+            ]
+            .into_iter()
+            .collect()
+        );
+        let expected = wilderness_variant("stable-place").as_str();
+        let markup = quest_location_top_bar("Stable Place", "stable-place", "map", false, None)
+            .into_string();
+        assert!(markup.contains(&format!("data-wilderness-variant=\"{expected}\"")));
     }
 
     #[test]
@@ -789,7 +850,7 @@ mod tests {
         assert_eq!(camp.matches("campfire-flame").count(), 1);
         assert_eq!(camp.matches("campfire-smoke").count(), 1);
         assert_eq!(camp.matches("class=\"fire-particle\"").count(), 16);
-        assert_eq!(camp.matches("class=\"smoke-puff\"").count(), 12);
+        assert_eq!(camp.matches("class=\"smoke-puff\"").count(), 18);
         assert!(!camp.contains("/locations/quest/party-7"));
         assert!(!camp.contains("/locations/quest/party-7/map"));
         assert!(!camp.contains("/locations/quest/party-7/enemy"));

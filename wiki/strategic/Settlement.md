@@ -28,6 +28,13 @@ service-tab art bleed (0.65 rem inline, 0.45 rem above, and 0.5 rem below);
 animated effects may rise through its transparent upper field. These
 front-facing compositions must not be mirrored.
 
+Camp and quest-location headers also carry a distant grayscale wilderness
+horizon behind their tabs. Forest, grassland, and hills variants use the same
+2880-by-240 transparent panorama contract as settlement horizons and inherit
+the live sky tint and brightness. Until imported terrain selects the actual
+biome, a deterministic hash of the camp party or quest-location ID keeps the
+assigned scenery stable between visits without adding persisted state.
+
 Each settlement offers a number of services. Tentatively, these are all tabs of a unified trade page. Each tab corresponds to a different guild, represented by a single NPC. The left side is a list of everything offered by the NPC, the right side is everything offered by your party. It _may_ be a good idea to not only include _items_ in this menu, but also _services_.
 
 The location header reflects settlement scale through architecture and its

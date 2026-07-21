@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (879)
+## Files (882)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -776,6 +776,9 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/styles/timber-framed/background/village/coastal.png` — Binary game or UI asset.
 - `crates/strategic-web/static/styles/timber-framed/background/village/inland.png` — Binary game or UI asset.
 - `crates/strategic-web/static/styles/timber-framed/background/village/river.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/background/wilderness/forest.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/background/wilderness/grassland.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/background/wilderness/hills.png` — Binary game or UI asset.
 - `crates/strategic-web/static/styles/timber-framed/building/city/armor.png` — Binary game or UI asset.
 - `crates/strategic-web/static/styles/timber-framed/building/city/clothing.png` — Binary game or UI asset.
 - `crates/strategic-web/static/styles/timber-framed/building/city/herbalist.png` — Binary game or UI asset.
