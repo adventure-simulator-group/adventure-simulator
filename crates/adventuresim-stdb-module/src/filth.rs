@@ -9,7 +9,7 @@ use crate::character::character;
 use crate::personality::character_personality;
 use crate::{
     character_attributes, character_time, infection_episode, inventory_item, limb_injury,
-    party_inventory_item,
+    party_inventory_item, retained_projectile,
 };
 
 pub const SOAP_ITEM_ID: &str = "soft_soap";
@@ -18,6 +18,13 @@ pub const SOAP_ITEM_ID: &str = "soft_soap";
 pub enum FilthSubstance {
     Dirt,
     Blood,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum FilthOrigin {
+    Own,
+    Foreign,
+    Unknown,
 }
 
 /// Sanitized visible deposit. Disease identity is never copied into this table.
@@ -30,9 +37,18 @@ pub struct CharacterFilth {
     #[index(btree)]
     pub character_id: u64,
     pub substance: FilthSubstance,
-    pub source_character_id: Option<u64>,
+    pub origin: FilthOrigin,
     pub amount: u16,
     pub deposited_at: u64,
+}
+
+/// Exact source identity is private; public subscribers receive only origin.
+#[derive(Clone, Debug)]
+#[table(accessor = filth_provenance)]
+pub struct FilthProvenance {
+    #[primary_key]
+    pub filth_id: u64,
+    pub source_character_id: Option<u64>,
 }
 
 /// Private snapshot of source infection provenance at the instant of deposition.
@@ -70,24 +86,58 @@ pub struct BloodExposureCheckpoint {
     pub evaluated_through: u64,
 }
 
-fn wound_route(ctx: &ReducerContext, character_id: u64) -> f32 {
-    let (mut open, mut bandaged, mut stitched) = (0, 0, 0);
-    for injury in ctx
+fn predicted_wound_routes(
+    ctx: &ReducerContext,
+    character_id: u64,
+    allow_healing: bool,
+) -> Result<Vec<filth::TimedCutRoute>, String> {
+    let natural = if allow_healing {
+        crate::time::health_recovered_per_day(crate::time::party_medicine_check(ctx, character_id)?)
+    } else {
+        0.0
+    };
+    Ok(ctx
         .db
         .limb_injury()
         .character_id()
         .filter(character_id)
         .filter(|injury| injury.cut_damage > 0.0)
-    {
-        if injury.stitched {
-            stitched += 1;
-        } else if injury.bandaged {
-            bandaged += 1;
-        } else {
-            open += 1;
-        }
-    }
-    filth::cut_exposure(open, bandaged, stitched)
+        .map(|injury| {
+            let state = if injury.stitched {
+                filth::CutRouteState::Stitched
+            } else if injury.bandaged {
+                filth::CutRouteState::Bandaged
+            } else {
+                filth::CutRouteState::Open
+            };
+            let active_minutes = if allow_healing && injury.bandaged {
+                let stitch_bonus = if injury.stitched {
+                    injury.stitch_quality.max(0.0) * crate::surgery::STITCH_HEALING_BONUS_PER_LEVEL
+                } else {
+                    0.0
+                };
+                let projectile_term = if ctx
+                    .db
+                    .retained_projectile()
+                    .character_id()
+                    .filter(character_id)
+                    .any(|projectile| projectile.limb == injury.limb)
+                {
+                    crate::surgery::RETAINED_PROJECTILE_HEALING_MULTIPLIER
+                } else {
+                    1.0
+                };
+                let per_day = (natural + 0.01 + stitch_bonus) * projectile_term;
+                Some(((injury.cut_damage / per_day) * 1_440.0).ceil().max(1.0) as u64)
+            } else {
+                None
+            };
+            filth::TimedCutRoute {
+                state,
+                active_minutes,
+            }
+        })
+        .collect())
 }
 
 pub fn blood_episodes_through(
@@ -96,18 +146,30 @@ pub fn blood_episodes_through(
     from: u64,
     to: u64,
     persist_checkpoint: bool,
+    allow_healing: bool,
 ) -> Result<Vec<adventuresim_core::disease::InfectionEpisode>, String> {
     if to <= from {
         return Ok(Vec::new());
     }
     let all_deposits = deposits(ctx, character_id)?;
+    let has_active_compatible_foreign_blood = adventuresim_core::disease::STARTER_DISEASES
+        .iter()
+        .filter(|definition| {
+            definition.supports(adventuresim_core::disease::TransmissionVector::Blood)
+        })
+        .any(|definition| {
+            !filth::blood_infectious_windows(&all_deposits, definition.id, from, to).is_empty()
+        });
+    if !has_active_compatible_foreign_blood {
+        return Ok(Vec::new());
+    }
     let immunity = ctx
         .db
         .character_attributes()
         .character_id()
         .find(character_id)
         .map_or(3.0, |attributes| attributes.immunity);
-    let route = wound_route(ctx, character_id);
+    let routes = predicted_wound_routes(ctx, character_id, allow_healing)?;
     let mut episodes = crate::disease::character_episodes(ctx, character_id)?;
     let original_len = episodes.len();
     for disease_id in adventuresim_core::disease::STARTER_DISEASES
@@ -124,14 +186,30 @@ pub fn blood_episodes_through(
                 .as_ref()
                 .map_or(0, |row| row.evaluated_through.saturating_add(1)),
         );
-        for minute in start..=to {
+        let relevant = all_deposits
+            .iter()
+            .filter(|deposit| {
+                deposit.foreign_blood()
+                    && deposit
+                        .diseases
+                        .iter()
+                        .any(|snapshot| snapshot.disease_id == disease_id)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let windows =
+            filth::blood_infectious_windows(&relevant, disease_id, start.saturating_sub(1), to);
+        for minute in windows
+            .into_iter()
+            .flat_map(|(window_start, window_end)| window_start..=window_end)
+        {
             if adventuresim_core::disease::has_unresolved_disease(
                 &episodes, disease_id, minute, immunity,
             ) {
                 continue;
             }
-            let exposure =
-                filth::blood_exposure(&all_deposits, disease_id, minute, route) / 1_440.0;
+            let route = filth::timed_cut_exposure(&routes, minute.saturating_sub(from));
+            let exposure = filth::blood_exposure(&relevant, disease_id, minute, route) / 1_440.0;
             if exposure <= 0.0 {
                 continue;
             }
@@ -258,9 +336,17 @@ pub fn deposit(
         id: 0,
         character_id,
         substance,
-        source_character_id,
+        origin: match source_character_id {
+            Some(source) if source == character_id => FilthOrigin::Own,
+            Some(_) => FilthOrigin::Foreign,
+            None => FilthOrigin::Unknown,
+        },
         amount,
         deposited_at: at,
+    });
+    ctx.db.filth_provenance().insert(FilthProvenance {
+        filth_id: row.id,
+        source_character_id,
     });
     if substance == FilthSubstance::Blood {
         if let Some(source) = source_character_id {
@@ -350,6 +436,13 @@ pub(crate) fn deposits(ctx: &ReducerContext, character_id: u64) -> Result<Vec<De
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
+            let source_character_id = ctx
+                .db
+                .filth_provenance()
+                .filth_id()
+                .find(row.id)
+                .ok_or("Filth provenance is missing")?
+                .source_character_id;
             Ok(Deposit {
                 id: row.id,
                 character_id,
@@ -357,7 +450,7 @@ pub(crate) fn deposits(ctx: &ReducerContext, character_id: u64) -> Result<Vec<De
                     FilthSubstance::Dirt => Substance::Dirt,
                     FilthSubstance::Blood => Substance::Blood,
                 },
-                source_character_id: row.source_character_id,
+                source_character_id,
                 amount: row.amount,
                 deposited_at: row.deposited_at,
                 diseases,
@@ -534,11 +627,16 @@ fn plan_party_wash(
                 &subject.dirty,
                 adventuresim_core::disease::DiseaseId::Plague,
                 now,
-                wound_route(ctx, subject.id),
+                filth::timed_cut_exposure(&predicted_wound_routes(ctx, subject.id, false)?, 0),
             );
-            filth::wash_priority(subject.id, &subject.dirty, subject.cut, exposure)
+            Ok::<_, String>(filth::wash_priority(
+                subject.id,
+                &subject.dirty,
+                subject.cut,
+                exposure,
+            ))
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
     filth::sort_wash_priorities(&mut priorities);
     for priority in priorities {
         let subject = subjects
@@ -638,6 +736,7 @@ pub fn wash_party_before_explicit_rest(
                     {
                         ctx.db.filth_disease_snapshot().id().delete(snapshot.id);
                     }
+                    ctx.db.filth_provenance().filth_id().delete(id);
                     ctx.db.character_filth().id().delete(id);
                 } else {
                     ctx.db.character_filth().id().update(row);

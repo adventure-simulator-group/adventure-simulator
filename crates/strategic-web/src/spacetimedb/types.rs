@@ -119,12 +119,19 @@ pub enum FilthSubstance {
     Blood,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum FilthOrigin {
+    Own,
+    Foreign,
+    Unknown,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterFilth {
     pub id: u64,
     pub character_id: u64,
     pub substance: FilthSubstance,
-    pub source_character_id: Option<u64>,
+    pub origin: FilthOrigin,
     pub amount: u16,
     pub deposited_at: u64,
 }

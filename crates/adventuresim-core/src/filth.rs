@@ -74,11 +74,85 @@ pub fn infectious_fraction(deposited_at: u64, now: u64) -> f32 {
     }
 }
 
+/// Inclusive absolute-minute windows in which compatible foreign blood can
+/// transmit. `from` is the already-committed cursor and is therefore excluded.
+pub fn blood_infectious_windows(
+    deposits: &[Deposit],
+    disease_id: DiseaseId,
+    from: u64,
+    to: u64,
+) -> Vec<(u64, u64)> {
+    if to <= from {
+        return Vec::new();
+    }
+    let first_uncommitted = from.saturating_add(1);
+    let mut windows = deposits
+        .iter()
+        .filter(|deposit| deposit.foreign_blood() && deposit.amount > 0)
+        .filter(|deposit| {
+            deposit
+                .diseases
+                .iter()
+                .any(|snapshot| snapshot.disease_id == disease_id)
+        })
+        .filter_map(|deposit| {
+            let infectious_end = deposit
+                .deposited_at
+                .saturating_add(BLOOD_INFECTIOUS_MINUTES)
+                .saturating_sub(1);
+            let start = first_uncommitted.max(deposit.deposited_at);
+            let end = to.min(infectious_end);
+            (start <= end).then_some((start, end))
+        })
+        .collect::<Vec<_>>();
+    windows.sort_unstable();
+    let mut merged: Vec<(u64, u64)> = Vec::new();
+    for (start, end) in windows {
+        if let Some(last) = merged.last_mut()
+            && start <= last.1.saturating_add(1)
+        {
+            last.1 = last.1.max(end);
+        } else {
+            merged.push((start, end));
+        }
+    }
+    merged
+}
+
 /// Combines cut routes with diminishing returns. Open cuts are most vulnerable;
 /// bandaging helps substantially and stitching helps further.
 pub fn cut_exposure(open: u32, bandaged: u32, stitched: u32) -> f32 {
     let raw = open as f32 + bandaged as f32 * 0.40 + stitched as f32 * 0.18;
     1.0 - (-raw).exp()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CutRouteState {
+    Open,
+    Bandaged,
+    Stitched,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TimedCutRoute {
+    pub state: CutRouteState,
+    /// None means the route remains active for the whole predicted interval.
+    pub active_minutes: Option<u64>,
+}
+
+pub fn timed_cut_exposure(routes: &[TimedCutRoute], elapsed: u64) -> f32 {
+    let (mut open, mut bandaged, mut stitched) = (0, 0, 0);
+    for route in routes
+        .iter()
+        .filter(|route| route.active_minutes.is_none_or(|minutes| elapsed < minutes))
+    {
+        match route.state {
+            CutRouteState::Open => open += 1,
+            CutRouteState::Bandaged => bandaged += 1,
+            CutRouteState::Stitched => stitched += 1,
+        }
+    }
+    cut_exposure(open, bandaged, stitched)
 }
 
 pub fn dirt_wound_multiplier(total_dirt: u16) -> f32 {
@@ -371,6 +445,79 @@ mod tests {
         }
         assert_eq!(one_chunk, (8, 0));
         assert_eq!((accumulated, remainder), one_chunk);
+    }
+
+    #[test]
+    fn long_clean_and_expired_blood_intervals_have_no_scan_windows() {
+        let year = 365 * 1_440;
+        assert!(blood_infectious_windows(&[], DiseaseId::Plague, 0, year).is_empty());
+        let mut own = d(2, Substance::Blood, Some(7), 20);
+        own.diseases.push(DiseaseSnapshot {
+            disease_id: DiseaseId::Plague,
+            episode_id: 3,
+        });
+        assert!(blood_infectious_windows(&[own], DiseaseId::Plague, 0, year).is_empty());
+        let mut expired = d(1, Substance::Blood, Some(8), 20);
+        expired.deposited_at = 10;
+        expired.diseases.push(DiseaseSnapshot {
+            disease_id: DiseaseId::Plague,
+            episode_id: 4,
+        });
+        assert!(
+            blood_infectious_windows(
+                &[expired],
+                DiseaseId::Plague,
+                BLOOD_INFECTIOUS_MINUTES + 20,
+                year,
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn active_blood_work_is_bounded_to_two_days() {
+        let mut blood = d(1, Substance::Blood, Some(8), 20);
+        blood.deposited_at = 100;
+        blood.diseases.push(DiseaseSnapshot {
+            disease_id: DiseaseId::Plague,
+            episode_id: 4,
+        });
+        let windows = blood_infectious_windows(&[blood], DiseaseId::Plague, 0, 365 * 1_440);
+        assert_eq!(windows, vec![(100, 100 + BLOOD_INFECTIOUS_MINUTES - 1)]);
+        assert_eq!(windows[0].1 - windows[0].0 + 1, BLOOD_INFECTIOUS_MINUTES);
+    }
+
+    #[test]
+    fn predicted_wound_routes_are_long_split_invariant() {
+        let routes = [
+            TimedCutRoute {
+                state: CutRouteState::Open,
+                active_minutes: None,
+            },
+            TimedCutRoute {
+                state: CutRouteState::Bandaged,
+                active_minutes: Some(900),
+            },
+            TimedCutRoute {
+                state: CutRouteState::Stitched,
+                active_minutes: Some(1_500),
+            },
+        ];
+        let split_at = 720;
+        let remaining = routes.map(|route| TimedCutRoute {
+            active_minutes: route
+                .active_minutes
+                .map(|minutes| minutes.saturating_sub(split_at)),
+            ..route
+        });
+        for minute in split_at..2_000 {
+            assert_eq!(
+                timed_cut_exposure(&routes, minute),
+                timed_cut_exposure(&remaining, minute - split_at)
+            );
+        }
+        assert!(timed_cut_exposure(&routes[..1], 0) > timed_cut_exposure(&routes[1..2], 0));
+        assert!(timed_cut_exposure(&routes[1..2], 0) > timed_cut_exposure(&routes[2..], 0));
     }
 
     #[test]

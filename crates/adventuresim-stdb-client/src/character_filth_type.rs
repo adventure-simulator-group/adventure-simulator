@@ -4,6 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::filth_origin_type::FilthOrigin;
 use super::filth_substance_type::FilthSubstance;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -12,7 +13,7 @@ pub struct CharacterFilth {
     pub id: u64,
     pub character_id: u64,
     pub substance: FilthSubstance,
-    pub source_character_id: Option<u64>,
+    pub origin: FilthOrigin,
     pub amount: u16,
     pub deposited_at: u64,
 }
@@ -28,7 +29,7 @@ pub struct CharacterFilthCols {
     pub id: __sdk::__query_builder::Col<CharacterFilth, u64>,
     pub character_id: __sdk::__query_builder::Col<CharacterFilth, u64>,
     pub substance: __sdk::__query_builder::Col<CharacterFilth, FilthSubstance>,
-    pub source_character_id: __sdk::__query_builder::Col<CharacterFilth, Option<u64>>,
+    pub origin: __sdk::__query_builder::Col<CharacterFilth, FilthOrigin>,
     pub amount: __sdk::__query_builder::Col<CharacterFilth, u16>,
     pub deposited_at: __sdk::__query_builder::Col<CharacterFilth, u64>,
 }
@@ -40,10 +41,7 @@ impl __sdk::__query_builder::HasCols for CharacterFilth {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
             substance: __sdk::__query_builder::Col::new(table_name, "substance"),
-            source_character_id: __sdk::__query_builder::Col::new(
-                table_name,
-                "source_character_id",
-            ),
+            origin: __sdk::__query_builder::Col::new(table_name, "origin"),
             amount: __sdk::__query_builder::Col::new(table_name, "amount"),
             deposited_at: __sdk::__query_builder::Col::new(table_name, "deposited_at"),
         }

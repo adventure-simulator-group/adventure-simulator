@@ -5105,7 +5105,7 @@ mod rest_form_tests {
         RestForm, calculate_soap_rest_preview, settlement_rest_minutes, travel_rest_minutes,
     };
     use crate::spacetimedb::{
-        Character, CharacterFilth, FilthSubstance, InventoryItem, PartyInventoryItem,
+        Character, CharacterFilth, FilthOrigin, FilthSubstance, InventoryItem, PartyInventoryItem,
     };
 
     fn form(duration: &str, unit: &str, requested_minutes: Option<u64>) -> RestForm {
@@ -5139,7 +5139,7 @@ mod rest_form_tests {
                 id: 1,
                 character_id: 1,
                 substance: FilthSubstance::Dirt,
-                source_character_id: None,
+                origin: FilthOrigin::Unknown,
                 amount: 26,
                 deposited_at: 0,
             },
@@ -5147,7 +5147,7 @@ mod rest_form_tests {
                 id: 2,
                 character_id: 2,
                 substance: FilthSubstance::Blood,
-                source_character_id: Some(9),
+                origin: FilthOrigin::Foreign,
                 amount: 30,
                 deposited_at: 0,
             },

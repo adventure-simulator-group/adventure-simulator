@@ -1735,7 +1735,7 @@ fn filth_status_bar(
     deposits: &[crate::spacetimedb::CharacterFilth],
     _characters: &[Character],
 ) -> Markup {
-    use crate::spacetimedb::FilthSubstance;
+    use crate::spacetimedb::{FilthOrigin, FilthSubstance};
     let dirt: u16 = deposits
         .iter()
         .filter(|d| d.substance == FilthSubstance::Dirt)
@@ -1755,12 +1755,10 @@ fn filth_status_bar(
         .iter()
         .filter(|d| d.substance == FilthSubstance::Blood)
         .fold((0_u16, 0_u16, 0_u16), |mut amounts, deposit| {
-            match deposit.source_character_id {
-                Some(source) if source == deposit.character_id => {
-                    amounts.0 = amounts.0.saturating_add(deposit.amount)
-                }
-                Some(_) => amounts.1 = amounts.1.saturating_add(deposit.amount),
-                None => amounts.2 = amounts.2.saturating_add(deposit.amount),
+            match deposit.origin {
+                FilthOrigin::Own => amounts.0 = amounts.0.saturating_add(deposit.amount),
+                FilthOrigin::Foreign => amounts.1 = amounts.1.saturating_add(deposit.amount),
+                FilthOrigin::Unknown => amounts.2 = amounts.2.saturating_add(deposit.amount),
             }
             amounts
         });
@@ -5151,12 +5149,33 @@ fn blood_recovery_minutes(condition: &CharacterCondition) -> u64 {
 mod tests {
     use super::{
         Character, CharacterCondition, LocationKind, MerchantShop, encumbrance_inventory_rail,
-        encumbrance_meter, format_rest_duration, live_merchant_shop_page, need_balance_meter,
-        repair_custody_panel, repair_submit_control, rest_default_minutes,
+        encumbrance_meter, filth_status_bar, format_rest_duration, live_merchant_shop_page,
+        need_balance_meter, repair_custody_panel, repair_submit_control, rest_default_minutes,
         settlement_rest_duration_control,
     };
-    use crate::spacetimedb::ItemKind;
+    use crate::spacetimedb::{CharacterFilth, FilthOrigin, FilthSubstance, ItemKind};
     use adventuresim_core::equipment::EncumbranceSummary;
+
+    #[test]
+    fn public_filth_serialization_and_template_expose_only_aggregate_origin() {
+        let deposit = CharacterFilth {
+            id: 1,
+            character_id: 7,
+            substance: FilthSubstance::Blood,
+            origin: FilthOrigin::Foreign,
+            amount: 2,
+            deposited_at: 10,
+        };
+        let serialized = serde_json::to_value(&deposit).unwrap();
+        assert!(serialized.get("source_character_id").is_none());
+        assert_eq!(
+            serialized.get("origin").and_then(|value| value.as_str()),
+            Some("Foreign")
+        );
+        let markup = filth_status_bar(&[deposit], &[]).into_string();
+        assert!(markup.contains("2 foreign"));
+        assert!(!markup.contains("source_character_id"));
+    }
 
     #[test]
     fn herbalist_stock_template_includes_every_prepared_course_and_ingredients() {

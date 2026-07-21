@@ -271,7 +271,7 @@ pub fn advance_character_time(
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, false)?;
     let (elapsed, terminal) =
-        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit)?;
+        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, false)?;
     let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, false)?;
     let elapsed = settled.elapsed;
     character_time.minutes = character_time.minutes.saturating_add(elapsed);
@@ -339,7 +339,7 @@ pub fn advance_character_wait_time(
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, true)?;
     let (elapsed, terminal) =
-        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit)?;
+        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, true)?;
     let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, true)?;
     time.minutes = time.minutes.saturating_add(settled.elapsed);
     ctx.db.character_time().character_id().update(time);
@@ -1087,7 +1087,7 @@ fn rest_for_minutes(
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested_minutes, true)?;
     let (elapsed, terminal) =
-        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit)?;
+        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, true)?;
     let medicine_check = party_medicine_check(ctx, character_id)?;
     let convalescing = convalescence_minutes(ctx, character_id, medicine_check).min(elapsed);
     let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, true)?;
@@ -1246,7 +1246,7 @@ fn advance_personal_camp_time(
     let starting_minute = time.minutes;
     let injury_limit = crate::surgery::preview_elapsed_for_injuries(ctx, member_id, elapsed, true)?;
     let (elapsed, terminal) =
-        crate::disease::clip_elapsed_for_disease(ctx, member_id, injury_limit)?;
+        crate::disease::clip_elapsed_for_disease(ctx, member_id, injury_limit, true)?;
     let convalescing =
         convalescence_minutes(ctx, member_id, party_medicine_check(ctx, member_id)?).min(elapsed);
     let settled = crate::surgery::settle_injuries(ctx, member_id, elapsed, true)?;
@@ -1379,7 +1379,8 @@ pub fn rest_at_camp(
     let elapsed = members
         .iter()
         .try_fold(requested_minutes, |limit, member_id| {
-            let disease = crate::disease::preview_elapsed_for_disease(ctx, *member_id, limit)?;
+            let disease =
+                crate::disease::preview_elapsed_for_disease(ctx, *member_id, limit, true)?;
             let injury =
                 crate::surgery::preview_elapsed_for_injuries(ctx, *member_id, limit, true)?;
             Ok::<u64, String>(limit.min(disease).min(injury))
@@ -1401,7 +1402,8 @@ pub fn rest_at_camp(
             .map_or(0.0, |stats| stats.calories_used.max(0.0));
         let medicine_check = party_medicine_check(ctx, member_id)?;
         let convalescing = convalescence_minutes(ctx, member_id, medicine_check).min(elapsed);
-        let (_, terminal) = crate::disease::clip_elapsed_for_disease(ctx, member_id, elapsed)?;
+        let (_, terminal) =
+            crate::disease::clip_elapsed_for_disease(ctx, member_id, elapsed, true)?;
         let settled = crate::surgery::settle_injuries(ctx, member_id, elapsed, true)?;
         let member_elapsed = settled.elapsed;
         time.minutes = time.minutes.saturating_add(member_elapsed);
@@ -1547,7 +1549,7 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested_elapsed, true)?;
     let (elapsed, terminal) =
-        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit)?;
+        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, true)?;
     let convalescing =
         convalescence_minutes(ctx, character_id, party_medicine_check(ctx, character_id)?)
             .min(elapsed);

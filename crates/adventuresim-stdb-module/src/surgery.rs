@@ -26,7 +26,6 @@ pub const RETAINED_PROJECTILE_HEALING_MULTIPLIER: f32 = 0.60;
 pub const FRACTURE_SINGLE_HIT_THRESHOLD: f32 = 0.18;
 pub const STANDING_INFECTION_CHECK_EXPOSURE: f32 = 0.05;
 pub const SOAP_SURGERY_CONTROL_BONUS: f32 = 2.0;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
 pub enum LimbRegion {
     LeftArm,
@@ -733,7 +732,7 @@ fn align_and_advance(
         vec![actor_id, patient_id]
     };
     let safe_duration = participants.iter().try_fold(duration, |limit, id| {
-        let disease = crate::disease::preview_elapsed_for_disease(ctx, *id, limit)?;
+        let disease = crate::disease::preview_elapsed_for_disease(ctx, *id, limit, true)?;
         let injury = preview_elapsed_for_injuries(ctx, *id, limit, true)?;
         Ok::<u64, String>(limit.min(disease).min(injury))
     })?;
@@ -878,6 +877,17 @@ pub fn treat_limb(
             ctx.db.retained_projectile().id().delete(projectile.id);
         }
         _ => unreachable!(),
+    }
+    let exposure =
+        adventuresim_core::surgery::procedure_blood_exposure(&procedure, actor_id != patient_id);
+    if exposure > 0 {
+        crate::filth::deposit_now(
+            ctx,
+            actor_id,
+            crate::filth::FilthSubstance::Blood,
+            Some(patient_id),
+            exposure,
+        )?;
     }
     store_injury(ctx, injury);
     refresh_limb_projection(ctx, patient_id, limb);

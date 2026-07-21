@@ -283,7 +283,7 @@ servers cannot supply an arbitrary XP award.
 | `limb_injury` | Per-character, per-limb cut, bruise, fracture, bandage, stitch, and applied-splint state |
 | `retained_projectile` | Durable retained arrowhead/ball records with extraction difficulty; no tactical anatomy or tick state |
 | `character_condition` | Durable strategic blood volume, body weight, and religion selection |
-| `character_filth` / `filth_disease_snapshot` | Durable bounded dirt/blood deposits and private blood-compatible source-episode snapshots; public presentation aggregates provenance |
+| `character_filth` / private filth provenance and disease snapshots | Public bounded dirt/blood deposits expose only Own/Foreign/Unknown; exact source IDs and blood-compatible source episodes remain private |
 | private travel/blood checkpoints | Fractional travel-dirt progress and committed blood-exposure evaluation prefixes used to make chunked time advance deterministic |
 | `settlement` | Strategic settlement data, including its legal religious status and current church |
 | `morale_event` | Time-stamped strategic successes and setbacks with seven-day decay |

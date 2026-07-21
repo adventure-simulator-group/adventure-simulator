@@ -209,6 +209,8 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/ferry_route_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/ferry_waterway_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/filth_disease_snapshot_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/filth_origin_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/filth_provenance_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/filth_substance_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/finalize_merchant_trade_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/finalize_party_offer_reducer.rs` — Generated SpacetimeDB reducer interface.

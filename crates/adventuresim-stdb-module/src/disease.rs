@@ -488,6 +488,7 @@ pub fn clip_elapsed_for_disease(
     ctx: &ReducerContext,
     character_id: u64,
     requested: u64,
+    allow_healing: bool,
 ) -> Result<(u64, Option<TerminalFailure>), String> {
     if requested == 0 {
         return Ok((0, None));
@@ -508,7 +509,14 @@ pub fn clip_elapsed_for_disease(
     let interval_end = now.saturating_add(requested);
     let proposed = merge_acquisition_proposals(
         outbreak_episodes_through(ctx, character_id, now, interval_end)?,
-        crate::filth::blood_episodes_through(ctx, character_id, now, interval_end, false)?,
+        crate::filth::blood_episodes_through(
+            ctx,
+            character_id,
+            now,
+            interval_end,
+            false,
+            allow_healing,
+        )?,
     );
     episodes.extend(proposed.iter().copied());
     let mut events = episodes
@@ -533,7 +541,8 @@ pub fn clip_elapsed_for_disease(
     )?;
     // Re-evaluate only the committed prefix and advance the private cursor.
     // Absolute-minute seeds guarantee the same proposal as preview/full evaluation.
-    let _ = crate::filth::blood_episodes_through(ctx, character_id, now, through, true)?;
+    let _ =
+        crate::filth::blood_episodes_through(ctx, character_id, now, through, true, allow_healing)?;
     for event in events.iter().filter(|event| event.minute <= through) {
         match event.kind {
             DiseaseEventKind::SymptomOnset => notice(
@@ -586,6 +595,7 @@ pub fn preview_elapsed_for_disease(
     ctx: &ReducerContext,
     character_id: u64,
     requested: u64,
+    allow_healing: bool,
 ) -> Result<u64, String> {
     let now = ctx
         .db
@@ -608,6 +618,7 @@ pub fn preview_elapsed_for_disease(
             now,
             now.saturating_add(requested),
             false,
+            allow_healing,
         )?,
     ));
     Ok(
@@ -1405,7 +1416,7 @@ fn advance_medical_participants(
     let elapsed = participants
         .iter()
         .try_fold(requested_minutes, |limit, character_id| {
-            let disease = preview_elapsed_for_disease(ctx, *character_id, limit)?;
+            let disease = preview_elapsed_for_disease(ctx, *character_id, limit, true)?;
             let injury =
                 crate::surgery::preview_elapsed_for_injuries(ctx, *character_id, limit, true)?;
             Ok::<u64, String>(limit.min(disease).min(injury))

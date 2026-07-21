@@ -17,13 +17,22 @@ vermin, wounds, or blood) rather than a generic contagious flag. Dirt modestly
 raises the standing infection risk of cuts. Blood only transmits a disease when
 that disease explicitly supports the blood vector. Plague is the current starter
 bloodborne disease; influenza is not. A blood deposit privately snapshots active,
-blood-compatible source infection episodes at deposition. The public character
-sheet aggregates blood as own, foreign, or unknown rather than exposing source
-character identities or disease snapshots. Blood remains visibly dirty until washed, but follows one
+blood-compatible source infection episodes at deposition. Exact source IDs and
+disease snapshots live in private provenance tables. The public filth row and
+character sheet expose only own, foreign, or unknown origin, so direct subscribers
+cannot recover the source identity. Blood remains visibly dirty until washed, but follows one
 global rule: infectiousness falls linearly to zero over two strategic days.
 Foreign infected blood can establish a new episode during strategic time advance.
 Open cuts make that risk dramatic, bandages reduce it substantially, and stitches
-reduce it further; intact skin retains only a small baseline route.
+reduce it further; intact skin retains only a small baseline route. Evaluation
+skips clean and expired intervals in O(deposits), scans only merged infectious
+windows, and predicts bandaged/stitched wound closure so split and unsplit time
+advances use the same route at each exposure minute.
+
+Successful bandaging, stitching, and projectile extraction transfer 2 filth points
+of the patient's blood to the acting surgeon. This occurs only after procedure
+requirements and elapsed time succeed. Another patient's active Plague snapshot is
+therefore reachable through ordinary care; self-treatment adds no procedure deposit.
 
 Autoresolve currently creates self/attacker blood deposits as it commits strategic
 wounds. The real-time tactical handoff does not yet carry per-hit wound provenance,
