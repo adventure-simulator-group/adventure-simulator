@@ -409,10 +409,15 @@ def identity_matches(expected: dict[str, object]) -> bool:
     actual = process_snapshot(int(expected.get("pid", 0)))
     if actual is None:
         return False
-    return (
-        os.path.normcase(str(actual["executable"])) == os.path.normcase(str(expected.get("executable", "")))
-        and actual["start_token"] == expected.get("start_token")
-    )
+    if actual["start_token"] != expected.get("start_token"):
+        return False
+    exe_matches = os.path.normcase(str(actual["executable"])) == os.path.normcase(str(expected.get("executable", "")))
+    if not exe_matches:
+        print(
+            f"note: executable path changed (likely exec'd): {expected.get('executable')} -> {actual['executable']}",
+            file=sys.stderr,
+        )
+    return True
 
 
 def terminate_verified(expected: dict[str, object]) -> None:
