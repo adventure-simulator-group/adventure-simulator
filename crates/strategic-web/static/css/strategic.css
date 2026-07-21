@@ -349,6 +349,7 @@
   overflow-wrap: anywhere;
   pointer-events: none;
   text-align: left;
+  white-space: pre-line;
 }
 
 #strategic-tooltip[hidden],

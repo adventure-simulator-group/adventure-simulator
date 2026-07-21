@@ -1758,20 +1758,26 @@ fn filth_status_bar(deposits: &[crate::spacetimedb::CharacterFilth]) -> Markup {
             }
             amounts
         });
-    let details = if total == 0 {
-        "Filth 0/100: clean".into()
-    } else {
-        format!(
-            "Filth {total}/100: {dirt} dirt; {blood} blood ({own_blood} own, {foreign_blood} foreign, {unknown_blood} unknown)"
-        )
-    };
+    let summary = format!(
+        "Current: {total}/100 — {dirt} dirt, {blood} blood ({own_blood} own, {foreign_blood} foreign, {unknown_blood} unknown)."
+    );
+    let details = format!(
+        "Filth accumulates from travel, combat, and medical treatment. Dirt and blood fill this bar. Foreign blood can transmit bloodborne disease, with greater risk through open cuts and lesser risk through bandaged cuts. Soap is used automatically before rest to wash filth away.\n\n{summary}"
+    );
     html! {
         div class="filth-status" tabindex="0" role="meter" aria-valuemin="0" aria-valuemax="100"
-            aria-valuenow=(total) aria-label=(&details) data-tooltip=(&details) {
+            aria-valuenow=(total) aria-label=(format!("Filth {total} out of 100"))
+            data-strategic-tooltip=(&details) {
             strong class="metric-label filth-status-label" { "Filth" }
             span class="filth-track" aria-hidden="true" {
-                span class="filth-segment filth-dirt" style=(format!("width:{dirt_width}%")) {}
-                span class="filth-segment filth-blood" style=(format!("width:{blood_width}%")) {}
+                @if dirt > 0 {
+                    span class="filth-segment filth-dirt" style=(format!("width:{dirt_width}%"))
+                        data-strategic-tooltip=(format!("Dirt\n{dirt}")) {}
+                }
+                @if blood > 0 {
+                    span class="filth-segment filth-blood" style=(format!("width:{blood_width}%"))
+                        data-strategic-tooltip=(format!("Blood\n{blood}")) {}
+                }
             }
         }
     }
@@ -5177,6 +5183,8 @@ mod tests {
         assert!(!markup.contains("source_character_id"));
         assert!(!markup.contains("filth-legend"));
         assert!(!markup.contains("/100 filth</span>"));
+        assert!(markup.contains("data-strategic-tooltip=\"Filth accumulates"));
+        assert!(markup.contains("data-strategic-tooltip=\"Blood\n2\""));
     }
 
     #[test]
