@@ -1451,6 +1451,20 @@ pub fn apply_travel_condition(
     prayer_minutes: u16,
 ) -> Result<(), String> {
     apply_elapsed_needs(ctx, character_id, elapsed_minutes)?;
+    // Movement alone may spend potable alcohol as emergency hydration. Generic
+    // waits and camp downtime deliberately stop after ordinary water above.
+    if let Some(mut needs) = ctx.db.character_needs().character_id().find(character_id)
+        && needs.water_balance_ml < 0.0
+    {
+        let supplied = crate::alcohol::consume_emergency_hydration(
+            ctx,
+            character_id,
+            -needs.water_balance_ml,
+            starting_minute.saturating_add(elapsed_minutes),
+        );
+        needs.water_balance_ml += supplied as f32;
+        ctx.db.character_needs().character_id().update(needs);
+    }
     let mut stats = ctx
         .db
         .character_stats()

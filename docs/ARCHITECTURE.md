@@ -289,8 +289,9 @@ servers cannot supply an arbitrary XP award.
 | `morale_event` | Time-stamped strategic successes and setbacks with seven-day decay |
 | `character_morale_source` | Refreshable named, signed contributions used by the morale meter breakdown |
 | `character_strategic_condition` | Refreshable derived morale, ally-restoration percentage, and incapacitation projection for server-authoritative UI and action gating |
-| `character_personality` | Immutable strategic personality axes; one typed row per newly created character, with missing legacy rows interpreted as neutral without requiring a materialized backfill |
-| `inventory_item` | Persistent items |
+| `character_personality` | Nine immutable strategic personality axes, including Temperance; one typed row per newly created character |
+| `alcohol_consumption` | Durable per-character/per-evening fixed-point ethanol history and idempotent morale-evaluation marker |
+| `inventory_item` / `item` | Persistent concrete stacks and explicit definitions; alcohol serving volume, ABV, net hydration, medical protection, and disinfectant effectiveness are definition data rather than inferred IDs |
 | `party` | Party groups, active quest, and aggregate skill-check targets; every character belongs to at least a solo party |
 | `party_member` | Party membership, including the recruitment role that filled a slot |
 | `party_recruitment_role` | Named party-independent role requirements and slot quantities |

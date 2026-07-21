@@ -470,6 +470,11 @@ fn live_personality(character_id: u64, p: &crate::Personality) -> CharacterPerso
             crate::Hygiene::Slovenly => adventuresim_stdb_client::Hygiene::Slovenly,
             crate::Hygiene::Cleanly => adventuresim_stdb_client::Hygiene::Cleanly,
         },
+        temperance: match p.temperance {
+            crate::Temperance::Neutral => adventuresim_stdb_client::Temperance::Neutral,
+            crate::Temperance::Temperate => adventuresim_stdb_client::Temperance::Temperate,
+            crate::Temperance::Drunkard => adventuresim_stdb_client::Temperance::Drunkard,
+        },
     }
 }
 

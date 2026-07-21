@@ -26,6 +26,7 @@ pub const RETAINED_PROJECTILE_HEALING_MULTIPLIER: f32 = 0.60;
 pub const FRACTURE_SINGLE_HIT_THRESHOLD: f32 = 0.18;
 pub const STANDING_INFECTION_CHECK_EXPOSURE: f32 = 0.05;
 pub const SOAP_SURGERY_CONTROL_BONUS: f32 = 2.0;
+pub const ALCOHOL_SURGERY_CONTROL_DIVISOR: f32 = 25.0;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
 pub enum LimbRegion {
     LeftArm,
@@ -819,15 +820,26 @@ pub fn treat_limb(
     }
     require_together(ctx, actor_id, patient_id)?;
     injury = injury_for(ctx, patient_id, limb);
+    let selected_alcohol = soap_applicable
+        .then(|| crate::alcohol::best_disinfectant(ctx, actor_id))
+        .flatten();
     if use_soap {
         consume_one(ctx, actor_id, crate::filth::SOAP_ITEM_ID)?;
+    }
+    if let Some((inventory_id, _, _)) = selected_alcohol.as_ref() {
+        crate::alcohol::consume_inventory_row(ctx, *inventory_id)?;
     }
     let clean_check = infection_control_check(ctx, actor_id, skill)
         + if use_soap {
             SOAP_SURGERY_CONTROL_BONUS
         } else {
             0.0
-        };
+        }
+        + selected_alcohol
+            .as_ref()
+            .map_or(0.0, |(_, _, effectiveness)| {
+                f32::from(*effectiveness) / ALCOHOL_SURGERY_CONTROL_DIVISOR
+            });
     match procedure.as_str() {
         "bandage" => {
             consume_one(ctx, actor_id, "bandage")?;

@@ -26,6 +26,13 @@ test("persisted quest segments place turnaround after outbound walking and inter
   assert.ok(helpers.position(1080, 2040) > helpers.position(480, 2040), "progress advances during rest");
 });
 
+test("water verdict includes but separately labels emergency alcohol", () => {
+  const source = fs.readFileSync(plannerPath, "utf8");
+  assert.match(source, /provisionOrdinaryWaterDays/);
+  assert.match(source, /provisionEmergencyAlcoholDays/);
+  assert.match(source, /ordinary water \+.*emergency alcohol/);
+});
+
 test("terrain rail preserves roads and woods around camps and reverses the return leg", () => {
   const helpers = plannerHelpers();
   const terrain = helpers.parseTerrain("road,0,30|open,30,20|sparse-woods,50,30|deep-woods,80,20");
@@ -226,7 +233,7 @@ test("authoritative travel guards stale sync, bounded legacy vectors, and termin
   const personalNeeds = time.indexOf("apply_elapsed_needs(ctx, member_id, elapsed)?;");
   const personalTerminal = time.indexOf("if terminal.is_some()", personalNeeds);
   assert.ok(personalNeeds >= 0 && personalNeeds < personalTerminal, "personal camp sync consumes needs before terminal return");
-  const partyNeeds = time.indexOf("apply_elapsed_needs(ctx, member_id, elapsed)?;", personalNeeds + 1);
+  const partyNeeds = time.indexOf("apply_elapsed_needs(ctx, member_id, member_elapsed)?;", personalNeeds + 1);
   const partyTerminal = time.indexOf("if terminal.is_some()", partyNeeds);
   assert.ok(partyNeeds > personalNeeds && partyNeeds < partyTerminal, "party camp consumes needs before terminal return");
   assert.match(strategic, /plan_version == 0[\s\S]+reconstruct_legacy_journey_coordinates/);

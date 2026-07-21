@@ -38,6 +38,24 @@ member consumes shared party rations and pooled water before their own supply;
  communal consumption does not alter party stakes. Provision purchases are
  staged into the party inventory at the General Market and use party gold when
  the offer is submitted.
+
+Alcohol remains a discrete whole-unit supply. One small beer, table-wine
+serving, or aqua-vitae measure is one stack unit used consistently by drinking,
+travel, and surgery; partially consumed containers are deferred to #150. Item
+definitions explicitly record serving volume, ABV in basis points, net
+emergency hydration, and disinfectant effectiveness. Quantity targets become
+reserve floors only while resting at a settlement. Nightly drinking first uses
+surplus shared-party stacks, then surplus personal stacks, and finally buys a
+table-wine serving for immediate consumption with that character's personal
+coin. It creates no debt and never spends unrestricted party wealth. On the
+road the reserve floor is ignored because the carried stock was reserved for
+travel.
+
+Ordinary drinks are selected deterministically before stronger
+disinfectant-focused alcohol. A Drunkard below -10 morale may consume the
+protected strong supply only after ordinary potable alcohol is exhausted.
+Shared stacks precede personal stacks, then weak disinfectant effectiveness,
+item ID, and inventory-row ID provide stable tie-breaking.
 # Inventory icons
 
 Inventory tables include a narrow **Type** column before the item name. Its

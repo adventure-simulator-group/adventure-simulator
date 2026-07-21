@@ -4,6 +4,7 @@ use strum::VariantArray;
 
 use crate::{
     ItemSlot, Settlement, add_inventory_item,
+    alcohol::alcohol_consumption,
     capability::character_capability,
     condition::{
         character_condition, character_morale_source, character_needs,
@@ -477,6 +478,15 @@ pub(crate) fn delete_temporary_character(
         .collect::<Vec<_>>()
     {
         ctx.db.inventory_quantity_target().id().delete(&row.id);
+    }
+    for row in ctx
+        .db
+        .alcohol_consumption()
+        .by_character()
+        .filter(character.id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.alcohol_consumption().id().delete(&row.id);
     }
 
     ctx.db.character_stats().character_id().delete(character.id);

@@ -99,6 +99,11 @@ personality_axis!(Hygiene {
     Slovenly,
     Cleanly
 });
+personality_axis!(Temperance {
+    Neutral,
+    Temperate,
+    Drunkard
+});
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterPersonality {
@@ -111,6 +116,7 @@ pub struct CharacterPersonality {
     pub self_regard: SelfRegard,
     pub conviction: Conviction,
     pub hygiene: Hygiene,
+    pub temperance: Temperance,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -664,6 +670,18 @@ pub struct ItemDefinition {
     #[serde(default)]
     pub water_capacity_ml: u32,
     #[serde(default)]
+    pub alcohol_serving_ml: u32,
+    #[serde(default)]
+    pub alcohol_abv_basis_points: u16,
+    #[serde(default)]
+    pub alcohol_net_hydration_ml: u32,
+    #[serde(default)]
+    pub alcohol_disinfectant_effectiveness: u16,
+    #[serde(default)]
+    pub alcohol_disinfectant_focused: bool,
+    #[serde(default)]
+    pub alcohol_potable: bool,
+    #[serde(default)]
     pub quality: u8,
     #[serde(default)]
     pub durability_yield: f32,
@@ -705,6 +723,12 @@ impl Default for ItemDefinition {
             base_value: None,
             nutrition_kcal: 0.0,
             water_capacity_ml: 0,
+            alcohol_serving_ml: 0,
+            alcohol_abv_basis_points: 0,
+            alcohol_net_hydration_ml: 0,
+            alcohol_disinfectant_effectiveness: 0,
+            alcohol_disinfectant_focused: false,
+            alcohol_potable: false,
             quality: 0,
             durability_yield: 0.0,
             durability_fracture: 0.0,
@@ -873,6 +897,15 @@ pub struct CharacterSkills {
 pub struct CharacterTime {
     pub character_id: u64,
     pub minutes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlcoholConsumption {
+    pub id: String,
+    pub character_id: u64,
+    pub evening_id: u64,
+    pub ethanol_ml: u32,
+    pub morale_evaluated: bool,
 }
 
 /// Queried only by strategic-web and immediately sanitized. Browser responses

@@ -12,6 +12,7 @@ use super::nerve_type::Nerve;
 use super::outlook_type::Outlook;
 use super::self_regard_type::SelfRegard;
 use super::sociability_type::Sociability;
+use super::temperance_type::Temperance;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -25,6 +26,7 @@ pub struct CharacterPersonality {
     pub self_regard: SelfRegard,
     pub conviction: Conviction,
     pub hygiene: Hygiene,
+    pub temperance: Temperance,
 }
 
 impl __sdk::InModule for CharacterPersonality {
@@ -44,6 +46,7 @@ pub struct CharacterPersonalityCols {
     pub self_regard: __sdk::__query_builder::Col<CharacterPersonality, SelfRegard>,
     pub conviction: __sdk::__query_builder::Col<CharacterPersonality, Conviction>,
     pub hygiene: __sdk::__query_builder::Col<CharacterPersonality, Hygiene>,
+    pub temperance: __sdk::__query_builder::Col<CharacterPersonality, Temperance>,
 }
 
 impl __sdk::__query_builder::HasCols for CharacterPersonality {
@@ -59,6 +62,7 @@ impl __sdk::__query_builder::HasCols for CharacterPersonality {
             self_regard: __sdk::__query_builder::Col::new(table_name, "self_regard"),
             conviction: __sdk::__query_builder::Col::new(table_name, "conviction"),
             hygiene: __sdk::__query_builder::Col::new(table_name, "hygiene"),
+            temperance: __sdk::__query_builder::Col::new(table_name, "temperance"),
         }
     }
 }

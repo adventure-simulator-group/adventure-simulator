@@ -1105,6 +1105,13 @@ fn rest_for_minutes(
     if terminal.is_some() || !settled.alive {
         return Ok(());
     }
+    crate::alcohol::process_rest_evenings(
+        ctx,
+        character_id,
+        starting_minute,
+        starting_minute.saturating_add(elapsed),
+        true,
+    )?;
 
     let smithing_skill = ctx
         .db
@@ -1258,6 +1265,13 @@ fn advance_personal_camp_time(
     if terminal.is_some() || !settled.alive {
         return Ok(());
     }
+    crate::alcohol::process_rest_evenings(
+        ctx,
+        member_id,
+        starting_minute,
+        starting_minute.saturating_add(elapsed),
+        false,
+    )?;
     let starting_fatigue = ctx
         .db
         .character_stats()
@@ -1414,6 +1428,13 @@ pub fn rest_at_camp(
         if terminal.is_some() || !settled.alive {
             continue;
         }
+        crate::alcohol::process_rest_evenings(
+            ctx,
+            member_id,
+            interval_end_minute.saturating_sub(member_elapsed),
+            interval_end_minute,
+            false,
+        )?;
         crate::condition::apply_camp_rest_recovery_condition(ctx, member_id, member_elapsed)?;
         let convalescing = convalescing.min(member_elapsed);
         let smithing_skill = ctx

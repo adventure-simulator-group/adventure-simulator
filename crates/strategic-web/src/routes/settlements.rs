@@ -92,16 +92,17 @@ use super::travel::{
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
-    CharacterFilth, CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterNotoriety,
-    CharacterPersonality, CharacterSkills, CharacterStats, CharacterStrategicCondition,
-    CharacterTime, CharacterTrainingSchedule, EquippedMedication, HerbalistExaminationRow,
-    InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget, ItemCondition, ItemDefinition,
-    ItemKind, ItemSlot, LimbInjury, LimbRegion, MedicalExaminationRow, Party, PartyInventoryItem,
-    PartyJourney, PartyJourneyItinerary, PartyJourneyRoute, PartyMember, PartyRecruitmentRole,
-    PartyStake, Quest, QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand,
-    RepairOrder, RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias,
-    SettlementDescription, SettlementSmith, TravelEdge,
+    AlcoholConsumption, Character, CharacterAttributes, CharacterCapability, CharacterCondition,
+    CharacterEquip, CharacterFilth, CharacterLimbs, CharacterMoraleSource, CharacterNeeds,
+    CharacterNotoriety, CharacterPersonality, CharacterSkills, CharacterStats,
+    CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, EquippedMedication,
+    HerbalistExaminationRow, InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget,
+    ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury, LimbRegion,
+    MedicalExaminationRow, Party, PartyInventoryItem, PartyJourney, PartyJourneyItinerary,
+    PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, Quest, QuestIssuer,
+    QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder, RetainedProjectile,
+    ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription, SettlementSmith,
+    TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
@@ -339,6 +340,42 @@ async fn surgery(
         ))
         .await
         .unwrap_or_default();
+    let item_definitions = state
+        .db
+        .query::<ItemDefinition>("SELECT * FROM item")
+        .await
+        .unwrap_or_default();
+    let alcohol_count = inventory
+        .iter()
+        .filter(|entry| {
+            item_definitions
+                .iter()
+                .any(|def| def.id == entry.item_id && def.alcohol_disinfectant_effectiveness > 0)
+        })
+        .map(|entry| entry.qty)
+        .sum();
+    let disinfectants = inventory
+        .iter()
+        .filter_map(|entry| {
+            item_definitions
+                .iter()
+                .find(|def| def.id == entry.item_id && def.alcohol_disinfectant_effectiveness > 0)
+                .map(|def| {
+                    (
+                        def.alcohol_disinfectant_effectiveness,
+                        entry.id,
+                        def.id.as_str(),
+                    )
+                })
+        })
+        .collect::<Vec<_>>();
+    let selected_alcohol = adventuresim_core::alcohol::best_disinfectant(
+        &disinfectants
+            .iter()
+            .map(|(effectiveness, id, _)| (*effectiveness, *id))
+            .collect::<Vec<_>>(),
+    )
+    .map(|index| disinfectants[index].2);
     let actor_injuries = if actor_id == patient_id {
         injuries.clone()
     } else {
@@ -397,6 +434,8 @@ async fn surgery(
             quantity("surgery_kit"),
             available_splints,
             quantity("soft_soap"),
+            alcohol_count,
+            selected_alcohol,
             skill,
         )
         .into_string(),
@@ -1599,6 +1638,8 @@ async fn travel_provision_forecast_for_minutes(
     let mut water_reserve_ml = 0.0;
     let mut ration_count = 0;
     let mut waterskin_count = 0;
+    let mut alcohol_supplies = Vec::new();
+    let mut expected_morale_demands = Vec::new();
     for traveler in &travelers {
         let Some(needs) = state
             .db
@@ -1619,6 +1660,66 @@ async fn travel_provision_forecast_for_minutes(
             ))
             .await
             .map_err(|error| error.to_string())?;
+        for entry in &inventory {
+            if let Some(def) = items.iter().find(|def| def.id == entry.item_id) {
+                alcohol_supplies.push(adventuresim_core::alcohol::ScopedAlcoholSupply {
+                    properties: adventuresim_core::alcohol::AlcoholProperties {
+                        serving_ml: def.alcohol_serving_ml,
+                        abv_basis_points: def.alcohol_abv_basis_points,
+                        net_hydration_ml: def.alcohol_net_hydration_ml,
+                        disinfectant_effectiveness: def.alcohol_disinfectant_effectiveness,
+                        disinfectant_focused: def.alcohol_disinfectant_focused,
+                        potable: def.alcohol_potable,
+                    },
+                    quantity: entry.qty,
+                    stable_id: entry.id,
+                    owner: Some(traveler.id),
+                });
+            }
+        }
+        let time = query_single::<CharacterTime>(state, "character_time", traveler.id).await;
+        let personality =
+            query_single::<CharacterPersonality>(state, "character_personality", traveler.id).await;
+        if let Some(time) = time {
+            let evenings: Vec<_> = adventuresim_core::alcohol::crossed_evenings(
+                time.minutes,
+                time.minutes.saturating_add(planning_minutes),
+            )
+            .collect();
+            let demand = match personality.map(|p| p.temperance) {
+                Some(crate::spacetimedb::Temperance::Temperate) => 0,
+                Some(crate::spacetimedb::Temperance::Drunkard) => (evenings.len() as u32)
+                    .saturating_mul(adventuresim_core::alcohol::HEAVY_ETHANOL_ML),
+                _ => {
+                    let mut heavy_evenings: Vec<u64> = state
+                        .db
+                        .query::<AlcoholConsumption>(&format!(
+                            "SELECT * FROM alcohol_consumption WHERE character_id = {}",
+                            traveler.id
+                        ))
+                        .await
+                        .map_err(|error| error.to_string())?
+                        .into_iter()
+                        .filter(|row| adventuresim_core::alcohol::qualifying_heavy(row.ethanol_ml))
+                        .map(|row| row.evening_id)
+                        .collect();
+                    evenings.into_iter().fold(0_u32, |total, evening| {
+                        let had_recent_heavy = heavy_evenings.iter().any(|prior| {
+                            *prior < evening
+                                && evening - *prior < adventuresim_core::alcohol::ROLLING_WEEK_DAYS
+                        });
+                        let target = if had_recent_heavy {
+                            adventuresim_core::alcohol::MODEST_ETHANOL_ML
+                        } else {
+                            heavy_evenings.push(evening);
+                            adventuresim_core::alcohol::HEAVY_ETHANOL_ML
+                        };
+                        total.saturating_add(target)
+                    })
+                }
+            };
+            expected_morale_demands.push((traveler.id, demand));
+        }
         let owned = |item_id: &str| {
             inventory
                 .iter()
@@ -1645,6 +1746,23 @@ async fn travel_provision_forecast_for_minutes(
             ))
             .await
             .map_err(|error| error.to_string())?;
+        for entry in &pooled {
+            if let Some(def) = items.iter().find(|def| def.id == entry.item_id) {
+                alcohol_supplies.push(adventuresim_core::alcohol::ScopedAlcoholSupply {
+                    properties: adventuresim_core::alcohol::AlcoholProperties {
+                        serving_ml: def.alcohol_serving_ml,
+                        abv_basis_points: def.alcohol_abv_basis_points,
+                        net_hydration_ml: def.alcohol_net_hydration_ml,
+                        disinfectant_effectiveness: def.alcohol_disinfectant_effectiveness,
+                        disinfectant_focused: def.alcohol_disinfectant_focused,
+                        potable: def.alcohol_potable,
+                    },
+                    quantity: entry.quantity,
+                    stable_id: entry.id,
+                    owner: None,
+                });
+            }
+        }
         ration_count += pooled
             .iter()
             .filter(|row| row.item_id == STANDARD_TRAVEL_RATION_ID)
@@ -1661,6 +1779,11 @@ async fn travel_provision_forecast_for_minutes(
             water_reserve_ml += party.pooled_water_ml.max(0.0);
         }
     }
+    let emergency_alcohol_hydration_ml =
+        adventuresim_core::alcohol::hydration_after_expected_drinking(
+            alcohol_supplies,
+            &expected_morale_demands,
+        );
     let inputs = PartyProvisioningInputs {
         planning_minutes,
         living_members: travelers.len() as u32,
@@ -1670,6 +1793,7 @@ async fn travel_provision_forecast_for_minutes(
         waterskin_count,
         ration_kcal: ration.nutrition_kcal,
         waterskin_capacity_ml: waterskin.water_capacity_ml,
+        emergency_alcohol_hydration_ml,
         ..Default::default()
     };
     let result = inputs.forecast();
@@ -1678,6 +1802,9 @@ async fn travel_provision_forecast_for_minutes(
         living_members: travelers.len() as u32,
         food_days: result.food_days,
         water_days: result.water_days,
+        ordinary_water_days: result.ordinary_water_days,
+        emergency_alcohol_days: result.emergency_alcohol_days,
+        emergency_alcohol_hydration_ml,
         food_reserve_kcal,
         water_reserve_ml,
         ration_count,

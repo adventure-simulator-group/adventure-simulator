@@ -3999,7 +3999,7 @@ body.chat-resizing {
 
 .surgery-supplies {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(3.25rem, 1fr));
     gap: .7rem;
     margin-block-end: .75rem;
 }

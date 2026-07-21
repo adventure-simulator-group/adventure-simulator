@@ -12,6 +12,8 @@ pub mod accept_quest_reducer;
 pub mod agricultural_commodity_type;
 pub mod agricultural_limitation_type;
 pub mod agriculture_industry_type;
+pub mod alcohol_consumption_table;
+pub mod alcohol_consumption_type;
 pub mod approve_party_action_request_planned_reducer;
 pub mod approve_party_action_request_reducer;
 pub mod autoresolve_quest_reducer;
@@ -394,6 +396,7 @@ pub mod tactical_server_request_table;
 pub mod tactical_server_request_type;
 pub mod tactical_server_table;
 pub mod tactical_server_type;
+pub mod temperance_type;
 pub mod topsoil_organic_carbon_type;
 pub mod transfer_party_item_reducer;
 pub mod travel_edge_import_type;
@@ -437,6 +440,8 @@ pub use accept_quest_reducer::accept_quest;
 pub use agricultural_commodity_type::AgriculturalCommodity;
 pub use agricultural_limitation_type::AgriculturalLimitation;
 pub use agriculture_industry_type::AgricultureIndustry;
+pub use alcohol_consumption_table::*;
+pub use alcohol_consumption_type::AlcoholConsumption;
 pub use approve_party_action_request_planned_reducer::approve_party_action_request_planned;
 pub use approve_party_action_request_reducer::approve_party_action_request;
 pub use autoresolve_quest_reducer::autoresolve_quest;
@@ -819,6 +824,7 @@ pub use tactical_server_request_table::*;
 pub use tactical_server_request_type::TacticalServerRequest;
 pub use tactical_server_table::*;
 pub use tactical_server_type::TacticalServer;
+pub use temperance_type::Temperance;
 pub use topsoil_organic_carbon_type::TopsoilOrganicCarbon;
 pub use transfer_party_item_reducer::transfer_party_item;
 pub use travel_edge_import_type::TravelEdgeImport;
@@ -2200,6 +2206,7 @@ Reducer::VoteForPartyLeader{
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct DbUpdate {
+    alcohol_consumption: __sdk::TableUpdate<AlcoholConsumption>,
     autoresolve_report: __sdk::TableUpdate<AutoresolveReport>,
     backend_committed_cuts: __sdk::TableUpdate<CommittedCut>,
     backend_herbalist_examinations: __sdk::TableUpdate<HerbalistExamination>,
@@ -2279,6 +2286,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_update in __sdk::transaction_update_iter_table_updates(raw) {
             match &table_update.table_name[..] {
+                "alcohol_consumption" => db_update
+                    .alcohol_consumption
+                    .append(alcohol_consumption_table::parse_table_update(table_update)?),
                 "autoresolve_report" => db_update
                     .autoresolve_report
                     .append(autoresolve_report_table::parse_table_update(table_update)?),
@@ -2520,6 +2530,12 @@ impl __sdk::DbUpdate for DbUpdate {
     ) -> AppliedDiff<'_> {
         let mut diff = AppliedDiff::default();
 
+        diff.alcohol_consumption = cache
+            .apply_diff_to_table::<AlcoholConsumption>(
+                "alcohol_consumption",
+                &self.alcohol_consumption,
+            )
+            .with_updates_by_pk(|row| &row.id);
         diff.autoresolve_report = cache
             .apply_diff_to_table::<AutoresolveReport>(
                 "autoresolve_report",
@@ -2830,6 +2846,9 @@ impl __sdk::DbUpdate for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_rows in raw.tables {
             match &table_rows.table[..] {
+                "alcohol_consumption" => db_update
+                    .alcohol_consumption
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "autoresolve_report" => db_update
                     .autoresolve_report
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -3056,6 +3075,9 @@ impl __sdk::DbUpdate for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_rows in raw.tables {
             match &table_rows.table[..] {
+                "alcohol_consumption" => db_update
+                    .alcohol_consumption
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "autoresolve_report" => db_update
                     .autoresolve_report
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -3284,6 +3306,7 @@ impl __sdk::DbUpdate for DbUpdate {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
+    alcohol_consumption: __sdk::TableAppliedDiff<'r, AlcoholConsumption>,
     autoresolve_report: __sdk::TableAppliedDiff<'r, AutoresolveReport>,
     backend_committed_cuts: __sdk::TableAppliedDiff<'r, CommittedCut>,
     backend_herbalist_examinations: __sdk::TableAppliedDiff<'r, HerbalistExamination>,
@@ -3368,6 +3391,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         event: &EventContext,
         callbacks: &mut __sdk::DbCallbacks<RemoteModule>,
     ) {
+        callbacks.invoke_table_row_callbacks::<AlcoholConsumption>(
+            "alcohol_consumption",
+            &self.alcohol_consumption,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<AutoresolveReport>(
             "autoresolve_report",
             &self.autoresolve_report,
@@ -4343,6 +4371,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type QueryBuilder = __sdk::QueryBuilder;
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
+        alcohol_consumption_table::register_table(client_cache);
         autoresolve_report_table::register_table(client_cache);
         backend_committed_cuts_table::register_table(client_cache);
         backend_herbalist_examinations_table::register_table(client_cache);
@@ -4416,6 +4445,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         world_node_table::register_table(client_cache);
     }
     const ALL_TABLE_NAMES: &'static [&'static str] = &[
+        "alcohol_consumption",
         "autoresolve_report",
         "backend_committed_cuts",
         "backend_herbalist_examinations",
