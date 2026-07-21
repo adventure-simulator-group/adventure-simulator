@@ -75,3 +75,9 @@ precision, reach, penetration, damage-type, and block columns. Armourers show
 armor and currency and offer coverage, resistance, padding, flexibility, and
 range-of-motion columns. General inventory views offer the union; merchants
 whose goods do not use combat statistics retain only the basic columns.
+# Soap
+
+Soft soap is a stackable, discrete personal or shared-party supply. One whole
+unit provides 25 points of cleansing capacity against the bounded 100-point
+filth meter; any unused capacity is lost at the end of that wash. Automatic
+washing consumes stable personal stacks first, then stable shared-party stacks.

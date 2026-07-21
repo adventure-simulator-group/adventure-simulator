@@ -12,6 +12,7 @@ pub(super) struct TreatLimbArgs {
     pub limb_slug: String,
     pub procedure: String,
     pub projectile_id: Option<u64>,
+    pub use_soap: bool,
 }
 
 impl From<TreatLimbArgs> for super::Reducer {
@@ -22,6 +23,7 @@ impl From<TreatLimbArgs> for super::Reducer {
             limb_slug: args.limb_slug,
             procedure: args.procedure,
             projectile_id: args.projectile_id,
+            use_soap: args.use_soap,
         }
     }
 }
@@ -48,6 +50,7 @@ pub trait treat_limb {
         limb_slug: String,
         procedure: String,
         projectile_id: Option<u64>,
+        use_soap: bool,
     ) -> __sdk::Result<()> {
         self.treat_limb_then(
             actor_id,
@@ -55,6 +58,7 @@ pub trait treat_limb {
             limb_slug,
             procedure,
             projectile_id,
+            use_soap,
             |_, _| {},
         )
     }
@@ -72,6 +76,7 @@ pub trait treat_limb {
         limb_slug: String,
         procedure: String,
         projectile_id: Option<u64>,
+        use_soap: bool,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -89,6 +94,7 @@ impl treat_limb for super::RemoteReducers {
         limb_slug: String,
         procedure: String,
         projectile_id: Option<u64>,
+        use_soap: bool,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -103,6 +109,7 @@ impl treat_limb for super::RemoteReducers {
                 limb_slug,
                 procedure,
                 projectile_id,
+                use_soap,
             },
             callback,
         )

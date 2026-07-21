@@ -1654,6 +1654,7 @@ pub fn party_personal_page(
     can_examine: bool,
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
+    filth: &[crate::spacetimedb::CharacterFilth],
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
@@ -1673,6 +1674,7 @@ pub fn party_personal_page(
                 can_examine,
             ))
             (visual_stage("character", &active_character.name, "Your identity, condition, and capabilities"))
+            (filth_status_bar(filth, party_members))
             (settlement_chat_area(&active_character.name, Some(active_character)))
             (medical_examination_popup(medical, &location.base_path(), active_character.id, limbs, injuries, projectiles))
         }
@@ -1689,6 +1691,67 @@ pub fn party_personal_page(
         }
     };
     location.render_layout("Party", content, Some(&active_character.name))
+}
+
+fn filth_status_bar(
+    deposits: &[crate::spacetimedb::CharacterFilth],
+    characters: &[Character],
+) -> Markup {
+    use crate::spacetimedb::FilthSubstance;
+    let dirt: u16 = deposits
+        .iter()
+        .filter(|d| d.substance == FilthSubstance::Dirt)
+        .map(|d| d.amount)
+        .fold(0, u16::saturating_add);
+    let blood: u16 = deposits
+        .iter()
+        .filter(|d| d.substance == FilthSubstance::Blood)
+        .map(|d| d.amount)
+        .fold(0, u16::saturating_add);
+    let total = dirt
+        .saturating_add(blood)
+        .min(adventuresim_core::filth::MAX_FILTH);
+    let dirt_width = f32::from(dirt.min(total));
+    let blood_width = f32::from(blood.min(total.saturating_sub(dirt.min(total))));
+    let sources = deposits
+        .iter()
+        .filter(|d| d.substance == FilthSubstance::Blood)
+        .map(|d| {
+            d.source_character_id
+                .and_then(|id| {
+                    characters
+                        .iter()
+                        .find(|c| c.id == id)
+                        .map(|c| c.name.clone())
+                })
+                .unwrap_or_else(|| "unknown source".into())
+        })
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let details = if total == 0 {
+        "Clean".into()
+    } else {
+        format!(
+            "Filth {total}/100: {dirt} dirt; {blood} blood{}",
+            if sources.is_empty() {
+                String::new()
+            } else {
+                format!(" from {}", sources.join(", "))
+            }
+        )
+    };
+    html! {
+        div class="filth-status" tabindex="0" role="meter" aria-valuemin="0" aria-valuemax="100"
+            aria-valuenow=(total) aria-label=(&details) data-tooltip=(&details) {
+            span class="filth-status-label" { "Cleanliness" span { (total) "/100 filth" } }
+            span class="filth-track" aria-hidden="true" {
+                span class="filth-segment filth-dirt" style=(format!("width:{dirt_width}%")) {}
+                span class="filth-segment filth-blood" style=(format!("width:{blood_width}%")) {}
+            }
+            span class="filth-legend" { span { "Dirt " (dirt) } span { "Blood " (blood) } }
+        }
+    }
 }
 
 fn religious_demand_rail(
@@ -1927,6 +1990,8 @@ fn surgery_procedure_row(
     unavailable: Option<&str>,
     disabled: Option<&str>,
     projectile_id: Option<u64>,
+    soap_available: bool,
+    soap_applicable: bool,
 ) -> Markup {
     let row_class = if unavailable.is_some() {
         "surgery-procedure surgery-procedure-unavailable"
@@ -1941,6 +2006,12 @@ fn surgery_procedure_row(
             input type="hidden" name="procedure" value=(procedure);
             @if let Some(projectile_id) = projectile_id {
                 input type="hidden" name="projectile_id" value=(projectile_id);
+            }
+            @if soap_applicable {
+                label class="surgery-soap-option" title="Consumes one unit; lowers contamination risk independently of other supplies" {
+                    input type="checkbox" name="use_soap" value="true" disabled[!soap_available];
+                    " Use 1 soft soap"
+                }
             }
             @if icon == "bullet-visual" {
                 span class="procedure-projectile-visual projectile-ball" role="img" aria-label=(label) {}
@@ -1993,6 +2064,7 @@ pub fn surgery_page(
     bandages: u32,
     surgery_kits: u32,
     splints: u32,
+    soaps: u32,
     surgery_skill: f32,
 ) -> Markup {
     let base = format!("{}/party/{}/surgery", location.base_path(), patient.id);
@@ -2026,22 +2098,23 @@ pub fn surgery_page(
                     (surgery_supply("Bandages", "bandage-roll", bandages))
                     (surgery_supply("Surgery kits", "medical-pack", surgery_kits))
                     (surgery_supply("Splints", "arm-bandage", splints))
+                    (surgery_supply("Soft soap", "water-drop", soaps))
                 }
                 div class="surgery-procedures" {
                     @for projectile in projectiles.iter().filter(|projectile| projectile.limb == selected_limb) {
                         @let requires_kit = adventuresim_core::surgery::extraction_requires_surgery_kit(projectile.extraction_dc);
                         (surgery_procedure_row(&action, match projectile.kind { ProjectileKind::Arrowhead => "Remove arrowhead", ProjectileKind::Ball => "Remove ball" }, match projectile.kind { ProjectileKind::Arrowhead => "plain-arrow", ProjectileKind::Ball => "bullet-visual" }, "extract", if requires_kit { &[SurgeryItemRequirement::SurgeryKitReusable] } else { &[] }, surgery_duration("extract", effective_skill, projectile.extraction_dc), projectile.extraction_dc,
-                            effective_skill, None, if effective_skill < projectile.extraction_dc { Some("Insufficient Surgery skill") } else if requires_kit && !has_kit { Some("No surgery kit") } else { None }, Some(projectile.id)))
+                            effective_skill, None, if effective_skill < projectile.extraction_dc { Some("Insufficient Surgery skill") } else if requires_kit && !has_kit { Some("No surgery kit") } else { None }, Some(projectile.id), soaps > 0, true))
                     }
                     (surgery_procedure_row(&action, "Bandage", "bandage-roll", "bandage", &[SurgeryItemRequirement::BandageConsumed], surgery_duration("bandage", effective_skill, 0.0), 0.0,
-                        effective_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if bandaged { Some("Already bandaged") } else if bandages == 0 { Some("No bandages") } else { None }, None))
+                        effective_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if bandaged { Some("Already bandaged") } else if bandages == 0 { Some("No bandages") } else { None }, None, soaps > 0, true))
                     (surgery_procedure_row(&action, "Stitch", "scalpel", "stitch", &[SurgeryItemRequirement::SurgeryKitReusable], surgery_duration("stitch", effective_skill, 2.0), 2.0,
-                        effective_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if stitched { Some("Already stitched") } else if effective_skill < 2.0 { Some("Insufficient Surgery skill") } else if !has_kit { Some("No surgery kit") } else { None }, None))
+                        effective_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if stitched { Some("Already stitched") } else if effective_skill < 2.0 { Some("Insufficient Surgery skill") } else if !has_kit { Some("No surgery kit") } else { None }, None, soaps > 0, true))
                     @if splinted {
-                        (surgery_procedure_row(&action, "Remove splint", "arm-bandage", "remove-splint", &[], surgery_duration("remove-splint", effective_skill, 0.0), 0.0, effective_skill, None, None, None))
+                        (surgery_procedure_row(&action, "Remove splint", "arm-bandage", "remove-splint", &[], surgery_duration("remove-splint", effective_skill, 0.0), 0.0, effective_skill, None, None, None, false, false))
                     } @else {
                         (surgery_procedure_row(&action, "Splint", "arm-bandage", "splint", &[SurgeryItemRequirement::SplintEquipped], surgery_duration("splint", effective_skill, 1.0), 1.0,
-                            effective_skill, if fracture <= 0.0 { Some("No injury is present") } else { None }, if fracture <= 0.0 { Some("No injury is present") } else if effective_skill < 1.0 { Some("Insufficient Surgery skill") } else if splints == 0 { Some("No splints") } else { None }, None))
+                            effective_skill, if fracture <= 0.0 { Some("No injury is present") } else { None }, if fracture <= 0.0 { Some("No injury is present") } else if effective_skill < 1.0 { Some("Insufficient Surgery skill") } else if splints == 0 { Some("No splints") } else { None }, None, false, false))
                     }
                     @if cut <= 0.0 && bruise > 0.0 && fracture <= 0.0 {
                         p class="text-muted small-copy" { "Bruising must heal on its own." }
@@ -3814,7 +3887,8 @@ fn personality_tags(
     personality: &crate::spacetimedb::CharacterPersonality,
 ) -> Vec<(&'static str, &'static str)> {
     use crate::spacetimedb::{
-        Conscience::*, Conviction::*, Drive::*, Nerve::*, Outlook::*, SelfRegard::*, Sociability::*,
+        Conscience::*, Conviction::*, Drive::*, Hygiene::*, Nerve::*, Outlook::*, SelfRegard::*,
+        Sociability::*,
     };
     let mut tags = Vec::new();
     match personality.nerve {
@@ -3871,6 +3945,14 @@ fn personality_tags(
         )),
         _ => {}
     }
+    match personality.hygiene {
+        Slovenly => tags.push(("Slovenly", "Filth morale penalty ×0.")),
+        Cleanly => tags.push((
+            "Cleanly",
+            "Filth morale penalty ×2.5; +2 morale while completely clean.",
+        )),
+        _ => {}
+    }
     tags
 }
 
@@ -3890,6 +3972,7 @@ mod personality_tests {
             conscience: Conscience::Cruel,
             self_regard: SelfRegard::Neutral,
             conviction: Conviction::Neutral,
+            hygiene: Hygiene::Neutral,
         };
         let tags = personality_tags(&personality);
         assert_eq!(
@@ -3910,6 +3993,7 @@ mod personality_tests {
                 conscience: Conscience::Compassionate,
                 self_regard: SelfRegard::Proud,
                 conviction: Conviction::Zealous,
+                hygiene: Hygiene::Cleanly,
             },
             CharacterPersonality {
                 character_id: 2,
@@ -3920,6 +4004,7 @@ mod personality_tests {
                 conscience: Conscience::Callous,
                 self_regard: SelfRegard::Humble,
                 conviction: Conviction::Irreverent,
+                hygiene: Hygiene::Slovenly,
             },
             CharacterPersonality {
                 character_id: 3,
@@ -3930,6 +4015,7 @@ mod personality_tests {
                 conscience: Conscience::Cruel,
                 self_regard: SelfRegard::Neutral,
                 conviction: Conviction::Neutral,
+                hygiene: Hygiene::Neutral,
             },
         ];
 
@@ -5568,6 +5654,8 @@ mod tests {
             Some("No injury is present"),
             Some("No injury is present"),
             None,
+            true,
+            true,
         )
         .into_string();
         assert!(row.contains("surgery-procedure-unavailable"));

@@ -350,6 +350,12 @@ fn live_skills(character_id: u64, profile: &AgentProfile) -> CharacterSkills {
 fn live_schedule(profile: &AgentProfile) -> ScheduleAllocation {
     let s = profile.schedule;
     ScheduleAllocation {
+        combat_training_minutes: 0,
+        carousing_minutes: 0,
+        apprenticeship_minutes: 0,
+        apprenticeship_service_id: None,
+        profession_practice_minutes: 0,
+        profession_service_id: None,
         combat_minutes: s.combat,
         combat_auto_train: s.combat_auto_train,
         melee_minutes: s.melee,
@@ -383,6 +389,12 @@ fn live_schedule(profile: &AgentProfile) -> ScheduleAllocation {
 
 fn medical_rest_schedule() -> ScheduleAllocation {
     ScheduleAllocation {
+        combat_training_minutes: 0,
+        carousing_minutes: 0,
+        apprenticeship_minutes: 0,
+        apprenticeship_service_id: None,
+        profession_practice_minutes: 0,
+        profession_service_id: None,
         combat_minutes: 0,
         combat_auto_train: true,
         melee_minutes: 0,
@@ -452,6 +464,11 @@ fn live_personality(character_id: u64, p: &crate::Personality) -> CharacterPerso
             crate::Conviction::Neutral => adventuresim_stdb_client::Conviction::Neutral,
             crate::Conviction::Zealous => adventuresim_stdb_client::Conviction::Zealous,
             crate::Conviction::Irreverent => adventuresim_stdb_client::Conviction::Irreverent,
+        },
+        hygiene: match p.hygiene {
+            crate::Hygiene::Neutral => adventuresim_stdb_client::Hygiene::Neutral,
+            crate::Hygiene::Slovenly => adventuresim_stdb_client::Hygiene::Slovenly,
+            crate::Hygiene::Cleanly => adventuresim_stdb_client::Hygiene::Cleanly,
         },
     }
 }

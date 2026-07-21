@@ -283,7 +283,7 @@ pub enum DiseaseTerminalCause {
     Neurologic,
 }
 
-fn parse_id(value: &str) -> Result<DiseaseId, String> {
+pub(crate) fn parse_id(value: &str) -> Result<DiseaseId, String> {
     match value {
         "influenza" => Ok(DiseaseId::Influenza),
         "dysentery" => Ok(DiseaseId::Dysentery),
@@ -1202,6 +1202,7 @@ pub(crate) fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
     equip_medication(ctx, patient_h, medication_id)?;
     crate::capability::refresh_character_capability(ctx, PHYSICIAN_ID)?;
     crate::capability::refresh_character_capability(ctx, AMBIGUOUS_PHYSICIAN_ID)?;
+    crate::filth::seed_demo(ctx, SICK_CHARACTER_ID, 9_999_999_999_999_996);
     Ok(())
 }
 

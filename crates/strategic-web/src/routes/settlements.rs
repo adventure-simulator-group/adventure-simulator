@@ -396,6 +396,7 @@ async fn surgery(
             quantity("bandage"),
             quantity("surgery_kit"),
             available_splints,
+            quantity("soft_soap"),
             skill,
         )
         .into_string(),
@@ -406,6 +407,8 @@ async fn surgery(
 struct SurgeryProcedureForm {
     procedure: String,
     projectile_id: Option<u64>,
+    #[serde(default)]
+    use_soap: bool,
 }
 
 /// SpacetimeDB's raw HTTP reducer API expects algebraic `Option<T>` values,
@@ -484,6 +487,7 @@ async fn perform_surgery(
                 json!(limb),
                 json!(form.procedure),
                 spacetime_option_u64(form.projectile_id),
+                json!(form.use_soap),
             ],
         )
         .await
@@ -2378,6 +2382,13 @@ async fn party_personal(
         .unwrap_or_default()
         .into_iter()
         .next();
+    let filth = state
+        .db
+        .query::<crate::spacetimedb::CharacterFilth>(&format!(
+            "SELECT * FROM character_filth WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default();
     Html(
         party_personal_page(
             &location,
@@ -2401,6 +2412,7 @@ async fn party_personal(
             can_examine,
             &injuries,
             &projectiles,
+            &filth,
         )
         .into_string(),
     )

@@ -6974,9 +6974,30 @@ pub fn autoresolve_quest(
     let outcome = resolve_battle(allies, enemies, seed);
     record_autoresolve_report(ctx, &quest_id, &party_id, &outcome);
 
+    for member_id in &member_ids {
+        crate::filth::deposit_now(
+            ctx,
+            *member_id,
+            crate::filth::FilthSubstance::Dirt,
+            None,
+            adventuresim_core::filth::COMBAT_DIRT,
+        );
+    }
+
     // Tactical exchanges remain transient; condition crosses the boundary only
     // here, alongside wounds and ammunition in the final autoresolve result.
     for exchange in &outcome.log {
+        if exchange.cut_damage > 0.0 && member_ids.contains(&exchange.attacker_id) {
+            crate::filth::deposit_now(
+                ctx,
+                exchange.attacker_id,
+                crate::filth::FilthSubstance::Blood,
+                member_ids
+                    .contains(&exchange.defender_id)
+                    .then_some(exchange.defender_id),
+                (exchange.cut_damage * 35.0).ceil().clamp(1.0, 15.0) as u16,
+            );
+        }
         if let Some(id) = exchange.weapon_inventory_item_id {
             crate::repair::apply_impact(ctx, id, exchange.contact_stress);
         }

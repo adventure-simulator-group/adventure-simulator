@@ -283,6 +283,15 @@ pub fn advance_character_time(
     if terminal.is_some() || !settled.alive {
         return Ok(false);
     }
+    let dirt = adventuresim_core::filth::travel_dirt(elapsed);
+    crate::filth::deposit(
+        ctx,
+        character_id,
+        crate::filth::FilthSubstance::Dirt,
+        None,
+        dirt,
+        starting_minute.saturating_add(elapsed),
+    );
     crate::condition::apply_travel_condition(ctx, character_id, starting_minute, elapsed, 0)?;
     crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(true)
@@ -996,6 +1005,7 @@ pub fn rest_at_settlement(
         character_id,
         u64::from(requested_days) * MINUTES_PER_DAY,
         at_inn,
+        true,
     )
 }
 
@@ -1009,7 +1019,7 @@ pub fn rest_at_settlement_hours(
     requested_minutes: u64,
     at_inn: bool,
 ) -> Result<(), String> {
-    rest_for_minutes(ctx, character_id, requested_minutes, at_inn)
+    rest_for_minutes(ctx, character_id, requested_minutes, at_inn, true)
 }
 
 fn rest_for_minutes(
@@ -1017,6 +1027,7 @@ fn rest_for_minutes(
     character_id: u64,
     requested_minutes: u64,
     at_inn: bool,
+    explicit: bool,
 ) -> Result<(), String> {
     crate::character::require_living_character(ctx, character_id)?;
     ensure_character_time(ctx, character_id)?;
@@ -1044,6 +1055,10 @@ fn rest_for_minutes(
     if at_inn {
         crate::item::consume_personal_currency(ctx, character_id, cost)
             .map_err(|_| "Not enough coin to pay for the inn stay".to_string())?;
+    }
+
+    if explicit {
+        crate::filth::wash_before_explicit_rest(ctx, character_id)?;
     }
 
     let injury_limit =
@@ -1177,7 +1192,7 @@ pub(crate) fn synchronize_party_departure_time(
             .find(member_id)
             .is_some_and(|character| character.current_settlement_id.is_some());
         if at_settlement {
-            rest_for_minutes(ctx, member_id, elapsed, false)?;
+            rest_for_minutes(ctx, member_id, elapsed, false, false)?;
         } else {
             advance_personal_camp_time(ctx, member_id, elapsed)?;
         }
@@ -1294,7 +1309,7 @@ pub(crate) fn rest_temporary_party_member_until_healed_at_settlement(
     let recovery_minutes =
         convalescence_minutes(ctx, character_id, party_medicine_check(ctx, character_id)?);
     if recovery_minutes > 0 {
-        rest_for_minutes(ctx, character_id, recovery_minutes, false)?;
+        rest_for_minutes(ctx, character_id, recovery_minutes, false, false)?;
     }
     Ok(())
 }
@@ -1335,6 +1350,11 @@ pub fn rest_at_camp(
         return Err("The party is not at a field rest location".into());
     }
     let members = crate::strategic::living_party_member_ids(ctx, &party_id);
+    // This reducer is an explicit player-chosen rest. Washing precedes disease
+    // and injury interval clipping, and dead members were excluded above.
+    for member_id in members.iter().copied() {
+        crate::filth::wash_before_explicit_rest(ctx, member_id)?;
+    }
     let elapsed = members
         .iter()
         .try_fold(requested_minutes, |limit, member_id| {

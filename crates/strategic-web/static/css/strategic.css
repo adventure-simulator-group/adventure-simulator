@@ -4265,3 +4265,14 @@ body.chat-resizing {
 .no-direct-route { padding: .55rem; border-left: 4px solid var(--warning, #9a6824); background: color-mix(in srgb, var(--warning, #9a6824) 10%, transparent); }
 @media (max-width: 720px) { .strategic-map { min-height: 26rem; } }
 @media (prefers-reduced-motion: reduce) { .strategic-map-svg { scroll-behavior: auto; } }
+.filth-status {
+  width: min(30rem, calc(100% - 2rem)); margin: .5rem auto; padding: .45rem .6rem;
+  background: rgba(20, 16, 12, .88); border: 1px solid var(--border-color, #765f42);
+}
+.filth-status-label, .filth-legend { display: flex; justify-content: space-between; gap: .75rem; font-size: .78rem; }
+.filth-track { display: flex; height: .7rem; margin: .25rem 0; overflow: hidden; background: #e4ddca; border: 1px solid #17130f; }
+.filth-segment { display: block; min-width: 0; }
+.filth-dirt { background: #76552e; }
+.filth-blood { background: #8e2020; }
+.filth-legend span::before { content: "■ "; }
+@media (max-width: 42rem) { .filth-status { width: calc(100% - 1rem); } }

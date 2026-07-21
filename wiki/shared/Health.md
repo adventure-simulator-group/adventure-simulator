@@ -12,6 +12,15 @@ Why elves? Because they are the designated race for casual players who aren't lo
 
 ## Disease
 
+Diseases declare typed transmission vectors (close contact, food/water,
+vermin, wounds, or blood) rather than a generic contagious flag. Dirt modestly
+raises the standing infection risk of cuts. Blood only transmits a disease when
+that disease explicitly supports the blood vector; none of the starter diseases
+currently do. A blood deposit privately snapshots its source infection episode
+at deposition, while the public character sheet exposes only substance, amount,
+age, and known source. Blood remains visibly dirty until washed, but follows one
+global rule: infectiousness falls linearly to zero over two strategic days.
+
 Characters do not innately know their diseases. Everyone can see compact,
 deduplicated outward symptoms. A completed examination can additionally find
 deterministic incidental complaints that obscure the underlying cause. Vitals and diagnoses appear only after a
@@ -99,6 +108,10 @@ During recovery, the existing bounded party Medicine check supplies **1 percenta
 Autoresolve calculates every hit through the shared melee and ranged exchanges and commits its body part, cut and blunt shares, and projectile kind. Strategic wounds are split per limb into cuts, bruising, and fracture severity. Fracture severity is a condition within blunt trauma and never adds a second copy of the hit's health damage. Cuts remain open after battle: they deteriorate at 2.5% health per day and drain blood in proportion to wound size until manually bandaged. Bandaging consumes one bandage and permanently stabilizes that wound; its health-bar segment changes from solid red to banded pink. Bruising heals without a procedure. A single blunt hit over 18% limb health creates fracture severity proportional to the excess. Untreated fractures are graphite grey, while splinted fractures use lighter grey bands so treatment state is not communicated by color alone.
 
 Clicking any limb preserves the character sheet and replaces its right rail with surgery. The normal limb bar and surgery view share the same per-limb cut, bruise, fracture, bandage, and projectile state. Procedures show supplies, time, and difficulty but keep infection odds hidden. The surgeon and patient must share a location, party, and personal character time; the lagging participant waits to the later clock, then only those participants advance by the procedure duration. Self-treatment applies a 2.5-point Surgery penalty. Bandaging is available at Surgery 0. Stitching is separate, requires Surgery 2 and a reusable surgery kit, and its quality accelerates healing. A splint's exact inventory row moves into a separate limb-applied slot while retaining its weight and owner, never displaces armor, and returns automatically when the fracture heals; anyone may remove it, while application requires Surgery training.
+
+Bandaging, stitching, and projectile extraction may optionally consume one unit
+of the acting character's soft soap. Soap improves infection control independently
+of Surgery skill and other supplies; procedures remain possible without it.
 
 Any unhealed cut accumulates deterministic standing wound exposure. Bandaging
 reduces that exposure and stitch quality reduces it further; a diseased surgeon

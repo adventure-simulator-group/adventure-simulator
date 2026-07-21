@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use crate::capability::StrategicEquipment;
 use crate::character::character;
+use crate::filth::character_filth;
 use crate::item::item;
 use crate::strategic::{party, party_inventory_item, quest, settlement};
 use crate::{
@@ -718,6 +719,37 @@ fn base_morale(
             "injury".into(),
             "Injuries".into(),
             -injury,
+            crate::personality::MoraleStimulus::Other,
+        );
+    }
+
+    let filth_total = ctx
+        .db
+        .character_filth()
+        .character_id()
+        .filter(character_id)
+        .map(|deposit| f32::from(deposit.amount))
+        .sum::<f32>()
+        .min(f32::from(adventuresim_core::filth::MAX_FILTH));
+    let filth_fraction = filth_total / f32::from(adventuresim_core::filth::MAX_FILTH);
+    let hygiene_morale = match personality.hygiene {
+        crate::personality::Hygiene::Slovenly => 0.0,
+        crate::personality::Hygiene::Neutral => -8.0 * filth_fraction,
+        crate::personality::Hygiene::Cleanly if filth_total == 0.0 => 2.0,
+        crate::personality::Hygiene::Cleanly => -20.0 * filth_fraction,
+    };
+    if hygiene_morale != 0.0 {
+        add_source(
+            "cleanliness".into(),
+            "cleanliness".into(),
+            if hygiene_morale > 0.0 {
+                "Clean (Cleanly)".into()
+            } else if personality.hygiene == crate::personality::Hygiene::Cleanly {
+                "Filthy (Cleanly)".into()
+            } else {
+                "Filthy".into()
+            },
+            hygiene_morale,
             crate::personality::MoraleStimulus::Other,
         );
     }

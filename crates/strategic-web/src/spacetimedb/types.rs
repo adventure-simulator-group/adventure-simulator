@@ -94,6 +94,11 @@ personality_axis!(Conviction {
     Zealous,
     Irreverent
 });
+personality_axis!(Hygiene {
+    Neutral,
+    Slovenly,
+    Cleanly
+});
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterPersonality {
@@ -105,6 +110,23 @@ pub struct CharacterPersonality {
     pub conscience: Conscience,
     pub self_regard: SelfRegard,
     pub conviction: Conviction,
+    pub hygiene: Hygiene,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum FilthSubstance {
+    Dirt,
+    Blood,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterFilth {
+    pub id: u64,
+    pub character_id: u64,
+    pub substance: FilthSubstance,
+    pub source_character_id: Option<u64>,
+    pub amount: u16,
+    pub deposited_at: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

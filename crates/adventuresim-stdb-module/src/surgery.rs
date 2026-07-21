@@ -25,6 +25,7 @@ pub const STITCH_HEALING_BONUS_PER_LEVEL: f32 = 0.006;
 pub const RETAINED_PROJECTILE_HEALING_MULTIPLIER: f32 = 0.60;
 pub const FRACTURE_SINGLE_HIT_THRESHOLD: f32 = 0.18;
 pub const STANDING_INFECTION_CHECK_EXPOSURE: f32 = 0.05;
+pub const SOAP_SURGERY_CONTROL_BONUS: f32 = 2.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
 pub enum LimbRegion {
@@ -275,6 +276,13 @@ pub fn commit_hit_injury(
         injury.bandaged = false;
         injury.stitched = false;
         injury.stitch_quality = 0.0;
+        crate::filth::deposit_now(
+            ctx,
+            character_id,
+            crate::filth::FilthSubstance::Blood,
+            Some(character_id),
+            (cut_damage * 50.0).ceil().clamp(1.0, 20.0) as u16,
+        );
     }
     store_injury(ctx, injury);
     if let Some(kind) = projectile.filter(|_| cut_damage + blunt_damage > 0.0) {
@@ -465,7 +473,11 @@ pub fn settle_injuries(
                 injury.stitched,
                 injury.stitch_quality,
             );
-            accrue_standing_infection(ctx, injury, exposure * protection)?;
+            let dirt = adventuresim_core::filth::dirt_wound_multiplier(crate::filth::dirt_total(
+                ctx,
+                character_id,
+            ));
+            accrue_standing_infection(ctx, injury, exposure * protection * dirt)?;
         }
         store_injury(ctx, injury.clone());
     }
@@ -746,6 +758,7 @@ pub fn treat_limb(
     limb_slug: String,
     procedure: String,
     projectile_id: Option<u64>,
+    use_soap: bool,
 ) -> Result<(), String> {
     crate::item::upsert_surgery_items(ctx);
     require_together(ctx, actor_id, patient_id)?;
@@ -794,13 +807,27 @@ pub fn treat_limb(
     if procedure == "splint" && available_splints(ctx, actor_id) == 0 {
         return Err("Applying a splint requires one splint".into());
     }
+    let soap_applicable = matches!(procedure.as_str(), "bandage" | "stitch" | "extract");
+    if use_soap
+        && (!soap_applicable || item_quantity(ctx, actor_id, crate::filth::SOAP_ITEM_ID) == 0)
+    {
+        return Err("The selected procedure cannot use an available unit of soap".into());
+    }
     let duration = duration_minutes(&procedure, skill, dc);
     if !align_and_advance(ctx, actor_id, patient_id, duration)? {
         return Ok(());
     }
     require_together(ctx, actor_id, patient_id)?;
     injury = injury_for(ctx, patient_id, limb);
-    let clean_check = infection_control_check(ctx, actor_id, skill);
+    if use_soap {
+        consume_one(ctx, actor_id, crate::filth::SOAP_ITEM_ID)?;
+    }
+    let clean_check = infection_control_check(ctx, actor_id, skill)
+        + if use_soap {
+            SOAP_SURGERY_CONTROL_BONUS
+        } else {
+            0.0
+        };
     match procedure.as_str() {
         "bandage" => {
             consume_one(ctx, actor_id, "bandage")?;
