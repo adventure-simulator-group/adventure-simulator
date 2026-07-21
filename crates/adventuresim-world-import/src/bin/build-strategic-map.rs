@@ -146,8 +146,22 @@ struct Source {
     verification_status: &'static str,
 }
 
+const RENDER_STACK_BYTES: usize = 64 * 1024 * 1024;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    let render = std::thread::Builder::new()
+        .name("strategic-map-renderer".into())
+        .stack_size(RENDER_STACK_BYTES)
+        .spawn(move || run(args).map_err(|error| error.to_string()))?;
+    match render.join() {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(message)) => Err(std::io::Error::other(message).into()),
+        Err(_) => Err(std::io::Error::other("strategic map renderer panicked").into()),
+    }
+}
+
+fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let layers = raster::load(&args.elevation_dir, &args.forest_cover_dir, BOUNDS)?;
     let mut package = build(&args.viabundus_dir, layers)?;
     let terrain_features = adventuresim_terrain::builder::Features {

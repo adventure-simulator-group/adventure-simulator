@@ -497,7 +497,8 @@ fn hex_sha(bytes: &[u8]) -> String {
 
 fn hex_sha_reader(mut reader: impl Read) -> Result<String> {
     let mut hasher = Sha256::new();
-    let mut buffer = [0_u8; 1024 * 1024];
+    // Keep the streaming buffer off the small Windows process stack.
+    let mut buffer = vec![0_u8; 1024 * 1024];
     loop {
         let read = reader.read(&mut buffer)?;
         if read == 0 {

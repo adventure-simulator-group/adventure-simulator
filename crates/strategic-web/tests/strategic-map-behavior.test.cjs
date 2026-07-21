@@ -140,6 +140,25 @@ test("visible tile range loads exact intersections and clamps to the world", () 
   );
 });
 
+test("missing deepest tiles deterministically crop their complete parent tile", () => {
+  const { document, helpers } = load();
+  assert.deepEqual(
+    { ...helpers.parentTileFallback(7, 75, 61, 512, 4) },
+    { zoom: 6, x: 37, y: 30, left: 295.9375, top: 239.9375, size: 8.125 },
+  );
+  document.body.innerHTML = `<section data-strategic-map data-map-theme="paper" data-map-tile-size="512" data-map-tile-gutter="4" data-map-max-tile-zoom="7" data-map-tile-version="digest" data-map-tile-root="/map/tiles/"><svg data-map-svg viewBox="300 244 5 3.33"><g data-map-tile-layer></g></svg></section>`;
+  const map = document.querySelector("section");
+  const svg = map.querySelector("[data-map-svg]");
+  svg.getBoundingClientRect = () => ({ width: 1200, height: 800 });
+  helpers.initializeMap(map);
+  const image = map.querySelector("[data-map-tile-layer] image");
+  const missingHref = image.getAttribute("href");
+  image.dispatchEvent(new document.defaultView.Event("error"));
+  assert.notEqual(image.getAttribute("href"), missingHref);
+  assert.match(image.getAttribute("href"), /^\/map\/tiles\/paper\/6\//);
+  assert.equal(image.closest("svg").getAttribute("overflow"), "hidden");
+});
+
 test("paper tiles render independently of the dynamic pin layer", () => {
   const { document, helpers } = load();
   document.body.innerHTML = `<section data-strategic-map data-map-theme="paper" data-map-tile-size="512" data-map-tile-gutter="4" data-map-max-tile-zoom="6" data-map-tile-version="abc123" data-map-tile-root="/map/tiles/"><svg data-map-svg viewBox="590 390 10 6.67"><g data-map-tile-layer></g><g data-map-pin-symbol></g></svg></section>`;

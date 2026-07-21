@@ -279,7 +279,7 @@ contours, and reduces every available prepared forest tile into bounded density
 and leaf-type regions. Missing forest tiles remain absent and their coverage is
 reported as partial; they do not block map generation. The command clips and
 simplifies presentation geometry, renders a Paper AVIF pyramid through zoom
-level 7 (native detail at 5–16°E, 50–56°N and generalized coverage elsewhere), concatenates the independently addressable images into one pack,
+level 7 (native detail at 5–16°E, 50–56°N), concatenates the independently addressable images into one pack,
 and embeds a digest
 over every presentation-affecting package field. The
 versioned filename is stable rather than content-addressed. Legacy Viabundus
@@ -304,7 +304,10 @@ direct-travel controls remain usable. Individual tile routes
 include the pack's SHA-256 in their query string and receive a one-year
 immutable cache policy. The browser requests only the Paper tiles covering its
 current view and replaces them as it pans or crosses a zoom level. The deepest
-level uses a higher AVIF quality setting for close inspection. Every encoded
+level uses a higher AVIF quality setting for close inspection. Outside native
+detail coverage, a missing deepest-level image is deterministically replaced by
+the correctly cropped complete parent tile, so the map never goes blank without
+inflating the pack with redundant generalized tiles. Every encoded
 tile includes a four-pixel gutter so independent AVIF edges overlap cleanly;
 close levels replace coarse tint cells and dense contours with deterministic
 curved hill and ridge ranges, including engraved shadow hatching and secondary

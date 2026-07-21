@@ -16,6 +16,7 @@ const MIN_TILE_SIZE: u32 = 64;
 const MAX_TILE_SIZE: u32 = 2_048;
 const MAX_TILE_COUNT: usize = 100_000;
 const RENDER_MARGIN: u32 = 12;
+const NATIVE_DETAIL_BOUNDS: [f64; 4] = [5.0, 50.0, 16.0, 56.0];
 
 #[derive(Debug)]
 struct ForestField {
@@ -184,7 +185,19 @@ pub(super) fn build(
         let span = f64::from(config.tile_size) / scale;
         let columns = (WIDTH / span).ceil() as u16;
         let rows = (HEIGHT / span).ceil() as u16;
-        let coordinates = tile_grid(columns, rows);
+        let coordinates = tile_grid(columns, rows)
+            .into_iter()
+            .filter(|&(x, y)| {
+                config.max_zoom < 7
+                    || zoom < config.max_zoom
+                    || tile_intersects_geographic_detail(
+                        package.bounds,
+                        span,
+                        u32::from(x),
+                        u32::from(y),
+                    )
+            })
+            .collect::<Vec<_>>();
         let quality = if zoom == config.max_zoom { 95 } else { 82 };
         let encoded_tiles: Result<Vec<Vec<u8>>, String> = coordinates
             .par_iter()
@@ -236,6 +249,21 @@ fn tile_grid(columns: u16, rows: u16) -> Vec<(u16, u16)> {
     (0..rows)
         .flat_map(|y| (0..columns).map(move |x| (x, y)))
         .collect()
+}
+
+fn tile_intersects_geographic_detail(map_bounds: [f64; 4], span: f64, x: u32, y: u32) -> bool {
+    let [west, south, east, north] = NATIVE_DETAIL_BOUNDS;
+    let (left, top) = project(west, north, map_bounds);
+    let (right, bottom) = project(east, south, map_bounds);
+    intersects(
+        [
+            f64::from(x) * span,
+            f64::from(y) * span,
+            f64::from(x + 1) * span,
+            f64::from(y + 1) * span,
+        ],
+        [left, top, right, bottom],
+    )
 }
 
 fn pyramid_tile_count(tile_size: u32, max_zoom: u8) -> usize {
@@ -1354,14 +1382,28 @@ mod tests {
     }
 
     #[test]
-    fn maximum_zoom_grid_has_generalized_coverage_everywhere() {
+    fn maximum_zoom_grid_is_sparse_but_every_tile_has_a_parent_fallback() {
         let zoom = 7;
         let span = 512.0 / f64::from(1_u32 << zoom);
         let columns = (WIDTH / span).ceil() as u16;
         let rows = (HEIGHT / span).ceil() as u16;
-        let coordinates = tile_grid(columns, rows);
-        assert_eq!(coordinates.len(), usize::from(columns) * usize::from(rows));
-        assert_eq!(coordinates.first(), Some(&(0, 0)));
-        assert_eq!(coordinates.last(), Some(&(columns - 1, rows - 1)));
+        let coordinates = tile_grid(columns, rows)
+            .into_iter()
+            .filter(|&(x, y)| {
+                tile_intersects_geographic_detail(
+                    [-11.0, 43.0, 31.0, 70.0],
+                    span,
+                    u32::from(x),
+                    u32::from(y),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert!(!coordinates.is_empty());
+        assert!(coordinates.len() < usize::from(columns) * usize::from(rows));
+        assert!(coordinates.iter().all(|&(x, y)| {
+            let parent_x = x / 2;
+            let parent_y = y / 2;
+            parent_x < columns.div_ceil(2) && parent_y < rows.div_ceil(2)
+        }));
     }
 }
