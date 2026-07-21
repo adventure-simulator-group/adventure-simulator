@@ -4173,9 +4173,11 @@ body.chat-resizing {
 .map-settlement-label-text { fill: var(--map-text); stroke: color-mix(in srgb, var(--map-land) 88%, #fff); stroke-width: var(--map-label-stroke-width, 1px); paint-order: stroke fill; stroke-linejoin: round; font-family: Georgia, "Times New Roman", serif; font-size: var(--map-label-font-size, 4px); font-weight: 700; letter-spacing: .05em; }
 .map-pin.current .map-settlement-label-text, .map-pin.selected .map-settlement-label-text { font-style: italic; font-weight: 800; }
 .strategic-map-legend { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; margin: 0; padding: .35rem .55rem; background: color-mix(in srgb, var(--map-land) 90%, #fff); color: var(--map-text); font-size: .72rem; }
-.map-legend-elevation, .map-legend-forest { display: inline-block; width: .8rem; height: .65rem; margin-right: -.55rem; border: 1px solid color-mix(in srgb, var(--map-text) 48%, transparent); }
+.map-legend-item { display: inline-flex; gap: .2rem; align-items: center; }
+.map-legend-elevation, .map-legend-forest-sparse, .map-legend-forest-deep { display: inline-block; width: .8rem; height: .65rem; margin-right: -.55rem; border: 1px solid color-mix(in srgb, var(--map-text) 48%, transparent); }
 .map-legend-elevation { background: linear-gradient(135deg, var(--map-height-50), var(--map-height-1000)); }
-.map-legend-forest { background: repeating-linear-gradient(45deg, var(--map-forest), var(--map-forest) 2px, transparent 2px, transparent 4px); }
+.map-legend-forest-sparse { margin-right: 0; background: color-mix(in srgb, var(--map-forest) 58%, var(--map-land)); }
+.map-legend-forest-deep { margin-right: 0; background: color-mix(in srgb, var(--map-forest-conifer) 80%, var(--map-land)); }
 .map-legend-settlement { display: inline-block; width: .7rem; height: .7rem; margin-right: -.55rem; background: var(--map-pin); clip-path: polygon(0 100%, 0 45%, 25% 45%, 25% 12%, 52% 12%, 52% 45%, 100% 45%, 100% 100%); }
 .map-legend-settlement.connected { background: var(--map-connected); }
 .map-legend-selected { display: inline-block; width: .75rem; height: .75rem; margin-right: -.55rem; border: 2px dashed var(--map-selected); border-radius: 50%; }

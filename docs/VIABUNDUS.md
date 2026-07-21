@@ -57,9 +57,14 @@ to the current zoom while the raster package remains unchanged and cacheable.
 A four-pixel encoded gutter prevents seams between lossy
 tiles, while the deepest level uses high-quality AVIF and contour/symbol terrain
 detail instead of magnifying the overview's generalized square cells. Close
-levels use deterministic overlapping tree groves and curved profile hill/ridge
-ranges with engraved shadow hatching; far levels retain restrained tint and
-contour context for overview readability. Viabundus zoom importance also
+levels use translucent green Sparse woods and Deep woods coverage plus curved
+profile hill/ridge ranges with engraved shadow hatching; far levels retain
+restrained tint and contour context for overview readability. Forest cell
+densities form one continuous categorical field, with boundaries displaced by
+deterministic domain-warped, four-octave noise and antialiased from four samples
+per output pixel so the prepared low-resolution grid does not appear as square
+pixels. The coverage remains offline raster content rather than dynamic browser
+geometry. Viabundus zoom importance also
 controls road visibility, weight, and ink strength, while a subtle globally
 positioned parchment texture keeps adjacent tile gutters identical.
 

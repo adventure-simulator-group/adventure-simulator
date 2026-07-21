@@ -28,7 +28,7 @@ const ROUTE_MIN_VIEW_WIDTH: f64 = 90.0;
 const ROUTE_MIN_VIEW_HEIGHT: f64 = ROUTE_MIN_VIEW_WIDTH / VIEW_ASPECT_RATIO;
 pub(crate) const TILE_PATH_PREFIX: &str = "/map/tiles/";
 const PACKAGE_SCHEMA: u32 = 3;
-const RENDERER_REVISION: u32 = 2;
+const RENDERER_REVISION: u32 = 3;
 const VIABUNDUS_URL: &str = "https://doi.org/10.5281/zenodo.16611998";
 const ELEVATION_URL: &str = "https://doi.org/10.5270/ESA-c5d3d65";
 const FOREST_URL: &str = "https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a";
@@ -448,7 +448,14 @@ pub fn strategic_map(
             }
             p class="strategic-map-legend" {
                 span class="map-legend-elevation" aria-hidden="true" {} "Higher ground"
-                span class="map-legend-forest" aria-hidden="true" {} "Forest (partial)"
+                span class="map-legend-item" {
+                    span class="map-legend-forest-sparse" aria-hidden="true" {}
+                    "Sparse woods"
+                }
+                span class="map-legend-item" {
+                    span class="map-legend-forest-deep" aria-hidden="true" {}
+                    "Deep woods"
+                }
                 span class="map-legend-settlement connected" aria-hidden="true" {} "Direct route"
                 span class="map-legend-settlement" aria-hidden="true" {} "Other settlement"
                 span class="map-legend-selected" aria-hidden="true" {} "Selected"
@@ -525,7 +532,7 @@ mod tests {
         let placeholder = "0".repeat(64);
         let unsigned = format!(
             concat!(
-                r#"{{"schema":3,"renderer_revision":2,"year":1544,"bounds":[-10.0,40.0,30.0,70.0],"source":{{"name":"Test roads","url":"https://doi.org/10.5281/zenodo.16611998","license":"CC0","verification_status":"verified"}},"elevation":{{"source":{{"name":"Test elevation","url":"https://doi.org/10.5270/ESA-c5d3d65","file_count":1}}}},"forest":{{"source":{{"name":"Test forest","url":"https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a","file_count":1}},"coverage_tiles":1}},"tiles":{{"format":"avif","tile_size":512,"gutter":4,"max_zoom":0,"content_sha256":"{}","entries":[{{"theme":"paper","zoom":0,"x":0,"y":0,"offset":0,"length":12}}]}},"package_sha256":"{}"}}"#
+                r#"{{"schema":3,"renderer_revision":3,"year":1544,"bounds":[-10.0,40.0,30.0,70.0],"source":{{"name":"Test roads","url":"https://doi.org/10.5281/zenodo.16611998","license":"CC0","verification_status":"verified"}},"elevation":{{"source":{{"name":"Test elevation","url":"https://doi.org/10.5270/ESA-c5d3d65","file_count":1}}}},"forest":{{"source":{{"name":"Test forest","url":"https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a","file_count":1}},"coverage_tiles":1}},"tiles":{{"format":"avif","tile_size":512,"gutter":4,"max_zoom":0,"content_sha256":"{}","entries":[{{"theme":"paper","zoom":0,"x":0,"y":0,"offset":0,"length":12}}]}},"package_sha256":"{}"}}"#
             ),
             tile_digest, placeholder
         );
@@ -696,7 +703,9 @@ mod tests {
             markup.len()
         );
         assert!(markup.contains("Higher ground"));
-        assert!(markup.contains("Forest (partial)"));
+        assert!(markup.contains("Sparse woods"));
+        assert!(markup.contains("Deep woods"));
+        assert!(!markup.contains("Forest (partial)"));
     }
 
     #[test]

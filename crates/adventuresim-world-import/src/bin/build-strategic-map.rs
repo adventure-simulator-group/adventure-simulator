@@ -15,7 +15,7 @@ mod raster;
 mod tiles;
 
 const PACKAGE_SCHEMA: u32 = 3;
-const RENDERER_REVISION: u32 = 2;
+const RENDERER_REVISION: u32 = 3;
 const YEAR: i32 = 1544;
 const VIABUNDUS_DOI: &str = "https://doi.org/10.5281/zenodo.16611998";
 const RECORD_URL: &str = "https://zenodo.org/api/records/16611998";
