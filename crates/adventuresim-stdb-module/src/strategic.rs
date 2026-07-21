@@ -5,16 +5,17 @@ use adventuresim_world_schema::{
     CrossingWatercourse, DominantLeafType, DroughtHistory, DroughtProfile, EdgeEndpoint,
     ElevationMeters, FerryWaterway, FlowingWaterAccess, ForestCover, GeologicEra, GeologicUnitId,
     HabitatSuitability, HistoricalVegetation, IndustryInferenceContext, InferredGeologicSetting,
-    InferredIndustryProfile, InferredTreeSpeciesProfile, LandUseFraction, LandUseProfile,
-    LanguageCode, MarineWaterAccess, MineralSoil, MineralSoilTexture, ModeledTreeSpecies,
-    ModeledTreeSpeciesProfile, OfficialReligion, PalmerDroughtSeverityIndex, PotentialVegetation,
-    PotentialVegetationClass, ProductionScale, SETTLEMENT_ALIAS_NAME_MAX_BYTES,
-    SETTLEMENT_ALIAS_PREFIX_MAX_BYTES, SETTLEMENT_DESCRIPTION_MAX_BYTES, SettlementDescriptionKind,
-    SettlementHydrology, SettlementImport, SettlementReligiousStatus, SoilAcidity, SoilBasisPoints,
-    SoilDepth, SoilEvidence, SoilFertility, SoilProfile, SoilProperties, SoilSubstrate,
-    SoilWaterRegime, StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon,
-    TravelEdgeImport, TravelRoute, TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit,
-    WORLD_SCHEMA_VERSION, Woodland, WorldNodeImport, historical_vegetation_matches_context,
+    InferredIndustryProfile, InferredTreeSpeciesProfile, LandRoute, LandUseFraction,
+    LandUseProfile, LanguageCode, MarineWaterAccess, MineralSoil, MineralSoilTexture,
+    ModeledTreeSpecies, ModeledTreeSpeciesProfile, OfficialReligion, PalmerDroughtSeverityIndex,
+    PotentialVegetation, PotentialVegetationClass, ProductionScale, RouteTerrain,
+    SETTLEMENT_ALIAS_NAME_MAX_BYTES, SETTLEMENT_ALIAS_PREFIX_MAX_BYTES,
+    SETTLEMENT_DESCRIPTION_MAX_BYTES, SettlementDescriptionKind, SettlementHydrology,
+    SettlementImport, SettlementReligiousStatus, SoilAcidity, SoilBasisPoints, SoilDepth,
+    SoilEvidence, SoilFertility, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
+    StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport,
+    TravelRoute, TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION,
+    Woodland, WorldNodeImport, historical_vegetation_matches_context,
     industry_profile_is_canonical, valid_bounded_source_text, valid_sources_markdown,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
@@ -7127,12 +7128,55 @@ pub fn bootstrap_development_world(
 }
 
 pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
+    const RIVERDALE_NODE: u64 = u64::MAX - 2;
+    const IRONFORGE_NODE: u64 = u64::MAX - 1;
+    const DEMO_EDGE: u64 = u64::MAX;
+    const DEMO_SOURCES: &str = "- **Adventure Simulator renderer demo:** Hand-authored geographic fixture for exercising map and terrain-routing UI.";
+
+    for (id, latitude, longitude) in [
+        (RIVERDALE_NODE, 53.50, 10.00),
+        (IRONFORGE_NODE, 53.62, 10.20),
+    ] {
+        if ctx.db.world_node().id().find(id).is_none() {
+            ctx.db.world_node().insert(WorldNode {
+                id,
+                parent_node_id: None,
+                latitude,
+                longitude,
+                is_settlement: true,
+                is_town: true,
+                is_ferry: false,
+                is_harbour: false,
+                sources: DEMO_SOURCES.into(),
+            });
+        }
+    }
+    if ctx.db.travel_edge().id().find(DEMO_EDGE).is_none() {
+        ctx.db.travel_edge().insert(TravelEdge {
+            id: DEMO_EDGE,
+            from_node_id: RIVERDALE_NODE,
+            to_node_id: IRONFORGE_NODE,
+            route: TravelRoute::Land(LandRoute {
+                bridge: None,
+                water_crossings: vec![],
+            }),
+            toll_at: None,
+            length_m: 19_000,
+            slope_multiplier: 1.0,
+            terrain: RouteTerrain::stage_placeholder(),
+            certainty: 1,
+            section: "renderer-demo".into(),
+            sources: DEMO_SOURCES.into(),
+        });
+    }
+
     let settlements = [
         (
             "riverdale",
             "Riverdale",
-            0.0,
-            0.0,
+            10.00,
+            53.50,
+            Some(RIVERDALE_NODE),
             3,
             "hills",
             SettlementReligiousStatus::Established {
@@ -7142,8 +7186,9 @@ pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
         (
             "ironforge",
             "Ironforge",
-            100.0,
-            50.0,
+            10.20,
+            53.62,
+            Some(IRONFORGE_NODE),
             4,
             "desert",
             SettlementReligiousStatus::Established {
@@ -7155,6 +7200,7 @@ pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
             "Willowmere",
             -50.0,
             75.0,
+            None,
             2,
             "hills",
             SettlementReligiousStatus::Established {
@@ -7163,7 +7209,7 @@ pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
         ),
     ];
 
-    for (id, name, x, y, pop, scene, religious_status) in settlements {
+    for (id, name, x, y, source_node_id, pop, scene, religious_status) in settlements {
         if ctx.db.settlement().id().find(&id.to_string()).is_none() {
             ctx.db.settlement().insert(Settlement {
                 id: id.into(),
@@ -7244,7 +7290,7 @@ pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                 scene_key: scene.into(),
                 religion_id: religious_status.church().religion_id().into(),
                 currency_id: crate::item::settlement_currency_id(id).into(),
-                source_node_id: None,
+                source_node_id,
                 sources: "- **Adventure Simulator demo data:** Hand-authored settlement and deterministic placeholder environment; no external world-data source was imported.".into(),
             });
         }
