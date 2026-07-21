@@ -16,7 +16,6 @@ const MIN_TILE_SIZE: u32 = 64;
 const MAX_TILE_SIZE: u32 = 2_048;
 const MAX_TILE_COUNT: usize = 100_000;
 const RENDER_MARGIN: u32 = 12;
-const NATIVE_DETAIL_BOUNDS: [f64; 4] = [5.0, 50.0, 16.0, 56.0];
 
 #[derive(Debug)]
 struct ForestField {
@@ -185,19 +184,7 @@ pub(super) fn build(
         let span = f64::from(config.tile_size) / scale;
         let columns = (WIDTH / span).ceil() as u16;
         let rows = (HEIGHT / span).ceil() as u16;
-        let coordinates: Vec<_> = (0..rows)
-            .flat_map(|y| (0..columns).map(move |x| (x, y)))
-            .filter(|&(x, y)| {
-                config.max_zoom < 7
-                    || zoom < config.max_zoom
-                    || tile_intersects_geographic_detail(
-                        package.bounds,
-                        span,
-                        u32::from(x),
-                        u32::from(y),
-                    )
-            })
-            .collect();
+        let coordinates = tile_grid(columns, rows);
         let quality = if zoom == config.max_zoom { 95 } else { 82 };
         let encoded_tiles: Result<Vec<Vec<u8>>, String> = coordinates
             .par_iter()
@@ -245,19 +232,10 @@ pub(super) fn build(
     ))
 }
 
-fn tile_intersects_geographic_detail(map_bounds: [f64; 4], span: f64, x: u32, y: u32) -> bool {
-    let [west, south, east, north] = NATIVE_DETAIL_BOUNDS;
-    let (left, top) = project(west, north, map_bounds);
-    let (right, bottom) = project(east, south, map_bounds);
-    intersects(
-        [
-            f64::from(x) * span,
-            f64::from(y) * span,
-            f64::from(x + 1) * span,
-            f64::from(y + 1) * span,
-        ],
-        [left, top, right, bottom],
-    )
+fn tile_grid(columns: u16, rows: u16) -> Vec<(u16, u16)> {
+    (0..rows)
+        .flat_map(|y| (0..columns).map(move |x| (x, y)))
+        .collect()
 }
 
 fn pyramid_tile_count(tile_size: u32, max_zoom: u8) -> usize {
@@ -1122,6 +1100,7 @@ mod tests {
                 verification_status: "fixture",
             },
             roads: Vec::new(),
+            routing_roads: Vec::new(),
             water: Vec::new(),
             elevation: ElevationLayer {
                 source: layer_source(),
@@ -1372,5 +1351,17 @@ mod tests {
 
         assert!(result.is_err());
         assert!(pyramid_tile_count(MIN_TILE_SIZE, 8) > MAX_TILE_COUNT);
+    }
+
+    #[test]
+    fn maximum_zoom_grid_has_generalized_coverage_everywhere() {
+        let zoom = 7;
+        let span = 512.0 / f64::from(1_u32 << zoom);
+        let columns = (WIDTH / span).ceil() as u16;
+        let rows = (HEIGHT / span).ceil() as u16;
+        let coordinates = tile_grid(columns, rows);
+        assert_eq!(coordinates.len(), usize::from(columns) * usize::from(rows));
+        assert_eq!(coordinates.first(), Some(&(0, 0)));
+        assert_eq!(coordinates.last(), Some(&(columns - 1, rows - 1)));
     }
 }
