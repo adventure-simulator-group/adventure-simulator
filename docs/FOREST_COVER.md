@@ -68,14 +68,15 @@ not silently accepted. Reserved or unclassified cell values take the
 documented plausible fallback path and are counted.
 
 The settlement Map presentation may additionally generalize any installed
-TCD/DLT tile pairs into coarse SVG forest regions. This is explicitly
-partial-coverage presentation data: absent tiles stay absent, tile coverage is
-recorded in the map package, and no missing regional forest is inferred from a
-settlement sample.
+TCD/DLT tile pairs into deterministic sparse/deep woodland inputs that the
+offline renderer naturalizes and encodes into the Paper AVIF tile pyramid. This
+is explicitly partial-coverage presentation data: absent tiles stay absent,
+tile coverage is recorded in the map package, and no missing regional forest
+is inferred from a settlement sample.
 
 Forest cover is stored on settlements because it describes the immediate area
 and can drive timber and foraging products, scene vegetation density, visibility,
 encounters, and fuel availability. Continuous route or canonical regional
 forest data still belongs in later spatial products rather than being inferred
-from one settlement sample; the generalized SVG layer is not such a canonical
-world product.
+from one settlement sample; the generalized raster layer is not such a
+canonical world product.

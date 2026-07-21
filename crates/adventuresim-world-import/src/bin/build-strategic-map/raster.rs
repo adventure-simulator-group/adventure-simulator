@@ -5,7 +5,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use serde::{Deserialize, Serialize};
+use adventuresim_world_import::{
+    PREPARED_FOREST_FORMAT, read_prepared_forest_raster, validate_prepared_forest_manifest,
+};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tiff::decoder::{Decoder, DecodingResult};
 
@@ -281,13 +284,7 @@ fn load_forest(
 ) -> Result<ForestLayer, Box<dyn std::error::Error>> {
     let manifest_path = directory.join("forest-cover-manifest.json");
     let manifest_bytes = fs::read(&manifest_path)?;
-    let manifest: ForestManifest = serde_json::from_slice(&manifest_bytes)?;
-    if !matches!(
-        manifest.format.as_str(),
-        "adventuresim-copernicus-forest-2018-v1" | "adventuresim-copernicus-forest-2018-v2"
-    ) {
-        return Err("unsupported forest preparation format".into());
-    }
+    validate_prepared_forest_manifest(&manifest_bytes, &manifest_path)?;
     let mut densities = source_files(directory, "TCD_", ".tif")?;
     densities.sort();
     let mut coverage = Vec::new();
@@ -314,9 +311,12 @@ fn load_forest(
         let leaf_bytes = fs::read(&leaf_path)?;
         identities.insert(name.into(), format!("{:x}", Sha256::digest(&density_bytes)));
         identities.insert(leaf_name, format!("{:x}", Sha256::digest(&leaf_bytes)));
-        let density = decode_forest(&density_bytes, &density_path)?;
-        let leaves = decode_forest(&leaf_bytes, &leaf_path)?;
-        append_forest_regions(tile, &density, &leaves, &mut regions);
+        let density = read_prepared_forest_raster(&density_path, tile.south, tile.west)?;
+        let leaves = read_prepared_forest_raster(&leaf_path, tile.south, tile.west)?;
+        if !density.has_same_grid(&leaves) {
+            return Err(format!("forest TCD and DLT transforms disagree for {name}").into());
+        }
+        append_forest_regions(tile, density.pixels(), leaves.pixels(), &mut regions);
         coverage.push(tile.bounds());
     }
     coverage.sort_by(|a, b| bounds_order(*a, *b));
@@ -329,7 +329,7 @@ fn load_forest(
     Ok(ForestLayer {
         source: LayerSource {
             name: "Copernicus HRL Forests 2018".into(),
-            version: manifest.format,
+            version: PREPARED_FOREST_FORMAT.into(),
             url: "https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a".into(),
             license: "Copernicus full, free, and open data policy".into(),
             file_count: identities.len(),
@@ -339,27 +339,6 @@ fn load_forest(
         coverage,
         regions,
     })
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ForestManifest {
-    format: String,
-}
-
-fn decode_forest(bytes: &[u8], path: &Path) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let mut decoder = Decoder::new(std::io::Cursor::new(bytes))?;
-    let (width, height) = decoder.dimensions()?;
-    if width as usize != FOREST_PIXELS_PER_DEGREE || height as usize != FOREST_PIXELS_PER_DEGREE {
-        return Err(format!("forest tile {} is not 1000 by 1000", path.display()).into());
-    }
-    let DecodingResult::U8(values) = decoder.read_image()? else {
-        return Err(format!("forest tile {} is not UInt8", path.display()).into());
-    };
-    if values.len() != FOREST_PIXELS_PER_DEGREE * FOREST_PIXELS_PER_DEGREE {
-        return Err(format!("forest tile {} has malformed pixels", path.display()).into());
-    }
-    Ok(values)
 }
 
 fn append_forest_regions(

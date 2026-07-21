@@ -73,7 +73,7 @@ positioned parchment texture keeps adjacent tile gutters identical.
 The stable `strategic-map-v1.json` and `strategic-map-tiles-v1.pack` filenames
 are versioned, not content-addressed; the pack digest query parameter is every
 tile route's cache key.
-The compact schema-3 deployment manifest carries renderer revision 2, reviewed
+The compact schema-3 deployment manifest carries renderer revision 3, reviewed
 source identities, coverage counts, and the indexed AVIF pyramid, but not the
 offline roads, compound water rings, elevation cells/contours, or forest
 regions used to render it. Its embedded SHA-256 covers every deployed field;
