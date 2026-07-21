@@ -152,7 +152,7 @@ async fn mission_status(
             .first()
             .filter(|result| viewer.party_id.as_deref() == Some(&result.party_id))
         {
-            return Redirect::to(&format!("/locations/quest/{}/loot", result.quest_id))
+            return Redirect::to(&format!("/locations/quest/{}/enemy", result.quest_id))
                 .into_response();
         }
         return (StatusCode::NOT_FOUND, "Mission not found").into_response();

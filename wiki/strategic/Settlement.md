@@ -13,6 +13,28 @@ Settlement and quest destinations share the same strategic **location** shell. A
 
 The backend classifies every materialized settlement by population as Hamlet, Village, Town, City, or Capital, with population level as the fallback when no estimate exists. Each service tab layers its existing service SVG over a grayscale, CSS-tinted building background. Unknown settlements, hamlets, and villages use the village set; towns use town overrides when present; and cities or capitals use city overrides when present. A missing higher-tier image falls back to that service's village building. The location header is twice the height of compact application headers so the low silhouettes and large service marks remain legible. The tabs meet the lower edge of the sky and the active building is shown by an underline. The settlement name and saved character time share one carved or engraved rectangular sign island. The active tint carries through both interface rails, whose recessed interiors, edge beams, square corner blocks, and darker interactive rows are all derived from that tint, as well as through character inspection via the validated `building` URL parameter. Quest destinations use green environmental framing. The location header renders a continuously interpolated sky from the active character's saved time snapshot: daylight is bright blue, dawn and dusk are warm, and nighttime plus the building surfaces are darker still. The sun or moon follows an edge-to-edge arc that peaks over the center at noon or midnight, while other header text uses protected dark labels for reliable contrast.
 
+Weaponsmith chimneys add a subtle decorative SVG smoke layer without changing
+the raster building or service semantics. Quest destinations use two physical
+tabs: the default Map view shares the unlit tent scene used by travel camps,
+while the Enemy view places a skull mark over the encounter ground. The Enemy
+view presents combat before resolution and recovered loot afterward, so loot is
+not a separate tab. All effect and prop layers are noninteractive.
+
+The wilderness props follow the ornament anatomy at
+`styles/timber-framed/ornament/<variant>/ornament.png`. Each uses a 512-by-512
+transparent canvas, a bottom-center anchor on source row 487, and the shared
+top-bar scene scale range of 0.8473–1. The raster may overlap only the standard
+service-tab art bleed (0.65 rem inline, 0.45 rem above, and 0.5 rem below);
+animated effects may rise through its transparent upper field. These
+front-facing compositions must not be mirrored.
+
+Camp and quest-location headers also carry a distant grayscale wilderness
+horizon behind their tabs. Forest, grassland, and hills variants use the same
+2880-by-240 transparent panorama contract as settlement horizons and inherit
+the live sky tint and brightness. Until imported terrain selects the actual
+biome, a deterministic hash of the camp party or quest-location ID keeps the
+assigned scenery stable between visits without adding persisted state.
+
 Each settlement offers a number of services. Tentatively, these are all tabs of a unified trade page. Each tab corresponds to a different guild, represented by a single NPC. The left side is a list of everything offered by the NPC, the right side is everything offered by your party. It _may_ be a good idea to not only include _items_ in this menu, but also _services_.
 
 The location header reflects settlement scale through architecture and its

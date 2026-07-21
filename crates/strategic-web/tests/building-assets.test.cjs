@@ -31,6 +31,14 @@ const facadeIconFiles = {
   religion: path.join(religionIconRoot, "catholic-cross-bottony.png"),
 };
 const facadeIconPlacement = { left: 194, top: 254, size: 125 };
+const ornamentRoot = path.join(
+  __dirname,
+  "..",
+  "static",
+  "styles",
+  "timber-framed",
+  "ornament",
+);
 
 function decodeRgbaPng(file) {
   const png = fs.readFileSync(file);
@@ -181,6 +189,58 @@ test("generated settlement service and Catholic marks are compact tintable PNG m
   }
 });
 
+test("wilderness tab props share the building raster and baseline contract", () => {
+  const variants = [
+    "camp-tent",
+    "encounter-boulders",
+  ];
+  const baselines = [];
+  for (const variant of variants) {
+    const variantRoot = path.join(ornamentRoot, variant);
+    assert.deepEqual(fs.readdirSync(variantRoot), ["ornament.png"], `${variant} follows ornament anatomy`);
+    const { width, height, rgba } = decodeRgbaPng(path.join(variantRoot, "ornament.png"));
+    assert.equal(width, 512, `${variant} width`);
+    assert.equal(height, 512, `${variant} height`);
+    for (const offset of [0, (width - 1) * 4, (height - 1) * width * 4, (width * height - 1) * 4]) {
+      assert.equal(rgba[offset + 3], 0, `${variant} corner alpha`);
+    }
+
+    const tones = new Set();
+    let visible = 0;
+    let bottom = -1;
+    for (let i = 0; i < rgba.length; i += 4) {
+      if (!rgba[i + 3]) continue;
+      assert.equal(rgba[i], rgba[i + 1], `${variant} is grayscale`);
+      assert.equal(rgba[i + 1], rgba[i + 2], `${variant} has no colored fringe`);
+      tones.add(rgba[i]);
+      visible += 1;
+      bottom = Math.max(bottom, Math.floor(i / 4 / width));
+    }
+    assert.deepEqual([...tones].sort((a, b) => a - b), [24, 112, 220], `${variant} tone roles`);
+    assert.ok(visible > width * height * 0.06, `${variant} has useful visible coverage`);
+    assert.ok(visible < width * height * 0.55, `${variant} retains transparent padding`);
+    baselines.push(bottom);
+  }
+  assert.deepEqual([...new Set(baselines)], [487], "wilderness props share the bottom baseline");
+});
+
+test("the camp ornament keeps its firepit subordinate to the tent", () => {
+  const { width, height, rgba } = decodeRgbaPng(path.join(ornamentRoot, "camp-tent", "ornament.png"));
+  let tentPixels = 0;
+  let firepitPixels = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      if (!rgba[offset + 3]) continue;
+      if (x < 370) tentPixels += 1;
+      if (x >= 370) firepitPixels += 1;
+    }
+  }
+  assert.ok(tentPixels > 20_000, "the tent is legible at compact scale");
+  assert.ok(firepitPixels > 1_000, "the firepit remains visible");
+  assert.ok(firepitPixels < tentPixels * 0.2, "the firepit remains small beside the tent");
+});
+
 test("all settlement horizons are standardized transparent panoramic assets", () => {
   for (const tier of tiers) {
     for (const variant of variants) {
@@ -229,6 +289,46 @@ test("all settlement horizons are standardized transparent panoramic assets", ()
       }
     }
   }
+});
+
+test("wilderness horizons are distinct standardized transparent panoramic assets", () => {
+  const wildernessRoot = path.join(horizonRoot, "wilderness");
+  const wildernessVariants = ["forest", "grassland", "hills"];
+  assert.deepEqual(
+    fs.readdirSync(wildernessRoot).filter((file) => file.endsWith(".png")).sort(),
+    wildernessVariants.map((variant) => `${variant}.png`).sort(),
+  );
+
+  const signatures = new Set();
+  for (const variant of wildernessVariants) {
+    const { width, height, rgba } = decodeRgbaPng(path.join(wildernessRoot, `${variant}.png`));
+    assert.equal(width, 2880, `${variant} width`);
+    assert.equal(height, 240, `${variant} height`);
+    let visible = 0;
+    const tones = new Set();
+    let firstVisibleRow = height;
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const offset = (y * width + x) * 4;
+        const alpha = rgba[offset + 3];
+        if (y === 0) assert.equal(alpha, 0, `${variant} upper sky is transparent`);
+        if (!alpha) continue;
+        assert.equal(rgba[offset], rgba[offset + 1], `${variant} has no colored fringe`);
+        assert.equal(rgba[offset + 1], rgba[offset + 2], `${variant} is grayscale`);
+        tones.add(rgba[offset]);
+        firstVisibleRow = Math.min(firstVisibleRow, y);
+        visible += 1;
+      }
+    }
+    assert.ok(visible > width * height * 0.08, `${variant} has useful scenery`);
+    assert.ok(visible < width * height * 0.8, `${variant} keeps sky transparent`);
+    assert.ok(tones.size > 32, `${variant} preserves layered tonal detail`);
+    for (const x of [0, width - 1]) {
+      assert.ok(rgba[((height - 1) * width + x) * 4 + 3] > 0, `${variant} reaches bottom corner`);
+    }
+    signatures.add(`${firstVisibleRow}:${visible}:${tones.size}`);
+  }
+  assert.equal(signatures.size, wildernessVariants.length, "each terrain has a distinct silhouette");
 });
 
 test("town and city horizons carry an irregular built skyline through both crop edges", () => {

@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (876)
+## Files (882)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -646,6 +646,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/game/crossed-swords.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/crown.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/daggers.svg` — Vector UI or texture asset.
+- `crates/strategic-web/static/icons/game/death-skull.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/dodge.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/duration.svg` — Vector UI or texture asset.
 - `crates/strategic-web/static/icons/game/eye-target.svg` — Vector UI or texture asset.
@@ -775,6 +776,9 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/styles/timber-framed/background/village/coastal.png` — Binary game or UI asset.
 - `crates/strategic-web/static/styles/timber-framed/background/village/inland.png` — Binary game or UI asset.
 - `crates/strategic-web/static/styles/timber-framed/background/village/river.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/background/wilderness/forest.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/background/wilderness/grassland.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/background/wilderness/hills.png` — Binary game or UI asset.
 - `crates/strategic-web/static/styles/timber-framed/building/city/armor.png` — Binary game or UI asset.
 - `crates/strategic-web/static/styles/timber-framed/building/city/clothing.png` — Binary game or UI asset.
 - `crates/strategic-web/static/styles/timber-framed/building/city/herbalist.png` — Binary game or UI asset.
@@ -799,6 +803,8 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/styles/timber-framed/building/village/merchants.png` — Binary game or UI asset.
 - `crates/strategic-web/static/styles/timber-framed/building/village/religion.png` — Binary game or UI asset.
 - `crates/strategic-web/static/styles/timber-framed/building/village/weapons.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/ornament/camp-tent/ornament.png` — Binary game or UI asset.
+- `crates/strategic-web/static/styles/timber-framed/ornament/encounter-boulders/ornament.png` — Binary game or UI asset.
 - `crates/strategic-web/static/training-schedule.js` — Repository support file.
 - `crates/strategic-web/static/travel-planner.js` — Repository support file.
 - `crates/strategic-web/tests/building-assets.test.cjs` — Repository support file.
