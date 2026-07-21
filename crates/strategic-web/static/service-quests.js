@@ -82,6 +82,58 @@ if (typeof module !== "undefined") module.exports = { serviceQuestTabState };
     return anchor;
   };
 
+  const professionDetails = {
+    merchants: { label: "merchant", description: "We learn to judge goods, bargain fairly, and keep trade moving between towns." },
+    weapons: { label: "weaponsmith", description: "A weaponsmith learns to forge, fit, and maintain the tools a fighting company depends upon." },
+    armor: { label: "armourer", description: "An armourer shapes and repairs protection that must move with its wearer and endure hard blows." },
+    clothing: { label: "tailor", description: "A tailor turns cloth into durable, well-fitted garments and learns the trade of the needle." },
+    herbalist: { label: "herbalist", description: "An herbalist studies remedies, prepares medicines, and learns when an injury needs a surgeon's hand." },
+    inn: { label: "innkeeper", description: "An innkeeper makes a living through hospitality, good judgment, and knowing how to speak with every sort of traveler." },
+    religion: { label: "cleric", description: "A cleric studies the faith, serves the congregation, and teaches sacred doctrine." },
+  };
+
+  const beginApprenticeship = async (serviceId, speaker) => {
+    const religious = serviceId === "religion";
+    // This is a private, scripted exchange. Persisting the player line would
+    // refresh the live chat region and could erase the NPC confirmation that
+    // follows the authoritative enrollment response.
+    privateLine("player", "You", religious ? "I would enter as a novice." : "I would become your apprentice.");
+    const response = await window.strategicFetch(
+      `/api/settlements/${encodeURIComponent(settlementId)}/professions/${encodeURIComponent(serviceId)}/apprenticeship`,
+      { method: "POST", headers: { Accept: "application/json" } },
+    );
+    const result = await response.json();
+    privateLine("npc", speaker, result.message || (result.enrolled
+      ? (religious ? "Then you shall begin as a novice. In time, a cleric may become a teacher." : "Then your apprenticeship begins today.")
+      : "I cannot take you on just now."));
+  };
+
+  const openProfessionTopic = (serviceId, speaker) => {
+    const profession = professionDetails[serviceId] || professionDetails.merchants;
+    line("player", "You", `Tell me about the ${profession.label}'s profession.`);
+    const explanation = document.createDocumentFragment();
+    explanation.append(document.createTextNode(`${profession.description} `));
+    if (serviceId === "religion") {
+      explanation.append(document.createTextNode("Are you interested in entering as a "));
+      explanation.append(link("novice", () => beginApprenticeship(serviceId, speaker)));
+      explanation.append(document.createTextNode("? With study, a novice may become a cleric and eventually a teacher."));
+    } else {
+      explanation.append(document.createTextNode("Are you interested in becoming an "));
+      explanation.append(link("apprentice", () => beginApprenticeship(serviceId, speaker)));
+      explanation.append(document.createTextNode("? Apprentices may become journeymen and, with mastery, teach apprentices of their own."));
+    }
+    line("npc", speaker, explanation);
+  };
+
+  const professionGreeting = (serviceId, speaker) => {
+    const profession = professionDetails[serviceId] || professionDetails.merchants;
+    const greeting = document.createDocumentFragment();
+    greeting.append(document.createTextNode("Welcome! What can a humble "));
+    greeting.append(link(profession.label, () => openProfessionTopic(serviceId, speaker)));
+    greeting.append(document.createTextNode(" do for you, traveler?"));
+    return greeting;
+  };
+
   document.addEventListener("click", (event) => {
     const anchor = event.target.closest("[data-quest-dialogue-action]");
     if (!anchor) return;
@@ -468,11 +520,19 @@ if (typeof module !== "undefined") module.exports = { serviceQuestTabState };
       if (nextConversationSignature === conversationSignature) return;
       conversationSignature = nextConversationSignature;
       const showConversation = () => {
-        if (chat.dataset.serviceQuestId === "herbalist") beginHerbalistConversation(quest);
-        else if (chat.dataset.serviceQuestId === "religion") beginReligionConversation(quest, religion);
+        const serviceId = chat.dataset.serviceQuestId;
+        if (serviceId === "herbalist") beginHerbalistConversation(quest);
+        else if (serviceId === "religion") beginReligionConversation(quest, religion);
         else if (quest?.state === "available") beginConversation(quest);
         else if (quest?.state === "recruiting") beginRecruitmentConversation(quest);
         else if (quest) beginReturnConversation(quest);
+        const speaker = quest?.npc_name || {
+          merchants: "Merchant", weapons: "Weaponsmith", armor: "Armourer",
+          clothing: "Tailor", herbalist: "Herbalist", inn: "Innkeeper", religion: "Priest",
+        }[serviceId] || "Merchant";
+        const row = line("npc", speaker, professionGreeting(serviceId, speaker));
+        const messages = chat.querySelector(".settlement-chat-messages");
+        if (row && messages) messages.prepend(row);
       };
       if (chat.dataset.localChatReady === "true") showConversation();
       else chat.addEventListener("local-chat-ready", showConversation, { once: true });

@@ -1,5 +1,6 @@
 //! Pure settlement schedule progression shared by the authoritative module and tools.
 
+use crate::profession::ProfessionId;
 use crate::{activity::*, strategic_time::training_hours_increment};
 use adventuresim_world_schema::{OfficialReligion, ReligionHours, ReligionMinutes};
 
@@ -65,6 +66,16 @@ impl SkillHours {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DailySchedule {
+    /// Structured combat practice, including weapon drills, will, and balance.
+    pub combat_training_minutes: u16,
+    /// Social recreation which trains Charisma at the activity rate.
+    pub carousing_minutes: u16,
+    /// Supervised work in an unlocked profession.
+    pub apprenticeship_minutes: u16,
+    pub apprenticeship_service_id: Option<ProfessionId>,
+    /// Independent paid professional work, available at Journeyman rank.
+    pub profession_practice_minutes: u16,
+    pub profession_service_id: Option<ProfessionId>,
     /// Aggregate automatic Combat budget. Ignored when `combat_auto_train` is false.
     pub combat: u16,
     pub combat_auto_train: bool,
@@ -92,7 +103,7 @@ pub struct DailySchedule {
 }
 
 impl DailySchedule {
-    pub fn allocated_minutes(self) -> u64 {
+    pub fn allocated_minutes(&self) -> u64 {
         let combat = if self.combat_auto_train {
             u64::from(self.combat)
         } else {
@@ -120,6 +131,10 @@ impl DailySchedule {
                 self.prayer,
                 self.thievery,
                 self.raiding,
+                self.combat_training_minutes,
+                self.carousing_minutes,
+                self.apprenticeship_minutes,
+                self.profession_practice_minutes,
             ]
             .into_iter()
             .map(u64::from)
@@ -271,6 +286,7 @@ pub fn apply_schedule_training(
     skills.balance += increment(schedule.balance);
     skills.surgeon += increment(schedule.surgeon);
     skills.smithing += increment(schedule.smithing);
+    skills.charisma += increment(schedule.carousing_minutes) * ACTIVITY_TRAINING_RATE;
     skills.will += increment(schedule.labor) * ACTIVITY_TRAINING_RATE;
     skills.stealth += increment(schedule.thievery) * ACTIVITY_TRAINING_RATE;
     let days = elapsed_minutes as f32 / crate::strategic_time::MINUTES_PER_DAY as f32;
@@ -293,6 +309,59 @@ pub fn apply_schedule_training(
     let mut combat = [skills.melee, skills.dodge, skills.block, skills.ranged];
     apply_adaptive_combat_training(&mut combat, profile.combat, manual, adaptive_per_day, days);
     [skills.melee, skills.dodge, skills.block, skills.ranged] = combat;
+
+    // Combat training conserves its total training budget across the four
+    // equipment-relevant combat skills plus Will and Balance. Will and Balance
+    // always receive weight even when no weapon is equipped.
+    let combat_training_hours = increment(schedule.combat_training_minutes);
+    if combat_training_hours > 0.0 {
+        let combat_weights = profile.combat.weights();
+        let total_weight = combat_weights.into_iter().sum::<f32>() + 2.0;
+        for (hours, weight) in [
+            &mut skills.melee,
+            &mut skills.dodge,
+            &mut skills.block,
+            &mut skills.ranged,
+        ]
+        .into_iter()
+        .zip(combat_weights)
+        {
+            *hours += combat_training_hours * weight / total_weight;
+        }
+        skills.will += combat_training_hours / total_weight;
+        skills.balance += combat_training_hours / total_weight;
+    }
+
+    apply_profession_training(
+        skills,
+        schedule.apprenticeship_service_id,
+        increment(schedule.apprenticeship_minutes),
+    );
+    apply_profession_training(
+        skills,
+        schedule.profession_service_id,
+        increment(schedule.profession_practice_minutes),
+    );
+}
+
+fn apply_profession_training(
+    skills: &mut SkillHours,
+    service_id: Option<ProfessionId>,
+    hours: f32,
+) {
+    match service_id {
+        Some(ProfessionId::Merchant | ProfessionId::Innkeeper) => skills.charisma += hours,
+        Some(ProfessionId::Weaponsmith | ProfessionId::Armourer | ProfessionId::Tailor) => {
+            skills.smithing += hours
+        }
+        Some(ProfessionId::Herbalist) => {
+            skills.medicine += hours * 0.5;
+            skills.surgeon += hours * 0.5;
+        }
+        // Religion is tradition-specific and is applied by the authoritative
+        // caller after resolving the settlement tradition.
+        _ => {}
+    }
 }
 
 /// Advance fixed combat study and adaptive Combat/Raiding training. Adaptive
@@ -421,6 +490,8 @@ pub struct ActivityOutcome {
     pub labor_hours: f32,
     pub thievery_hours: f32,
     pub raiding_hours: f32,
+    pub carousing_morale: f32,
+    pub virtue_lost: f32,
 }
 
 /// Calculate authoritative economic and risk results for one settlement interval.
@@ -434,6 +505,7 @@ pub fn settlement_activity_outcome(
     let labor_hours = hours(schedule.labor);
     let thievery_hours = hours(schedule.thievery);
     let raiding_hours = hours(schedule.raiding);
+    let carousing_hours = hours(schedule.carousing_minutes);
     ActivityOutcome {
         gold_earned: labor_gold(labor_hours, inputs.strength_check, inputs.endurance_check)
             .saturating_add(thievery_gold(
@@ -456,13 +528,44 @@ pub fn settlement_activity_outcome(
         labor_hours,
         thievery_hours,
         raiding_hours,
+        carousing_morale: days * carousing_morale_per_day(schedule.carousing_minutes),
+        virtue_lost: carousing_hours * 0.125,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::profession::ProfessionId;
     use crate::strategic_time::MINUTES_PER_DAY;
+
+    #[test]
+    fn new_activities_conserve_training_and_apply_profession_weights() {
+        let mut skills = SkillHours::default();
+        let schedule = DailySchedule {
+            combat_training_minutes: 360,
+            carousing_minutes: 240,
+            apprenticeship_minutes: 120,
+            apprenticeship_service_id: Some(ProfessionId::Herbalist),
+            ..Default::default()
+        };
+        apply_schedule_training(
+            &mut skills,
+            schedule,
+            MINUTES_PER_DAY,
+            ActivityTrainingProfile::default(),
+        );
+        let combat_total = skills.melee
+            + skills.dodge
+            + skills.block
+            + skills.ranged
+            + skills.will
+            + skills.balance;
+        assert!((combat_total - 6.0).abs() < 0.001);
+        assert!((skills.charisma - 1.0).abs() < 0.001);
+        assert!((skills.medicine - 1.0).abs() < 0.001);
+        assert!((skills.surgeon - 1.0).abs() < 0.001);
+    }
 
     fn item(melee: bool, ranged: bool, shield: bool, balance: f32) -> EquippedCombatItem {
         EquippedCombatItem {

@@ -18,7 +18,7 @@ pub const HEALTH_RECOVERED_PER_DAY: f32 = 0.05;
 /// The fatigue inputs that determine one party member's available marching
 /// time.  Keeping this small and data-only lets both the strategic reducer and
 /// the HTML travel preview use exactly the same calculation.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TravelFatigueInputs {
     pub fatigue_capacity: f32,
     pub calories_used: f32,
@@ -221,8 +221,11 @@ pub fn forecast_itinerary(
             let required = common_fatigue_clear_minutes(&members);
             let (average_start, _) = fatigue_summary(&members);
             for member in &mut members {
-                member.calories_used =
-                    camp_fatigue_after(member.calories_used, duration, member.camp_schedule);
+                member.calories_used = camp_fatigue_after(
+                    member.calories_used,
+                    duration,
+                    member.camp_schedule.clone(),
+                );
             }
             let (average_end, maximum_end) = fatigue_summary(&members);
             segments.push(ItinerarySegment {

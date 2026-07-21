@@ -165,6 +165,18 @@ pub(crate) fn settlement_destination(
 /// the leader takes the recommended full-fatigue camp rest.
 fn camp_schedule(allocation: &ScheduleAllocation) -> DailySchedule {
     DailySchedule {
+        combat_training_minutes: allocation.combat_training_minutes,
+        carousing_minutes: allocation.carousing_minutes,
+        apprenticeship_minutes: allocation.apprenticeship_minutes,
+        apprenticeship_service_id: allocation
+            .apprenticeship_service_id
+            .as_deref()
+            .and_then(adventuresim_core::profession::ProfessionId::from_service_id),
+        profession_practice_minutes: allocation.profession_practice_minutes,
+        profession_service_id: allocation
+            .profession_service_id
+            .as_deref()
+            .and_then(adventuresim_core::profession::ProfessionId::from_service_id),
         combat: allocation.combat_minutes,
         combat_auto_train: allocation.combat_auto_train,
         melee: allocation.melee_minutes,

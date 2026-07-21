@@ -71,3 +71,18 @@ test("service tab state is appended only for actionable quest states", () => {
     "quest available",
   );
 });
+
+test("every settlement service greets with a profession and can begin training", () => {
+  for (const service of ["merchants", "weapons", "armor", "clothing", "herbalist", "inn", "religion"])
+    assert.match(source, new RegExp(`${service}: \\{ label:`));
+  assert.match(source, /Welcome! What can a humble/);
+  assert.match(source, /openProfessionTopic/);
+  assert.match(source, /link\("apprentice"/);
+  assert.match(source, /link\("novice"/);
+  assert.match(source, /professions\/\$\{encodeURIComponent\(serviceId\)\}\/apprenticeship/);
+  assert.match(source, /method: "POST"/);
+  assert.match(source, /privateLine\("player", "You", religious/);
+  assert.match(source, /privateLine\("npc", speaker, result\.message/);
+  for (const title of ["novice", "cleric", "teacher"])
+    assert.match(source, new RegExp(title));
+});

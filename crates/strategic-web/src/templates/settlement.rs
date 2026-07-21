@@ -2857,7 +2857,7 @@ fn party_skills_rail(
                             button type="button" data-schedule-retry { "Retry" }
                         }
                     }
-                    script src="/static/training-schedule.js?v=shared-numeric-editor-1" {}
+                    script src="/static/training-schedule.js?v=apprentice-system-1" {}
                 } @else {
                     (skills_table(
                         title, skills, head_health, upper_health, lower_health, None, None,
@@ -2865,7 +2865,7 @@ fn party_skills_rail(
                         training_religion_id.and_then(OfficialReligion::from_id),
                         combat_profile,
                     ))
-                    script src="/static/training-schedule.js?v=shared-numeric-editor-1" {}
+                    script src="/static/training-schedule.js?v=apprentice-system-1" {}
                 }
             } @else {
                 h3 class="sidebar-header" { (title) }
@@ -2894,6 +2894,7 @@ fn skills_table(
                     col class="party-skill-name-column";
                     @if schedule.is_some() {
                         col class="schedule-effect-column";
+                        col class="schedule-effect-column schedule-training-column";
                         col class="schedule-effect-column";
                         col class="schedule-effect-column";
                         col class="schedule-effect-column";
@@ -2911,36 +2912,29 @@ fn skills_table(
                     colgroup { col class="religion-expand-column"; }
                 }
                 thead { tr class="schedule-context-heading" {
-                        th scope="colgroup" colspan=(if schedule.is_some() { "5" } else { "2" }) class="schedule-table-title" { (title) }
-                    @if schedule.is_some() {
-                        th scope="col" aria-label="Automatic training" title="Automatically distribute training to skills in section" {
-                            (schedule_auto_header_icon())
-                        }
-                        th scope="col" title="Daily plan used while resting or waiting in a settlement" {
-                            (schedule_header_icon("duration", "Daily allocation"))
-                        }
-                    }
+                        th scope="colgroup" colspan=(if schedule.is_some() { "8" } else { "2" }) class="schedule-table-title" { (title) }
                     th scope="col" aria-label="Skill details" {}
                 } }
                 tbody {
-                    (party_skill_row("Will", "will", Skill::Will, skills.will_hours, head_health, schedule.map(|s| s.downtime.will_minutes)))
-                    (party_skill_row("Charisma", "charisma", Skill::Charisma, skills.charisma_hours, head_health, schedule.map(|s| s.downtime.charisma_minutes)))
-                    (party_skill_row("Medicine", "medicine", Skill::Medicine, skills.medicine_hours, head_health, schedule.map(|s| s.downtime.medicine_minutes)))
+                    @if skills.will_hours > 0.0 { (party_skill_row("Will", "will", Skill::Will, skills.will_hours, head_health, schedule.is_some())) }
+                    @if skills.charisma_hours > 0.0 { (party_skill_row("Charisma", "charisma", Skill::Charisma, skills.charisma_hours, head_health, schedule.is_some())) }
+                    @if skills.medicine_hours > 0.0 { (party_skill_row("Medicine", "medicine", Skill::Medicine, skills.medicine_hours, head_health, schedule.is_some())) }
                     (religion_skill_rows(skills, head_health, schedule, training_religion))
                     (combat_skill_rows(skills, upper_health, lower_health, schedule, combat_profile))
-                    (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, upper_health, schedule.map(|s| s.downtime.stealth_minutes)))
-                    (party_skill_row("Balance", "balance", Skill::Balance, skills.balance_hours, lower_health, schedule.map(|s| s.downtime.balance_minutes)))
-                    (party_skill_row("Surgeon", "surgeon", Skill::Surgeon, skills.surgeon_hours, upper_health, schedule.map(|s| s.downtime.surgeon_minutes)))
-                    (party_skill_row("Smithing", "smithing", Skill::Smithing, skills.smithing_hours, upper_health, schedule.map(|s| s.downtime.smithing_minutes)))
+                    @if skills.stealth_hours > 0.0 { (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, upper_health, schedule.is_some())) }
+                    @if skills.balance_hours > 0.0 { (party_skill_row("Balance", "balance", Skill::Balance, skills.balance_hours, lower_health, schedule.is_some())) }
+                    @if skills.surgeon_hours > 0.0 { (party_skill_row("Surgeon", "surgeon", Skill::Surgeon, skills.surgeon_hours, upper_health, schedule.is_some())) }
+                    @if skills.smithing_hours > 0.0 { (party_skill_row("Smithing", "smithing", Skill::Smithing, skills.smithing_hours, upper_health, schedule.is_some())) }
                     @if let Some(schedule) = schedule {
                         @let preview = activity_preview.unwrap_or_default();
-                        tr class="schedule-divider" { td colspan="8" {} }
+                        tr class="schedule-divider" { td colspan="9" {} }
                         tr class="schedule-section-heading" {
                             th { span class="sr-only" { "Activities" } }
                             th scope="col" title="Currency" { (schedule_header_icon("coins", "Currency")) }
                             th scope="col" title="Virtue" { (schedule_header_icon("scales", "Virtue")) }
                             th scope="col" title="Morale" { (schedule_header_icon("sun", "Morale")) }
                             th scope="col" title="Fatigue" { (schedule_header_icon("night-sleep", "Fatigue")) }
+                            th scope="col" title="Effective skill-hours gained at the current daily allocation" { (schedule_header_icon("open-book", "Skill-hours")) }
                             th scope="col" {}
                             th scope="col" title="Daily allocation" { (schedule_header_icon("duration", "Daily allocation")) }
                             th scope="col" aria-label="Skill details" {}
@@ -2956,6 +2950,17 @@ fn skills_table(
                                 "Meditation gives modest morale independently of party Religion knowledge and does not train Religion or create Fervor."
                             },
                         ))
+                        (schedule_special_row("Combat Training", "crossed-swords", "combat_training_minutes", schedule.downtime.combat_training_minutes, true, ActivityEffectRates::default(), None, "Sparring and target practice train equipped Combat skills together with Will and Balance."))
+                        (schedule_special_row("Carousing", "beer-stein", "carousing_minutes", schedule.downtime.carousing_minutes, true, ActivityEffectRates::linear(-0.5, -0.05, 0.5, 0.0), None, "Drink and socialize to improve morale and train Charisma at 25% speed, at a small cost to Virtue."))
+                        @if let Some(service_id) = schedule.downtime.apprenticeship_service_id.as_deref() {
+                            (schedule_service_selection("apprenticeship_service_id", service_id))
+                            (schedule_special_row(&format!("Apprenticeship — {}", profession_label(service_id)), "open-book", "apprenticeship_minutes", schedule.downtime.apprenticeship_minutes, true, ActivityEffectRates::linear(-1.0, 0.0, 0.0, 0.0), None, "Pay for instruction in an enrolled profession. Religious students are called novices."))
+                        }
+                        @if let Some(service_id) = schedule.downtime.profession_service_id.as_deref() {
+                            @let religious = service_id == "religion";
+                            (schedule_service_selection("profession_service_id", service_id))
+                            (schedule_special_row(&format!("Profession Practice — {}", profession_label(service_id)), if religious { "holy-symbol" } else { "anvil" }, "profession_practice_minutes", schedule.downtime.profession_practice_minutes, true, if religious { ActivityEffectRates::linear(0.0, 0.25, 0.0, 0.0) } else { ActivityEffectRates::linear(0.5, 0.0, 0.0, 0.0) }, None, if religious { "Practice as a cleric or teacher to serve the community and earn Virtue; religious practice never earns money." } else { "Practice an enrolled profession independently. Journeymen earn a modest income and masters earn a good income while teaching apprentices." }))
+                        }
                         (schedule_special_row("Labor", "hammer-sickle", "labor_minutes", schedule.downtime.labor_minutes, true, ActivityEffectRates::linear(preview.labor_gold_per_hour, 0.0, 0.0, LABOR_FATIGUE_PER_HOUR / FATIGUE_RESERVOIR_PER_PREVIEW_POINT), None, "Earn coin during settlement downtime from Strength and Endurance checks; trains Will at 25% speed and generates fatigue."))
                         (schedule_special_row("Thievery", "lockpicks", "thievery_minutes", schedule.downtime.thievery_minutes, true, ActivityEffectRates::linear(preview.thievery_gold_per_hour, preview.thievery_virtue_per_hour, 0.0, 0.0), None, "Settlement downtime can earn coin and risk discovery while training Stealth at 25% speed."))
                         (schedule_special_row("Raiding", "mounted-knight", "raiding_minutes", schedule.downtime.raiding_minutes, true, ActivityEffectRates::linear(preview.raiding_gold_per_hour, preview.raiding_virtue_per_hour, 0.0, 0.0), None, "Settlement downtime can earn coin and risk retaliation while feeding the equipment-derived Combat training distribution at 25% speed."))
@@ -2973,6 +2978,12 @@ fn religion_skill_rows(
     schedule: Option<&CharacterTrainingSchedule>,
     training_religion: Option<OfficialReligion>,
 ) -> Markup {
+    if !OfficialReligion::ALL.into_iter().any(|religion| {
+        let direct = skills.religion_hours.direct(religion);
+        direct.is_finite() && direct > 0.0
+    }) {
+        return html! {};
+    }
     let primary = training_religion.unwrap_or_else(|| {
         OfficialReligion::ALL
             .into_iter()
@@ -2991,11 +3002,6 @@ fn religion_skill_rows(
         let direct = skills.religion_hours.direct(religion);
         religion != primary && direct.is_finite() && direct > 0.0
     });
-    let auto = schedule.is_none_or(|value| value.downtime.religion_auto_train);
-    let auto_minutes = schedule.map_or(0, |value| value.downtime.religion_minutes);
-    let primary_minutes = schedule.map_or(0, |value| {
-        value.downtime.religion_minutes_by_tradition.get(primary)
-    });
     html! {
         tr class="party-skill-row religion-primary-row" data-religion-primary=(primary_id) {
             th scope="row" class="party-skill-name party-skill-icon-cell" {
@@ -3003,44 +3009,13 @@ fn religion_skill_rows(
                     (religion_icon(primary.label(), Some(primary_id), false))
                 }
             }
-            td class="party-skill-meter" colspan=[schedule.map(|_| "4")] {
-                @if schedule.is_some() {
-                    (skill_rank_bar(
-                        Skill::Religion.training_rank(primary_effective),
-                        Skill::Religion.training_rank(primary_effective) * health.clamp(0.0, 1.0),
-                        &format!("{primary_effective:.1} effective hours; {primary_direct:.1} directly studied hours"),
-                        SkillRankBarOptions::default(),
-                    ))
-                } @else {
-                    (skill_rank_bar(
-                        Skill::Religion.training_rank(primary_effective),
-                        Skill::Religion.training_rank(primary_effective) * health.clamp(0.0, 1.0),
-                        &format!("{primary_effective:.1} effective hours; {primary_direct:.1} directly studied hours"),
-                        SkillRankBarOptions::default(),
-                    ))
-                }
-            }
-            @if schedule.is_some() {
-                td class="religion-auto-toggle-cell" {
-                    label class="religion-auto-toggle-label" title="You'll automatically train whichever religion your character has, or if none, whichever are present in the settlement you're in." {
-                        input type="checkbox" name="religion_auto_train" value="true" checked[auto]
-                            data-religion-auto-toggle aria-label="Auto-train";
-                    }
-                }
-                td class="party-skill-allocation religion-primary-allocation" data-religion-primary-allocation {
-                  span class="religion-primary-allocation-content" {
-                    span data-religion-auto-control data-schedule-value="religion_minutes" hidden[!auto] {
-                      input type="hidden" name="religion_minutes" value=(auto_minutes)
-                          data-schedule-input data-religion-auto-budget;
-                      span data-schedule-display tabindex="0" role="button" { (format_schedule_hours(auto_minutes)) }
-                    }
-                    span data-religion-primary-manual-control data-schedule-value=(format!("religion_{primary_id}_minutes")) hidden[auto] {
-                      input type="hidden" name=(format!("religion_{primary_id}_minutes")) value=(primary_minutes)
-                          data-schedule-input data-religion-manual-budget;
-                      span data-schedule-display tabindex="0" role="button" { (format_schedule_hours(primary_minutes)) }
-                    }
-                  }
-                }
+            td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
+                (skill_rank_bar(
+                    Skill::Religion.training_rank(primary_effective),
+                    Skill::Religion.training_rank(primary_effective) * health.clamp(0.0, 1.0),
+                    &format!("{primary_effective:.1} effective hours; {primary_direct:.1} directly studied hours"),
+                    skill_rail_bar_options(),
+                ))
             }
             td class="religion-expand-cell" {
                 @if has_details {
@@ -3053,28 +3028,19 @@ fn religion_skill_rows(
           @if religion != primary && direct.is_finite() && direct > 0.0 {
             @let id = religion.religion_id();
             @let effective = skills.religion_hours.effective(religion);
-            @let minutes = schedule.map_or(0, |value| value.downtime.religion_minutes_by_tradition.get(religion));
             tr class="party-skill-row religion-detail-row" data-religion-detail hidden {
                 th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
                     span class="religion-tradition-icon" {
                         (religion_icon(religion.label(), Some(id), false))
                     }
                 }
-                td class="party-skill-meter" colspan=[schedule.map(|_| "4")] {
+                td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
                     (skill_rank_bar(
                         Skill::Religion.training_rank(effective),
                         Skill::Religion.training_rank(effective) * health.clamp(0.0, 1.0),
                         &format!("{effective:.1} effective hours; {direct:.1} directly studied hours"),
-                        SkillRankBarOptions::default(),
+                        skill_rail_bar_options(),
                     ))
-                }
-                @if schedule.is_some() {
-                    td class="religion-auto-toggle-cell" {}
-                    td class="party-skill-allocation" data-schedule-value=(format!("religion_{id}_minutes")) {
-                        input type="hidden" name=(format!("religion_{id}_minutes")) value=(minutes)
-                            data-schedule-input data-religion-manual-budget;
-                        span data-schedule-display tabindex="0" role="button" { (format_schedule_hours(minutes)) }
-                    }
                 }
                 td class="religion-expand-cell" {}
             }
@@ -3090,6 +3056,17 @@ fn combat_skill_rows(
     schedule: Option<&CharacterTrainingSchedule>,
     profile: CombatTrainingProfile,
 ) -> Markup {
+    if [
+        skills.melee_hours,
+        skills.ranged_hours,
+        skills.dodge_hours,
+        skills.block_hours,
+    ]
+    .into_iter()
+    .all(|hours| hours <= 0.0)
+    {
+        return html! {};
+    }
     let weights = profile.weights();
     let entries = [
         (
@@ -3141,38 +3118,13 @@ fn combat_skill_rows(
         .map(|entry| entry.0)
         .collect::<Vec<_>>()
         .join(", ");
-    let auto = schedule.is_none_or(|value| value.downtime.combat_auto_train);
-    let auto_minutes = schedule.map_or(0, |value| value.downtime.combat_minutes);
-    let manual_total = schedule.map_or(0, |value| {
-        value
-            .downtime
-            .melee_minutes
-            .saturating_add(value.downtime.ranged_minutes)
-            .saturating_add(value.downtime.dodge_minutes)
-            .saturating_add(value.downtime.block_minutes)
-    });
     html! {
         tr class="party-skill-row combat-primary-row" data-combat-primary {
             th scope="row" class="party-skill-name party-skill-icon-cell" {
                 (stat_icon("Combat", "skills", "combat", false))
             }
-            td class="party-skill-meter" colspan=[schedule.map(|_| "4")] {
-                (skill_rank_bar(rank, effective_rank, &format!("Relevant skills: {included}"), SkillRankBarOptions::default()))
-            }
-            @if schedule.is_some() {
-                td class="religion-auto-toggle-cell" {
-                    label class="religion-auto-toggle-label" title="Automatically equalize training among combat skills relevant to current equipped weapons and shields." {
-                        input type="checkbox" name="combat_auto_train" value="true" checked[auto]
-                            data-combat-auto-toggle aria-label="Auto-train Combat";
-                    }
-                }
-                td class="party-skill-allocation combat-primary-allocation" data-schedule-value="combat_minutes" {
-                    input type="hidden" name="combat_minutes" value=(auto_minutes)
-                        data-schedule-input data-combat-auto-budget;
-                    span data-schedule-display data-combat-auto-display tabindex="0" role="button" {
-                        (format_schedule_hours(if auto { auto_minutes } else { manual_total }))
-                    }
-                }
+            td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
+                (skill_rank_bar(rank, effective_rank, &format!("Relevant skills: {included}"), skill_rail_bar_options()))
             }
             td class="religion-expand-cell" {
                 button type="button" class="religion-expand-button" data-combat-expand
@@ -3182,31 +3134,18 @@ fn combat_skill_rows(
             }
         }
         @for (name, icon, skill, hours, health, weight) in entries {
-            @let minutes = schedule.map_or(0, |value| match skill {
-                Skill::Melee => value.downtime.melee_minutes,
-                Skill::Ranged => value.downtime.ranged_minutes,
-                Skill::Dodge => value.downtime.dodge_minutes,
-                Skill::Block => value.downtime.block_minutes,
-                _ => 0,
-            });
+          @if hours > 0.0 {
             tr class="party-skill-row combat-detail-row" data-combat-detail data-combat-weight=(weight) hidden {
                 th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
                     (stat_icon(name, "skills", icon, false))
                 }
-                td class="party-skill-meter" colspan=[schedule.map(|_| "4")] {
+                td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
                     @let sub_rank = skill.training_rank(hours);
-                    (skill_rank_bar(sub_rank, sub_rank * health.clamp(0.0, 1.0), &format!("{:.0} hours invested", hours.max(0.0)), SkillRankBarOptions::default()))
-                }
-                @if schedule.is_some() {
-                    td class="religion-auto-toggle-cell" {}
-                    td class="party-skill-allocation" data-schedule-value=(format!("{icon}_minutes")) {
-                        input type="hidden" name=(format!("{icon}_minutes")) value=(minutes)
-                            data-schedule-input data-combat-manual-budget;
-                        span data-schedule-display data-combat-manual-display tabindex="0" role="button" { (format_schedule_hours(minutes)) }
-                    }
+                    (skill_rank_bar(sub_rank, sub_rank * health.clamp(0.0, 1.0), &format!("{:.0} hours invested", hours.max(0.0)), skill_rail_bar_options()))
                 }
                 td class="religion-expand-cell" {}
             }
+          }
         }
     }
 }
@@ -3226,17 +3165,13 @@ fn schedule_header_icon(icon: &str, label: &str) -> Markup {
     html! { span class="schedule-header-icon" { (game_icon(label, icon)) } }
 }
 
-fn schedule_auto_header_icon() -> Markup {
-    html! { span class="schedule-header-icon" aria-hidden="true" { "⚙" } }
-}
-
 fn party_skill_row(
     name: &str,
     icon: &str,
     skill: Skill,
     hours: f32,
     health: f32,
-    schedule_minutes: Option<u16>,
+    schedule_context: bool,
 ) -> Markup {
     let rank = skill.training_rank(hours);
     let effective_rank = rank * health.clamp(0.0, 1.0);
@@ -3246,12 +3181,8 @@ fn party_skill_row(
             th scope="row" class="party-skill-name party-skill-icon-cell" {
                 (stat_icon(name, "skills", icon, false))
             }
-            td class="party-skill-meter" colspan=[schedule_minutes.map(|_| "4")] {
-                (skill_rank_bar(rank, effective_rank, &format!("{invested_hours} hours invested"), SkillRankBarOptions::default()))
-            }
-            @if let Some(minutes) = schedule_minutes {
-                td class="religion-auto-toggle-cell" {}
-                (schedule_allocation_cell(&format!("{}_minutes", icon), minutes, true))
+            td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
+                (skill_rank_bar(rank, effective_rank, &format!("{invested_hours} hours invested"), skill_rail_bar_options()))
             }
             td class="religion-expand-cell" {}
         }
@@ -3272,6 +3203,13 @@ impl Default for SkillRankBarOptions<'_> {
             extra_class: None,
             aria_label: None,
         }
+    }
+}
+
+fn skill_rail_bar_options() -> SkillRankBarOptions<'static> {
+    SkillRankBarOptions {
+        show_value: false,
+        ..SkillRankBarOptions::default()
     }
 }
 
@@ -3331,6 +3269,18 @@ struct LeisurePreview {
 
 fn core_daily_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
     DailySchedule {
+        combat_training_minutes: schedule.combat_training_minutes,
+        carousing_minutes: schedule.carousing_minutes,
+        apprenticeship_minutes: schedule.apprenticeship_minutes,
+        apprenticeship_service_id: schedule
+            .apprenticeship_service_id
+            .as_deref()
+            .and_then(adventuresim_core::profession::ProfessionId::from_service_id),
+        profession_practice_minutes: schedule.profession_practice_minutes,
+        profession_service_id: schedule
+            .profession_service_id
+            .as_deref()
+            .and_then(adventuresim_core::profession::ProfessionId::from_service_id),
         combat: schedule.combat_minutes,
         combat_auto_train: schedule.combat_auto_train,
         melee: schedule.melee_minutes,
@@ -3442,6 +3392,55 @@ fn activity_effect_cell(kind: &str, value: f32) -> Markup {
     }
 }
 
+fn activity_training_cell(label: &str, allocation_name: &str, minutes: u16) -> Markup {
+    let hours = f32::from(minutes) / 60.0;
+    let rates: Vec<(String, f32)> = match allocation_name {
+        "combat_training_minutes" => vec![
+            ("Combat".into(), 1.0),
+            ("Will".into(), 1.0),
+            ("Balance".into(), 1.0),
+        ],
+        "carousing_minutes" => vec![("Charisma".into(), 0.25)],
+        "labor_minutes" => vec![("Will".into(), 0.25)],
+        "thievery_minutes" => vec![("Stealth".into(), 0.25)],
+        "raiding_minutes" => vec![("Combat".into(), 0.25)],
+        "prayer_minutes" if label == "Prayer" => vec![("Religion".into(), 0.25)],
+        "apprenticeship_minutes" => adventuresim_core::profession::PROFESSIONS
+            .iter()
+            .find(|profession| label.contains(profession.label))
+            .map(|profession| {
+                profession
+                    .skills
+                    .iter()
+                    .map(|entry| (format!("{:?}", entry.skill), entry.weight))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    let breakdown = rates
+        .iter()
+        .map(|(skill, rate)| (skill.clone(), hours * rate))
+        .collect::<Vec<_>>();
+    let total = breakdown.iter().map(|(_, value)| value).sum::<f32>();
+    let title = if breakdown.is_empty() {
+        "No skill training".to_string()
+    } else {
+        breakdown
+            .iter()
+            .map(|(skill, value)| format!("{skill}: +{value:.2}h"))
+            .collect::<Vec<_>>()
+            .join("; ")
+    };
+    html! {
+        td class="schedule-effect schedule-training-effect" data-activity-effect="training"
+            data-training-rates=(rates.iter().map(|(skill, rate)| format!("{skill}={rate}")).collect::<Vec<_>>().join("|"))
+            title=(title) aria-label=(format!("Effective skill training: {total:.2} hours")) {
+            @if total > 0.0 { (format!("+{total:.2}h")) } @else { "—" }
+        }
+    }
+}
+
 fn schedule_special_row(
     label: &str,
     icon: &str,
@@ -3482,11 +3481,25 @@ fn schedule_special_row(
             (activity_effect_cell("virtue", values[1]))
             (activity_effect_cell("morale", values[2]))
             (activity_effect_cell("fatigue", values[3]))
+            (activity_training_cell(label, allocation_name, allocation_minutes))
             td class="religion-auto-toggle-cell" {}
             (schedule_allocation_cell(allocation_name, allocation_minutes, editable))
             td class="religion-expand-cell" {}
         }
     }
+}
+
+fn schedule_service_selection(name: &str, service_id: &str) -> Markup {
+    html! {
+        tr hidden aria-hidden="true" {
+            td colspan="9" { input type="hidden" name=(name) value=(service_id); }
+        }
+    }
+}
+
+fn profession_label(service_id: &str) -> &'static str {
+    adventuresim_core::profession::profession_for_service(service_id)
+        .map_or("profession", |profession| profession.label)
 }
 
 fn schedule_allocation_cell(name: &str, minutes: u16, editable: bool) -> Markup {
@@ -5440,7 +5453,7 @@ mod tests {
         .into_string();
 
         assert!(rendered.contains(
-            "scope=\"colgroup\" colspan=\"5\" class=\"schedule-table-title\">Your skills"
+            "scope=\"colgroup\" colspan=\"8\" class=\"schedule-table-title\">Your skills"
         ));
         assert_eq!(rendered.matches("<colgroup>").count(), 2);
         assert!(rendered.contains(
@@ -5448,69 +5461,44 @@ mod tests {
         ));
         assert_eq!(
             rendered.matches("aria-label=\"Daily allocation\"").count(),
-            2
+            1
         );
+        assert!(!rendered.contains("aria-label=\"Automatic training\""));
         for label in ["Currency", "Virtue", "Morale", "Fatigue"] {
             assert!(rendered.contains(&format!("aria-label=\"{label}\"")));
         }
         assert!(rendered.contains("data-religion-expand"));
+        assert!(!rendered.contains("class=\"skill-rank-value\""));
+        assert_eq!(
+            rendered.matches("class=\"party-skill-row").count(),
+            rendered.matches("class=\"religion-expand-cell\"").count(),
+        );
         assert!(rendered.contains("aria-expanded=\"false\""));
         assert!(rendered.contains("data-religion-primary=\"judaism\""));
         assert!(rendered.contains("Expand Judaism Religion skill"));
         assert!(rendered.contains("title=\"Judaism\""));
         assert!(rendered.contains("/static/icons/religion/fontawesome-star-of-david.svg"));
-        assert!(rendered.contains("Auto-train"));
-        assert!(rendered.contains("name=\"combat_minutes\" value=\"90\""));
-        assert!(rendered.contains("data-combat-auto-toggle"));
-        assert!(rendered.contains("data-combat-expand"));
-        assert!(rendered.contains("data-combat-auto-display tabindex=\"0\" role=\"button\""));
-        assert_eq!(
-            rendered
-                .matches("data-combat-manual-display tabindex=\"0\" role=\"button\"")
-                .count(),
-            4
-        );
-        assert_eq!(rendered.matches("data-combat-detail").count(), 4);
-        assert!(rendered.contains("Relevant skills: Dodge"));
+        assert!(!rendered.contains("data-combat-auto-toggle"));
+        assert!(!rendered.contains("data-combat-detail"));
         assert!(!rendered.contains("aria-label=\"Religion details\""));
         assert!(rendered.contains("aria-label=\"Skill details\""));
-        assert!(rendered.contains("equipment-derived Combat training distribution at 25% speed"));
+        assert!(rendered.contains("Sparring and target practice"));
+        assert!(rendered.contains("Carousing"));
         assert_eq!(rendered.matches("data-religion-detail").count(), 1);
         assert!(!rendered.contains("title=\"Lutheranism\""));
-        assert!(rendered.contains("religion_judaism_minutes"));
+        assert!(!rendered.contains("religion_judaism_minutes"));
         assert!(!rendered.contains("effective /"));
         assert!(rendered.contains("100.0 effective hours; 0.0 directly studied hours"));
-        let auto_train_help = "You'll automatically train whichever religion your character has, or if none, whichever are present in the settlement you're in.";
-        assert_eq!(rendered.matches(auto_train_help).count(), 1);
-        assert!(rendered.contains("name=\"religion_minutes\" value=\"120\""));
-        assert!(rendered.contains("name=\"religion_judaism_minutes\" value=\"45\""));
-        let auto_toggle = rendered.find("data-religion-auto-toggle").unwrap();
         let primary_icon = rendered
             .find("/static/icons/religion/fontawesome-star-of-david.svg")
             .unwrap();
-        let allocation = rendered.find("name=\"religion_minutes\"").unwrap();
         let expand = rendered.find("data-religion-expand").unwrap();
-        assert!(primary_icon < auto_toggle);
-        assert!(auto_toggle < allocation);
-        assert!(allocation < expand);
+        assert!(primary_icon < expand);
         assert!(rendered.contains("class=\"religion-expand-cell\"><button"));
-        assert!(rendered.contains("aria-label=\"Will\""));
+        assert!(!rendered.contains("aria-label=\"Will\""));
         assert!(!rendered.contains(">Will</th>"));
         assert!(!rendered.contains("data-religion-auto-budget disabled"));
         assert!(!rendered.contains("data-religion-manual-budget disabled"));
-        let mut manual_schedule = schedule.clone();
-        manual_schedule.downtime.religion_auto_train = false;
-        let remounted = religion_skill_rows(
-            &skills,
-            1.0,
-            Some(&manual_schedule),
-            Some(OfficialReligion::Judaism),
-        )
-        .into_string();
-        assert!(remounted.contains("name=\"religion_minutes\" value=\"120\""));
-        assert!(remounted.contains("name=\"religion_judaism_minutes\" value=\"45\""));
-        assert!(!remounted.contains("data-religion-auto-budget disabled"));
-        assert!(!remounted.contains("data-religion-manual-budget disabled"));
         assert!(rendered.contains("/static/icons/game/coins.svg"));
         assert!(!rendered.contains(">Gold</th>"));
         assert!(!rendered.contains(">Virt.</th>"));
@@ -5533,12 +5521,8 @@ mod tests {
         assert!(rail.contains("data-schedule-save-status"));
         assert!(rail.contains("role=\"status\" aria-live=\"polite\" hidden"));
         assert!(rail.contains("data-schedule-retry>Retry</button>"));
-        assert_eq!(rail.matches(">⚙</span>").count(), 1);
-        assert_eq!(
-            rail.matches("aria-label=\"Automatic training\" title=\"Automatically distribute training to skills in section\"")
-                .count(),
-            1
-        );
+        assert!(!rail.contains(">⚙</span>"));
+        assert!(!rail.contains("aria-label=\"Automatic training\""));
     }
 
     #[test]
@@ -5565,6 +5549,29 @@ mod tests {
         assert!(!rendered.contains("<strong>Thievery</strong>"));
         assert!(!rendered.contains("schedule-allocation-fill"));
         assert!(!rendered.contains("schedule-special-track"));
+    }
+
+    #[test]
+    fn activity_training_column_totals_and_explains_effective_skill_hours() {
+        let combat =
+            activity_training_cell("Combat Training", "combat_training_minutes", 120).into_string();
+        assert!(combat.contains(">+6.00h<"));
+        assert!(combat.contains("Combat: +2.00h; Will: +2.00h; Balance: +2.00h"));
+
+        let carousing = activity_training_cell("Carousing", "carousing_minutes", 120).into_string();
+        assert!(carousing.contains(">+0.50h<"));
+        assert!(carousing.contains("Charisma: +0.50h"));
+
+        let apprenticeship =
+            activity_training_cell("Apprenticeship — herbalist", "apprenticeship_minutes", 120)
+                .into_string();
+        assert!(apprenticeship.contains(">+2.00h<"));
+        assert!(apprenticeship.contains("Medicine: +1.00h"));
+        assert!(apprenticeship.contains("Surgeon: +1.00h"));
+
+        let leisure = activity_training_cell("Leisure", "leisure_minutes", 480).into_string();
+        assert!(leisure.contains(">—<"));
+        assert!(leisure.contains("No skill training"));
     }
 
     #[test]

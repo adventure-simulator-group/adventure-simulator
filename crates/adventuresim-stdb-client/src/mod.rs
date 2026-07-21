@@ -32,6 +32,7 @@ pub mod battle_participant_table;
 pub mod battle_participant_type;
 pub mod battle_result_table;
 pub mod battle_result_type;
+pub mod begin_apprenticeship_reducer;
 pub mod begin_world_data_import_reducer;
 pub mod bootstrap_development_world_reducer;
 pub mod built_settlement_cover_type;
@@ -44,6 +45,8 @@ pub mod catholic_lutheran_church_type;
 pub mod catholic_reformed_church_type;
 pub mod cation_exchange_capacity_type;
 pub mod change_inventory_item_reducer;
+pub mod character_apprenticeship_table;
+pub mod character_apprenticeship_type;
 pub mod character_attributes_table;
 pub mod character_attributes_type;
 pub mod character_capability_table;
@@ -78,6 +81,8 @@ pub mod character_time_type;
 pub mod character_training_schedule_table;
 pub mod character_training_schedule_type;
 pub mod character_type;
+pub mod character_virtue_table;
+pub mod character_virtue_type;
 pub mod charcoal_burning_industry_type;
 pub mod claim_simulation_run_reducer;
 pub mod committed_cut_type;
@@ -430,6 +435,7 @@ pub use battle_participant_table::*;
 pub use battle_participant_type::BattleParticipant;
 pub use battle_result_table::*;
 pub use battle_result_type::BattleResult;
+pub use begin_apprenticeship_reducer::begin_apprenticeship;
 pub use begin_world_data_import_reducer::begin_world_data_import;
 pub use bootstrap_development_world_reducer::bootstrap_development_world;
 pub use built_settlement_cover_type::BuiltSettlementCover;
@@ -442,6 +448,8 @@ pub use catholic_lutheran_church_type::CatholicLutheranChurch;
 pub use catholic_reformed_church_type::CatholicReformedChurch;
 pub use cation_exchange_capacity_type::CationExchangeCapacity;
 pub use change_inventory_item_reducer::change_inventory_item;
+pub use character_apprenticeship_table::*;
+pub use character_apprenticeship_type::CharacterApprenticeship;
 pub use character_attributes_table::*;
 pub use character_attributes_type::CharacterAttributes;
 pub use character_capability_table::*;
@@ -476,6 +484,8 @@ pub use character_time_type::CharacterTime;
 pub use character_training_schedule_table::*;
 pub use character_training_schedule_type::CharacterTrainingSchedule;
 pub use character_type::Character;
+pub use character_virtue_table::*;
+pub use character_virtue_type::CharacterVirtue;
 pub use charcoal_burning_industry_type::CharcoalBurningIndustry;
 pub use claim_simulation_run_reducer::claim_simulation_run;
 pub use committed_cut_type::CommittedCut;
@@ -835,6 +845,10 @@ pub enum Reducer {
     BackfillItemValues,
     BackfillSettlementHerbalists,
     BackfillSoloParties,
+    BeginApprenticeship {
+        character_id: u64,
+        service_id: String,
+    },
     BeginWorldDataImport {
         schema_version: u32,
         artifact_id: String,
@@ -1242,6 +1256,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::BackfillItemValues => "backfill_item_values",
             Reducer::BackfillSettlementHerbalists => "backfill_settlement_herbalists",
             Reducer::BackfillSoloParties => "backfill_solo_parties",
+            Reducer::BeginApprenticeship { .. } => "begin_apprenticeship",
             Reducer::BeginWorldDataImport { .. } => "begin_world_data_import",
             Reducer::BootstrapDevelopmentWorld { .. } => "bootstrap_development_world",
             Reducer::CalibrateWeaponPrecision => "calibrate_weapon_precision",
@@ -1378,7 +1393,14 @@ Reducer::BackfillSettlementHerbalists => __sats::bsatn::to_vec(&backfill_settlem
                 }),
 Reducer::BackfillSoloParties => __sats::bsatn::to_vec(&backfill_solo_parties_reducer::BackfillSoloPartiesArgs {
                 }),
-Reducer::BeginWorldDataImport{
+Reducer::BeginApprenticeship{
+                character_id,
+                service_id,
+}             => __sats::bsatn::to_vec(&begin_apprenticeship_reducer::BeginApprenticeshipArgs {
+                character_id: character_id.clone(),
+                service_id: service_id.clone(),
+}),
+            Reducer::BeginWorldDataImport{
                 schema_version,
                 artifact_id,
                 manifest_digest,
@@ -2081,6 +2103,7 @@ pub struct DbUpdate {
     battle_participant: __sdk::TableUpdate<BattleParticipant>,
     battle_result: __sdk::TableUpdate<BattleResult>,
     character: __sdk::TableUpdate<Character>,
+    character_apprenticeship: __sdk::TableUpdate<CharacterApprenticeship>,
     character_attributes: __sdk::TableUpdate<CharacterAttributes>,
     character_capability: __sdk::TableUpdate<CharacterCapability>,
     character_condition: __sdk::TableUpdate<CharacterCondition>,
@@ -2097,6 +2120,7 @@ pub struct DbUpdate {
     character_strategic_condition: __sdk::TableUpdate<CharacterStrategicCondition>,
     character_time: __sdk::TableUpdate<CharacterTime>,
     character_training_schedule: __sdk::TableUpdate<CharacterTrainingSchedule>,
+    character_virtue: __sdk::TableUpdate<CharacterVirtue>,
     connected_players: __sdk::TableUpdate<ConnectedPlayer>,
     equipped_medication: __sdk::TableUpdate<EquippedMedication>,
     inventory_item: __sdk::TableUpdate<InventoryItem>,
@@ -2175,6 +2199,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "character" => db_update
                     .character
                     .append(character_table::parse_table_update(table_update)?),
+                "character_apprenticeship" => db_update.character_apprenticeship.append(
+                    character_apprenticeship_table::parse_table_update(table_update)?,
+                ),
                 "character_attributes" => db_update.character_attributes.append(
                     character_attributes_table::parse_table_update(table_update)?,
                 ),
@@ -2223,6 +2250,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "character_training_schedule" => db_update.character_training_schedule.append(
                     character_training_schedule_table::parse_table_update(table_update)?,
                 ),
+                "character_virtue" => db_update
+                    .character_virtue
+                    .append(character_virtue_table::parse_table_update(table_update)?),
                 "connected_players" => db_update
                     .connected_players
                     .append(connected_players_table::parse_table_update(table_update)?),
@@ -2393,6 +2423,12 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.character = cache
             .apply_diff_to_table::<Character>("character", &self.character)
             .with_updates_by_pk(|row| &row.id);
+        diff.character_apprenticeship = cache
+            .apply_diff_to_table::<CharacterApprenticeship>(
+                "character_apprenticeship",
+                &self.character_apprenticeship,
+            )
+            .with_updates_by_pk(|row| &row.id);
         diff.character_attributes = cache
             .apply_diff_to_table::<CharacterAttributes>(
                 "character_attributes",
@@ -2467,6 +2503,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_training_schedule",
                 &self.character_training_schedule,
             )
+            .with_updates_by_pk(|row| &row.character_id);
+        diff.character_virtue = cache
+            .apply_diff_to_table::<CharacterVirtue>("character_virtue", &self.character_virtue)
             .with_updates_by_pk(|row| &row.character_id);
         diff.equipped_medication = cache
             .apply_diff_to_table::<EquippedMedication>(
@@ -2685,6 +2724,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character" => db_update
                     .character
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_apprenticeship" => db_update
+                    .character_apprenticeship
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_attributes" => db_update
                     .character_attributes
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -2732,6 +2774,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_training_schedule" => db_update
                     .character_training_schedule
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_virtue" => db_update
+                    .character_virtue
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "connected_players" => db_update
                     .connected_players
@@ -2896,6 +2941,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character" => db_update
                     .character
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_apprenticeship" => db_update
+                    .character_apprenticeship
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_attributes" => db_update
                     .character_attributes
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -2943,6 +2991,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_training_schedule" => db_update
                     .character_training_schedule
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_virtue" => db_update
+                    .character_virtue
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "connected_players" => db_update
                     .connected_players
@@ -3091,6 +3142,7 @@ pub struct AppliedDiff<'r> {
     battle_participant: __sdk::TableAppliedDiff<'r, BattleParticipant>,
     battle_result: __sdk::TableAppliedDiff<'r, BattleResult>,
     character: __sdk::TableAppliedDiff<'r, Character>,
+    character_apprenticeship: __sdk::TableAppliedDiff<'r, CharacterApprenticeship>,
     character_attributes: __sdk::TableAppliedDiff<'r, CharacterAttributes>,
     character_capability: __sdk::TableAppliedDiff<'r, CharacterCapability>,
     character_condition: __sdk::TableAppliedDiff<'r, CharacterCondition>,
@@ -3107,6 +3159,7 @@ pub struct AppliedDiff<'r> {
     character_strategic_condition: __sdk::TableAppliedDiff<'r, CharacterStrategicCondition>,
     character_time: __sdk::TableAppliedDiff<'r, CharacterTime>,
     character_training_schedule: __sdk::TableAppliedDiff<'r, CharacterTrainingSchedule>,
+    character_virtue: __sdk::TableAppliedDiff<'r, CharacterVirtue>,
     connected_players: __sdk::TableAppliedDiff<'r, ConnectedPlayer>,
     equipped_medication: __sdk::TableAppliedDiff<'r, EquippedMedication>,
     inventory_item: __sdk::TableAppliedDiff<'r, InventoryItem>,
@@ -3202,6 +3255,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             event,
         );
         callbacks.invoke_table_row_callbacks::<Character>("character", &self.character, event);
+        callbacks.invoke_table_row_callbacks::<CharacterApprenticeship>(
+            "character_apprenticeship",
+            &self.character_apprenticeship,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<CharacterAttributes>(
             "character_attributes",
             &self.character_attributes,
@@ -3280,6 +3338,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<CharacterTrainingSchedule>(
             "character_training_schedule",
             &self.character_training_schedule,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterVirtue>(
+            "character_virtue",
+            &self.character_virtue,
             event,
         );
         callbacks.invoke_table_row_callbacks::<ConnectedPlayer>(
@@ -4120,6 +4183,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         battle_participant_table::register_table(client_cache);
         battle_result_table::register_table(client_cache);
         character_table::register_table(client_cache);
+        character_apprenticeship_table::register_table(client_cache);
         character_attributes_table::register_table(client_cache);
         character_capability_table::register_table(client_cache);
         character_condition_table::register_table(client_cache);
@@ -4136,6 +4200,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         character_strategic_condition_table::register_table(client_cache);
         character_time_table::register_table(client_cache);
         character_training_schedule_table::register_table(client_cache);
+        character_virtue_table::register_table(client_cache);
         connected_players_table::register_table(client_cache);
         equipped_medication_table::register_table(client_cache);
         inventory_item_table::register_table(client_cache);
@@ -4188,6 +4253,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "battle_participant",
         "battle_result",
         "character",
+        "character_apprenticeship",
         "character_attributes",
         "character_capability",
         "character_condition",
@@ -4204,6 +4270,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "character_strategic_condition",
         "character_time",
         "character_training_schedule",
+        "character_virtue",
         "connected_players",
         "equipped_medication",
         "inventory_item",

@@ -146,6 +146,10 @@ pub fn routes() -> Router<AppState> {
             get(service_quest_offers),
         )
         .route(
+            "/api/settlements/{id}/professions/{service_id}/apprenticeship",
+            post(begin_service_apprenticeship),
+        )
+        .route(
             "/api/settlements/{id}/religion",
             get(religion_dialogue).post(set_religion),
         )
@@ -414,15 +418,46 @@ fn spacetime_option_u64(value: Option<u64>) -> serde_json::Value {
     }
 }
 
+fn spacetime_option_string(value: Option<&str>) -> serde_json::Value {
+    match value {
+        Some(value) => json!({ "some": value }),
+        None => json!({ "none": [] }),
+    }
+}
+
+fn schedule_allocation_reducer_arg(schedule: &ScheduleAllocation) -> serde_json::Value {
+    let mut value = json!(schedule);
+    value["apprenticeship_service_id"] =
+        spacetime_option_string(schedule.apprenticeship_service_id.as_deref());
+    value["profession_service_id"] =
+        spacetime_option_string(schedule.profession_service_id.as_deref());
+    value
+}
+
 #[cfg(test)]
 mod surgery_reducer_argument_tests {
-    use super::spacetime_option_u64;
+    use super::{schedule_allocation_reducer_arg, spacetime_option_u64};
+    use crate::spacetimedb::ScheduleAllocation;
     use serde_json::json;
 
     #[test]
     fn projectile_id_uses_spacetime_option_encoding() {
         assert_eq!(spacetime_option_u64(Some(73)), json!({ "some": 73 }));
         assert_eq!(spacetime_option_u64(None), json!({ "none": [] }));
+    }
+
+    #[test]
+    fn schedule_profession_ids_use_spacetime_option_encoding() {
+        let encoded = schedule_allocation_reducer_arg(&ScheduleAllocation {
+            apprenticeship_service_id: Some("armor".into()),
+            profession_service_id: None,
+            ..Default::default()
+        });
+        assert_eq!(
+            encoded["apprenticeship_service_id"],
+            json!({ "some": "armor" })
+        );
+        assert_eq!(encoded["profession_service_id"], json!({ "none": [] }));
     }
 }
 
@@ -1573,6 +1608,71 @@ struct ServiceQuestOffer {
 }
 
 #[derive(Serialize)]
+struct ApprenticeshipResult {
+    enrolled: bool,
+    message: &'static str,
+}
+
+async fn begin_service_apprenticeship(
+    State(state): State<AppState>,
+    Path((id, service_id)): Path<(String, String)>,
+    session: Session,
+) -> Json<ApprenticeshipResult> {
+    const PROFESSIONS: &[&str] = &[
+        "merchants",
+        "weapons",
+        "armor",
+        "clothing",
+        "herbalist",
+        "inn",
+        "religion",
+    ];
+    if !PROFESSIONS.contains(&service_id.as_str()) {
+        return Json(ApprenticeshipResult {
+            enrolled: false,
+            message: "That profession is not taught here.",
+        });
+    }
+    let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
+    else {
+        return Json(ApprenticeshipResult {
+            enrolled: false,
+            message: "Choose a character before asking to train.",
+        });
+    };
+    if character.current_settlement_id.as_deref() != Some(id.as_str()) {
+        return Json(ApprenticeshipResult {
+            enrolled: false,
+            message: "You must speak to the guild member in person.",
+        });
+    }
+    match state
+        .db
+        .call(
+            "begin_apprenticeship",
+            &[json!(character.id), json!(service_id)],
+        )
+        .await
+    {
+        Ok(()) => Json(ApprenticeshipResult {
+            enrolled: true,
+            message: if service_id == "religion" {
+                "Then you shall begin as a novice. In time, a cleric may become a teacher."
+            } else {
+                "Then your apprenticeship begins today."
+            },
+        }),
+        Err(error) => {
+            tracing::warn!(%error, character_id = character.id, %service_id, "failed to begin apprenticeship");
+            Json(ApprenticeshipResult {
+                enrolled: false,
+                message: "I cannot take you on just now.",
+            })
+        }
+    }
+}
+
+#[derive(Serialize)]
 struct ServiceQuestRecruitment {
     party_name: String,
     leader_id: String,
@@ -2064,15 +2164,6 @@ async fn party_personal(
     Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Html<String> {
-    if let Some(character_id) = session.character_id_u64() {
-        if let Err(error) = state
-            .db
-            .call("synchronize_character_time", &[json!(character_id)])
-            .await
-        {
-            tracing::error!("Failed to liquidate party inventory: {error:?}");
-        }
-    }
     let mut location = match resolve_location(&state, &kind, &id).await {
         LocationLookup::Found(location) => location,
         LocationLookup::NotFound => return Html("<h1>Location not found</h1>".to_string()),
@@ -2309,8 +2400,15 @@ async fn resolve_religious_demand(
     Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party/{character_id}")))
 }
 
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
+#[serde(default)]
 struct TrainingScheduleForm {
+    combat_training_minutes: u16,
+    carousing_minutes: u16,
+    apprenticeship_minutes: u16,
+    apprenticeship_service_id: Option<String>,
+    profession_practice_minutes: u16,
+    profession_service_id: Option<String>,
     #[serde(default)]
     combat_minutes: u16,
     #[serde(default)]
@@ -2399,50 +2497,71 @@ async fn update_training_schedule(
     Query(building): Query<BuildingQuery>,
     session: Session,
     Form(form): Form<TrainingScheduleForm>,
-) -> Redirect {
-    if session.character_id_u64() == Some(character_id) {
-        let _ = state
-            .db
-            .call(
-                "update_training_schedule",
-                &[
-                    json!(character_id),
-                    json!(ScheduleAllocation {
-                        combat_minutes: form.combat_minutes,
-                        combat_auto_train: form.combat_auto_train,
-                        melee_minutes: form.melee_minutes,
-                        dodge_minutes: form.dodge_minutes,
-                        block_minutes: form.block_minutes,
-                        ranged_minutes: form.ranged_minutes,
-                        will_minutes: form.will_minutes,
-                        charisma_minutes: form.charisma_minutes,
-                        medicine_minutes: form.medicine_minutes,
-                        religion_minutes: form.religion_minutes,
-                        religion_auto_train: form.religion_auto_train,
-                        religion_minutes_by_tradition: adventuresim_world_schema::ReligionMinutes {
-                            roman_catholic: form.religion_roman_catholic_minutes,
-                            lutheran: form.religion_lutheran_minutes,
-                            reformed: form.religion_reformed_minutes,
-                            anglican: form.religion_anglican_minutes,
-                            eastern_orthodox: form.religion_eastern_orthodox_minutes,
-                            islamic: form.religion_islamic_minutes,
-                            judaism: form.religion_judaism_minutes,
-                        },
-                        stealth_minutes: form.stealth_minutes,
-                        balance_minutes: form.balance_minutes,
-                        surgeon_minutes: form.surgeon_minutes,
-                        smithing_minutes: form.smithing_minutes,
-                        labor_minutes: form.labor_minutes,
-                        prayer_minutes: form.prayer_minutes,
-                        thievery_minutes: form.thievery_minutes,
-                        raiding_minutes: form.raiding_minutes,
-                    }),
-                    json!(ScheduleAllocation::default()),
-                ],
-            )
-            .await;
+) -> Response {
+    if session.character_id_u64() != Some(character_id) {
+        return (
+            StatusCode::FORBIDDEN,
+            "Select this character before editing their schedule",
+        )
+            .into_response();
     }
-    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party/{character_id}")))
+    let downtime = ScheduleAllocation {
+        combat_training_minutes: form.combat_training_minutes,
+        carousing_minutes: form.carousing_minutes,
+        apprenticeship_minutes: form.apprenticeship_minutes,
+        apprenticeship_service_id: form.apprenticeship_service_id,
+        profession_practice_minutes: form.profession_practice_minutes,
+        profession_service_id: form.profession_service_id,
+        combat_minutes: form.combat_minutes,
+        combat_auto_train: form.combat_auto_train,
+        melee_minutes: form.melee_minutes,
+        dodge_minutes: form.dodge_minutes,
+        block_minutes: form.block_minutes,
+        ranged_minutes: form.ranged_minutes,
+        will_minutes: form.will_minutes,
+        charisma_minutes: form.charisma_minutes,
+        medicine_minutes: form.medicine_minutes,
+        religion_minutes: form.religion_minutes,
+        religion_auto_train: form.religion_auto_train,
+        religion_minutes_by_tradition: adventuresim_world_schema::ReligionMinutes {
+            roman_catholic: form.religion_roman_catholic_minutes,
+            lutheran: form.religion_lutheran_minutes,
+            reformed: form.religion_reformed_minutes,
+            anglican: form.religion_anglican_minutes,
+            eastern_orthodox: form.religion_eastern_orthodox_minutes,
+            islamic: form.religion_islamic_minutes,
+            judaism: form.religion_judaism_minutes,
+        },
+        stealth_minutes: form.stealth_minutes,
+        balance_minutes: form.balance_minutes,
+        surgeon_minutes: form.surgeon_minutes,
+        smithing_minutes: form.smithing_minutes,
+        labor_minutes: form.labor_minutes,
+        prayer_minutes: form.prayer_minutes,
+        thievery_minutes: form.thievery_minutes,
+        raiding_minutes: form.raiding_minutes,
+    };
+    match state
+        .db
+        .call(
+            "update_training_schedule",
+            &[
+                json!(character_id),
+                schedule_allocation_reducer_arg(&downtime),
+                schedule_allocation_reducer_arg(&ScheduleAllocation::default()),
+            ],
+        )
+        .await
+    {
+        Ok(()) => Redirect::to(
+            &building.append_to(format!("/locations/{kind}/{id}/party/{character_id}")),
+        )
+        .into_response(),
+        Err(error) => {
+            tracing::warn!(%error, character_id, "failed to update training schedule");
+            (StatusCode::BAD_REQUEST, error.to_string()).into_response()
+        }
+    }
 }
 
 async fn party_member(

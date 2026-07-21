@@ -8,6 +8,12 @@ pub const PRAYER_MORALE_SCALE_MINUTES: f32 = 60.0;
 pub const MAX_DAILY_PRAYER_OBLIGATION_MINUTES: f32 = 120.0;
 pub const DAYS_PER_WEEK: u64 = 7;
 pub const SUNDAY_INDEX: u64 = 6;
+pub const CAROUSING_MORALE_LIMIT: f32 = 4.0;
+pub const CAROUSING_MORALE_SCALE_MINUTES: f32 = 120.0;
+
+pub fn carousing_morale_per_day(minutes: u16) -> f32 {
+    CAROUSING_MORALE_LIMIT * (1.0 - (-f32::from(minutes) / CAROUSING_MORALE_SCALE_MINUTES).exp())
+}
 
 pub fn is_sunday(day: u64) -> bool {
     day % DAYS_PER_WEEK == SUNDAY_INDEX
