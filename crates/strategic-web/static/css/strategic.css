@@ -349,6 +349,7 @@
   overflow-wrap: anywhere;
   pointer-events: none;
   text-align: left;
+  white-space: pre-line;
 }
 
 #strategic-tooltip[hidden],
@@ -4265,3 +4266,11 @@ body.chat-resizing {
 .no-direct-route { padding: .55rem; border-left: 4px solid var(--warning, #9a6824); background: color-mix(in srgb, var(--warning, #9a6824) 10%, transparent); }
 @media (max-width: 720px) { .strategic-map { min-height: 26rem; } }
 @media (prefers-reduced-motion: reduce) { .strategic-map-svg { scroll-behavior: auto; } }
+.filth-status {
+  width: 100%; margin: .75rem 0 0; outline: none;
+}
+.filth-status-label { margin-bottom: .25rem; font-size: var(--font-size-xs); }
+.filth-track { display: flex; height: .55rem; overflow: hidden; border: 1px solid var(--border-light); border-radius: 999px; background: var(--bg-tertiary); }
+.filth-segment { display: block; min-width: 0; }
+.filth-dirt { background: #76552e; }
+.filth-blood { background: #8e2020; }

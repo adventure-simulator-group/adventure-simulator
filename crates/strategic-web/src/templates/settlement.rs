@@ -477,6 +477,7 @@ pub fn settlement_map_page(
     active_party: Option<&Party>,
     _party_members: &[Character],
     default_rest_minutes: u64,
+    soap_preview: SoapRestPreview,
     can_travel: bool,
     provision_forecast: Option<&TravelProvisionForecast>,
     is_current_settlement: bool,
@@ -518,6 +519,7 @@ pub fn settlement_map_page(
                         "Rest party",
                         default_rest_minutes,
                         None,
+                        soap_preview,
                     ))
                 }
             }),
@@ -1282,6 +1284,7 @@ pub fn camp_page(
     camp_destinations: &[CampTravelDestination],
     provision_forecast: Option<&TravelProvisionForecast>,
     default_rest_minutes: u64,
+    soap_preview: SoapRestPreview,
     planned_wake_minute: u16,
     can_continue_travel: bool,
     logged_in_as: Option<&str>,
@@ -1322,6 +1325,7 @@ pub fn camp_page(
                     "Rest party",
                     default_rest_minutes,
                     Some(planned_wake_minute),
+                    soap_preview,
                 ))
             }
         }
@@ -1392,6 +1396,7 @@ pub(crate) fn party_rest_menu(
     submit_label: &str,
     default_minutes: u64,
     scheduled_wake_minute: Option<u16>,
+    soap_preview: SoapRestPreview,
 ) -> Markup {
     html! {
         div class="rest-service-heading" { strong { (heading) } }
@@ -1407,6 +1412,34 @@ pub(crate) fn party_rest_menu(
             button type="submit" class="btn btn-primary btn-small btn-block" data-rest-submit {
                 (submit_label)
             }
+        }
+        (soap_wash_preview(soap_preview))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SoapRestPreview {
+    pub total_units: u32,
+    pub personal_units: u32,
+    pub shared_units: u32,
+}
+
+fn soap_wash_preview(preview: SoapRestPreview) -> Markup {
+    html! {
+        @if preview.total_units > 0 {
+            p class="text-muted small-copy rest-soap-preview" {
+                "Washing before rest will use " (preview.total_units) " soft soap"
+                @if preview.personal_units > 0 && preview.shared_units > 0 {
+                    " (" (preview.personal_units) " personal, " (preview.shared_units) " shared)"
+                } @else if preview.shared_units > 0 {
+                    " (shared)"
+                } @else {
+                    " (personal)"
+                }
+                ". Soap is also a surgical supply."
+            }
+        } @else {
+            p class="text-muted small-copy rest-soap-preview" { "No soap will be used for washing." }
         }
     }
 }
@@ -1480,6 +1513,7 @@ pub fn merchants_page(
         logged_in_as,
         None,
         None,
+        SoapRestPreview::default(),
     )
 }
 
@@ -1495,6 +1529,7 @@ pub fn inn_page(
     condition: Option<&CharacterCondition>,
     field_repair_minutes: u64,
     smith_wait_minutes: u64,
+    soap_preview: SoapRestPreview,
     logged_in_as: Option<&str>,
 ) -> Markup {
     service_page(
@@ -1516,6 +1551,7 @@ pub fn inn_page(
             smith_wait_minutes,
         ),
         None,
+        soap_preview,
     )
 }
 
@@ -1531,6 +1567,7 @@ pub fn religion_page(
     condition: Option<&CharacterCondition>,
     field_repair_minutes: u64,
     smith_wait_minutes: u64,
+    soap_preview: SoapRestPreview,
     logged_in_as: Option<&str>,
 ) -> Markup {
     service_page(
@@ -1552,6 +1589,7 @@ pub fn religion_page(
             smith_wait_minutes,
         ),
         None,
+        soap_preview,
     )
 }
 
@@ -1654,11 +1692,12 @@ pub fn party_personal_page(
     can_examine: bool,
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
+    filth: &[crate::spacetimedb::CharacterFilth],
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
             (party_attributes_rail("Your attributes", attributes, limbs, medical, Some(&format!("{}/party/{}/surgery", location.base_path(), active_character.id)), injuries, projectiles))
-            (strategic_condition_rail(condition, morale_sources))
+            (strategic_condition_rail(condition, morale_sources, filth))
             (medical_rail(medical, &location.base_path(), active_character.id, active_character.id, true))
             @if let Some(demand) = religious_demand {
                 (religious_demand_rail(demand, &location.base_path(), active_character.id))
@@ -1689,6 +1728,59 @@ pub fn party_personal_page(
         }
     };
     location.render_layout("Party", content, Some(&active_character.name))
+}
+
+fn filth_status_bar(deposits: &[crate::spacetimedb::CharacterFilth]) -> Markup {
+    use crate::spacetimedb::{FilthOrigin, FilthSubstance};
+    let dirt: u16 = deposits
+        .iter()
+        .filter(|d| d.substance == FilthSubstance::Dirt)
+        .map(|d| d.amount)
+        .fold(0, u16::saturating_add);
+    let blood: u16 = deposits
+        .iter()
+        .filter(|d| d.substance == FilthSubstance::Blood)
+        .map(|d| d.amount)
+        .fold(0, u16::saturating_add);
+    let total = dirt
+        .saturating_add(blood)
+        .min(adventuresim_core::filth::MAX_FILTH);
+    let dirt_width = f32::from(dirt.min(total));
+    let blood_width = f32::from(blood.min(total.saturating_sub(dirt.min(total))));
+    let (own_blood, foreign_blood, unknown_blood) = deposits
+        .iter()
+        .filter(|d| d.substance == FilthSubstance::Blood)
+        .fold((0_u16, 0_u16, 0_u16), |mut amounts, deposit| {
+            match deposit.origin {
+                FilthOrigin::Own => amounts.0 = amounts.0.saturating_add(deposit.amount),
+                FilthOrigin::Foreign => amounts.1 = amounts.1.saturating_add(deposit.amount),
+                FilthOrigin::Unknown => amounts.2 = amounts.2.saturating_add(deposit.amount),
+            }
+            amounts
+        });
+    let summary = format!(
+        "Current: {total}/100 — {dirt} dirt, {blood} blood ({own_blood} own, {foreign_blood} foreign, {unknown_blood} unknown)."
+    );
+    let details = format!(
+        "Filth accumulates from travel, combat, and medical treatment. Dirt and blood fill this bar. Foreign blood can transmit bloodborne disease, with greater risk through open cuts and lesser risk through bandaged cuts. Soap is used automatically before rest to wash filth away.\n\n{summary}"
+    );
+    html! {
+        div class="filth-status" tabindex="0" role="meter" aria-valuemin="0" aria-valuemax="100"
+            aria-valuenow=(total) aria-label=(format!("Filth {total} out of 100"))
+            data-strategic-tooltip=(&details) {
+            strong class="metric-label filth-status-label" { "Filth" }
+            span class="filth-track" aria-hidden="true" {
+                @if dirt > 0 {
+                    span class="filth-segment filth-dirt" style=(format!("width:{dirt_width}%"))
+                        data-strategic-tooltip=(format!("Dirt\n{dirt}")) {}
+                }
+                @if blood > 0 {
+                    span class="filth-segment filth-blood" style=(format!("width:{blood_width}%"))
+                        data-strategic-tooltip=(format!("Blood\n{blood}")) {}
+                }
+            }
+        }
+    }
 }
 
 fn religious_demand_rail(
@@ -1739,13 +1831,14 @@ pub fn party_stats_page(
     can_examine: bool,
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
+    filth: &[crate::spacetimedb::CharacterFilth],
 ) -> Markup {
     let selected_attributes_title = format!("{}'s attributes", selected.name);
     let selected_skills_title = format!("{}'s skills", selected.name);
     let content = html! {
         aside class="left-sidebar" {
             (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs, medical, Some(&format!("{}/party/{}/surgery", location.base_path(), selected.id)), injuries, projectiles))
-            (strategic_condition_rail(condition, morale_sources))
+            (strategic_condition_rail(condition, morale_sources, filth))
             (medical_rail(medical, &location.base_path(), active_character.id, selected.id, true))
         }
         main class="center-content settlement-main party-member-stage" {
@@ -1927,6 +2020,8 @@ fn surgery_procedure_row(
     unavailable: Option<&str>,
     disabled: Option<&str>,
     projectile_id: Option<u64>,
+    soap_available: bool,
+    soap_applicable: bool,
 ) -> Markup {
     let row_class = if unavailable.is_some() {
         "surgery-procedure surgery-procedure-unavailable"
@@ -1941,6 +2036,12 @@ fn surgery_procedure_row(
             input type="hidden" name="procedure" value=(procedure);
             @if let Some(projectile_id) = projectile_id {
                 input type="hidden" name="projectile_id" value=(projectile_id);
+            }
+            @if soap_applicable {
+                label class="surgery-soap-option" title="Consumes one unit; lowers contamination risk independently of other supplies" {
+                    input type="checkbox" name="use_soap" value="true" disabled[!soap_available];
+                    " Use 1 soft soap"
+                }
             }
             @if icon == "bullet-visual" {
                 span class="procedure-projectile-visual projectile-ball" role="img" aria-label=(label) {}
@@ -1993,6 +2094,7 @@ pub fn surgery_page(
     bandages: u32,
     surgery_kits: u32,
     splints: u32,
+    soaps: u32,
     surgery_skill: f32,
 ) -> Markup {
     let base = format!("{}/party/{}/surgery", location.base_path(), patient.id);
@@ -2026,22 +2128,23 @@ pub fn surgery_page(
                     (surgery_supply("Bandages", "bandage-roll", bandages))
                     (surgery_supply("Surgery kits", "medical-pack", surgery_kits))
                     (surgery_supply("Splints", "arm-bandage", splints))
+                    (surgery_supply("Soft soap", "water-drop", soaps))
                 }
                 div class="surgery-procedures" {
                     @for projectile in projectiles.iter().filter(|projectile| projectile.limb == selected_limb) {
                         @let requires_kit = adventuresim_core::surgery::extraction_requires_surgery_kit(projectile.extraction_dc);
                         (surgery_procedure_row(&action, match projectile.kind { ProjectileKind::Arrowhead => "Remove arrowhead", ProjectileKind::Ball => "Remove ball" }, match projectile.kind { ProjectileKind::Arrowhead => "plain-arrow", ProjectileKind::Ball => "bullet-visual" }, "extract", if requires_kit { &[SurgeryItemRequirement::SurgeryKitReusable] } else { &[] }, surgery_duration("extract", effective_skill, projectile.extraction_dc), projectile.extraction_dc,
-                            effective_skill, None, if effective_skill < projectile.extraction_dc { Some("Insufficient Surgery skill") } else if requires_kit && !has_kit { Some("No surgery kit") } else { None }, Some(projectile.id)))
+                            effective_skill, None, if effective_skill < projectile.extraction_dc { Some("Insufficient Surgery skill") } else if requires_kit && !has_kit { Some("No surgery kit") } else { None }, Some(projectile.id), soaps > 0, true))
                     }
                     (surgery_procedure_row(&action, "Bandage", "bandage-roll", "bandage", &[SurgeryItemRequirement::BandageConsumed], surgery_duration("bandage", effective_skill, 0.0), 0.0,
-                        effective_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if bandaged { Some("Already bandaged") } else if bandages == 0 { Some("No bandages") } else { None }, None))
+                        effective_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if bandaged { Some("Already bandaged") } else if bandages == 0 { Some("No bandages") } else { None }, None, soaps > 0, true))
                     (surgery_procedure_row(&action, "Stitch", "scalpel", "stitch", &[SurgeryItemRequirement::SurgeryKitReusable], surgery_duration("stitch", effective_skill, 2.0), 2.0,
-                        effective_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if stitched { Some("Already stitched") } else if effective_skill < 2.0 { Some("Insufficient Surgery skill") } else if !has_kit { Some("No surgery kit") } else { None }, None))
+                        effective_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if stitched { Some("Already stitched") } else if effective_skill < 2.0 { Some("Insufficient Surgery skill") } else if !has_kit { Some("No surgery kit") } else { None }, None, soaps > 0, true))
                     @if splinted {
-                        (surgery_procedure_row(&action, "Remove splint", "arm-bandage", "remove-splint", &[], surgery_duration("remove-splint", effective_skill, 0.0), 0.0, effective_skill, None, None, None))
+                        (surgery_procedure_row(&action, "Remove splint", "arm-bandage", "remove-splint", &[], surgery_duration("remove-splint", effective_skill, 0.0), 0.0, effective_skill, None, None, None, false, false))
                     } @else {
                         (surgery_procedure_row(&action, "Splint", "arm-bandage", "splint", &[SurgeryItemRequirement::SplintEquipped], surgery_duration("splint", effective_skill, 1.0), 1.0,
-                            effective_skill, if fracture <= 0.0 { Some("No injury is present") } else { None }, if fracture <= 0.0 { Some("No injury is present") } else if effective_skill < 1.0 { Some("Insufficient Surgery skill") } else if splints == 0 { Some("No splints") } else { None }, None))
+                            effective_skill, if fracture <= 0.0 { Some("No injury is present") } else { None }, if fracture <= 0.0 { Some("No injury is present") } else if effective_skill < 1.0 { Some("Insufficient Surgery skill") } else if splints == 0 { Some("No splints") } else { None }, None, false, false))
                     }
                     @if cut <= 0.0 && bruise > 0.0 && fracture <= 0.0 {
                         p class="text-muted small-copy" { "Bruising must heal on its own." }
@@ -2066,6 +2169,7 @@ fn service_page(
     logged_in_as: Option<&str>,
     rest_default_minutes: Option<u64>,
     rest_summary: Option<&RestSummary>,
+    soap_preview: SoapRestPreview,
 ) -> Markup {
     let trade_offers: Option<(&str, &[&str])> = match service_id {
         "merchants" => Some((
@@ -2095,7 +2199,7 @@ fn service_page(
             @if service_id == "inn" {
                 div class="service-left-stack" {
                     div class="service-inventory-area" { (merchant_offers_rail("Inn supplies", &["Rations", "Water", "Supplies", "Bed for the night"])) }
-                    (rest_service_menu("Inn", &settlement.id, "inn", rest_default_minutes, rest_summary))
+                    (rest_service_menu("Inn", &settlement.id, "inn", rest_default_minutes, rest_summary, soap_preview))
                 }
             } @else if service_id == "religion" {
                 div class="service-left-stack" {
@@ -2106,7 +2210,7 @@ fn service_page(
                             }
                         }))
                     }
-                    (rest_service_menu("Temple", &settlement.id, "temple", rest_default_minutes, rest_summary))
+                    (rest_service_menu("Temple", &settlement.id, "temple", rest_default_minutes, rest_summary, soap_preview))
                 }
             } @else if let Some((stock_title, offers)) = trade_offers {
                 (merchant_offers_rail(stock_title, offers))
@@ -3814,7 +3918,8 @@ fn personality_tags(
     personality: &crate::spacetimedb::CharacterPersonality,
 ) -> Vec<(&'static str, &'static str)> {
     use crate::spacetimedb::{
-        Conscience::*, Conviction::*, Drive::*, Nerve::*, Outlook::*, SelfRegard::*, Sociability::*,
+        Conscience::*, Conviction::*, Drive::*, Hygiene::*, Nerve::*, Outlook::*, SelfRegard::*,
+        Sociability::*,
     };
     let mut tags = Vec::new();
     match personality.nerve {
@@ -3871,6 +3976,14 @@ fn personality_tags(
         )),
         _ => {}
     }
+    match personality.hygiene {
+        Slovenly => tags.push(("Slovenly", "Filth morale penalty ×0.")),
+        Cleanly => tags.push((
+            "Cleanly",
+            "Filth morale penalty ×2.5; +2 morale while completely clean.",
+        )),
+        _ => {}
+    }
     tags
 }
 
@@ -3890,6 +4003,7 @@ mod personality_tests {
             conscience: Conscience::Cruel,
             self_regard: SelfRegard::Neutral,
             conviction: Conviction::Neutral,
+            hygiene: Hygiene::Neutral,
         };
         let tags = personality_tags(&personality);
         assert_eq!(
@@ -3910,6 +4024,7 @@ mod personality_tests {
                 conscience: Conscience::Compassionate,
                 self_regard: SelfRegard::Proud,
                 conviction: Conviction::Zealous,
+                hygiene: Hygiene::Cleanly,
             },
             CharacterPersonality {
                 character_id: 2,
@@ -3920,6 +4035,7 @@ mod personality_tests {
                 conscience: Conscience::Callous,
                 self_regard: SelfRegard::Humble,
                 conviction: Conviction::Irreverent,
+                hygiene: Hygiene::Slovenly,
             },
             CharacterPersonality {
                 character_id: 3,
@@ -3930,6 +4046,7 @@ mod personality_tests {
                 conscience: Conscience::Cruel,
                 self_regard: SelfRegard::Neutral,
                 conviction: Conviction::Neutral,
+                hygiene: Hygiene::Neutral,
             },
         ];
 
@@ -3947,6 +4064,7 @@ mod personality_tests {
 fn strategic_condition_rail(
     condition: Option<&CharacterStrategicCondition>,
     morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
+    filth: &[crate::spacetimedb::CharacterFilth],
 ) -> Markup {
     let Some(condition) = condition else {
         return html! {};
@@ -4070,6 +4188,7 @@ fn strategic_condition_rail(
                 (need_balance_meter("Food", "meal", "Hunger", "Full", "hunger", condition.food_days, condition.hunger))
                 (need_balance_meter("Water", "water-drop", "Thirst", "Hydrated", "thirst", condition.water_days, condition.thirst))
             }
+            (filth_status_bar(filth))
         }))
     }
 }
@@ -4817,6 +4936,7 @@ pub fn rest_result_page(
     logged_in_as: Option<&str>,
     at_inn: bool,
     summary: &RestSummary,
+    soap_preview: SoapRestPreview,
 ) -> Markup {
     service_page(
         settlement,
@@ -4831,6 +4951,7 @@ pub fn rest_result_page(
         logged_in_as,
         None,
         Some(summary),
+        soap_preview,
     )
 }
 
@@ -4840,6 +4961,7 @@ fn rest_service_menu(
     kind: &str,
     default_minutes: Option<u64>,
     summary: Option<&RestSummary>,
+    soap_preview: SoapRestPreview,
 ) -> Markup {
     html! {
     section class="rest-service-menu" aria-label=(format!("{} rest service", location))
@@ -4874,6 +4996,7 @@ fn rest_service_menu(
                     span class="sr-only" { "Rest" }
                 }
         }
+        (soap_wash_preview(soap_preview))
         @if let Some(summary) = summary {
             div class="rest-summary-overlay" role="dialog" aria-modal="true" aria-labelledby="rest-summary-title" {
                 section class="rest-summary" {
@@ -5030,12 +5153,66 @@ fn blood_recovery_minutes(condition: &CharacterCondition) -> u64 {
 mod tests {
     use super::{
         Character, CharacterCondition, LocationKind, MerchantShop, encumbrance_inventory_rail,
-        encumbrance_meter, format_rest_duration, live_merchant_shop_page, need_balance_meter,
-        repair_custody_panel, repair_submit_control, rest_default_minutes,
-        settlement_rest_duration_control,
+        encumbrance_meter, filth_status_bar, format_rest_duration, live_merchant_shop_page,
+        need_balance_meter, repair_custody_panel, repair_submit_control, rest_default_minutes,
+        settlement_rest_duration_control, strategic_condition_rail,
     };
-    use crate::spacetimedb::ItemKind;
+    use crate::spacetimedb::{
+        CharacterFilth, CharacterStrategicCondition, FilthOrigin, FilthSubstance, ItemKind,
+    };
     use adventuresim_core::equipment::EncumbranceSummary;
+
+    #[test]
+    fn public_filth_serialization_and_template_expose_only_aggregate_origin() {
+        let deposit = CharacterFilth {
+            id: 1,
+            character_id: 7,
+            substance: FilthSubstance::Blood,
+            origin: FilthOrigin::Foreign,
+            amount: 2,
+            deposited_at: 10,
+        };
+        let serialized = serde_json::to_value(&deposit).unwrap();
+        assert!(serialized.get("source_character_id").is_none());
+        assert_eq!(
+            serialized.get("origin").and_then(|value| value.as_str()),
+            Some("Foreign")
+        );
+        let markup = filth_status_bar(&[deposit]).into_string();
+        assert!(markup.contains("2 foreign"));
+        assert!(!markup.contains("source_character_id"));
+        assert!(!markup.contains("filth-legend"));
+        assert!(!markup.contains("/100 filth</span>"));
+        assert!(markup.contains("data-strategic-tooltip=\"Filth accumulates"));
+        assert!(markup.contains("data-strategic-tooltip=\"Blood\n2\""));
+    }
+
+    #[test]
+    fn status_rail_places_filth_after_water() {
+        let condition = CharacterStrategicCondition {
+            character_id: 7,
+            morale: 0.0,
+            morale_bonus: 0.0,
+            morale_bonus_cap: 0.0,
+            fervor: 0.0,
+            pain: 0.0,
+            blood_loss: 0.0,
+            fear: 0.0,
+            fatigue: 0.0,
+            hunger: 0.0,
+            thirst: 0.0,
+            food_days: 1.0,
+            water_days: 1.0,
+            water_capacity_ml: 2_000,
+            incapacitation: 0.0,
+            check_multiplier: 1.0,
+            status: "ready".into(),
+        };
+        let markup = strategic_condition_rail(Some(&condition), &[], &[]).into_string();
+        let water = markup.find("Water").expect("water meter");
+        let filth = markup.find("Filth").expect("filth meter");
+        assert!(water < filth);
+    }
 
     #[test]
     fn herbalist_stock_template_includes_every_prepared_course_and_ingredients() {
@@ -5568,6 +5745,8 @@ mod tests {
             Some("No injury is present"),
             Some("No injury is present"),
             None,
+            true,
+            true,
         )
         .into_string();
         assert!(row.contains("surgery-procedure-unavailable"));

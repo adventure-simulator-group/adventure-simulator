@@ -271,7 +271,7 @@ pub fn advance_character_time(
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, false)?;
     let (elapsed, terminal) =
-        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit)?;
+        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, false)?;
     let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, false)?;
     let elapsed = settled.elapsed;
     character_time.minutes = character_time.minutes.saturating_add(elapsed);
@@ -285,6 +285,38 @@ pub fn advance_character_time(
     }
     crate::condition::apply_travel_condition(ctx, character_id, starting_minute, elapsed, 0)?;
     crate::capability::refresh_character_capability(ctx, character_id)?;
+    Ok(true)
+}
+
+/// Actual strategic movement, split at exact dirt boundaries so filth and its
+/// wound-risk multiplier are independent of caller chunking.
+pub fn advance_travel_time(
+    ctx: &ReducerContext,
+    character_id: u64,
+    mut minutes: u64,
+) -> Result<bool, String> {
+    while minutes > 0 {
+        let chunk = minutes.min(crate::filth::next_travel_dirt_boundary(ctx, character_id));
+        let before = ctx
+            .db
+            .character_time()
+            .character_id()
+            .find(character_id)
+            .map_or(0, |row| row.minutes);
+        let alive = advance_character_time(ctx, character_id, chunk)?;
+        let after = ctx
+            .db
+            .character_time()
+            .character_id()
+            .find(character_id)
+            .map_or(before, |row| row.minutes);
+        let elapsed = after.saturating_sub(before);
+        crate::filth::record_travel_elapsed(ctx, character_id, elapsed, after)?;
+        if !alive || elapsed < chunk {
+            return Ok(false);
+        }
+        minutes -= elapsed;
+    }
     Ok(true)
 }
 
@@ -307,7 +339,7 @@ pub fn advance_character_wait_time(
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, true)?;
     let (elapsed, terminal) =
-        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit)?;
+        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, true)?;
     let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, true)?;
     time.minutes = time.minutes.saturating_add(settled.elapsed);
     ctx.db.character_time().character_id().update(time);
@@ -996,6 +1028,7 @@ pub fn rest_at_settlement(
         character_id,
         u64::from(requested_days) * MINUTES_PER_DAY,
         at_inn,
+        true,
     )
 }
 
@@ -1009,7 +1042,7 @@ pub fn rest_at_settlement_hours(
     requested_minutes: u64,
     at_inn: bool,
 ) -> Result<(), String> {
-    rest_for_minutes(ctx, character_id, requested_minutes, at_inn)
+    rest_for_minutes(ctx, character_id, requested_minutes, at_inn, true)
 }
 
 fn rest_for_minutes(
@@ -1017,6 +1050,7 @@ fn rest_for_minutes(
     character_id: u64,
     requested_minutes: u64,
     at_inn: bool,
+    explicit: bool,
 ) -> Result<(), String> {
     crate::character::require_living_character(ctx, character_id)?;
     ensure_character_time(ctx, character_id)?;
@@ -1046,10 +1080,14 @@ fn rest_for_minutes(
             .map_err(|_| "Not enough coin to pay for the inn stay".to_string())?;
     }
 
+    if explicit {
+        crate::filth::wash_before_explicit_rest(ctx, character_id)?;
+    }
+
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested_minutes, true)?;
     let (elapsed, terminal) =
-        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit)?;
+        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, true)?;
     let medicine_check = party_medicine_check(ctx, character_id)?;
     let convalescing = convalescence_minutes(ctx, character_id, medicine_check).min(elapsed);
     let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, true)?;
@@ -1177,7 +1215,7 @@ pub(crate) fn synchronize_party_departure_time(
             .find(member_id)
             .is_some_and(|character| character.current_settlement_id.is_some());
         if at_settlement {
-            rest_for_minutes(ctx, member_id, elapsed, false)?;
+            rest_for_minutes(ctx, member_id, elapsed, false, false)?;
         } else {
             advance_personal_camp_time(ctx, member_id, elapsed)?;
         }
@@ -1208,7 +1246,7 @@ fn advance_personal_camp_time(
     let starting_minute = time.minutes;
     let injury_limit = crate::surgery::preview_elapsed_for_injuries(ctx, member_id, elapsed, true)?;
     let (elapsed, terminal) =
-        crate::disease::clip_elapsed_for_disease(ctx, member_id, injury_limit)?;
+        crate::disease::clip_elapsed_for_disease(ctx, member_id, injury_limit, true)?;
     let convalescing =
         convalescence_minutes(ctx, member_id, party_medicine_check(ctx, member_id)?).min(elapsed);
     let settled = crate::surgery::settle_injuries(ctx, member_id, elapsed, true)?;
@@ -1294,7 +1332,7 @@ pub(crate) fn rest_temporary_party_member_until_healed_at_settlement(
     let recovery_minutes =
         convalescence_minutes(ctx, character_id, party_medicine_check(ctx, character_id)?);
     if recovery_minutes > 0 {
-        rest_for_minutes(ctx, character_id, recovery_minutes, false)?;
+        rest_for_minutes(ctx, character_id, recovery_minutes, false, false)?;
     }
     Ok(())
 }
@@ -1335,10 +1373,14 @@ pub fn rest_at_camp(
         return Err("The party is not at a field rest location".into());
     }
     let members = crate::strategic::living_party_member_ids(ctx, &party_id);
+    // This reducer is an explicit player-chosen rest. Washing precedes disease
+    // and injury interval clipping, and dead members were excluded above.
+    crate::filth::wash_party_before_explicit_rest(ctx, &members)?;
     let elapsed = members
         .iter()
         .try_fold(requested_minutes, |limit, member_id| {
-            let disease = crate::disease::preview_elapsed_for_disease(ctx, *member_id, limit)?;
+            let disease =
+                crate::disease::preview_elapsed_for_disease(ctx, *member_id, limit, true)?;
             let injury =
                 crate::surgery::preview_elapsed_for_injuries(ctx, *member_id, limit, true)?;
             Ok::<u64, String>(limit.min(disease).min(injury))
@@ -1360,7 +1402,8 @@ pub fn rest_at_camp(
             .map_or(0.0, |stats| stats.calories_used.max(0.0));
         let medicine_check = party_medicine_check(ctx, member_id)?;
         let convalescing = convalescence_minutes(ctx, member_id, medicine_check).min(elapsed);
-        let (_, terminal) = crate::disease::clip_elapsed_for_disease(ctx, member_id, elapsed)?;
+        let (_, terminal) =
+            crate::disease::clip_elapsed_for_disease(ctx, member_id, elapsed, true)?;
         let settled = crate::surgery::settle_injuries(ctx, member_id, elapsed, true)?;
         let member_elapsed = settled.elapsed;
         time.minutes = time.minutes.saturating_add(member_elapsed);
@@ -1506,7 +1549,7 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested_elapsed, true)?;
     let (elapsed, terminal) =
-        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit)?;
+        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, true)?;
     let convalescing =
         convalescence_minutes(ctx, character_id, party_medicine_check(ctx, character_id)?)
             .min(elapsed);

@@ -17,12 +17,13 @@ The current strategic sources are:
 - The difference between allied and enemy power at a quest location. Undead use a 1.5 fear multiplier and demons use 3.0; other enemies use 1.0.
 - Religious conviction and mixed-faith discord.
 - Morale restored by individual allies.
+- Standing cleanliness: Neutral characters moderately dislike filth; Slovenly characters ignore it; Cleanly characters suffer a severe scaling penalty and receive a modest benefit while completely clean.
 
 Food quality and disease will become additional named sources when those systems are implemented. **Comfort-seeking/Ascetic** is a good follow-up personality axis only after food and lodging distinguish quality levels, so it has meaningful conditions to react to.
 
 # Personality reactions
 
-Personality is stored as seven immutable, mutually-exclusive axes. Neutral axes are not shown in the UI: **Brave/Fearful**, **Ambitious/Content**, **Sanguine/Brooding**, **Gregarious/Solitary**, **Compassionate/Callous/Cruel**, **Proud/Humble**, and **Zealous/Irreverent**. Conscience is present but has no morale hook until outcomes can carry durable moral context.
+Personality is stored as eight immutable, mutually-exclusive axes. Neutral axes are not shown in the UI: **Brave/Fearful**, **Ambitious/Content**, **Sanguine/Brooding**, **Gregarious/Solitary**, **Compassionate/Callous/Cruel**, **Proud/Humble**, **Zealous/Irreverent**, and **Slovenly/Cleanly**. Conscience is present but has no morale hook until outcomes can carry durable moral context.
 
 Reactions modify each raw source before positive/negative ranking and Will mitigation. Brave/Fearful halves/doubles outmatched fear; Ambitious/Content multiplies victory and defeat by 1.5/0.5; Sanguine favors positive sources by 1.25 and negative sources by 0.75 while Brooding does the reverse. Sanguine negative events last half the normal duration and Brooding ones last twice as long. Proud multiplies victory by 1.5 and defeat by 3, while Humble multiplies both by 0.75. Zealous/Irreverent multiplies religious conviction, prayer, discord, neglect, and religious events by 1.5/0.5. Gregarious/Solitary multiplies incoming named ally restoration by 1.5/0.5 before the existing cap at neutral morale.
 

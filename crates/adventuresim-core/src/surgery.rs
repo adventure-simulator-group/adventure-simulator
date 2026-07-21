@@ -5,6 +5,16 @@ pub const MINUTES_PER_DAY: u64 = 1_440;
 pub const UNTREATED_CUT_DETERIORATION_PER_DAY: f32 = 0.025;
 pub const UNTREATED_CUT_BLOOD_LOSS_PER_DAY: f32 = 0.08;
 pub const PROJECTILE_KIT_DC_THRESHOLD: f32 = 1.0;
+/// Small visible contamination transferred by a successful bloody procedure.
+pub const PROCEDURE_BLOOD_EXPOSURE_FILTH: u16 = 2;
+
+pub fn procedure_blood_exposure(procedure: &str, treating_other: bool) -> u16 {
+    if treating_other && matches!(procedure, "bandage" | "stitch" | "extract") {
+        PROCEDURE_BLOOD_EXPOSURE_FILTH
+    } else {
+        0
+    }
+}
 
 pub fn effective_skill(skill: f32, self_treatment: bool) -> f32 {
     (skill
@@ -129,6 +139,25 @@ mod tests {
         assert!(!extraction_requires_surgery_kit(1.0));
         assert!(extraction_requires_surgery_kit(1.000_1));
         assert!(extraction_requires_surgery_kit(8.0));
+    }
+
+    #[test]
+    fn only_blood_contact_procedures_contaminate_the_actor() {
+        assert_eq!(
+            procedure_blood_exposure("bandage", true),
+            PROCEDURE_BLOOD_EXPOSURE_FILTH
+        );
+        assert_eq!(
+            procedure_blood_exposure("stitch", true),
+            PROCEDURE_BLOOD_EXPOSURE_FILTH
+        );
+        assert_eq!(
+            procedure_blood_exposure("extract", true),
+            PROCEDURE_BLOOD_EXPOSURE_FILTH
+        );
+        assert_eq!(procedure_blood_exposure("splint", true), 0);
+        assert_eq!(procedure_blood_exposure("remove-splint", true), 0);
+        assert_eq!(procedure_blood_exposure("bandage", false), 0);
     }
 
     #[test]

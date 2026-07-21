@@ -959,6 +959,13 @@ pub(crate) fn upsert_surgery_items(ctx: &ReducerContext) {
             kind: ItemKind::Simple,
             ..Item::default()
         },
+        Item {
+            id: crate::filth::SOAP_ITEM_ID.into(),
+            weight: 0.25,
+            base_value: Some(3),
+            kind: ItemKind::Simple,
+            ..Item::default()
+        },
     ] {
         if ctx.db.item().id().find(definition.id.clone()).is_some() {
             ctx.db.item().id().update(definition);

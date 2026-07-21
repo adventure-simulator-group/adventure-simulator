@@ -30,6 +30,7 @@ pub fn quest_location_map_page(
     party: Option<&crate::spacetimedb::Party>,
     can_configure_travel: bool,
     default_rest_minutes: u64,
+    soap_preview: super::settlement::SoapRestPreview,
     logged_in_as: Option<&str>,
 ) -> Markup {
     let selected = selected_id.and_then(|id| nearby.iter().find(|entry| entry.id == id));
@@ -47,6 +48,7 @@ pub fn quest_location_map_page(
                         "Rest party",
                         default_rest_minutes,
                         None,
+                        soap_preview,
                     ))
                 }
             },
@@ -154,6 +156,7 @@ pub fn quest_location_enemy_page(
     party: Option<&crate::spacetimedb::Party>,
     can_configure_travel: bool,
     default_rest_minutes: u64,
+    soap_preview: super::settlement::SoapRestPreview,
     loot: &[BattleLootItem],
     pooled: &[PartyInventoryItem],
     stake: u64,
@@ -173,6 +176,7 @@ pub fn quest_location_enemy_page(
                         "Rest party",
                         default_rest_minutes,
                         None,
+                        soap_preview,
                     ))
                 }
             } @else {

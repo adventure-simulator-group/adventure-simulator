@@ -94,6 +94,13 @@ pub enum Conviction {
     Zealous,
     Irreverent,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Hygiene {
+    Neutral,
+    Slovenly,
+    Cleanly,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -105,6 +112,7 @@ pub struct Personality {
     pub conscience: Conscience,
     pub self_regard: SelfRegard,
     pub conviction: Conviction,
+    pub hygiene: Hygiene,
 }
 
 impl Personality {
@@ -117,6 +125,7 @@ impl Personality {
             conscience: Conscience::Neutral,
             self_regard: SelfRegard::Neutral,
             conviction: Conviction::Neutral,
+            hygiene: Hygiene::Neutral,
         }
     }
 
@@ -128,6 +137,7 @@ impl Personality {
             + usize::from(self.conscience != Conscience::Neutral)
             + usize::from(self.self_regard != SelfRegard::Neutral)
             + usize::from(self.conviction != Conviction::Neutral)
+            + usize::from(self.hygiene != Hygiene::Neutral)
     }
 }
 
@@ -357,7 +367,7 @@ fn generated_schedule(
 
 fn generated_personality(rng: &mut StableRng) -> Personality {
     let mut p = Personality::neutral();
-    let mut axes = [0_u8, 1, 2, 3, 4, 5, 6];
+    let mut axes = [0_u8, 1, 2, 3, 4, 5, 6, 7];
     for index in (1..axes.len()).rev() {
         axes.swap(index, rng.next_u64() as usize % (index + 1));
     }
@@ -406,11 +416,18 @@ fn generated_personality(rng: &mut StableRng) -> Personality {
                     SelfRegard::Humble
                 }
             }
-            _ => {
+            6 => {
                 p.conviction = if rng.next_u64().is_multiple_of(2) {
                     Conviction::Zealous
                 } else {
                     Conviction::Irreverent
+                }
+            }
+            _ => {
+                p.hygiene = if rng.next_u64().is_multiple_of(2) {
+                    Hygiene::Slovenly
+                } else {
+                    Hygiene::Cleanly
                 }
             }
         }

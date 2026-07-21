@@ -24,6 +24,7 @@ use adventuresim_stdb_client::{
     character_capability_table::CharacterCapabilityTableAccess,
     character_condition_table::CharacterConditionTableAccess,
     character_equip_table::CharacterEquipTableAccess,
+    character_filth_table::CharacterFilthTableAccess,
     character_limbs_table::CharacterLimbsTableAccess,
     character_morale_source_table::CharacterMoraleSourceTableAccess,
     character_needs_table::CharacterNeedsTableAccess,
@@ -158,6 +159,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.party_inventory_state());
         invalidate_on_changes!(state.0._connection.db.party_stake());
         invalidate_on_changes!(state.0._connection.db.character_equip());
+        invalidate_on_changes!(state.0._connection.db.character_filth());
         invalidate_on_changes!(state.0._connection.db.equipped_medication());
         invalidate_on_changes!(state.0._connection.db.character_capability());
         invalidate_on_changes!(state.0._connection.db.character_condition());
@@ -201,6 +203,7 @@ impl LiveState {
             .add_query(|query| query.from.character_capability())
             .add_query(|query| query.from.character_condition())
             .add_query(|query| query.from.character_equip())
+            .add_query(|query| query.from.character_filth())
             .add_query(|query| query.from.character_limbs())
             .add_query(|query| query.from.limb_injury())
             .add_query(|query| query.from.retained_projectile())

@@ -6,6 +6,7 @@ use super::character_personality_type::CharacterPersonality;
 use super::conscience_type::Conscience;
 use super::conviction_type::Conviction;
 use super::drive_type::Drive;
+use super::hygiene_type::Hygiene;
 use super::nerve_type::Nerve;
 use super::outlook_type::Outlook;
 use super::self_regard_type::SelfRegard;

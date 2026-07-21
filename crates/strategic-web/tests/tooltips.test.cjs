@@ -99,3 +99,16 @@ test('existing accessible names and descriptions are not overwritten', () => {
   system.hide();
   assert.equal(button.getAttribute('aria-describedby'), 'inventory-help');
 });
+
+test('nested meter segments show their own multiline value tooltip', () => {
+  const { window, document, system } = fixture(
+    '<div data-strategic-tooltip="Filth system"><span data-strategic-tooltip="Blood\n24"></span></div>',
+  );
+  const segment = document.querySelector('span');
+  segment.getBoundingClientRect = () => ({ left: 100, right: 140, top: 80, bottom: 90, width: 40, height: 10 });
+
+  dispatch(window, segment, 'pointerover', { pointerType: 'mouse' });
+
+  assert.equal(system.activeTarget, segment);
+  assert.equal(system.tooltip.textContent, 'Blood\n24');
+});

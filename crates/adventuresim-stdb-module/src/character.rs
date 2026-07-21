@@ -636,7 +636,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
         0.22,
         0.05,
         Some(crate::surgery::ProjectileKind::Arrowhead),
-    );
+    )?;
     crate::surgery::commit_hit_injury(
         ctx,
         DAMAGED_CHARACTER_ID,
@@ -644,7 +644,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
         0.18,
         0.0,
         None,
-    );
+    )?;
     let mut bandaged = crate::surgery::injury_for(
         ctx,
         DAMAGED_CHARACTER_ID,
@@ -661,7 +661,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
         0.0,
         0.42,
         None,
-    );
+    )?;
     let mut splinted = crate::surgery::injury_for(
         ctx,
         DAMAGED_CHARACTER_ID,
@@ -676,7 +676,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
         0.15,
         0.08,
         Some(crate::surgery::ProjectileKind::Ball),
-    );
+    )?;
 
     crate::add_inventory_item(ctx, DAMAGED_CHARACTER_ID, "bandage", 8);
     crate::add_inventory_item(ctx, DAMAGED_CHARACTER_ID, "surgery_kit", 1);
@@ -725,7 +725,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
         0.36,
         0.08,
         Some(crate::surgery::ProjectileKind::Arrowhead),
-    );
+    )?;
     crate::surgery::commit_hit_injury(
         ctx,
         9_000_002,
@@ -733,7 +733,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
         0.04,
         0.50,
         None,
-    );
+    )?;
 
     let equip = ctx
         .db

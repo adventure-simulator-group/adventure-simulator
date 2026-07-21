@@ -10,6 +10,7 @@ pub mod disease;
 pub mod durability;
 pub mod equipment;
 pub mod essential;
+pub mod filth;
 pub mod leadership;
 pub mod morale;
 pub mod profession;

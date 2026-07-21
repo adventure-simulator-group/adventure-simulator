@@ -35,6 +35,7 @@ pub mod battle_result_table;
 pub mod battle_result_type;
 pub mod begin_apprenticeship_reducer;
 pub mod begin_world_data_import_reducer;
+pub mod blood_exposure_checkpoint_type;
 pub mod bootstrap_development_world_reducer;
 pub mod built_settlement_cover_type;
 pub mod calibrate_weapon_precision_reducer;
@@ -58,6 +59,8 @@ pub mod character_death_table;
 pub mod character_death_type;
 pub mod character_equip_table;
 pub mod character_equip_type;
+pub mod character_filth_table;
+pub mod character_filth_type;
 pub mod character_illness_status_table;
 pub mod character_illness_status_type;
 pub mod character_limbs_table;
@@ -147,6 +150,10 @@ pub mod fallback_historical_vegetation_type;
 pub mod fallback_industry_type;
 pub mod ferry_route_type;
 pub mod ferry_waterway_type;
+pub mod filth_disease_snapshot_type;
+pub mod filth_origin_type;
+pub mod filth_provenance_type;
+pub mod filth_substance_type;
 pub mod finalize_merchant_trade_reducer;
 pub mod finalize_party_offer_reducer;
 pub mod finish_world_data_import_reducer;
@@ -167,6 +174,7 @@ pub mod herbalist_examination_type;
 pub mod historical_vegetation_type;
 pub mod historical_wetland_type;
 pub mod historical_woodland_type;
+pub mod hygiene_type;
 pub mod igneous_rock_type;
 pub mod import_settlement_aliases_reducer;
 pub mod import_settlement_descriptions_reducer;
@@ -391,6 +399,7 @@ pub mod transfer_party_item_reducer;
 pub mod travel_edge_import_type;
 pub mod travel_edge_table;
 pub mod travel_edge_type;
+pub mod travel_filth_progress_type;
 pub mod travel_route_type;
 pub mod travel_to_quest_planned_reducer;
 pub mod travel_to_quest_reducer;
@@ -451,6 +460,7 @@ pub use battle_result_table::*;
 pub use battle_result_type::BattleResult;
 pub use begin_apprenticeship_reducer::begin_apprenticeship;
 pub use begin_world_data_import_reducer::begin_world_data_import;
+pub use blood_exposure_checkpoint_type::BloodExposureCheckpoint;
 pub use bootstrap_development_world_reducer::bootstrap_development_world;
 pub use built_settlement_cover_type::BuiltSettlementCover;
 pub use calibrate_weapon_precision_reducer::calibrate_weapon_precision;
@@ -474,6 +484,8 @@ pub use character_death_table::*;
 pub use character_death_type::CharacterDeath;
 pub use character_equip_table::*;
 pub use character_equip_type::CharacterEquip;
+pub use character_filth_table::*;
+pub use character_filth_type::CharacterFilth;
 pub use character_illness_status_table::*;
 pub use character_illness_status_type::CharacterIllnessStatus;
 pub use character_limbs_table::*;
@@ -563,6 +575,10 @@ pub use fallback_historical_vegetation_type::FallbackHistoricalVegetation;
 pub use fallback_industry_type::FallbackIndustry;
 pub use ferry_route_type::FerryRoute;
 pub use ferry_waterway_type::FerryWaterway;
+pub use filth_disease_snapshot_type::FilthDiseaseSnapshot;
+pub use filth_origin_type::FilthOrigin;
+pub use filth_provenance_type::FilthProvenance;
+pub use filth_substance_type::FilthSubstance;
 pub use finalize_merchant_trade_reducer::finalize_merchant_trade;
 pub use finalize_party_offer_reducer::finalize_party_offer;
 pub use finish_world_data_import_reducer::finish_world_data_import;
@@ -583,6 +599,7 @@ pub use herbalist_examination_type::HerbalistExamination;
 pub use historical_vegetation_type::HistoricalVegetation;
 pub use historical_wetland_type::HistoricalWetland;
 pub use historical_woodland_type::HistoricalWoodland;
+pub use hygiene_type::Hygiene;
 pub use igneous_rock_type::IgneousRock;
 pub use import_settlement_aliases_reducer::import_settlement_aliases;
 pub use import_settlement_descriptions_reducer::import_settlement_descriptions;
@@ -807,6 +824,7 @@ pub use transfer_party_item_reducer::transfer_party_item;
 pub use travel_edge_import_type::TravelEdgeImport;
 pub use travel_edge_table::*;
 pub use travel_edge_type::TravelEdge;
+pub use travel_filth_progress_type::TravelFilthProgress;
 pub use travel_route_type::TravelRoute;
 pub use travel_to_quest_planned_reducer::travel_to_quest_planned;
 pub use travel_to_quest_reducer::travel_to_quest;
@@ -1236,6 +1254,7 @@ pub enum Reducer {
         limb_slug: String,
         procedure: String,
         projectile_id: Option<u64>,
+        use_soap: bool,
     },
     TurnInQuest {
         character_id: u64,
@@ -2089,12 +2108,14 @@ Reducer::CancelMissionRequest{
                 limb_slug,
                 procedure,
                 projectile_id,
+                use_soap,
 }             => __sats::bsatn::to_vec(&treat_limb_reducer::TreatLimbArgs {
                 actor_id: actor_id.clone(),
                 patient_id: patient_id.clone(),
                 limb_slug: limb_slug.clone(),
                 procedure: procedure.clone(),
                 projectile_id: projectile_id.clone(),
+                use_soap: use_soap.clone(),
 }),
             Reducer::TurnInQuest{
                 character_id,
@@ -2194,6 +2215,7 @@ pub struct DbUpdate {
     character_condition: __sdk::TableUpdate<CharacterCondition>,
     character_death: __sdk::TableUpdate<CharacterDeath>,
     character_equip: __sdk::TableUpdate<CharacterEquip>,
+    character_filth: __sdk::TableUpdate<CharacterFilth>,
     character_illness_status: __sdk::TableUpdate<CharacterIllnessStatus>,
     character_limbs: __sdk::TableUpdate<CharacterLimbs>,
     character_morale_source: __sdk::TableUpdate<CharacterMoraleSource>,
@@ -2304,6 +2326,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "character_equip" => db_update
                     .character_equip
                     .append(character_equip_table::parse_table_update(table_update)?),
+                "character_filth" => db_update
+                    .character_filth
+                    .append(character_filth_table::parse_table_update(table_update)?),
                 "character_illness_status" => db_update.character_illness_status.append(
                     character_illness_status_table::parse_table_update(table_update)?,
                 ),
@@ -2546,6 +2571,9 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.character_equip = cache
             .apply_diff_to_table::<CharacterEquip>("character_equip", &self.character_equip)
             .with_updates_by_pk(|row| &row.character_id);
+        diff.character_filth = cache
+            .apply_diff_to_table::<CharacterFilth>("character_filth", &self.character_filth)
+            .with_updates_by_pk(|row| &row.id);
         diff.character_illness_status = cache
             .apply_diff_to_table::<CharacterIllnessStatus>(
                 "character_illness_status",
@@ -2847,6 +2875,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_equip" => db_update
                     .character_equip
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_filth" => db_update
+                    .character_filth
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_illness_status" => db_update
                     .character_illness_status
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -3070,6 +3101,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_equip" => db_update
                     .character_equip
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_filth" => db_update
+                    .character_filth
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_illness_status" => db_update
                     .character_illness_status
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -3265,6 +3299,7 @@ pub struct AppliedDiff<'r> {
     character_condition: __sdk::TableAppliedDiff<'r, CharacterCondition>,
     character_death: __sdk::TableAppliedDiff<'r, CharacterDeath>,
     character_equip: __sdk::TableAppliedDiff<'r, CharacterEquip>,
+    character_filth: __sdk::TableAppliedDiff<'r, CharacterFilth>,
     character_illness_status: __sdk::TableAppliedDiff<'r, CharacterIllnessStatus>,
     character_limbs: __sdk::TableAppliedDiff<'r, CharacterLimbs>,
     character_morale_source: __sdk::TableAppliedDiff<'r, CharacterMoraleSource>,
@@ -3402,6 +3437,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<CharacterEquip>(
             "character_equip",
             &self.character_equip,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterFilth>(
+            "character_filth",
+            &self.character_filth,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CharacterIllnessStatus>(
@@ -4318,6 +4358,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         character_condition_table::register_table(client_cache);
         character_death_table::register_table(client_cache);
         character_equip_table::register_table(client_cache);
+        character_filth_table::register_table(client_cache);
         character_illness_status_table::register_table(client_cache);
         character_limbs_table::register_table(client_cache);
         character_morale_source_table::register_table(client_cache);
@@ -4390,6 +4431,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "character_condition",
         "character_death",
         "character_equip",
+        "character_filth",
         "character_illness_status",
         "character_limbs",
         "character_morale_source",

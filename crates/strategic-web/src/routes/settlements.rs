@@ -93,7 +93,7 @@ use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
-    CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterNotoriety,
+    CharacterFilth, CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterNotoriety,
     CharacterPersonality, CharacterSkills, CharacterStats, CharacterStrategicCondition,
     CharacterTime, CharacterTrainingSchedule, EquippedMedication, HerbalistExaminationRow,
     InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget, ItemCondition, ItemDefinition,
@@ -105,8 +105,8 @@ use crate::spacetimedb::{
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
-    RestSummary, alchemy_page, camp_page, inn_page, live_merchant_shop_page, merchants_page,
-    party_discard_page, party_inventory_page, party_personal_page, party_pool_page,
+    RestSummary, SoapRestPreview, alchemy_page, camp_page, inn_page, live_merchant_shop_page,
+    merchants_page, party_discard_page, party_inventory_page, party_personal_page, party_pool_page,
     party_stats_page, religion_page, rest_result_page, settlement_map_page,
     settlement_overview_page, surgery_page,
 };
@@ -396,6 +396,7 @@ async fn surgery(
             quantity("bandage"),
             quantity("surgery_kit"),
             available_splints,
+            quantity("soft_soap"),
             skill,
         )
         .into_string(),
@@ -406,6 +407,8 @@ async fn surgery(
 struct SurgeryProcedureForm {
     procedure: String,
     projectile_id: Option<u64>,
+    #[serde(default)]
+    use_soap: bool,
 }
 
 /// SpacetimeDB's raw HTTP reducer API expects algebraic `Option<T>` values,
@@ -484,6 +487,7 @@ async fn perform_surgery(
                 json!(limb),
                 json!(form.procedure),
                 spacetime_option_u64(form.projectile_id),
+                json!(form.use_soap),
             ],
         )
         .await
@@ -1057,6 +1061,12 @@ async fn settlement_map(
         .as_deref()
         .and_then(|id| destinations.iter().find(|destination| destination.id == id))
         .and_then(|destination| destination.provision_forecast.as_ref());
+    let soap_preview = soap_rest_preview(
+        &state,
+        &party_members,
+        active_party.as_ref().map(|party| party.id.as_str()),
+    )
+    .await;
     Html(
         settlement_map_page(
             settlement,
@@ -1069,6 +1079,7 @@ async fn settlement_map(
             active_party.as_ref(),
             &party_members,
             default_rest_minutes,
+            soap_preview,
             can_travel,
             provision_forecast,
             is_current_settlement,
@@ -1408,6 +1419,7 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
     .ok()
     .flatten();
     let camp_destinations = camp_settlement_destinations(&state, &party, journey.as_ref()).await;
+    let soap_preview = soap_rest_preview(&state, &party_members, Some(&party.id)).await;
     Html(
         camp_page(
             &party,
@@ -1420,6 +1432,7 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
             &camp_destinations,
             provision_forecast.as_ref(),
             default_rest_minutes,
+            soap_preview,
             planned_wake_minute,
             can_continue_travel,
             Some(&character.name),
@@ -2378,6 +2391,13 @@ async fn party_personal(
         .unwrap_or_default()
         .into_iter()
         .next();
+    let filth = state
+        .db
+        .query::<crate::spacetimedb::CharacterFilth>(&format!(
+            "SELECT * FROM character_filth WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default();
     Html(
         party_personal_page(
             &location,
@@ -2401,6 +2421,7 @@ async fn party_personal(
             can_examine,
             &injuries,
             &projectiles,
+            &filth,
         )
         .into_string(),
     )
@@ -3258,6 +3279,13 @@ async fn party_stats(
         ))
         .await
         .unwrap_or_default();
+    let filth = state
+        .db
+        .query::<CharacterFilth>(&format!(
+            "SELECT * FROM character_filth WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default();
     Html(
         party_stats_page(
             &location,
@@ -3280,6 +3308,7 @@ async fn party_stats(
             can_examine,
             &injuries,
             &projectiles,
+            &filth,
         )
         .into_string(),
     )
@@ -3689,6 +3718,16 @@ async fn inn(
         .query::<ItemDefinition>("SELECT * FROM item")
         .await
         .unwrap_or_default();
+    let soap_preview = soap_rest_preview(
+        &state,
+        active_character
+            .as_ref()
+            .map_or(&[][..], |(character, _)| std::slice::from_ref(character)),
+        active_character
+            .as_ref()
+            .and_then(|(character, _)| character.party_id.as_deref()),
+    )
+    .await;
     Html(
         inn_page(
             settlement,
@@ -3703,6 +3742,7 @@ async fn inn(
             condition.as_ref(),
             field_repair_minutes,
             smith_wait_minutes,
+            soap_preview,
             logged_in_as.as_deref(),
         )
         .into_string(),
@@ -3893,6 +3933,16 @@ async fn rest(
         .query::<ItemDefinition>("SELECT * FROM item")
         .await
         .unwrap_or_default();
+    let soap_preview = soap_rest_preview(
+        &state,
+        active_character
+            .as_ref()
+            .map_or(&[][..], |(character, _)| std::slice::from_ref(character)),
+        active_character
+            .as_ref()
+            .and_then(|(character, _)| character.party_id.as_deref()),
+    )
+    .await;
     Html(
         rest_result_page(
             settlement,
@@ -3905,6 +3955,7 @@ async fn rest(
             logged_in_as.as_deref(),
             at_inn,
             &summary,
+            soap_preview,
         )
         .into_string(),
     )
@@ -4398,6 +4449,7 @@ type ServiceRenderer = fn(
     Option<&CharacterCondition>,
     u64,
     u64,
+    SoapRestPreview,
     Option<&str>,
 ) -> maud::Markup;
 
@@ -4614,6 +4666,12 @@ async fn render_service_page(
         condition_lookup,
         equipment_lookup,
     );
+    let soap_preview = soap_rest_preview(
+        &state,
+        active_character_ref.map_or(&[][..], std::slice::from_ref),
+        active_character_ref.and_then(|character| character.party_id.as_deref()),
+    )
+    .await;
     let logged_in_as = active_character
         .as_ref()
         .map(|(character, _)| character.name.clone());
@@ -4633,6 +4691,7 @@ async fn render_service_page(
             condition.as_ref(),
             equipment_recovery.0,
             equipment_recovery.1,
+            soap_preview,
             logged_in_as.as_deref(),
         )
         .into_string(),
@@ -4980,11 +5039,82 @@ pub(crate) async fn get_active_party_members(
     members
 }
 
+pub(crate) async fn soap_rest_preview(
+    state: &AppState,
+    members: &[Character],
+    party_id: Option<&str>,
+) -> SoapRestPreview {
+    let (filth, personal, shared) = tokio::join!(
+        state
+            .db
+            .query::<CharacterFilth>("SELECT * FROM character_filth"),
+        state
+            .db
+            .query::<InventoryItem>("SELECT * FROM inventory_item"),
+        state
+            .db
+            .query::<PartyInventoryItem>("SELECT * FROM party_inventory_item"),
+    );
+    calculate_soap_rest_preview(
+        members,
+        &filth.unwrap_or_default(),
+        &personal.unwrap_or_default(),
+        &shared.unwrap_or_default(),
+        party_id,
+    )
+}
+
+fn calculate_soap_rest_preview(
+    members: &[Character],
+    filth: &[CharacterFilth],
+    personal: &[InventoryItem],
+    shared: &[PartyInventoryItem],
+    party_id: Option<&str>,
+) -> SoapRestPreview {
+    const SOAP_ITEM_ID: &str = "soft_soap";
+    let mut personal_units = 0_u32;
+    let mut need_after_personal = 0_u32;
+    for member in members.iter().filter(|member| member.alive) {
+        let amount = filth
+            .iter()
+            .filter(|deposit| deposit.character_id == member.id)
+            .map(|deposit| u32::from(deposit.amount))
+            .sum::<u32>();
+        let needed = amount.div_ceil(u32::from(adventuresim_core::filth::SOAP_CLEANSING_CAPACITY));
+        let available = personal
+            .iter()
+            .filter(|stack| stack.character_id == member.id && stack.item_id == SOAP_ITEM_ID)
+            .map(|stack| stack.qty)
+            .sum::<u32>();
+        let used = needed.min(available);
+        personal_units = personal_units.saturating_add(used);
+        need_after_personal = need_after_personal.saturating_add(needed.saturating_sub(used));
+    }
+    let shared_available = party_id.map_or(0, |party_id| {
+        shared
+            .iter()
+            .filter(|stack| stack.party_id == party_id && stack.item_id == SOAP_ITEM_ID)
+            .map(|stack| stack.quantity)
+            .sum()
+    });
+    let shared_units = need_after_personal.min(shared_available);
+    SoapRestPreview {
+        total_units: personal_units.saturating_add(shared_units),
+        personal_units,
+        shared_units,
+    }
+}
+
 #[cfg(test)]
 mod rest_form_tests {
     use adventuresim_core::strategic_time::{is_walking_time, minutes_until_next_walking_start};
 
-    use super::{RestForm, settlement_rest_minutes, travel_rest_minutes};
+    use super::{
+        RestForm, calculate_soap_rest_preview, settlement_rest_minutes, travel_rest_minutes,
+    };
+    use crate::spacetimedb::{
+        Character, CharacterFilth, FilthOrigin, FilthSubstance, InventoryItem, PartyInventoryItem,
+    };
 
     fn form(duration: &str, unit: &str, requested_minutes: Option<u64>) -> RestForm {
         RestForm {
@@ -4992,6 +5122,66 @@ mod rest_form_tests {
             unit: unit.into(),
             requested_minutes,
         }
+    }
+
+    fn member(id: u64) -> Character {
+        Character {
+            id,
+            name: format!("Member {id}"),
+            xp: 0,
+            level: 1,
+            gold: 0,
+            current_settlement_id: None,
+            current_quest_location_id: None,
+            party_id: Some("party".into()),
+            age_years: 30,
+            alive: true,
+            temporary: false,
+        }
+    }
+
+    #[test]
+    fn soap_preview_exactly_splits_personal_and_shared_units() {
+        let filth = [
+            CharacterFilth {
+                id: 1,
+                character_id: 1,
+                substance: FilthSubstance::Dirt,
+                origin: FilthOrigin::Unknown,
+                amount: 26,
+                deposited_at: 0,
+            },
+            CharacterFilth {
+                id: 2,
+                character_id: 2,
+                substance: FilthSubstance::Blood,
+                origin: FilthOrigin::Foreign,
+                amount: 30,
+                deposited_at: 0,
+            },
+        ];
+        let personal = [InventoryItem {
+            id: 1,
+            character_id: 1,
+            item_id: "soft_soap".into(),
+            qty: 1,
+        }];
+        let shared = [PartyInventoryItem {
+            id: 1,
+            party_id: "party".into(),
+            item_id: "soft_soap".into(),
+            quantity: 2,
+        }];
+        let preview = calculate_soap_rest_preview(
+            &[member(1), member(2)],
+            &filth,
+            &personal,
+            &shared,
+            Some("party"),
+        );
+        assert_eq!(preview.personal_units, 1);
+        assert_eq!(preview.shared_units, 2);
+        assert_eq!(preview.total_units, 3);
     }
 
     #[test]

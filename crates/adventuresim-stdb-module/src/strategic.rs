@@ -28,7 +28,7 @@ use crate::{
     item::{InventoryItem, inventory_item, item},
     repair::item_condition,
     tactical::tactical_server_request,
-    time::{advance_character_time, character_time, character_training_schedule},
+    time::{advance_travel_time, character_time, character_training_schedule},
 };
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
@@ -6311,7 +6311,7 @@ fn travel_to_quest_impl(
         travel_minutes.min(party_next_walking_minutes(ctx, &party.id, travel_minutes)?);
     if leg_minutes < travel_minutes {
         for member_id in traveler_ids.iter().copied() {
-            if !advance_character_time(ctx, member_id, leg_minutes)? {
+            if !advance_travel_time(ctx, member_id, leg_minutes)? {
                 return Ok(());
             }
             let mut member = ctx
@@ -6335,7 +6335,7 @@ fn travel_to_quest_impl(
     }
     for member_id in traveler_ids {
         if let Some(mut member) = ctx.db.character().id().find(member_id) {
-            if !advance_character_time(ctx, member.id, travel_minutes)? {
+            if !advance_travel_time(ctx, member.id, travel_minutes)? {
                 return Ok(());
             }
             member.current_settlement_id = None;
@@ -6547,7 +6547,7 @@ fn travel_to_settlement_impl(
             travel_minutes.min(party_next_walking_minutes(ctx, &party.id, travel_minutes)?);
         if leg_minutes < travel_minutes {
             for traveler_id in traveler_ids {
-                if !advance_character_time(ctx, traveler_id, leg_minutes)? {
+                if !advance_travel_time(ctx, traveler_id, leg_minutes)? {
                     return Ok(());
                 }
                 let mut traveler = ctx
@@ -6571,7 +6571,7 @@ fn travel_to_settlement_impl(
         }
     }
     for traveler_id in traveler_ids {
-        if !advance_character_time(ctx, traveler_id, travel_minutes)? {
+        if !advance_travel_time(ctx, traveler_id, travel_minutes)? {
             return Ok(());
         }
         let mut traveler = ctx
@@ -6740,7 +6740,7 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
     }
     let traveler_ids = living_party_member_ids(ctx, &party_id);
     for member_id in traveler_ids.iter().copied() {
-        if !advance_character_time(ctx, member_id, leg_minutes)? {
+        if !advance_travel_time(ctx, member_id, leg_minutes)? {
             return Ok(());
         }
     }
@@ -6974,9 +6974,30 @@ pub fn autoresolve_quest(
     let outcome = resolve_battle(allies, enemies, seed);
     record_autoresolve_report(ctx, &quest_id, &party_id, &outcome);
 
+    for member_id in &member_ids {
+        crate::filth::deposit_now(
+            ctx,
+            *member_id,
+            crate::filth::FilthSubstance::Dirt,
+            None,
+            adventuresim_core::filth::COMBAT_DIRT,
+        )?;
+    }
+
     // Tactical exchanges remain transient; condition crosses the boundary only
     // here, alongside wounds and ammunition in the final autoresolve result.
     for exchange in &outcome.log {
+        if exchange.cut_damage > 0.0 && member_ids.contains(&exchange.attacker_id) {
+            crate::filth::deposit_now(
+                ctx,
+                exchange.attacker_id,
+                crate::filth::FilthSubstance::Blood,
+                member_ids
+                    .contains(&exchange.defender_id)
+                    .then_some(exchange.defender_id),
+                (exchange.cut_damage * 35.0).ceil().clamp(1.0, 15.0) as u16,
+            )?;
+        }
         if let Some(id) = exchange.weapon_inventory_item_id {
             crate::repair::apply_impact(ctx, id, exchange.contact_stress);
         }
@@ -7037,7 +7058,7 @@ pub fn autoresolve_quest(
                 exchange.cut_damage,
                 exchange.blunt_damage,
                 projectile,
-            );
+            )?;
         }
         crate::condition::apply_blood_loss(ctx, member.id, member.blood_loss_fraction)?;
         crate::capability::refresh_character_capability(ctx, member.id)?;

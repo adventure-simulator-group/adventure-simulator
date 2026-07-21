@@ -283,7 +283,7 @@ pub enum DiseaseTerminalCause {
     Neurologic,
 }
 
-fn parse_id(value: &str) -> Result<DiseaseId, String> {
+pub(crate) fn parse_id(value: &str) -> Result<DiseaseId, String> {
     match value {
         "influenza" => Ok(DiseaseId::Influenza),
         "dysentery" => Ok(DiseaseId::Dysentery),
@@ -462,12 +462,33 @@ fn persist_outbreak_episodes(
     Ok(())
 }
 
+fn merge_acquisition_proposals(
+    mut proposals: Vec<InfectionEpisode>,
+    additional: impl IntoIterator<Item = InfectionEpisode>,
+) -> Vec<InfectionEpisode> {
+    for candidate in additional {
+        if let Some(existing) = proposals
+            .iter_mut()
+            .find(|episode| episode.disease_id == candidate.disease_id)
+        {
+            if (candidate.contracted_at, candidate.id) < (existing.contracted_at, existing.id) {
+                *existing = candidate;
+            }
+        } else {
+            proposals.push(candidate);
+        }
+    }
+    proposals.sort_by_key(|episode| (episode.contracted_at, episode.id));
+    proposals
+}
+
 /// Returns the safe prefix of an interval and a terminal mechanism, if any.
 /// All boundary events at the earliest minute are considered together.
 pub fn clip_elapsed_for_disease(
     ctx: &ReducerContext,
     character_id: u64,
     requested: u64,
+    allow_healing: bool,
 ) -> Result<(u64, Option<TerminalFailure>), String> {
     if requested == 0 {
         return Ok((0, None));
@@ -485,8 +506,18 @@ pub fn clip_elapsed_for_disease(
         .find(character_id)
         .map_or(3.0, |a| a.immunity);
     let mut episodes = character_episodes(ctx, character_id)?;
-    let proposed =
-        outbreak_episodes_through(ctx, character_id, now, now.saturating_add(requested))?;
+    let interval_end = now.saturating_add(requested);
+    let proposed = merge_acquisition_proposals(
+        outbreak_episodes_through(ctx, character_id, now, interval_end)?,
+        crate::filth::blood_episodes_through(
+            ctx,
+            character_id,
+            now,
+            interval_end,
+            false,
+            allow_healing,
+        )?,
+    );
     episodes.extend(proposed.iter().copied());
     let mut events = episodes
         .iter()
@@ -508,6 +539,10 @@ pub fn clip_elapsed_for_disease(
             .into_iter()
             .filter(|episode| disease::infection_occurs_through(*episode, through)),
     )?;
+    // Re-evaluate only the committed prefix and advance the private cursor.
+    // Absolute-minute seeds guarantee the same proposal as preview/full evaluation.
+    let _ =
+        crate::filth::blood_episodes_through(ctx, character_id, now, through, true, allow_healing)?;
     for event in events.iter().filter(|event| event.minute <= through) {
         match event.kind {
             DiseaseEventKind::SymptomOnset => notice(
@@ -560,6 +595,7 @@ pub fn preview_elapsed_for_disease(
     ctx: &ReducerContext,
     character_id: u64,
     requested: u64,
+    allow_healing: bool,
 ) -> Result<u64, String> {
     let now = ctx
         .db
@@ -574,12 +610,17 @@ pub fn preview_elapsed_for_disease(
         .find(character_id)
         .map_or(3.0, |a| a.immunity);
     let mut episodes = character_episodes(ctx, character_id)?;
-    episodes.extend(outbreak_episodes_through(
-        ctx,
-        character_id,
-        now,
-        now.saturating_add(requested),
-    )?);
+    episodes.extend(merge_acquisition_proposals(
+        outbreak_episodes_through(ctx, character_id, now, now.saturating_add(requested))?,
+        crate::filth::blood_episodes_through(
+            ctx,
+            character_id,
+            now,
+            now.saturating_add(requested),
+            false,
+            allow_healing,
+        )?,
+    ));
     Ok(
         disease::first_combined_terminal(&episodes, now, now.saturating_add(requested), immunity)
             .map_or(requested, |(minute, _)| minute.saturating_sub(now)),
@@ -616,7 +657,7 @@ pub fn finish_disease_interval(
     Ok(())
 }
 
-fn disease_key(id: DiseaseId) -> &'static str {
+pub(crate) fn disease_key(id: DiseaseId) -> &'static str {
     match id {
         DiseaseId::Influenza => "influenza",
         DiseaseId::Dysentery => "dysentery",
@@ -1202,6 +1243,7 @@ pub(crate) fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
     equip_medication(ctx, patient_h, medication_id)?;
     crate::capability::refresh_character_capability(ctx, PHYSICIAN_ID)?;
     crate::capability::refresh_character_capability(ctx, AMBIGUOUS_PHYSICIAN_ID)?;
+    crate::filth::seed_demo(ctx, SICK_CHARACTER_ID, 9_999_999_999_999_996)?;
     Ok(())
 }
 
@@ -1374,7 +1416,7 @@ fn advance_medical_participants(
     let elapsed = participants
         .iter()
         .try_fold(requested_minutes, |limit, character_id| {
-            let disease = preview_elapsed_for_disease(ctx, *character_id, limit)?;
+            let disease = preview_elapsed_for_disease(ctx, *character_id, limit, true)?;
             let injury =
                 crate::surgery::preview_elapsed_for_injuries(ctx, *character_id, limit, true)?;
             Ok::<u64, String>(limit.min(disease).min(injury))

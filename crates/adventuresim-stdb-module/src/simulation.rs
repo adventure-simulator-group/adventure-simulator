@@ -306,7 +306,7 @@ pub fn seed_simulation_disease(
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested, false)?;
     let (elapsed, terminal) =
-        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit)?;
+        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, false)?;
     let mut time = ctx
         .db
         .character_time()

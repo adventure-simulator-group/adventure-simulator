@@ -13,7 +13,10 @@ use serde_json::json;
 use super::{
     AppState, PartyAction, PartyActionOutcome, execute_or_request_party_action,
     participates_in_party_readiness,
-    settlements::{RestForm, get_active_party_members, living_party_members, travel_rest_minutes},
+    settlements::{
+        RestForm, get_active_party_members, living_party_members, soap_rest_preview,
+        travel_rest_minutes,
+    },
     travel::{
         QuestMapMarkers, TravelDestination, TravelForm, active_quest_tooltip, apply_terrain_route,
         populate_itinerary_forecasts, settlement_destination,
@@ -727,6 +730,12 @@ async fn render_quest_location(
             .as_ref()
             .is_some_and(|party| party.active_quest_id.as_deref() == Some(&quest.id));
     let logged_in_as = character.as_ref().map(|c| c.name.as_str());
+    let soap_preview = soap_rest_preview(
+        &state,
+        &party_members,
+        party.as_ref().map(|party| party.id.as_str()),
+    )
+    .await;
     let page = match tab {
         QuestLocationTab::Map(selected) => quest_location_map_page(
             quest,
@@ -741,6 +750,7 @@ async fn render_quest_location(
             party.as_ref(),
             can_configure_travel,
             default_rest_minutes,
+            soap_preview,
             logged_in_as,
         ),
         QuestLocationTab::Enemy => quest_location_enemy_page(
@@ -753,6 +763,7 @@ async fn render_quest_location(
             party.as_ref(),
             can_configure_travel,
             default_rest_minutes,
+            soap_preview,
             &loot,
             &pooled,
             stake,
