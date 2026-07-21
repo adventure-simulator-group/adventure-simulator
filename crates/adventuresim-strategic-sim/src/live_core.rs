@@ -1132,9 +1132,10 @@ impl LiveRunner {
                 else {
                     continue;
                 };
-                let skill = match definition.kind {
-                    ItemKind::Weapon | ItemKind::Shield => smith.weaponsmith_skill,
-                    ItemKind::Armor => smith.armourer_skill,
+                let (skill, service) = match definition.kind {
+                    ItemKind::Weapon | ItemKind::Shield => (smith.weaponsmith_skill, "weapons"),
+                    ItemKind::Armor => (smith.armourer_skill, "armor"),
+                    ItemKind::Clothing => (smith.tailor_skill, "clothing"),
                     _ => continue,
                 };
                 let Some(condition) = self
@@ -1172,6 +1173,7 @@ impl LiveRunner {
                         .submit_item_for_repair_then(
                             character_id,
                             settlement.clone(),
+                            service.to_string(),
                             owned.id,
                             cb
                         ));

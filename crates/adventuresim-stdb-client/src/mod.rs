@@ -1103,7 +1103,7 @@ pub enum Reducer {
     RetrieveRepairedItems {
         character_id: u64,
         settlement_id: String,
-        armourer: bool,
+        service: String,
         item_id: Option<String>,
         limit: u32,
     },
@@ -1161,11 +1161,12 @@ pub enum Reducer {
     SubmitAllRepairableItems {
         character_id: u64,
         settlement_id: String,
-        armourer: bool,
+        service: String,
     },
     SubmitItemForRepair {
         character_id: u64,
         settlement_id: String,
+        service: String,
         inventory_item_id: u64,
     },
     SynchronizeCharacterTime {
@@ -1848,13 +1849,13 @@ Reducer::CancelMissionRequest{
             Reducer::RetrieveRepairedItems{
                 character_id,
                 settlement_id,
-                armourer,
+                service,
                 item_id,
                 limit,
 }             => __sats::bsatn::to_vec(&retrieve_repaired_items_reducer::RetrieveRepairedItemsArgs {
                 character_id: character_id.clone(),
                 settlement_id: settlement_id.clone(),
-                armourer: armourer.clone(),
+                service: service.clone(),
                 item_id: item_id.clone(),
                 limit: limit.clone(),
 }),
@@ -1953,19 +1954,21 @@ Reducer::CancelMissionRequest{
             Reducer::SubmitAllRepairableItems{
                 character_id,
                 settlement_id,
-                armourer,
+                service,
 }             => __sats::bsatn::to_vec(&submit_all_repairable_items_reducer::SubmitAllRepairableItemsArgs {
                 character_id: character_id.clone(),
                 settlement_id: settlement_id.clone(),
-                armourer: armourer.clone(),
+                service: service.clone(),
 }),
             Reducer::SubmitItemForRepair{
                 character_id,
                 settlement_id,
+                service,
                 inventory_item_id,
 }             => __sats::bsatn::to_vec(&submit_item_for_repair_reducer::SubmitItemForRepairArgs {
                 character_id: character_id.clone(),
                 settlement_id: settlement_id.clone(),
+                service: service.clone(),
                 inventory_item_id: inventory_item_id.clone(),
 }),
             Reducer::SynchronizeCharacterTime{

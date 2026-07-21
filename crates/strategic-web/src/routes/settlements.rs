@@ -357,9 +357,11 @@ async fn surgery(
             .map(|item| item.qty)
             .sum()
     };
-    let skill = get_character_capability(&state, actor_id)
+    let procedure_checks = get_character_capability(&state, actor_id)
         .await
-        .map_or(0.0, |capability| capability.surgery);
+        .map_or([0.0; 3], |capability| {
+            [capability.anatomy, capability.knife, capability.tailoring]
+        });
     let available_splints = inventory
         .iter()
         .filter(|item| {
@@ -396,7 +398,7 @@ async fn surgery(
             quantity("bandage"),
             quantity("surgery_kit"),
             available_splints,
-            skill,
+            procedure_checks,
         )
         .into_string(),
     )
@@ -667,13 +669,36 @@ struct RepairItemForm {
     inventory_item_id: u64,
 }
 
+fn repair_service(shop: &str) -> Option<&'static str> {
+    match shop {
+        "weapons" => Some("weapons"),
+        "armor" => Some("armor"),
+        "clothing" => Some("clothing"),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod repair_route_tests {
+    use super::repair_service;
+
+    #[test]
+    fn repair_routes_dispatch_all_and_only_the_three_authoritative_services() {
+        assert_eq!(repair_service("weapons"), Some("weapons"));
+        assert_eq!(repair_service("armor"), Some("armor"));
+        assert_eq!(repair_service("clothing"), Some("clothing"));
+        assert_eq!(repair_service("merchants"), None);
+        assert_eq!(repair_service("smith"), None);
+    }
+}
+
 async fn submit_repair(
     State(state): State<AppState>,
     Path((id, shop)): Path<(String, String)>,
     session: Session,
     Form(form): Form<RepairItemForm>,
 ) -> Redirect {
-    if matches!(shop.as_str(), "weapons" | "armor") {
+    if let Some(service) = repair_service(&shop) {
         if let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
         {
             let _ = state
@@ -683,6 +708,7 @@ async fn submit_repair(
                     &[
                         json!(character.id),
                         json!(id),
+                        json!(service),
                         json!(form.inventory_item_id),
                     ],
                 )
@@ -697,14 +723,14 @@ async fn submit_all_repairs(
     Path((id, shop)): Path<(String, String)>,
     session: Session,
 ) -> Redirect {
-    if matches!(shop.as_str(), "weapons" | "armor") {
+    if let Some(service) = repair_service(&shop) {
         if let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
         {
             let _ = state
                 .db
                 .call(
                     "submit_all_repairable_items",
-                    &[json!(character.id), json!(id), json!(shop == "armor")],
+                    &[json!(character.id), json!(id), json!(service)],
                 )
                 .await;
         }
@@ -717,7 +743,9 @@ async fn retrieve_repair(
     Path((id, shop, order_id)): Path<(String, String, u64)>,
     session: Session,
 ) -> Redirect {
-    if let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await {
+    if repair_service(&shop).is_some()
+        && let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
+    {
         let _ = state
             .db
             .call(
@@ -741,7 +769,7 @@ async fn retrieve_repairs(
     session: Session,
     Form(form): Form<RetrieveRepairsForm>,
 ) -> Redirect {
-    if matches!(shop.as_str(), "weapons" | "armor")
+    if let Some(service) = repair_service(&shop)
         && let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
     {
         let _ = state
@@ -751,7 +779,7 @@ async fn retrieve_repairs(
                 &[
                     json!(character.id),
                     json!(id),
-                    json!(shop == "armor"),
+                    json!(service),
                     json!(form.item_id),
                     json!(form.limit),
                 ],

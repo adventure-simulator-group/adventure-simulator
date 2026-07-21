@@ -693,13 +693,11 @@ fn procedure_check(
             LimbWeights::both_arms(),
         )
     };
-    let skill = match procedure {
-        "extract" => (check(Skill::Anatomy) + check(Skill::Knife)) * 0.5,
-        "stitch" => (check(Skill::Anatomy) + check(Skill::Tailoring)) * 0.5,
-        _ => check(Skill::Anatomy),
-    };
-    Ok(adventuresim_core::surgery::effective_skill(
-        skill,
+    Ok(adventuresim_core::surgery::procedure_skill(
+        procedure,
+        check(Skill::Anatomy),
+        check(Skill::Knife),
+        check(Skill::Tailoring),
         actor_id == patient_id,
     ))
 }

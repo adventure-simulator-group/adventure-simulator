@@ -457,6 +457,9 @@ pub struct CharacterCapability {
     pub athletics: f32,
     pub endurance: f32,
     pub medicine: f32,
+    pub anatomy: f32,
+    pub knife: f32,
+    pub tailoring: f32,
     pub surgery: f32,
     pub charisma: f32,
     pub religion: f32,
@@ -817,7 +820,7 @@ pub struct CharacterAttributes {
     pub right_leg_agility: f32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CharacterSkills {
     pub character_id: u64,
     pub polearm_hours: f32,

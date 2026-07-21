@@ -1676,6 +1676,16 @@ fn surgery_duration(procedure: &str, skill: f32, dc: f32) -> u64 {
     adventuresim_core::surgery::procedure_duration_minutes(procedure, skill, dc)
 }
 
+fn surgery_procedure_skill(procedure: &str, checks: [f32; 3], self_treatment: bool) -> f32 {
+    adventuresim_core::surgery::procedure_skill(
+        procedure,
+        checks[0],
+        checks[1],
+        checks[2],
+        self_treatment,
+    )
+}
+
 #[derive(Clone, Copy)]
 enum SurgeryItemRequirement {
     BandageConsumed,
@@ -1834,7 +1844,7 @@ pub fn surgery_page(
     bandages: u32,
     surgery_kits: u32,
     splints: u32,
-    procedure_skill: f32,
+    procedure_checks: [f32; 3],
 ) -> Markup {
     let base = format!("{}/party/{}/surgery", location.base_path(), patient.id);
     let action = format!("{base}/{}/procedure", surgery_limb_slug(selected_limb));
@@ -1846,10 +1856,12 @@ pub fn surgery_page(
     let stitched = selected.is_some_and(|injury| injury.stitched);
     let splinted = selected.is_some_and(|injury| injury.splint_inventory_item_id.is_some());
     let has_kit = surgery_kits > 0;
-    let effective_skill = adventuresim_core::surgery::effective_skill(
-        procedure_skill,
-        active_character.id == patient.id,
-    );
+    let self_treatment = active_character.id == patient.id;
+    let procedure_skill =
+        |procedure| surgery_procedure_skill(procedure, procedure_checks, self_treatment);
+    let anatomy_skill = procedure_skill("bandage");
+    let extraction_skill = procedure_skill("extract");
+    let stitching_skill = procedure_skill("stitch");
     let content = html! {
         aside class="left-sidebar" {
             (character_summary_rail(capability))
@@ -1871,18 +1883,18 @@ pub fn surgery_page(
                 div class="surgery-procedures" {
                     @for projectile in projectiles.iter().filter(|projectile| projectile.limb == selected_limb) {
                         @let requires_kit = adventuresim_core::surgery::extraction_requires_surgery_kit(projectile.extraction_dc);
-                        (surgery_procedure_row(&action, match projectile.kind { ProjectileKind::Arrowhead => "Remove arrowhead", ProjectileKind::Ball => "Remove ball" }, match projectile.kind { ProjectileKind::Arrowhead => "plain-arrow", ProjectileKind::Ball => "bullet-visual" }, "extract", if requires_kit { &[SurgeryItemRequirement::SurgeryKitReusable] } else { &[] }, surgery_duration("extract", effective_skill, projectile.extraction_dc), projectile.extraction_dc,
-                            effective_skill, None, if effective_skill < projectile.extraction_dc { Some("Insufficient Anatomy + Knife skill") } else if requires_kit && !has_kit { Some("No surgery kit") } else { None }, Some(projectile.id)))
+                        (surgery_procedure_row(&action, match projectile.kind { ProjectileKind::Arrowhead => "Remove arrowhead", ProjectileKind::Ball => "Remove ball" }, match projectile.kind { ProjectileKind::Arrowhead => "plain-arrow", ProjectileKind::Ball => "bullet-visual" }, "extract", if requires_kit { &[SurgeryItemRequirement::SurgeryKitReusable] } else { &[] }, surgery_duration("extract", extraction_skill, projectile.extraction_dc), projectile.extraction_dc,
+                            extraction_skill, None, if extraction_skill < projectile.extraction_dc { Some("Insufficient Anatomy + Knife skill") } else if requires_kit && !has_kit { Some("No surgery kit") } else { None }, Some(projectile.id)))
                     }
-                    (surgery_procedure_row(&action, "Bandage", "bandage-roll", "bandage", &[SurgeryItemRequirement::BandageConsumed], surgery_duration("bandage", effective_skill, 0.0), 0.0,
-                        effective_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if bandaged { Some("Already bandaged") } else if bandages == 0 { Some("No bandages") } else { None }, None))
-                    (surgery_procedure_row(&action, "Stitch", "scalpel", "stitch", &[SurgeryItemRequirement::SurgeryKitReusable], surgery_duration("stitch", effective_skill, 2.0), 2.0,
-                        effective_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if stitched { Some("Already stitched") } else if effective_skill < 2.0 { Some("Insufficient Anatomy + Tailoring skill") } else if !has_kit { Some("No surgery kit") } else { None }, None))
+                    (surgery_procedure_row(&action, "Bandage", "bandage-roll", "bandage", &[SurgeryItemRequirement::BandageConsumed], surgery_duration("bandage", anatomy_skill, 0.0), 0.0,
+                        anatomy_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if bandaged { Some("Already bandaged") } else if bandages == 0 { Some("No bandages") } else { None }, None))
+                    (surgery_procedure_row(&action, "Stitch", "scalpel", "stitch", &[SurgeryItemRequirement::SurgeryKitReusable], surgery_duration("stitch", stitching_skill, 2.0), 2.0,
+                        stitching_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if stitched { Some("Already stitched") } else if stitching_skill < 2.0 { Some("Insufficient Anatomy + Tailoring skill") } else if !has_kit { Some("No surgery kit") } else { None }, None))
                     @if splinted {
-                        (surgery_procedure_row(&action, "Remove splint", "arm-bandage", "remove-splint", &[], surgery_duration("remove-splint", effective_skill, 0.0), 0.0, effective_skill, None, None, None))
+                        (surgery_procedure_row(&action, "Remove splint", "arm-bandage", "remove-splint", &[], surgery_duration("remove-splint", anatomy_skill, 0.0), 0.0, anatomy_skill, None, None, None))
                     } @else {
-                        (surgery_procedure_row(&action, "Splint", "arm-bandage", "splint", &[SurgeryItemRequirement::SplintEquipped], surgery_duration("splint", effective_skill, 1.0), 1.0,
-                            effective_skill, if fracture <= 0.0 { Some("No injury is present") } else { None }, if fracture <= 0.0 { Some("No injury is present") } else if effective_skill < 1.0 { Some("Insufficient Anatomy skill") } else if splints == 0 { Some("No splints") } else { None }, None))
+                        (surgery_procedure_row(&action, "Splint", "arm-bandage", "splint", &[SurgeryItemRequirement::SplintEquipped], surgery_duration("splint", anatomy_skill, 1.0), 1.0,
+                            anatomy_skill, if fracture <= 0.0 { Some("No injury is present") } else { None }, if fracture <= 0.0 { Some("No injury is present") } else if anatomy_skill < 1.0 { Some("Insufficient Anatomy skill") } else if splints == 0 { Some("No splints") } else { None }, None))
                     }
                     @if cut <= 0.0 && bruise > 0.0 && fracture <= 0.0 {
                         p class="text-muted small-copy" { "Bruising must heal on its own." }
@@ -2936,7 +2948,7 @@ fn skills_table(
                     @if skills.charisma_hours > 0.0 { (party_skill_row("Charisma", "charisma", Skill::Charisma, skills.charisma_hours, head_health, schedule.is_some())) }
                     @if skills.medicine_hours > 0.0 { (party_skill_row("Medicine", "medicine", Skill::Medicine, skills.medicine_hours, head_health, schedule.is_some())) }
                     (religion_skill_rows(skills, head_health, schedule, training_religion))
-                    (combat_skill_rows(skills, upper_health, lower_health, schedule, combat_profile))
+                    (combat_skill_rows(skills, head_health, upper_health, lower_health, schedule, combat_profile))
                     @if skills.stealth_hours > 0.0 { (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, upper_health, schedule.is_some())) }
                     @if skills.anatomy_hours > 0.0 { (party_skill_row("Anatomy", "surgeon", Skill::Anatomy, skills.anatomy_hours, head_health, schedule.is_some())) }
                     @if skills.tailoring_hours > 0.0 { (party_skill_row("Tailoring", "sewing-needle", Skill::Tailoring, skills.tailoring_hours, upper_health, schedule.is_some())) }
@@ -3067,6 +3079,7 @@ fn religion_skill_rows(
 
 fn combat_skill_rows(
     skills: &CharacterSkills,
+    head_health: f32,
     upper_health: f32,
     lower_health: f32,
     schedule: Option<&CharacterTrainingSchedule>,
@@ -3091,7 +3104,7 @@ fn combat_skill_rows(
             ("Dodge", "dodge", Skill::Dodge, skills.dodge_hours, lower_health, weights[9]),
             ("Block", "block", Skill::Block, skills.block_hours, upper_health, weights[10]),
             ("Balance", "balance", Skill::Balance, skills.balance_hours, lower_health, weights[11]),
-            ("Will", "will", Skill::Will, skills.will_hours, upper_health, weights[12]),
+            ("Will", "will", Skill::Will, skills.will_hours, head_health, weights[12]),
         ]))
     }
 }
@@ -5382,6 +5395,24 @@ mod tests {
     }
 
     #[test]
+    fn surgery_preview_uses_the_same_asymmetric_procedure_composition_as_reducers() {
+        let checks = [5.0, 5.0, 0.0];
+        let extraction = surgery_procedure_skill("extract", checks, false);
+        let stitching = surgery_procedure_skill("stitch", checks, false);
+        assert_eq!(
+            extraction,
+            adventuresim_core::surgery::procedure_skill("extract", 5.0, 5.0, 0.0, false)
+        );
+        assert_eq!(
+            stitching,
+            adventuresim_core::surgery::procedure_skill("stitch", 5.0, 5.0, 0.0, false)
+        );
+        assert!(extraction >= 4.0);
+        assert!(stitching < 4.0);
+        assert_eq!(surgery_procedure_skill("extract", checks, true), 2.5);
+    }
+
+    #[test]
     fn unavailable_surgery_rows_are_greyed_and_buttons_keep_procedure_names() {
         let row = surgery_procedure_row(
             "/test",
@@ -5530,6 +5561,36 @@ mod tests {
         assert!(rail.contains("data-schedule-retry>Retry</button>"));
         assert!(!rail.contains(">⚙</span>"));
         assert!(!rail.contains("aria-label=\"Automatic training\""));
+    }
+
+    #[test]
+    fn defense_will_uses_head_health_for_its_injury_adjusted_rank() {
+        let skills = CharacterSkills {
+            will_hours: 5_000.0,
+            ..Default::default()
+        };
+        let rendered = combat_skill_rows(
+            &skills,
+            0.2,
+            0.8,
+            1.0,
+            None,
+            CombatTrainingProfile::default(),
+        )
+        .into_string();
+        let will = rendered.find("aria-label=\"Will\"").unwrap();
+        let start = rendered[..will].rfind("<tr").unwrap();
+        let end = will + rendered[will..].find("</tr>").unwrap() + "</tr>".len();
+        let will_row = &rendered[start..end];
+        let rank = Skill::Will.training_rank(5_000.0);
+        let expected = skill_rank_bar(
+            rank,
+            rank * 0.2,
+            "5000 hours invested",
+            skill_rail_bar_options(),
+        )
+        .into_string();
+        assert!(will_row.contains(&expected));
     }
 
     #[test]

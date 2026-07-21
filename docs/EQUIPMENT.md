@@ -72,6 +72,13 @@ Equipment quality is also its required maintenance skill, so a lesser smith can 
 masterwork item without restoring it completely. Damage can never occupy a tier above the item's
 quality: only quality-5 equipment can acquire violet tier-5 damage.
 
+Clothing condition and Tailor repair are authoritative for damaged clothing
+instances, including seeded and imported damage. Ordinary clothing wear is not
+yet generated because clothing has no equipped/worn slot in the current item
+model; carried inventory is deliberately not worn down as if it were being
+worn. Routine wear should begin when clothing becomes equippable and can
+participate in the same contact and use paths as other equipment.
+
 Quality uses the same 1--5 scale and is shown by the item name using the corresponding condition
 color, adjusted toward the fixed light interface text color for readability. Quality 3 is ordinary
 munition-grade work, quality 4 is the sort of commission a knight might order, and quality 5 is

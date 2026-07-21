@@ -141,6 +141,9 @@ pub struct CharacterCapabilities {
     pub athletics: f32,
     pub endurance: f32,
     pub medicine: f32,
+    pub anatomy: f32,
+    pub knife: f32,
+    pub tailoring: f32,
     pub surgery: f32,
     pub charisma: f32,
     pub religion: f32,
@@ -265,6 +268,36 @@ pub fn evaluate_capabilities(
         * equipment.armor_penalty(BodyPart::FULL_BODY)
         * encumbrance;
     let (quarter_armor, half_armor, three_quarter_armor, full_armor) = armor_tiers(equipment);
+    let anatomy = skills
+        .skill_check_by_parts(
+            Skill::Anatomy,
+            attributes,
+            body,
+            essentials,
+            equipment,
+            LimbWeights::both_arms(),
+        )
+        .clamp(0.0, 5.0);
+    let knife = skills
+        .skill_check_by_parts(
+            Skill::Knife,
+            attributes,
+            body,
+            essentials,
+            equipment,
+            LimbWeights::both_arms(),
+        )
+        .clamp(0.0, 5.0);
+    let tailoring = skills
+        .skill_check_by_parts(
+            Skill::Tailoring,
+            attributes,
+            body,
+            essentials,
+            equipment,
+            LimbWeights::both_arms(),
+        )
+        .clamp(0.0, 5.0);
 
     CharacterCapabilities {
         melee: equipment.weapon_is_melee(),
@@ -288,21 +321,10 @@ pub fn evaluate_capabilities(
                 LimbWeights::all_equal(),
             )
             .clamp(0.0, 5.0),
-        surgery: ([Skill::Anatomy, Skill::Knife, Skill::Tailoring]
-            .into_iter()
-            .map(|skill| {
-                skills.skill_check_by_parts(
-                    skill,
-                    attributes,
-                    body,
-                    essentials,
-                    equipment,
-                    LimbWeights::both_arms(),
-                )
-            })
-            .sum::<f32>()
-            / 3.0)
-            .clamp(0.0, 5.0),
+        anatomy,
+        knife,
+        tailoring,
+        surgery: (anatomy + knife + tailoring) / 3.0,
         charisma: skills
             .skill_check_by_parts(
                 Skill::Charisma,

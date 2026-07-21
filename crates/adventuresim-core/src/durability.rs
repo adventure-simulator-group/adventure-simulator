@@ -8,6 +8,40 @@ pub struct DamageBins(pub [f32; 5]);
 
 pub const MAX_DURABLE_QUANTITY_CHANGE: u32 = 64;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RepairService {
+    Weapons,
+    Armor,
+    Clothing,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RepairItemKind {
+    Weapon,
+    Shield,
+    Armor,
+    Clothing,
+}
+
+impl RepairService {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "weapons" => Some(Self::Weapons),
+            "armor" => Some(Self::Armor),
+            "clothing" => Some(Self::Clothing),
+            _ => None,
+        }
+    }
+
+    pub const fn matches(self, kind: RepairItemKind) -> bool {
+        match self {
+            Self::Weapons => matches!(kind, RepairItemKind::Weapon | RepairItemKind::Shield),
+            Self::Armor => matches!(kind, RepairItemKind::Armor),
+            Self::Clothing => matches!(kind, RepairItemKind::Clothing),
+        }
+    }
+}
+
 /// One legacy durable stack keeps its original row and needs this many new
 /// physical-instance rows. Keeping the original ID preserves equip references.
 pub fn durable_stack_split_count(quantity: u32) -> u32 {
@@ -243,6 +277,22 @@ pub fn effective_handling(base_range_of_motion: f32, damage: DamageBins, sensiti
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repair_service_filter_is_strict_and_three_way() {
+        let weapons = RepairService::parse("weapons").unwrap();
+        let armor = RepairService::parse("armor").unwrap();
+        let clothing = RepairService::parse("clothing").unwrap();
+        assert!(weapons.matches(RepairItemKind::Weapon));
+        assert!(weapons.matches(RepairItemKind::Shield));
+        assert!(!weapons.matches(RepairItemKind::Armor));
+        assert!(!weapons.matches(RepairItemKind::Clothing));
+        assert!(armor.matches(RepairItemKind::Armor));
+        assert!(!armor.matches(RepairItemKind::Clothing));
+        assert!(clothing.matches(RepairItemKind::Clothing));
+        assert!(!clothing.matches(RepairItemKind::Weapon));
+        assert_eq!(RepairService::parse("smith"), None);
+    }
     #[test]
     fn ductile_yields_sooner_but_brittle_fails_sooner() {
         let ductile = DurabilityProfile {
