@@ -814,6 +814,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/styles/timber-framed/building/village/weapons.png` — Binary game or UI asset.
 - `crates/strategic-web/static/styles/timber-framed/ornament/camp-tent/ornament.png` — Binary game or UI asset.
 - `crates/strategic-web/static/styles/timber-framed/ornament/encounter-boulders/ornament.png` — Binary game or UI asset.
+- `crates/strategic-web/static/tooltips.js` — Repository support file.
 - `crates/strategic-web/static/training-schedule.js` — Repository support file.
 - `crates/strategic-web/static/travel-planner.js` — Repository support file.
 - `crates/strategic-web/tests/building-assets.test.cjs` — Repository support file.
@@ -828,6 +829,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/tests/party-action-contract.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/rest-duration.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/service-quests.test.cjs` — Repository support file.
+- `crates/strategic-web/tests/tooltips.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/training-schedule.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/travel-planner-behavior.test.cjs` — Repository support file.
 - `docs/ARCHITECTURE.md` — Project documentation.
@@ -905,8 +907,6 @@ development, or wiki document before changing a subsystem.
 - `wiki/shared/Terrain.md` — Project documentation.
 - `wiki/strategic/Character.md` — Project documentation.
 - `wiki/strategic/Quests.md` — Project documentation.
-- `wiki/strategic/Settlement.md` — Project documentation.
-- `wiki/strategic/Settlement.md` — Project documentation.
 - `wiki/strategic/Settlement.md` — Project documentation.
 - `wiki/strategic/Time.md` — Project documentation.
 - `wiki/strategic/Trade.md` — Project documentation.

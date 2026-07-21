@@ -117,7 +117,7 @@ test("settlement smithies and wilderness tabs use independent non-interactive ef
   assert.match(layoutCss, /\.topbar-scene-effect-plane \{[\s\S]*bottom: var\(--topbar-prop-baseline\);[\s\S]*width: 6\.55rem;[\s\S]*height: 6\.55rem;[\s\S]*scale\(var\(--topbar-prop-scale\)\)/);
   assert.match(layoutCss, /@media \(max-width: 1200px\)[\s\S]*--topbar-prop-scale: 0\.8473;[\s\S]*data-environment="wilderness"[\s\S]*--topbar-prop-scale: 0\.8473;/);
   assert.match(layoutCss, /\.campfire-smoke \{[\s\S]*--smoke-rise-distance: -180px;/);
-  assert.match(layoutCss, /@media \(max-width: 768px\)[\s\S]*padding-top: 1\.75rem;[\s\S]*overflow-y: hidden;[\s\S]*--topbar-prop-scale: 0\.8855;[\s\S]*\.campfire-smoke \{[\s\S]*--smoke-rise-distance: -110px;/);
+  assert.match(layoutCss, /@media \(max-width: 768px\)[\s\S]*padding: 0\.75rem 0\.5rem 0\.35rem;[\s\S]*overflow-y: hidden;[\s\S]*--topbar-prop-scale: 0\.8855;[\s\S]*\.campfire-smoke \{[\s\S]*--smoke-rise-distance: -110px;/);
 
   const smokeFrames = layoutCss.match(/@keyframes wilderness-smoke-rise \{[\s\S]*?\n\}/)?.[0] ?? "";
   const flameFrames = layoutCss.match(/@keyframes wilderness-flame-flicker \{[\s\S]*?\n\}/)?.[0] ?? "";
@@ -161,12 +161,12 @@ test("wilderness headers select a tintable physical horizon", () => {
   }
 });
 
-test("settlement side panels use tint-derived beams and corner blocks", () => {
+test("settlement side panels use tint-derived frames around neutral recesses", () => {
   assert.match(layoutCss, /data-environment="settlement"[\s\S]*:is\(\.left-sidebar, \.right-sidebar\)/);
-  assert.match(layoutCss, /--building-frame: color-mix\(in srgb, var\(--building-surface\)/);
+  assert.match(layoutCss, /--building-frame: color-mix\(in srgb, var\(--building-frame-tint\)/);
   assert.match(layoutCss, /--building-frame-corner: color-mix/);
   assert.match(layoutCss, /--building-frame-corner-size: 1\.35rem/);
-  assert.match(layoutCss, /--building-panel-recess: color-mix/);
+  assert.match(layoutCss, /--building-panel-recess: var\(--content-surface-recess\)/);
   assert.match(layoutCss, /padding-block: var\(--building-frame-corner-size\)/);
   assert.match(layoutCss, /padding-inline: var\(--building-frame-corner-size\)/);
   assert.match(layoutCss, /border: 0/);
