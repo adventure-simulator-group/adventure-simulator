@@ -162,6 +162,21 @@
       fatigue: hours * Number(row.dataset.fatigueRate || 0),
     };
     Object.entries(effects).forEach(([kind, value]) => renderEffect(row, kind, value));
+    const training = row.querySelector('[data-activity-effect="training"]');
+    if (training) {
+      const rates = (training.dataset.trainingRates || '').split('|').filter(Boolean)
+        .map((entry) => {
+          const [skill, rate] = entry.split('=');
+          return [skill, Number(rate)];
+        });
+      const trained = rates.map(([skill, rate]) => [skill, hours * rate]);
+      const total = trained.reduce((sum, [, value]) => sum + value, 0);
+      training.textContent = total > 0 ? `+${total.toFixed(2)}h` : '—';
+      training.title = trained.length
+        ? trained.map(([skill, value]) => `${skill}: +${value.toFixed(2)}h`).join('; ')
+        : 'No skill training';
+      training.setAttribute('aria-label', `Effective skill training: ${total.toFixed(2)} hours`);
+    }
   }
 
   function calculateLeisurePreview({

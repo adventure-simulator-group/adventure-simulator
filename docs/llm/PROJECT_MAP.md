@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (882)
+## Files (903)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -18,6 +18,9 @@ development, or wiki document before changing a subsystem.
 - `.gitattributes` — Repository support file.
 - `.github/workflows/gh-pages.yml` — Repository support file.
 - `.gitignore` — Repository support file.
+- `.ui-audit.err.log` — Repository support file.
+- `.ui-audit.out.log` — Repository support file.
+- `93298.zip` — Repository support file.
 - `AGENTS.md` — Project documentation.
 - `CNAME` — Repository support file.
 - `Caddyfile.dev` — Repository support file.
@@ -50,6 +53,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/leadership.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/morale.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/profession.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/provisioning.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/simulation_security.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/skill.rs` — Rust source module for this component.
@@ -87,6 +91,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/battle_participant_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/battle_result_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/battle_result_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/begin_apprenticeship_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/begin_world_data_import_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/bootstrap_development_world_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/built_settlement_cover_type.rs` — Generated SpacetimeDB data type.
@@ -99,6 +104,8 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/catholic_reformed_church_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/cation_exchange_capacity_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/change_inventory_item_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/character_apprenticeship_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/character_apprenticeship_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_attributes_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_attributes_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_capability_table.rs` — Generated SpacetimeDB table interface.
@@ -133,6 +140,8 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/character_training_schedule_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_training_schedule_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/character_virtue_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/character_virtue_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/charcoal_burning_industry_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/claim_simulation_run_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/committed_cut_type.rs` — Generated SpacetimeDB data type.
@@ -842,6 +851,10 @@ development, or wiki document before changing a subsystem.
 - `docs/VIABUNDUS.md` — Project documentation.
 - `docs/WORLD_DATA_BUNDLES.md` — Project documentation.
 - `docs/llm/README.md` — Component overview and usage notes.
+- `downloads/cropland.nc` — Repository support file.
+- `downloads/general_files.zip` — Repository support file.
+- `downloads/grazing_land.nc` — Repository support file.
+- `downloads/urban_area.nc` — Repository support file.
 - `flake.lock` — Nix environment configuration or lockfile.
 - `flake.nix` — Nix environment configuration or lockfile.
 - `justfile` — Repository support file.
@@ -864,6 +877,12 @@ development, or wiki document before changing a subsystem.
 - `scripts/update_project_map.py` — Development or documentation automation script.
 - `scripts/world_data_bundle.py` — Development or documentation automation script.
 - `scripts/world_source_init.py` — Development or documentation automation script.
+- `target-codex-map-qa/.rustc_info.json` — Repository support file.
+- `target-codex-map-qa/CACHEDIR.TAG` — Repository support file.
+- `target-domain/.rustc_info.json` — Repository support file.
+- `target-domain/CACHEDIR.TAG` — Repository support file.
+- `target-surgery-check/.rustc_info.json` — Repository support file.
+- `target-surgery-check/CACHEDIR.TAG` — Repository support file.
 - `utils/generate_certificates.sh` — Development or documentation automation script.
 - `wiki/Implementation.md` — Project documentation.
 - `wiki/Meta.md` — Project documentation.
@@ -886,6 +905,8 @@ development, or wiki document before changing a subsystem.
 - `wiki/shared/Terrain.md` — Project documentation.
 - `wiki/strategic/Character.md` — Project documentation.
 - `wiki/strategic/Quests.md` — Project documentation.
+- `wiki/strategic/Settlement.md` — Project documentation.
+- `wiki/strategic/Settlement.md` — Project documentation.
 - `wiki/strategic/Settlement.md` — Project documentation.
 - `wiki/strategic/Time.md` — Project documentation.
 - `wiki/strategic/Trade.md` — Project documentation.

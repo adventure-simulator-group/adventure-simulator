@@ -35,7 +35,11 @@ the live sky tint and brightness. Until imported terrain selects the actual
 biome, a deterministic hash of the camp party or quest-location ID keeps the
 assigned scenery stable between visits without adding persisted state.
 
-Each settlement offers a number of services. Tentatively, these are all tabs of a unified trade page. Each tab corresponds to a different guild, represented by a single NPC. The left side is a list of everything offered by the NPC, the right side is everything offered by your party. It _may_ be a good idea to not only include _items_ in this menu, but also _services_.
+Each settlement offers a number of services as tabs of a unified trade page. Each service corresponds to a profession, represented by a single NPC. A greeting links the NPC's profession; asking about it explains the work and offers a second linked topic through which the active character may become an apprentice. The left side lists what the NPC offers, including training or other services where appropriate, and the right side lists what the party offers.
+
+The general merchant and innkeeper teach Charisma; weaponsmiths, armourers, and tailors teach Smithing as distinct professions; herbalists teach Medicine and Surgery; and the church teaches direct knowledge of its own religious tradition. Apprentices pay for instruction. At rank 2 in every associated profession skill they become journeymen who may practice independently in cities for a small wage, and at rank 4 they become masters whose practice earns a good income. Religious progression uses novice, cleric, and teacher as neutral interface terms, and religious practice earns Virtue rather than money.
+
+This is a profession and activity system, not a guild-membership simulation. There are no persisted guild affiliations, rivalries, dues, membership limits, exclusive apprenticeships, or restrictions on where a qualified character may practice beyond the activity requiring a city. Several professions may teach the same skill without making the character a member of all of them.
 
 The location header reflects settlement scale through architecture and its
 distant horizon. Unknown settlements, hamlets, and villages use the low village

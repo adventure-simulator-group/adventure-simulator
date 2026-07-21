@@ -12,6 +12,7 @@ pub mod equipment;
 pub mod essential;
 pub mod leadership;
 pub mod morale;
+pub mod profession;
 pub mod provisioning;
 pub mod simulation_security;
 pub mod skill;
@@ -36,6 +37,7 @@ pub mod prelude {
     pub use crate::equipment::*;
     pub use crate::essential::*;
     pub use crate::morale::*;
+    pub use crate::profession::*;
     pub use crate::provisioning::*;
     pub use crate::skill::*;
     pub use crate::strategic_economy::*;
