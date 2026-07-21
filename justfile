@@ -4,14 +4,14 @@
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
-spacetime_port := "3000"
+spacetime_port := "23100"
 web_port := "8080"
 secure_web_port := "8443"
 tactical_port := "6000"
 tactical_web_port := "6001"
 public_bind := "0.0.0.0"
 
-spacetime_url := "http://localhost:" + spacetime_port
+spacetime_url := "http://127.0.0.1:" + spacetime_port
 spacetime_module := "adventuresim-stdb-module"
 spacetime_version := "2.6.1"
 
@@ -63,16 +63,13 @@ caddy-preflight:
     }
 
 # Start the canonical server-rendered browser stack.
-dev:
-    @just web
+dev: web
 
 # Full dev with WASM game built
-dev-full:
-    @just web
+dev-full: web
 
 # Start only the persistent strategic layer and its browser UI.
-dev-strategic:
-    @just web-strategic
+dev-strategic: web-strategic
 
 # Start the local browser stack.
 web: preflight spacetime-start publish _seed-world build-wasm build-tactical
@@ -167,14 +164,14 @@ _seed-religion-scholar-character server=spacetime_url: spacetime-version-check
 # Start SpacetimeDB if it is not already listening
 spacetime-start: spacetime-version-check
     @mkdir -p "{{run_dir}}"
-    @if python3 -c 'import socket, sys; s=socket.socket(); s.settimeout(0.2); code=s.connect_ex(("127.0.0.1", {{spacetime_port}})); s.close(); sys.exit(0 if code==0 else 1)'; then \
+    @if {{python_bin}} -c 'import socket, sys; s=socket.socket(); s.settimeout(0.2); code=s.connect_ex(("127.0.0.1", {{spacetime_port}})); s.close(); sys.exit(0 if code==0 else 1)'; then \
         echo "SpacetimeDB already running on http://localhost:{{spacetime_port}}"; \
     else \
         rm -f "{{stdb_pid}}"; \
         spacetime start --listen-addr 127.0.0.1:{{spacetime_port}} >"{{stdb_log}}" 2>&1 & \
         echo $! > "{{stdb_pid}}"; \
         sleep 2; \
-        if ! python3 -c 'import socket, sys; s=socket.socket(); s.settimeout(0.2); code=s.connect_ex(("127.0.0.1", {{spacetime_port}})); s.close(); sys.exit(0 if code==0 else 1)'; then \
+        if ! {{python_bin}} -c 'import socket, sys; s=socket.socket(); s.settimeout(0.2); code=s.connect_ex(("127.0.0.1", {{spacetime_port}})); s.close(); sys.exit(0 if code==0 else 1)'; then \
             echo "SpacetimeDB failed to start. See {{stdb_log}}"; \
             exit 1; \
         fi; \

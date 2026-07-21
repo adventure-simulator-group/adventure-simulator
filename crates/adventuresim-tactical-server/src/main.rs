@@ -61,7 +61,7 @@ struct Args {
     spacetimedb_url: String,
 
     /// SpacetimeDB module name
-    #[arg(long, default_value = "strategic-stdb-module")]
+    #[arg(long, default_value = "adventuresim-stdb-module")]
     spacetimedb_module: String,
 
     /// Mission timeout in seconds (how long the server stays up waiting for players)
