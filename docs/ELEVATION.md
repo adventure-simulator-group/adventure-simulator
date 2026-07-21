@@ -46,3 +46,19 @@ location and can directly influence scene selection, climate inference,
 agriculture, travel preparation, and UI presentation. A future source may add
 route elevation profiles. See [ROUTE_TERRAIN.md](ROUTE_TERRAIN.md); settlement
 elevation is never used as a proxy for terrain along an entire road edge.
+
+## Native strategic terrain pack
+
+`build-strategic-map` compiles the initialized 5–16°E, 50–56°N source tiles
+into `terrain-routing-v1.json` and `terrain-routing-v1.pack`. The pack preserves
+each source tile's native 1,800/2,400/3,600 by 3,600 grid instead of expanding
+it into database rows or `ElevationCell` structs. Independently deflated
+256×256 chunks carry signed elevation, road/open/sparse-woods/deep-woods/water
+surface, and an explicit infrastructure-crossing bit.
+
+The manifest and pack are separately SHA-256 addressed. Readers reject wrong
+dimensions, overlapping or truncated chunks, digest mismatches, excess
+entries, and oversized decompression. Runtime decompression uses a
+deterministic 32 MiB LRU, so the complete native grid never resides in RAM.
+Northern Germany's z7 paper tiles sample this pack; lower zooms and areas
+outside that initialized detail bound keep the generalized fallback.

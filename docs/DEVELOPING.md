@@ -269,15 +269,16 @@ local download. The command records the source URLs and SHA-256 checksums in
 After Viabundus and the world-data inputs are installed, run `just
 build-strategic-map` to regenerate
 `target/strategic-map/strategic-map-v1.json` and the derived
-`target/strategic-map/strategic-map-tiles-v1.pack`. These deterministic presentation assets verify
+`target/strategic-map/strategic-map-tiles-v1.pack`, plus the independent
+`terrain-routing-v1.json`/`.pack` native-detail artifact. These deterministic presentation assets verify
 the initialized v2 edge and water files against
 their recorded SHA-256 identities, retains only active 1544 overview roads and
-ferries, sparsely samples installed GLO-30 tiles into elevation bands and
+ferries, samples installed GLO-30 tiles into elevation bands and
 contours, and reduces every available prepared forest tile into bounded density
 and leaf-type regions. Missing forest tiles remain absent and their coverage is
 reported as partial; they do not block map generation. The command clips and
 simplifies presentation geometry, renders a Paper AVIF pyramid through zoom
-level 6, concatenates the independently addressable images into one pack,
+level 7 (with native-detail z7 coverage bounded to 5–16°E, 50–56°N), concatenates the independently addressable images into one pack,
 and embeds a digest
 over every presentation-affecting package field. The
 versioned filename is stable rather than content-addressed. Legacy Viabundus

@@ -16,6 +16,7 @@ const MIN_TILE_SIZE: u32 = 64;
 const MAX_TILE_SIZE: u32 = 2_048;
 const MAX_TILE_COUNT: usize = 100_000;
 const RENDER_MARGIN: u32 = 12;
+const NATIVE_DETAIL_BOUNDS: [f64; 4] = [5.0, 50.0, 16.0, 56.0];
 
 #[derive(Debug)]
 struct ForestField {
@@ -118,7 +119,7 @@ impl Default for TileConfig {
     fn default() -> Self {
         Self {
             tile_size: 512,
-            max_zoom: 6,
+            max_zoom: 7,
         }
     }
 }
@@ -166,6 +167,7 @@ const PAPER: Palette = Palette {
 
 pub(super) fn build(
     package: &Package,
+    native_terrain: Option<&adventuresim_terrain::TerrainPack>,
     config: TileConfig,
 ) -> Result<(TilePyramid, Vec<u8>), Box<dyn std::error::Error>> {
     if !(MIN_TILE_SIZE..=MAX_TILE_SIZE).contains(&config.tile_size)
@@ -185,6 +187,16 @@ pub(super) fn build(
         let rows = (HEIGHT / span).ceil() as u16;
         let coordinates: Vec<_> = (0..rows)
             .flat_map(|y| (0..columns).map(move |x| (x, y)))
+            .filter(|&(x, y)| {
+                config.max_zoom < 7
+                    || zoom < config.max_zoom
+                    || tile_intersects_geographic_detail(
+                        package.bounds,
+                        span,
+                        u32::from(x),
+                        u32::from(y),
+                    )
+            })
             .collect();
         let quality = if zoom == config.max_zoom { 95 } else { 82 };
         let encoded_tiles: Result<Vec<Vec<u8>>, String> = coordinates
@@ -192,6 +204,7 @@ pub(super) fn build(
             .map(|&(x, y)| {
                 let tile = render_with_forest_field(
                     package,
+                    native_terrain,
                     forest_field.as_ref(),
                     config.tile_size,
                     TILE_GUTTER,
@@ -232,6 +245,21 @@ pub(super) fn build(
     ))
 }
 
+fn tile_intersects_geographic_detail(map_bounds: [f64; 4], span: f64, x: u32, y: u32) -> bool {
+    let [west, south, east, north] = NATIVE_DETAIL_BOUNDS;
+    let (left, top) = project(west, north, map_bounds);
+    let (right, bottom) = project(east, south, map_bounds);
+    intersects(
+        [
+            f64::from(x) * span,
+            f64::from(y) * span,
+            f64::from(x + 1) * span,
+            f64::from(y + 1) * span,
+        ],
+        [left, top, right, bottom],
+    )
+}
+
 fn pyramid_tile_count(tile_size: u32, max_zoom: u8) -> usize {
     (0..=max_zoom)
         .map(|zoom| {
@@ -267,6 +295,7 @@ fn render(
     let forest_field = ForestField::from_regions(&package.forest.regions, package.bounds);
     render_with_forest_field(
         package,
+        None,
         forest_field.as_ref(),
         tile_size,
         gutter,
@@ -280,6 +309,7 @@ fn render(
 #[allow(clippy::too_many_arguments)]
 fn render_with_forest_field(
     package: &Package,
+    native_terrain: Option<&adventuresim_terrain::TerrainPack>,
     forest_field: Option<&ForestField>,
     tile_size: u32,
     gutter: u8,
@@ -303,6 +333,12 @@ fn render_with_forest_field(
         (origin.1 + f64::from(render_size)) / scale,
     ];
     draw_parchment_texture(&mut pixmap, scale, origin, palette);
+
+    if scale >= 64.0
+        && let Some(native_terrain) = native_terrain
+    {
+        draw_native_relief(&mut pixmap, native_terrain, package.bounds, scale, origin)?;
+    }
 
     if scale < 16.0 {
         for cell in &package.elevation.cells {
@@ -528,6 +564,61 @@ fn draw_forest_cover(
             }
         }
     }
+}
+
+fn draw_native_relief(
+    pixmap: &mut Pixmap,
+    terrain: &adventuresim_terrain::TerrainPack,
+    [west, south, east, north]: [f64; 4],
+    scale: f64,
+    origin: (f64, f64),
+) -> Result<(), Box<dyn std::error::Error>> {
+    let width = pixmap.width() as usize;
+    let height = pixmap.height() as usize;
+    let mut previous = vec![None; width];
+    let mut current = vec![None; width];
+    let data = pixmap.data_mut();
+    for pixel_y in 0..height {
+        for pixel_x in 0..width {
+            let logical_x = (origin.0 + pixel_x as f64 + 0.5) / scale;
+            let logical_y = (origin.1 + pixel_y as f64 + 0.5) / scale;
+            let longitude = west + logical_x / WIDTH * (east - west);
+            let latitude = north - logical_y / HEIGHT * (north - south);
+            current[pixel_x] = terrain
+                .cell(latitude, longitude)?
+                .map(|cell| cell.elevation_m);
+            let Some(elevation) = current[pixel_x] else {
+                continue;
+            };
+            let west_elevation = pixel_x
+                .checked_sub(1)
+                .and_then(|x| current[x])
+                .unwrap_or(elevation);
+            let north_elevation = previous[pixel_x].unwrap_or(elevation);
+            // Northwest light: eastward/southward rises darken, opposite faces
+            // brighten. Clamp keeps GLO void rims and cliffs from overpowering ink.
+            let gradient = ((i32::from(elevation) - i32::from(west_elevation))
+                + (i32::from(elevation) - i32::from(north_elevation)))
+            .clamp(-120, 120);
+            let offset = (pixel_y * width + pixel_x) * 4;
+            if gradient > 2 {
+                blend_opaque_pixel(
+                    &mut data[offset..offset + 4],
+                    [83, 72, 59, 255],
+                    f64::from(gradient) / 420.0,
+                );
+            } else if gradient < -2 {
+                blend_opaque_pixel(
+                    &mut data[offset..offset + 4],
+                    [245, 239, 214, 255],
+                    f64::from(-gradient) / 500.0,
+                );
+            }
+        }
+        std::mem::swap(&mut previous, &mut current);
+        current.fill(None);
+    }
+    Ok(())
 }
 
 fn blend_opaque_pixel(destination: &mut [u8], source: [u8; 4], coverage: f64) {
@@ -1272,6 +1363,7 @@ mod tests {
     fn excessive_tile_pyramid_is_rejected_before_rendering() {
         let result = build(
             &paper_fixture("broadleaf", false),
+            None,
             TileConfig {
                 tile_size: MIN_TILE_SIZE,
                 max_zoom: 8,

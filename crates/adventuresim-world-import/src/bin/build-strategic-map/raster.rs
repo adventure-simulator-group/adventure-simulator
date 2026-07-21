@@ -152,8 +152,12 @@ fn load_elevation(
 fn sample_elevation(path: &Path) -> Result<Vec<Option<f64>>, Box<dyn std::error::Error>> {
     let mut decoder = Decoder::new(BufReader::new(File::open(path)?))?;
     let (width, height) = decoder.dimensions()?;
-    if width < 2 || height < 2 {
-        return Err(format!("elevation tile {} is too small", path.display()).into());
+    if ![1_800, 2_400, 3_600].contains(&width) || height != 3_600 {
+        return Err(format!(
+            "elevation tile {} has invalid GLO-30 dimensions {width}x{height}",
+            path.display()
+        )
+        .into());
     }
     let (chunk_width, chunk_height) = decoder.chunk_dimensions();
     if chunk_width == 0 || chunk_height == 0 {
@@ -175,22 +179,18 @@ fn sample_elevation(path: &Path) -> Result<Vec<Option<f64>>, Box<dyn std::error:
                 .push((row * side + column, x, y));
         }
     }
+    // Decode one source tile at a time (at most 49.5 MiB) and immediately
+    // reduce it. This bounds memory independently of total source coverage.
+    let DecodingResult::F32(values) = decoder.read_image()? else {
+        return Err(format!("elevation tile {} is not Float32", path.display()).into());
+    };
+    if values.len() != width as usize * height as usize {
+        return Err(format!("elevation tile {} is truncated", path.display()).into());
+    }
     let mut samples = vec![None; side * side];
-    for (chunk, targets) in requests {
-        let (data_width, data_height) = decoder.chunk_data_dimensions(chunk);
-        let origin_x = (chunk % chunks_across) * chunk_width;
-        let origin_y = (chunk / chunks_across) * chunk_height;
-        let DecodingResult::F32(values) = decoder.read_chunk(chunk)? else {
-            return Err(format!("elevation tile {} is not Float32", path.display()).into());
-        };
-        if values.len() != data_width as usize * data_height as usize {
-            return Err(format!("elevation tile {} has a malformed chunk", path.display()).into());
-        }
+    for targets in requests.into_values() {
         for (index, x, y) in targets {
-            let local_x = x - origin_x;
-            let local_y = y - origin_y;
-            let value =
-                f64::from(values[local_y as usize * data_width as usize + local_x as usize]);
+            let value = f64::from(values[y as usize * width as usize + x as usize]);
             samples[index] = value.is_finite().then_some(value.clamp(-500.0, 9_000.0));
         }
     }
