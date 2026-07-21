@@ -739,7 +739,7 @@ def canonical_spawner(action: str) -> int:
             stop_recorded(identity_file)
             return 0
         config = spawner_identity(
-            "canonical", "http://localhost:3000", "adventuresim-stdb-module", "127.0.0.1", 6001
+            "canonical", "http://localhost:23100", "adventuresim-stdb-module", "127.0.0.1", 6001
         )
         if action == "start":
             start_spawner(run_dir, config)
