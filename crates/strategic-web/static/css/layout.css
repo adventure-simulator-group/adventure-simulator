@@ -220,7 +220,7 @@
   font-family: var(--font-display), serif;
   font-size: var(--font-size-sm);
   letter-spacing: 0.05em;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .settlement-location {
@@ -904,6 +904,14 @@ body:has(.settlement-top-bar) .main-grid {
   margin-bottom: 1.5rem;
 }
 
+/* Architectural textures belong to the exposed rail, never directly behind
+   copy, meters, or controls. Sections provide an opaque reading surface while
+   the building material remains visible in their surrounding gaps. */
+body:has(.settlement-top-bar[data-environment="settlement"])
+  :is(.left-sidebar, .right-sidebar) .sidebar-section {
+  background: var(--content-surface-recess);
+}
+
 .sidebar-section:last-child {
   margin-bottom: 0;
 }
@@ -912,8 +920,8 @@ body:has(.settlement-top-bar) .main-grid {
   font-family: var(--font-display), serif;
   font-size: var(--font-size-xs);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
+  text-transform: none;
+  letter-spacing: 0.05em;
   color: var(--text-muted);
   padding-bottom: 0.5rem;
   margin-bottom: 0.75rem;
@@ -1004,7 +1012,6 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
     var(--architectural-edge, repeating-linear-gradient(135deg, transparent 0 2.6rem, rgb(255 255 255 / 2%) 2.6rem 2.7rem)),
     var(--building-panel-recess);
   box-shadow:
-    inset calc(-1 * var(--left-rail-scrollbar-reserve, 0px)) 0 0 var(--building-frame),
     inset 0 0 0 1px rgb(0 0 0 / 42%),
     inset 0 0 1.25rem rgb(0 0 0 / 22%);
 }

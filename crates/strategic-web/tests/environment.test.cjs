@@ -7,6 +7,7 @@ const source = fs.readFileSync("crates/strategic-web/static/strategic-time.js", 
 const buildingSource = fs.readFileSync("crates/strategic-web/static/building-state.js", "utf8");
 const baseCss = fs.readFileSync("crates/strategic-web/static/css/base.css", "utf8");
 const layoutCss = fs.readFileSync("crates/strategic-web/static/css/layout.css", "utf8");
+const componentsCss = fs.readFileSync("crates/strategic-web/static/css/components.css", "utf8");
 const strategicCss = fs.readFileSync("crates/strategic-web/static/css/strategic.css", "utf8");
 const layoutTemplate = fs.readFileSync("crates/strategic-web/src/templates/layout.rs", "utf8");
 const settlementTemplate = fs.readFileSync("crates/strategic-web/src/templates/settlement.rs", "utf8");
@@ -177,6 +178,19 @@ test("settlement side panels use tint-derived frames around neutral recesses", (
   assert.doesNotMatch(layoutCss, /:is\(\.left-sidebar, \.right-sidebar\)::after/);
 });
 
+test("patterned rails keep text and controls on opaque reading surfaces", () => {
+  assert.match(
+    layoutCss,
+    /data-environment="settlement"[\s\S]*:is\(\.left-sidebar, \.right-sidebar\) \.sidebar-section \{[\s\S]*background: var\(--content-surface-recess\)/,
+  );
+});
+
+test("ceremonial blackletter is never transformed to all caps", () => {
+  assert.match(layoutCss, /\.entry-message \{[\s\S]*font-family: var\(--font-display\)[\s\S]*text-transform: none/);
+  assert.match(layoutCss, /\.sidebar-header \{[\s\S]*font-family: var\(--font-display\)[\s\S]*text-transform: none/);
+  assert.match(componentsCss, /\.panel-header \{[\s\S]*font-family: var\(--font-display\)[\s\S]*text-transform: none/);
+});
+
 test("strategic left rails keep their scrollbars on the outer edge", () => {
   assert.match(layoutCss, /--left-rail-scrollbar-reserve: 8px;/);
   assert.match(layoutCss, /\.left-sidebar \{[\s\S]*direction: rtl;[\s\S]*scrollbar-gutter: stable;/);
@@ -188,7 +202,11 @@ test("strategic left rails keep their scrollbars on the outer edge", () => {
 test("settlement frames compensate for the left scrollbar gutter", () => {
   assert.match(layoutCss, /calc\(100% \+ var\(--left-rail-scrollbar-reserve, 0px\)\) top/);
   assert.match(layoutCss, /calc\(100% \+ var\(--left-rail-scrollbar-reserve, 0px\)\) center \/ 0\.55rem 100% no-repeat local/);
-  assert.match(layoutCss, /inset calc\(-1 \* var\(--left-rail-scrollbar-reserve, 0px\)\) 0 0 var\(--building-frame\)/);
+  assert.doesNotMatch(layoutCss, /inset calc\(-1 \* var\(--left-rail-scrollbar-reserve, 0px\)\) 0 0 var\(--building-frame\)/);
+  assert.ok(
+    layoutCss.indexOf("right top / var(--building-frame-corner-size)")
+      < layoutCss.indexOf("center / 0.55rem 100% no-repeat local"),
+  );
 });
 
 test("skill schedule columns fit inside a framed left rail", () => {

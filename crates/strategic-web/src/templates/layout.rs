@@ -156,8 +156,8 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/base.css?v=environment-14";
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=responsive-rails-2";
-                link rel="stylesheet" href="/static/css/components.css?v=coin-currencies-3";
+                link rel="stylesheet" href="/static/css/layout.css?v=solid-content-surfaces-1";
+                link rel="stylesheet" href="/static/css/components.css?v=lowercase-display-type-1";
                 link rel="stylesheet" href="/static/css/strategic.css?v=strategic-ui-overhaul-4";
                 link rel="stylesheet" href="/static/css/utilities.css?v=strategic-ui-overhaul-1";
 
