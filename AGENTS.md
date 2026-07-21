@@ -27,6 +27,24 @@ documentation is intentionally changed as part of the task.
   through Iconify (`@iconify-json/game-icons`) and update both that directory's
   `ATTRIBUTION.md` and `THIRD_PARTY_NOTICES.md`.
 
+## Database schema evolution
+
+This project is pre-launch. During feature development, existing database and
+character data is disposable. Implement the clean final schema for the feature
+and recreate/reseed the development database whenever the schema changes.
+
+- Do not preserve backward compatibility with an earlier development schema.
+- Do not create schema/data migrations, compatibility shims, legacy fields,
+  dual-read/dual-write paths, or transitional fallbacks for existing data.
+- Do not complicate a feature merely to retain current local characters or
+  other development data. Losing that data and recreating the database is
+  always an acceptable outcome while iterating on a feature.
+- Only implement a migration or compatibility path when the user explicitly
+  requests one for a specifically identified player-bearing environment.
+- This policy governs implementation choices; it does not authorize deleting a
+  public or player-bearing database. Use the repository's isolated development
+  workflows for destructive reset and reseed operations.
+
 ## Project map maintenance
 
 `docs/llm/PROJECT_MAP.md` is generated from the current source tree. Whenever
