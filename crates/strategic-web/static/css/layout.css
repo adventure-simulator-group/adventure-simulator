@@ -953,28 +953,28 @@ body:has(.settlement-top-bar[data-environment="settlement"])
 /* The selected building changes joinery, not the plaster. This lets semantic
    reds, greens, and blues inside panels remain visually authoritative. */
 body:has(.nav-tab[data-service-id="map"].active) {
-  --architectural-edge: repeating-linear-gradient(0deg, transparent 0 1.15rem, rgb(222 215 196 / 9%) 1.15rem 1.22rem);
+  --architectural-edge: repeating-linear-gradient(0deg, transparent 0 1.15rem, rgb(222 215 196 / 4%) 1.15rem 1.22rem);
 }
 body:has(.nav-tab[data-service-id="merchants"].active) {
-  --architectural-edge: repeating-linear-gradient(135deg, transparent 0 2.5rem, rgb(230 207 169 / 8%) 2.5rem 2.62rem);
+  --architectural-edge: repeating-linear-gradient(135deg, transparent 0 2.5rem, rgb(230 207 169 / 3%) 2.5rem 2.62rem);
 }
 body:has(.nav-tab[data-service-id="weapons"].active) {
-  --architectural-edge: repeating-linear-gradient(45deg, transparent 0 1.4rem, rgb(236 211 174 / 8%) 1.4rem 1.5rem);
+  --architectural-edge: repeating-linear-gradient(45deg, transparent 0 1.4rem, rgb(236 211 174 / 3%) 1.4rem 1.5rem);
 }
 body:has(.nav-tab[data-service-id="armor"].active) {
-  --architectural-edge: radial-gradient(circle at .7rem .7rem, rgb(235 226 203 / 14%) 0 .1rem, transparent .12rem) 0 0 / 1.4rem 1.4rem;
+  --architectural-edge: radial-gradient(circle at .7rem .7rem, rgb(235 226 203 / 6%) 0 .1rem, transparent .12rem) 0 0 / 1.4rem 1.4rem;
 }
 body:has(.nav-tab[data-service-id="clothing"].active) {
-  --architectural-edge: repeating-linear-gradient(90deg, transparent 0 .62rem, rgb(242 220 187 / 6%) .62rem .68rem);
+  --architectural-edge: repeating-linear-gradient(90deg, transparent 0 .62rem, rgb(242 220 187 / 3%) .62rem .68rem);
 }
 body:has(.nav-tab[data-service-id="herbalist"].active) {
-  --architectural-edge: repeating-radial-gradient(ellipse at 0 100%, transparent 0 .7rem, rgb(218 228 188 / 7%) .72rem .8rem, transparent .82rem 1.45rem);
+  --architectural-edge: repeating-radial-gradient(ellipse at 0 100%, transparent 0 .7rem, rgb(218 228 188 / 3%) .72rem .8rem, transparent .82rem 1.45rem);
 }
 body:has(.nav-tab[data-service-id="inn"].active) {
-  --architectural-edge: repeating-linear-gradient(0deg, transparent 0 2.1rem, rgb(237 204 153 / 8%) 2.1rem 2.25rem);
+  --architectural-edge: repeating-linear-gradient(0deg, transparent 0 2.1rem, rgb(237 204 153 / 4%) 2.1rem 2.25rem);
 }
 body:has(.nav-tab[data-service-id="religion"].active) {
-  --architectural-edge: repeating-linear-gradient(120deg, transparent 0 1.7rem, rgb(232 225 204 / 8%) 1.7rem 1.78rem);
+  --architectural-edge: repeating-linear-gradient(120deg, transparent 0 1.7rem, rgb(232 225 204 / 3%) 1.7rem 1.78rem);
 }
 
 body:has(.settlement-top-bar[data-environment="settlement"]) .center-content .panel {
@@ -1008,7 +1008,7 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
     linear-gradient(var(--building-frame), var(--building-frame)) center top / 100% 0.55rem no-repeat local,
     linear-gradient(var(--building-frame), var(--building-frame)) center bottom / 100% 0.55rem no-repeat local,
     linear-gradient(var(--building-frame), var(--building-frame)) left center / 0.55rem 100% no-repeat local,
-    linear-gradient(var(--building-frame), var(--building-frame)) calc(100% + var(--left-rail-scrollbar-reserve, 0px)) center / 0.55rem 100% no-repeat local,
+    linear-gradient(var(--building-frame), var(--building-frame)) right center / 0.55rem 100% no-repeat local,
     var(--architectural-edge, repeating-linear-gradient(135deg, transparent 0 2.6rem, rgb(255 255 255 / 2%) 2.6rem 2.7rem)),
     var(--building-panel-recess);
   box-shadow:

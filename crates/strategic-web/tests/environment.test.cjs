@@ -176,6 +176,9 @@ test("settlement side panels use tint-derived frames around neutral recesses", (
   assert.match(layoutCss, /center top \/ 100% 0\.55rem no-repeat local/);
   assert.ok(layoutCss.indexOf("var(--left-rail-scrollbar-reserve, 0px)) bottom") < layoutCss.indexOf("center top / 100% 0.55rem"));
   assert.doesNotMatch(layoutCss, /:is\(\.left-sidebar, \.right-sidebar\)::after/);
+  for (const opacity of ["4%", "3%", "6%"]) {
+    assert.match(layoutCss, new RegExp(`architectural-edge:[^;]*\\/ ${opacity.replace("%", "\\%")}\\)`));
+  }
 });
 
 test("patterned rails keep text and controls on opaque reading surfaces", () => {
@@ -201,11 +204,11 @@ test("strategic left rails keep their scrollbars on the outer edge", () => {
 
 test("settlement frames compensate for the left scrollbar gutter", () => {
   assert.match(layoutCss, /calc\(100% \+ var\(--left-rail-scrollbar-reserve, 0px\)\) top/);
-  assert.match(layoutCss, /calc\(100% \+ var\(--left-rail-scrollbar-reserve, 0px\)\) center \/ 0\.55rem 100% no-repeat local/);
+  assert.match(layoutCss, /right center \/ 0\.55rem 100% no-repeat local/);
   assert.doesNotMatch(layoutCss, /inset calc\(-1 \* var\(--left-rail-scrollbar-reserve, 0px\)\) 0 0 var\(--building-frame\)/);
   assert.ok(
     layoutCss.indexOf("right top / var(--building-frame-corner-size)")
-      < layoutCss.indexOf("center / 0.55rem 100% no-repeat local"),
+      < layoutCss.indexOf("right center / 0.55rem 100% no-repeat local"),
   );
 });
 
