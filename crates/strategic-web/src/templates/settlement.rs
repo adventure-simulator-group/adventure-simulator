@@ -1759,7 +1759,7 @@ fn filth_status_bar(deposits: &[crate::spacetimedb::CharacterFilth]) -> Markup {
             amounts
         });
     let details = if total == 0 {
-        "Clean".into()
+        "Filth 0/100: clean".into()
     } else {
         format!(
             "Filth {total}/100: {dirt} dirt; {blood} blood ({own_blood} own, {foreign_blood} foreign, {unknown_blood} unknown)"
@@ -1768,12 +1768,11 @@ fn filth_status_bar(deposits: &[crate::spacetimedb::CharacterFilth]) -> Markup {
     html! {
         div class="filth-status" tabindex="0" role="meter" aria-valuemin="0" aria-valuemax="100"
             aria-valuenow=(total) aria-label=(&details) data-tooltip=(&details) {
-            span class="filth-status-label" { "Cleanliness" span { (total) "/100 filth" } }
+            strong class="metric-label filth-status-label" { "Filth" }
             span class="filth-track" aria-hidden="true" {
                 span class="filth-segment filth-dirt" style=(format!("width:{dirt_width}%")) {}
                 span class="filth-segment filth-blood" style=(format!("width:{blood_width}%")) {}
             }
-            span class="filth-legend" { span { "Dirt " (dirt) } span { "Blood " (blood) } }
         }
     }
 }
@@ -5176,10 +5175,12 @@ mod tests {
         let markup = filth_status_bar(&[deposit]).into_string();
         assert!(markup.contains("2 foreign"));
         assert!(!markup.contains("source_character_id"));
+        assert!(!markup.contains("filth-legend"));
+        assert!(!markup.contains("/100 filth</span>"));
     }
 
     #[test]
-    fn status_rail_places_cleanliness_after_water() {
+    fn status_rail_places_filth_after_water() {
         let condition = CharacterStrategicCondition {
             character_id: 7,
             morale: 0.0,
@@ -5201,8 +5202,8 @@ mod tests {
         };
         let markup = strategic_condition_rail(Some(&condition), &[], &[]).into_string();
         let water = markup.find("Water").expect("water meter");
-        let cleanliness = markup.find("Cleanliness").expect("cleanliness meter");
-        assert!(water < cleanliness);
+        let filth = markup.find("Filth").expect("filth meter");
+        assert!(water < filth);
     }
 
     #[test]

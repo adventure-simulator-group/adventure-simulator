@@ -4266,12 +4266,10 @@ body.chat-resizing {
 @media (max-width: 720px) { .strategic-map { min-height: 26rem; } }
 @media (prefers-reduced-motion: reduce) { .strategic-map-svg { scroll-behavior: auto; } }
 .filth-status {
-  width: 100%; margin: .75rem 0 0; padding: .45rem .6rem;
-  background: rgba(20, 16, 12, .88); border: 1px solid var(--border-color, #765f42);
+  width: 100%; margin: .75rem 0 0; outline: none;
 }
-.filth-status-label, .filth-legend { display: flex; justify-content: space-between; gap: .75rem; font-size: .78rem; }
-.filth-track { display: flex; height: .7rem; margin: .25rem 0; overflow: hidden; background: #e4ddca; border: 1px solid #17130f; }
+.filth-status-label { margin-bottom: .25rem; font-size: var(--font-size-xs); }
+.filth-track { display: flex; height: .55rem; overflow: hidden; border: 1px solid var(--border-light); border-radius: 999px; background: var(--bg-tertiary); }
 .filth-segment { display: block; min-width: 0; }
 .filth-dirt { background: #76552e; }
 .filth-blood { background: #8e2020; }
-.filth-legend span::before { content: "■ "; }
