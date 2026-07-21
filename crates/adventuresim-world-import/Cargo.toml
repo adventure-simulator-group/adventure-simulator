@@ -7,7 +7,7 @@ license.workspace = true
 
 [features]
 default = []
-strategic-map-renderer = ["dep:image", "dep:tiny-skia"]
+strategic-map-renderer = ["dep:image", "dep:rayon", "dep:tiny-skia"]
 
 [[bin]]
 name = "build-strategic-map"
@@ -23,7 +23,7 @@ dbase.workspace = true
 geo.workspace = true
 geozero.workspace = true
 proj4rs.workspace = true
-rayon.workspace = true
+rayon = { workspace = true, optional = true }
 rusqlite.workspace = true
 html-escape.workspace = true
 image = { workspace = true, optional = true }

@@ -12,6 +12,9 @@ use super::{Package, Point, TileEntry, TilePyramid};
 const WIDTH: f64 = 1_200.0;
 const HEIGHT: f64 = 800.0;
 const TILE_GUTTER: u8 = 4;
+const MIN_TILE_SIZE: u32 = 64;
+const MAX_TILE_SIZE: u32 = 2_048;
+const MAX_TILE_COUNT: usize = 100_000;
 const RENDER_MARGIN: u32 = 12;
 
 #[derive(Debug)]
@@ -165,7 +168,11 @@ pub(super) fn build(
     package: &Package,
     config: TileConfig,
 ) -> Result<(TilePyramid, Vec<u8>), Box<dyn std::error::Error>> {
-    if config.tile_size < 64 || !config.tile_size.is_power_of_two() || config.max_zoom > 8 {
+    if !(MIN_TILE_SIZE..=MAX_TILE_SIZE).contains(&config.tile_size)
+        || !config.tile_size.is_power_of_two()
+        || config.max_zoom > 8
+        || pyramid_tile_count(config.tile_size, config.max_zoom) > MAX_TILE_COUNT
+    {
         return Err("strategic map tile configuration is outside its bound".into());
     }
     let forest_field = ForestField::from_regions(&package.forest.regions, package.bounds);
@@ -223,6 +230,17 @@ pub(super) fn build(
         },
         bytes,
     ))
+}
+
+fn pyramid_tile_count(tile_size: u32, max_zoom: u8) -> usize {
+    (0..=max_zoom)
+        .map(|zoom| {
+            let scale = 1_u32 << zoom;
+            let columns = (WIDTH as u32 * scale).div_ceil(tile_size) as usize;
+            let rows = (HEIGHT as u32 * scale).div_ceil(tile_size) as usize;
+            columns * rows
+        })
+        .sum()
 }
 
 fn encode(pixmap: &Pixmap, quality: u8) -> Result<Vec<u8>, image::ImageError> {
@@ -1248,5 +1266,19 @@ mod tests {
         let tile = render(&donut_fixture(), 64, TILE_GUTTER, 1.0, 0, 0, PAPER).unwrap();
         assert_eq!(pixel(&tile, 24, 24), PAPER.water);
         assert_eq!(pixel(&tile, 34, 34), PAPER.land);
+    }
+
+    #[test]
+    fn excessive_tile_pyramid_is_rejected_before_rendering() {
+        let result = build(
+            &paper_fixture("broadleaf", false),
+            TileConfig {
+                tile_size: MIN_TILE_SIZE,
+                max_zoom: 8,
+            },
+        );
+
+        assert!(result.is_err());
+        assert!(pyramid_tile_count(MIN_TILE_SIZE, 8) > MAX_TILE_COUNT);
     }
 }

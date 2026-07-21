@@ -29,6 +29,9 @@ const ROUTE_MIN_VIEW_HEIGHT: f64 = ROUTE_MIN_VIEW_WIDTH / VIEW_ASPECT_RATIO;
 pub(crate) const TILE_PATH_PREFIX: &str = "/map/tiles/";
 const PACKAGE_SCHEMA: u32 = 3;
 const RENDERER_REVISION: u32 = 3;
+const MIN_TILE_SIZE: u32 = 64;
+const MAX_TILE_SIZE: u32 = 2_048;
+const MAX_TILE_ENTRIES: usize = 100_000;
 const VIABUNDUS_URL: &str = "https://doi.org/10.5281/zenodo.16611998";
 const ELEVATION_URL: &str = "https://doi.org/10.5270/ESA-c5d3d65";
 const FOREST_URL: &str = "https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a";
@@ -160,7 +163,8 @@ impl StrategicMap {
             "unsupported map tile format"
         );
         anyhow::ensure!(
-            package.tiles.tile_size.is_power_of_two(),
+            (MIN_TILE_SIZE..=MAX_TILE_SIZE).contains(&package.tiles.tile_size)
+                && package.tiles.tile_size.is_power_of_two(),
             "invalid map tile size"
         );
         anyhow::ensure!(
@@ -168,6 +172,16 @@ impl StrategicMap {
             "invalid map tile gutter"
         );
         anyhow::ensure!(package.tiles.max_zoom <= 8, "map tile zoom exceeds bound");
+        let expected_entries =
+            pyramid_tile_entry_count(package.tiles.tile_size, package.tiles.max_zoom);
+        anyhow::ensure!(
+            expected_entries <= MAX_TILE_ENTRIES,
+            "map tile pyramid exceeds entry bound"
+        );
+        anyhow::ensure!(
+            package.tiles.entries.len() == expected_entries,
+            "map tile pyramid is incomplete or oversized"
+        );
         let tile_pack: Arc<[u8]> = std::fs::read(tile_path)?.into();
         anyhow::ensure!(
             format!("{:x}", Sha256::digest(&tile_pack)) == package.tiles.content_sha256,
@@ -176,6 +190,15 @@ impl StrategicMap {
         let mut tile_index = HashMap::with_capacity(package.tiles.entries.len());
         for entry in &package.tiles.entries {
             anyhow::ensure!(entry.theme == "paper", "unsupported map tile theme");
+            let Some((columns, rows)) = tile_grid_size(package.tiles.tile_size, entry.zoom) else {
+                anyhow::bail!("map tile entry zoom exceeds package bound");
+            };
+            anyhow::ensure!(
+                entry.zoom <= package.tiles.max_zoom
+                    && u32::from(entry.x) < columns
+                    && u32::from(entry.y) < rows,
+                "map tile entry coordinate is outside its grid"
+            );
             let start = usize::try_from(entry.offset)?;
             let end = start
                 .checked_add(entry.length as usize)
@@ -197,6 +220,23 @@ impl StrategicMap {
             tile_index,
         })
     }
+}
+
+fn tile_grid_size(tile_size: u32, zoom: u8) -> Option<(u32, u32)> {
+    (zoom <= 8).then(|| {
+        let scale = 1_u32 << zoom;
+        (
+            (WIDTH as u32 * scale).div_ceil(tile_size),
+            (HEIGHT as u32 * scale).div_ceil(tile_size),
+        )
+    })
+}
+
+fn pyramid_tile_entry_count(tile_size: u32, max_zoom: u8) -> usize {
+    (0..=max_zoom)
+        .filter_map(|zoom| tile_grid_size(tile_size, zoom))
+        .map(|(columns, rows)| columns as usize * rows as usize)
+        .sum()
 }
 
 #[derive(Deserialize)]
@@ -547,7 +587,7 @@ mod tests {
         let placeholder = "0".repeat(64);
         let unsigned = format!(
             concat!(
-                r#"{{"schema":3,"renderer_revision":3,"year":1544,"bounds":[-10.0,40.0,30.0,70.0],"source":{{"name":"Test roads","url":"https://doi.org/10.5281/zenodo.16611998","license":"CC0","verification_status":"verified"}},"elevation":{{"source":{{"name":"Test elevation","url":"https://doi.org/10.5270/ESA-c5d3d65","file_count":1}}}},"forest":{{"source":{{"name":"Test forest","url":"https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a","file_count":1}},"coverage_tiles":1}},"tiles":{{"format":"avif","tile_size":512,"gutter":4,"max_zoom":0,"content_sha256":"{}","entries":[{{"theme":"paper","zoom":0,"x":0,"y":0,"offset":0,"length":12}}]}},"package_sha256":"{}"}}"#
+                r#"{{"schema":3,"renderer_revision":3,"year":1544,"bounds":[-10.0,40.0,30.0,70.0],"source":{{"name":"Test roads","url":"https://doi.org/10.5281/zenodo.16611998","license":"CC0","verification_status":"verified"}},"elevation":{{"source":{{"name":"Test elevation","url":"https://doi.org/10.5270/ESA-c5d3d65","file_count":1}}}},"forest":{{"source":{{"name":"Test forest","url":"https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a","file_count":1}},"coverage_tiles":1}},"tiles":{{"format":"avif","tile_size":2048,"gutter":4,"max_zoom":0,"content_sha256":"{}","entries":[{{"theme":"paper","zoom":0,"x":0,"y":0,"offset":0,"length":12}}]}},"package_sha256":"{}"}}"#
             ),
             tile_digest, placeholder
         );
@@ -880,6 +920,25 @@ mod tests {
     #[test]
     fn stale_renderer_revision_is_rejected() {
         assert!(load_rewritten_manifest(|value| value["renderer_revision"] = 0.into()).is_err());
+    }
+
+    #[test]
+    fn runtime_rejects_undersized_or_excessive_tile_pyramids() {
+        assert!(load_rewritten_manifest(|value| value["tiles"]["tile_size"] = 2.into()).is_err());
+        assert!(
+            load_rewritten_manifest(|value| {
+                value["tiles"]["tile_size"] = MIN_TILE_SIZE.into();
+                value["tiles"]["max_zoom"] = 8.into();
+            })
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn runtime_rejects_tile_coordinates_outside_the_declared_grid() {
+        assert!(
+            load_rewritten_manifest(|value| value["tiles"]["entries"][0]["x"] = 1.into()).is_err()
+        );
     }
 
     #[test]
