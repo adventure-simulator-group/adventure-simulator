@@ -156,14 +156,15 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/base.css?v=environment-14";
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=wilderness-horizons-1";
-                link rel="stylesheet" href="/static/css/components.css?v=coin-currencies-3";
-                link rel="stylesheet" href="/static/css/strategic.css?v=strategic-ui-overhaul-1";
+                link rel="stylesheet" href="/static/css/layout.css?v=subtle-material-lines-1";
+                link rel="stylesheet" href="/static/css/components.css?v=lowercase-display-type-1";
+                link rel="stylesheet" href="/static/css/strategic.css?v=strategic-ui-overhaul-4";
                 link rel="stylesheet" href="/static/css/utilities.css?v=strategic-ui-overhaul-1";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
                 script src="/static/background-fetch.js?v=background-fetch-2" {}
+                script src="/static/tooltips.js?v=styled-tooltips-1" defer {}
                 script src="/static/medical-examination.js?v=strategic-dialogs-1" defer {}
                 @if scripts != ScriptProfile::Entry {
                     script src="/static/live-state.js?v=sse-3" defer {}

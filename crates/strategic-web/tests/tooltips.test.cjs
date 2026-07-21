@@ -1,0 +1,101 @@
+const assert = require('node:assert/strict');
+const test = require('node:test');
+const { parseHTML } = require('linkedom');
+
+const { createTooltipSystem } = require('../static/tooltips.js');
+
+function fixture(markup = '<button title="Open inventory">Bag</button>') {
+  const { window, document } = parseHTML(`<html><body>${markup}</body></html>`);
+  Object.defineProperties(window, {
+    innerWidth: { value: 320, configurable: true },
+    innerHeight: { value: 200, configurable: true },
+  });
+  const system = createTooltipSystem(document, window);
+  system.tooltip.getBoundingClientRect = () => ({ width: 100, height: 30 });
+  return { window, document, system };
+}
+
+function dispatch(window, target, type, properties = {}) {
+  const event = new window.Event(type, { bubbles: true });
+  Object.entries(properties).forEach(([key, value]) => Object.defineProperty(event, key, { value }));
+  target.dispatchEvent(event);
+  return event;
+}
+
+test('title tooltips enhance immediately while preserving an accessible description', () => {
+  const { window, document, system } = fixture();
+  const button = document.querySelector('button');
+  button.getBoundingClientRect = () => ({ left: 120, right: 160, top: 80, bottom: 100, width: 40, height: 20 });
+
+  dispatch(window, button, 'pointerover', { pointerType: 'mouse' });
+
+  assert.equal(button.hasAttribute('title'), false);
+  assert.equal(button.dataset.strategicTooltip, 'Open inventory');
+  assert.equal(button.getAttribute('aria-describedby'), 'strategic-tooltip');
+  assert.equal(system.tooltip.textContent, 'Open inventory');
+  assert.equal(system.tooltip.hidden, false);
+  assert.equal(system.tooltip.getAttribute('aria-hidden'), 'false');
+  assert.equal(system.tooltip.dataset.placement, 'top');
+  assert.equal(system.tooltip.style.left, '90px');
+  assert.equal(system.tooltip.style.top, '42px');
+
+  dispatch(window, button, 'pointerout', { pointerType: 'mouse', relatedTarget: document.body });
+  assert.equal(system.tooltip.hidden, true);
+  assert.equal(button.hasAttribute('aria-describedby'), false);
+
+  dispatch(window, button, 'pointerover', { pointerType: 'mouse' });
+  dispatch(window, button, 'pointerleave', { pointerType: 'mouse' });
+  assert.equal(system.tooltip.hidden, true);
+});
+
+test('an otherwise unnamed icon retains the title as its accessible name', () => {
+  const { window, document } = fixture('<span title="Armour condition"></span>');
+  const icon = document.querySelector('span');
+  dispatch(window, icon, 'focusin');
+  assert.equal(icon.getAttribute('aria-label'), 'Armour condition');
+  assert.equal(icon.hasAttribute('data-strategic-tooltip-generated-label'), true);
+});
+
+test('delegation supports replacement content and Escape and blur dismiss it', () => {
+  const { window, document, system } = fixture('<main></main>');
+  const dynamic = document.createElement('button');
+  dynamic.title = 'New live action';
+  dynamic.textContent = 'Action';
+  dynamic.getBoundingClientRect = () => ({ left: 5, right: 25, top: 3, bottom: 23, width: 20, height: 20 });
+  document.querySelector('main').append(dynamic);
+
+  dispatch(window, dynamic, 'focusin');
+  assert.equal(system.tooltip.textContent, 'New live action');
+  assert.equal(system.tooltip.dataset.placement, 'bottom');
+  assert.equal(system.tooltip.style.left, '8px');
+  assert.equal(system.tooltip.style.top, '31px');
+
+  dispatch(window, document, 'keydown', { key: 'Escape' });
+  assert.equal(system.tooltip.hidden, true);
+  dispatch(window, dynamic, 'focusin');
+  dispatch(window, dynamic, 'focusout', { relatedTarget: document.body });
+  assert.equal(system.tooltip.hidden, true);
+});
+
+test('touch pointers neither open nor leave a focused tooltip trapped', () => {
+  const { window, document, system } = fixture();
+  const button = document.querySelector('button');
+  dispatch(window, button, 'pointerover', { pointerType: 'touch' });
+  assert.equal(system.tooltip.hidden, true);
+
+  dispatch(window, button, 'pointerdown', { pointerType: 'touch' });
+  dispatch(window, button, 'focusin');
+  assert.equal(system.tooltip.hidden, true);
+});
+
+test('existing accessible names and descriptions are not overwritten', () => {
+  const { window, document, system } = fixture(
+    '<button aria-label="Bag" aria-describedby="inventory-help" title="Open inventory"></button>',
+  );
+  const button = document.querySelector('button');
+  dispatch(window, button, 'pointerover', { pointerType: 'mouse' });
+  assert.equal(button.getAttribute('aria-label'), 'Bag');
+  assert.equal(button.getAttribute('aria-describedby'), 'inventory-help strategic-tooltip');
+  system.hide();
+  assert.equal(button.getAttribute('aria-describedby'), 'inventory-help');
+});

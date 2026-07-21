@@ -95,8 +95,18 @@ pub fn item_icon_name(item_id: &str) -> &'static str {
 }
 
 pub fn item_type_icon(item_id: &str) -> Markup {
-    let readable = item_id.replace('_', " ");
+    let readable = item_display_name(item_id);
     game_icon(&format!("Item type: {readable}"), item_icon_name(item_id))
+}
+
+/// Turn a stable snake-case item identifier into player-facing copy without
+/// changing the identifier used by forms or client-side behavior.
+pub fn item_display_name(item_id: &str) -> String {
+    let mut readable = item_id.replace('_', " ");
+    if let Some(first) = readable.get_mut(0..1) {
+        first.make_ascii_uppercase();
+    }
+    readable
 }
 
 pub fn item_type_header() -> Markup {
@@ -362,13 +372,20 @@ mod icon_tests {
     fn icon_markup_is_local_accessible_and_header_is_compact() {
         let icon = item_type_icon("arming_sword").into_string();
         assert!(icon.contains("/static/icons/game/broadsword.svg"));
-        assert!(icon.contains("aria-label=\"Item type: arming sword\""));
+        assert!(icon.contains("aria-label=\"Item type: Arming sword\""));
         let header = item_type_header().into_string();
         assert!(header.contains("inventory-column-type"));
         assert!(header.contains("aria-label=\"Item type\""));
         let decorative = decorative_game_icon("sun").into_string();
         assert!(decorative.contains("aria-hidden=\"true\""));
         assert!(!decorative.contains("role=\"img\""));
+    }
+
+    #[test]
+    fn item_ids_are_humanized_for_display() {
+        assert_eq!(item_display_name("arming_sword"), "Arming sword");
+        assert_eq!(item_display_name("torch"), "Torch");
+        assert_eq!(item_display_name(""), "");
     }
 }
 

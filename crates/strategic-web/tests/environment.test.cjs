@@ -7,6 +7,7 @@ const source = fs.readFileSync("crates/strategic-web/static/strategic-time.js", 
 const buildingSource = fs.readFileSync("crates/strategic-web/static/building-state.js", "utf8");
 const baseCss = fs.readFileSync("crates/strategic-web/static/css/base.css", "utf8");
 const layoutCss = fs.readFileSync("crates/strategic-web/static/css/layout.css", "utf8");
+const componentsCss = fs.readFileSync("crates/strategic-web/static/css/components.css", "utf8");
 const strategicCss = fs.readFileSync("crates/strategic-web/static/css/strategic.css", "utf8");
 const layoutTemplate = fs.readFileSync("crates/strategic-web/src/templates/layout.rs", "utf8");
 const settlementTemplate = fs.readFileSync("crates/strategic-web/src/templates/settlement.rs", "utf8");
@@ -117,7 +118,7 @@ test("settlement smithies and wilderness tabs use independent non-interactive ef
   assert.match(layoutCss, /\.topbar-scene-effect-plane \{[\s\S]*bottom: var\(--topbar-prop-baseline\);[\s\S]*width: 6\.55rem;[\s\S]*height: 6\.55rem;[\s\S]*scale\(var\(--topbar-prop-scale\)\)/);
   assert.match(layoutCss, /@media \(max-width: 1200px\)[\s\S]*--topbar-prop-scale: 0\.8473;[\s\S]*data-environment="wilderness"[\s\S]*--topbar-prop-scale: 0\.8473;/);
   assert.match(layoutCss, /\.campfire-smoke \{[\s\S]*--smoke-rise-distance: -180px;/);
-  assert.match(layoutCss, /@media \(max-width: 768px\)[\s\S]*padding-top: 1\.75rem;[\s\S]*overflow-y: hidden;[\s\S]*--topbar-prop-scale: 0\.8855;[\s\S]*\.campfire-smoke \{[\s\S]*--smoke-rise-distance: -110px;/);
+  assert.match(layoutCss, /@media \(max-width: 768px\)[\s\S]*padding: 0\.75rem 0\.5rem 0\.35rem;[\s\S]*overflow-y: hidden;[\s\S]*--topbar-prop-scale: 0\.8855;[\s\S]*\.campfire-smoke \{[\s\S]*--smoke-rise-distance: -110px;/);
 
   const smokeFrames = layoutCss.match(/@keyframes wilderness-smoke-rise \{[\s\S]*?\n\}/)?.[0] ?? "";
   const flameFrames = layoutCss.match(/@keyframes wilderness-flame-flicker \{[\s\S]*?\n\}/)?.[0] ?? "";
@@ -161,12 +162,12 @@ test("wilderness headers select a tintable physical horizon", () => {
   }
 });
 
-test("settlement side panels use tint-derived beams and corner blocks", () => {
+test("settlement side panels use tint-derived frames around neutral recesses", () => {
   assert.match(layoutCss, /data-environment="settlement"[\s\S]*:is\(\.left-sidebar, \.right-sidebar\)/);
-  assert.match(layoutCss, /--building-frame: color-mix\(in srgb, var\(--building-surface\)/);
+  assert.match(layoutCss, /--building-frame: color-mix\(in srgb, var\(--building-frame-tint\)/);
   assert.match(layoutCss, /--building-frame-corner: color-mix/);
   assert.match(layoutCss, /--building-frame-corner-size: 1\.35rem/);
-  assert.match(layoutCss, /--building-panel-recess: color-mix/);
+  assert.match(layoutCss, /--building-panel-recess: var\(--content-surface-recess\)/);
   assert.match(layoutCss, /padding-block: var\(--building-frame-corner-size\)/);
   assert.match(layoutCss, /padding-inline: var\(--building-frame-corner-size\)/);
   assert.match(layoutCss, /border: 0/);
@@ -175,6 +176,22 @@ test("settlement side panels use tint-derived beams and corner blocks", () => {
   assert.match(layoutCss, /center top \/ 100% 0\.55rem no-repeat local/);
   assert.ok(layoutCss.indexOf("var(--left-rail-scrollbar-reserve, 0px)) bottom") < layoutCss.indexOf("center top / 100% 0.55rem"));
   assert.doesNotMatch(layoutCss, /:is\(\.left-sidebar, \.right-sidebar\)::after/);
+  for (const opacity of ["4%", "3%", "6%"]) {
+    assert.match(layoutCss, new RegExp(`architectural-edge:[^;]*\\/ ${opacity.replace("%", "\\%")}\\)`));
+  }
+});
+
+test("patterned rails keep text and controls on opaque reading surfaces", () => {
+  assert.match(
+    layoutCss,
+    /data-environment="settlement"[\s\S]*:is\(\.left-sidebar, \.right-sidebar\) \.sidebar-section \{[\s\S]*background: var\(--content-surface-recess\)/,
+  );
+});
+
+test("ceremonial blackletter is never transformed to all caps", () => {
+  assert.match(layoutCss, /\.entry-message \{[\s\S]*font-family: var\(--font-display\)[\s\S]*text-transform: none/);
+  assert.match(layoutCss, /\.sidebar-header \{[\s\S]*font-family: var\(--font-display\)[\s\S]*text-transform: none/);
+  assert.match(componentsCss, /\.panel-header \{[\s\S]*font-family: var\(--font-display\)[\s\S]*text-transform: none/);
 });
 
 test("strategic left rails keep their scrollbars on the outer edge", () => {
@@ -187,8 +204,12 @@ test("strategic left rails keep their scrollbars on the outer edge", () => {
 
 test("settlement frames compensate for the left scrollbar gutter", () => {
   assert.match(layoutCss, /calc\(100% \+ var\(--left-rail-scrollbar-reserve, 0px\)\) top/);
-  assert.match(layoutCss, /calc\(100% \+ var\(--left-rail-scrollbar-reserve, 0px\)\) center \/ 0\.55rem 100% no-repeat local/);
-  assert.match(layoutCss, /inset calc\(-1 \* var\(--left-rail-scrollbar-reserve, 0px\)\) 0 0 var\(--building-frame\)/);
+  assert.match(layoutCss, /right center \/ 0\.55rem 100% no-repeat local/);
+  assert.doesNotMatch(layoutCss, /inset calc\(-1 \* var\(--left-rail-scrollbar-reserve, 0px\)\) 0 0 var\(--building-frame\)/);
+  assert.ok(
+    layoutCss.indexOf("right top / var(--building-frame-corner-size)")
+      < layoutCss.indexOf("right center / 0.55rem 100% no-repeat local"),
+  );
 });
 
 test("skill schedule columns fit inside a framed left rail", () => {

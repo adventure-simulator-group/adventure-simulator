@@ -3,7 +3,7 @@
 use maud::{Markup, html};
 
 use super::inventory_browser::{InventoryBrowser, InventoryColumnSet};
-use super::{empty_state, item_type_icon, sidebar_section};
+use super::{empty_state, item_display_name, item_type_icon, sidebar_section};
 use crate::routes::travel::TravelDestination;
 use crate::spacetimedb::{
     AutoresolveReport, BattleLootItem, InventoryQuantityTarget, ItemDefinition, PartyInventoryItem,
@@ -187,10 +187,11 @@ pub fn quest_location_enemy_page(
                                 @let value = definition.and_then(|item| item.base_value).unwrap_or(0);
                                 @let current = pooled.iter().find(|pooled| pooled.item_id == entry.item_id).map_or(0, |pooled| pooled.quantity);
                                 @let target = inventory_target(targets, &entry.item_id);
+                                @let item_name = item_display_name(&entry.item_id);
                                 tr class="trade-inventory-row" data-loot-row data-count=(entry.quantity) data-current=(current) data-target=(target) {
                                     td class="inventory-item-type" { (item_type_icon(&entry.item_id)) }
                                     td class="inventory-item-name" { (super::settlement::item_name_with_quality(&entry.item_id, definition)) span class="inventory-row-actions" {
-                                        button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-loot-stage=(entry.id) data-transfer-mode="one" data-label-one=(format!("Move one {}", entry.item_id)) data-label-target=(format!("Move {} to target", entry.item_id)) data-label-all=(format!("Move all {}", entry.item_id)) aria-label=(format!("Move one {}", entry.item_id)) title=(format!("Move one {}", entry.item_id)) { (super::settlement::transfer_glyph(1)) }
+                                        button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-loot-stage=(entry.id) data-transfer-mode="one" data-label-one=(format!("Move one {item_name}")) data-label-target=(format!("Move {item_name} to target")) data-label-all=(format!("Move all {item_name}")) aria-label=(format!("Move one {item_name}")) title=(format!("Move one {item_name}")) { (super::settlement::transfer_glyph(1)) }
                                     } }
                                     td class="inventory-count" { (entry.quantity) }
                                     td class="inventory-weight" { (definition.map_or_else(|| "—".to_string(), |item| item.weight.to_string())) }

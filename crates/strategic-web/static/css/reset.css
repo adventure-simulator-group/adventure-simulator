@@ -21,6 +21,7 @@ body {
   font-size: var(--font-size-base);
   color: var(--text-primary);
   background: var(--bg-primary);
+  font-variant-numeric: oldstyle-nums proportional-nums;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -28,6 +29,13 @@ h1, h2, h3, h4, h5, h6 {
   line-height: 1.2;
   font-weight: 700;
   color: var(--text-primary);
+}
+
+/* Dense headings keep blackletter character without the deliberately ornate
+   display face used for stable landmarks and major page titles. */
+h3, h4, h5, h6,
+button, input, select, textarea {
+  font-family: var(--font-heading), serif;
 }
 
 h1 { font-size: var(--font-size-3xl); }

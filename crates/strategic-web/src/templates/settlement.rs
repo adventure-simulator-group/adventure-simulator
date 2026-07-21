@@ -23,8 +23,9 @@ use std::{collections::BTreeSet, fmt, str::FromStr};
 use super::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use super::{
     camp_location_layout_with_session, decorative_game_icon, empty_state, game_icon,
-    item_type_header, item_type_icon, population_description, quest_location_layout_with_session,
-    religion_icon, settlement_layout_with_session, sidebar_section, stat_icon_path,
+    item_display_name, item_type_header, item_type_icon, population_description,
+    quest_location_layout_with_session, religion_icon, settlement_layout_with_session,
+    sidebar_section, stat_icon_path,
 };
 use crate::medical::MedicalPresentation;
 use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
@@ -1941,11 +1942,9 @@ fn service_page(
                 div class="service-left-stack" {
                     div class="service-inventory-area" {
                         (sidebar_section("Church services", html! {
-                            p { "Faith: " strong { (religion_name(Some(&settlement.religion_id))) } }
-                            @if active_character.is_some() {
-                                p class="small-copy" { "Speak with the priest below to profess this church's faith. Renunciation is available only from your biography." }
+                            p title=[active_character.is_some().then_some("Speak with the priest to profess this faith. Renunciation is available from your biography. Shared conviction strengthens allied Charisma; conflicting conviction penalizes morale.")] {
+                                "Faith: " strong { (religion_name(Some(&settlement.religion_id))) }
                             }
-                            p class="text-muted small-copy" { "Shared conviction strengthens allied Charisma. Conflicting conviction turns that influence into a morale penalty." }
                         }))
                     }
                     (rest_service_menu("Temple", &settlement.id, "temple", rest_default_minutes, rest_summary))
@@ -2028,6 +2027,7 @@ fn party_trade_inventory_rail(
                             @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
                             @let definition = items.iter().find(|definition| definition.id == item.item_id);
                             @let target = target_quantity(recipient_targets, &item.item_id);
+                            @let item_name = item_display_name(&item.item_id);
                                 tr class=(if direction == "left" { "trade-inventory-row trade-row-player" } else { "trade-inventory-row trade-row-merchant" }) data-item-key=(&item.item_id) {
                                     td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                                     td class="inventory-item-name" {
@@ -2036,7 +2036,7 @@ fn party_trade_inventory_rail(
                                             @if is_equipped {
                                                 (disabled_transfer_button(direction, "Equipped items cannot be transferred"))
                                             } @else {
-                                                button type="button" class=(format!("trade-transfer trade-transfer-{direction} party-draft-transfer")) data-dynamic-transfer data-default-transfer-mode="one" data-from=(character.id) data-to=(recipient_id) data-item=(item.id) data-key=(&item.item_id) data-count=(item.qty) data-target=(target) data-transfer-mode="one" data-label-one=(format!("Transfer one {}", item.item_id)) data-label-target=(format!("Transfer {} to target", item.item_id)) data-label-all=(format!("Transfer all {}", item.item_id)) aria-label=(format!("Transfer one {}", item.item_id)) title=(format!("Transfer one {}", item.item_id)) { (transfer_glyph(1)) }
+                                                button type="button" class=(format!("trade-transfer trade-transfer-{direction} party-draft-transfer")) data-dynamic-transfer data-default-transfer-mode="one" data-from=(character.id) data-to=(recipient_id) data-item=(item.id) data-key=(&item.item_id) data-count=(item.qty) data-target=(target) data-transfer-mode="one" data-label-one=(format!("Transfer one {item_name}")) data-label-target=(format!("Transfer {item_name} to target")) data-label-all=(format!("Transfer all {item_name}")) aria-label=(format!("Transfer one {item_name}")) title=(format!("Transfer one {item_name}")) { (transfer_glyph(1)) }
                                             }
                                         }
                                     }
@@ -2071,6 +2071,7 @@ fn discard_inventory_rail(
                         @for item in inventory {
                             @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
                             @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                            @let item_name = item_display_name(&item.item_id);
                             tr class="trade-inventory-row trade-row-player" data-discard-source=(item.id) data-item-key=(&item.item_id) {
                                 td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                                 td class="inventory-item-name" {
@@ -2082,11 +2083,11 @@ fn discard_inventory_rail(
                                             button type="button" class="trade-transfer trade-transfer-left"
                                             data-discard-item=(item.id) data-count=(item.qty)
                                             data-dynamic-transfer data-default-transfer-mode="one" data-transfer-mode="one"
-                                            data-label-one=(format!("Discard one {}", item.item_id))
-                                            data-label-target=(format!("Discard {} down to target", item.item_id))
-                                            data-label-all=(format!("Discard all {}", item.item_id))
-                                            aria-label=(format!("Discard {}", item.item_id))
-                                            title=(format!("Discard one {}", item.item_id)) { (transfer_glyph(1)) }
+                                            data-label-one=(format!("Discard one {item_name}"))
+                                            data-label-target=(format!("Discard {item_name} down to target"))
+                                            data-label-all=(format!("Discard all {item_name}"))
+                                            aria-label=(format!("Discard {item_name}"))
+                                            title=(format!("Discard one {item_name}")) { (transfer_glyph(1)) }
                                         }
                                     }
                                 }
@@ -2156,7 +2157,8 @@ pub fn live_merchant_shop_page(
                     );
                     @let sell_price = (item.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32;
                     @let target = target_quantity(personal_targets, &item.id);
-                    tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) data-herbalist-medication-name=[medication_recipe.map(|recipe| recipe.name)] { td class="inventory-item-type" { (item_type_icon(&item.id)) } td class="inventory-item-name" { (item_name_with_display(medication_recipe.map_or(item.id.as_str(), |recipe| recipe.name), Some(item))) @if !is_currency { (merchant_buy_controls(&item.id, buy_price, target, 999)) } } td class="inventory-count" hidden { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
+                    @let display_name = medication_recipe.map_or_else(|| item_display_name(&item.id), |recipe| recipe.name.to_owned());
+                    tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) data-herbalist-medication-name=[medication_recipe.map(|recipe| recipe.name)] { td class="inventory-item-type" { (item_type_icon(&item.id)) } td class="inventory-item-name" { (item_name_with_display(&item.id, &display_name, Some(item))) @if !is_currency { (merchant_buy_controls(&item.id, buy_price, target, 999)) } } td class="inventory-count" hidden { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
                 }
             }))
             (inventory_footer_controls("buy", "Buy to targets", "Buy everything"))
@@ -2302,11 +2304,12 @@ pub fn party_pool_page(
                             @let value = definition.and_then(|definition| definition.base_value).unwrap_or(0) as u64;
                             @let target = target_quantity(personal_targets, &item.item_id);
                             @let current = inventory.iter().find(|personal| personal.item_id == item.item_id).map_or(0, |personal| personal.qty);
+                            @let item_name = item_display_name(&item.item_id);
                             tr class="trade-inventory-row" {
                                 td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                                 td class="inventory-item-name" {
                                     (item_name_with_quality(&item.item_id, definition))
-                                span class="inventory-row-actions" { button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="withdraw" data-transfer-mode="one" data-count=(item.quantity) data-current=(current) data-target=(target) data-label-one=(format!("Withdraw one {}", item.item_id)) data-label-target=(format!("Withdraw {} to target", item.item_id)) data-label-all=(format!("Withdraw all {}", item.item_id)) title=(if value > stake { format!("Withdraw one {}; {} personal coin required", item.item_id, value - stake) } else { format!("Withdraw one {} using your stake", item.item_id) }) aria-label=(format!("Withdraw one {}", item.item_id)) { (transfer_glyph(1)) } }
+                                span class="inventory-row-actions" { button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="withdraw" data-transfer-mode="one" data-count=(item.quantity) data-current=(current) data-target=(target) data-label-one=(format!("Withdraw one {item_name}")) data-label-target=(format!("Withdraw {item_name} to target")) data-label-all=(format!("Withdraw all {item_name}")) title=(if value > stake { format!("Withdraw one {item_name}; {} personal coin required", value - stake) } else { format!("Withdraw one {item_name} using your stake") }) aria-label=(format!("Withdraw one {item_name}")) { (transfer_glyph(1)) } }
                                 }
                                 td class="inventory-count" { (quantity_target_control(item.quantity, target_quantity(party_targets, &item.item_id), &item.item_id, true)) }
                                 td class="inventory-weight" { (item_weight(definition)) }
@@ -2332,6 +2335,7 @@ pub fn party_pool_page(
                             @let equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
                             @let target = target_quantity(party_targets, &item.item_id);
                             @let current = pooled.iter().find(|pooled| pooled.item_id == item.item_id).map_or(0, |pooled| pooled.quantity);
+                            @let item_name = item_display_name(&item.item_id);
                             tr class="trade-inventory-row" {
                                 td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                                 td class="inventory-item-name" {
@@ -2340,7 +2344,7 @@ pub fn party_pool_page(
                                         @if equipped {
                                             (disabled_transfer_button("left", "Equipped items cannot be deposited"))
                                         } @else {
-                                            button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="deposit" data-transfer-mode="one" data-count=(item.qty) data-current=(current) data-target=(target) data-label-one=(format!("Deposit one {}", item.item_id)) data-label-target=(format!("Deposit {} to target", item.item_id)) data-label-all=(format!("Deposit all {}", item.item_id)) aria-label=(format!("Deposit one {}", item.item_id)) title=(format!("Deposit one {}", item.item_id)) { (transfer_glyph(1)) }
+                                            button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="deposit" data-transfer-mode="one" data-count=(item.qty) data-current=(current) data-target=(target) data-label-one=(format!("Deposit one {item_name}")) data-label-target=(format!("Deposit {item_name} to target")) data-label-all=(format!("Deposit all {item_name}")) aria-label=(format!("Deposit one {item_name}")) title=(format!("Deposit one {item_name}")) { (transfer_glyph(1)) }
                                         }
                                     }
                                 }
@@ -2416,10 +2420,11 @@ fn equipment_checkbox(
         definition.slot != ItemSlot::None
             || definition.kind == crate::spacetimedb::ItemKind::Medication
     });
+    let item_name = item_display_name(&inventory.item_id);
     let label = if equipped {
-        format!("Unequip {}", inventory.item_id)
+        format!("Unequip {item_name}")
     } else {
-        format!("Equip {}", inventory.item_id)
+        format!("Equip {item_name}")
     };
     html! {
         input type="checkbox"
@@ -2448,11 +2453,13 @@ pub(super) fn item_name_with_quality(
                 data-item-kind="currency" data-currency-name=(currency_name) { "Coin" }
         }
     } else {
-        item_name_with_display(item_id, definition)
+        let display_name = item_display_name(item_id);
+        item_name_with_display(item_id, &display_name, definition)
     }
 }
 
 fn item_name_with_display(
+    item_id: &str,
     display_name: &str,
     definition: Option<&crate::spacetimedb::ItemDefinition>,
 ) -> Markup {
@@ -2487,7 +2494,7 @@ fn item_name_with_display(
     });
     html! {
         span class=(quality.map_or_else(|| "inventory-item-label".to_string(), |quality| format!("inventory-item-label item-quality-{quality}"))) title=[label]
-            data-item-name=(display_name)
+            data-item-name=(item_id)
             data-item-kind=[definition.map(|item| format!("{:?}", item.kind).to_ascii_lowercase())]
             data-stat-accuracy=[definition.map(|item| weight_display(item.accuracy))]
             data-stat-reach=[definition.map(|item| weight_display(item.reach))]
@@ -2542,11 +2549,12 @@ fn target_quantity(targets: &[InventoryQuantityTarget], item_id: &str) -> u32 {
 }
 
 fn quantity_target_control(quantity: u32, target: u32, item_id: &str, party_scope: bool) -> Markup {
+    let item_name = item_display_name(item_id);
     html! {
         span class="inventory-target-control" data-target-control data-quantity=(quantity) data-item-id=(item_id) data-party-scope=(party_scope) title=(format!("Carrying {quantity}; target {target}")) {
             span class="inventory-target-value" data-target-value role="button" tabindex="0"
-                aria-label=(format!("Target quantity for {item_id}"))
-                title=(format!("Click to edit the target quantity for {item_id}")) { (target) }
+                aria-label=(format!("Target quantity for {item_name}"))
+                title=(format!("Click to edit the target quantity for {item_name}")) { (target) }
         }
     }
 }
@@ -2562,8 +2570,9 @@ fn disabled_transfer_button(direction: &str, explanation: &str) -> Markup {
 }
 
 fn merchant_buy_controls(item_id: &str, price: u32, target: u32, available: u32) -> Markup {
+    let item_name = item_display_name(item_id);
     html! { span class="inventory-row-actions" {
-        button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-merchant-buy=(item_id) data-merchant-buy-price=(price) data-transfer-mode="one" data-target=(target) data-count=(available) data-label-one=(format!("Buy one {item_id}")) data-label-target=(format!("Buy {item_id} to target")) data-label-all=(format!("Buy all {item_id}")) aria-label=(format!("Buy one {item_id}")) title=(format!("Buy one {item_id}")) { (transfer_glyph(1)) }
+        button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-merchant-buy=(item_id) data-merchant-buy-price=(price) data-transfer-mode="one" data-target=(target) data-count=(available) data-label-one=(format!("Buy one {item_name}")) data-label-target=(format!("Buy {item_name} to target")) data-label-all=(format!("Buy all {item_name}")) aria-label=(format!("Buy one {item_name}")) title=(format!("Buy one {item_name}")) { (transfer_glyph(1)) }
     } }
 }
 
@@ -2574,8 +2583,9 @@ fn merchant_sell_controls(
     quantity: u32,
     target: u32,
 ) -> Markup {
+    let item_name = item_display_name(item_id);
     html! { span class="inventory-row-actions" {
-        button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-merchant-sell=(id) data-item-name=(item_id) data-merchant-sell-price=(price) data-transfer-mode="one" data-count=(quantity) data-target=(target) data-label-one=(format!("Sell one {item_id}")) data-label-target=(format!("Sell surplus {item_id}")) data-label-all=(format!("Sell all {item_id}")) aria-label=(format!("Sell one {item_id}")) title=(format!("Sell one {item_id}")) { (transfer_glyph(1)) }
+        button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-merchant-sell=(id) data-item-name=(item_id) data-merchant-sell-price=(price) data-transfer-mode="one" data-count=(quantity) data-target=(target) data-label-one=(format!("Sell one {item_name}")) data-label-target=(format!("Sell surplus {item_name}")) data-label-all=(format!("Sell all {item_name}")) aria-label=(format!("Sell one {item_name}")) title=(format!("Sell one {item_name}")) { (transfer_glyph(1)) }
     } }
 }
 
@@ -2589,10 +2599,11 @@ fn merchant_sell_repair_controls(
     repair: Option<Markup>,
 ) -> Markup {
     let has_repair = repair.is_some();
+    let item_name = item_display_name(item_id);
     html! { div class=(if has_repair { "inventory-row-actions smith-player-actions" } else { "inventory-row-actions" }) {
         @if let Some(repair) = repair { (repair) }
         @if can_sell {
-            button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-merchant-sell=(id) data-item-name=(item_id) data-merchant-sell-price=(price) data-transfer-mode="one" data-count=(quantity) data-target=(target) data-label-one=(format!("Sell one {item_id}")) data-label-target=(format!("Sell surplus {item_id}")) data-label-all=(format!("Sell all {item_id}")) aria-label=(format!("Sell one {item_id}")) title=(format!("Sell one {item_id}")) { (transfer_glyph(1)) }
+            button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-merchant-sell=(id) data-item-name=(item_id) data-merchant-sell-price=(price) data-transfer-mode="one" data-count=(quantity) data-target=(target) data-label-one=(format!("Sell one {item_name}")) data-label-target=(format!("Sell surplus {item_name}")) data-label-all=(format!("Sell all {item_name}")) aria-label=(format!("Sell one {item_name}")) title=(format!("Sell one {item_name}")) { (transfer_glyph(1)) }
         } @else if has_repair {
             (disabled_transfer_button("left", "Equipped items cannot be sold"))
         }
@@ -4585,8 +4596,7 @@ fn chat_area(
 fn merchant_offers_rail(title: &str, unavailable_offers: &[&str]) -> Markup {
     html! {
         (sidebar_section(title, html! {
-            p class="small-copy" { "No stock is listed at present." }
-            ul class="service-offering-list" aria-label="Expected offerings" {
+            ul class="service-offering-list" aria-label="Expected offerings" title="No stock is listed at present" {
                 @for offer in unavailable_offers {
                     li { (decorative_game_icon("shop")) span { (offer) } }
                 }
@@ -4616,13 +4626,14 @@ fn inventory_rail(
                     tbody {
                     @for item in inventory {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                        @let item_name = item_display_name(&item.item_id);
                         tr class=(if trade_action.is_some() { "trade-inventory-row" } else { "trade-inventory-row inventory-row-readonly" }) {
                             td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                             td class="inventory-item-name" {
                                 (item_name_with_quality(&item.item_id, definition))
                                 @if let Some((action, tooltip)) = trade_action {
                                 button type="button" class="trade-transfer trade-transfer-left" disabled
-                                    aria-label=(format!("{} {}", action, item.item_id))
+                                    aria-label=(format!("{action} {item_name}"))
                                     title=(tooltip) { "◀" }
                                 }
                             }
@@ -4672,12 +4683,13 @@ fn rest_service_menu(
     summary: Option<&RestSummary>,
 ) -> Markup {
     html! {
-    section class="rest-service-menu" aria-label=(format!("{} rest service", location)) {
+    section class="rest-service-menu" aria-label=(format!("{} rest service", location))
+        title=(if kind == "inn" { "A bed costs 1 coin per day. Injuries are tended before downtime." } else { "Sanctuary is free. Injuries are tended before downtime." }) {
         div class="rest-service-heading" { strong { "Rest" } }
         @if kind == "inn" {
-            p class="rest-service-copy" { "A bed costs 1 coin per day. Injuries are tended before any downtime." }
+            p class="rest-service-copy" { "1 coin / day · treatment included" }
         } @else {
-            p class="rest-service-copy" { "Sanctuary is freely offered to those down on their luck. Injuries are tended before any downtime." }
+            p class="rest-service-copy" { "Free · treatment included" }
         }
         form action=(format!("/settlements/{settlement_id}/rest/{kind}")) method="post" {
                 @let minutes = default_minutes.unwrap_or(0);
@@ -4698,7 +4710,10 @@ fn rest_service_menu(
                         onclick=(format!("const input=this.parentElement.querySelector('input'); input.value={}; input.dispatchEvent(new Event('input', {{bubbles:true}}));", healing_days.unwrap_or(0))) { "Until healed" }
                 }
                 */
-                button type="submit" class="btn btn-primary btn-small btn-block" data-rest-submit disabled[unit == "hours"] { "Rest" }
+                button type="submit" class="btn btn-primary btn-small btn-block" data-rest-submit disabled[unit == "hours"] title="Rest for the selected duration" {
+                    (decorative_game_icon("night-sleep"))
+                    span class="sr-only" { "Rest" }
+                }
         }
         @if let Some(summary) = summary {
             div class="rest-summary-overlay" role="dialog" aria-modal="true" aria-labelledby="rest-summary-title" {
@@ -4873,8 +4888,10 @@ mod tests {
             kind: ItemKind::Medication,
             ..Default::default()
         };
-        let rendered = item_name_with_display("Black Death tonic", Some(&definition)).into_string();
-        assert!(rendered.contains("data-item-name=\"Black Death tonic\""));
+        let rendered =
+            item_name_with_display("black_death_tonic", "Black Death tonic", Some(&definition))
+                .into_string();
+        assert!(rendered.contains("data-item-name=\"black_death_tonic\""));
         assert!(rendered.contains("data-item-kind=\"medication\""));
         assert!(rendered.contains(">Black Death tonic</span>"));
     }
@@ -5164,8 +5181,8 @@ mod tests {
         assert_eq!(rendered.matches("data-merchant-sell=\"").count(), 1);
         assert!(rendered.contains("data-dynamic-transfer"));
         assert!(rendered.contains("data-default-transfer-mode=\"one\""));
-        assert!(rendered.contains("data-label-target=\"Sell surplus torch\""));
-        assert!(rendered.contains("data-label-all=\"Sell all torch\""));
+        assert!(rendered.contains("data-label-target=\"Sell surplus Torch\""));
+        assert!(rendered.contains("data-label-all=\"Sell all Torch\""));
         assert!(rendered.contains("row-repair-form"));
         assert_eq!(rendered.matches("smith-player-actions").count(), 1);
     }

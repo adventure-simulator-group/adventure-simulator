@@ -4,7 +4,9 @@
    PANELS (Cards/Containers)
    ============================================ */
 .panel {
-  background: var(--panel-bg);
+  background:
+    linear-gradient(rgb(255 255 255 / 1.5%), rgb(0 0 0 / 3%)),
+    var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
   margin-bottom: 1rem;
@@ -21,12 +23,12 @@
   font-family: var(--font-display), serif;
   font-size: var(--font-size-sm);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  text-transform: none;
+  letter-spacing: 0.04em;
   color: var(--accent-dark);
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--panel-border);
-  background: var(--bg-secondary);
+  background: color-mix(in srgb, var(--panel-bg) 82%, black);
 }
 
 .panel-body {
@@ -36,7 +38,7 @@
 .panel-footer {
   padding: 0.75rem 1rem;
   border-top: 1px solid var(--panel-border);
-  background: var(--bg-secondary);
+  background: color-mix(in srgb, var(--panel-bg) 82%, black);
 }
 
 /* ============================================
@@ -48,7 +50,7 @@
   justify-content: center;
   gap: 0.5rem;
   padding: 0.5rem 1rem;
-  font-family: var(--font-display), serif;
+  font-family: var(--font-heading), serif;
   font-size: var(--font-size-sm);
   font-weight: 600;
   letter-spacing: 0.03em;
@@ -152,7 +154,7 @@
 .form-label {
   display: block;
   margin-bottom: 0.375rem;
-  font-family: var(--font-display), serif;
+  font-family: var(--font-heading), serif;
   font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--text-primary);

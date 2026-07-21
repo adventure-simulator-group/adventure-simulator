@@ -315,6 +315,80 @@
 .travel-daylight-segment.sunset { background: #b96850; }
 .travel-daylight-segment.night { background: #14223a; }
 .travel-rail-tooltip { position: fixed; z-index: 500; min-width: max-content; padding: .2rem .35rem; border: 1px solid color-mix(in srgb, var(--text-muted) 45%, transparent); border-radius: .18rem; background: color-mix(in srgb, var(--panel-bg) 96%, #000); box-shadow: 0 .15rem .45rem #0008; color: var(--text-primary); font-size: .54rem; line-height: 1.1; pointer-events: none; transform: translateY(-50%); }
+
+/* One immediate tooltip layer replaces delayed, unstyled browser titles. JS
+   owns positioning; these rules own its consistent parchment-sign treatment. */
+#strategic-tooltip,
+.strategic-tooltip {
+  position: fixed;
+  z-index: 1000;
+  width: max-content;
+  max-width: min(20rem, calc(100vw - 1rem));
+  padding: .42rem .58rem .48rem;
+  border: 1px solid color-mix(in srgb, var(--building-frame-tint) 62%, #d8c59e);
+  border-radius: 2px;
+  background:
+    linear-gradient(rgb(255 255 255 / 3%), transparent),
+    color-mix(in srgb, var(--panel-bg) 94%, black);
+  box-shadow: 0 .35rem .9rem #000b, inset 0 0 0 1px rgb(0 0 0 / 45%);
+  color: var(--text-primary);
+  font-family: var(--font-body), serif;
+  font-size: .78rem;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: .015em;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  text-align: left;
+}
+
+#strategic-tooltip[hidden],
+.strategic-tooltip[hidden] { display: none; }
+
+#strategic-tooltip::after,
+.strategic-tooltip::after {
+  position: absolute;
+  width: .45rem;
+  height: .45rem;
+  border-right: 1px solid color-mix(in srgb, var(--building-frame-tint) 62%, #d8c59e);
+  border-bottom: 1px solid color-mix(in srgb, var(--building-frame-tint) 62%, #d8c59e);
+  background: color-mix(in srgb, var(--panel-bg) 94%, black);
+  content: "";
+  transform: rotate(45deg);
+}
+
+#strategic-tooltip:is([data-placement="top"], :not([data-placement]))::after,
+.strategic-tooltip:is([data-placement="top"], :not([data-placement]))::after {
+  top: calc(100% - .2rem);
+  left: calc(50% - .225rem);
+}
+
+#strategic-tooltip[data-placement="bottom"]::after,
+.strategic-tooltip[data-placement="bottom"]::after {
+  bottom: calc(100% - .2rem);
+  left: calc(50% - .225rem);
+  transform: rotate(225deg);
+}
+
+#strategic-tooltip[data-placement="left"]::after,
+.strategic-tooltip[data-placement="left"]::after {
+  top: calc(50% - .225rem);
+  left: calc(100% - .2rem);
+  transform: rotate(315deg);
+}
+
+#strategic-tooltip[data-placement="right"]::after,
+.strategic-tooltip[data-placement="right"]::after {
+  top: calc(50% - .225rem);
+  right: calc(100% - .2rem);
+  transform: rotate(135deg);
+}
+
+/* Names are repeatedly scanned, so they use the readable blackletter grade. */
+:is(.item-name, .inventory-item-name, .inventory-name, .character-name,
+    .quest-name, .service-offering-list strong) {
+  font-family: var(--font-heading), serif;
+}
 .travel-resource-row.fatigue.warning .travel-resource-icon { color: var(--danger); }
 .travel-midnight-tick { position: absolute; z-index: 7; left: 100%; width: 1.05rem; border-top: 1px solid color-mix(in srgb, #fff 58%, transparent); transform: translateY(-50%); }
 .travel-midnight-tick svg { position: absolute; top: -.43rem; left: .58rem; width: .82rem; height: .82rem; }
@@ -1807,7 +1881,7 @@ body:has(.settlement-top-bar) .main-grid .settlement-card:hover {
   border-radius: 999px;
   background: #b4232c;
   color: #fff;
-  font: 700 0.68rem/1 sans-serif;
+  font: 700 0.68rem/1 var(--font-heading), serif;
 }
 
 .party-role-notification-badge[hidden] { display: none; }
@@ -1840,7 +1914,7 @@ body:has(.settlement-top-bar) .main-grid .settlement-card:hover {
   place-items: center;
   border: 1px solid #f2c66f;
   border-radius: 999px;
-  font: 800 0.72rem/1 sans-serif;
+  font: 800 0.72rem/1 var(--font-heading), serif;
 }
 
 .current-location-row {
@@ -3521,7 +3595,13 @@ body.chat-resizing {
 }
 
 @media (max-width: 768px) {
-  .settlement-main { min-height: 32rem; }
+  .settlement-main { min-height: 38rem; }
+  .service-left-sidebar .service-left-stack,
+  .service-left-sidebar .service-inventory-area {
+    flex: 0 0 auto;
+    height: auto;
+    min-height: 0;
+  }
   .party-portrait-overlay {
     right: 0.5rem;
     left: 0.5rem;
@@ -3573,7 +3653,7 @@ body.chat-resizing {
 }
 
 @media (max-width: 480px) {
-  .settlement-main { min-height: 27rem; }
+  .settlement-main { min-height: 32rem; }
   .service-visual-scene { min-height: 14rem; }
   .visual-scene-caption { align-items: flex-start; flex-direction: column; gap: 0.15rem; }
   .settlement-chat { --chat-panel-height: 9.5rem; min-height: 9.5rem; }
