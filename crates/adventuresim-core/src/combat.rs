@@ -121,14 +121,20 @@ pub fn resolve_melee_attack_by_parts(
     defender_equip: &impl PlayerEquipment,
 ) -> AttackResult {
     // (1) Calculate accuracy of the attacker
-    let accuracy = attacker_skills.skill_check_by_parts(
-        Skill::Melee,
-        attacker_attr,
-        attacker_body,
-        attacker_essentials,
-        attacker_equip,
-        LimbWeights::arm(attacker_side, attacker_body.primary_side()),
-    ) * attacker_equip.weapon_accuracy()
+    let weights = LimbWeights::arm(attacker_side, attacker_body.primary_side());
+    let accuracy = attacker_equip
+        .weapon_skill_distribution()
+        .weighted_check(|skill| {
+            attacker_skills.skill_check_by_parts(
+                skill,
+                attacker_attr,
+                attacker_body,
+                attacker_essentials,
+                attacker_equip,
+                weights,
+            )
+        })
+        * attacker_equip.weapon_accuracy()
         * hit_precision.clamp(0.0, 1.0);
 
     // (2)-(5) Calculate defense of the defender depending on the response
@@ -254,14 +260,19 @@ pub fn resolve_ranged_attack_by_parts(
     } else {
         defender_response
     };
-    let accuracy = attacker_skills.skill_check_by_parts(
-        Skill::Ranged,
-        attacker_attr,
-        attacker_body,
-        attacker_essentials,
-        attacker_equip,
-        LimbWeights::both_arms(),
-    ) * attacker_equip.weapon_accuracy()
+    let accuracy = attacker_equip
+        .weapon_skill_distribution()
+        .weighted_check(|skill| {
+            attacker_skills.skill_check_by_parts(
+                skill,
+                attacker_attr,
+                attacker_body,
+                attacker_essentials,
+                attacker_equip,
+                LimbWeights::both_arms(),
+            )
+        })
+        * attacker_equip.weapon_accuracy()
         * hit_precision.clamp(0.0, 1.0);
 
     let defense = defense_by_parts(

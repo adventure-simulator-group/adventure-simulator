@@ -214,10 +214,17 @@ pub struct CharacterStats {
 pub struct CharacterSkills {
     #[primary_key]
     pub character_id: u64,
-    pub melee_hours: f32,
+    pub polearm_hours: f32,
+    pub axe_hours: f32,
+    pub bludgeon_hours: f32,
+    pub sword_hours: f32,
+    pub knife_hours: f32,
     pub dodge_hours: f32,
     pub block_hours: f32,
-    pub ranged_hours: f32,
+    pub bow_hours: f32,
+    pub crossbow_hours: f32,
+    pub firearm_hours: f32,
+    pub throw_hours: f32,
     pub will_hours: f32,
     pub insight_hours: f32,
     pub self_awareness_hours: f32,
@@ -229,7 +236,8 @@ pub struct CharacterSkills {
     pub religion_hours: adventuresim_world_schema::ReligionHours,
     pub stealth_hours: f32,
     pub balance_hours: f32,
-    pub surgeon_hours: f32,
+    pub anatomy_hours: f32,
+    pub tailoring_hours: f32,
     pub smithing_hours: f32,
 }
 
@@ -708,7 +716,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
         .ok_or("Surgery demo primary surgeon is missing time")?
         .minutes
         .max(200);
-    for (id, surgeon_hours, lag) in [
+    for (id, procedure_hours, lag) in [
         (DAMAGED_CHARACTER_ID, 20_000.0, 0),
         (9_000_001, 3_333.0, 100),
         (9_000_002, 500.0, 200),
@@ -719,7 +727,9 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
             .character_id()
             .find(id)
             .ok_or("Surgery demo character is missing skills")?;
-        skills.surgeon_hours = surgeon_hours;
+        skills.anatomy_hours = procedure_hours;
+        skills.knife_hours = procedure_hours;
+        skills.tailoring_hours = procedure_hours;
         ctx.db.character_skills().character_id().update(skills);
         let mut time = ctx
             .db
@@ -950,10 +960,17 @@ fn insert_character_with_origin(
     });
     let _character_skills = ctx.db.character_skills().insert(CharacterSkills {
         character_id: id,
-        melee_hours: 2000.0,
+        polearm_hours: 2000.0,
+        axe_hours: 2000.0,
+        bludgeon_hours: 2000.0,
+        sword_hours: 2000.0,
+        knife_hours: 2000.0,
         dodge_hours: 1000.0,
         block_hours: 1000.0,
-        ranged_hours: 1000.0,
+        bow_hours: 1000.0,
+        crossbow_hours: 1000.0,
+        firearm_hours: 1000.0,
+        throw_hours: 1000.0,
         will_hours: 1000.0,
         insight_hours: 1000.0,
         self_awareness_hours: 1000.0,
@@ -968,7 +985,8 @@ fn insert_character_with_origin(
         },
         stealth_hours: 1000.0,
         balance_hours: 1000.0,
-        surgeon_hours: 1000.0,
+        anatomy_hours: 1000.0,
+        tailoring_hours: 1000.0,
         smithing_hours: 1000.0,
     });
     crate::time::initialize_character_time(ctx, id)?;

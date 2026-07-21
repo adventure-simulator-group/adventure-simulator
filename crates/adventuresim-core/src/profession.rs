@@ -98,14 +98,26 @@ const SMITHING: &[ProfessionSkillWeight] = &[ProfessionSkillWeight {
     skill: Skill::Smithing,
     weight: 1.0,
 }];
+const TAILORING: &[ProfessionSkillWeight] = &[ProfessionSkillWeight {
+    skill: Skill::Tailoring,
+    weight: 1.0,
+}];
 const MEDICAL: &[ProfessionSkillWeight] = &[
     ProfessionSkillWeight {
         skill: Skill::Medicine,
         weight: 0.5,
     },
     ProfessionSkillWeight {
-        skill: Skill::Surgeon,
-        weight: 0.5,
+        skill: Skill::Anatomy,
+        weight: 1.0 / 6.0,
+    },
+    ProfessionSkillWeight {
+        skill: Skill::Knife,
+        weight: 1.0 / 6.0,
+    },
+    ProfessionSkillWeight {
+        skill: Skill::Tailoring,
+        weight: 1.0 / 6.0,
     },
 ];
 const RELIGION: &[ProfessionSkillWeight] = &[ProfessionSkillWeight {
@@ -147,7 +159,7 @@ pub const PROFESSIONS: &[ProfessionDefinition] = &[
         service_id: "clothing",
         label: "tailor",
         description: "Tailors cut, fit, and repair clothing for work, travel, and display.",
-        skills: SMITHING,
+        skills: TAILORING,
         religious: false,
         practice_reward: PracticeReward::Gold,
     },
@@ -288,8 +300,9 @@ mod tests {
         assert_eq!(
             profession_tier(herbalist, |skill| match skill {
                 Skill::Medicine => 20_000.0,
-                Skill::Surgeon => 0.0,
-                _ => unreachable!(),
+                Skill::Anatomy => 0.0,
+                Skill::Knife | Skill::Tailoring => 20_000.0,
+                _ => unreachable!("unexpected medical skill: {skill:?}"),
             }),
             ProfessionTier::Apprentice
         );

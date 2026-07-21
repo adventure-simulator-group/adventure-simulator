@@ -10,10 +10,17 @@ use super::religion_hours_type::ReligionHours;
 #[sats(crate = __lib)]
 pub struct CharacterSkills {
     pub character_id: u64,
-    pub melee_hours: f32,
+    pub polearm_hours: f32,
+    pub axe_hours: f32,
+    pub bludgeon_hours: f32,
+    pub sword_hours: f32,
+    pub knife_hours: f32,
     pub dodge_hours: f32,
     pub block_hours: f32,
-    pub ranged_hours: f32,
+    pub bow_hours: f32,
+    pub crossbow_hours: f32,
+    pub firearm_hours: f32,
+    pub throw_hours: f32,
     pub will_hours: f32,
     pub insight_hours: f32,
     pub self_awareness_hours: f32,
@@ -25,7 +32,8 @@ pub struct CharacterSkills {
     pub religion_hours: ReligionHours,
     pub stealth_hours: f32,
     pub balance_hours: f32,
-    pub surgeon_hours: f32,
+    pub anatomy_hours: f32,
+    pub tailoring_hours: f32,
     pub smithing_hours: f32,
 }
 
@@ -38,10 +46,17 @@ impl __sdk::InModule for CharacterSkills {
 /// Provides typed access to columns for query building.
 pub struct CharacterSkillsCols {
     pub character_id: __sdk::__query_builder::Col<CharacterSkills, u64>,
-    pub melee_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub polearm_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub axe_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub bludgeon_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub sword_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub knife_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub dodge_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub block_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
-    pub ranged_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub bow_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub crossbow_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub firearm_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub throw_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub will_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub insight_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub self_awareness_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
@@ -53,7 +68,8 @@ pub struct CharacterSkillsCols {
     pub religion_hours: __sdk::__query_builder::Col<CharacterSkills, ReligionHours>,
     pub stealth_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub balance_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
-    pub surgeon_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub anatomy_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
+    pub tailoring_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub smithing_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
 }
 
@@ -62,10 +78,17 @@ impl __sdk::__query_builder::HasCols for CharacterSkills {
     fn cols(table_name: &'static str) -> Self::Cols {
         CharacterSkillsCols {
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
-            melee_hours: __sdk::__query_builder::Col::new(table_name, "melee_hours"),
+            polearm_hours: __sdk::__query_builder::Col::new(table_name, "polearm_hours"),
+            axe_hours: __sdk::__query_builder::Col::new(table_name, "axe_hours"),
+            bludgeon_hours: __sdk::__query_builder::Col::new(table_name, "bludgeon_hours"),
+            sword_hours: __sdk::__query_builder::Col::new(table_name, "sword_hours"),
+            knife_hours: __sdk::__query_builder::Col::new(table_name, "knife_hours"),
             dodge_hours: __sdk::__query_builder::Col::new(table_name, "dodge_hours"),
             block_hours: __sdk::__query_builder::Col::new(table_name, "block_hours"),
-            ranged_hours: __sdk::__query_builder::Col::new(table_name, "ranged_hours"),
+            bow_hours: __sdk::__query_builder::Col::new(table_name, "bow_hours"),
+            crossbow_hours: __sdk::__query_builder::Col::new(table_name, "crossbow_hours"),
+            firearm_hours: __sdk::__query_builder::Col::new(table_name, "firearm_hours"),
+            throw_hours: __sdk::__query_builder::Col::new(table_name, "throw_hours"),
             will_hours: __sdk::__query_builder::Col::new(table_name, "will_hours"),
             insight_hours: __sdk::__query_builder::Col::new(table_name, "insight_hours"),
             self_awareness_hours: __sdk::__query_builder::Col::new(
@@ -80,7 +103,8 @@ impl __sdk::__query_builder::HasCols for CharacterSkills {
             religion_hours: __sdk::__query_builder::Col::new(table_name, "religion_hours"),
             stealth_hours: __sdk::__query_builder::Col::new(table_name, "stealth_hours"),
             balance_hours: __sdk::__query_builder::Col::new(table_name, "balance_hours"),
-            surgeon_hours: __sdk::__query_builder::Col::new(table_name, "surgeon_hours"),
+            anatomy_hours: __sdk::__query_builder::Col::new(table_name, "anatomy_hours"),
+            tailoring_hours: __sdk::__query_builder::Col::new(table_name, "tailoring_hours"),
             smithing_hours: __sdk::__query_builder::Col::new(table_name, "smithing_hours"),
         }
     }

@@ -43,7 +43,7 @@ sinks; the runner therefore does not assert naive currency conservation.
 
 Profiles retain their seed and all inputs needed for inspection: a deterministic sparse personality
 (two through four non-neutral axes); correlated, bounded attributes; an explicit personality-by-attribute
-build role; initial skills; training and activity allocations;
+build role; initial leaf skills; activity allocations that produce training;
 activity-versus-quest, risk, and recovery preferences; equipment style and
 utility weights; and provisioning, reserve, and spending preferences. Some
 fields are recorded for later slices and do not yet affect settlement choices. Build derivation keeps
