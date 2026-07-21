@@ -76,6 +76,7 @@ test("settlement tabs layer tiered tintable buildings and proportional horizons 
   assert.match(layoutCss, /data-building-tier="city"[\s\S]*--service-icon-bottom: 1\.8rem[\s\S]*--service-icon-size: 1\.75rem/);
   assert.match(layoutCss, /data-environment="settlement"[\s\S]*\.settlement-services \.nav-tab \{[\s\S]*width: 5\.25rem[\s\S]*height: 6\.75rem/);
   assert.match(layoutCss, /\.service-notification-badge \{[\s\S]*z-index: 3/);
+  assert.match(layoutCss, /data-environment="settlement"[\s\S]*\.service-notification-badge \{[\s\S]*right: calc\(50% - var\(--service-icon-size, 1\.6rem\) \/ 2 - 0\.4rem\)[\s\S]*bottom: calc\(var\(--service-icon-bottom, 1\.2rem\) \+ var\(--service-icon-size, 1\.6rem\) - 0\.4rem\)/);
   assert.match(layoutCss, /\.nav-tab\.active \{[\s\S]*border-bottom: 3px solid var\(--accent-light\)/);
   assert.match(layoutCss, /\.nav-tab\.active::after \{[\s\S]*z-index: 4[\s\S]*bottom: 0[\s\S]*height: 3px/);
   assert.match(layoutCss, /\.settlement-top-bar \{[\s\S]*padding-inline: 0/);

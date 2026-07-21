@@ -272,6 +272,20 @@ pub fn alchemy_page(
     party_targets: &[InventoryQuantityTarget],
     party_scope: bool,
 ) -> Markup {
+    let scope = if party_scope { "party" } else { "personal" };
+    let return_to = format!(
+        "/locations/settlement/{}/alchemy?recipe={}&scope={scope}",
+        settlement.id, selected.item_id
+    );
+    let herbalist_href = format!(
+        "/settlements/{}/herbalist?return_to={}",
+        settlement.id,
+        return_to
+            .replace('%', "%25")
+            .replace('?', "%3F")
+            .replace('&', "%26")
+            .replace('=', "%3D")
+    );
     let recipes: Vec<_> = adventuresim_core::disease::MEDICATION_RECIPES
         .iter()
         .filter(|recipe| adventuresim_core::disease::can_prepare_medication(medicine, recipe))
@@ -293,7 +307,7 @@ pub fn alchemy_page(
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), Some(character.id), true))
             (visual_stage("alchemy", "Alchemy", "A working table of herbs, vessels, and prepared medicines"))
-            a class="stage-context-link" href=(format!("/settlements/{}/herbalist", settlement.id)) {
+            a class="stage-context-link" href=(herbalist_href) {
                 "Return to the herbalist"
             }
             (settlement_chat_area_with_info("Alchemy", Some(character), &[format!("Selected recipe: {}", selected.name)]))
@@ -2508,11 +2522,9 @@ fn target_quantity(targets: &[InventoryQuantityTarget], item_id: &str) -> u32 {
 fn quantity_target_control(quantity: u32, target: u32, item_id: &str, party_scope: bool) -> Markup {
     html! {
         span class="inventory-target-control" data-target-control data-quantity=(quantity) data-item-id=(item_id) data-party-scope=(party_scope) title=(format!("Carrying {quantity}; target {target}")) {
-            span class="inventory-target-denominator" {
-                button type="button" class="inventory-target-step inventory-target-up" data-target-step="1" aria-label=(format!("Increase {} target", item_id)) { "⌃" }
-                span class="inventory-target-value" data-target-value { (target) }
-                button type="button" class="inventory-target-step inventory-target-down" data-target-step="-1" aria-label=(format!("Decrease {} target", item_id)) hidden[target == 0] { "⌄" }
-            }
+            span class="inventory-target-value" data-target-value role="button" tabindex="0"
+                aria-label=(format!("Target quantity for {item_id}"))
+                title=(format!("Click to edit the target quantity for {item_id}")) { (target) }
         }
     }
 }

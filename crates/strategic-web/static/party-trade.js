@@ -94,17 +94,14 @@ function applyDynamicTransferModifiers(event) {
 }
 strategicTradeUi.applyDynamicTransferModifiers = applyDynamicTransferModifiers;
 
-function changeInventoryTarget(control, change) {
+function saveInventoryTarget(control, quantity) {
   const value = control?.querySelector("[data-target-value]");
   const row = control?.closest("tr");
   if (!value || !row) return;
 
-  const quantity = Math.max(0, Number(value.textContent) + change);
   value.textContent = String(quantity);
   row.dataset.target = String(quantity);
   control.title = `Carrying ${row.dataset.inventoryQuantity || 0}; target ${quantity}`;
-  const down = control.querySelector('[data-target-step="-1"]');
-  if (down) down.hidden = quantity === 0;
 
   window.strategicFetch("/api/inventory-target", {
     method: "POST",
@@ -113,6 +110,34 @@ function changeInventoryTarget(control, change) {
       quantity: String(quantity),
       party_scope: control.dataset.partyScope,
     }),
+  });
+}
+
+function editInventoryTarget(control) {
+  const display = control?.querySelector("[data-target-value]");
+  const initialValue = Number(display?.textContent);
+  if (!display || !Number.isSafeInteger(initialValue) || !window.StrategicNumericEditor) return;
+  window.StrategicNumericEditor.open({
+    display,
+    initialValue,
+    parse(text) {
+      const trimmed = String(text).trim();
+      if (!/^\d+$/.test(trimmed)) return null;
+      const parsed = Number(trimmed);
+      return Number.isSafeInteger(parsed) ? parsed : null;
+    },
+    format: String,
+    step: 1,
+    minimum: 0,
+    maximum: 4294967295,
+    anchor: control,
+    groupLabel: "Edit target quantity",
+    inputLabel: `Target quantity for ${control.dataset.itemId}`,
+    increaseLabel: "Increase target quantity by one",
+    decreaseLabel: "Decrease target quantity by one",
+    saveLabel: "Save target quantity",
+    cancelLabel: "Cancel target quantity edit",
+    onCommit: (quantity) => saveInventoryTarget(control, quantity),
   });
 }
 
@@ -325,10 +350,10 @@ document.addEventListener("click", (event) => {
     refreshInventoryPanel(root.querySelector('[data-inventory-pane]:not([hidden])'));
     return;
   }
-  const targetStep = clickTarget.closest("[data-target-step]");
-  if (targetStep) {
+  const targetValue = clickTarget.closest("[data-target-value]");
+  if (targetValue) {
     event.preventDefault();
-    changeInventoryTarget(targetStep.closest("[data-target-control]"), Number(targetStep.dataset.targetStep));
+    editInventoryTarget(targetValue.closest("[data-target-control]"));
     return;
   }
   const bulk = clickTarget.closest("[data-inventory-bulk]");
@@ -550,15 +575,13 @@ document.addEventListener("click", (event) => {
   form.querySelector("[type='submit']").disabled = false;
 });
 
-document.addEventListener("wheel", (event) => {
-  const cell = event.target.closest(".inventory-count");
-  const control = cell?.querySelector("[data-target-control]");
-  if (!control) return;
-  event.preventDefault();
-  changeInventoryTarget(control, event.deltaY < 0 ? 1 : -1);
-}, { passive: false });
-
 document.addEventListener("keydown", (event) => {
+  const targetValue = event.target.closest?.("[data-target-value]");
+  if (targetValue && (event.key === "Enter" || event.key === " ")) {
+    event.preventDefault();
+    editInventoryTarget(targetValue.closest("[data-target-control]"));
+    return;
+  }
   if (event.key === "Shift" || event.key === "Control") applyDynamicTransferModifiers(event);
 });
 

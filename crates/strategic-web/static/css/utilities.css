@@ -88,7 +88,7 @@
 .inventory-target-step { opacity:0; border:0; background:transparent; color:var(--color-accent); line-height:.65rem; padding:0 .25rem; cursor:pointer; transition:opacity .12s; }
 .inventory-count:hover .inventory-target-step:not([hidden]),
 .inventory-count:focus-within .inventory-target-step:not([hidden]) { opacity:1; }
-.inventory-target-value { grid-row:2; }
+.inventory-target-value { grid-row:2; cursor:pointer; }
 .inventory-transfer-glyph { display:inline-flex; align-items:center; }
 .inventory-transfer-glyph i { display:block; width:.48rem; height:.48rem; border-top:2px solid currentColor; border-right:2px solid currentColor; transform:rotate(45deg); margin-left:-.16rem; }
 .inventory-transfer-glyph i:first-child { margin-left:0; }

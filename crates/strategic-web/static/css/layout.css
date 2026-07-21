@@ -411,6 +411,12 @@
   display: none;
 }
 
+.settlement-top-bar[data-environment="settlement"] .service-notification-badge {
+  top: auto;
+  right: calc(50% - var(--service-icon-size, 1.6rem) / 2 - 0.4rem);
+  bottom: calc(var(--service-icon-bottom, 1.2rem) + var(--service-icon-size, 1.6rem) - 0.4rem);
+}
+
 .service-tab-icon {
   position: relative;
   z-index: 2;

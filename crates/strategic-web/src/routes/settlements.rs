@@ -3887,10 +3887,12 @@ async fn purchase_from_herbalist(
     session: Session,
     Form(form): Form<MerchantOfferForm>,
 ) -> Redirect {
+    let fallback = format!("/settlements/{id}/herbalist");
     let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
     else {
         return Redirect::to("/characters");
     };
+    let mut purchase_completed = false;
     // Prepared courses are individual equipment-like items, so this storefront
     // intentionally has no party-scope purchase path.
     if form.inventory_scope == "player"
@@ -3901,7 +3903,7 @@ async fn purchase_from_herbalist(
             .into_iter()
             .map(|entry| (entry.id, entry.quantity))
             .unzip();
-        if let Err(error) = state
+        match state
             .db
             .call(
                 "purchase_from_herbalist",
@@ -3914,10 +3916,17 @@ async fn purchase_from_herbalist(
             )
             .await
         {
-            tracing::warn!(%error, character_id = character.id, "herbalist purchase rejected");
+            Ok(()) => purchase_completed = true,
+            Err(error) => {
+                tracing::warn!(%error, character_id = character.id, "herbalist purchase rejected");
+            }
         }
     }
-    Redirect::to(&format!("/settlements/{id}/herbalist"))
+    if purchase_completed {
+        redirect_to_local(&form.return_to, &fallback)
+    } else {
+        Redirect::to(&fallback)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
