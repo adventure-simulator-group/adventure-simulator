@@ -18,6 +18,7 @@ const MAX_TILE_COUNT: usize = 100_000;
 const RENDER_MARGIN: u32 = 12;
 const NATIVE_DETAIL_BOUNDS: [f64; 4] = [5.0, 50.0, 16.0, 56.0];
 const FOREST_CANOPY_THRESHOLD_PERCENT: f64 = 20.0;
+const CANOPY_CELLS_PER_DEGREE: usize = 1_000;
 const RELIEF_STEP_DEGREES: f64 = 0.01;
 const MOUNTAIN_RELIEF_RADIUS_M: f64 = 7_000.0;
 const MOUNTAIN_RELIEF_THRESHOLD_M: i32 = 300;
@@ -99,6 +100,139 @@ impl ForestField {
             + fractal_noise(x * 4.83, y * 4.83, 0x12f7_8a4c_d963_b05e) * 1.65;
         interpolated + boundary_detail
     }
+}
+
+#[derive(Debug)]
+struct CanopyLevel {
+    width: usize,
+    height: usize,
+    coverage: Vec<u8>,
+}
+
+#[derive(Debug)]
+struct CanopyPyramid {
+    bounds: [f64; 4],
+    levels: Vec<CanopyLevel>,
+}
+
+impl CanopyPyramid {
+    fn from_terrain(
+        terrain: &adventuresim_terrain::TerrainPack,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let bounds = terrain.bounds();
+        let width = ((bounds[2] - bounds[0]) * CANOPY_CELLS_PER_DEGREE as f64).round() as usize;
+        let height = ((bounds[3] - bounds[1]) * CANOPY_CELLS_PER_DEGREE as f64).round() as usize;
+        if width == 0 || height == 0 {
+            return Err("terrain bounds cannot produce a canopy pyramid".into());
+        }
+        let mut coverage = vec![0_u8; width * height];
+        let west_degree = bounds[0].round() as i16;
+        let south_degree = bounds[1].round() as i16;
+        let east_degree = bounds[2].round() as i16;
+        let north_degree = bounds[3].round() as i16;
+        for south in south_degree..north_degree {
+            let row_base = usize::try_from(north_degree - south - 1)? * CANOPY_CELLS_PER_DEGREE;
+            for west in west_degree..east_degree {
+                let column_base = usize::try_from(west - west_degree)? * CANOPY_CELLS_PER_DEGREE;
+                for local_y in 0..CANOPY_CELLS_PER_DEGREE {
+                    let latitude = f64::from(south + 1)
+                        - (local_y as f64 + 0.5) / CANOPY_CELLS_PER_DEGREE as f64;
+                    let output = (row_base + local_y) * width + column_base;
+                    for local_x in 0..CANOPY_CELLS_PER_DEGREE {
+                        let longitude = f64::from(west)
+                            + (local_x as f64 + 0.5) / CANOPY_CELLS_PER_DEGREE as f64;
+                        let forest = terrain.cell(latitude, longitude)?.is_some_and(|cell| {
+                            f64::from(cell.canopy_percent) >= FOREST_CANOPY_THRESHOLD_PERCENT
+                        });
+                        coverage[output + local_x] = if forest { u8::MAX } else { 0 };
+                    }
+                }
+            }
+        }
+        Ok(Self::from_base(bounds, width, height, coverage))
+    }
+
+    fn from_base(bounds: [f64; 4], width: usize, height: usize, coverage: Vec<u8>) -> Self {
+        debug_assert_eq!(coverage.len(), width * height);
+        let mut levels = vec![CanopyLevel {
+            width,
+            height,
+            coverage,
+        }];
+        while levels
+            .last()
+            .is_some_and(|level| level.width > 1 || level.height > 1)
+        {
+            let previous = levels.last().expect("canopy base level exists");
+            let next_width = previous.width.div_ceil(2);
+            let next_height = previous.height.div_ceil(2);
+            let mut next = Vec::with_capacity(next_width * next_height);
+            for y in 0..next_height {
+                for x in 0..next_width {
+                    let mut sum = 0_u16;
+                    let mut count = 0_u16;
+                    for child_y in y * 2..(y * 2 + 2).min(previous.height) {
+                        for child_x in x * 2..(x * 2 + 2).min(previous.width) {
+                            sum += u16::from(previous.coverage[child_y * previous.width + child_x]);
+                            count += 1;
+                        }
+                    }
+                    next.push(((sum + count / 2) / count) as u8);
+                }
+            }
+            levels.push(CanopyLevel {
+                width: next_width,
+                height: next_height,
+                coverage: next,
+            });
+        }
+        Self { bounds, levels }
+    }
+
+    fn coverage_at(
+        &self,
+        latitude: f64,
+        longitude: f64,
+        longitude_per_pixel: f64,
+        latitude_per_pixel: f64,
+    ) -> f64 {
+        let [west, south, east, north] = self.bounds;
+        if longitude < west || longitude >= east || latitude <= south || latitude > north {
+            return 0.0;
+        }
+        let source_footprint = (longitude_per_pixel.abs() * CANOPY_CELLS_PER_DEGREE as f64)
+            .max(latitude_per_pixel.abs() * CANOPY_CELLS_PER_DEGREE as f64)
+            .max(1.0);
+        let lod = source_footprint.log2();
+        let lower = (lod.floor() as usize).min(self.levels.len() - 1);
+        let upper = (lower + 1).min(self.levels.len() - 1);
+        let blend = if lower == upper { 0.0 } else { lod.fract() };
+        let sample = |level_index: usize| {
+            let level = &self.levels[level_index];
+            let divisor = (1_u64 << level_index) as f64;
+            let x = (longitude - west) * CANOPY_CELLS_PER_DEGREE as f64 / divisor - 0.5;
+            let y = (north - latitude) * CANOPY_CELLS_PER_DEGREE as f64 / divisor - 0.5;
+            bilinear_coverage(level, x, y)
+        };
+        lerp(sample(lower), sample(upper), blend) / 255.0
+    }
+}
+
+fn bilinear_coverage(level: &CanopyLevel, x: f64, y: f64) -> f64 {
+    let x0 = x.floor() as isize;
+    let y0 = y.floor() as isize;
+    let tx = x - x.floor();
+    let ty = y - y.floor();
+    let sample = |column: isize, row: isize| {
+        if column < 0 || row < 0 || column >= level.width as isize || row >= level.height as isize {
+            0.0
+        } else {
+            f64::from(level.coverage[row as usize * level.width + column as usize])
+        }
+    };
+    let top = lerp(sample(x0, y0), sample(x0 + 1, y0), tx);
+    let bottom = lerp(sample(x0, y0 + 1), sample(x0 + 1, y0 + 1), tx);
+    lerp(top, bottom, ty)
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -441,6 +575,9 @@ pub(super) fn build(
         return Err("strategic map tile configuration is outside its bound".into());
     }
     let forest_field = ForestField::from_regions(&package.forest.regions, package.bounds);
+    let canopy_pyramid = native_terrain
+        .map(CanopyPyramid::from_terrain)
+        .transpose()?;
     let relief_field = native_terrain.map(ReliefField::from_terrain).transpose()?;
     let mut bytes = Vec::new();
     let mut entries = Vec::new();
@@ -470,6 +607,7 @@ pub(super) fn build(
                     package,
                     native_terrain,
                     forest_field.as_ref(),
+                    canopy_pyramid.as_ref(),
                     relief_field.as_ref(),
                     config.tile_size,
                     TILE_GUTTER,
@@ -569,6 +707,7 @@ fn render(
         None,
         forest_field.as_ref(),
         None,
+        None,
         tile_size,
         gutter,
         scale,
@@ -583,6 +722,7 @@ fn render_with_forest_field(
     package: &Package,
     native_terrain: Option<&adventuresim_terrain::TerrainPack>,
     forest_field: Option<&ForestField>,
+    canopy_pyramid: Option<&CanopyPyramid>,
     relief_field: Option<&ReliefField>,
     tile_size: u32,
     gutter: u8,
@@ -611,6 +751,7 @@ fn render_with_forest_field(
         &mut pixmap,
         native_terrain,
         forest_field,
+        canopy_pyramid,
         relief_field,
         package.bounds,
         scale,
@@ -740,6 +881,7 @@ fn draw_land_cover(
     pixmap: &mut Pixmap,
     native_terrain: Option<&adventuresim_terrain::TerrainPack>,
     forest_field: Option<&ForestField>,
+    canopy_pyramid: Option<&CanopyPyramid>,
     relief_field: Option<&ReliefField>,
     [west, south, east, north]: [f64; 4],
     scale: f64,
@@ -750,13 +892,15 @@ fn draw_land_cover(
     let height = pixmap.height() as usize;
     let data = pixmap.data_mut();
     let sample_offset = 0.25 / scale;
+    let longitude_per_pixel = (east - west) / (WIDTH * scale);
+    let latitude_per_pixel = (north - south) / (HEIGHT * scale);
     for pixel_y in 0..height {
         let logical_y = (origin.1 + pixel_y as f64 + 0.5) / scale;
         for pixel_x in 0..width {
             let logical_x = (origin.0 + pixel_x as f64 + 0.5) / scale;
-            let mut forest_samples = 0_u8;
-            let mut hilly_samples = 0_u8;
-            let mut combined_samples = 0_u8;
+            let mut forest_samples = 0.0;
+            let mut hilly_samples = 0.0;
+            let mut combined_samples = 0.0;
             for offset_y in [-sample_offset, sample_offset] {
                 for offset_x in [-sample_offset, sample_offset] {
                     let sample_x = logical_x + offset_x;
@@ -771,42 +915,52 @@ fn draw_land_cover(
                     } else {
                         None
                     };
-                    let forest = native.map_or_else(
+                    let forest_coverage = canopy_pyramid.map_or_else(
                         || {
-                            forest_field.is_some_and(|field| {
+                            f64::from(u8::from(forest_field.is_some_and(|field| {
                                 field.density_at(sample_x, sample_y)
                                     >= FOREST_CANOPY_THRESHOLD_PERCENT
-                            })
+                            })))
                         },
-                        |cell| f64::from(cell.canopy_percent) >= FOREST_CANOPY_THRESHOLD_PERCENT,
+                        |pyramid| {
+                            pyramid.coverage_at(
+                                latitude,
+                                longitude,
+                                longitude_per_pixel,
+                                latitude_per_pixel,
+                            )
+                        },
                     );
                     let hilly = native.map_or_else(
                         || relief_field.is_some_and(|field| field.hilly_at(latitude, longitude)),
                         |cell| cell.hilly,
                     );
-                    forest_samples += u8::from(forest && !hilly);
-                    hilly_samples += u8::from(hilly && !forest);
-                    combined_samples += u8::from(hilly && forest);
+                    if hilly {
+                        hilly_samples += 1.0 - forest_coverage;
+                        combined_samples += forest_coverage;
+                    } else {
+                        forest_samples += forest_coverage;
+                    }
                 }
             }
-            if forest_samples == 0 && hilly_samples == 0 && combined_samples == 0 {
+            if forest_samples == 0.0 && hilly_samples == 0.0 && combined_samples == 0.0 {
                 continue;
             }
             let offset = (pixel_y * width + pixel_x) * 4;
             blend_opaque_pixel(
                 &mut data[offset..offset + 4],
                 palette.elevation[2],
-                f64::from(hilly_samples) * 0.25,
+                hilly_samples * 0.25,
             );
             blend_opaque_pixel(
                 &mut data[offset..offset + 4],
                 palette.forest_sparse,
-                f64::from(forest_samples) * 0.25,
+                forest_samples * 0.25,
             );
             blend_opaque_pixel(
                 &mut data[offset..offset + 4],
                 palette.forest_deep,
-                f64::from(combined_samples) * 0.25,
+                combined_samples * 0.25,
             );
         }
     }
@@ -1406,6 +1560,24 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn canopy_parent_is_the_area_average_of_its_children() {
+        let pyramid =
+            CanopyPyramid::from_base([0.0, 0.0, 0.002, 0.002], 2, 2, vec![u8::MAX, 0, 0, 0]);
+        assert_eq!(pyramid.levels.len(), 2);
+        assert_eq!(pyramid.levels[1].coverage, vec![64]);
+        let parent = pyramid.coverage_at(0.001, 0.001, 0.002, 0.002);
+        assert!((parent - 64.0 / 255.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn canopy_finest_lod_preserves_source_cells() {
+        let pyramid =
+            CanopyPyramid::from_base([0.0, 0.0, 0.002, 0.002], 2, 2, vec![u8::MAX, 0, 0, 0]);
+        assert_eq!(pyramid.coverage_at(0.0015, 0.0005, 0.001, 0.001), 1.0);
+        assert_eq!(pyramid.coverage_at(0.0015, 0.0015, 0.001, 0.001), 0.0);
     }
 
     #[test]
