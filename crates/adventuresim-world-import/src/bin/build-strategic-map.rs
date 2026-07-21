@@ -78,6 +78,9 @@ struct Package {
     bounds: [f64; 4],
     source: Source,
     roads: Vec<Line>,
+    /// Full active Viabundus geometry used only by the offline routing pack.
+    /// Presentation filtering and simplification must never affect it.
+    routing_roads: Vec<Vec<Point>>,
     water: Vec<WaterPolygon>,
     elevation: ElevationLayer,
     forest: ForestLayer,
@@ -149,9 +152,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut package = build(&args.viabundus_dir, layers)?;
     let terrain_features = adventuresim_terrain::builder::Features {
         roads: package
-            .roads
+            .routing_roads
             .iter()
-            .map(|line| line.points.iter().map(|point| point.0).collect())
+            .map(|line| line.iter().map(|point| point.0).collect())
             .collect(),
         water: package
             .water
@@ -262,6 +265,7 @@ fn build(root: &Path, layers: MapRasterLayers) -> Result<Package, Box<dyn std::e
     }
 
     let mut roads = Vec::new();
+    let mut routing_roads = Vec::new();
     let mut reader = csv::Reader::from_path(root.join("edges.csv"))?;
     for row in reader.deserialize::<BTreeMap<String, String>>() {
         let row = row?;
@@ -272,11 +276,14 @@ fn build(root: &Path, layers: MapRasterLayers) -> Result<Package, Box<dyn std::e
             .get("zoomlevel")
             .and_then(|v| v.parse::<u8>().ok())
             .unwrap_or(99);
-        if zoom > 4 {
-            continue;
-        }
         let Some(wkt) = row.get("wkt") else { continue };
         for points in clip_polyline(&coordinates(wkt), BOUNDS) {
+            if points.len() >= 2 {
+                routing_roads.push(points.clone());
+            }
+            if zoom > 4 {
+                continue;
+            }
             let points = simplify(&points, 0.001);
             if points.len() < 2 {
                 continue;
@@ -299,6 +306,7 @@ fn build(root: &Path, layers: MapRasterLayers) -> Result<Package, Box<dyn std::e
             .then_with(|| a.importance.cmp(&b.importance))
             .then_with(|| point_order(&a.points, &b.points))
     });
+    routing_roads.sort_by(|a, b| point_order(a, b));
 
     let mut water = Vec::new();
     let mut reader = csv::Reader::from_path(root.join("water-1500.csv"))?;
@@ -336,6 +344,7 @@ fn build(root: &Path, layers: MapRasterLayers) -> Result<Package, Box<dyn std::e
         bounds: BOUNDS,
         source,
         roads,
+        routing_roads,
         water,
         elevation: layers.elevation,
         forest: layers.forest,
@@ -683,7 +692,7 @@ mod tests {
             NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(&root).unwrap();
-        let edges = b"id,section,type,certainty,zoomlevel,fromyear,toyear,descriptionid,length,fromnode,tonode,wkt,slopemultiplier\n1,A,land,1,2,1500,,x,100,1,2,\"LINESTRING(10 53,10.5 53.2,11 53.3)\",1\n";
+        let edges = b"id,section,type,certainty,zoomlevel,fromyear,toyear,descriptionid,length,fromnode,tonode,wkt,slopemultiplier\n1,A,land,1,2,1500,,x,100,1,2,\"LINESTRING(10 53,10.5 53.2,11 53.3)\",1\n2,B,land,1,6,1500,,x,100,2,3,\"LINESTRING(11 53.3,11.123456 53.345678,11.5 53.5)\",1\n";
         let water = b"WKT\n\"MULTIPOLYGON (((10 52,11 52,11 53,10 52)))\"\n";
         fs::write(root.join("edges.csv"), edges).unwrap();
         fs::write(root.join("water-1500.csv"), water).unwrap();
@@ -779,6 +788,8 @@ mod tests {
         assert_eq!(first_manifest.entries.len(), 247);
         assert_eq!(first_manifest.gutter, 4);
         assert_eq!(first.roads.len(), 1);
+        assert_eq!(first.routing_roads.len(), 2);
+        assert_eq!(first.routing_roads[1][1], Point([11.123456, 53.345678]));
         assert_eq!(first.water.len(), 1);
         assert_eq!(first.water[0].rings.len(), 1);
 

@@ -59,6 +59,9 @@ surface, and an explicit infrastructure-crossing bit.
 The manifest and pack are separately SHA-256 addressed. Readers reject wrong
 dimensions, overlapping or truncated chunks, digest mismatches, excess
 entries, and oversized decompression. Runtime decompression uses a
-deterministic 32 MiB LRU, so the complete native grid never resides in RAM.
-Northern Germany's z7 paper tiles sample this pack; lower zooms and areas
-outside that initialized detail bound keep the generalized fallback.
+deterministic 32 MiB LRU. The compressed pack remains range-readable on disk,
+is size-checked before opening, and is stream-hashed at startup, so the complete
+native grid never resides in RAM. Chunk I/O and decompression occur outside the
+cache lock before a race-safe insert.
+Northern Germany's z7 paper tiles sample this pack. The rest of the world also
+has generalized z7 tiles, so zooming never produces blank uncovered cells.

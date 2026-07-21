@@ -10,8 +10,8 @@ use sha2::{Digest, Sha256};
 use std::{
     cmp::{Ordering, Reverse},
     collections::{BinaryHeap, HashMap},
-    fs,
-    io::Read,
+    fs::{self, File},
+    io::{BufReader, Read, Seek, SeekFrom},
     ops::Range,
     path::Path,
     sync::{Arc, Mutex},
@@ -21,6 +21,7 @@ pub const SCHEMA: u32 = 1;
 pub const CHUNK_SIDE: u16 = 256;
 pub const MAX_ENTRIES: usize = 20_000;
 pub const MAX_PACK_BYTES: usize = 2 * 1024 * 1024 * 1024;
+pub const MAX_MANIFEST_BYTES: u64 = 8 * 1024 * 1024;
 pub const MAX_DECODED_CHUNK_BYTES: usize = 256 * 256 * 4;
 pub const CACHE_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_ROUTE_NODES: usize = 750_000;
@@ -109,7 +110,7 @@ struct Cache {
 
 pub struct TerrainPack {
     manifest: Manifest,
-    bytes: Arc<[u8]>,
+    file: Mutex<File>,
     ranges: Vec<Range<usize>>,
     index: HashMap<(i16, i16, u16, u16), usize>,
     tiles: HashMap<(i16, i16), (u16, u16)>,
@@ -118,6 +119,12 @@ pub struct TerrainPack {
 
 impl TerrainPack {
     pub fn load(manifest_path: &Path, pack_path: &Path) -> Result<Self> {
+        let manifest_length = fs::metadata(manifest_path)?.len();
+        if manifest_length == 0 || manifest_length > MAX_MANIFEST_BYTES {
+            return Err(Error::Validation(
+                "terrain manifest exceeds its byte bound".into(),
+            ));
+        }
         let json = fs::read(manifest_path)?;
         let manifest: Manifest = serde_json::from_slice(&json)?;
         validate_manifest(&manifest)?;
@@ -126,13 +133,15 @@ impl TerrainPack {
         if hex_sha(&serde_json::to_vec(&unsigned)?) != manifest.package_sha256 {
             return Err(Error::Validation("manifest digest mismatch".into()));
         }
-        let bytes: Arc<[u8]> = fs::read(pack_path)?.into();
-        if bytes.len() > MAX_PACK_BYTES {
+        let pack_length = fs::metadata(pack_path)?.len();
+        if pack_length == 0 || pack_length > MAX_PACK_BYTES as u64 {
             return Err(Error::Validation("pack exceeds 2 GiB bound".into()));
         }
-        if hex_sha(&bytes) != manifest.content_sha256 {
+        let mut file = File::open(pack_path)?;
+        if hex_sha_reader(BufReader::new(&mut file))? != manifest.content_sha256 {
             return Err(Error::Validation("pack digest mismatch".into()));
         }
+        file.seek(SeekFrom::Start(0))?;
         let mut ranges = Vec::with_capacity(manifest.entries.len());
         let mut previous_end = 0;
         for entry in &manifest.entries {
@@ -141,7 +150,7 @@ impl TerrainPack {
             let end = start
                 .checked_add(entry.length as usize)
                 .ok_or_else(|| Error::Validation("chunk range overflow".into()))?;
-            if start < previous_end || end > bytes.len() {
+            if start < previous_end || end as u64 > pack_length {
                 return Err(Error::Validation(
                     "chunk ranges overlap or exceed pack".into(),
                 ));
@@ -175,7 +184,7 @@ impl TerrainPack {
         }
         Ok(Self {
             manifest,
-            bytes,
+            file: Mutex::new(file),
             ranges,
             index,
             tiles,
@@ -225,26 +234,38 @@ impl TerrainPack {
     }
 
     fn chunk(&self, index: usize) -> Result<Arc<[Cell]>> {
-        let mut cache = self
-            .cache
-            .lock()
-            .map_err(|_| Error::Validation("terrain cache poisoned".into()))?;
-        cache.clock = cache
-            .clock
-            .checked_add(1)
-            .ok_or_else(|| Error::Validation("cache clock overflow".into()))?;
-        let clock = cache.clock;
-        if let Some((used, cells)) = cache.chunks.get_mut(&index) {
-            *used = clock;
-            return Ok(cells.clone());
+        {
+            let mut cache = self
+                .cache
+                .lock()
+                .map_err(|_| Error::Validation("terrain cache poisoned".into()))?;
+            cache.clock = cache
+                .clock
+                .checked_add(1)
+                .ok_or_else(|| Error::Validation("cache clock overflow".into()))?;
+            let clock = cache.clock;
+            if let Some((used, cells)) = cache.chunks.get_mut(&index) {
+                *used = clock;
+                return Ok(cells.clone());
+            }
         }
         let entry = &self.manifest.entries[index];
         let expected = entry.width as usize * entry.height as usize * 4;
         if expected > MAX_DECODED_CHUNK_BYTES {
             return Err(Error::Validation("decoded chunk exceeds bound".into()));
         }
+        let range = self.ranges[index].clone();
+        let mut compressed = vec![0_u8; range.len()];
+        {
+            let mut file = self
+                .file
+                .lock()
+                .map_err(|_| Error::Validation("terrain pack file lock poisoned".into()))?;
+            file.seek(SeekFrom::Start(range.start as u64))?;
+            file.read_exact(&mut compressed)?;
+        }
         let mut decoded = Vec::with_capacity(expected);
-        DeflateDecoder::new(&self.bytes[self.ranges[index].clone()])
+        DeflateDecoder::new(compressed.as_slice())
             .take((MAX_DECODED_CHUNK_BYTES + 1) as u64)
             .read_to_end(&mut decoded)?;
         if decoded.len() != expected || hex_sha(&decoded) != entry.decoded_sha256 {
@@ -265,6 +286,19 @@ impl TerrainPack {
             })
             .collect::<Vec<_>>()
             .into();
+        let mut cache = self
+            .cache
+            .lock()
+            .map_err(|_| Error::Validation("terrain cache poisoned".into()))?;
+        cache.clock = cache
+            .clock
+            .checked_add(1)
+            .ok_or_else(|| Error::Validation("cache clock overflow".into()))?;
+        let clock = cache.clock;
+        if let Some((used, existing)) = cache.chunks.get_mut(&index) {
+            *used = clock;
+            return Ok(existing.clone());
+        }
         while cache.bytes + decoded.len() > CACHE_BYTES {
             let victim = cache
                 .chunks
@@ -459,6 +493,19 @@ fn valid_digest(value: &str) -> bool {
 }
 fn hex_sha(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
+}
+
+fn hex_sha_reader(mut reader: impl Read) -> Result<String> {
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 1024 * 1024];
+    loop {
+        let read = reader.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -665,6 +712,7 @@ fn reconstruct<G: RoutingGrid>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
     struct Grid {
         w: u32,
         h: u32,
@@ -726,5 +774,24 @@ mod tests {
             astar(&g, (0, 0), (3, 2)).unwrap(),
             astar(&g, (0, 0), (3, 2)).unwrap()
         );
+    }
+
+    #[test]
+    fn oversized_manifest_is_rejected_before_reading_or_parsing() {
+        let root =
+            std::env::temp_dir().join(format!("adventuresim-terrain-bound-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let manifest = root.join("terrain.json");
+        let pack = root.join("terrain.pack");
+        File::create(&manifest)
+            .unwrap()
+            .set_len(MAX_MANIFEST_BYTES + 1)
+            .unwrap();
+        File::create(&pack).unwrap().write_all(b"x").unwrap();
+        assert!(matches!(
+            TerrainPack::load(&manifest, &pack),
+            Err(Error::Validation(message)) if message.contains("manifest exceeds")
+        ));
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
