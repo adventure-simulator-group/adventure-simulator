@@ -377,14 +377,17 @@ only when retaining its backup is acceptable. See
 licence collection, its OWDA/IEG boundaries, release-maintainer requirements,
 and the distinction from a future combined derived-world release.
 
-The remaining accepted source workflows share `scripts/world_source_init.py`.
-Every source has `plan-*`, `init-*`, and `verify-*` targets. EU-Trees4F is the
-only newly automated anonymous immutable download (`tree-species`); it is
-size/hash checked and atomically published. Religion is a validation-only
-workflow and never mirrors the rights-reserved IEG images. GLO-30
-(`glo30`), Copernicus forest (`forest-cover`), and EU-Hydro (`hydrology`)
-perform redacted credential-file preflights but refuse network acquisition
-until exact product inventories are committed. HYDE 3.5 and EGDI likewise provide
+Most remaining accepted source workflows share `scripts/world_source_init.py`.
+Every source has `plan-*`, `init-*`, and `verify-*` targets. EU-Trees4F is an
+automated anonymous immutable download (`tree-species`); it is size/hash
+checked and atomically published. Copernicus forest uses the dedicated
+`scripts/init_forest_cover.py` workflow: it reads redacted Sentinel Hub OAuth
+credentials from `.env`, prepares the official 2018 TCD/DLT northern-Germany
+coverage, resumes interrupted requests, and atomically publishes an exact
+size/SHA-256 inventory. Religion is a validation-only workflow and never
+mirrors the rights-reserved IEG images. GLO-30 (`glo30`) and EU-Hydro
+(`hydrology`) perform redacted credential-file preflights but refuse network
+acquisition until exact product inventories are committed. HYDE 3.5 and EGDI likewise provide
 deterministic plans and strict local-inventory verification while remaining
 release-blocked. `init-*` never turns missing pins or rights restrictions into
 guesses. See each source document for its exact blocker and command names.
@@ -402,11 +405,11 @@ the shared general-files archive, place them under
 The stacked compiler requires them; override that directory with
 `--land-use-dir`.
 
-Forest cover likewise has a tested boundary but no authenticated full local
-download. Prepare the paired Copernicus TCD/DLT one-degree GeoTIFFs documented
-in `docs/FOREST_COVER.md` under
-`target/world-data-sources/raw/forest-cover/`. Override that directory with
-`--forest-cover-dir`.
+Initialize the paired Copernicus TCD/DLT one-degree GeoTIFFs documented in
+`docs/FOREST_COVER.md` with `just init-forest-cover`. The default 66-tile
+northern-Germany set is written under
+`target/world-data-sources/raw/forest-cover/`; the world compiler can override
+that directory with `--forest-cover-dir`.
 
 Initialize the CC BY 4.0 Jung/IIASA European PNV v1.1 rasters with
 `just init-jung-pnv`. Verified local files are written under

@@ -276,11 +276,11 @@ verify-hyde35:
 	@python3 scripts/world_source_init.py hyde35 --verify-only
 
 plan-forest-cover:
-	@python3 scripts/world_source_init.py forest --plan
+	@python3 scripts/init_forest_cover.py --plan
 init-forest-cover:
-	@python3 scripts/world_source_init.py forest --init
+	@python3 scripts/init_forest_cover.py --prepare
 verify-forest-cover:
-	@python3 scripts/world_source_init.py forest --verify-only
+	@python3 scripts/init_forest_cover.py --verify-only
 
 plan-tree-species:
 	@python3 scripts/world_source_init.py trees4f --plan
