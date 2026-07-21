@@ -1539,6 +1539,48 @@ pub struct PartyJourneyItinerary {
     pub forecast_camp_intervals: Vec<JourneyCampInterval>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum JourneyTerrainKind {
+    Road,
+    Open,
+    SparseWoods,
+    DeepWoods,
+}
+
+#[derive(Clone, Debug, PartialEq, SpacetimeType)]
+pub struct JourneyRoutePoint {
+    pub latitude_e7: i32,
+    pub longitude_e7: i32,
+}
+
+#[derive(Clone, Debug, PartialEq, SpacetimeType)]
+pub struct JourneyTerrainSpan {
+    pub kind: JourneyTerrainKind,
+    pub start_minute: u64,
+    pub duration_minutes: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, SpacetimeType)]
+pub struct JourneyRoutePlan {
+    pub package_digest: String,
+    pub distance_m: u64,
+    pub minutes: u64,
+    pub points: Vec<JourneyRoutePoint>,
+    pub spans: Vec<JourneyTerrainSpan>,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = party_journey_route, public)]
+pub struct PartyJourneyRoute {
+    #[primary_key]
+    pub party_id: String,
+    pub package_digest: String,
+    pub distance_m: u64,
+    pub minutes: u64,
+    pub points: Vec<JourneyRoutePoint>,
+    pub spans: Vec<JourneyTerrainSpan>,
+}
+
 #[derive(Clone, Debug)]
 #[table(accessor = party_member, public)]
 pub struct PartyMember {
@@ -2251,6 +2293,58 @@ pub fn approve_party_action_request(
 }
 
 #[reducer]
+pub fn approve_party_action_request_planned(
+    ctx: &ReducerContext,
+    leader_id: u64,
+    request_id: u64,
+    route: JourneyRoutePlan,
+) -> Result<(), String> {
+    crate::character::require_living_character(ctx, leader_id)?;
+    if let Some(resolved) = ctx.db.resolved_party_action().id().find(request_id) {
+        if resolved.approved_by != leader_id {
+            return Err("Only the party leader can approve requests".into());
+        }
+        return Ok(());
+    }
+    let request = ctx
+        .db
+        .party_action_request()
+        .id()
+        .find(request_id)
+        .ok_or("Request not found")?;
+    let party = ctx
+        .db
+        .party()
+        .id()
+        .find(&request.party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != leader_id {
+        return Err("Only the party leader can resolve requests".into());
+    }
+    let action: ApprovedPartyAction = serde_json::from_str(&request.payload)
+        .map_err(|error| format!("Invalid party action payload: {error}"))?;
+    if action.kind() != request.action_kind {
+        return Err("Party action kind does not match its typed payload".into());
+    }
+    match action {
+        ApprovedPartyAction::TravelToSettlement { settlement_id } => {
+            travel_to_settlement_impl(ctx, leader_id, settlement_id, Some(route))?
+        }
+        ApprovedPartyAction::TravelToQuest { quest_id } => {
+            travel_to_quest_impl(ctx, leader_id, quest_id, Some(route))?
+        }
+        _ => return Err("A planned approval is only valid for travel".into()),
+    }
+    ctx.db.resolved_party_action().insert(ResolvedPartyAction {
+        id: request.id,
+        party_id: request.party_id,
+        approved_by: leader_id,
+    });
+    ctx.db.party_action_request().id().delete(request_id);
+    Ok(())
+}
+
+#[reducer]
 pub fn vote_for_party_leader(
     ctx: &ReducerContext,
     voter_id: u64,
@@ -2494,6 +2588,15 @@ pub(crate) fn delete_temporary_character_party(
     }
     if ctx.db.party_journey().party_id().find(&party_key).is_some() {
         ctx.db.party_journey().party_id().delete(&party_key);
+    }
+    if ctx
+        .db
+        .party_journey_route()
+        .party_id()
+        .find(&party_key)
+        .is_some()
+    {
+        ctx.db.party_journey_route().party_id().delete(&party_key);
     }
     if ctx
         .db
@@ -4789,6 +4892,75 @@ fn quest_journey_minutes(distance_m: u64) -> u64 {
     journey_minutes(distance_m).saturating_mul(QUEST_TRAVEL_SPEED_DIVISOR)
 }
 
+fn validate_journey_route(
+    route: &JourneyRoutePlan,
+    origin: (f64, f64),
+    destination: (f64, f64),
+) -> Result<(), String> {
+    const MAX_POINTS: usize = 512;
+    const MAX_SPANS: usize = 256;
+    if route.package_digest.len() != 64
+        || !route
+            .package_digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err("Terrain route has an invalid package digest".into());
+    }
+    if !(2..=MAX_POINTS).contains(&route.points.len())
+        || route.spans.is_empty()
+        || route.spans.len() > MAX_SPANS
+        || route.distance_m == 0
+        || route.distance_m > 2_000_000
+        || route.minutes == 0
+        || route.minutes > 2_000_000
+    {
+        return Err("Terrain route exceeds its collection or aggregate bounds".into());
+    }
+    let coordinate = |point: &JourneyRoutePoint| {
+        (
+            f64::from(point.longitude_e7) / 10_000_000.0,
+            f64::from(point.latitude_e7) / 10_000_000.0,
+        )
+    };
+    let first = coordinate(route.points.first().expect("bounded nonempty route"));
+    let last = coordinate(route.points.last().expect("bounded nonempty route"));
+    if straight_line_distance_m(first.0, first.1, origin.0, origin.1, true) > 500
+        || straight_line_distance_m(last.0, last.1, destination.0, destination.1, true) > 500
+    {
+        return Err("Terrain route endpoints do not match the current journey".into());
+    }
+    let mut physical = 0_u64;
+    for pair in route.points.windows(2) {
+        let from = coordinate(&pair[0]);
+        let to = coordinate(&pair[1]);
+        let segment = straight_line_distance_m(from.0, from.1, to.0, to.1, true);
+        if segment == 0 || segment > 100_000 {
+            return Err("Terrain route points are not a bounded continuous path".into());
+        }
+        physical = physical
+            .checked_add(segment)
+            .ok_or("Terrain route distance overflow")?;
+    }
+    let tolerance = route.distance_m / 20 + 250;
+    if physical.abs_diff(route.distance_m) > tolerance {
+        return Err("Terrain route distance does not match its geometry".into());
+    }
+    let mut cursor = 0_u64;
+    for span in &route.spans {
+        if span.start_minute != cursor || span.duration_minutes == 0 {
+            return Err("Terrain route spans are discontinuous".into());
+        }
+        cursor = cursor
+            .checked_add(span.duration_minutes)
+            .ok_or("Terrain route minutes overflow")?;
+    }
+    if cursor != route.minutes {
+        return Err("Terrain route spans do not match aggregate minutes".into());
+    }
+    Ok(())
+}
+
 fn straight_line_distance_m(
     from_x: f64,
     from_y: f64,
@@ -5242,6 +5414,7 @@ fn start_party_journey(
     destination_name: &str,
     total_minutes: u64,
     departure_minute: u64,
+    route: Option<&JourneyRoutePlan>,
 ) -> Result<(), String> {
     if ctx.db.party_journey().party_id().find(&party.id).is_some() {
         ctx.db.party_journey().party_id().delete(&party.id);
@@ -5257,6 +5430,15 @@ fn start_party_journey(
             .party_journey_itinerary()
             .party_id()
             .delete(&party.id);
+    }
+    if ctx
+        .db
+        .party_journey_route()
+        .party_id()
+        .find(&party.id)
+        .is_some()
+    {
+        ctx.db.party_journey_route().party_id().delete(&party.id);
     }
     let fatigue_percent = party.camp_fatigue_percent;
     let forecast_camp_stop_minutes =
@@ -5307,6 +5489,16 @@ fn start_party_journey(
             actual_camp_intervals: Vec::new(),
             forecast_camp_intervals: itinerary_camps(&itinerary),
         });
+    if let Some(route) = route {
+        ctx.db.party_journey_route().insert(PartyJourneyRoute {
+            party_id: party.id.clone(),
+            package_digest: route.package_digest.clone(),
+            distance_m: route.distance_m,
+            minutes: route.minutes,
+            points: route.points.clone(),
+            spans: route.spans.clone(),
+        });
+    }
     Ok(())
 }
 
@@ -5511,6 +5703,15 @@ fn finish_party_journey(ctx: &ReducerContext, party_id: &str) {
     }
     if ctx
         .db
+        .party_journey_route()
+        .party_id()
+        .find(&party_id)
+        .is_some()
+    {
+        ctx.db.party_journey_route().party_id().delete(&party_id);
+    }
+    if ctx
+        .db
         .party_journey_itinerary()
         .party_id()
         .find(&party_id)
@@ -5652,7 +5853,11 @@ fn reconstruct_legacy_journey_coordinates(
 
 #[cfg(test)]
 mod departure_invariant_tests {
-    use super::{departure_snapshot_allows_travel, reconstruct_legacy_journey_coordinates};
+    use super::{
+        JourneyRoutePlan, JourneyRoutePoint, JourneyTerrainKind, JourneyTerrainSpan,
+        departure_snapshot_allows_travel, reconstruct_legacy_journey_coordinates,
+        straight_line_distance_m, validate_journey_route,
+    };
 
     #[test]
     fn scheduled_activity_incident_prevents_stale_requested_journey() {
@@ -5670,6 +5875,62 @@ mod departure_invariant_tests {
         );
         assert_eq!(reconstruct_legacy_journey_coordinates(300, 600), (0, 600));
     }
+
+    fn route_fixture() -> JourneyRoutePlan {
+        let origin = (10.0, 53.0);
+        let destination = (10.01, 53.0);
+        JourneyRoutePlan {
+            package_digest: "a".repeat(64),
+            distance_m: straight_line_distance_m(
+                origin.0,
+                origin.1,
+                destination.0,
+                destination.1,
+                true,
+            ),
+            minutes: 12,
+            points: vec![
+                JourneyRoutePoint {
+                    latitude_e7: 530_000_000,
+                    longitude_e7: 100_000_000,
+                },
+                JourneyRoutePoint {
+                    latitude_e7: 530_000_000,
+                    longitude_e7: 100_100_000,
+                },
+            ],
+            spans: vec![
+                JourneyTerrainSpan {
+                    kind: JourneyTerrainKind::Road,
+                    start_minute: 0,
+                    duration_minutes: 5,
+                },
+                JourneyTerrainSpan {
+                    kind: JourneyTerrainKind::Open,
+                    start_minute: 5,
+                    duration_minutes: 7,
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn planned_route_validation_binds_endpoints_geometry_and_exact_minutes() {
+        let route = route_fixture();
+        assert!(validate_journey_route(&route, (10.0, 53.0), (10.01, 53.0)).is_ok());
+
+        let mut bad = route.clone();
+        bad.points[0].longitude_e7 += 1_000_000;
+        assert!(validate_journey_route(&bad, (10.0, 53.0), (10.01, 53.0)).is_err());
+
+        let mut bad = route.clone();
+        bad.distance_m *= 2;
+        assert!(validate_journey_route(&bad, (10.0, 53.0), (10.01, 53.0)).is_err());
+
+        let mut bad = route;
+        bad.spans[1].start_minute = 6;
+        assert!(validate_journey_route(&bad, (10.0, 53.0), (10.01, 53.0)).is_err());
+    }
 }
 
 #[reducer]
@@ -5677,6 +5938,25 @@ pub fn travel_to_quest(
     ctx: &ReducerContext,
     character_id: u64,
     quest_id: String,
+) -> Result<(), String> {
+    travel_to_quest_impl(ctx, character_id, quest_id, None)
+}
+
+#[reducer]
+pub fn travel_to_quest_planned(
+    ctx: &ReducerContext,
+    character_id: u64,
+    quest_id: String,
+    route: JourneyRoutePlan,
+) -> Result<(), String> {
+    travel_to_quest_impl(ctx, character_id, quest_id, Some(route))
+}
+
+fn travel_to_quest_impl(
+    ctx: &ReducerContext,
+    character_id: u64,
+    quest_id: String,
+    route: Option<JourneyRoutePlan>,
 ) -> Result<(), String> {
     crate::character::require_living_character(ctx, character_id)?;
     let Some(character) = ctx.db.character().id().find(character_id) else {
@@ -5728,13 +6008,23 @@ pub fn travel_to_quest(
         .ok_or("Quest changed during departure synchronization")?;
     let traveler_ids = living_party_member_ids(ctx, &party_id);
 
-    let travel_minutes = quest_journey_minutes(quest.distance_m);
     let origin = ctx
         .db
         .settlement()
         .id()
         .find(&quest.settlement_id)
         .ok_or("Quest posting settlement not found")?;
+    if let Some(route) = route.as_ref() {
+        validate_journey_route(
+            route,
+            (origin.coord_x, origin.coord_y),
+            (quest.location_coord_x, quest.location_coord_y),
+        )?;
+    }
+    let travel_minutes = route.as_ref().map_or_else(
+        || quest_journey_minutes(quest.distance_m),
+        |route| route.minutes,
+    );
     start_party_journey(
         ctx,
         &party,
@@ -5746,6 +6036,7 @@ pub fn travel_to_quest(
         &quest.title,
         travel_minutes,
         departure_minute,
+        route.as_ref(),
     )?;
     crate::condition::prepare_party_waterskins(ctx, &party_id, true)?;
     for member_id in traveler_ids.iter().copied() {
@@ -5811,6 +6102,25 @@ pub fn travel_to_settlement(
     ctx: &ReducerContext,
     character_id: u64,
     settlement_id: String,
+) -> Result<(), String> {
+    travel_to_settlement_impl(ctx, character_id, settlement_id, None)
+}
+
+#[reducer]
+pub fn travel_to_settlement_planned(
+    ctx: &ReducerContext,
+    character_id: u64,
+    settlement_id: String,
+    route: JourneyRoutePlan,
+) -> Result<(), String> {
+    travel_to_settlement_impl(ctx, character_id, settlement_id, Some(route))
+}
+
+fn travel_to_settlement_impl(
+    ctx: &ReducerContext,
+    character_id: u64,
+    settlement_id: String,
+    route: Option<JourneyRoutePlan>,
 ) -> Result<(), String> {
     crate::character::require_living_character(ctx, character_id)?;
     let Some(destination) = ctx.db.settlement().id().find(&settlement_id) else {
@@ -5880,6 +6190,14 @@ pub fn travel_to_settlement(
                 .ceil() as u64;
                 journey_minutes(distance_km.saturating_mul(METERS_PER_KILOMETER))
             };
+            if let Some(route) = route.as_ref() {
+                validate_journey_route(
+                    route,
+                    (origin.coord_x, origin.coord_y),
+                    (destination.coord_x, destination.coord_y),
+                )?;
+            }
+            let minutes = route.as_ref().map_or(minutes, |route| route.minutes);
             (minutes, "settlement", origin.id, origin.name)
         } else if let Some(quest_id) = &character.current_quest_location_id {
             let Some(quest) = ctx.db.quest().id().find(quest_id) else {
@@ -5892,8 +6210,17 @@ pub fn travel_to_settlement(
                 destination.coord_y,
                 quest.coordinates_are_geographic && destination.source_node_id.is_some(),
             );
+            if let Some(route) = route.as_ref() {
+                validate_journey_route(
+                    route,
+                    (quest.location_coord_x, quest.location_coord_y),
+                    (destination.coord_x, destination.coord_y),
+                )?;
+            }
             (
-                quest_journey_minutes(distance_m),
+                route
+                    .as_ref()
+                    .map_or_else(|| quest_journey_minutes(distance_m), |route| route.minutes),
                 "quest",
                 quest.id,
                 quest.title,
@@ -5936,6 +6263,7 @@ pub fn travel_to_settlement(
             &destination.name,
             travel_minutes,
             departure_minute,
+            route.as_ref(),
         )?;
     }
     let departing_settlement = character.current_settlement_id.is_some();

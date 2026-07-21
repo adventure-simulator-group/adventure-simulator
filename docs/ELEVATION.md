@@ -65,3 +65,25 @@ native grid never resides in RAM. Chunk I/O and decompression occur outside the
 cache lock before a race-safe insert.
 Northern Germany's z7 paper tiles sample this pack. The rest of the world also
 has generalized z7 tiles, so zooming never produces blank uncovered cells.
+
+The same pack is the strategic pathfinding input. A bounded search window begins
+at the native nominal 30 m spacing and coarsens deterministically only when the
+hard 750,000-node cap requires it. Eight-neighbour A* minimizes directional
+travel time: roads are fastest, open ground is slower, sparse and deep woods
+are progressively slower, and positive elevation gain adds an uphill cost.
+Water is impassable except where imported infrastructure marks a crossing.
+Search costs use seconds internally so rounding does not compound at every
+30 m cell; persisted journey time is rounded once to whole strategic minutes.
+
+The initialized land-focused GLO-30 request omits five reviewed, all-water
+North Sea cells (54–55°N at 5–7°E). The offline pack compiler represents only
+that explicit allowlist at the native 2,400×3,600 latitude-band geometry as
+zero-elevation impassable water. Any other missing source tile remains a hard
+build error; the exception cannot hide a land-coverage gap.
+
+Routes are simplified to at most 512 geographic points for transport and are
+stored only for an active journey together with exact ordered terrain-time
+spans and the terrain package digest. The raster remains an optional on-disk
+asset with a 32 MiB decompression cache. If it is absent, corrupt, outside its
+coverage, or cannot produce a bounded route, the existing HTML travel flow
+remains available and labels its straight-line value as a legacy estimate.

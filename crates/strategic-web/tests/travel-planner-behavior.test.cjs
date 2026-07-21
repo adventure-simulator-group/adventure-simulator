@@ -11,7 +11,7 @@ const plannerHelpers = () => {
   let source = fs.readFileSync(plannerPath, "utf8");
   source = source.replace(
     "  initializeTravelPlanner();",
-    "  globalThis.__planner = { parseSegments, position, turnaroundElapsed, moonName, moonGeometry, calendarDate, provisionQuantities, fatigueBand, splitFatigueSegment, fatigueAtElapsed, timePeriodAt, formatClock, stepRangeValue };",
+    "  globalThis.__planner = { parseSegments, parseTerrain, terrainPieces, position, turnaroundElapsed, moonName, moonGeometry, calendarDate, provisionQuantities, fatigueBand, splitFatigueSegment, fatigueAtElapsed, timePeriodAt, formatClock, stepRangeValue };",
   );
   const context = { document: { addEventListener() {} } };
   vm.runInNewContext(source, context);
@@ -24,6 +24,30 @@ test("persisted quest segments place turnaround after outbound walking and inter
   assert.equal(helpers.turnaroundElapsed(segments, 720, 2040), 1320);
   assert.notEqual(helpers.turnaroundElapsed(segments, 720, 2040), 2040);
   assert.ok(helpers.position(1080, 2040) > helpers.position(480, 2040), "progress advances during rest");
+});
+
+test("terrain rail preserves roads and woods around camps and reverses the return leg", () => {
+  const helpers = plannerHelpers();
+  const terrain = helpers.parseTerrain("road,0,30|open,30,20|sparse-woods,50,30|deep-woods,80,20");
+  const itinerary = helpers.parseSegments("w,0,100,0,50,0,.3,.3,0|f,100,60,50,0,.3,.1,.3,60|w,160,100,50,50,.1,.4,.4,0");
+  assert.deepEqual(Array.from(terrain, (span) => ({ ...span })), [
+    { kind: "road", start: 0, duration: 30 },
+    { kind: "open", start: 30, duration: 20 },
+    { kind: "sparse-woods", start: 50, duration: 30 },
+    { kind: "deep-woods", start: 80, duration: 20 },
+  ]);
+  assert.deepEqual(Array.from(helpers.terrainPieces(terrain, itinerary, 100, false), (piece) => ({ ...piece })), [
+    { kind: "road", start: 0, duration: 60 },
+    { kind: "open", start: 60, duration: 40 },
+    { kind: "stopped", start: 100, duration: 60 },
+    { kind: "sparse-woods", start: 160, duration: 60 },
+    { kind: "deep-woods", start: 220, duration: 40 },
+  ]);
+  const returnPieces = helpers.terrainPieces(terrain, [{ kind: "w", start: 0, duration: 200, movementStart: 0, movementDuration: 200 }], 200, true);
+  assert.equal(returnPieces[0].kind, "road");
+  assert.equal(returnPieces.at(-1).kind, "road");
+  assert.ok(returnPieces.some((piece) => piece.kind === "deep-woods" && piece.start === 80));
+  assert.ok(returnPieces.some((piece) => piece.kind === "deep-woods" && piece.start === 100));
 });
 
 test("provision target math supports positive and negative surplus", () => {

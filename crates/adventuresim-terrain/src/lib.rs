@@ -615,7 +615,14 @@ pub fn astar<G: RoutingGrid>(grid: &G, start: (u32, u32), goal: (u32, u32)) -> R
                 if to.surface == Surface::Water && !to.crossing {
                     continue;
                 }
-                let step = step_minutes(from, to, grid.metres_per_cell(), dx != 0 && dy != 0);
+                if dx != 0
+                    && dy != 0
+                    && (!grid.cell(next.0, y).is_some_and(passable)
+                        || !grid.cell(x, next.1).is_some_and(passable))
+                {
+                    continue;
+                }
+                let step = step_seconds(from, to, grid.metres_per_cell(), dx != 0 && dy != 0);
                 let next_g = current.g.saturating_add(step);
                 let next_i = index(next);
                 if best.get(&next_i).is_none_or(|known| next_g < *known) {
@@ -638,12 +645,15 @@ fn heuristic(a: (u32, u32), b: (u32, u32), metres: u32) -> u64 {
     let dy = a.1.abs_diff(b.1);
     let diagonal = dx.min(dy);
     let straight = dx.max(dy) - diagonal;
-    ((u64::from(diagonal) * 1414 + u64::from(straight) * 1000) * u64::from(metres) * 60)
+    ((u64::from(diagonal) * 1414 + u64::from(straight) * 1000) * u64::from(metres) * 3_600)
         / (1000 * 5000)
 }
-fn step_minutes(from: Cell, to: Cell, metres: u32, diagonal: bool) -> u64 {
+fn passable(cell: Cell) -> bool {
+    cell.surface != Surface::Water || cell.crossing
+}
+fn step_seconds(from: Cell, to: Cell, metres: u32, diagonal: bool) -> u64 {
     let distance = u64::from(metres) * if diagonal { 1414 } else { 1000 } / 1000;
-    let base = (distance * 60).div_ceil(u64::from(to.surface.speed_metres_per_hour().max(1)));
+    let base = (distance * 3_600).div_ceil(u64::from(to.surface.speed_metres_per_hour().max(1)));
     let rise = i32::from(to.elevation_m) - i32::from(from.elevation_m);
     let uphill = if rise > 0 {
         1000 + (u64::try_from(rise).unwrap_or(0) * 6).min(1500)
@@ -664,14 +674,14 @@ fn reconstruct<G: RoutingGrid>(
     while current != start {
         current = *parent.get(&current).ok_or(Error::NoRoute)?;
         nodes.push(current);
-        if nodes.len() > MAX_ROUTE_POINTS {
+        if nodes.len() > MAX_ROUTE_NODES {
             return Err(Error::NoRoute);
         }
     }
     nodes.reverse();
     let mut distance = 0_u64;
-    let mut minutes = 0_u64;
-    let mut spans = Vec::new();
+    let mut seconds = 0_u64;
+    let mut second_spans = Vec::new();
     for pair in nodes.windows(2) {
         let a = (pair[0] % grid.width(), pair[0] / grid.width());
         let b = (pair[1] % grid.width(), pair[1] / grid.width());
@@ -680,34 +690,77 @@ fn reconstruct<G: RoutingGrid>(
         let diagonal = a.0 != b.0 && a.1 != b.1;
         let step_distance =
             u64::from(grid.metres_per_cell()) * if diagonal { 1414 } else { 1000 } / 1000;
-        let step = step_minutes(from, to, grid.metres_per_cell(), diagonal);
+        let step = step_seconds(from, to, grid.metres_per_cell(), diagonal);
         distance += step_distance;
-        minutes += step;
-        if let Some(last) = spans
+        seconds += step;
+        if let Some((_, duration)) = second_spans
             .last_mut()
-            .filter(|span: &&mut TerrainSpan| span.surface == to.surface)
+            .filter(|(surface, _)| *surface == to.surface)
         {
-            last.duration_minutes += step
+            *duration += step
         } else {
-            spans.push(TerrainSpan {
-                surface: to.surface,
-                start_minute: minutes - step,
-                duration_minutes: step,
-            })
+            second_spans.push((to.surface, step));
         }
     }
+    let mut cursor_seconds = 0_u64;
+    let mut cursor_minutes = 0_u64;
+    let mut spans: Vec<TerrainSpan> = Vec::new();
+    for (surface, duration_seconds) in second_spans {
+        cursor_seconds = cursor_seconds.saturating_add(duration_seconds);
+        let end_minutes = cursor_seconds.div_ceil(60);
+        let duration_minutes = end_minutes.saturating_sub(cursor_minutes);
+        if duration_minutes == 0 {
+            continue;
+        }
+        if let Some(last) = spans.last_mut().filter(|span| span.surface == surface) {
+            last.duration_minutes += duration_minutes;
+        } else {
+            spans.push(TerrainSpan {
+                surface,
+                start_minute: cursor_minutes,
+                duration_minutes,
+            });
+        }
+        cursor_minutes = end_minutes;
+    }
+    let mut points = nodes
+        .into_iter()
+        .map(|i| RoutePoint {
+            longitude: f64::from(i % grid.width()),
+            latitude: f64::from(i / grid.width()),
+        })
+        .collect::<Vec<_>>();
+    retain_grid_turns(&mut points);
+    simplify_route(&mut points, 512);
     Ok(RoutePlan {
-        points: nodes
-            .into_iter()
-            .map(|i| RoutePoint {
-                longitude: f64::from(i % grid.width()),
-                latitude: f64::from(i / grid.width()),
-            })
-            .collect(),
+        points,
         spans,
         distance_m: distance,
-        minutes,
+        minutes: seconds.div_ceil(60),
     })
+}
+
+fn retain_grid_turns(points: &mut Vec<RoutePoint>) {
+    if points.len() <= 2 {
+        return;
+    }
+    let mut retained = Vec::with_capacity(points.len());
+    retained.push(points[0].clone());
+    for window in points.windows(3) {
+        let before = (
+            (window[1].longitude - window[0].longitude).signum() as i8,
+            (window[1].latitude - window[0].latitude).signum() as i8,
+        );
+        let after = (
+            (window[2].longitude - window[1].longitude).signum() as i8,
+            (window[2].latitude - window[1].latitude).signum() as i8,
+        );
+        if before != after {
+            retained.push(window[1].clone());
+        }
+    }
+    retained.push(points.last().expect("route is nonempty").clone());
+    *points = retained;
 }
 
 #[cfg(test)]
@@ -775,6 +828,49 @@ mod tests {
             astar(&g, (0, 0), (3, 2)).unwrap(),
             astar(&g, (0, 0), (3, 2)).unwrap()
         );
+    }
+
+    #[test]
+    fn surface_speeds_are_applied_without_per_cell_minute_rounding() {
+        let expected = [
+            (Surface::Road, 2),
+            (Surface::Open, 5),
+            (Surface::SparseWoods, 6),
+            (Surface::DeepWoods, 8),
+        ];
+        for (surface, minutes) in expected {
+            let mut g = grid(2, 1);
+            g.cells[1].surface = surface;
+            assert_eq!(astar(&g, (0, 0), (1, 0)).unwrap().minutes, minutes);
+        }
+    }
+
+    #[test]
+    fn long_native_routes_are_compacted_after_search() {
+        let g = grid(10_000, 1);
+        let route = astar(&g, (0, 0), (9_999, 0)).unwrap();
+        assert_eq!(route.distance_m, 999_900);
+        assert_eq!(route.points.len(), 2);
+        assert_eq!(
+            route
+                .spans
+                .iter()
+                .map(|span| span.duration_minutes)
+                .sum::<u64>(),
+            route.minutes
+        );
+    }
+
+    #[test]
+    fn endpoint_snapping_and_blocked_diagonal_are_deterministic() {
+        let mut g = grid(5, 5);
+        g.cells[(2 * 5 + 2) as usize].surface = Surface::Water;
+        assert_eq!(snap(&g, (2, 2), 1), Some((1, 1)));
+
+        let mut corner = grid(2, 2);
+        corner.cells[1].surface = Surface::Water;
+        corner.cells[2].surface = Surface::Water;
+        assert!(astar(&corner, (0, 0), (1, 1)).is_err());
     }
 
     #[test]

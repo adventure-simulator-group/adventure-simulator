@@ -19,6 +19,10 @@
     const [kind, start, duration, movementStart, movementDuration, fatigueStart, fatigueEnd, fatigueMax, requiredRest] = entry.split(",");
     return { kind, start: Number(start), duration: Number(duration), movementStart: Number(movementStart), movementDuration: Number(movementDuration), fatigueStart: Number(fatigueStart), fatigueEnd: Number(fatigueEnd), fatigueMax: Number(fatigueMax), requiredRest: Number(requiredRest) };
   }).filter((segment) => [segment.start, segment.duration].every(Number.isFinite));
+  const parseTerrain = (value) => (value || "").split("|").filter(Boolean).map((entry) => {
+    const [kind, start, duration] = entry.split(",");
+    return { kind, start: Number(start), duration: Number(duration) };
+  }).filter((segment) => ["road", "open", "sparse-woods", "deep-woods"].includes(segment.kind) && [segment.start, segment.duration].every(Number.isFinite));
   const position = (minute, total) => TRACK_START + (TRACK_END - TRACK_START) * clamp(total > 0 ? minute / total : 0);
   const setPathRange = (path, start, end, total) => {
     if (!path) return;
@@ -250,6 +254,48 @@
     }
   };
 
+  const renderTerrain = (planner, terrain, itinerary, total, movementTotal, roundTrip) => {
+    const track = planner.querySelector("[data-terrain-track]");
+    const summary = planner.querySelector("[data-terrain-summary]");
+    if (!track) return;
+    track.replaceChildren();
+    const labels = { road: "Road", open: "Open", "sparse-woods": "Sparse woods", "deep-woods": "Deep woods" };
+    const pieces = terrainPieces(terrain, itinerary, movementTotal, roundTrip);
+    for (const piece of pieces) {
+      const node = document.createElement("span");
+      node.className = `travel-terrain-segment ${piece.kind}`;
+      node.style.top = `${piece.start / total * 100}%`;
+      node.style.height = `${piece.duration / total * 100}%`;
+      node.title = piece.kind === "stopped" ? "Camp · stopped" : labels[piece.kind];
+      track.append(node);
+    }
+    const ordered = [...new Set(terrain.map((span) => labels[span.kind]))];
+    if (summary) summary.textContent = ordered.length ? `Terrain: ${ordered.join(", ")}` : "Terrain unavailable; legacy estimate";
+    attachRailTooltip(track, (fraction) => Array.from(track.children).find((node) => fraction * 100 >= parseFloat(node.style.top) && fraction * 100 <= parseFloat(node.style.top) + parseFloat(node.style.height))?.title || "Terrain unavailable");
+  };
+
+  const terrainPieces = (terrain, itinerary, movementTotal, roundTrip) => {
+    const pieces = [];
+    for (const elapsed of itinerary) {
+      if (elapsed.kind !== "w") {
+        pieces.push({ kind: "stopped", start: elapsed.start, duration: elapsed.duration });
+        continue;
+      }
+      for (const span of terrain) {
+        const starts = [span.start];
+        if (roundTrip) starts.push(movementTotal - span.start - span.duration);
+        for (const routeStart of starts) {
+          const overlapStart = Math.max(routeStart, elapsed.movementStart);
+          const overlapEnd = Math.min(routeStart + span.duration, elapsed.movementStart + elapsed.movementDuration);
+          if (overlapEnd <= overlapStart) continue;
+          const ratio = elapsed.movementDuration > 0 ? elapsed.duration / elapsed.movementDuration : 0;
+          pieces.push({ kind: span.kind, start: elapsed.start + (overlapStart - elapsed.movementStart) * ratio, duration: (overlapEnd - overlapStart) * ratio });
+        }
+      }
+    }
+    return pieces.sort((left, right) => left.start - right.start || left.kind.localeCompare(right.kind));
+  };
+
   const initializeTravelPlanner = () => {
     const planner = document.querySelector("[data-travel-planner]");
     if (!planner || planner.dataset.travelPlannerReady === "true") return;
@@ -264,6 +310,7 @@
       targetDisplay.textContent = String(initialTarget);
     }
     let currentPlan;
+    const terrain = parseTerrain(planner.dataset.terrainSpans);
 
     const showPlan = ({ name, origin = "Start", oneWay, movementTotal, elapsedTotal, completedElapsed = 0, departure = 0, segments = [], description = "", roundTrip = movementTotal > oneWay }) => {
       if (!name || elapsedTotal <= 0) { planner.hidden = true; return; }
@@ -301,6 +348,7 @@
       planner.hidden = false;
       setPathRange(planner.querySelector("[data-travel-progress]"), 0, completedElapsed, elapsedTotal);
       renderFatigue(planner, segments, elapsedTotal);
+      renderTerrain(planner, terrain, segments, elapsedTotal, movementTotal, roundTrip);
       renderTimeRail(planner, departure, elapsedTotal);
       currentPlan = { elapsedTotal, completedElapsed };
     };

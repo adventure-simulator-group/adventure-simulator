@@ -380,6 +380,7 @@ pub fn strategic_map(
     connected_ids: &BTreeSet<&str>,
     selected_id: Option<&str>,
     map_path: &str,
+    terrain_route: Option<&adventuresim_terrain::RoutePlan>,
 ) -> Markup {
     let package = &map.package;
     let current = settlements
@@ -458,7 +459,12 @@ pub fn strategic_map(
                         }
                     }
                     g class="map-overlay-layer" {
-                        @if let Some((destination_x, destination_y)) = destination {
+                        @if let Some(route) = terrain_route {
+                            @let points = route.points.iter().map(|point| { let (x,y)=project(point.longitude, point.latitude, package.bounds); format!("{x:.3},{y:.3}") }).collect::<Vec<_>>().join(" ");
+                            polyline class="map-selection-line map-terrain-route" data-map-selection-line
+                                aria-label=(format!("Computed terrain route, {:.1} kilometres", route.distance_m as f64 / 1000.0))
+                                points=(points) {}
+                        } @else if let Some((destination_x, destination_y)) = destination {
                             line class="map-selection-line map-legacy-route" data-map-selection-line aria-hidden="true"
                                 x1=(format!("{origin_x:.3}")) y1=(format!("{origin_y:.3}"))
                                 x2=(format!("{destination_x:.3}")) y2=(format!("{destination_y:.3}")) {}
@@ -752,6 +758,7 @@ mod tests {
             &connected,
             Some("near"),
             "/locations/settlement/origin/map",
+            None,
         )
         .into_string();
 
@@ -789,9 +796,28 @@ mod tests {
     }
 
     #[test]
-    fn selected_quest_has_a_pin_and_straight_origin_line() {
+    fn selected_quest_has_a_pin_and_computed_terrain_route() {
         let map = map_bundle();
         let quest = quest("quest-1", "Bandits in the woods", 11.0, 53.2);
+        let route = adventuresim_terrain::RoutePlan {
+            points: vec![
+                adventuresim_terrain::RoutePoint {
+                    latitude: 53.0,
+                    longitude: 10.0,
+                },
+                adventuresim_terrain::RoutePoint {
+                    latitude: 53.1,
+                    longitude: 10.4,
+                },
+                adventuresim_terrain::RoutePoint {
+                    latitude: 53.2,
+                    longitude: 11.0,
+                },
+            ],
+            spans: Vec::new(),
+            distance_m: 74_500,
+            minutes: 1_100,
+        };
         let markup = strategic_map(
             &map,
             &[settlement("origin", "Origin", 10.0, 53.0)],
@@ -800,6 +826,7 @@ mod tests {
             &BTreeSet::new(),
             Some("quest-1"),
             "/locations/settlement/origin/map",
+            Some(&route),
         )
         .into_string();
 
@@ -808,6 +835,9 @@ mod tests {
         assert!(markup.contains("Quest: Bandits in the woods, available"));
         assert!(markup.contains("map-quest-shape"));
         assert!(markup.contains("data-map-selection-line"));
+        assert!(markup.contains("map-terrain-route"));
+        assert!(!markup.contains("map-legacy-route"));
+        assert!(markup.contains("Computed terrain route, 74.5 kilometres"));
         assert!(markup.contains("aria-current=\"true\""));
     }
 
@@ -865,6 +895,7 @@ mod tests {
             &BTreeSet::new(),
             None,
             "/locations/settlement/origin/map",
+            None,
         )
         .into_string();
         let package = &map.package;

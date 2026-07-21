@@ -72,6 +72,8 @@ pub struct TravelDestination {
     /// At least one unaccepted quest is posted at this settlement.
     pub open_quest_available: bool,
     pub provision_forecast: Option<TravelProvisionForecast>,
+    pub terrain_route: Option<adventuresim_terrain::RoutePlan>,
+    pub route_fallback: bool,
 }
 
 /// Quest markers shared by settlement and off-road Map views. Available
@@ -157,6 +159,37 @@ pub(crate) fn settlement_destination(
         turn_in_ready: false,
         open_quest_available: false,
         provision_forecast: None,
+        terrain_route: None,
+        route_fallback: true,
+    }
+}
+
+pub(crate) fn apply_terrain_route(
+    destination: &mut TravelDestination,
+    terrain: Option<&adventuresim_terrain::TerrainPack>,
+    start: (f64, f64),
+    goal: (f64, f64),
+) {
+    let Some(terrain) = terrain else {
+        destination.route_fallback = true;
+        return;
+    };
+    match terrain.plan(start, goal) {
+        Ok(plan) => {
+            destination.distance_m = plan.distance_m;
+            destination.journey_minutes = plan.minutes;
+            destination.itinerary_total_elapsed_minutes = if destination.quest_in_progress {
+                plan.minutes.saturating_mul(2)
+            } else {
+                plan.minutes
+            };
+            destination.terrain_route = Some(plan);
+            destination.route_fallback = false;
+        }
+        Err(error) => {
+            tracing::warn!(%error, destination=%destination.id, "bounded terrain route unavailable; using explicitly marked legacy estimate");
+            destination.route_fallback = true;
+        }
     }
 }
 

@@ -102,6 +102,18 @@ changes out to selected-character pages as Datastar server-sent events.
 Large static world tables, including settlements, routes, aliases, and source
 descriptions, stay out of this subscription and are queried on demand.
 
+Strategic terrain is a separate, optional native artifact rather than a
+SpacetimeDB grid. The offline compiler preserves the initialized GLO-30 cells
+in independently compressed chunks and merges road, water, and forest surface
+classes. `strategic-web` keeps only a bounded chunk LRU and runs deterministic
+A* when a route is previewed or executed. It submits the bounded route geometry,
+terrain spans, package digest, aggregate distance, and directional travel time
+to planned travel reducers. Those reducers re-check the current character,
+party authority, destination, endpoints, geometry, and aggregate bounds before
+persisting the active party route. The tactical server still owns every live
+position and terrain interaction; neither raw raster cells nor tactical ticks
+are stored in SpacetimeDB.
+
 Browser-facing deployments terminate HTTPS at a reverse proxy and negotiate
 HTTP/2 or HTTP/3. Multiplexing prevents the long-lived Datastar SSE stream from
 consuming one of the browser's small HTTP/1.1 per-origin connection pool while

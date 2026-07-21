@@ -77,6 +77,23 @@ async fn main() -> anyhow::Result<()> {
         db,
         live,
         strategic_map,
+        terrain: match adventuresim_terrain::TerrainPack::load(
+            &config
+                .strategic_map_bundle_dir
+                .join("terrain-routing-v1.json"),
+            &config
+                .strategic_map_bundle_dir
+                .join("terrain-routing-v1.pack"),
+        ) {
+            Ok(pack) => {
+                tracing::info!(digest=%pack.digest(), "loaded optional terrain routing pack");
+                Some(std::sync::Arc::new(pack))
+            }
+            Err(error) => {
+                tracing::warn!(%error, "terrain routing unavailable; retaining legacy straight-line travel");
+                None
+            }
+        },
     };
 
     // Build router

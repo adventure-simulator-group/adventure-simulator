@@ -281,6 +281,37 @@ pub struct PartyJourneyItinerary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum JourneyTerrainKind {
+    Road,
+    Open,
+    SparseWoods,
+    DeepWoods,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JourneyRoutePoint {
+    pub latitude_e7: i32,
+    pub longitude_e7: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JourneyTerrainSpan {
+    pub kind: JourneyTerrainKind,
+    pub start_minute: u64,
+    pub duration_minutes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyJourneyRoute {
+    pub party_id: String,
+    pub package_digest: String,
+    pub distance_m: u64,
+    pub minutes: u64,
+    pub points: Vec<JourneyRoutePoint>,
+    pub spans: Vec<JourneyTerrainSpan>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PartyMember {
     pub id: u64,
     pub party_id: String,
