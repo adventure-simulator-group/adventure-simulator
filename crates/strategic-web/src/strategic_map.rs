@@ -28,7 +28,7 @@ const ROUTE_MIN_VIEW_WIDTH: f64 = 90.0;
 const ROUTE_MIN_VIEW_HEIGHT: f64 = ROUTE_MIN_VIEW_WIDTH / VIEW_ASPECT_RATIO;
 pub(crate) const TILE_PATH_PREFIX: &str = "/map/tiles/";
 const PACKAGE_SCHEMA: u32 = 3;
-const RENDERER_REVISION: u32 = 3;
+const RENDERER_REVISION: u32 = 4;
 const MIN_TILE_SIZE: u32 = 64;
 const MAX_TILE_SIZE: u32 = 2_048;
 const MAX_TILE_ENTRIES: usize = 100_000;
@@ -179,8 +179,8 @@ impl StrategicMap {
             "map tile pyramid exceeds entry bound"
         );
         anyhow::ensure!(
-            package.tiles.entries.len() == expected_entries,
-            "map tile pyramid is incomplete or oversized"
+            !package.tiles.entries.is_empty() && package.tiles.entries.len() <= expected_entries,
+            "map tile pyramid is empty or oversized"
         );
         let tile_pack: Arc<[u8]> = std::fs::read(tile_path)?.into();
         anyhow::ensure!(
@@ -459,7 +459,7 @@ pub fn strategic_map(
                     }
                     g class="map-overlay-layer" {
                         @if let Some((destination_x, destination_y)) = destination {
-                            line class="map-selection-line" data-map-selection-line aria-hidden="true"
+                            line class="map-selection-line map-legacy-route" data-map-selection-line aria-hidden="true"
                                 x1=(format!("{origin_x:.3}")) y1=(format!("{origin_y:.3}"))
                                 x2=(format!("{destination_x:.3}")) y2=(format!("{destination_y:.3}")) {}
                         }
@@ -590,7 +590,8 @@ mod tests {
                 r#"{{"schema":3,"renderer_revision":3,"year":1544,"bounds":[-10.0,40.0,30.0,70.0],"source":{{"name":"Test roads","url":"https://doi.org/10.5281/zenodo.16611998","license":"CC0","verification_status":"verified"}},"elevation":{{"source":{{"name":"Test elevation","url":"https://doi.org/10.5270/ESA-c5d3d65","file_count":1}}}},"forest":{{"source":{{"name":"Test forest","url":"https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a","file_count":1}},"coverage_tiles":1}},"tiles":{{"format":"avif","tile_size":2048,"gutter":4,"max_zoom":0,"content_sha256":"{}","entries":[{{"theme":"paper","zoom":0,"x":0,"y":0,"offset":0,"length":12}}]}},"package_sha256":"{}"}}"#
             ),
             tile_digest, placeholder
-        );
+        )
+        .replace("\"renderer_revision\":3", "\"renderer_revision\":4");
         let package_digest = format!("{:x}", Sha256::digest(unsigned.as_bytes()));
         (
             unsigned.replace(

@@ -15,7 +15,7 @@ mod raster;
 mod tiles;
 
 const PACKAGE_SCHEMA: u32 = 3;
-const RENDERER_REVISION: u32 = 3;
+const RENDERER_REVISION: u32 = 4;
 const YEAR: i32 = 1544;
 const VIABUNDUS_DOI: &str = "https://doi.org/10.5281/zenodo.16611998";
 const RECORD_URL: &str = "https://zenodo.org/api/records/16611998";
@@ -38,6 +38,10 @@ struct Args {
         default_value = "target/strategic-map/strategic-map-tiles-v1.pack"
     )]
     tiles_output: PathBuf,
+    #[arg(long, default_value = "target/strategic-map/terrain-routing-v1.json")]
+    terrain_output: PathBuf,
+    #[arg(long, default_value = "target/strategic-map/terrain-routing-v1.pack")]
+    terrain_pack_output: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -143,7 +147,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let layers = raster::load(&args.elevation_dir, &args.forest_cover_dir, BOUNDS)?;
     let mut package = build(&args.viabundus_dir, layers)?;
-    let (tile_manifest, tile_bytes) = tiles::build(&package, tiles::TileConfig::default())?;
+    let terrain_features = adventuresim_terrain::builder::Features {
+        roads: package
+            .roads
+            .iter()
+            .map(|line| line.points.iter().map(|point| point.0).collect())
+            .collect(),
+        water: package
+            .water
+            .iter()
+            .map(|polygon| {
+                polygon
+                    .rings
+                    .iter()
+                    .map(|ring| ring.iter().map(|point| point.0).collect())
+                    .collect()
+            })
+            .collect(),
+    };
+    let terrain = adventuresim_terrain::builder::build(
+        &args.elevation_dir,
+        &args.forest_cover_dir,
+        [5, 50, 16, 56],
+        &args.terrain_output,
+        &args.terrain_pack_output,
+        &terrain_features,
+    )?;
+    let native_terrain =
+        adventuresim_terrain::TerrainPack::load(&args.terrain_output, &args.terrain_pack_output)?;
+    let (tile_manifest, tile_bytes) = tiles::build(
+        &package,
+        Some(&native_terrain),
+        tiles::TileConfig::default(),
+    )?;
     package.tiles = tile_manifest;
     let mut deployment = deployment_package(&package);
     deployment.package_sha256 = package_digest(&deployment)?;
@@ -167,6 +203,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         package.tiles.entries.len(),
         args.output.display(),
         args.tiles_output.display()
+    );
+    println!(
+        "Wrote {} native 30 m terrain chunks to {} and {} (digest {})",
+        terrain.entries.len(),
+        args.terrain_output.display(),
+        args.terrain_pack_output.display(),
+        terrain.package_sha256
     );
     Ok(())
 }
@@ -728,8 +771,8 @@ mod tests {
             tile_size: 64,
             max_zoom: 0,
         };
-        let (first_manifest, first_tiles) = tiles::build(&first, config).unwrap();
-        let (second_manifest, second_tiles) = tiles::build(&second, config).unwrap();
+        let (first_manifest, first_tiles) = tiles::build(&first, None, config).unwrap();
+        let (second_manifest, second_tiles) = tiles::build(&second, None, config).unwrap();
         assert_eq!(first_manifest, second_manifest);
         assert_eq!(first_tiles, second_tiles);
         assert!(first_tiles.windows(8).any(|bytes| bytes == b"ftypavif"));

@@ -5,6 +5,7 @@ members = [
     "crates/adventuresim-strategic-sim",
     "crates/adventuresim-world-schema",
     "crates/adventuresim-world-import",
+    "crates/adventuresim-terrain",
     "crates/adventuresim-stdb-module",
     "crates/adventuresim-stdb-client",
     "crates/adventuresim-tactical-core",
@@ -79,6 +80,7 @@ proj4rs = { version = "0.1.10", default-features = false }
 rusqlite = { version = "0.37.0", features = ["bundled"] }
 shapefile = { version = "0.9.0", features = ["geo-types"] }
 zip = { version = "3.0.0", default-features = false, features = ["deflate"] }
+flate2 = "1.1"
 wasm-bindgen = "=0.2.108"
 spacetimedb = "=2.6.1"
 spacetimedb-sdk = "=2.6.1"

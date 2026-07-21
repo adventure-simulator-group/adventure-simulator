@@ -209,9 +209,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "adventuresim-terrain"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.18",
+ "tiff",
+]
+
+[[package]]
 name = "adventuresim-world-import"
 version = "0.1.0"
 dependencies = [
+ "adventuresim-terrain",
  "adventuresim-world-schema",
  "blake3",
  "clap",
