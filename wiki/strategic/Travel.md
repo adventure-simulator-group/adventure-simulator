@@ -77,6 +77,12 @@ this choice with the party and immediately recomputes the remaining forecast.
 These travel preferences remain available on the right side of the Map while
 the party is at a settlement, camp, or quest destination. Provision purchasing
 is shown only at settlements, where a market can actually fulfill it.
+
+Actual movement accrues exactly 8 dirt per 1,440 travel minutes. A private
+per-character remainder carries fractional progress across travel legs, and long
+advances split at each dirt boundary so wound risk changes at the same minute
+regardless of travel chunking. Camp/settlement rest, medical procedures, and
+medication crafting advance strategic time without adding travel dirt.
 Every minute outside the walking window is camp/downtime, so a full day's camp
 interval is 24 hours minus the configured walking hours. A
 member who cannot clear their fatigue in that interval carries it into the next

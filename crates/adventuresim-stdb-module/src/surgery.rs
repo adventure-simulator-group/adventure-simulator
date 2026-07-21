@@ -258,7 +258,7 @@ pub fn commit_hit_injury(
     cut_damage: f32,
     blunt_damage: f32,
     projectile: Option<ProjectileKind>,
-) {
+) -> Result<(), String> {
     backfill_character_injuries(ctx, character_id);
     let mut injury = injury_for(ctx, character_id, limb);
     injury.cut_damage += cut_damage.max(0.0);
@@ -282,7 +282,7 @@ pub fn commit_hit_injury(
             crate::filth::FilthSubstance::Blood,
             Some(character_id),
             (cut_damage * 50.0).ceil().clamp(1.0, 20.0) as u16,
-        );
+        )?;
     }
     store_injury(ctx, injury);
     if let Some(kind) = projectile.filter(|_| cut_damage + blunt_damage > 0.0) {
@@ -301,6 +301,7 @@ pub fn commit_hit_injury(
         });
     }
     refresh_limb_projection(ctx, character_id, limb);
+    Ok(())
 }
 
 pub fn fracture_from_single_hit(blunt_damage: f32) -> f32 {

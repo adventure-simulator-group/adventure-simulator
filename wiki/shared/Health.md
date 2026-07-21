@@ -15,11 +15,22 @@ Why elves? Because they are the designated race for casual players who aren't lo
 Diseases declare typed transmission vectors (close contact, food/water,
 vermin, wounds, or blood) rather than a generic contagious flag. Dirt modestly
 raises the standing infection risk of cuts. Blood only transmits a disease when
-that disease explicitly supports the blood vector; none of the starter diseases
-currently do. A blood deposit privately snapshots its source infection episode
-at deposition, while the public character sheet exposes only substance, amount,
-age, and known source. Blood remains visibly dirty until washed, but follows one
+that disease explicitly supports the blood vector. Plague is the current starter
+bloodborne disease; influenza is not. A blood deposit privately snapshots active,
+blood-compatible source infection episodes at deposition. The public character
+sheet aggregates blood as own, foreign, or unknown rather than exposing source
+character identities or disease snapshots. Blood remains visibly dirty until washed, but follows one
 global rule: infectiousness falls linearly to zero over two strategic days.
+Foreign infected blood can establish a new episode during strategic time advance.
+Open cuts make that risk dramatic, bandages reduce it substantially, and stitches
+reduce it further; intact skin retains only a small baseline route.
+
+Autoresolve currently creates self/attacker blood deposits as it commits strategic
+wounds. The real-time tactical handoff does not yet carry per-hit wound provenance,
+so equivalent tactical blood deposits remain a documented follow-up rather than
+inventing tactical tick state in SpacetimeDB. Synthetic autoresolve opponents also
+lack durable character identities, so their blood is recorded with unknown source
+provenance.
 
 Characters do not innately know their diseases. Everyone can see compact,
 deduplicated outward symptoms. A completed examination can additionally find

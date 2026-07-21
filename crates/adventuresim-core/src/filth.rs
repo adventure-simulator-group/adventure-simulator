@@ -56,6 +56,15 @@ pub fn travel_dirt(minutes: u64) -> u16 {
     ((minutes as f32 / 1_440.0) * TRAVEL_DIRT_PER_DAY).round() as u16
 }
 
+/// Carries exact travel-dirt progress between movement chunks. The remainder is
+/// measured in dirt-minutes over a denominator of 1,440.
+pub fn travel_dirt_accrual(remainder_numerator: u16, minutes: u64) -> (u16, u16) {
+    let numerator =
+        u128::from(remainder_numerator).saturating_add(u128::from(minutes).saturating_mul(8));
+    let dirt = u16::try_from(numerator / 1_440).unwrap_or(u16::MAX);
+    (dirt, (numerator % 1_440) as u16)
+}
+
 pub fn infectious_fraction(deposited_at: u64, now: u64) -> f32 {
     let age = now.saturating_sub(deposited_at);
     if age >= BLOOD_INFECTIOUS_MINUTES {
@@ -112,16 +121,27 @@ pub fn blood_exposure_for_vector(
     (dose * (0.04 + 0.96 * cut_route.clamp(0.0, 1.0))).clamp(0.0, 1.0)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SoapSource {
+    Personal,
+    Party,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SoapStackId {
+    pub source: SoapSource,
+    pub id: u64,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WashStack {
-    pub id: u64,
+    pub key: SoapStackId,
     pub quantity: u32,
-    pub personal: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WashPlan {
-    pub soap_stacks: Vec<(u64, u32)>,
+    pub soap_stacks: Vec<(SoapStackId, u32)>,
     pub cleaned_deposits: Vec<(u64, u16)>,
 }
 
@@ -139,6 +159,42 @@ fn cleaning_rank(d: &Deposit, has_cut: bool) -> u8 {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WashPriority {
+    pub character_id: u64,
+    pub best_substance_rank: u8,
+    pub exposure: f32,
+    pub total_filth: u32,
+}
+
+pub fn wash_priority(
+    character_id: u64,
+    deposits: &[Deposit],
+    has_cut: bool,
+    exposure: f32,
+) -> WashPriority {
+    WashPriority {
+        character_id,
+        best_substance_rank: deposits
+            .iter()
+            .map(|d| cleaning_rank(d, has_cut))
+            .min()
+            .unwrap_or(5),
+        exposure: exposure.max(0.0),
+        total_filth: deposits.iter().map(|d| u32::from(d.amount)).sum(),
+    }
+}
+
+pub fn sort_wash_priorities(priorities: &mut [WashPriority]) {
+    priorities.sort_by(|left, right| {
+        left.best_substance_rank
+            .cmp(&right.best_substance_rank)
+            .then_with(|| right.exposure.total_cmp(&left.exposure))
+            .then_with(|| right.total_filth.cmp(&left.total_filth))
+            .then_with(|| left.character_id.cmp(&right.character_id))
+    });
+}
+
 /// Plans a stable, personal-first wash. Every used soap unit is consumed whole.
 pub fn plan_wash(deposits: &[Deposit], stacks: &[WashStack], has_cut: bool) -> WashPlan {
     let total: u32 = deposits.iter().map(|d| u32::from(d.amount)).sum();
@@ -150,13 +206,13 @@ pub fn plan_wash(deposits: &[Deposit], stacks: &[WashStack], has_cut: bool) -> W
     }
     let needed = total.div_ceil(u32::from(SOAP_CLEANSING_CAPACITY));
     let mut ordered_stacks = stacks.to_vec();
-    ordered_stacks.sort_by_key(|s| (!s.personal, s.id));
+    ordered_stacks.sort_by_key(|s| (s.key.source, s.key.id));
     let mut remaining_units = needed;
     let mut soap_stacks = Vec::new();
     for stack in ordered_stacks {
         let used = stack.quantity.min(remaining_units);
         if used > 0 {
-            soap_stacks.push((stack.id, used));
+            soap_stacks.push((stack.key, used));
             remaining_units -= used;
         }
         if remaining_units == 0 {
@@ -196,26 +252,42 @@ mod tests {
             diseases: vec![],
         }
     }
+    fn stack(source: SoapSource, id: u64, quantity: u32) -> WashStack {
+        WashStack {
+            key: SoapStackId { source, id },
+            quantity,
+        }
+    }
 
     #[test]
     fn soap_rounds_up_and_uses_personal_stacks_first() {
         let plan = plan_wash(
             &[d(1, Substance::Dirt, None, 26)],
             &[
-                WashStack {
-                    id: 9,
-                    quantity: 4,
-                    personal: false,
-                },
-                WashStack {
-                    id: 3,
-                    quantity: 1,
-                    personal: true,
-                },
+                stack(SoapSource::Party, 9, 4),
+                stack(SoapSource::Personal, 3, 1),
             ],
             false,
         );
-        assert_eq!(plan.soap_stacks, vec![(3, 1), (9, 1)]);
+        assert_eq!(
+            plan.soap_stacks,
+            vec![
+                (
+                    SoapStackId {
+                        source: SoapSource::Personal,
+                        id: 3
+                    },
+                    1
+                ),
+                (
+                    SoapStackId {
+                        source: SoapSource::Party,
+                        id: 9
+                    },
+                    1
+                )
+            ]
+        );
         assert_eq!(plan.cleaned_deposits, vec![(1, 26)]);
     }
 
@@ -223,11 +295,7 @@ mod tests {
     fn wash_is_input_order_invariant_and_prioritizes_foreign_blood() {
         let a = d(2, Substance::Dirt, None, 25);
         let b = d(1, Substance::Blood, Some(8), 25);
-        let stacks = [WashStack {
-            id: 4,
-            quantity: 1,
-            personal: true,
-        }];
+        let stacks = [stack(SoapSource::Personal, 4, 1)];
         assert_eq!(
             plan_wash(&[a.clone(), b.clone()], &stacks, true),
             plan_wash(&[b, a.clone()], &stacks, true)
@@ -237,6 +305,72 @@ mod tests {
                 .0,
             1
         );
+    }
+
+    #[test]
+    fn equal_numeric_ids_from_personal_and_party_tables_remain_distinct() {
+        let plan = plan_wash(
+            &[d(1, Substance::Dirt, None, 40)],
+            &[
+                stack(SoapSource::Party, 7, 1),
+                stack(SoapSource::Personal, 7, 1),
+            ],
+            false,
+        );
+        assert_eq!(
+            plan.soap_stacks,
+            vec![
+                (
+                    SoapStackId {
+                        source: SoapSource::Personal,
+                        id: 7
+                    },
+                    1
+                ),
+                (
+                    SoapStackId {
+                        source: SoapSource::Party,
+                        id: 7
+                    },
+                    1
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn scarce_shared_soap_priority_is_risk_first_and_deterministic() {
+        let mut dangerous = d(1, Substance::Blood, Some(99), 10);
+        dangerous.character_id = 20;
+        dangerous.diseases.push(DiseaseSnapshot {
+            disease_id: DiseaseId::Plague,
+            episode_id: 5,
+        });
+        let safe = d(2, Substance::Dirt, None, 100);
+        let priorities = [
+            wash_priority(7, &[safe], false, 0.0),
+            wash_priority(20, &[dangerous], true, 0.4),
+        ];
+        let mut forward = priorities;
+        let mut reverse = [priorities[1], priorities[0]];
+        sort_wash_priorities(&mut forward);
+        sort_wash_priorities(&mut reverse);
+        assert_eq!(forward, reverse);
+        assert_eq!(forward[0].character_id, 20);
+    }
+
+    #[test]
+    fn travel_dirt_is_invariant_to_elapsed_time_chunking() {
+        let one_chunk = travel_dirt_accrual(0, 1_440);
+        let mut accumulated = 0_u16;
+        let mut remainder = 0_u16;
+        for _ in 0..24 {
+            let (dirt, next) = travel_dirt_accrual(remainder, 60);
+            accumulated = accumulated.saturating_add(dirt);
+            remainder = next;
+        }
+        assert_eq!(one_chunk, (8, 0));
+        assert_eq!((accumulated, remainder), one_chunk);
     }
 
     #[test]
@@ -269,10 +403,9 @@ mod tests {
             0.0
         );
         assert!(blood_exposure_for_vector(&[blood], DiseaseId::Influenza, 1, 1.0, true) > 0.4);
+        assert!(crate::disease::definition(DiseaseId::Plague).supports(TransmissionVector::Blood));
         assert!(
-            crate::disease::STARTER_DISEASES
-                .iter()
-                .all(|d| !d.supports(TransmissionVector::Blood))
+            !crate::disease::definition(DiseaseId::Influenza).supports(TransmissionVector::Blood)
         );
     }
 }

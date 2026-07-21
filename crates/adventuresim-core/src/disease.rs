@@ -579,7 +579,11 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         },
         BUBOES,
         0.50,
-        &[TransmissionVector::CloseContact, TransmissionVector::Vermin],
+        &[
+            TransmissionVector::CloseContact,
+            TransmissionVector::Vermin,
+            TransmissionVector::Blood,
+        ],
     ),
     d(
         DiseaseId::Consumption,

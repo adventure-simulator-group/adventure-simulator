@@ -477,6 +477,7 @@ pub fn settlement_map_page(
     active_party: Option<&Party>,
     _party_members: &[Character],
     default_rest_minutes: u64,
+    soap_preview: SoapRestPreview,
     can_travel: bool,
     provision_forecast: Option<&TravelProvisionForecast>,
     is_current_settlement: bool,
@@ -518,6 +519,7 @@ pub fn settlement_map_page(
                         "Rest party",
                         default_rest_minutes,
                         None,
+                        soap_preview,
                     ))
                 }
             }),
@@ -1282,6 +1284,7 @@ pub fn camp_page(
     camp_destinations: &[CampTravelDestination],
     provision_forecast: Option<&TravelProvisionForecast>,
     default_rest_minutes: u64,
+    soap_preview: SoapRestPreview,
     planned_wake_minute: u16,
     can_continue_travel: bool,
     logged_in_as: Option<&str>,
@@ -1322,6 +1325,7 @@ pub fn camp_page(
                     "Rest party",
                     default_rest_minutes,
                     Some(planned_wake_minute),
+                    soap_preview,
                 ))
             }
         }
@@ -1392,6 +1396,7 @@ pub(crate) fn party_rest_menu(
     submit_label: &str,
     default_minutes: u64,
     scheduled_wake_minute: Option<u16>,
+    soap_preview: SoapRestPreview,
 ) -> Markup {
     html! {
         div class="rest-service-heading" { strong { (heading) } }
@@ -1407,6 +1412,34 @@ pub(crate) fn party_rest_menu(
             button type="submit" class="btn btn-primary btn-small btn-block" data-rest-submit {
                 (submit_label)
             }
+        }
+        (soap_wash_preview(soap_preview))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SoapRestPreview {
+    pub total_units: u32,
+    pub personal_units: u32,
+    pub shared_units: u32,
+}
+
+fn soap_wash_preview(preview: SoapRestPreview) -> Markup {
+    html! {
+        @if preview.total_units > 0 {
+            p class="text-muted small-copy rest-soap-preview" {
+                "Washing before rest will use " (preview.total_units) " soft soap"
+                @if preview.personal_units > 0 && preview.shared_units > 0 {
+                    " (" (preview.personal_units) " personal, " (preview.shared_units) " shared)"
+                } @else if preview.shared_units > 0 {
+                    " (shared)"
+                } @else {
+                    " (personal)"
+                }
+                ". Soap is also a surgical supply."
+            }
+        } @else {
+            p class="text-muted small-copy rest-soap-preview" { "No soap will be used for washing." }
         }
     }
 }
@@ -1480,6 +1513,7 @@ pub fn merchants_page(
         logged_in_as,
         None,
         None,
+        SoapRestPreview::default(),
     )
 }
 
@@ -1495,6 +1529,7 @@ pub fn inn_page(
     condition: Option<&CharacterCondition>,
     field_repair_minutes: u64,
     smith_wait_minutes: u64,
+    soap_preview: SoapRestPreview,
     logged_in_as: Option<&str>,
 ) -> Markup {
     service_page(
@@ -1516,6 +1551,7 @@ pub fn inn_page(
             smith_wait_minutes,
         ),
         None,
+        soap_preview,
     )
 }
 
@@ -1531,6 +1567,7 @@ pub fn religion_page(
     condition: Option<&CharacterCondition>,
     field_repair_minutes: u64,
     smith_wait_minutes: u64,
+    soap_preview: SoapRestPreview,
     logged_in_as: Option<&str>,
 ) -> Markup {
     service_page(
@@ -1552,6 +1589,7 @@ pub fn religion_page(
             smith_wait_minutes,
         ),
         None,
+        soap_preview,
     )
 }
 
@@ -1695,7 +1733,7 @@ pub fn party_personal_page(
 
 fn filth_status_bar(
     deposits: &[crate::spacetimedb::CharacterFilth],
-    characters: &[Character],
+    _characters: &[Character],
 ) -> Markup {
     use crate::spacetimedb::FilthSubstance;
     let dirt: u16 = deposits
@@ -1713,32 +1751,24 @@ fn filth_status_bar(
         .min(adventuresim_core::filth::MAX_FILTH);
     let dirt_width = f32::from(dirt.min(total));
     let blood_width = f32::from(blood.min(total.saturating_sub(dirt.min(total))));
-    let sources = deposits
+    let (own_blood, foreign_blood, unknown_blood) = deposits
         .iter()
         .filter(|d| d.substance == FilthSubstance::Blood)
-        .map(|d| {
-            d.source_character_id
-                .and_then(|id| {
-                    characters
-                        .iter()
-                        .find(|c| c.id == id)
-                        .map(|c| c.name.clone())
-                })
-                .unwrap_or_else(|| "unknown source".into())
-        })
-        .collect::<std::collections::BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
+        .fold((0_u16, 0_u16, 0_u16), |mut amounts, deposit| {
+            match deposit.source_character_id {
+                Some(source) if source == deposit.character_id => {
+                    amounts.0 = amounts.0.saturating_add(deposit.amount)
+                }
+                Some(_) => amounts.1 = amounts.1.saturating_add(deposit.amount),
+                None => amounts.2 = amounts.2.saturating_add(deposit.amount),
+            }
+            amounts
+        });
     let details = if total == 0 {
         "Clean".into()
     } else {
         format!(
-            "Filth {total}/100: {dirt} dirt; {blood} blood{}",
-            if sources.is_empty() {
-                String::new()
-            } else {
-                format!(" from {}", sources.join(", "))
-            }
+            "Filth {total}/100: {dirt} dirt; {blood} blood ({own_blood} own, {foreign_blood} foreign, {unknown_blood} unknown)"
         )
     };
     html! {
@@ -2139,6 +2169,7 @@ fn service_page(
     logged_in_as: Option<&str>,
     rest_default_minutes: Option<u64>,
     rest_summary: Option<&RestSummary>,
+    soap_preview: SoapRestPreview,
 ) -> Markup {
     let trade_offers: Option<(&str, &[&str])> = match service_id {
         "merchants" => Some((
@@ -2168,7 +2199,7 @@ fn service_page(
             @if service_id == "inn" {
                 div class="service-left-stack" {
                     div class="service-inventory-area" { (merchant_offers_rail("Inn supplies", &["Rations", "Water", "Supplies", "Bed for the night"])) }
-                    (rest_service_menu("Inn", &settlement.id, "inn", rest_default_minutes, rest_summary))
+                    (rest_service_menu("Inn", &settlement.id, "inn", rest_default_minutes, rest_summary, soap_preview))
                 }
             } @else if service_id == "religion" {
                 div class="service-left-stack" {
@@ -2179,7 +2210,7 @@ fn service_page(
                             }
                         }))
                     }
-                    (rest_service_menu("Temple", &settlement.id, "temple", rest_default_minutes, rest_summary))
+                    (rest_service_menu("Temple", &settlement.id, "temple", rest_default_minutes, rest_summary, soap_preview))
                 }
             } @else if let Some((stock_title, offers)) = trade_offers {
                 (merchant_offers_rail(stock_title, offers))
@@ -4903,6 +4934,7 @@ pub fn rest_result_page(
     logged_in_as: Option<&str>,
     at_inn: bool,
     summary: &RestSummary,
+    soap_preview: SoapRestPreview,
 ) -> Markup {
     service_page(
         settlement,
@@ -4917,6 +4949,7 @@ pub fn rest_result_page(
         logged_in_as,
         None,
         Some(summary),
+        soap_preview,
     )
 }
 
@@ -4926,6 +4959,7 @@ fn rest_service_menu(
     kind: &str,
     default_minutes: Option<u64>,
     summary: Option<&RestSummary>,
+    soap_preview: SoapRestPreview,
 ) -> Markup {
     html! {
     section class="rest-service-menu" aria-label=(format!("{} rest service", location))
@@ -4960,6 +4994,7 @@ fn rest_service_menu(
                     span class="sr-only" { "Rest" }
                 }
         }
+        (soap_wash_preview(soap_preview))
         @if let Some(summary) = summary {
             div class="rest-summary-overlay" role="dialog" aria-modal="true" aria-labelledby="rest-summary-title" {
                 section class="rest-summary" {

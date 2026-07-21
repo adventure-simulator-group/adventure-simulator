@@ -283,6 +283,8 @@ servers cannot supply an arbitrary XP award.
 | `limb_injury` | Per-character, per-limb cut, bruise, fracture, bandage, stitch, and applied-splint state |
 | `retained_projectile` | Durable retained arrowhead/ball records with extraction difficulty; no tactical anatomy or tick state |
 | `character_condition` | Durable strategic blood volume, body weight, and religion selection |
+| `character_filth` / `filth_disease_snapshot` | Durable bounded dirt/blood deposits and private blood-compatible source-episode snapshots; public presentation aggregates provenance |
+| private travel/blood checkpoints | Fractional travel-dirt progress and committed blood-exposure evaluation prefixes used to make chunked time advance deterministic |
 | `settlement` | Strategic settlement data, including its legal religious status and current church |
 | `morale_event` | Time-stamped strategic successes and setbacks with seven-day decay |
 | `character_morale_source` | Refreshable named, signed contributions used by the morale meter breakdown |
@@ -323,6 +325,7 @@ servers cannot supply an arbitrary XP award.
 | `send_local_chat_message` / `record_local_npc_message` | Persist location-gated, party-owned Local conversations |
 | `refresh_capabilities` | Recompute automatic character tags through the shared core evaluator |
 | `refresh_strategic_condition` | Recompute morale, pain, blood loss, fear, fatigue, readiness, and check effectiveness |
+| explicit rest reducers | Atomically plan party washing, consume personal soap before shared soap, then advance rest; scarce shared soap is assigned by deterministic disease risk |
 | `set_character_religion` | Record church conversion or biography renunciation for religious relationships |
 | `ensure_settlement_activity` | Maintain 3–5 visible quests and 1–2 locally generated recruiting NPC quest parties |
 | `start_mission` | Allocate port, record mission |

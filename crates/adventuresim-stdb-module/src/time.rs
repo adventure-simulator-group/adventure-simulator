@@ -283,17 +283,40 @@ pub fn advance_character_time(
     if terminal.is_some() || !settled.alive {
         return Ok(false);
     }
-    let dirt = adventuresim_core::filth::travel_dirt(elapsed);
-    crate::filth::deposit(
-        ctx,
-        character_id,
-        crate::filth::FilthSubstance::Dirt,
-        None,
-        dirt,
-        starting_minute.saturating_add(elapsed),
-    );
     crate::condition::apply_travel_condition(ctx, character_id, starting_minute, elapsed, 0)?;
     crate::capability::refresh_character_capability(ctx, character_id)?;
+    Ok(true)
+}
+
+/// Actual strategic movement, split at exact dirt boundaries so filth and its
+/// wound-risk multiplier are independent of caller chunking.
+pub fn advance_travel_time(
+    ctx: &ReducerContext,
+    character_id: u64,
+    mut minutes: u64,
+) -> Result<bool, String> {
+    while minutes > 0 {
+        let chunk = minutes.min(crate::filth::next_travel_dirt_boundary(ctx, character_id));
+        let before = ctx
+            .db
+            .character_time()
+            .character_id()
+            .find(character_id)
+            .map_or(0, |row| row.minutes);
+        let alive = advance_character_time(ctx, character_id, chunk)?;
+        let after = ctx
+            .db
+            .character_time()
+            .character_id()
+            .find(character_id)
+            .map_or(before, |row| row.minutes);
+        let elapsed = after.saturating_sub(before);
+        crate::filth::record_travel_elapsed(ctx, character_id, elapsed, after)?;
+        if !alive || elapsed < chunk {
+            return Ok(false);
+        }
+        minutes -= elapsed;
+    }
     Ok(true)
 }
 
@@ -1352,9 +1375,7 @@ pub fn rest_at_camp(
     let members = crate::strategic::living_party_member_ids(ctx, &party_id);
     // This reducer is an explicit player-chosen rest. Washing precedes disease
     // and injury interval clipping, and dead members were excluded above.
-    for member_id in members.iter().copied() {
-        crate::filth::wash_before_explicit_rest(ctx, member_id)?;
-    }
+    crate::filth::wash_party_before_explicit_rest(ctx, &members)?;
     let elapsed = members
         .iter()
         .try_fold(requested_minutes, |limit, member_id| {

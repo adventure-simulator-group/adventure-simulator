@@ -81,3 +81,8 @@ Soft soap is a stackable, discrete personal or shared-party supply. One whole
 unit provides 25 points of cleansing capacity against the bounded 100-point
 filth meter; any unused capacity is lost at the end of that wash. Automatic
 washing consumes stable personal stacks first, then stable shared-party stacks.
+When shared soap is scarce, it is assigned deterministically by health risk:
+diseased blood first, then the strongest blood exposure, total filth, and character
+ID as a final tie-breaker. Every explicit rest control previews the exact whole
+units that will be consumed, split between personal and shared supplies, and warns
+that the same soap is used by surgery.
