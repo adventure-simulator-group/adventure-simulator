@@ -153,11 +153,6 @@
       renderTiles(map, svg, view);
     };
     const zoom = (factor) => updateView(zoomedView(parseViewBox(svg), factor));
-    map.addEventListener("click", (event) => {
-      const control = event.target.closest?.("[data-map-zoom]");
-      if (control) zoom(control.dataset.mapZoom === "in" ? 0.8 : 1.25);
-      if (event.target.closest?.("[data-map-reset]")) updateView(initial);
-    });
     svg.addEventListener("wheel", (event) => { event.preventDefault(); zoom(event.deltaY < 0 ? 0.85 : 1.18); }, { passive: false });
     svg.addEventListener("keydown", (event) => {
       const [, , width, height] = parseViewBox(svg);
@@ -169,17 +164,51 @@
       if (event.key === "Home") { event.preventDefault(); updateView(initial); }
     });
 
-    let drag = null;
-    svg.addEventListener("pointerdown", (event) => { if (!event.target.closest?.("a")) { drag = { x: event.clientX, y: event.clientY, view: parseViewBox(svg) }; svg.setPointerCapture?.(event.pointerId); } });
+    const pointers = new Map();
+    let drag = null, pinch = null;
+    const pointerMidpoint = ([first, second]) => ({ x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 });
+    const pointerDistance = ([first, second]) => Math.hypot(second.x - first.x, second.y - first.y);
+    svg.addEventListener("pointerdown", (event) => {
+      if (event.target.closest?.("a")) return;
+      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      svg.setPointerCapture?.(event.pointerId);
+      if (pointers.size === 1) {
+        drag = { x: event.clientX, y: event.clientY, view: parseViewBox(svg) };
+      } else if (pointers.size === 2) {
+        const points = [...pointers.values()];
+        pinch = { midpoint: pointerMidpoint(points), distance: pointerDistance(points), view: parseViewBox(svg) };
+        drag = null;
+      }
+    });
     svg.addEventListener("pointermove", (event) => {
+      if (!pointers.has(event.pointerId)) return;
+      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (pinch && pointers.size >= 2) {
+        const points = [...pointers.values()].slice(0, 2);
+        const midpoint = pointerMidpoint(points);
+        const distance = pointerDistance(points);
+        if (!distance || !pinch.distance) return;
+        const rect = svg.getBoundingClientRect();
+        const [x, y, width, height] = pinch.view;
+        const focusX = x + (pinch.midpoint.x - rect.left) / rect.width * width;
+        const focusY = y + (pinch.midpoint.y - rect.top) / rect.height * height;
+        const next = zoomedView(pinch.view, pinch.distance / distance, focusX, focusY);
+        updateView(pannedView(next, -(midpoint.x - pinch.midpoint.x) * next[2] / rect.width, -(midpoint.y - pinch.midpoint.y) * next[3] / rect.height));
+        return;
+      }
       if (!drag) return;
       const [, , width, height] = drag.view;
       const rect = svg.getBoundingClientRect();
       updateView(pannedView(drag.view, -(event.clientX - drag.x) * width / rect.width, -(event.clientY - drag.y) * height / rect.height));
     });
-    const endDrag = () => { drag = null; };
-    svg.addEventListener("pointerup", endDrag);
-    svg.addEventListener("pointercancel", endDrag);
+    const endPointer = (event) => {
+      pointers.delete(event.pointerId);
+      pinch = null;
+      const remaining = [...pointers.values()][0];
+      drag = remaining ? { x: remaining.x, y: remaining.y, view: parseViewBox(svg) } : null;
+    };
+    svg.addEventListener("pointerup", endPointer);
+    svg.addEventListener("pointercancel", endPointer);
   };
 
   const initializeStrategicMaps = (root = document) => root.querySelectorAll("[data-strategic-map]").forEach((map) => initializeMap(map));

@@ -316,8 +316,10 @@ zoom visibility and line weight, and a restrained deterministic parchment
 fiber/fleck layer prevents flat digital backgrounds. All procedural marks are
 positioned in the zoom's global map coordinates so they remain stable across
 tile gutters and repeated builds.
-Settlement pins, route availability, current location, and selection remain in
-the authenticated HTML/SVG overlay and are never cached as
+Settlement pins, locally issued available-quest pins, the party's active quest
+pin at its issuing settlement, route availability, current location, selection,
+and the straight line to the selected destination remain in the authenticated
+HTML/SVG overlay and are never cached as
 part of the world asset.
 
 For a small deterministic renderer preview without building the production
