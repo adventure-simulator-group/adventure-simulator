@@ -1,6 +1,7 @@
 use image::{ExtendedColorType, ImageEncoder, codecs::avif::AvifEncoder};
 use rayon::prelude::*;
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use tiny_skia::{
     Color, FillRule, IntRect, LineCap, LineJoin, Paint, Path, PathBuilder, Pixmap, Rect, Stroke,
     Transform,
@@ -12,6 +13,97 @@ const WIDTH: f64 = 1_200.0;
 const HEIGHT: f64 = 800.0;
 const TILE_GUTTER: u8 = 4;
 const RENDER_MARGIN: u32 = 12;
+
+#[derive(Debug)]
+struct ForestField {
+    cells: HashMap<(i64, i64), f64>,
+    origin: (f64, f64),
+    step: (f64, f64),
+    bounds: [f64; 4],
+}
+
+impl ForestField {
+    fn from_regions(regions: &[crate::raster::ForestRegion], map_bounds: [f64; 4]) -> Option<Self> {
+        let mut samples = Vec::with_capacity(regions.len());
+        let mut widths = Vec::with_capacity(regions.len());
+        let mut heights = Vec::with_capacity(regions.len());
+        for region in regions {
+            let [west, south, east, north] = region.bounds;
+            let (left, top) = project(west, north, map_bounds);
+            let (right, bottom) = project(east, south, map_bounds);
+            let width = right - left;
+            let height = bottom - top;
+            if width <= f64::EPSILON || height <= f64::EPSILON {
+                continue;
+            }
+            samples.push(((left + right) * 0.5, (top + bottom) * 0.5, region.density));
+            widths.push(width);
+            heights.push(height);
+        }
+        if samples.is_empty() {
+            return None;
+        }
+
+        widths.sort_by(f64::total_cmp);
+        heights.sort_by(f64::total_cmp);
+        let step = (widths[widths.len() / 2], heights[heights.len() / 2]);
+        let origin = samples.iter().fold(
+            (f64::INFINITY, f64::INFINITY),
+            |(minimum_x, minimum_y), (x, y, _)| (minimum_x.min(*x), minimum_y.min(*y)),
+        );
+        let mut cells: HashMap<(i64, i64), f64> = HashMap::with_capacity(samples.len());
+        let mut bounds = [
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        ];
+        for (x, y, density) in samples {
+            let column = ((x - origin.0) / step.0).round() as i64;
+            let row = ((y - origin.1) / step.1).round() as i64;
+            cells
+                .entry((column, row))
+                .and_modify(|stored| *stored = stored.max(f64::from(density)))
+                .or_insert(f64::from(density));
+            bounds[0] = bounds[0].min(x);
+            bounds[1] = bounds[1].min(y);
+            bounds[2] = bounds[2].max(x);
+            bounds[3] = bounds[3].max(y);
+        }
+        bounds[0] -= step.0 * 1.5;
+        bounds[1] -= step.1 * 1.5;
+        bounds[2] += step.0 * 1.5;
+        bounds[3] += step.1 * 1.5;
+        Some(Self {
+            cells,
+            origin,
+            step,
+            bounds,
+        })
+    }
+
+    fn density_at(&self, logical_x: f64, logical_y: f64) -> f64 {
+        let base_x = (logical_x - self.origin.0) / self.step.0;
+        let base_y = (logical_y - self.origin.1) / self.step.1;
+        let warp_x = fractal_noise(base_x * 0.23, base_y * 0.23, 0x0f67_47f4_6c9a_31b5) * 0.40
+            + fractal_noise(base_x * 1.19, base_y * 1.19, 0x8b72_46dc_a913_5ef0) * 0.14;
+        let warp_y = fractal_noise(base_x * 0.23, base_y * 0.23, 0xca62_d13b_98f4_07e1) * 0.40
+            + fractal_noise(base_x * 1.19, base_y * 1.19, 0x34d9_81a7_f5c0_62be) * 0.14;
+        let x = base_x + warp_x;
+        let y = base_y + warp_y;
+        let x0 = x.floor() as i64;
+        let y0 = y.floor() as i64;
+        let tx = smoothstep(x - x.floor());
+        let ty = smoothstep(y - y.floor());
+        let sample = |column, row| self.cells.get(&(column, row)).copied().unwrap_or_default();
+        let top = lerp(sample(x0, y0), sample(x0 + 1, y0), tx);
+        let bottom = lerp(sample(x0, y0 + 1), sample(x0 + 1, y0 + 1), tx);
+        let interpolated = lerp(top, bottom, ty);
+        let boundary_detail = fractal_noise(x * 1.71, y * 1.71, 0x5e41_bdf0_216d_893c) * 0.36
+            + fractal_noise(x * 4.83, y * 4.83, 0x12f7_8a4c_d963_b05e) * 0.11;
+        interpolated + boundary_detail
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct TileConfig {
@@ -38,8 +130,8 @@ struct Palette {
     road: [u8; 4],
     ferry: [u8; 4],
     contour: [u8; 4],
-    forest: [u8; 4],
-    conifer: [u8; 4],
+    forest_sparse: [u8; 4],
+    forest_deep: [u8; 4],
     terrain_ink: [u8; 4],
     terrain_hatch: [u8; 4],
     elevation: [[u8; 4]; 7],
@@ -54,8 +146,8 @@ const PAPER: Palette = Palette {
     road: [92, 79, 57, 230],
     ferry: [91, 88, 78, 180],
     contour: [102, 91, 73, 105],
-    forest: [115, 128, 106, 120],
-    conifer: [88, 106, 93, 145],
+    forest_sparse: [111, 143, 97, 82],
+    forest_deep: [69, 112, 68, 118],
     terrain_ink: [94, 81, 66, 205],
     terrain_hatch: [112, 96, 77, 155],
     elevation: [
@@ -76,6 +168,7 @@ pub(super) fn build(
     if config.tile_size < 64 || !config.tile_size.is_power_of_two() || config.max_zoom > 8 {
         return Err("strategic map tile configuration is outside its bound".into());
     }
+    let forest_field = ForestField::from_regions(&package.forest.regions, package.bounds);
     let mut bytes = Vec::new();
     let mut entries = Vec::new();
     for zoom in 0..=config.max_zoom {
@@ -90,8 +183,17 @@ pub(super) fn build(
         let encoded_tiles: Result<Vec<Vec<u8>>, String> = coordinates
             .par_iter()
             .map(|&(x, y)| {
-                let tile = render(package, config.tile_size, TILE_GUTTER, scale, x, y, PAPER)
-                    .map_err(|error| error.to_string())?;
+                let tile = render_with_forest_field(
+                    package,
+                    forest_field.as_ref(),
+                    config.tile_size,
+                    TILE_GUTTER,
+                    scale,
+                    x,
+                    y,
+                    PAPER,
+                )
+                .map_err(|error| error.to_string())?;
                 encode(&tile, quality).map_err(|error| error.to_string())
             })
             .collect();
@@ -134,8 +236,33 @@ fn encode(pixmap: &Pixmap, quality: u8) -> Result<Vec<u8>, image::ImageError> {
     Ok(bytes)
 }
 
+#[cfg(test)]
 fn render(
     package: &Package,
+    tile_size: u32,
+    gutter: u8,
+    scale: f64,
+    tile_x: u16,
+    tile_y: u16,
+    palette: Palette,
+) -> Result<Pixmap, Box<dyn std::error::Error>> {
+    let forest_field = ForestField::from_regions(&package.forest.regions, package.bounds);
+    render_with_forest_field(
+        package,
+        forest_field.as_ref(),
+        tile_size,
+        gutter,
+        scale,
+        tile_x,
+        tile_y,
+        palette,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_with_forest_field(
+    package: &Package,
+    forest_field: Option<&ForestField>,
     tile_size: u32,
     gutter: u8,
     scale: f64,
@@ -186,6 +313,9 @@ fn render(
             palette,
         );
     }
+    if let Some(forest_field) = forest_field {
+        draw_forest_cover(&mut pixmap, forest_field, scale, origin, palette);
+    }
     for polygon in &package.water {
         stroke_and_fill_source_polygon(
             &mut pixmap,
@@ -197,42 +327,6 @@ fn render(
             Some(palette.water),
             Some((palette.water_edge, 1.1)),
         );
-    }
-    for region in &package.forest.regions {
-        let mut shade = match region.kind.as_str() {
-            "conifer" => palette.conifer,
-            "mixed" => mix(palette.forest, palette.conifer),
-            _ => palette.forest,
-        };
-        shade[3] = match region.density {
-            1 => (u16::from(shade[3]) * 2 / 5) as u8,
-            2 => (u16::from(shade[3]) * 2 / 3) as u8,
-            _ => shade[3],
-        };
-        if scale < 16.0 {
-            fill_source_bounds(
-                &mut pixmap,
-                region.bounds,
-                package.bounds,
-                scale,
-                origin,
-                logical_bounds,
-                shade,
-            );
-        } else {
-            draw_forest_grove(
-                &mut pixmap,
-                region.bounds,
-                region.density,
-                &region.kind,
-                package.bounds,
-                scale,
-                origin,
-                logical_bounds,
-                shade,
-                palette.terrain_ink,
-            );
-        }
     }
     for (index, contour) in package.elevation.contours.iter().enumerate() {
         let show_contour =
@@ -372,276 +466,114 @@ fn fill_source_bounds(
     pixmap.fill_rect(rect, &paint(shade), Transform::identity(), None);
 }
 
-struct TreeMark {
-    x: f32,
-    y: f32,
-    height: f32,
-    conifer: bool,
-}
-
-fn draw_forest_grove(
+fn draw_forest_cover(
     pixmap: &mut Pixmap,
-    [west, south, east, north]: [f64; 4],
-    density: u8,
-    kind: &str,
-    map_bounds: [f64; 4],
+    field: &ForestField,
     scale: f64,
     origin: (f64, f64),
-    tile_bounds: [f64; 4],
-    mut shade: [u8; 4],
-    ink: [u8; 4],
+    palette: Palette,
 ) {
-    let (left, top) = project(west, north, map_bounds);
-    let (right, bottom) = project(east, south, map_bounds);
-    let symbol_margin = 8.0 / scale;
-    if !intersects(
-        [
-            left - symbol_margin,
-            top - symbol_margin,
-            right + symbol_margin,
-            bottom + symbol_margin,
-        ],
-        tile_bounds,
-    ) {
+    let width = pixmap.width() as usize;
+    let height = pixmap.height() as usize;
+    let left = ((field.bounds[0] * scale - origin.0).floor() as isize).clamp(0, width as isize);
+    let top = ((field.bounds[1] * scale - origin.1).floor() as isize).clamp(0, height as isize);
+    let right = ((field.bounds[2] * scale - origin.0).ceil() as isize).clamp(0, width as isize);
+    let bottom = ((field.bounds[3] * scale - origin.1).ceil() as isize).clamp(0, height as isize);
+    if left >= right || top >= bottom {
         return;
     }
-    let density = density.clamp(1, 3);
-    shade[3] = match density {
-        1 => 120,
-        2 => 160,
-        _ => 190,
-    };
-    let mut random = feature_seed([west, south, east, north], density, kind);
-    let cluster_count = usize::from(density) + if scale >= 64.0 { 2 } else { 1 };
-    let mut clusters = Vec::with_capacity(cluster_count);
-    for _ in 0..cluster_count {
-        clusters.push((
-            0.14 + 0.72 * next_unit(&mut random),
-            0.16 + 0.68 * next_unit(&mut random),
-            0.82 + 0.34 * next_unit(&mut random),
-        ));
-    }
-    for &(relative_x, relative_y, spread) in &clusters {
-        let x = ((left + (right - left) * relative_x) * scale - origin.0) as f32;
-        let y = ((top + (bottom - top) * relative_y) * scale - origin.1) as f32;
-        draw_grove_shadow(
-            pixmap,
-            x,
-            y + 2.0,
-            ((right - left) * scale * 0.12 * spread) as f32,
-            ((bottom - top) * scale * 0.09 * spread) as f32,
-            with_alpha(shade, 24 + density * 3),
-        );
-    }
 
-    let count = if scale >= 64.0 {
-        usize::from(density) * 18 + 10
-    } else if scale >= 32.0 {
-        usize::from(density) * 11 + 7
-    } else {
-        usize::from(density) * 6 + 4
-    };
-    let base_height = if scale >= 64.0 {
-        9.0
-    } else if scale >= 32.0 {
-        7.2
-    } else {
-        5.4
-    };
-    let mut trees = Vec::with_capacity(count);
-    for index in 0..count {
-        let cluster = clusters[index % clusters.len()];
-        let offset_x = (next_unit(&mut random) + next_unit(&mut random) + next_unit(&mut random)
-            - 1.5)
-            * 0.115
-            * cluster.2;
-        let offset_y = (next_unit(&mut random) + next_unit(&mut random) + next_unit(&mut random)
-            - 1.5)
-            * 0.105
-            * cluster.2;
-        let relative_x = (cluster.0 + offset_x).clamp(0.035, 0.965);
-        let relative_y = (cluster.1 + offset_y).clamp(0.055, 0.955);
-        let size_jitter = 0.80 + 0.38 * next_unit(&mut random);
-        let conifer = match kind {
-            "conifer" => true,
-            "mixed" => (next_random(&mut random) ^ index as u64) & 1 == 0,
-            _ => false,
-        };
-        trees.push(TreeMark {
-            x: ((left + (right - left) * relative_x) * scale - origin.0) as f32,
-            y: ((top + (bottom - top) * relative_y) * scale - origin.1) as f32,
-            height: (base_height * size_jitter) as f32,
-            conifer,
-        });
-    }
-    trees.sort_by(|left, right| {
-        left.y
-            .total_cmp(&right.y)
-            .then_with(|| left.x.total_cmp(&right.x))
-    });
-    for tree in trees {
-        if tree.conifer {
-            draw_conifer(pixmap, tree.x, tree.y, tree.height, shade, ink);
-        } else {
-            draw_deciduous_tree(pixmap, tree.x, tree.y, tree.height, shade, ink);
+    let data = pixmap.data_mut();
+    let sample_offset = 0.25 / scale;
+    for pixel_y in top as usize..bottom as usize {
+        let logical_y = (origin.1 + pixel_y as f64 + 0.5) / scale;
+        for pixel_x in left as usize..right as usize {
+            let logical_x = (origin.0 + pixel_x as f64 + 0.5) / scale;
+            let mut sparse_samples = 0_u8;
+            let mut deep_samples = 0_u8;
+            for offset_y in [-sample_offset, sample_offset] {
+                for offset_x in [-sample_offset, sample_offset] {
+                    let density = field.density_at(logical_x + offset_x, logical_y + offset_y);
+                    sparse_samples += u8::from(density >= 0.48);
+                    deep_samples += u8::from(density >= 2.35);
+                }
+            }
+            let sparse = f64::from(sparse_samples) * 0.25;
+            let deep = f64::from(deep_samples) * 0.25;
+            if sparse <= 0.0 {
+                continue;
+            }
+            let offset = (pixel_y * width + pixel_x) * 4;
+            blend_opaque_pixel(&mut data[offset..offset + 4], palette.forest_sparse, sparse);
+            if deep > 0.0 {
+                blend_opaque_pixel(&mut data[offset..offset + 4], palette.forest_deep, deep);
+            }
         }
     }
 }
 
-fn draw_grove_shadow(
-    pixmap: &mut Pixmap,
-    x: f32,
-    y: f32,
-    radius_x: f32,
-    radius_y: f32,
-    shade: [u8; 4],
-) {
-    if radius_x <= 0.0 || radius_y <= 0.0 {
+fn blend_opaque_pixel(destination: &mut [u8], source: [u8; 4], coverage: f64) {
+    let alpha = (f64::from(source[3]) * coverage).round().clamp(0.0, 255.0) as u32;
+    if alpha == 0 {
         return;
     }
-    let control = 0.552_284_8;
-    let mut shadow = PathBuilder::new();
-    shadow.move_to(x - radius_x, y);
-    shadow.cubic_to(
-        x - radius_x,
-        y - radius_y * control,
-        x - radius_x * control,
-        y - radius_y,
-        x,
-        y - radius_y,
-    );
-    shadow.cubic_to(
-        x + radius_x * control,
-        y - radius_y,
-        x + radius_x,
-        y - radius_y * control,
-        x + radius_x,
-        y,
-    );
-    shadow.cubic_to(
-        x + radius_x,
-        y + radius_y * control,
-        x + radius_x * control,
-        y + radius_y,
-        x,
-        y + radius_y,
-    );
-    shadow.cubic_to(
-        x - radius_x * control,
-        y + radius_y,
-        x - radius_x,
-        y + radius_y * control,
-        x - radius_x,
-        y,
-    );
-    shadow.close();
-    if let Some(shadow) = shadow.finish() {
-        pixmap.fill_path(
-            &shadow,
-            &symbol_paint(shade),
-            FillRule::Winding,
-            Transform::identity(),
-            None,
-        );
+    for channel in 0..3 {
+        destination[channel] = ((u32::from(source[channel]) * alpha
+            + u32::from(destination[channel]) * (255 - alpha)
+            + 127)
+            / 255) as u8;
     }
+    destination[3] = 255;
 }
 
-fn draw_deciduous_tree(
-    pixmap: &mut Pixmap,
-    x: f32,
-    y: f32,
-    height: f32,
-    shade: [u8; 4],
-    ink: [u8; 4],
-) {
-    let half = height * 0.42;
-    let crown_y = y - height * 0.20;
-    let mut crown = PathBuilder::new();
-    crown.move_to(x - half, crown_y + height * 0.08);
-    crown.cubic_to(
-        x - half * 1.08,
-        crown_y - height * 0.18,
-        x - half * 0.55,
-        crown_y - height * 0.45,
-        x - half * 0.18,
-        crown_y - height * 0.34,
-    );
-    crown.cubic_to(
-        x + half * 0.05,
-        crown_y - height * 0.58,
-        x + half * 0.72,
-        crown_y - height * 0.42,
-        x + half * 0.65,
-        crown_y - height * 0.16,
-    );
-    crown.cubic_to(
-        x + half * 1.08,
-        crown_y - height * 0.02,
-        x + half * 0.68,
-        crown_y + height * 0.29,
-        x + half * 0.22,
-        crown_y + height * 0.22,
-    );
-    crown.cubic_to(
-        x - half * 0.15,
-        crown_y + height * 0.38,
-        x - half * 0.72,
-        crown_y + height * 0.30,
-        x - half,
-        crown_y + height * 0.08,
-    );
-    crown.close();
-    if let Some(crown) = crown.finish() {
-        pixmap.fill_path(
-            &crown,
-            &symbol_paint(shade),
-            FillRule::Winding,
-            Transform::identity(),
-            None,
-        );
-        stroke_pixmap_path(pixmap, &crown, ink, 0.75);
+fn fractal_noise(mut x: f64, mut y: f64, seed: u64) -> f64 {
+    let mut amplitude = 0.58;
+    let mut total = 0.0;
+    let mut weight = 0.0;
+    for octave in 0_u64..4 {
+        total += value_noise(x, y, seed.wrapping_add(octave * 0x9e37_79b9)) * amplitude;
+        weight += amplitude;
+        x = x * 2.03 + 17.7;
+        y = y * 2.03 - 11.3;
+        amplitude *= 0.5;
     }
-    let mut trunk = PathBuilder::new();
-    trunk.move_to(x, crown_y + height * 0.12);
-    trunk.line_to(x - height * 0.03, y + height * 0.46);
-    trunk.move_to(x, crown_y + height * 0.12);
-    trunk.line_to(x + height * 0.12, crown_y - height * 0.02);
-    if let Some(trunk) = trunk.finish() {
-        stroke_pixmap_path(pixmap, &trunk, ink, 0.8);
-    }
+    total / weight
 }
 
-fn draw_conifer(pixmap: &mut Pixmap, x: f32, y: f32, height: f32, shade: [u8; 4], ink: [u8; 4]) {
-    let width = height * 0.60;
-    let mut crown = PathBuilder::new();
-    crown.move_to(x, y - height * 0.72);
-    crown.line_to(x - width * 0.30, y - height * 0.34);
-    crown.line_to(x - width * 0.13, y - height * 0.36);
-    crown.line_to(x - width * 0.49, y - height * 0.02);
-    crown.line_to(x - width * 0.22, y - height * 0.08);
-    crown.line_to(x - width * 0.60, y + height * 0.24);
-    crown.line_to(x + width * 0.60, y + height * 0.24);
-    crown.line_to(x + width * 0.22, y - height * 0.08);
-    crown.line_to(x + width * 0.49, y - height * 0.02);
-    crown.line_to(x + width * 0.13, y - height * 0.36);
-    crown.line_to(x + width * 0.30, y - height * 0.34);
-    crown.close();
-    if let Some(crown) = crown.finish() {
-        pixmap.fill_path(
-            &crown,
-            &symbol_paint(shade),
-            FillRule::Winding,
-            Transform::identity(),
-            None,
-        );
-        stroke_pixmap_path(pixmap, &crown, ink, 0.8);
-    }
-    let mut trunk = PathBuilder::new();
-    trunk.move_to(x, y + height * 0.10);
-    trunk.line_to(x, y + height * 0.48);
-    if let Some(trunk) = trunk.finish() {
-        stroke_pixmap_path(pixmap, &trunk, ink, 0.9);
-    }
+fn value_noise(x: f64, y: f64, seed: u64) -> f64 {
+    let x0 = x.floor() as i64;
+    let y0 = y.floor() as i64;
+    let tx = smoothstep(x - x.floor());
+    let ty = smoothstep(y - y.floor());
+    let top = lerp(
+        lattice_noise(x0, y0, seed),
+        lattice_noise(x0 + 1, y0, seed),
+        tx,
+    );
+    let bottom = lerp(
+        lattice_noise(x0, y0 + 1, seed),
+        lattice_noise(x0 + 1, y0 + 1, seed),
+        tx,
+    );
+    lerp(top, bottom, ty)
+}
+
+fn lattice_noise(x: i64, y: i64, seed: u64) -> f64 {
+    let mut value = seed
+        ^ (x as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+        ^ (y as u64).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^= value >> 31;
+    (value >> 11) as f64 / (1_u64 << 53) as f64 * 2.0 - 1.0
+}
+
+fn smoothstep(value: f64) -> f64 {
+    value * value * (3.0 - 2.0 * value)
+}
+
+fn lerp(left: f64, right: f64, amount: f64) -> f64 {
+    left + (right - left) * amount
 }
 
 fn draw_elevation_stamps(
@@ -1049,15 +981,6 @@ fn with_alpha(mut rgba: [u8; 4], alpha: u8) -> [u8; 4] {
     rgba
 }
 
-fn mix(left: [u8; 4], right: [u8; 4]) -> [u8; 4] {
-    [
-        ((u16::from(left[0]) + u16::from(right[0])) / 2) as u8,
-        ((u16::from(left[1]) + u16::from(right[1])) / 2) as u8,
-        ((u16::from(left[2]) + u16::from(right[2])) / 2) as u8,
-        ((u16::from(left[3]) + u16::from(right[3])) / 2) as u8,
-    ]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1152,13 +1075,32 @@ mod tests {
         package
     }
 
+    fn continuous_forest_fixture() -> Package {
+        let mut package = flat_fixture();
+        package.forest.regions = (1..=6)
+            .flat_map(|row| {
+                (1..=6).map(move |column| ForestRegion {
+                    bounds: [
+                        f64::from(column),
+                        HEIGHT - f64::from(row + 1),
+                        f64::from(column + 1),
+                        HEIGHT - f64::from(row),
+                    ],
+                    density: 3,
+                    kind: "mixed".into(),
+                })
+            })
+            .collect();
+        package
+    }
+
     fn pixel(tile: &Pixmap, x: usize, y: usize) -> [u8; 4] {
         let offset = (y * tile.width() as usize + x) * 4;
         tile.data()[offset..offset + 4].try_into().unwrap()
     }
 
     #[test]
-    fn close_paper_symbols_are_deterministic_and_kind_specific() {
+    fn forest_overlay_is_deterministic_and_leaf_type_neutral() {
         let conifer = paper_fixture("conifer", true);
         let first = render(&conifer, 64, TILE_GUTTER, 32.0, 0, 0, PAPER).unwrap();
         let second = render(&conifer, 64, TILE_GUTTER, 32.0, 0, 0, PAPER).unwrap();
@@ -1166,7 +1108,18 @@ mod tests {
 
         let broadleaf = paper_fixture("broadleaf", true);
         let broadleaf = render(&broadleaf, 64, TILE_GUTTER, 32.0, 0, 0, PAPER).unwrap();
-        assert_ne!(first.data(), broadleaf.data());
+        assert_eq!(first.data(), broadleaf.data());
+    }
+
+    #[test]
+    fn sparse_and_deep_woods_have_distinct_tints() {
+        let mut sparse = paper_fixture("mixed", true);
+        sparse.forest.regions[0].density = 1;
+        let sparse = render(&sparse, 64, TILE_GUTTER, 32.0, 0, 0, PAPER).unwrap();
+
+        let deep = paper_fixture("mixed", true);
+        let deep = render(&deep, 64, TILE_GUTTER, 32.0, 0, 0, PAPER).unwrap();
+        assert_ne!(sparse.data(), deep.data());
     }
 
     #[test]
@@ -1184,7 +1137,7 @@ mod tests {
     }
 
     #[test]
-    fn close_forest_groves_form_a_substantial_clustered_mass() {
+    fn close_forest_overlay_forms_a_substantial_organic_mass() {
         let mut forest = paper_fixture("mixed", true);
         forest.elevation.cells.clear();
         let plain = flat_fixture();
@@ -1196,7 +1149,36 @@ mod tests {
             .zip(plain.data().chunks_exact(4))
             .filter(|(forest, plain)| forest != plain)
             .count();
-        assert!(changed > 600, "forest grove is still too sparse: {changed}");
+        assert!(
+            changed > 600,
+            "forest overlay is still too sparse: {changed}"
+        );
+    }
+
+    #[test]
+    fn continuous_deep_woods_do_not_reveal_cell_center_holes() {
+        let forest = render(
+            &continuous_forest_fixture(),
+            512,
+            TILE_GUTTER,
+            64.0,
+            0,
+            0,
+            PAPER,
+        )
+        .unwrap();
+        let plain = render(&flat_fixture(), 512, TILE_GUTTER, 64.0, 0, 0, PAPER).unwrap();
+        for logical_y in 2..6 {
+            for logical_x in 2..6 {
+                let pixel_x = logical_x * 64 + usize::from(TILE_GUTTER);
+                let pixel_y = logical_y * 64 + usize::from(TILE_GUTTER);
+                assert_ne!(
+                    pixel(&forest, pixel_x, pixel_y),
+                    pixel(&plain, pixel_x, pixel_y),
+                    "forest field left a periodic hole at ({logical_x}, {logical_y})"
+                );
+            }
+        }
     }
 
     #[test]
@@ -1209,7 +1191,7 @@ mod tests {
     }
 
     #[test]
-    fn close_paper_symbols_are_stable_across_tile_gutters() {
+    fn forest_overlay_is_stable_across_tile_gutters() {
         let package = paper_fixture("mixed", true);
         let left = render(&package, 64, TILE_GUTTER, 32.0, 0, 0, PAPER).unwrap();
         let right = render(&package, 64, TILE_GUTTER, 32.0, 1, 0, PAPER).unwrap();
