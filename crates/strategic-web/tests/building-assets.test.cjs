@@ -191,10 +191,8 @@ test("generated settlement service and Catholic marks are compact tintable PNG m
 
 test("wilderness tab props share the building raster and baseline contract", () => {
   const variants = [
-    "camp-firepit",
+    "camp-tent",
     "encounter-boulders",
-    "map-lookout-tree",
-    "loot-supply-cache",
   ];
   const baselines = [];
   for (const variant of variants) {
@@ -226,20 +224,21 @@ test("wilderness tab props share the building raster and baseline contract", () 
   assert.deepEqual([...new Set(baselines)], [487], "wilderness props share the bottom baseline");
 });
 
-test("camp logs keep broad flat faces without grain or crosshatching", () => {
-  const { width, rgba } = decodeRgbaPng(path.join(ornamentRoot, "camp-firepit", "ornament.png"));
-  let logFacePixels = 0;
-  let internalDarkMarks = 0;
-  for (let y = 270; y < 320; y += 1) {
-    for (let x = 105; x < 405; x += 1) {
+test("the camp ornament keeps its firepit subordinate to the tent", () => {
+  const { width, height, rgba } = decodeRgbaPng(path.join(ornamentRoot, "camp-tent", "ornament.png"));
+  let tentPixels = 0;
+  let firepitPixels = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
       const offset = (y * width + x) * 4;
       if (!rgba[offset + 3]) continue;
-      if (rgba[offset] === 112) logFacePixels += 1;
-      if (rgba[offset] === 24) internalDarkMarks += 1;
+      if (x < 370) tentPixels += 1;
+      if (x >= 370) firepitPixels += 1;
     }
   }
-  assert.ok(logFacePixels > 1_000, "camp logs retain broad structural faces");
-  assert.equal(internalDarkMarks, 0, "camp logs contain no dark grain or hatch marks");
+  assert.ok(tentPixels > 20_000, "the tent is legible at compact scale");
+  assert.ok(firepitPixels > 1_000, "the firepit remains visible");
+  assert.ok(firepitPixels < tentPixels * 0.2, "the firepit remains small beside the tent");
 });
 
 test("all settlement horizons are standardized transparent panoramic assets", () => {

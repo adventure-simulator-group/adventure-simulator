@@ -125,19 +125,27 @@ test("settlement smithies and wilderness tabs use independent non-interactive ef
     assert.match(frames, /opacity:/);
     assert.doesNotMatch(frames, /filter:|fill:|stroke:/);
   }
+  const particleFrames = layoutCss.match(/@keyframes campfire-particle-rise \{[\s\S]*?\n\}/)?.[0] ?? "";
+  assert.match(particleFrames, /#ffe06a[\s\S]*#ed7a25[\s\S]*#bf3826[\s\S]*#827b74/);
+  assert.match(particleFrames, /transform:/);
+  assert.match(particleFrames, /opacity:/);
+  assert.equal((layoutTemplate.match(/class="fire-particle"/g) || []).length, 1);
+  assert.match(layoutTemplate, /let particles = \[[\s\S]*\];[\s\S]*@for \(cx, cy, radius, drift, delay, duration\) in particles/);
+  assert.match(layoutTemplate, /let puffs = \[[\s\S]*\];[\s\S]*@for \(cx, cy, radius, drift, delay, duration\) in puffs/);
 });
 
-test("quest and camp headers keep their navigation while presenting physical wilderness props", () => {
+test("quest and camp headers share the tent while keeping fire and enemy layers independent", () => {
   for (const [view, variant] of [
-    ["camp", "camp-firepit"],
-    ["encounter", "encounter-boulders"],
-    ["map", "map-lookout-tree"],
-    ["loot", "loot-supply-cache"],
+    ["camp", "camp-tent"],
+    ["map", "camp-tent"],
+    ["enemy", "encounter-boulders"],
   ]) {
     assert.match(layoutTemplate, new RegExp(`data-location-view="${view}"`));
     assert.match(layoutCss, new RegExp(`ornament/${variant}/ornament\\.png`));
   }
-  assert.match(layoutTemplate, /aria-label="Encounter"[\s\S]*aria-label="Map"[\s\S]*aria-label="Loot"/);
+  assert.match(layoutTemplate, /aria-label="Map"[\s\S]*aria-label="Enemy"/);
+  assert.doesNotMatch(layoutTemplate, /aria-label="(?:Encounter|Loot)"/);
+  assert.match(layoutCss, /service-tab-icon-enemy[\s\S]*death-skull\.svg/);
   assert.match(layoutCss, /data-environment="wilderness"[\s\S]*\.wilderness-tab-prop \{[\s\S]*background-blend-mode: color, normal[\s\S]*pointer-events: none/);
   assert.match(settlementTemplate, /actual_camp_intervals[\s\S]*movement_minute == journey\.completed_minutes/);
   assert.match(settlementTemplate, /camp_location_layout_with_session\([\s\S]*camp_fire_lit/);

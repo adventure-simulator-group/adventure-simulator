@@ -357,25 +357,17 @@
 }
 
 .quest-location-top-bar .nav-tab[data-location-view="camp"] {
-  --wilderness-prop-image: url("/static/styles/timber-framed/ornament/camp-firepit/ornament.png");
-}
-
-.quest-location-top-bar .nav-tab[data-location-view="encounter"] {
-  --wilderness-prop-image: url("/static/styles/timber-framed/ornament/encounter-boulders/ornament.png");
-  --wilderness-icon-bottom: 1.55rem;
-  --wilderness-icon-size: 1.6rem;
+  --wilderness-prop-image: url("/static/styles/timber-framed/ornament/camp-tent/ornament.png");
 }
 
 .quest-location-top-bar .nav-tab[data-location-view="map"] {
-  --wilderness-prop-image: url("/static/styles/timber-framed/ornament/map-lookout-tree/ornament.png");
-  --wilderness-icon-bottom: 1.55rem;
-  --wilderness-icon-size: 1.45rem;
+  --wilderness-prop-image: url("/static/styles/timber-framed/ornament/camp-tent/ornament.png");
 }
 
-.quest-location-top-bar .nav-tab[data-location-view="loot"] {
-  --wilderness-prop-image: url("/static/styles/timber-framed/ornament/loot-supply-cache/ornament.png");
-  --wilderness-icon-bottom: 0.8rem;
-  --wilderness-icon-size: 1.45rem;
+.quest-location-top-bar .nav-tab[data-location-view="enemy"] {
+  --wilderness-prop-image: url("/static/styles/timber-framed/ornament/encounter-boulders/ornament.png");
+  --wilderness-icon-bottom: 1.25rem;
+  --wilderness-icon-size: 1.8rem;
 }
 
 .topbar-scene-effect-plane {
@@ -425,18 +417,18 @@
 }
 
 .campfire-flame {
-  left: 50%;
-  bottom: 1.53rem;
-  width: 2.25rem;
-  height: 3rem;
+  left: 84.5%;
+  bottom: 0.82rem;
+  width: 1.55rem;
+  height: 2.1rem;
   transform: translateX(-50%);
 }
 
 .campfire-smoke {
-  left: 50%;
-  bottom: 3.73rem;
-  width: 2.35rem;
-  height: 3.9rem;
+  left: 84.5%;
+  bottom: 2.16rem;
+  width: 1.8rem;
+  height: 3.35rem;
   transform: translateX(-50%);
 }
 
@@ -446,22 +438,6 @@
   transform-box: fill-box;
   transform-origin: center;
   animation: wilderness-smoke-rise 6.8s ease-out infinite;
-}
-
-.smoke-puff-one {
-  --smoke-drift: -7px;
-}
-
-.smoke-puff-two {
-  --smoke-drift: 8px;
-  animation-delay: -2.25s;
-  animation-duration: 7.4s;
-}
-
-.smoke-puff-three {
-  --smoke-drift: 3px;
-  animation-delay: -4.6s;
-  animation-duration: 6.2s;
 }
 
 .flame-shape {
@@ -478,6 +454,14 @@
   fill: #ffd36a;
   animation-delay: -360ms;
   animation-duration: 570ms;
+}
+
+.fire-particle {
+  fill: #ffe06a;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: campfire-particle-rise 2s ease-out infinite;
 }
 
 @keyframes wilderness-smoke-rise {
@@ -504,25 +488,44 @@
   }
 }
 
+@keyframes campfire-particle-rise {
+  0% {
+    fill: #ffe06a;
+    opacity: 0;
+    transform: translate(0, 4px) scale(0.55);
+  }
+  12% {
+    fill: #ffc13d;
+    opacity: 1;
+  }
+  38% { fill: #ed7a25; }
+  64% {
+    fill: #bf3826;
+    opacity: 0.82;
+  }
+  84% { fill: #827b74; }
+  100% {
+    fill: #aaa49d;
+    opacity: 0;
+    transform: translate(var(--fire-drift), -46px) scale(0.25);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .smoke-puff,
-  .flame-shape {
+  .flame-shape,
+  .fire-particle {
     animation: none;
   }
 
-  .smoke-puff-one {
-    opacity: 0.24;
-    transform: translate(-5px, -5px) scale(0.65);
+  .smoke-puff {
+    opacity: 0.16;
+    transform: translate(0, -22px) scale(0.85);
   }
 
-  .smoke-puff-two {
-    opacity: 0.18;
-    transform: translate(5px, -24px) scale(0.9);
-  }
-
-  .smoke-puff-three {
-    opacity: 0.12;
-    transform: translate(0, -43px) scale(1.15);
+  .fire-particle {
+    fill: #ed7a25;
+    opacity: 0.72;
   }
 }
 
@@ -716,8 +719,7 @@
 .service-tab-icon-church { --service-tab-icon: url("/static/icons/game/church.svg"); }
 
 .service-tab-icon-map { --service-tab-icon: url("/static/icons/settlement-services/travel.png"); }
-.service-tab-icon-loot { --service-tab-icon: url("/static/icons/game/open-chest.svg"); }
-.service-tab-icon-encounter { --service-tab-icon: url("/static/icons/game/sword-clash.svg"); }
+.service-tab-icon-enemy { --service-tab-icon: url("/static/icons/game/death-skull.svg"); }
 .service-tab-icon-camp { --service-tab-icon: url("/static/icons/game/campfire.svg"); }
 
 .settlement-services .nav-tab:hover .service-tab-icon,

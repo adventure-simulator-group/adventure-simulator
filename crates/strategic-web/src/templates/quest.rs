@@ -17,63 +17,6 @@ use crate::{
     },
 };
 
-pub fn quest_location_base_page(
-    quest: &Quest,
-    active_character: Option<&Character>,
-    party_members: &[Character],
-    can_fight: bool,
-    resolved: bool,
-    autoresolve_report: Option<&AutoresolveReport>,
-    party: Option<&crate::spacetimedb::Party>,
-    can_configure_travel: bool,
-    default_rest_minutes: u64,
-    logged_in_as: Option<&str>,
-) -> Markup {
-    let content = html! {
-        aside class="left-sidebar map-rest-sidebar" {
-            (sidebar_section("Location", html! { p { (&quest.location_description) } }))
-            section class="rest-service-menu quest-rest-menu" aria-label="Destination rest" {
-                (party_rest_menu(
-                    &format!("/locations/quest/{}/rest", quest.id),
-                    "quest-rest",
-                    "Rest before battle",
-                    "Rest party",
-                    default_rest_minutes,
-                    None,
-                ))
-            }
-        }
-        (quest_location_center(
-            quest,
-            active_character,
-            party_members,
-            can_fight,
-            resolved,
-            autoresolve_report,
-            None,
-        ))
-        aside class="right-sidebar travel-preferences-only-sidebar" aria-label="Location details" {
-            @if let Some(party) = party.filter(|_| can_configure_travel) {
-                (sidebar_section(
-                    "Travel preferences",
-                    travel_preferences_form(
-                        party,
-                        &format!("/locations/quest/{}/map/travel-configuration", quest.id),
-                    ),
-                ))
-            }
-        }
-    };
-    super::quest_location_layout_with_session(
-        &quest.title,
-        &quest.title,
-        &quest.id,
-        "encounter",
-        content,
-        logged_in_as,
-    )
-}
-
 pub fn quest_location_map_page(
     quest: &Quest,
     nearby: &[TravelDestination],
@@ -116,6 +59,7 @@ pub fn quest_location_map_page(
             resolved,
             autoresolve_report,
             None,
+            false,
         ))
         (map_destination_detail(
             selected,
@@ -146,6 +90,7 @@ fn quest_location_center(
     resolved: bool,
     autoresolve_report: Option<&AutoresolveReport>,
     travel_planner: Option<Markup>,
+    show_combat_actions: bool,
 ) -> Markup {
     let autoresolve_messages = autoresolve_info_messages(autoresolve_report);
     html! {
@@ -159,7 +104,7 @@ fn quest_location_center(
             ))
             div class="quest-visual-wrap" {
                 (visual_stage("quest", &quest.title, &quest.location_description))
-                @if can_fight || !resolved {
+                @if show_combat_actions && (can_fight || !resolved) {
                 div class="quest-combat-actions" aria-label="Quest actions" {
                     @if can_fight {
                         form action="/missions/enter" method="post" {
@@ -195,14 +140,17 @@ fn autoresolve_info_messages(report: Option<&AutoresolveReport>) -> Vec<String> 
     messages
 }
 
-/// Loot and shared inventory at an off-road quest location.
-pub fn quest_location_page(
+/// Enemy encounter and, once resolved, its loot at an off-road quest location.
+pub fn quest_location_enemy_page(
     quest: &Quest,
     active_character: Option<&Character>,
     party_members: &[Character],
     can_fight: bool,
     resolved: bool,
     autoresolve_report: Option<&AutoresolveReport>,
+    party: Option<&crate::spacetimedb::Party>,
+    can_configure_travel: bool,
+    default_rest_minutes: u64,
     loot: &[BattleLootItem],
     pooled: &[PartyInventoryItem],
     stake: u64,
@@ -212,7 +160,20 @@ pub fn quest_location_page(
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
-            (sidebar_section("Loot", html! {
+            @if !resolved {
+                (sidebar_section("Location", html! { p { (&quest.location_description) } }))
+                section class="rest-service-menu quest-rest-menu" aria-label="Destination rest" {
+                    (party_rest_menu(
+                        &format!("/locations/quest/{}/rest", quest.id),
+                        "quest-rest",
+                        "Rest before battle",
+                        "Rest party",
+                        default_rest_minutes,
+                        None,
+                    ))
+                }
+            } @else {
+                (sidebar_section("Loot", html! {
                 @if loot.is_empty() {
                     (empty_state(
                         if resolved { "No unclaimed loot remains." } else { "No loot has been recovered." },
@@ -240,7 +201,8 @@ pub fn quest_location_page(
                     (loot_stage_form(&quest.id))
                     (super::settlement::inventory_footer_controls("loot", "Move loot to targets", "Move all loot"))
                 }
-            }))
+                }))
+            }
         }
 
         (quest_location_center(
@@ -251,10 +213,23 @@ pub fn quest_location_page(
             resolved,
             autoresolve_report,
             None,
+            true,
         ))
 
-        aside class="right-sidebar" {
-            (sidebar_section("Party inventory", html! {
+        aside class=(if resolved { "right-sidebar" } else { "right-sidebar travel-preferences-only-sidebar" })
+            aria-label=(if resolved { "Party inventory" } else { "Location details" }) {
+            @if !resolved {
+                @if let Some(party) = party.filter(|_| can_configure_travel) {
+                    (sidebar_section(
+                        "Travel preferences",
+                        travel_preferences_form(
+                            party,
+                            &format!("/locations/quest/{}/map/travel-configuration", quest.id),
+                        ),
+                    ))
+                }
+            } @else {
+                (sidebar_section("Party inventory", html! {
                 div class="party-stake-summary" {
                     span { "Your available stake" }
                     strong { (stake) " coin" }
@@ -277,14 +252,15 @@ pub fn quest_location_page(
                             }
                     }}.render())
                 }
-            }))
+                }))
+            }
         }
     };
     super::quest_location_layout_with_session(
         &quest.title,
         &quest.title,
         &quest.id,
-        "loot",
+        "enemy",
         content,
         logged_in_as,
     )

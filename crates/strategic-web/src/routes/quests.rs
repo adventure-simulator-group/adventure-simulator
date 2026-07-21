@@ -27,9 +27,7 @@ use crate::spacetimedb::{
     InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem, PartyStake, Quest,
     QuestStatus, Settlement,
 };
-use crate::templates::quest::{
-    quest_location_base_page, quest_location_map_page, quest_location_page,
-};
+use crate::templates::quest::{quest_location_enemy_page, quest_location_map_page};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -40,7 +38,11 @@ pub fn routes() -> Router<AppState> {
         .route("/quests/{id}/travel", post(travel_to_quest))
         .route("/locations/quest/{id}", get(quest_location_base))
         .route("/locations/quest/{id}/map", get(quest_location_map))
-        .route("/locations/quest/{id}/loot", get(quest_location_loot))
+        .route("/locations/quest/{id}/enemy", get(quest_location_enemy))
+        .route(
+            "/locations/quest/{id}/loot",
+            get(quest_location_legacy_loot),
+        )
         .route("/locations/quest/{id}/rest", post(rest_at_quest_location))
         .route(
             "/locations/quest/{id}/map/rest",
@@ -325,7 +327,7 @@ async fn store_battle_loot(
     {
         tracing::error!("Failed to store battle loot: {error:?}");
     }
-    Redirect::to(&format!("/locations/quest/{id}/loot"))
+    Redirect::to(&format!("/locations/quest/{id}/enemy"))
 }
 
 #[derive(Default, serde::Deserialize)]
@@ -334,9 +336,8 @@ struct QuestMapQuery {
 }
 
 enum QuestLocationTab {
-    Base,
     Map(Option<String>),
-    Loot,
+    Enemy,
 }
 
 async fn quest_location_base(
@@ -344,7 +345,7 @@ async fn quest_location_base(
     Path(id): Path<String>,
     session: Session,
 ) -> Response {
-    render_quest_location(state, id, session, QuestLocationTab::Base).await
+    render_quest_location(state, id, session, QuestLocationTab::Map(None)).await
 }
 
 async fn quest_location_map(
@@ -356,12 +357,16 @@ async fn quest_location_map(
     render_quest_location(state, id, session, QuestLocationTab::Map(query.destination)).await
 }
 
-async fn quest_location_loot(
+async fn quest_location_enemy(
     State(state): State<AppState>,
     Path(id): Path<String>,
     session: Session,
 ) -> Response {
-    render_quest_location(state, id, session, QuestLocationTab::Loot).await
+    render_quest_location(state, id, session, QuestLocationTab::Enemy).await
+}
+
+async fn quest_location_legacy_loot(Path(id): Path<String>) -> Redirect {
+    Redirect::to(&format!("/locations/quest/{id}/enemy"))
 }
 
 async fn rest_at_quest_location(
@@ -375,7 +380,7 @@ async fn rest_at_quest_location(
         id.clone(),
         session,
         form,
-        &format!("/locations/quest/{id}"),
+        &format!("/locations/quest/{id}/enemy"),
     )
     .await
 }
@@ -510,14 +515,18 @@ async fn render_quest_location(
             .unwrap_or_else(|| "/characters".to_string());
         return (
             StatusCode::FORBIDDEN,
-            Html(crate::templates::strategic_notice_page(
-                "Your party is elsewhere",
-                "Travel to this quest destination before opening its encounter, map, or loot views.",
-                &return_href,
-                "Return to your location",
-                character.as_ref().map(|character| character.name.as_str()),
-            ).into_string()),
-        ).into_response();
+            Html(
+                crate::templates::strategic_notice_page(
+                    "Your party is elsewhere",
+                    "Travel to this quest destination before opening its map or enemy views.",
+                    &return_href,
+                    "Return to your location",
+                    character.as_ref().map(|character| character.name.as_str()),
+                )
+                .into_string(),
+            ),
+        )
+            .into_response();
     }
     let settlements: Vec<Settlement> = state
         .db
@@ -702,18 +711,6 @@ async fn render_quest_location(
             .is_some_and(|party| party.active_quest_id.as_deref() == Some(&quest.id));
     let logged_in_as = character.as_ref().map(|c| c.name.as_str());
     let page = match tab {
-        QuestLocationTab::Base => quest_location_base_page(
-            quest,
-            character.as_ref(),
-            &party_members,
-            can_fight,
-            resolved,
-            autoresolve_report.as_ref(),
-            party.as_ref(),
-            can_configure_travel,
-            default_rest_minutes,
-            logged_in_as,
-        ),
         QuestLocationTab::Map(selected) => quest_location_map_page(
             quest,
             &nearby,
@@ -729,13 +726,16 @@ async fn render_quest_location(
             default_rest_minutes,
             logged_in_as,
         ),
-        QuestLocationTab::Loot => quest_location_page(
+        QuestLocationTab::Enemy => quest_location_enemy_page(
             quest,
             character.as_ref(),
             &party_members,
             can_fight,
             resolved,
             autoresolve_report.as_ref(),
+            party.as_ref(),
+            can_configure_travel,
+            default_rest_minutes,
             &loot,
             &pooled,
             stake,
@@ -813,10 +813,14 @@ async fn autoresolve_quest(
     if let Err(ref error) = outcome {
         tracing::error!("Failed to autoresolve quest: {error:?}");
     }
+    autoresolve_redirect(&id, outcome)
+}
+
+fn autoresolve_redirect<E>(id: &str, outcome: Result<PartyActionOutcome, E>) -> Redirect {
     match outcome {
-        Ok(PartyActionOutcome::Executed) => Redirect::to(&format!("/locations/quest/{id}/loot")),
+        Ok(PartyActionOutcome::Executed) => Redirect::to(&format!("/locations/quest/{id}/enemy")),
         Ok(PartyActionOutcome::Requested) => Redirect::to("/?party-requested=autoresolve"),
-        Err(_) => Redirect::to(&format!("/locations/quest/{id}")),
+        Err(_) => Redirect::to(&format!("/locations/quest/{id}/enemy")),
     }
 }
 
@@ -839,5 +843,46 @@ pub(crate) fn straight_line_distance_m(quest: &Quest, settlement: &Settlement) -
         .sqrt()
             * 1_000.0)
             .round() as u64
+    }
+}
+
+#[cfg(test)]
+mod quest_route_tests {
+    use axum::http::header::LOCATION;
+
+    use super::*;
+
+    fn redirect_location(redirect: Redirect) -> String {
+        redirect
+            .into_response()
+            .headers()
+            .get(LOCATION)
+            .expect("redirect has a location")
+            .to_str()
+            .expect("redirect location is valid text")
+            .to_owned()
+    }
+
+    #[test]
+    fn autoresolve_stays_on_the_enemy_lifecycle_except_while_requesting_approval() {
+        let enemy = "/locations/quest/quest-1/enemy";
+        assert_eq!(
+            redirect_location(autoresolve_redirect::<()>(
+                "quest-1",
+                Ok(PartyActionOutcome::Executed),
+            )),
+            enemy,
+        );
+        assert_eq!(
+            redirect_location(autoresolve_redirect::<()>("quest-1", Err(()))),
+            enemy,
+        );
+        assert_eq!(
+            redirect_location(autoresolve_redirect::<()>(
+                "quest-1",
+                Ok(PartyActionOutcome::Requested),
+            )),
+            "/?party-requested=autoresolve",
+        );
     }
 }
