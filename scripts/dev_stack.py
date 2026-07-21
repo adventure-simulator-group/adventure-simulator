@@ -27,6 +27,22 @@ MODULE_DIR = ROOT / "crates" / "adventuresim-stdb-module"
 CLIENT_DIR = ROOT / "crates" / "adventuresim-stdb-client" / "src"
 
 
+def cargo_target_dir() -> Path:
+    try:
+        result = subprocess.run(
+            ["cargo", "-Z", "unstable-options", "config", "get", "build.target-dir"],
+            capture_output=True, text=True, cwd=ROOT, timeout=5,
+        )
+        if result.returncode == 0:
+            line = result.stdout.strip()
+            if line.startswith("build.target-dir"):
+                value = line.split("=", 1)[1].strip().strip('"').strip("'")
+                return Path(value)
+    except (subprocess.SubprocessError, OSError):
+        pass
+    return ROOT / "target"
+
+
 def worktree_fingerprint(root: Path = ROOT) -> str:
     return hashlib.sha256(str(root.resolve()).encode("utf-8")).hexdigest()[:12]
 
@@ -447,8 +463,9 @@ def terminate_verified(expected: dict[str, object]) -> None:
 
 
 def spawner_identity(profile: str, server: str, database: str, host: str, base_port: int) -> dict[str, object]:
-    dispatcher = ROOT / "target" / "debug" / ("adventuresim-tactical-server-dispatcher.exe" if os.name == "nt" else "adventuresim-tactical-server-dispatcher")
-    tactical = ROOT / "target" / "debug" / ("adventuresim-tactical-server.exe" if os.name == "nt" else "adventuresim-tactical-server")
+    target = cargo_target_dir()
+    dispatcher = target / "debug" / ("adventuresim-tactical-server-dispatcher.exe" if os.name == "nt" else "adventuresim-tactical-server-dispatcher")
+    tactical = target / "debug" / ("adventuresim-tactical-server.exe" if os.name == "nt" else "adventuresim-tactical-server")
     binaries = {}
     for name, path in (("dispatcher", dispatcher), ("tactical_server", tactical)):
         if not path.is_file():
@@ -676,7 +693,7 @@ def run_profile(
                 f"Starting isolated {mode} profile {name!r} "
                 f"at http://127.0.0.1:{values['web_port']}"
             )
-            executable = ROOT / "target" / "debug" / ("strategic-web.exe" if os.name == "nt" else "strategic-web")
+            executable = cargo_target_dir() / "debug" / ("strategic-web.exe" if os.name == "nt" else "strategic-web")
             web_config = {"role": "strategic-web", "profile": name, "executable": str(executable), "server": server}
             log = secure_log(run_dir / "web.log")
             try:

@@ -6,7 +6,9 @@ cd "$(dirname "$0")/.."
 STATIC_DIR="crates/adventuresim-stdb-module/static"
 WASM_DIR="$STATIC_DIR/wasm"
 ASSET_DIR="$STATIC_DIR/assets"
-WASM_TARGET_DIR="target/wasm32-unknown-unknown/release"
+CARGO_TARGET_DIR="$(cargo -Z unstable-options config get build.target-dir 2>/dev/null | sed 's/^build.target-dir = //' | tr -d '"' || true)"
+CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}"
+WASM_TARGET_DIR="$CARGO_TARGET_DIR/wasm32-unknown-unknown/release"
 
 echo "Building WASM client..."
 command -v wasm-bindgen >/dev/null 2>&1 || {
