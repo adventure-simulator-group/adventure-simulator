@@ -883,12 +883,11 @@ async fn settlement_map(
     } else {
         None
     };
-    let markers = QuestMapMarkers::new(
-        &quests,
-        active_party
-            .as_ref()
-            .and_then(|party| party.active_quest_id.as_deref()),
-    );
+    let active_quest_id = active_party
+        .as_ref()
+        .and_then(|party| party.active_quest_id.as_deref());
+    let markers = QuestMapMarkers::new(&quests, active_quest_id);
+    let map_quests = map_quests_for_settlement(&quests, &settlement.id, active_quest_id);
     for destination in &mut destinations {
         markers.decorate_settlement(destination);
     }
@@ -1033,6 +1032,7 @@ async fn settlement_map(
         settlement_map_page(
             settlement,
             &settlements,
+            &map_quests,
             state.strategic_map.as_deref(),
             &destinations,
             query.destination.as_deref(),
@@ -1063,6 +1063,23 @@ async fn settlement_map(
 
 fn can_abandon_active_quest(quest: &Quest, current_quest_location_id: Option<&str>) -> bool {
     quest.status == QuestStatus::Accepted && current_quest_location_id.is_none()
+}
+
+fn map_quests_for_settlement(
+    quests: &[Quest],
+    settlement_id: &str,
+    active_quest_id: Option<&str>,
+) -> Vec<Quest> {
+    quests
+        .iter()
+        .filter(|quest| {
+            quest.settlement_id == settlement_id
+                && (quest.status == QuestStatus::Available
+                    || (quest.status == QuestStatus::Accepted
+                        && active_quest_id == Some(quest.id.as_str())))
+        })
+        .cloned()
+        .collect()
 }
 
 #[cfg(test)]
@@ -1105,6 +1122,40 @@ mod map_quest_tests {
             &quest(QuestStatus::Completed),
             None
         ));
+    }
+
+    #[test]
+    fn map_quest_pins_are_bounded_to_the_local_issuer_and_active_destination() {
+        let mut local_available = quest(QuestStatus::Available);
+        local_available.id = "local-available".into();
+        local_available.accepted_by = None;
+        let mut remote_available = local_available.clone();
+        remote_available.id = "remote-available".into();
+        remote_available.settlement_id = "elsewhere".into();
+        let mut local_active = quest(QuestStatus::Accepted);
+        local_active.id = "local-active".into();
+        let mut local_inactive = local_active.clone();
+        local_inactive.id = "other-party-active".into();
+        let mut completed = quest(QuestStatus::Completed);
+        completed.id = "local-completed".into();
+
+        let visible = map_quests_for_settlement(
+            &[
+                local_available,
+                remote_available,
+                local_active,
+                local_inactive,
+                completed,
+            ],
+            "issuer",
+            Some("local-active"),
+        );
+        let ids = visible
+            .iter()
+            .map(|quest| quest.id.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(ids, ["local-available", "local-active"]);
     }
 }
 

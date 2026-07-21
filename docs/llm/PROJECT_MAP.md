@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (903)
+## Files (894)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -18,9 +18,6 @@ development, or wiki document before changing a subsystem.
 - `.gitattributes` — Repository support file.
 - `.github/workflows/gh-pages.yml` — Repository support file.
 - `.gitignore` — Repository support file.
-- `.ui-audit.err.log` — Repository support file.
-- `.ui-audit.out.log` — Repository support file.
-- `93298.zip` — Repository support file.
 - `AGENTS.md` — Project documentation.
 - `CNAME` — Repository support file.
 - `Caddyfile.dev` — Repository support file.
@@ -853,10 +850,6 @@ development, or wiki document before changing a subsystem.
 - `docs/VIABUNDUS.md` — Project documentation.
 - `docs/WORLD_DATA_BUNDLES.md` — Project documentation.
 - `docs/llm/README.md` — Component overview and usage notes.
-- `downloads/cropland.nc` — Repository support file.
-- `downloads/general_files.zip` — Repository support file.
-- `downloads/grazing_land.nc` — Repository support file.
-- `downloads/urban_area.nc` — Repository support file.
 - `flake.lock` — Nix environment configuration or lockfile.
 - `flake.nix` — Nix environment configuration or lockfile.
 - `justfile` — Repository support file.
@@ -879,12 +872,6 @@ development, or wiki document before changing a subsystem.
 - `scripts/update_project_map.py` — Development or documentation automation script.
 - `scripts/world_data_bundle.py` — Development or documentation automation script.
 - `scripts/world_source_init.py` — Development or documentation automation script.
-- `target-codex-map-qa/.rustc_info.json` — Repository support file.
-- `target-codex-map-qa/CACHEDIR.TAG` — Repository support file.
-- `target-domain/.rustc_info.json` — Repository support file.
-- `target-domain/CACHEDIR.TAG` — Repository support file.
-- `target-surgery-check/.rustc_info.json` — Repository support file.
-- `target-surgery-check/CACHEDIR.TAG` — Repository support file.
 - `utils/generate_certificates.sh` — Development or documentation automation script.
 - `wiki/Implementation.md` — Project documentation.
 - `wiki/Meta.md` — Project documentation.

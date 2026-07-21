@@ -24,7 +24,7 @@ test("zoom preserves focus and clamps readable bounds", () => {
 
 test("keyboard pan and reset change only the SVG viewBox", () => {
   const { document, helpers } = load();
-  document.body.innerHTML = `<section data-strategic-map><button data-map-reset></button><svg data-map-svg viewBox="100 100 400 200"></svg></section>`;
+  document.body.innerHTML = `<section data-strategic-map><svg data-map-svg viewBox="100 100 400 200"></svg></section>`;
   const map = document.querySelector("section");
   helpers.initializeMap(map, null);
   const svg = map.querySelector("svg");
@@ -32,21 +32,51 @@ test("keyboard pan and reset change only the SVG viewBox", () => {
   Object.defineProperty(keydown, "key", { value: "ArrowRight" });
   svg.dispatchEvent(keydown);
   assert.equal(svg.getAttribute("viewBox"), "132.00 100.00 400.00 200.00");
-  map.querySelector("button").click();
+  const reset = new document.defaultView.Event("keydown", { bubbles: true, cancelable: true });
+  Object.defineProperty(reset, "key", { value: "Home" });
+  svg.dispatchEvent(reset);
   assert.equal(svg.getAttribute("viewBox"), "100.00 100.00 400.00 200.00");
 });
 
 test("pin symbols retain their screen size while zooming and resetting", () => {
   const { document, helpers } = load();
-  document.body.innerHTML = `<section data-strategic-map><button data-map-zoom="in"></button><button data-map-reset></button><svg data-map-svg viewBox="100 100 195 130"><g data-map-pin-symbol></g></svg></section>`;
+  document.body.innerHTML = `<section data-strategic-map><svg data-map-svg viewBox="100 100 195 130"><g data-map-pin-symbol></g></svg></section>`;
   const map = document.querySelector("section");
   helpers.initializeMap(map, null);
+  const svg = map.querySelector("svg");
   const symbol = map.querySelector("[data-map-pin-symbol]");
   assert.equal(symbol.getAttribute("transform"), "scale(0.50000)");
-  map.querySelector("[data-map-zoom]").click();
+  const zoom = new document.defaultView.Event("keydown", { bubbles: true, cancelable: true });
+  Object.defineProperty(zoom, "key", { value: "+" });
+  svg.dispatchEvent(zoom);
   assert.equal(symbol.getAttribute("transform"), "scale(0.40000)");
-  map.querySelector("[data-map-reset]").click();
+  const reset = new document.defaultView.Event("keydown", { bubbles: true, cancelable: true });
+  Object.defineProperty(reset, "key", { value: "Home" });
+  svg.dispatchEvent(reset);
   assert.equal(symbol.getAttribute("transform"), "scale(0.50000)");
+});
+
+test("two-pointer pinch zooms without visible controls", () => {
+  const { document, helpers } = load();
+  document.body.innerHTML = `<section data-strategic-map><svg data-map-svg viewBox="100 100 400 200"></svg></section>`;
+  const map = document.querySelector("section");
+  const svg = map.querySelector("svg");
+  svg.getBoundingClientRect = () => ({ left: 0, top: 0, width: 800, height: 400 });
+  helpers.initializeMap(map, null);
+  const pointer = (type, pointerId, clientX, clientY) => {
+    const event = new document.defaultView.Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperties(event, {
+      pointerId: { value: pointerId }, clientX: { value: clientX }, clientY: { value: clientY },
+    });
+    svg.dispatchEvent(event);
+  };
+
+  pointer("pointerdown", 1, 200, 200);
+  pointer("pointerdown", 2, 600, 200);
+  pointer("pointermove", 2, 700, 200);
+
+  assert.equal(svg.getAttribute("viewBox"), "120.00 120.00 320.00 160.00");
+  assert.equal(map.querySelectorAll("button").length, 0);
 });
 
 test("label priority reveals progressively smaller settlements while zooming", () => {

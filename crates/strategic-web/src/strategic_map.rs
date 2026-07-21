@@ -17,7 +17,7 @@ use maud::{Markup, html};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-use crate::spacetimedb::{Settlement, SettlementCategory};
+use crate::spacetimedb::{Quest, QuestStatus, Settlement, SettlementCategory};
 
 const WIDTH: f64 = 1200.0;
 const HEIGHT: f64 = 800.0;
@@ -37,7 +37,6 @@ const FOREST_URL: &str = "https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac59
 struct Package {
     schema: u32,
     renderer_revision: u32,
-    year: i32,
     bounds: [f64; 4],
     source: Source,
     elevation: ElevationLayer,
@@ -68,17 +67,12 @@ struct TileEntry {
 
 #[derive(Debug, Deserialize)]
 struct Source {
-    name: String,
     url: String,
-    license: String,
-    verification_status: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct LayerSource {
-    name: String,
     url: String,
-    file_count: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -89,7 +83,6 @@ struct ElevationLayer {
 #[derive(Debug, Deserialize)]
 struct ForestLayer {
     source: LayerSource,
-    coverage_tiles: usize,
 }
 
 pub struct StrategicMap {
@@ -300,6 +293,12 @@ pub(crate) fn has_geographic_source(settlement: &Settlement) -> bool {
         && settlement.coord_y.is_finite()
 }
 
+fn has_geographic_quest(quest: &Quest) -> bool {
+    quest.coordinates_are_geographic
+        && quest.location_coord_x.is_finite()
+        && quest.location_coord_y.is_finite()
+}
+
 fn settlement_symbol_kind(category: &SettlementCategory) -> &'static str {
     match category {
         SettlementCategory::City | SettlementCategory::Capital => "city",
@@ -336,6 +335,7 @@ fn settlement_label_priority(
 pub fn strategic_map(
     map: &StrategicMap,
     settlements: &[Settlement],
+    quests: &[Quest],
     current_id: &str,
     connected_ids: &BTreeSet<&str>,
     selected_id: Option<&str>,
@@ -348,13 +348,27 @@ pub fn strategic_map(
     let (origin_x, origin_y) = current.map_or((WIDTH / 2.0, HEIGHT / 2.0), |settlement| {
         project(settlement.coord_x, settlement.coord_y, package.bounds)
     });
-    let destination = selected_id
+    let settlement_destination = selected_id
         .and_then(|selected_id| {
             settlements.iter().find(|settlement| {
                 settlement.id == selected_id && has_geographic_source(settlement)
             })
         })
         .map(|settlement| project(settlement.coord_x, settlement.coord_y, package.bounds));
+    let quest_destination = selected_id
+        .and_then(|selected_id| {
+            quests
+                .iter()
+                .find(|quest| quest.id == selected_id && has_geographic_quest(quest))
+        })
+        .map(|quest| {
+            project(
+                quest.location_coord_x,
+                quest.location_coord_y,
+                package.bounds,
+            )
+        });
+    let destination = settlement_destination.or(quest_destination);
     let initial_view = initial_view_box((origin_x, origin_y), destination);
     let view_box = format!(
         "{:.2} {:.2} {:.2} {:.2}",
@@ -373,17 +387,10 @@ pub fn strategic_map(
             data-map-tile-gutter=(package.tiles.gutter)
             data-map-tile-version=(&package.tiles.content_sha256) data-map-tile-root=(TILE_PATH_PREFIX)
             aria-label=(format!("Map around {}", current.map_or("the current settlement", |item| item.name.as_str()))) {
-            div class="strategic-map-toolbar" role="toolbar" aria-label="Map controls" {
-                div class="strategic-map-zoom" {
-                    button type="button" data-map-zoom="in" aria-label="Zoom map in" { "+" }
-                    button type="button" data-map-zoom="out" aria-label="Zoom map out" { "−" }
-                    button type="button" data-map-reset aria-label="Reset map view" { "Reset" }
-                }
-            }
             svg class="strategic-map-svg" data-map-svg viewBox=(view_box)
                 aria-labelledby="strategic-map-title strategic-map-description" tabindex="0" {
                 title id="strategic-map-title" { "Settlement road map" }
-                desc id="strategic-map-description" { "Use arrow keys or drag to pan. Use plus and minus controls or the mouse wheel to zoom. Activate a settlement pin to inspect it." }
+                desc id="strategic-map-description" { "Use arrow keys or drag to pan. Use plus, minus, or the mouse wheel to zoom. Activate a settlement or quest pin to inspect it." }
                 defs {
                     g id="map-settlement-village-symbol" {
                         path class="map-settlement-ground" d="M-10,3 Q0,5 10,3" {}
@@ -411,6 +418,11 @@ pub fn strategic_map(
                         }
                     }
                     g class="map-overlay-layer" {
+                        @if let Some((destination_x, destination_y)) = destination {
+                            line class="map-selection-line" data-map-selection-line aria-hidden="true"
+                                x1=(format!("{origin_x:.3}")) y1=(format!("{origin_y:.3}"))
+                                x2=(format!("{destination_x:.3}")) y2=(format!("{destination_y:.3}")) {}
+                        }
                         @for settlement in settlements.iter().filter(|settlement| has_geographic_source(settlement)) {
                             @let (x, y) = project(settlement.coord_x, settlement.coord_y, package.bounds);
                             @let is_current = settlement.id == current_id;
@@ -443,32 +455,35 @@ pub fn strategic_map(
                                 }
                             }
                         }
+                        @for quest in quests.iter().filter(|quest| has_geographic_quest(quest)) {
+                            @let (x, y) = project(quest.location_coord_x, quest.location_coord_y, package.bounds);
+                            @let is_selected = selected_id == Some(quest.id.as_str());
+                            @let is_active = quest.status != QuestStatus::Available;
+                            @let status_label = match quest.status {
+                                QuestStatus::Available => "available",
+                                QuestStatus::Accepted => "active",
+                                QuestStatus::Completed => "completed",
+                            };
+                            @let label = format!("Quest: {}, {status_label}", quest.title);
+                            a href=(format!("{map_path}?destination={}", quest.id))
+                                class="map-pin-link map-quest-link" aria-label=(label)
+                                aria-current=[is_selected.then_some("true")]
+                                data-map-pin data-quest-id=(&quest.id) {
+                                g class=(format!("map-pin map-quest{}{}", if is_active { " active" } else { "" }, if is_selected { " selected" } else { "" }))
+                                    transform=(format!("translate({x:.3} {y:.3})")) {
+                                    g data-map-pin-symbol transform=(format!("scale({initial_pin_scale:.5})")) {
+                                        circle class="map-quest-hit-area" r="13" {}
+                                        @if is_selected { circle class="map-pin-selection" r="12" {} }
+                                        path class="map-quest-shape" d="M0,-9 L9,0 L0,9 L-9,0 Z" {}
+                                        path class="map-quest-mark" d="M0,-5 V2 M0,5 V6" {}
+                                        @if is_selected { path class="map-pin-selected-mark" d="M-5,13 H5" {} }
+                                        title { (&quest.title) }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
-            }
-            p class="strategic-map-legend" {
-                span class="map-legend-elevation" aria-hidden="true" {} "Higher ground"
-                span class="map-legend-item" {
-                    span class="map-legend-forest-sparse" aria-hidden="true" {}
-                    "Sparse woods"
-                }
-                span class="map-legend-item" {
-                    span class="map-legend-forest-deep" aria-hidden="true" {}
-                    "Deep woods"
-                }
-                span class="map-legend-settlement connected" aria-hidden="true" {} "Direct route"
-                span class="map-legend-settlement" aria-hidden="true" {} "Other settlement"
-                span class="map-legend-selected" aria-hidden="true" {} "Selected"
-            }
-            p class="strategic-map-attribution small-copy" {
-                "Map data: " a href=(&package.source.url) { (&package.source.name) }
-                " (" (&package.source.license) "), adapted for " (package.year) ". Package "
-                code { (&package.package_sha256[..12]) }
-                @if package.source.verification_status != "verified" { ". Source status: legacy sidecar without byte sizes (release-blocked)." }
-                " Elevation: " a href=(&package.elevation.source.url) { (&package.elevation.source.name) }
-                " (" (package.elevation.source.file_count) " tiles, generalized)."
-                " Forest: " a href=(&package.forest.source.url) { (&package.forest.source.name) }
-                " (" (package.forest.coverage_tiles) " partial-coverage tiles)."
             }
         }
     }
@@ -614,6 +629,28 @@ mod tests {
         }
     }
 
+    fn quest(id: &str, title: &str, longitude: f64, latitude: f64) -> Quest {
+        Quest {
+            id: id.into(),
+            title: title.into(),
+            description: "A dangerous destination.".into(),
+            difficulty: 2,
+            gold_reward: 50,
+            xp_reward: 20,
+            settlement_id: "origin".into(),
+            status: QuestStatus::Available,
+            accepted_by: None,
+            enemy_type: "bandit".into(),
+            enemy_count: 4,
+            location_description: "A camp in the woods.".into(),
+            location_scene_key: "forest".into(),
+            location_coord_x: longitude,
+            location_coord_y: latitude,
+            coordinates_are_geographic: true,
+            distance_m: 8_000,
+        }
+    }
+
     #[test]
     fn projection_maps_bounds_and_keeps_north_at_top() {
         let bounds = [-10.0, 40.0, 30.0, 70.0];
@@ -655,7 +692,7 @@ mod tests {
     }
 
     #[test]
-    fn tiled_map_has_accessible_controls_and_canonical_pin_links() {
+    fn tiled_map_has_canonical_pin_links_without_extra_chrome() {
         let map = map_bundle();
         let mut source_less = settlement("demo", "Demo", 0.0, 0.0);
         source_less.source_node_id = None;
@@ -669,6 +706,7 @@ mod tests {
         let markup = strategic_map(
             &map,
             &settlements,
+            &[],
             "origin",
             &connected,
             Some("near"),
@@ -678,7 +716,8 @@ mod tests {
 
         assert!(markup.contains("data-map-theme=\"paper\""));
         assert!(!markup.contains("data-map-theme-choice"));
-        assert!(markup.contains("aria-label=\"Zoom map in\""));
+        assert!(!markup.contains("strategic-map-toolbar"));
+        assert!(!markup.contains("data-map-zoom"));
         assert!(markup.contains("tabindex=\"0\""));
         assert!(markup.contains("?destination=near"));
         assert!(markup.contains("Nearby, direct route available"));
@@ -693,6 +732,7 @@ mod tests {
         assert!(markup.contains("map-settlement-label-text"));
         assert!(markup.contains("map-tile-layer"));
         assert!(markup.contains("map-overlay-layer"));
+        assert!(markup.contains("data-map-selection-line"));
         assert!(markup.contains(TILE_PATH_PREFIX));
         assert!(markup.contains(&map.package.tiles.content_sha256));
         assert!(markup.contains("image"));
@@ -702,10 +742,32 @@ mod tests {
             "dynamic map markup grew to {} bytes",
             markup.len()
         );
-        assert!(markup.contains("Higher ground"));
-        assert!(markup.contains("Sparse woods"));
-        assert!(markup.contains("Deep woods"));
-        assert!(!markup.contains("Forest (partial)"));
+        assert!(!markup.contains("strategic-map-legend"));
+        assert!(!markup.contains("strategic-map-attribution"));
+        assert!(!markup.contains("Map data:"));
+    }
+
+    #[test]
+    fn selected_quest_has_a_pin_and_straight_origin_line() {
+        let map = map_bundle();
+        let quest = quest("quest-1", "Bandits in the woods", 11.0, 53.2);
+        let markup = strategic_map(
+            &map,
+            &[settlement("origin", "Origin", 10.0, 53.0)],
+            std::slice::from_ref(&quest),
+            "origin",
+            &BTreeSet::new(),
+            Some("quest-1"),
+            "/locations/settlement/origin/map",
+        )
+        .into_string();
+
+        assert!(markup.contains("data-quest-id=\"quest-1\""));
+        assert!(markup.contains("?destination=quest-1"));
+        assert!(markup.contains("Quest: Bandits in the woods, available"));
+        assert!(markup.contains("map-quest-shape"));
+        assert!(markup.contains("data-map-selection-line"));
+        assert!(markup.contains("aria-current=\"true\""));
     }
 
     #[test]
@@ -757,6 +819,7 @@ mod tests {
         let markup = strategic_map(
             &map,
             &[settlement("origin", "Origin", 10.0, 53.0)],
+            &[],
             "origin",
             &BTreeSet::new(),
             None,
