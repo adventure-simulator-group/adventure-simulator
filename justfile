@@ -276,11 +276,11 @@ verify-hyde35:
 	@python3 scripts/world_source_init.py hyde35 --verify-only
 
 plan-forest-cover:
-	@python3 scripts/world_source_init.py forest --plan
+	@python3 scripts/init_forest_cover.py --plan
 init-forest-cover:
-	@python3 scripts/world_source_init.py forest --init
+	@python3 scripts/init_forest_cover.py --prepare
 verify-forest-cover:
-	@python3 scripts/world_source_init.py forest --verify-only
+	@python3 scripts/init_forest_cover.py --verify-only
 
 plan-tree-species:
 	@python3 scripts/world_source_init.py trees4f --plan
@@ -325,18 +325,22 @@ replace-world-data archive descriptor descriptor_sha256:
 
 # Compile all initialized sources into the 1544 strategic world artifact.
 compile-world:
-	@cargo run --package adventuresim-world-import --
+	@cargo run --package adventuresim-world-import --bin adventuresim-world-import --
+
+# Derive the bounded metadata package and offline Paper AVIF tile bundle.
+build-strategic-map:
+	@cargo run --package adventuresim-world-import --features strategic-map-renderer --bin build-strategic-map --
 
 # Compatibility name for the former Python normalizer.
 normalise-viabundus: compile-world
 
 # Compile and load the world into the published local module.
 load-world server=spacetime_url: spacetime-version-check
-	@cargo run --package adventuresim-world-import -- --load --server {{server}} --database {{spacetime_module}}
+	@cargo run --package adventuresim-world-import --bin adventuresim-world-import -- --load --server {{server}} --database {{spacetime_module}}
 
 # Compatibility name for the former Viabundus-only loader.
 load-viabundus-world server=spacetime_url: spacetime-version-check
-	@cargo run --package adventuresim-world-import -- --load --server {{server}} --database {{spacetime_module}}
+	@cargo run --package adventuresim-world-import --bin adventuresim-world-import -- --load --server {{server}} --database {{spacetime_module}}
 
 # Build the tactical server and spawner
 build-tactical: verify-db-client

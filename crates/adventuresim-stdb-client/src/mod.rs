@@ -12,6 +12,7 @@ pub mod accept_quest_reducer;
 pub mod agricultural_commodity_type;
 pub mod agricultural_limitation_type;
 pub mod agriculture_industry_type;
+pub mod approve_party_action_request_planned_reducer;
 pub mod approve_party_action_request_reducer;
 pub mod autoresolve_quest_reducer;
 pub mod autoresolve_report_table;
@@ -190,6 +191,11 @@ pub mod item_slot_type;
 pub mod item_table;
 pub mod item_type;
 pub mod journey_camp_interval_type;
+pub mod journey_route_leg_type;
+pub mod journey_route_plan_type;
+pub mod journey_route_point_type;
+pub mod journey_terrain_kind_type;
+pub mod journey_terrain_span_type;
 pub mod kill_simulation_character_reducer;
 pub mod land_route_type;
 pub mod land_use_fraction_type;
@@ -237,6 +243,8 @@ pub mod party_join_request_table;
 pub mod party_join_request_type;
 pub mod party_journey_itinerary_table;
 pub mod party_journey_itinerary_type;
+pub mod party_journey_route_table;
+pub mod party_journey_route_type;
 pub mod party_journey_table;
 pub mod party_journey_type;
 pub mod party_leader_vote_table;
@@ -269,6 +277,7 @@ pub mod quest_type;
 pub mod recruitment_requirements_type;
 pub mod refresh_capabilities_reducer;
 pub mod refresh_strategic_condition_reducer;
+pub mod register_strategic_gateway_reducer;
 pub mod reject_party_join_request_reducer;
 pub mod religion_hours_type;
 pub mod religion_minutes_type;
@@ -363,6 +372,8 @@ pub mod soil_water_regime_type;
 pub mod stone_content_percent_type;
 pub mod store_battle_loot_reducer;
 pub mod strahler_order_type;
+pub mod strategic_gateway_authority_table;
+pub mod strategic_gateway_authority_type;
 pub mod strategic_incident_table;
 pub mod strategic_incident_type;
 pub mod submit_all_repairable_items_reducer;
@@ -381,7 +392,9 @@ pub mod travel_edge_import_type;
 pub mod travel_edge_table;
 pub mod travel_edge_type;
 pub mod travel_route_type;
+pub mod travel_to_quest_planned_reducer;
 pub mod travel_to_quest_reducer;
+pub mod travel_to_settlement_planned_reducer;
 pub mod travel_to_settlement_reducer;
 pub mod treat_limb_reducer;
 pub mod tree_species_id_type;
@@ -415,6 +428,7 @@ pub use accept_quest_reducer::accept_quest;
 pub use agricultural_commodity_type::AgriculturalCommodity;
 pub use agricultural_limitation_type::AgriculturalLimitation;
 pub use agriculture_industry_type::AgricultureIndustry;
+pub use approve_party_action_request_planned_reducer::approve_party_action_request_planned;
 pub use approve_party_action_request_reducer::approve_party_action_request;
 pub use autoresolve_quest_reducer::autoresolve_quest;
 pub use autoresolve_report_table::*;
@@ -593,6 +607,11 @@ pub use item_slot_type::ItemSlot;
 pub use item_table::*;
 pub use item_type::Item;
 pub use journey_camp_interval_type::JourneyCampInterval;
+pub use journey_route_leg_type::JourneyRouteLeg;
+pub use journey_route_plan_type::JourneyRoutePlan;
+pub use journey_route_point_type::JourneyRoutePoint;
+pub use journey_terrain_kind_type::JourneyTerrainKind;
+pub use journey_terrain_span_type::JourneyTerrainSpan;
 pub use kill_simulation_character_reducer::kill_simulation_character;
 pub use land_route_type::LandRoute;
 pub use land_use_fraction_type::LandUseFraction;
@@ -640,6 +659,8 @@ pub use party_join_request_table::*;
 pub use party_join_request_type::PartyJoinRequest;
 pub use party_journey_itinerary_table::*;
 pub use party_journey_itinerary_type::PartyJourneyItinerary;
+pub use party_journey_route_table::*;
+pub use party_journey_route_type::PartyJourneyRoute;
 pub use party_journey_table::*;
 pub use party_journey_type::PartyJourney;
 pub use party_leader_vote_table::*;
@@ -672,6 +693,7 @@ pub use quest_type::Quest;
 pub use recruitment_requirements_type::RecruitmentRequirements;
 pub use refresh_capabilities_reducer::refresh_capabilities;
 pub use refresh_strategic_condition_reducer::refresh_strategic_condition;
+pub use register_strategic_gateway_reducer::register_strategic_gateway;
 pub use reject_party_join_request_reducer::reject_party_join_request;
 pub use religion_hours_type::ReligionHours;
 pub use religion_minutes_type::ReligionMinutes;
@@ -766,6 +788,8 @@ pub use soil_water_regime_type::SoilWaterRegime;
 pub use stone_content_percent_type::StoneContentPercent;
 pub use store_battle_loot_reducer::store_battle_loot;
 pub use strahler_order_type::StrahlerOrder;
+pub use strategic_gateway_authority_table::*;
+pub use strategic_gateway_authority_type::StrategicGatewayAuthority;
 pub use strategic_incident_table::*;
 pub use strategic_incident_type::StrategicIncident;
 pub use submit_all_repairable_items_reducer::submit_all_repairable_items;
@@ -784,7 +808,9 @@ pub use travel_edge_import_type::TravelEdgeImport;
 pub use travel_edge_table::*;
 pub use travel_edge_type::TravelEdge;
 pub use travel_route_type::TravelRoute;
+pub use travel_to_quest_planned_reducer::travel_to_quest_planned;
 pub use travel_to_quest_reducer::travel_to_quest;
+pub use travel_to_settlement_planned_reducer::travel_to_settlement_planned;
 pub use travel_to_settlement_reducer::travel_to_settlement;
 pub use treat_limb_reducer::treat_limb;
 pub use tree_species_id_type::TreeSpeciesId;
@@ -835,6 +861,11 @@ pub enum Reducer {
     ApprovePartyActionRequest {
         leader_id: u64,
         request_id: u64,
+    },
+    ApprovePartyActionRequestPlanned {
+        leader_id: u64,
+        request_id: u64,
+        route: JourneyRoutePlan,
     },
     AutoresolveQuest {
         character_id: u64,
@@ -1042,6 +1073,10 @@ pub enum Reducer {
     RefreshStrategicCondition {
         character_id: u64,
     },
+    RegisterStrategicGateway {
+        terrain_package_digest: Option<String>,
+        terrain_schema: u32,
+    },
     RejectPartyJoinRequest {
         leader_id: u64,
         request_id: u64,
@@ -1181,9 +1216,19 @@ pub enum Reducer {
         character_id: u64,
         quest_id: String,
     },
+    TravelToQuestPlanned {
+        character_id: u64,
+        quest_id: String,
+        route: JourneyRoutePlan,
+    },
     TravelToSettlement {
         character_id: u64,
         settlement_id: String,
+    },
+    TravelToSettlementPlanned {
+        character_id: u64,
+        settlement_id: String,
+        route: JourneyRoutePlan,
     },
     TreatLimb {
         actor_id: u64,
@@ -1246,6 +1291,9 @@ impl __sdk::Reducer for Reducer {
             Reducer::AcceptPartyJoinRequest { .. } => "accept_party_join_request",
             Reducer::AcceptQuest { .. } => "accept_quest",
             Reducer::ApprovePartyActionRequest { .. } => "approve_party_action_request",
+            Reducer::ApprovePartyActionRequestPlanned { .. } => {
+                "approve_party_action_request_planned"
+            }
             Reducer::AutoresolveQuest { .. } => "autoresolve_quest",
             Reducer::BackfillCharacterDeathsAndLeadership => {
                 "backfill_character_deaths_and_leadership"
@@ -1302,6 +1350,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::PurchaseFromHerbalist { .. } => "purchase_from_herbalist",
             Reducer::RefreshCapabilities { .. } => "refresh_capabilities",
             Reducer::RefreshStrategicCondition { .. } => "refresh_strategic_condition",
+            Reducer::RegisterStrategicGateway { .. } => "register_strategic_gateway",
             Reducer::RejectPartyJoinRequest { .. } => "reject_party_join_request",
             Reducer::RemovePartyMember { .. } => "remove_party_member",
             Reducer::RenameSavedRecruitmentRole { .. } => "rename_saved_recruitment_role",
@@ -1331,7 +1380,9 @@ impl __sdk::Reducer for Reducer {
             Reducer::SynchronizeCharacterTime { .. } => "synchronize_character_time",
             Reducer::TransferPartyItem { .. } => "transfer_party_item",
             Reducer::TravelToQuest { .. } => "travel_to_quest",
+            Reducer::TravelToQuestPlanned { .. } => "travel_to_quest_planned",
             Reducer::TravelToSettlement { .. } => "travel_to_settlement",
+            Reducer::TravelToSettlementPlanned { .. } => "travel_to_settlement_planned",
             Reducer::TreatLimb { .. } => "treat_limb",
             Reducer::TurnInQuest { .. } => "turn_in_quest",
             Reducer::UnequipMedication { .. } => "unequip_medication",
@@ -1375,6 +1426,15 @@ impl __sdk::Reducer for Reducer {
 }             => __sats::bsatn::to_vec(&approve_party_action_request_reducer::ApprovePartyActionRequestArgs {
                 leader_id: leader_id.clone(),
                 request_id: request_id.clone(),
+}),
+            Reducer::ApprovePartyActionRequestPlanned{
+                leader_id,
+                request_id,
+                route,
+}             => __sats::bsatn::to_vec(&approve_party_action_request_planned_reducer::ApprovePartyActionRequestPlannedArgs {
+                leader_id: leader_id.clone(),
+                request_id: request_id.clone(),
+                route: route.clone(),
 }),
             Reducer::AutoresolveQuest{
                 character_id,
@@ -1742,6 +1802,13 @@ Reducer::CancelMissionRequest{
 }             => __sats::bsatn::to_vec(&refresh_strategic_condition_reducer::RefreshStrategicConditionArgs {
                 character_id: character_id.clone(),
 }),
+            Reducer::RegisterStrategicGateway{
+                terrain_package_digest,
+                terrain_schema,
+}             => __sats::bsatn::to_vec(&register_strategic_gateway_reducer::RegisterStrategicGatewayArgs {
+                terrain_package_digest: terrain_package_digest.clone(),
+                terrain_schema: terrain_schema.clone(),
+}),
             Reducer::RejectPartyJoinRequest{
                 leader_id,
                 request_id,
@@ -1991,12 +2058,30 @@ Reducer::CancelMissionRequest{
                 character_id: character_id.clone(),
                 quest_id: quest_id.clone(),
 }),
+            Reducer::TravelToQuestPlanned{
+                character_id,
+                quest_id,
+                route,
+}             => __sats::bsatn::to_vec(&travel_to_quest_planned_reducer::TravelToQuestPlannedArgs {
+                character_id: character_id.clone(),
+                quest_id: quest_id.clone(),
+                route: route.clone(),
+}),
             Reducer::TravelToSettlement{
                 character_id,
                 settlement_id,
 }             => __sats::bsatn::to_vec(&travel_to_settlement_reducer::TravelToSettlementArgs {
                 character_id: character_id.clone(),
                 settlement_id: settlement_id.clone(),
+}),
+            Reducer::TravelToSettlementPlanned{
+                character_id,
+                settlement_id,
+                route,
+}             => __sats::bsatn::to_vec(&travel_to_settlement_planned_reducer::TravelToSettlementPlannedArgs {
+                character_id: character_id.clone(),
+                settlement_id: settlement_id.clone(),
+                route: route.clone(),
 }),
             Reducer::TreatLimb{
                 actor_id,
@@ -2138,6 +2223,7 @@ pub struct DbUpdate {
     party_join_request: __sdk::TableUpdate<PartyJoinRequest>,
     party_journey: __sdk::TableUpdate<PartyJourney>,
     party_journey_itinerary: __sdk::TableUpdate<PartyJourneyItinerary>,
+    party_journey_route: __sdk::TableUpdate<PartyJourneyRoute>,
     party_leader_vote: __sdk::TableUpdate<PartyLeaderVote>,
     party_member: __sdk::TableUpdate<PartyMember>,
     party_recruitment_role: __sdk::TableUpdate<PartyRecruitmentRole>,
@@ -2155,6 +2241,7 @@ pub struct DbUpdate {
     settlement_smith: __sdk::TableUpdate<SettlementSmith>,
     simulation_character: __sdk::TableUpdate<SimulationCharacter>,
     simulation_run: __sdk::TableUpdate<SimulationRun>,
+    strategic_gateway_authority: __sdk::TableUpdate<StrategicGatewayAuthority>,
     strategic_incident: __sdk::TableUpdate<StrategicIncident>,
     tactical_server: __sdk::TableUpdate<TacticalServer>,
     tactical_server_request: __sdk::TableUpdate<TacticalServerRequest>,
@@ -2304,6 +2391,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "party_journey_itinerary" => db_update.party_journey_itinerary.append(
                     party_journey_itinerary_table::parse_table_update(table_update)?,
                 ),
+                "party_journey_route" => db_update
+                    .party_journey_route
+                    .append(party_journey_route_table::parse_table_update(table_update)?),
                 "party_leader_vote" => db_update
                     .party_leader_vote
                     .append(party_leader_vote_table::parse_table_update(table_update)?),
@@ -2355,6 +2445,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "simulation_run" => db_update
                     .simulation_run
                     .append(simulation_run_table::parse_table_update(table_update)?),
+                "strategic_gateway_authority" => db_update.strategic_gateway_authority.append(
+                    strategic_gateway_authority_table::parse_table_update(table_update)?,
+                ),
                 "strategic_incident" => db_update
                     .strategic_incident
                     .append(strategic_incident_table::parse_table_update(table_update)?),
@@ -2576,6 +2669,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.party_journey_itinerary,
             )
             .with_updates_by_pk(|row| &row.party_id);
+        diff.party_journey_route = cache
+            .apply_diff_to_table::<PartyJourneyRoute>(
+                "party_journey_route",
+                &self.party_journey_route,
+            )
+            .with_updates_by_pk(|row| &row.party_id);
         diff.party_leader_vote = cache
             .apply_diff_to_table::<PartyLeaderVote>("party_leader_vote", &self.party_leader_vote)
             .with_updates_by_pk(|row| &row.id);
@@ -2644,6 +2743,12 @@ impl __sdk::DbUpdate for DbUpdate {
             .with_updates_by_pk(|row| &row.character_id);
         diff.simulation_run = cache
             .apply_diff_to_table::<SimulationRun>("simulation_run", &self.simulation_run)
+            .with_updates_by_pk(|row| &row.id);
+        diff.strategic_gateway_authority = cache
+            .apply_diff_to_table::<StrategicGatewayAuthority>(
+                "strategic_gateway_authority",
+                &self.strategic_gateway_authority,
+            )
             .with_updates_by_pk(|row| &row.id);
         diff.strategic_incident = cache
             .apply_diff_to_table::<StrategicIncident>(
@@ -2829,6 +2934,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "party_journey_itinerary" => db_update
                     .party_journey_itinerary
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "party_journey_route" => db_update
+                    .party_journey_route
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "party_leader_vote" => db_update
                     .party_leader_vote
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -2879,6 +2987,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "simulation_run" => db_update
                     .simulation_run
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "strategic_gateway_authority" => db_update
+                    .strategic_gateway_authority
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "strategic_incident" => db_update
                     .strategic_incident
@@ -3046,6 +3157,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "party_journey_itinerary" => db_update
                     .party_journey_itinerary
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "party_journey_route" => db_update
+                    .party_journey_route
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "party_leader_vote" => db_update
                     .party_leader_vote
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -3096,6 +3210,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "simulation_run" => db_update
                     .simulation_run
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "strategic_gateway_authority" => db_update
+                    .strategic_gateway_authority
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "strategic_incident" => db_update
                     .strategic_incident
@@ -3177,6 +3294,7 @@ pub struct AppliedDiff<'r> {
     party_join_request: __sdk::TableAppliedDiff<'r, PartyJoinRequest>,
     party_journey: __sdk::TableAppliedDiff<'r, PartyJourney>,
     party_journey_itinerary: __sdk::TableAppliedDiff<'r, PartyJourneyItinerary>,
+    party_journey_route: __sdk::TableAppliedDiff<'r, PartyJourneyRoute>,
     party_leader_vote: __sdk::TableAppliedDiff<'r, PartyLeaderVote>,
     party_member: __sdk::TableAppliedDiff<'r, PartyMember>,
     party_recruitment_role: __sdk::TableAppliedDiff<'r, PartyRecruitmentRole>,
@@ -3194,6 +3312,7 @@ pub struct AppliedDiff<'r> {
     settlement_smith: __sdk::TableAppliedDiff<'r, SettlementSmith>,
     simulation_character: __sdk::TableAppliedDiff<'r, SimulationCharacter>,
     simulation_run: __sdk::TableAppliedDiff<'r, SimulationRun>,
+    strategic_gateway_authority: __sdk::TableAppliedDiff<'r, StrategicGatewayAuthority>,
     strategic_incident: __sdk::TableAppliedDiff<'r, StrategicIncident>,
     tactical_server: __sdk::TableAppliedDiff<'r, TacticalServer>,
     tactical_server_request: __sdk::TableAppliedDiff<'r, TacticalServerRequest>,
@@ -3418,6 +3537,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.party_journey_itinerary,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<PartyJourneyRoute>(
+            "party_journey_route",
+            &self.party_journey_route,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<PartyLeaderVote>(
             "party_leader_vote",
             &self.party_leader_vote,
@@ -3489,6 +3613,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<SimulationRun>(
             "simulation_run",
             &self.simulation_run,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<StrategicGatewayAuthority>(
+            "strategic_gateway_authority",
+            &self.strategic_gateway_authority,
             event,
         );
         callbacks.invoke_table_row_callbacks::<StrategicIncident>(
@@ -4218,6 +4347,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         party_join_request_table::register_table(client_cache);
         party_journey_table::register_table(client_cache);
         party_journey_itinerary_table::register_table(client_cache);
+        party_journey_route_table::register_table(client_cache);
         party_leader_vote_table::register_table(client_cache);
         party_member_table::register_table(client_cache);
         party_recruitment_role_table::register_table(client_cache);
@@ -4235,6 +4365,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         settlement_smith_table::register_table(client_cache);
         simulation_character_table::register_table(client_cache);
         simulation_run_table::register_table(client_cache);
+        strategic_gateway_authority_table::register_table(client_cache);
         strategic_incident_table::register_table(client_cache);
         tactical_server_table::register_table(client_cache);
         tactical_server_request_table::register_table(client_cache);
@@ -4288,6 +4419,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "party_join_request",
         "party_journey",
         "party_journey_itinerary",
+        "party_journey_route",
         "party_leader_vote",
         "party_member",
         "party_recruitment_role",
@@ -4305,6 +4437,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "settlement_smith",
         "simulation_character",
         "simulation_run",
+        "strategic_gateway_authority",
         "strategic_incident",
         "tactical_server",
         "tactical_server_request",

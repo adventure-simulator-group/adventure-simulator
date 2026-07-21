@@ -98,10 +98,10 @@ use crate::spacetimedb::{
     CharacterTime, CharacterTrainingSchedule, EquippedMedication, HerbalistExaminationRow,
     InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget, ItemCondition, ItemDefinition,
     ItemKind, ItemSlot, LimbInjury, LimbRegion, MedicalExaminationRow, Party, PartyInventoryItem,
-    PartyJourney, PartyJourneyItinerary, PartyMember, PartyRecruitmentRole, PartyStake, Quest,
-    QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
-    RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription,
-    SettlementSmith, TravelEdge,
+    PartyJourney, PartyJourneyItinerary, PartyJourneyRoute, PartyMember, PartyRecruitmentRole,
+    PartyStake, Quest, QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand,
+    RepairOrder, RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias,
+    SettlementDescription, SettlementSmith, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
@@ -854,7 +854,12 @@ async fn settlement_map(
         .query("SELECT * FROM travel_edge")
         .await
         .unwrap_or_default();
-    let mut destinations = connected_destinations(settlement, &settlements, &edges);
+    let map_data_initialized = crate::strategic_map::has_geographic_source(settlement);
+    let mut destinations = if map_data_initialized {
+        connected_destinations(settlement, &settlements, &edges)
+    } else {
+        Vec::new()
+    };
     let quests: Vec<Quest> = state
         .db
         .query("SELECT * FROM quest")
@@ -878,12 +883,11 @@ async fn settlement_map(
     } else {
         None
     };
-    let markers = QuestMapMarkers::new(
-        &quests,
-        active_party
-            .as_ref()
-            .and_then(|party| party.active_quest_id.as_deref()),
-    );
+    let active_quest_id = active_party
+        .as_ref()
+        .and_then(|party| party.active_quest_id.as_deref());
+    let markers = QuestMapMarkers::new(&quests, active_quest_id);
+    let map_quests = map_quests_for_settlement(&quests, &settlement.id, active_quest_id);
     for destination in &mut destinations {
         markers.decorate_settlement(destination);
     }
@@ -891,7 +895,7 @@ async fn settlement_map(
     let is_current_settlement = active_character.as_ref().is_some_and(|(character, _)| {
         character.current_settlement_id.as_deref() == Some(&settlement.id)
     });
-    let can_travel = is_current_settlement && active_party.is_some();
+    let can_travel = map_data_initialized && is_current_settlement && active_party.is_some();
     if let Some(quest) = active_quest.filter(|quest| quest.status == QuestStatus::Accepted) {
         if can_travel && settlement.id == quest.settlement_id {
             let distance_m = crate::routes::quests::straight_line_distance_m(quest, settlement);
@@ -916,6 +920,9 @@ async fn settlement_map(
                 turn_in_ready: false,
                 open_quest_available: false,
                 provision_forecast: None,
+                terrain_route: None,
+                return_terrain_route: None,
+                route_fallback: true,
             });
         } else if can_travel {
             if let Some(next_settlement_id) =
@@ -945,6 +952,32 @@ async fn settlement_map(
                     destination.active_quest_route = true;
                 }
             }
+        }
+    }
+    if let Some(selected_id) = query.destination.as_deref()
+        && let Some(destination) = destinations
+            .iter_mut()
+            .find(|destination| destination.id == selected_id)
+    {
+        let goal = if destination.quest_in_progress {
+            map_quests
+                .iter()
+                .find(|quest| quest.id == destination.id)
+                .map(|quest| (quest.location_coord_y, quest.location_coord_x))
+        } else {
+            settlements
+                .iter()
+                .find(|candidate| candidate.id == destination.id)
+                .map(|candidate| (candidate.coord_y, candidate.coord_x))
+        };
+        if let Some(goal) = goal {
+            crate::routes::travel::apply_terrain_route(
+                destination,
+                state.terrain.as_deref(),
+                (settlement.coord_y, settlement.coord_x),
+                goal,
+            )
+            .await;
         }
     }
     let party_members = get_active_party_members(
@@ -1027,6 +1060,9 @@ async fn settlement_map(
     Html(
         settlement_map_page(
             settlement,
+            &settlements,
+            &map_quests,
+            state.strategic_map.as_deref(),
             &destinations,
             query.destination.as_deref(),
             active_character.as_ref().map(|(character, _)| character),
@@ -1056,6 +1092,23 @@ async fn settlement_map(
 
 fn can_abandon_active_quest(quest: &Quest, current_quest_location_id: Option<&str>) -> bool {
     quest.status == QuestStatus::Accepted && current_quest_location_id.is_none()
+}
+
+fn map_quests_for_settlement(
+    quests: &[Quest],
+    settlement_id: &str,
+    active_quest_id: Option<&str>,
+) -> Vec<Quest> {
+    quests
+        .iter()
+        .filter(|quest| {
+            quest.settlement_id == settlement_id
+                && (quest.status == QuestStatus::Available
+                    || (quest.status == QuestStatus::Accepted
+                        && active_quest_id == Some(quest.id.as_str())))
+        })
+        .cloned()
+        .collect()
 }
 
 #[cfg(test)]
@@ -1098,6 +1151,40 @@ mod map_quest_tests {
             &quest(QuestStatus::Completed),
             None
         ));
+    }
+
+    #[test]
+    fn map_quest_pins_are_bounded_to_the_local_issuer_and_active_destination() {
+        let mut local_available = quest(QuestStatus::Available);
+        local_available.id = "local-available".into();
+        local_available.accepted_by = None;
+        let mut remote_available = local_available.clone();
+        remote_available.id = "remote-available".into();
+        remote_available.settlement_id = "elsewhere".into();
+        let mut local_active = quest(QuestStatus::Accepted);
+        local_active.id = "local-active".into();
+        let mut local_inactive = local_active.clone();
+        local_inactive.id = "other-party-active".into();
+        let mut completed = quest(QuestStatus::Completed);
+        completed.id = "local-completed".into();
+
+        let visible = map_quests_for_settlement(
+            &[
+                local_available,
+                remote_available,
+                local_active,
+                local_inactive,
+                completed,
+            ],
+            "issuer",
+            Some("local-active"),
+        );
+        let ids = visible
+            .iter()
+            .map(|quest| quest.id.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(ids, ["local-available", "local-active"]);
     }
 }
 
@@ -1270,6 +1357,15 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
         .await
         .ok()
         .flatten();
+    let terrain_route = state
+        .db
+        .query_one::<PartyJourneyRoute>(&format!(
+            "SELECT * FROM party_journey_route WHERE party_id = {}",
+            sql_string_literal(&party.id)
+        ))
+        .await
+        .ok()
+        .flatten();
     let stats: Vec<CharacterStats> = state
         .db
         .query("SELECT * FROM character_stats")
@@ -1317,6 +1413,7 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
             &party,
             journey.as_ref(),
             itinerary.as_ref(),
+            terrain_route.as_ref(),
             &destination_name,
             Some(&character),
             &party_members,

@@ -32,9 +32,10 @@ use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
     CharacterLimbs, CharacterSkills, CharacterStats, CharacterStrategicCondition,
-    CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, ItemSlot, LimbInjury,
-    LimbRegion, Party, PartyInventoryItem, PartyJourney, PartyJourneyItinerary, ProjectileKind,
-    Quest, RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementCategory,
+    CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, ItemSlot,
+    JourneyTerrainKind, LimbInjury, LimbRegion, Party, PartyInventoryItem, PartyJourney,
+    PartyJourneyItinerary, PartyJourneyRoute, ProjectileKind, Quest, QuestStatus,
+    RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementCategory,
     SettlementDescription, SettlementDescriptionKind,
 };
 
@@ -467,11 +468,14 @@ fn language_label(language: Option<&str>) -> &str {
 
 pub fn settlement_map_page(
     settlement: &Settlement,
+    settlements: &[Settlement],
+    quests: &[Quest],
+    strategic_map: Option<&crate::strategic_map::StrategicMap>,
     destinations: &[TravelDestination],
     selected_id: Option<&str>,
     active_character: Option<&Character>,
     active_party: Option<&Party>,
-    party_members: &[Character],
+    _party_members: &[Character],
     default_rest_minutes: u64,
     can_travel: bool,
     provision_forecast: Option<&TravelProvisionForecast>,
@@ -482,7 +486,15 @@ pub fn settlement_map_page(
     logged_in_as: Option<&str>,
 ) -> Markup {
     let selected = selected_id.and_then(|id| destinations.iter().find(|entry| entry.id == id));
+    let selected_settlement =
+        selected_id.and_then(|id| settlements.iter().find(|entry| entry.id == id));
+    let selected_quest = selected_id.and_then(|id| quests.iter().find(|entry| entry.id == id));
     let base_path = format!("/locations/settlement/{}/map", settlement.id);
+    let connected_ids = destinations
+        .iter()
+        .filter(|destination| !destination.quest_in_progress)
+        .map(|destination| destination.id.as_str())
+        .collect::<BTreeSet<_>>();
     let content = html! {
         (map_destination_list_with_context(
             destinations,
@@ -510,13 +522,31 @@ pub fn settlement_map_page(
                 }
             }),
         ))
-        main class="center-content settlement-main settlement-overview" {
-            (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None, false))
-            (visual_stage("route", &settlement.name, "Roads and known destinations from this settlement"))
-            (settlement_chat_area(&settlement.name, active_character))
+        main class="center-content settlement-main settlement-map-main" {
+            @if settlement.source_node_id.is_some() {
+                @if let Some(strategic_map) = strategic_map {
+                    (crate::strategic_map::strategic_map(
+                        strategic_map,
+                        settlements,
+                        quests,
+                        &settlement.id,
+                        &connected_ids,
+                        selected_id,
+                        &base_path,
+                        selected.and_then(|destination| destination.terrain_route.as_ref()),
+                    ))
+                } @else {
+                    (crate::strategic_map::strategic_map_bundle_unavailable())
+                }
+            } @else {
+                (crate::strategic_map::strategic_map_unavailable(&settlement.name))
+            }
         }
         (map_destination_detail(
             selected,
+            selected_settlement,
+            selected_quest,
+            selected_settlement.is_some_and(|destination| destination.id == settlement.id),
             can_travel,
             true,
             provision_forecast,
@@ -701,6 +731,9 @@ pub(crate) fn travel_preferences_form(party: &Party, action: &str) -> Markup {
 
 pub(crate) fn map_destination_detail(
     selected: Option<&TravelDestination>,
+    selected_settlement: Option<&Settlement>,
+    selected_quest: Option<&Quest>,
+    selected_is_current: bool,
     can_travel: bool,
     provisioning_available: bool,
     provision_forecast: Option<&TravelProvisionForecast>,
@@ -711,6 +744,7 @@ pub(crate) fn map_destination_detail(
 ) -> Markup {
     let camp_fatigue_percent = party.map_or(50, |party| party.camp_fatigue_percent);
     let travel_disabled = party.is_some_and(|party| party.walking_minutes_per_day == 0);
+    let inspecting_nonroute = selected.is_none() && selected_settlement.is_some();
     let market_path = format!(
         "/settlements/{}/merchants",
         map_path
@@ -720,7 +754,7 @@ pub(crate) fn map_destination_detail(
             .unwrap_or("")
     );
     html! {
-        aside class=(if party.is_some() && can_configure_travel { "right-sidebar travel-configuration-sidebar" } else { "right-sidebar" }) {
+        aside class=(if party.is_some() && can_configure_travel && !inspecting_nonroute { "right-sidebar travel-configuration-sidebar" } else { "right-sidebar" }) {
             @if party.is_some() && can_configure_travel {
             (sidebar_section("Travel configuration", html! {
                 div class=(if selected.is_some() { "travel-planner-vertical" } else { "travel-planner-vertical no-destination" }) {
@@ -783,6 +817,50 @@ pub(crate) fn map_destination_detail(
                         }
                         (format_distance(destination.distance_m))
                         " · " (format_journey_time(destination.journey_minutes))
+                        @if destination.route_fallback {
+                            span class="travel-route-estimate-warning" { " · Legacy straight-line estimate" }
+                        }
+                    }
+                }))
+            } @else if let Some(quest) = selected_quest {
+                (sidebar_section("Destination", html! {
+                    h3 { (&quest.title) }
+                    p { (&quest.description) }
+                    @if !quest.location_description.is_empty() {
+                        p class="text-muted small-copy" { (&quest.location_description) }
+                    }
+                    p class="no-direct-route" role="status" {
+                        @match quest.status {
+                            QuestStatus::Available => {
+                                strong { "Quest destination." }
+                                " Accept and activate this quest at its issuing settlement before travelling here."
+                            }
+                            QuestStatus::Accepted => {
+                                strong { "Active quest destination." }
+                                " Your party has accepted this quest, but cannot begin the journey from its current strategic location."
+                            }
+                            QuestStatus::Completed => {
+                                strong { "Quest completed." }
+                                " Return to the issuing settlement to report your success and claim the reward."
+                            }
+                        }
+                    }
+                }))
+            } @else if let Some(destination) = selected_settlement {
+                (sidebar_section("Destination", html! {
+                    h3 { (&destination.name) }
+                    p { (settlement_description(destination.population_level)) }
+                    dl class="settlement-stats" {
+                        div { dt { "Size" } dd { (format_population(destination)) } }
+                    }
+                    p class="no-direct-route" role="status" {
+                        @if selected_is_current {
+                            strong { "Current settlement." }
+                            " Your party is already here."
+                        } @else {
+                            strong { "No direct route." }
+                            " Travel is only available to settlements connected to the current location."
+                        }
                     }
                 }))
             } @else {
@@ -814,11 +892,14 @@ pub(crate) fn travel_planner_bar(
     travel_planner_bar_for(
         selected_name,
         &selected_description,
-        selected.is_some_and(|destination| destination.quest_in_progress),
+        selected.is_some_and(|destination| {
+            destination.quest_in_progress && destination.return_terrain_route.is_none()
+        }),
         selected_minutes,
         &selected_camp_stops,
         &selected_camp_forecasts,
         camp_fatigue_percent,
+        None,
         None,
         provision_forecast,
         selected
@@ -830,6 +911,7 @@ pub(crate) fn travel_planner_bar(
         &selected.map_or_else(String::new, |destination| {
             format_itinerary_segments(&destination.itinerary_segments)
         }),
+        &selected.map_or_else(String::new, |destination| format_terrain_spans(destination)),
     )
 }
 
@@ -851,10 +933,12 @@ pub(crate) fn travel_planner_bar_for(
     camp_forecasts: &str,
     camp_fatigue_percent: u8,
     journey: Option<&PartyJourney>,
+    journey_route: Option<&PartyJourneyRoute>,
     provision_forecast: Option<&TravelProvisionForecast>,
     preview_departure_minute: u64,
     preview_elapsed_minutes: u64,
     preview_segments: &str,
+    terrain_spans: &str,
 ) -> Markup {
     let journey_origin_name = journey.map_or("", |item| item.origin_name.as_str());
     let journey_destination_name = journey.map_or("", |item| item.destination_name.as_str());
@@ -863,7 +947,11 @@ pub(crate) fn travel_planner_bar_for(
         .map_or(0, |item| item.total_minutes);
     let journey_total_minutes = journey.map_or(0, |item| {
         if item.destination_kind == "quest" {
-            item.total_minutes.saturating_mul(2)
+            item.total_minutes.saturating_add(
+                journey_route
+                    .and_then(|route| route.return_route.as_ref())
+                    .map_or(item.total_minutes, |route| route.minutes),
+            )
         } else {
             item.total_minutes
         }
@@ -880,7 +968,7 @@ pub(crate) fn travel_planner_bar_for(
                     .iter()
                     .chain(item.forecast_camp_stop_minutes.iter())
                     .rev()
-                    .map(|minute| item.total_minutes.saturating_mul(2).saturating_sub(*minute)),
+                    .map(|minute| journey_total_minutes.saturating_sub(*minute)),
             );
         }
         format_camp_stops(&stops)
@@ -903,6 +991,7 @@ pub(crate) fn travel_planner_bar_for(
             data-total-elapsed-minutes=(journey.map_or(preview_elapsed_minutes, |item| item.total_elapsed_minutes))
             data-completed-elapsed-minutes=(journey.map_or(0, |item| item.completed_elapsed_minutes))
             data-itinerary-segments=(preview_segments)
+            data-terrain-spans=(terrain_spans)
             data-journey-camp-stops=(journey_camp_stops)
             data-journey-forecast-stops=(journey_forecast_stops)
             data-provision-planning-minutes=[provision_forecast.map(|row| row.planning_minutes)]
@@ -942,6 +1031,12 @@ pub(crate) fn travel_planner_bar_for(
                         div class="travel-fatigue-track" data-fatigue-track {}
                         span class="sr-only" data-fatigue-summary aria-live="polite" {}
                     }
+                    div class="travel-resource-row terrain" aria-label="Terrain along route" {
+                        span class="travel-resource-icon" { (game_icon("Terrain", "mountains")) }
+                        div class="travel-terrain-track" data-terrain-track aria-describedby="terrain-course-description" {}
+                        span class="sr-only" data-terrain-summary aria-live="polite" {}
+                        ol id="terrain-course-description" class="sr-only" data-terrain-course-description {}
+                    }
                     div class="travel-resource-row daylight" aria-label="Day and night" {
                         span class="travel-resource-icon" { (game_icon("Day and night", "sun")) }
                         div class="travel-daylight-track" data-daylight-track {}
@@ -961,6 +1056,42 @@ fn format_camp_stops(stops: &[u64]) -> String {
         .map(u64::to_string)
         .collect::<Vec<_>>()
         .join(",")
+}
+
+fn format_terrain_spans(destination: &TravelDestination) -> String {
+    destination
+        .terrain_route
+        .as_ref()
+        .map_or_else(String::new, |route| {
+            route
+                .spans
+                .iter()
+                .map(|span| (span, 0_u64))
+                .chain(
+                    destination
+                        .return_terrain_route
+                        .iter()
+                        .flat_map(|return_route| {
+                            return_route.spans.iter().map(|span| (span, route.minutes))
+                        }),
+                )
+                .filter_map(|(span, offset)| {
+                    let kind = match span.surface {
+                        adventuresim_terrain::Surface::Road => "road",
+                        adventuresim_terrain::Surface::Open => "open",
+                        adventuresim_terrain::Surface::SparseWoods => "sparse-woods",
+                        adventuresim_terrain::Surface::DeepWoods => "deep-woods",
+                        adventuresim_terrain::Surface::Water => return None,
+                    };
+                    Some(format!(
+                        "{kind},{},{}",
+                        span.start_minute.saturating_add(offset),
+                        span.duration_minutes
+                    ))
+                })
+                .collect::<Vec<_>>()
+                .join("|")
+        })
 }
 
 fn format_camp_forecasts(destination: &TravelDestination) -> String {
@@ -1144,6 +1275,7 @@ pub fn camp_page(
     party: &Party,
     journey: Option<&PartyJourney>,
     itinerary: Option<&PartyJourneyItinerary>,
+    terrain_route: Option<&PartyJourneyRoute>,
     destination_name: &str,
     active_character: Option<&Character>,
     party_members: &[Character],
@@ -1202,7 +1334,7 @@ pub fn camp_page(
             div class="sidebar-section camp-journey-section" {
                 h3 class="sidebar-header" { "Journey" }
                 div class="travel-planner-vertical" {
-                    (travel_planner_bar_for(destination_name, "", false, party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, provision_forecast, journey.map_or(0, |item| item.departure_minute), journey.map_or(party.camp_remaining_minutes, |item| item.total_elapsed_minutes), &match (journey, itinerary) { (Some(journey), Some(itinerary)) => format_persisted_itinerary(journey, itinerary), (Some(journey), None) => format_legacy_persisted_itinerary(journey), _ => String::new() }))
+                    (travel_planner_bar_for(destination_name, "", false, party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, terrain_route, provision_forecast, journey.map_or(0, |item| item.departure_minute), journey.map_or(party.camp_remaining_minutes, |item| item.total_elapsed_minutes), &match (journey, itinerary) { (Some(journey), Some(itinerary)) => format_persisted_itinerary(journey, itinerary), (Some(journey), None) => format_legacy_persisted_itinerary(journey), _ => String::new() }, &format_persisted_terrain_spans(terrain_route)))
                 }
                 form action="/camp/continue" method="post" {
                     button type="submit" class="btn btn-primary btn-small btn-block"
@@ -1224,6 +1356,33 @@ pub fn camp_page(
         content,
         logged_in_as,
     )
+}
+
+fn format_persisted_terrain_spans(route: Option<&PartyJourneyRoute>) -> String {
+    route.map_or_else(String::new, |route| {
+        route
+            .spans
+            .iter()
+            .map(|span| (span, 0_u64))
+            .chain(route.return_route.iter().flat_map(|return_route| {
+                return_route.spans.iter().map(|span| (span, route.minutes))
+            }))
+            .map(|(span, offset)| {
+                let kind = match span.kind {
+                    JourneyTerrainKind::Road => "road",
+                    JourneyTerrainKind::Open => "open",
+                    JourneyTerrainKind::SparseWoods => "sparse-woods",
+                    JourneyTerrainKind::DeepWoods => "deep-woods",
+                };
+                format!(
+                    "{kind},{},{}",
+                    span.start_minute.saturating_add(offset),
+                    span.duration_minutes
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("|")
+    })
 }
 
 pub(crate) fn party_rest_menu(
@@ -5951,6 +6110,9 @@ mod tests {
             turn_in_ready: false,
             open_quest_available: false,
             provision_forecast: None,
+            terrain_route: None,
+            return_terrain_route: None,
+            route_fallback: true,
         }
     }
 
@@ -6086,6 +6248,9 @@ mod tests {
         let destination = quest_destination();
         let markup = map_destination_detail(
             Some(&destination),
+            None,
+            None,
+            false,
             true,
             false,
             None,
@@ -6101,6 +6266,163 @@ mod tests {
         assert!(!markup.contains("Active quest"));
         assert!(!markup.contains("name=\"provisioning\""));
         assert!(!markup.contains("data-provision-buy"));
+    }
+
+    #[test]
+    fn nonconnected_map_selection_has_detail_but_no_travel_form() {
+        let mut destination = settlement();
+        destination.id = "viabundus-99".into();
+        destination.name = "Distant town".into();
+        let markup = map_destination_detail(
+            None,
+            Some(&destination),
+            None,
+            false,
+            true,
+            true,
+            None,
+            None,
+            false,
+            None,
+            "/locations/settlement/viabundus-1/map",
+        )
+        .into_string();
+
+        assert!(markup.contains("Distant town"));
+        assert!(markup.contains("No direct route."));
+        assert!(!markup.contains("Begin journey"));
+        assert!(!markup.contains("data-travel-submit"));
+    }
+
+    #[test]
+    fn available_quest_selection_has_detail_but_no_travel_form() {
+        let quest = Quest {
+            id: "quest-bandits".into(),
+            title: "Drive off the bandits".into(),
+            description: "Bandits have occupied the old watchtower.".into(),
+            difficulty: 2,
+            gold_reward: 50,
+            xp_reward: 20,
+            settlement_id: "viabundus-1".into(),
+            status: crate::spacetimedb::QuestStatus::Available,
+            accepted_by: None,
+            enemy_type: "bandit".into(),
+            enemy_count: 4,
+            location_description: "An abandoned tower beyond the fields.".into(),
+            location_scene_key: "watchtower".into(),
+            location_coord_x: 10.2,
+            location_coord_y: 53.1,
+            coordinates_are_geographic: true,
+            distance_m: 8_000,
+        };
+        let markup = map_destination_detail(
+            None,
+            None,
+            Some(&quest),
+            false,
+            false,
+            false,
+            None,
+            None,
+            false,
+            None,
+            "/locations/settlement/viabundus-1/map",
+        )
+        .into_string();
+
+        assert!(markup.contains("Drive off the bandits"));
+        assert!(markup.contains("Bandits have occupied the old watchtower."));
+        assert!(markup.contains("An abandoned tower beyond the fields."));
+        assert!(markup.contains("Quest destination."));
+        assert!(!markup.contains("Begin journey"));
+        assert!(!markup.contains("data-travel-submit"));
+    }
+
+    #[test]
+    fn nontravelable_active_quest_selection_uses_its_actual_status() {
+        let mut quest = Quest {
+            id: "quest-bandits".into(),
+            title: "Drive off the bandits".into(),
+            description: "Bandits have occupied the old watchtower.".into(),
+            difficulty: 2,
+            gold_reward: 50,
+            xp_reward: 20,
+            settlement_id: "viabundus-1".into(),
+            status: QuestStatus::Accepted,
+            accepted_by: Some("party-1".into()),
+            enemy_type: "bandit".into(),
+            enemy_count: 4,
+            location_description: "An abandoned tower beyond the fields.".into(),
+            location_scene_key: "watchtower".into(),
+            location_coord_x: 10.2,
+            location_coord_y: 53.1,
+            coordinates_are_geographic: true,
+            distance_m: 8_000,
+        };
+
+        let accepted = map_destination_detail(
+            None,
+            None,
+            Some(&quest),
+            false,
+            false,
+            false,
+            None,
+            None,
+            false,
+            None,
+            "/locations/settlement/viabundus-1/map",
+        )
+        .into_string();
+        assert!(accepted.contains("Active quest destination."));
+        assert!(!accepted.contains("Accept and activate"));
+
+        quest.status = QuestStatus::Completed;
+        let completed = map_destination_detail(
+            None,
+            None,
+            Some(&quest),
+            false,
+            false,
+            false,
+            None,
+            None,
+            false,
+            None,
+            "/locations/settlement/viabundus-1/map",
+        )
+        .into_string();
+        assert!(completed.contains("Quest completed."));
+        assert!(completed.contains("Return to the issuing settlement"));
+        assert!(!completed.contains("Accept and activate"));
+    }
+
+    #[test]
+    fn connected_settlement_selection_keeps_existing_travel_action() {
+        let mut destination = quest_destination();
+        destination.id = "viabundus-2".into();
+        destination.name = "Connected town".into();
+        destination.quest_in_progress = false;
+        destination.travel_action = "/settlements/viabundus-2/travel".into();
+        let markup = map_destination_detail(
+            Some(&destination),
+            None,
+            None,
+            false,
+            true,
+            true,
+            None,
+            None,
+            false,
+            None,
+            "/locations/settlement/viabundus-1/map",
+        )
+        .into_string();
+
+        assert!(markup.contains("action=\"/settlements/viabundus-2/travel\""));
+        assert!(markup.contains("data-travel-submit"));
+        assert!(markup.contains("Begin journey"));
+        assert!(!markup.contains("No direct route"));
     }
 
     #[test]

@@ -266,6 +266,96 @@ Use `python3 scripts/init_viabundus.py --force` only when replacing an existing
 local download. The command records the source URLs and SHA-256 checksums in
 `viabundus/.viabundus-source.json`.
 
+After Viabundus and the world-data inputs are installed, run `just
+build-strategic-map` to regenerate
+`target/strategic-map/strategic-map-v1.json` and the derived
+`target/strategic-map/strategic-map-tiles-v1.pack`, plus the independent
+`terrain-routing-v1.json`/`.pack` native-detail artifact. These deterministic presentation assets verify
+the initialized v2 edge and water files against
+their recorded SHA-256 identities, retains only active 1544 overview roads and
+ferries for presentation, and separately rasterizes every active full-precision
+Viabundus road into the routing pack. It classifies installed native GLO-30
+slopes and multi-scale relief, and reduces every available prepared forest tile
+into bounded canopy-density and leaf-type regions. Missing forest tiles remain absent and their coverage is
+reported as partial; they do not block map generation. The command clips and
+simplifies presentation geometry, renders a Paper AVIF pyramid through zoom
+level 7 (native detail at 5–16°E, 50–56°N), concatenates the independently addressable images into one pack,
+and embeds a digest
+over every presentation-affecting package field. The
+versioned filename is stable rather than content-addressed. Legacy Viabundus
+sidecars without byte sizes remain usable for local generation but the package
+marks them `legacy-release-blocked-missing-sizes`; they are not a fully verified
+release snapshot. It is presentation data only: settlements still come
+from the canonical strategic database and map geometry is not persisted in
+SpacetimeDB. Run this command whenever the initialized Viabundus release or map
+package schema changes. The elevation and forest directories default to
+`target/world-data-sources/raw/elevation/` and
+`target/world-data-sources/raw/forest-cover/`; use the generator's explicit
+directory flags when regenerating from another reviewed installation.
+
+The offline compiler lives in `adventuresim-world-import` behind its opt-in
+`strategic-map-renderer` feature (enabled by the `just` recipe); it is not a
+`strategic-web` dependency, and normal workspace builds do not select its image
+renderer or encoder dependencies. At startup the server optionally loads the bundle directory from
+`STRATEGIC_MAP_BUNDLE_DIR` (default `target/strategic-map`) for bounds,
+attribution, indexed byte ranges, and integrity checks. If the bundle is absent
+or invalid, the server still starts and the surrounding HTML destination and
+direct-travel controls remain usable. Individual tile routes
+include the pack's SHA-256 in their query string and receive a one-year
+immutable cache policy. The browser requests only the Paper tiles covering its
+current view and replaces them as it pans or crosses a zoom level. The deepest
+level uses a higher AVIF quality setting for close inspection. Outside native
+detail coverage, a missing deepest-level image is deterministically replaced by
+the correctly cropped complete parent tile, so the map never goes blank without
+inflating the pack with redundant generalized tiles. Every encoded
+tile includes a four-pixel gutter so independent AVIF edges overlap cleanly;
+close levels use the native terrain pack to classify 15-degree slopes and
+20-percent canopy cover. Open hilly ground is light brown, forest is green, and
+their overlap is dark green. The raster map has no symbolic hill or mountain
+stamps; hilly terrain is communicated only by those area colours. Native
+elevation remains available in the independent terrain pack for routing and
+future terrain presentation. Each tile samples continuous, domain-warped
+coverage fields with four-sample edge antialiasing instead of exposing source
+pixels.
+Historical road importance controls both
+zoom visibility and line weight, and a restrained deterministic parchment
+fiber/fleck layer prevents flat digital backgrounds. All procedural marks are
+positioned in the zoom's global map coordinates so they remain stable across
+tile gutters and repeated builds.
+Settlement pins, locally issued available-quest pins, the party's active quest
+pin at its issuing settlement, route availability, current location, selection,
+and the computed terrain polyline to the selected destination remain in the authenticated
+HTML/SVG overlay and are never cached as
+part of the world asset.
+
+`strategic-web` requires an authenticated `SPACETIMEDB_TOKEN` even when the
+optional terrain pack is absent. At startup it claims (or renews, using the same
+identity) the singleton strategic-gateway authority and pins the loaded terrain
+package digest. Keep a new database private until this registration succeeds;
+the first authenticated claim establishes the trusted gateway identity.
+The isolated `web-isolated` recipes read the current token from
+`spacetime login show --token`, pass it only in the child process environment,
+and never print or persist it. Run `spacetime login` before starting an isolated
+profile. Canonical deployments must continue to provide `SPACETIMEDB_TOKEN`
+through their secret manager.
+
+For a small deterministic renderer preview without building the production
+bundle, set `STRATEGIC_MAP_PREVIEW_PNG` to an output path and run the focused
+`representative_paper_tile_has_deterministic_png_preview_hook` test with the
+`strategic-map-renderer` feature.
+
+The deployment manifest is schema 3 with renderer revision 7. It contains only
+bounds, attribution/source metadata, coverage counts, the tile index, and
+content digests; source roads, water rings, elevation cells/contours, and
+forest regions stay in the offline compiler and are not shipped to
+`strategic-web`. The server rejects stale renderer revisions and source URLs
+that do not exactly match the compiler's reviewed HTTPS DOI sources. Paper-only
+is intentional: the earlier Atlas-style option was superseded by the Paper-map
+direction. Full spatial bucketing remains outside this aesthetic pass because
+generation is offline and cacheable; mmap and an additional arbitrary cache
+buster are likewise deferred while the validated pack remains file-backed
+and content-versioned.
+
 `just compile-world` retains active 1544 land and ferry segments, all nodes
 needed to connect those segments, active settlements and their alternative
 names, and typed settlement/city descriptions. The Rust world
@@ -304,14 +394,17 @@ only when retaining its backup is acceptable. See
 licence collection, its OWDA/IEG boundaries, release-maintainer requirements,
 and the distinction from a future combined derived-world release.
 
-The remaining accepted source workflows share `scripts/world_source_init.py`.
-Every source has `plan-*`, `init-*`, and `verify-*` targets. EU-Trees4F is the
-only newly automated anonymous immutable download (`tree-species`); it is
-size/hash checked and atomically published. Religion is a validation-only
-workflow and never mirrors the rights-reserved IEG images. GLO-30
-(`glo30`), Copernicus forest (`forest-cover`), and EU-Hydro (`hydrology`)
-perform redacted credential-file preflights but refuse network acquisition
-until exact product inventories are committed. HYDE 3.5 and EGDI likewise provide
+Most remaining accepted source workflows share `scripts/world_source_init.py`.
+Every source has `plan-*`, `init-*`, and `verify-*` targets. EU-Trees4F is an
+automated anonymous immutable download (`tree-species`); it is size/hash
+checked and atomically published. Copernicus forest uses the dedicated
+`scripts/init_forest_cover.py` workflow: it reads redacted Sentinel Hub OAuth
+credentials from `.env`, prepares the official 2018 TCD/DLT northern-Germany
+coverage, resumes interrupted requests, and atomically publishes an exact
+size/SHA-256 inventory. Religion is a validation-only workflow and never
+mirrors the rights-reserved IEG images. GLO-30 (`glo30`) and EU-Hydro
+(`hydrology`) perform redacted credential-file preflights but refuse network
+acquisition until exact product inventories are committed. HYDE 3.5 and EGDI likewise provide
 deterministic plans and strict local-inventory verification while remaining
 release-blocked. `init-*` never turns missing pins or rights restrictions into
 guesses. See each source document for its exact blocker and command names.
@@ -329,11 +422,11 @@ the shared general-files archive, place them under
 The stacked compiler requires them; override that directory with
 `--land-use-dir`.
 
-Forest cover likewise has a tested boundary but no authenticated full local
-download. Prepare the paired Copernicus TCD/DLT one-degree GeoTIFFs documented
-in `docs/FOREST_COVER.md` under
-`target/world-data-sources/raw/forest-cover/`. Override that directory with
-`--forest-cover-dir`.
+Initialize the paired Copernicus TCD/DLT one-degree GeoTIFFs documented in
+`docs/FOREST_COVER.md` with `just init-forest-cover`. The default 66-tile
+northern-Germany set is written under
+`target/world-data-sources/raw/forest-cover/`; the world compiler can override
+that directory with `--forest-cover-dir`.
 
 Initialize the CC BY 4.0 Jung/IIASA European PNV v1.1 rasters with
 `just init-jung-pnv`. Verified local files are written under

@@ -4,8 +4,19 @@ version.workspace = true
 edition.workspace = true
 repository.workspace = true
 license.workspace = true
+
+[features]
+default = []
+strategic-map-renderer = ["dep:image", "dep:rayon", "dep:tiny-skia", "dep:adventuresim-terrain", "adventuresim-terrain/builder"]
+
+[[bin]]
+name = "build-strategic-map"
+path = "src/bin/build-strategic-map.rs"
+required-features = ["strategic-map-renderer"]
+
 [dependencies]
 adventuresim-world-schema.workspace = true
+adventuresim-terrain = { path = "../adventuresim-terrain", optional = true }
 blake3.workspace = true
 clap.workspace = true
 csv.workspace = true
@@ -13,8 +24,10 @@ dbase.workspace = true
 geo.workspace = true
 geozero.workspace = true
 proj4rs.workspace = true
+rayon = { workspace = true, optional = true }
 rusqlite.workspace = true
 html-escape.workspace = true
+image = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -22,6 +35,7 @@ netcdf-reader.workspace = true
 shapefile.workspace = true
 thiserror.workspace = true
 tiff.workspace = true
+tiny-skia = { workspace = true, optional = true }
 zip.workspace = true
 
 [lints]

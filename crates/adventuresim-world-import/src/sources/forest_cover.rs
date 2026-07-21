@@ -2,7 +2,7 @@
 
 use std::{
     collections::BTreeMap,
-    fs::File,
+    fs::{self, File},
     io::{BufReader, Read, Seek},
     path::{Path, PathBuf},
 };
@@ -22,6 +22,8 @@ use crate::{
 const NODATA: u8 = 255;
 const MANIFEST_FILENAME: &str = "forest-cover-manifest.json";
 const PIXELS_PER_DEGREE: u32 = 1_000;
+#[cfg(feature = "strategic-map-renderer")]
+pub const PREPARED_FOREST_FORMAT: &str = "adventuresim-copernicus-forest-2018-v1";
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -122,10 +124,14 @@ pub(crate) fn enrich(
 
 fn read_manifest(directory: &Path) -> Result<()> {
     let path = require(directory, MANIFEST_FILENAME)?;
-    let file = File::open(&path)?;
+    let bytes = fs::read(&path)?;
+    validate_prepared_forest_manifest(&bytes, &path)
+}
+
+pub fn validate_prepared_forest_manifest(bytes: &[u8], path: &Path) -> Result<()> {
     let manifest: PreparedManifest =
-        serde_json::from_reader(BufReader::new(file)).map_err(|source| Error::JsonSource {
-            path: path.clone(),
+        serde_json::from_slice(bytes).map_err(|source| Error::JsonSource {
+            path: path.into(),
             source,
         })?;
     match manifest.format {
@@ -253,6 +259,29 @@ struct ByteRaster {
     height: u32,
     grid: AreaGrid,
     pixels: Vec<u8>,
+}
+
+#[cfg(feature = "strategic-map-renderer")]
+pub struct PreparedForestRaster(ByteRaster);
+
+#[cfg(feature = "strategic-map-renderer")]
+pub fn read_prepared_forest_raster(
+    path: &Path,
+    south: i16,
+    west: i16,
+) -> Result<PreparedForestRaster> {
+    ByteRaster::read(path, DegreeTile { south, west }).map(PreparedForestRaster)
+}
+
+#[cfg(feature = "strategic-map-renderer")]
+impl PreparedForestRaster {
+    pub fn pixels(&self) -> &[u8] {
+        &self.0.pixels
+    }
+
+    pub fn has_same_grid(&self, other: &Self) -> bool {
+        self.0.grid == other.0.grid
+    }
 }
 
 impl ByteRaster {
@@ -408,20 +437,19 @@ mod tests {
 
     use super::{ByteRaster, DegreeTile, PreparedManifest, forest_cover};
 
-    #[test]
-    fn prepared_area_geotiff_is_parsed_and_sampled() {
+    fn prepared_geotiff(scale: f64, north: f64, raster_type: u16, epsg: u16) -> Cursor<Vec<u8>> {
         let mut bytes = Cursor::new(Vec::new());
         let mut encoder = TiffEncoder::new(&mut bytes).unwrap();
         let mut image = encoder.new_image::<Gray8>(1_000, 1_000).unwrap();
         image
             .encoder()
-            .write_tag(Tag::ModelPixelScaleTag, &[0.001_f64, 0.001, 0.0][..])
+            .write_tag(Tag::ModelPixelScaleTag, &[scale, scale, 0.0][..])
             .unwrap();
         image
             .encoder()
             .write_tag(
                 Tag::ModelTiepointTag,
-                &[0.0_f64, 0.0, 0.0, 0.0, 49.0, 0.0][..],
+                &[0.0_f64, 0.0, 0.0, 0.0, north, 0.0][..],
             )
             .unwrap();
         image
@@ -429,7 +457,22 @@ mod tests {
             .write_tag(
                 Tag::GeoKeyDirectoryTag,
                 &[
-                    1_u16, 1, 0, 3, 1024, 0, 1, 2, 1025, 0, 1, 1, 2048, 0, 1, 4326,
+                    1_u16,
+                    1,
+                    0,
+                    3,
+                    1024,
+                    0,
+                    1,
+                    2,
+                    1025,
+                    0,
+                    1,
+                    raster_type,
+                    2048,
+                    0,
+                    1,
+                    epsg,
                 ][..],
             )
             .unwrap();
@@ -437,6 +480,12 @@ mod tests {
         pixels[250 * 1_000 + 250] = 42;
         image.write_data(&pixels).unwrap();
         bytes.set_position(0);
+        bytes
+    }
+
+    #[test]
+    fn prepared_area_geotiff_is_parsed_and_sampled() {
+        let bytes = prepared_geotiff(0.001, 49.0, 1, 4326);
         let raster = ByteRaster::decode(
             bytes,
             std::path::Path::new("TCD_N48_E000.tif"),
@@ -448,6 +497,20 @@ mod tests {
             .pixel(48.75, 0.25, raster.width, raster.height)
             .unwrap();
         assert_eq!(raster.value(column, row), Some(42));
+    }
+
+    #[test]
+    fn prepared_forest_geotiff_rejects_wrong_grid_or_crs() {
+        let tile = DegreeTile { south: 48, west: 0 };
+        let path = std::path::Path::new("TCD_N48_E000.tif");
+        for bytes in [
+            prepared_geotiff(0.002, 49.0, 1, 4326),
+            prepared_geotiff(0.001, 50.0, 1, 4326),
+            prepared_geotiff(0.001, 49.0, 2, 4326),
+            prepared_geotiff(0.001, 49.0, 1, 3857),
+        ] {
+            assert!(ByteRaster::decode(bytes, path, tile).is_err());
+        }
     }
 
     #[test]

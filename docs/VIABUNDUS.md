@@ -28,6 +28,63 @@ approximate population estimate. It is an adapted
 dataset and must retain this attribution and CC BY-SA 4.0 licensing when
 distributed.
 
+The settlement Map screen uses the separately generated
+`target/strategic-map/strategic-map-v1.json` presentation package and
+`target/strategic-map/strategic-map-tiles-v1.pack` world-tile asset. `just
+build-strategic-map` derives both versioned files with an embedded content digest from the
+initialized Viabundus v2 roads, ferries, and 1500 water polygons, generalized
+Copernicus GLO-30 elevation, and every available prepared Copernicus forest
+tile. It clips the view to the supported northern-European envelope and
+simplifies source geometry for a multilevel raster presentation; it does not change or replace
+canonical routing data. Native elevation is classified into hilly areas rather
+than absolute-height colour bands. Forest
+coverage is deliberately partial: the generator renders only
+installed TCD/DLT tile pairs and records their exact bounds instead of filling
+missing regions with inferred vegetation.
+
+The server exposes individual AVIF images from an indexed pack beneath a small
+inline SVG settlement overlay. Each tile URL includes the pack's SHA-256 and is
+served with `public, max-age=31536000, immutable`. The browser loads only tiles
+covering the current viewport at an appropriate zoom from the Paper pyramid.
+The offline raster compiler belongs to `adventuresim-world-import`, not the web
+server. `strategic-web` optionally loads `STRATEGIC_MAP_BUNDLE_DIR` (default
+`target/strategic-map`) at runtime and has no raster renderer or encoder
+dependency. A missing or invalid bundle does not prevent startup: settlement
+selection and direct travel continue through the surrounding HTML interface.
+Current and selected settlements, locally issued available quests, the party's
+active quest when it is at the issuing settlement, direct-route state,
+population-class settlement pictograms, collision-managed names, destination
+links, and the straight selection line remain dynamic HTML/SVG and are served
+on every map response. Label priority responds
+to the current zoom while the raster package remains unchanged and cacheable.
+A four-pixel encoded gutter prevents seams between lossy
+tiles, while the deepest level uses high-quality AVIF. The map uses a
+single green forest mask at 20 percent canopy, light brown for hilly open
+ground, and dark green where forest and hills overlap. It draws no symbolic
+hill or mountain stamps; native elevation remains in the independent terrain
+pack for routing and future terrain presentation. Forest is classified once on the
+prepared 0.001-degree canopy grid; every coarser level is an area average of
+2-by-2 children, and adjacent mip levels are blended while rendering. Forest
+boundaries therefore retain one sampling history across zoom levels instead of
+switching between a procedural low-detail field and native samples. The
+coverage remains offline raster content rather than dynamic browser geometry.
+Viabundus zoom importance also
+controls road visibility, weight, and ink strength, while a subtle globally
+positioned parchment texture keeps adjacent tile gutters identical.
+
+The stable `strategic-map-v1.json` and `strategic-map-tiles-v1.pack` filenames
+are versioned, not content-addressed; the pack digest query parameter is every
+tile route's cache key.
+The compact schema-3 deployment manifest carries renderer revision 7, reviewed
+source identities, coverage counts, and the indexed AVIF pyramid, but not the
+offline roads, compound water rings, elevation cells/contours, or forest
+regions used to render it. Its embedded SHA-256 covers every deployed field;
+strategic-web revalidates that digest and the exact source URLs before
+rendering. A
+legacy initializer sidecar without recorded byte
+sizes is accepted only with the explicit
+`legacy-release-blocked-missing-sizes` package status.
+
 Active Viabundus bridge and toll nodes are projected onto their incident travel
 edges with their `from`, `to`, or `both` endpoint identity intact. Ferry routes
 and land routes with an optional bridge are distinct enum variants, so invalid
