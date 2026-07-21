@@ -32,6 +32,13 @@ use live::LiveState;
 use routes::{AppState, build_router};
 use spacetimedb::SpacetimeClient;
 
+fn sats_option_string(value: Option<&str>) -> serde_json::Value {
+    match value {
+        Some(value) => serde_json::json!({ "some": value }),
+        None => serde_json::json!({ "none": [] }),
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize tracing
@@ -104,7 +111,7 @@ async fn main() -> anyhow::Result<()> {
     db.call(
         "register_strategic_gateway",
         &[
-            serde_json::json!(terrain.as_ref().map(|planner| planner.digest())),
+            sats_option_string(terrain.as_ref().map(|planner| planner.digest())),
             serde_json::json!(if terrain.is_some() { 1_u32 } else { 0_u32 }),
         ],
     )
@@ -200,5 +207,19 @@ impl Drop for HttpRequestLog {
                 "http request canceled before a response was produced"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sats_option_string;
+
+    #[test]
+    fn gateway_registration_uses_spacetimedb_option_sum_json() {
+        assert_eq!(
+            sats_option_string(Some("digest")),
+            serde_json::json!({ "some": "digest" })
+        );
+        assert_eq!(sats_option_string(None), serde_json::json!({ "none": [] }));
     }
 }
