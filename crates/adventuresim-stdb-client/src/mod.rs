@@ -191,6 +191,7 @@ pub mod item_slot_type;
 pub mod item_table;
 pub mod item_type;
 pub mod journey_camp_interval_type;
+pub mod journey_route_leg_type;
 pub mod journey_route_plan_type;
 pub mod journey_route_point_type;
 pub mod journey_terrain_kind_type;
@@ -276,6 +277,7 @@ pub mod quest_type;
 pub mod recruitment_requirements_type;
 pub mod refresh_capabilities_reducer;
 pub mod refresh_strategic_condition_reducer;
+pub mod register_strategic_gateway_reducer;
 pub mod reject_party_join_request_reducer;
 pub mod religion_hours_type;
 pub mod religion_minutes_type;
@@ -370,6 +372,8 @@ pub mod soil_water_regime_type;
 pub mod stone_content_percent_type;
 pub mod store_battle_loot_reducer;
 pub mod strahler_order_type;
+pub mod strategic_gateway_authority_table;
+pub mod strategic_gateway_authority_type;
 pub mod strategic_incident_table;
 pub mod strategic_incident_type;
 pub mod submit_all_repairable_items_reducer;
@@ -603,6 +607,7 @@ pub use item_slot_type::ItemSlot;
 pub use item_table::*;
 pub use item_type::Item;
 pub use journey_camp_interval_type::JourneyCampInterval;
+pub use journey_route_leg_type::JourneyRouteLeg;
 pub use journey_route_plan_type::JourneyRoutePlan;
 pub use journey_route_point_type::JourneyRoutePoint;
 pub use journey_terrain_kind_type::JourneyTerrainKind;
@@ -688,6 +693,7 @@ pub use quest_type::Quest;
 pub use recruitment_requirements_type::RecruitmentRequirements;
 pub use refresh_capabilities_reducer::refresh_capabilities;
 pub use refresh_strategic_condition_reducer::refresh_strategic_condition;
+pub use register_strategic_gateway_reducer::register_strategic_gateway;
 pub use reject_party_join_request_reducer::reject_party_join_request;
 pub use religion_hours_type::ReligionHours;
 pub use religion_minutes_type::ReligionMinutes;
@@ -782,6 +788,8 @@ pub use soil_water_regime_type::SoilWaterRegime;
 pub use stone_content_percent_type::StoneContentPercent;
 pub use store_battle_loot_reducer::store_battle_loot;
 pub use strahler_order_type::StrahlerOrder;
+pub use strategic_gateway_authority_table::*;
+pub use strategic_gateway_authority_type::StrategicGatewayAuthority;
 pub use strategic_incident_table::*;
 pub use strategic_incident_type::StrategicIncident;
 pub use submit_all_repairable_items_reducer::submit_all_repairable_items;
@@ -1065,6 +1073,10 @@ pub enum Reducer {
     RefreshStrategicCondition {
         character_id: u64,
     },
+    RegisterStrategicGateway {
+        terrain_package_digest: Option<String>,
+        terrain_schema: u32,
+    },
     RejectPartyJoinRequest {
         leader_id: u64,
         request_id: u64,
@@ -1338,6 +1350,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::PurchaseFromHerbalist { .. } => "purchase_from_herbalist",
             Reducer::RefreshCapabilities { .. } => "refresh_capabilities",
             Reducer::RefreshStrategicCondition { .. } => "refresh_strategic_condition",
+            Reducer::RegisterStrategicGateway { .. } => "register_strategic_gateway",
             Reducer::RejectPartyJoinRequest { .. } => "reject_party_join_request",
             Reducer::RemovePartyMember { .. } => "remove_party_member",
             Reducer::RenameSavedRecruitmentRole { .. } => "rename_saved_recruitment_role",
@@ -1789,6 +1802,13 @@ Reducer::CancelMissionRequest{
 }             => __sats::bsatn::to_vec(&refresh_strategic_condition_reducer::RefreshStrategicConditionArgs {
                 character_id: character_id.clone(),
 }),
+            Reducer::RegisterStrategicGateway{
+                terrain_package_digest,
+                terrain_schema,
+}             => __sats::bsatn::to_vec(&register_strategic_gateway_reducer::RegisterStrategicGatewayArgs {
+                terrain_package_digest: terrain_package_digest.clone(),
+                terrain_schema: terrain_schema.clone(),
+}),
             Reducer::RejectPartyJoinRequest{
                 leader_id,
                 request_id,
@@ -2221,6 +2241,7 @@ pub struct DbUpdate {
     settlement_smith: __sdk::TableUpdate<SettlementSmith>,
     simulation_character: __sdk::TableUpdate<SimulationCharacter>,
     simulation_run: __sdk::TableUpdate<SimulationRun>,
+    strategic_gateway_authority: __sdk::TableUpdate<StrategicGatewayAuthority>,
     strategic_incident: __sdk::TableUpdate<StrategicIncident>,
     tactical_server: __sdk::TableUpdate<TacticalServer>,
     tactical_server_request: __sdk::TableUpdate<TacticalServerRequest>,
@@ -2424,6 +2445,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "simulation_run" => db_update
                     .simulation_run
                     .append(simulation_run_table::parse_table_update(table_update)?),
+                "strategic_gateway_authority" => db_update.strategic_gateway_authority.append(
+                    strategic_gateway_authority_table::parse_table_update(table_update)?,
+                ),
                 "strategic_incident" => db_update
                     .strategic_incident
                     .append(strategic_incident_table::parse_table_update(table_update)?),
@@ -2720,6 +2744,12 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.simulation_run = cache
             .apply_diff_to_table::<SimulationRun>("simulation_run", &self.simulation_run)
             .with_updates_by_pk(|row| &row.id);
+        diff.strategic_gateway_authority = cache
+            .apply_diff_to_table::<StrategicGatewayAuthority>(
+                "strategic_gateway_authority",
+                &self.strategic_gateway_authority,
+            )
+            .with_updates_by_pk(|row| &row.id);
         diff.strategic_incident = cache
             .apply_diff_to_table::<StrategicIncident>(
                 "strategic_incident",
@@ -2958,6 +2988,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "simulation_run" => db_update
                     .simulation_run
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "strategic_gateway_authority" => db_update
+                    .strategic_gateway_authority
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "strategic_incident" => db_update
                     .strategic_incident
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -3178,6 +3211,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "simulation_run" => db_update
                     .simulation_run
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "strategic_gateway_authority" => db_update
+                    .strategic_gateway_authority
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "strategic_incident" => db_update
                     .strategic_incident
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -3276,6 +3312,7 @@ pub struct AppliedDiff<'r> {
     settlement_smith: __sdk::TableAppliedDiff<'r, SettlementSmith>,
     simulation_character: __sdk::TableAppliedDiff<'r, SimulationCharacter>,
     simulation_run: __sdk::TableAppliedDiff<'r, SimulationRun>,
+    strategic_gateway_authority: __sdk::TableAppliedDiff<'r, StrategicGatewayAuthority>,
     strategic_incident: __sdk::TableAppliedDiff<'r, StrategicIncident>,
     tactical_server: __sdk::TableAppliedDiff<'r, TacticalServer>,
     tactical_server_request: __sdk::TableAppliedDiff<'r, TacticalServerRequest>,
@@ -3576,6 +3613,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<SimulationRun>(
             "simulation_run",
             &self.simulation_run,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<StrategicGatewayAuthority>(
+            "strategic_gateway_authority",
+            &self.strategic_gateway_authority,
             event,
         );
         callbacks.invoke_table_row_callbacks::<StrategicIncident>(
@@ -4323,6 +4365,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         settlement_smith_table::register_table(client_cache);
         simulation_character_table::register_table(client_cache);
         simulation_run_table::register_table(client_cache);
+        strategic_gateway_authority_table::register_table(client_cache);
         strategic_incident_table::register_table(client_cache);
         tactical_server_table::register_table(client_cache);
         tactical_server_request_table::register_table(client_cache);
@@ -4394,6 +4437,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "settlement_smith",
         "simulation_character",
         "simulation_run",
+        "strategic_gateway_authority",
         "strategic_incident",
         "tactical_server",
         "tactical_server_request",

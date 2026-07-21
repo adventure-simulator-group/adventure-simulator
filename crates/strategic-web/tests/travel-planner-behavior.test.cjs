@@ -50,6 +50,15 @@ test("terrain rail preserves roads and woods around camps and reverses the retur
   assert.ok(returnPieces.some((piece) => piece.kind === "deep-woods" && piece.start === 100));
 });
 
+test("terrain parser rejects malformed, negative, zero-length, and discontinuous spans", () => {
+  const helpers = plannerHelpers();
+  assert.deepEqual(Array.from(helpers.parseTerrain("road,-1,5")), []);
+  assert.deepEqual(Array.from(helpers.parseTerrain("road,0,0")), []);
+  assert.deepEqual(Array.from(helpers.parseTerrain("road,0,5|open,6,5")), []);
+  assert.deepEqual(Array.from(helpers.parseTerrain("road,0,5,extra")), []);
+  assert.deepEqual(Array.from(helpers.parseTerrain("lava,0,5")), []);
+});
+
 test("provision target math supports positive and negative surplus", () => {
   const helpers = plannerHelpers();
   assert.deepEqual(

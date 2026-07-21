@@ -4,6 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::journey_route_leg_type::JourneyRouteLeg;
 use super::journey_route_point_type::JourneyRoutePoint;
 use super::journey_terrain_span_type::JourneyTerrainSpan;
 
@@ -16,6 +17,7 @@ pub struct PartyJourneyRoute {
     pub minutes: u64,
     pub points: Vec<JourneyRoutePoint>,
     pub spans: Vec<JourneyTerrainSpan>,
+    pub return_route: Option<JourneyRouteLeg>,
 }
 
 impl __sdk::InModule for PartyJourneyRoute {
@@ -32,6 +34,7 @@ pub struct PartyJourneyRouteCols {
     pub minutes: __sdk::__query_builder::Col<PartyJourneyRoute, u64>,
     pub points: __sdk::__query_builder::Col<PartyJourneyRoute, Vec<JourneyRoutePoint>>,
     pub spans: __sdk::__query_builder::Col<PartyJourneyRoute, Vec<JourneyTerrainSpan>>,
+    pub return_route: __sdk::__query_builder::Col<PartyJourneyRoute, Option<JourneyRouteLeg>>,
 }
 
 impl __sdk::__query_builder::HasCols for PartyJourneyRoute {
@@ -44,6 +47,7 @@ impl __sdk::__query_builder::HasCols for PartyJourneyRoute {
             minutes: __sdk::__query_builder::Col::new(table_name, "minutes"),
             points: __sdk::__query_builder::Col::new(table_name, "points"),
             spans: __sdk::__query_builder::Col::new(table_name, "spans"),
+            return_route: __sdk::__query_builder::Col::new(table_name, "return_route"),
         }
     }
 }

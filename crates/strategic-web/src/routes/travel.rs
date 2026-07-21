@@ -1,6 +1,10 @@
 //! Strategic travel view models and road-network routing.
 
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::{
+    collections::{BinaryHeap, HashMap, HashSet, VecDeque},
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
 use adventuresim_core::{
     strategic_schedule::DailySchedule,
@@ -15,6 +19,99 @@ use crate::spacetimedb::{
 };
 
 const WALKING_SPEED_KM_PER_HOUR: u64 = 5;
+const TERRAIN_PLAN_TIMEOUT: Duration = Duration::from_secs(10);
+const TERRAIN_PLAN_CACHE_ENTRIES: usize = 128;
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct TerrainPlanKey([i32; 4]);
+
+impl TerrainPlanKey {
+    fn new(start: (f64, f64), goal: (f64, f64)) -> Self {
+        Self([
+            (start.0 * 100_000.0).round() as i32,
+            (start.1 * 100_000.0).round() as i32,
+            (goal.0 * 100_000.0).round() as i32,
+            (goal.1 * 100_000.0).round() as i32,
+        ])
+    }
+}
+
+#[derive(Default)]
+struct TerrainPlanCache {
+    plans: HashMap<TerrainPlanKey, adventuresim_terrain::RoutePlan>,
+    order: VecDeque<TerrainPlanKey>,
+}
+
+/// Bounded async facade around the CPU-heavy, synchronous terrain planner.
+/// At most two plans run concurrently and successful normalized routes are
+/// cached for the life of the immutable terrain package.
+pub struct TerrainPlanner {
+    pack: Arc<adventuresim_terrain::TerrainPack>,
+    permits: Arc<tokio::sync::Semaphore>,
+    cache: Mutex<TerrainPlanCache>,
+}
+
+impl TerrainPlanner {
+    pub fn new(pack: Arc<adventuresim_terrain::TerrainPack>) -> Self {
+        Self {
+            pack,
+            permits: Arc::new(tokio::sync::Semaphore::new(2)),
+            cache: Mutex::new(TerrainPlanCache::default()),
+        }
+    }
+
+    pub fn digest(&self) -> &str {
+        self.pack.digest()
+    }
+
+    pub async fn plan(
+        &self,
+        start: (f64, f64),
+        goal: (f64, f64),
+    ) -> Result<adventuresim_terrain::RoutePlan, String> {
+        let key = TerrainPlanKey::new(start, goal);
+        if let Some(plan) = self
+            .cache
+            .lock()
+            .map_err(|_| "terrain route cache poisoned")?
+            .plans
+            .get(&key)
+            .cloned()
+        {
+            return Ok(plan);
+        }
+        let permit =
+            tokio::time::timeout(TERRAIN_PLAN_TIMEOUT, self.permits.clone().acquire_owned())
+                .await
+                .map_err(|_| "terrain route planning queue timed out")?
+                .map_err(|_| "terrain planner is shutting down")?;
+        let pack = Arc::clone(&self.pack);
+        let deadline = Instant::now() + TERRAIN_PLAN_TIMEOUT;
+        let task = tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            pack.plan_until(start, goal, deadline)
+        });
+        let plan = tokio::time::timeout(TERRAIN_PLAN_TIMEOUT + Duration::from_secs(1), task)
+            .await
+            .map_err(|_| "terrain route planning timed out")?
+            .map_err(|error| format!("terrain route worker failed: {error}"))?
+            .map_err(|error| error.to_string())?;
+        let mut cache = self
+            .cache
+            .lock()
+            .map_err(|_| "terrain route cache poisoned")?;
+        if !cache.plans.contains_key(&key) {
+            if cache.plans.len() == TERRAIN_PLAN_CACHE_ENTRIES
+                && let Some(oldest) = cache.order.pop_front()
+            {
+                cache.plans.remove(&oldest);
+            }
+            cache.order.push_back(key);
+            cache.plans.insert(key, plan.clone());
+        }
+        Ok(plan)
+    }
+}
 
 pub(crate) fn active_quest_summary(quest: &Quest) -> String {
     format!("Active quest · {} {}", quest.enemy_count, quest.enemy_type)
@@ -73,6 +170,7 @@ pub struct TravelDestination {
     pub open_quest_available: bool,
     pub provision_forecast: Option<TravelProvisionForecast>,
     pub terrain_route: Option<adventuresim_terrain::RoutePlan>,
+    pub return_terrain_route: Option<adventuresim_terrain::RoutePlan>,
     pub route_fallback: bool,
 }
 
@@ -120,7 +218,11 @@ impl<'a> QuestMapMarkers<'a> {
 impl TravelDestination {
     pub fn forecast_minutes(&self) -> u64 {
         if self.quest_in_progress {
-            self.journey_minutes.saturating_mul(2)
+            self.journey_minutes.saturating_add(
+                self.return_terrain_route
+                    .as_ref()
+                    .map_or(self.journey_minutes, |route| route.minutes),
+            )
         } else {
             self.journey_minutes
         }
@@ -160,13 +262,14 @@ pub(crate) fn settlement_destination(
         open_quest_available: false,
         provision_forecast: None,
         terrain_route: None,
+        return_terrain_route: None,
         route_fallback: true,
     }
 }
 
-pub(crate) fn apply_terrain_route(
+pub(crate) async fn apply_terrain_route(
     destination: &mut TravelDestination,
-    terrain: Option<&adventuresim_terrain::TerrainPack>,
+    terrain: Option<&TerrainPlanner>,
     start: (f64, f64),
     goal: (f64, f64),
 ) {
@@ -174,16 +277,33 @@ pub(crate) fn apply_terrain_route(
         destination.route_fallback = true;
         return;
     };
-    match terrain.plan(start, goal) {
+    match terrain.plan(start, goal).await {
         Ok(plan) => {
+            let return_plan = if destination.quest_in_progress {
+                match terrain.plan(goal, start).await {
+                    Ok(plan) => Some(plan),
+                    Err(error) => {
+                        tracing::warn!(%error, destination=%destination.id, "return terrain route unavailable; using explicitly marked legacy estimate");
+                        destination.route_fallback = true;
+                        return;
+                    }
+                }
+            } else {
+                None
+            };
             destination.distance_m = plan.distance_m;
             destination.journey_minutes = plan.minutes;
             destination.itinerary_total_elapsed_minutes = if destination.quest_in_progress {
-                plan.minutes.saturating_mul(2)
+                plan.minutes.saturating_add(
+                    return_plan
+                        .as_ref()
+                        .map_or(plan.minutes, |route| route.minutes),
+                )
             } else {
                 plan.minutes
             };
             destination.terrain_route = Some(plan);
+            destination.return_terrain_route = return_plan;
             destination.route_fallback = false;
         }
         Err(error) => {
@@ -558,6 +678,18 @@ mod tests {
         assert_eq!(destination.forecast_minutes(), 120);
         destination.quest_in_progress = true;
         assert_eq!(destination.forecast_minutes(), 240);
+    }
+
+    #[test]
+    fn terrain_cache_keys_normalize_sub_metre_coordinate_noise() {
+        assert_eq!(
+            TerrainPlanKey::new((53.500_000_1, 10.000_000_1), (53.6, 10.1)),
+            TerrainPlanKey::new((53.500_000_2, 10.000_000_2), (53.6, 10.1))
+        );
+        assert_ne!(
+            TerrainPlanKey::new((53.500_02, 10.0), (53.6, 10.1)),
+            TerrainPlanKey::new((53.500_04, 10.0), (53.6, 10.1))
+        );
     }
 
     #[test]

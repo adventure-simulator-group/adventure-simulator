@@ -1561,12 +1561,21 @@ pub struct JourneyTerrainSpan {
 }
 
 #[derive(Clone, Debug, PartialEq, SpacetimeType)]
+pub struct JourneyRouteLeg {
+    pub distance_m: u64,
+    pub minutes: u64,
+    pub points: Vec<JourneyRoutePoint>,
+    pub spans: Vec<JourneyTerrainSpan>,
+}
+
+#[derive(Clone, Debug, PartialEq, SpacetimeType)]
 pub struct JourneyRoutePlan {
     pub package_digest: String,
     pub distance_m: u64,
     pub minutes: u64,
     pub points: Vec<JourneyRoutePoint>,
     pub spans: Vec<JourneyTerrainSpan>,
+    pub return_route: Option<JourneyRouteLeg>,
 }
 
 #[derive(Clone, Debug)]
@@ -1579,6 +1588,75 @@ pub struct PartyJourneyRoute {
     pub minutes: u64,
     pub points: Vec<JourneyRoutePoint>,
     pub spans: Vec<JourneyTerrainSpan>,
+    pub return_route: Option<JourneyRouteLeg>,
+}
+
+/// The authenticated strategic-web identity trusted to submit server-planned
+/// travel. The singleton also pins the immutable terrain package digest.
+#[derive(Clone, Debug)]
+#[table(accessor = strategic_gateway_authority, public)]
+pub struct StrategicGatewayAuthority {
+    #[primary_key]
+    pub id: u8,
+    pub identity: Identity,
+    pub terrain_package_digest: Option<String>,
+    pub terrain_schema: u32,
+}
+
+fn valid_route_digest(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+/// First authenticated registration claims the singleton. Subsequent package
+/// rotations must be made by the same SpacetimeDB identity.
+#[reducer]
+pub fn register_strategic_gateway(
+    ctx: &ReducerContext,
+    terrain_package_digest: Option<String>,
+    terrain_schema: u32,
+) -> Result<(), String> {
+    if ctx.sender() == Identity::ZERO {
+        return Err("Strategic gateway registration requires authentication".into());
+    }
+    if terrain_package_digest
+        .as_deref()
+        .is_some_and(|digest| !valid_route_digest(digest))
+        || (terrain_package_digest.is_some() && terrain_schema != 1)
+        || (terrain_package_digest.is_none() && terrain_schema != 0)
+    {
+        return Err("Strategic gateway terrain package metadata is invalid".into());
+    }
+    let authority = StrategicGatewayAuthority {
+        id: 0,
+        identity: ctx.sender(),
+        terrain_package_digest,
+        terrain_schema,
+    };
+    if let Some(existing) = ctx.db.strategic_gateway_authority().id().find(0) {
+        if existing.identity != ctx.sender() {
+            return Err("A different authenticated identity owns the strategic gateway".into());
+        }
+        ctx.db.strategic_gateway_authority().id().update(authority);
+    } else {
+        ctx.db.strategic_gateway_authority().insert(authority);
+    }
+    Ok(())
+}
+
+fn require_strategic_gateway(ctx: &ReducerContext) -> Result<StrategicGatewayAuthority, String> {
+    let authority = ctx
+        .db
+        .strategic_gateway_authority()
+        .id()
+        .find(0)
+        .ok_or("Strategic gateway is not registered")?;
+    if authority.identity != ctx.sender() {
+        return Err("Travel reducers may only be called by the strategic gateway".into());
+    }
+    Ok(authority)
 }
 
 #[derive(Clone, Debug)]
@@ -2255,6 +2333,7 @@ pub fn approve_party_action_request(
     leader_id: u64,
     request_id: u64,
 ) -> Result<(), String> {
+    require_strategic_gateway(ctx)?;
     crate::character::require_living_character(ctx, leader_id)?;
     if let Some(resolved) = ctx.db.resolved_party_action().id().find(request_id) {
         if resolved.approved_by != leader_id {
@@ -2299,6 +2378,7 @@ pub fn approve_party_action_request_planned(
     request_id: u64,
     route: JourneyRoutePlan,
 ) -> Result<(), String> {
+    require_strategic_gateway(ctx)?;
     crate::character::require_living_character(ctx, leader_id)?;
     if let Some(resolved) = ctx.db.resolved_party_action().id().find(request_id) {
         if resolved.approved_by != leader_id {
@@ -4893,18 +4973,28 @@ fn quest_journey_minutes(distance_m: u64) -> u64 {
 }
 
 fn validate_journey_route(
+    ctx: &ReducerContext,
+    route: &JourneyRoutePlan,
+    origin: (f64, f64),
+    destination: (f64, f64),
+) -> Result<(), String> {
+    let authority = require_strategic_gateway(ctx)?;
+    if authority.terrain_schema != 1
+        || authority.terrain_package_digest.as_deref() != Some(route.package_digest.as_str())
+    {
+        return Err("Terrain route does not match the gateway terrain package".into());
+    }
+    validate_journey_route_payload(route, origin, destination)
+}
+
+fn validate_journey_route_payload(
     route: &JourneyRoutePlan,
     origin: (f64, f64),
     destination: (f64, f64),
 ) -> Result<(), String> {
     const MAX_POINTS: usize = 512;
     const MAX_SPANS: usize = 256;
-    if route.package_digest.len() != 64
-        || !route
-            .package_digest
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    {
+    if !valid_route_digest(&route.package_digest) {
         return Err("Terrain route has an invalid package digest".into());
     }
     if !(2..=MAX_POINTS).contains(&route.points.len())
@@ -4923,6 +5013,12 @@ fn validate_journey_route(
             f64::from(point.latitude_e7) / 10_000_000.0,
         )
     };
+    if route.points.iter().any(|point| {
+        !(-900_000_000..=900_000_000).contains(&point.latitude_e7)
+            || !(-1_800_000_000..=1_800_000_000).contains(&point.longitude_e7)
+    }) {
+        return Err("Terrain route contains an invalid coordinate".into());
+    }
     let first = coordinate(route.points.first().expect("bounded nonempty route"));
     let last = coordinate(route.points.last().expect("bounded nonempty route"));
     if straight_line_distance_m(first.0, first.1, origin.0, origin.1, true) > 500
@@ -4946,6 +5042,14 @@ fn validate_journey_route(
     if physical.abs_diff(route.distance_m) > tolerance {
         return Err("Terrain route distance does not match its geometry".into());
     }
+    let minimum_minutes = route
+        .distance_m
+        .saturating_mul(MINUTES_PER_HOUR)
+        .div_ceil(WALKING_SPEED_KM_PER_HOUR * METERS_PER_KILOMETER)
+        .max(1);
+    if route.minutes < minimum_minutes {
+        return Err("Terrain route duration is faster than the maximum travel speed".into());
+    }
     let mut cursor = 0_u64;
     for span in &route.spans {
         if span.start_minute != cursor || span.duration_minutes == 0 {
@@ -4959,6 +5063,31 @@ fn validate_journey_route(
         return Err("Terrain route spans do not match aggregate minutes".into());
     }
     Ok(())
+}
+
+fn validate_return_journey_route(
+    ctx: &ReducerContext,
+    route: &JourneyRoutePlan,
+    origin: (f64, f64),
+    destination: (f64, f64),
+) -> Result<(), String> {
+    let leg = route
+        .return_route
+        .as_ref()
+        .ok_or("Quest travel requires an independently planned return route")?;
+    validate_journey_route(
+        ctx,
+        &JourneyRoutePlan {
+            package_digest: route.package_digest.clone(),
+            distance_m: leg.distance_m,
+            minutes: leg.minutes,
+            points: leg.points.clone(),
+            spans: leg.spans.clone(),
+            return_route: None,
+        },
+        origin,
+        destination,
+    )
 }
 
 fn straight_line_distance_m(
@@ -5444,7 +5573,11 @@ fn start_party_journey(
     let forecast_camp_stop_minutes =
         forecast_camp_stop_minutes(ctx, &party.id, total_minutes, 0, fatigue_percent)?;
     let planned_movement = if destination_kind == "quest" {
-        total_minutes.saturating_mul(2)
+        total_minutes.saturating_add(
+            route
+                .and_then(|route| route.return_route.as_ref())
+                .map_or(total_minutes, |return_route| return_route.minutes),
+        )
     } else {
         total_minutes
     };
@@ -5497,6 +5630,7 @@ fn start_party_journey(
             minutes: route.minutes,
             points: route.points.clone(),
             spans: route.spans.clone(),
+            return_route: route.return_route.clone(),
         });
     }
     Ok(())
@@ -5738,10 +5872,52 @@ fn camp_redirect_minutes(journey: &PartyJourney, settlement_id: &str) -> Option<
     None
 }
 
+fn route_position_at_minute(route: &PartyJourneyRoute, minute: u64) -> Option<(f64, f64)> {
+    let coordinate = |point: &JourneyRoutePoint| {
+        (
+            f64::from(point.longitude_e7) / 10_000_000.0,
+            f64::from(point.latitude_e7) / 10_000_000.0,
+        )
+    };
+    let lengths = route
+        .points
+        .windows(2)
+        .map(|pair| {
+            let from = coordinate(&pair[0]);
+            let to = coordinate(&pair[1]);
+            straight_line_distance_m(from.0, from.1, to.0, to.1, true)
+        })
+        .collect::<Vec<_>>();
+    let total = lengths.iter().sum::<u64>();
+    if total == 0 || route.minutes == 0 {
+        return route.points.first().map(coordinate);
+    }
+    let target = total.saturating_mul(minute.min(route.minutes)) / route.minutes;
+    let mut traversed = 0_u64;
+    for (index, length) in lengths.into_iter().enumerate() {
+        if traversed.saturating_add(length) >= target {
+            let from = coordinate(&route.points[index]);
+            let to = coordinate(&route.points[index + 1]);
+            let fraction = if length == 0 {
+                0.0
+            } else {
+                (target.saturating_sub(traversed)) as f64 / length as f64
+            };
+            return Some((
+                from.0 + (to.0 - from.0) * fraction,
+                from.1 + (to.1 - from.1) * fraction,
+            ));
+        }
+        traversed = traversed.saturating_add(length);
+    }
+    route.points.last().map(coordinate)
+}
+
 fn redirect_camped_party_to_settlement(
     ctx: &ReducerContext,
     party: &mut Party,
     destination: &Settlement,
+    route: Option<JourneyRoutePlan>,
 ) -> Result<(), String> {
     let mut journey = ctx
         .db
@@ -5749,8 +5925,26 @@ fn redirect_camped_party_to_settlement(
         .party_id()
         .find(&party.id)
         .ok_or("Camp journey not found")?;
-    let travel_minutes = camp_redirect_minutes(&journey, &destination.id)
-        .ok_or("That settlement is not an endpoint of this camp journey")?;
+    let travel_minutes = if let Some(route) = route.as_ref() {
+        let current_route = ctx
+            .db
+            .party_journey_route()
+            .party_id()
+            .find(&party.id)
+            .ok_or("Camp has no persisted terrain route")?;
+        let origin = route_position_at_minute(&current_route, journey.completed_minutes)
+            .ok_or("Camp route position is unavailable")?;
+        validate_journey_route(
+            ctx,
+            route,
+            origin,
+            (destination.coord_x, destination.coord_y),
+        )?;
+        route.minutes
+    } else {
+        camp_redirect_minutes(&journey, &destination.id)
+            .ok_or("That settlement is not an endpoint of this camp journey")?
+    };
     if travel_minutes == 0 {
         return Err("The party is already at that journey endpoint".into());
     }
@@ -5779,6 +5973,26 @@ fn redirect_camped_party_to_settlement(
     journey.forecast_camp_stop_minutes =
         forecast_camp_stop_minutes(ctx, &party.id, travel_minutes, 0, journey.fatigue_percent)?;
     ctx.db.party_journey().party_id().update(journey);
+    if ctx
+        .db
+        .party_journey_route()
+        .party_id()
+        .find(&party.id)
+        .is_some()
+    {
+        ctx.db.party_journey_route().party_id().delete(&party.id);
+    }
+    if let Some(route) = route {
+        ctx.db.party_journey_route().insert(PartyJourneyRoute {
+            party_id: party.id.clone(),
+            package_digest: route.package_digest,
+            distance_m: route.distance_m,
+            minutes: route.minutes,
+            points: route.points,
+            spans: route.spans,
+            return_route: route.return_route,
+        });
+    }
 
     party.current_settlement_id = None;
     party.current_quest_location_id = None;
@@ -5855,8 +6069,9 @@ fn reconstruct_legacy_journey_coordinates(
 mod departure_invariant_tests {
     use super::{
         JourneyRoutePlan, JourneyRoutePoint, JourneyTerrainKind, JourneyTerrainSpan,
-        departure_snapshot_allows_travel, reconstruct_legacy_journey_coordinates,
-        straight_line_distance_m, validate_journey_route,
+        PartyJourneyRoute, departure_snapshot_allows_travel,
+        reconstruct_legacy_journey_coordinates, route_position_at_minute, straight_line_distance_m,
+        validate_journey_route_payload,
     };
 
     #[test]
@@ -5911,25 +6126,56 @@ mod departure_invariant_tests {
                     duration_minutes: 7,
                 },
             ],
+            return_route: None,
         }
     }
 
     #[test]
     fn planned_route_validation_binds_endpoints_geometry_and_exact_minutes() {
         let route = route_fixture();
-        assert!(validate_journey_route(&route, (10.0, 53.0), (10.01, 53.0)).is_ok());
+        assert!(validate_journey_route_payload(&route, (10.0, 53.0), (10.01, 53.0)).is_ok());
 
         let mut bad = route.clone();
         bad.points[0].longitude_e7 += 1_000_000;
-        assert!(validate_journey_route(&bad, (10.0, 53.0), (10.01, 53.0)).is_err());
+        assert!(validate_journey_route_payload(&bad, (10.0, 53.0), (10.01, 53.0)).is_err());
 
         let mut bad = route.clone();
         bad.distance_m *= 2;
-        assert!(validate_journey_route(&bad, (10.0, 53.0), (10.01, 53.0)).is_err());
+        assert!(validate_journey_route_payload(&bad, (10.0, 53.0), (10.01, 53.0)).is_err());
+
+        let mut bad = route.clone();
+        bad.spans[1].start_minute = 6;
+        assert!(validate_journey_route_payload(&bad, (10.0, 53.0), (10.01, 53.0)).is_err());
+
+        let mut bad = route.clone();
+        bad.minutes = 1;
+        bad.spans = vec![JourneyTerrainSpan {
+            kind: JourneyTerrainKind::Road,
+            start_minute: 0,
+            duration_minutes: 1,
+        }];
+        assert!(validate_journey_route_payload(&bad, (10.0, 53.0), (10.01, 53.0)).is_err());
 
         let mut bad = route;
-        bad.spans[1].start_minute = 6;
-        assert!(validate_journey_route(&bad, (10.0, 53.0), (10.01, 53.0)).is_err());
+        bad.points[0].latitude_e7 = i32::MAX;
+        assert!(validate_journey_route_payload(&bad, (10.0, 53.0), (10.01, 53.0)).is_err());
+    }
+
+    #[test]
+    fn camp_origin_is_interpolated_from_persisted_route_progress() {
+        let route = route_fixture();
+        let persisted = PartyJourneyRoute {
+            party_id: "party".into(),
+            package_digest: route.package_digest,
+            distance_m: route.distance_m,
+            minutes: route.minutes,
+            points: route.points,
+            spans: route.spans,
+            return_route: route.return_route,
+        };
+        let midpoint = route_position_at_minute(&persisted, persisted.minutes / 2).unwrap();
+        assert!((midpoint.0 - 10.005).abs() < 0.000_1);
+        assert!((midpoint.1 - 53.0).abs() < 0.000_1);
     }
 }
 
@@ -5939,6 +6185,7 @@ pub fn travel_to_quest(
     character_id: u64,
     quest_id: String,
 ) -> Result<(), String> {
+    require_strategic_gateway(ctx)?;
     travel_to_quest_impl(ctx, character_id, quest_id, None)
 }
 
@@ -5949,6 +6196,7 @@ pub fn travel_to_quest_planned(
     quest_id: String,
     route: JourneyRoutePlan,
 ) -> Result<(), String> {
+    require_strategic_gateway(ctx)?;
     travel_to_quest_impl(ctx, character_id, quest_id, Some(route))
 }
 
@@ -6016,9 +6264,16 @@ fn travel_to_quest_impl(
         .ok_or("Quest posting settlement not found")?;
     if let Some(route) = route.as_ref() {
         validate_journey_route(
+            ctx,
             route,
             (origin.coord_x, origin.coord_y),
             (quest.location_coord_x, quest.location_coord_y),
+        )?;
+        validate_return_journey_route(
+            ctx,
+            route,
+            (quest.location_coord_x, quest.location_coord_y),
+            (origin.coord_x, origin.coord_y),
         )?;
     }
     let travel_minutes = route.as_ref().map_or_else(
@@ -6103,6 +6358,7 @@ pub fn travel_to_settlement(
     character_id: u64,
     settlement_id: String,
 ) -> Result<(), String> {
+    require_strategic_gateway(ctx)?;
     travel_to_settlement_impl(ctx, character_id, settlement_id, None)
 }
 
@@ -6113,6 +6369,7 @@ pub fn travel_to_settlement_planned(
     settlement_id: String,
     route: JourneyRoutePlan,
 ) -> Result<(), String> {
+    require_strategic_gateway(ctx)?;
     travel_to_settlement_impl(ctx, character_id, settlement_id, Some(route))
 }
 
@@ -6152,7 +6409,7 @@ fn travel_to_settlement_impl(
     if let Some(party) = party.as_mut()
         && party.camp_destination_id.is_some()
     {
-        return redirect_camped_party_to_settlement(ctx, party, &destination);
+        return redirect_camped_party_to_settlement(ctx, party, &destination, route);
     }
 
     if let Some(party) = party.as_ref() {
@@ -6192,6 +6449,7 @@ fn travel_to_settlement_impl(
             };
             if let Some(route) = route.as_ref() {
                 validate_journey_route(
+                    ctx,
                     route,
                     (origin.coord_x, origin.coord_y),
                     (destination.coord_x, destination.coord_y),
@@ -6212,6 +6470,7 @@ fn travel_to_settlement_impl(
             );
             if let Some(route) = route.as_ref() {
                 validate_journey_route(
+                    ctx,
                     route,
                     (quest.location_coord_x, quest.location_coord_y),
                     (destination.coord_x, destination.coord_y),

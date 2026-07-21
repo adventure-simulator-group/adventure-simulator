@@ -921,6 +921,7 @@ async fn settlement_map(
                 open_quest_available: false,
                 provision_forecast: None,
                 terrain_route: None,
+                return_terrain_route: None,
                 route_fallback: true,
             });
         } else if can_travel {
@@ -975,7 +976,8 @@ async fn settlement_map(
                 state.terrain.as_deref(),
                 (settlement.coord_y, settlement.coord_x),
                 goal,
-            );
+            )
+            .await;
         }
     }
     let party_members = get_active_party_members(

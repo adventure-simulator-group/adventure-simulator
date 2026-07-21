@@ -302,6 +302,14 @@ pub struct JourneyTerrainSpan {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JourneyRouteLeg {
+    pub distance_m: u64,
+    pub minutes: u64,
+    pub points: Vec<JourneyRoutePoint>,
+    pub spans: Vec<JourneyTerrainSpan>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PartyJourneyRoute {
     pub party_id: String,
     pub package_digest: String,
@@ -309,6 +317,7 @@ pub struct PartyJourneyRoute {
     pub minutes: u64,
     pub points: Vec<JourneyRoutePoint>,
     pub spans: Vec<JourneyTerrainSpan>,
+    pub return_route: Option<JourneyRouteLeg>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

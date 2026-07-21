@@ -327,6 +327,12 @@ and the computed terrain polyline to the selected destination remain in the auth
 HTML/SVG overlay and are never cached as
 part of the world asset.
 
+`strategic-web` requires an authenticated `SPACETIMEDB_TOKEN` even when the
+optional terrain pack is absent. At startup it claims (or renews, using the same
+identity) the singleton strategic-gateway authority and pins the loaded terrain
+package digest. Keep a new database private until this registration succeeds;
+the first authenticated claim establishes the trusted gateway identity.
+
 For a small deterministic renderer preview without building the production
 bundle, set `STRATEGIC_MAP_PREVIEW_PNG` to an output path and run the focused
 `representative_paper_tile_has_deterministic_png_preview_hook` test with the

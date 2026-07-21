@@ -105,12 +105,25 @@ descriptions, stay out of this subscription and are queried on demand.
 Strategic terrain is a separate, optional native artifact rather than a
 SpacetimeDB grid. The offline compiler preserves the initialized GLO-30 cells
 in independently compressed chunks and merges road, water, and forest surface
-classes. `strategic-web` keeps only a bounded chunk LRU and runs deterministic
-A* when a route is previewed or executed. It submits the bounded route geometry,
-terrain spans, package digest, aggregate distance, and directional travel time
-to planned travel reducers. Those reducers re-check the current character,
-party authority, destination, endpoints, geometry, and aggregate bounds before
-persisting the active party route. The tactical server still owns every live
+classes. `strategic-web` streams verified chunk ranges from the pack into a
+bounded LRU; it never allocates the continental pack in RAM. Route requests run
+deterministic A* on a two-worker blocking pool with a cooperative deadline, an
+expanding search corridor, and a bounded normalized-endpoint cache. It submits
+the bounded route geometry, terrain spans, package digest, aggregate distance,
+and directional travel time to planned travel reducers. Quest journeys persist
+separately planned outbound and return legs, and camp redirects replace the
+remaining route rather than reusing its old straight-line duration.
+
+Travel and travel-approval reducers accept calls only from the singleton
+authenticated strategic gateway identity, and planned routes must match the
+package digest that identity registered at startup. Reducers also re-check the
+current character, party authority, destination, coordinate/span continuity,
+physical distance, and a maximum-speed lower bound before persisting the active
+party route. The first authenticated gateway claim is an operational trust
+bootstrap: deploy the database privately and start the intended gateway first.
+A compromised registered gateway can still forge routes within those semantic
+bounds, so its `SPACETIMEDB_TOKEN` is a server credential and must not be shared
+with browsers. The tactical server still owns every live
 position and terrain interaction; neither raw raster cells nor tactical ticks
 are stored in SpacetimeDB.
 

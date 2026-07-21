@@ -2,6 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use super::journey_route_leg_type::JourneyRouteLeg;
 use super::journey_route_point_type::JourneyRoutePoint;
 use super::journey_terrain_span_type::JourneyTerrainSpan;
 use super::party_journey_route_type::PartyJourneyRoute;

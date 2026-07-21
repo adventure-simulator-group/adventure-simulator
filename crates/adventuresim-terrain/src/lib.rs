@@ -15,6 +15,7 @@ use std::{
     ops::Range,
     path::Path,
     sync::{Arc, Mutex},
+    time::Instant,
 };
 
 pub const SCHEMA: u32 = 1;
@@ -25,7 +26,8 @@ pub const MAX_MANIFEST_BYTES: u64 = 8 * 1024 * 1024;
 pub const MAX_DECODED_CHUNK_BYTES: usize = 256 * 256 * 4;
 pub const CACHE_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_ROUTE_NODES: usize = 750_000;
-pub const MAX_ROUTE_POINTS: usize = 8_192;
+pub const MAX_ROUTE_POINTS: usize = 512;
+pub const MAX_TERRAIN_SPANS: usize = 256;
 
 #[cfg(feature = "builder")]
 pub mod builder;
@@ -40,6 +42,8 @@ pub enum Error {
     Validation(String),
     #[error("no bounded route was found")]
     NoRoute,
+    #[error("terrain route planning deadline elapsed")]
+    Deadline,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -318,20 +322,50 @@ impl TerrainPack {
     /// starts at native 30 m spacing and deterministically coarsens only when
     /// the hard node cap would otherwise be exceeded.
     pub fn plan(&self, start: (f64, f64), goal: (f64, f64)) -> Result<RoutePlan> {
-        let [pack_west, pack_south, pack_east, pack_north] = self.bounds();
+        self.plan_with_deadline(start, goal, None)
+    }
+
+    /// Plan with a cooperative deadline. This is intended for request-serving
+    /// callers so a timed-out blocking task stops consuming its worker slot.
+    pub fn plan_until(
+        &self,
+        start: (f64, f64),
+        goal: (f64, f64),
+        deadline: Instant,
+    ) -> Result<RoutePlan> {
+        self.plan_with_deadline(start, goal, Some(deadline))
+    }
+
+    fn plan_with_deadline(
+        &self,
+        start: (f64, f64),
+        goal: (f64, f64),
+        deadline: Option<Instant>,
+    ) -> Result<RoutePlan> {
         if ![start.0, start.1, goal.0, goal.1]
             .into_iter()
             .all(f64::is_finite)
         {
             return Err(Error::NoRoute);
         }
-        let span_lon = (start.1 - goal.1).abs();
-        let span_lat = (start.0 - goal.0).abs();
-        let padding = (span_lon.max(span_lat) * 0.25).max(0.01);
-        let west = (start.1.min(goal.1) - padding).max(pack_west);
-        let east = (start.1.max(goal.1) + padding).min(pack_east);
-        let south = (start.0.min(goal.0) - padding).max(pack_south);
-        let north = (start.0.max(goal.0) + padding).min(pack_north);
+        for window in expanding_windows(start, goal, self.bounds()) {
+            check_deadline(deadline)?;
+            match self.plan_window(start, goal, window, deadline) {
+                Ok(plan) => return Ok(plan),
+                Err(Error::NoRoute) => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Err(Error::NoRoute)
+    }
+
+    fn plan_window(
+        &self,
+        start: (f64, f64),
+        goal: (f64, f64),
+        [west, south, east, north]: [f64; 4],
+        deadline: Option<Instant>,
+    ) -> Result<RoutePlan> {
         if west >= east || south >= north {
             return Err(Error::NoRoute);
         }
@@ -354,14 +388,13 @@ impl TerrainPack {
         let height = ((north - south) / step_lat).ceil() as u32 + 1;
         let mut cells = Vec::with_capacity(width as usize * height as usize);
         for y in 0..height {
+            if y % 16 == 0 {
+                check_deadline(deadline)?;
+            }
             let lat = north - f64::from(y) * step_lat;
             for x in 0..width {
                 let lon = west + f64::from(x) * step_lon;
-                cells.push(self.cell(lat, lon)?.unwrap_or(Cell {
-                    elevation_m: 0,
-                    surface: Surface::Water,
-                    crossing: false,
-                }));
+                cells.push(self.sample_coarsened(lat, lon, step_lat, step_lon)?);
             }
         }
         let grid = WindowGrid {
@@ -382,15 +415,117 @@ impl TerrainPack {
         };
         let start_node = snap(&grid, coordinate(start), 8).ok_or(Error::NoRoute)?;
         let goal_node = snap(&grid, coordinate(goal), 8).ok_or(Error::NoRoute)?;
-        let mut plan = astar(&grid, start_node, goal_node)?;
+        let mut plan = astar_with_deadline(&grid, start_node, goal_node, deadline)?;
         for point in &mut plan.points {
             let x = point.longitude;
             let y = point.latitude;
             point.longitude = west + x * step_lon;
             point.latitude = north - y * step_lat;
         }
-        simplify_route(&mut plan.points, 512);
+        simplify_route(&mut plan.points, MAX_ROUTE_POINTS);
         Ok(plan)
+    }
+
+    fn sample_coarsened(
+        &self,
+        latitude: f64,
+        longitude: f64,
+        step_lat: f64,
+        step_lon: f64,
+    ) -> Result<Cell> {
+        let native_lat = 30.0 / 111_320.0;
+        let samples = (step_lat / native_lat).ceil().clamp(1.0, 9.0) as usize;
+        let mut cells = Vec::with_capacity(samples * samples);
+        for row in 0..samples {
+            for column in 0..samples {
+                let x = (column as f64 + 0.5) / samples as f64 - 0.5;
+                let y = (row as f64 + 0.5) / samples as f64 - 0.5;
+                cells.push(
+                    self.cell(latitude - y * step_lat, longitude + x * step_lon)?
+                        .unwrap_or(Cell {
+                            elevation_m: 0,
+                            surface: Surface::Water,
+                            crossing: false,
+                        }),
+                );
+            }
+        }
+        Ok(aggregate_cells(&cells))
+    }
+}
+
+fn check_deadline(deadline: Option<Instant>) -> Result<()> {
+    if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+        Err(Error::Deadline)
+    } else {
+        Ok(())
+    }
+}
+
+fn expanding_windows(start: (f64, f64), goal: (f64, f64), bounds: [f64; 4]) -> Vec<[f64; 4]> {
+    let [pack_west, pack_south, pack_east, pack_north] = bounds;
+    let span = (start.1 - goal.1).abs().max((start.0 - goal.0).abs());
+    let mut windows = Vec::new();
+    for factor in [0.25, 0.5, 1.0, 2.0] {
+        let padding = (span * factor).max(0.01);
+        let window = [
+            (start.1.min(goal.1) - padding).max(pack_west),
+            (start.0.min(goal.0) - padding).max(pack_south),
+            (start.1.max(goal.1) + padding).min(pack_east),
+            (start.0.max(goal.0) + padding).min(pack_north),
+        ];
+        if windows.last() != Some(&window) {
+            windows.push(window);
+        }
+    }
+    if windows.last() != Some(&bounds) {
+        windows.push(bounds);
+    }
+    windows
+}
+
+fn aggregate_cells(cells: &[Cell]) -> Cell {
+    if let Some(road) = cells.iter().find(|cell| cell.surface == Surface::Road) {
+        return Cell {
+            elevation_m: road.elevation_m,
+            surface: Surface::Road,
+            crossing: cells.iter().any(|cell| cell.crossing),
+        };
+    }
+    let passable = cells
+        .iter()
+        .filter(|cell| passable(**cell))
+        .collect::<Vec<_>>();
+    if passable.is_empty() {
+        return Cell {
+            elevation_m: 0,
+            surface: Surface::Water,
+            crossing: false,
+        };
+    }
+    let mut counts = [0_usize; 3];
+    for cell in &passable {
+        match cell.surface {
+            Surface::Open => counts[0] += 1,
+            Surface::SparseWoods => counts[1] += 1,
+            Surface::DeepWoods => counts[2] += 1,
+            _ => {}
+        }
+    }
+    let surface = [Surface::Open, Surface::SparseWoods, Surface::DeepWoods]
+        .into_iter()
+        .enumerate()
+        .max_by_key(|(index, _)| (counts[*index], *index))
+        .map(|(_, surface)| surface)
+        .unwrap_or(Surface::Open);
+    Cell {
+        elevation_m: (passable
+            .iter()
+            .map(|cell| i64::from(cell.elevation_m))
+            .sum::<i64>()
+            / passable.len() as i64) as i16,
+        surface,
+        crossing: passable.iter().any(|cell| cell.crossing),
     }
 }
 
@@ -559,6 +694,15 @@ impl PartialOrd for Queue {
 }
 
 pub fn astar<G: RoutingGrid>(grid: &G, start: (u32, u32), goal: (u32, u32)) -> Result<RoutePlan> {
+    astar_with_deadline(grid, start, goal, None)
+}
+
+fn astar_with_deadline<G: RoutingGrid>(
+    grid: &G,
+    start: (u32, u32),
+    goal: (u32, u32),
+    deadline: Option<Instant>,
+) -> Result<RoutePlan> {
     if start.0 >= grid.width()
         || start.1 >= grid.height()
         || goal.0 >= grid.width()
@@ -588,6 +732,9 @@ pub fn astar<G: RoutingGrid>(grid: &G, start: (u32, u32), goal: (u32, u32)) -> R
             return reconstruct(grid, &parent, start_i, goal_i);
         }
         visited += 1;
+        if visited % 256 == 0 {
+            check_deadline(deadline)?;
+        }
         if visited > MAX_ROUTE_NODES {
             return Err(Error::NoRoute);
         }
@@ -653,7 +800,7 @@ fn passable(cell: Cell) -> bool {
 }
 fn step_seconds(from: Cell, to: Cell, metres: u32, diagonal: bool) -> u64 {
     let distance = u64::from(metres) * if diagonal { 1414 } else { 1000 } / 1000;
-    let base = (distance * 3_600).div_ceil(u64::from(to.surface.speed_metres_per_hour().max(1)));
+    let base = (distance * 3_600).div_ceil(u64::from(from.surface.speed_metres_per_hour().max(1)));
     let rise = i32::from(to.elevation_m) - i32::from(from.elevation_m);
     let uphill = if rise > 0 {
         1000 + (u64::try_from(rise).unwrap_or(0) * 6).min(1500)
@@ -695,11 +842,11 @@ fn reconstruct<G: RoutingGrid>(
         seconds += step;
         if let Some((_, duration)) = second_spans
             .last_mut()
-            .filter(|(surface, _)| *surface == to.surface)
+            .filter(|(surface, _)| *surface == from.surface)
         {
             *duration += step
         } else {
-            second_spans.push((to.surface, step));
+            second_spans.push((from.surface, step));
         }
     }
     let mut cursor_seconds = 0_u64;
@@ -731,13 +878,72 @@ fn reconstruct<G: RoutingGrid>(
         })
         .collect::<Vec<_>>();
     retain_grid_turns(&mut points);
-    simplify_route(&mut points, 512);
+    simplify_route(&mut points, MAX_ROUTE_POINTS);
+    compact_spans(&mut spans, seconds.div_ceil(60), MAX_TERRAIN_SPANS);
     Ok(RoutePlan {
         points,
         spans,
         distance_m: distance,
         minutes: seconds.div_ceil(60),
     })
+}
+
+fn compact_spans(spans: &mut Vec<TerrainSpan>, total_minutes: u64, cap: usize) {
+    if spans.len() <= cap || cap == 0 || total_minutes == 0 {
+        return;
+    }
+    let source = std::mem::take(spans);
+    let mut compacted: Vec<TerrainSpan> = Vec::with_capacity(cap);
+    for bucket in 0..cap {
+        let start = total_minutes * bucket as u64 / cap as u64;
+        let end = total_minutes * (bucket as u64 + 1) / cap as u64;
+        if start == end {
+            continue;
+        }
+        let mut durations = [0_u64; 5];
+        for span in &source {
+            let span_end = span.start_minute + span.duration_minutes;
+            let overlap = end
+                .min(span_end)
+                .saturating_sub(start.max(span.start_minute));
+            durations[surface_index(span.surface)] += overlap;
+        }
+        let surface = [
+            Surface::Road,
+            Surface::Open,
+            Surface::SparseWoods,
+            Surface::DeepWoods,
+            Surface::Water,
+        ]
+        .into_iter()
+        .enumerate()
+        .max_by_key(|(index, _)| (durations[*index], Reverse(*index)))
+        .map(|(_, surface)| surface)
+        .unwrap_or(Surface::Open);
+        if let Some(previous) = compacted
+            .last_mut()
+            .filter(|previous| previous.surface == surface)
+        {
+            previous.duration_minutes += end - start;
+        } else {
+            compacted.push(TerrainSpan {
+                surface,
+                start_minute: start,
+                duration_minutes: end - start,
+            });
+        }
+    }
+    *spans = compacted;
+}
+
+fn surface_index(surface: Surface) -> usize {
+    match surface {
+        Surface::Road => 0,
+        Surface::Open => 1,
+        Surface::SparseWoods => 2,
+        Surface::DeepWoods => 3,
+        Surface::Water => 4,
+    }
 }
 
 fn retain_grid_turns(points: &mut Vec<RoutePoint>) {
@@ -840,9 +1046,83 @@ mod tests {
         ];
         for (surface, minutes) in expected {
             let mut g = grid(2, 1);
-            g.cells[1].surface = surface;
+            g.cells[0].surface = surface;
             assert_eq!(astar(&g, (0, 0), (1, 0)).unwrap().minutes, minutes);
         }
+    }
+
+    #[test]
+    fn first_span_describes_the_surface_being_departed() {
+        let mut g = grid(3, 1);
+        g.cells[0].surface = Surface::Road;
+        let route = astar(&g, (0, 0), (2, 0)).unwrap();
+        assert_eq!(route.spans[0].surface, Surface::Road);
+        assert_eq!(route.spans[0].start_minute, 0);
+    }
+
+    #[test]
+    fn coarsening_preserves_a_road_cell() {
+        let mut cells = vec![Cell::default(); 25];
+        cells[12] = Cell {
+            surface: Surface::Road,
+            elevation_m: 17,
+            crossing: true,
+        };
+        assert_eq!(
+            aggregate_cells(&cells),
+            Cell {
+                surface: Surface::Road,
+                elevation_m: 17,
+                crossing: true,
+            }
+        );
+    }
+
+    #[test]
+    fn expanding_search_finishes_with_full_pack_bounds() {
+        let bounds = [5.0, 50.0, 15.0, 55.0];
+        let windows = expanding_windows((53.5, 9.8), (53.7, 10.2), bounds);
+        assert!(windows.len() > 1);
+        assert_eq!(windows.last(), Some(&bounds));
+        assert_ne!(windows.first(), windows.last());
+    }
+
+    #[test]
+    fn terrain_spans_are_deterministically_bounded() {
+        let mut g = grid(700, 1);
+        for (index, cell) in g.cells.iter_mut().enumerate() {
+            cell.surface = if index % 2 == 0 {
+                Surface::Road
+            } else {
+                Surface::DeepWoods
+            };
+        }
+        let first = astar(&g, (0, 0), (699, 0)).unwrap();
+        let second = astar(&g, (0, 0), (699, 0)).unwrap();
+        assert_eq!(first, second);
+        assert!(first.spans.len() <= MAX_TERRAIN_SPANS);
+        assert_eq!(
+            first
+                .spans
+                .iter()
+                .map(|span| span.duration_minutes)
+                .sum::<u64>(),
+            first.minutes
+        );
+        assert!(first
+            .spans
+            .windows(2)
+            .all(|pair| pair[0].start_minute + pair[0].duration_minutes
+                == pair[1].start_minute));
+    }
+
+    #[test]
+    fn expired_deadline_stops_search_cooperatively() {
+        let g = grid(100, 100);
+        assert!(matches!(
+            astar_with_deadline(&g, (0, 0), (99, 99), Some(Instant::now())),
+            Err(Error::Deadline)
+        ));
     }
 
     #[test]

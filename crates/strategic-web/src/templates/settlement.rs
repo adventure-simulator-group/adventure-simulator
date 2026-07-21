@@ -891,11 +891,14 @@ pub(crate) fn travel_planner_bar(
     travel_planner_bar_for(
         selected_name,
         &selected_description,
-        selected.is_some_and(|destination| destination.quest_in_progress),
+        selected.is_some_and(|destination| {
+            destination.quest_in_progress && destination.return_terrain_route.is_none()
+        }),
         selected_minutes,
         &selected_camp_stops,
         &selected_camp_forecasts,
         camp_fatigue_percent,
+        None,
         None,
         provision_forecast,
         selected
@@ -907,9 +910,7 @@ pub(crate) fn travel_planner_bar(
         &selected.map_or_else(String::new, |destination| {
             format_itinerary_segments(&destination.itinerary_segments)
         }),
-        &selected.map_or_else(String::new, |destination| {
-            format_terrain_spans(destination.terrain_route.as_ref())
-        }),
+        &selected.map_or_else(String::new, |destination| format_terrain_spans(destination)),
     )
 }
 
@@ -931,6 +932,7 @@ pub(crate) fn travel_planner_bar_for(
     camp_forecasts: &str,
     camp_fatigue_percent: u8,
     journey: Option<&PartyJourney>,
+    journey_route: Option<&PartyJourneyRoute>,
     provision_forecast: Option<&TravelProvisionForecast>,
     preview_departure_minute: u64,
     preview_elapsed_minutes: u64,
@@ -944,7 +946,11 @@ pub(crate) fn travel_planner_bar_for(
         .map_or(0, |item| item.total_minutes);
     let journey_total_minutes = journey.map_or(0, |item| {
         if item.destination_kind == "quest" {
-            item.total_minutes.saturating_mul(2)
+            item.total_minutes.saturating_add(
+                journey_route
+                    .and_then(|route| route.return_route.as_ref())
+                    .map_or(item.total_minutes, |route| route.minutes),
+            )
         } else {
             item.total_minutes
         }
@@ -961,7 +967,7 @@ pub(crate) fn travel_planner_bar_for(
                     .iter()
                     .chain(item.forecast_camp_stop_minutes.iter())
                     .rev()
-                    .map(|minute| item.total_minutes.saturating_mul(2).saturating_sub(*minute)),
+                    .map(|minute| journey_total_minutes.saturating_sub(*minute)),
             );
         }
         format_camp_stops(&stops)
@@ -1026,8 +1032,9 @@ pub(crate) fn travel_planner_bar_for(
                     }
                     div class="travel-resource-row terrain" aria-label="Terrain along route" {
                         span class="travel-resource-icon" { (game_icon("Terrain", "mountains")) }
-                        div class="travel-terrain-track" data-terrain-track {}
+                        div class="travel-terrain-track" data-terrain-track aria-describedby="terrain-course-description" {}
                         span class="sr-only" data-terrain-summary aria-live="polite" {}
+                        ol id="terrain-course-description" class="sr-only" data-terrain-course-description {}
                     }
                     div class="travel-resource-row daylight" aria-label="Day and night" {
                         span class="travel-resource-icon" { (game_icon("Day and night", "sun")) }
@@ -1050,27 +1057,40 @@ fn format_camp_stops(stops: &[u64]) -> String {
         .join(",")
 }
 
-fn format_terrain_spans(route: Option<&adventuresim_terrain::RoutePlan>) -> String {
-    route.map_or_else(String::new, |route| {
-        route
-            .spans
-            .iter()
-            .filter_map(|span| {
-                let kind = match span.surface {
-                    adventuresim_terrain::Surface::Road => "road",
-                    adventuresim_terrain::Surface::Open => "open",
-                    adventuresim_terrain::Surface::SparseWoods => "sparse-woods",
-                    adventuresim_terrain::Surface::DeepWoods => "deep-woods",
-                    adventuresim_terrain::Surface::Water => return None,
-                };
-                Some(format!(
-                    "{kind},{},{}",
-                    span.start_minute, span.duration_minutes
-                ))
-            })
-            .collect::<Vec<_>>()
-            .join("|")
-    })
+fn format_terrain_spans(destination: &TravelDestination) -> String {
+    destination
+        .terrain_route
+        .as_ref()
+        .map_or_else(String::new, |route| {
+            route
+                .spans
+                .iter()
+                .map(|span| (span, 0_u64))
+                .chain(
+                    destination
+                        .return_terrain_route
+                        .iter()
+                        .flat_map(|return_route| {
+                            return_route.spans.iter().map(|span| (span, route.minutes))
+                        }),
+                )
+                .filter_map(|(span, offset)| {
+                    let kind = match span.surface {
+                        adventuresim_terrain::Surface::Road => "road",
+                        adventuresim_terrain::Surface::Open => "open",
+                        adventuresim_terrain::Surface::SparseWoods => "sparse-woods",
+                        adventuresim_terrain::Surface::DeepWoods => "deep-woods",
+                        adventuresim_terrain::Surface::Water => return None,
+                    };
+                    Some(format!(
+                        "{kind},{},{}",
+                        span.start_minute.saturating_add(offset),
+                        span.duration_minutes
+                    ))
+                })
+                .collect::<Vec<_>>()
+                .join("|")
+        })
 }
 
 fn format_camp_forecasts(destination: &TravelDestination) -> String {
@@ -1313,7 +1333,7 @@ pub fn camp_page(
             div class="sidebar-section camp-journey-section" {
                 h3 class="sidebar-header" { "Journey" }
                 div class="travel-planner-vertical" {
-                    (travel_planner_bar_for(destination_name, "", false, party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, provision_forecast, journey.map_or(0, |item| item.departure_minute), journey.map_or(party.camp_remaining_minutes, |item| item.total_elapsed_minutes), &match (journey, itinerary) { (Some(journey), Some(itinerary)) => format_persisted_itinerary(journey, itinerary), (Some(journey), None) => format_legacy_persisted_itinerary(journey), _ => String::new() }, &format_persisted_terrain_spans(terrain_route)))
+                    (travel_planner_bar_for(destination_name, "", false, party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, terrain_route, provision_forecast, journey.map_or(0, |item| item.departure_minute), journey.map_or(party.camp_remaining_minutes, |item| item.total_elapsed_minutes), &match (journey, itinerary) { (Some(journey), Some(itinerary)) => format_persisted_itinerary(journey, itinerary), (Some(journey), None) => format_legacy_persisted_itinerary(journey), _ => String::new() }, &format_persisted_terrain_spans(terrain_route)))
                 }
                 form action="/camp/continue" method="post" {
                     button type="submit" class="btn btn-primary btn-small btn-block"
@@ -1342,14 +1362,22 @@ fn format_persisted_terrain_spans(route: Option<&PartyJourneyRoute>) -> String {
         route
             .spans
             .iter()
-            .map(|span| {
+            .map(|span| (span, 0_u64))
+            .chain(route.return_route.iter().flat_map(|return_route| {
+                return_route.spans.iter().map(|span| (span, route.minutes))
+            }))
+            .map(|(span, offset)| {
                 let kind = match span.kind {
                     JourneyTerrainKind::Road => "road",
                     JourneyTerrainKind::Open => "open",
                     JourneyTerrainKind::SparseWoods => "sparse-woods",
                     JourneyTerrainKind::DeepWoods => "deep-woods",
                 };
-                format!("{kind},{},{}", span.start_minute, span.duration_minutes)
+                format!(
+                    "{kind},{},{}",
+                    span.start_minute.saturating_add(offset),
+                    span.duration_minutes
+                )
             })
             .collect::<Vec<_>>()
             .join("|")
@@ -6066,6 +6094,7 @@ mod tests {
             open_quest_available: false,
             provision_forecast: None,
             terrain_route: None,
+            return_terrain_route: None,
             route_fallback: true,
         }
     }
