@@ -63,6 +63,12 @@ it into database rows or `ElevationCell` structs. Independently deflated
 surface, exact bounded canopy percentage, a native 15-degree hill bit, and an
 explicit infrastructure-crossing bit.
 
+The compiler writes `STRATEGIC_MAP_DATA_LICENSE.md` beside the terrain and map
+outputs. It contains the prescribed Copernicus WorldDEM-30 production credit,
+liability notice, modification statement, and the separate CC BY-SA licence
+for Adventure Simulator's contributions. Distribute that notice with the pack;
+the repository software's AGPL does not license these generated data artifacts.
+
 The manifest and pack are separately SHA-256 addressed. Readers reject wrong
 dimensions, overlapping or truncated chunks, digest mismatches, excess
 entries, and oversized decompression. Runtime decompression uses a

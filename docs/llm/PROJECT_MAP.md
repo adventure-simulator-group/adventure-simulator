@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (914)
+## Files (915)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -24,6 +24,7 @@ development, or wiki document before changing a subsystem.
 - `Cargo.lock` — Locked Rust dependency versions.
 - `Cargo.toml` — Cargo package/workspace manifest.
 - `LICENSE` — Repository support file.
+- `MAP_DATA_LICENSE.md` — Project documentation.
 - `README.md` — Component overview and usage notes.
 - `THIRD_PARTY_NOTICES.md` — Project documentation.
 - `assets/TownA.glb` — Binary game or UI asset.

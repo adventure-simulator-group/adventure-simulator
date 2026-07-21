@@ -75,6 +75,11 @@ positioned parchment texture keeps adjacent tile gutters identical.
 The stable `strategic-map-v1.json` and `strategic-map-tiles-v1.pack` filenames
 are versioned, not content-addressed; the pack digest query parameter is every
 tile route's cache key.
+Adventure Simulator's contributions to the generated map and terrain packs are
+distributed under CC BY-SA 4.0 rather than the repository software's AGPL.
+Every bundle must retain the generated `STRATEGIC_MAP_DATA_LICENSE.md` notice
+or provide a reasonably prominent link to the canonical `MAP_DATA_LICENSE.md`;
+the server exposes the latter at `/map/data-license`.
 The compact schema-3 deployment manifest carries renderer revision 7, reviewed
 source identities, coverage counts, and the indexed AVIF pyramid, but not the
 offline roads, compound water rings, elevation cells/contours, or forest

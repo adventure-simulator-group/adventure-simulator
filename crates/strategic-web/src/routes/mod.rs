@@ -468,6 +468,10 @@ pub(crate) async fn approve_party_action(
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route(
+            crate::strategic_map::DATA_LICENSE_PATH,
+            get(crate::strategic_map::data_license),
+        )
+        .route(
             "/map/tiles/{theme}/{zoom}/{x}/{tile}",
             get(crate::strategic_map::world_tile),
         )

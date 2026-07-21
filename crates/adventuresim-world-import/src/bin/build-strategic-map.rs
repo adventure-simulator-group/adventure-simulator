@@ -21,6 +21,8 @@ const VIABUNDUS_DOI: &str = "https://doi.org/10.5281/zenodo.16611998";
 const RECORD_URL: &str = "https://zenodo.org/api/records/16611998";
 const BOUNDS: [f64; 4] = [-11.0, 43.0, 31.0, 70.0];
 const MAX_SOURCE_FILES: usize = 64;
+const DATA_LICENSE_FILENAME: &str = "STRATEGIC_MAP_DATA_LICENSE.md";
+const DATA_LICENSE: &str = include_str!("../../../../MAP_DATA_LICENSE.md");
 
 #[derive(Parser)]
 #[command(about = "Build the bounded AVIF strategic-map package from initialized world data")]
@@ -210,6 +212,12 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         fs::create_dir_all(parent)?;
     }
     fs::write(&args.tiles_output, tile_bytes)?;
+    write_data_license(&[
+        &args.output,
+        &args.tiles_output,
+        &args.terrain_output,
+        &args.terrain_pack_output,
+    ])?;
     println!(
         "Wrote {} roads, {} water polygons, {} elevation cells, {} contours, {} forest regions, and {} AVIF tiles to {} and {}",
         package.roads.len(),
@@ -228,6 +236,24 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         args.terrain_pack_output.display(),
         terrain.package_sha256
     );
+    Ok(())
+}
+
+fn write_data_license(outputs: &[&Path]) -> std::io::Result<()> {
+    let directories = outputs
+        .iter()
+        .map(|output| {
+            output
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+                .unwrap_or_else(|| Path::new("."))
+                .to_path_buf()
+        })
+        .collect::<BTreeSet<_>>();
+    for directory in directories {
+        fs::create_dir_all(&directory)?;
+        fs::write(directory.join(DATA_LICENSE_FILENAME), DATA_LICENSE)?;
+    }
     Ok(())
 }
 
@@ -821,6 +847,29 @@ mod tests {
         assert!(value["forest"].get("regions").is_none());
         fs::write(root.join("edges.csv"), b"changed").unwrap();
         assert!(build(&root, layers()).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn generated_bundle_directories_receive_the_canonical_data_license() {
+        let root = fixture();
+        let map_dir = root.join("map");
+        let terrain_dir = root.join("terrain");
+        write_data_license(&[
+            &map_dir.join("strategic-map-v1.json"),
+            &map_dir.join("strategic-map-tiles-v1.pack"),
+            &terrain_dir.join("terrain-routing-v1.json"),
+            &terrain_dir.join("terrain-routing-v1.pack"),
+        ])
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(map_dir.join(DATA_LICENSE_FILENAME)).unwrap(),
+            DATA_LICENSE
+        );
+        assert_eq!(
+            fs::read_to_string(terrain_dir.join(DATA_LICENSE_FILENAME)).unwrap(),
+            DATA_LICENSE
+        );
         fs::remove_dir_all(root).unwrap();
     }
 

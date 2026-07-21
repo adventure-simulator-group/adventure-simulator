@@ -27,6 +27,8 @@ const DEFAULT_VIEW_HEIGHT: f64 = DEFAULT_VIEW_WIDTH / VIEW_ASPECT_RATIO;
 const ROUTE_MIN_VIEW_WIDTH: f64 = 90.0;
 const ROUTE_MIN_VIEW_HEIGHT: f64 = ROUTE_MIN_VIEW_WIDTH / VIEW_ASPECT_RATIO;
 pub(crate) const TILE_PATH_PREFIX: &str = "/map/tiles/";
+pub(crate) const DATA_LICENSE_PATH: &str = "/map/data-license";
+const DATA_LICENSE: &str = include_str!("../../../MAP_DATA_LICENSE.md");
 const PACKAGE_SCHEMA: u32 = 3;
 const RENDERER_REVISION: u32 = 7;
 const MIN_TILE_SIZE: u32 = 64;
@@ -242,6 +244,14 @@ fn pyramid_tile_entry_count(tile_size: u32, max_zoom: u8) -> usize {
 #[derive(Deserialize)]
 pub(crate) struct TileQuery {
     v: Option<String>,
+}
+
+pub(crate) async fn data_license() -> Response<Body> {
+    Response::builder()
+        .header(CONTENT_TYPE, "text/markdown; charset=utf-8")
+        .header(CACHE_CONTROL, "public, max-age=3600")
+        .body(Body::from(DATA_LICENSE))
+        .expect("map data licence response")
 }
 
 pub(crate) async fn world_tile(
@@ -545,6 +555,8 @@ pub fn strategic_map(
                     }
                 }
             }
+            a class="strategic-map-license-link" href=(DATA_LICENSE_PATH)
+                rel="license" target="_blank" { "Map data licence" }
         }
     }
 }
@@ -810,6 +822,10 @@ mod tests {
         assert!(!markup.contains("strategic-map-legend"));
         assert!(!markup.contains("strategic-map-attribution"));
         assert!(!markup.contains("Map data:"));
+        assert!(markup.contains("href=\"/map/data-license\""));
+        assert!(markup.contains("rel=\"license\""));
+        assert!(DATA_LICENSE.contains("Creative Commons Attribution-ShareAlike 4.0"));
+        assert!(DATA_LICENSE.contains("The organisations in charge of the Copernicus programme"));
     }
 
     #[test]

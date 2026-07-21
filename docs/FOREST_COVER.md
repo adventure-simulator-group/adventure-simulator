@@ -112,6 +112,12 @@ presentation data: absent tiles stay absent, tile coverage is recorded in the
 map package, and no missing regional forest is inferred from a settlement
 sample.
 
+Published map and terrain packs retain the Copernicus source, modification,
+and no-endorsement statements in `STRATEGIC_MAP_DATA_LICENSE.md`, which the
+offline compiler writes beside every output directory. That notice must remain
+with redistributed bundles or be available through an equivalent prominent
+link.
+
 Forest cover is stored on settlements because it describes the immediate area
 and can drive timber and foraging products, scene vegetation density, visibility,
 encounters, and fuel availability. Continuous route or canonical regional
