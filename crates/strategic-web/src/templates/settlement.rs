@@ -1697,7 +1697,7 @@ pub fn party_personal_page(
     let content = html! {
         aside class="left-sidebar" {
             (party_attributes_rail("Your attributes", attributes, limbs, medical, Some(&format!("{}/party/{}/surgery", location.base_path(), active_character.id)), injuries, projectiles))
-            (strategic_condition_rail(condition, morale_sources))
+            (strategic_condition_rail(condition, morale_sources, filth))
             (medical_rail(medical, &location.base_path(), active_character.id, active_character.id, true))
             @if let Some(demand) = religious_demand {
                 (religious_demand_rail(demand, &location.base_path(), active_character.id))
@@ -1712,7 +1712,6 @@ pub fn party_personal_page(
                 can_examine,
             ))
             (visual_stage("character", &active_character.name, "Your identity, condition, and capabilities"))
-            (filth_status_bar(filth, party_members))
             (settlement_chat_area(&active_character.name, Some(active_character)))
             (medical_examination_popup(medical, &location.base_path(), active_character.id, limbs, injuries, projectiles))
         }
@@ -1731,10 +1730,7 @@ pub fn party_personal_page(
     location.render_layout("Party", content, Some(&active_character.name))
 }
 
-fn filth_status_bar(
-    deposits: &[crate::spacetimedb::CharacterFilth],
-    _characters: &[Character],
-) -> Markup {
+fn filth_status_bar(deposits: &[crate::spacetimedb::CharacterFilth]) -> Markup {
     use crate::spacetimedb::{FilthOrigin, FilthSubstance};
     let dirt: u16 = deposits
         .iter()
@@ -1830,13 +1826,14 @@ pub fn party_stats_page(
     can_examine: bool,
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
+    filth: &[crate::spacetimedb::CharacterFilth],
 ) -> Markup {
     let selected_attributes_title = format!("{}'s attributes", selected.name);
     let selected_skills_title = format!("{}'s skills", selected.name);
     let content = html! {
         aside class="left-sidebar" {
             (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs, medical, Some(&format!("{}/party/{}/surgery", location.base_path(), selected.id)), injuries, projectiles))
-            (strategic_condition_rail(condition, morale_sources))
+            (strategic_condition_rail(condition, morale_sources, filth))
             (medical_rail(medical, &location.base_path(), active_character.id, selected.id, true))
         }
         main class="center-content settlement-main party-member-stage" {
@@ -4062,6 +4059,7 @@ mod personality_tests {
 fn strategic_condition_rail(
     condition: Option<&CharacterStrategicCondition>,
     morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
+    filth: &[crate::spacetimedb::CharacterFilth],
 ) -> Markup {
     let Some(condition) = condition else {
         return html! {};
@@ -4185,6 +4183,7 @@ fn strategic_condition_rail(
                 (need_balance_meter("Food", "meal", "Hunger", "Full", "hunger", condition.food_days, condition.hunger))
                 (need_balance_meter("Water", "water-drop", "Thirst", "Hydrated", "thirst", condition.water_days, condition.thirst))
             }
+            (filth_status_bar(filth))
         }))
     }
 }
@@ -5151,9 +5150,11 @@ mod tests {
         Character, CharacterCondition, LocationKind, MerchantShop, encumbrance_inventory_rail,
         encumbrance_meter, filth_status_bar, format_rest_duration, live_merchant_shop_page,
         need_balance_meter, repair_custody_panel, repair_submit_control, rest_default_minutes,
-        settlement_rest_duration_control,
+        settlement_rest_duration_control, strategic_condition_rail,
     };
-    use crate::spacetimedb::{CharacterFilth, FilthOrigin, FilthSubstance, ItemKind};
+    use crate::spacetimedb::{
+        CharacterFilth, CharacterStrategicCondition, FilthOrigin, FilthSubstance, ItemKind,
+    };
     use adventuresim_core::equipment::EncumbranceSummary;
 
     #[test]
@@ -5172,9 +5173,36 @@ mod tests {
             serialized.get("origin").and_then(|value| value.as_str()),
             Some("Foreign")
         );
-        let markup = filth_status_bar(&[deposit], &[]).into_string();
+        let markup = filth_status_bar(&[deposit]).into_string();
         assert!(markup.contains("2 foreign"));
         assert!(!markup.contains("source_character_id"));
+    }
+
+    #[test]
+    fn status_rail_places_cleanliness_after_water() {
+        let condition = CharacterStrategicCondition {
+            character_id: 7,
+            morale: 0.0,
+            morale_bonus: 0.0,
+            morale_bonus_cap: 0.0,
+            fervor: 0.0,
+            pain: 0.0,
+            blood_loss: 0.0,
+            fear: 0.0,
+            fatigue: 0.0,
+            hunger: 0.0,
+            thirst: 0.0,
+            food_days: 1.0,
+            water_days: 1.0,
+            water_capacity_ml: 2_000,
+            incapacitation: 0.0,
+            check_multiplier: 1.0,
+            status: "ready".into(),
+        };
+        let markup = strategic_condition_rail(Some(&condition), &[], &[]).into_string();
+        let water = markup.find("Water").expect("water meter");
+        let cleanliness = markup.find("Cleanliness").expect("cleanliness meter");
+        assert!(water < cleanliness);
     }
 
     #[test]

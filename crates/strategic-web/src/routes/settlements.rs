@@ -3279,6 +3279,13 @@ async fn party_stats(
         ))
         .await
         .unwrap_or_default();
+    let filth = state
+        .db
+        .query::<CharacterFilth>(&format!(
+            "SELECT * FROM character_filth WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default();
     Html(
         party_stats_page(
             &location,
@@ -3301,6 +3308,7 @@ async fn party_stats(
             can_examine,
             &injuries,
             &projectiles,
+            &filth,
         )
         .into_string(),
     )
