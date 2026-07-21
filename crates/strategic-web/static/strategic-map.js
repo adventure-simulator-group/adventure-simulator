@@ -98,6 +98,20 @@
       maxY: Math.min(maxY, Math.ceil((y + height) / span) - 1),
     };
   };
+  const parentTileFallback = (zoom, x, y, tileSize, gutter) => {
+    if (zoom <= 0) return null;
+    const parentZoom = zoom - 1;
+    const span = tileSize / 2 ** parentZoom;
+    const tileGutter = gutter / 2 ** parentZoom;
+    return {
+      zoom: parentZoom,
+      x: Math.floor(x / 2),
+      y: Math.floor(y / 2),
+      left: Math.floor(x / 2) * span - tileGutter,
+      top: Math.floor(y / 2) * span - tileGutter,
+      size: span + 2 * tileGutter,
+    };
+  };
   const renderTiles = (map, svg, view, theme = map.dataset.mapTheme) => {
     const layer = svg.querySelector("[data-map-tile-layer]");
     if (!layer) return;
@@ -116,14 +130,36 @@
     const tiles = [];
     for (let y = range.minY; y <= range.maxY; y += 1) {
       for (let x = range.minX; x <= range.maxX; x += 1) {
+        const left = x * range.span - tileGutter;
+        const top = y * range.span - tileGutter;
+        const size = range.span + 2 * tileGutter;
+        const viewport = document.createElementNS(SVG_NS, "svg");
+        viewport.setAttribute("x", left.toFixed(3));
+        viewport.setAttribute("y", top.toFixed(3));
+        viewport.setAttribute("width", size.toFixed(3));
+        viewport.setAttribute("height", size.toFixed(3));
+        viewport.setAttribute("viewBox", `${left.toFixed(3)} ${top.toFixed(3)} ${size.toFixed(3)} ${size.toFixed(3)}`);
+        viewport.setAttribute("overflow", "hidden");
         const image = document.createElementNS(SVG_NS, "image");
-        image.setAttribute("x", (x * range.span - tileGutter).toFixed(3));
-        image.setAttribute("y", (y * range.span - tileGutter).toFixed(3));
-        image.setAttribute("width", (range.span + 2 * tileGutter).toFixed(3));
-        image.setAttribute("height", (range.span + 2 * tileGutter).toFixed(3));
+        image.setAttribute("x", left.toFixed(3));
+        image.setAttribute("y", top.toFixed(3));
+        image.setAttribute("width", size.toFixed(3));
+        image.setAttribute("height", size.toFixed(3));
         image.setAttribute("preserveAspectRatio", "none");
         image.setAttribute("href", `${root}${theme}/${zoom}/${x}/${y}.avif?v=${version}`);
-        tiles.push(image);
+        image.addEventListener("error", () => {
+          if (image.dataset.parentFallback === "true") return;
+          const parent = parentTileFallback(zoom, x, y, tileSize, gutter);
+          if (!parent) return;
+          image.dataset.parentFallback = "true";
+          image.setAttribute("x", parent.left.toFixed(3));
+          image.setAttribute("y", parent.top.toFixed(3));
+          image.setAttribute("width", parent.size.toFixed(3));
+          image.setAttribute("height", parent.size.toFixed(3));
+          image.setAttribute("href", `${root}${theme}/${parent.zoom}/${parent.x}/${parent.y}.avif?v=${version}`);
+        });
+        viewport.append(image);
+        tiles.push(viewport);
       }
     }
     layer.replaceChildren(...tiles);
@@ -212,7 +248,7 @@
   };
 
   const initializeStrategicMaps = (root = document) => root.querySelectorAll("[data-strategic-map]").forEach((map) => initializeMap(map));
-  globalThis.StrategicMap = { boxesOverlap, initializeMap, labelPriorityThreshold, layoutLabels, parseViewBox, pannedView, renderTiles, tileZoom, visibleTileRange, zoomedView };
+  globalThis.StrategicMap = { boxesOverlap, initializeMap, labelPriorityThreshold, layoutLabels, parentTileFallback, parseViewBox, pannedView, renderTiles, tileZoom, visibleTileRange, zoomedView };
   initializeStrategicMaps();
   document.addEventListener("strategic-live-regions-refreshed", () => initializeStrategicMaps());
 })();
