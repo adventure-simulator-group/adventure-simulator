@@ -1883,7 +1883,7 @@ mod tests {
     #[test]
     fn carried_fatigue_prevents_morale_until_the_next_qualifying_interval() {
         let schedule = DailySchedule {
-            melee: 16 * 60,
+            combat_training_minutes: 16 * 60,
             ..Default::default()
         };
         let first = settlement_leisure_outcome(schedule, MINUTES_PER_DAY, 200.0);
@@ -1948,7 +1948,7 @@ mod tests {
     #[test]
     fn leisure_source_with_carried_fatigue_is_partition_independent() {
         let schedule = DailySchedule {
-            melee: 16 * 60,
+            combat_training_minutes: 16 * 60,
             ..Default::default()
         };
         let total = 4 * MINUTES_PER_DAY;
@@ -1967,7 +1967,7 @@ mod tests {
     #[test]
     fn leisure_source_decay_before_earning_is_partition_independent_below_cap() {
         let schedule = DailySchedule {
-            melee: 17 * 60,
+            combat_training_minutes: 17 * 60,
             ..Default::default()
         };
         let total = 2 * MINUTES_PER_DAY;

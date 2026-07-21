@@ -6,6 +6,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::item_kind_type::ItemKind;
 use super::item_slot_type::ItemSlot;
+use super::weapon_skill_distribution_type::WeaponSkillDistribution;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -27,6 +28,7 @@ pub struct Item {
     pub balance: f32,
     pub melee: bool,
     pub ranged: bool,
+    pub weapon_skills: WeaponSkillDistribution,
     pub blunt: bool,
     pub slash: bool,
     pub pierce: bool,
@@ -67,6 +69,7 @@ pub struct ItemCols {
     pub balance: __sdk::__query_builder::Col<Item, f32>,
     pub melee: __sdk::__query_builder::Col<Item, bool>,
     pub ranged: __sdk::__query_builder::Col<Item, bool>,
+    pub weapon_skills: __sdk::__query_builder::Col<Item, WeaponSkillDistribution>,
     pub blunt: __sdk::__query_builder::Col<Item, bool>,
     pub slash: __sdk::__query_builder::Col<Item, bool>,
     pub pierce: __sdk::__query_builder::Col<Item, bool>,
@@ -103,6 +106,7 @@ impl __sdk::__query_builder::HasCols for Item {
             balance: __sdk::__query_builder::Col::new(table_name, "balance"),
             melee: __sdk::__query_builder::Col::new(table_name, "melee"),
             ranged: __sdk::__query_builder::Col::new(table_name, "ranged"),
+            weapon_skills: __sdk::__query_builder::Col::new(table_name, "weapon_skills"),
             blunt: __sdk::__query_builder::Col::new(table_name, "blunt"),
             slash: __sdk::__query_builder::Col::new(table_name, "slash"),
             pierce: __sdk::__query_builder::Col::new(table_name, "pierce"),

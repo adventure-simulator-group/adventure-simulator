@@ -51,15 +51,23 @@ The current item schema has one armor item per existing body slot, with no
 layering field. A `mail_shirt`, for example, is a chest-slot alternative to a
 brigandine rather than a simultaneous underlayer. This is an explicit temporary
 representation constraint, not a claim that period armor was worn in one
-layer. Adding layering, ammunition-specific projectile behavior, condition, or
-rust belongs to later corrosion work.
+layer. Adding layering, ammunition-specific projectile behavior, or rust
+belongs to later corrosion work.
+
+Weapons carry an explicit distribution across Polearm, Axe, Bludgeon, Sword,
+Knife, Bow, Crossbow, Firearm, and Throw. Hybrid weapons split equally among
+their applicable tags: a halberd is Polearm/Axe/Bludgeon, a glaive is
+Polearm/Sword, and a hand axe is Axe/Knife. Combat averages the complete leaf
+checks by these weights. Knife is the short-weapon category, not a literal item
+name test.
 
 ## Condition and repair
 
-Weapons, shields, and armor are individual inventory instances. Their condition is a continuous
+Weapons, shields, armor, and clothing are individual inventory instances. Their condition is a continuous
 five-bin bar: tier one is yellow-green, tier two yellow, tier three orange, tier four red, and tier
 five violet. Bins one and two are field-repairable, while bins three through five require a
-settlement smith. Repairing bin *n* requires Smithing skill *n*; field work is capped at bin two.
+settlement craftsperson. Repairing bin *n* requires Smithing skill *n* for weapons, shields, and
+armor, or Tailoring skill *n* for clothing; field work is capped at bin two.
 Equipment quality is also its required maintenance skill, so a lesser smith can improve a
 masterwork item without restoring it completely. Damage can never occupy a tier above the item's
 quality: only quality-5 equipment can acquire violet tier-5 damage.
@@ -84,9 +92,10 @@ Smithing uses the shared trained-skill curve: 5,000 invested hours is rank 2.5. 
 split any legacy durable stack into quantity-one instances while retaining the original row ID for
 one piece, preserving equipped references; pooled party equipment is migrated the same way.
 
-Rest resolves health first, then automatic field maintenance, then scheduled downtime. Settlement
-rest recommendations also include unfinished local smith orders. Smiths have independently seeded
-Weaponsmith and Armourer ratings of 3--5. Repair orders escrow the exact item instance, have an ETA,
+Rest resolves health first, then automatic field maintenance, then scheduled downtime. Field
+maintenance uses Tailoring for clothing and Smithing for other durable equipment. Settlement rest
+recommendations also include unfinished local repair orders. Services have independently seeded
+Weaponsmith, Armourer, and Tailor ratings of 3--5. Repair orders escrow the exact item instance, have an ETA,
 retain damage beyond the smith's skill, and never expire. A job's stable quote is
 `ceil(base_value * repairable_damage)`, with a minimum of one gold; only bins within that smith's
 skill contribute. The quote is charged atomically from personal gold when the repaired item is

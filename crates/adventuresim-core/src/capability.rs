@@ -288,15 +288,20 @@ pub fn evaluate_capabilities(
                 LimbWeights::all_equal(),
             )
             .clamp(0.0, 5.0),
-        surgery: skills
-            .skill_check_by_parts(
-                Skill::Surgeon,
-                attributes,
-                body,
-                essentials,
-                equipment,
-                LimbWeights::both_arms(),
-            )
+        surgery: ([Skill::Anatomy, Skill::Knife, Skill::Tailoring]
+            .into_iter()
+            .map(|skill| {
+                skills.skill_check_by_parts(
+                    skill,
+                    attributes,
+                    body,
+                    essentials,
+                    equipment,
+                    LimbWeights::both_arms(),
+                )
+            })
+            .sum::<f32>()
+            / 3.0)
             .clamp(0.0, 5.0),
         charisma: skills
             .skill_check_by_parts(

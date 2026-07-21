@@ -1,7 +1,94 @@
+use crate::skill::Skill;
 use crate::{
     body::{BodyPart, BodyParts, BodySide, LimbWeights, PlayerBody},
     prelude::{LimbAttribute, PlayerAttributes},
 };
+
+/// SpacetimeDB-friendly weights for the nine weapon leaf skills. A weapon may
+/// combine melee and ranged families; callers normalize the positive entries.
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WeaponSkillDistribution {
+    pub polearm: f32,
+    pub axe: f32,
+    pub bludgeon: f32,
+    pub sword: f32,
+    pub knife: f32,
+    pub bow: f32,
+    pub crossbow: f32,
+    pub firearm: f32,
+    pub throw: f32,
+}
+
+impl WeaponSkillDistribution {
+    pub const SKILLS: [Skill; 9] = [
+        Skill::Polearm,
+        Skill::Axe,
+        Skill::Bludgeon,
+        Skill::Sword,
+        Skill::Knife,
+        Skill::Bow,
+        Skill::Crossbow,
+        Skill::Firearm,
+        Skill::Throw,
+    ];
+
+    pub fn weights(self) -> [f32; 9] {
+        [
+            self.polearm,
+            self.axe,
+            self.bludgeon,
+            self.sword,
+            self.knife,
+            self.bow,
+            self.crossbow,
+            self.firearm,
+            self.throw,
+        ]
+        .map(|v| if v.is_finite() { v.max(0.0) } else { 0.0 })
+    }
+
+    pub fn total(self) -> f32 {
+        self.weights().into_iter().sum()
+    }
+    pub fn melee_total(self) -> f32 {
+        self.weights()[..5].iter().sum()
+    }
+    pub fn ranged_total(self) -> f32 {
+        self.weights()[5..].iter().sum()
+    }
+
+    pub fn validate(self, melee: bool, ranged: bool) -> bool {
+        let raw = [
+            self.polearm,
+            self.axe,
+            self.bludgeon,
+            self.sword,
+            self.knife,
+            self.bow,
+            self.crossbow,
+            self.firearm,
+            self.throw,
+        ];
+        raw.into_iter().all(|v| v.is_finite() && v >= 0.0)
+            && (!melee || self.melee_total() > 0.0)
+            && (!ranged || self.ranged_total() > 0.0)
+            && (!(melee || ranged) || self.total() > 0.0)
+    }
+
+    pub fn weighted_check(self, mut check: impl FnMut(Skill) -> f32) -> f32 {
+        let weights = self.weights();
+        let total: f32 = weights.into_iter().sum();
+        if total <= f32::EPSILON {
+            return 0.0;
+        }
+        Self::SKILLS
+            .into_iter()
+            .zip(weights)
+            .map(|(skill, weight)| check(skill) * weight)
+            .sum::<f32>()
+            / total
+    }
+}
 
 pub const LOWER_MUSCLE_MASS_PER_LEG_STRENGTH: f32 = 5.0;
 pub const WEIGHT_CAPACITY_PER_LOWER_MUSCLE_MASS: f32 = 30.0;
@@ -71,6 +158,9 @@ pub fn encumbrance_remaining_multiplier(burden_kg: f32, capacity_kg: f32) -> f32
 #[blanket::blanket(derive(Ref, Rc, Arc, Mut, Box, Cow))]
 #[ambassador::delegatable_trait]
 pub trait PlayerEquipment {
+    fn weapon_skill_distribution(&self) -> WeaponSkillDistribution {
+        WeaponSkillDistribution::default()
+    }
     fn weapon_is_melee(&self) -> bool {
         false
     }
@@ -144,6 +234,41 @@ pub trait PlayerEquipment {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hybrid_weapon_distribution_uses_normalized_leaf_checks() {
+        let halberd = WeaponSkillDistribution {
+            polearm: 1.0,
+            axe: 1.0,
+            bludgeon: 1.0,
+            ..Default::default()
+        };
+        let check = halberd.weighted_check(|skill| match skill {
+            Skill::Polearm => 2.0,
+            Skill::Axe => 3.0,
+            Skill::Bludgeon => 4.0,
+            _ => 100.0,
+        });
+        assert_eq!(check, 3.0);
+        assert!(halberd.validate(true, false));
+    }
+
+    #[test]
+    fn weapon_distribution_rejects_missing_family_and_invalid_weights() {
+        let bow = WeaponSkillDistribution {
+            bow: 1.0,
+            ..Default::default()
+        };
+        assert!(bow.validate(false, true));
+        assert!(!bow.validate(true, false));
+        assert!(
+            !WeaponSkillDistribution {
+                sword: f32::NAN,
+                ..Default::default()
+            }
+            .validate(true, false)
+        );
+    }
 
     #[test]
     fn linear_encumbrance_covers_key_points_and_overload() {

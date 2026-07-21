@@ -136,34 +136,50 @@ impl PlayerEssentials for CombatEssentials {
 
 #[derive(Clone, Debug, Default)]
 pub struct CombatSkills {
-    pub melee_hours: f32,
+    pub polearm_hours: f32,
+    pub axe_hours: f32,
+    pub bludgeon_hours: f32,
+    pub sword_hours: f32,
+    pub knife_hours: f32,
     pub dodge_hours: f32,
     pub block_hours: f32,
-    pub ranged_hours: f32,
+    pub bow_hours: f32,
+    pub crossbow_hours: f32,
+    pub firearm_hours: f32,
+    pub throw_hours: f32,
     pub will_hours: f32,
     pub charisma_hours: f32,
     pub medicine_hours: f32,
     pub religion_hours: f32,
     pub stealth_hours: f32,
     pub balance_hours: f32,
-    pub surgeon_hours: f32,
+    pub anatomy_hours: f32,
+    pub tailoring_hours: f32,
     pub smithing_hours: f32,
 }
 
 impl PlayerSkills for CombatSkills {
     fn skill_hours_trained(&self, skill: Skill) -> f32 {
         match skill {
-            Skill::Melee => self.melee_hours,
+            Skill::Polearm => self.polearm_hours,
+            Skill::Axe => self.axe_hours,
+            Skill::Bludgeon => self.bludgeon_hours,
+            Skill::Sword => self.sword_hours,
+            Skill::Knife => self.knife_hours,
             Skill::Dodge => self.dodge_hours,
             Skill::Block => self.block_hours,
-            Skill::Ranged => self.ranged_hours,
+            Skill::Bow => self.bow_hours,
+            Skill::Crossbow => self.crossbow_hours,
+            Skill::Firearm => self.firearm_hours,
+            Skill::Throw => self.throw_hours,
             Skill::Will => self.will_hours,
             Skill::Charisma => self.charisma_hours,
             Skill::Medicine => self.medicine_hours,
             Skill::Religion => self.religion_hours,
             Skill::Stealth => self.stealth_hours,
             Skill::Balance => self.balance_hours,
-            Skill::Surgeon => self.surgeon_hours,
+            Skill::Anatomy => self.anatomy_hours,
+            Skill::Tailoring => self.tailoring_hours,
             Skill::Smithing => self.smithing_hours,
         }
     }
@@ -180,6 +196,7 @@ pub struct CombatArmor {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CombatWeapon {
+    pub skills: crate::equipment::WeaponSkillDistribution,
     pub melee: bool,
     pub ranged: bool,
     pub blunt: bool,
@@ -264,6 +281,10 @@ impl CombatEquipment {
 }
 
 impl PlayerEquipment for CombatEquipment {
+    fn weapon_skill_distribution(&self) -> crate::equipment::WeaponSkillDistribution {
+        self.weapon
+            .map_or_else(Default::default, |weapon| weapon.skills)
+    }
     fn weapon_is_melee(&self) -> bool {
         self.weapon.is_some_and(|weapon| weapon.melee)
     }
@@ -1489,8 +1510,8 @@ mod tests {
             ..CombatAttributes::default()
         };
         fighter.skills = CombatSkills {
-            melee_hours: skill * 2_000.0,
-            ranged_hours: skill * 3_000.0,
+            sword_hours: skill * 2_000.0,
+            bow_hours: skill * 3_000.0,
             dodge_hours: skill * 2_000.0,
             block_hours: skill * 2_000.0,
             will_hours: skill * 1_000.0,
@@ -1498,6 +1519,17 @@ mod tests {
             ..CombatSkills::default()
         };
         let weapon = CombatWeapon {
+            skills: if ranged {
+                crate::equipment::WeaponSkillDistribution {
+                    bow: 1.0,
+                    ..Default::default()
+                }
+            } else {
+                crate::equipment::WeaponSkillDistribution {
+                    sword: 1.0,
+                    ..Default::default()
+                }
+            },
             melee: !ranged,
             ranged,
             slash: !ranged,
@@ -1646,7 +1678,7 @@ mod tests {
     #[test]
     fn precise_ranged_criticals_bypass_armor() {
         let mut attacker = fighter(1, 5.0, true);
-        attacker.skills.ranged_hours = 100_000.0;
+        attacker.skills.bow_hours = 100_000.0;
         let weapon = attacker.equipment.ranged_weapon.as_mut().unwrap();
         weapon.accuracy = 2.0;
         weapon.precise = true;
@@ -1688,7 +1720,7 @@ mod tests {
     #[test]
     fn precise_melee_criticals_bypass_armor() {
         let mut attacker = fighter(1, 5.0, false);
-        attacker.skills.melee_hours = 100_000.0;
+        attacker.skills.sword_hours = 100_000.0;
         let weapon = attacker.equipment.melee_weapon.as_mut().unwrap();
         weapon.accuracy = 2.0;
         weapon.precise = true;
@@ -1860,7 +1892,7 @@ mod tests {
     #[test]
     fn ranged_characters_fire_during_the_enemy_approach() {
         let mut archer = fighter(1, 5.0, true);
-        archer.skills.ranged_hours = 100_000.0;
+        archer.skills.bow_hours = 100_000.0;
         archer.equipment.ranged_weapon.as_mut().unwrap().accuracy = 2.0;
         let mut allies = vec![archer];
         let mut enemies = vec![fighter(2, 1.0, false)];
@@ -1878,7 +1910,7 @@ mod tests {
     #[test]
     fn detour_volleys_only_target_surplus_melee() {
         let mut archer = fighter(1, 5.0, true);
-        archer.skills.ranged_hours = 100_000.0;
+        archer.skills.bow_hours = 100_000.0;
         archer.equipment.ranged_weapon.as_mut().unwrap().accuracy = 2.0;
         let screen = fighter(2, 3.0, false);
         let mut attackers = vec![archer, screen];

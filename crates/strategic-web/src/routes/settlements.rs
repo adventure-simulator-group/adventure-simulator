@@ -2409,39 +2409,6 @@ struct TrainingScheduleForm {
     apprenticeship_service_id: Option<String>,
     profession_practice_minutes: u16,
     profession_service_id: Option<String>,
-    #[serde(default)]
-    combat_minutes: u16,
-    #[serde(default)]
-    combat_auto_train: bool,
-    melee_minutes: u16,
-    dodge_minutes: u16,
-    block_minutes: u16,
-    ranged_minutes: u16,
-    will_minutes: u16,
-    charisma_minutes: u16,
-    medicine_minutes: u16,
-    #[serde(default)]
-    religion_minutes: u16,
-    #[serde(default)]
-    religion_auto_train: bool,
-    #[serde(default)]
-    religion_roman_catholic_minutes: u16,
-    #[serde(default)]
-    religion_lutheran_minutes: u16,
-    #[serde(default)]
-    religion_reformed_minutes: u16,
-    #[serde(default)]
-    religion_anglican_minutes: u16,
-    #[serde(default)]
-    religion_eastern_orthodox_minutes: u16,
-    #[serde(default)]
-    religion_islamic_minutes: u16,
-    #[serde(default)]
-    religion_judaism_minutes: u16,
-    stealth_minutes: u16,
-    balance_minutes: u16,
-    surgeon_minutes: u16,
-    smithing_minutes: u16,
     labor_minutes: u16,
     prayer_minutes: u16,
     thievery_minutes: u16,
@@ -2454,40 +2421,15 @@ mod training_schedule_form_tests {
     use serde_json::json;
 
     #[test]
-    fn omitted_checkbox_and_inactive_religion_inputs_deserialize_as_false_and_zero() {
+    fn schedule_form_contains_only_activity_allocations() {
         let form: TrainingScheduleForm = serde_json::from_value(json!({
-            "melee_minutes": 0, "dodge_minutes": 0, "block_minutes": 0,
-            "ranged_minutes": 0, "will_minutes": 0, "charisma_minutes": 0,
-            "medicine_minutes": 0, "stealth_minutes": 0, "balance_minutes": 0,
-            "surgeon_minutes": 0, "smithing_minutes": 0, "labor_minutes": 0,
-            "prayer_minutes": 0, "thievery_minutes": 0, "raiding_minutes": 0
+            "combat_training_minutes": 90, "labor_minutes": 15,
+            "prayer_minutes": 30, "thievery_minutes": 0, "raiding_minutes": 0
         }))
         .unwrap();
-        assert!(!form.religion_auto_train);
-        assert!(!form.combat_auto_train);
-        assert_eq!(form.combat_minutes, 0);
-        assert_eq!(form.religion_minutes, 0);
-        assert_eq!(form.religion_judaism_minutes, 0);
-    }
-
-    #[test]
-    fn submitted_schedule_retains_both_religion_allocation_branches() {
-        let form: TrainingScheduleForm = serde_json::from_value(json!({
-            "melee_minutes": 0, "dodge_minutes": 0, "block_minutes": 0,
-            "ranged_minutes": 0, "will_minutes": 0, "charisma_minutes": 0,
-            "medicine_minutes": 0, "combat_minutes": 90, "combat_auto_train": true,
-            "religion_minutes": 120,
-            "religion_auto_train": false, "religion_judaism_minutes": 45,
-            "stealth_minutes": 0, "balance_minutes": 0, "surgeon_minutes": 0,
-            "smithing_minutes": 0, "labor_minutes": 0, "prayer_minutes": 0,
-            "thievery_minutes": 0, "raiding_minutes": 0
-        }))
-        .unwrap();
-        assert!(!form.religion_auto_train);
-        assert!(form.combat_auto_train);
-        assert_eq!(form.combat_minutes, 90);
-        assert_eq!(form.religion_minutes, 120);
-        assert_eq!(form.religion_judaism_minutes, 45);
+        assert_eq!(form.combat_training_minutes, 90);
+        assert_eq!(form.labor_minutes, 15);
+        assert_eq!(form.prayer_minutes, 30);
     }
 }
 
@@ -2512,30 +2454,6 @@ async fn update_training_schedule(
         apprenticeship_service_id: form.apprenticeship_service_id,
         profession_practice_minutes: form.profession_practice_minutes,
         profession_service_id: form.profession_service_id,
-        combat_minutes: form.combat_minutes,
-        combat_auto_train: form.combat_auto_train,
-        melee_minutes: form.melee_minutes,
-        dodge_minutes: form.dodge_minutes,
-        block_minutes: form.block_minutes,
-        ranged_minutes: form.ranged_minutes,
-        will_minutes: form.will_minutes,
-        charisma_minutes: form.charisma_minutes,
-        medicine_minutes: form.medicine_minutes,
-        religion_minutes: form.religion_minutes,
-        religion_auto_train: form.religion_auto_train,
-        religion_minutes_by_tradition: adventuresim_world_schema::ReligionMinutes {
-            roman_catholic: form.religion_roman_catholic_minutes,
-            lutheran: form.religion_lutheran_minutes,
-            reformed: form.religion_reformed_minutes,
-            anglican: form.religion_anglican_minutes,
-            eastern_orthodox: form.religion_eastern_orthodox_minutes,
-            islamic: form.religion_islamic_minutes,
-            judaism: form.religion_judaism_minutes,
-        },
-        stealth_minutes: form.stealth_minutes,
-        balance_minutes: form.balance_minutes,
-        surgeon_minutes: form.surgeon_minutes,
-        smithing_minutes: form.smithing_minutes,
         labor_minutes: form.labor_minutes,
         prayer_minutes: form.prayer_minutes,
         thievery_minutes: form.thievery_minutes,
@@ -3897,10 +3815,17 @@ fn limb_deltas(before: &CharacterLimbs, after: &CharacterLimbs) -> Vec<(String, 
 
 fn skill_deltas(before: &CharacterSkills, after: &CharacterSkills) -> Vec<(String, f32)> {
     [
-        ("Melee", before.melee_hours, after.melee_hours),
+        ("Polearm", before.polearm_hours, after.polearm_hours),
+        ("Axe", before.axe_hours, after.axe_hours),
+        ("Bludgeon", before.bludgeon_hours, after.bludgeon_hours),
+        ("Sword", before.sword_hours, after.sword_hours),
+        ("Knife", before.knife_hours, after.knife_hours),
         ("Dodge", before.dodge_hours, after.dodge_hours),
         ("Block", before.block_hours, after.block_hours),
-        ("Ranged", before.ranged_hours, after.ranged_hours),
+        ("Bow", before.bow_hours, after.bow_hours),
+        ("Crossbow", before.crossbow_hours, after.crossbow_hours),
+        ("Firearm", before.firearm_hours, after.firearm_hours),
+        ("Throw", before.throw_hours, after.throw_hours),
         ("Will", before.will_hours, after.will_hours),
         ("Charisma", before.charisma_hours, after.charisma_hours),
         ("Medicine", before.medicine_hours, after.medicine_hours),
@@ -3911,7 +3836,8 @@ fn skill_deltas(before: &CharacterSkills, after: &CharacterSkills) -> Vec<(Strin
         ),
         ("Stealth", before.stealth_hours, after.stealth_hours),
         ("Balance", before.balance_hours, after.balance_hours),
-        ("Surgeon", before.surgeon_hours, after.surgeon_hours),
+        ("Anatomy", before.anatomy_hours, after.anatomy_hours),
+        ("Tailoring", before.tailoring_hours, after.tailoring_hours),
         ("Smithing", before.smithing_hours, after.smithing_hours),
     ]
     .into_iter()
@@ -4832,8 +4758,7 @@ async fn get_combat_training_profile(state: &AppState, character_id: u64) -> Com
             .flatten();
         if let Some(item) = definition {
             hands.push(EquippedCombatItem {
-                melee: item.kind == ItemKind::Weapon && item.melee,
-                ranged: item.kind == ItemKind::Weapon && item.ranged,
+                weapons: item.weapon_skills.core(),
                 shield: item.kind == ItemKind::Shield,
                 balance: item.balance,
             });

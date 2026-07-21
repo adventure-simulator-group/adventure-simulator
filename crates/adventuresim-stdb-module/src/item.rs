@@ -55,6 +55,67 @@ pub enum ItemKind {
     Medication,
 }
 
+#[derive(SpacetimeType, Default, Clone, Copy, Debug, PartialEq)]
+pub struct WeaponSkillDistribution {
+    pub polearm: f32,
+    pub axe: f32,
+    pub bludgeon: f32,
+    pub sword: f32,
+    pub knife: f32,
+    pub bow: f32,
+    pub crossbow: f32,
+    pub firearm: f32,
+    pub throw_skill: f32,
+}
+
+impl WeaponSkillDistribution {
+    pub fn core(self) -> adventuresim_core::equipment::WeaponSkillDistribution {
+        adventuresim_core::equipment::WeaponSkillDistribution {
+            polearm: self.polearm,
+            axe: self.axe,
+            bludgeon: self.bludgeon,
+            sword: self.sword,
+            knife: self.knife,
+            bow: self.bow,
+            crossbow: self.crossbow,
+            firearm: self.firearm,
+            throw: self.throw_skill,
+        }
+    }
+}
+
+fn weapon_skills(id: &str) -> WeaponSkillDistribution {
+    let mut value = WeaponSkillDistribution::default();
+    let tags: &[&str] = match id {
+        "club" | "flanged_mace" | "war_hammer" | "walking_staff" => &["bludgeon"],
+        "hand_axe" => &["axe", "knife"],
+        "utility_knife" | "rondel_dagger" | "misericorde" => &["knife", "sword"],
+        "baselard" | "bauernwehr" | "katzbalger" => &["knife", "sword"],
+        "hunting_spear" | "military_pike" => &["polearm"],
+        "halberd" => &["polearm", "axe", "bludgeon"],
+        "self_bow" | "longbow" => &["bow"],
+        "light_crossbow" | "heavy_crossbow" => &["crossbow"],
+        "matchlock_arquebus" | "hooked_arquebus" => &["firearm"],
+        _ => &["sword"],
+    };
+    let weight = 1.0 / tags.len() as f32;
+    for tag in tags {
+        match *tag {
+            "polearm" => value.polearm = weight,
+            "axe" => value.axe = weight,
+            "bludgeon" => value.bludgeon = weight,
+            "sword" => value.sword = weight,
+            "knife" => value.knife = weight,
+            "bow" => value.bow = weight,
+            "crossbow" => value.crossbow = weight,
+            "firearm" => value.firearm = weight,
+            "throw" => value.throw_skill = weight,
+            _ => {}
+        }
+    }
+    value
+}
+
 #[derive(SpacetimeType, Default, Clone, Copy, Debug, PartialEq, EnumCount, VariantArray)]
 pub enum ItemSlot {
     #[default]
@@ -98,6 +159,7 @@ pub struct Item {
     pub balance: f32,
     pub melee: bool,
     pub ranged: bool,
+    pub weapon_skills: WeaponSkillDistribution,
     pub blunt: bool,
     pub slash: bool,
     pub pierce: bool,
@@ -902,6 +964,11 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
             balance: definition.balance,
             melee: definition.melee,
             ranged: definition.ranged,
+            weapon_skills: if definition.kind == ItemKind::Weapon {
+                weapon_skills(definition.id)
+            } else {
+                WeaponSkillDistribution::default()
+            },
             blunt: definition.blunt,
             slash: definition.slash,
             pierce: definition.pierce,
@@ -1041,6 +1108,7 @@ pub fn define_weapon(
         precise,
         melee,
         ranged,
+        weapon_skills: weapon_skills(item_id),
         blunt,
         slash,
         pierce,
@@ -1079,6 +1147,12 @@ pub fn define_clothing(ctx: &ReducerContext, item_id: &str, weight: f32) {
         weight,
         base_value: Some((weight * 25.0).ceil() as u32),
         kind: ItemKind::Clothing,
+        quality: 1,
+        durability_yield: 12.0,
+        durability_fracture: 35.0,
+        durability_wear: 0.2,
+        durability_failure_share: 0.8,
+        handling_sensitivity: 0.5,
         ..Item::default()
     });
 }
@@ -1131,8 +1205,12 @@ pub fn add_inventory_item(
         .id()
         .find(item_id.to_owned())
         .map(|definition| definition.kind);
-    let durable = kind
-        .is_some_and(|kind| matches!(kind, ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield));
+    let durable = kind.is_some_and(|kind| {
+        matches!(
+            kind,
+            ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield | ItemKind::Clothing
+        )
+    });
     let individual = durable || kind == Some(ItemKind::Medication);
     let count = if individual { quantity } else { 1 };
     let mut first = None;
@@ -1278,7 +1356,7 @@ pub fn change_inventory_item(
         .is_some_and(|definition| {
             matches!(
                 definition.kind,
-                ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield
+                ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield | ItemKind::Clothing
             )
         });
     if durable {
@@ -1383,6 +1461,23 @@ pub fn change_inventory_item(
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    #[test]
+    fn catalog_weapon_skill_distributions_cover_hybrids_and_ranged_families() {
+        let halberd = weapon_skills("halberd").core();
+        assert_eq!(halberd.polearm, 1.0 / 3.0);
+        assert_eq!(halberd.axe, 1.0 / 3.0);
+        assert_eq!(halberd.bludgeon, 1.0 / 3.0);
+        assert!(halberd.validate(true, false));
+
+        let hand_axe = weapon_skills("hand_axe").core();
+        assert_eq!(hand_axe.axe, 0.5);
+        assert_eq!(hand_axe.knife, 0.5);
+
+        let crossbow = weapon_skills("heavy_crossbow").core();
+        assert_eq!(crossbow.crossbow, 1.0);
+        assert!(crossbow.validate(false, true));
+    }
 
     #[test]
     fn settlement_currency_assignment_is_stable_and_uses_the_fixed_catalog() {

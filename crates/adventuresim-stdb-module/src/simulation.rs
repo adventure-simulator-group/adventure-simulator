@@ -188,16 +188,24 @@ pub fn configure_simulation_character(
     .into_iter()
     .all(|value| value.is_finite() && (0.5..=5.0).contains(&value));
     let skills_valid = [
-        skills.melee_hours,
+        skills.polearm_hours,
+        skills.axe_hours,
+        skills.bludgeon_hours,
+        skills.sword_hours,
+        skills.knife_hours,
         skills.dodge_hours,
         skills.block_hours,
-        skills.ranged_hours,
+        skills.bow_hours,
+        skills.crossbow_hours,
+        skills.firearm_hours,
+        skills.throw_hours,
         skills.will_hours,
         skills.charisma_hours,
         skills.medicine_hours,
         skills.stealth_hours,
         skills.balance_hours,
-        skills.surgeon_hours,
+        skills.anatomy_hours,
+        skills.tailoring_hours,
     ]
     .into_iter()
     .all(|value| value.is_finite() && (0.0..=MAX_INITIAL_SKILL_HOURS).contains(&value))

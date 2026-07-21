@@ -210,10 +210,17 @@ impl PlayerAttributes for CharacterAttributes {
 impl PlayerSkills for CharacterSkills {
     fn skill_hours_trained(&self, skill: Skill) -> f32 {
         match skill {
-            Skill::Melee => self.melee_hours,
+            Skill::Polearm => self.polearm_hours,
+            Skill::Axe => self.axe_hours,
+            Skill::Bludgeon => self.bludgeon_hours,
+            Skill::Sword => self.sword_hours,
+            Skill::Knife => self.knife_hours,
             Skill::Block => self.block_hours,
             Skill::Dodge => self.dodge_hours,
-            Skill::Ranged => self.ranged_hours,
+            Skill::Bow => self.bow_hours,
+            Skill::Crossbow => self.crossbow_hours,
+            Skill::Firearm => self.firearm_hours,
+            Skill::Throw => self.throw_hours,
             Skill::Will => self.will_hours,
             Skill::Charisma => self.charisma_hours,
             Skill::Medicine => self.medicine_hours,
@@ -222,7 +229,8 @@ impl PlayerSkills for CharacterSkills {
             Skill::Religion => self.religion_hours.maximum_effective(),
             Skill::Stealth => self.stealth_hours,
             Skill::Balance => self.balance_hours,
-            Skill::Surgeon => self.surgeon_hours,
+            Skill::Anatomy => self.anatomy_hours,
+            Skill::Tailoring => self.tailoring_hours,
             Skill::Smithing => self.smithing_hours,
         }
     }
@@ -389,8 +397,7 @@ impl StrategicEquipment {
         use adventuresim_core::strategic_schedule::EquippedCombatItem;
         adventuresim_core::strategic_schedule::CombatTrainingProfile::from_equipped_hands(
             self.hands.iter().flatten().map(|item| EquippedCombatItem {
-                melee: item.kind == ItemKind::Weapon && item.melee,
-                ranged: item.kind == ItemKind::Weapon && item.ranged,
+                weapons: item.weapon_skills.core(),
                 shield: item.kind == ItemKind::Shield,
                 balance: item.balance,
             }),
@@ -462,6 +469,7 @@ fn hand_side(index: usize) -> BodySide {
 
 fn combat_weapon(item: &Item) -> CombatWeapon {
     CombatWeapon {
+        skills: item.weapon_skills.core(),
         melee: item.melee,
         ranged: item.ranged,
         blunt: item.blunt,
@@ -490,6 +498,11 @@ fn carried_water_weight_kg(carried_water_ml: f32) -> f32 {
 }
 
 impl PlayerEquipment for StrategicEquipment {
+    fn weapon_skill_distribution(&self) -> adventuresim_core::equipment::WeaponSkillDistribution {
+        self.weapon
+            .as_ref()
+            .map_or_else(Default::default, |item| item.weapon_skills.core())
+    }
     fn weapon_is_melee(&self) -> bool {
         self.weapon.as_ref().is_some_and(|item| item.melee)
     }
@@ -637,17 +650,25 @@ pub(crate) fn load_combatant(
         },
         equipment: combat_equipment,
         skills: CombatSkills {
-            melee_hours: skills.melee_hours,
+            polearm_hours: skills.polearm_hours,
+            axe_hours: skills.axe_hours,
+            bludgeon_hours: skills.bludgeon_hours,
+            sword_hours: skills.sword_hours,
+            knife_hours: skills.knife_hours,
             dodge_hours: skills.dodge_hours,
             block_hours: skills.block_hours,
-            ranged_hours: skills.ranged_hours,
+            bow_hours: skills.bow_hours,
+            crossbow_hours: skills.crossbow_hours,
+            firearm_hours: skills.firearm_hours,
+            throw_hours: skills.throw_hours,
             will_hours: skills.will_hours,
             charisma_hours: skills.charisma_hours,
             medicine_hours: skills.medicine_hours,
             religion_hours: skills.religion_hours.total_direct(),
             stealth_hours: skills.stealth_hours,
             balance_hours: skills.balance_hours,
-            surgeon_hours: skills.surgeon_hours,
+            anatomy_hours: skills.anatomy_hours,
+            tailoring_hours: skills.tailoring_hours,
             smithing_hours: skills.smithing_hours,
         },
         starting_incapacitation: (strategic_incapacitation - strategic_pain - strategic_blood_loss)

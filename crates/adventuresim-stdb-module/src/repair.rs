@@ -56,6 +56,7 @@ pub struct SettlementSmith {
     pub settlement_id: String,
     pub weaponsmith_skill: u8,
     pub armourer_skill: u8,
+    pub tailor_skill: u8,
 }
 
 #[derive(Clone, Debug)]
@@ -83,7 +84,10 @@ pub struct RepairOrder {
 }
 
 fn durable(kind: ItemKind) -> bool {
-    matches!(kind, ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield)
+    matches!(
+        kind,
+        ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield | ItemKind::Clothing
+    )
 }
 
 pub(crate) fn initialize_item_condition(ctx: &ReducerContext, inventory: &InventoryItem) {
@@ -159,6 +163,7 @@ pub(crate) fn ensure_settlement_smith(
         settlement_id: settlement_id.to_owned(),
         weaponsmith_skill: stable_skill(settlement_id, 0x5745_4150),
         armourer_skill: stable_skill(settlement_id, 0x4152_4d52),
+        tailor_skill: stable_skill(settlement_id, 0x5441_494c),
     })
 }
 
@@ -260,6 +265,7 @@ fn service_skill(ctx: &ReducerContext, settlement_id: &str, kind: ItemKind) -> R
     match kind {
         ItemKind::Weapon | ItemKind::Shield => Ok(service.weaponsmith_skill),
         ItemKind::Armor => Ok(service.armourer_skill),
+        ItemKind::Clothing => Ok(service.tailor_skill),
         _ => Err("This service does not repair that item kind".into()),
     }
 }
@@ -573,11 +579,12 @@ pub fn retrieve_repaired_items(
 }
 
 /// Field maintenance is automatic after bodily convalescence. It repairs only
-/// yellow bins and only through the character's trained Smithing rating.
+/// yellow bins and uses Tailoring for clothing, Smithing for other equipment.
 pub(crate) fn field_repair(
     ctx: &ReducerContext,
     character_id: u64,
     smithing: u8,
+    tailoring: u8,
     available_minutes: u64,
 ) -> u64 {
     let mut remaining = available_minutes;
@@ -596,7 +603,19 @@ pub(crate) fn field_repair(
             continue;
         };
         let mut bins = condition.bins();
-        let eligible_skill = smithing.min(2);
+        let item_kind = ctx
+            .db
+            .inventory_item()
+            .id()
+            .find(id)
+            .and_then(|inventory| ctx.db.item().id().find(&inventory.item_id))
+            .map(|item| item.kind);
+        let eligible_skill = if item_kind == Some(ItemKind::Clothing) {
+            tailoring
+        } else {
+            smithing
+        }
+        .min(2);
         let eligible = bins.repairable(eligible_skill);
         let possible = remaining as f32 / REPAIR_MINUTES_PER_FULL_ITEM as f32;
         let repaired = eligible.min(possible);
@@ -704,4 +723,16 @@ pub fn seed_simulation_equipment_damage(
         .update(condition);
     crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clothing_instances_receive_durable_condition_tracking() {
+        assert!(durable(ItemKind::Clothing));
+        assert!(durable(ItemKind::Weapon));
+        assert!(!durable(ItemKind::Medication));
+    }
 }

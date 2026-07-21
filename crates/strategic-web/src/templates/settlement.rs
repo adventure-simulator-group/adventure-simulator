@@ -1730,14 +1730,14 @@ fn surgery_item_requirement(requirement: SurgeryItemRequirement) -> Markup {
 fn surgery_difficulty_meter(procedure_label: &str, dc: f32, effective_skill: f32) -> Markup {
     let difficulty = dc.max(0.0);
     let over_cap = difficulty > 5.0;
-    let meter_label = format!("{procedure_label} Surgery difficulty");
+    let meter_label = format!("{procedure_label} procedure difficulty");
     let accessible_label = format!(
-        "{procedure_label}: requires {difficulty:.1} Surgery; current effective skill {:.1}",
+        "{procedure_label}: requires {difficulty:.1} procedure skill; current effective skill {:.1}",
         effective_skill.max(0.0)
     );
     html! {
         div class=(if over_cap { "surgery-difficulty surgery-difficulty-over-cap" } else { "surgery-difficulty" })
-            title=[over_cap.then_some("Difficulty exceeds the normal Surgery skill scale")] {
+            title=[over_cap.then_some("Difficulty exceeds the normal procedure skill scale")] {
             (stat_icon(&meter_label, "skills", "surgeon", true))
             (skill_rank_bar(
                 difficulty,
@@ -1834,7 +1834,7 @@ pub fn surgery_page(
     bandages: u32,
     surgery_kits: u32,
     splints: u32,
-    surgery_skill: f32,
+    procedure_skill: f32,
 ) -> Markup {
     let base = format!("{}/party/{}/surgery", location.base_path(), patient.id);
     let action = format!("{base}/{}/procedure", surgery_limb_slug(selected_limb));
@@ -1847,7 +1847,7 @@ pub fn surgery_page(
     let splinted = selected.is_some_and(|injury| injury.splint_inventory_item_id.is_some());
     let has_kit = surgery_kits > 0;
     let effective_skill = adventuresim_core::surgery::effective_skill(
-        surgery_skill,
+        procedure_skill,
         active_character.id == patient.id,
     );
     let content = html! {
@@ -1872,17 +1872,17 @@ pub fn surgery_page(
                     @for projectile in projectiles.iter().filter(|projectile| projectile.limb == selected_limb) {
                         @let requires_kit = adventuresim_core::surgery::extraction_requires_surgery_kit(projectile.extraction_dc);
                         (surgery_procedure_row(&action, match projectile.kind { ProjectileKind::Arrowhead => "Remove arrowhead", ProjectileKind::Ball => "Remove ball" }, match projectile.kind { ProjectileKind::Arrowhead => "plain-arrow", ProjectileKind::Ball => "bullet-visual" }, "extract", if requires_kit { &[SurgeryItemRequirement::SurgeryKitReusable] } else { &[] }, surgery_duration("extract", effective_skill, projectile.extraction_dc), projectile.extraction_dc,
-                            effective_skill, None, if effective_skill < projectile.extraction_dc { Some("Insufficient Surgery skill") } else if requires_kit && !has_kit { Some("No surgery kit") } else { None }, Some(projectile.id)))
+                            effective_skill, None, if effective_skill < projectile.extraction_dc { Some("Insufficient Anatomy + Knife skill") } else if requires_kit && !has_kit { Some("No surgery kit") } else { None }, Some(projectile.id)))
                     }
                     (surgery_procedure_row(&action, "Bandage", "bandage-roll", "bandage", &[SurgeryItemRequirement::BandageConsumed], surgery_duration("bandage", effective_skill, 0.0), 0.0,
                         effective_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if bandaged { Some("Already bandaged") } else if bandages == 0 { Some("No bandages") } else { None }, None))
                     (surgery_procedure_row(&action, "Stitch", "scalpel", "stitch", &[SurgeryItemRequirement::SurgeryKitReusable], surgery_duration("stitch", effective_skill, 2.0), 2.0,
-                        effective_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if stitched { Some("Already stitched") } else if effective_skill < 2.0 { Some("Insufficient Surgery skill") } else if !has_kit { Some("No surgery kit") } else { None }, None))
+                        effective_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if stitched { Some("Already stitched") } else if effective_skill < 2.0 { Some("Insufficient Anatomy + Tailoring skill") } else if !has_kit { Some("No surgery kit") } else { None }, None))
                     @if splinted {
                         (surgery_procedure_row(&action, "Remove splint", "arm-bandage", "remove-splint", &[], surgery_duration("remove-splint", effective_skill, 0.0), 0.0, effective_skill, None, None, None))
                     } @else {
                         (surgery_procedure_row(&action, "Splint", "arm-bandage", "splint", &[SurgeryItemRequirement::SplintEquipped], surgery_duration("splint", effective_skill, 1.0), 1.0,
-                            effective_skill, if fracture <= 0.0 { Some("No injury is present") } else { None }, if fracture <= 0.0 { Some("No injury is present") } else if effective_skill < 1.0 { Some("Insufficient Surgery skill") } else if splints == 0 { Some("No splints") } else { None }, None))
+                            effective_skill, if fracture <= 0.0 { Some("No injury is present") } else { None }, if fracture <= 0.0 { Some("No injury is present") } else if effective_skill < 1.0 { Some("Insufficient Anatomy skill") } else if splints == 0 { Some("No splints") } else { None }, None))
                     }
                     @if cut <= 0.0 && bruise > 0.0 && fracture <= 0.0 {
                         p class="text-muted small-copy" { "Bruising must heal on its own." }
@@ -2128,6 +2128,8 @@ pub fn live_merchant_shop_page(
         .map(|smith| {
             if matches!(shop, MerchantShop::Armor) {
                 smith.armourer_skill
+            } else if matches!(shop, MerchantShop::Clothing) {
+                smith.tailor_skill
             } else {
                 smith.weaponsmith_skill
             }
@@ -2137,8 +2139,11 @@ pub fn live_merchant_shop_page(
         html! {}
     } else {
         inventory_footer_controls_with_leading(
-            matches!(shop, MerchantShop::Weapons | MerchantShop::Armor)
-                .then(|| repair_all_control(settlement, service_id)),
+            matches!(
+                shop,
+                MerchantShop::Weapons | MerchantShop::Armor | MerchantShop::Clothing
+            )
+            .then(|| repair_all_control(settlement, service_id)),
             "sell",
             "Sell surplus",
             "Sell everything",
@@ -2167,7 +2172,7 @@ pub fn live_merchant_shop_page(
             }
             }
         }))
-        @if matches!(shop, MerchantShop::Weapons | MerchantShop::Armor) {
+        @if matches!(shop, MerchantShop::Weapons | MerchantShop::Armor | MerchantShop::Clothing) {
             (repair_custody_panel(settlement, shop, repair_orders, conditions, items, now_minutes, smith_skill))
         }
         }
@@ -2182,7 +2187,7 @@ pub fn live_merchant_shop_page(
             div data-inventory-pane="player" {
             div class="sidebar-section" {
                 (encumbrance_inventory_rail(html! {
-                (trade_inventory_table("merchant-player-right", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, true, true, matches!(shop, MerchantShop::Weapons | MerchantShop::Armor), html! {
+                (trade_inventory_table("merchant-player-right", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, true, true, matches!(shop, MerchantShop::Weapons | MerchantShop::Armor | MerchantShop::Clothing), html! {
                     @for item in inventory.iter().filter(|item| items.iter().find(|definition| definition.id == item.item_id).is_some_and(|definition| shop.shows_inventory(definition.kind))) {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
@@ -2192,8 +2197,8 @@ pub fn live_merchant_shop_page(
                         tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-merchant-equipped=(is_equipped) data-inventory-quantity=(item.qty) data-target=(target) {
                         @let condition = conditions.iter().find(|condition| condition.inventory_item_id == item.id);
                         @let repair_skill = smith_skill;
-                        @let durable_item = definition.is_some_and(|definition| matches!(definition.kind, crate::spacetimedb::ItemKind::Weapon | crate::spacetimedb::ItemKind::Armor | crate::spacetimedb::ItemKind::Shield));
-                        @let service_matches = definition.is_some_and(|definition| if matches!(shop, MerchantShop::Armor) { definition.kind == crate::spacetimedb::ItemKind::Armor } else { matches!(definition.kind, crate::spacetimedb::ItemKind::Weapon | crate::spacetimedb::ItemKind::Shield) });
+                        @let durable_item = definition.is_some_and(|definition| matches!(definition.kind, crate::spacetimedb::ItemKind::Weapon | crate::spacetimedb::ItemKind::Armor | crate::spacetimedb::ItemKind::Shield | crate::spacetimedb::ItemKind::Clothing));
+                        @let service_matches = definition.is_some_and(|definition| if matches!(shop, MerchantShop::Armor) { definition.kind == crate::spacetimedb::ItemKind::Armor } else if matches!(shop, MerchantShop::Clothing) { definition.kind == crate::spacetimedb::ItemKind::Clothing } else { matches!(definition.kind, crate::spacetimedb::ItemKind::Weapon | crate::spacetimedb::ItemKind::Shield) });
                         @let can_sell = !is_currency && !is_equipped;
                         td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                         td class="inventory-item-name" { (item_name_with_quality(&item.item_id, definition)) @if !matches!(shop, MerchantShop::Herbalist) && (can_sell || service_matches) { (merchant_sell_repair_controls(item.id, &item.item_id, sell_price, item.qty, target, can_sell, service_matches.then(|| repair_submit_control(settlement, service_id, item.id, condition, repair_skill)))) } }
@@ -2726,10 +2731,11 @@ fn repair_custody_panel(
     html! {
         section class="repair-custody-panel" aria-label="Items entrusted for repair" {
             header class="repair-custody-header" {
-                h3 { "In the smith's care" }
-                span class="repair-custody-skill" title=(format!("Smithing {smith_skill}")) {
-                    (stat_icon("Smithing", "skills", "smithing", false))
-                    (skill_rank_bar(f32::from(smith_skill), f32::from(smith_skill), &format!("Smithing {smith_skill}"), SkillRankBarOptions::default()))
+                h3 { @if matches!(shop, MerchantShop::Clothing) { "In the tailor's care" } @else { "In the smith's care" } }
+                @let craft = if matches!(shop, MerchantShop::Clothing) { "Tailoring" } else { "Smithing" };
+                span class="repair-custody-skill" title=(format!("{craft} {smith_skill}")) {
+                    (stat_icon(craft, "skills", if craft == "Tailoring" { "sewing-needle" } else { "smithing" }, false))
+                    (skill_rank_bar(f32::from(smith_skill), f32::from(smith_skill), &format!("{craft} {smith_skill}"), SkillRankBarOptions::default()))
                 }
             }
             div class="repair-custody-scroll" {
@@ -2927,14 +2933,13 @@ fn skills_table(
                     th scope="col" aria-label="Skill details" {}
                 } }
                 tbody {
-                    @if skills.will_hours > 0.0 { (party_skill_row("Will", "will", Skill::Will, skills.will_hours, head_health, schedule.is_some())) }
                     @if skills.charisma_hours > 0.0 { (party_skill_row("Charisma", "charisma", Skill::Charisma, skills.charisma_hours, head_health, schedule.is_some())) }
                     @if skills.medicine_hours > 0.0 { (party_skill_row("Medicine", "medicine", Skill::Medicine, skills.medicine_hours, head_health, schedule.is_some())) }
                     (religion_skill_rows(skills, head_health, schedule, training_religion))
                     (combat_skill_rows(skills, upper_health, lower_health, schedule, combat_profile))
                     @if skills.stealth_hours > 0.0 { (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, upper_health, schedule.is_some())) }
-                    @if skills.balance_hours > 0.0 { (party_skill_row("Balance", "balance", Skill::Balance, skills.balance_hours, lower_health, schedule.is_some())) }
-                    @if skills.surgeon_hours > 0.0 { (party_skill_row("Surgeon", "surgeon", Skill::Surgeon, skills.surgeon_hours, upper_health, schedule.is_some())) }
+                    @if skills.anatomy_hours > 0.0 { (party_skill_row("Anatomy", "surgeon", Skill::Anatomy, skills.anatomy_hours, head_health, schedule.is_some())) }
+                    @if skills.tailoring_hours > 0.0 { (party_skill_row("Tailoring", "sewing-needle", Skill::Tailoring, skills.tailoring_hours, upper_health, schedule.is_some())) }
                     @if skills.smithing_hours > 0.0 { (party_skill_row("Smithing", "smithing", Skill::Smithing, skills.smithing_hours, upper_health, schedule.is_some())) }
                     @if let Some(schedule) = schedule {
                         @let preview = activity_preview.unwrap_or_default();
@@ -3067,52 +3072,36 @@ fn combat_skill_rows(
     schedule: Option<&CharacterTrainingSchedule>,
     profile: CombatTrainingProfile,
 ) -> Markup {
-    if [
-        skills.melee_hours,
-        skills.ranged_hours,
-        skills.dodge_hours,
-        skills.block_hours,
-    ]
-    .into_iter()
-    .all(|hours| hours <= 0.0)
-    {
-        return html! {};
-    }
     let weights = profile.weights();
-    let entries = [
-        (
-            "Melee",
-            "melee",
-            Skill::Melee,
-            skills.melee_hours,
-            upper_health,
-            weights[0],
-        ),
-        (
-            "Ranged",
-            "ranged",
-            Skill::Ranged,
-            skills.ranged_hours,
-            upper_health,
-            weights[3],
-        ),
-        (
-            "Dodge",
-            "dodge",
-            Skill::Dodge,
-            skills.dodge_hours,
-            lower_health,
-            weights[1],
-        ),
-        (
-            "Block",
-            "block",
-            Skill::Block,
-            skills.block_hours,
-            upper_health,
-            weights[2],
-        ),
-    ];
+    html! {
+        (combat_meta_group("Melee", "crossed-swords", schedule, &[
+            ("Polearm", "spear-hook", Skill::Polearm, skills.polearm_hours, upper_health, weights[0]),
+            ("Axe", "battle-axe", Skill::Axe, skills.axe_hours, upper_health, weights[1]),
+            ("Bludgeon", "flanged-mace", Skill::Bludgeon, skills.bludgeon_hours, upper_health, weights[2]),
+            ("Sword", "sword", Skill::Sword, skills.sword_hours, upper_health, weights[3]),
+            ("Knife", "bowie-knife", Skill::Knife, skills.knife_hours, upper_health, weights[4]),
+        ]))
+        (combat_meta_group("Ranged", "archery-target", schedule, &[
+            ("Bow", "bow-arrow", Skill::Bow, skills.bow_hours, upper_health, weights[5]),
+            ("Crossbow", "crossbow", Skill::Crossbow, skills.crossbow_hours, upper_health, weights[6]),
+            ("Firearm", "musket", Skill::Firearm, skills.firearm_hours, upper_health, weights[7]),
+            ("Throw", "throwing-ball", Skill::Throw, skills.throw_hours, upper_health, weights[8]),
+        ]))
+        (combat_meta_group("Defense", "shield", schedule, &[
+            ("Dodge", "dodge", Skill::Dodge, skills.dodge_hours, lower_health, weights[9]),
+            ("Block", "block", Skill::Block, skills.block_hours, upper_health, weights[10]),
+            ("Balance", "balance", Skill::Balance, skills.balance_hours, lower_health, weights[11]),
+            ("Will", "will", Skill::Will, skills.will_hours, upper_health, weights[12]),
+        ]))
+    }
+}
+
+fn combat_meta_group(
+    name: &str,
+    icon: &str,
+    schedule: Option<&CharacterTrainingSchedule>,
+    entries: &[(&str, &str, Skill, f32, f32, f32)],
+) -> Markup {
     let relevant: Vec<_> = entries.iter().filter(|entry| entry.5 > 0.0).collect();
     let rank = relevant
         .iter()
@@ -3130,25 +3119,26 @@ fn combat_skill_rows(
         .collect::<Vec<_>>()
         .join(", ");
     html! {
-        tr class="party-skill-row combat-primary-row" data-combat-primary {
+        tr class="party-skill-row combat-primary-row" data-combat-primary=(name.to_ascii_lowercase()) {
             th scope="row" class="party-skill-name party-skill-icon-cell" {
-                (stat_icon("Combat", "skills", "combat", false))
+                (stat_icon(name, "skills", icon, false))
             }
             td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
                 (skill_rank_bar(rank, effective_rank, &format!("Relevant skills: {included}"), skill_rail_bar_options()))
             }
             td class="religion-expand-cell" {
-                button type="button" class="religion-expand-button" data-combat-expand
-                    aria-expanded="false" aria-label="Expand Combat skills" title="Expand Combat" {
+                button type="button" class="religion-expand-button" data-combat-expand=(name.to_ascii_lowercase())
+                    aria-expanded="false" aria-label=(format!("Expand {name} skills")) title=(format!("Expand {name}")) {
                     span class="religion-expand-chevron" aria-hidden="true" { "›" }
                 }
             }
         }
-        @for (name, icon, skill, hours, health, weight) in entries {
-          @if hours > 0.0 {
-            tr class="party-skill-row combat-detail-row" data-combat-detail data-combat-weight=(weight) hidden {
+        @for &(leaf_name, leaf_icon, skill, hours, health, weight) in entries {
+            tr class="party-skill-row combat-detail-row" data-combat-detail=(name.to_ascii_lowercase()) data-combat-weight=(weight) hidden {
                 th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
-                    (stat_icon(name, "skills", icon, false))
+                    span title=[(skill == Skill::Knife).then_some("Knife means short weapons: knives, daggers, and short blades.")] {
+                        (stat_icon(leaf_name, "skills", leaf_icon, false))
+                    }
                 }
                 td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
                     @let sub_rank = skill.training_rank(hours);
@@ -3156,7 +3146,6 @@ fn combat_skill_rows(
                 }
                 td class="religion-expand-cell" {}
             }
-          }
         }
     }
 }
@@ -3292,22 +3281,6 @@ fn core_daily_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
             .profession_service_id
             .as_deref()
             .and_then(adventuresim_core::profession::ProfessionId::from_service_id),
-        combat: schedule.combat_minutes,
-        combat_auto_train: schedule.combat_auto_train,
-        melee: schedule.melee_minutes,
-        dodge: schedule.dodge_minutes,
-        block: schedule.block_minutes,
-        ranged: schedule.ranged_minutes,
-        will: schedule.will_minutes,
-        charisma: schedule.charisma_minutes,
-        medicine: schedule.medicine_minutes,
-        religion: schedule.religion_minutes,
-        religion_auto_train: schedule.religion_auto_train,
-        religions: schedule.religion_minutes_by_tradition,
-        stealth: schedule.stealth_minutes,
-        balance: schedule.balance_minutes,
-        surgeon: schedule.surgeon_minutes,
-        smithing: schedule.smithing_minutes,
         labor: schedule.labor_minutes,
         prayer: schedule.prayer_minutes,
         thievery: schedule.thievery_minutes,
@@ -3406,15 +3379,11 @@ fn activity_effect_cell(kind: &str, value: f32) -> Markup {
 fn activity_training_cell(label: &str, allocation_name: &str, minutes: u16) -> Markup {
     let hours = f32::from(minutes) / 60.0;
     let rates: Vec<(String, f32)> = match allocation_name {
-        "combat_training_minutes" => vec![
-            ("Combat".into(), 1.0),
-            ("Will".into(), 1.0),
-            ("Balance".into(), 1.0),
-        ],
+        "combat_training_minutes" => vec![("Relevant combat skills".into(), 1.0)],
         "carousing_minutes" => vec![("Charisma".into(), 0.25)],
         "labor_minutes" => vec![("Will".into(), 0.25)],
         "thievery_minutes" => vec![("Stealth".into(), 0.25)],
-        "raiding_minutes" => vec![("Combat".into(), 0.25)],
+        "raiding_minutes" => vec![("Relevant combat skills".into(), 0.25)],
         "prayer_minutes" if label == "Prayer" => vec![("Religion".into(), 0.25)],
         "apprenticeship_minutes" => adventuresim_core::profession::PROFESSIONS
             .iter()
@@ -5157,6 +5126,23 @@ mod tests {
     }
 
     #[test]
+    fn tailor_repair_control_targets_the_clothing_service() {
+        let condition = crate::spacetimedb::ItemCondition {
+            inventory_item_id: 4,
+            tier_1: 0.25,
+            tier_2: 0.0,
+            tier_3: 0.0,
+            tier_4: 0.0,
+            tier_5: 0.0,
+        };
+        let rendered =
+            repair_submit_control(&settlement(), "clothing", 4, Some(&condition), 2).into_string();
+        assert!(rendered.contains("/clothing/repair"));
+        assert!(rendered.contains("row-repair-form"));
+        assert!(!rendered.contains("disabled"));
+    }
+
+    #[test]
     fn collapsed_currency_label_hides_the_historical_denomination() {
         let definition = crate::spacetimedb::ItemDefinition {
             id: "lubeck_mark".into(),
@@ -5384,11 +5370,11 @@ mod tests {
         assert!(!meter.contains("skill-rank-value"));
         assert!(!meter.contains(">4.0<"));
         assert!(meter.contains(
-            "aria-label=\"Remove ball: requires 4.0 Surgery; current effective skill 2.0\""
+            "aria-label=\"Remove ball: requires 4.0 procedure skill; current effective skill 2.0\""
         ));
         let over_cap = surgery_difficulty_meter("Remove ball", 7.2, 5.0).into_string();
         assert!(over_cap.contains("surgery-difficulty-over-cap-marker"));
-        assert!(over_cap.contains("requires 7.2 Surgery; current effective skill 5.0"));
+        assert!(over_cap.contains("requires 7.2 procedure skill; current effective skill 5.0"));
         assert!(!adventuresim_core::surgery::extraction_requires_surgery_kit(1.0));
         assert!(adventuresim_core::surgery::extraction_requires_surgery_kit(
             1.01
@@ -5423,10 +5409,17 @@ mod tests {
     fn schedule_table_uses_compact_accessible_icon_headers() {
         let skills = CharacterSkills {
             character_id: 1,
-            melee_hours: 0.0,
+            polearm_hours: 0.0,
+            axe_hours: 0.0,
+            bludgeon_hours: 0.0,
+            sword_hours: 0.0,
+            knife_hours: 0.0,
             dodge_hours: 0.0,
             block_hours: 0.0,
-            ranged_hours: 0.0,
+            bow_hours: 0.0,
+            crossbow_hours: 0.0,
+            firearm_hours: 0.0,
+            throw_hours: 0.0,
             will_hours: 0.0,
             charisma_hours: 0.0,
             medicine_hours: 0.0,
@@ -5436,20 +5429,15 @@ mod tests {
             },
             stealth_hours: 0.0,
             balance_hours: 0.0,
-            surgeon_hours: 0.0,
+            anatomy_hours: 0.0,
+            tailoring_hours: 0.0,
             smithing_hours: 0.0,
         };
         let schedule = CharacterTrainingSchedule {
             character_id: 1,
             downtime: crate::spacetimedb::ScheduleAllocation {
-                combat_minutes: 90,
-                combat_auto_train: true,
-                religion_minutes: 120,
-                religion_auto_train: true,
-                religion_minutes_by_tradition: adventuresim_world_schema::ReligionMinutes {
-                    judaism: 45,
-                    ..Default::default()
-                },
+                combat_training_minutes: 90,
+                prayer_minutes: 120,
                 ..Default::default()
             },
             travel: crate::spacetimedb::ScheduleAllocation::default(),
@@ -5496,7 +5484,10 @@ mod tests {
         assert!(rendered.contains("title=\"Judaism\""));
         assert!(rendered.contains("/static/icons/religion/fontawesome-star-of-david.svg"));
         assert!(!rendered.contains("data-combat-auto-toggle"));
-        assert!(!rendered.contains("data-combat-detail"));
+        for group in ["melee", "ranged", "defense"] {
+            assert!(rendered.contains(&format!("data-combat-expand=\"{group}\"")));
+            assert!(rendered.contains(&format!("data-combat-detail=\"{group}\"")));
+        }
         assert!(!rendered.contains("aria-label=\"Religion details\""));
         assert!(rendered.contains("aria-label=\"Skill details\""));
         assert!(rendered.contains("Sparring and target practice"));
@@ -5512,8 +5503,7 @@ mod tests {
         let expand = rendered.find("data-religion-expand").unwrap();
         assert!(primary_icon < expand);
         assert!(rendered.contains("class=\"religion-expand-cell\"><button"));
-        assert!(!rendered.contains("aria-label=\"Will\""));
-        assert!(!rendered.contains(">Will</th>"));
+        assert!(rendered.contains("aria-label=\"Will\""));
         assert!(!rendered.contains("data-religion-auto-budget disabled"));
         assert!(!rendered.contains("data-religion-manual-budget disabled"));
         assert!(rendered.contains("/static/icons/game/coins.svg"));
@@ -5572,8 +5562,8 @@ mod tests {
     fn activity_training_column_totals_and_explains_effective_skill_hours() {
         let combat =
             activity_training_cell("Combat Training", "combat_training_minutes", 120).into_string();
-        assert!(combat.contains(">+6.00h<"));
-        assert!(combat.contains("Combat: +2.00h; Will: +2.00h; Balance: +2.00h"));
+        assert!(combat.contains(">+2.00h<"));
+        assert!(combat.contains("Relevant combat skills: +2.00h"));
 
         let carousing = activity_training_cell("Carousing", "carousing_minutes", 120).into_string();
         assert!(carousing.contains(">+0.50h<"));
@@ -5584,7 +5574,9 @@ mod tests {
                 .into_string();
         assert!(apprenticeship.contains(">+2.00h<"));
         assert!(apprenticeship.contains("Medicine: +1.00h"));
-        assert!(apprenticeship.contains("Surgeon: +1.00h"));
+        assert!(apprenticeship.contains("Anatomy: +0.33h"));
+        assert!(apprenticeship.contains("Knife: +0.33h"));
+        assert!(apprenticeship.contains("Tailoring: +0.33h"));
 
         let leisure = activity_training_cell("Leisure", "leisure_minutes", 480).into_string();
         assert!(leisure.contains(">—<"));
@@ -5617,7 +5609,7 @@ mod tests {
     fn leisure_and_labor_previews_decompose_the_shared_fatigue_outcome() {
         let schedule = ScheduleAllocation {
             labor_minutes: 240,
-            melee_minutes: 720,
+            combat_training_minutes: 720,
             ..Default::default()
         };
         let leisure = leisure_preview(&schedule, 0.0);
