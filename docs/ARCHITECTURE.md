@@ -24,6 +24,13 @@ import types shared by the compiler and strategic module. The strategic module
 accepts those records through reducers but never parses raw datasets or depends
 on native geospatial libraries.
 
+Generated strategic map tiles and terrain-routing packs are a separate data
+distribution boundary from the AGPL software. The offline compiler copies the
+canonical `MAP_DATA_LICENSE.md` terms beside each bundle, while strategic-web
+serves the same notice at `/map/data-license`. Deployments must retain that
+notice so source-specific attribution and pass-through conditions travel with
+the otherwise optional file-backed artifacts.
+
 Every gridded enrichment shares the canonical `SpatialGridSpec` described in
 `docs/SPATIAL_GRID.md`. The complete spec and inference-rules version are
 serialized in world metadata, so either changing alters the content-addressed

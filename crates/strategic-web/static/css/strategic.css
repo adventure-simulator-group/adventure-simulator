@@ -4234,8 +4234,10 @@ body.chat-resizing {
 }
 /* Settlement map: cached AVIF world tiles under an interactive SVG overlay. */
 .settlement-map-main { min-width: 0; overflow: hidden; }
-.strategic-map { display: grid; grid-template-rows: minmax(20rem, 1fr); height: 100%; min-height: 32rem; background: #dce5dc; color: #202820; }
+.strategic-map { position: relative; display: grid; grid-template-rows: minmax(20rem, 1fr); height: 100%; min-height: 32rem; background: #dce5dc; color: #202820; }
 .strategic-map-svg { display: block; width: 100%; height: 100%; min-height: 20rem; cursor: grab; touch-action: none; background: var(--map-land); }
+.strategic-map-license-link { position: absolute; right: .45rem; bottom: .35rem; z-index: 3; padding: .14rem .32rem; border: 1px solid rgb(41 48 38 / 28%); background: rgb(244 238 211 / 86%); color: #30372b; font-size: .68rem; line-height: 1.15; text-decoration: none; }
+.strategic-map-license-link:hover, .strategic-map-license-link:focus-visible { background: #f4eed3; text-decoration: underline; }
 .strategic-map-svg:active { cursor: grabbing; }
 .strategic-map-svg:focus-visible { outline: 3px solid #173d72; outline-offset: -3px; }
 .map-tile-layer { pointer-events: none; image-rendering: auto; }

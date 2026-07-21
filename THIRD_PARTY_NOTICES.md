@@ -2,24 +2,14 @@
 
 ## Strategic map data
 
-The generated Paper map tiles adapt these datasets offline; the source raster
-and vector files are not shipped to the browser:
-
-- [Viabundus Pre-modern Street Map 2](https://doi.org/10.5281/zenodo.16611998),
-  conservatively treated as [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
-  Adventure Simulator clips, simplifies, classifies, and rasterizes the source
-  roads, ferries, settlements, and water geometry.
-- [Copernicus DEM GLO-30](https://doi.org/10.5270/ESA-c5d3d65). Credit: European
-  Union, Copernicus DEM GLO-30. Produced using Copernicus WorldDEM-30 © DLR e.V.
-  2010–2014 and © Airbus Defence and Space GmbH 2014–2018 provided under
-  COPERNICUS by the European Union and ESA; all rights reserved. Adventure
-  Simulator generalizes the elevation into map relief. Neither the European
-  Commission nor ESA is liable for use of Copernicus data and information.
-- [Copernicus HRL Forest 2018](https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a).
-  © European Union, Copernicus Land Monitoring Service. Adventure Simulator
-  aggregates and procedurally reshapes the partial source coverage into sparse
-  and deep woodland bands. No endorsement by the European Union or Copernicus
-  programme is implied.
+The generated Paper map and terrain-routing packs adapt Viabundus Pre-modern
+Street Map 2, Copernicus DEM GLO-30, and Copernicus Land Monitoring Service
+forest data offline. Their canonical redistribution notice is
+[MAP_DATA_LICENSE.md](MAP_DATA_LICENSE.md). It applies CC BY-SA 4.0 to the
+project-owned contributions, excludes the generated data artifacts from the
+software AGPL, identifies modifications, and retains the source-specific
+attribution, liability, and no-endorsement terms. The compiler copies that
+notice beside every generated map or terrain pack.
 
 ## Game Icons
 

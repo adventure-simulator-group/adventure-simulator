@@ -270,7 +270,11 @@ After Viabundus and the world-data inputs are installed, run `just
 build-strategic-map` to regenerate
 `target/strategic-map/strategic-map-v1.json` and the derived
 `target/strategic-map/strategic-map-tiles-v1.pack`, plus the independent
-`terrain-routing-v1.json`/`.pack` native-detail artifact. These deterministic presentation assets verify
+`terrain-routing-v1.json`/`.pack` native-detail artifact. The compiler also
+writes `STRATEGIC_MAP_DATA_LICENSE.md` beside every output directory. Keep that
+notice with any copied, published, or hosted bundle; it is the artifact-level
+licence and attribution boundary described by the repository's
+`MAP_DATA_LICENSE.md`. These deterministic presentation assets verify
 the initialized v2 edge and water files against
 their recorded SHA-256 identities, retains only active 1544 overview roads and
 ferries for presentation, and separately rasterizes every active full-precision
@@ -327,6 +331,11 @@ pin at its issuing settlement, route availability, current location, selection,
 and the computed terrain polyline to the selected destination remain in the authenticated
 HTML/SVG overlay and are never cached as
 part of the world asset.
+
+The public `/map/data-license` route serves the same canonical notice compiled
+into `strategic-web`. A compact `Map data licence` link overlays the map so the
+attribution and reuse terms remain discoverable without restoring the old
+legend or source-information block.
 
 `strategic-web` requires an authenticated `SPACETIMEDB_TOKEN` even when the
 optional terrain pack is absent. At startup it claims (or renews, using the same

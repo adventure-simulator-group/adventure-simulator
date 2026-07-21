@@ -59,6 +59,13 @@ Below are some guiding principles for _Adventure Simulator_ development.
 ### Open source software
 We tentatively intend to keep everything [AGPLv3](https://www.gnu.org/licenses/agpl-3.0.en.html), but we're willing to hear out the case for other licenses.
 
+The AGPL applies to Adventure Simulator software unless a file or artifact says
+otherwise. Generated strategic map tiles and terrain-routing packs are data
+artifacts with a separate licence boundary: project-owned contributions are
+offered under CC BY-SA 4.0 and underlying datasets retain their own terms. See
+[MAP_DATA_LICENSE.md](MAP_DATA_LICENSE.md) before distributing or hosting those
+artifacts.
+
 It's clear to us that _Adventure Simulator_ is very much the kind of project which will benefit from collaboration and indefinite iteration, which makes open source the obvious choice by a country mile. For instance, though our MVP for _Adventure Simulator_ is (deliberately)[^9] generic historical fantasy, we don't intend or hope for it to stay that way. The project's open source nature will allow modders to come in and take it in all sorts of unexpected directions in the future; they may create [total conversions](https://en.wikipedia.org/wiki/Total_conversion) to other fantasy settings, sci-fi settings, or... [something else entirely](https://fxtwitter.com/warlockracy/status/1489001741337169926).
 
 [^9]: Think of this as a high-effort tech demo in the spirit of Valve (cf. *Half-Life*). We really enjoy "weird fiction" like *Morrowind* and *Dune*, but at least for *Adventure Simulator*'s first iteration, the goal is to innovate in tech, not aesthetic. For now, our aesthetic is what has been proven to work.
