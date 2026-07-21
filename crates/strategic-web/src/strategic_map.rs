@@ -28,7 +28,7 @@ const ROUTE_MIN_VIEW_WIDTH: f64 = 90.0;
 const ROUTE_MIN_VIEW_HEIGHT: f64 = ROUTE_MIN_VIEW_WIDTH / VIEW_ASPECT_RATIO;
 pub(crate) const TILE_PATH_PREFIX: &str = "/map/tiles/";
 const PACKAGE_SCHEMA: u32 = 3;
-const RENDERER_REVISION: u32 = 6;
+const RENDERER_REVISION: u32 = 7;
 const MIN_TILE_SIZE: u32 = 64;
 const MAX_TILE_SIZE: u32 = 2_048;
 const MAX_TILE_ENTRIES: usize = 100_000;
@@ -611,7 +611,10 @@ mod tests {
             ),
             tile_digest, placeholder
         )
-        .replace("\"renderer_revision\":3", "\"renderer_revision\":4");
+        .replace(
+            "\"renderer_revision\":3",
+            &format!("\"renderer_revision\":{RENDERER_REVISION}"),
+        );
         let package_digest = format!("{:x}", Sha256::digest(unsigned.as_bytes()));
         (
             unsigned.replace(

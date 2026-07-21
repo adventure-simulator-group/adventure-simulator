@@ -1,7 +1,7 @@
 use image::{ExtendedColorType, ImageEncoder, codecs::avif::AvifEncoder};
 use rayon::prelude::*;
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use tiny_skia::{
     Color, FillRule, IntRect, LineCap, LineJoin, Paint, Path, PathBuilder, Pixmap, Rect, Stroke,
     Transform,
@@ -20,12 +20,6 @@ const NATIVE_DETAIL_BOUNDS: [f64; 4] = [5.0, 50.0, 16.0, 56.0];
 const FOREST_CANOPY_THRESHOLD_PERCENT: f64 = 20.0;
 const CANOPY_CELLS_PER_DEGREE: usize = 1_000;
 const RELIEF_STEP_DEGREES: f64 = 0.01;
-const MOUNTAIN_RELIEF_RADIUS_M: f64 = 7_000.0;
-const MOUNTAIN_RELIEF_THRESHOLD_M: i32 = 300;
-const MOUNTAIN_LOCAL_RELIEF_THRESHOLD_M: i32 = 150;
-const MOUNTAIN_STEEP_FRACTION_PERCENT: u8 = 15;
-const MIN_MOUNTAIN_COMPONENT_CELLS: usize = 10;
-const MOUNTAIN_MARKER_BLOCK: usize = 4;
 
 #[derive(Debug)]
 struct ForestField {
@@ -237,18 +231,7 @@ fn bilinear_coverage(level: &CanopyLevel, x: f64, y: f64) -> f64 {
 
 #[derive(Clone, Copy, Debug, Default)]
 struct ReliefCell {
-    elevation_m: Option<i16>,
-    local_relief_m: u16,
     hilly_fraction_percent: u8,
-    mountain: bool,
-    relief_7km_m: u16,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct MountainMarker {
-    longitude: f64,
-    latitude: f64,
-    relief_m: u16,
 }
 
 #[derive(Debug)]
@@ -258,7 +241,6 @@ struct ReliefField {
     columns: usize,
     rows: usize,
     cells: Vec<ReliefCell>,
-    markers: Vec<MountainMarker>,
 }
 
 impl ReliefField {
@@ -274,7 +256,6 @@ impl ReliefField {
             let latitude = north - (row as f64 + 0.5) * RELIEF_STEP_DEGREES;
             for column in 0..columns {
                 let longitude = west + (column as f64 + 0.5) * RELIEF_STEP_DEGREES;
-                let mut elevations = Vec::with_capacity(9);
                 let mut hilly = 0_u8;
                 let mut samples = 0_u8;
                 for offset_y in sample_offsets {
@@ -282,38 +263,28 @@ impl ReliefField {
                         let sample_latitude = latitude - offset_y * RELIEF_STEP_DEGREES;
                         let sample_longitude = longitude + offset_x * RELIEF_STEP_DEGREES;
                         if let Some(cell) = terrain.cell(sample_latitude, sample_longitude)? {
-                            elevations.push(cell.elevation_m);
                             hilly += u8::from(cell.hilly);
                             samples += 1;
                         }
                     }
                 }
-                if elevations.is_empty() {
+                if samples == 0 {
                     continue;
                 }
-                elevations.sort_unstable();
-                let local_relief =
-                    i32::from(*elevations.last().expect("nonempty")) - i32::from(elevations[0]);
                 cells[row * columns + column] = ReliefCell {
-                    elevation_m: Some(elevations[elevations.len() / 2]),
-                    local_relief_m: local_relief.clamp(0, i32::from(u16::MAX)) as u16,
                     hilly_fraction_percent: u8::try_from(
                         u16::from(hilly) * 100 / u16::from(samples),
                     )
                     .unwrap_or(100),
-                    ..ReliefCell::default()
                 };
             }
         }
-        classify_mountains(&mut cells, columns, rows, north);
-        let markers = mountain_markers(&cells, columns, rows, west, north);
         Ok(Self {
             west,
             north,
             columns,
             rows,
             cells,
-            markers,
         })
     }
 
@@ -351,163 +322,6 @@ impl ReliefField {
     }
 }
 
-fn classify_mountains(cells: &mut [ReliefCell], columns: usize, rows: usize, north: f64) {
-    for row in 0..rows {
-        let latitude = north - (row as f64 + 0.5) * RELIEF_STEP_DEGREES;
-        let north_radius =
-            (MOUNTAIN_RELIEF_RADIUS_M / (111_320.0 * RELIEF_STEP_DEGREES)).ceil() as isize;
-        let east_metres = 111_320.0 * latitude.to_radians().cos() * RELIEF_STEP_DEGREES;
-        let east_radius = (MOUNTAIN_RELIEF_RADIUS_M / east_metres.max(1.0)).ceil() as isize;
-        for column in 0..columns {
-            let index = row * columns + column;
-            if cells[index].elevation_m.is_none() {
-                continue;
-            }
-            let mut minimum = i16::MAX;
-            let mut maximum = i16::MIN;
-            for offset_y in -north_radius..=north_radius {
-                let neighbour_row = row as isize + offset_y;
-                if neighbour_row < 0 || neighbour_row >= rows as isize {
-                    continue;
-                }
-                for offset_x in -east_radius..=east_radius {
-                    let neighbour_column = column as isize + offset_x;
-                    if neighbour_column < 0 || neighbour_column >= columns as isize {
-                        continue;
-                    }
-                    let distance = ((offset_y as f64 * 111_320.0 * RELIEF_STEP_DEGREES).powi(2)
-                        + (offset_x as f64 * east_metres).powi(2))
-                    .sqrt();
-                    if distance > MOUNTAIN_RELIEF_RADIUS_M {
-                        continue;
-                    }
-                    if let Some(elevation) = cells
-                        [neighbour_row as usize * columns + neighbour_column as usize]
-                        .elevation_m
-                    {
-                        minimum = minimum.min(elevation);
-                        maximum = maximum.max(elevation);
-                    }
-                }
-            }
-            if minimum == i16::MAX {
-                continue;
-            }
-            let relief = (i32::from(maximum) - i32::from(minimum)).max(0);
-            cells[index].relief_7km_m = relief.min(i32::from(u16::MAX)) as u16;
-            cells[index].mountain = relief >= MOUNTAIN_RELIEF_THRESHOLD_M
-                && (i32::from(cells[index].local_relief_m) >= MOUNTAIN_LOCAL_RELIEF_THRESHOLD_M
-                    || cells[index].hilly_fraction_percent >= MOUNTAIN_STEEP_FRACTION_PERCENT);
-        }
-    }
-    remove_small_mountain_components(cells, columns, rows);
-
-    // Fill small interior gaps so a ridge remains a coherent area rather than
-    // a stippled collection of independently qualifying kilometre cells.
-    let original = cells.iter().map(|cell| cell.mountain).collect::<Vec<_>>();
-    for row in 1..rows.saturating_sub(1) {
-        for column in 1..columns.saturating_sub(1) {
-            let index = row * columns + column;
-            if original[index] || cells[index].elevation_m.is_none() {
-                continue;
-            }
-            let neighbours = (-1_isize..=1)
-                .flat_map(|dy| (-1_isize..=1).map(move |dx| (dx, dy)))
-                .filter(|(dx, dy)| *dx != 0 || *dy != 0)
-                .filter(|(dx, dy)| {
-                    original
-                        [(row as isize + dy) as usize * columns + (column as isize + dx) as usize]
-                })
-                .count();
-            if neighbours >= 6 {
-                cells[index].mountain = true;
-            }
-        }
-    }
-}
-
-fn remove_small_mountain_components(cells: &mut [ReliefCell], columns: usize, rows: usize) {
-    let mut visited = vec![false; cells.len()];
-    for start in 0..cells.len() {
-        if visited[start] || !cells[start].mountain {
-            continue;
-        }
-        let mut queue = VecDeque::from([start]);
-        let mut component = Vec::new();
-        visited[start] = true;
-        while let Some(index) = queue.pop_front() {
-            component.push(index);
-            let row = index / columns;
-            let column = index % columns;
-            for offset_y in -1_isize..=1 {
-                for offset_x in -1_isize..=1 {
-                    if offset_x == 0 && offset_y == 0 {
-                        continue;
-                    }
-                    let next_row = row as isize + offset_y;
-                    let next_column = column as isize + offset_x;
-                    if next_row < 0
-                        || next_column < 0
-                        || next_row >= rows as isize
-                        || next_column >= columns as isize
-                    {
-                        continue;
-                    }
-                    let next = next_row as usize * columns + next_column as usize;
-                    if !visited[next] && cells[next].mountain {
-                        visited[next] = true;
-                        queue.push_back(next);
-                    }
-                }
-            }
-        }
-        if component.len() < MIN_MOUNTAIN_COMPONENT_CELLS {
-            for index in component {
-                cells[index].mountain = false;
-            }
-        }
-    }
-}
-
-fn mountain_markers(
-    cells: &[ReliefCell],
-    columns: usize,
-    rows: usize,
-    west: f64,
-    north: f64,
-) -> Vec<MountainMarker> {
-    let mut markers = Vec::new();
-    for block_row in (0..rows).step_by(MOUNTAIN_MARKER_BLOCK) {
-        for block_column in (0..columns).step_by(MOUNTAIN_MARKER_BLOCK) {
-            let mut mountain_count = 0;
-            let mut strongest = None;
-            for row in block_row..(block_row + MOUNTAIN_MARKER_BLOCK).min(rows) {
-                for column in block_column..(block_column + MOUNTAIN_MARKER_BLOCK).min(columns) {
-                    let cell = cells[row * columns + column];
-                    if !cell.mountain {
-                        continue;
-                    }
-                    mountain_count += 1;
-                    if strongest.is_none_or(|(_, _, relief)| cell.relief_7km_m > relief) {
-                        strongest = Some((row, column, cell.relief_7km_m));
-                    }
-                }
-            }
-            if mountain_count < 4 {
-                continue;
-            }
-            if let Some((row, column, relief_m)) = strongest {
-                markers.push(MountainMarker {
-                    longitude: west + (column as f64 + 0.5) * RELIEF_STEP_DEGREES,
-                    latitude: north - (row as f64 + 0.5) * RELIEF_STEP_DEGREES,
-                    relief_m,
-                });
-            }
-        }
-    }
-    markers
-}
-
 #[derive(Clone, Copy, Debug)]
 pub(super) struct TileConfig {
     pub tile_size: u32,
@@ -534,9 +348,7 @@ struct Palette {
     ferry: [u8; 4],
     forest_sparse: [u8; 4],
     forest_deep: [u8; 4],
-    terrain_ink: [u8; 4],
-    terrain_hatch: [u8; 4],
-    elevation: [[u8; 4]; 7],
+    hilly_open: [u8; 4],
 }
 
 const PAPER: Palette = Palette {
@@ -549,17 +361,7 @@ const PAPER: Palette = Palette {
     ferry: [91, 88, 78, 180],
     forest_sparse: [105, 139, 91, 120],
     forest_deep: [49, 94, 55, 155],
-    terrain_ink: [94, 81, 66, 205],
-    terrain_hatch: [112, 96, 77, 155],
-    elevation: [
-        [221, 213, 186, 255],
-        [212, 201, 170, 255],
-        [201, 185, 153, 120],
-        [186, 166, 134, 255],
-        [170, 146, 119, 255],
-        [152, 127, 108, 255],
-        [130, 107, 96, 255],
-    ],
+    hilly_open: [191, 159, 115, 180],
 };
 
 pub(super) fn build(
@@ -758,17 +560,6 @@ fn render_with_forest_field(
         origin,
         palette,
     )?;
-    if let Some(relief_field) = relief_field {
-        draw_mountain_ranges(
-            &mut pixmap,
-            relief_field,
-            package.bounds,
-            scale,
-            origin,
-            logical_bounds,
-            palette,
-        );
-    }
     for polygon in &package.water {
         stroke_and_fill_source_polygon(
             &mut pixmap,
@@ -949,7 +740,7 @@ fn draw_land_cover(
             let offset = (pixel_y * width + pixel_x) * 4;
             blend_opaque_pixel(
                 &mut data[offset..offset + 4],
-                palette.elevation[2],
+                palette.hilly_open,
                 hilly_samples * 0.25,
             );
             blend_opaque_pixel(
@@ -965,42 +756,6 @@ fn draw_land_cover(
         }
     }
     Ok(())
-}
-
-fn draw_mountain_ranges(
-    pixmap: &mut Pixmap,
-    field: &ReliefField,
-    map_bounds: [f64; 4],
-    scale: f64,
-    origin: (f64, f64),
-    tile_bounds: [f64; 4],
-    palette: Palette,
-) {
-    if scale < 16.0 {
-        return;
-    }
-    let margin = 24.0 / scale;
-    for marker in &field.markers {
-        let (x, y) = project(marker.longitude, marker.latitude, map_bounds);
-        if !intersects(
-            [x - margin, y - margin, x + margin, y + margin],
-            tile_bounds,
-        ) {
-            continue;
-        }
-        let relief_factor = (f64::from(marker.relief_m) / 600.0).clamp(0.75, 1.45);
-        draw_hill_stamp(
-            pixmap,
-            (x * scale - origin.0) as f32,
-            (y * scale - origin.1) as f32,
-            (18.0 * relief_factor) as f32,
-            4,
-            scale,
-            palette.elevation[3],
-            palette.terrain_ink,
-            palette.terrain_hatch,
-        );
-    }
 }
 
 fn blend_opaque_pixel(destination: &mut [u8], source: [u8; 4], coverage: f64) {
@@ -1065,64 +820,6 @@ fn smoothstep(value: f64) -> f64 {
 
 fn lerp(left: f64, right: f64, amount: f64) -> f64 {
     left + (right - left) * amount
-}
-
-#[allow(clippy::too_many_arguments)]
-fn draw_hill_stamp(
-    pixmap: &mut Pixmap,
-    x: f32,
-    y: f32,
-    width: f32,
-    band_index: usize,
-    scale: f64,
-    fill: [u8; 4],
-    ink: [u8; 4],
-    hatch: [u8; 4],
-) {
-    let height = width * (0.48 + band_index as f32 * 0.035);
-    let left = x - width * 0.5;
-    let right = x + width * 0.5;
-    let ridge = band_index >= 4;
-    let mut profile = PathBuilder::new();
-    profile.move_to(left, y + height * 0.30);
-    if ridge {
-        profile.line_to(x - width * 0.18, y - height * 0.30);
-        profile.line_to(x - width * 0.04, y - height * 0.10);
-        profile.line_to(x + width * 0.14, y - height * 0.52);
-    } else {
-        profile.line_to(x - width * 0.08, y - height * 0.48);
-    }
-    profile.line_to(right, y + height * 0.30);
-    profile.close();
-    if let Some(profile) = profile.finish() {
-        pixmap.fill_path(
-            &profile,
-            &symbol_paint(with_alpha(fill, 170)),
-            FillRule::Winding,
-            Transform::identity(),
-            None,
-        );
-        stroke_pixmap_path(pixmap, &profile, ink, if scale >= 32.0 { 1.0 } else { 0.8 });
-    }
-
-    let hatch_count = if scale >= 64.0 {
-        4 + usize::from(band_index >= 4)
-    } else if scale >= 32.0 {
-        3
-    } else {
-        1
-    };
-    for index in 0..hatch_count {
-        let offset = (index as f32 + 1.0) / (hatch_count as f32 + 1.0);
-        let start_x = x + width * (0.05 + offset * 0.36);
-        let start_y = y - height * (0.28 - offset * 0.16);
-        let mut line = PathBuilder::new();
-        line.move_to(start_x, start_y);
-        line.line_to(start_x - width * 0.12, y + height * (0.05 + offset * 0.20));
-        if let Some(line) = line.finish() {
-            stroke_pixmap_path(pixmap, &line, hatch, 0.65);
-        }
-    }
 }
 
 fn stroke_pixmap_path(pixmap: &mut Pixmap, path: &Path, shade: [u8; 4], width: f32) {
@@ -1677,50 +1374,12 @@ mod tests {
     }
 
     #[test]
-    fn mountain_classifier_rejects_high_plains() {
-        let mut cells = vec![
-            ReliefCell {
-                elevation_m: Some(1_500),
-                ..ReliefCell::default()
-            };
-            30 * 30
-        ];
-        classify_mountains(&mut cells, 30, 30, 53.0);
-        assert!(cells.iter().all(|cell| !cell.mountain));
-    }
-
-    #[test]
-    fn mountain_classifier_accepts_sustained_low_elevation_relief() {
-        let mut cells = (0..30)
-            .flat_map(|_| {
-                (0..30).map(|column| ReliefCell {
-                    elevation_m: Some((column * 40) as i16),
-                    local_relief_m: 180,
-                    hilly_fraction_percent: 45,
-                    ..ReliefCell::default()
-                })
-            })
-            .collect::<Vec<_>>();
-        classify_mountains(&mut cells, 30, 30, 53.0);
-        assert!(cells.iter().filter(|cell| cell.mountain).count() > 50);
-    }
-
-    #[test]
-    fn mountain_classifier_removes_an_isolated_spike() {
-        let mut cells = vec![
-            ReliefCell {
-                elevation_m: Some(0),
-                ..ReliefCell::default()
-            };
-            30 * 30
-        ];
-        cells[15 * 30 + 15] = ReliefCell {
-            elevation_m: Some(500),
-            local_relief_m: 500,
-            hilly_fraction_percent: 100,
-            ..ReliefCell::default()
-        };
-        classify_mountains(&mut cells, 30, 30, 53.0);
-        assert!(cells.iter().all(|cell| !cell.mountain));
+    fn open_hill_tint_is_visibly_brown_against_the_parchment() {
+        let mut tinted = PAPER.land;
+        blend_opaque_pixel(&mut tinted, PAPER.hilly_open, 1.0);
+        assert!(PAPER.land[0].abs_diff(tinted[0]) >= 25);
+        assert!(PAPER.land[1].abs_diff(tinted[1]) >= 35);
+        assert!(PAPER.land[2].abs_diff(tinted[2]) >= 50);
+        assert!(tinted[0] > tinted[1] && tinted[1] > tinted[2]);
     }
 }

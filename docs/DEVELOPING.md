@@ -311,10 +311,10 @@ inflating the pack with redundant generalized tiles. Every encoded
 tile includes a four-pixel gutter so independent AVIF edges overlap cleanly;
 close levels use the native terrain pack to classify 15-degree slopes and
 20-percent canopy cover. Open hilly ground is light brown, forest is green, and
-their overlap is dark green. A multi-scale mountain classifier combines robust
-seven-kilometre relief, one-kilometre relief or sustained steepness, and a
-minimum connected area before adding engraved ridge marks; absolute elevation
-alone never makes a mountain. Each tile samples continuous, domain-warped
+their overlap is dark green. The raster map has no symbolic hill or mountain
+stamps; hilly terrain is communicated only by those area colours. Native
+elevation remains available in the independent terrain pack for routing and
+future terrain presentation. Each tile samples continuous, domain-warped
 coverage fields with four-sample edge antialiasing instead of exposing source
 pixels.
 Historical road importance controls both
@@ -344,7 +344,7 @@ bundle, set `STRATEGIC_MAP_PREVIEW_PNG` to an output path and run the focused
 `representative_paper_tile_has_deterministic_png_preview_hook` test with the
 `strategic-map-renderer` feature.
 
-The deployment manifest is schema 3 with renderer revision 6. It contains only
+The deployment manifest is schema 3 with renderer revision 7. It contains only
 bounds, attribution/source metadata, coverage counts, the tile index, and
 content digests; source roads, water rings, elevation cells/contours, and
 forest regions stay in the offline compiler and are not shipped to
