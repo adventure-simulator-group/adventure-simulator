@@ -315,7 +315,8 @@ Agility reduces the noise that you make while moving, precision reduces the radi
 5. Master thief, elven hunter
 
 ### Balance (intuitive, 30000 hours)
-Relevant both for poise in melee and speed in difficult terrain
+Relevant for poise in melee. Strategic terrain speed is handled by the
+separate Terrain meta-skill and does not stack with Balance.
 
 0. Cannot walk upright
 1. Bit of a klutz, orcs
@@ -326,6 +327,17 @@ Relevant both for poise in melee and speed in difficult terrain
 
 ### Anatomy (trained, 10000 hours)
 Anatomy is the medical knowledge that turns ordinary craft and weapon skills into treatment skills. Bandaging and splinting use Anatomy; projectile extraction uses Anatomy plus Knife; stitching uses Anatomy plus Tailoring. Procedures are strictly individual and self-treatment applies a penalty.
+
+### Terrain (computed meta-skill; intuitive subskills, 30000 hours each)
+
+Terrain stores no hours of its own. Its expandable subskills are Plains,
+Forest, Hills, and Urban. A route cell supplies a normalized mixture, and the
+displayed route/local Terrain value is the weighted combination of those
+subskills; without context the character rail shows their unweighted mean.
+Urban is stored and displayed now but has zero routing weight until the world
+pipeline has an authoritative urban-coverage source. Roads exercise the
+underlying terrain rather than Urban and reduce training in proportion to the
+time they save.
 
 ### Tailoring (trained, 10000 hours)
 Tailoring makes and repairs cloth goods. Settlement tailors and field maintenance use it for clothing durability, while wound stitching combines it with Anatomy.

@@ -44,9 +44,15 @@ destination asks the optional native terrain pack for the fastest bounded
 route. Road movement is 5 km/h; open ground, sparse woods, and deep woods use
 progressively slower base rates, and climbing adds a directional uphill
 penalty. Water blocks movement unless road infrastructure identifies a
-crossing. Confirming recomputes the route at execution time, uses its aggregate
+crossing. Each cell mixes Plains, Forest, and Hills from independent canopy and
+hill coverage. Urban expertise is available on characters but is not inferred
+from roads and has no route weight until built-up coverage is sourced.
+The bounded party Terrain check for that mixture provides a 1.0â€“1.5 speed
+multiplier and participates directly in A*, so different parties can prefer
+different paths. Confirming recomputes the route at execution time, uses its aggregate
 distance and terrain-weighted duration, and persists its package digest,
-bounded polyline, and ordered terrain spans for the active party journey.
+bounded polyline, ordered terrain spans, skill mixture, check, and exposure
+discount for the active party journey.
 Missing or incomplete terrain data falls back to the former straight-line
 estimate and is explicitly labelled as such.
 
@@ -145,6 +151,13 @@ start of the configured walking window rather than adding a fixed interval to
 the camp's arrival time. If another system advances party time, the
 recommendation shrinks toward that same scheduled wake time. Continue travel is
 disabled outside the walking window and becomes available once it opens.
+
+Only actual movement trains Terrain. Every living participant receives the
+same conserved movement exposure divided across the persisted terrain mixture;
+camp time is excluded. Road movement trains the underlying terrain at 25% for
+open ground, 20% for sparse woods, or 15% for deep woods. Persisted span
+overlap makes the result identical across multi-day chunks and offline
+continuation.
 
 The en-route header keeps its single Camp tab and existing rest and continue
 actions. The raster scene combines a cut-paper tent with a small stone-and-log

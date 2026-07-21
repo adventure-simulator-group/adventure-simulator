@@ -407,6 +407,14 @@
       root.querySelectorAll('.social-detail-row').forEach((row) => { row.hidden = !expanded; });
       return;
     }
+    const terrainExpand = event.target.closest?.('[data-terrain-expand]');
+    if (terrainExpand) {
+      const root = terrainExpand.closest('[data-skill-schedule]') || terrainExpand.closest('table');
+      const expanded = terrainExpand.getAttribute('aria-expanded') !== 'true';
+      terrainExpand.setAttribute('aria-expanded', String(expanded));
+      root.querySelectorAll('.terrain-detail-row').forEach((row) => { row.hidden = !expanded; });
+      return;
+    }
     const retry = event.target.closest?.('[data-schedule-retry]');
     if (retry) {
       const root = retry.closest('[data-skill-schedule]');

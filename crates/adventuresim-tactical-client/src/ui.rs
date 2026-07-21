@@ -379,6 +379,10 @@ fn update_skills_ui(
             Skill::Religion => format!("{:.2}", skills.religion_hours),
             Skill::Stealth => format!("{:.2}", skills.stealth_hours),
             Skill::Balance => format!("{:.2}", skills.balance_hours),
+            Skill::TerrainPlains
+            | Skill::TerrainForest
+            | Skill::TerrainHills
+            | Skill::TerrainUrban => "0.00".into(),
             Skill::Anatomy => format!("{:.2}", skills.anatomy_hours),
             Skill::Tailoring => format!("{:.2}", skills.tailoring_hours),
             Skill::Smithing => format!("{:.2}", skills.smithing_hours),

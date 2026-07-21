@@ -35,15 +35,15 @@ test("water verdict includes but separately labels emergency alcohol", () => {
 
 test("terrain rail preserves roads and woods around camps and reverses the return leg", () => {
   const helpers = plannerHelpers();
-  const terrain = helpers.parseTerrain("road,0,30|open,30,20|sparse-woods,50,30|deep-woods,80,20");
+  const terrain = helpers.parseTerrain("road,0,30,2500,1000,0,0,0|open,30,20,2500,1000,0,0,0|sparse-woods,50,30,3000,800,200,0,0|deep-woods,80,20,3500,400,600,0,0");
   const itinerary = helpers.parseSegments("w,0,100,0,50,0,.3,.3,0|f,100,60,50,0,.3,.1,.3,60|w,160,100,50,50,.1,.4,.4,0");
   assert.deepEqual(Array.from(terrain, (span) => ({ ...span })), [
-    { kind: "road", start: 0, duration: 30 },
-    { kind: "open", start: 30, duration: 20 },
-    { kind: "sparse-woods", start: 50, duration: 30 },
-    { kind: "deep-woods", start: 80, duration: 20 },
+    { kind: "road", start: 0, duration: 30, check: 2.5, weights: [1000, 0, 0, 0] },
+    { kind: "open", start: 30, duration: 20, check: 2.5, weights: [1000, 0, 0, 0] },
+    { kind: "sparse-woods", start: 50, duration: 30, check: 3, weights: [800, 200, 0, 0] },
+    { kind: "deep-woods", start: 80, duration: 20, check: 3.5, weights: [400, 600, 0, 0] },
   ]);
-  assert.deepEqual(Array.from(helpers.terrainPieces(terrain, itinerary, 100, false), (piece) => ({ ...piece })), [
+  assert.deepEqual(Array.from(helpers.terrainPieces(terrain, itinerary, 100, false), ({ kind, start, duration }) => ({ kind, start, duration })), [
     { kind: "road", start: 0, duration: 60 },
     { kind: "open", start: 60, duration: 40 },
     { kind: "stopped", start: 100, duration: 60 },
@@ -59,11 +59,12 @@ test("terrain rail preserves roads and woods around camps and reverses the retur
 
 test("terrain parser rejects malformed, negative, zero-length, and discontinuous spans", () => {
   const helpers = plannerHelpers();
-  assert.deepEqual(Array.from(helpers.parseTerrain("road,-1,5")), []);
-  assert.deepEqual(Array.from(helpers.parseTerrain("road,0,0")), []);
-  assert.deepEqual(Array.from(helpers.parseTerrain("road,0,5|open,6,5")), []);
+  assert.deepEqual(Array.from(helpers.parseTerrain("road,-1,5,0,1000,0,0,0")), []);
+  assert.deepEqual(Array.from(helpers.parseTerrain("road,0,0,0,1000,0,0,0")), []);
+  assert.deepEqual(Array.from(helpers.parseTerrain("road,0,5,0,1000,0,0,0|open,6,5,0,1000,0,0,0")), []);
   assert.deepEqual(Array.from(helpers.parseTerrain("road,0,5,extra")), []);
-  assert.deepEqual(Array.from(helpers.parseTerrain("lava,0,5")), []);
+  assert.deepEqual(Array.from(helpers.parseTerrain("lava,0,5,0,1000,0,0,0")), []);
+  assert.deepEqual(Array.from(helpers.parseTerrain("road,0,5,0,999,0,0,0")), []);
 });
 
 test("provision target math supports positive and negative surplus", () => {

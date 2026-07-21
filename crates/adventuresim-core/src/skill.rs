@@ -80,9 +80,21 @@ pub enum Skill {
     /// Physical. Intuitive. Movement noise (agility), detection radius (precision). (8000h)
     #[assoc(max_hours = 8000.0, kind = SkillKind::Physical, is_trained = false)]
     Stealth,
-    /// Physical. Intuitive. Poise in melee, terrain speed. (30000h)
+    /// Physical. Intuitive. Poise in melee. (30000h)
     #[assoc(max_hours = 30000.0, kind = SkillKind::Physical, is_trained = false)]
     Balance,
+    /// Mental. Intuitive. Movement through open country. (30000h)
+    #[assoc(max_hours = 30000.0, kind = SkillKind::Mental, is_trained = false)]
+    TerrainPlains,
+    /// Mental. Intuitive. Movement through woodland. (30000h)
+    #[assoc(max_hours = 30000.0, kind = SkillKind::Mental, is_trained = false)]
+    TerrainForest,
+    /// Mental. Intuitive. Movement through hilly ground. (30000h)
+    #[assoc(max_hours = 30000.0, kind = SkillKind::Mental, is_trained = false)]
+    TerrainHills,
+    /// Mental. Intuitive. Movement through built-up ground. (30000h)
+    #[assoc(max_hours = 30000.0, kind = SkillKind::Mental, is_trained = false)]
+    TerrainUrban,
     /// Mental. Trained. Knowledge of bodies and wounds. (10000h)
     #[assoc(max_hours = 10000.0, kind = SkillKind::Mental, is_trained = true)]
     Anatomy,

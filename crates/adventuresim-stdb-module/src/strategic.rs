@@ -22,7 +22,8 @@ use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table
 
 use crate::{
     character::{
-        character, character_attributes, character_equip, character_limbs, character_stats,
+        character, character_attributes, character_equip, character_limbs, character_skills,
+        character_stats,
     },
     condition::character_condition,
     item::{InventoryItem, inventory_item, item},
@@ -1567,9 +1568,20 @@ pub struct JourneyRoutePoint {
     pub longitude_e7: i32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub struct JourneyTerrainWeights {
+    pub plains: u16,
+    pub forest: u16,
+    pub hills: u16,
+    pub urban: u16,
+}
+
 #[derive(Clone, Debug, PartialEq, SpacetimeType)]
 pub struct JourneyTerrainSpan {
     pub kind: JourneyTerrainKind,
+    pub terrain: JourneyTerrainWeights,
+    pub training_multiplier_permille: u16,
+    pub check_millirank: u16,
     pub start_minute: u64,
     pub duration_minutes: u64,
 }
@@ -6185,13 +6197,29 @@ fn validate_journey_route_payload(
     let minimum_minutes = route
         .distance_m
         .saturating_mul(MINUTES_PER_HOUR)
-        .div_ceil(WALKING_SPEED_KM_PER_HOUR * METERS_PER_KILOMETER)
+        .div_ceil((WALKING_SPEED_KM_PER_HOUR * 3 / 2) * METERS_PER_KILOMETER)
         .max(1);
     if route.minutes < minimum_minutes {
         return Err("Terrain route duration is faster than the maximum travel speed".into());
     }
     let mut cursor = 0_u64;
     for span in &route.spans {
+        let weight_sum = u32::from(span.terrain.plains)
+            + u32::from(span.terrain.forest)
+            + u32::from(span.terrain.hills)
+            + u32::from(span.terrain.urban);
+        if weight_sum != 1_000
+            || span.training_multiplier_permille > 1_000
+            || span.check_millirank > 5_000
+            || match span.kind {
+                JourneyTerrainKind::Road => {
+                    ![150, 200, 250].contains(&span.training_multiplier_permille)
+                }
+                _ => span.training_multiplier_permille != 1_000,
+            }
+        {
+            return Err("Terrain route span has invalid bounded skill metadata".into());
+        }
         if span.start_minute != cursor || span.duration_minutes == 0 {
             return Err("Terrain route spans are discontinuous".into());
         }
@@ -6803,6 +6831,71 @@ fn record_party_journey_camp(
     Ok(())
 }
 
+/// Award conserved terrain exposure for the exact movement interval about to
+/// be advanced. Camp time never reaches this function. The persisted route is
+/// the departure snapshot, so chunked/offline continuation cannot change the
+/// check, duration, or skill mixture mid-journey.
+fn train_party_terrain_movement(
+    ctx: &ReducerContext,
+    party_id: &str,
+    movement_minutes: u64,
+) -> Result<(), String> {
+    if movement_minutes == 0 {
+        return Ok(());
+    }
+    let Some(journey) = ctx
+        .db
+        .party_journey()
+        .party_id()
+        .find(&party_id.to_string())
+    else {
+        return Ok(());
+    };
+    let Some(route) = ctx
+        .db
+        .party_journey_route()
+        .party_id()
+        .find(&party_id.to_string())
+    else {
+        return Ok(());
+    };
+    let start = journey.completed_minutes;
+    let end = start.saturating_add(movement_minutes).min(route.minutes);
+    let exposure = terrain_training_exposure(&route.spans, start, end);
+    for member_id in living_party_member_ids(ctx, party_id) {
+        if let Some(mut skills) = ctx.db.character_skills().character_id().find(member_id) {
+            skills.terrain_plains_hours = (skills.terrain_plains_hours + exposure[0])
+                .clamp(0.0, Skill::TerrainPlains.max_hours());
+            skills.terrain_forest_hours = (skills.terrain_forest_hours + exposure[1])
+                .clamp(0.0, Skill::TerrainForest.max_hours());
+            skills.terrain_hills_hours = (skills.terrain_hills_hours + exposure[2])
+                .clamp(0.0, Skill::TerrainHills.max_hours());
+            skills.terrain_urban_hours = (skills.terrain_urban_hours + exposure[3])
+                .clamp(0.0, Skill::TerrainUrban.max_hours());
+            ctx.db.character_skills().character_id().update(skills);
+        }
+    }
+    Ok(())
+}
+
+fn terrain_training_exposure(spans: &[JourneyTerrainSpan], start: u64, end: u64) -> [f32; 4] {
+    let mut exposure = [0.0_f32; 4];
+    for span in spans {
+        let overlap = end
+            .min(span.start_minute.saturating_add(span.duration_minutes))
+            .saturating_sub(start.max(span.start_minute));
+        if overlap == 0 {
+            continue;
+        }
+        let hours = overlap as f32 / 60.0 * f32::from(span.training_multiplier_permille) / 1_000.0;
+        exposure[0] += hours * f32::from(span.terrain.plains) / 1_000.0;
+        exposure[1] += hours * f32::from(span.terrain.forest) / 1_000.0;
+        exposure[2] += hours * f32::from(span.terrain.hills) / 1_000.0;
+        exposure[3] += hours * f32::from(span.terrain.urban) / 1_000.0;
+    }
+    exposure
+}
+
 pub(crate) fn refresh_party_journey_forecast(
     ctx: &ReducerContext,
     party_id: &str,
@@ -7257,11 +7350,27 @@ mod departure_invariant_tests {
             spans: vec![
                 JourneyTerrainSpan {
                     kind: JourneyTerrainKind::Road,
+                    terrain: JourneyTerrainWeights {
+                        plains: 1_000,
+                        forest: 0,
+                        hills: 0,
+                        urban: 0,
+                    },
+                    training_multiplier_permille: 250,
+                    check_millirank: 0,
                     start_minute: 0,
                     duration_minutes: 5,
                 },
                 JourneyTerrainSpan {
                     kind: JourneyTerrainKind::Open,
+                    terrain: JourneyTerrainWeights {
+                        plains: 1_000,
+                        forest: 0,
+                        hills: 0,
+                        urban: 0,
+                    },
+                    training_multiplier_permille: 1_000,
+                    check_millirank: 0,
                     start_minute: 5,
                     duration_minutes: 7,
                 },
@@ -7288,9 +7397,21 @@ mod departure_invariant_tests {
         assert!(validate_journey_route_payload(&bad, (10.0, 53.0), (10.01, 53.0)).is_err());
 
         let mut bad = route.clone();
+        bad.spans[0].terrain.plains = 999;
+        assert!(validate_journey_route_payload(&bad, (10.0, 53.0), (10.01, 53.0)).is_err());
+
+        let mut bad = route.clone();
         bad.minutes = 1;
         bad.spans = vec![JourneyTerrainSpan {
             kind: JourneyTerrainKind::Road,
+            terrain: JourneyTerrainWeights {
+                plains: 1_000,
+                forest: 0,
+                hills: 0,
+                urban: 0,
+            },
+            training_multiplier_permille: 250,
+            check_millirank: 0,
             start_minute: 0,
             duration_minutes: 1,
         }];
@@ -7299,6 +7420,17 @@ mod departure_invariant_tests {
         let mut bad = route;
         bad.points[0].latitude_e7 = i32::MAX;
         assert!(validate_journey_route_payload(&bad, (10.0, 53.0), (10.01, 53.0)).is_err());
+    }
+
+    #[test]
+    fn terrain_training_uses_exact_overlap_and_conserves_mixed_exposure() {
+        let spans = route_fixture().spans;
+        let exposure = terrain_training_exposure(&spans, 3, 9);
+        // Two road minutes at 25%, then four open minutes at full exposure.
+        assert!((exposure[0] - 4.5 / 60.0).abs() < 0.0001);
+        assert_eq!(exposure[1..], [0.0, 0.0, 0.0]);
+        let none = terrain_training_exposure(&spans, 12, 30);
+        assert_eq!(none, [0.0; 4]);
     }
 
     #[test]
@@ -7449,6 +7581,7 @@ fn travel_to_quest_impl(
     let leg_minutes =
         travel_minutes.min(party_next_walking_minutes(ctx, &party.id, travel_minutes)?);
     if leg_minutes < travel_minutes {
+        train_party_terrain_movement(ctx, &party_id, leg_minutes)?;
         for member_id in traveler_ids.iter().copied() {
             if !advance_travel_time(ctx, member_id, leg_minutes)? {
                 return Ok(());
@@ -7472,6 +7605,7 @@ fn travel_to_quest_impl(
         record_party_journey_camp(ctx, &party_id, leg_minutes)?;
         return Ok(());
     }
+    train_party_terrain_movement(ctx, &party_id, travel_minutes)?;
     for member_id in traveler_ids {
         if let Some(mut member) = ctx.db.character().id().find(member_id) {
             if !advance_travel_time(ctx, member.id, travel_minutes)? {
@@ -7685,6 +7819,7 @@ fn travel_to_settlement_impl(
         let leg_minutes =
             travel_minutes.min(party_next_walking_minutes(ctx, &party.id, travel_minutes)?);
         if leg_minutes < travel_minutes {
+            train_party_terrain_movement(ctx, &party.id, leg_minutes)?;
             for traveler_id in traveler_ids {
                 if !advance_travel_time(ctx, traveler_id, leg_minutes)? {
                     return Ok(());
@@ -7708,6 +7843,9 @@ fn travel_to_settlement_impl(
             record_party_journey_camp(ctx, &party.id, leg_minutes)?;
             return Ok(());
         }
+    }
+    if let Some(party) = party.as_ref() {
+        train_party_terrain_movement(ctx, &party.id, travel_minutes)?;
     }
     for traveler_id in traveler_ids {
         if !advance_travel_time(ctx, traveler_id, travel_minutes)? {
@@ -7878,6 +8016,7 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
         return Err("Rest until the party reaches its next daylight walking window".into());
     }
     let traveler_ids = living_party_member_ids(ctx, &party_id);
+    train_party_terrain_movement(ctx, &party_id, leg_minutes)?;
     for member_id in traveler_ids.iter().copied() {
         if !advance_travel_time(ctx, member_id, leg_minutes)? {
             return Ok(());

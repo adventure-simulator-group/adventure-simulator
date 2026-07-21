@@ -25,15 +25,19 @@
     let cursor = 0;
     for (const entry of entries) {
       const fields = entry.split(",");
-      if (fields.length !== 3) return [];
-      const [kind, startText, durationText] = fields;
+      if (fields.length !== 8) return [];
+      const [kind, startText, durationText, checkText, plainsText, forestText, hillsText, urbanText] = fields;
       const start = Number(startText);
       const duration = Number(durationText);
+      const check = Number(checkText) / 1000;
+      const weights = [plainsText, forestText, hillsText, urbanText].map(Number);
       if (!["road", "open", "sparse-woods", "deep-woods"].includes(kind)
           || !Number.isSafeInteger(start) || start < 0
           || !Number.isSafeInteger(duration) || duration <= 0
-          || start !== cursor) return [];
-      parsed.push({ kind, start, duration });
+          || start !== cursor || !Number.isFinite(check) || check < 0 || check > 5
+          || weights.some((weight) => !Number.isSafeInteger(weight) || weight < 0 || weight > 1000)
+          || weights.reduce((sum, weight) => sum + weight, 0) !== 1000) return [];
+      parsed.push({ kind, start, duration, check, weights });
       cursor += duration;
     }
     return parsed;
@@ -282,7 +286,7 @@
       node.className = `travel-terrain-segment ${piece.kind}`;
       node.style.top = `${piece.start / total * 100}%`;
       node.style.height = `${piece.duration / total * 100}%`;
-      node.title = piece.kind === "stopped" ? "Camp · stopped" : labels[piece.kind];
+      node.title = piece.kind === "stopped" ? "Camp · stopped" : `${labels[piece.kind]} · Terrain ${piece.check.toFixed(2)} · ${(1 + piece.check / 10).toFixed(2)}× speed`;
       node.tabIndex = 0;
       node.setAttribute("aria-label", `${node.title}, elapsed minute ${Math.round(piece.start)} to ${Math.round(piece.start + piece.duration)}`);
       track.append(node);
@@ -316,7 +320,7 @@
           const overlapEnd = Math.min(routeStart + span.duration, elapsed.movementStart + elapsed.movementDuration);
           if (overlapEnd <= overlapStart) continue;
           const ratio = elapsed.movementDuration > 0 ? elapsed.duration / elapsed.movementDuration : 0;
-          pieces.push({ kind: span.kind, start: elapsed.start + (overlapStart - elapsed.movementStart) * ratio, duration: (overlapEnd - overlapStart) * ratio });
+          pieces.push({ kind: span.kind, start: elapsed.start + (overlapStart - elapsed.movementStart) * ratio, duration: (overlapEnd - overlapStart) * ratio, check: span.check, weights: span.weights });
         }
       }
     }

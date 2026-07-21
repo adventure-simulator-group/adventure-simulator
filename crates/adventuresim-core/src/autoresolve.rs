@@ -188,6 +188,10 @@ impl PlayerSkills for CombatSkills {
             Skill::Religion => self.religion_hours,
             Skill::Stealth => self.stealth_hours,
             Skill::Balance => self.balance_hours,
+            Skill::TerrainPlains
+            | Skill::TerrainForest
+            | Skill::TerrainHills
+            | Skill::TerrainUrban => 0.0,
             Skill::Anatomy => self.anatomy_hours,
             Skill::Tailoring => self.tailoring_hours,
             Skill::Smithing => self.smithing_hours,
