@@ -19,6 +19,25 @@
     const [kind, start, duration, movementStart, movementDuration, fatigueStart, fatigueEnd, fatigueMax, requiredRest] = entry.split(",");
     return { kind, start: Number(start), duration: Number(duration), movementStart: Number(movementStart), movementDuration: Number(movementDuration), fatigueStart: Number(fatigueStart), fatigueEnd: Number(fatigueEnd), fatigueMax: Number(fatigueMax), requiredRest: Number(requiredRest) };
   }).filter((segment) => [segment.start, segment.duration].every(Number.isFinite));
+  const parseTerrain = (value) => {
+    const entries = (value || "").split("|").filter(Boolean);
+    const parsed = [];
+    let cursor = 0;
+    for (const entry of entries) {
+      const fields = entry.split(",");
+      if (fields.length !== 3) return [];
+      const [kind, startText, durationText] = fields;
+      const start = Number(startText);
+      const duration = Number(durationText);
+      if (!["road", "open", "sparse-woods", "deep-woods"].includes(kind)
+          || !Number.isSafeInteger(start) || start < 0
+          || !Number.isSafeInteger(duration) || duration <= 0
+          || start !== cursor) return [];
+      parsed.push({ kind, start, duration });
+      cursor += duration;
+    }
+    return parsed;
+  };
   const position = (minute, total) => TRACK_START + (TRACK_END - TRACK_START) * clamp(total > 0 ? minute / total : 0);
   const setPathRange = (path, start, end, total) => {
     if (!path) return;
@@ -250,6 +269,60 @@
     }
   };
 
+  const renderTerrain = (planner, terrain, itinerary, total, movementTotal, roundTrip) => {
+    const track = planner.querySelector("[data-terrain-track]");
+    const summary = planner.querySelector("[data-terrain-summary]");
+    const description = planner.querySelector("[data-terrain-course-description]");
+    if (!track) return;
+    track.replaceChildren();
+    const labels = { road: "Road", open: "Open", "sparse-woods": "Sparse woods", "deep-woods": "Deep woods" };
+    const pieces = terrainPieces(terrain, itinerary, movementTotal, roundTrip);
+    for (const piece of pieces) {
+      const node = document.createElement("span");
+      node.className = `travel-terrain-segment ${piece.kind}`;
+      node.style.top = `${piece.start / total * 100}%`;
+      node.style.height = `${piece.duration / total * 100}%`;
+      node.title = piece.kind === "stopped" ? "Camp · stopped" : labels[piece.kind];
+      node.tabIndex = 0;
+      node.setAttribute("aria-label", `${node.title}, elapsed minute ${Math.round(piece.start)} to ${Math.round(piece.start + piece.duration)}`);
+      track.append(node);
+    }
+    if (description) {
+      description.replaceChildren();
+      for (const piece of pieces) {
+        const item = document.createElement("li");
+        const label = piece.kind === "stopped" ? "Camp, stopped" : labels[piece.kind];
+        item.textContent = `${label}: elapsed minute ${Math.round(piece.start)} to ${Math.round(piece.start + piece.duration)}`;
+        description.append(item);
+      }
+    }
+    const ordered = [...new Set(terrain.map((span) => labels[span.kind]))];
+    if (summary) summary.textContent = ordered.length ? `Terrain: ${ordered.join(", ")}` : "Terrain unavailable; legacy estimate";
+    attachRailTooltip(track, (fraction) => Array.from(track.children).find((node) => fraction * 100 >= parseFloat(node.style.top) && fraction * 100 <= parseFloat(node.style.top) + parseFloat(node.style.height))?.title || "Terrain unavailable");
+  };
+
+  const terrainPieces = (terrain, itinerary, movementTotal, roundTrip) => {
+    const pieces = [];
+    for (const elapsed of itinerary) {
+      if (elapsed.kind !== "w") {
+        pieces.push({ kind: "stopped", start: elapsed.start, duration: elapsed.duration });
+        continue;
+      }
+      for (const span of terrain) {
+        const starts = [span.start];
+        if (roundTrip) starts.push(movementTotal - span.start - span.duration);
+        for (const routeStart of starts) {
+          const overlapStart = Math.max(routeStart, elapsed.movementStart);
+          const overlapEnd = Math.min(routeStart + span.duration, elapsed.movementStart + elapsed.movementDuration);
+          if (overlapEnd <= overlapStart) continue;
+          const ratio = elapsed.movementDuration > 0 ? elapsed.duration / elapsed.movementDuration : 0;
+          pieces.push({ kind: span.kind, start: elapsed.start + (overlapStart - elapsed.movementStart) * ratio, duration: (overlapEnd - overlapStart) * ratio });
+        }
+      }
+    }
+    return pieces.sort((left, right) => left.start - right.start || left.kind.localeCompare(right.kind));
+  };
+
   const initializeTravelPlanner = () => {
     const planner = document.querySelector("[data-travel-planner]");
     if (!planner || planner.dataset.travelPlannerReady === "true") return;
@@ -264,6 +337,7 @@
       targetDisplay.textContent = String(initialTarget);
     }
     let currentPlan;
+    const terrain = parseTerrain(planner.dataset.terrainSpans);
 
     const showPlan = ({ name, origin = "Start", oneWay, movementTotal, elapsedTotal, completedElapsed = 0, departure = 0, segments = [], description = "", roundTrip = movementTotal > oneWay }) => {
       if (!name || elapsedTotal <= 0) { planner.hidden = true; return; }
@@ -301,6 +375,7 @@
       planner.hidden = false;
       setPathRange(planner.querySelector("[data-travel-progress]"), 0, completedElapsed, elapsedTotal);
       renderFatigue(planner, segments, elapsedTotal);
+      renderTerrain(planner, terrain, segments, elapsedTotal, movementTotal, roundTrip);
       renderTimeRail(planner, departure, elapsedTotal);
       currentPlan = { elapsedTotal, completedElapsed };
     };

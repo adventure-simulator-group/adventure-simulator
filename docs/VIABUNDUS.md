@@ -36,8 +36,9 @@ initialized Viabundus v2 roads, ferries, and 1500 water polygons, generalized
 Copernicus GLO-30 elevation, and every available prepared Copernicus forest
 tile. It clips the view to the supported northern-European envelope and
 simplifies source geometry for a multilevel raster presentation; it does not change or replace
-canonical routing data. Elevation is emitted as bounded tint cells and contour
-segments. Forest coverage is deliberately partial: the generator renders only
+canonical routing data. Native elevation is classified into hilly areas rather
+than absolute-height colour bands. Forest
+coverage is deliberately partial: the generator renders only
 installed TCD/DLT tile pairs and records their exact bounds instead of filling
 missing regions with inferred vegetation.
 
@@ -57,23 +58,24 @@ links, and the straight selection line remain dynamic HTML/SVG and are served
 on every map response. Label priority responds
 to the current zoom while the raster package remains unchanged and cacheable.
 A four-pixel encoded gutter prevents seams between lossy
-tiles, while the deepest level uses high-quality AVIF and contour/symbol terrain
-detail instead of magnifying the overview's generalized square cells. Close
-levels use translucent green Sparse woods and Deep woods coverage plus curved
-profile hill/ridge ranges with engraved shadow hatching; far levels retain
-restrained tint and contour context for overview readability. Forest cell
-densities form one continuous categorical field, with boundaries displaced by
-deterministic domain-warped, four-octave noise and antialiased from four samples
-per output pixel so the prepared low-resolution grid does not appear as square
-pixels. The coverage remains offline raster content rather than dynamic browser
-geometry. Viabundus zoom importance also
+tiles, while the deepest level uses high-quality AVIF. The map uses a
+single green forest mask at 20 percent canopy, light brown for hilly open
+ground, and dark green where forest and hills overlap. It draws no symbolic
+hill or mountain stamps; native elevation remains in the independent terrain
+pack for routing and future terrain presentation. Forest is classified once on the
+prepared 0.001-degree canopy grid; every coarser level is an area average of
+2-by-2 children, and adjacent mip levels are blended while rendering. Forest
+boundaries therefore retain one sampling history across zoom levels instead of
+switching between a procedural low-detail field and native samples. The
+coverage remains offline raster content rather than dynamic browser geometry.
+Viabundus zoom importance also
 controls road visibility, weight, and ink strength, while a subtle globally
 positioned parchment texture keeps adjacent tile gutters identical.
 
 The stable `strategic-map-v1.json` and `strategic-map-tiles-v1.pack` filenames
 are versioned, not content-addressed; the pack digest query parameter is every
 tile route's cache key.
-The compact schema-3 deployment manifest carries renderer revision 3, reviewed
+The compact schema-3 deployment manifest carries renderer revision 7, reviewed
 source identities, coverage counts, and the indexed AVIF pyramid, but not the
 offline roads, compound water rings, elevation cells/contours, or forest
 regions used to render it. Its embedded SHA-256 covers every deployed field;

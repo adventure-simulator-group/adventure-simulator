@@ -15,7 +15,7 @@ use super::{
     participates_in_party_readiness,
     settlements::{RestForm, get_active_party_members, living_party_members, travel_rest_minutes},
     travel::{
-        QuestMapMarkers, TravelDestination, TravelForm, active_quest_tooltip,
+        QuestMapMarkers, TravelDestination, TravelForm, active_quest_tooltip, apply_terrain_route,
         populate_itinerary_forecasts, settlement_destination,
     },
 };
@@ -545,7 +545,8 @@ async fn render_quest_location(
             .and_then(|party| party.active_quest_id.as_deref()),
     );
     let mut nearby: Vec<TravelDestination> = settlements
-        .into_iter()
+        .iter()
+        .cloned()
         .map(|settlement| {
             let distance_m = straight_line_distance_m(quest, &settlement);
             settlement_destination(settlement, distance_m, offroad_journey_minutes(distance_m))
@@ -556,6 +557,22 @@ async fn render_quest_location(
     }
     nearby.sort_by_key(|destination| destination.distance_m);
     nearby.truncate(5);
+    if let QuestLocationTab::Map(Some(selected_id)) = &tab
+        && let Some(destination) = nearby
+            .iter_mut()
+            .find(|destination| destination.id == *selected_id)
+        && let Some(settlement) = settlements
+            .iter()
+            .find(|settlement| settlement.id == destination.id)
+    {
+        apply_terrain_route(
+            destination,
+            state.terrain.as_deref(),
+            (quest.location_coord_y, quest.location_coord_x),
+            (settlement.coord_y, settlement.coord_x),
+        )
+        .await;
+    }
     let can_control = character.as_ref().zip(party.as_ref()).is_some();
     let can_configure_travel = character
         .as_ref()

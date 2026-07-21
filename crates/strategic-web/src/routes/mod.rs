@@ -29,8 +29,8 @@ use crate::live::LiveState;
 use crate::session::{CHARACTER_COOKIE, Session};
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    Character, CharacterStrategicCondition, CharacterTime, Party, PartyActionRequest, PartyMember,
-    SpacetimeClient, WorldClock,
+    Character, CharacterStrategicCondition, CharacterTime, Party, PartyActionRequest, PartyJourney,
+    PartyJourneyRoute, PartyMember, Quest, Settlement, SpacetimeClient, WorldClock,
 };
 
 /// Application state shared across routes
@@ -39,6 +39,7 @@ pub struct AppState {
     pub db: SpacetimeClient,
     pub live: LiveState,
     pub strategic_map: Option<std::sync::Arc<crate::strategic_map::StrategicMap>>,
+    pub terrain: Option<std::sync::Arc<travel::TerrainPlanner>>,
 }
 
 pub(crate) use party_actions::PartyAction;
@@ -171,7 +172,8 @@ pub(crate) async fn execute_or_request_party_action(
         }
     }
     if party.leader_id == actor_id {
-        let (reducer, args) = action.reducer_call(actor_id);
+        let planned = planned_travel_call(state, actor_id, &action).await?;
+        let (reducer, args) = planned.unwrap_or_else(|| action.reducer_call(actor_id));
         state
             .db
             .call(reducer, &args)
@@ -230,6 +232,199 @@ pub(crate) async fn execute_or_request_party_action(
     Ok(PartyActionOutcome::Requested)
 }
 
+async fn planned_travel_call(
+    state: &AppState,
+    actor_id: u64,
+    action: &PartyAction,
+) -> Result<Option<(&'static str, Vec<serde_json::Value>)>, String> {
+    let Some(terrain) = state.terrain.as_deref() else {
+        return Ok(None);
+    };
+    let character = state
+        .db
+        .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {actor_id}"))
+        .await
+        .map_err(|error| error.to_string())?
+        .ok_or("Character not found")?;
+    let (reducer, destination) = match action {
+        PartyAction::TravelToSettlement { settlement_id } => {
+            let destination = state
+                .db
+                .query_one::<Settlement>(&format!(
+                    "SELECT * FROM settlement WHERE id = {}",
+                    sql_string_literal(settlement_id)
+                ))
+                .await
+                .map_err(|error| error.to_string())?
+                .ok_or("Settlement not found")?;
+            (
+                "travel_to_settlement_planned",
+                (destination.coord_y, destination.coord_x),
+            )
+        }
+        PartyAction::TravelToQuest { quest_id } => {
+            let destination = state
+                .db
+                .query_one::<Quest>(&format!(
+                    "SELECT * FROM quest WHERE id = {}",
+                    sql_string_literal(quest_id)
+                ))
+                .await
+                .map_err(|error| error.to_string())?
+                .ok_or("Quest not found")?;
+            (
+                "travel_to_quest_planned",
+                (destination.location_coord_y, destination.location_coord_x),
+            )
+        }
+        _ => return Ok(None),
+    };
+    let origin = if let Some(id) = character.current_settlement_id.as_deref() {
+        let settlement = state
+            .db
+            .query_one::<Settlement>(&format!(
+                "SELECT * FROM settlement WHERE id = {}",
+                sql_string_literal(id)
+            ))
+            .await
+            .map_err(|error| error.to_string())?
+            .ok_or("Origin settlement not found")?;
+        (settlement.coord_y, settlement.coord_x)
+    } else if let Some(id) = character.current_quest_location_id.as_deref() {
+        let quest = state
+            .db
+            .query_one::<Quest>(&format!(
+                "SELECT * FROM quest WHERE id = {}",
+                sql_string_literal(id)
+            ))
+            .await
+            .map_err(|error| error.to_string())?
+            .ok_or("Origin quest not found")?;
+        (quest.location_coord_y, quest.location_coord_x)
+    } else if let Some(party_id) = character.party_id.as_deref() {
+        let journey = state
+            .db
+            .query_one::<PartyJourney>(&format!(
+                "SELECT * FROM party_journey WHERE party_id = {}",
+                sql_string_literal(party_id)
+            ))
+            .await
+            .map_err(|error| error.to_string())?
+            .ok_or("Camp journey not found")?;
+        let route = state
+            .db
+            .query_one::<PartyJourneyRoute>(&format!(
+                "SELECT * FROM party_journey_route WHERE party_id = {}",
+                sql_string_literal(party_id)
+            ))
+            .await
+            .map_err(|error| error.to_string())?
+            .ok_or("Camp terrain route not found")?;
+        persisted_route_position(&route, journey.completed_minutes)
+            .ok_or("Camp terrain route position is unavailable")?
+    } else {
+        return Ok(None);
+    };
+    let plan = match terrain.plan(origin, destination).await {
+        Ok(plan) => plan,
+        Err(error) => {
+            tracing::warn!(%error, actor_id, "terrain route unavailable at execution; using legacy travel reducer");
+            return Ok(None);
+        }
+    };
+    let return_plan = if matches!(action, PartyAction::TravelToQuest { .. }) {
+        match terrain.plan(destination, origin).await {
+            Ok(plan) => Some(plan),
+            Err(error) => {
+                tracing::warn!(%error, actor_id, "quest return terrain route unavailable at execution; using legacy travel reducer");
+                return Ok(None);
+            }
+        }
+    } else {
+        None
+    };
+    let route_json = terrain_route_json(terrain.digest(), &plan, return_plan.as_ref());
+    let destination_id = match action {
+        PartyAction::TravelToSettlement { settlement_id } => settlement_id,
+        PartyAction::TravelToQuest { quest_id } => quest_id,
+        _ => unreachable!(),
+    };
+    Ok(Some((
+        reducer,
+        vec![json!(actor_id), json!(destination_id), route_json],
+    )))
+}
+
+fn persisted_route_position(route: &PartyJourneyRoute, minute: u64) -> Option<(f64, f64)> {
+    let coordinate = |point: &crate::spacetimedb::JourneyRoutePoint| {
+        (
+            f64::from(point.latitude_e7) / 10_000_000.0,
+            f64::from(point.longitude_e7) / 10_000_000.0,
+        )
+    };
+    let distance = |from: (f64, f64), to: (f64, f64)| {
+        let earth_radius_m = 6_371_000.0_f64;
+        let lat1 = from.0.to_radians();
+        let lat2 = to.0.to_radians();
+        let delta_lat = (to.0 - from.0).to_radians();
+        let delta_lon = (to.1 - from.1).to_radians();
+        let a = (delta_lat / 2.0).sin().powi(2)
+            + lat1.cos() * lat2.cos() * (delta_lon / 2.0).sin().powi(2);
+        (earth_radius_m * 2.0 * a.sqrt().atan2((1.0 - a).sqrt())).round() as u64
+    };
+    let lengths = route
+        .points
+        .windows(2)
+        .map(|pair| distance(coordinate(&pair[0]), coordinate(&pair[1])))
+        .collect::<Vec<_>>();
+    let total = lengths.iter().sum::<u64>();
+    if total == 0 || route.minutes == 0 {
+        return route.points.first().map(coordinate);
+    }
+    let target = total.saturating_mul(minute.min(route.minutes)) / route.minutes;
+    let mut traversed = 0_u64;
+    for (index, length) in lengths.into_iter().enumerate() {
+        if traversed.saturating_add(length) >= target {
+            let from = coordinate(&route.points[index]);
+            let to = coordinate(&route.points[index + 1]);
+            let fraction = if length == 0 {
+                0.0
+            } else {
+                target.saturating_sub(traversed) as f64 / length as f64
+            };
+            return Some((
+                from.0 + (to.0 - from.0) * fraction,
+                from.1 + (to.1 - from.1) * fraction,
+            ));
+        }
+        traversed = traversed.saturating_add(length);
+    }
+    route.points.last().map(coordinate)
+}
+
+fn terrain_route_json(
+    digest: &str,
+    plan: &adventuresim_terrain::RoutePlan,
+    return_plan: Option<&adventuresim_terrain::RoutePlan>,
+) -> serde_json::Value {
+    let leg_json = |plan: &adventuresim_terrain::RoutePlan| {
+        json!({
+            "distance_m": plan.distance_m,
+            "minutes": plan.minutes,
+            "points": plan.points.iter().map(|point| json!({"latitude_e7":(point.latitude*10_000_000.0).round() as i32,"longitude_e7":(point.longitude*10_000_000.0).round() as i32})).collect::<Vec<_>>(),
+            "spans": plan.spans.iter().filter_map(|span| { let kind=match span.surface { adventuresim_terrain::Surface::Road=>"Road",adventuresim_terrain::Surface::Open=>"Open",adventuresim_terrain::Surface::SparseWoods=>"SparseWoods",adventuresim_terrain::Surface::DeepWoods=>"DeepWoods",adventuresim_terrain::Surface::Water=>return None};Some(json!({"kind":kind,"start_minute":span.start_minute,"duration_minutes":span.duration_minutes})) }).collect::<Vec<_>>()
+        })
+    };
+    json!({
+        "package_digest": digest,
+        "distance_m": plan.distance_m,
+        "minutes": plan.minutes,
+        "points": plan.points.iter().map(|point| json!({"latitude_e7":(point.latitude*10_000_000.0).round() as i32,"longitude_e7":(point.longitude*10_000_000.0).round() as i32})).collect::<Vec<_>>(),
+        "spans": plan.spans.iter().filter_map(|span| { let kind=match span.surface { adventuresim_terrain::Surface::Road=>"Road",adventuresim_terrain::Surface::Open=>"Open",adventuresim_terrain::Surface::SparseWoods=>"SparseWoods",adventuresim_terrain::Surface::DeepWoods=>"DeepWoods",adventuresim_terrain::Surface::Water=>return None};Some(json!({"kind":kind,"start_minute":span.start_minute,"duration_minutes":span.duration_minutes})) }).collect::<Vec<_>>(),
+        "return_route": return_plan.map(leg_json)
+    })
+}
+
 #[cfg(test)]
 mod readiness_tests {
     use super::participates_in_party_readiness;
@@ -246,6 +441,18 @@ pub(crate) async fn approve_party_action(
     leader_id: u64,
     request: &PartyActionRequest,
 ) -> Result<(), String> {
+    if let Ok(action) = serde_json::from_str::<PartyAction>(&request.payload)
+        && let Some((_, args)) = planned_travel_call(state, leader_id, &action).await?
+    {
+        return state
+            .db
+            .call(
+                "approve_party_action_request_planned",
+                &[json!(leader_id), json!(request.id), args[2].clone()],
+            )
+            .await
+            .map_err(|error| error.to_string());
+    }
     state
         .db
         .call(

@@ -30,7 +30,7 @@ Essentially, the travel map is a minigame where each "party" (players or enemies
 - The travel screen is a map that lets you place points to chart your planned journey
 - In any given region, you can view a list of what sorts of enemies are in an area along with an estimate of the size of a party of that enemy type from which you could not reliably evade. This is important for planning your journey. If a particular area has parties that are too powerful for you to beat in combat *or* evade (because they are elite warriors), you should find a different route or rethink your party.
 - Different sorts of terrain may also have different travel speed multipliers. Traveling on roads is very fast, fording a river is extremely slow. Your route will show the speed multiplier at any given point along its path.
-- This isn't necessary for the MVP, but a pathfinding algorithm should be used on the terrain map to find the optimal route between each point. The point of placing points should be more to plan around resources or route around areas with dangerous enemies, not a check to see whether your brain is capable of intuitively computing A*.
+- The current strategic implementation uses bounded deterministic A* over the installed 30 m terrain pack. Future route waypoints should be about planning around resources and threats, not manually approximating the shortest path.
 
 ## Viabundus road network
 
@@ -40,11 +40,15 @@ roads and ferries; intermediate junctions, bridges, and ferry endpoints remain
 in the graph so that a route is not incorrectly collapsed into a direct line
 between settlements. Selecting a settlement name opens its overview, which
 lists the next connected settlements on the road/ferry graph. Selecting a
-destination shows its route distance and an MVP journey-time estimate at an
-average walking pace of 5 km/h. Confirming advances the character's strategic
-time by that duration and moves them to the destination. Route cost, party
-speed, terrain, rest stops, and encounters are subsequent layers on this
-graph.
+destination asks the optional native terrain pack for the fastest bounded
+route. Road movement is 5 km/h; open ground, sparse woods, and deep woods use
+progressively slower base rates, and climbing adds a directional uphill
+penalty. Water blocks movement unless road infrastructure identifies a
+crossing. Confirming recomputes the route at execution time, uses its aggregate
+distance and terrain-weighted duration, and persists its package digest,
+bounded polyline, and ordered terrain spans for the active party journey.
+Missing or incomplete terrain data falls back to the former straight-line
+estimate and is explicitly labelled as such.
 
 Each edge retains canonical route terrain compiled from GLO-30 and EU-Hydro: a
 bounded elevation profile, directional grade, terrain class, landforms,
@@ -59,11 +63,11 @@ the infrastructure lies at the route's `from`, `to`, or both endpoints. This
 lets travel events deduplicate a shared node and generate an appropriate
 tactical scene without treating infrastructure as a settlement attribute.
 
-Quest travel is deliberately separate from this road graph. A generated quest
-stores an off-road point near its posting settlement. The trip to that point and
-trips from it to the five nearest settlements use straight-line distance, require
-no road connection, and advance strategic time at 1.25 km/h (one quarter of the
-MVP's normal walking speed). Both settlement and quest-destination travel use the
+Quest travel is deliberately separate from the settlement-connectivity rule. A generated quest
+stores an off-road point near its posting settlement. Terrain A* may follow a
+road initially, leave it across open ground, and pass through woods to reach
+that point; the return projection reverses the same terrain course. Both
+settlement and quest-destination travel use the
 shared Map tab. The leader configures walking time with a 0-24 hours-per-day
 slider (eight by default) and chooses whether the party travels by day or by night. Day
 travel centers the walking window on solar noon. Night travel centers its
@@ -79,16 +83,18 @@ member who cannot clear their fatigue in that interval carries it into the next
 day. The reducer and preview use the same itinerary function, including partial
 first and final walking days.
 
-The runner-track preview contains exactly four compact vertical rails: Food,
-Water, Fatigue, and Day/night. Camp brackets span elapsed rest time while their
+The runner-track preview contains exactly five compact vertical rails: Food,
+Water, Fatigue, Terrain, and Day/night. The Terrain rail appears between Fatigue
+and Day/night and shows road, open ground, sparse woods, deep woods, and stopped
+camp intervals in journey order. Camp brackets span elapsed rest time while their
 markers retain movement coordinates, and white progress advances through both
 walking and rest. The fatigue rail shows party average, range, highest member,
 and a warning at 100%. The Day/night rail follows absolute party time; midnight
 ticks protrude right and show accessible lunar phases from the canonical
 42,524-minute cycle, beginning with a new moon on Day 1. A journey longer than
 a walking window stops at a persisted camp. The strategic layer persists the journey's
-original endpoints, total duration, actual camp checkpoints, and the remaining
-forecast. SSE updates therefore keep every party member's tracker consistent
+original endpoints, total duration, actual camp checkpoints, remaining
+forecast, and the validated terrain route. SSE updates therefore keep every party member's tracker consistent
 across camp rests and page navigations. A shorter-than-recommended camp rest
 can legitimately add a future projected camp, but camps already reached never
 disappear. While camped, the left rail keeps the journey's settlement endpoints

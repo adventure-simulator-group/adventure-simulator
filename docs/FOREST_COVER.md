@@ -99,11 +99,18 @@ not silently accepted. Reserved or unclassified cell values take the
 documented plausible fallback path and are counted.
 
 The settlement Map presentation may additionally generalize any installed
-TCD/DLT tile pairs into deterministic sparse/deep woodland inputs that the
-offline renderer naturalizes and encodes into the Paper AVIF tile pyramid. This
-is explicitly partial-coverage presentation data: absent tiles stay absent,
-tile coverage is recorded in the map package, and no missing regional forest
-is inferred from a settlement sample.
+TCD/DLT tile pairs into one naturalized forest mask at 20 percent canopy cover.
+It retains the exact bounded percentage in its offline inputs rather than
+turning presentation data into sparse/deep classes. Hilly forest is rendered
+dark green while flat forest is green. Production raster generation first
+classifies one canonical 0.001-degree canopy mask, then constructs every lower
+level of detail by area-averaging 2-by-2 child cells. Rendering uses bilinear
+sampling within a level and blends adjacent mip levels, so zooming changes the
+amount of retained detail without switching to a separately sampled or
+procedurally distorted forest mask. This is explicitly partial-coverage
+presentation data: absent tiles stay absent, tile coverage is recorded in the
+map package, and no missing regional forest is inferred from a settlement
+sample.
 
 Forest cover is stored on settlements because it describes the immediate area
 and can drive timber and foraging products, scene vegetation density, visibility,

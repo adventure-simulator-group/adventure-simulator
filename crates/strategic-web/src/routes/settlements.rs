@@ -98,10 +98,10 @@ use crate::spacetimedb::{
     CharacterTime, CharacterTrainingSchedule, EquippedMedication, HerbalistExaminationRow,
     InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget, ItemCondition, ItemDefinition,
     ItemKind, ItemSlot, LimbInjury, LimbRegion, MedicalExaminationRow, Party, PartyInventoryItem,
-    PartyJourney, PartyJourneyItinerary, PartyMember, PartyRecruitmentRole, PartyStake, Quest,
-    QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
-    RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription,
-    SettlementSmith, TravelEdge,
+    PartyJourney, PartyJourneyItinerary, PartyJourneyRoute, PartyMember, PartyRecruitmentRole,
+    PartyStake, Quest, QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand,
+    RepairOrder, RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias,
+    SettlementDescription, SettlementSmith, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
@@ -920,6 +920,9 @@ async fn settlement_map(
                 turn_in_ready: false,
                 open_quest_available: false,
                 provision_forecast: None,
+                terrain_route: None,
+                return_terrain_route: None,
+                route_fallback: true,
             });
         } else if can_travel {
             if let Some(next_settlement_id) =
@@ -949,6 +952,32 @@ async fn settlement_map(
                     destination.active_quest_route = true;
                 }
             }
+        }
+    }
+    if let Some(selected_id) = query.destination.as_deref()
+        && let Some(destination) = destinations
+            .iter_mut()
+            .find(|destination| destination.id == selected_id)
+    {
+        let goal = if destination.quest_in_progress {
+            map_quests
+                .iter()
+                .find(|quest| quest.id == destination.id)
+                .map(|quest| (quest.location_coord_y, quest.location_coord_x))
+        } else {
+            settlements
+                .iter()
+                .find(|candidate| candidate.id == destination.id)
+                .map(|candidate| (candidate.coord_y, candidate.coord_x))
+        };
+        if let Some(goal) = goal {
+            crate::routes::travel::apply_terrain_route(
+                destination,
+                state.terrain.as_deref(),
+                (settlement.coord_y, settlement.coord_x),
+                goal,
+            )
+            .await;
         }
     }
     let party_members = get_active_party_members(
@@ -1328,6 +1357,15 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
         .await
         .ok()
         .flatten();
+    let terrain_route = state
+        .db
+        .query_one::<PartyJourneyRoute>(&format!(
+            "SELECT * FROM party_journey_route WHERE party_id = {}",
+            sql_string_literal(&party.id)
+        ))
+        .await
+        .ok()
+        .flatten();
     let stats: Vec<CharacterStats> = state
         .db
         .query("SELECT * FROM character_stats")
@@ -1375,6 +1413,7 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
             &party,
             journey.as_ref(),
             itinerary.as_ref(),
+            terrain_route.as_ref(),
             &destination_name,
             Some(&character),
             &party_members,

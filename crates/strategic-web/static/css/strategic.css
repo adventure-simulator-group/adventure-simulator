@@ -267,7 +267,7 @@
 .travel-planner {
   --travel-rail-width: .78rem;
   --travel-rail-gap: .42rem;
-  --travel-rail-count: 4;
+  --travel-rail-count: 5;
   --travel-rails-left: 3.75rem;
   --travel-rails-width: calc(var(--travel-rail-width) * var(--travel-rail-count) + var(--travel-rail-gap) * (var(--travel-rail-count) - 1));
   --travel-first-bar-inset: calc(var(--travel-rail-width) * .1875);
@@ -290,6 +290,7 @@
 .travel-resource-row.food .travel-resource-icon { color: #e9a45d; }
 .travel-resource-row.water .travel-resource-icon { color: #579fd7; }
 .travel-resource-row.fatigue .travel-resource-icon { color: #e0c54f; }
+.travel-resource-row.terrain .travel-resource-icon { color: #a8c082; }
 .travel-resource-row.daylight .travel-resource-icon { color: #f5cc68; }
 .travel-resource-track { width: var(--travel-rail-width); height: 100%; overflow: visible; }
 .travel-resource-path.base { stroke: color-mix(in srgb, var(--panel-bg) 88%, var(--text-muted)); }
@@ -303,13 +304,21 @@
 .travel-progress-track { position: absolute; z-index: 2; top: 1.55rem; bottom: .5rem; left: var(--travel-rails-left); width: var(--travel-rails-width); height: calc(100% - 2.05rem); overflow: visible; pointer-events: none; opacity: .72; }
 .travel-progress-path { fill: none; stroke: #fff; stroke-linecap: butt; stroke-width: 3; vector-effect: non-scaling-stroke; }
 .travel-fatigue-track,
+.travel-terrain-track,
 .travel-daylight-track { position: relative; top: 3%; width: 64%; height: 94%; margin-inline: auto; overflow: visible; background: var(--panel-bg); }
 .travel-fatigue-segment,
+.travel-terrain-segment,
 .travel-daylight-segment { position: absolute; right: 0; left: 0; min-height: 1px; }
 .travel-fatigue-segment.green { background: #58b66b; }
 .travel-fatigue-segment.yellow { background: #e0c54f; }
 .travel-fatigue-segment.red { background: #d65757; }
 .travel-fatigue-segment.stopped { background: #66707c; }
+.travel-terrain-segment { border-inline: 1px solid #171c16; background-size: 6px 6px; }
+.travel-terrain-segment.road { background-color: #8c7350; background-image: repeating-linear-gradient(0deg, transparent 0 4px, #d7c395 4px 5px); }
+.travel-terrain-segment.open { background-color: #9eb27b; background-image: radial-gradient(#d8dfbd 1px, transparent 1px); }
+.travel-terrain-segment.sparse-woods { background-color: #64845b; background-image: repeating-linear-gradient(45deg, transparent 0 4px, #b3c69a 4px 5px); }
+.travel-terrain-segment.deep-woods { background-color: #365b3c; background-image: repeating-linear-gradient(-45deg, transparent 0 3px, #7f9f75 3px 4px); }
+.travel-terrain-segment.stopped { background: #555; opacity: .55; }
 .travel-daylight-segment.day { background: #d9b95f; }
 .travel-daylight-segment.sunrise { background: #c98255; }
 .travel-daylight-segment.sunset { background: #b96850; }

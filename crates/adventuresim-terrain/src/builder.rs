@@ -30,32 +30,45 @@ pub fn build(
     for south in bounds[1]..bounds[3] {
         for west in bounds[0]..bounds[2] {
             let path = elevation_path(elevation_dir, south, west)?;
-            let mut decoder = Decoder::new(BufReader::new(File::open(&path)?))
-                .map_err(|error| crate::Error::Validation(error.to_string()))?;
-            let (width, height) = decoder
-                .dimensions()
-                .map_err(|error| crate::Error::Validation(error.to_string()))?;
-            if ![1_800, 2_400, 3_600].contains(&width) || height != 3_600 {
+            let (width, height, elevations, synthetic_water) = if path.is_file() {
+                let mut decoder = Decoder::new(BufReader::new(File::open(&path)?))
+                    .map_err(|error| crate::Error::Validation(error.to_string()))?;
+                let (width, height) = decoder
+                    .dimensions()
+                    .map_err(|error| crate::Error::Validation(error.to_string()))?;
+                if ![1_800, 2_400, 3_600].contains(&width) || height != 3_600 {
+                    return Err(crate::Error::Validation(format!(
+                        "{} is not a native GLO-30 tile",
+                        path.display()
+                    )));
+                }
+                let DecodingResult::F32(elevations) = decoder
+                    .read_image()
+                    .map_err(|error| crate::Error::Validation(error.to_string()))?
+                else {
+                    return Err(crate::Error::Validation(format!(
+                        "{} is not Float32",
+                        path.display()
+                    )));
+                };
+                if elevations.len() != width as usize * height as usize {
+                    return Err(crate::Error::Validation(format!(
+                        "{} is truncated",
+                        path.display()
+                    )));
+                }
+                (width, height, Some(elevations), false)
+            } else if is_known_offshore_gap(south, west) {
+                // The initialized request intentionally omits five all-water
+                // North Sea cells. Preserve the native latitude-band geometry
+                // and mark them impassable without inventing terrain heights.
+                (2_400, 3_600, None, true)
+            } else {
                 return Err(crate::Error::Validation(format!(
-                    "{} is not a native GLO-30 tile",
-                    path.display()
-                )));
-            }
-            let DecodingResult::F32(elevations) = decoder
-                .read_image()
-                .map_err(|error| crate::Error::Validation(error.to_string()))?
-            else {
-                return Err(crate::Error::Validation(format!(
-                    "{} is not Float32",
+                    "missing {}",
                     path.display()
                 )));
             };
-            if elevations.len() != width as usize * height as usize {
-                return Err(crate::Error::Validation(format!(
-                    "{} is truncated",
-                    path.display()
-                )));
-            }
             let forest = read_forest(forest_dir, south, west)?;
             let (roads, water) = masks(features, south, west, width, height);
             let chunks_x = width.div_ceil(u32::from(CHUNK_SIDE));
@@ -67,12 +80,14 @@ pub fn build(
                     let chunk_height =
                         (height - chunk_y * u32::from(CHUNK_SIDE)).min(u32::from(CHUNK_SIDE));
                     let mut decoded =
-                        Vec::with_capacity(chunk_width as usize * chunk_height as usize * 4);
+                        Vec::with_capacity(chunk_width as usize * chunk_height as usize * 5);
                     for local_y in 0..chunk_height {
                         let y = chunk_y * u32::from(CHUNK_SIDE) + local_y;
                         for local_x in 0..chunk_width {
                             let x = chunk_x * u32::from(CHUNK_SIDE) + local_x;
-                            let elevation = elevations[y as usize * width as usize + x as usize];
+                            let elevation = elevations.as_ref().map_or(0.0, |pixels| {
+                                pixels[y as usize * width as usize + x as usize]
+                            });
                             let metres = if elevation.is_finite() {
                                 elevation.round().clamp(-500.0, 9_000.0) as i16
                             } else {
@@ -83,12 +98,13 @@ pub fn build(
                             let canopy = forest
                                 .as_ref()
                                 .map_or(0, |pixels| pixels[forest_y * 1_000 + forest_x]);
+                            let canopy = if canopy <= 100 { canopy } else { 0 };
                             let pixel_index = y as usize * width as usize + x as usize;
                             let on_road = roads.contains(&(x as u16, y as u16));
                             let on_water = water[pixel_index] != 0;
                             let surface = if on_road {
                                 Surface::Road
-                            } else if on_water {
+                            } else if on_water || synthetic_water {
                                 Surface::Water
                             } else {
                                 match canopy {
@@ -99,7 +115,12 @@ pub fn build(
                             };
                             decoded.extend_from_slice(&metres.to_le_bytes());
                             decoded.push(surface as u8);
-                            decoded.push(u8::from(on_road && on_water));
+                            let crossing = on_road && (on_water || synthetic_water);
+                            let hilly = elevations.as_ref().is_some_and(|pixels| {
+                                native_cell_is_hilly(pixels, x, y, width, height, south)
+                            });
+                            decoded.push(u8::from(crossing) | (u8::from(hilly) << 1));
+                            decoded.push(canopy);
                         }
                     }
                     let mut encoder = DeflateEncoder::new(Vec::new(), Compression::new(6));
@@ -147,6 +168,53 @@ pub fn build(
     Ok(manifest)
 }
 
+fn native_cell_is_hilly(
+    elevations: &[f32],
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+    south: i16,
+) -> bool {
+    const TAN_FIFTEEN_DEGREES: f64 = 0.267_949_192_431_122_7;
+    const METRES_PER_DEGREE: f64 = 111_320.0;
+    let center = elevations[y as usize * width as usize + x as usize];
+    if !center.is_finite() || !(-500.0..=9_000.0).contains(&center) {
+        return false;
+    }
+    let latitude = f64::from(south + 1) - (f64::from(y) + 0.5) / f64::from(height);
+    let north_step = METRES_PER_DEGREE / f64::from(height);
+    let east_step = METRES_PER_DEGREE * latitude.to_radians().cos() / f64::from(width);
+    for offset_y in -1_i32..=1 {
+        for offset_x in -1_i32..=1 {
+            if offset_x == 0 && offset_y == 0 {
+                continue;
+            }
+            let neighbour_x = x as i32 + offset_x;
+            let neighbour_y = y as i32 + offset_y;
+            if neighbour_x < 0
+                || neighbour_y < 0
+                || neighbour_x >= width as i32
+                || neighbour_y >= height as i32
+            {
+                continue;
+            }
+            let neighbour =
+                elevations[neighbour_y as usize * width as usize + neighbour_x as usize];
+            if !neighbour.is_finite() || !(-500.0..=9_000.0).contains(&neighbour) {
+                continue;
+            }
+            let run = (f64::from(offset_x).powi(2) * east_step.powi(2)
+                + f64::from(offset_y).powi(2) * north_step.powi(2))
+            .sqrt();
+            if f64::from((center - neighbour).abs()) > run * TAN_FIFTEEN_DEGREES {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn masks(
     features: &Features,
     south: i16,
@@ -155,23 +223,26 @@ fn masks(
     height: u32,
 ) -> (HashSet<(u16, u16)>, Vec<u8>) {
     let mut roads = HashSet::new();
-    let to_pixel = |point: [f64; 2]| -> Option<(i32, i32)> {
-        if point[0] < f64::from(west) - 0.01
-            || point[0] > f64::from(west + 1) + 0.01
-            || point[1] < f64::from(south) - 0.01
-            || point[1] > f64::from(south + 1) + 0.01
-        {
-            return None;
-        }
-        Some((
+    let to_pixel = |point: [f64; 2]| -> (i32, i32) {
+        (
             ((point[0] - f64::from(west)) * f64::from(width)).round() as i32,
             ((f64::from(south + 1) - point[1]) * f64::from(height)).round() as i32,
-        ))
+        )
     };
     for line in &features.roads {
         for pair in line.windows(2) {
-            let Some(a) = to_pixel(pair[0]) else { continue };
-            let Some(b) = to_pixel(pair[1]) else { continue };
+            let Some((clipped_a, clipped_b)) = clip_segment(
+                pair[0],
+                pair[1],
+                f64::from(west),
+                f64::from(south),
+                f64::from(west + 1),
+                f64::from(south + 1),
+            ) else {
+                continue;
+            };
+            let a = to_pixel(clipped_a);
+            let b = to_pixel(clipped_b);
             let steps = (a.0.abs_diff(b.0).max(a.1.abs_diff(b.1))).max(1);
             for step in 0..=steps {
                 let t = f64::from(step) / f64::from(steps);
@@ -191,7 +262,23 @@ fn masks(
     }
     let mut water = vec![0_u8; width as usize * height as usize];
     for polygon in &features.water {
-        for y in 0..height {
+        let Some([min_x, min_y, max_x, max_y]) = polygon_bounds(polygon) else {
+            continue;
+        };
+        if max_x < f64::from(west)
+            || min_x > f64::from(west + 1)
+            || max_y < f64::from(south)
+            || min_y > f64::from(south + 1)
+        {
+            continue;
+        }
+        let first_y = ((f64::from(south + 1) - max_y) * f64::from(height))
+            .floor()
+            .clamp(0.0, f64::from(height)) as u32;
+        let last_y = ((f64::from(south + 1) - min_y) * f64::from(height))
+            .ceil()
+            .clamp(0.0, f64::from(height)) as u32;
+        for y in first_y..last_y {
             let latitude = f64::from(south + 1) - (f64::from(y) + 0.5) / f64::from(height);
             let mut intersections = Vec::new();
             for ring in polygon {
@@ -220,6 +307,59 @@ fn masks(
     (roads, water)
 }
 
+fn polygon_bounds(polygon: &[Vec<[f64; 2]>]) -> Option<[f64; 4]> {
+    let mut points = polygon.iter().flatten();
+    let first = *points.next()?;
+    let mut bounds = [first[0], first[1], first[0], first[1]];
+    for point in points {
+        bounds[0] = bounds[0].min(point[0]);
+        bounds[1] = bounds[1].min(point[1]);
+        bounds[2] = bounds[2].max(point[0]);
+        bounds[3] = bounds[3].max(point[1]);
+    }
+    Some(bounds)
+}
+
+fn clip_segment(
+    a: [f64; 2],
+    b: [f64; 2],
+    min_x: f64,
+    min_y: f64,
+    max_x: f64,
+    max_y: f64,
+) -> Option<([f64; 2], [f64; 2])> {
+    let dx = b[0] - a[0];
+    let dy = b[1] - a[1];
+    let mut enter = 0.0_f64;
+    let mut leave = 1.0_f64;
+    for (p, q) in [
+        (-dx, a[0] - min_x),
+        (dx, max_x - a[0]),
+        (-dy, a[1] - min_y),
+        (dy, max_y - a[1]),
+    ] {
+        if p == 0.0 {
+            if q < 0.0 {
+                return None;
+            }
+            continue;
+        }
+        let ratio = q / p;
+        if p < 0.0 {
+            enter = enter.max(ratio);
+        } else {
+            leave = leave.min(ratio);
+        }
+        if enter > leave {
+            return None;
+        }
+    }
+    Some((
+        [a[0] + enter * dx, a[1] + enter * dy],
+        [a[0] + leave * dx, a[1] + leave * dy],
+    ))
+}
+
 fn manifest_digest(manifest: &Manifest) -> crate::Result<String> {
     let mut unsigned = manifest.clone();
     unsigned.package_sha256 = "0".repeat(64);
@@ -243,13 +383,14 @@ fn elevation_path(directory: &Path, south: i16, west: i16) -> crate::Result<Path
     let path = directory.join(format!(
         "Copernicus_DSM_COG_10_{latitude}_00_{longitude}_00_DEM.tif"
     ));
-    if !path.is_file() {
-        return Err(crate::Error::Validation(format!(
-            "missing {}",
-            path.display()
-        )));
-    }
     Ok(path)
+}
+
+fn is_known_offshore_gap(south: i16, west: i16) -> bool {
+    matches!(
+        (south, west),
+        (54, 5) | (54, 6) | (55, 5) | (55, 6) | (55, 7)
+    )
 }
 
 fn read_forest(directory: &Path, south: i16, west: i16) -> crate::Result<Option<Vec<u8>>> {
@@ -289,4 +430,58 @@ fn read_forest(directory: &Path, south: i16, west: i16) -> crate::Result<Option<
         )));
     };
     Ok(Some(pixels))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clips_roads_that_cross_a_tile_with_both_vertices_outside() {
+        let clipped = clip_segment([-1.0, 0.5], [2.0, 0.5], 0.0, 0.0, 1.0, 1.0).unwrap();
+        assert_eq!(clipped, ([0.0, 0.5], [1.0, 0.5]));
+        assert!(clip_segment([-1.0, -1.0], [-0.5, -0.5], 0.0, 0.0, 1.0, 1.0).is_none());
+    }
+
+    #[test]
+    fn polygon_bounds_include_every_ring() {
+        let polygon = vec![vec![[1.0, 2.0], [4.0, 3.0]], vec![[-1.0, 8.0], [2.0, -2.0]]];
+        assert_eq!(polygon_bounds(&polygon), Some([-1.0, -2.0, 4.0, 8.0]));
+        assert_eq!(polygon_bounds(&[]), None);
+    }
+
+    #[test]
+    fn only_reviewed_north_sea_source_gaps_are_synthetic() {
+        assert!(is_known_offshore_gap(54, 5));
+        assert!(is_known_offshore_gap(55, 7));
+        assert!(!is_known_offshore_gap(53, 5));
+        assert!(!is_known_offshore_gap(55, 8));
+    }
+
+    #[test]
+    fn native_hill_threshold_is_fifteen_degrees() {
+        let width = 2_400;
+        let height = 3;
+        let center = width + 1;
+        let mut gentle = vec![0.0_f32; width * height];
+        gentle[center + 1] = 7.0;
+        assert!(!native_cell_is_hilly(
+            &gentle,
+            1,
+            1,
+            width as u32,
+            height as u32,
+            53,
+        ));
+
+        gentle[center + 1] = 9.0;
+        assert!(native_cell_is_hilly(
+            &gentle,
+            1,
+            1,
+            width as u32,
+            height as u32,
+            53,
+        ));
+    }
 }

@@ -23,7 +23,7 @@ pub struct Config {
     )]
     pub spacetimedb_database: String,
 
-    /// SpacetimeDB auth token (optional)
+    /// SpacetimeDB auth token for the trusted strategic gateway identity
     #[arg(long, env = "SPACETIMEDB_TOKEN")]
     pub spacetimedb_token: Option<String>,
 

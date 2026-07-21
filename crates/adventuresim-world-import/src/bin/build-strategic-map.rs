@@ -15,7 +15,7 @@ mod raster;
 mod tiles;
 
 const PACKAGE_SCHEMA: u32 = 3;
-const RENDERER_REVISION: u32 = 4;
+const RENDERER_REVISION: u32 = 7;
 const YEAR: i32 = 1544;
 const VIABUNDUS_DOI: &str = "https://doi.org/10.5281/zenodo.16611998";
 const RECORD_URL: &str = "https://zenodo.org/api/records/16611998";
@@ -618,7 +618,7 @@ fn validate_geometry(package: &Package) -> Result<(), Box<dyn std::error::Error>
             .any(|bounds| !valid_bounds(*bounds, package.bounds))
         || package.forest.regions.iter().any(|region| {
             !valid_bounds(region.bounds, package.bounds)
-                || !(1..=3).contains(&region.density)
+                || !(1..=100).contains(&region.density)
                 || !matches!(region.kind.as_str(), "broadleaf" | "conifer" | "mixed")
         })
     {

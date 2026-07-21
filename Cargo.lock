@@ -8554,6 +8554,7 @@ version = "0.1.0"
 dependencies = [
  "adventuresim-core",
  "adventuresim-stdb-client",
+ "adventuresim-terrain",
  "adventuresim-world-schema",
  "anyhow",
  "axum",

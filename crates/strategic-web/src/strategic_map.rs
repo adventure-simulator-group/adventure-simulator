@@ -28,7 +28,7 @@ const ROUTE_MIN_VIEW_WIDTH: f64 = 90.0;
 const ROUTE_MIN_VIEW_HEIGHT: f64 = ROUTE_MIN_VIEW_WIDTH / VIEW_ASPECT_RATIO;
 pub(crate) const TILE_PATH_PREFIX: &str = "/map/tiles/";
 const PACKAGE_SCHEMA: u32 = 3;
-const RENDERER_REVISION: u32 = 4;
+const RENDERER_REVISION: u32 = 7;
 const MIN_TILE_SIZE: u32 = 64;
 const MAX_TILE_SIZE: u32 = 2_048;
 const MAX_TILE_ENTRIES: usize = 100_000;
@@ -380,6 +380,7 @@ pub fn strategic_map(
     connected_ids: &BTreeSet<&str>,
     selected_id: Option<&str>,
     map_path: &str,
+    terrain_route: Option<&adventuresim_terrain::RoutePlan>,
 ) -> Markup {
     let package = &map.package;
     let current = settlements
@@ -458,7 +459,12 @@ pub fn strategic_map(
                         }
                     }
                     g class="map-overlay-layer" {
-                        @if let Some((destination_x, destination_y)) = destination {
+                        @if let Some(route) = terrain_route {
+                            @let points = route.points.iter().map(|point| { let (x,y)=project(point.longitude, point.latitude, package.bounds); format!("{x:.3},{y:.3}") }).collect::<Vec<_>>().join(" ");
+                            polyline class="map-selection-line map-terrain-route" data-map-selection-line
+                                aria-label=(format!("Computed terrain route, {:.1} kilometres", route.distance_m as f64 / 1000.0))
+                                points=(points) {}
+                        } @else if let Some((destination_x, destination_y)) = destination {
                             line class="map-selection-line map-legacy-route" data-map-selection-line aria-hidden="true"
                                 x1=(format!("{origin_x:.3}")) y1=(format!("{origin_y:.3}"))
                                 x2=(format!("{destination_x:.3}")) y2=(format!("{destination_y:.3}")) {}
@@ -518,6 +524,20 @@ pub fn strategic_map(
                                         path class="map-quest-mark" d="M0,-5 V2 M0,5 V6" {}
                                         @if is_selected { path class="map-pin-selected-mark" d="M-5,13 H5" {} }
                                         title { (&quest.title) }
+                                    }
+                                }
+                            }
+                        }
+                        // Settlement symbols take pointer priority when a generated quest happens
+                        // to overlap them. The visible/accessibility link remains above; this
+                        // transparent duplicate is mouse-only and is rendered last in SVG order.
+                        @for settlement in settlements.iter().filter(|settlement| has_geographic_source(settlement)) {
+                            @let (x, y) = project(settlement.coord_x, settlement.coord_y, package.bounds);
+                            a href=(format!("{map_path}?destination={}", settlement.id))
+                                class="map-settlement-hit-link" aria-hidden="true" tabindex="-1" {
+                                g transform=(format!("translate({x:.3} {y:.3})")) {
+                                    g data-map-pin-symbol transform=(format!("scale({initial_pin_scale:.5})")) {
+                                        circle class="map-settlement-hit-area map-settlement-hit-overlay" r="13" {}
                                     }
                                 }
                             }
@@ -591,7 +611,10 @@ mod tests {
             ),
             tile_digest, placeholder
         )
-        .replace("\"renderer_revision\":3", "\"renderer_revision\":4");
+        .replace(
+            "\"renderer_revision\":3",
+            &format!("\"renderer_revision\":{RENDERER_REVISION}"),
+        );
         let package_digest = format!("{:x}", Sha256::digest(unsigned.as_bytes()));
         (
             unsigned.replace(
@@ -752,6 +775,7 @@ mod tests {
             &connected,
             Some("near"),
             "/locations/settlement/origin/map",
+            None,
         )
         .into_string();
 
@@ -789,9 +813,28 @@ mod tests {
     }
 
     #[test]
-    fn selected_quest_has_a_pin_and_straight_origin_line() {
+    fn selected_quest_has_a_pin_and_computed_terrain_route() {
         let map = map_bundle();
         let quest = quest("quest-1", "Bandits in the woods", 11.0, 53.2);
+        let route = adventuresim_terrain::RoutePlan {
+            points: vec![
+                adventuresim_terrain::RoutePoint {
+                    latitude: 53.0,
+                    longitude: 10.0,
+                },
+                adventuresim_terrain::RoutePoint {
+                    latitude: 53.1,
+                    longitude: 10.4,
+                },
+                adventuresim_terrain::RoutePoint {
+                    latitude: 53.2,
+                    longitude: 11.0,
+                },
+            ],
+            spans: Vec::new(),
+            distance_m: 74_500,
+            minutes: 1_100,
+        };
         let markup = strategic_map(
             &map,
             &[settlement("origin", "Origin", 10.0, 53.0)],
@@ -800,6 +843,7 @@ mod tests {
             &BTreeSet::new(),
             Some("quest-1"),
             "/locations/settlement/origin/map",
+            Some(&route),
         )
         .into_string();
 
@@ -808,7 +852,16 @@ mod tests {
         assert!(markup.contains("Quest: Bandits in the woods, available"));
         assert!(markup.contains("map-quest-shape"));
         assert!(markup.contains("data-map-selection-line"));
+        assert!(markup.contains("map-terrain-route"));
+        assert!(!markup.contains("map-legacy-route"));
+        assert!(markup.contains("Computed terrain route, 74.5 kilometres"));
         assert!(markup.contains("aria-current=\"true\""));
+        assert!(markup.contains("map-settlement-hit-overlay"));
+        assert!(
+            markup.rfind("map-settlement-hit-overlay").unwrap()
+                > markup.rfind("map-quest-shape").unwrap(),
+            "settlement pointer overlay must render after quest pins"
+        );
     }
 
     #[test]
@@ -865,6 +918,7 @@ mod tests {
             &BTreeSet::new(),
             None,
             "/locations/settlement/origin/map",
+            None,
         )
         .into_string();
         let package = &map.package;
