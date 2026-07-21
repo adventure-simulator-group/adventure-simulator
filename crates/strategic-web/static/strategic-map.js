@@ -6,6 +6,26 @@
   const MIN_VIEW_HEIGHT = MIN_VIEW_WIDTH / 1.5;
   const SVG_NS = "http://www.w3.org/2000/svg";
   const parseViewBox = (svg) => svg.getAttribute("viewBox").trim().split(/\s+/).map(Number);
+  const viewForElement = ([x, y, width, height], pixelWidth, pixelHeight) => {
+    if (!(pixelWidth > 0) || !(pixelHeight > 0)) return [x, y, width, height];
+    const elementAspect = pixelWidth / pixelHeight;
+    const viewAspect = width / height;
+    if (Math.abs(elementAspect - viewAspect) < 0.0001) return [x, y, width, height];
+    if (elementAspect > viewAspect) {
+      const nextWidth = height * elementAspect;
+      return [x - (nextWidth - width) / 2, y, nextWidth, height];
+    }
+    const nextHeight = width / elementAspect;
+    return [x, y - (nextHeight - height) / 2, width, nextHeight];
+  };
+  const resizedView = ([x, y, width, height], previousWidth, previousHeight, pixelWidth, pixelHeight) => {
+    if (!(previousWidth > 0) || !(previousHeight > 0)) return viewForElement([x, y, width, height], pixelWidth, pixelHeight);
+    if (!(pixelWidth > 0) || !(pixelHeight > 0)) return [x, y, width, height];
+    const worldPerPixel = Math.max(width / previousWidth, height / previousHeight);
+    const nextWidth = worldPerPixel * pixelWidth;
+    const nextHeight = worldPerPixel * pixelHeight;
+    return [x + (width - nextWidth) / 2, y + (height - nextHeight) / 2, nextWidth, nextHeight];
+  };
   const scalePins = (svg, width) => {
     const scale = width / PIN_REFERENCE_WIDTH;
     svg.querySelectorAll("[data-map-pin-symbol]").forEach((symbol) => {
@@ -166,8 +186,11 @@
     layer.dataset.tileKey = key;
   };
   const zoomedView = ([x, y, width, height], factor, focusX = x + width / 2, focusY = y + height / 2) => {
-    const nextWidth = Math.min(1200, Math.max(MIN_VIEW_WIDTH, width * factor));
-    const nextHeight = Math.min(800, Math.max(MIN_VIEW_HEIGHT, height * factor));
+    const minimumFactor = Math.max(MIN_VIEW_WIDTH / width, MIN_VIEW_HEIGHT / height);
+    const maximumFactor = Math.min(1200 / width, 800 / height);
+    const boundedFactor = Math.min(maximumFactor, Math.max(minimumFactor, factor));
+    const nextWidth = width * boundedFactor;
+    const nextHeight = height * boundedFactor;
     const ratioX = (focusX - x) / width;
     const ratioY = (focusY - y) / height;
     return [focusX - nextWidth * ratioX, focusY - nextHeight * ratioY, nextWidth, nextHeight];
@@ -179,15 +202,30 @@
     map.dataset.mapReady = "true";
     const svg = map.querySelector("[data-map-svg]");
     if (!svg) return;
-    const initial = parseViewBox(svg);
-    scalePins(svg, initial[2]);
-    layoutLabels(svg, initial);
-    renderTiles(map, svg, initial, "paper");
+    const authoredInitial = parseViewBox(svg);
+    const initialRect = svg.getBoundingClientRect();
+    let pixelWidth = initialRect.width || authoredInitial[2];
+    let pixelHeight = initialRect.height || authoredInitial[3];
+    let initial = viewForElement(authoredInitial, pixelWidth, pixelHeight);
 
     const updateView = (view) => {
       writeViewBox(svg, view);
       renderTiles(map, svg, view);
     };
+    updateView(initial);
+
+    const resize = () => {
+      const rect = svg.getBoundingClientRect();
+      if (!(rect.width > 0) || !(rect.height > 0)
+        || (rect.width === pixelWidth && rect.height === pixelHeight)) return;
+      const view = resizedView(parseViewBox(svg), pixelWidth, pixelHeight, rect.width, rect.height);
+      initial = resizedView(initial, pixelWidth, pixelHeight, rect.width, rect.height);
+      pixelWidth = rect.width;
+      pixelHeight = rect.height;
+      updateView(view);
+    };
+    if (globalThis.ResizeObserver) new ResizeObserver(resize).observe(svg);
+    else globalThis.addEventListener?.("resize", resize);
     const zoom = (factor) => updateView(zoomedView(parseViewBox(svg), factor));
     svg.addEventListener("wheel", (event) => { event.preventDefault(); zoom(event.deltaY < 0 ? 0.85 : 1.18); }, { passive: false });
     svg.addEventListener("keydown", (event) => {
@@ -248,7 +286,7 @@
   };
 
   const initializeStrategicMaps = (root = document) => root.querySelectorAll("[data-strategic-map]").forEach((map) => initializeMap(map));
-  globalThis.StrategicMap = { boxesOverlap, initializeMap, labelPriorityThreshold, layoutLabels, parentTileFallback, parseViewBox, pannedView, renderTiles, tileZoom, visibleTileRange, zoomedView };
+  globalThis.StrategicMap = { boxesOverlap, initializeMap, labelPriorityThreshold, layoutLabels, parentTileFallback, parseViewBox, pannedView, renderTiles, resizedView, tileZoom, viewForElement, visibleTileRange, zoomedView };
   initializeStrategicMaps();
   document.addEventListener("strategic-live-regions-refreshed", () => initializeStrategicMaps());
 })();

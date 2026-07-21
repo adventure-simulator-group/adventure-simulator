@@ -7,19 +7,55 @@ const { parseHTML } = require("linkedom");
 
 const source = fs.readFileSync(path.join(__dirname, "..", "static", "strategic-map.js"), "utf8");
 
-const load = () => {
+const load = ({ ResizeObserver } = {}) => {
   const { document } = parseHTML(`<main></main>`);
-  const context = { document, localStorage: null };
+  const context = { document, localStorage: null, ResizeObserver };
   context.globalThis = context;
   vm.runInNewContext(source, context);
   return { document, helpers: context.StrategicMap };
 };
+
+test("camera expands to the rendered element aspect ratio without cropping its fitted area", () => {
+  const { helpers } = load();
+  assert.deepEqual(
+    Array.from(helpers.viewForElement([100, 200, 300, 200], 300, 600)),
+    [100, 0, 300, 600],
+  );
+  assert.deepEqual(
+    Array.from(helpers.viewForElement([100, 200, 300, 200], 900, 300)),
+    [-50, 200, 600, 200],
+  );
+});
+
+test("element resize preserves camera center and world scale while updating loaded tiles", () => {
+  let resizeMap;
+  class TestResizeObserver {
+    constructor(callback) { resizeMap = callback; }
+    observe() {}
+  }
+  const { document, helpers } = load({ ResizeObserver: TestResizeObserver });
+  document.body.innerHTML = `<section data-strategic-map data-map-theme="paper" data-map-tile-size="128" data-map-tile-gutter="0" data-map-max-tile-zoom="0" data-map-tile-version="digest" data-map-tile-root="/map/tiles/"><svg data-map-svg viewBox="100 200 300 200"><g data-map-tile-layer></g></svg></section>`;
+  const map = document.querySelector("section");
+  const svg = map.querySelector("svg");
+  let rect = { width: 300, height: 600 };
+  svg.getBoundingClientRect = () => rect;
+  helpers.initializeMap(map);
+  assert.equal(svg.getAttribute("viewBox"), "100.00 0.00 300.00 600.00");
+  assert.equal(map.querySelectorAll("[data-map-tile-layer] image").length, 20);
+
+  rect = { width: 600, height: 300 };
+  resizeMap();
+  assert.equal(svg.getAttribute("viewBox"), "-50.00 150.00 600.00 300.00");
+  assert.equal(map.querySelectorAll("[data-map-tile-layer] image").length, 15);
+});
 
 test("zoom preserves focus and clamps readable bounds", () => {
   const { helpers } = load();
   assert.deepEqual(Array.from(helpers.zoomedView([100, 100, 400, 200], .5)), [200, 150, 200, 100]);
   assert.deepEqual(Array.from(helpers.zoomedView([0, 0, 80, 160 / 3], .5)), [20, 40 / 3, 40, 80 / 3]);
   assert.deepEqual(Array.from(helpers.zoomedView([0, 0, 10, 20 / 3], .5)), [0, 0, 10, 20 / 3]);
+  assert.deepEqual(Array.from(helpers.zoomedView([0, 0, 20, 50], .1)), [5, 12.5, 10, 25]);
+  assert.deepEqual(Array.from(helpers.zoomedView([5, 12.5, 10, 25], .5)), [5, 12.5, 10, 25]);
 });
 
 test("keyboard pan and reset change only the SVG viewBox", () => {
