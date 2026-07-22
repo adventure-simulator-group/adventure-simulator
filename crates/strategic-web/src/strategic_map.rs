@@ -446,6 +446,20 @@ fn settlement_label_priority(
     category_priority + u16::from(is_connected) * 25
 }
 
+fn population_level_threshold(view_width: f64) -> i32 {
+    if view_width > 900.0 {
+        5
+    } else if view_width > 600.0 {
+        4
+    } else if view_width > 350.0 {
+        3
+    } else if view_width > 180.0 {
+        2
+    } else {
+        1
+    }
+}
+
 pub fn strategic_map(
     map: &StrategicMap,
     settlements: &[Settlement],
@@ -558,13 +572,17 @@ pub fn strategic_map(
                             @let is_current = settlement.id == current_id;
                             @let is_connected = connected_ids.contains(settlement.id.as_str());
                             @let is_selected = selected_id == Some(settlement.id.as_str());
+                            @let is_essential = is_current || is_selected;
+                            @let initially_visible = is_essential || settlement.population_level >= population_level_threshold(initial_view.width);
                             @let symbol_kind = settlement_symbol_kind(&settlement.category);
                             @let label_priority = settlement_label_priority(settlement, is_current, is_connected, is_selected);
                             @let label_width = (settlement.name.chars().count() as u16 * 7 + 8).clamp(44, 180);
                             @let label = if is_current { format!("{}, {:?} prosperity, current settlement", settlement.name, settlement.economy.prosperity_tier) } else if is_connected { format!("{}, {:?} prosperity, direct route available", settlement.name, settlement.economy.prosperity_tier) } else { format!("{}, {:?} prosperity, no direct route", settlement.name, settlement.economy.prosperity_tier) };
                             a href=(format!("{map_path}?destination={}", settlement.id))
                                 class="map-pin-link" aria-label=(&label) data-strategic-tooltip=(&label) aria-current=[is_selected.then_some("true")]
-                                data-map-pin data-settlement-id=(&settlement.id) data-connected=(is_connected) {
+                                data-map-pin data-map-settlement data-settlement-id=(&settlement.id) data-connected=(is_connected)
+                                data-map-population-level=(settlement.population_level) data-map-pin-essential=(is_essential)
+                                display=[(!initially_visible).then_some("none")] {
                                 g class=(format!("map-pin map-settlement map-settlement-{symbol_kind}{}{}{}", if is_current { " current" } else { "" }, if is_connected { " connected" } else { "" }, if is_selected { " selected" } else { "" }))
                                     transform=(format!("translate({x:.3} {y:.3})")) {
                                     g data-map-pin-symbol transform=(format!("scale({initial_pin_scale:.5})")) {
@@ -617,8 +635,12 @@ pub fn strategic_map(
                         // transparent duplicate is mouse-only and is rendered last in SVG order.
                         @for settlement in settlements.iter().filter(|settlement| has_geographic_source_in_bounds(settlement, package.bounds)) {
                             @let (x, y) = project(settlement.coord_x, settlement.coord_y, package.bounds);
+                            @let is_essential = settlement.id == current_id || selected_id == Some(settlement.id.as_str());
+                            @let initially_visible = is_essential || settlement.population_level >= population_level_threshold(initial_view.width);
                             a href=(format!("{map_path}?destination={}", settlement.id))
-                                class="map-settlement-hit-link" aria-hidden="true" tabindex="-1" {
+                                class="map-settlement-hit-link" aria-hidden="true" tabindex="-1"
+                                data-map-settlement-hit data-map-population-level=(settlement.population_level)
+                                data-map-pin-essential=(is_essential) display=[(!initially_visible).then_some("none")] {
                                 g transform=(format!("translate({x:.3} {y:.3})")) {
                                     g data-map-pin-symbol transform=(format!("scale({initial_pin_scale:.5})")) {
                                         circle class="map-settlement-hit-area map-settlement-hit-overlay" r="13" {}
@@ -885,6 +907,15 @@ mod tests {
         assert_eq!(view.height, DEFAULT_VIEW_HEIGHT);
         assert_eq!(view.x, 405.0);
         assert_eq!(view.y, 270.0);
+    }
+
+    #[test]
+    fn population_pin_threshold_reveals_smaller_places_as_the_camera_closes() {
+        assert_eq!(population_level_threshold(1_200.0), 5);
+        assert_eq!(population_level_threshold(900.0), 4);
+        assert_eq!(population_level_threshold(600.0), 3);
+        assert_eq!(population_level_threshold(350.0), 2);
+        assert_eq!(population_level_threshold(180.0), 1);
     }
 
     #[test]

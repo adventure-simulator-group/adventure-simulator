@@ -542,8 +542,8 @@ pub(crate) const fn settlement_category(
         match population_estimate {
             0..=1_999 => SettlementCategory::Hamlet,
             2_000..=3_999 => SettlementCategory::Village,
-            4_000..=10_999 => SettlementCategory::Town,
-            11_000..=50_999 => SettlementCategory::City,
+            4_000..=7_999 => SettlementCategory::Town,
+            8_000..=12_999 => SettlementCategory::City,
             _ => SettlementCategory::Capital,
         }
     } else {
@@ -563,17 +563,17 @@ mod settlement_category_tests {
     use super::{SettlementCategory, settlement_category};
 
     #[test]
-    fn population_estimate_boundaries_use_existing_bands() {
+    fn population_estimate_boundaries_use_regional_bands() {
         let cases = [
             (1, SettlementCategory::Hamlet),
             (1_999, SettlementCategory::Hamlet),
             (2_000, SettlementCategory::Village),
             (3_999, SettlementCategory::Village),
             (4_000, SettlementCategory::Town),
-            (10_999, SettlementCategory::Town),
-            (11_000, SettlementCategory::City),
-            (50_999, SettlementCategory::City),
-            (51_000, SettlementCategory::Capital),
+            (7_999, SettlementCategory::Town),
+            (8_000, SettlementCategory::City),
+            (12_999, SettlementCategory::City),
+            (13_000, SettlementCategory::Capital),
         ];
         for (population, expected) in cases {
             assert_eq!(settlement_category(population, -1), expected);

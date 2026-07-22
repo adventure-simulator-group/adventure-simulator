@@ -641,8 +641,8 @@ fn population_level(thousands: Option<u32>) -> i32 {
     match thousands.unwrap_or(0) {
         0..=1 => 1,
         2..=3 => 2,
-        4..=10 => 3,
-        11..=50 => 4,
+        4..=7 => 3,
+        8..=12 => 4,
         _ => 5,
     }
 }
@@ -686,12 +686,12 @@ mod tests {
     }
 
     #[test]
-    fn population_bands_match_existing_importer() {
+    fn population_bands_cover_all_five_regional_city_sizes() {
         assert_eq!(population_level(None), 1);
         assert_eq!(population_level(Some(3)), 2);
-        assert_eq!(population_level(Some(10)), 3);
-        assert_eq!(population_level(Some(50)), 4);
-        assert_eq!(population_level(Some(51)), 5);
+        assert_eq!(population_level(Some(7)), 3);
+        assert_eq!(population_level(Some(12)), 4);
+        assert_eq!(population_level(Some(13)), 5);
     }
 
     #[test]
