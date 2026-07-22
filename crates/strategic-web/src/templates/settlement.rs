@@ -2089,11 +2089,10 @@ pub fn party_social_page(
                 } @else {
                     ul class="perceived-traits" aria-label="Perceived personality traits" {
                         @for belief in &social.beliefs {
-                            @let (axis, value) = perceived_trait(&belief.axis, belief.perceived_value);
+                            @let (_, value) = perceived_trait(&belief.axis, belief.perceived_value);
                             li class="perceived-trait" style=(belief_style(belief.confidence))
                                 tabindex="0" data-strategic-tooltip=(belief_tooltip(belief)) {
-                                strong { (axis) }
-                                span { (value) }
+                                (value)
                             }
                         }
                     }

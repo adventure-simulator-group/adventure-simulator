@@ -2546,9 +2546,23 @@ button.party-portrait-action {
 .social-biography > div { display: flex; justify-content: space-between; gap: 1rem; }
 .social-biography dt { color: var(--text-muted); }
 .social-biography dd { margin: 0; text-align: right; font-weight: 700; }
-.perceived-traits,
+.perceived-traits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0;
+  margin: 0.65rem 0 0;
+  list-style: none;
+}
+.perceived-trait {
+  padding: 0.18rem 0.45rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  font-size: var(--font-size-xs);
+  line-height: 1.25;
+}
 .social-source-list { display: grid; gap: 0.55rem; padding: 0; margin: 0.65rem 0 0; list-style: none; }
-.perceived-traits li { display: grid; grid-template-columns: 1fr auto; gap: 0.1rem 0.5rem; text-transform: capitalize; }
 .perceived-trait,
 .social-source-context p.belief-copy {
   color: color-mix(in srgb, var(--text-muted), #fff var(--belief-confidence));
