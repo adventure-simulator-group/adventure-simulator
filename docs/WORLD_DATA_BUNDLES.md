@@ -18,6 +18,11 @@ full release pinned in the checked-in `world-data-release.lock.json` from the
 project's public R2 development URL, resumes an interrupted byte-range download,
 verifies the separately pinned descriptor, and atomically installs the
 source-separated inputs. It does not download a combined `world-1544.json`.
+Every full release is required to contain both the reviewed Viabundus v2
+component and the four HYDE 3.5 c9 inputs (`cropland.nc`, `grazing_land.nc`,
+`urban_area.nc`, and `general_files.zip`), as well as the other required source
+components. Their payloads, inventories, notices, and licences remain separate
+inside the collection.
 The installer retains the downloaded ZIP below `target/world-data-bundle-cache/`
 for later verification and requires roughly 50 GiB of free disk space while it
 installs. If a different release is already installed, rerun the script with
