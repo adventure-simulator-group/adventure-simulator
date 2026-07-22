@@ -78,6 +78,7 @@ pub mod character_needs_table;
 pub mod character_needs_type;
 pub mod character_notoriety_table;
 pub mod character_notoriety_type;
+pub mod character_personality_table;
 pub mod character_personality_type;
 pub mod character_skills_table;
 pub mod character_skills_type;
@@ -514,6 +515,7 @@ pub use character_needs_table::*;
 pub use character_needs_type::CharacterNeeds;
 pub use character_notoriety_table::*;
 pub use character_notoriety_type::CharacterNotoriety;
+pub use character_personality_table::*;
 pub use character_personality_type::CharacterPersonality;
 pub use character_skills_table::*;
 pub use character_skills_type::CharacterSkills;
@@ -953,14 +955,7 @@ pub enum Reducer {
         attributes: CharacterAttributes,
         skills: CharacterSkills,
         downtime: ScheduleAllocation,
-        nerve: String,
-        drive: String,
-        outlook: String,
-        sociability: String,
-        conscience: String,
-        self_regard: String,
-        conviction: String,
-        hygiene: String,
+        personality: CharacterPersonality,
     },
     ContinueCampTravel {
         character_id: u64,
@@ -1568,14 +1563,7 @@ Reducer::CancelMissionRequest{
                 attributes,
                 skills,
                 downtime,
-                nerve,
-                drive,
-                outlook,
-                sociability,
-                conscience,
-                self_regard,
-                conviction,
-                hygiene,
+                personality,
 }             => __sats::bsatn::to_vec(&configure_simulation_character_reducer::ConfigureSimulationCharacterArgs {
                 nonce: nonce.clone(),
                 character_id: character_id.clone(),
@@ -1584,14 +1572,7 @@ Reducer::CancelMissionRequest{
                 attributes: attributes.clone(),
                 skills: skills.clone(),
                 downtime: downtime.clone(),
-                nerve: nerve.clone(),
-                drive: drive.clone(),
-                outlook: outlook.clone(),
-                sociability: sociability.clone(),
-                conscience: conscience.clone(),
-                self_regard: self_regard.clone(),
-                conviction: conviction.clone(),
-                hygiene: hygiene.clone(),
+                personality: personality.clone(),
 }),
             Reducer::ContinueCampTravel{
                 character_id,
@@ -2286,6 +2267,7 @@ pub struct DbUpdate {
     character_morale_source: __sdk::TableUpdate<CharacterMoraleSource>,
     character_needs: __sdk::TableUpdate<CharacterNeeds>,
     character_notoriety: __sdk::TableUpdate<CharacterNotoriety>,
+    character_personality: __sdk::TableUpdate<CharacterPersonality>,
     character_skills: __sdk::TableUpdate<CharacterSkills>,
     character_stats: __sdk::TableUpdate<CharacterStats>,
     character_strategic_condition: __sdk::TableUpdate<CharacterStrategicCondition>,
@@ -2422,6 +2404,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "character_notoriety" => db_update
                     .character_notoriety
                     .append(character_notoriety_table::parse_table_update(table_update)?),
+                "character_personality" => db_update.character_personality.append(
+                    character_personality_table::parse_table_update(table_update)?,
+                ),
                 "character_skills" => db_update
                     .character_skills
                     .append(character_skills_table::parse_table_update(table_update)?),
@@ -2677,6 +2662,12 @@ impl __sdk::DbUpdate for DbUpdate {
             .apply_diff_to_table::<CharacterNotoriety>(
                 "character_notoriety",
                 &self.character_notoriety,
+            )
+            .with_updates_by_pk(|row| &row.character_id);
+        diff.character_personality = cache
+            .apply_diff_to_table::<CharacterPersonality>(
+                "character_personality",
+                &self.character_personality,
             )
             .with_updates_by_pk(|row| &row.character_id);
         diff.character_skills = cache
@@ -2992,6 +2983,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_notoriety" => db_update
                     .character_notoriety
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_personality" => db_update
+                    .character_personality
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_skills" => db_update
                     .character_skills
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -3227,6 +3221,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_notoriety" => db_update
                     .character_notoriety
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_personality" => db_update
+                    .character_personality
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_skills" => db_update
                     .character_skills
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -3414,6 +3411,7 @@ pub struct AppliedDiff<'r> {
     character_morale_source: __sdk::TableAppliedDiff<'r, CharacterMoraleSource>,
     character_needs: __sdk::TableAppliedDiff<'r, CharacterNeeds>,
     character_notoriety: __sdk::TableAppliedDiff<'r, CharacterNotoriety>,
+    character_personality: __sdk::TableAppliedDiff<'r, CharacterPersonality>,
     character_skills: __sdk::TableAppliedDiff<'r, CharacterSkills>,
     character_stats: __sdk::TableAppliedDiff<'r, CharacterStats>,
     character_strategic_condition: __sdk::TableAppliedDiff<'r, CharacterStrategicCondition>,
@@ -3595,6 +3593,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<CharacterNotoriety>(
             "character_notoriety",
             &self.character_notoriety,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterPersonality>(
+            "character_personality",
+            &self.character_personality,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CharacterSkills>(
@@ -4491,6 +4494,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         character_morale_source_table::register_table(client_cache);
         character_needs_table::register_table(client_cache);
         character_notoriety_table::register_table(client_cache);
+        character_personality_table::register_table(client_cache);
         character_skills_table::register_table(client_cache);
         character_stats_table::register_table(client_cache);
         character_strategic_condition_table::register_table(client_cache);
@@ -4567,6 +4571,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "character_morale_source",
         "character_needs",
         "character_notoriety",
+        "character_personality",
         "character_skills",
         "character_stats",
         "character_strategic_condition",
