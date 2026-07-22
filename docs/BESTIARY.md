@@ -16,8 +16,12 @@ wounds, disturbances, sounds, silhouettes, odors, mistaken identities,
 distinguishing evidence, visibility, and preparation advice.
 
 The strategic autoresolver consumes identity, loadout, protection, speed,
-loot, and cut/blunt response. Cutting attacks are inefficient against
-skeletons while blunt contact is amplified. Other fields are typed for the
+loot, perception/stealth, morale, encounter scaling, and cut/blunt response.
+Cutting attacks are inefficient against skeletons while blunt contact is
+amplified; armor and penetration, ranged loadouts, speed, and party size also
+produce mechanically testable preparation choices. Fire, silver, daylight,
+and ritual courage are stored separately as **unimplemented investigation
+hypotheses**. UI copy must not claim they modify autoresolve. Other fields are typed for the
 investigative generator and future tactical combat; they are not all simulated
 yet. Tactical servers do not yet receive bestiary identity, and tactical enemy
 instances, position, HP, and damage remain transient.
@@ -29,17 +33,21 @@ weight are separate; habitat, activity time, visibility, distance, and witness
 capability provide context. `rank_candidates` computes inverse conclusions from
 those forward likelihoods, priors, and evidence. No inverse table is authored.
 
-Zero means impossible and a low positive weight means rare. Improbable
-combinations can require a typed `CausalBridge` with evidence outputs. For
+Zero means impossible and is never raised by curation. A low positive weight
+means rare. The public habitat-selection API validates improbable combinations
+and requires a typed `CausalBridge` with evidence outputs. For
 example, skeletons in an occupied house require a cellar crypt, graveyard
 tunnel, or resident controller. Witness demographics belong to the future case
 model, not this threat-focused catalog.
 
+The MVP northern-Germany regional prior is a small typed authoring context,
+separate from curation; it is not yet derived from imported world geography.
 `evidence_limited_preparation` accepts only visible reports and evidence, never
 a hidden threat ID. Direct bounty quests currently confirm opposition and may
 show canonical preparation advice. Pure deterministic validation and ranking
-APIs support strict-ID, ambiguity, re-ranking, bridge, reachability, and
-identification-challenge tests.
+APIs expose ambiguity cardinality, distinguishing clues, normalized
+plausibility/curation marginals, dominance, bridge coverage, reachability, and
+numeric/duplicate invariants. Evidence inputs are deduplicated and bounded.
 
 ## Folklore provenance and adaptation
 
@@ -48,8 +56,8 @@ northern Germany in 1544. Names, dates, regions, and motifs changed between
 tellings. The small current subset also fits reusable humanoid/quadruped rigs.
 
 - **Kobold:** the Grimms' collected [Der Kobold](https://de.wikisource.org/wiki/Der_Kobold_%28Br%C3%BCder_Grimm%29).
-- **Werewolf:** the Grimms' collected [Der Wärwolf](https://de.wikisource.org/wiki/Der_W%C3%A4rwolf); silver weakness and clues are game design, not asserted details of that text.
-- **Nachzehrer/Wiedergänger:** early-modern mortuary context in this [academic overview](https://www.eaz-journal.org/index.php/eaz/article/view/851); the fire weakness is an adaptation.
+- **Werewolf:** the Grimms' collected [Der Wärwolf](https://de.wikisource.org/wiki/Der_W%C3%A4rwolf); silver is an unimplemented investigative hypothesis and not asserted by that text.
+- **Nachzehrer/Wiedergänger:** early-modern mortuary context in this [academic overview](https://www.eaz-journal.org/index.php/eaz/article/view/851); fire is an unimplemented investigative hypothesis.
 - **Wild man:** early-modern German visual/cultural context in this [art-historical study](https://onlinelibrary.wiley.com/doi/10.1111/j.1467-8365.2008.00607.x), not one uniform folk belief.
 - **Spectral hound:** the later regional [Der schwarze Hund (1839)](https://de.wikisource.org/wiki/Der_schwarze_Hund_%28Gr%C3%A4ve%2C_1839%29). Its later date makes it evidence of a collected tradition, not proof of the exact motif in 1544.
 - **Alp:** included conservatively as a nocturnal identification challenge;

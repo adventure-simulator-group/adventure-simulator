@@ -4,7 +4,7 @@
 //! retries cannot change which journey/seed encounters a party. Mount support
 //! is intentionally represented as a speed input; absent mounts are neutral.
 
-use crate::bestiary::{ActivityTime, Habitat, ThreatId, habitat_weight};
+use crate::bestiary::{ActivityTime, Habitat, ThreatId, select_habitat_relation};
 
 pub const ENCOUNTER_ROLL_INTERVAL_MINUTES: u64 = 180;
 pub const BASE_ENCOUNTER_BASIS_POINTS: u32 = 180;
@@ -238,16 +238,11 @@ pub fn select_at(
             EncounterArchetype::Goblins => 1,
             EncounterArchetype::Undead => 2,
         };
-        weights[slot] += bonus;
+        if weights[slot] > 0 {
+            weights[slot] = weights[slot].saturating_add(bonus);
+        }
     }
-    let pick = domain_roll(seed, index, 1) % u64::from(weights.iter().sum::<u32>());
-    let archetype = if pick < u64::from(weights[0]) {
-        EncounterArchetype::Bandits
-    } else if pick < u64::from(weights[0] + weights[1]) {
-        EncounterArchetype::Goblins
-    } else {
-        EncounterArchetype::Undead
-    };
+    let archetype = select_archetype_from_weights(domain_roll(seed, index, 1), weights)?;
     let count = scale_enemy_count(
         enemy_count(seed, index, context.combat_capable_members),
         archetype,
@@ -275,16 +270,31 @@ pub fn select_at(
     })
 }
 
+fn select_archetype_from_weights(roll: u64, weights: [u32; 3]) -> Option<EncounterArchetype> {
+    let total = weights.iter().copied().fold(0_u32, u32::saturating_add);
+    if total == 0 { return None; }
+    let pick = roll % u64::from(total);
+    Some(if pick < u64::from(weights[0]) {
+        EncounterArchetype::Bandits
+    } else if pick < u64::from(weights[0] + weights[1]) {
+        EncounterArchetype::Goblins
+    } else {
+        EncounterArchetype::Undead
+    })
+}
+
 fn encounter_weight(id: ThreatId, habitat: Habitat, night: bool) -> u32 {
     let profile = id.profile();
-    let habitat = u32::from(habitat_weight(id, habitat));
+    let Ok(relation) = select_habitat_relation(id, habitat, None) else {
+        return 0;
+    };
+    let habitat = u32::from(relation.weight);
     let activity = match (profile.investigation.activity, night) {
         (ActivityTime::Night, true) | (ActivityTime::Day, false) | (ActivityTime::Any, _) => 100,
         _ => 20,
     };
     (u32::from(profile.base_weight) * habitat * activity / 10_000)
         .saturating_add(u32::from(profile.curation_weight) / 10)
-        .max(1)
 }
 
 /// Returns the deterministic enemy count for an encounter roll.
@@ -444,6 +454,7 @@ mod tests {
         let archetype_counts = |accepted_active_quest| {
             let c = EncounterContext {
                 accepted_active_quest,
+                terrain: EncounterTerrain::DeepWoods,
                 ..context()
             };
             let mut counts = [0_usize; 3];
@@ -464,7 +475,7 @@ mod tests {
 
         assert!(
             undead_quest[EncounterArchetype::Undead as usize] * baseline_total
-                > baseline[EncounterArchetype::Undead as usize] * quest_total * 4,
+                > baseline[EncounterArchetype::Undead as usize] * quest_total * 2,
             "baseline={baseline:?}, undead quest={undead_quest:?}"
         );
     }
@@ -548,5 +559,29 @@ mod tests {
         assert!(
             sustainable_speed_m_per_minute(0, 10_000, 1, EncounterTerrain::DeepWoods) < baseline
         );
+    }
+
+    #[test]
+    fn impossible_habitats_remain_hard_zero_despite_curation() {
+        assert_eq!(encounter_weight(ThreatId::Skeleton, Habitat::Road, true), 0);
+        assert_eq!(
+            encounter_weight(ThreatId::Bandit, Habitat::DeepWoods, false),
+            0
+        );
+        let occupied_total = [ThreatId::Bandit, ThreatId::Goblin, ThreatId::Skeleton]
+            .into_iter()
+            .map(|id| encounter_weight(id, Habitat::OccupiedHouse, true))
+            .sum::<u32>();
+        // Skeletons need a causal bridge here, which random encounter selection cannot supply.
+        assert_eq!(occupied_total, 0);
+        assert_eq!(select_archetype_from_weights(7, [0, 0, 0]), None);
+        let road_with_undead_quest = EncounterContext {
+            accepted_active_quest: Some(AcceptedQuestInfluence {
+                archetype: EncounterArchetype::Undead,
+                distance_minutes: 0,
+            }),
+            ..context()
+        };
+        assert!((0..50_000).filter_map(|seed| select_at(seed, 1, 180, road_with_undead_quest)).all(|selection| selection.archetype != EncounterArchetype::Undead));
     }
 }

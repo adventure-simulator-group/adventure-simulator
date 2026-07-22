@@ -2387,10 +2387,10 @@ fn service_quest_greeting(service_id: &str) -> (&'static str, &'static str) {
 }
 
 fn service_quest_details(
-    service_id: &str,
+    _service_id: &str,
     quest: &Quest,
-    settlement_name: &str,
-    neighboring_name: &str,
+    _settlement_name: &str,
+    _neighboring_name: &str,
     low: i32,
     high: i32,
 ) -> String {
@@ -2401,30 +2401,59 @@ fn service_quest_details(
     let preparation = threat
         .map(|id| id.profile().investigation.preparation_advice)
         .unwrap_or("Learn more before committing to a fight.");
-    let situation = match service_id {
-        "weapons" => format!(
-            "smugglers are hiding with the stolen arms near the road between {settlement_name} and {neighboring_name}"
-        ),
-        "armor" => format!(
-            "the old mine between {settlement_name} and {neighboring_name} is occupied by kobolds, and no miner will go near it"
-        ),
-        "clothing" => format!(
-            "the wolves are ranging through the grazing land between {settlement_name} and {neighboring_name}, where our shepherds cannot avoid them"
-        ),
-        "inn" => format!(
-            "the goblins are lairing in a cave near the road between {settlement_name} and {neighboring_name} and attacking travelers after dark"
-        ),
-        "religion" => format!(
-            "a necromancer has occupied an old crypt outside {settlement_name} and raised its dead"
-        ),
-        _ => format!(
-            "a handful of bandits are camped in the forest near the road between {settlement_name} and {neighboring_name} and have been laying ambushes for my caravans"
-        ),
-    };
+    // The generated quest is authoritative. Service identifies the speaker,
+    // never the threat or location; several templates intentionally share it.
+    let situation = format!("{} {}", quest.description, quest.location_description);
     format!(
         "Yes, {situation}. I believe there are about {low} or {high} {threat_name}, give or take. I'd offer {} coin to anyone who clears them out. Preparation: {preparation} Are you",
         quest.gold_reward,
     )
+}
+
+#[cfg(test)]
+mod bestiary_quest_presentation_tests {
+    use super::*;
+
+    fn quest(enemy_type: &str, description: &str, location: &str) -> Quest {
+        Quest {
+            id: "q".into(),
+            title: "Problem".into(),
+            description: description.into(),
+            difficulty: 2,
+            gold_reward: 40,
+            xp_reward: 20,
+            settlement_id: "s".into(),
+            status: QuestStatus::Available,
+            accepted_by: None,
+            enemy_type: enemy_type.into(),
+            enemy_count: 3,
+            location_description: location.into(),
+            location_scene_key: "ruins".into(),
+            location_coord_x: 0.0,
+            location_coord_y: 0.0,
+            coordinates_are_geographic: false,
+            distance_m: 1000,
+        }
+    }
+
+    #[test]
+    fn shared_service_never_substitutes_its_old_fixed_threat_or_location() {
+        let alp = quest(
+            "alp",
+            "Sleepers report an unseen visitor.",
+            "An abandoned house.",
+        );
+        let hound = quest(
+            "spectral_hound",
+            "A black hound haunts the road.",
+            "The graveyard road.",
+        );
+        let alp_details = service_quest_details("inn", &alp, "A", "B", 2, 3);
+        let hound_details = service_quest_details("inn", &hound, "A", "B", 2, 3);
+        assert!(alp_details.contains("unseen visitor") && alp_details.contains("abandoned house"));
+        assert!(hound_details.contains("black hound") && hound_details.contains("graveyard road"));
+        assert!(!alp_details.contains("goblin") && !hound_details.contains("goblin"));
+    }
 }
 
 fn role_requirement_labels(role: &PartyRecruitmentRole) -> Vec<String> {
