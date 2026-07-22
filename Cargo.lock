@@ -105,6 +105,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "adventuresim-dialogue"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "adventuresim-stdb-client"
 version = "0.1.0"
 dependencies = [
@@ -116,6 +125,7 @@ name = "adventuresim-stdb-module"
 version = "0.1.0"
 dependencies = [
  "adventuresim-core",
+ "adventuresim-dialogue",
  "adventuresim-world-schema",
  "log",
  "petname",
@@ -8553,6 +8563,7 @@ name = "strategic-web"
 version = "0.1.0"
 dependencies = [
  "adventuresim-core",
+ "adventuresim-dialogue",
  "adventuresim-stdb-client",
  "adventuresim-terrain",
  "adventuresim-world-schema",

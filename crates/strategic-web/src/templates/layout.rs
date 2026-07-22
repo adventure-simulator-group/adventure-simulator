@@ -164,6 +164,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
                 script src="/static/background-fetch.js?v=background-fetch-2" {}
+                script src="/static/developer-mode.js?v=dialogue-sources-1" defer {}
                 script src="/static/tooltips.js?v=styled-tooltips-1" defer {}
                 script src="/static/medical-examination.js?v=strategic-dialogs-1" defer {}
                 @if scripts != ScriptProfile::Entry {
@@ -178,6 +179,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}
                     script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
                     script src="/static/service-quests.js?v=apprentice-system-1" defer {}
+                    script src="/static/dialogue-client.js?v=authoritative-dialogue-1" defer {}
                     script src="/static/chat-resize.js?v=floating-chat-3" defer {}
                     script src="/static/local-chat.js?v=herbalist-private-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}
@@ -556,6 +558,10 @@ fn wilderness_variant(location_id: &str) -> WildernessVariant {
 fn character_switcher(name: &str) -> Markup {
     let initial = name.chars().next().unwrap_or('?');
     html! {
+        button type="button" class="developer-mode-toggle" data-developer-mode-toggle
+            aria-label="Enable developer mode" aria-pressed="false" title="Developer mode" {
+            span class="developer-mode-icon" aria-hidden="true" {}
+        }
         details class="character-switcher" {
             summary class="character-switcher-toggle"
                 aria-label=(format!("Character menu for {name}")) title=(name) {
@@ -805,6 +811,20 @@ mod tests {
         assert!(!markup.contains("current-quest.js"));
         assert!(!markup.contains("data-settlement-turn-in-badge"));
         assert!(markup.contains("data-map-quest-badge"));
+        let developer = markup.find("data-developer-mode-toggle").unwrap();
+        let portrait = markup.find("class=\"character-switcher\"").unwrap();
+        assert!(
+            developer < portrait,
+            "developer toggle must precede the portrait"
+        );
+        assert!(markup.contains("aria-label=\"Enable developer mode\""));
+        assert!(markup.contains("aria-pressed=\"false\""));
+        let wilderness =
+            quest_location_top_bar("Ruins", "q", "map", false, Some("Ada")).into_string();
+        assert!(
+            wilderness.find("data-developer-mode-toggle").unwrap()
+                < wilderness.find("class=\"character-switcher\"").unwrap()
+        );
     }
 
     #[test]

@@ -33,7 +33,13 @@ use adventuresim_stdb_client::{
     character_stats_table::CharacterStatsTableAccess,
     character_strategic_condition_table::CharacterStrategicConditionTableAccess,
     character_table::CharacterTableAccess,
+    character_topic_knowledge_table::CharacterTopicKnowledgeTableAccess,
     character_training_schedule_table::CharacterTrainingScheduleTableAccess,
+    dialogue_answer_table::DialogueAnswerTableAccess,
+    dialogue_event_table::DialogueEventTableAccess,
+    dialogue_participant_table::DialogueParticipantTableAccess,
+    dialogue_prompt_table::DialoguePromptTableAccess,
+    dialogue_session_table::DialogueSessionTableAccess,
     equipped_medication_table::EquippedMedicationTableAccess,
     inventory_item_table::InventoryItemTableAccess,
     inventory_quantity_target_table::InventoryQuantityTargetTableAccess,
@@ -172,6 +178,12 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.quest());
         invalidate_on_changes!(state.0._connection.db.quest_issuer());
         invalidate_on_changes!(state.0._connection.db.local_chat_message());
+        invalidate_on_changes!(state.0._connection.db.dialogue_session());
+        invalidate_on_changes!(state.0._connection.db.dialogue_participant());
+        invalidate_on_changes!(state.0._connection.db.dialogue_event());
+        invalidate_on_changes!(state.0._connection.db.dialogue_prompt());
+        invalidate_on_changes!(state.0._connection.db.dialogue_answer());
+        invalidate_on_changes!(state.0._connection.db.character_topic_knowledge());
         invalidate_on_changes!(state.0._connection.db.battle_result());
         invalidate_on_changes!(state.0._connection.db.autoresolve_report());
         invalidate_on_changes!(state.0._connection.db.battle_loot_item());
@@ -219,6 +231,12 @@ impl LiveState {
             .add_query(|query| query.from.item())
             .add_query(|query| query.from.item_condition())
             .add_query(|query| query.from.local_chat_message())
+            .add_query(|query| query.from.dialogue_session())
+            .add_query(|query| query.from.dialogue_participant())
+            .add_query(|query| query.from.dialogue_event())
+            .add_query(|query| query.from.dialogue_prompt())
+            .add_query(|query| query.from.dialogue_answer())
+            .add_query(|query| query.from.character_topic_knowledge())
             .add_query(|query| query.from.morale_event())
             .add_query(|query| query.from.party())
             .add_query(|query| query.from.party_action_request())

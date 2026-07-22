@@ -1,0 +1,70 @@
+{
+  "conversations": [
+    {
+      "id": "service-professions",
+      "roles": { "player": { "kind": "player" }, "professional": { "kind": "npc" } },
+      "topics": [
+        { "id": "profession", "label": "Profession", "initially_known": true,
+          "responses": [{ "id": "explain-profession", "priority": 0,
+            "turns": [
+              { "speaker": "player", "fragments": [{ "kind": "text", "value": "Tell me about your profession." }] },
+              { "speaker": "professional", "fragments": [
+                { "kind": "text", "value": "I can teach you the work of this profession. " },
+                { "kind": "topic", "topic": "apprenticeship", "label": "apprentice" }
+              ] }
+            ],
+            "effects": [{ "kind": "learn_topic", "topic": "apprenticeship" }], "prompt": null }]
+        },
+        { "id": "apprenticeship", "label": "Apprenticeship",
+          "responses": [{ "id": "offer-apprenticeship", "priority": 0,
+            "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Are you interested in becoming my apprentice?" }] }],
+            "effects": [],
+            "prompt": { "id": "accept-apprenticeship", "respondent": "player", "mode": "yes_no", "resolution": "first_response",
+              "choices": [
+                { "id": "yes", "label": "Yes", "effects": [{ "kind": "begin_apprenticeship", "profession": "selected-service" }] },
+                { "id": "no", "label": "No" }
+              ] }
+          }]
+        },
+        { "id": "quest", "label": "Work", "initially_known": true,
+          "responses": [{ "id": "quest-offer", "priority": 0,
+            "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "There is work for an adventuring company, if you are interested." }] }],
+            "effects": [],
+            "prompt": { "id": "accept-work", "respondent": "player", "mode": "yes_no",
+              "choices": [
+                { "id": "interested", "label": "I'm interested.", "effects": [{ "kind": "accept_quest", "quest": "selected-service-quest" }] },
+                { "id": "decline", "label": "Not now." }
+              ] }
+          }]
+        }
+      ]
+    },
+    { "id": "herbalist-examination", "roles": { "patient": { "kind": "player" }, "herbalist": { "kind": "npc" } },
+      "topics": [{ "id": "examination", "label": "Examination", "initially_known": true,
+        "responses": [{ "id": "examine", "priority": 0,
+          "turns": [{ "speaker": "herbalist", "fragments": [{ "kind": "text", "value": "Let me examine you and see what treatment is needed." }] }],
+          "effects": [],
+          "prompt": { "id": "request-examination", "respondent": "patient", "mode": "yes_no",
+            "choices": [
+              { "id": "yes", "label": "Please examine me.", "effects": [{ "kind": "examine_disease" }] },
+              { "id": "no", "label": "Not now." }
+            ] }
+        }]
+      }]
+    },
+    { "id": "religion-service", "roles": { "player": { "kind": "player" }, "cleric": { "kind": "npc" } },
+      "topics": [{ "id": "faith", "label": "Faith", "initially_known": true,
+        "responses": [{ "id": "explain-faith", "priority": 0,
+          "turns": [{ "speaker": "cleric", "fragments": [{ "kind": "text", "value": "Our congregation welcomes travelers who wish to learn its doctrine." }] }],
+          "effects": [], "prompt": null }]
+      }]
+    },
+    { "id": "recruitment", "roles": { "player": { "kind": "player" }, "employer": { "kind": "npc" } },
+      "topics": [{ "id": "open-roles", "label": "Recruitment", "initially_known": true,
+        "responses": [{ "id": "list-open-roles", "priority": 0,
+          "turns": [{ "speaker": "employer", "fragments": [{ "kind": "text", "value": "An adventuring company is looking for capable hands." }] }],
+          "effects": [{ "kind": "learn_topic", "topic": "open-roles" }], "prompt": null }]
+      }]
+    }
+  ]
+}

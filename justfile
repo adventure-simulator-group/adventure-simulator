@@ -488,6 +488,10 @@ win-dev:
 check:
     @cargo check --workspace
 
+# Validate compiled dialogue content and its generated source map.
+dialogue-check:
+    @cargo run -p adventuresim-dialogue --bin dialogue-check -- check
+
 test-chat:
     @node --test crates/strategic-web/tests/local-chat.test.cjs crates/strategic-web/tests/service-quests.test.cjs
 

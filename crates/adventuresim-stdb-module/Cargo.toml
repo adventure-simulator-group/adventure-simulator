@@ -10,6 +10,7 @@ doctest = false
 
 [dependencies]
 adventuresim-core.workspace = true
+adventuresim-dialogue.workspace = true
 adventuresim-world-schema = { workspace = true, features = ["spacetimedb"] }
 log = "0.4"
 spacetimedb.workspace = true
