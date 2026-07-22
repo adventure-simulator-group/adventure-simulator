@@ -5,9 +5,11 @@ const test = require("node:test");
 
 const source = fs.readFileSync(path.join(__dirname, "../static/cooking.js"), "utf8");
 
-test("cooking stages lot IDs and bounded quantities", () => {
-  assert.match(source, /data-cooking-lot/);
-  assert.match(source, /Math\.max\(1, Math\.min/);
+test("cooking stages inventory rows into a bounded pot draft", () => {
+  assert.match(source, /data-cooking-stage/);
+  assert.match(source, /data-cooking-unstage/);
+  assert.match(source, /const staged = new Map\(\)/);
+  assert.match(source, /Math\.min\(entry\.available, entry\.quantity \+ 1\)/);
   assert.match(source, /\.join\(","\)/);
 });
 

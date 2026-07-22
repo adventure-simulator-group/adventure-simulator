@@ -114,7 +114,7 @@ use crate::spacetimedb::{
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
-    RestSummary, SoapRestPreview, SocialPresentation, alchemy_page, camp_page, inn_page,
+    RestSummary, SoapRestPreview, SocialPresentation, alchemy_page, camp_page,
     live_merchant_shop_page, merchants_page, party_discard_page, party_inventory_page,
     party_personal_page, party_pool_page, party_social_page, party_stats_page, religion_page,
     rest_default_minutes, rest_result_page, settlement_map_page, settlement_overview_page,

@@ -525,22 +525,35 @@
   color: #000;
 }
 
-.cooking-ingredient-row {
+.cooking-activity { display: contents; }
+
+.cooking-pot .inventory-browser {
+  transition: opacity 120ms ease;
+}
+
+.cooking-pot:has([data-cooking-pot-empty]:not([hidden])) .inventory-browser {
+  opacity: .55;
+}
+
+.cooking-workspace {
+  position: absolute;
+  inset: 14% 12% auto;
+  z-index: 3;
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: .55rem;
-  padding: .55rem;
-  margin-block: .35rem;
-  background: rgb(18 14 10 / 88%);
-  border: 1px solid rgb(215 180 116 / 35%);
-  border-radius: .2rem;
+  justify-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid rgb(215 180 116 / 28%);
+  border-radius: var(--radius-md);
+  background: rgb(18 14 10 / 72%);
+  box-shadow: var(--shadow-md);
 }
 
 .cooking-method-list {
   display: grid;
   grid-template-columns: repeat(4, minmax(2.4rem, 1fr));
   gap: .4rem;
+  width: min(22rem, 100%);
 }
 
 .cooking-method {
@@ -578,13 +591,11 @@
   cursor: not-allowed;
 }
 
-.cooking-ingredient-details {
-  color: var(--text-muted);
-  font-size: .82rem;
-}
-
-.cooking-ingredient-row [type="number"] {
-  width: 4.2rem;
+.cooking-stage-placeholder {
+  width: clamp(5rem, 22%, 8rem);
+  max-height: 8rem;
+  opacity: .42;
+  filter: sepia(.3);
 }
 
 .cooking-actions {

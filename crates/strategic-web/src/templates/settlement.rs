@@ -1779,44 +1779,78 @@ fn cooking_activity_page(
     let pot = owns("cooking_pot");
     let oven = owns("portable_oven");
     let content = html! {
-        form class="cooking-activity" data-cooking-activity method="post"
-            action=(format!("{}/party/{}/cook", location.base_path(), active_character.id)) {
-            aside class="left-sidebar cooking-methods" aria-label="Cooking instrument" {
-                (sidebar_section("Cooking instrument", html! {
-                    div class="cooking-method-list" {
+        div class="cooking-activity" data-cooking-activity {
+            aside class="left-sidebar cooking-pot" aria-label="Cooking pot" {
+                (sidebar_section("Pot", html! {
+                    p class="text-muted small-copy cooking-pot-empty" data-cooking-pot-empty {
+                        "Transfer ingredients here to prepare a meal."
+                    }
+                    (trade_inventory_table("cooking-pot-left", InventoryColumnSet::Basic, true, false, false, html! {}))
+                }))
+            }
+            main class="center-content settlement-main party-member-stage cooking-stage" {
+                (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(active_character.id), false))
+                section class="cooking-workspace" aria-label="Cooking workspace" {
+                    div class="cooking-method-list" aria-label="Cooking instrument" {
                         (cooking_method("pan-fry", "Pan-fry", "meal", pan, "A pan is required", false))
                         (cooking_method("stew", "Stew", "water-bottle", pot, "A pot and water are required", false))
                         (cooking_method("roast", "Roast / skewer", "campfire", true, "", true))
                         (cooking_method("bake", "Bake", "bread", oven, "A portable oven is required", false))
                     }
-                }))
-            }
-            main class="center-content settlement-main party-member-stage cooking-stage" {
-                (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(active_character.id), false))
-                (visual_stage("service", "Cooking fire", "Prepare a meal from the selected ingredients"))
-                input type="hidden" name="inventory_item_ids" value="" data-cooking-ids;
-                input type="hidden" name="quantities" value="" data-cooking-quantities;
-                div class="party-offer cooking-actions" {
-                    a class="party-offer-cancel" href=(format!("{}/party/{}", location.base_path(), active_character.id)) { "Cancel" }
-                    button type="submit" disabled title="Select at least one ingredient" data-cook-submit { "Cook" }
+                    img class="cooking-stage-placeholder" src="/static/icons/game/campfire.svg"
+                        alt="Placeholder for the cooking vessel and fire";
+                    p class="text-muted small-copy" { "Cooking scene placeholder" }
+                }
+                form class="cooking-submit-form" method="post"
+                    action=(format!("{}/party/{}/cook", location.base_path(), active_character.id)) {
+                    input type="hidden" name="inventory_item_ids" value="" data-cooking-ids;
+                    input type="hidden" name="quantities" value="" data-cooking-quantities;
+                    div class="party-offer cooking-actions" {
+                        a class="party-offer-cancel" href=(format!("{}/party/{}", location.base_path(), active_character.id)) { "Cancel" }
+                        button type="submit" disabled title="Select at least one ingredient" data-cook-submit { "Cook" }
+                    }
                 }
             }
             aside class="right-sidebar cooking-ingredients" aria-label="Ingredient inventory" {
-                (sidebar_section("Ingredients", html! {
-                    @for lot in food_lots.iter().filter(|lot| lot.inventory_item_id.is_some_and(|id| inventory.iter().any(|row| row.id == id))) {
-                        @let inventory_row = inventory.iter().find(|row| Some(row.id) == lot.inventory_item_id).unwrap();
-                        @let definition = item_definitions.iter().find(|item| item.id == inventory_row.item_id);
-                        label class="cooking-ingredient-row" {
-                            input type="checkbox" data-cooking-lot=(inventory_row.id)
-                                data-mass=(format!("{:.4}", lot.mass_kg / inventory_row.qty.max(1) as f32))
-                                data-safety=(definition.and_then(|_| adventuresim_core::food::definition(&inventory_row.item_id)).map_or(5, |food| food.cooking_minutes));
-                            span class="cooking-ingredient-name" { (&lot.display_name) }
-                            span class="cooking-ingredient-details" { (format!("{:.0} kcal · {:.2} kg", lot.nutrition_kcal, lot.mass_kg)) }
-                            input type="number" min="1" max=(inventory_row.qty) value="1" aria-label=(format!("Amount of {}", lot.display_name)) data-cooking-quantity;
-                        }
-                    }
-                    @if !food_lots.iter().any(|lot| lot.inventory_item_id.is_some_and(|id| inventory.iter().any(|row| row.id == id))) {
-                        (empty_state("No food ingredients are available.", None, None))
+                @let title = format!("{}'s inventory", active_character.name);
+                (sidebar_section(&title, html! {
+                    @if inventory.is_empty() {
+                        (empty_state("No items carried.", None, None))
+                    } @else {
+                        (trade_inventory_table("cooking-inventory-right", InventoryColumnSet::Basic, true, false, false, html! {
+                            @for item in inventory {
+                                @let definition = item_definitions.iter().find(|definition| definition.id == item.item_id);
+                                @let food_lot = food_lots.iter().find(|lot| lot.inventory_item_id == Some(item.id));
+                                @let display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());
+                                @let unit_mass = food_lot.map_or_else(|| definition.map_or(0.0, |definition| definition.weight), |lot| lot.mass_kg / item.qty.max(1) as f32);
+                                @let value = food_lot.map_or_else(|| item_value(definition), |lot| weight_display(lot.total_value));
+                                tr class="trade-inventory-row trade-row-player" data-cooking-source=(item.id) data-item-key=(&item.item_id) {
+                                    td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
+                                    td class="inventory-item-name" {
+                                        (item_name_with_display(&item.item_id, &display_name, definition))
+                                        span class="inventory-row-actions" {
+                                            @if food_lot.is_some() {
+                                                @let safety = adventuresim_core::food::definition(&item.item_id).map_or(5, |food| food.cooking_minutes);
+                                                button type="button" class="trade-transfer trade-transfer-left"
+                                                    data-cooking-stage=(item.id) data-cooking-name=(&display_name)
+                                                    data-count=(item.qty) data-mass=(format!("{unit_mass:.4}")) data-safety=(safety)
+                                                    data-dynamic-transfer data-default-transfer-mode="one" data-transfer-mode="one"
+                                                    data-label-one=(format!("Add one {display_name} to the pot"))
+                                                    data-label-target=(format!("Add {display_name} to the pot"))
+                                                    data-label-all=(format!("Add all {display_name} to the pot"))
+                                                    aria-label=(format!("Add one {display_name} to the pot"))
+                                                    title=(format!("Add one {display_name} to the pot")) { (transfer_glyph(1)) }
+                                            } @else {
+                                                (disabled_transfer_button("left", "Only food ingredients can be added to the pot"))
+                                            }
+                                        }
+                                    }
+                                    td class="inventory-count" { (item.qty) }
+                                    td class="inventory-weight" { (weight_display(unit_mass)) }
+                                    td class="inventory-gold" { (value) }
+                                }
+                            }
+                        }))
                     }
                 }))
             }
