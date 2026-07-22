@@ -289,11 +289,90 @@
     components.forEach((component) => { component.hidden = !wasExpanded; });
   }
 
-  function apply(browser, state) {
-    groupCurrencyRows(browser);
+  function groupAlcoholRows(browser) {
     const body = browser.querySelector("tbody");
     if (!body) return;
-    const rows = [...body.querySelectorAll(":scope > tr.trade-inventory-row:not(.inventory-detail-row):not(.currency-component-row)")];
+    const previousParent = body.querySelector(":scope > .alcohol-parent-row");
+    const wasExpanded = previousParent?.getAttribute("aria-expanded") === "true";
+    previousParent?.remove();
+    const components = [...body.querySelectorAll(":scope > tr.trade-inventory-row")]
+      .filter((row) => !row.classList.contains("alcohol-parent-row") && row.querySelector('[data-item-group="alcohol"]'));
+    if (!components.length) return;
+    const first = components[0];
+    const parent = first.cloneNode(true);
+    parent.classList.add("alcohol-parent-row");
+    parent.classList.remove("alcohol-component-row");
+    parent.dataset.itemKey = "alcohol";
+    parent.dataset.merchantItem = "alcohol";
+    parent.querySelectorAll("[data-item-name]").forEach((label) => {
+      label.dataset.itemName = "Alcohol";
+      label.textContent = "Alcohol";
+      delete label.dataset.itemGroup;
+      delete label.dataset.groupName;
+    });
+    const total = components.reduce((sum, row) => sum + currencyRowQuantity(row), 0);
+    const target = components.reduce((sum, row) => sum + currencyRowTarget(row), 0);
+    const totalWeight = components.reduce((sum, row) => sum
+      + currencyRowQuantity(row) * currencyNumber(row.querySelector(".inventory-weight")), 0);
+    const totalValue = components.reduce((sum, row) => sum
+      + currencyRowQuantity(row) * currencyNumber(row.querySelector(".inventory-gold")), 0);
+    parent.querySelector("[data-target-control]")?.remove();
+    const count = parent.querySelector(".inventory-count");
+    if (count) count.textContent = String(total);
+    const showsQuantity = !components.every((row) => row.dataset.groupSummary === "catalog");
+    if (count && !showsQuantity) {
+      count.hidden = true;
+      count.setAttribute("hidden", "");
+    }
+    parent.dataset.inventoryQuantity = String(total);
+    parent.dataset.target = String(target);
+    const targetCell = parent.querySelector(":scope > .inventory-target");
+    if (targetCell) targetCell.textContent = String(target);
+    const weightCell = parent.querySelector(".inventory-weight");
+    const valueCell = parent.querySelector(".inventory-gold");
+    if (showsQuantity) {
+      if (weightCell) { weightCell.textContent = totalWeight.toFixed(2).replace(/\.00$/, ""); weightCell.dataset.sortValue = String(totalWeight); }
+      if (valueCell) { valueCell.textContent = String(totalValue); valueCell.dataset.sortValue = String(totalValue); }
+    } else {
+      if (weightCell) { weightCell.textContent = "—"; weightCell.dataset.sortValue = ""; }
+      if (valueCell) { valueCell.textContent = "—"; valueCell.dataset.sortValue = ""; }
+    }
+    parent.querySelectorAll("button,input,select").forEach((control) => control.remove());
+    const nameCell = parent.querySelector(".inventory-item-name");
+    if (nameCell) {
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "currency-disclosure";
+      toggle.dataset.alcoholToggle = "true";
+      toggle.setAttribute("aria-label", "Show alcohol types");
+      toggle.setAttribute("aria-expanded", "false");
+      toggle.textContent = "›";
+      const label = nameCell.querySelector("[data-item-name]");
+      if (label) label.after(toggle);
+      else nameCell.append(toggle);
+    }
+    parent.querySelectorAll(".game-icon").forEach((icon) => {
+      icon.setAttribute("aria-label", "Item type: Alcohol");
+      icon.setAttribute("title", "Item type: Alcohol");
+    });
+    components.forEach((row) => {
+      row.classList.add("alcohol-component-row");
+      row.hidden = true;
+      row.tabIndex = -1;
+    });
+    first.before(parent);
+    parent._alcoholComponents = components;
+    parent.setAttribute("aria-expanded", String(Boolean(wasExpanded)));
+    parent.querySelector("[data-alcohol-toggle]")?.setAttribute("aria-expanded", String(Boolean(wasExpanded)));
+    components.forEach((component) => { component.hidden = !wasExpanded; });
+  }
+
+  function apply(browser, state) {
+    groupCurrencyRows(browser);
+    groupAlcoholRows(browser);
+    const body = browser.querySelector("tbody");
+    if (!body) return;
+    const rows = [...body.querySelectorAll(":scope > tr.trade-inventory-row:not(.inventory-detail-row):not(.currency-component-row):not(.alcohol-component-row)")];
     rows.forEach((row) => normalizeDestinationRow(row, browser));
     rows.forEach((row) => {
       row.tabIndex = 0;
@@ -302,15 +381,16 @@
       row.hidden = !name.includes(state.query.toLocaleLowerCase());
       Object.keys(OPTIONAL_COLUMNS).forEach((column) => optionalCell(row, column).hidden = !state.columns.includes(column));
       if (row._inventoryDetail) { row._inventoryDetail.remove(); row._inventoryDetail = null; }
-      if (row.getAttribute("aria-expanded") === "true" && !row._currencyComponents) createDetail(row, browser);
+      if (row.getAttribute("aria-expanded") === "true" && !row._currencyComponents && !row._alcoholComponents) createDetail(row, browser);
     });
     browser.querySelectorAll("thead [data-inventory-column]").forEach((header) => { header.hidden = !state.columns.includes(header.dataset.inventoryColumn); });
     rows.map((row, index) => ({ row, index })).sort((a, b) => {
-      const coinPriority = Number(!a.row.classList.contains("currency-parent-row")) - Number(!b.row.classList.contains("currency-parent-row"));
-      return coinPriority || compareValues(rowValue(a.row, state.sort), rowValue(b.row, state.sort), state.direction) || a.index - b.index;
+      const groupRank = (row) => row.classList.contains("currency-parent-row") ? 0 : row.classList.contains("alcohol-parent-row") ? 1 : 2;
+      return groupRank(a.row) - groupRank(b.row) || compareValues(rowValue(a.row, state.sort), rowValue(b.row, state.sort), state.direction) || a.index - b.index;
     }).forEach(({ row }) => {
       body.append(row);
       if (row._currencyComponents) row._currencyComponents.forEach((component) => body.append(component));
+      if (row._alcoholComponents) row._alcoholComponents.forEach((component) => body.append(component));
       const detail = row._inventoryDetail;
       if (detail) body.append(detail);
     });
@@ -361,6 +441,11 @@
     if (row._currencyComponents) {
       row.querySelector("[data-coin-toggle]")?.setAttribute("aria-expanded", String(!open));
       row._currencyComponents.forEach((component) => { component.hidden = open || row.hidden; });
+      return;
+    }
+    if (row._alcoholComponents) {
+      row.querySelector("[data-alcohol-toggle]")?.setAttribute("aria-expanded", String(!open));
+      row._alcoholComponents.forEach((component) => { component.hidden = open || row.hidden; });
       return;
     }
     if (!open) createDetail(row, browser);
@@ -426,6 +511,8 @@
       }
       const coinToggle = event.target.closest("[data-coin-toggle]");
       if (coinToggle) { event.preventDefault(); toggleExpanded(coinToggle.closest(".currency-parent-row"), browser); return; }
+      const alcoholToggle = event.target.closest("[data-alcohol-toggle]");
+      if (alcoholToggle) { event.preventDefault(); toggleExpanded(alcoholToggle.closest(".alcohol-parent-row"), browser); return; }
       const sort = event.target.closest("[data-inventory-sort]");
       if (sort) { const key = sort.dataset.inventorySort; state.direction = state.sort === key && state.direction === "asc" ? "desc" : "asc"; state.sort = key; updateHistory(browser, state); apply(browser, state); return; }
       const row = event.target.closest("tr.trade-inventory-row");

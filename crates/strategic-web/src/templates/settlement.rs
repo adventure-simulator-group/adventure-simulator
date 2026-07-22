@@ -2441,7 +2441,7 @@ pub fn live_merchant_shop_page(
                     @let sell_price = (item.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32;
                     @let target = target_quantity(personal_targets, &item.id);
                     @let display_name = medication_recipe.map_or_else(|| item_display_name(&item.id), |recipe| recipe.name.to_owned());
-                    tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) data-herbalist-medication-name=[medication_recipe.map(|recipe| recipe.name)] { td class="inventory-item-type" { (item_type_icon(&item.id)) } td class="inventory-item-name" { (item_name_with_display(&item.id, &display_name, Some(item))) @if !is_currency { (merchant_buy_controls(&item.id, buy_price, target, 999)) } } td class="inventory-count" hidden { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
+                    tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) data-group-summary="catalog" data-herbalist-medication-name=[medication_recipe.map(|recipe| recipe.name)] { td class="inventory-item-type" { (item_type_icon(&item.id)) } td class="inventory-item-name" { (item_name_with_display(&item.id, &display_name, Some(item))) @if !is_currency { (merchant_buy_controls(&item.id, buy_price, target, 999)) } } td class="inventory-count" hidden { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
                 }
             }))
             (inventory_footer_controls("buy", "Buy to targets", "Buy everything"))
@@ -2746,6 +2746,9 @@ fn item_name_with_display(
     display_name: &str,
     definition: Option<&crate::spacetimedb::ItemDefinition>,
 ) -> Markup {
+    let alcohol_group = definition
+        .filter(|item| item.alcohol_serving_ml > 0)
+        .map(|_| "alcohol");
     let quality = definition
         .filter(|item| {
             matches!(
@@ -2779,6 +2782,8 @@ fn item_name_with_display(
         span class=(quality.map_or_else(|| "inventory-item-label".to_string(), |quality| format!("inventory-item-label item-quality-{quality}"))) title=[label]
             data-item-name=(item_id)
             data-item-kind=[definition.map(|item| format!("{:?}", item.kind).to_ascii_lowercase())]
+            data-item-group=[alcohol_group]
+            data-group-name=[alcohol_group.map(|_| "Alcohol")]
             data-stat-accuracy=[definition.map(|item| weight_display(item.accuracy))]
             data-stat-reach=[definition.map(|item| weight_display(item.reach))]
             data-stat-penetration=[definition.map(|item| weight_display(item.penetration))]
@@ -5542,6 +5547,20 @@ mod tests {
         assert!(rendered.contains(">Coin<"));
         assert!(rendered.contains("data-currency-name=\"Lübeck mark\""));
         assert!(!rendered.contains(">Lübeck mark<"));
+    }
+
+    #[test]
+    fn alcohol_labels_expose_a_shared_inventory_group() {
+        let definition = crate::spacetimedb::ItemDefinition {
+            id: "small_beer".into(),
+            kind: crate::spacetimedb::ItemKind::Simple,
+            alcohol_serving_ml: 500,
+            ..Default::default()
+        };
+        let rendered = item_name_with_quality(&definition.id, Some(&definition)).into_string();
+        assert!(rendered.contains("data-item-name=\"small_beer\""));
+        assert!(rendered.contains("data-item-group=\"alcohol\""));
+        assert!(rendered.contains("data-group-name=\"Alcohol\""));
     }
 
     #[test]
