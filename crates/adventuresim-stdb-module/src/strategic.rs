@@ -31,7 +31,7 @@ use crate::{
     tactical::tactical_server_request,
     time::{
         advance_travel_time, character_apprenticeship, character_time, character_training_schedule,
-        preview_travel_time,
+        preview_travel_time, settle_travel_boundary,
     },
 };
 use std::collections::{BinaryHeap, HashMap, HashSet};
@@ -6902,9 +6902,15 @@ fn advance_party_movement(
     for member_id in traveler_ids {
         safe_prefixes.push(preview_travel_time(ctx, *member_id, requested_minutes)?);
     }
-    let actual_minutes = common_movement_prefix(requested_minutes, safe_prefixes);
+    let actual_minutes = common_movement_prefix(requested_minutes, safe_prefixes.iter().copied());
     if actual_minutes == 0 {
-        return Ok((0, false));
+        let mut all_survived = true;
+        for (member_id, safe_prefix) in traveler_ids.iter().zip(safe_prefixes) {
+            if zero_boundary_requires_settlement(actual_minutes, safe_prefix) {
+                all_survived &= settle_travel_boundary(ctx, *member_id)?;
+            }
+        }
+        return Ok((0, all_survived));
     }
     let mut all_survived = true;
     for member_id in traveler_ids.iter().copied() {
@@ -6914,6 +6920,31 @@ fn advance_party_movement(
     // clock has committed the same safe movement prefix.
     train_party_terrain_movement(ctx, party_id, actual_minutes)?;
     Ok((actual_minutes, all_survived))
+}
+
+fn zero_boundary_requires_settlement(actual_minutes: u64, safe_prefix: u64) -> bool {
+    actual_minutes == 0 && safe_prefix == 0
+}
+
+fn set_party_journey_state(
+    party: &mut Party,
+    current_settlement_id: Option<String>,
+    current_quest_location_id: Option<String>,
+    camp_destination_id: Option<String>,
+    camp_destination_kind: Option<String>,
+    camp_remaining_minutes: u64,
+) {
+    // Deliberately touch only journey fields. In particular, leadership may
+    // have changed while movement committed a terminal event.
+    party.current_settlement_id = current_settlement_id;
+    party.current_quest_location_id = current_quest_location_id;
+    party.camp_destination_id = camp_destination_id;
+    party.camp_destination_kind = camp_destination_kind;
+    party.camp_remaining_minutes = camp_remaining_minutes;
+}
+
+fn party_can_continue_travel(party: &Party, character_id: u64) -> bool {
+    party.leader_id == character_id
 }
 
 fn common_movement_prefix(
@@ -7328,10 +7359,12 @@ fn reconstruct_legacy_journey_coordinates(
 #[cfg(test)]
 mod departure_invariant_tests {
     use super::{
-        JourneyRoutePlan, JourneyRoutePoint, JourneyTerrainKind, JourneyTerrainSpan,
-        PartyJourneyRoute, departure_snapshot_allows_travel,
-        reconstruct_legacy_journey_coordinates, route_position_at_minute, straight_line_distance_m,
-        validate_journey_route_payload,
+        CampDurationMode, JourneyRoutePlan, JourneyRoutePoint, JourneyTerrainKind,
+        JourneyTerrainSpan, Party, PartyJourneyRoute, common_movement_prefix,
+        departure_snapshot_allows_travel, reconstruct_legacy_journey_coordinates,
+        party_can_continue_travel, route_position_at_minute, set_party_journey_state,
+        straight_line_distance_m, validate_journey_route_payload,
+        zero_boundary_requires_settlement,
     };
 
     #[test]
@@ -7499,6 +7532,68 @@ mod departure_invariant_tests {
     }
 
     #[test]
+    fn zero_minute_terminal_is_settled_before_survivors_retry() {
+        let first_prefixes = [12, 0];
+        let first = common_movement_prefix(12, first_prefixes);
+        assert_eq!(first, 0);
+        assert!(!zero_boundary_requires_settlement(first, first_prefixes[0]));
+        assert!(zero_boundary_requires_settlement(first, first_prefixes[1]));
+
+        // Once the terminal member has been authoritatively removed from the
+        // living traveler list, the survivor's retry advances normally and no
+        // zero-boundary settlement is repeated.
+        let retry_prefixes = [12];
+        let retry = common_movement_prefix(12, retry_prefixes);
+        assert_eq!(retry, 12);
+        assert!(!zero_boundary_requires_settlement(retry, retry_prefixes[0]));
+    }
+
+    #[test]
+    fn journey_state_update_preserves_elected_successor_authority() {
+        let mut fresh_party = Party {
+            id: "party".into(),
+            name: "Travelers".into(),
+            leader_id: 2,
+            current_settlement_id: None,
+            current_quest_location_id: None,
+            active_quest_id: None,
+            is_solo: true,
+            camp_fatigue_percent: 50,
+            walking_minutes_per_day: 480,
+            travel_at_night: false,
+            camp_duration_mode: CampDurationMode::Auto,
+            fixed_camp_minutes: 0,
+            camp_destination_id: Some("destination".into()),
+            camp_destination_kind: Some("settlement".into()),
+            camp_remaining_minutes: 30,
+            pooled_water_ml: 0.0,
+            medicine_target: 0.0,
+            charisma_target: 0.0,
+            religion_target: 0.0,
+        };
+        set_party_journey_state(
+            &mut fresh_party,
+            Some("destination".into()),
+            None,
+            None,
+            None,
+            0,
+        );
+        assert_eq!(fresh_party.leader_id, 2);
+        assert_eq!(
+            fresh_party.current_settlement_id.as_deref(),
+            Some("destination")
+        );
+        assert!(fresh_party.camp_destination_id.is_none());
+        assert_eq!(
+            fresh_party.leader_id, 2,
+            "the successor can continue leading"
+        );
+        assert!(party_can_continue_travel(&fresh_party, 2));
+        assert!(!party_can_continue_travel(&fresh_party, 1));
+    }
+
+    #[test]
     fn camp_origin_is_interpolated_from_persisted_route_progress() {
         let route = route_fixture();
         let persisted = PartyJourneyRoute {
@@ -7647,6 +7742,12 @@ fn travel_to_quest_impl(
         travel_minutes.min(party_next_walking_minutes(ctx, &party.id, travel_minutes)?);
     let (leg_minutes, _) =
         advance_party_movement(ctx, &party_id, &traveler_ids, proposed_leg_minutes)?;
+    party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party changed during travel")?;
     if leg_minutes < travel_minutes {
         for member_id in living_party_member_ids(ctx, &party_id) {
             let mut member = ctx
@@ -7659,11 +7760,14 @@ fn travel_to_quest_impl(
             member.current_quest_location_id = None;
             ctx.db.character().id().update(member);
         }
-        party.current_settlement_id = None;
-        party.current_quest_location_id = None;
-        party.camp_destination_id = Some(quest_id);
-        party.camp_destination_kind = Some("quest".into());
-        party.camp_remaining_minutes = travel_minutes.saturating_sub(leg_minutes);
+        set_party_journey_state(
+            &mut party,
+            None,
+            None,
+            Some(quest_id),
+            Some("quest".into()),
+            travel_minutes.saturating_sub(leg_minutes),
+        );
         ctx.db.party().id().update(party);
         if leg_minutes > 0 {
             record_party_journey_camp(ctx, &party_id, leg_minutes)?;
@@ -7677,11 +7781,7 @@ fn travel_to_quest_impl(
             ctx.db.character().id().update(member);
         }
     }
-    party.current_settlement_id = None;
-    party.current_quest_location_id = Some(quest_id);
-    party.camp_destination_id = None;
-    party.camp_destination_kind = None;
-    party.camp_remaining_minutes = 0;
+    set_party_journey_state(&mut party, None, Some(quest_id), None, None, 0);
     ctx.db.party().id().update(party);
     finish_party_journey(ctx, &party_id);
     Ok(())
@@ -7877,14 +7977,22 @@ fn travel_to_settlement_impl(
         crate::condition::prepare_character_waterskins(ctx, traveler_id, departing_settlement)?;
     }
     let mut party_movement_committed = false;
-    if let Some(ref mut party) = party {
+    if let Some(current_party) = party.as_ref() {
+        let party_id = current_party.id.clone();
         let proposed_leg_minutes =
-            travel_minutes.min(party_next_walking_minutes(ctx, &party.id, travel_minutes)?);
+            travel_minutes.min(party_next_walking_minutes(ctx, &party_id, travel_minutes)?);
         let (leg_minutes, _) =
-            advance_party_movement(ctx, &party.id, &traveler_ids, proposed_leg_minutes)?;
+            advance_party_movement(ctx, &party_id, &traveler_ids, proposed_leg_minutes)?;
+        party = Some(
+            ctx.db
+                .party()
+                .id()
+                .find(&party_id)
+                .ok_or("Party changed during travel")?,
+        );
         party_movement_committed = true;
         if leg_minutes < travel_minutes {
-            for traveler_id in living_party_member_ids(ctx, &party.id) {
+            for traveler_id in living_party_member_ids(ctx, &party_id) {
                 let mut traveler = ctx
                     .db
                     .character()
@@ -7895,11 +8003,15 @@ fn travel_to_settlement_impl(
                 traveler.current_quest_location_id = None;
                 ctx.db.character().id().update(traveler);
             }
-            party.current_settlement_id = None;
-            party.current_quest_location_id = None;
-            party.camp_destination_id = Some(settlement_id);
-            party.camp_destination_kind = Some("settlement".into());
-            party.camp_remaining_minutes = travel_minutes.saturating_sub(leg_minutes);
+            let party = party.as_mut().expect("party was just reloaded");
+            set_party_journey_state(
+                party,
+                None,
+                None,
+                Some(settlement_id),
+                Some("settlement".into()),
+                travel_minutes.saturating_sub(leg_minutes),
+            );
             ctx.db.party().id().update(party.clone());
             if leg_minutes > 0 {
                 record_party_journey_camp(ctx, &party.id, leg_minutes)?;
@@ -7927,11 +8039,7 @@ fn travel_to_settlement_impl(
     }
 
     if let Some(ref mut party) = party {
-        party.current_settlement_id = Some(settlement_id.clone());
-        party.current_quest_location_id = None;
-        party.camp_destination_id = None;
-        party.camp_destination_kind = None;
-        party.camp_remaining_minutes = 0;
+        set_party_journey_state(party, Some(settlement_id.clone()), None, None, None, 0);
         ctx.db.party().id().update(party.clone());
         finish_party_journey(ctx, &party.id);
         let fled_incident = departing_quest.as_ref().is_some_and(|quest_id| {
@@ -8053,7 +8161,7 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
-    if party.leader_id != character_id {
+    if !party_can_continue_travel(&party, character_id) {
         return Err("Only the party leader can continue travel".into());
     }
     let destination_id = party
@@ -8078,6 +8186,12 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
     let traveler_ids = living_party_member_ids(ctx, &party_id);
     let (leg_minutes, _) =
         advance_party_movement(ctx, &party_id, &traveler_ids, proposed_leg_minutes)?;
+    party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party changed during travel")?;
     party.camp_remaining_minutes = party.camp_remaining_minutes.saturating_sub(leg_minutes);
     if party.camp_remaining_minutes > 0 {
         ctx.db.party().id().update(party);
@@ -8137,8 +8251,16 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
         }
         _ => return Err("Camp destination kind is invalid".into()),
     }
-    party.camp_destination_id = None;
-    party.camp_destination_kind = None;
+    let current_settlement_id = party.current_settlement_id.clone();
+    let current_quest_location_id = party.current_quest_location_id.clone();
+    set_party_journey_state(
+        &mut party,
+        current_settlement_id,
+        current_quest_location_id,
+        None,
+        None,
+        0,
+    );
     ctx.db.party().id().update(party);
     finish_party_journey(ctx, &party_id);
     Ok(())
