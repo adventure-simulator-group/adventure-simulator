@@ -14,6 +14,7 @@ pub mod agricultural_limitation_type;
 pub mod agriculture_industry_type;
 pub mod alcohol_consumption_table;
 pub mod alcohol_consumption_type;
+pub mod answer_dialogue_prompt_reducer;
 pub mod approve_party_action_request_planned_reducer;
 pub mod approve_party_action_request_reducer;
 pub mod autoresolve_quest_reducer;
@@ -89,12 +90,14 @@ pub mod character_strategic_condition_type;
 pub mod character_table;
 pub mod character_time_table;
 pub mod character_time_type;
+pub mod character_topic_knowledge_type;
 pub mod character_training_schedule_table;
 pub mod character_training_schedule_type;
 pub mod character_type;
 pub mod character_virtue_table;
 pub mod character_virtue_type;
 pub mod charcoal_burning_industry_type;
+pub mod choose_dialogue_topic_reducer;
 pub mod claim_simulation_run_reducer;
 pub mod committed_cut_type;
 pub mod configure_simulation_character_reducer;
@@ -125,6 +128,18 @@ pub mod derived_historical_vegetation_cover_type;
 pub mod derived_historical_vegetation_method_type;
 pub mod derived_historical_vegetation_type;
 pub mod derived_industry_type;
+pub mod dialogue_action_type;
+pub mod dialogue_answer_type;
+pub mod dialogue_event_table;
+pub mod dialogue_event_type;
+pub mod dialogue_participant_table;
+pub mod dialogue_participant_type;
+pub mod dialogue_prompt_table;
+pub mod dialogue_prompt_type;
+pub mod dialogue_session_table;
+pub mod dialogue_session_type;
+pub mod dialogue_topic_option_table;
+pub mod dialogue_topic_option_type;
 pub mod direct_historical_vegetation_cover_type;
 pub mod direct_historical_vegetation_method_type;
 pub mod direct_historical_vegetation_type;
@@ -205,6 +220,7 @@ pub mod item_kind_type;
 pub mod item_slot_type;
 pub mod item_table;
 pub mod item_type;
+pub mod join_dialogue_session_reducer;
 pub mod journey_camp_interval_type;
 pub mod journey_route_leg_type;
 pub mod journey_route_plan_type;
@@ -387,6 +403,7 @@ pub mod soil_profile_type;
 pub mod soil_properties_type;
 pub mod soil_substrate_type;
 pub mod soil_water_regime_type;
+pub mod start_dialogue_reducer;
 pub mod stone_content_percent_type;
 pub mod store_battle_loot_reducer;
 pub mod strahler_order_type;
@@ -451,6 +468,7 @@ pub use agricultural_limitation_type::AgriculturalLimitation;
 pub use agriculture_industry_type::AgricultureIndustry;
 pub use alcohol_consumption_table::*;
 pub use alcohol_consumption_type::AlcoholConsumption;
+pub use answer_dialogue_prompt_reducer::answer_dialogue_prompt;
 pub use approve_party_action_request_planned_reducer::approve_party_action_request_planned;
 pub use approve_party_action_request_reducer::approve_party_action_request;
 pub use autoresolve_quest_reducer::autoresolve_quest;
@@ -526,12 +544,14 @@ pub use character_strategic_condition_type::CharacterStrategicCondition;
 pub use character_table::*;
 pub use character_time_table::*;
 pub use character_time_type::CharacterTime;
+pub use character_topic_knowledge_type::CharacterTopicKnowledge;
 pub use character_training_schedule_table::*;
 pub use character_training_schedule_type::CharacterTrainingSchedule;
 pub use character_type::Character;
 pub use character_virtue_table::*;
 pub use character_virtue_type::CharacterVirtue;
 pub use charcoal_burning_industry_type::CharcoalBurningIndustry;
+pub use choose_dialogue_topic_reducer::choose_dialogue_topic;
 pub use claim_simulation_run_reducer::claim_simulation_run;
 pub use committed_cut_type::CommittedCut;
 pub use configure_simulation_character_reducer::configure_simulation_character;
@@ -562,6 +582,18 @@ pub use derived_historical_vegetation_cover_type::DerivedHistoricalVegetationCov
 pub use derived_historical_vegetation_method_type::DerivedHistoricalVegetationMethod;
 pub use derived_historical_vegetation_type::DerivedHistoricalVegetation;
 pub use derived_industry_type::DerivedIndustry;
+pub use dialogue_action_type::DialogueAction;
+pub use dialogue_answer_type::DialogueAnswer;
+pub use dialogue_event_table::*;
+pub use dialogue_event_type::DialogueEvent;
+pub use dialogue_participant_table::*;
+pub use dialogue_participant_type::DialogueParticipant;
+pub use dialogue_prompt_table::*;
+pub use dialogue_prompt_type::DialoguePrompt;
+pub use dialogue_session_table::*;
+pub use dialogue_session_type::DialogueSession;
+pub use dialogue_topic_option_table::*;
+pub use dialogue_topic_option_type::DialogueTopicOption;
 pub use direct_historical_vegetation_cover_type::DirectHistoricalVegetationCover;
 pub use direct_historical_vegetation_method_type::DirectHistoricalVegetationMethod;
 pub use direct_historical_vegetation_type::DirectHistoricalVegetation;
@@ -642,6 +674,7 @@ pub use item_kind_type::ItemKind;
 pub use item_slot_type::ItemSlot;
 pub use item_table::*;
 pub use item_type::Item;
+pub use join_dialogue_session_reducer::join_dialogue_session;
 pub use journey_camp_interval_type::JourneyCampInterval;
 pub use journey_route_leg_type::JourneyRouteLeg;
 pub use journey_route_plan_type::JourneyRoutePlan;
@@ -824,6 +857,7 @@ pub use soil_profile_type::SoilProfile;
 pub use soil_properties_type::SoilProperties;
 pub use soil_substrate_type::SoilSubstrate;
 pub use soil_water_regime_type::SoilWaterRegime;
+pub use start_dialogue_reducer::start_dialogue;
 pub use stone_content_percent_type::StoneContentPercent;
 pub use store_battle_loot_reducer::store_battle_loot;
 pub use strahler_order_type::StrahlerOrder;
@@ -900,6 +934,14 @@ pub enum Reducer {
         character_id: u64,
         quest_id: String,
     },
+    AnswerDialoguePrompt {
+        character_id: u64,
+        prompt_row_id: String,
+        choice_ids_json: String,
+        action_id: String,
+        expected_revision: u64,
+        catalog_revision: String,
+    },
     ApprovePartyActionRequest {
         leader_id: u64,
         request_id: u64,
@@ -941,6 +983,14 @@ pub enum Reducer {
         character_id: u64,
         item_id: String,
         by_quantity: i32,
+    },
+    ChooseDialogueTopic {
+        character_id: u64,
+        session_id: String,
+        topic_id: String,
+        action_id: String,
+        expected_revision: u64,
+        catalog_revision: String,
     },
     ClaimSimulationRun {
         bootstrap_token: String,
@@ -1086,6 +1136,14 @@ pub enum Reducer {
     },
     ImportWorldNodes {
         nodes: Vec<WorldNodeImport>,
+    },
+    JoinDialogueSession {
+        character_id: u64,
+        session_id: String,
+        role: String,
+        action_id: String,
+        expected_revision: u64,
+        catalog_revision: String,
     },
     KillSimulationCharacter {
         nonce: String,
@@ -1235,6 +1293,13 @@ pub enum Reducer {
         automatic_camp_duration: bool,
         fixed_camp_minutes: u16,
     },
+    StartDialogue {
+        character_id: u64,
+        session_id: String,
+        conversation_id: String,
+        npc_actor_id: String,
+        catalog_revision: String,
+    },
     StoreBattleLoot {
         character_id: u64,
         quest_id: String,
@@ -1340,6 +1405,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::AbandonQuest { .. } => "abandon_quest",
             Reducer::AcceptPartyJoinRequest { .. } => "accept_party_join_request",
             Reducer::AcceptQuest { .. } => "accept_quest",
+            Reducer::AnswerDialoguePrompt { .. } => "answer_dialogue_prompt",
             Reducer::ApprovePartyActionRequest { .. } => "approve_party_action_request",
             Reducer::ApprovePartyActionRequestPlanned { .. } => {
                 "approve_party_action_request_planned"
@@ -1360,6 +1426,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::CalibrateWeaponPrecision => "calibrate_weapon_precision",
             Reducer::CancelMissionRequest { .. } => "cancel_mission_request",
             Reducer::ChangeInventoryItem { .. } => "change_inventory_item",
+            Reducer::ChooseDialogueTopic { .. } => "choose_dialogue_topic",
             Reducer::ClaimSimulationRun { .. } => "claim_simulation_run",
             Reducer::ConfigureSimulationCharacter { .. } => "configure_simulation_character",
             Reducer::ContinueCampTravel { .. } => "continue_camp_travel",
@@ -1393,6 +1460,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::ImportSettlements { .. } => "import_settlements",
             Reducer::ImportTravelEdges { .. } => "import_travel_edges",
             Reducer::ImportWorldNodes { .. } => "import_world_nodes",
+            Reducer::JoinDialogueSession { .. } => "join_dialogue_session",
             Reducer::KillSimulationCharacter { .. } => "kill_simulation_character",
             Reducer::LeaveMission { .. } => "leave_mission",
             Reducer::LeaveParty { .. } => "leave_party",
@@ -1425,6 +1493,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::SetInventoryQuantityTarget { .. } => "set_inventory_quantity_target",
             Reducer::SetPartyCampFatiguePercent { .. } => "set_party_camp_fatigue_percent",
             Reducer::SetPartyTravelItinerary { .. } => "set_party_travel_itinerary",
+            Reducer::StartDialogue { .. } => "start_dialogue",
             Reducer::StoreBattleLoot { .. } => "store_battle_loot",
             Reducer::SubmitAllRepairableItems { .. } => "submit_all_repairable_items",
             Reducer::SubmitItemForRepair { .. } => "submit_item_for_repair",
@@ -1470,6 +1539,21 @@ impl __sdk::Reducer for Reducer {
 }             => __sats::bsatn::to_vec(&accept_quest_reducer::AcceptQuestArgs {
                 character_id: character_id.clone(),
                 quest_id: quest_id.clone(),
+}),
+            Reducer::AnswerDialoguePrompt{
+                character_id,
+                prompt_row_id,
+                choice_ids_json,
+                action_id,
+                expected_revision,
+                catalog_revision,
+}             => __sats::bsatn::to_vec(&answer_dialogue_prompt_reducer::AnswerDialoguePromptArgs {
+                character_id: character_id.clone(),
+                prompt_row_id: prompt_row_id.clone(),
+                choice_ids_json: choice_ids_json.clone(),
+                action_id: action_id.clone(),
+                expected_revision: expected_revision.clone(),
+                catalog_revision: catalog_revision.clone(),
 }),
             Reducer::ApprovePartyActionRequest{
                 leader_id,
@@ -1546,6 +1630,21 @@ Reducer::CancelMissionRequest{
                 character_id: character_id.clone(),
                 item_id: item_id.clone(),
                 by_quantity: by_quantity.clone(),
+}),
+            Reducer::ChooseDialogueTopic{
+                character_id,
+                session_id,
+                topic_id,
+                action_id,
+                expected_revision,
+                catalog_revision,
+}             => __sats::bsatn::to_vec(&choose_dialogue_topic_reducer::ChooseDialogueTopicArgs {
+                character_id: character_id.clone(),
+                session_id: session_id.clone(),
+                topic_id: topic_id.clone(),
+                action_id: action_id.clone(),
+                expected_revision: expected_revision.clone(),
+                catalog_revision: catalog_revision.clone(),
 }),
             Reducer::ClaimSimulationRun{
                 bootstrap_token,
@@ -1803,6 +1902,21 @@ Reducer::CancelMissionRequest{
                 nodes,
 }             => __sats::bsatn::to_vec(&import_world_nodes_reducer::ImportWorldNodesArgs {
                 nodes: nodes.clone(),
+}),
+            Reducer::JoinDialogueSession{
+                character_id,
+                session_id,
+                role,
+                action_id,
+                expected_revision,
+                catalog_revision,
+}             => __sats::bsatn::to_vec(&join_dialogue_session_reducer::JoinDialogueSessionArgs {
+                character_id: character_id.clone(),
+                session_id: session_id.clone(),
+                role: role.clone(),
+                action_id: action_id.clone(),
+                expected_revision: expected_revision.clone(),
+                catalog_revision: catalog_revision.clone(),
 }),
             Reducer::KillSimulationCharacter{
                 nonce,
@@ -2068,6 +2182,19 @@ Reducer::CancelMissionRequest{
                 automatic_camp_duration: automatic_camp_duration.clone(),
                 fixed_camp_minutes: fixed_camp_minutes.clone(),
 }),
+            Reducer::StartDialogue{
+                character_id,
+                session_id,
+                conversation_id,
+                npc_actor_id,
+                catalog_revision,
+}             => __sats::bsatn::to_vec(&start_dialogue_reducer::StartDialogueArgs {
+                character_id: character_id.clone(),
+                session_id: session_id.clone(),
+                conversation_id: conversation_id.clone(),
+                npc_actor_id: npc_actor_id.clone(),
+                catalog_revision: catalog_revision.clone(),
+}),
             Reducer::StoreBattleLoot{
                 character_id,
                 quest_id,
@@ -2278,6 +2405,11 @@ pub struct DbUpdate {
     character_training_schedule: __sdk::TableUpdate<CharacterTrainingSchedule>,
     character_virtue: __sdk::TableUpdate<CharacterVirtue>,
     connected_players: __sdk::TableUpdate<ConnectedPlayer>,
+    dialogue_event: __sdk::TableUpdate<DialogueEvent>,
+    dialogue_participant: __sdk::TableUpdate<DialogueParticipant>,
+    dialogue_prompt: __sdk::TableUpdate<DialoguePrompt>,
+    dialogue_session: __sdk::TableUpdate<DialogueSession>,
+    dialogue_topic_option: __sdk::TableUpdate<DialogueTopicOption>,
     equipped_medication: __sdk::TableUpdate<EquippedMedication>,
     inventory_item: __sdk::TableUpdate<InventoryItem>,
     inventory_quantity_target: __sdk::TableUpdate<InventoryQuantityTarget>,
@@ -2431,6 +2563,21 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "connected_players" => db_update
                     .connected_players
                     .append(connected_players_table::parse_table_update(table_update)?),
+                "dialogue_event" => db_update
+                    .dialogue_event
+                    .append(dialogue_event_table::parse_table_update(table_update)?),
+                "dialogue_participant" => db_update.dialogue_participant.append(
+                    dialogue_participant_table::parse_table_update(table_update)?,
+                ),
+                "dialogue_prompt" => db_update
+                    .dialogue_prompt
+                    .append(dialogue_prompt_table::parse_table_update(table_update)?),
+                "dialogue_session" => db_update
+                    .dialogue_session
+                    .append(dialogue_session_table::parse_table_update(table_update)?),
+                "dialogue_topic_option" => db_update.dialogue_topic_option.append(
+                    dialogue_topic_option_table::parse_table_update(table_update)?,
+                ),
                 "equipped_medication" => db_update
                     .equipped_medication
                     .append(equipped_medication_table::parse_table_update(table_update)?),
@@ -2697,6 +2844,27 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.character_virtue = cache
             .apply_diff_to_table::<CharacterVirtue>("character_virtue", &self.character_virtue)
             .with_updates_by_pk(|row| &row.character_id);
+        diff.dialogue_event = cache
+            .apply_diff_to_table::<DialogueEvent>("dialogue_event", &self.dialogue_event)
+            .with_updates_by_pk(|row| &row.id);
+        diff.dialogue_participant = cache
+            .apply_diff_to_table::<DialogueParticipant>(
+                "dialogue_participant",
+                &self.dialogue_participant,
+            )
+            .with_updates_by_pk(|row| &row.id);
+        diff.dialogue_prompt = cache
+            .apply_diff_to_table::<DialoguePrompt>("dialogue_prompt", &self.dialogue_prompt)
+            .with_updates_by_pk(|row| &row.id);
+        diff.dialogue_session = cache
+            .apply_diff_to_table::<DialogueSession>("dialogue_session", &self.dialogue_session)
+            .with_updates_by_pk(|row| &row.id);
+        diff.dialogue_topic_option = cache
+            .apply_diff_to_table::<DialogueTopicOption>(
+                "dialogue_topic_option",
+                &self.dialogue_topic_option,
+            )
+            .with_updates_by_pk(|row| &row.id);
         diff.equipped_medication = cache
             .apply_diff_to_table::<EquippedMedication>(
                 "equipped_medication",
@@ -3010,6 +3178,21 @@ impl __sdk::DbUpdate for DbUpdate {
                 "connected_players" => db_update
                     .connected_players
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "dialogue_event" => db_update
+                    .dialogue_event
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "dialogue_participant" => db_update
+                    .dialogue_participant
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "dialogue_prompt" => db_update
+                    .dialogue_prompt
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "dialogue_session" => db_update
+                    .dialogue_session
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "dialogue_topic_option" => db_update
+                    .dialogue_topic_option
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "equipped_medication" => db_update
                     .equipped_medication
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -3248,6 +3431,21 @@ impl __sdk::DbUpdate for DbUpdate {
                 "connected_players" => db_update
                     .connected_players
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "dialogue_event" => db_update
+                    .dialogue_event
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "dialogue_participant" => db_update
+                    .dialogue_participant
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "dialogue_prompt" => db_update
+                    .dialogue_prompt
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "dialogue_session" => db_update
+                    .dialogue_session
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "dialogue_topic_option" => db_update
+                    .dialogue_topic_option
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "equipped_medication" => db_update
                     .equipped_medication
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -3422,6 +3620,11 @@ pub struct AppliedDiff<'r> {
     character_training_schedule: __sdk::TableAppliedDiff<'r, CharacterTrainingSchedule>,
     character_virtue: __sdk::TableAppliedDiff<'r, CharacterVirtue>,
     connected_players: __sdk::TableAppliedDiff<'r, ConnectedPlayer>,
+    dialogue_event: __sdk::TableAppliedDiff<'r, DialogueEvent>,
+    dialogue_participant: __sdk::TableAppliedDiff<'r, DialogueParticipant>,
+    dialogue_prompt: __sdk::TableAppliedDiff<'r, DialoguePrompt>,
+    dialogue_session: __sdk::TableAppliedDiff<'r, DialogueSession>,
+    dialogue_topic_option: __sdk::TableAppliedDiff<'r, DialogueTopicOption>,
     equipped_medication: __sdk::TableAppliedDiff<'r, EquippedMedication>,
     inventory_item: __sdk::TableAppliedDiff<'r, InventoryItem>,
     inventory_quantity_target: __sdk::TableAppliedDiff<'r, InventoryQuantityTarget>,
@@ -3636,6 +3839,31 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<ConnectedPlayer>(
             "connected_players",
             &self.connected_players,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<DialogueEvent>(
+            "dialogue_event",
+            &self.dialogue_event,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<DialogueParticipant>(
+            "dialogue_participant",
+            &self.dialogue_participant,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<DialoguePrompt>(
+            "dialogue_prompt",
+            &self.dialogue_prompt,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<DialogueSession>(
+            "dialogue_session",
+            &self.dialogue_session,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<DialogueTopicOption>(
+            "dialogue_topic_option",
+            &self.dialogue_topic_option,
             event,
         );
         callbacks.invoke_table_row_callbacks::<EquippedMedication>(
@@ -4505,6 +4733,11 @@ impl __sdk::SpacetimeModule for RemoteModule {
         character_training_schedule_table::register_table(client_cache);
         character_virtue_table::register_table(client_cache);
         connected_players_table::register_table(client_cache);
+        dialogue_event_table::register_table(client_cache);
+        dialogue_participant_table::register_table(client_cache);
+        dialogue_prompt_table::register_table(client_cache);
+        dialogue_session_table::register_table(client_cache);
+        dialogue_topic_option_table::register_table(client_cache);
         equipped_medication_table::register_table(client_cache);
         inventory_item_table::register_table(client_cache);
         inventory_quantity_target_table::register_table(client_cache);
@@ -4582,6 +4815,11 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "character_training_schedule",
         "character_virtue",
         "connected_players",
+        "dialogue_event",
+        "dialogue_participant",
+        "dialogue_prompt",
+        "dialogue_session",
+        "dialogue_topic_option",
         "equipped_medication",
         "inventory_item",
         "inventory_quantity_target",

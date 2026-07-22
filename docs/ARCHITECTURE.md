@@ -1,5 +1,10 @@
 # Architecture MVP - Adventure Simulator
 
+The strategic dialogue subsystem is documented in [DIALOGUE.md](DIALOGUE.md).
+Its compiled catalog and evaluator are shared by the web and SpacetimeDB module;
+authoritative sessions are strategic persistence, while free-form chat remains
+separate.
+
 Minimal SpacetimeDB implementation for Adventure Simulator.
 
 - **Strategic Layer**: SpacetimeDB for character progression, inventory, parties, missions

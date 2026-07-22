@@ -2,6 +2,7 @@
 
 pub mod characters;
 mod data;
+pub mod dialogue;
 pub mod home;
 mod inventory_forms;
 pub mod local_chat;
@@ -479,6 +480,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(
             Router::new()
                 .merge(home::routes())
+                .merge(dialogue::routes())
                 .merge(local_chat::routes())
                 .merge(settlements::routes())
                 .merge(parties::routes())

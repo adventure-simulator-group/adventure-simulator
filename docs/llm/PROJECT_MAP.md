@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (957)
+## Files (971)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -34,6 +34,8 @@ development, or wiki document before changing a subsystem.
 - `assets/TownB.glb` — Binary game or UI asset.
 - `assets/world-data/ieg-religion-1544.csv` — Repository support file.
 - `book.toml` — Tooling or build configuration.
+- `content/dialogue/examples.yaml` — Repository support file.
+- `content/dialogue/services.yaml` — Repository support file.
 - `crates/adventuresim-character-creator/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-character-creator/README.md` — Component overview and usage notes.
 - `crates/adventuresim-character-creator/src/lib.rs` — Rust source module for this component.
@@ -67,6 +69,10 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/strategic_time.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/stub.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/surgery.rs` — Rust source module for this component.
+- `crates/adventuresim-dialogue/Cargo.toml` — Cargo package/workspace manifest.
+- `crates/adventuresim-dialogue/build.rs` — Rust source module.
+- `crates/adventuresim-dialogue/src/bin/dialogue-check.rs` — Rust source module.
+- `crates/adventuresim-dialogue/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-client/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-stdb-client/README.md` — Component overview and usage notes.
 - `crates/adventuresim-stdb-client/src/abandon_quest_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -77,6 +83,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/agriculture_industry_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/alcohol_consumption_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/alcohol_consumption_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/answer_dialogue_prompt_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/approve_party_action_request_planned_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/approve_party_action_request_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/autoresolve_quest_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -152,12 +159,14 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/character_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_time_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_time_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/character_topic_knowledge_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_training_schedule_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_training_schedule_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_virtue_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_virtue_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/charcoal_burning_industry_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/choose_dialogue_topic_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/claim_simulation_run_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/committed_cut_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/configure_simulation_character_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -188,6 +197,18 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/derived_historical_vegetation_method_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/derived_historical_vegetation_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/derived_industry_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/dialogue_action_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/dialogue_answer_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/dialogue_event_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/dialogue_event_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/dialogue_participant_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/dialogue_participant_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/dialogue_prompt_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/dialogue_prompt_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/dialogue_session_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/dialogue_session_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/dialogue_topic_option_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/dialogue_topic_option_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/direct_historical_vegetation_cover_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/direct_historical_vegetation_method_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/direct_historical_vegetation_type.rs` — Generated SpacetimeDB data type.
@@ -268,6 +289,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/item_slot_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/item_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/item_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/join_dialogue_session_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/journey_camp_interval_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/journey_route_leg_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/journey_route_plan_type.rs` — Generated SpacetimeDB data type.
@@ -452,6 +474,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/soil_properties_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/soil_substrate_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/soil_water_regime_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/start_dialogue_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/stone_content_percent_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/store_battle_loot_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/strahler_order_type.rs` — Generated SpacetimeDB data type.
@@ -620,6 +643,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/src/medical.rs` — Rust source module for this component.
 - `crates/strategic-web/src/routes/characters.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/data.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/dialogue.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/home.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/inventory_forms.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/local_chat.rs` — Strategic web HTTP route handler.
@@ -653,6 +677,8 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/css/reset.css` — Browser UI styling.
 - `crates/strategic-web/static/css/strategic.css` — Browser UI styling.
 - `crates/strategic-web/static/css/utilities.css` — Browser UI styling.
+- `crates/strategic-web/static/developer-mode.js` — Repository support file.
+- `crates/strategic-web/static/dialogue-client.js` — Repository support file.
 - `crates/strategic-web/static/equipment-toggle.js` — Repository support file.
 - `crates/strategic-web/static/icons/game/ATTRIBUTION.md` — Project documentation.
 - `crates/strategic-web/static/icons/game/acrobatic.svg` — Vector UI or texture asset.
@@ -868,6 +894,8 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/travel-planner.js` — Repository support file.
 - `crates/strategic-web/tests/building-assets.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/currency-backend-source.test.cjs` — Repository support file.
+- `crates/strategic-web/tests/developer-mode.test.cjs` — Repository support file.
+- `crates/strategic-web/tests/dialogue-client.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/environment.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/icon-rendering.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/inventory-browser.dom.test.cjs` — Repository support file.
@@ -884,6 +912,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/tests/travel-planner-behavior.test.cjs` — Repository support file.
 - `docs/ARCHITECTURE.md` — Project documentation.
 - `docs/DEVELOPING.md` — Project documentation.
+- `docs/DIALOGUE.md` — Project documentation.
 - `docs/DROUGHT.md` — Project documentation.
 - `docs/ELEVATION.md` — Project documentation.
 - `docs/EQUIPMENT.md` — Project documentation.

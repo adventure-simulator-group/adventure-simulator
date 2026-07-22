@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "crates/adventuresim-dialogue",
     "crates/adventuresim-core",
     "crates/adventuresim-strategic-sim",
     "crates/adventuresim-world-schema",
@@ -29,6 +30,7 @@ adventuresim-tactical-netcode = { version = "0.1.0", default-features = false }
 adventuresim-tactical-core = { version = "0.1.0" }
 adventuresim-stdb-client = { version = "0.1.0" }
 adventuresim-core = { version = "0.1.0" }
+adventuresim-dialogue = { version = "0.1.0", path = "crates/adventuresim-dialogue" }
 adventuresim-strategic-sim = { version = "0.1.0" }
 adventuresim-world-schema = { version = "0.1.0", path = "crates/adventuresim-world-schema" }
 

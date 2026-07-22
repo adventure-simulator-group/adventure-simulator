@@ -86,6 +86,61 @@
   justify-content: flex-end;
 }
 
+.developer-mode-toggle {
+  width: 2rem;
+  height: 2rem;
+  padding: 0.35rem;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 50%;
+  background: rgb(10 12 16 / 75%);
+  cursor: pointer;
+}
+
+.developer-mode-toggle[aria-pressed="true"] {
+  border-color: var(--accent-light);
+  background: rgb(90 64 24 / 88%);
+}
+
+.developer-mode-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: currentcolor;
+  mask: url("/static/icons/game/hammer-nails.svg") center / contain no-repeat;
+}
+
+.dialogue-source-link {
+  display: inline-grid;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin-inline-start: 0.35rem;
+  place-items: center;
+  vertical-align: -0.16rem;
+  border: 1px solid color-mix(in srgb, currentcolor 58%, transparent);
+  border-radius: 50%;
+  color: var(--accent-light);
+  text-decoration: none;
+}
+
+.dialogue-source-link[hidden] { display: none; }
+
+.dialogue-source-link:is(:hover, :focus-visible) {
+  border-color: currentcolor;
+  background: color-mix(in srgb, currentcolor 16%, transparent);
+}
+
+.dialogue-source-link:focus-visible {
+  outline: 2px solid currentcolor;
+  outline-offset: 2px;
+}
+
+.dialogue-source-icon {
+  width: 0.68rem;
+  height: 0.68rem;
+  background: currentcolor;
+  mask: url("/static/icons/game/hammer-nails.svg") center / contain no-repeat;
+}
+
 /* Settlement pages keep settlement identity and services visible at the top. */
 .settlement-top-bar {
   height: var(--settlement-header-height);
