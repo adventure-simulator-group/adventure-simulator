@@ -64,6 +64,7 @@ pub enum ArmorSide {
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 pub struct WeaponItem {
+    pub skill_weights: [f32; 9],
     pub accuracy: f32,
     pub penetration: f32,
     pub reach: f32,
@@ -206,6 +207,24 @@ impl InventoryView<'_, '_, '_> {
 }
 
 impl PlayerEquipment for InventoryView<'_, '_, '_> {
+    fn weapon_skill_distribution(&self) -> adventuresim_core::equipment::WeaponSkillDistribution {
+        let w = self
+            .equipped_weapon()
+            .and_then(|item| item.weapon)
+            .map(|weapon| weapon.skill_weights)
+            .unwrap_or([0.0; 9]);
+        adventuresim_core::equipment::WeaponSkillDistribution {
+            polearm: w[0],
+            axe: w[1],
+            bludgeon: w[2],
+            sword: w[3],
+            knife: w[4],
+            bow: w[5],
+            crossbow: w[6],
+            firearm: w[7],
+            throw: w[8],
+        }
+    }
     fn weapon_accuracy(&self) -> f32 {
         self.equipped_weapon()
             .and_then(|item| item.weapon)

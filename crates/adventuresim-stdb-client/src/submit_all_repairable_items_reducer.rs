@@ -9,7 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub(super) struct SubmitAllRepairableItemsArgs {
     pub character_id: u64,
     pub settlement_id: String,
-    pub armourer: bool,
+    pub service: String,
 }
 
 impl From<SubmitAllRepairableItemsArgs> for super::Reducer {
@@ -17,7 +17,7 @@ impl From<SubmitAllRepairableItemsArgs> for super::Reducer {
         Self::SubmitAllRepairableItems {
             character_id: args.character_id,
             settlement_id: args.settlement_id,
-            armourer: args.armourer,
+            service: args.service,
         }
     }
 }
@@ -41,9 +41,9 @@ pub trait submit_all_repairable_items {
         &self,
         character_id: u64,
         settlement_id: String,
-        armourer: bool,
+        service: String,
     ) -> __sdk::Result<()> {
-        self.submit_all_repairable_items_then(character_id, settlement_id, armourer, |_, _| {})
+        self.submit_all_repairable_items_then(character_id, settlement_id, service, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `submit_all_repairable_items` to run as soon as possible,
@@ -56,7 +56,7 @@ pub trait submit_all_repairable_items {
         &self,
         character_id: u64,
         settlement_id: String,
-        armourer: bool,
+        service: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -71,7 +71,7 @@ impl submit_all_repairable_items for super::RemoteReducers {
         &self,
         character_id: u64,
         settlement_id: String,
-        armourer: bool,
+        service: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -83,7 +83,7 @@ impl submit_all_repairable_items for super::RemoteReducers {
             SubmitAllRepairableItemsArgs {
                 character_id,
                 settlement_id,
-                armourer,
+                service,
             },
             callback,
         )

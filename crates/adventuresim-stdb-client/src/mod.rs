@@ -312,7 +312,6 @@ pub mod refresh_strategic_condition_reducer;
 pub mod register_strategic_gateway_reducer;
 pub mod reject_party_join_request_reducer;
 pub mod religion_hours_type;
-pub mod religion_minutes_type;
 pub mod religious_demand_table;
 pub mod religious_demand_type;
 pub mod remove_party_member_reducer;
@@ -447,6 +446,7 @@ pub mod update_training_schedule_reducer;
 pub mod upgrade_manual_surgery_reducer;
 pub mod vote_for_party_leader_reducer;
 pub mod water_distance_meters_type;
+pub mod weapon_skill_distribution_type;
 pub mod western_christian_arrangement_type;
 pub mod withdraw_party_inventory_item_reducer;
 pub mod woodland_type;
@@ -766,7 +766,6 @@ pub use refresh_strategic_condition_reducer::refresh_strategic_condition;
 pub use register_strategic_gateway_reducer::register_strategic_gateway;
 pub use reject_party_join_request_reducer::reject_party_join_request;
 pub use religion_hours_type::ReligionHours;
-pub use religion_minutes_type::ReligionMinutes;
 pub use religious_demand_table::*;
 pub use religious_demand_type::ReligiousDemand;
 pub use remove_party_member_reducer::remove_party_member;
@@ -901,6 +900,7 @@ pub use update_training_schedule_reducer::update_training_schedule;
 pub use upgrade_manual_surgery_reducer::upgrade_manual_surgery;
 pub use vote_for_party_leader_reducer::vote_for_party_leader;
 pub use water_distance_meters_type::WaterDistanceMeters;
+pub use weapon_skill_distribution_type::WeaponSkillDistribution;
 pub use western_christian_arrangement_type::WesternChristianArrangement;
 pub use withdraw_party_inventory_item_reducer::withdraw_party_inventory_item;
 pub use woodland_type::Woodland;
@@ -1244,7 +1244,7 @@ pub enum Reducer {
     RetrieveRepairedItems {
         character_id: u64,
         settlement_id: String,
-        armourer: bool,
+        service: String,
         item_id: Option<String>,
         limit: u32,
     },
@@ -1309,11 +1309,12 @@ pub enum Reducer {
     SubmitAllRepairableItems {
         character_id: u64,
         settlement_id: String,
-        armourer: bool,
+        service: String,
     },
     SubmitItemForRepair {
         character_id: u64,
         settlement_id: String,
+        service: String,
         inventory_item_id: u64,
     },
     SynchronizeCharacterTime {
@@ -2090,13 +2091,13 @@ Reducer::CancelMissionRequest{
             Reducer::RetrieveRepairedItems{
                 character_id,
                 settlement_id,
-                armourer,
+                service,
                 item_id,
                 limit,
 }             => __sats::bsatn::to_vec(&retrieve_repaired_items_reducer::RetrieveRepairedItemsArgs {
                 character_id: character_id.clone(),
                 settlement_id: settlement_id.clone(),
-                armourer: armourer.clone(),
+                service: service.clone(),
                 item_id: item_id.clone(),
                 limit: limit.clone(),
 }),
@@ -2208,19 +2209,21 @@ Reducer::CancelMissionRequest{
             Reducer::SubmitAllRepairableItems{
                 character_id,
                 settlement_id,
-                armourer,
+                service,
 }             => __sats::bsatn::to_vec(&submit_all_repairable_items_reducer::SubmitAllRepairableItemsArgs {
                 character_id: character_id.clone(),
                 settlement_id: settlement_id.clone(),
-                armourer: armourer.clone(),
+                service: service.clone(),
 }),
             Reducer::SubmitItemForRepair{
                 character_id,
                 settlement_id,
+                service,
                 inventory_item_id,
 }             => __sats::bsatn::to_vec(&submit_item_for_repair_reducer::SubmitItemForRepairArgs {
                 character_id: character_id.clone(),
                 settlement_id: settlement_id.clone(),
+                service: service.clone(),
                 inventory_item_id: inventory_item_id.clone(),
 }),
             Reducer::SynchronizeCharacterTime{

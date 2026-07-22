@@ -6,16 +6,18 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct ReligionMinutes {
-    pub roman_catholic: u16,
-    pub lutheran: u16,
-    pub reformed: u16,
-    pub anglican: u16,
-    pub eastern_orthodox: u16,
-    pub islamic: u16,
-    pub judaism: u16,
+pub struct WeaponSkillDistribution {
+    pub polearm: f32,
+    pub axe: f32,
+    pub bludgeon: f32,
+    pub sword: f32,
+    pub knife: f32,
+    pub bow: f32,
+    pub crossbow: f32,
+    pub firearm: f32,
+    pub throw_skill: f32,
 }
 
-impl __sdk::InModule for ReligionMinutes {
+impl __sdk::InModule for WeaponSkillDistribution {
     type Module = super::RemoteModule;
 }

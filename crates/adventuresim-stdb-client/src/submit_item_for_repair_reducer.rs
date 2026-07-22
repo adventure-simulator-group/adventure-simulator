@@ -9,6 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub(super) struct SubmitItemForRepairArgs {
     pub character_id: u64,
     pub settlement_id: String,
+    pub service: String,
     pub inventory_item_id: u64,
 }
 
@@ -17,6 +18,7 @@ impl From<SubmitItemForRepairArgs> for super::Reducer {
         Self::SubmitItemForRepair {
             character_id: args.character_id,
             settlement_id: args.settlement_id,
+            service: args.service,
             inventory_item_id: args.inventory_item_id,
         }
     }
@@ -41,9 +43,16 @@ pub trait submit_item_for_repair {
         &self,
         character_id: u64,
         settlement_id: String,
+        service: String,
         inventory_item_id: u64,
     ) -> __sdk::Result<()> {
-        self.submit_item_for_repair_then(character_id, settlement_id, inventory_item_id, |_, _| {})
+        self.submit_item_for_repair_then(
+            character_id,
+            settlement_id,
+            service,
+            inventory_item_id,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `submit_item_for_repair` to run as soon as possible,
@@ -56,6 +65,7 @@ pub trait submit_item_for_repair {
         &self,
         character_id: u64,
         settlement_id: String,
+        service: String,
         inventory_item_id: u64,
 
         callback: impl FnOnce(
@@ -71,6 +81,7 @@ impl submit_item_for_repair for super::RemoteReducers {
         &self,
         character_id: u64,
         settlement_id: String,
+        service: String,
         inventory_item_id: u64,
 
         callback: impl FnOnce(
@@ -83,6 +94,7 @@ impl submit_item_for_repair for super::RemoteReducers {
             SubmitItemForRepairArgs {
                 character_id,
                 settlement_id,
+                service,
                 inventory_item_id,
             },
             callback,

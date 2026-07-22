@@ -18,6 +18,9 @@ development, or wiki document before changing a subsystem.
 - `.gitattributes` — Repository support file.
 - `.github/workflows/gh-pages.yml` — Repository support file.
 - `.gitignore` — Repository support file.
+- `.ui-audit.err.log` — Repository support file.
+- `.ui-audit.out.log` — Repository support file.
+- `93298.zip` — Repository support file.
 - `AGENTS.md` — Project documentation.
 - `CNAME` — Repository support file.
 - `Caddyfile.dev` — Repository support file.
@@ -380,7 +383,6 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/register_strategic_gateway_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/reject_party_join_request_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/religion_hours_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/religion_minutes_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/religious_demand_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/religious_demand_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/remove_party_member_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -515,6 +517,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/upgrade_manual_surgery_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/vote_for_party_leader_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/water_distance_meters_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/weapon_skill_distribution_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/western_christian_arrangement_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/withdraw_party_inventory_item_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/woodland_type.rs` — Generated SpacetimeDB data type.
@@ -929,6 +932,10 @@ development, or wiki document before changing a subsystem.
 - `docs/VIABUNDUS.md` — Project documentation.
 - `docs/WORLD_DATA_BUNDLES.md` — Project documentation.
 - `docs/llm/README.md` — Component overview and usage notes.
+- `downloads/cropland.nc` — Repository support file.
+- `downloads/general_files.zip` — Repository support file.
+- `downloads/grazing_land.nc` — Repository support file.
+- `downloads/urban_area.nc` — Repository support file.
 - `flake.lock` — Nix environment configuration or lockfile.
 - `flake.nix` — Nix environment configuration or lockfile.
 - `justfile` — Repository support file.
@@ -953,6 +960,14 @@ development, or wiki document before changing a subsystem.
 - `scripts/update_project_map.py` — Development or documentation automation script.
 - `scripts/world_data_bundle.py` — Development or documentation automation script.
 - `scripts/world_source_init.py` — Development or documentation automation script.
+- `target-codex-map-qa/.rustc_info.json` — Repository support file.
+- `target-codex-map-qa/CACHEDIR.TAG` — Repository support file.
+- `target-domain/.rustc_info.json` — Repository support file.
+- `target-domain/CACHEDIR.TAG` — Repository support file.
+- `target-social-check/.rustc_info.json` — Repository support file.
+- `target-social-check/CACHEDIR.TAG` — Repository support file.
+- `target-surgery-check/.rustc_info.json` — Repository support file.
+- `target-surgery-check/CACHEDIR.TAG` — Repository support file.
 - `utils/generate_certificates.sh` — Development or documentation automation script.
 - `wiki/Implementation.md` — Project documentation.
 - `wiki/Meta.md` — Project documentation.

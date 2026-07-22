@@ -17,7 +17,7 @@ use crate::{
     CharacterAttributes, CharacterSkills, CharacterStats, character_attributes, character_equip,
     character_limbs, character_skills, character_stats, settlement,
 };
-use adventuresim_world_schema::{OfficialReligion, ReligionMinutes};
+use adventuresim_world_schema::OfficialReligion;
 
 /// Natural recovery without useful medical support while taking full
 /// settlement downtime.
@@ -67,27 +67,6 @@ pub struct ScheduleAllocation {
     pub apprenticeship_service_id: Option<String>,
     pub profession_practice_minutes: u16,
     pub profession_service_id: Option<String>,
-    pub combat_minutes: u16,
-    pub combat_auto_train: bool,
-    pub melee_minutes: u16,
-    pub dodge_minutes: u16,
-    pub block_minutes: u16,
-    pub ranged_minutes: u16,
-    pub will_minutes: u16,
-    pub insight_minutes: u16,
-    pub self_awareness_minutes: u16,
-    pub humor_minutes: u16,
-    pub command_minutes: u16,
-    pub deception_minutes: u16,
-    pub seduction_minutes: u16,
-    pub medicine_minutes: u16,
-    pub religion_minutes: u16,
-    pub religion_auto_train: bool,
-    pub religion_minutes_by_tradition: ReligionMinutes,
-    pub stealth_minutes: u16,
-    pub balance_minutes: u16,
-    pub surgeon_minutes: u16,
-    pub smithing_minutes: u16,
     /// Paid physical work; also trains Will at reduced speed.
     pub labor_minutes: u16,
     pub prayer_minutes: u16,
@@ -143,31 +122,6 @@ pub struct CharacterNotoriety {
 impl ScheduleAllocation {
     pub fn allocated_minutes(&self) -> u64 {
         allocated_schedule_minutes([
-            if self.combat_auto_train {
-                self.combat_minutes
-            } else {
-                self.melee_minutes
-                    .saturating_add(self.dodge_minutes)
-                    .saturating_add(self.block_minutes)
-                    .saturating_add(self.ranged_minutes)
-            },
-            self.will_minutes,
-            self.insight_minutes,
-            self.self_awareness_minutes,
-            self.humor_minutes,
-            self.command_minutes,
-            self.deception_minutes,
-            self.seduction_minutes,
-            self.medicine_minutes,
-            if self.religion_auto_train {
-                self.religion_minutes
-            } else {
-                u16::try_from(self.religion_minutes_by_tradition.total()).unwrap_or(u16::MAX)
-            },
-            self.stealth_minutes,
-            self.balance_minutes,
-            self.surgeon_minutes,
-            self.smithing_minutes,
             self.labor_minutes,
             self.prayer_minutes,
             self.thievery_minutes,
@@ -180,25 +134,7 @@ impl ScheduleAllocation {
     }
 
     fn uses_quarter_hours(&self) -> bool {
-        let mut values = vec![
-            self.combat_minutes,
-            self.melee_minutes,
-            self.dodge_minutes,
-            self.block_minutes,
-            self.ranged_minutes,
-            self.will_minutes,
-            self.insight_minutes,
-            self.self_awareness_minutes,
-            self.humor_minutes,
-            self.command_minutes,
-            self.deception_minutes,
-            self.seduction_minutes,
-            self.medicine_minutes,
-            self.religion_minutes,
-            self.stealth_minutes,
-            self.balance_minutes,
-            self.surgeon_minutes,
-            self.smithing_minutes,
+        let values = vec![
             self.labor_minutes,
             self.prayer_minutes,
             self.thievery_minutes,
@@ -208,11 +144,6 @@ impl ScheduleAllocation {
             self.apprenticeship_minutes,
             self.profession_practice_minutes,
         ];
-        values.extend(
-            OfficialReligion::ALL
-                .into_iter()
-                .map(|r| self.religion_minutes_by_tradition.get(r)),
-        );
         values.into_iter().all(|minutes| minutes % 15 == 0)
     }
 }
@@ -383,11 +314,7 @@ pub fn advance_character_wait_time(
 fn default_schedule(character_id: u64) -> CharacterTrainingSchedule {
     CharacterTrainingSchedule {
         character_id,
-        downtime: ScheduleAllocation {
-            combat_auto_train: true,
-            religion_auto_train: true,
-            ..Default::default()
-        },
+        downtime: ScheduleAllocation::default(),
         travel: ScheduleAllocation::default(),
     }
 }
@@ -453,7 +380,9 @@ fn profession_training_hours(
         Skill::Seduction => skills.seduction_hours,
         Skill::Smithing => skills.smithing_hours,
         Skill::Medicine => skills.medicine_hours,
-        Skill::Surgeon => skills.surgeon_hours,
+        Skill::Anatomy => skills.anatomy_hours,
+        Skill::Knife => skills.knife_hours,
+        Skill::Tailoring => skills.tailoring_hours,
         Skill::Religion => apprenticeship
             .religion_id
             .as_deref()
@@ -617,10 +546,17 @@ fn apply_training(
     activities: adventuresim_core::strategic_schedule::ActivityTrainingProfile,
 ) {
     let mut hours = SkillHours {
-        melee: skills.melee_hours,
+        polearm: skills.polearm_hours,
+        axe: skills.axe_hours,
+        bludgeon: skills.bludgeon_hours,
+        sword: skills.sword_hours,
+        knife: skills.knife_hours,
         dodge: skills.dodge_hours,
         block: skills.block_hours,
-        ranged: skills.ranged_hours,
+        bow: skills.bow_hours,
+        crossbow: skills.crossbow_hours,
+        firearm: skills.firearm_hours,
+        throw: skills.throw_hours,
         will: skills.will_hours,
         insight: skills.insight_hours,
         self_awareness: skills.self_awareness_hours,
@@ -632,14 +568,21 @@ fn apply_training(
         religion: skills.religion_hours,
         stealth: skills.stealth_hours,
         balance: skills.balance_hours,
-        surgeon: skills.surgeon_hours,
+        anatomy: skills.anatomy_hours,
+        tailoring: skills.tailoring_hours,
         smithing: skills.smithing_hours,
     };
     apply_schedule_training(&mut hours, core_schedule(schedule), elapsed, activities);
-    let (allocations, prayer_religion) = resolve_religion_training(ctx, character_id, schedule);
+    let prayer_religion = ctx
+        .db
+        .character_condition()
+        .character_id()
+        .find(character_id)
+        .and_then(|condition| condition.religion_id)
+        .as_deref()
+        .and_then(OfficialReligion::from_id);
     apply_religion_training(
         &mut hours.religion,
-        allocations,
         elapsed,
         prayer_religion,
         schedule.prayer_minutes,
@@ -666,10 +609,17 @@ fn apply_training(
             hours.religion.add_direct(religion, trained);
         }
     }
-    skills.melee_hours = hours.melee;
+    skills.polearm_hours = hours.polearm;
+    skills.axe_hours = hours.axe;
+    skills.bludgeon_hours = hours.bludgeon;
+    skills.sword_hours = hours.sword;
+    skills.knife_hours = hours.knife;
     skills.dodge_hours = hours.dodge;
     skills.block_hours = hours.block;
-    skills.ranged_hours = hours.ranged;
+    skills.bow_hours = hours.bow;
+    skills.crossbow_hours = hours.crossbow;
+    skills.firearm_hours = hours.firearm;
+    skills.throw_hours = hours.throw;
     skills.will_hours = hours.will;
     skills.insight_hours = hours.insight;
     skills.self_awareness_hours = hours.self_awareness;
@@ -681,43 +631,9 @@ fn apply_training(
     skills.religion_hours = hours.religion;
     skills.stealth_hours = hours.stealth;
     skills.balance_hours = hours.balance;
-    skills.surgeon_hours = hours.surgeon;
+    skills.anatomy_hours = hours.anatomy;
+    skills.tailoring_hours = hours.tailoring;
     skills.smithing_hours = hours.smithing;
-}
-
-fn resolve_religion_training(
-    ctx: &ReducerContext,
-    character_id: u64,
-    schedule: &ScheduleAllocation,
-) -> (ReligionMinutes, Option<OfficialReligion>) {
-    let profession = ctx
-        .db
-        .character_condition()
-        .character_id()
-        .find(character_id)
-        .and_then(|condition| condition.religion_id)
-        .as_deref()
-        .and_then(OfficialReligion::from_id);
-    if !schedule.religion_auto_train {
-        return (schedule.religion_minutes_by_tradition, profession);
-    }
-
-    let targets = if let Some(religion) = profession {
-        vec![religion]
-    } else {
-        ctx.db
-            .character()
-            .id()
-            .find(character_id)
-            .and_then(|character| character.current_settlement_id)
-            .and_then(|settlement_id| ctx.db.settlement().id().find(&settlement_id))
-            .map(|settlement| settlement.religious_status.represented_religions())
-            .unwrap_or_default()
-    };
-    (
-        ReligionMinutes::split_evenly(schedule.religion_minutes, &targets),
-        profession,
-    )
 }
 
 pub(crate) fn core_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
@@ -734,27 +650,6 @@ pub(crate) fn core_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
             .profession_service_id
             .as_deref()
             .and_then(adventuresim_core::profession::ProfessionId::from_service_id),
-        combat: schedule.combat_minutes,
-        combat_auto_train: schedule.combat_auto_train,
-        melee: schedule.melee_minutes,
-        dodge: schedule.dodge_minutes,
-        block: schedule.block_minutes,
-        ranged: schedule.ranged_minutes,
-        will: schedule.will_minutes,
-        insight: schedule.insight_minutes,
-        self_awareness: schedule.self_awareness_minutes,
-        humor: schedule.humor_minutes,
-        command: schedule.command_minutes,
-        deception: schedule.deception_minutes,
-        seduction: schedule.seduction_minutes,
-        medicine: schedule.medicine_minutes,
-        religion: schedule.religion_minutes,
-        religion_auto_train: schedule.religion_auto_train,
-        religions: schedule.religion_minutes_by_tradition,
-        stealth: schedule.stealth_minutes,
-        balance: schedule.balance_minutes,
-        surgeon: schedule.surgeon_minutes,
-        smithing: schedule.smithing_minutes,
         labor: schedule.labor_minutes,
         prayer: schedule.prayer_minutes,
         thievery: schedule.thievery_minutes,
@@ -1156,17 +1051,25 @@ fn rest_for_minutes(
         true,
     )?;
 
-    let smithing_skill = ctx
+    let (smithing_skill, tailoring_skill) = ctx
         .db
         .character_skills()
         .character_id()
         .find(character_id)
-        .map(|skills| Skill::Smithing.training_rank(skills.smithing_hours).floor() as u8)
-        .unwrap_or(0);
+        .map(|skills| {
+            (
+                Skill::Smithing.training_rank(skills.smithing_hours).floor() as u8,
+                Skill::Tailoring
+                    .training_rank(skills.tailoring_hours)
+                    .floor() as u8,
+            )
+        })
+        .unwrap_or((0, 0));
     let maintenance_elapsed = crate::repair::field_repair(
         ctx,
         character_id,
         smithing_skill,
+        tailoring_skill,
         elapsed.saturating_sub(convalescing),
     );
     let training_elapsed = elapsed
@@ -1486,17 +1389,25 @@ pub fn rest_at_camp(
         )?;
         crate::condition::apply_camp_rest_recovery_condition(ctx, member_id, member_elapsed)?;
         let convalescing = convalescing.min(member_elapsed);
-        let smithing_skill = ctx
+        let (smithing_skill, tailoring_skill) = ctx
             .db
             .character_skills()
             .character_id()
             .find(member_id)
-            .map(|skills| Skill::Smithing.training_rank(skills.smithing_hours).floor() as u8)
-            .unwrap_or(0);
+            .map(|skills| {
+                (
+                    Skill::Smithing.training_rank(skills.smithing_hours).floor() as u8,
+                    Skill::Tailoring
+                        .training_rank(skills.tailoring_hours)
+                        .floor() as u8,
+                )
+            })
+            .unwrap_or((0, 0));
         let maintenance = crate::repair::field_repair(
             ctx,
             member_id,
             smithing_skill,
+            tailoring_skill,
             adventuresim_core::durability::remaining_after_priority(member_elapsed, convalescing),
         );
         let fatigue_rest =
@@ -1720,72 +1631,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn training_uses_the_daily_minute_allocation() {
-        let mut skills = CharacterSkills {
-            character_id: 1,
-            melee_hours: 0.0,
-            dodge_hours: 0.0,
-            block_hours: 0.0,
-            ranged_hours: 0.0,
-            will_hours: 0.0,
-            insight_hours: 0.0,
-            self_awareness_hours: 0.0,
-            humor_hours: 0.0,
-            command_hours: 0.0,
-            deception_hours: 0.0,
-            seduction_hours: 0.0,
-            medicine_hours: 0.0,
-            religion_hours: adventuresim_world_schema::ReligionHours::default(),
-            stealth_hours: 0.0,
-            balance_hours: 0.0,
-            surgeon_hours: 0.0,
-            smithing_hours: 0.0,
-        };
+    fn activity_training_uses_the_daily_minute_allocation() {
         let allocation = ScheduleAllocation {
-            combat_minutes: 0,
-            combat_auto_train: false,
-            melee_minutes: 90,
-            dodge_minutes: 30,
-            block_minutes: 0,
-            ranged_minutes: 0,
-            will_minutes: 0,
-            insight_minutes: 0,
-            self_awareness_minutes: 0,
-            humor_minutes: 0,
-            command_minutes: 0,
-            deception_minutes: 0,
-            seduction_minutes: 0,
-            medicine_minutes: 0,
-            religion_minutes: 0,
-            religion_auto_train: false,
-            religion_minutes_by_tradition: ReligionMinutes::default(),
-            stealth_minutes: 0,
-            balance_minutes: 0,
-            surgeon_minutes: 0,
-            smithing_minutes: 0,
+            combat_training_minutes: 90,
             labor_minutes: 480,
             prayer_minutes: 60,
-            thievery_minutes: 0,
-            raiding_minutes: 0,
-        };
-        let mut hours = SkillHours {
-            melee: skills.melee_hours,
-            dodge: skills.dodge_hours,
             ..Default::default()
         };
+        let mut hours = SkillHours::default();
         apply_schedule_training(
             &mut hours,
             core_schedule(&allocation),
             MINUTES_PER_DAY * 2,
-            ActivityTrainingProfile::default(),
+            ActivityTrainingProfile {
+                combat: adventuresim_core::strategic_schedule::CombatTrainingProfile {
+                    weapons: adventuresim_core::equipment::WeaponSkillDistribution {
+                        sword: 1.0,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            },
         );
-        skills.melee_hours = hours.melee;
-        skills.dodge_hours = hours.dodge;
-        skills.will_hours = hours.will;
-        assert_eq!(skills.melee_hours, 3.0);
-        assert_eq!(skills.dodge_hours, 1.0);
-        assert_eq!(skills.will_hours, 4.0);
-        assert_eq!(allocation.allocated_minutes(), 660);
+        assert!((hours.sword - 0.1875).abs() < f32::EPSILON);
+        assert!((hours.dodge - 0.1875).abs() < f32::EPSILON);
+        assert!((hours.balance - 0.1875).abs() < f32::EPSILON);
+        assert!((hours.will - 4.1875).abs() < f32::EPSILON);
+        assert_eq!(allocation.allocated_minutes(), 630);
     }
 
     #[test]

@@ -1,83 +1,30 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const test = require("node:test");
 
 const {
   calculateLeisurePreview,
   createLatestSaveQueue,
   parseClock,
-  religionAllocationTotal,
-  metaInputActive,
-  setAllocationInteractive,
-  religionInputActive,
   signedEffect,
   stepClockValue,
 } = require("../static/training-schedule.js");
 
-test("religion and combat independently select exactly one allocation branch", () => {
-  const root = {
-    querySelector(selector) {
-      if (selector.includes("religion")) return { checked: false };
-      if (selector.includes("combat")) return { checked: true };
-      return null;
-    },
-  };
-  assert.equal(metaInputActive({ dataset: { religionAutoBudget: "" } }, root), false);
-  assert.equal(metaInputActive({ dataset: { religionManualBudget: "" } }, root), true);
-  assert.equal(metaInputActive({ dataset: { combatAutoBudget: "" } }, root), true);
-  assert.equal(metaInputActive({ dataset: { combatManualBudget: "" } }, root), false);
-});
-
-test("Combat allocation controls become keyboard interactive in both toggle directions", () => {
-  const state = { inactive: null, ariaDisabled: null, tabindex: null };
-  const control = {
-    setAttribute(name, value) { state[name === "aria-disabled" ? "ariaDisabled" : name] = value; },
-  };
-  const allocation = {
-    classList: { toggle(_name, value) { state.inactive = value; } },
-    querySelectorAll() { return [control]; },
-  };
-  setAllocationInteractive(allocation, false);
-  assert.deepEqual(state, { inactive: true, ariaDisabled: "true", tabindex: "-1" });
-  setAllocationInteractive(allocation, true);
-  assert.deepEqual(state, { inactive: false, ariaDisabled: "false", tabindex: "0" });
-});
-
-test("Religion allocation counts either the auto budget or manual traditions exactly once", () => {
-  const allocation = {
-    religion_minutes: 120,
-    religion_roman_catholic_minutes: 45,
-    religion_lutheran_minutes: 30,
-    religion_judaism_minutes: 15,
-  };
-  assert.equal(religionAllocationTotal(allocation, true), 120);
-  assert.equal(religionAllocationTotal(allocation, false), 90);
-});
-
-test("Religion mode toggles preserve inactive branch values across remounts", () => {
-  const values = {
-    religion_minutes: 120,
-    religion_judaism_minutes: 45,
-    religion_lutheran_minutes: 30,
-  };
-  const inputs = {
-    religion_minutes: { dataset: { religionAutoBudget: "" } },
-    religion_judaism_minutes: { dataset: { religionManualBudget: "" } },
-    religion_lutheran_minutes: { dataset: { religionManualBudget: "" } },
-  };
-  const active = (autoTrain) => Object.fromEntries(Object.entries(values)
-    .filter(([name]) => religionInputActive(inputs[name], autoTrain)));
-  assert.deepEqual(active(true), { religion_minutes: 120 });
-  assert.deepEqual(active(false), {
-    religion_judaism_minutes: 45,
-    religion_lutheran_minutes: 30,
-  });
-  assert.deepEqual(values, {
-    religion_minutes: 120,
-    religion_judaism_minutes: 45,
-    religion_lutheran_minutes: 30,
-  });
-  assert.equal(religionAllocationTotal(values, true), 120);
-  assert.equal(religionAllocationTotal(values, false), 75);
+test("schedule editor contains only activity allocations", () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, "../static/training-schedule.js"),
+    "utf8",
+  );
+  for (const legacy of [
+    "combat_auto_train",
+    "melee_minutes",
+    "ranged_minutes",
+    "religion_auto_train",
+    "religion_minutes_by_tradition",
+  ]) {
+    assert.equal(source.includes(legacy), false, legacy);
+  }
 });
 
 const nextTurn = () => new Promise((resolve) => setImmediate(resolve));
