@@ -22,13 +22,13 @@ function ordinaryRow(id, name, quantity) {
   </tr>`;
 }
 
-function alcoholRow(id, name, quantity, weight, value) {
+function alcoholRow(id, name, quantity, weight, value, target = 0) {
   return `<tr class="trade-inventory-row" data-inventory-quantity="${quantity}" data-item-key="${id}">
     <td class="inventory-item-type"><span class="game-icon" role="img" aria-label="Item type: ${name}" title="Item type: ${name}"></span></td>
     <td class="inventory-item-name"><span data-item-name="${name}" data-item-kind="supply" data-item-group="alcohol" data-group-name="Alcohol">${name}</span>
       <span class="inventory-row-actions"><button type="button" class="trade-transfer" aria-label="Transfer one ${name}">→</button></span>
     </td>
-    <td class="inventory-count">${quantity}</td>
+    <td class="inventory-count"><span data-target-control data-quantity="${quantity}"><span data-target-value>${target}</span></span></td>
     <td class="inventory-weight">${weight}</td><td class="inventory-gold">${value}</td>
   </tr>`;
 }
@@ -117,6 +117,8 @@ test("alcohol types collapse into a non-fungible aggregate and retain component 
   const components = browser.querySelectorAll(".alcohol-component-row");
   assert.equal(components.length, 2);
   assert.ok([...components].every((row) => row.hidden));
+  assert.deepEqual([...components].map((row) => row.querySelector(".inventory-count").textContent), ["2", "1"]);
+  assert.ok([...components].every((row) => row.querySelector(":scope > .inventory-target [data-target-control]")));
   parent.querySelector("[data-alcohol-toggle]").click();
   assert.ok([...components].every((row) => !row.hidden));
   assert.equal(components[0].querySelector(".trade-transfer").getAttribute("aria-label"), "Transfer one Small beer");

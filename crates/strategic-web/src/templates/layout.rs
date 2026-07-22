@@ -172,7 +172,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 }
                 @if scripts == ScriptProfile::Strategic {
                     script src="/static/numeric-editor.js?v=shared-numeric-editor-2" defer {}
-                    script src="/static/inventory-browser.js?v=coin-currencies-3" defer {}
+                    script src="/static/inventory-browser.js?v=coin-currencies-3-alcohol-targets-1" defer {}
                     script src="/static/party-trade.js?v=inventory-numeric-editor-1" defer {}
                     script src="/static/equipment-toggle.js?v=functional-equipment-1" defer {}
                     script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}

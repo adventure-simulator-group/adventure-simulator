@@ -374,6 +374,8 @@
     if (!body) return;
     const rows = [...body.querySelectorAll(":scope > tr.trade-inventory-row:not(.inventory-detail-row):not(.currency-component-row):not(.alcohol-component-row)")];
     rows.forEach((row) => normalizeDestinationRow(row, browser));
+    body.querySelectorAll(":scope > tr.alcohol-component-row")
+      .forEach((row) => normalizeDestinationRow(row, browser));
     rows.forEach((row) => {
       row.tabIndex = 0;
       if (!row.hasAttribute("aria-expanded")) row.setAttribute("aria-expanded", "false");
