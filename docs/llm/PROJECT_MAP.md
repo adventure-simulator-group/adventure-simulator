@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (985)
+## Files (995)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -272,6 +272,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/historical_woodland_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/hygiene_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/igneous_rock_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/immediate_activity_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/import_settlement_aliases_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/import_settlement_descriptions_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/import_settlements_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -367,6 +368,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/party_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/pasture_cover_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/peat_cutting_industry_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/perform_immediate_activity_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/perform_social_action_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/potential_vegetation_class_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/potential_vegetation_posterior_type.rs` — Generated SpacetimeDB data type.
@@ -850,6 +852,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/stats/terrain/plains.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/terrain/terrain.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/terrain/urban.png` — Binary game or UI asset.
+- `crates/strategic-web/static/immediate-activity.js` — Repository support file.
 - `crates/strategic-web/static/inventory-browser.js` — Repository support file.
 - `crates/strategic-web/static/live-regions.js` — Repository support file.
 - `crates/strategic-web/static/live-state.js` — Repository support file.
@@ -914,6 +917,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/tests/environment.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/food-remediation.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/icon-rendering.test.cjs` — Repository support file.
+- `crates/strategic-web/tests/immediate-activity.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/inventory-browser.dom.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/inventory-browser.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/live-refresh.test.cjs` — Repository support file.

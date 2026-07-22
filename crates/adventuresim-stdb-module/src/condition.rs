@@ -1369,6 +1369,37 @@ fn stored_morale_event_duration(ctx: &ReducerContext, character_id: u64, magnitu
     }
 }
 
+/// Record the one-off nonlinear morale result of an explicit prayer or
+/// meditation interval. This deliberately does not inspect or alter the saved
+/// daily activity schedule.
+pub(crate) fn record_immediate_prayer_morale(
+    ctx: &ReducerContext,
+    character_id: u64,
+    minutes: u16,
+) -> Result<(), String> {
+    let party_members = party_character_ids(ctx, character_id)?;
+    let (kind, magnitude) = if let Some((_religion_id, religion)) =
+        party_religion_context(ctx, character_id, &party_members)?
+    {
+        (
+            "prayer",
+            adventuresim_core::activity::led_prayer_morale(minutes, religion.knowledge),
+        )
+    } else {
+        (
+            "meditation",
+            adventuresim_core::activity::meditation_morale(minutes),
+        )
+    };
+    record_morale_event(
+        ctx,
+        character_id,
+        kind,
+        magnitude,
+        Some(format!("activity:{kind}")),
+    )
+}
+
 fn party_command(ctx: &ReducerContext, character_id: u64) -> Result<f32, String> {
     Ok(aggregate_party_command(
         party_character_ids(ctx, character_id)?

@@ -205,6 +205,7 @@ pub mod historical_wetland_type;
 pub mod historical_woodland_type;
 pub mod hygiene_type;
 pub mod igneous_rock_type;
+pub mod immediate_activity_type;
 pub mod import_settlement_aliases_reducer;
 pub mod import_settlement_descriptions_reducer;
 pub mod import_settlements_reducer;
@@ -298,6 +299,7 @@ pub mod party_table;
 pub mod party_type;
 pub mod pasture_cover_type;
 pub mod peat_cutting_industry_type;
+pub mod perform_immediate_activity_reducer;
 pub mod perform_social_action_reducer;
 pub mod potential_vegetation_class_type;
 pub mod potential_vegetation_posterior_type;
@@ -667,6 +669,7 @@ pub use historical_wetland_type::HistoricalWetland;
 pub use historical_woodland_type::HistoricalWoodland;
 pub use hygiene_type::Hygiene;
 pub use igneous_rock_type::IgneousRock;
+pub use immediate_activity_type::ImmediateActivity;
 pub use import_settlement_aliases_reducer::import_settlement_aliases;
 pub use import_settlement_descriptions_reducer::import_settlement_descriptions;
 pub use import_settlements_reducer::import_settlements;
@@ -760,6 +763,7 @@ pub use party_table::*;
 pub use party_type::Party;
 pub use pasture_cover_type::PastureCover;
 pub use peat_cutting_industry_type::PeatCuttingIndustry;
+pub use perform_immediate_activity_reducer::perform_immediate_activity;
 pub use perform_social_action_reducer::perform_social_action;
 pub use potential_vegetation_class_type::PotentialVegetationClass;
 pub use potential_vegetation_posterior_type::PotentialVegetationPosterior;
@@ -1187,6 +1191,12 @@ pub enum Reducer {
         party_inventory_item_ids: Vec<u64>,
         quantities: Vec<u32>,
     },
+    PerformImmediateActivity {
+        character_id: u64,
+        activity: ImmediateActivity,
+        requested_minutes: u64,
+        service_id: Option<String>,
+    },
     PerformSocialAction {
         actor_id: u64,
         target_id: u64,
@@ -1493,6 +1503,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::LeaveMission { .. } => "leave_mission",
             Reducer::LeaveParty { .. } => "leave_party",
             Reducer::LiquidatePartyInventory { .. } => "liquidate_party_inventory",
+            Reducer::PerformImmediateActivity { .. } => "perform_immediate_activity",
             Reducer::PerformSocialAction { .. } => "perform_social_action",
             Reducer::PurchaseFromHerbalist { .. } => "purchase_from_herbalist",
             Reducer::RefreshCapabilities { .. } => "refresh_capabilities",
@@ -1991,6 +2002,17 @@ Reducer::CancelMissionRequest{
                 settlement_id: settlement_id.clone(),
                 party_inventory_item_ids: party_inventory_item_ids.clone(),
                 quantities: quantities.clone(),
+}),
+            Reducer::PerformImmediateActivity{
+                character_id,
+                activity,
+                requested_minutes,
+                service_id,
+}             => __sats::bsatn::to_vec(&perform_immediate_activity_reducer::PerformImmediateActivityArgs {
+                character_id: character_id.clone(),
+                activity: activity.clone(),
+                requested_minutes: requested_minutes.clone(),
+                service_id: service_id.clone(),
 }),
             Reducer::PerformSocialAction{
                 actor_id,

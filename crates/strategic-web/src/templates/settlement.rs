@@ -3608,7 +3608,9 @@ fn party_skills_rail(
                             button type="button" data-schedule-retry { "Retry" }
                         }
                     }
+                    (immediate_activity_dialog(&action.replace("/schedule", "/activity")))
                     script src="/static/training-schedule.js?v=apprentice-system-1" {}
+                    script src="/static/immediate-activity.js?v=manual-activities-1" {}
                 } @else {
                     (skills_table(
                         title, skills, head_health, upper_health, lower_health, None, None,
@@ -3704,15 +3706,15 @@ fn skills_table(
                             },
                         ))
                         (schedule_special_row("Combat Training", "crossed-swords", "combat_training_minutes", schedule.downtime.combat_training_minutes, true, ActivityEffectRates::default(), None, "Sparring and target practice train equipped Combat skills together with Will and Balance."))
-                        (schedule_special_row("Carousing", "beer-stein", "carousing_minutes", schedule.downtime.carousing_minutes, true, ActivityEffectRates::linear(-0.5, -0.05, 0.5, 0.0), None, "Drink and socialize to improve morale and train Humor at 25% speed, at a small cost to Virtue."))
+                        (schedule_special_row("Carousing", "beer-stein", "carousing_minutes", schedule.downtime.carousing_minutes, true, ActivityEffectRates::carousing(), None, "Drink and socialize to improve morale and train Humor at 25% speed, at a small cost to Virtue."))
                         @if let Some(service_id) = schedule.downtime.apprenticeship_service_id.as_deref() {
                             (schedule_service_selection("apprenticeship_service_id", service_id))
-                            (schedule_special_row(&format!("Apprenticeship — {}", profession_label(service_id)), "open-book", "apprenticeship_minutes", schedule.downtime.apprenticeship_minutes, true, ActivityEffectRates::linear(-1.0, 0.0, 0.0, 0.0), None, "Pay for instruction in an enrolled profession. Religious students are called novices."))
+                            (schedule_special_row(&format!("Apprenticeship — {}", profession_label(service_id)), "open-book", "apprenticeship_minutes", schedule.downtime.apprenticeship_minutes, true, ActivityEffectRates::linear(-0.125, 0.0, 0.0, 0.0), None, "Pay one coin per eight hours of instruction in an enrolled profession. Religious students are called novices."))
                         }
                         @if let Some(service_id) = schedule.downtime.profession_service_id.as_deref() {
                             @let religious = service_id == "religion";
                             (schedule_service_selection("profession_service_id", service_id))
-                            (schedule_special_row(&format!("Profession Practice — {}", profession_label(service_id)), if religious { "holy-symbol" } else { "anvil" }, "profession_practice_minutes", schedule.downtime.profession_practice_minutes, true, if religious { ActivityEffectRates::linear(0.0, 0.25, 0.0, 0.0) } else { ActivityEffectRates::linear(0.5, 0.0, 0.0, 0.0) }, None, if religious { "Practice as a cleric or teacher to serve the community and earn Virtue; religious practice never earns money." } else { "Practice an enrolled profession independently. Journeymen earn a modest income and masters earn a good income while teaching apprentices." }))
+                            (schedule_special_row(&format!("Profession Practice — {}", profession_label(service_id)), if religious { "holy-symbol" } else { "anvil" }, "profession_practice_minutes", schedule.downtime.profession_practice_minutes, true, if religious { ActivityEffectRates::linear(0.0, 0.125, 0.0, 0.0) } else { ActivityEffectRates::linear(0.125, 0.0, 0.0, 0.0) }, None, if religious { "Practice as a cleric or teacher to serve the community and earn Virtue; teachers earn faster than clerics." } else { "Practice an enrolled profession independently. Journeymen earn one coin per eight hours; masters earn one per two hours." }))
                         }
                         (schedule_special_row("Labor", "hammer-sickle", "labor_minutes", schedule.downtime.labor_minutes, true, ActivityEffectRates::linear(preview.labor_gold_per_hour, 0.0, 0.0, LABOR_FATIGUE_PER_HOUR / FATIGUE_RESERVOIR_PER_PREVIEW_POINT), None, "Earn coin during settlement downtime from Strength and Endurance checks; trains Will at 25% speed and generates fatigue."))
                         (schedule_special_row("Thievery", "lockpicks", "thievery_minutes", schedule.downtime.thievery_minutes, true, ActivityEffectRates::linear(preview.thievery_gold_per_hour, preview.thievery_virtue_per_hour, 0.0, 0.0), None, "Settlement downtime can earn coin and risk discovery while training Stealth at 25% speed."))
@@ -4122,6 +4124,8 @@ struct ActivityEffectRates {
     fatigue_per_hour: f32,
     prayer_morale: bool,
     prayer_morale_multiplier: f32,
+    morale_limit: f32,
+    morale_scale_minutes: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -4176,6 +4180,8 @@ impl ActivityEffectRates {
             fatigue_per_hour: fatigue,
             prayer_morale: false,
             prayer_morale_multiplier: 1.0,
+            morale_limit: PRAYER_MORALE_LIMIT,
+            morale_scale_minutes: PRAYER_MORALE_SCALE_MINUTES,
         }
     }
 
@@ -4195,12 +4201,24 @@ impl ActivityEffectRates {
         }
     }
 
+    const fn carousing() -> Self {
+        Self {
+            gold_per_hour: 0.0,
+            virtue_per_hour: -0.125,
+            prayer_morale: true,
+            prayer_morale_multiplier: 1.0,
+            morale_limit: adventuresim_core::activity::CAROUSING_MORALE_LIMIT,
+            morale_scale_minutes: adventuresim_core::activity::CAROUSING_MORALE_SCALE_MINUTES,
+            ..Self::linear(0.0, 0.0, 0.0, 0.0)
+        }
+    }
+
     fn values(self, minutes: u16) -> [f32; 4] {
         let hours = f32::from(minutes) / 60.0;
         let morale = if self.prayer_morale {
             self.prayer_morale_multiplier
-                * PRAYER_MORALE_LIMIT
-                * (1.0 - (-f32::from(minutes) / PRAYER_MORALE_SCALE_MINUTES).exp())
+                * self.morale_limit
+                * (1.0 - (-f32::from(minutes) / self.morale_scale_minutes).exp())
         } else {
             self.morale_per_hour * hours
         };
@@ -4307,8 +4325,8 @@ fn schedule_special_row(
             data-morale-rate=(effects.morale_per_hour)
             data-fatigue-rate=(effects.fatigue_per_hour)
             data-prayer-morale=[effects.prayer_morale.then_some("true")]
-            data-prayer-morale-limit=[effects.prayer_morale.then_some(PRAYER_MORALE_LIMIT)]
-            data-prayer-morale-scale=[effects.prayer_morale.then_some(PRAYER_MORALE_SCALE_MINUTES)]
+            data-prayer-morale-limit=[effects.prayer_morale.then_some(effects.morale_limit)]
+            data-prayer-morale-scale=[effects.prayer_morale.then_some(effects.morale_scale_minutes)]
             data-prayer-morale-multiplier=[effects.prayer_morale.then_some(effects.prayer_morale_multiplier)]
             data-leisure-current-fatigue=[leisure.map(|preview| preview.current_fatigue)]
             data-leisure-baseline-fatigue=[leisure.map(|_| BASELINE_FATIGUE_PER_DAY)]
@@ -4318,7 +4336,7 @@ fn schedule_special_row(
             data-leisure-morale-scale=[leisure.map(|_| LEISURE_MORALE_SCALE_FATIGUE)]
             data-leisure-fatigue-preview-divisor=[leisure.map(|_| FATIGUE_RESERVOIR_PER_PREVIEW_POINT)] {
             th scope="row" class="party-skill-name party-skill-icon-cell" {
-                (schedule_icon(label, icon))
+                (schedule_icon(label, icon, editable, allocation_name))
                 span class="sr-only" { (label) }
             }
             (activity_effect_cell("gold", values[0]))
@@ -4361,13 +4379,69 @@ fn schedule_allocation_cell(name: &str, minutes: u16, editable: bool) -> Markup 
     }
 }
 
-fn schedule_icon(_label: &str, icon: &str) -> Markup {
+fn schedule_icon(label: &str, icon: &str, actionable: bool, activity: &str) -> Markup {
     html! {
-        span
-            class="stat-icon schedule-special-icon"
-            style=(format!("--stat-icon: url('/static/icons/game/{icon}.svg')"))
-            aria-hidden="true"
-        {}
+        @if actionable {
+            button type="button" class="schedule-activity-button" data-activity-open=(activity)
+                aria-label=(format!("Perform {label} now")) title=(format!("Perform {label} now")) {
+                span class="stat-icon schedule-special-icon"
+                    style=(format!("--stat-icon: url('/static/icons/game/{icon}.svg')"))
+                    aria-hidden="true" {}
+            }
+        } @else {
+            span class="stat-icon schedule-special-icon"
+                style=(format!("--stat-icon: url('/static/icons/game/{icon}.svg')"))
+                aria-hidden="true" {}
+        }
+    }
+}
+
+fn immediate_activity_dialog(action: &str) -> Markup {
+    html! {
+        div class="activity-modal" data-activity-modal hidden {
+            button type="button" class="activity-modal-backdrop" data-activity-close
+                aria-label="Close activity dialog" {}
+            form class="activity-modal-panel" action=(action) method="post" role="dialog"
+                aria-modal="true" aria-labelledby="activity-modal-title" tabindex="-1"
+                data-activity-form {
+                header class="activity-modal-header" {
+                    h3 id="activity-modal-title" data-activity-title { "Perform activity" }
+                    button type="button" class="activity-modal-close" data-activity-close
+                        aria-label="Close activity dialog" { "Ã—" }
+                }
+                input type="hidden" name="activity" data-activity-kind;
+                input type="hidden" name="service_id" data-activity-service;
+                input type="hidden" name="requested_minutes" value="60" data-activity-minutes;
+                div class="activity-duration-control" {
+                    label for="immediate-activity-duration" { "Duration" }
+                    input id="immediate-activity-duration" type="range" min="1" max="24"
+                        step="1" value="1" data-activity-duration;
+                    p class="activity-duration-summary" aria-live="polite" data-activity-duration-summary {
+                        span data-activity-end { "Ends at --:--" }
+                        span aria-hidden="true" { " Â· " }
+                        span data-activity-hours { "1 h spent" }
+                    }
+                }
+                table class="party-skills-table activity-preview-table" aria-label="Activity result preview" {
+                    thead { tr {
+                        th scope="col" { "Activity" }
+                        th scope="col" { (schedule_header_icon("coins", "Currency")) }
+                        th scope="col" { (schedule_header_icon("scales", "Virtue")) }
+                        th scope="col" { (schedule_header_icon("sun", "Morale")) }
+                        th scope="col" { (schedule_header_icon("night-sleep", "Fatigue")) }
+                        th scope="col" { (schedule_header_icon("open-book", "Skill-hours")) }
+                    } }
+                    tbody { tr class="party-skill-row schedule-special-row" data-activity-preview-row {
+                        th scope="row" data-activity-preview-label { "Activity" }
+                        @for kind in ["gold", "virtue", "morale", "fatigue"] {
+                            td class="schedule-effect schedule-effect-neutral" data-activity-effect=(kind) { "0" }
+                        }
+                        td class="schedule-effect schedule-training-effect" data-activity-effect="training" { "â€”" }
+                    } }
+                }
+                button type="submit" class="activity-submit" data-activity-submit { "Spend 1 hour" }
+            }
+        }
     }
 }
 
@@ -5881,27 +5955,13 @@ mod tests {
     fn social_skill_family_has_an_average_and_six_expandable_icon_rows() {
         let skills = CharacterSkills {
             character_id: 7,
-            melee_hours: 0.0,
-            dodge_hours: 0.0,
-            block_hours: 0.0,
-            ranged_hours: 0.0,
-            will_hours: 0.0,
             insight_hours: 100.0,
             self_awareness_hours: 80.0,
             humor_hours: 60.0,
             command_hours: 40.0,
             deception_hours: 20.0,
             seduction_hours: 10.0,
-            medicine_hours: 0.0,
-            religion_hours: Default::default(),
-            stealth_hours: 0.0,
-            balance_hours: 0.0,
-            terrain_plains_hours: 0.0,
-            terrain_forest_hours: 0.0,
-            terrain_hills_hours: 0.0,
-            terrain_urban_hours: 0.0,
-            surgeon_hours: 0.0,
-            smithing_hours: 0.0,
+            ..Default::default()
         };
         let markup = social_skill_rows(&skills, 1.0, None).into_string();
         assert!(markup.contains("data-social-primary"));
