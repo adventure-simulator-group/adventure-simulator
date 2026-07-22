@@ -84,6 +84,7 @@ pub fn settlement_layout_with_session(
     category: &SettlementCategory,
     active_service: &str,
     religion_id: Option<&str>,
+    economy: Option<&adventuresim_world_schema::SettlementEconomyProfile>,
     content: Markup,
     logged_in_as: Option<&str>,
 ) -> Markup {
@@ -95,6 +96,7 @@ pub fn settlement_layout_with_session(
             category,
             active_service,
             religion_id,
+            economy,
             logged_in_as,
         ),
         content,
@@ -226,6 +228,7 @@ fn settlement_top_bar(
     category: &SettlementCategory,
     active_service: &str,
     religion_id: Option<&str>,
+    economy: Option<&adventuresim_world_schema::SettlementEconomyProfile>,
     logged_in_as: Option<&str>,
 ) -> Markup {
     let services = [
@@ -262,6 +265,8 @@ fn settlement_top_bar(
             nav class="top-bar-center settlement-services" aria-label="Settlement services"
                 data-settlement-id=(settlement_id) {
                 @for (path, label, icon) in services {
+                    @let available = economy.is_none_or(|profile| service_tab_available(profile, path));
+                    @if available {
                     @let href = if path == "map" {
                         format!("/locations/settlement/{}/map", settlement_id)
                     } else if path.is_empty() {
@@ -298,6 +303,7 @@ fn settlement_top_bar(
                             span class="service-notification-badge service-quest-badge" data-service-quest-badge hidden { "!" }
                         }
                     }
+                    }
                 }
             }
 
@@ -308,6 +314,25 @@ fn settlement_top_bar(
             }
         }
         script src="/static/strategic-time.js?v=continuous-environment-1" {}
+    }
+}
+
+fn service_tab_available(
+    profile: &adventuresim_world_schema::SettlementEconomyProfile,
+    path: &str,
+) -> bool {
+    use adventuresim_core::settlement_economy::{Storefront, storefront_available};
+    use adventuresim_world_schema::SettlementService as S;
+    match path {
+        "map" => true,
+        "merchants" => storefront_available(profile, Storefront::General),
+        "weapons" => storefront_available(profile, Storefront::Weapons),
+        "armor" => storefront_available(profile, Storefront::Armor),
+        "clothing" => storefront_available(profile, Storefront::Clothing),
+        "herbalist" => storefront_available(profile, Storefront::Herbalist),
+        "inn" => storefront_available(profile, Storefront::Inn),
+        "religion" => profile.has_service(S::Temple),
+        _ => false,
     }
 }
 

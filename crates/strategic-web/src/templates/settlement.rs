@@ -284,6 +284,7 @@ impl LocationView {
                     .unwrap_or(&SettlementCategory::Unknown),
                 self.active_building.as_deref().unwrap_or(""),
                 self.religion_id.as_deref(),
+                None,
                 content,
                 logged_in_as,
             )
@@ -322,6 +323,45 @@ pub struct RestSummary {
 }
 
 impl MerchantShop {
+    pub fn storefront(self) -> adventuresim_core::settlement_economy::Storefront {
+        use adventuresim_core::settlement_economy::Storefront as S;
+        match self {
+            Self::General => S::General,
+            Self::Weapons => S::Weapons,
+            Self::Armor => S::Armor,
+            Self::Clothing => S::Clothing,
+            Self::Herbalist => S::Herbalist,
+            Self::Inn => S::Inn,
+        }
+    }
+
+    pub fn available_at(self, settlement: &Settlement) -> bool {
+        adventuresim_core::settlement_economy::storefront_available(
+            &settlement.economy,
+            self.storefront(),
+        )
+    }
+
+    fn stocks_at(self, settlement: &Settlement, item: &crate::spacetimedb::ItemDefinition) -> bool {
+        use adventuresim_core::settlement_economy::CatalogKind as C;
+        let kind = match item.kind {
+            crate::spacetimedb::ItemKind::Simple => C::Simple,
+            crate::spacetimedb::ItemKind::Weapon => C::Weapon,
+            crate::spacetimedb::ItemKind::Armor => C::Armor,
+            crate::spacetimedb::ItemKind::Shield => C::Shield,
+            crate::spacetimedb::ItemKind::Clothing => C::Clothing,
+            crate::spacetimedb::ItemKind::Currency => C::Currency,
+            crate::spacetimedb::ItemKind::Ingredient => C::Ingredient,
+            crate::spacetimedb::ItemKind::Medication => C::Medication,
+            crate::spacetimedb::ItemKind::Food => C::Food,
+        };
+        adventuresim_core::settlement_economy::storefront_stocks(
+            &settlement.economy,
+            self.storefront(),
+            &item.id,
+            kind,
+        )
+    }
     pub fn service_id(self) -> &'static str {
         match self {
             Self::General => "merchants",
@@ -478,6 +518,7 @@ pub fn alchemy_page(
         &settlement.category,
         "herbalist",
         Some(&settlement.religion_id),
+        Some(&settlement.economy),
         content,
         Some(&character.name),
     )
@@ -544,6 +585,7 @@ pub fn settlement_overview_page(
         &settlement.category,
         "",
         Some(&settlement.religion_id),
+        Some(&settlement.economy),
         content,
         logged_in_as,
     )
@@ -692,6 +734,7 @@ pub fn settlement_map_page(
         &settlement.category,
         "map",
         Some(&settlement.religion_id),
+        Some(&settlement.economy),
         content,
         logged_in_as,
     )
@@ -1221,7 +1264,6 @@ fn format_terrain_spans(destination: &TravelDestination) -> String {
                         adventuresim_terrain::Surface::Open => "open",
                         adventuresim_terrain::Surface::SparseWoods => "sparse-woods",
                         adventuresim_terrain::Surface::DeepWoods => "deep-woods",
-                        adventuresim_terrain::Surface::Wetland => "wetland",
                         adventuresim_terrain::Surface::Water => return None,
                     };
                     Some(format!(
@@ -2854,6 +2896,7 @@ fn service_page(
         &settlement.category,
         service_id,
         Some(&settlement.religion_id),
+        Some(&settlement.economy),
         content,
         logged_in_as,
     )
@@ -3020,7 +3063,7 @@ pub fn live_merchant_shop_page(
         (sidebar_section(if matches!(shop, MerchantShop::Herbalist) { "Prepared medicines and ingredients" } else if matches!(shop, MerchantShop::Inn) { "Cooking supplies" } else { "Merchant stock" }, html! {
             div class="smith-wares-scroll" {
             (trade_inventory_table("merchant-left", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, false, false, false, html! {
-                @for item in items.iter().filter(|item| shop.stocks(item)) {
+                @for item in items.iter().filter(|item| shop.stocks_at(settlement, item)) {
                     @let is_currency = item.kind == crate::spacetimedb::ItemKind::Currency;
                     @let medication_recipe = adventuresim_core::disease::medication_recipe_for_item(&item.id);
                     @let buy_price = adventuresim_core::strategic_economy::language_adjusted_buy_price(medication_recipe.map_or_else(
@@ -3148,6 +3191,7 @@ pub fn live_merchant_shop_page(
         &settlement.category,
         service_id,
         Some(&settlement.religion_id),
+        Some(&settlement.economy),
         content,
         Some(&character.name),
     )

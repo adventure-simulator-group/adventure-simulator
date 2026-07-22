@@ -31,7 +31,7 @@
       const duration = Number(durationText);
       const check = Number(checkText) / 1000;
       const weights = [plainsText, forestText, hillsText, urbanText].map(Number);
-      if (!["road", "open", "sparse-woods", "deep-woods", "wetland"].includes(kind)
+      if (!["road", "open", "sparse-woods", "deep-woods"].includes(kind)
           || !Number.isSafeInteger(start) || start < 0
           || !Number.isSafeInteger(duration) || duration <= 0
           || start !== cursor || !Number.isFinite(check) || check < 0 || check > 5
@@ -279,7 +279,7 @@
     const description = planner.querySelector("[data-terrain-course-description]");
     if (!track) return;
     track.replaceChildren();
-    const labels = { road: "Road", open: "Open", "sparse-woods": "Sparse woods", "deep-woods": "Deep woods", wetland: "Wetland" };
+    const labels = { road: "Road", open: "Open", "sparse-woods": "Sparse woods", "deep-woods": "Deep woods" };
     const pieces = terrainPieces(terrain, itinerary, movementTotal, roundTrip);
     for (const piece of pieces) {
       const node = document.createElement("span");

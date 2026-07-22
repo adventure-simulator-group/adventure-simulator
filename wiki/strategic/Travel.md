@@ -270,9 +270,8 @@ character ID before remaining net hydration is counted. The planner presents ord
 and emergency alcohol separately, while its overall water-sufficiency verdict
 uses their sum. Provisioning still stages waterskins only; it does not disguise
 alcohol as water or automatically purchase it as a water container.
-World compilation conservatively fills a small class of Viabundus gaps between
-nearby settlements. Inferred links have stable IDs and explicit provenance,
-bounded candidate work and degree, and are rejected when off-road walking is too
-long, steep, slow, or water-adjacent. They are presented as inferred local links,
-not as documented road geometry, and cannot create crossings. The runtime graph
-and terrain router consume them exactly as topology after ordinary DEM profiling.
+World compilation does not yet publish inferred road links. Safe publication
+requires terrain-aware route evaluation over the complete proposed alignment
+and one accepted geometry shared by the runtime graph, terrain road mask, map
+rendering, and package digest. Endpoint-only heuristics are deliberately not
+treated as roads.

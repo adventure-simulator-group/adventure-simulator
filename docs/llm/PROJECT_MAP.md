@@ -64,6 +64,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/social.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/strategic_currency.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/strategic_economy.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/settlement_economy.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/strategic_schedule.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/strategic_time.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/stub.rs` — Rust source module for this component.
@@ -641,7 +642,6 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-world-import/src/sources/mod.rs` — Rust source module.
 - `crates/adventuresim-world-import/src/sources/potential_vegetation.rs` — Rust source module.
 - `crates/adventuresim-world-import/src/sources/religion.rs` — Rust source module.
-- `crates/adventuresim-world-import/src/sources/road_inference.rs` — Rust source module.
 - `crates/adventuresim-world-import/src/sources/route_terrain.rs` — Rust source module.
 - `crates/adventuresim-world-import/src/sources/soil.rs` — Rust source module.
 - `crates/adventuresim-world-import/src/sources/tree_species.rs` — Rust source module.

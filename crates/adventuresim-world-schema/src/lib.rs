@@ -2825,6 +2825,178 @@ impl SettlementEconomyProfile {
     }
 }
 
+/// Single canonical rules-v8 economy projection used by import and database
+/// finalization. `documented_town` is direct Viabundus evidence; route count is
+/// taken from the finalized graph.
+pub fn infer_settlement_economy(
+    population_level: i32,
+    population: u32,
+    routes: u16,
+    documented_town: bool,
+    industries: &InferredIndustryProfile,
+) -> Result<SettlementEconomyProfile, String> {
+    use std::collections::{BTreeMap, BTreeSet};
+    let industrial = industries
+        .outputs()
+        .iter()
+        .map(|e| match e {
+            IndustryEvidence::Derived(v) => match v.scale() {
+                ProductionScale::Marginal => 12,
+                ProductionScale::Local => 28,
+                ProductionScale::Regional => 48,
+            },
+            IndustryEvidence::Fallback(_) => 5,
+        })
+        .sum::<u16>()
+        .min(260);
+    let population_points = ((population.max(1) as f64).log10() * 95.0) as u16;
+    let score = (u16::try_from(population_level.max(1)).unwrap_or(1) * 85)
+        .saturating_add(population_points)
+        .saturating_add(industrial)
+        .saturating_add(routes.min(8) * 18)
+        .saturating_add(u16::from(documented_town) * 55)
+        .min(1_000);
+    let tier = match score {
+        0..=249 => ProsperityTier::Subsistence,
+        250..=419 => ProsperityTier::Modest,
+        420..=599 => ProsperityTier::Comfortable,
+        600..=779 => ProsperityTier::Prosperous,
+        _ => ProsperityTier::Wealthy,
+    };
+    let mut services = BTreeSet::from([SettlementService::Inn]);
+    if population_level <= 1 && population < 250 {
+        services.insert(SettlementService::GeneralStore);
+    } else {
+        services.extend([
+            SettlementService::GeneralStore,
+            SettlementService::Market,
+            SettlementService::Temple,
+        ]);
+        if population_level <= 2 || score < 470 {
+            services.insert(SettlementService::GeneralBlacksmith);
+        } else {
+            services.extend([SettlementService::Weaponsmith, SettlementService::Armorer]);
+        }
+        if population_level >= 3 || score >= 500 {
+            services.insert(SettlementService::Tailor);
+        }
+        if population_level >= 3 || industries.outputs().iter().any(forest_or_peat) {
+            services.insert(SettlementService::Herbalist);
+        }
+    }
+    let mut stock = BTreeMap::<StockCategory, SettlementStock>::new();
+    let mut specializations = BTreeSet::new();
+    let mut add = |category, abundance, provenance| {
+        stock
+            .entry(category)
+            .and_modify(|v| v.abundance = v.abundance.max(abundance))
+            .or_insert(SettlementStock {
+                category,
+                abundance,
+                provenance,
+            });
+        if abundance >= 4 {
+            specializations.insert(category);
+        }
+    };
+    for evidence in industries.outputs() {
+        let IndustryEvidence::Derived(industry) = evidence else {
+            continue;
+        };
+        let abundance = match industry.scale() {
+            ProductionScale::Marginal => 2,
+            ProductionScale::Local => 4,
+            ProductionScale::Regional => 5,
+        };
+        let category = match industry {
+            DerivedIndustry::Agriculture(v) => match v.commodity {
+                AgriculturalCommodity::Grain => StockCategory::Grain,
+                AgriculturalCommodity::Flax | AgriculturalCommodity::Wool => StockCategory::Cloth,
+                AgriculturalCommodity::Dairy => StockCategory::Dairy,
+                AgriculturalCommodity::Hides => StockCategory::Hides,
+            },
+            DerivedIndustry::Fishing(_) => StockCategory::Fish,
+            DerivedIndustry::Quarrying(_) => StockCategory::Stone,
+            DerivedIndustry::Mining(_) => StockCategory::Fuel,
+            DerivedIndustry::Pottery(_) => StockCategory::Pottery,
+            DerivedIndustry::PeatCutting(_) | DerivedIndustry::CharcoalBurning(_) => {
+                StockCategory::Fuel
+            }
+            DerivedIndustry::Forestry(v) => match v.commodity {
+                ForestCommodity::Fuelwood => StockCategory::Fuel,
+                _ => StockCategory::Timber,
+            },
+            DerivedIndustry::Saltmaking(_) => StockCategory::Salt,
+            DerivedIndustry::Construction(v) => match v.commodity {
+                ConstructionCommodity::Timber => StockCategory::Timber,
+                ConstructionCommodity::Brick | ConstructionCommodity::RoofTile => {
+                    StockCategory::Pottery
+                }
+                _ => StockCategory::Stone,
+            },
+        };
+        add(
+            category,
+            abundance,
+            ProfileFactProvenance::DerivedFromCanonicalEvidence,
+        );
+    }
+    let gap = ProfileFactProvenance::DeterministicGapFill;
+    add(
+        StockCategory::GeneralGoods,
+        if population_level <= 1 { 3 } else { 2 },
+        gap,
+    );
+    if population_level <= 1 {
+        add(StockCategory::Grain, 1, gap);
+        add(StockCategory::Meat, 1, gap);
+    }
+    if industries.outputs().iter().any(|e|matches!(e,IndustryEvidence::Derived(DerivedIndustry::Agriculture(v)) if matches!(v.commodity,AgriculturalCommodity::Dairy|AgriculturalCommodity::Hides))){add(StockCategory::Meat,3,ProfileFactProvenance::DerivedFromCanonicalEvidence);}
+    if services.contains(&SettlementService::GeneralBlacksmith)
+        || services.contains(&SettlementService::Weaponsmith)
+    {
+        add(
+            StockCategory::Metalwares,
+            if score >= 600 { 4 } else { 2 },
+            gap,
+        );
+        add(
+            StockCategory::Weapons,
+            if score >= 700 { 4 } else { 1 },
+            gap,
+        );
+    }
+    if services.contains(&SettlementService::Armorer)
+        || services.contains(&SettlementService::GeneralBlacksmith)
+    {
+        add(StockCategory::Armor, if score >= 700 { 4 } else { 1 }, gap);
+    }
+    if services.contains(&SettlementService::Herbalist) {
+        add(
+            StockCategory::Herbs,
+            2 + u8::from(industries.outputs().iter().any(forest_or_peat)),
+            gap,
+        );
+    }
+    let profile = SettlementEconomyProfile {
+        rules_version: CURRENT_INFERENCE_RULES_VERSION,
+        prosperity_score: score,
+        prosperity_tier: tier,
+        services: services.into_iter().collect(),
+        specializations: specializations.into_iter().collect(),
+        stock: stock.into_values().collect(),
+    };
+    profile.validate()?;
+    Ok(profile)
+}
+
+fn forest_or_peat(e: &IndustryEvidence) -> bool {
+    matches!(
+        e,
+        IndustryEvidence::Derived(DerivedIndustry::Forestry(_) | DerivedIndustry::PeatCutting(_))
+    )
+}
+
 impl SettlementHydrology {
     pub const fn has_freshwater(self) -> bool {
         self.flowing.is_some() || self.inland.is_some()

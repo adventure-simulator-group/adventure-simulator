@@ -841,6 +841,7 @@ pub fn finish_world_data_import(ctx: &ReducerContext, artifact_id: String) -> Re
         return Err("Cannot finish a different world artifact".into());
     }
     validate_final_settlement_industries(ctx)?;
+    validate_final_settlement_economies(ctx)?;
     import.completed = true;
     ctx.db.world_data_import().id().update(import);
     Ok(())
@@ -1201,6 +1202,40 @@ fn validate_final_settlement_industries(ctx: &ReducerContext) -> Result<(), Stri
         ) {
             return Err(format!(
                 "Settlement {} industries do not match the final travel-edge graph",
+                settlement.id
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_final_settlement_economies(ctx: &ReducerContext) -> Result<(), String> {
+    for settlement in ctx.db.settlement().iter() {
+        let Some(node_id) = settlement.source_node_id else {
+            continue;
+        };
+        let routes = ctx
+            .db
+            .travel_edge()
+            .iter()
+            .filter(|e| e.from_node_id == node_id || e.to_node_id == node_id)
+            .count();
+        let documented_town = ctx
+            .db
+            .world_node()
+            .id()
+            .find(node_id)
+            .is_some_and(|n| n.is_town);
+        let expected = adventuresim_world_schema::infer_settlement_economy(
+            settlement.population_level,
+            settlement.population_estimate,
+            u16::try_from(routes).unwrap_or(u16::MAX),
+            documented_town,
+            &settlement.industries,
+        )?;
+        if settlement.economy != expected {
+            return Err(format!(
+                "Settlement {} economy does not match canonical facts and final travel graph",
                 settlement.id
             ));
         }
@@ -5952,6 +5987,7 @@ pub fn finalize_merchant_trade(
         adventuresim_world_schema::ORAL_FLUENCY_HOURS;
     let (_, shared_language) =
         adventuresim_world_schema::best_common_oral_language(speaker, merchant);
+    let settlement_economy = settlement.economy.clone();
     // Sales are inventory-instance operations. Preserve each submitted stack
     // and quantity rather than netting by item ID, which can assign the whole
     // net sale to every matching stack.
@@ -5973,6 +6009,23 @@ pub fn finalize_merchant_trade(
         ) || *quantity == 0
         {
             return Err("Invalid merchant purchase".into());
+        }
+        use adventuresim_core::settlement_economy::{CatalogKind as C, Storefront as S};
+        let catalog_kind = crate::item::economy_catalog_kind(item.kind);
+        let storefront = match catalog_kind {
+            C::Weapon | C::Shield => S::Weapons,
+            C::Armor => S::Armor,
+            C::Clothing => S::Clothing,
+            C::Food => S::Inn,
+            _ => S::General,
+        };
+        if !adventuresim_core::settlement_economy::storefront_stocks(
+            &settlement_economy,
+            storefront,
+            item_id,
+            catalog_kind,
+        ) {
+            return Err("This settlement does not stock that merchant item".into());
         }
         let line = adventuresim_core::strategic_economy::checked_merchant_line_total(
             adventuresim_core::strategic_economy::language_adjusted_buy_price(

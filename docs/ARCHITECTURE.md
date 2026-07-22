@@ -556,18 +556,11 @@ specializations, and relative stock categories. Every gap-fill stock fact is
 typed as deterministic fabrication rather than attributed to an upstream
 dataset. Authoritative reducers consult the profile; it is not a UI-only hint.
 
-The same rules may add sparse inferred walking links where Viabundus topology
-has a local gap. Candidates are reorder-stable, capped at eight examined
-neighbors and two inferred links per endpoint, reject water-adjacent endpoints,
-and must fit bounded off-road walking distance/time. They carry typed inferred
-provenance and then receive the same GLO-30 route profile as documented edges.
-Because the canonical artifact has topology rather than historical road
-polylines, these straight segments assert plausible connectivity only, not an
-exact historical alignment. They never fabricate a bridge, ford, or ferry.
-
-Wetland is a distinct slow surface in terrain-pack schema 4 and has a separate
-accessible route-strip treatment. The compiler does not extrapolate wetland
-raster coverage from settlement samples: only a future bounded polygon/raster
-source passed to the terrain builder may set those cells. Until then, canonical
-settlement wetland evidence remains visible in environment/economy facts and
-route-adjacent seasonal mud/flood risks, without claiming whole-area coverage.
+Inferred road publication remains deferred until world compilation and terrain
+pack generation share a canonical route-geometry and digest contract. Endpoint
+distance or endpoint-only terrain evidence is not sufficient to publish a
+historical road: the full proposed route must be evaluated without allowing the
+new road to lower its own cost, and accepted geometry must feed both the runtime
+graph and the rendered terrain mask. Likewise, canonical settlement-scale
+wetland evidence is retained, but terrain packs do not claim wetland cells until
+a bounded spatial source is wired into pack generation.

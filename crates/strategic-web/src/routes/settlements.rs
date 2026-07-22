@@ -4832,6 +4832,7 @@ struct ReligionForm {
 struct ReligionDialogue {
     religion_id: Option<String>,
     priest_religion_id: String,
+    represented_religion_ids: Vec<String>,
     can_choose: bool,
 }
 
@@ -4854,11 +4855,22 @@ async fn religion_dialogue(
         .as_ref()
         .map(|settlement| settlement.religion_id.clone())
         .unwrap_or_default();
+    let represented_religion_ids = settlement
+        .as_ref()
+        .map(|s| {
+            s.religious_status
+                .represented_religions()
+                .into_iter()
+                .map(|r| r.religion_id().to_string())
+                .collect()
+        })
+        .unwrap_or_default();
     let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
     else {
         return Json(ReligionDialogue {
             religion_id: None,
             priest_religion_id,
+            represented_religion_ids,
             can_choose: false,
         });
     };
@@ -4877,6 +4889,7 @@ async fn religion_dialogue(
     Json(ReligionDialogue {
         religion_id: condition.and_then(|condition| condition.religion_id),
         priest_religion_id,
+        represented_religion_ids,
         can_choose,
     })
 }
@@ -4912,7 +4925,12 @@ async fn set_religion(
             message: "There is no church here to receive your profession.",
         });
     };
-    if religion_id != settlement.religion_id {
+    if !settlement
+        .religious_status
+        .represented_religions()
+        .iter()
+        .any(|religion| religion.religion_id() == religion_id)
+    {
         return Json(ReligionChange {
             changed: false,
             religion_id: None,
@@ -5007,6 +5025,18 @@ async fn merchant_shop(
     let Some(settlement) = settlements.first() else {
         return Html("<h1>Settlement not found</h1>".to_string());
     };
+    if !shop.available_at(settlement) {
+        return Html(
+            crate::templates::strategic_notice_page(
+                "Service unavailable",
+                "This settlement does not offer that service.",
+                &format!("/locations/settlement/{}", settlement.id),
+                "Return to settlement",
+                None,
+            )
+            .into_string(),
+        );
+    }
     let logged_in_as = active_character
         .as_ref()
         .map(|(character, _)| character.name.clone());

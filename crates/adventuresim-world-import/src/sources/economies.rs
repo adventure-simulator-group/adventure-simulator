@@ -27,7 +27,7 @@ pub(crate) fn enrich(mut world: CompiledWorld) -> Result<CompiledWorld> {
             .get(&settlement.source_node_id)
             .copied()
             .unwrap_or(0);
-        let profile = infer(
+        let profile = adventuresim_world_schema::infer_settlement_economy(
             settlement.population_level,
             settlement.population_estimate,
             routes,
@@ -35,8 +35,9 @@ pub(crate) fn enrich(mut world: CompiledWorld) -> Result<CompiledWorld> {
                 .get(&settlement.source_node_id)
                 .copied()
                 .unwrap_or(false),
-            settlement.industries.outputs(),
-        )?;
+            &settlement.industries,
+        )
+        .map_err(Error::Validation)?;
         append_note(
             &mut settlement.sources,
             "**Settlement economy rules v8:** Prosperity, services, specializations, and bounded stock categories are deterministically derived from population, documented town status, finalized route access, and canonical local production. General goods, meat, metalwares, weapons, armor, and herbs may be explicit deterministic gap-fill and are never attributed to EGDI or another source.",
@@ -47,12 +48,43 @@ pub(crate) fn enrich(mut world: CompiledWorld) -> Result<CompiledWorld> {
 }
 
 pub(crate) fn validate_semantics(world: &CompiledWorld) -> Result<()> {
+    let mut route_counts = HashMap::<u64, u16>::new();
+    for edge in &world.edges {
+        *route_counts.entry(edge.from_node_id).or_default() += 1;
+        *route_counts.entry(edge.to_node_id).or_default() += 1;
+    }
+    let towns = world
+        .nodes
+        .iter()
+        .map(|n| (n.id, n.is_town))
+        .collect::<HashMap<_, _>>();
     for settlement in &world.settlements {
         settlement.economy.validate().map_err(Error::Validation)?;
+        let expected = adventuresim_world_schema::infer_settlement_economy(
+            settlement.population_level,
+            settlement.population_estimate,
+            route_counts
+                .get(&settlement.source_node_id)
+                .copied()
+                .unwrap_or(0),
+            towns
+                .get(&settlement.source_node_id)
+                .copied()
+                .unwrap_or(false),
+            &settlement.industries,
+        )
+        .map_err(Error::Validation)?;
+        if settlement.economy != expected {
+            return Err(Error::Validation(format!(
+                "settlement {} economy is not canonical",
+                settlement.id
+            )));
+        }
     }
     Ok(())
 }
 
+#[allow(dead_code)]
 fn infer(
     population_level: i32,
     population: u32,
@@ -219,10 +251,19 @@ mod tests {
     use super::*;
     #[test]
     fn tiny_places_are_generalist_and_urban_places_split_specialists() {
-        let tiny = infer(1, 90, 1, false, &[]).unwrap();
+        let fallback = adventuresim_world_schema::InferredIndustryProfile::new(vec![
+            adventuresim_world_schema::IndustryEvidence::Fallback(
+                adventuresim_world_schema::FallbackIndustry::CommonAggregate,
+            ),
+        ])
+        .unwrap();
+        let tiny = adventuresim_world_schema::infer_settlement_economy(1, 90, 1, false, &fallback)
+            .unwrap();
         assert!(tiny.has_service(Service::GeneralStore));
         assert!(!tiny.has_service(Service::Weaponsmith));
-        let city = infer(5, 20_000, 6, true, &[]).unwrap();
+        let city =
+            adventuresim_world_schema::infer_settlement_economy(5, 20_000, 6, true, &fallback)
+                .unwrap();
         assert!(city.has_service(Service::Weaponsmith));
         assert!(city.has_service(Service::Armorer));
         assert!(!city.has_service(Service::GeneralBlacksmith));
