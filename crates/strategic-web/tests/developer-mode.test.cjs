@@ -6,6 +6,7 @@ const test = require("node:test");
 const root = path.join(__dirname, "..");
 const script = fs.readFileSync(path.join(root, "static", "developer-mode.js"), "utf8");
 const dialogue = fs.readFileSync(path.join(root, "static", "dialogue-client.js"), "utf8");
+const layoutCss = fs.readFileSync(path.join(root, "static", "css", "layout.css"), "utf8");
 const layout = fs.readFileSync(path.join(root, "src", "templates", "layout.rs"), "utf8");
 const settlement = fs.readFileSync(path.join(root, "src", "templates", "settlement.rs"), "utf8");
 
@@ -14,6 +15,10 @@ test("developer mode is persisted off by default and controls only source links"
   assert.match(script, /link\.hidden = !enabled/);
   assert.match(dialogue, /target = "_blank"/);
   assert.match(dialogue, /noopener noreferrer/);
+  assert.match(dialogue, /dialogue-source-icon/);
+  assert.doesNotMatch(dialogue, /link\.textContent = "Edit"/);
+  assert.match(layoutCss, /\.dialogue-source-link[\s\S]*border-radius: 50%/);
+  assert.match(layoutCss, /\.dialogue-source-icon[\s\S]*hammer-nails\.svg/);
 });
 
 test("toggle is emitted immediately before every character portrait menu", () => {

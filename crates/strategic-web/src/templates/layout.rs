@@ -156,7 +156,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/base.css?v=environment-14";
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=subtle-material-lines-1";
+                link rel="stylesheet" href="/static/css/layout.css?v=subtle-material-lines-1-dialogue-source-icons-1";
                 link rel="stylesheet" href="/static/css/components.css?v=lowercase-display-type-1";
                 link rel="stylesheet" href="/static/css/strategic.css?v=strategic-ui-overhaul-4-paper-map-2-data-license-1-grouped-alcohol-2-rest-supplies-1-dialogue-pane-1";
                 link rel="stylesheet" href="/static/css/utilities.css?v=strategic-ui-overhaul-1";
@@ -179,7 +179,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}
                     script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
                     script src="/static/service-quests.js?v=apprentice-system-1" defer {}
-                    script src="/static/dialogue-client.js?v=authoritative-dialogue-2" defer {}
+                    script src="/static/dialogue-client.js?v=authoritative-dialogue-3" defer {}
                     script src="/static/chat-resize.js?v=floating-chat-3" defer {}
                     script src="/static/local-chat.js?v=herbalist-private-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}

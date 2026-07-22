@@ -110,8 +110,33 @@
 }
 
 .dialogue-source-link {
+  display: inline-grid;
+  width: 1.05rem;
+  height: 1.05rem;
   margin-inline-start: 0.35rem;
-  font-size: 0.72rem;
+  place-items: center;
+  vertical-align: -0.16rem;
+  border: 1px solid color-mix(in srgb, currentcolor 58%, transparent);
+  border-radius: 50%;
+  color: var(--accent-light);
+  text-decoration: none;
+}
+
+.dialogue-source-link:is(:hover, :focus-visible) {
+  border-color: currentcolor;
+  background: color-mix(in srgb, currentcolor 16%, transparent);
+}
+
+.dialogue-source-link:focus-visible {
+  outline: 2px solid currentcolor;
+  outline-offset: 2px;
+}
+
+.dialogue-source-icon {
+  width: 0.68rem;
+  height: 0.68rem;
+  background: currentcolor;
+  mask: url("/static/icons/game/hammer-nails.svg") center / contain no-repeat;
 }
 
 /* Settlement pages keep settlement identity and services visible at the top. */
