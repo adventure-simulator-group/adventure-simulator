@@ -502,6 +502,12 @@ pub fn settlement_overview_page(
                         div { dt { "Population" } dd { (format_population(settlement)) } }
                         div { dt { "Size" } dd { (population_description(settlement.population_level)) } }
                         div { dt { "Coordinates" } dd { (format!("{}, {}", settlement.coord_x as i32, settlement.coord_y as i32)) } }
+                        div { dt { "Languages" } dd { (format!(
+                            "East-central {:.1}% · West-central {:.1}% · Low {:.1}%",
+                            f32::from(settlement.languages.east_central_bp) / 100.0,
+                            f32::from(settlement.languages.west_central_bp) / 100.0,
+                            f32::from(settlement.languages.low_bp) / 100.0,
+                        )) } }
                         @if !alias_labels.is_empty() {
                             div { dt { "Also known as" } dd { (alias_labels.join(", ")) } }
                         }
@@ -2898,6 +2904,7 @@ pub fn live_merchant_shop_page(
     party_targets: &[InventoryQuantityTarget],
     pooled: &[PartyInventoryItem],
     shop: MerchantShop,
+    shared_language: f32,
     conditions: &[crate::spacetimedb::ItemCondition],
     smith: Option<&crate::spacetimedb::SettlementSmith>,
     repair_orders: &[crate::spacetimedb::RepairOrder],
@@ -2909,6 +2916,12 @@ pub fn live_merchant_shop_page(
 ) -> Markup {
     let title = shop.title();
     let service_id = shop.service_id();
+    // Herbalist purchases use a separate reducer and retain their specialized quote.
+    let trade_language = if matches!(shop, MerchantShop::Herbalist) {
+        1.0
+    } else {
+        shared_language
+    };
     let smith_skill = smith
         .map(|smith| {
             if matches!(shop, MerchantShop::Armor) {
@@ -2944,11 +2957,11 @@ pub fn live_merchant_shop_page(
                 @for item in items.iter().filter(|item| shop.stocks(item)) {
                     @let is_currency = item.kind == crate::spacetimedb::ItemKind::Currency;
                     @let medication_recipe = adventuresim_core::disease::medication_recipe_for_item(&item.id);
-                    @let buy_price = medication_recipe.map_or_else(
+                    @let buy_price = adventuresim_core::strategic_economy::language_adjusted_buy_price(medication_recipe.map_or_else(
                         || adventuresim_core::strategic_economy::merchant_buy_price(item.base_value.unwrap_or(1)),
                         adventuresim_core::strategic_economy::herbalist_medication_price,
-                    );
-                    @let sell_price = (item.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32;
+                    ), trade_language);
+                    @let sell_price = adventuresim_core::strategic_economy::language_adjusted_sell_price((item.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32, trade_language);
                     @let target = target_quantity(personal_targets, &item.id);
                     @let display_name = medication_recipe.map_or_else(|| item_display_name(&item.id), |recipe| recipe.name.to_owned());
                     tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) data-group-summary="catalog" data-herbalist-medication-name=[medication_recipe.map(|recipe| recipe.name)] { td class="inventory-item-type" { (item_type_icon(&item.id)) } td class="inventory-item-name" { (item_name_with_display(&item.id, &display_name, Some(item))) @if !is_currency { (merchant_buy_controls(&item.id, buy_price, target, 999)) } } td class="inventory-count" hidden { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
@@ -2986,7 +2999,7 @@ pub fn live_merchant_shop_page(
                         @let food_lot = food_lots.iter().find(|lot| lot.inventory_item_id == Some(item.id));
                         @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
                         @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
-                        @let sell_price = merchant_inventory_sell_price(definition, food_lot);
+                        @let sell_price = adventuresim_core::strategic_economy::language_adjusted_sell_price(merchant_inventory_sell_price(definition, food_lot), trade_language);
                         @let target = target_quantity(personal_targets, &item.item_id);
                         tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-merchant-equipped=(is_equipped) data-inventory-quantity=(item.qty) data-target=(target) {
                         @let condition = conditions.iter().find(|condition| condition.inventory_item_id == item.id);
@@ -3022,7 +3035,7 @@ pub fn live_merchant_shop_page(
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         @let food_lot = food_lots.iter().find(|lot| lot.party_inventory_item_id == Some(item.id));
                         @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
-                        @let sell_price = merchant_inventory_sell_price(definition, food_lot);
+                        @let sell_price = adventuresim_core::strategic_economy::language_adjusted_sell_price(merchant_inventory_sell_price(definition, food_lot), trade_language);
                         @let target = target_quantity(party_targets, &item.item_id);
                         tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-party-inventory-id=(item.id) data-inventory-quantity=(item.quantity) data-target=(target) {
                             td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
@@ -3774,6 +3787,7 @@ fn skills_table(
                     @if skills.medicine_hours > 0.0 { (party_skill_row("Medicine", "medicine", Skill::Medicine, skills.medicine_hours, head_health, schedule.is_some())) }
                     (party_skill_row("Cooking", "cooking", Skill::Cooking, skills.cooking_hours, head_health, schedule.is_some()))
                     (religion_skill_rows(skills, head_health, schedule, training_religion))
+                    (language_skill_rows(skills, schedule.is_some()))
                     (combat_skill_rows(skills, head_health, upper_health, lower_health, schedule, combat_profile))
                     @if skills.stealth_hours > 0.0 { (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, upper_health, schedule.is_some())) }
                     (terrain_skill_rows(skills, schedule.is_some()))
@@ -3887,6 +3901,34 @@ fn terrain_skill_rows(skills: &CharacterSkills, schedule_context: bool) -> Marku
                 }
                 td class="religion-expand-cell" {}
             }
+        }
+    }
+}
+
+fn language_skill_rows(skills: &CharacterSkills, schedule_context: bool) -> Markup {
+    use adventuresim_world_schema::{OralLanguage, WrittenLanguage};
+    let oral_rank = OralLanguage::ALL
+        .into_iter()
+        .map(|language| skills.oral_languages.effective(language))
+        .fold(0.0, f32::max)
+        / 1_000.0;
+    let written_rank = WrittenLanguage::ALL
+        .into_iter()
+        .map(|language| skills.written_languages.effective(language))
+        .fold(0.0, f32::max)
+        / 1_000.0;
+    html! {
+        @for (family, rank, kind) in [("Oral",oral_rank,"oral"),("Written",written_rank,"written")] {
+            tr class=(format!("party-skill-row language-primary-row language-{kind}")) {
+                th scope="row" class="party-skill-name party-skill-icon-cell" { span class=(format!("language-monogram language-{kind}")) aria-hidden="true" { (if kind=="oral" {"O"} else {"W"}) } span class="sr-only" { (family) } }
+                td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { (skill_rank_bar(rank.clamp(0.0,5.0),rank.clamp(0.0,5.0),&format!("Best effective {family} language"),skill_rail_bar_options())) }
+                td class="religion-expand-cell" { button type="button" class="religion-expand-button" data-language-expand=(kind) aria-expanded="false" aria-label=(format!("Expand {family} languages")) { span class="religion-expand-chevron" aria-hidden="true" { "›" } } }
+            }
+            @if kind=="oral" { @for language in OralLanguage::ALL { @let descriptor=language.descriptor();
+                tr class="party-skill-row language-detail-row" data-language-detail="oral" hidden { th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" { span class=(if descriptor.germanic_style {"language-monogram language-oral language-blackletter"} else {"language-monogram language-oral"}) aria-hidden="true" { (descriptor.monogram) } span class="sr-only" { (descriptor.english) } } td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let hours=skills.oral_languages.direct(language); (skill_rank_bar((hours/1000.0).clamp(0.0,5.0),(hours/1000.0).clamp(0.0,5.0),&format!("{} · {} · {hours:.1} direct hours",descriptor.english,descriptor.native),skill_rail_bar_options())) } td class="religion-expand-cell" {} }
+            }} @else { @for language in WrittenLanguage::ALL { @let descriptor=language.descriptor();
+                tr class="party-skill-row language-detail-row" data-language-detail="written" hidden { th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" { span class=(if descriptor.germanic_style {"language-monogram language-written language-blackletter"} else {"language-monogram language-written"}) aria-hidden="true" { (descriptor.monogram) } span class="sr-only" { (descriptor.english) } } td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let hours=skills.written_languages.direct(language); (skill_rank_bar((hours/1000.0).clamp(0.0,5.0),(hours/1000.0).clamp(0.0,5.0),&format!("{} · {} · {hours:.1} direct hours",descriptor.english,descriptor.native),skill_rail_bar_options())) } td class="religion-expand-cell" {} }
+            }}
         }
     }
 }
@@ -5970,6 +6012,13 @@ mod tests {
         lot.total_value = 2.5;
         assert_eq!(merchant_inventory_weight(None, Some(&lot)), "6.25");
         assert_eq!(merchant_inventory_sell_price(None, Some(&lot)), 2);
+        lot.total_value = 0.5;
+        let zero = merchant_inventory_sell_price(None, Some(&lot));
+        assert_eq!(zero, 0);
+        assert_eq!(
+            adventuresim_core::strategic_economy::language_adjusted_sell_price(zero, 0.0),
+            0
+        );
     }
 
     #[test]
@@ -6237,6 +6286,7 @@ mod tests {
                 &[],
                 &[],
                 shop,
+                1.0,
                 &[],
                 None,
                 &[],
@@ -6388,6 +6438,12 @@ mod tests {
             population_level: 4,
             population_estimate: 12_000,
             category: crate::spacetimedb::SettlementCategory::City,
+            languages: adventuresim_world_schema::SettlementLanguageProfile {
+                east_central_bp: 2_000,
+                west_central_bp: 2_000,
+                low_bp: 6_000,
+                yiddish_incidence_bp: 75,
+            },
             industries: adventuresim_world_schema::InferredIndustryProfile::new(vec![
                 adventuresim_world_schema::IndustryEvidence::Fallback(
                     adventuresim_world_schema::FallbackIndustry::CroplandGrain,
@@ -6787,6 +6843,8 @@ mod tests {
                 roman_catholic: 1_000.0,
                 ..Default::default()
             },
+            oral_languages: Default::default(),
+            written_languages: Default::default(),
             stealth_hours: 0.0,
             balance_hours: 0.0,
             terrain_plains_hours: 0.0,
@@ -6942,6 +7000,31 @@ mod tests {
         )
         .into_string();
         assert!(will_row.contains(&expected));
+    }
+
+    #[test]
+    fn language_families_are_expandable_accessible_and_color_coded() {
+        let skills = CharacterSkills {
+            oral_languages: adventuresim_world_schema::OralLanguageHours {
+                east_central: 5_000.0,
+                ..Default::default()
+            },
+            written_languages: adventuresim_world_schema::WrittenLanguageHours {
+                german: 1_000.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let rendered = language_skill_rows(&skills, false).into_string();
+        assert!(rendered.contains("Expand Oral languages"));
+        assert!(rendered.contains("Expand Written languages"));
+        assert!(rendered.contains("language-oral language-blackletter"));
+        assert!(rendered.contains("language-written language-blackletter"));
+        assert_eq!(rendered.matches("data-language-detail=\"oral\"").count(), 8);
+        assert_eq!(
+            rendered.matches("data-language-detail=\"written\"").count(),
+            7
+        );
     }
 
     #[test]

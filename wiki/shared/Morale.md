@@ -142,3 +142,5 @@ Affinity toward the actor. Gains diminish near the positive cap. Failure,
 exposure, or a boundary-crossing response can lower Affinity. Repeating the same
 approach to the same source has a 24-hour target-clock cooldown. Passive party
 morale projection uses Command but never creates Affinity.
+
+Command contributed to another party member is multiplied by that pair's best shared Oral-language coefficient. The same coefficient scales other directed Social skill checks; self-directed reflection is unaffected.

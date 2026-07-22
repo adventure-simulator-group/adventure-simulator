@@ -96,6 +96,10 @@ pub(crate) fn finalize(mut draft: FinalizedSoilWorldDraft) -> Result<CompiledWor
                 soil: finalized.soil,
                 geology: geologic.geology,
                 religious_status: religious.religious_status,
+                languages: adventuresim_world_schema::infer_settlement_language_profile(
+                    settlement.longitude,
+                    settlement.latitude,
+                ).expect("bounded imported settlement has a language profile"),
                 drought: drought.drought,
                 hydrology: wet.hydrology,
                 industries: adventuresim_world_schema::InferredIndustryProfile::new(vec![
