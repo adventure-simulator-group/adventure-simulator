@@ -457,6 +457,14 @@ pub fn strategic_map(
             data-map-tile-gutter=(package.tiles.gutter)
             data-map-tile-version=(&package.tiles.content_sha256) data-map-tile-root=(TILE_PATH_PREFIX)
             aria-label=(format!("Map around {}", current.map_or("the current settlement", |item| item.name.as_str()))) {
+            div class="strategic-map-controls" role="group" aria-label="Map controls" {
+                button type="button" class="strategic-map-control" data-map-action="zoom-in"
+                    aria-label="Zoom in" data-strategic-tooltip="Zoom in" { span aria-hidden="true" { "+" } }
+                button type="button" class="strategic-map-control" data-map-action="zoom-out"
+                    aria-label="Zoom out" data-strategic-tooltip="Zoom out" { span aria-hidden="true" { "−" } }
+                button type="button" class="strategic-map-control" data-map-action="reset"
+                    aria-label="Reset map view" data-strategic-tooltip="Reset map view" { span aria-hidden="true" { "↺" } }
+            }
             svg class="strategic-map-svg" data-map-svg viewBox=(view_box)
                 aria-labelledby="strategic-map-title strategic-map-description" tabindex="0" {
                 title id="strategic-map-title" { "Settlement road map" }
@@ -487,6 +495,7 @@ pub fn strategic_map(
                                 href=(tile_url("paper", initial_tile_zoom, x, y, &package.tiles.content_sha256)) {}
                         }
                     }
+                    rect class="map-atmosphere-layer" x="0" y="0" width="1200" height="800" aria-hidden="true" {}
                     g class="map-overlay-layer" {
                         @if let Some(route) = terrain_route {
                             @let points = route.points.iter().map(|point| { let (x,y)=project(point.longitude, point.latitude, package.bounds); format!("{x:.3},{y:.3}") }).collect::<Vec<_>>().join(" ");
@@ -508,7 +517,7 @@ pub fn strategic_map(
                             @let label_width = (settlement.name.chars().count() as u16 * 7 + 8).clamp(44, 180);
                             @let label = if is_current { format!("{}, current settlement", settlement.name) } else if is_connected { format!("{}, direct route available", settlement.name) } else { format!("{}, no direct route", settlement.name) };
                             a href=(format!("{map_path}?destination={}", settlement.id))
-                                class="map-pin-link" aria-label=(label) aria-current=[is_selected.then_some("true")]
+                                class="map-pin-link" aria-label=(&label) data-strategic-tooltip=(&label) aria-current=[is_selected.then_some("true")]
                                 data-map-pin data-settlement-id=(&settlement.id) data-connected=(is_connected) {
                                 g class=(format!("map-pin map-settlement map-settlement-{symbol_kind}{}{}{}", if is_current { " current" } else { "" }, if is_connected { " connected" } else { "" }, if is_selected { " selected" } else { "" }))
                                     transform=(format!("translate({x:.3} {y:.3})")) {
@@ -541,7 +550,7 @@ pub fn strategic_map(
                             };
                             @let label = format!("Quest: {}, {status_label}", quest.title);
                             a href=(format!("{map_path}?destination={}", quest.id))
-                                class="map-pin-link map-quest-link" aria-label=(label)
+                                class="map-pin-link map-quest-link" aria-label=(&label) data-strategic-tooltip=(&label)
                                 aria-current=[is_selected.then_some("true")]
                                 data-map-pin data-quest-id=(&quest.id) {
                                 g class=(format!("map-pin map-quest{}{}", if is_active { " active" } else { "" }, if is_selected { " selected" } else { "" }))
@@ -787,7 +796,7 @@ mod tests {
     }
 
     #[test]
-    fn tiled_map_has_canonical_pin_links_without_extra_chrome() {
+    fn tiled_map_has_canonical_pin_links_and_accessible_controls() {
         let map = map_bundle();
         let mut source_less = settlement("demo", "Demo", 0.0, 0.0);
         source_less.source_node_id = None;
@@ -815,9 +824,15 @@ mod tests {
         assert!(!markup.contains("data-map-theme-choice"));
         assert!(!markup.contains("strategic-map-toolbar"));
         assert!(!markup.contains("data-map-zoom"));
+        assert_eq!(markup.matches("class=\"strategic-map-control\"").count(), 3);
+        assert!(markup.contains("data-map-action=\"zoom-in\""));
+        assert!(markup.contains("data-map-action=\"zoom-out\""));
+        assert!(markup.contains("data-map-action=\"reset\""));
+        assert!(markup.contains("data-strategic-tooltip=\"Zoom in\""));
         assert!(markup.contains("tabindex=\"0\""));
         assert!(markup.contains("?destination=near"));
         assert!(markup.contains("Nearby, direct route available"));
+        assert!(markup.contains("data-strategic-tooltip=\"Nearby, direct route available\""));
         assert!(markup.contains("Far away, no direct route"));
         assert!(!markup.contains("Outside package"));
         assert!(!markup.contains("?destination=demo"));
@@ -829,11 +844,13 @@ mod tests {
         assert!(markup.contains("data-map-label-priority"));
         assert!(markup.contains("map-settlement-label-text"));
         assert!(markup.contains("map-tile-layer"));
+        assert!(markup.contains("map-atmosphere-layer"));
         assert!(markup.contains("map-overlay-layer"));
         assert!(markup.contains("data-map-selection-line"));
         assert!(markup.contains(TILE_PATH_PREFIX));
         assert!(markup.contains(&map.package.tiles.content_sha256));
         assert!(markup.contains("image"));
+        assert!(markup.contains("class=\"map-settlement-hit-area\" r=\"13\""));
         assert!(!markup.contains("class=\"map-elevation"));
         assert!(
             markup.len() < 50_000,

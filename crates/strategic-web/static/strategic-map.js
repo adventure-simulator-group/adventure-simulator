@@ -32,6 +32,16 @@
       symbol.setAttribute("transform", `scale(${scale.toFixed(5)})`);
     });
   };
+  const hitTargetRadius = (pixelWidth, coarsePointer) => (
+    coarsePointer && pixelWidth > 0 ? 24 * PIN_REFERENCE_WIDTH / pixelWidth : 13
+  );
+  const scaleHitTargets = (svg, pixelWidth) => {
+    const coarsePointer = globalThis.matchMedia?.("(pointer: coarse)")?.matches === true;
+    const radius = hitTargetRadius(pixelWidth, coarsePointer).toFixed(3);
+    svg.querySelectorAll(".map-settlement-hit-area, .map-quest-hit-area").forEach((target) => {
+      target.setAttribute("r", radius);
+    });
+  };
   const labelPriorityThreshold = (viewWidth) => {
     if (viewWidth > 700) return 80;
     if (viewWidth > 400) return 70;
@@ -100,6 +110,7 @@
   const writeViewBox = (svg, view) => {
     svg.setAttribute("viewBox", view.map((value) => value.toFixed(2)).join(" "));
     scalePins(svg, view[2]);
+    scaleHitTargets(svg, svg.getBoundingClientRect().width || PIN_REFERENCE_WIDTH);
     layoutLabels(svg, view);
   };
   const tileZoom = (viewWidth, pixelWidth, pixelRatio, maxZoom) => {
@@ -227,6 +238,13 @@
     if (globalThis.ResizeObserver) new ResizeObserver(resize).observe(svg);
     else globalThis.addEventListener?.("resize", resize);
     const zoom = (factor) => updateView(zoomedView(parseViewBox(svg), factor));
+    map.querySelectorAll("[data-map-action]").forEach((control) => {
+      control.addEventListener("click", () => {
+        if (control.dataset.mapAction === "zoom-in") zoom(0.8);
+        else if (control.dataset.mapAction === "zoom-out") zoom(1.25);
+        else if (control.dataset.mapAction === "reset") updateView(initial);
+      });
+    });
     svg.addEventListener("wheel", (event) => { event.preventDefault(); zoom(event.deltaY < 0 ? 0.85 : 1.18); }, { passive: false });
     svg.addEventListener("keydown", (event) => {
       const [, , width, height] = parseViewBox(svg);
@@ -286,7 +304,7 @@
   };
 
   const initializeStrategicMaps = (root = document) => root.querySelectorAll("[data-strategic-map]").forEach((map) => initializeMap(map));
-  globalThis.StrategicMap = { boxesOverlap, initializeMap, labelPriorityThreshold, layoutLabels, parentTileFallback, parseViewBox, pannedView, renderTiles, resizedView, tileZoom, viewForElement, visibleTileRange, zoomedView };
+  globalThis.StrategicMap = { boxesOverlap, hitTargetRadius, initializeMap, labelPriorityThreshold, layoutLabels, parentTileFallback, parseViewBox, pannedView, renderTiles, resizedView, scaleHitTargets, tileZoom, viewForElement, visibleTileRange, zoomedView };
   initializeStrategicMaps();
   document.addEventListener("strategic-live-regions-refreshed", () => initializeStrategicMaps());
 })();
