@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const source = fs.readFileSync(path.join(__dirname, "../static/cooking.js"), "utf8");
+const inventoryBrowserSource = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
 const template = fs.readFileSync(path.join(__dirname, "../src/templates/settlement.rs"), "utf8");
 
 test("cooking stages inventory rows into a bounded pot draft", () => {
@@ -24,4 +25,10 @@ test("cook exposes the shared duration formula to hover and accessibility", () =
 test("cooking methods submit through the valid center form", () => {
   assert.match(template, /form id="cooking-submit-form" class="cooking-submit-form"/);
   assert.match(template, /name="method" value=\(value\) form="cooking-submit-form"/);
+});
+
+test("cooking inventory shows only food and expands its food group initially", () => {
+  assert.match(template, /let ingredients = inventory/);
+  assert.match(template, /@for item in ingredients/);
+  assert.match(inventoryBrowserSource, /browser\.dataset\.inventoryBrowser === "cooking-inventory-right"/);
 });

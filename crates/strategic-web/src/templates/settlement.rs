@@ -1778,6 +1778,14 @@ fn cooking_activity_page(
     let pan = owns("cooking_pan");
     let pot = owns("cooking_pot");
     let oven = owns("portable_oven");
+    let ingredients = inventory
+        .iter()
+        .filter(|item| {
+            food_lots
+                .iter()
+                .any(|lot| lot.inventory_item_id == Some(item.id))
+        })
+        .collect::<Vec<_>>();
     let content = html! {
         div class="cooking-activity" data-cooking-activity {
             aside class="left-sidebar cooking-pot" aria-label="Cooking pot" {
@@ -1814,11 +1822,11 @@ fn cooking_activity_page(
             aside class="right-sidebar cooking-ingredients" aria-label="Ingredient inventory" {
                 @let title = format!("{}'s inventory", active_character.name);
                 (sidebar_section(&title, html! {
-                    @if inventory.is_empty() {
-                        (empty_state("No items carried.", None, None))
+                    @if ingredients.is_empty() {
+                        (empty_state("No food carried.", None, None))
                     } @else {
                         (trade_inventory_table("cooking-inventory-right", InventoryColumnSet::Basic, true, false, false, html! {
-                            @for item in inventory {
+                            @for item in ingredients {
                                 @let definition = item_definitions.iter().find(|definition| definition.id == item.item_id);
                                 @let food_lot = food_lots.iter().find(|lot| lot.inventory_item_id == Some(item.id));
                                 @let display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());

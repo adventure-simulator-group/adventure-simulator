@@ -371,7 +371,9 @@
     const body = browser.querySelector("tbody");
     if (!body) return;
     const previousParent = body.querySelector(":scope > .food-parent-row");
-    const wasExpanded = previousParent?.getAttribute("aria-expanded") === "true";
+    const wasExpanded = previousParent
+      ? previousParent.getAttribute("aria-expanded") === "true"
+      : browser.dataset.inventoryBrowser === "cooking-inventory-right";
     previousParent?.remove();
     const components = [...body.querySelectorAll(":scope > tr.trade-inventory-row")]
       .filter((row) => !row.classList.contains("food-parent-row") && row.querySelector('[data-item-kind="food"], [data-food-lot="true"]'));

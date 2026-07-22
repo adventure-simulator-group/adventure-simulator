@@ -6,7 +6,7 @@ use crate::{activity::*, strategic_time::training_hours_increment};
 use adventuresim_world_schema::{OfficialReligion, ReligionHours};
 
 /// Stable order used by reports and schedule arrays.
-pub const SKILL_COUNT: usize = 25;
+pub const SKILL_COUNT: usize = 26;
 /// Ordinary sleep pressure accumulated over a full day without tiring activity.
 pub const BASELINE_FATIGUE_PER_DAY: f32 = 600.0;
 /// Fatigue added by an hour of sustained ordinary labor.
@@ -347,7 +347,7 @@ fn apply_profession_training(
     hours: f32,
 ) {
     match service_id {
-        Some(ProfessionId::Merchant | ProfessionId::Innkeeper) => skills.command += hours,
+        Some(ProfessionId::Merchant) => skills.command += hours,
         Some(ProfessionId::Weaponsmith | ProfessionId::Armourer) => skills.smithing += hours,
         Some(ProfessionId::Tailor) => skills.tailoring += hours,
         Some(ProfessionId::Herbalist) => {
