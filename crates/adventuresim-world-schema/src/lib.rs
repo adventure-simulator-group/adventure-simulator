@@ -9,9 +9,10 @@ use serde::{Deserialize, Serialize};
 
 mod language;
 pub use language::*;
-
-pub const WORLD_SCHEMA_VERSION: u32 = 24;
-pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 8;
+pub const WORLD_SCHEMA_VERSION: u32 = 25;
+pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 9;
+pub const MAX_EDGE_GEOMETRY_POINTS: usize = 512;
+pub const MAX_WORLD_GEOMETRY_POINTS: usize = 200_000;
 pub const MAX_SOURCES_MARKDOWN_CHARS: usize = 32_768;
 
 /// Authoritative MVP playable area in `[west, south, east, north]` order.
@@ -1860,6 +1861,47 @@ pub enum TravelEdgeKind {
     Ferry,
 }
 
+/// Whether an active strategic connection is directly documented or a
+/// conservative gap-fill inferred by the versioned world compiler.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+#[serde(rename_all = "snake_case")]
+pub enum TravelEdgeProvenance {
+    DocumentedViabundus,
+    InferredWalkingLink,
+}
+
+/// A bounded, deterministic WGS84 point in canonical offline edge geometry.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct TravelGeometryPoint {
+    pub longitude_e7: i32,
+    pub latitude_e7: i32,
+}
+
+impl TravelGeometryPoint {
+    pub fn new(longitude: f64, latitude: f64) -> Result<Self, String> {
+        if !longitude.is_finite()
+            || !latitude.is_finite()
+            || !(-180.0..=180.0).contains(&longitude)
+            || !(-90.0..=90.0).contains(&latitude)
+        {
+            return Err("invalid travel geometry coordinate".into());
+        }
+        Ok(Self {
+            longitude_e7: (longitude * 10_000_000.0).round() as i32,
+            latitude_e7: (latitude * 10_000_000.0).round() as i32,
+        })
+    }
+
+    pub fn longitude(self) -> f64 {
+        f64::from(self.longitude_e7) / 10_000_000.0
+    }
+    pub fn latitude(self) -> f64 {
+        f64::from(self.latitude_e7) / 10_000_000.0
+    }
+}
+
 impl TravelEdgeKind {
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -2693,6 +2735,310 @@ fn canonical_historical_woodland(v: HistoricalVegetation) -> Option<DominantLeaf
         },
         HistoricalVegetation::Direct(_) => None,
     }
+}
+
+/// Versioned, immutable settlement economy computed at world-build time.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum ProsperityTier {
+    Subsistence,
+    Modest,
+    Comfortable,
+    Prosperous,
+    Wealthy,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum SettlementService {
+    GeneralStore,
+    Inn,
+    GeneralBlacksmith,
+    Market,
+    Weaponsmith,
+    Armorer,
+    Tailor,
+    Herbalist,
+    Temple,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum StockCategory {
+    Grain,
+    Dairy,
+    Meat,
+    Fish,
+    Cloth,
+    Hides,
+    Timber,
+    Fuel,
+    Stone,
+    Pottery,
+    Salt,
+    Metalwares,
+    Weapons,
+    Armor,
+    Herbs,
+    GeneralGoods,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum ProfileFactProvenance {
+    ImportedEvidence,
+    DerivedFromCanonicalEvidence,
+    DeterministicGapFill,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct SettlementStock {
+    pub category: StockCategory,
+    /// Stable 1..=5 relative abundance, not mutable shop quantity.
+    pub abundance: u8,
+    pub provenance: ProfileFactProvenance,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct SettlementEconomyProfile {
+    pub rules_version: u32,
+    pub prosperity_score: u16,
+    pub prosperity_tier: ProsperityTier,
+    pub services: Vec<SettlementService>,
+    pub specializations: Vec<StockCategory>,
+    pub stock: Vec<SettlementStock>,
+}
+
+impl SettlementEconomyProfile {
+    pub const MAX_SERVICES: usize = 9;
+    pub const MAX_SPECIALIZATIONS: usize = 8;
+    pub const MAX_STOCK: usize = 16;
+
+    pub fn stage_placeholder() -> Self {
+        Self {
+            rules_version: CURRENT_INFERENCE_RULES_VERSION,
+            prosperity_score: 0,
+            prosperity_tier: ProsperityTier::Subsistence,
+            services: vec![SettlementService::Inn],
+            specializations: vec![],
+            stock: vec![SettlementStock {
+                category: StockCategory::GeneralGoods,
+                abundance: 1,
+                provenance: ProfileFactProvenance::DeterministicGapFill,
+            }],
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.rules_version != CURRENT_INFERENCE_RULES_VERSION || self.prosperity_score > 1_000 {
+            return Err("settlement economy has unsupported rules or prosperity".into());
+        }
+        if self.services.is_empty()
+            || self.services.len() > Self::MAX_SERVICES
+            || self.specializations.len() > Self::MAX_SPECIALIZATIONS
+            || self.stock.is_empty()
+            || self.stock.len() > Self::MAX_STOCK
+            || self.services.windows(2).any(|v| v[0] >= v[1])
+            || self.specializations.windows(2).any(|v| v[0] >= v[1])
+            || self
+                .stock
+                .windows(2)
+                .any(|v| v[0].category >= v[1].category)
+            || self.stock.iter().any(|v| !(1..=5).contains(&v.abundance))
+        {
+            return Err("settlement economy collections are not bounded canonical sets".into());
+        }
+        Ok(())
+    }
+
+    pub fn has_service(&self, service: SettlementService) -> bool {
+        self.services.binary_search(&service).is_ok()
+    }
+}
+
+/// Single canonical rules-v8 economy projection used by import and database
+/// finalization. `documented_town` is direct Viabundus evidence; route count is
+/// taken from the finalized graph.
+pub fn infer_settlement_economy(
+    population_level: i32,
+    population: u32,
+    routes: u16,
+    documented_town: bool,
+    industries: &InferredIndustryProfile,
+) -> Result<SettlementEconomyProfile, String> {
+    use std::collections::{BTreeMap, BTreeSet};
+    let industrial = industries
+        .outputs()
+        .iter()
+        .map(|e| match e {
+            IndustryEvidence::Derived(v) => match v.scale() {
+                ProductionScale::Marginal => 12,
+                ProductionScale::Local => 28,
+                ProductionScale::Regional => 48,
+            },
+            IndustryEvidence::Fallback(_) => 5,
+        })
+        .sum::<u16>()
+        .min(260);
+    let population_points = ((population.max(1) as f64).log10() * 95.0) as u16;
+    let score = (u16::try_from(population_level.max(1)).unwrap_or(1) * 85)
+        .saturating_add(population_points)
+        .saturating_add(industrial)
+        .saturating_add(routes.min(8) * 18)
+        .saturating_add(u16::from(documented_town) * 55)
+        .min(1_000);
+    let tier = match score {
+        0..=249 => ProsperityTier::Subsistence,
+        250..=419 => ProsperityTier::Modest,
+        420..=599 => ProsperityTier::Comfortable,
+        600..=779 => ProsperityTier::Prosperous,
+        _ => ProsperityTier::Wealthy,
+    };
+    let mut services = BTreeSet::from([SettlementService::Inn]);
+    if population_level <= 1 && population < 250 {
+        services.insert(SettlementService::GeneralStore);
+    } else {
+        services.extend([
+            SettlementService::GeneralStore,
+            SettlementService::Market,
+            SettlementService::Temple,
+        ]);
+        if population_level <= 2 || score < 470 {
+            services.insert(SettlementService::GeneralBlacksmith);
+        } else {
+            services.extend([SettlementService::Weaponsmith, SettlementService::Armorer]);
+        }
+        if population_level >= 3 || score >= 500 {
+            services.insert(SettlementService::Tailor);
+        }
+        if population_level >= 3 || industries.outputs().iter().any(forest_or_peat) {
+            services.insert(SettlementService::Herbalist);
+        }
+    }
+    let mut stock = BTreeMap::<StockCategory, SettlementStock>::new();
+    let mut add = |category, abundance, provenance| {
+        stock
+            .entry(category)
+            .and_modify(|v| v.abundance = v.abundance.max(abundance))
+            .or_insert(SettlementStock {
+                category,
+                abundance,
+                provenance,
+            });
+    };
+    for evidence in industries.outputs() {
+        let IndustryEvidence::Derived(industry) = evidence else {
+            continue;
+        };
+        let abundance = match industry.scale() {
+            ProductionScale::Marginal => 2,
+            ProductionScale::Local => 4,
+            ProductionScale::Regional => 5,
+        };
+        let category = match industry {
+            DerivedIndustry::Agriculture(v) => match v.commodity {
+                AgriculturalCommodity::Grain => StockCategory::Grain,
+                AgriculturalCommodity::Flax | AgriculturalCommodity::Wool => StockCategory::Cloth,
+                AgriculturalCommodity::Dairy => StockCategory::Dairy,
+                AgriculturalCommodity::Hides => StockCategory::Hides,
+            },
+            DerivedIndustry::Fishing(_) => StockCategory::Fish,
+            DerivedIndustry::Quarrying(_) => StockCategory::Stone,
+            DerivedIndustry::Mining(_) => StockCategory::Fuel,
+            DerivedIndustry::Pottery(_) => StockCategory::Pottery,
+            DerivedIndustry::PeatCutting(_) | DerivedIndustry::CharcoalBurning(_) => {
+                StockCategory::Fuel
+            }
+            DerivedIndustry::Forestry(v) => match v.commodity {
+                ForestCommodity::Fuelwood => StockCategory::Fuel,
+                _ => StockCategory::Timber,
+            },
+            DerivedIndustry::Saltmaking(_) => StockCategory::Salt,
+            DerivedIndustry::Construction(v) => match v.commodity {
+                ConstructionCommodity::Timber => StockCategory::Timber,
+                ConstructionCommodity::Brick | ConstructionCommodity::RoofTile => {
+                    StockCategory::Pottery
+                }
+                _ => StockCategory::Stone,
+            },
+        };
+        add(
+            category,
+            abundance,
+            ProfileFactProvenance::DerivedFromCanonicalEvidence,
+        );
+    }
+    let gap = ProfileFactProvenance::DeterministicGapFill;
+    add(
+        StockCategory::GeneralGoods,
+        if population_level <= 1 { 3 } else { 2 },
+        gap,
+    );
+    if population_level <= 1 {
+        add(StockCategory::Grain, 1, gap);
+        add(StockCategory::Meat, 1, gap);
+    }
+    if industries.outputs().iter().any(|e|matches!(e,IndustryEvidence::Derived(DerivedIndustry::Agriculture(v)) if matches!(v.commodity,AgriculturalCommodity::Dairy|AgriculturalCommodity::Hides))){add(StockCategory::Meat,3,ProfileFactProvenance::DerivedFromCanonicalEvidence);}
+    if services.contains(&SettlementService::GeneralBlacksmith)
+        || services.contains(&SettlementService::Weaponsmith)
+    {
+        add(
+            StockCategory::Metalwares,
+            if score >= 600 { 4 } else { 2 },
+            gap,
+        );
+    }
+    if services.contains(&SettlementService::GeneralBlacksmith) {
+        add(StockCategory::Weapons, 1, gap);
+        add(StockCategory::Armor, 1, gap);
+    }
+    if services.contains(&SettlementService::Weaponsmith) {
+        add(
+            StockCategory::Weapons,
+            if score >= 700 { 4 } else { 2 },
+            gap,
+        );
+    }
+    if services.contains(&SettlementService::Armorer) {
+        add(StockCategory::Armor, if score >= 700 { 4 } else { 2 }, gap);
+    }
+    if services.contains(&SettlementService::Herbalist) {
+        add(
+            StockCategory::Herbs,
+            2 + u8::from(industries.outputs().iter().any(forest_or_peat)),
+            gap,
+        );
+    }
+    let mut specializations = stock
+        .values()
+        .filter(|value| value.abundance >= 4)
+        .map(|value| (value.category, value.abundance))
+        .collect::<Vec<_>>();
+    specializations.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+    specializations.truncate(SettlementEconomyProfile::MAX_SPECIALIZATIONS);
+    specializations.sort_by_key(|(category, _)| *category);
+    let profile = SettlementEconomyProfile {
+        rules_version: CURRENT_INFERENCE_RULES_VERSION,
+        prosperity_score: score,
+        prosperity_tier: tier,
+        services: services.into_iter().collect(),
+        specializations: specializations
+            .into_iter()
+            .map(|(category, _)| category)
+            .collect(),
+        stock: stock.into_values().collect(),
+    };
+    profile.validate()?;
+    Ok(profile)
+}
+
+fn forest_or_peat(e: &IndustryEvidence) -> bool {
+    matches!(
+        e,
+        IndustryEvidence::Derived(DerivedIndustry::Forestry(_) | DerivedIndustry::PeatCutting(_))
+    )
 }
 
 impl SettlementHydrology {
@@ -3870,6 +4216,9 @@ pub struct WorldBuildReport {
     pub industry_charcoal_outputs: usize,
     pub industry_saltmaking_outputs: usize,
     pub industry_construction_outputs: usize,
+    pub base_terrain_package_sha256: String,
+    pub inferred_road_edges: usize,
+    pub inferred_road_geometry_sha256: String,
     pub excluded_edges: std::collections::BTreeMap<String, usize>,
 }
 
@@ -3905,10 +4254,33 @@ pub struct TravelEdgeImport {
     pub from_node_id: u64,
     pub to_node_id: u64,
     pub route: TravelRoute,
+    pub provenance: TravelEdgeProvenance,
+    /// Exact offline geometry for inferred links. Documented Viabundus edges
+    /// keep their source geometry outside this normalized topology artifact.
+    pub geometry: Vec<TravelGeometryPoint>,
     pub toll: Option<EdgeEndpoint>,
     pub length_m: u32,
     pub slope_multiplier: f32,
     /// Viabundus's source cost hint remains distinct from DEM-derived grade.
+    pub terrain: RouteTerrain,
+    pub certainty: u8,
+    pub section: String,
+    pub sources: String,
+}
+
+/// Bounded reducer transport projection. Offline geometry is deliberately
+/// omitted after compiled-artifact validation because runtime tables do not use it.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct TravelEdgeLoad {
+    pub id: u64,
+    pub from_node_id: u64,
+    pub to_node_id: u64,
+    pub route: TravelRoute,
+    pub provenance: TravelEdgeProvenance,
+    pub toll: Option<EdgeEndpoint>,
+    pub length_m: u32,
+    pub slope_multiplier: f32,
     pub terrain: RouteTerrain,
     pub certainty: u8,
     pub section: String,
@@ -3939,6 +4311,7 @@ pub struct SettlementImport {
     pub drought: DroughtProfile,
     pub hydrology: SettlementHydrology,
     pub industries: InferredIndustryProfile,
+    pub economy: SettlementEconomyProfile,
     pub scene_key: String,
     pub sources: String,
 }
@@ -3985,14 +4358,90 @@ mod tests {
     use std::str::FromStr;
 
     use super::{
-        CanopyDensity, DroughtHistory, ElevationBand, ElevationMeters, ForestCover, GeologicUnitId,
-        HabitatSuitability, HumanLandUseIntensity, InferredTreeSpeciesProfile, LandUseFraction,
-        LandUseProfile, LanguageCode, ModeledTreeSpecies, ModeledTreeSpeciesProfile,
-        NativeRangeEvidence, OfficialReligion, PalmerDroughtSeverityIndex, PotentialVegetation,
-        PotentialVegetationClass, PotentialVegetationPosterior, ReligionHours, ReligionMinutes,
-        SettlementReligiousStatus, SoilBasisPoints, StoneContentPercent, SuitabilityBasisPoints,
-        SummerHydroclimate, TreeSpeciesId,
+        AgriculturalCommodity, AgricultureIndustry, CanopyDensity, DerivedIndustry, DroughtHistory,
+        ElevationBand, ElevationMeters, FishCommodity, FishingIndustry, ForestCommodity,
+        ForestCover, ForestryIndustry, GeologicUnitId, HabitatSuitability, HumanLandUseIntensity,
+        IndustryEvidence, InferredIndustryProfile, InferredTreeSpeciesProfile, LandUseFraction,
+        LandUseProfile, LanguageCode, MinedCommodity, MiningIndustry, ModeledTreeSpecies,
+        ModeledTreeSpeciesProfile, NativeRangeEvidence, OfficialReligion,
+        PalmerDroughtSeverityIndex, PotentialVegetation, PotentialVegetationClass,
+        PotentialVegetationPosterior, PotteryCommodity, PotteryIndustry, ProductionScale,
+        QuarryCommodity, QuarryingIndustry, ReligionHours, ReligionMinutes, SaltSource,
+        SaltmakingIndustry, SettlementEconomyProfile, SettlementReligiousStatus, SoilBasisPoints,
+        StockCategory, StoneContentPercent, SuitabilityBasisPoints, SummerHydroclimate,
+        TreeSpeciesId, infer_settlement_economy,
     };
+
+    #[test]
+    fn maximal_industry_diversity_keeps_the_strongest_bounded_specializations() {
+        let regional = ProductionScale::Regional;
+        let local = ProductionScale::Local;
+        let industries = InferredIndustryProfile::new(vec![
+            IndustryEvidence::Derived(DerivedIndustry::Agriculture(AgricultureIndustry {
+                commodity: AgriculturalCommodity::Grain,
+                scale: regional,
+            })),
+            IndustryEvidence::Derived(DerivedIndustry::Agriculture(AgricultureIndustry {
+                commodity: AgriculturalCommodity::Flax,
+                scale: regional,
+            })),
+            IndustryEvidence::Derived(DerivedIndustry::Agriculture(AgricultureIndustry {
+                commodity: AgriculturalCommodity::Dairy,
+                scale: regional,
+            })),
+            IndustryEvidence::Derived(DerivedIndustry::Agriculture(AgricultureIndustry {
+                commodity: AgriculturalCommodity::Hides,
+                scale: regional,
+            })),
+            IndustryEvidence::Derived(DerivedIndustry::Fishing(FishingIndustry {
+                commodity: FishCommodity::Freshwater,
+                scale: regional,
+            })),
+            IndustryEvidence::Derived(DerivedIndustry::Quarrying(QuarryingIndustry {
+                commodity: QuarryCommodity::Limestone,
+                scale: regional,
+            })),
+            IndustryEvidence::Derived(DerivedIndustry::Mining(MiningIndustry {
+                commodity: MinedCommodity::Coal,
+                scale: regional,
+            })),
+            IndustryEvidence::Derived(DerivedIndustry::Pottery(PotteryIndustry {
+                commodity: PotteryCommodity::Earthenware,
+                scale: regional,
+            })),
+            IndustryEvidence::Derived(DerivedIndustry::Forestry(ForestryIndustry {
+                commodity: ForestCommodity::Hardwood,
+                scale: local,
+            })),
+            IndustryEvidence::Derived(DerivedIndustry::Saltmaking(SaltmakingIndustry {
+                source: SaltSource::Evaporite,
+                scale: local,
+            })),
+        ])
+        .unwrap();
+
+        let profile = infer_settlement_economy(5, 50_000, 8, true, &industries).unwrap();
+
+        assert_eq!(
+            profile.specializations.len(),
+            SettlementEconomyProfile::MAX_SPECIALIZATIONS
+        );
+        assert_eq!(
+            profile.specializations,
+            vec![
+                StockCategory::Grain,
+                StockCategory::Dairy,
+                StockCategory::Fish,
+                StockCategory::Cloth,
+                StockCategory::Hides,
+                StockCategory::Fuel,
+                StockCategory::Stone,
+                StockCategory::Pottery,
+            ]
+        );
+        assert!(profile.specializations.windows(2).all(|v| v[0] < v[1]));
+        profile.validate().unwrap();
+    }
 
     #[test]
     fn religion_correlations_are_identity_symmetric_and_non_recursive() {

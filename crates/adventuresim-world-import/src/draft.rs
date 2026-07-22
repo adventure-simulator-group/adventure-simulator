@@ -37,6 +37,7 @@ pub(crate) struct TravelEdgeDraft {
     pub(crate) from_node_id: u64,
     pub(crate) to_node_id: u64,
     pub(crate) route: TravelRouteDraft,
+    pub(crate) provenance: adventuresim_world_schema::TravelEdgeProvenance,
     pub(crate) toll: Option<EdgeEndpoint>,
     pub(crate) length_m: u32,
     pub(crate) slope_multiplier: f32,
