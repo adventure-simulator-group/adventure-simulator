@@ -568,11 +568,19 @@ async fn render_quest_location(
             .iter()
             .find(|settlement| settlement.id == destination.id)
     {
+        let terrain_profile = if let Some(character) = character.as_ref() {
+            crate::routes::party_terrain_profile(&state, character)
+                .await
+                .unwrap_or_default()
+        } else {
+            adventuresim_terrain::TerrainSkillProfile::default()
+        };
         apply_terrain_route(
             destination,
             state.terrain.as_deref(),
             (quest.location_coord_y, quest.location_coord_x),
             (settlement.coord_y, settlement.coord_x),
+            terrain_profile,
         )
         .await;
     }

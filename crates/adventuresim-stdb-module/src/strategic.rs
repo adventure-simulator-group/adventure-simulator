@@ -22,7 +22,8 @@ use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table
 
 use crate::{
     character::{
-        character, character_attributes, character_equip, character_limbs, character_stats,
+        character, character_attributes, character_equip, character_limbs, character_skills,
+        character_stats,
     },
     condition::character_condition,
     item::{InventoryItem, inventory_item, item},
@@ -30,6 +31,7 @@ use crate::{
     tactical::tactical_server_request,
     time::{
         advance_travel_time, character_apprenticeship, character_time, character_training_schedule,
+        preview_travel_time, settle_travel_boundary,
     },
 };
 use std::collections::{BinaryHeap, HashMap, HashSet};
@@ -1567,9 +1569,20 @@ pub struct JourneyRoutePoint {
     pub longitude_e7: i32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub struct JourneyTerrainWeights {
+    pub plains: u16,
+    pub forest: u16,
+    pub hills: u16,
+    pub urban: u16,
+}
+
 #[derive(Clone, Debug, PartialEq, SpacetimeType)]
 pub struct JourneyTerrainSpan {
     pub kind: JourneyTerrainKind,
+    pub terrain: JourneyTerrainWeights,
+    pub training_multiplier_permille: u16,
+    pub check_millirank: u16,
     pub start_minute: u64,
     pub duration_minutes: u64,
 }
@@ -6370,13 +6383,24 @@ fn validate_journey_route_payload(
     let minimum_minutes = route
         .distance_m
         .saturating_mul(MINUTES_PER_HOUR)
-        .div_ceil(WALKING_SPEED_KM_PER_HOUR * METERS_PER_KILOMETER)
+        .div_ceil(7_500)
         .max(1);
     if route.minutes < minimum_minutes {
         return Err("Terrain route duration is faster than the maximum travel speed".into());
     }
     let mut cursor = 0_u64;
     for span in &route.spans {
+        let weight_sum = u32::from(span.terrain.plains)
+            + u32::from(span.terrain.forest)
+            + u32::from(span.terrain.hills)
+            + u32::from(span.terrain.urban);
+        if weight_sum != 1_000
+            || span.terrain.urban != 0
+            || span.training_multiplier_permille > 1_000
+            || span.check_millirank > 5_000
+        {
+            return Err("Terrain route span has invalid bounded skill metadata".into());
+        }
         if span.start_minute != cursor || span.duration_minutes == 0 {
             return Err("Terrain route spans are discontinuous".into());
         }
@@ -6988,6 +7012,133 @@ fn record_party_journey_camp(
     Ok(())
 }
 
+/// Award conserved terrain exposure for the exact movement interval about to
+/// be advanced. Camp time never reaches this function. The persisted route is
+/// the departure snapshot, so chunked/offline continuation cannot change the
+/// check, duration, or skill mixture mid-journey.
+fn train_party_terrain_movement(
+    ctx: &ReducerContext,
+    party_id: &str,
+    movement_minutes: u64,
+) -> Result<(), String> {
+    if movement_minutes == 0 {
+        return Ok(());
+    }
+    let Some(journey) = ctx
+        .db
+        .party_journey()
+        .party_id()
+        .find(&party_id.to_string())
+    else {
+        return Ok(());
+    };
+    let Some(route) = ctx
+        .db
+        .party_journey_route()
+        .party_id()
+        .find(&party_id.to_string())
+    else {
+        return Ok(());
+    };
+    let start = journey.completed_minutes;
+    let end = start.saturating_add(movement_minutes).min(route.minutes);
+    let exposure = terrain_training_exposure(&route.spans, start, end);
+    for member_id in living_party_member_ids(ctx, party_id) {
+        if let Some(mut skills) = ctx.db.character_skills().character_id().find(member_id) {
+            skills.terrain_plains_hours = (skills.terrain_plains_hours + exposure[0])
+                .clamp(0.0, Skill::TerrainPlains.max_hours());
+            skills.terrain_forest_hours = (skills.terrain_forest_hours + exposure[1])
+                .clamp(0.0, Skill::TerrainForest.max_hours());
+            skills.terrain_hills_hours = (skills.terrain_hills_hours + exposure[2])
+                .clamp(0.0, Skill::TerrainHills.max_hours());
+            skills.terrain_urban_hours = (skills.terrain_urban_hours + exposure[3])
+                .clamp(0.0, Skill::TerrainUrban.max_hours());
+            ctx.db.character_skills().character_id().update(skills);
+        }
+    }
+    Ok(())
+}
+
+fn terrain_training_exposure(spans: &[JourneyTerrainSpan], start: u64, end: u64) -> [f32; 4] {
+    let mut exposure = [0.0_f32; 4];
+    for span in spans {
+        let overlap = end
+            .min(span.start_minute.saturating_add(span.duration_minutes))
+            .saturating_sub(start.max(span.start_minute));
+        if overlap == 0 {
+            continue;
+        }
+        let hours = overlap as f32 / 60.0 * f32::from(span.training_multiplier_permille) / 1_000.0;
+        exposure[0] += hours * f32::from(span.terrain.plains) / 1_000.0;
+        exposure[1] += hours * f32::from(span.terrain.forest) / 1_000.0;
+        exposure[2] += hours * f32::from(span.terrain.hills) / 1_000.0;
+        exposure[3] += hours * f32::from(span.terrain.urban) / 1_000.0;
+    }
+    exposure
+}
+
+fn advance_party_movement(
+    ctx: &ReducerContext,
+    party_id: &str,
+    traveler_ids: &[u64],
+    requested_minutes: u64,
+) -> Result<(u64, bool), String> {
+    let mut safe_prefixes = Vec::with_capacity(traveler_ids.len());
+    for member_id in traveler_ids {
+        safe_prefixes.push(preview_travel_time(ctx, *member_id, requested_minutes)?);
+    }
+    let actual_minutes = common_movement_prefix(requested_minutes, safe_prefixes.iter().copied());
+    if actual_minutes == 0 {
+        let mut all_survived = true;
+        for (member_id, safe_prefix) in traveler_ids.iter().zip(safe_prefixes) {
+            if zero_boundary_requires_settlement(actual_minutes, safe_prefix) {
+                all_survived &= settle_travel_boundary(ctx, *member_id)?;
+            }
+        }
+        return Ok((0, all_survived));
+    }
+    let mut all_survived = true;
+    for member_id in traveler_ids.iter().copied() {
+        all_survived &= advance_travel_time(ctx, member_id, actual_minutes)?;
+    }
+    // Training is committed only after every participant's authoritative
+    // clock has committed the same safe movement prefix.
+    train_party_terrain_movement(ctx, party_id, actual_minutes)?;
+    Ok((actual_minutes, all_survived))
+}
+
+fn zero_boundary_requires_settlement(actual_minutes: u64, safe_prefix: u64) -> bool {
+    actual_minutes == 0 && safe_prefix == 0
+}
+
+fn set_party_journey_state(
+    party: &mut Party,
+    current_settlement_id: Option<String>,
+    current_quest_location_id: Option<String>,
+    camp_destination_id: Option<String>,
+    camp_destination_kind: Option<String>,
+    camp_remaining_minutes: u64,
+) {
+    // Deliberately touch only journey fields. In particular, leadership may
+    // have changed while movement committed a terminal event.
+    party.current_settlement_id = current_settlement_id;
+    party.current_quest_location_id = current_quest_location_id;
+    party.camp_destination_id = camp_destination_id;
+    party.camp_destination_kind = camp_destination_kind;
+    party.camp_remaining_minutes = camp_remaining_minutes;
+}
+
+fn party_can_continue_travel(party: &Party, character_id: u64) -> bool {
+    party.leader_id == character_id
+}
+
+fn common_movement_prefix(
+    requested_minutes: u64,
+    safe_prefixes: impl IntoIterator<Item = u64>,
+) -> u64 {
+    safe_prefixes.into_iter().fold(requested_minutes, u64::min)
+}
+
 pub(crate) fn refresh_party_journey_forecast(
     ctx: &ReducerContext,
     party_id: &str,
@@ -7393,10 +7544,12 @@ fn reconstruct_legacy_journey_coordinates(
 #[cfg(test)]
 mod departure_invariant_tests {
     use super::{
-        JourneyRoutePlan, JourneyRoutePoint, JourneyTerrainKind, JourneyTerrainSpan,
-        PartyJourneyRoute, departure_snapshot_allows_travel,
-        reconstruct_legacy_journey_coordinates, route_position_at_minute, straight_line_distance_m,
-        validate_journey_route_payload,
+        CampDurationMode, JourneyRoutePlan, JourneyRoutePoint, JourneyTerrainKind,
+        JourneyTerrainSpan, Party, PartyJourneyRoute, common_movement_prefix,
+        departure_snapshot_allows_travel, party_can_continue_travel,
+        reconstruct_legacy_journey_coordinates, route_position_at_minute, set_party_journey_state,
+        straight_line_distance_m, validate_journey_route_payload,
+        zero_boundary_requires_settlement,
     };
 
     #[test]
@@ -7442,11 +7595,27 @@ mod departure_invariant_tests {
             spans: vec![
                 JourneyTerrainSpan {
                     kind: JourneyTerrainKind::Road,
+                    terrain: JourneyTerrainWeights {
+                        plains: 1_000,
+                        forest: 0,
+                        hills: 0,
+                        urban: 0,
+                    },
+                    training_multiplier_permille: 250,
+                    check_millirank: 0,
                     start_minute: 0,
                     duration_minutes: 5,
                 },
                 JourneyTerrainSpan {
                     kind: JourneyTerrainKind::Open,
+                    terrain: JourneyTerrainWeights {
+                        plains: 1_000,
+                        forest: 0,
+                        hills: 0,
+                        urban: 0,
+                    },
+                    training_multiplier_permille: 1_000,
+                    check_millirank: 0,
                     start_minute: 5,
                     duration_minutes: 7,
                 },
@@ -7473,9 +7642,28 @@ mod departure_invariant_tests {
         assert!(validate_journey_route_payload(&bad, (10.0, 53.0), (10.01, 53.0)).is_err());
 
         let mut bad = route.clone();
+        bad.spans[0].terrain.plains = 999;
+        assert!(validate_journey_route_payload(&bad, (10.0, 53.0), (10.01, 53.0)).is_err());
+
+        for index in 0..2 {
+            let mut bad = route.clone();
+            bad.spans[index].terrain.plains -= 1;
+            bad.spans[index].terrain.urban = 1;
+            assert!(validate_journey_route_payload(&bad, (10.0, 53.0), (10.01, 53.0)).is_err());
+        }
+
+        let mut bad = route.clone();
         bad.minutes = 1;
         bad.spans = vec![JourneyTerrainSpan {
             kind: JourneyTerrainKind::Road,
+            terrain: JourneyTerrainWeights {
+                plains: 1_000,
+                forest: 0,
+                hills: 0,
+                urban: 0,
+            },
+            training_multiplier_permille: 250,
+            check_millirank: 0,
             start_minute: 0,
             duration_minutes: 1,
         }];
@@ -7484,6 +7672,110 @@ mod departure_invariant_tests {
         let mut bad = route;
         bad.points[0].latitude_e7 = i32::MAX;
         assert!(validate_journey_route_payload(&bad, (10.0, 53.0), (10.01, 53.0)).is_err());
+    }
+
+    #[test]
+    fn max_rank_seventy_five_hundred_metres_per_hour_route_is_accepted() {
+        let mut route = route_fixture();
+        route.minutes = route.distance_m.saturating_mul(60).div_ceil(7_500);
+        route.spans[0].duration_minutes = 2;
+        route.spans[1].start_minute = 2;
+        route.spans[1].duration_minutes = route.minutes - 2;
+        for span in &mut route.spans {
+            span.check_millirank = 5_000;
+        }
+        assert_eq!(route.minutes, 6);
+        assert!(validate_journey_route_payload(&route, (10.0, 53.0), (10.01, 53.0)).is_ok());
+    }
+
+    #[test]
+    fn terrain_training_uses_exact_overlap_and_conserves_mixed_exposure() {
+        let spans = route_fixture().spans;
+        let exposure = terrain_training_exposure(&spans, 3, 9);
+        // Two road minutes at 25%, then four open minutes at full exposure.
+        assert!((exposure[0] - 4.5 / 60.0).abs() < 0.0001);
+        assert_eq!(exposure[1..], [0.0, 0.0, 0.0]);
+        let none = terrain_training_exposure(&spans, 12, 30);
+        assert_eq!(none, [0.0; 4]);
+    }
+
+    #[test]
+    fn terminal_prefix_and_retry_train_each_committed_minute_once() {
+        let spans = route_fixture().spans;
+        let first = common_movement_prefix(12, [12, 4]);
+        assert_eq!(
+            first, 4,
+            "the earliest death boundary limits the whole party"
+        );
+        let retry = common_movement_prefix(12 - first, [8]);
+        let chunked = terrain_training_exposure(&spans, 0, first);
+        let resumed = terrain_training_exposure(&spans, first, first + retry);
+        let whole = terrain_training_exposure(&spans, 0, 12);
+        for index in 0..4 {
+            assert!((chunked[index] + resumed[index] - whole[index]).abs() < 0.0001);
+        }
+    }
+
+    #[test]
+    fn zero_minute_terminal_is_settled_before_survivors_retry() {
+        let first_prefixes = [12, 0];
+        let first = common_movement_prefix(12, first_prefixes);
+        assert_eq!(first, 0);
+        assert!(!zero_boundary_requires_settlement(first, first_prefixes[0]));
+        assert!(zero_boundary_requires_settlement(first, first_prefixes[1]));
+
+        // Once the terminal member has been authoritatively removed from the
+        // living traveler list, the survivor's retry advances normally and no
+        // zero-boundary settlement is repeated.
+        let retry_prefixes = [12];
+        let retry = common_movement_prefix(12, retry_prefixes);
+        assert_eq!(retry, 12);
+        assert!(!zero_boundary_requires_settlement(retry, retry_prefixes[0]));
+    }
+
+    #[test]
+    fn journey_state_update_preserves_elected_successor_authority() {
+        let mut fresh_party = Party {
+            id: "party".into(),
+            name: "Travelers".into(),
+            leader_id: 2,
+            current_settlement_id: None,
+            current_quest_location_id: None,
+            active_quest_id: None,
+            is_solo: true,
+            camp_fatigue_percent: 50,
+            walking_minutes_per_day: 480,
+            travel_at_night: false,
+            camp_duration_mode: CampDurationMode::Auto,
+            fixed_camp_minutes: 0,
+            camp_destination_id: Some("destination".into()),
+            camp_destination_kind: Some("settlement".into()),
+            camp_remaining_minutes: 30,
+            pooled_water_ml: 0.0,
+            medicine_target: 0.0,
+            charisma_target: 0.0,
+            religion_target: 0.0,
+        };
+        set_party_journey_state(
+            &mut fresh_party,
+            Some("destination".into()),
+            None,
+            None,
+            None,
+            0,
+        );
+        assert_eq!(fresh_party.leader_id, 2);
+        assert_eq!(
+            fresh_party.current_settlement_id.as_deref(),
+            Some("destination")
+        );
+        assert!(fresh_party.camp_destination_id.is_none());
+        assert_eq!(
+            fresh_party.leader_id, 2,
+            "the successor can continue leading"
+        );
+        assert!(party_can_continue_travel(&fresh_party, 2));
+        assert!(!party_can_continue_travel(&fresh_party, 1));
     }
 
     #[test]
@@ -7631,13 +7923,18 @@ fn travel_to_quest_impl(
         .id()
         .find(&party_id)
         .ok_or("Party changed while its waterskins were filled")?;
-    let leg_minutes =
+    let proposed_leg_minutes =
         travel_minutes.min(party_next_walking_minutes(ctx, &party.id, travel_minutes)?);
+    let (leg_minutes, _) =
+        advance_party_movement(ctx, &party_id, &traveler_ids, proposed_leg_minutes)?;
+    party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party changed during travel")?;
     if leg_minutes < travel_minutes {
-        for member_id in traveler_ids.iter().copied() {
-            if !advance_travel_time(ctx, member_id, leg_minutes)? {
-                return Ok(());
-            }
+        for member_id in living_party_member_ids(ctx, &party_id) {
             let mut member = ctx
                 .db
                 .character()
@@ -7648,30 +7945,28 @@ fn travel_to_quest_impl(
             member.current_quest_location_id = None;
             ctx.db.character().id().update(member);
         }
-        party.current_settlement_id = None;
-        party.current_quest_location_id = None;
-        party.camp_destination_id = Some(quest_id);
-        party.camp_destination_kind = Some("quest".into());
-        party.camp_remaining_minutes = travel_minutes.saturating_sub(leg_minutes);
+        set_party_journey_state(
+            &mut party,
+            None,
+            None,
+            Some(quest_id),
+            Some("quest".into()),
+            travel_minutes.saturating_sub(leg_minutes),
+        );
         ctx.db.party().id().update(party);
-        record_party_journey_camp(ctx, &party_id, leg_minutes)?;
+        if leg_minutes > 0 {
+            record_party_journey_camp(ctx, &party_id, leg_minutes)?;
+        }
         return Ok(());
     }
     for member_id in traveler_ids {
         if let Some(mut member) = ctx.db.character().id().find(member_id) {
-            if !advance_travel_time(ctx, member.id, travel_minutes)? {
-                return Ok(());
-            }
             member.current_settlement_id = None;
             member.current_quest_location_id = Some(quest_id.clone());
             ctx.db.character().id().update(member);
         }
     }
-    party.current_settlement_id = None;
-    party.current_quest_location_id = Some(quest_id);
-    party.camp_destination_id = None;
-    party.camp_destination_kind = None;
-    party.camp_remaining_minutes = 0;
+    set_party_journey_state(&mut party, None, Some(quest_id), None, None, 0);
     ctx.db.party().id().update(party);
     finish_party_journey(ctx, &party_id);
     Ok(())
@@ -7866,14 +8161,23 @@ fn travel_to_settlement_impl(
     for traveler_id in traveler_ids.iter().copied() {
         crate::condition::prepare_character_waterskins(ctx, traveler_id, departing_settlement)?;
     }
-    if let Some(ref mut party) = party {
-        let leg_minutes =
-            travel_minutes.min(party_next_walking_minutes(ctx, &party.id, travel_minutes)?);
+    let mut party_movement_committed = false;
+    if let Some(current_party) = party.as_ref() {
+        let party_id = current_party.id.clone();
+        let proposed_leg_minutes =
+            travel_minutes.min(party_next_walking_minutes(ctx, &party_id, travel_minutes)?);
+        let (leg_minutes, _) =
+            advance_party_movement(ctx, &party_id, &traveler_ids, proposed_leg_minutes)?;
+        party = Some(
+            ctx.db
+                .party()
+                .id()
+                .find(&party_id)
+                .ok_or("Party changed during travel")?,
+        );
+        party_movement_committed = true;
         if leg_minutes < travel_minutes {
-            for traveler_id in traveler_ids {
-                if !advance_travel_time(ctx, traveler_id, leg_minutes)? {
-                    return Ok(());
-                }
+            for traveler_id in living_party_member_ids(ctx, &party_id) {
                 let mut traveler = ctx
                     .db
                     .character()
@@ -7884,18 +8188,24 @@ fn travel_to_settlement_impl(
                 traveler.current_quest_location_id = None;
                 ctx.db.character().id().update(traveler);
             }
-            party.current_settlement_id = None;
-            party.current_quest_location_id = None;
-            party.camp_destination_id = Some(settlement_id);
-            party.camp_destination_kind = Some("settlement".into());
-            party.camp_remaining_minutes = travel_minutes.saturating_sub(leg_minutes);
+            let party = party.as_mut().expect("party was just reloaded");
+            set_party_journey_state(
+                party,
+                None,
+                None,
+                Some(settlement_id),
+                Some("settlement".into()),
+                travel_minutes.saturating_sub(leg_minutes),
+            );
             ctx.db.party().id().update(party.clone());
-            record_party_journey_camp(ctx, &party.id, leg_minutes)?;
+            if leg_minutes > 0 {
+                record_party_journey_camp(ctx, &party.id, leg_minutes)?;
+            }
             return Ok(());
         }
     }
     for traveler_id in traveler_ids {
-        if !advance_travel_time(ctx, traveler_id, travel_minutes)? {
+        if !party_movement_committed && !advance_travel_time(ctx, traveler_id, travel_minutes)? {
             return Ok(());
         }
         let mut traveler = ctx
@@ -7914,11 +8224,7 @@ fn travel_to_settlement_impl(
     }
 
     if let Some(ref mut party) = party {
-        party.current_settlement_id = Some(settlement_id.clone());
-        party.current_quest_location_id = None;
-        party.camp_destination_id = None;
-        party.camp_destination_kind = None;
-        party.camp_remaining_minutes = 0;
+        set_party_journey_state(party, Some(settlement_id.clone()), None, None, None, 0);
         ctx.db.party().id().update(party.clone());
         finish_party_journey(ctx, &party.id);
         let fled_incident = departing_quest.as_ref().is_some_and(|quest_id| {
@@ -8040,7 +8346,7 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
-    if party.leader_id != character_id {
+    if !party_can_continue_travel(&party, character_id) {
         return Err("Only the party leader can continue travel".into());
     }
     let destination_id = party
@@ -8054,24 +8360,29 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
     // This also upgrades pre elapsed-itinerary rows before any celestial or
     // progress coordinates are used.
     refresh_party_journey_forecast(ctx, &party_id)?;
-    let leg_minutes = party.camp_remaining_minutes.min(party_next_walking_minutes(
+    let proposed_leg_minutes = party.camp_remaining_minutes.min(party_next_walking_minutes(
         ctx,
         &party.id,
         party.camp_remaining_minutes,
     )?);
-    if leg_minutes == 0 {
+    if proposed_leg_minutes == 0 {
         return Err("Rest until the party reaches its next daylight walking window".into());
     }
     let traveler_ids = living_party_member_ids(ctx, &party_id);
-    for member_id in traveler_ids.iter().copied() {
-        if !advance_travel_time(ctx, member_id, leg_minutes)? {
-            return Ok(());
-        }
-    }
+    let (leg_minutes, _) =
+        advance_party_movement(ctx, &party_id, &traveler_ids, proposed_leg_minutes)?;
+    party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party changed during travel")?;
     party.camp_remaining_minutes = party.camp_remaining_minutes.saturating_sub(leg_minutes);
     if party.camp_remaining_minutes > 0 {
         ctx.db.party().id().update(party);
-        record_party_journey_camp(ctx, &party_id, leg_minutes)?;
+        if leg_minutes > 0 {
+            record_party_journey_camp(ctx, &party_id, leg_minutes)?;
+        }
         return Ok(());
     }
     match destination_kind.as_str() {
@@ -8125,8 +8436,16 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
         }
         _ => return Err("Camp destination kind is invalid".into()),
     }
-    party.camp_destination_id = None;
-    party.camp_destination_kind = None;
+    let current_settlement_id = party.current_settlement_id.clone();
+    let current_quest_location_id = party.current_quest_location_id.clone();
+    set_party_journey_state(
+        &mut party,
+        current_settlement_id,
+        current_quest_location_id,
+        None,
+        None,
+        0,
+    );
     ctx.db.party().id().update(party);
     finish_party_journey(ctx, &party_id);
     Ok(())

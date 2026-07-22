@@ -64,6 +64,11 @@ it into database rows or `ElevationCell` structs. Independently deflated
 surface, exact bounded canopy percentage, a native 15-degree hill bit, and an
 explicit infrastructure-crossing bit.
 
+The runtime decodes the native hill bit as 0 or 100 percent hill coverage.
+When pathfinding coarsens a window it averages that percentage, rather than
+promoting a cell when any sample is hilly. Canopy and hill coverage therefore
+remain independent and a wooded hillside stays a mixed terrain cell.
+
 The compiler writes `STRATEGIC_MAP_DATA_LICENSE.md` beside the terrain and map
 outputs. It contains the prescribed Copernicus WorldDEM-30 production credit,
 liability notice, modification statement, and the separate CC BY-SA licence
@@ -89,6 +94,12 @@ are progressively slower, and positive elevation gain adds an uphill cost.
 Water is impassable except where imported infrastructure marks a crossing.
 Search costs use seconds internally so rounding does not compound at every
 30 m cell; persisted journey time is rounded once to whole strategic minutes.
+Each sampled cell also derives a normalized permille Terrain distribution:
+Forest is the canopy percentage, Hills is the hill fraction of the remaining
+non-forest share, Plains receives the remainder, and Urban is currently zero.
+The departure party's weighted Terrain check multiplies speed by
+`1 + check / 10`; A* includes that profile in both its costs and cache key, so
+expertise can change the chosen route as well as its duration.
 
 Any missing source tile intersecting the playable boundary remains a hard
 build error. Whole source cells are retained internally, while the manifest,
@@ -96,7 +107,8 @@ cell lookup, and route planner enforce the exact decimal playable bounds.
 
 Routes are simplified to at most 512 geographic points for transport and are
 stored only for an active journey together with exact ordered terrain-time
-spans and the terrain package digest. The raster remains an optional on-disk
+spans, their Terrain mixtures, departure checks, road exposure discounts, and
+the terrain package digest. The raster remains an optional on-disk
 asset with a 32 MiB decompression cache. If it is absent, corrupt, outside its
 coverage, or cannot produce a bounded route, the existing HTML travel flow
 remains available and labels its straight-line value as a legacy estimate.

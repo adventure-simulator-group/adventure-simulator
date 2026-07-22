@@ -237,6 +237,31 @@ pub fn advance_character_time(
 
 /// Actual strategic movement, split at exact dirt boundaries so filth and its
 /// wound-risk multiplier are independent of caller chunking.
+pub fn preview_travel_time(
+    ctx: &ReducerContext,
+    character_id: u64,
+    requested: u64,
+) -> Result<u64, String> {
+    let injury = crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested, false)?;
+    crate::disease::preview_elapsed_for_disease(ctx, character_id, injury, false)
+}
+
+/// Commit a terminal injury or disease event that falls exactly on the
+/// character's current strategic minute. This intentionally grants no elapsed
+/// travel time, condition use, filth, or training.
+pub fn settle_travel_boundary(ctx: &ReducerContext, character_id: u64) -> Result<bool, String> {
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    if !character.alive {
+        return Ok(false);
+    }
+    advance_character_time(ctx, character_id, 0)
+}
+
 pub fn advance_travel_time(
     ctx: &ReducerContext,
     character_id: u64,

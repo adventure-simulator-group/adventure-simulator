@@ -332,8 +332,19 @@ pub struct JourneyRoutePoint {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JourneyTerrainSpan {
     pub kind: JourneyTerrainKind,
+    pub terrain: JourneyTerrainWeights,
+    pub training_multiplier_permille: u16,
+    pub check_millirank: u16,
     pub start_minute: u64,
     pub duration_minutes: u64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct JourneyTerrainWeights {
+    pub plains: u16,
+    pub forest: u16,
+    pub hills: u16,
+    pub urban: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -966,6 +977,10 @@ pub struct CharacterSkills {
     pub religion_hours: adventuresim_world_schema::ReligionHours,
     pub stealth_hours: f32,
     pub balance_hours: f32,
+    pub terrain_plains_hours: f32,
+    pub terrain_forest_hours: f32,
+    pub terrain_hills_hours: f32,
+    pub terrain_urban_hours: f32,
     pub anatomy_hours: f32,
     pub tailoring_hours: f32,
     pub smithing_hours: f32,

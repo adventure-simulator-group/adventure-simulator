@@ -80,8 +80,80 @@ pub struct Cell {
     pub crossing: bool,
     /// Copernicus TCD canopy cover, retained independently of routing classes.
     pub canopy_percent: u8,
-    /// At least one native neighbour forms a slope steeper than 15 degrees.
-    pub hilly: bool,
+    /// Area share whose native neighbours form slopes steeper than 15 degrees.
+    /// Native pack bits decode to 0 or 100; coarser cells retain the average.
+    pub hilly_fraction_percent: u8,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TerrainWeights {
+    pub plains: u16,
+    pub forest: u16,
+    pub hills: u16,
+    pub urban: u16,
+}
+
+impl TerrainWeights {
+    pub const TOTAL: u16 = 1_000;
+    pub fn from_cover(canopy_percent: u8, hilly_fraction_percent: u8) -> Self {
+        let forest = u16::from(canopy_percent.min(100)) * 10;
+        let hills = (u32::from(Self::TOTAL - forest) * u32::from(hilly_fraction_percent.min(100))
+            / 100) as u16;
+        Self {
+            plains: Self::TOTAL - forest - hills,
+            forest,
+            hills,
+            urban: 0,
+        }
+    }
+    pub const fn is_normalized(self) -> bool {
+        self.plains <= Self::TOTAL
+            && self.forest <= Self::TOTAL
+            && self.hills <= Self::TOTAL
+            && self.urban <= Self::TOTAL
+            && self.plains + self.forest + self.hills + self.urban == Self::TOTAL
+    }
+    pub fn dot(self, profile: TerrainSkillProfile) -> u16 {
+        debug_assert!(self.is_normalized());
+        ((u32::from(self.plains) * u32::from(profile.plains)
+            + u32::from(self.forest) * u32::from(profile.forest)
+            + u32::from(self.hills) * u32::from(profile.hills)
+            + u32::from(self.urban) * u32::from(profile.urban))
+            / u32::from(Self::TOTAL)) as u16
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TerrainSkillProfile {
+    pub plains: u16,
+    pub forest: u16,
+    pub hills: u16,
+    pub urban: u16,
+}
+
+impl TerrainSkillProfile {
+    pub const MAX: u16 = 5_000;
+    pub const fn is_valid(self) -> bool {
+        self.plains <= Self::MAX
+            && self.forest <= Self::MAX
+            && self.hills <= Self::MAX
+            && self.urban <= Self::MAX
+    }
+}
+
+impl Cell {
+    pub fn terrain_weights(self) -> TerrainWeights {
+        TerrainWeights::from_cover(self.canopy_percent, self.hilly_fraction_percent)
+    }
+    fn underlying_surface(self) -> Surface {
+        match self.canopy_percent {
+            45..=u8::MAX => Surface::DeepWoods,
+            10..=44 => Surface::SparseWoods,
+            _ => Surface::Open,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -300,7 +372,7 @@ impl TerrainPack {
                     _ => Surface::Water,
                 },
                 crossing: bytes[3] & 1 != 0,
-                hilly: bytes[3] & 2 != 0,
+                hilly_fraction_percent: if bytes[3] & 2 != 0 { 100 } else { 0 },
                 canopy_percent: bytes[4],
             })
             .collect::<Vec<_>>()
@@ -337,7 +409,16 @@ impl TerrainPack {
     /// starts at native 30 m spacing and deterministically coarsens only when
     /// the hard node cap would otherwise be exceeded.
     pub fn plan(&self, start: (f64, f64), goal: (f64, f64)) -> Result<RoutePlan> {
-        self.plan_with_deadline(start, goal, None)
+        self.plan_with_profile(start, goal, TerrainSkillProfile::default())
+    }
+
+    pub fn plan_with_profile(
+        &self,
+        start: (f64, f64),
+        goal: (f64, f64),
+        profile: TerrainSkillProfile,
+    ) -> Result<RoutePlan> {
+        self.plan_with_deadline(start, goal, profile, None)
     }
 
     /// Plan with a cooperative deadline. This is intended for request-serving
@@ -348,15 +429,31 @@ impl TerrainPack {
         goal: (f64, f64),
         deadline: Instant,
     ) -> Result<RoutePlan> {
-        self.plan_with_deadline(start, goal, Some(deadline))
+        self.plan_until_with_profile(start, goal, TerrainSkillProfile::default(), deadline)
+    }
+
+    pub fn plan_until_with_profile(
+        &self,
+        start: (f64, f64),
+        goal: (f64, f64),
+        profile: TerrainSkillProfile,
+        deadline: Instant,
+    ) -> Result<RoutePlan> {
+        self.plan_with_deadline(start, goal, profile, Some(deadline))
     }
 
     fn plan_with_deadline(
         &self,
         start: (f64, f64),
         goal: (f64, f64),
+        profile: TerrainSkillProfile,
         deadline: Option<Instant>,
     ) -> Result<RoutePlan> {
+        if !profile.is_valid() {
+            return Err(Error::Validation(
+                "terrain skill profile exceeds rank five".into(),
+            ));
+        }
         if ![start.0, start.1, goal.0, goal.1]
             .into_iter()
             .all(f64::is_finite)
@@ -372,7 +469,7 @@ impl TerrainPack {
         }
         for window in expanding_windows(start, goal, self.bounds()) {
             check_deadline(deadline)?;
-            match self.plan_window(start, goal, window, deadline) {
+            match self.plan_window(start, goal, window, profile, deadline) {
                 Ok(plan) => return Ok(plan),
                 Err(Error::NoRoute) => continue,
                 Err(error) => return Err(error),
@@ -386,6 +483,7 @@ impl TerrainPack {
         start: (f64, f64),
         goal: (f64, f64),
         [west, south, east, north]: [f64; 4],
+        profile: TerrainSkillProfile,
         deadline: Option<Instant>,
     ) -> Result<RoutePlan> {
         if west >= east || south >= north {
@@ -437,7 +535,8 @@ impl TerrainPack {
         };
         let start_node = snap(&grid, coordinate(start), 8).ok_or(Error::NoRoute)?;
         let goal_node = snap(&grid, coordinate(goal), 8).ok_or(Error::NoRoute)?;
-        let mut plan = astar_with_deadline(&grid, start_node, goal_node, deadline)?;
+        let mut plan =
+            astar_with_profile_and_deadline(&grid, start_node, goal_node, profile, deadline)?;
         for point in &mut plan.points {
             let x = point.longitude;
             let y = point.latitude;
@@ -469,7 +568,7 @@ impl TerrainPack {
                             surface: Surface::Water,
                             crossing: false,
                             canopy_percent: 0,
-                            hilly: false,
+                            hilly_fraction_percent: 0,
                         }),
                 );
             }
@@ -516,10 +615,15 @@ fn aggregate_cells(cells: &[Cell]) -> Cell {
             crossing: cells.iter().any(|cell| cell.crossing),
             canopy_percent: cells
                 .iter()
-                .map(|cell| cell.canopy_percent)
-                .max()
-                .unwrap_or_default(),
-            hilly: cells.iter().any(|cell| cell.hilly),
+                .map(|cell| u64::from(cell.canopy_percent))
+                .sum::<u64>()
+                .checked_div(cells.len() as u64)
+                .unwrap_or_default() as u8,
+            hilly_fraction_percent: (cells
+                .iter()
+                .map(|cell| u64::from(cell.hilly_fraction_percent))
+                .sum::<u64>()
+                / cells.len() as u64) as u8,
         };
     }
     let passable = cells
@@ -532,7 +636,7 @@ fn aggregate_cells(cells: &[Cell]) -> Cell {
             surface: Surface::Water,
             crossing: false,
             canopy_percent: 0,
-            hilly: false,
+            hilly_fraction_percent: 0,
         };
     }
     let mut counts = [0_usize; 3];
@@ -563,7 +667,11 @@ fn aggregate_cells(cells: &[Cell]) -> Cell {
             .map(|cell| u64::from(cell.canopy_percent))
             .sum::<u64>()
             / passable.len() as u64) as u8,
-        hilly: passable.iter().any(|cell| cell.hilly),
+        hilly_fraction_percent: (passable
+            .iter()
+            .map(|cell| u64::from(cell.hilly_fraction_percent))
+            .sum::<u64>()
+            / passable.len() as u64) as u8,
     }
 }
 
@@ -691,6 +799,9 @@ pub struct RoutePoint {
 #[derive(Clone, Debug, PartialEq)]
 pub struct TerrainSpan {
     pub surface: Surface,
+    pub terrain: TerrainWeights,
+    pub training_multiplier_permille: u16,
+    pub check_millirank: u16,
     pub start_minute: u64,
     pub duration_minutes: u64,
 }
@@ -732,13 +843,28 @@ impl PartialOrd for Queue {
 }
 
 pub fn astar<G: RoutingGrid>(grid: &G, start: (u32, u32), goal: (u32, u32)) -> Result<RoutePlan> {
-    astar_with_deadline(grid, start, goal, None)
+    astar_with_profile(grid, start, goal, TerrainSkillProfile::default())
 }
 
-fn astar_with_deadline<G: RoutingGrid>(
+pub fn astar_with_profile<G: RoutingGrid>(
     grid: &G,
     start: (u32, u32),
     goal: (u32, u32),
+    profile: TerrainSkillProfile,
+) -> Result<RoutePlan> {
+    if !profile.is_valid() {
+        return Err(Error::Validation(
+            "terrain skill profile exceeds rank five".into(),
+        ));
+    }
+    astar_with_profile_and_deadline(grid, start, goal, profile, None)
+}
+
+fn astar_with_profile_and_deadline<G: RoutingGrid>(
+    grid: &G,
+    start: (u32, u32),
+    goal: (u32, u32),
+    profile: TerrainSkillProfile,
     deadline: Option<Instant>,
 ) -> Result<RoutePlan> {
     if start.0 >= grid.width()
@@ -767,7 +893,7 @@ fn astar_with_deadline<G: RoutingGrid>(
             continue;
         }
         if current.index == goal_i {
-            return reconstruct(grid, &parent, start_i, goal_i);
+            return reconstruct(grid, &parent, start_i, goal_i, profile);
         }
         visited += 1;
         if visited % 256 == 0 {
@@ -807,7 +933,13 @@ fn astar_with_deadline<G: RoutingGrid>(
                 {
                     continue;
                 }
-                let step = step_seconds(from, to, grid.metres_per_cell(), dx != 0 && dy != 0);
+                let step = step_seconds(
+                    from,
+                    to,
+                    grid.metres_per_cell(),
+                    dx != 0 && dy != 0,
+                    profile,
+                );
                 let next_g = current.g.saturating_add(step);
                 let next_i = index(next);
                 if best.get(&next_i).is_none_or(|known| next_g < *known) {
@@ -831,12 +963,18 @@ fn heuristic(a: (u32, u32), b: (u32, u32), metres: u32) -> u64 {
     let diagonal = dx.min(dy);
     let straight = dx.max(dy) - diagonal;
     ((u64::from(diagonal) * 1414 + u64::from(straight) * 1000) * u64::from(metres) * 3_600)
-        / (1000 * 5000)
+        / (1000 * 7500)
 }
 fn passable(cell: Cell) -> bool {
     cell.surface != Surface::Water || cell.crossing
 }
-fn step_seconds(from: Cell, to: Cell, metres: u32, diagonal: bool) -> u64 {
+fn step_seconds(
+    from: Cell,
+    to: Cell,
+    metres: u32,
+    diagonal: bool,
+    profile: TerrainSkillProfile,
+) -> u64 {
     let distance = u64::from(metres) * if diagonal { 1414 } else { 1000 } / 1000;
     let base = (distance * 3_600).div_ceil(u64::from(from.surface.speed_metres_per_hour().max(1)));
     let rise = i32::from(to.elevation_m) - i32::from(from.elevation_m);
@@ -845,7 +983,11 @@ fn step_seconds(from: Cell, to: Cell, metres: u32, diagonal: bool) -> u64 {
     } else {
         1000
     };
-    (base * uphill).div_ceil(1000).max(1)
+    let check = u64::from(from.terrain_weights().dot(profile));
+    // check is milli-rank: 1 + rank/10 => (10_000 + check) / 10_000.
+    (base * uphill * 10_000)
+        .div_ceil(1000 * (10_000 + check))
+        .max(1)
 }
 
 fn reconstruct<G: RoutingGrid>(
@@ -853,6 +995,7 @@ fn reconstruct<G: RoutingGrid>(
     parent: &HashMap<u32, u32>,
     start: u32,
     goal: u32,
+    profile: TerrainSkillProfile,
 ) -> Result<RoutePlan> {
     let mut nodes = vec![goal];
     let mut current = goal;
@@ -866,7 +1009,7 @@ fn reconstruct<G: RoutingGrid>(
     nodes.reverse();
     let mut distance = 0_u64;
     let mut seconds = 0_u64;
-    let mut second_spans = Vec::new();
+    let mut second_spans: Vec<(Surface, TerrainWeights, u16, u16, u64)> = Vec::new();
     for pair in nodes.windows(2) {
         let a = (pair[0] % grid.width(), pair[0] / grid.width());
         let b = (pair[1] % grid.width(), pair[1] / grid.width());
@@ -875,33 +1018,62 @@ fn reconstruct<G: RoutingGrid>(
         let diagonal = a.0 != b.0 && a.1 != b.1;
         let step_distance =
             u64::from(grid.metres_per_cell()) * if diagonal { 1414 } else { 1000 } / 1000;
-        let step = step_seconds(from, to, grid.metres_per_cell(), diagonal);
+        let step = step_seconds(from, to, grid.metres_per_cell(), diagonal, profile);
         distance += step_distance;
         seconds += step;
-        if let Some((_, duration)) = second_spans
-            .last_mut()
-            .filter(|(surface, _)| *surface == from.surface)
+        let terrain = from.terrain_weights();
+        let training_multiplier_permille = if from.surface == Surface::Road {
+            (from.underlying_surface().speed_metres_per_hour() / 5) as u16
+        } else {
+            1_000
+        };
+        let check_millirank = terrain.dot(profile);
+        if let Some((_, _, _, _, duration)) =
+            second_spans
+                .last_mut()
+                .filter(|(surface, weights, multiplier, check, _)| {
+                    *surface == from.surface
+                        && *weights == terrain
+                        && *multiplier == training_multiplier_permille
+                        && *check == check_millirank
+                })
         {
             *duration += step
         } else {
-            second_spans.push((from.surface, step));
+            second_spans.push((
+                from.surface,
+                terrain,
+                training_multiplier_permille,
+                check_millirank,
+                step,
+            ));
         }
     }
     let mut cursor_seconds = 0_u64;
     let mut cursor_minutes = 0_u64;
     let mut spans: Vec<TerrainSpan> = Vec::new();
-    for (surface, duration_seconds) in second_spans {
+    for (surface, terrain, training_multiplier_permille, check_millirank, duration_seconds) in
+        second_spans
+    {
         cursor_seconds = cursor_seconds.saturating_add(duration_seconds);
         let end_minutes = cursor_seconds.div_ceil(60);
         let duration_minutes = end_minutes.saturating_sub(cursor_minutes);
         if duration_minutes == 0 {
             continue;
         }
-        if let Some(last) = spans.last_mut().filter(|span| span.surface == surface) {
+        if let Some(last) = spans.last_mut().filter(|span| {
+            span.surface == surface
+                && span.terrain == terrain
+                && span.training_multiplier_permille == training_multiplier_permille
+                && span.check_millirank == check_millirank
+        }) {
             last.duration_minutes += duration_minutes;
         } else {
             spans.push(TerrainSpan {
                 surface,
+                terrain,
+                training_multiplier_permille,
+                check_millirank,
                 start_minute: cursor_minutes,
                 duration_minutes,
             });
@@ -939,12 +1111,27 @@ fn compact_spans(spans: &mut Vec<TerrainSpan>, total_minutes: u64, cap: usize) {
             continue;
         }
         let mut durations = [0_u64; 5];
+        let mut training_mass = 0_u128;
+        let mut check_mass = 0_u128;
+        let mut terrain_training_mass = [0_u128; 4];
         for span in &source {
             let span_end = span.start_minute + span.duration_minutes;
             let overlap = end
                 .min(span_end)
                 .saturating_sub(start.max(span.start_minute));
             durations[surface_index(span.surface)] += overlap;
+            let overlap = u128::from(overlap);
+            let training = u128::from(span.training_multiplier_permille);
+            training_mass += overlap * training;
+            check_mass += overlap * u128::from(span.check_millirank);
+            for (mass, weight) in terrain_training_mass.iter_mut().zip([
+                span.terrain.plains,
+                span.terrain.forest,
+                span.terrain.hills,
+                span.terrain.urban,
+            ]) {
+                *mass += overlap * training * u128::from(weight);
+            }
         }
         let surface = [
             Surface::Road,
@@ -958,20 +1145,59 @@ fn compact_spans(spans: &mut Vec<TerrainSpan>, total_minutes: u64, cap: usize) {
         .max_by_key(|(index, _)| (durations[*index], Reverse(*index)))
         .map(|(_, surface)| surface)
         .unwrap_or(Surface::Open);
-        if let Some(previous) = compacted
-            .last_mut()
-            .filter(|previous| previous.surface == surface)
-        {
+        let duration = u128::from(end - start);
+        let training_multiplier_permille = ((training_mass + duration / 2) / duration) as u16;
+        let check_millirank = ((check_mass + duration / 2) / duration) as u16;
+        let weights = normalized_weighted_parts(terrain_training_mass, training_mass);
+        let terrain = TerrainWeights {
+            plains: weights[0],
+            forest: weights[1],
+            hills: weights[2],
+            urban: weights[3],
+        };
+        if let Some(previous) = compacted.last_mut().filter(|previous| {
+            previous.surface == surface
+                && previous.terrain == terrain
+                && previous.training_multiplier_permille == training_multiplier_permille
+                && previous.check_millirank == check_millirank
+        }) {
             previous.duration_minutes += end - start;
         } else {
             compacted.push(TerrainSpan {
                 surface,
+                terrain,
+                training_multiplier_permille,
+                check_millirank,
                 start_minute: start,
                 duration_minutes: end - start,
             });
         }
     }
     *spans = compacted;
+}
+
+fn normalized_weighted_parts(numerators: [u128; 4], denominator: u128) -> [u16; 4] {
+    if denominator == 0 {
+        return [TerrainWeights::TOTAL, 0, 0, 0];
+    }
+    let mut result = [0_u16; 4];
+    let mut remainders = [0_u128; 4];
+    for index in 0..4 {
+        result[index] = (numerators[index] / denominator) as u16;
+        remainders[index] = numerators[index] % denominator;
+    }
+    let mut missing = TerrainWeights::TOTAL - result.iter().sum::<u16>();
+    let mut awarded = [false; 4];
+    while missing > 0 {
+        let index = (0..4)
+            .filter(|index| !awarded[*index])
+            .max_by_key(|index| (remainders[*index], Reverse(*index)))
+            .expect("normalization deficit is at most one unit per terrain");
+        result[index] += 1;
+        awarded[index] = true;
+        missing -= 1;
+    }
+    result
 }
 
 fn surface_index(surface: Surface) -> usize {
@@ -1119,6 +1345,101 @@ mod tests {
     }
 
     #[test]
+    fn terrain_weights_are_normalized_monotonic_and_keep_mixed_hills() {
+        let open_hills = TerrainWeights::from_cover(0, 100);
+        let mixed = TerrainWeights::from_cover(40, 50);
+        let dense = TerrainWeights::from_cover(80, 50);
+        assert!(open_hills.is_normalized() && mixed.is_normalized() && dense.is_normalized());
+        assert_eq!(
+            open_hills,
+            TerrainWeights {
+                plains: 0,
+                forest: 0,
+                hills: 1_000,
+                urban: 0
+            }
+        );
+        assert_eq!(
+            mixed,
+            TerrainWeights {
+                plains: 300,
+                forest: 400,
+                hills: 300,
+                urban: 0
+            }
+        );
+        assert!(dense.forest > mixed.forest && dense.hills < mixed.hills);
+    }
+
+    #[test]
+    fn coarse_hill_fraction_is_area_average_not_any() {
+        let cells = [
+            Cell {
+                hilly_fraction_percent: 100,
+                ..Cell::default()
+            },
+            Cell::default(),
+            Cell::default(),
+            Cell::default(),
+        ];
+        assert_eq!(aggregate_cells(&cells).hilly_fraction_percent, 25);
+    }
+
+    #[test]
+    fn roads_train_underlying_terrain_at_exact_inverse_speed_discount() {
+        for (canopy, expected) in [(0, 250), (20, 200), (60, 150)] {
+            let mut g = grid(2, 1);
+            g.cells[0].surface = Surface::Road;
+            g.cells[0].canopy_percent = canopy;
+            let span = astar(&g, (0, 0), (1, 0)).unwrap().spans[0].clone();
+            assert_eq!(span.training_multiplier_permille, expected);
+            assert_eq!(span.terrain, TerrainWeights::from_cover(canopy, 0));
+        }
+    }
+
+    #[test]
+    fn matching_skill_shortens_route_and_is_stored_on_span() {
+        let mut g = grid(2, 1);
+        g.cells[0].canopy_percent = 100;
+        let novice = astar(&g, (0, 0), (1, 0)).unwrap();
+        let expert = astar_with_profile(
+            &g,
+            (0, 0),
+            (1, 0),
+            TerrainSkillProfile {
+                forest: 5_000,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(expert.minutes < novice.minutes);
+        assert_eq!(expert.spans[0].check_millirank, 5_000);
+    }
+
+    #[test]
+    fn skill_profile_can_change_the_fastest_path() {
+        let mut g = grid(7, 3);
+        for x in 0..7 {
+            g.cells[(7 + x) as usize].surface = Surface::DeepWoods;
+            g.cells[(7 + x) as usize].canopy_percent = 100;
+            g.cells[(14 + x) as usize].surface = Surface::Water;
+        }
+        let novice = astar(&g, (0, 1), (6, 1)).unwrap();
+        let expert = astar_with_profile(
+            &g,
+            (0, 1),
+            (6, 1),
+            TerrainSkillProfile {
+                forest: 5_000,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_ne!(novice.points, expert.points);
+        assert!(expert.spans.iter().all(|span| span.terrain.forest == 1_000));
+    }
+
+    #[test]
     fn expanding_search_finishes_with_full_pack_bounds() {
         let bounds = [5.0, 50.0, 15.0, 55.0];
         let windows = expanding_windows((53.5, 9.8), (53.7, 10.2), bounds);
@@ -1157,10 +1478,93 @@ mod tests {
     }
 
     #[test]
+    fn span_compaction_conserves_weighted_skill_exposure_with_road_discounts() {
+        let terrains = [
+            TerrainWeights {
+                plains: 1_000,
+                forest: 0,
+                hills: 0,
+                urban: 0,
+            },
+            TerrainWeights {
+                plains: 0,
+                forest: 1_000,
+                hills: 0,
+                urban: 0,
+            },
+            TerrainWeights {
+                plains: 0,
+                forest: 0,
+                hills: 1_000,
+                urban: 0,
+            },
+            TerrainWeights {
+                plains: 400,
+                forest: 300,
+                hills: 300,
+                urban: 0,
+            },
+        ];
+        let mut spans = (0..300_u64)
+            .map(|minute| TerrainSpan {
+                surface: if minute % 3 == 0 {
+                    Surface::Road
+                } else {
+                    Surface::Open
+                },
+                terrain: terrains[minute as usize % terrains.len()],
+                training_multiplier_permille: if minute % 3 == 0 {
+                    [150, 200, 250][minute as usize / 3 % 3]
+                } else {
+                    1_000
+                },
+                check_millirank: (minute % 6) as u16 * 1_000,
+                start_minute: minute,
+                duration_minutes: 1,
+            })
+            .collect::<Vec<_>>();
+        let exposure = |values: &[TerrainSpan]| {
+            let mut result = [0.0_f64; 4];
+            for span in values {
+                for (total, weight) in result.iter_mut().zip([
+                    span.terrain.plains,
+                    span.terrain.forest,
+                    span.terrain.hills,
+                    span.terrain.urban,
+                ]) {
+                    *total += span.duration_minutes as f64
+                        * f64::from(span.training_multiplier_permille)
+                        / 1_000.0
+                        * f64::from(weight)
+                        / 1_000.0;
+                }
+            }
+            result
+        };
+        let before = exposure(&spans);
+        compact_spans(&mut spans, 300, 8);
+        let after = exposure(&spans);
+        assert!(spans.len() <= 8);
+        assert!(spans.iter().all(|span| span.terrain.is_normalized()));
+        for (before, after) in before.into_iter().zip(after) {
+            assert!(
+                (before - after).abs() <= before.max(1.0) * 0.005,
+                "{before} != {after}"
+            );
+        }
+    }
+
+    #[test]
     fn expired_deadline_stops_search_cooperatively() {
         let g = grid(100, 100);
         assert!(matches!(
-            astar_with_deadline(&g, (0, 0), (99, 99), Some(Instant::now())),
+            astar_with_profile_and_deadline(
+                &g,
+                (0, 0),
+                (99, 99),
+                TerrainSkillProfile::default(),
+                Some(Instant::now())
+            ),
             Err(Error::Deadline)
         ));
     }

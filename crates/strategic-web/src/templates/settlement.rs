@@ -1115,9 +1115,14 @@ fn format_terrain_spans(destination: &TravelDestination) -> String {
                         adventuresim_terrain::Surface::Water => return None,
                     };
                     Some(format!(
-                        "{kind},{},{}",
+                        "{kind},{},{},{},{},{},{},{}",
                         span.start_minute.saturating_add(offset),
-                        span.duration_minutes
+                        span.duration_minutes,
+                        span.check_millirank,
+                        span.terrain.plains,
+                        span.terrain.forest,
+                        span.terrain.hills,
+                        span.terrain.urban,
                     ))
                 })
                 .collect::<Vec<_>>()
@@ -1408,9 +1413,14 @@ fn format_persisted_terrain_spans(route: Option<&PartyJourneyRoute>) -> String {
                     JourneyTerrainKind::DeepWoods => "deep-woods",
                 };
                 format!(
-                    "{kind},{},{}",
+                    "{kind},{},{},{},{},{},{},{}",
                     span.start_minute.saturating_add(offset),
-                    span.duration_minutes
+                    span.duration_minutes,
+                    span.check_millirank,
+                    span.terrain.plains,
+                    span.terrain.forest,
+                    span.terrain.hills,
+                    span.terrain.urban,
                 )
             })
             .collect::<Vec<_>>()
@@ -3664,6 +3674,7 @@ fn skills_table(
                     (religion_skill_rows(skills, head_health, schedule, training_religion))
                     (combat_skill_rows(skills, head_health, upper_health, lower_health, schedule, combat_profile))
                     @if skills.stealth_hours > 0.0 { (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, upper_health, schedule.is_some())) }
+                    (terrain_skill_rows(skills, schedule.is_some()))
                     @if skills.anatomy_hours > 0.0 { (party_skill_row("Anatomy", "surgeon", Skill::Anatomy, skills.anatomy_hours, head_health, schedule.is_some())) }
                     @if skills.tailoring_hours > 0.0 { (party_skill_row("Tailoring", "sewing-needle", Skill::Tailoring, skills.tailoring_hours, upper_health, schedule.is_some())) }
                     @if skills.smithing_hours > 0.0 { (party_skill_row("Smithing", "smithing", Skill::Smithing, skills.smithing_hours, upper_health, schedule.is_some())) }
@@ -3709,6 +3720,65 @@ fn skills_table(
                         @let leisure = leisure_preview(&schedule.downtime, preview.current_fatigue);
                         (schedule_special_row("Leisure", "bed", "leisure_minutes", 0, false, ActivityEffectRates::default(), Some(leisure), "Unallocated downtime first offsets baseline and activity fatigue; only surplus recovery improves morale."))
                     }
+            }
+        }
+    }
+}
+
+fn terrain_skill_rows(skills: &CharacterSkills, schedule_context: bool) -> Markup {
+    let entries = [
+        (
+            "Plains",
+            "plains",
+            Skill::TerrainPlains,
+            skills.terrain_plains_hours,
+        ),
+        (
+            "Forest",
+            "forest",
+            Skill::TerrainForest,
+            skills.terrain_forest_hours,
+        ),
+        (
+            "Hills",
+            "hills",
+            Skill::TerrainHills,
+            skills.terrain_hills_hours,
+        ),
+        (
+            "Urban",
+            "urban",
+            Skill::TerrainUrban,
+            skills.terrain_urban_hours,
+        ),
+    ];
+    let rank = entries
+        .iter()
+        .map(|entry| entry.2.training_rank(entry.3))
+        .sum::<f32>()
+        / 4.0;
+    html! {
+        tr class="party-skill-row terrain-primary-row" data-terrain-primary {
+            th scope="row" class="party-skill-name party-skill-icon-cell" { (stat_icon("Terrain", "terrain", "terrain", false)) }
+            td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
+                (skill_rank_bar(rank, rank, "Unweighted mean; route previews use the local terrain mixture", skill_rail_bar_options()))
+            }
+            td class="religion-expand-cell" {
+                button type="button" class="religion-expand-button" data-terrain-expand aria-expanded="false" aria-label="Expand Terrain skills" title="Expand Terrain" {
+                    span class="religion-expand-chevron" aria-hidden="true" { "›" }
+                }
+            }
+        }
+        @for (name, icon, skill, hours) in entries {
+            tr class="party-skill-row terrain-detail-row" data-terrain-detail hidden {
+                th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
+                    (stat_icon(name, "terrain", icon, false))
+                }
+                td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
+                    @let sub_rank = skill.training_rank(hours);
+                    (skill_rank_bar(sub_rank, sub_rank, &format!("{:.1} hours invested", hours.max(0.0)), skill_rail_bar_options()))
+                }
+                td class="religion-expand-cell" {}
             }
         }
     }
@@ -5826,6 +5896,10 @@ mod tests {
             religion_hours: Default::default(),
             stealth_hours: 0.0,
             balance_hours: 0.0,
+            terrain_plains_hours: 0.0,
+            terrain_forest_hours: 0.0,
+            terrain_hills_hours: 0.0,
+            terrain_urban_hours: 0.0,
             surgeon_hours: 0.0,
             smithing_hours: 0.0,
         };
@@ -6541,6 +6615,10 @@ mod tests {
             },
             stealth_hours: 0.0,
             balance_hours: 0.0,
+            terrain_plains_hours: 0.0,
+            terrain_forest_hours: 0.0,
+            terrain_hills_hours: 0.0,
+            terrain_urban_hours: 0.0,
             anatomy_hours: 0.0,
             tailoring_hours: 0.0,
             smithing_hours: 0.0,

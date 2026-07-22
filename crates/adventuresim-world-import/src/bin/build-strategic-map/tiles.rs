@@ -252,7 +252,7 @@ impl ReliefField {
                         let sample_latitude = latitude - offset_y * RELIEF_STEP_DEGREES;
                         let sample_longitude = longitude + offset_x * RELIEF_STEP_DEGREES;
                         if let Some(cell) = terrain.cell(sample_latitude, sample_longitude)? {
-                            hilly += u8::from(cell.hilly);
+                            hilly += u8::from(cell.hilly_fraction_percent >= 50);
                             samples += 1;
                         }
                     }
@@ -715,7 +715,7 @@ fn draw_land_cover(
                     );
                     let hilly = native.map_or_else(
                         || relief_field.is_some_and(|field| field.hilly_at(latitude, longitude)),
-                        |cell| cell.hilly,
+                        |cell| cell.hilly_fraction_percent >= 50,
                     );
                     if hilly {
                         hilly_samples += 1.0 - forest_coverage;

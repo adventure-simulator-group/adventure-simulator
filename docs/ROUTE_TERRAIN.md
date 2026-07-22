@@ -65,3 +65,26 @@ The official full GLO-30 and EU-Hydro audit remains blocked until their
 authenticated, completely pinned source inventories are available locally.
 Synthetic tests exercise deterministic algorithms and strict boundaries; this
 document does not claim issue #62 complete.
+
+## Native routing skill mixture
+
+The separate native terrain-routing pack retains canopy and hill coverage
+independently. Runtime routing cells normalize them to exactly 1,000 permille:
+Forest follows canopy density, Hills receives the hill-covered share of the
+remaining non-forest ground, and Plains receives the remainder. Urban is part
+of the Terrain skill domain but has zero route weight until an authoritative
+built-up-land source is added; roads are infrastructure over their underlying
+terrain and are never treated as Urban.
+
+Plains, Forest, Hills, and Urban are intuitive mental checks using Instinct,
+Intelligence, focus, and training on the shared rank-zero-to-five curve. Party
+checks use bounded party aggregation, then the cell mixture's dot product.
+Movement speed is multiplied by `1 + check / 10`. The departure profile is in
+the A* cache key and the resulting adjusted spans are validated and persisted,
+so skill can affect route choice while an active journey remains stable.
+
+Actual walking trains every living traveler and conserves exposure across the
+normalized mixture. Non-road movement grants one exposure hour per movement
+hour. Roads still train their underlying terrain, discounted by underlying
+off-road speed divided by 5 km/h: 0.25 open, 0.20 sparse woods, and 0.15 deep
+woods. Camp intervals grant no Terrain training.

@@ -1059,11 +1059,19 @@ async fn settlement_map(
                 .map(|candidate| (candidate.coord_y, candidate.coord_x))
         };
         if let Some(goal) = goal {
+            let terrain_profile = if let Some((character, _)) = active_character.as_ref() {
+                crate::routes::party_terrain_profile(&state, character)
+                    .await
+                    .unwrap_or_default()
+            } else {
+                adventuresim_terrain::TerrainSkillProfile::default()
+            };
             crate::routes::travel::apply_terrain_route(
                 destination,
                 state.terrain.as_deref(),
                 (settlement.coord_y, settlement.coord_x),
                 goal,
+                terrain_profile,
             )
             .await;
         }

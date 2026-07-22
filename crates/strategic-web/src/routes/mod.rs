@@ -30,7 +30,8 @@ use crate::live::LiveState;
 use crate::session::{CHARACTER_COOKIE, Session};
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    Character, CharacterStrategicCondition, CharacterTime, Party, PartyActionRequest, PartyJourney,
+    Character, CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats,
+    CharacterStrategicCondition, CharacterTime, Party, PartyActionRequest, PartyJourney,
     PartyJourneyRoute, PartyMember, Quest, Settlement, SpacetimeClient, WorldClock,
 };
 
@@ -73,7 +74,7 @@ pub(crate) fn redirect_to_local(return_to: &str, fallback: &str) -> Redirect {
 
 #[cfg(test)]
 mod return_url_tests {
-    use super::local_return_url;
+    use super::{local_return_url, terrain_mental_check};
 
     #[test]
     fn return_urls_are_local_paths_with_optional_query_and_fragment() {
@@ -97,6 +98,16 @@ mod return_url_tests {
         assert_eq!(split_party_purchase_payment(8, 20, 15), Some((8, 7)));
         assert_eq!(split_party_purchase_payment(20, 8, 15), Some((15, 0)));
         assert_eq!(split_party_purchase_payment(4, 5, 10), None);
+    }
+
+    #[test]
+    fn terrain_mental_check_applies_authoritative_head_health() {
+        let healthy = terrain_mental_check(2.0, 2.0, 2.0, 1.0, 1.0);
+        let injured = terrain_mental_check(2.0, 2.0, 2.0, 1.0, 0.5);
+        let destroyed = terrain_mental_check(2.0, 2.0, 2.0, 1.0, 0.0);
+        assert_eq!(healthy, 3.0);
+        assert_eq!(injured, 2.0);
+        assert_eq!(destroyed, 1.0);
     }
 }
 
@@ -233,6 +244,135 @@ pub(crate) async fn execute_or_request_party_action(
     Ok(PartyActionOutcome::Requested)
 }
 
+pub(crate) async fn party_terrain_profile(
+    state: &AppState,
+    actor: &Character,
+) -> Result<adventuresim_terrain::TerrainSkillProfile, String> {
+    let member_ids = if let Some(party_id) = actor.party_id.as_deref() {
+        state
+            .db
+            .query::<PartyMember>(&format!(
+                "SELECT * FROM party_member WHERE party_id = {}",
+                sql_string_literal(party_id)
+            ))
+            .await
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .map(|member| member.character_id)
+            .collect::<Vec<_>>()
+    } else {
+        vec![actor.id]
+    };
+    let mut checks = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
+    for id in member_ids {
+        let Some(character) = state
+            .db
+            .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {id}"))
+            .await
+            .map_err(|e| e.to_string())?
+        else {
+            continue;
+        };
+        if !character.alive {
+            continue;
+        }
+        let Some(attributes) = state
+            .db
+            .query_one::<CharacterAttributes>(&format!(
+                "SELECT * FROM character_attributes WHERE character_id = {id}"
+            ))
+            .await
+            .map_err(|e| e.to_string())?
+        else {
+            continue;
+        };
+        let Some(stats) = state
+            .db
+            .query_one::<CharacterStats>(&format!(
+                "SELECT * FROM character_stats WHERE character_id = {id}"
+            ))
+            .await
+            .map_err(|e| e.to_string())?
+        else {
+            continue;
+        };
+        let Some(limbs) = state
+            .db
+            .query_one::<CharacterLimbs>(&format!(
+                "SELECT * FROM character_limbs WHERE character_id = {id}"
+            ))
+            .await
+            .map_err(|e| e.to_string())?
+        else {
+            continue;
+        };
+        let Some(skills) = state
+            .db
+            .query_one::<CharacterSkills>(&format!(
+                "SELECT * FROM character_skills WHERE character_id = {id}"
+            ))
+            .await
+            .map_err(|e| e.to_string())?
+        else {
+            continue;
+        };
+        for (index, (skill, hours)) in [
+            (
+                adventuresim_core::skill::Skill::TerrainPlains,
+                skills.terrain_plains_hours,
+            ),
+            (
+                adventuresim_core::skill::Skill::TerrainForest,
+                skills.terrain_forest_hours,
+            ),
+            (
+                adventuresim_core::skill::Skill::TerrainHills,
+                skills.terrain_hills_hours,
+            ),
+            (
+                adventuresim_core::skill::Skill::TerrainUrban,
+                skills.terrain_urban_hours,
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            checks[index].push(terrain_mental_check(
+                skill.training_rank(hours),
+                attributes.instinct,
+                attributes.intelligence,
+                stats.focus,
+                limbs.head_health,
+            ));
+        }
+    }
+    let aggregate = |values: &[f32]| {
+        (adventuresim_core::capability::aggregate_bounded_party_check(values.iter().copied())
+            .clamp(0.0, 5.0)
+            * 1_000.0)
+            .round() as u16
+    };
+    Ok(adventuresim_terrain::TerrainSkillProfile {
+        plains: aggregate(&checks[0]),
+        forest: aggregate(&checks[1]),
+        hills: aggregate(&checks[2]),
+        urban: aggregate(&checks[3]),
+    })
+}
+
+fn terrain_mental_check(
+    training_rank: f32,
+    instinct: f32,
+    intelligence: f32,
+    focus: f32,
+    head_health: f32,
+) -> f32 {
+    let head_health = head_health.clamp(0.0, 1.0);
+    let attribute_check =
+        instinct * head_health + intelligence * head_health * focus.clamp(0.0, 1.0);
+    ((training_rank + attribute_check) * 0.5).clamp(0.0, 5.0)
+}
+
 async fn planned_travel_call(
     state: &AppState,
     actor_id: u64,
@@ -247,6 +387,7 @@ async fn planned_travel_call(
         .await
         .map_err(|error| error.to_string())?
         .ok_or("Character not found")?;
+    let terrain_profile = party_terrain_profile(state, &character).await?;
     let (reducer, destination) = match action {
         PartyAction::TravelToSettlement { settlement_id } => {
             let destination = state
@@ -326,7 +467,10 @@ async fn planned_travel_call(
     } else {
         return Ok(None);
     };
-    let plan = match terrain.plan(origin, destination).await {
+    let plan = match terrain
+        .plan_with_profile(origin, destination, terrain_profile)
+        .await
+    {
         Ok(plan) => plan,
         Err(error) => {
             tracing::warn!(%error, actor_id, "terrain route unavailable at execution; using legacy travel reducer");
@@ -334,7 +478,10 @@ async fn planned_travel_call(
         }
     };
     let return_plan = if matches!(action, PartyAction::TravelToQuest { .. }) {
-        match terrain.plan(destination, origin).await {
+        match terrain
+            .plan_with_profile(destination, origin, terrain_profile)
+            .await
+        {
             Ok(plan) => Some(plan),
             Err(error) => {
                 tracing::warn!(%error, actor_id, "quest return terrain route unavailable at execution; using legacy travel reducer");
@@ -413,7 +560,7 @@ fn terrain_route_json(
             "distance_m": plan.distance_m,
             "minutes": plan.minutes,
             "points": plan.points.iter().map(|point| json!({"latitude_e7":(point.latitude*10_000_000.0).round() as i32,"longitude_e7":(point.longitude*10_000_000.0).round() as i32})).collect::<Vec<_>>(),
-            "spans": plan.spans.iter().filter_map(|span| { let kind=match span.surface { adventuresim_terrain::Surface::Road=>"Road",adventuresim_terrain::Surface::Open=>"Open",adventuresim_terrain::Surface::SparseWoods=>"SparseWoods",adventuresim_terrain::Surface::DeepWoods=>"DeepWoods",adventuresim_terrain::Surface::Water=>return None};Some(json!({"kind":kind,"start_minute":span.start_minute,"duration_minutes":span.duration_minutes})) }).collect::<Vec<_>>()
+            "spans": plan.spans.iter().filter_map(|span| { let kind=match span.surface { adventuresim_terrain::Surface::Road=>"Road",adventuresim_terrain::Surface::Open=>"Open",adventuresim_terrain::Surface::SparseWoods=>"SparseWoods",adventuresim_terrain::Surface::DeepWoods=>"DeepWoods",adventuresim_terrain::Surface::Water=>return None};Some(json!({"kind":kind,"terrain":span.terrain,"training_multiplier_permille":span.training_multiplier_permille,"check_millirank":span.check_millirank,"start_minute":span.start_minute,"duration_minutes":span.duration_minutes})) }).collect::<Vec<_>>()
         })
     };
     json!({
@@ -421,7 +568,7 @@ fn terrain_route_json(
         "distance_m": plan.distance_m,
         "minutes": plan.minutes,
         "points": plan.points.iter().map(|point| json!({"latitude_e7":(point.latitude*10_000_000.0).round() as i32,"longitude_e7":(point.longitude*10_000_000.0).round() as i32})).collect::<Vec<_>>(),
-        "spans": plan.spans.iter().filter_map(|span| { let kind=match span.surface { adventuresim_terrain::Surface::Road=>"Road",adventuresim_terrain::Surface::Open=>"Open",adventuresim_terrain::Surface::SparseWoods=>"SparseWoods",adventuresim_terrain::Surface::DeepWoods=>"DeepWoods",adventuresim_terrain::Surface::Water=>return None};Some(json!({"kind":kind,"start_minute":span.start_minute,"duration_minutes":span.duration_minutes})) }).collect::<Vec<_>>(),
+        "spans": plan.spans.iter().filter_map(|span| { let kind=match span.surface { adventuresim_terrain::Surface::Road=>"Road",adventuresim_terrain::Surface::Open=>"Open",adventuresim_terrain::Surface::SparseWoods=>"SparseWoods",adventuresim_terrain::Surface::DeepWoods=>"DeepWoods",adventuresim_terrain::Surface::Water=>return None};Some(json!({"kind":kind,"terrain":span.terrain,"training_multiplier_permille":span.training_multiplier_permille,"check_millirank":span.check_millirank,"start_minute":span.start_minute,"duration_minutes":span.duration_minutes})) }).collect::<Vec<_>>(),
         "return_route": return_plan.map(leg_json)
     })
 }

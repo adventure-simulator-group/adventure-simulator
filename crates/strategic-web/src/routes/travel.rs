@@ -23,16 +23,26 @@ const TERRAIN_PLAN_TIMEOUT: Duration = Duration::from_secs(10);
 const TERRAIN_PLAN_CACHE_ENTRIES: usize = 128;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-struct TerrainPlanKey([i32; 4]);
+struct TerrainPlanKey {
+    coordinates: [i32; 4],
+    profile: adventuresim_terrain::TerrainSkillProfile,
+}
 
 impl TerrainPlanKey {
-    fn new(start: (f64, f64), goal: (f64, f64)) -> Self {
-        Self([
-            (start.0 * 100_000.0).round() as i32,
-            (start.1 * 100_000.0).round() as i32,
-            (goal.0 * 100_000.0).round() as i32,
-            (goal.1 * 100_000.0).round() as i32,
-        ])
+    fn new(
+        start: (f64, f64),
+        goal: (f64, f64),
+        profile: adventuresim_terrain::TerrainSkillProfile,
+    ) -> Self {
+        Self {
+            coordinates: [
+                (start.0 * 100_000.0).round() as i32,
+                (start.1 * 100_000.0).round() as i32,
+                (goal.0 * 100_000.0).round() as i32,
+                (goal.1 * 100_000.0).round() as i32,
+            ],
+            profile,
+        }
     }
 }
 
@@ -64,12 +74,13 @@ impl TerrainPlanner {
         self.pack.digest()
     }
 
-    pub async fn plan(
+    pub async fn plan_with_profile(
         &self,
         start: (f64, f64),
         goal: (f64, f64),
+        profile: adventuresim_terrain::TerrainSkillProfile,
     ) -> Result<adventuresim_terrain::RoutePlan, String> {
-        let key = TerrainPlanKey::new(start, goal);
+        let key = TerrainPlanKey::new(start, goal, profile);
         if let Some(plan) = self
             .cache
             .lock()
@@ -89,7 +100,7 @@ impl TerrainPlanner {
         let deadline = Instant::now() + TERRAIN_PLAN_TIMEOUT;
         let task = tokio::task::spawn_blocking(move || {
             let _permit = permit;
-            pack.plan_until(start, goal, deadline)
+            pack.plan_until_with_profile(start, goal, profile, deadline)
         });
         let plan = tokio::time::timeout(TERRAIN_PLAN_TIMEOUT + Duration::from_secs(1), task)
             .await
@@ -275,15 +286,16 @@ pub(crate) async fn apply_terrain_route(
     terrain: Option<&TerrainPlanner>,
     start: (f64, f64),
     goal: (f64, f64),
+    profile: adventuresim_terrain::TerrainSkillProfile,
 ) {
     let Some(terrain) = terrain else {
         destination.route_fallback = true;
         return;
     };
-    match terrain.plan(start, goal).await {
+    match terrain.plan_with_profile(start, goal, profile).await {
         Ok(plan) => {
             let return_plan = if destination.quest_in_progress {
-                match terrain.plan(goal, start).await {
+                match terrain.plan_with_profile(goal, start, profile).await {
                     Ok(plan) => Some(plan),
                     Err(error) => {
                         tracing::warn!(%error, destination=%destination.id, "return terrain route unavailable; using explicitly marked legacy estimate");
@@ -670,12 +682,31 @@ mod tests {
     #[test]
     fn terrain_cache_keys_normalize_sub_metre_coordinate_noise() {
         assert_eq!(
-            TerrainPlanKey::new((53.500_000_1, 10.000_000_1), (53.6, 10.1)),
-            TerrainPlanKey::new((53.500_000_2, 10.000_000_2), (53.6, 10.1))
+            TerrainPlanKey::new(
+                (53.500_000_1, 10.000_000_1),
+                (53.6, 10.1),
+                Default::default()
+            ),
+            TerrainPlanKey::new(
+                (53.500_000_2, 10.000_000_2),
+                (53.6, 10.1),
+                Default::default()
+            )
         );
         assert_ne!(
-            TerrainPlanKey::new((53.500_02, 10.0), (53.6, 10.1)),
-            TerrainPlanKey::new((53.500_04, 10.0), (53.6, 10.1))
+            TerrainPlanKey::new((53.500_02, 10.0), (53.6, 10.1), Default::default()),
+            TerrainPlanKey::new((53.500_04, 10.0), (53.6, 10.1), Default::default())
+        );
+        assert_ne!(
+            TerrainPlanKey::new((53.5, 10.0), (53.6, 10.1), Default::default()),
+            TerrainPlanKey::new(
+                (53.5, 10.0),
+                (53.6, 10.1),
+                adventuresim_terrain::TerrainSkillProfile {
+                    forest: 1_000,
+                    ..Default::default()
+                },
+            )
         );
     }
 
