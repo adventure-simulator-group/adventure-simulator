@@ -100,6 +100,20 @@ pub(crate) fn owned_run(ctx: &ReducerContext, nonce: &str) -> Result<SimulationR
     Ok(run)
 }
 
+pub(crate) fn sender_owns_simulation_character(ctx: &ReducerContext, character_id: u64) -> bool {
+    ctx.db
+        .simulation_run()
+        .id()
+        .find(0)
+        .is_some_and(|run| run.owner == ctx.sender())
+        && ctx
+            .db
+            .simulation_character()
+            .character_id()
+            .find(character_id)
+            .is_some()
+}
+
 #[reducer]
 pub fn seed_simulation_world(ctx: &ReducerContext, nonce: String) -> Result<(), String> {
     owned_run(ctx, &nonce)?;

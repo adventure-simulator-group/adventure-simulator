@@ -1023,6 +1023,7 @@ pub fn rest_at_settlement(
     requested_days: u16,
     at_inn: bool,
 ) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
     rest_for_minutes(
         ctx,
         character_id,
@@ -1042,6 +1043,7 @@ pub fn rest_at_settlement_hours(
     requested_minutes: u64,
     at_inn: bool,
 ) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
     rest_for_minutes(ctx, character_id, requested_minutes, at_inn, true)
 }
 
@@ -1052,7 +1054,10 @@ fn rest_for_minutes(
     at_inn: bool,
     explicit: bool,
 ) -> Result<(), String> {
-    crate::character::require_living_character(ctx, character_id)?;
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    if character.current_settlement_id.is_none() {
+        return Err("Settlement rest requires the character to be at a settlement".into());
+    }
     ensure_character_time(ctx, character_id)?;
     let _ = refresh_clock(ctx)?;
     let mut character_time = ctx
@@ -1105,6 +1110,13 @@ fn rest_for_minutes(
     if terminal.is_some() || !settled.alive {
         return Ok(());
     }
+    crate::alcohol::process_rest_evenings(
+        ctx,
+        character_id,
+        starting_minute,
+        starting_minute.saturating_add(elapsed),
+        true,
+    )?;
 
     let smithing_skill = ctx
         .db
@@ -1258,6 +1270,13 @@ fn advance_personal_camp_time(
     if terminal.is_some() || !settled.alive {
         return Ok(());
     }
+    crate::alcohol::process_rest_evenings(
+        ctx,
+        member_id,
+        starting_minute,
+        starting_minute.saturating_add(elapsed),
+        false,
+    )?;
     let starting_fatigue = ctx
         .db
         .character_stats()
@@ -1346,9 +1365,13 @@ pub fn rest_at_camp(
     character_id: u64,
     requested_minutes: u64,
 ) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
     crate::character::require_living_character(ctx, character_id)?;
     if requested_minutes == 0 {
         return Ok(());
+    }
+    if requested_minutes > MINUTES_PER_YEAR {
+        return Err("Camp rest cannot exceed one year".into());
     }
     let character = ctx
         .db
@@ -1414,6 +1437,13 @@ pub fn rest_at_camp(
         if terminal.is_some() || !settled.alive {
             continue;
         }
+        crate::alcohol::process_rest_evenings(
+            ctx,
+            member_id,
+            interval_end_minute.saturating_sub(member_elapsed),
+            interval_end_minute,
+            false,
+        )?;
         crate::condition::apply_camp_rest_recovery_condition(ctx, member_id, member_elapsed)?;
         let convalescing = convalescing.min(member_elapsed);
         let smithing_skill = ctx

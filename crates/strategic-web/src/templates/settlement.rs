@@ -656,6 +656,8 @@ fn map_destination_list_with_context(
                                         data-living-members=(forecast.living_members)
                                         data-food-days=(forecast.food_days)
                                         data-water-days=(forecast.water_days)
+                                        data-ordinary-water-days=(forecast.ordinary_water_days)
+                                        data-emergency-alcohol-days=(forecast.emergency_alcohol_days)
                                         data-ration-kcal=(forecast.ration_kcal)
                                         data-waterskin-ml=(forecast.waterskin_capacity_ml) {}
                                 }
@@ -1000,6 +1002,8 @@ pub(crate) fn travel_planner_bar_for(
             data-provision-living-members=[provision_forecast.map(|row| row.living_members)]
             data-provision-food-days=[provision_forecast.map(|row| row.food_days)]
             data-provision-water-days=[provision_forecast.map(|row| row.water_days)]
+            data-provision-ordinary-water-days=[provision_forecast.map(|row| row.ordinary_water_days)]
+            data-provision-emergency-alcohol-days=[provision_forecast.map(|row| row.emergency_alcohol_days)]
             data-provision-food-reserve=[provision_forecast.map(|row| row.food_reserve_kcal)]
             data-provision-water-reserve=[provision_forecast.map(|row| row.water_reserve_ml)]
             data-provision-rations=[provision_forecast.map(|row| row.ration_count)]
@@ -1027,6 +1031,12 @@ pub(crate) fn travel_planner_bar_for(
                             path class="travel-resource-path actual" data-resource-fill pathLength="100" {}
                         }
                         span class="sr-only" data-surplus-summary="water" {}
+                    }
+                    div class="travel-resource-row alcohol" aria-label="Emergency alcohol hydration" {
+                        span class="travel-resource-icon" { (game_icon("Emergency alcohol hydration", "beer-stein")) }
+                        @if let Some(forecast) = provision_forecast {
+                            span class="small-copy" data-emergency-alcohol-summary { (format!("+{:.2} d", forecast.emergency_alcohol_days)) }
+                        }
                     }
                     div class="travel-resource-row fatigue" aria-label="Party fatigue" {
                         span class="travel-resource-icon" { (game_icon("Fatigue", "heart-minus")) }
@@ -2022,6 +2032,7 @@ fn surgery_procedure_row(
     projectile_id: Option<u64>,
     soap_available: bool,
     soap_applicable: bool,
+    selected_alcohol: Option<&str>,
 ) -> Markup {
     let row_class = if unavailable.is_some() {
         "surgery-procedure surgery-procedure-unavailable"
@@ -2065,6 +2076,12 @@ fn surgery_procedure_row(
                     }
                 }
             }
+            @if let Some(item_id) = selected_alcohol {
+                div class="surgery-alcohol-consumption" aria-label=(format!("Consumes one {} for disinfection", item_display_name(item_id))) {
+                    (game_icon(&format!("Consumes one {}", item_display_name(item_id)), "beer-stein"))
+                    span { "Consumes 1 " (item_display_name(item_id)) }
+                }
+            }
             @if let Some(reason) = disabled {
                 button type="submit" class="btn btn-block" disabled title=(reason) aria-label=(format!("{label}: {reason}")) { (label) }
             } @else {
@@ -2095,6 +2112,8 @@ pub fn surgery_page(
     surgery_kits: u32,
     splints: u32,
     soaps: u32,
+    alcohol_units: u32,
+    selected_alcohol: Option<&str>,
     surgery_skill: f32,
 ) -> Markup {
     let base = format!("{}/party/{}/surgery", location.base_path(), patient.id);
@@ -2129,22 +2148,23 @@ pub fn surgery_page(
                     (surgery_supply("Surgery kits", "medical-pack", surgery_kits))
                     (surgery_supply("Splints", "arm-bandage", splints))
                     (surgery_supply("Soft soap", "water-drop", soaps))
+                    (surgery_supply("Disinfecting alcohol", "beer-stein", alcohol_units))
                 }
                 div class="surgery-procedures" {
                     @for projectile in projectiles.iter().filter(|projectile| projectile.limb == selected_limb) {
                         @let requires_kit = adventuresim_core::surgery::extraction_requires_surgery_kit(projectile.extraction_dc);
                         (surgery_procedure_row(&action, match projectile.kind { ProjectileKind::Arrowhead => "Remove arrowhead", ProjectileKind::Ball => "Remove ball" }, match projectile.kind { ProjectileKind::Arrowhead => "plain-arrow", ProjectileKind::Ball => "bullet-visual" }, "extract", if requires_kit { &[SurgeryItemRequirement::SurgeryKitReusable] } else { &[] }, surgery_duration("extract", effective_skill, projectile.extraction_dc), projectile.extraction_dc,
-                            effective_skill, None, if effective_skill < projectile.extraction_dc { Some("Insufficient Surgery skill") } else if requires_kit && !has_kit { Some("No surgery kit") } else { None }, Some(projectile.id), soaps > 0, true))
+                            effective_skill, None, if effective_skill < projectile.extraction_dc { Some("Insufficient Surgery skill") } else if requires_kit && !has_kit { Some("No surgery kit") } else { None }, Some(projectile.id), soaps > 0, true, selected_alcohol))
                     }
                     (surgery_procedure_row(&action, "Bandage", "bandage-roll", "bandage", &[SurgeryItemRequirement::BandageConsumed], surgery_duration("bandage", effective_skill, 0.0), 0.0,
-                        effective_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if bandaged { Some("Already bandaged") } else if bandages == 0 { Some("No bandages") } else { None }, None, soaps > 0, true))
+                        effective_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if bandaged { Some("Already bandaged") } else if bandages == 0 { Some("No bandages") } else { None }, None, soaps > 0, true, selected_alcohol))
                     (surgery_procedure_row(&action, "Stitch", "scalpel", "stitch", &[SurgeryItemRequirement::SurgeryKitReusable], surgery_duration("stitch", effective_skill, 2.0), 2.0,
-                        effective_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if stitched { Some("Already stitched") } else if effective_skill < 2.0 { Some("Insufficient Surgery skill") } else if !has_kit { Some("No surgery kit") } else { None }, None, soaps > 0, true))
+                        effective_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if stitched { Some("Already stitched") } else if effective_skill < 2.0 { Some("Insufficient Surgery skill") } else if !has_kit { Some("No surgery kit") } else { None }, None, soaps > 0, true, selected_alcohol))
                     @if splinted {
-                        (surgery_procedure_row(&action, "Remove splint", "arm-bandage", "remove-splint", &[], surgery_duration("remove-splint", effective_skill, 0.0), 0.0, effective_skill, None, None, None, false, false))
+                        (surgery_procedure_row(&action, "Remove splint", "arm-bandage", "remove-splint", &[], surgery_duration("remove-splint", effective_skill, 0.0), 0.0, effective_skill, None, None, None, false, false, None))
                     } @else {
                         (surgery_procedure_row(&action, "Splint", "arm-bandage", "splint", &[SurgeryItemRequirement::SplintEquipped], surgery_duration("splint", effective_skill, 1.0), 1.0,
-                            effective_skill, if fracture <= 0.0 { Some("No injury is present") } else { None }, if fracture <= 0.0 { Some("No injury is present") } else if effective_skill < 1.0 { Some("Insufficient Surgery skill") } else if splints == 0 { Some("No splints") } else { None }, None, false, false))
+                            effective_skill, if fracture <= 0.0 { Some("No injury is present") } else { None }, if fracture <= 0.0 { Some("No injury is present") } else if effective_skill < 1.0 { Some("Insufficient Surgery skill") } else if splints == 0 { Some("No splints") } else { None }, None, false, false, None))
                     }
                     @if cut <= 0.0 && bruise > 0.0 && fracture <= 0.0 {
                         p class="text-muted small-copy" { "Bruising must heal on its own." }
@@ -2421,7 +2441,7 @@ pub fn live_merchant_shop_page(
                     @let sell_price = (item.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32;
                     @let target = target_quantity(personal_targets, &item.id);
                     @let display_name = medication_recipe.map_or_else(|| item_display_name(&item.id), |recipe| recipe.name.to_owned());
-                    tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) data-herbalist-medication-name=[medication_recipe.map(|recipe| recipe.name)] { td class="inventory-item-type" { (item_type_icon(&item.id)) } td class="inventory-item-name" { (item_name_with_display(&item.id, &display_name, Some(item))) @if !is_currency { (merchant_buy_controls(&item.id, buy_price, target, 999)) } } td class="inventory-count" hidden { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
+                    tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) data-group-summary="catalog" data-herbalist-medication-name=[medication_recipe.map(|recipe| recipe.name)] { td class="inventory-item-type" { (item_type_icon(&item.id)) } td class="inventory-item-name" { (item_name_with_display(&item.id, &display_name, Some(item))) @if !is_currency { (merchant_buy_controls(&item.id, buy_price, target, 999)) } } td class="inventory-count" hidden { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
                 }
             }))
             (inventory_footer_controls("buy", "Buy to targets", "Buy everything"))
@@ -2726,6 +2746,9 @@ fn item_name_with_display(
     display_name: &str,
     definition: Option<&crate::spacetimedb::ItemDefinition>,
 ) -> Markup {
+    let alcohol_group = definition
+        .filter(|item| item.alcohol_serving_ml > 0)
+        .map(|_| "alcohol");
     let quality = definition
         .filter(|item| {
             matches!(
@@ -2759,6 +2782,8 @@ fn item_name_with_display(
         span class=(quality.map_or_else(|| "inventory-item-label".to_string(), |quality| format!("inventory-item-label item-quality-{quality}"))) title=[label]
             data-item-name=(item_id)
             data-item-kind=[definition.map(|item| format!("{:?}", item.kind).to_ascii_lowercase())]
+            data-item-group=[alcohol_group]
+            data-group-name=[alcohol_group.map(|_| "Alcohol")]
             data-stat-accuracy=[definition.map(|item| weight_display(item.accuracy))]
             data-stat-reach=[definition.map(|item| weight_display(item.reach))]
             data-stat-penetration=[definition.map(|item| weight_display(item.penetration))]
@@ -3919,7 +3944,7 @@ fn personality_tags(
 ) -> Vec<(&'static str, &'static str)> {
     use crate::spacetimedb::{
         Conscience::*, Conviction::*, Drive::*, Hygiene::*, Nerve::*, Outlook::*, SelfRegard::*,
-        Sociability::*,
+        Sociability::*, Temperance::*,
     };
     let mut tags = Vec::new();
     match personality.nerve {
@@ -3984,6 +4009,17 @@ fn personality_tags(
         )),
         _ => {}
     }
+    match personality.temperance {
+        Temperate => tags.push((
+            "Temperate",
+            "Automatic alcohol morale bonus +0; missed-drink morale penalty -0.",
+        )),
+        Drunkard => tags.push((
+            "Drunkard",
+            "Wants a heavy drink every evening: +5 morale when satisfied, -5 when missed.",
+        )),
+        _ => {}
+    }
     tags
 }
 
@@ -4004,6 +4040,7 @@ mod personality_tests {
             self_regard: SelfRegard::Neutral,
             conviction: Conviction::Neutral,
             hygiene: Hygiene::Neutral,
+            temperance: Temperance::Neutral,
         };
         let tags = personality_tags(&personality);
         assert_eq!(
@@ -4025,6 +4062,7 @@ mod personality_tests {
                 self_regard: SelfRegard::Proud,
                 conviction: Conviction::Zealous,
                 hygiene: Hygiene::Cleanly,
+                temperance: Temperance::Temperate,
             },
             CharacterPersonality {
                 character_id: 2,
@@ -4036,6 +4074,7 @@ mod personality_tests {
                 self_regard: SelfRegard::Humble,
                 conviction: Conviction::Irreverent,
                 hygiene: Hygiene::Slovenly,
+                temperance: Temperance::Drunkard,
             },
             CharacterPersonality {
                 character_id: 3,
@@ -4047,14 +4086,17 @@ mod personality_tests {
                 self_regard: SelfRegard::Neutral,
                 conviction: Conviction::Neutral,
                 hygiene: Hygiene::Neutral,
+                temperance: Temperance::Neutral,
             },
         ];
 
         for profile in &profiles {
             for (tag, description) in personality_tags(profile) {
                 assert!(
-                    description.contains('×'),
-                    "{tag} tooltip lacks a numeric multiplier: {description}"
+                    description
+                        .chars()
+                        .any(|character| character.is_ascii_digit()),
+                    "{tag} tooltip lacks a numeric morale effect: {description}"
                 );
             }
         }
@@ -5508,6 +5550,20 @@ mod tests {
     }
 
     #[test]
+    fn alcohol_labels_expose_a_shared_inventory_group() {
+        let definition = crate::spacetimedb::ItemDefinition {
+            id: "small_beer".into(),
+            kind: crate::spacetimedb::ItemKind::Simple,
+            alcohol_serving_ml: 500,
+            ..Default::default()
+        };
+        let rendered = item_name_with_quality(&definition.id, Some(&definition)).into_string();
+        assert!(rendered.contains("data-item-name=\"small_beer\""));
+        assert!(rendered.contains("data-item-group=\"alcohol\""));
+        assert!(rendered.contains("data-group-name=\"Alcohol\""));
+    }
+
+    #[test]
     fn smith_player_actions_keep_sell_and_repair_in_one_hover_area() {
         let repair = repair_submit_control(&settlement(), "weapons", 4, None, 3);
         let rendered =
@@ -5747,6 +5803,7 @@ mod tests {
             None,
             true,
             true,
+            None,
         )
         .into_string();
         assert!(row.contains("surgery-procedure-unavailable"));
@@ -5755,6 +5812,31 @@ mod tests {
         assert!(row.contains("disabled title=\"No injury is present\""));
         assert!(row.contains(">Stitch</button>"));
         assert!(!row.contains(">No injury is present</button>"));
+    }
+
+    #[test]
+    fn bloody_procedure_names_concrete_automatic_alcohol_without_risk_numbers() {
+        let row = surgery_procedure_row(
+            "/test",
+            "Bandage",
+            "bandage-roll",
+            "bandage",
+            &[],
+            10,
+            0.0,
+            1.0,
+            None,
+            None,
+            None,
+            false,
+            true,
+            Some("aqua_vitae"),
+        )
+        .into_string();
+        assert!(row.contains("Consumes 1 Aqua vitae"));
+        assert!(row.contains("beer-stein.svg"));
+        assert!(!row.contains("infection probability"));
+        assert!(!row.contains("use_alcohol"));
     }
 
     #[test]

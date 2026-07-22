@@ -201,3 +201,27 @@ locations do not refill water. Settlement arrival continues to clear hunger
 and thirst and refill personal containers. Foraging, intermediate freshwater
 stops, weather-based water use, spoilage, food quality, and manual eating or
 drinking remain future layers.
+
+# Emergency alcohol hydration
+
+Movement consumes pooled water and then personal carried water before touching
+alcohol. If a character still has a hydration deficit, travel may consume
+ordinary potable alcohol whose explicit net-hydration value is positive;
+medical-only/non-potable preparations and non-hydrating strong spirits are
+never used. Multi-day movement is split at absolute evening boundaries for
+needs processing, and each whole serving's ethanol is recorded in the nightly
+history where its hydration deficit arose. Long reducer intervals and bounded
+travel chunks therefore produce the same history. Generic waits do not invoke
+this fallback.
+
+The journey forecast uses the same item metadata and ordinary-alcohol
+eligibility rules. It first reserves the whole servings expected to satisfy
+Temperance-driven morale drinking only during projected camp intervals;
+movement-only elapsed time creates no drinking opportunity. New journeys use
+their calculated camp segments, while active journeys use persisted future
+camp intervals clipped to the remaining elapsed span. Concrete units are
+rounded separately and allocated in runtime order by absolute evening and then
+character ID before remaining net hydration is counted. The planner presents ordinary water
+and emergency alcohol separately, while its overall water-sufficiency verdict
+uses their sum. Provisioning still stages waterskins only; it does not disguise
+alcohol as water or automatically purchase it as a water container.

@@ -23,7 +23,28 @@ Food quality and disease will become additional named sources when those systems
 
 # Personality reactions
 
-Personality is stored as eight immutable, mutually-exclusive axes. Neutral axes are not shown in the UI: **Brave/Fearful**, **Ambitious/Content**, **Sanguine/Brooding**, **Gregarious/Solitary**, **Compassionate/Callous/Cruel**, **Proud/Humble**, **Zealous/Irreverent**, and **Slovenly/Cleanly**. Conscience is present but has no morale hook until outcomes can carry durable moral context.
+Personality is stored as nine immutable, mutually-exclusive axes. Neutral axes are not shown in the UI: **Brave/Fearful**, **Ambitious/Content**, **Sanguine/Brooding**, **Gregarious/Solitary**, **Compassionate/Callous/Cruel**, **Proud/Humble**, **Zealous/Irreverent**, **Slovenly/Cleanly**, and **Temperate/Drunkard**. Conscience is present but has no morale hook until outcomes can carry durable moral context.
+
+Alcohol preference is evaluated for every absolute nightly rest opportunity:
+the sleep window begins at 18:00 and continues through 08:00, so a rest that
+starts after 18:00 still processes that evening. Temperate characters neither
+seek alcohol nor react to its absence.
+Neutral characters seek 15 ml pure ethanol on ordinary evenings and 45 ml on
+the first evening without another qualifying heavy evening in the prior seven
+days; satisfaction grants +1 or +3 morale and failure gives -1 or -3. Drunkards
+seek 45 ml every evening, gaining +5 when satisfied and -5 when unsatisfied.
+The values are named balancing constants. A durable per-character/evening row
+records consumed ethanol and whether morale was evaluated, so long rests,
+short-rest sequences, departure clock synchronization, and emergency drinking
+cannot duplicate an evening. The latest result replaces one refreshable
+alcohol morale source at that evening's absolute 18:00 timestamp; nightly
+bonuses and penalties therefore age correctly and never accumulate as an
+unbounded series. This is preference, not physiological dependence.
+
+Carousing remains a social leisure activity and Charisma-training allocation.
+Its existing schedule effect is not interpreted as an additional inventory-
+backed alcohol reward; the nightly alcohol event is the only alcohol-specific
+morale source.
 
 Reactions modify each raw source before positive/negative ranking and Will mitigation. Brave/Fearful halves/doubles outmatched fear; Ambitious/Content multiplies victory and defeat by 1.5/0.5; Sanguine favors positive sources by 1.25 and negative sources by 0.75 while Brooding does the reverse. Sanguine negative events last half the normal duration and Brooding ones last twice as long. Proud multiplies victory by 1.5 and defeat by 3, while Humble multiplies both by 0.75. Zealous/Irreverent multiplies religious conviction, prayer, discord, neglect, and religious events by 1.5/0.5. Gregarious/Solitary multiplies incoming named ally restoration by 1.5/0.5 before the existing cap at neutral morale.
 

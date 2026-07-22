@@ -11,6 +11,7 @@ use super::nerve_type::Nerve;
 use super::outlook_type::Outlook;
 use super::self_regard_type::SelfRegard;
 use super::sociability_type::Sociability;
+use super::temperance_type::Temperance;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `character_personality`.

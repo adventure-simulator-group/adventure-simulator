@@ -169,3 +169,14 @@ fn update_blood_loss_poise_factor(character):
 	percentage_of_total_blood_volume = character.blood / character.max_blood
 	character.blood_loss_poise_factor = (1 - percentage_of_total_blood_volume) / PERCENT_BLOOD_LOSS_UNCONSCIOUS
 ```
+
+# Alcohol disinfection
+
+Successful bloody procedures (bandaging, stitching, and projectile extraction)
+automatically use the actor's best eligible personal alcohol unit when one is
+available. Effectiveness is explicit item metadata; aqua vitae therefore adds
+more hidden infection control than wine or beer. Equal candidates use the
+lowest inventory-row ID. The chosen unit is consumed only after procedure time
+successfully completes. Soap remains independently optional, and its bonus adds
+to alcohol before the hidden infection check saturates. Lack of alcohol never
+blocks treatment, and no UI exposes a numeric infection probability.

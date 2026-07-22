@@ -403,6 +403,8 @@
       const members = Number(planner.dataset.provisionLivingMembers);
       const foodDays = Number(planner.dataset.provisionFoodDays);
       const waterDays = Number(planner.dataset.provisionWaterDays);
+      const ordinaryWaterDays = Number(planner.dataset.provisionOrdinaryWaterDays);
+      const emergencyAlcoholDays = Number(planner.dataset.provisionEmergencyAlcoholDays);
       if (![total, members, foodDays, waterDays].every(Number.isFinite) || total <= 0 || members <= 0) return;
       const target = clamp(Number(targetInput?.value || 0), -365, 365);
       const returnUrl = new URL(location.href);
@@ -418,7 +420,12 @@
         const surplus = available - (totalDays - completedDays);
         const label = row?.querySelector("[data-surplus-summary]");
         if (label) label.textContent = surplus >= 0 ? `${Number(surplus.toFixed(1))} day${Math.abs(surplus - 1) < .05 ? "" : "s"} surplus` : `${Number(Math.abs(surplus).toFixed(1))} days short`;
+        if (kind === "water" && label && Number.isFinite(ordinaryWaterDays) && Number.isFinite(emergencyAlcoholDays)) {
+          label.textContent += ` (${Number(ordinaryWaterDays.toFixed(1))} ordinary water + ${Number(emergencyAlcoholDays.toFixed(1))} emergency alcohol)`;
+        }
       });
+      const alcoholSummary = planner.querySelector("[data-emergency-alcohol-summary]");
+      if (alcoholSummary && Number.isFinite(emergencyAlcoholDays)) alcoholSummary.textContent = `+${Number(emergencyAlcoholDays.toFixed(2))} d`;
       const rationKcal = Number(planner.dataset.provisionRationKcal);
       const skinMl = Number(planner.dataset.provisionWaterskinMl);
       const remainingDays = Math.max(0, totalDays - completedDays);

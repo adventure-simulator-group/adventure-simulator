@@ -1,4 +1,5 @@
 pub mod activity;
+pub mod alcohol;
 pub mod attribute;
 pub mod autoresolve;
 pub mod battle_rewards;

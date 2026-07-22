@@ -63,6 +63,16 @@ test("currency rows use one aggregate parent and dedicated denomination componen
   assert.doesNotMatch(source, /No additional details[\s\S]*currency-component-row/);
 });
 
+test("alcohol rows use one aggregate parent and preserve concrete component actions", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
+  assert.match(source, /groupAlcoholRows\(browser\)/);
+  assert.match(source, /alcohol-parent-row/);
+  assert.match(source, /alcohol-component-row/);
+  assert.match(source, /data-alcohol-toggle/);
+  assert.match(source, /row\._alcoholComponents/);
+  assert.match(source, /not\(\.alcohol-component-row\)/);
+});
+
 test("rail measurement excludes projected action overflow", () => {
   const source = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
   assert.match(source, /table\?\.getBoundingClientRect\?\.\(\)\.width/);

@@ -289,8 +289,9 @@ servers cannot supply an arbitrary XP award.
 | `morale_event` | Time-stamped strategic successes and setbacks with seven-day decay |
 | `character_morale_source` | Refreshable named, signed contributions used by the morale meter breakdown |
 | `character_strategic_condition` | Refreshable derived morale, ally-restoration percentage, and incapacitation projection for server-authoritative UI and action gating |
-| `character_personality` | Immutable strategic personality axes; one typed row per newly created character, with missing legacy rows interpreted as neutral without requiring a materialized backfill |
-| `inventory_item` | Persistent items |
+| `character_personality` | Nine immutable strategic personality axes, including Temperance; one typed row per newly created character |
+| `alcohol_consumption` | Durable per-character/per-evening fixed-point ethanol history and idempotent morale-evaluation marker |
+| `inventory_item` / `item` | Persistent concrete stacks and explicit definitions; alcohol serving volume, ABV, net hydration, medical protection, and disinfectant effectiveness are definition data rather than inferred IDs |
 | `party` | Party groups, active quest, and aggregate skill-check targets; every character belongs to at least a solo party |
 | `party_member` | Party membership, including the recruitment role that filled a slot |
 | `party_recruitment_role` | Named party-independent role requirements and slot quantities |
@@ -325,7 +326,7 @@ servers cannot supply an arbitrary XP award.
 | `send_local_chat_message` / `record_local_npc_message` | Persist location-gated, party-owned Local conversations |
 | `refresh_capabilities` | Recompute automatic character tags through the shared core evaluator |
 | `refresh_strategic_condition` | Recompute morale, pain, blood loss, fear, fatigue, readiness, and check effectiveness |
-| explicit rest reducers | Atomically plan party washing, consume personal soap before shared soap, then advance rest; scarce shared soap is assigned by deterministic disease risk |
+| explicit rest reducers | Require the registered strategic gateway (or the owner of the target disposable simulation character), validate the physical rest location and one-year work bound, atomically plan washing, then advance rest and nightly alcohol chronology |
 | `set_character_religion` | Record church conversion or biography renunciation for religious relationships |
 | `ensure_settlement_activity` | Maintain 3–5 visible quests and 1–2 locally generated recruiting NPC quest parties |
 | `start_mission` | Allocate port, record mission |
@@ -339,6 +340,10 @@ servers cannot supply an arbitrary XP award.
 The current strategic module does not yet persist a player-identity-to-character ownership mapping.
 Most strategic reducers therefore rely on the authenticated strategic gateway and simulator's
 database connection as a system-wide trust boundary; character IDs alone are not authorization.
+The public rest and surgery reducers enforce that boundary directly: only the registered gateway
+may mutate a normal character, while a simulation-run owner may act only through a character
+registered to that disposable run. Settlement rest additionally derives tavern eligibility from
+the character's persisted settlement presence rather than trusting a caller flag.
 Reducers that already have a concrete identity relationship (world imports, simulation runs,
 tactical servers, and religious-demand ownership) validate `ctx.sender()` directly. Equipment
 repair follows the existing strategic boundary until ownership is introduced consistently for all

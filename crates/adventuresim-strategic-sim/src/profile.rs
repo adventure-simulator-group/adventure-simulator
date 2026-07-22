@@ -101,6 +101,13 @@ pub enum Hygiene {
     Slovenly,
     Cleanly,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Temperance {
+    Neutral,
+    Temperate,
+    Drunkard,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -113,6 +120,7 @@ pub struct Personality {
     pub self_regard: SelfRegard,
     pub conviction: Conviction,
     pub hygiene: Hygiene,
+    pub temperance: Temperance,
 }
 
 impl Personality {
@@ -126,6 +134,7 @@ impl Personality {
             self_regard: SelfRegard::Neutral,
             conviction: Conviction::Neutral,
             hygiene: Hygiene::Neutral,
+            temperance: Temperance::Neutral,
         }
     }
 
@@ -138,6 +147,7 @@ impl Personality {
             + usize::from(self.self_regard != SelfRegard::Neutral)
             + usize::from(self.conviction != Conviction::Neutral)
             + usize::from(self.hygiene != Hygiene::Neutral)
+            + usize::from(self.temperance != Temperance::Neutral)
     }
 }
 
@@ -367,7 +377,7 @@ fn generated_schedule(
 
 fn generated_personality(rng: &mut StableRng) -> Personality {
     let mut p = Personality::neutral();
-    let mut axes = [0_u8, 1, 2, 3, 4, 5, 6, 7];
+    let mut axes = [0_u8, 1, 2, 3, 4, 5, 6, 7, 8];
     for index in (1..axes.len()).rev() {
         axes.swap(index, rng.next_u64() as usize % (index + 1));
     }
@@ -423,11 +433,18 @@ fn generated_personality(rng: &mut StableRng) -> Personality {
                     Conviction::Irreverent
                 }
             }
-            _ => {
+            7 => {
                 p.hygiene = if rng.next_u64().is_multiple_of(2) {
                     Hygiene::Slovenly
                 } else {
                     Hygiene::Cleanly
+                }
+            }
+            _ => {
+                p.temperance = if rng.next_u64().is_multiple_of(2) {
+                    Temperance::Temperate
+                } else {
+                    Temperance::Drunkard
                 }
             }
         }

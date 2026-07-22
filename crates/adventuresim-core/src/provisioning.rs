@@ -41,12 +41,15 @@ pub struct PartyProvisioningInputs {
     pub waterskin_count: u32,
     pub ration_kcal: f32,
     pub waterskin_capacity_ml: u32,
+    pub emergency_alcohol_hydration_ml: u32,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct PartyProvisioningForecast {
     pub food_days: f32,
     pub water_days: f32,
+    pub ordinary_water_days: f32,
+    pub emergency_alcohol_days: f32,
     pub journey_days: f32,
     pub rations_to_buy: u32,
     pub waterskins_to_buy: u32,
@@ -59,14 +62,17 @@ impl PartyProvisioningInputs {
         let water_per_day = members * STRATEGIC_TRAVEL_WATER_ML_PER_DAY;
         let food = (self.food_reserve_kcal + self.ration_count as f32 * self.ration_kcal.max(0.0))
             .max(0.0);
-        let water = (self.water_reserve_ml
+        let ordinary_water = (self.water_reserve_ml
             + self.waterskin_count as f32 * self.waterskin_capacity_ml as f32)
             .max(0.0);
+        let water = ordinary_water + self.emergency_alcohol_hydration_ml as f32;
         let journey_days = self.planning_minutes as f32 / (24.0 * 60.0);
         let target_days = (journey_days + self.target_surplus_days).max(0.0);
         PartyProvisioningForecast {
             food_days: food / food_per_day,
             water_days: water / water_per_day,
+            ordinary_water_days: ordinary_water / water_per_day,
+            emergency_alcohol_days: self.emergency_alcohol_hydration_ml as f32 / water_per_day,
             journey_days,
             rations_to_buy: if self.ration_kcal > 0.0 {
                 ((target_days * food_per_day - food).max(0.0) / self.ration_kcal).ceil() as u32

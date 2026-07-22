@@ -49,6 +49,12 @@ pub enum Hygiene {
     Slovenly,
     Cleanly,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum Temperance {
+    Neutral,
+    Temperate,
+    Drunkard,
+}
 
 /// Immutable strategic temperament. Each field is one mutually-exclusive axis.
 #[derive(Clone, Debug)]
@@ -64,6 +70,7 @@ pub struct CharacterPersonality {
     pub self_regard: SelfRegard,
     pub conviction: Conviction,
     pub hygiene: Hygiene,
+    pub temperance: Temperance,
 }
 
 impl CharacterPersonality {
@@ -78,6 +85,7 @@ impl CharacterPersonality {
             self_regard: SelfRegard::Neutral,
             conviction: Conviction::Neutral,
             hygiene: Hygiene::Neutral,
+            temperance: Temperance::Neutral,
         }
     }
 
@@ -90,6 +98,7 @@ impl CharacterPersonality {
             + usize::from(self.self_regard != SelfRegard::Neutral)
             + usize::from(self.conviction != Conviction::Neutral)
             + usize::from(self.hygiene != Hygiene::Neutral)
+            + usize::from(self.temperance != Temperance::Neutral)
     }
 }
 
@@ -110,7 +119,7 @@ pub fn random_personality(
     mut random: impl FnMut() -> u64,
 ) -> CharacterPersonality {
     let mut result = CharacterPersonality::neutral(character_id);
-    let mut axes = [0_u8, 1, 2, 3, 4, 5, 6, 7];
+    let mut axes = [0_u8, 1, 2, 3, 4, 5, 6, 7, 8];
     for index in (1..axes.len()).rev() {
         axes.swap(index, random() as usize % (index + 1));
     }
@@ -166,11 +175,18 @@ pub fn random_personality(
                     Conviction::Irreverent
                 }
             }
-            _ => {
+            7 => {
                 result.hygiene = if random() % 2 == 0 {
                     Hygiene::Slovenly
                 } else {
                     Hygiene::Cleanly
+                }
+            }
+            _ => {
+                result.temperance = if random() % 2 == 0 {
+                    Temperance::Temperate
+                } else {
+                    Temperance::Drunkard
                 }
             }
         }

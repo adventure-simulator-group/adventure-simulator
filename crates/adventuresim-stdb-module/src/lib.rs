@@ -1,3 +1,4 @@
+pub mod alcohol;
 pub mod capability;
 pub mod character;
 pub mod condition;
@@ -12,6 +13,7 @@ pub mod surgery;
 pub mod tactical;
 pub mod time;
 
+pub use alcohol::*;
 pub use capability::*;
 pub use character::*;
 pub use condition::*;

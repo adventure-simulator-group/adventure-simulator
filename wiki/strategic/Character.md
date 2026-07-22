@@ -10,6 +10,11 @@ Characters have an immutable sparse personality drawn from eight discrete axes. 
 When mortal creation is reworked, players should choose among several generated whole characters with different personality tags. Players will not customize individual tags: personality is part of choosing an existing mortal person rather than assembling one stat by stat.
 
 ## Mortal
+
+Character personality includes an immutable Temperance axis. **Temperate** and
+**Drunkard** are visible non-neutral tags; the neutral state is omitted like
+other neutral axes. Random mortal/NPC profiles still activate exactly two to
+four distinct axes across the expanded nine-axis catalog.
 Mortal characters [age](../strategic/Time.md) normally and eventually die. They cannot have their physical features customized; when rolling them, players must choose from a limited selection of randomly generated characters. They are cheap and efficient, ideal for players who want a [roguelike](https://en.wikipedia.org/wiki/Roguelike)/extraction-esque experience of frequently rolling new characters, quickly obtaining power, dying, and starting over.
 ### Humans
 [Default](https://en.wikipedia.org/wiki/Human).

@@ -35,6 +35,7 @@ pub fn item_icon_name(item_id: &str) -> &'static str {
         "splint" => "arm-bandage",
         "travel_ration" => "bread",
         "waterskin" => "waterskin",
+        "small_beer" | "table_wine" | "aqua_vitae" => "beer-stein",
         "linen_tunic" => "shirt",
         "club" => "wood-club",
         "walking_staff" => "bo",
@@ -304,6 +305,9 @@ mod icon_tests {
             ("bandage", "bandage-roll"),
             ("travel_ration", "bread"),
             ("waterskin", "waterskin"),
+            ("small_beer", "beer-stein"),
+            ("table_wine", "beer-stein"),
+            ("aqua_vitae", "beer-stein"),
             ("linen_tunic", "shirt"),
             ("club", "wood-club"),
             ("walking_staff", "bo"),
@@ -361,7 +365,7 @@ mod icon_tests {
             ("fauld", "belt-armor"),
             ("tassets", "pteruges"),
         ];
-        assert_eq!(mappings.len(), 67);
+        assert_eq!(mappings.len(), 70);
         for (item, icon) in mappings {
             assert_eq!(item_icon_name(item), icon, "{item}");
         }

@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (926)
+## Files (931)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -37,6 +37,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-character-creator/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-core/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-core/src/activity.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/alcohol.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/attribute.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/autoresolve.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/battle_rewards.rs` — Rust source module for this component.
@@ -70,6 +71,8 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/agricultural_commodity_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/agricultural_limitation_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/agriculture_industry_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/alcohol_consumption_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/alcohol_consumption_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/approve_party_action_request_planned_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/approve_party_action_request_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/autoresolve_quest_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -454,6 +457,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/tactical_server_request_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/tactical_server_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/tactical_server_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/temperance_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/topsoil_organic_carbon_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/transfer_party_item_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/travel_edge_import_type.rs` — Generated SpacetimeDB data type.
@@ -493,6 +497,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/.gitignore` — Repository support file.
 - `crates/adventuresim-stdb-module/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-stdb-module/README.md` — Component overview and usage notes.
+- `crates/adventuresim-stdb-module/src/alcohol.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/capability.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/character.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/condition.rs` — Rust source module for this component.

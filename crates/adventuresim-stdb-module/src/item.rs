@@ -106,6 +106,17 @@ pub struct Item {
     pub nutrition_kcal: f32,
     /// Water capacity contributed while this item is in personal inventory.
     pub water_capacity_ml: u32,
+    /// Potable liquid in one discrete serving.
+    pub alcohol_serving_ml: u32,
+    /// Alcohol by volume in basis points (500 = 5%).
+    pub alcohol_abv_basis_points: u16,
+    /// Useful emergency hydration supplied by one unit while travelling.
+    pub alcohol_net_hydration_ml: u32,
+    /// Additive hidden infection-control value; zero means ineligible.
+    pub alcohol_disinfectant_effectiveness: u16,
+    /// Preserve for medical use during ordinary morale drinking.
+    pub alcohol_disinfectant_focused: bool,
+    pub alcohol_potable: bool,
     /// Craftsmanship and maintenance target, on the shared 1..5 skill scale.
     pub quality: u8,
     /// Explicit construction/material inputs; never inferred from market value.
@@ -873,6 +884,50 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
         nutrition_kcal: 6_000.0,
         ..Item::default()
     });
+    for item in [
+        Item {
+            id: "small_beer".into(),
+            weight: 0.52,
+            base_value: Some(1),
+            alcohol_serving_ml: 500,
+            alcohol_abv_basis_points: 300,
+            alcohol_net_hydration_ml: 425,
+            alcohol_disinfectant_effectiveness: 10,
+            alcohol_potable: true,
+            ..Item::default()
+        },
+        Item {
+            id: "table_wine".into(),
+            weight: 0.26,
+            base_value: Some(2),
+            alcohol_serving_ml: 250,
+            alcohol_abv_basis_points: 1_200,
+            alcohol_net_hydration_ml: 150,
+            alcohol_disinfectant_effectiveness: 30,
+            alcohol_potable: true,
+            ..Item::default()
+        },
+        Item {
+            id: "aqua_vitae".into(),
+            weight: 0.11,
+            base_value: Some(4),
+            alcohol_serving_ml: 100,
+            alcohol_abv_basis_points: 5_000,
+            alcohol_net_hydration_ml: 0,
+            alcohol_disinfectant_effectiveness: 100,
+            alcohol_disinfectant_focused: true,
+            alcohol_potable: true,
+            ..Item::default()
+        },
+    ] {
+        if !adventuresim_core::alcohol::properties_valid(crate::alcohol::properties(&item)) {
+            return Err(format!(
+                "Alcohol definition {} has invalid ABV or hydration metadata",
+                item.id
+            ));
+        }
+        ctx.db.item().insert(item);
+    }
     ctx.db.item().insert(Item {
         id: "waterskin".into(),
         weight: 0.5,
