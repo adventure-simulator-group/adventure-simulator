@@ -190,7 +190,6 @@ just verify-db-client   # Fail if committed bindings differ from the module ABI
 
 # World-data source
 just init-world-data  # Install the pinned full input bundle, including Viabundus and HYDE
-just init-viabundus   # Independently restore/audit only the Viabundus v2 source
 just verify-world-data-bundle /path/to/archive.zip /path/to/archive.release.json <published-descriptor-sha256> # Verify a reviewed input collection
 just install-world-data /path/to/archive.zip /path/to/archive.release.json <published-descriptor-sha256> # Install it without source-by-source downloads
 just build-base-terrain # Build documented-road-only inference terrain
@@ -258,18 +257,10 @@ replaced.
 ## Viabundus source data
 
 The Viabundus v2 CSV data is a local development input for the strategic world
-importer and is intentionally ignored by Git. The standard `just
-init-world-data` workflow installs the reviewed Viabundus component together
-with HYDE and the other source-separated inputs. To restore or audit only
-Viabundus directly from the official Zenodo record, use:
-
-```bash
-just init-viabundus
-```
-
-Use `python3 scripts/init_viabundus.py --force` only when replacing an existing
-local download. The command records the source URLs and SHA-256 checksums in
-`viabundus/.viabundus-source.json`.
+importer and is intentionally ignored by Git. `just init-world-data` installs
+the reviewed Viabundus component together with HYDE and the other
+source-separated inputs. Its component inventory records the source URLs,
+sizes, and SHA-256 checksums, including `viabundus/.viabundus-source.json`.
 
 After the pinned bundle is installed (or every source has been initialized
 individually), run `just build-strategic-map`. The dependency chain first

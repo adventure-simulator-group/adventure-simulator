@@ -244,10 +244,6 @@ generate-db-client: spacetime-version-check
 verify-db-client: spacetime-version-check
 	@{{python_bin}} scripts/dev_stack.py verify-bindings
 
-# Download and extract the Viabundus v2 CSV source data into viabundus/.
-init-viabundus:
-	@python3 scripts/init_viabundus.py
-
 # Download and verify the pinned NOAA OWDA v1.0 NetCDF source.
 init-owda:
 	@python3 scripts/init_owda.py

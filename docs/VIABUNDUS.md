@@ -22,11 +22,10 @@ Legacy sidecars without sizes remain explicitly release-blocked.
 
 For normal development, `just init-world-data` installs the reviewed upstream
 CSVs into the Git-ignored `viabundus/` directory as the Viabundus component of
-the pinned source-separated bundle. `just init-viabundus` remains available to
-download and audit that source independently from Zenodo. The native Rust world
-compiler reads the files from its source-specific `sources::viabundus` module,
-then enriches the draft with required values from the other initialized
-sources. `just compile-world` writes the validated, schema-versioned artifact to
+the pinned source-separated bundle. The native Rust world compiler reads the
+files from its source-specific `sources::viabundus` module, then enriches the
+draft with required values from the other initialized sources. `just
+compile-world` writes the validated, schema-versioned artifact to
 `target/world-1544.json`. The generated strategic graph contains
 the source attributes required to route between and identify settlements in
 1544: nodes, active land/ferry edges, settlement metadata, active alternative

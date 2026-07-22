@@ -142,7 +142,21 @@ python scripts/world_data_bundle.py publish adventuresim-world-inputs.zip `
 
 The command validates the ZIP and descriptor before uploading, writes the ZIP
 and descriptor below `releases/world-data/`, and verifies each resulting R2
-object's content length. It never uploads a partial profile.
+object's content length. It never uploads a partial profile. The resulting
+object locations are:
+
+```text
+s3://adventuresim-world-data/releases/world-data/<archive-name>.zip
+s3://adventuresim-world-data/releases/world-data/<archive-name>.release.json
+```
+
+Uploading does not make clients select the new release automatically. After
+both immutable objects are publicly readable through the project's
+`pub-46168a4accb04d08ad0a558b0a2abfaa.r2.dev` custom R2 development domain,
+update the checked-in `world-data-release.lock.json` with their public HTTPS
+URLs, the exact ZIP byte size, and the SHA-256 of the external descriptor.
+`just init-world-data` downloads exactly that pinned pair; it never discovers a
+"latest" object by listing the bucket.
 
 ## Future combined release
 
