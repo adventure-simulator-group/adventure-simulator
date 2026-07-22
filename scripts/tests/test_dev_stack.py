@@ -253,8 +253,9 @@ class WorkflowTests(unittest.TestCase):
         lines = [line for line in source.splitlines() if "run-profile" in line]
         self.assertEqual(len(lines), 2)
         for line in lines:
-            self.assertIn("{{quote(profile)}}", line)
-            self.assertIn("{{quote(base_port)}}", line)
+            compact = line.replace(" ", "")
+            self.assertIn("{{quote(profile)}}", compact)
+            self.assertIn("{{quote(base_port)}}", compact)
             self.assertNotIn("'{{profile}}'", line)
 
     def test_strategic_only_recipes_skip_tactical_builds(self):

@@ -35,7 +35,7 @@ target
 
 # Dev tools - ignore everything except helper scripts
 utils/*
-!utils/*.sh
+!utils/*.py
 
 # Obsidian
 wiki/.obsidian/
@@ -55,6 +55,6 @@ crates/adventuresim-stdb-module/static/assets/
 # Local browser inspection and development output
 .playwright-cli/
 output/
-scripts/__pycache__/
+**/__pycache__/
 *.stdout.log
 *.stderr.log

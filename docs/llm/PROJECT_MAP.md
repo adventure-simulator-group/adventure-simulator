@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (999)
+## Files (1001)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -961,7 +961,7 @@ development, or wiki document before changing a subsystem.
 - `flake.nix` — Nix environment configuration or lockfile.
 - `justfile` — Repository support file.
 - `rust-toolchain.toml` — Tooling or build configuration.
-- `scripts/build_wasm.sh` — Development or documentation automation script.
+- `scripts/build_wasm.py` — Development or documentation automation script.
 - `scripts/dev_stack.py` — Development or documentation automation script.
 - `scripts/init_forest_cover.py` — Development or documentation automation script.
 - `scripts/init_jung_pnv.py` — Development or documentation automation script.
@@ -969,6 +969,7 @@ development, or wiki document before changing a subsystem.
 - `scripts/init_soilgrids.py` — Development or documentation automation script.
 - `scripts/init_viabundus.py` — Development or documentation automation script.
 - `scripts/init_world_data.py` — Development or documentation automation script.
+- `scripts/just_tasks.py` — Development or documentation automation script.
 - `scripts/test_init_forest_cover.py` — Development or documentation automation script.
 - `scripts/test_init_jung_pnv.py` — Development or documentation automation script.
 - `scripts/test_init_owda.py` — Development or documentation automation script.
@@ -978,10 +979,11 @@ development, or wiki document before changing a subsystem.
 - `scripts/test_world_data_bundle.py` — Development or documentation automation script.
 - `scripts/test_world_source_init.py` — Development or documentation automation script.
 - `scripts/tests/test_dev_stack.py` — Development or documentation automation script.
+- `scripts/tests/test_just_tasks.py` — Development or documentation automation script.
 - `scripts/update_project_map.py` — Development or documentation automation script.
 - `scripts/world_data_bundle.py` — Development or documentation automation script.
 - `scripts/world_source_init.py` — Development or documentation automation script.
-- `utils/generate_certificates.sh` — Development or documentation automation script.
+- `utils/generate_certificates.py` — Development or documentation automation script.
 - `wiki/Implementation.md` — Project documentation.
 - `wiki/Meta.md` — Project documentation.
 - `wiki/Networking.md` — Project documentation.
