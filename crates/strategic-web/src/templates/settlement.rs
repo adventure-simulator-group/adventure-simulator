@@ -1755,6 +1755,14 @@ pub fn party_personal_page(
     }
     let content = html! {
         aside class="left-sidebar" {
+            (sidebar_section("Activities", html! {
+                nav class="character-activity-menu" aria-label="Character activities" {
+                    a class="btn btn-small" data-character-activity="cooking"
+                        href=(format!("{}/party/{}?activity=cooking", location.base_path(), active_character.id)) {
+                        "Cooking"
+                    }
+                }
+            }))
             (party_attributes_rail("Your attributes", attributes, limbs, medical, Some(&format!("{}/party/{}/surgery", location.base_path(), active_character.id)), injuries, projectiles))
             (strategic_condition_rail(condition, morale_sources, filth, &location.preserve_building(format!("{}/party/{}/social", location.base_path(), active_character.id))))
             (medical_rail(medical, &location.base_path(), active_character.id, active_character.id, true))
@@ -3158,6 +3166,7 @@ fn item_name_with_display(
             data-item-kind=[definition.map(|item| format!("{:?}", item.kind).to_ascii_lowercase())]
             data-item-group=[alcohol_group]
             data-group-name=[alcohol_group.map(|_| "Alcohol")]
+            data-food-lot=[adventuresim_core::food::definition(item_id).map(|_| "true")]
             data-stat-accuracy=[definition.map(|item| weight_display(item.accuracy))]
             data-stat-reach=[definition.map(|item| weight_display(item.reach))]
             data-stat-penetration=[definition.map(|item| weight_display(item.penetration))]

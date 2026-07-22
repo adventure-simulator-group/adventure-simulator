@@ -247,9 +247,21 @@ pub fn travel_consumption(deficit_kcal: f32, available_kcal: f32) -> f32 {
 }
 
 pub fn explicit_meal_consumption(balance_kcal: f32, available_kcal: f32) -> f32 {
-    (MAX_MEAL_FULLNESS_KCAL - balance_kcal.max(0.0))
+    if !balance_kcal.is_finite() || !available_kcal.is_finite() {
+        return 0.0;
+    }
+    (MAX_MEAL_FULLNESS_KCAL - balance_kcal)
         .max(0.0)
         .min(available_kcal.max(0.0))
+}
+
+/// Scale a non-negative lot component while keeping malformed state from
+/// creating mass, nutrition, value, or provenance.
+pub fn retained_component(value: f32, retained_fraction: f32) -> f32 {
+    if !value.is_finite() || !retained_fraction.is_finite() {
+        return 0.0;
+    }
+    value.max(0.0) * retained_fraction.clamp(0.0, 1.0)
 }
 
 #[cfg(test)]
@@ -302,5 +314,16 @@ mod tests {
     fn travel_never_creates_surplus_but_meals_can() {
         assert_eq!(travel_consumption(-100.0, 500.0), 100.0);
         assert_eq!(explicit_meal_consumption(-100.0, 500.0), 500.0);
+        assert_eq!(explicit_meal_consumption(-1_000.0, 8_000.0), 4_000.0);
+        assert_eq!(explicit_meal_consumption(f32::NAN, 500.0), 0.0);
+    }
+
+    #[test]
+    fn partial_lot_components_are_conserved() {
+        for value in [0.25, 3.0, 2_500.0, 25.0] {
+            let remaining = retained_component(value, 0.37);
+            let consumed = retained_component(value, 0.63);
+            assert!((remaining + consumed - value).abs() < 0.001);
+        }
     }
 }

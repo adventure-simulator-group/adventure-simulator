@@ -374,7 +374,7 @@
     const wasExpanded = previousParent?.getAttribute("aria-expanded") === "true";
     previousParent?.remove();
     const components = [...body.querySelectorAll(":scope > tr.trade-inventory-row")]
-      .filter((row) => !row.classList.contains("food-parent-row") && row.querySelector('[data-item-kind="food"]'));
+      .filter((row) => !row.classList.contains("food-parent-row") && row.querySelector('[data-item-kind="food"], [data-food-lot="true"]'));
     if (!components.length) return;
     const first = components[0];
     const parent = first.cloneNode(true);

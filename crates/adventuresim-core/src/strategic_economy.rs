@@ -30,6 +30,16 @@ pub fn merchant_sell_price(base_value: u32) -> u32 {
     (base_value as f32 / MERCHANT_MARGIN).floor().max(1.0) as u32
 }
 
+/// Food lots can have fractional remaining value after a meal. Unlike a whole
+/// item quote, a sub-coin remainder may sell for zero and must never be rounded
+/// back up into a fresh unit of value.
+pub fn merchant_sell_food_lot_value(total_value: f32) -> Option<u64> {
+    if !total_value.is_finite() || total_value < 0.0 {
+        return None;
+    }
+    Some((total_value / MERCHANT_MARGIN).floor() as u64)
+}
+
 /// Checked line extension used by every authoritative merchant total. A quote
 /// that cannot be represented is rejected instead of being silently capped.
 pub fn checked_merchant_line_total(unit_price: u32, quantity: u32) -> Option<u64> {
@@ -141,5 +151,12 @@ mod tests {
         ] {
             assert!((2..=4).contains(&settlement_herbalist_medicine_skill(id)));
         }
+    }
+
+    #[test]
+    fn partial_food_sale_never_recreates_consumed_value() {
+        assert_eq!(merchant_sell_food_lot_value(3.0), Some(2));
+        assert_eq!(merchant_sell_food_lot_value(0.75), Some(0));
+        assert_eq!(merchant_sell_food_lot_value(f32::NAN), None);
     }
 }

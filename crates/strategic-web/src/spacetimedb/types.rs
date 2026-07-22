@@ -612,7 +612,7 @@ pub struct FoodLot {
     pub display_name: String,
     pub preparation: FoodPreparation,
     pub ingredient_item_ids: Vec<String>,
-    pub ingredient_quantities: Vec<u32>,
+    pub ingredient_quantities: Vec<f32>,
     pub mass_kg: f32,
     pub nutrition_kcal: f32,
     pub total_value: f32,

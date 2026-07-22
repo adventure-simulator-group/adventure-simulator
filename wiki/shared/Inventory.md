@@ -1,8 +1,10 @@
 # Management
 Food uses the same collapsed-parent disclosure pattern as coin in the browser,
-but the rows below `Food` are non-fungible lots. Each lot retains age,
-preparation, ingredient provenance, nutrition, value, and hidden contamination
-through splitting and custody transfers. See
+but the rows below `Food` are non-fungible quantity-one lots, including edible
+herbalist ingredients such as garlic and sage. Each lot retains age, preparation,
+fractional ingredient provenance, nutrition, value, and hidden contamination.
+Partial eating scales the lot fields while the row continues to identify the
+remaining batch; custody, cooking, and sales move that complete remainder. See
 [`docs/FOOD_AND_COOKING.md`](../../docs/FOOD_AND_COOKING.md).
 
 Inventory management should NOT be a full-time job. When players come home from laboring at the spreadsheet mines all day they should not *have* to toil more in what is ostensibly their reprieve from such work. But this is adventure _simulator_, not adventure _handwaver_, so we need to use the interface to abstract over all of the things that normally make inventory management tedious while still preserving the underlying depth.

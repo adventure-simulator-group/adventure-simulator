@@ -133,6 +133,7 @@ test("food lots use a disclosure parent without becoming fungible", () => {
   assert.equal(typeof require("../static/inventory-browser.js").groupFoodRows, "function");
   const source = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
   assert.match(source, /data-item-kind=\\?"food/);
+  assert.match(source, /data-food-lot=\\?"true/);
   assert.match(source, /food-component-row/);
   assert.match(source, /Show food lots/);
 });

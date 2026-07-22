@@ -3,6 +3,7 @@ use adventuresim_core::prelude::*;
 use spacetimedb::{ReducerContext, Table, reducer, table};
 
 use crate::condition::{character_condition as _, character_needs as _};
+use crate::food::food_lot as _;
 use crate::item::item as _;
 use crate::repair::item_condition as _;
 use crate::{
@@ -371,6 +372,14 @@ impl StrategicEquipment {
             .character_id()
             .filter(character_id)
             .filter_map(|inventory: InventoryItem| {
+                if let Some(lot) = ctx
+                    .db
+                    .food_lot()
+                    .iter()
+                    .find(|lot| lot.inventory_item_id == Some(inventory.id))
+                {
+                    return Some(lot.mass_kg.max(0.0));
+                }
                 ctx.db
                     .item()
                     .id()

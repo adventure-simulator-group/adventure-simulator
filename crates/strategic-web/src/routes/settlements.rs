@@ -3029,16 +3029,27 @@ async fn party_member(
         .query("SELECT * FROM item")
         .await
         .unwrap_or_default();
+    let food_lots: Vec<FoodLot> = state
+        .db
+        .query("SELECT * FROM food_lot")
+        .await
+        .unwrap_or_default();
     let selected_targets = personal_inventory_targets(&state, selected.id).await;
     let active_targets = personal_inventory_targets(&state, active_character.id).await;
     let encumbrance_rows =
         EncumbranceRows::query(&state, &[selected.id, active_character.id]).await;
-    let selected_encumbrance =
-        personal_encumbrance(selected.id, &selected_inventory, &items, &encumbrance_rows);
+    let selected_encumbrance = personal_encumbrance(
+        selected.id,
+        &selected_inventory,
+        &items,
+        &food_lots,
+        &encumbrance_rows,
+    );
     let active_encumbrance = personal_encumbrance(
         active_character.id,
         &active_inventory,
         &items,
+        &food_lots,
         &encumbrance_rows,
     );
 
@@ -5278,10 +5289,21 @@ async fn inventory_encumbrance_summaries(
         .flatten()
         .collect::<Vec<_>>();
     let rows = EncumbranceRows::query(state, &encumbrance_ids).await;
+    let food_lots = state
+        .db
+        .query::<FoodLot>("SELECT * FROM food_lot")
+        .await
+        .unwrap_or_default();
     InventoryEncumbranceSummaries {
-        personal: personal_encumbrance(active_character.id, active_inventory, items, &rows),
+        personal: personal_encumbrance(
+            active_character.id,
+            active_inventory,
+            items,
+            &food_lots,
+            &rows,
+        ),
         party: include_party
-            .then(|| party_encumbrance(members, &all_inventories, pooled, items, &rows))
+            .then(|| party_encumbrance(members, &all_inventories, pooled, items, &food_lots, &rows))
             .unwrap_or_default(),
     }
 }
@@ -5335,6 +5357,7 @@ fn personal_encumbrance(
     character_id: u64,
     inventory: &[InventoryItem],
     items: &[ItemDefinition],
+    food_lots: &[FoodLot],
     rows: &EncumbranceRows,
 ) -> EncumbranceSummary {
     let body_weight = rows
@@ -5350,7 +5373,15 @@ fn personal_encumbrance(
     let inventory_weight = inventory
         .iter()
         .filter(|row| row.character_id == character_id)
-        .map(|row| item_stack_weight_kg(&row.item_id, row.qty, items))
+        .map(|row| {
+            food_lots
+                .iter()
+                .find(|lot| lot.inventory_item_id == Some(row.id))
+                .map_or_else(
+                    || item_stack_weight_kg(&row.item_id, row.qty, items),
+                    |lot| lot.mass_kg.max(0.0),
+                )
+        })
         .sum::<f32>();
     let capacity = rows
         .attributes
@@ -5377,17 +5408,32 @@ fn party_encumbrance(
     inventories: &[InventoryItem],
     pooled: &[PartyInventoryItem],
     items: &[ItemDefinition],
+    food_lots: &[FoodLot],
     rows: &EncumbranceRows,
 ) -> EncumbranceSummary {
     let member_summary = members.iter().filter(|member| member.alive).fold(
         EncumbranceSummary::default(),
         |summary, member| {
-            summary.combined(personal_encumbrance(member.id, inventories, items, rows))
+            summary.combined(personal_encumbrance(
+                member.id,
+                inventories,
+                items,
+                food_lots,
+                rows,
+            ))
         },
     );
     let pooled_weight = pooled
         .iter()
-        .map(|row| item_stack_weight_kg(&row.item_id, row.quantity, items))
+        .map(|row| {
+            food_lots
+                .iter()
+                .find(|lot| lot.party_inventory_item_id == Some(row.id))
+                .map_or_else(
+                    || item_stack_weight_kg(&row.item_id, row.quantity, items),
+                    |lot| lot.mass_kg.max(0.0),
+                )
+        })
         .sum::<f32>();
     member_summary.combined(EncumbranceSummary::new(pooled_weight, 0.0))
 }
@@ -5968,7 +6014,7 @@ mod encumbrance_tests {
     };
     use crate::spacetimedb::{
         Character, CharacterAttributes, CharacterCondition, CharacterLimbs, CharacterNeeds,
-        InventoryItem, ItemDefinition, PartyInventoryItem,
+        FoodLot, FoodPreparation, InventoryItem, ItemDefinition, PartyInventoryItem,
     };
     use serde_json::json;
 
@@ -6061,7 +6107,7 @@ mod encumbrance_tests {
             item_id: "sword".into(),
             qty: 3,
         }];
-        let summary = personal_encumbrance(1, &inventory, &[item("sword", 4.0)], &rows());
+        let summary = personal_encumbrance(1, &inventory, &[item("sword", 4.0)], &[], &rows());
         assert_eq!(summary.burden_kg, 84.5);
         assert_eq!(summary.capacity_kg, 300.0);
     }
@@ -6093,6 +6139,7 @@ mod encumbrance_tests {
             &inventories,
             &pooled,
             &[item("sword", 4.0)],
+            &[],
             &rows(),
         );
         assert_eq!(summary.burden_kg, 92.5);
@@ -6121,10 +6168,48 @@ mod encumbrance_tests {
                 qty: 4,
             }],
             &[],
+            &[],
             &EncumbranceRows::default(),
         );
         assert_eq!(summary.burden_kg, 0.0);
         assert_eq!(summary.capacity_kg, 0.0);
         assert_eq!(summary.penalty_fraction(), 1.0);
+    }
+
+    #[test]
+    fn linked_food_lot_mass_replaces_static_item_weight() {
+        let inventory = vec![InventoryItem {
+            id: 40,
+            character_id: 1,
+            item_id: "cooked_meal".into(),
+            qty: 1,
+        }];
+        let lots = vec![FoodLot {
+            id: 5,
+            inventory_item_id: Some(40),
+            party_inventory_item_id: None,
+            display_name: "Large stew".into(),
+            preparation: FoodPreparation::Stewed,
+            ingredient_item_ids: vec!["raw_venison".into()],
+            ingredient_quantities: vec![25.0],
+            mass_kg: 25.0,
+            nutrition_kcal: 10_000.0,
+            total_value: 25.0,
+            created_at_minute: 1,
+        }];
+        let summary =
+            personal_encumbrance(1, &inventory, &[item("cooked_meal", 0.0)], &lots, &rows());
+        assert_eq!(summary.burden_kg, 97.5);
+
+        let mut partial = lots[0].clone();
+        partial.mass_kg = 6.25;
+        let summary = personal_encumbrance(
+            1,
+            &inventory,
+            &[item("cooked_meal", 0.0)],
+            &[partial],
+            &rows(),
+        );
+        assert_eq!(summary.burden_kg, 78.75);
     }
 }

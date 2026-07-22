@@ -72,7 +72,8 @@ pub struct FoodLot {
     pub display_name: String,
     pub preparation: FoodPreparation,
     pub ingredient_item_ids: Vec<String>,
-    pub ingredient_quantities: Vec<u32>,
+    /// Fractional source-unit provenance is conserved when a lot is partly eaten.
+    pub ingredient_quantities: Vec<f32>,
     pub mass_kg: f32,
     pub nutrition_kcal: f32,
     pub total_value: f32,
@@ -118,7 +119,7 @@ pub fn create_personal_food_lot(
             FoodPreparation::Raw
         },
         ingredient_item_ids: vec![item_id.into()],
-        ingredient_quantities: vec![quantity],
+        ingredient_quantities: vec![quantity as f32],
         mass_kg: definition.mass_kg_per_unit * quantity as f32,
         nutrition_kcal: definition.kcal_per_unit * quantity as f32,
         total_value: definition.value_per_unit * quantity as f32,
@@ -154,7 +155,7 @@ pub fn create_party_food_lot(
             FoodPreparation::Raw
         },
         ingredient_item_ids: vec![item_id.into()],
-        ingredient_quantities: vec![quantity],
+        ingredient_quantities: vec![quantity as f32],
         mass_kg: definition.mass_kg_per_unit * quantity as f32,
         nutrition_kcal: definition.kcal_per_unit * quantity as f32,
         total_value: definition.value_per_unit * quantity as f32,
@@ -227,35 +228,56 @@ pub fn remove_party_lot_quantity(
 }
 
 fn split_ingredient_quantities(
-    quantities: &[u32],
+    quantities: &[f32],
     taken: u32,
     original: u32,
-) -> (Vec<u32>, Vec<u32>) {
+) -> (Vec<f32>, Vec<f32>) {
+    let ratio = taken as f32 / original as f32;
     let child = quantities
         .iter()
-        .map(|quantity| (u64::from(*quantity) * u64::from(taken) / u64::from(original)) as u32)
+        .map(|quantity| food::retained_component(*quantity, ratio))
         .collect::<Vec<_>>();
     let source = quantities
         .iter()
         .zip(&child)
-        .map(|(quantity, child_quantity)| quantity.saturating_sub(*child_quantity))
+        .map(|(quantity, child_quantity)| (quantity - child_quantity).max(0.0))
         .collect();
     (source, child)
 }
 
-fn retained_ingredient_quantities(quantities: &[u32], retained: u32, original: u32) -> Vec<u32> {
+fn retained_ingredient_quantities(quantities: &[f32], retained: u32, original: u32) -> Vec<f32> {
+    let ratio = retained as f32 / original as f32;
     quantities
         .iter()
-        .map(|quantity| (u64::from(*quantity) * u64::from(retained) / u64::from(original)) as u32)
+        .map(|quantity| food::retained_component(*quantity, ratio))
         .collect()
 }
 
-fn lot_for_inventory(ctx: &ReducerContext, inventory_item_id: u64) -> Result<FoodLot, String> {
+fn retain_lot_fraction(lot: &mut FoodLot, retained: f32) {
+    lot.mass_kg = food::retained_component(lot.mass_kg, retained);
+    lot.nutrition_kcal = food::retained_component(lot.nutrition_kcal, retained);
+    lot.total_value = food::retained_component(lot.total_value, retained);
+    for quantity in &mut lot.ingredient_quantities {
+        *quantity = food::retained_component(*quantity, retained);
+    }
+}
+
+pub fn personal_lot(ctx: &ReducerContext, inventory_item_id: u64) -> Option<FoodLot> {
     ctx.db
         .food_lot()
         .iter()
         .find(|lot| lot.inventory_item_id == Some(inventory_item_id))
-        .ok_or("Food lot metadata not found".into())
+}
+
+pub fn party_lot(ctx: &ReducerContext, inventory_item_id: u64) -> Option<FoodLot> {
+    ctx.db
+        .food_lot()
+        .iter()
+        .find(|lot| lot.party_inventory_item_id == Some(inventory_item_id))
+}
+
+fn lot_for_inventory(ctx: &ReducerContext, inventory_item_id: u64) -> Result<FoodLot, String> {
+    personal_lot(ctx, inventory_item_id).ok_or("Food lot metadata not found".into())
 }
 
 fn contamination(
@@ -561,7 +583,7 @@ fn consume_food_amount(
     explicit: bool,
 ) -> Result<f32, String> {
     initialize_character_condition(ctx, character_id)?;
-    let mut inventory = ctx
+    let inventory = ctx
         .db
         .inventory_item()
         .id()
@@ -602,13 +624,10 @@ fn consume_food_amount(
         ctx.db.inventory_item().id().delete(inventory.id);
         delete_personal_food_lot(ctx, inventory.id);
     } else {
-        lot.mass_kg *= 1.0 - ratio;
-        lot.nutrition_kcal -= wanted;
-        lot.total_value *= 1.0 - ratio;
-        inventory.quantity = inventory.quantity.max(1);
+        retain_lot_fraction(&mut lot, 1.0 - ratio);
         ctx.db.food_lot().id().update(lot);
-        ctx.db.inventory_item().id().update(inventory);
     }
+    crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(wanted)
 }
 
@@ -636,7 +655,7 @@ pub fn consume_travel_food_to_zero(ctx: &ReducerContext, character_id: u64) -> R
             })
             .collect();
         candidates.sort_by_key(|row| (row.0, row.1));
-        for (_, _, mut inventory, mut lot) in candidates {
+        for (_, _, inventory, mut lot) in candidates {
             let deficit = ctx
                 .db
                 .character_needs()
@@ -670,12 +689,8 @@ pub fn consume_travel_food_to_zero(ctx: &ReducerContext, character_id: u64) -> R
                 ctx.db.food_contamination().food_lot_id().delete(lot.id);
                 ctx.db.food_lot().id().delete(lot.id);
             } else {
-                lot.mass_kg *= 1.0 - ratio;
-                lot.nutrition_kcal -= wanted;
-                lot.total_value *= 1.0 - ratio;
-                inventory.quantity = inventory.quantity.max(1);
+                retain_lot_fraction(&mut lot, 1.0 - ratio);
                 ctx.db.food_lot().id().update(lot);
-                ctx.db.party_inventory_item().id().update(inventory);
             }
         }
     }
@@ -723,6 +738,15 @@ pub fn eat_food(
         return Err("Eating requires authentication".into());
     }
     crate::character::require_living_character(ctx, character_id)?;
+    let actor = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    if actor.in_server {
+        return Err("Eating is unavailable during a tactical encounter".into());
+    }
     consume_food_amount(ctx, character_id, inventory_item_id, f32::MAX, true)?;
     Ok(())
 }
@@ -780,7 +804,7 @@ pub fn cook_food(
         ingredient_quantities.extend(
             lot.ingredient_quantities
                 .iter()
-                .map(|q| ((*q as f32 * ratio).round() as u32).max(1)),
+                .map(|q| food::retained_component(*q, ratio)),
         );
         mass += lot.mass_kg * ratio;
         kcal += lot.nutrition_kcal * ratio;
@@ -814,14 +838,12 @@ pub fn cook_food(
             inv.quantity -= quantity;
             ctx.db.inventory_item().id().update(inv);
             let mut remaining = lot;
-            remaining.mass_kg *= 1.0 - ratio;
-            remaining.nutrition_kcal *= 1.0 - ratio;
-            remaining.total_value *= 1.0 - ratio;
+            retain_lot_fraction(&mut remaining, 1.0 - ratio);
             ctx.db.food_lot().id().update(remaining);
         }
     }
     if !crate::time::advance_character_wait_time(ctx, character_id, duration as u64)? {
-        return Ok(());
+        return Err("Cooking was interrupted before the meal was completed".into());
     }
     let output = ctx.db.inventory_item().insert(crate::InventoryItem {
         id: 0,

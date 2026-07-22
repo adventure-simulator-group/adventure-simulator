@@ -1302,7 +1302,10 @@ pub fn add_inventory_item(
     });
     let food =
         kind == Some(ItemKind::Food) || adventuresim_core::food::definition(item_id).is_some();
-    let individual = durable || kind == Some(ItemKind::Medication);
+    // Every food unit is its own non-fungible batch. A partly consumed unit
+    // remains quantity one while its authoritative lot mass/value/provenance
+    // shrink, so it can never be merged back into fresh stock.
+    let individual = durable || kind == Some(ItemKind::Medication) || food;
     let count = if individual { quantity } else { 1 };
     let mut first = None;
     for _ in 0..count {
@@ -1326,6 +1329,9 @@ pub fn add_inventory_item(
             .ok()?;
         }
         first.get_or_insert(item.id);
+    }
+    if food {
+        let _ = crate::capability::refresh_character_capability(ctx, character_id);
     }
     first
 }
