@@ -33,7 +33,28 @@
   };
   const render = (view) => {
     currentView=view;messages?.querySelectorAll("[data-dialogue-scripted]").forEach((node)=>node.remove());
-    view.events.forEach((event)=>{const row=document.createElement("div");const player=event.speaker_is_player;row.className=player?"chat-player-message":"chat-npc-message";row.dataset.chatChannel="local";row.dataset.dialogueScripted="true";const timestamp=document.createElement("span");timestamp.className="chat-timestamp";timestamp.textContent="[--:--] ";const speaker=document.createElement("strong");speaker.textContent=`${event.speaker_name}: `;row.append(timestamp,speaker);event.fragments.forEach(({fragment,source})=>{if(fragment.kind==="text"){row.append(document.createTextNode(fragment.value));const edit=sourceLink(source);if(edit)row.append(edit);}else if(fragment.kind==="topic")row.append(topicAnchor({id:fragment.topic,label:fragment.label,source}));});messages.append(row);});
+    view.events.forEach((event) => {
+      const row = document.createElement("div");
+      row.className = event.speaker_is_player ? "chat-player-message" : "chat-npc-message";
+      row.dataset.chatChannel = "local";
+      row.dataset.dialogueScripted = "true";
+      const timestamp = document.createElement("span");
+      timestamp.className = "chat-timestamp";
+      timestamp.textContent = "[--:--] ";
+      const speaker = document.createElement("strong");
+      speaker.textContent = `${event.speaker_name}: `;
+      row.append(timestamp, speaker);
+      event.fragments.forEach(({ fragment, source }) => {
+        if (fragment.kind === "text") {
+          row.append(document.createTextNode(fragment.value));
+          const edit = sourceLink(source);
+          if (edit) row.append(edit);
+        } else if (fragment.kind === "topic") {
+          row.append(topicAnchor({ id: fragment.topic, label: fragment.label, source }));
+        }
+      });
+      messages.append(row);
+    });
     renderPrompt(view.open_prompt);
     renderExamination(view.examination);
     const rail=document.querySelector(".right-sidebar");if(rail){rail.querySelector("[data-dialogue-topic-rail]")?.remove();const section=document.createElement("section");section.className="sidebar-section";section.dataset.dialogueTopicRail="true";const heading=document.createElement("h3");heading.className="sidebar-header";heading.textContent="Topics";const list=document.createElement("ul");view.topics.forEach((topic)=>{const item=document.createElement("li");item.append(topicAnchor(topic));list.append(item);});section.append(heading,list);rail.prepend(section);} messages.scrollTop=messages.scrollHeight;
