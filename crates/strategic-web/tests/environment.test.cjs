@@ -203,7 +203,11 @@ test("wilderness headers select a tintable physical horizon", () => {
 
 test("service silhouettes expose names through the shared tooltip and keep active state non-color", () => {
   assert.match(layoutTemplate, /data-service-label=\(label\)[\s\S]*data-strategic-tooltip=\(label\)/);
+  assert.match(layoutTemplate, /href="\/camp" class="nav-tab active quest-context-tab"[\s\S]*data-service-label="Camp"/);
+  assert.match(layoutTemplate, /data-location-view="map"[\s\S]*data-service-label="Map"/);
+  assert.match(layoutTemplate, /data-location-view="enemy"[\s\S]*data-service-label="Enemy"/);
   assert.match(layoutCss, /\.settlement-services \.nav-tab:focus-visible/);
+  assert.match(layoutCss, /@media \(hover: none\), \(pointer: coarse\)[\s\S]*\.service-tab-label \{[\s\S]*display: block/);
   assert.match(layoutCss, /\.nav-tab\.active::after[\s\S]*height: 3px/);
   assert.match(layoutCss, /padding: 0\.75rem 0\.5rem 0\.65rem/);
 });

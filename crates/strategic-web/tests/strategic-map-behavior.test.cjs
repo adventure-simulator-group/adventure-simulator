@@ -7,9 +7,9 @@ const { parseHTML } = require("linkedom");
 
 const source = fs.readFileSync(path.join(__dirname, "..", "static", "strategic-map.js"), "utf8");
 
-const load = ({ ResizeObserver } = {}) => {
+const load = ({ ResizeObserver, matchMedia } = {}) => {
   const { document } = parseHTML(`<main></main>`);
-  const context = { document, localStorage: null, ResizeObserver };
+  const context = { document, localStorage: null, ResizeObserver, matchMedia };
   context.globalThis = context;
   vm.runInNewContext(source, context);
   return { document, helpers: context.StrategicMap };
@@ -83,13 +83,34 @@ test("visible controls zoom and reset through the shared camera", () => {
   const map = document.querySelector("section");
   helpers.initializeMap(map);
   const svg = map.querySelector("svg");
-  map.querySelector('[data-map-action="zoom-in"]').click();
+  const zoomIn = map.querySelector('[data-map-action="zoom-in"]');
+  zoomIn.focus();
+  zoomIn.click();
   assert.equal(svg.getAttribute("viewBox"), "140.00 120.00 320.00 160.00");
+  if (document.activeElement) assert.equal(document.activeElement, zoomIn);
   map.querySelector('[data-map-action="zoom-out"]').click();
   assert.equal(svg.getAttribute("viewBox"), "100.00 100.00 400.00 200.00");
   map.querySelector('[data-map-action="zoom-in"]').click();
   map.querySelector('[data-map-action="reset"]').click();
   assert.equal(svg.getAttribute("viewBox"), "100.00 100.00 400.00 200.00");
+  assert.doesNotMatch(source, /svg\.focus/);
+});
+
+test("hit targets stay compact for fine pointers and resolve to 48 screen pixels for coarse pointers", () => {
+  const fine = load();
+  assert.equal(fine.helpers.hitTargetRadius(1200, false), 13);
+  assert.equal(fine.helpers.hitTargetRadius(390, false), 13);
+  assert.equal(fine.helpers.hitTargetRadius(390, true), 24);
+  assert.equal(fine.helpers.hitTargetRadius(780, true), 12);
+
+  const coarse = load({ matchMedia: () => ({ matches: true }) });
+  coarse.document.body.innerHTML = `<svg><circle class="map-settlement-hit-area" r="13"></circle><circle class="map-settlement-hit-area map-settlement-hit-overlay" r="13"></circle><circle class="map-quest-hit-area" r="13"></circle></svg>`;
+  const svg = coarse.document.querySelector("svg");
+  coarse.helpers.scaleHitTargets(svg, 780);
+  assert.deepEqual(
+    [...svg.querySelectorAll("circle")].map((target) => target.getAttribute("r")),
+    ["12.000", "12.000", "12.000"],
+  );
 });
 
 test("pin symbols retain their screen size while zooming and resetting", () => {

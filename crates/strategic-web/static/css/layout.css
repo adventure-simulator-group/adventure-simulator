@@ -612,6 +612,7 @@
 }
 
 .settlement-services .nav-tab:hover { filter: brightness(1.12); }
+.service-tab-label { display: none; }
 .settlement-services .nav-tab:focus-visible { z-index: 5; outline: 2px solid var(--accent-light); outline-offset: 2px; }
 .settlement-services .nav-tab.active {
   color: var(--text-primary);
@@ -1250,4 +1251,27 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
   .center-content { min-height: 27rem; }
   .left-sidebar,
   .right-sidebar { padding: 0.85rem; }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .service-tab-label {
+    position: absolute;
+    z-index: 5;
+    right: .12rem;
+    bottom: .28rem;
+    left: .12rem;
+    display: block;
+    overflow: hidden;
+    padding: .1rem .15rem .13rem;
+    border: 1px solid rgb(240 221 169 / 32%);
+    background: rgb(10 10 9 / 82%);
+    color: var(--text-primary);
+    font-size: .65rem;
+    font-weight: 700;
+    line-height: 1;
+    pointer-events: none;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }

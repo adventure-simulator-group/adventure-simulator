@@ -522,7 +522,7 @@ pub fn strategic_map(
                                 g class=(format!("map-pin map-settlement map-settlement-{symbol_kind}{}{}{}", if is_current { " current" } else { "" }, if is_connected { " connected" } else { "" }, if is_selected { " selected" } else { "" }))
                                     transform=(format!("translate({x:.3} {y:.3})")) {
                                     g data-map-pin-symbol transform=(format!("scale({initial_pin_scale:.5})")) {
-                                        circle class="map-settlement-hit-area" r="24" {}
+                                        circle class="map-settlement-hit-area" r="13" {}
                                         @if is_selected { circle class="map-pin-selection" cy="-3" r="12" {} }
                                         use class="map-settlement-pictogram" aria-hidden="true"
                                             href=(format!("#map-settlement-{symbol_kind}-symbol")) {}
@@ -556,7 +556,7 @@ pub fn strategic_map(
                                 g class=(format!("map-pin map-quest{}{}", if is_active { " active" } else { "" }, if is_selected { " selected" } else { "" }))
                                     transform=(format!("translate({x:.3} {y:.3})")) {
                                     g data-map-pin-symbol transform=(format!("scale({initial_pin_scale:.5})")) {
-                                        circle class="map-quest-hit-area" r="24" {}
+                                        circle class="map-quest-hit-area" r="13" {}
                                         @if is_selected { circle class="map-pin-selection" r="12" {} }
                                         path class="map-quest-shape" d="M0,-9 L9,0 L0,9 L-9,0 Z" {}
                                         path class="map-quest-mark" d="M0,-5 V2 M0,5 V6" {}
@@ -575,7 +575,7 @@ pub fn strategic_map(
                                 class="map-settlement-hit-link" aria-hidden="true" tabindex="-1" {
                                 g transform=(format!("translate({x:.3} {y:.3})")) {
                                     g data-map-pin-symbol transform=(format!("scale({initial_pin_scale:.5})")) {
-                                        circle class="map-settlement-hit-area map-settlement-hit-overlay" r="24" {}
+                                        circle class="map-settlement-hit-area map-settlement-hit-overlay" r="13" {}
                                     }
                                 }
                             }
@@ -850,7 +850,7 @@ mod tests {
         assert!(markup.contains(TILE_PATH_PREFIX));
         assert!(markup.contains(&map.package.tiles.content_sha256));
         assert!(markup.contains("image"));
-        assert!(markup.contains("class=\"map-settlement-hit-area\" r=\"24\""));
+        assert!(markup.contains("class=\"map-settlement-hit-area\" r=\"13\""));
         assert!(!markup.contains("class=\"map-elevation"));
         assert!(
             markup.len() < 50_000,
