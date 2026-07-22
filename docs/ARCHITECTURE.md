@@ -45,6 +45,14 @@ serves the same notice at `/map/data-license`. Deployments must retain that
 notice so source-specific attribution and pass-through conditions travel with
 the otherwise optional file-backed artifacts.
 
+Normal development consumes a separately pinned compiled runtime ZIP containing
+`world-1544.json`, the AVIF strategic-map package, and the coherent final
+terrain-routing package. `just load-world` installs that small immutable bundle
+when absent and loads the compiled JSON; raw source initialization and offline
+geospatial compilation are release-maintainer workflows, not fresh-checkout
+requirements. The runtime archive carries both the strategic-map licence and a
+generated notice derived from the compiled world's embedded source manifests.
+
 Every gridded enrichment shares the canonical `SpatialGridSpec` described in
 `docs/SPATIAL_GRID.md`. The complete spec and inference-rules version are
 serialized in world metadata, so either changing alters the content-addressed

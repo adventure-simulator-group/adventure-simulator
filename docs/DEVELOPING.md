@@ -190,6 +190,7 @@ just verify-db-client   # Fail if committed bindings differ from the module ABI
 
 # World-data source
 just init-world-data  # Install the pinned full input bundle, including Viabundus and HYDE
+just init-world-runtime # Install the small compiled world/map runtime bundle
 just verify-world-data-bundle /path/to/archive.zip /path/to/archive.release.json <published-descriptor-sha256> # Verify a reviewed input collection
 just install-world-data /path/to/archive.zip /path/to/archive.release.json <published-descriptor-sha256> # Install it without source-by-source downloads
 just build-base-terrain # Build documented-road-only inference terrain
@@ -262,9 +263,12 @@ the reviewed Viabundus component together with HYDE and the other
 source-separated inputs. Its component inventory records the source URLs,
 sizes, and SHA-256 checksums, including `viabundus/.viabundus-source.json`.
 
-After the pinned bundle is installed (or every source has been initialized
-individually), run `just build-strategic-map`. The dependency chain first
-writes the immutable
+Most developers do not need these compiler inputs at all: `just load-world`
+automatically installs the separately pinned compiled runtime bundle and loads
+it without rebuilding. Install the full source bundle only when changing or
+auditing world generation. After the source bundle is installed (or every
+source has been initialized individually), run `just build-strategic-map`. The
+dependency chain first writes the immutable
 `terrain-routing-base-v2.json`/`.pack`, compiles `target/world-1544.json`
 against that digest, then regenerates
 `target/strategic-map/strategic-map-v1.json` and the derived
@@ -376,8 +380,12 @@ compiler writes a deterministic, schema-versioned artifact to
 `target/world-1544.json`, validates its references and invariants, and emits a
 build report. Canonical nodes, edges, and settlements include a bounded,
 unstructured Markdown `sources` field for future debugging; it is persisted but
-not currently displayed. `just load-world` sends that same compiled
-data in bounded batches to a published local module. Run it after
+not currently displayed. `just load-world` first verifies or downloads the
+pinned approximately 60 MiB runtime archive when its files are absent, then
+sends `target/world-1544.json` in bounded batches to a published local module.
+The same archive installs the AVIF map and final terrain-routing package, so a
+fresh checkout does not need the 26 GiB source bundle or a geospatial rebuild.
+Run it after
 `just publish-reset`, without `_seed-world`, when using the historical world.
 Interrupted loads can be resumed without recompiling by loading the identical
 artifact directly:

@@ -312,6 +312,12 @@ init-world-data:
 	@{{python_bin}} scripts/init_world_data.py --repository .
 rebuild-world-data:
 	@{{python_bin}} scripts/init_world_data.py --repository . --rebuild
+
+# Install the small pinned compiled world, map, and final terrain bundle.
+init-world-runtime:
+	@{{python_bin}} scripts/init_world_runtime.py --repository .
+replace-world-runtime:
+	@{{python_bin}} scripts/init_world_runtime.py --repository . --replace
 verify-world-data-bundle archive descriptor descriptor_sha256:
 	@{{python_bin}} scripts/world_data_bundle.py verify {{quote(archive)}} --descriptor {{quote(descriptor)}} --descriptor-sha256 {{quote(descriptor_sha256)}}
 install-world-data archive descriptor descriptor_sha256:
@@ -334,13 +340,13 @@ build-strategic-map: compile-world
 # Compatibility name for the former Python normalizer.
 normalise-viabundus: compile-world
 
-# Compile and load the world into the published local module.
-load-world server=spacetime_url: spacetime-version-check
-	@cargo run --package adventuresim-world-import --bin adventuresim-world-import -- --load --server {{server}} --database {{spacetime_module}}
+# Download the pinned compiled runtime when absent, then load it without rebuilding.
+load-world server=spacetime_url: spacetime-version-check init-world-runtime
+	@cargo run --package adventuresim-world-import --bin adventuresim-world-import -- --input target/world-1544.json --load --server {{server}} --database {{spacetime_module}}
 
 # Compatibility name for the former Viabundus-only loader.
-load-viabundus-world server=spacetime_url: spacetime-version-check
-	@cargo run --package adventuresim-world-import --bin adventuresim-world-import -- --load --server {{server}} --database {{spacetime_module}}
+load-viabundus-world server=spacetime_url: spacetime-version-check init-world-runtime
+	@cargo run --package adventuresim-world-import --bin adventuresim-world-import -- --input target/world-1544.json --load --server {{server}} --database {{spacetime_module}}
 
 # Build the tactical server and spawner
 build-tactical: verify-db-client

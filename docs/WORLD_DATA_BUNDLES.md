@@ -158,10 +158,39 @@ URLs, the exact ZIP byte size, and the SHA-256 of the external descriptor.
 `just init-world-data` downloads exactly that pinned pair; it never discovers a
 "latest" object by listing the bucket.
 
-## Future combined release
+## Compiled runtime release
 
-This workflow is separate from a future download of a fully compiled
-`world-1544.json`. A combined output can be an adapted database and requires a
-separate licence/provenance review, particularly for Viabundus’s CC BY-SA terms
-and non-CC source-specific conditions. Do not infer permission for that future
-release from the ability to distribute this source-separated collection.
+The source-input workflow is separate from the small compiled runtime release
+pinned in `world-runtime-release.lock.json`. That release contains
+`world-1544.json`, the AVIF strategic-map manifest/pack, the final coherent
+terrain-routing manifest/pack, the strategic-map licence, and a generated world
+data notice. Its exact derived bytes are independently hashed; upstream
+reproducibility warnings remain embedded in the world source manifests and are
+repeated in the generated notice.
+
+`just load-world` runs `just init-world-runtime` automatically. If every pinned
+runtime file already matches, initialization performs no network request. On a
+fresh checkout it downloads the single archive from
+`s3://adventuresim-world-data/releases/world-runtime/`, verifies the checked-in
+archive and member hashes, installs the files under `target/`, and loads the
+compiled world without invoking the source compiler. A conflicting local build
+is never overwritten implicitly; `just replace-world-runtime` retains replaced
+files below `target/world-runtime-backups/`. A previously pinned runtime that is
+still byte-for-byte intact is recognized as downloaded output and upgraded
+automatically, with the prior files retained by the same backup mechanism.
+
+Release maintainers build and publish it after `just build-strategic-map`:
+
+```powershell
+python scripts/world_runtime_release.py build --repository . `
+  --output target/adventuresim-world-runtime-1544-YYYYMMDD.zip `
+  --lock-output world-runtime-release.lock.json `
+  --release 1544-YYYYMMDD
+python scripts/world_runtime_release.py publish `
+  target/adventuresim-world-runtime-1544-YYYYMMDD.zip `
+  --lock world-runtime-release.lock.json
+```
+
+The publisher validates the complete archive before writing the immutable
+object below `releases/world-runtime/` in the same R2 bucket used by the source
+bundle. Commit the generated lock only after the public object is verified.
