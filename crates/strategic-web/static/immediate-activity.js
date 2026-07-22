@@ -69,7 +69,7 @@
         return [skill, Number(rate) * hours];
       });
     const total = trained.reduce((sum, [, value]) => sum + value, 0);
-    targetTraining.textContent = total > 0 ? `+${total.toFixed(2)}h` : 'â€”';
+    targetTraining.textContent = total > 0 ? `+${total.toFixed(2)}h` : '--';
     targetTraining.title = trained.length
       ? trained.map(([skill, value]) => `${skill}: +${value.toFixed(2)}h`).join('; ')
       : 'No skill training';

@@ -4521,7 +4521,7 @@ fn immediate_activity_dialog(action: &str) -> Markup {
                 header class="activity-modal-header" {
                     h3 id="activity-modal-title" data-activity-title { "Perform activity" }
                     button type="button" class="activity-modal-close" data-activity-close
-                        aria-label="Close activity dialog" { "Ã—" }
+                        aria-label="Close activity dialog" { "x" }
                 }
                 input type="hidden" name="activity" data-activity-kind;
                 input type="hidden" name="service_id" data-activity-service;
@@ -4532,7 +4532,7 @@ fn immediate_activity_dialog(action: &str) -> Markup {
                         step="1" value="1" data-activity-duration;
                     p class="activity-duration-summary" aria-live="polite" data-activity-duration-summary {
                         span data-activity-end { "Ends at --:--" }
-                        span aria-hidden="true" { " Â· " }
+                        span aria-hidden="true" { " / " }
                         span data-activity-hours { "1 h spent" }
                     }
                 }
@@ -4550,7 +4550,7 @@ fn immediate_activity_dialog(action: &str) -> Markup {
                         @for kind in ["gold", "virtue", "morale", "fatigue"] {
                             td class="schedule-effect schedule-effect-neutral" data-activity-effect=(kind) { "0" }
                         }
-                        td class="schedule-effect schedule-training-effect" data-activity-effect="training" { "â€”" }
+                        td class="schedule-effect schedule-training-effect" data-activity-effect="training" { "--" }
                     } }
                 }
                 button type="submit" class="activity-submit" data-activity-submit { "Spend 1 hour" }
