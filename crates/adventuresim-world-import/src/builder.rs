@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use adventuresim_world_schema::{
-    CompiledWorld, SettlementAliasImport, SettlementDescriptionImport, SpatialGridSpec,
-    WorldBuildReport,
+    CompiledWorld, PLAYABLE_BOUNDS, SettlementAliasImport, SettlementDescriptionImport,
+    SpatialGridSpec, WorldBuildReport,
 };
 
 use crate::{
@@ -18,6 +18,7 @@ use crate::{
 pub struct WorldBuilder {
     year: i32,
     spatial_grid: SpatialGridSpec,
+    bounds: Option<[f64; 4]>,
 }
 
 /// Viabundus-only enrichment output used to inspect source-boundary behavior
@@ -34,6 +35,7 @@ impl WorldBuilder {
         Self {
             year,
             spatial_grid: SpatialGridSpec::default(),
+            bounds: None,
         }
     }
 
@@ -42,8 +44,19 @@ impl WorldBuilder {
         self
     }
 
+    /// Restrict source topology and settlements before enrichment begins.
+    pub const fn with_bounds(mut self, bounds: [f64; 4]) -> Self {
+        self.bounds = Some(bounds);
+        self
+    }
+
+    /// Apply the repository's authoritative MVP playable boundary.
+    pub const fn with_playable_bounds(self) -> Self {
+        self.with_bounds(PLAYABLE_BOUNDS)
+    }
+
     pub fn build_from_viabundus(self, directory: &Path) -> Result<ViabundusEnrichment> {
-        let draft = viabundus::compile(directory, self.year, self.spatial_grid)?;
+        let draft = viabundus::compile(directory, self.year, self.spatial_grid, self.bounds)?;
         Ok(ViabundusEnrichment {
             settlement_aliases: draft.settlement_aliases,
             settlement_descriptions: draft.settlement_descriptions,
@@ -65,7 +78,12 @@ impl WorldBuilder {
         drought_netcdf: &Path,
         hydrology_directory: &Path,
     ) -> Result<CompiledWorld> {
-        let draft = viabundus::compile(viabundus_directory, self.year, self.spatial_grid)?;
+        let draft = viabundus::compile(
+            viabundus_directory,
+            self.year,
+            self.spatial_grid,
+            self.bounds,
+        )?;
         let draft = elevation::enrich(draft, elevation_directory)?;
         let draft = land_use::enrich(draft, land_use_directory)?;
         let draft = forest_cover::enrich(draft, forest_cover_directory)?;

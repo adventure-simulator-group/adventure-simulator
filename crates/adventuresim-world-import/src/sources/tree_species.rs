@@ -961,6 +961,7 @@ mod tests {
             Path::new(&viabundus),
             1544,
             adventuresim_world_schema::SpatialGridSpec::default(),
+            None,
         )
         .unwrap();
         let settlements = std::mem::take(&mut raw.settlements)

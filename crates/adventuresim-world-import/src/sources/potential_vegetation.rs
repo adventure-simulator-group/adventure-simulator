@@ -925,6 +925,7 @@ mod tests {
             Path::new(&viabundus),
             1544,
             SpatialGridSpec::default(),
+            None,
         )
         .unwrap();
         assert_eq!(raw.settlements.len(), 6_041);

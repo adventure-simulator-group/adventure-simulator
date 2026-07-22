@@ -18,7 +18,7 @@ use std::{
     time::Instant,
 };
 
-pub const SCHEMA: u32 = 2;
+pub const SCHEMA: u32 = 3;
 pub const CHUNK_SIDE: u16 = 256;
 pub const MAX_ENTRIES: usize = 20_000;
 pub const MAX_PACK_BYTES: usize = 2 * 1024 * 1024 * 1024;
@@ -216,6 +216,14 @@ impl TerrainPack {
         if !latitude.is_finite() || !longitude.is_finite() {
             return Ok(None);
         }
+        let [west_bound, south_bound, east_bound, north_bound] = self.bounds();
+        if longitude < west_bound
+            || longitude > east_bound
+            || latitude < south_bound
+            || latitude > north_bound
+        {
+            return Ok(None);
+        }
         let south = latitude.floor() as i16;
         let west = longitude.floor() as i16;
         let Some(&(tile_width, tile_height)) = self.tiles.get(&(south, west)) else {
@@ -353,6 +361,13 @@ impl TerrainPack {
             .into_iter()
             .all(f64::is_finite)
         {
+            return Err(Error::NoRoute);
+        }
+        let [west, south, east, north] = self.bounds();
+        let inside = |(latitude, longitude): (f64, f64)| {
+            longitude >= west && longitude <= east && latitude >= south && latitude <= north
+        };
+        if !inside(start) || !inside(goal) {
             return Err(Error::NoRoute);
         }
         for window in expanding_windows(start, goal, self.bounds()) {

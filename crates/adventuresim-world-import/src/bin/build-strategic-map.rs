@@ -4,6 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use adventuresim_world_schema::PLAYABLE_BOUNDS;
 use clap::Parser;
 use raster::{ElevationLayer, ForestLayer, MapRasterLayers};
 use serde::{Deserialize, Serialize};
@@ -15,11 +16,11 @@ mod raster;
 mod tiles;
 
 const PACKAGE_SCHEMA: u32 = 3;
-const RENDERER_REVISION: u32 = 7;
+const RENDERER_REVISION: u32 = 8;
 const YEAR: i32 = 1544;
 const VIABUNDUS_DOI: &str = "https://doi.org/10.5281/zenodo.16611998";
 const RECORD_URL: &str = "https://zenodo.org/api/records/16611998";
-const BOUNDS: [f64; 4] = [-11.0, 43.0, 31.0, 70.0];
+const BOUNDS: [f64; 4] = PLAYABLE_BOUNDS;
 const MAX_SOURCE_FILES: usize = 64;
 const DATA_LICENSE_FILENAME: &str = "STRATEGIC_MAP_DATA_LICENSE.md";
 const DATA_LICENSE: &str = include_str!("../../../../MAP_DATA_LICENSE.md");
@@ -187,7 +188,7 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let terrain = adventuresim_terrain::builder::build(
         &args.elevation_dir,
         &args.forest_cover_dir,
-        [5, 50, 16, 56],
+        BOUNDS,
         &args.terrain_output,
         &args.terrain_pack_output,
         &terrain_features,
@@ -258,6 +259,7 @@ fn write_data_license(outputs: &[&Path]) -> std::io::Result<()> {
 }
 
 fn build(root: &Path, layers: MapRasterLayers) -> Result<Package, Box<dyn std::error::Error>> {
+    let layers = clip_raster_layers(layers, BOUNDS);
     let manifest: SourceManifest =
         serde_json::from_slice(&fs::read(root.join(".viabundus-source.json"))?)?;
     if manifest.version != "2" || manifest.record_url != RECORD_URL {
@@ -399,6 +401,58 @@ fn build(root: &Path, layers: MapRasterLayers) -> Result<Package, Box<dyn std::e
     };
     validate_geometry(&package)?;
     Ok(package)
+}
+
+fn clip_raster_layers(mut layers: MapRasterLayers, bounds: [f64; 4]) -> MapRasterLayers {
+    layers.elevation.cells = layers
+        .elevation
+        .cells
+        .into_iter()
+        .filter_map(|mut cell| {
+            cell.bounds = bounds_intersection(cell.bounds, bounds)?;
+            Some(cell)
+        })
+        .collect();
+    layers.elevation.contours = layers
+        .elevation
+        .contours
+        .into_iter()
+        .flat_map(|contour| {
+            let points = contour.points.into_iter().map(Point).collect::<Vec<_>>();
+            clip_polyline(&points, bounds)
+                .into_iter()
+                .map(move |points| raster::ElevationContour {
+                    elevation_m: contour.elevation_m,
+                    points: points.into_iter().map(|point| point.0).collect(),
+                })
+        })
+        .collect();
+    layers.forest.coverage = layers
+        .forest
+        .coverage
+        .into_iter()
+        .filter_map(|coverage| bounds_intersection(coverage, bounds))
+        .collect();
+    layers.forest.regions = layers
+        .forest
+        .regions
+        .into_iter()
+        .filter_map(|mut region| {
+            region.bounds = bounds_intersection(region.bounds, bounds)?;
+            Some(region)
+        })
+        .collect();
+    layers
+}
+
+fn bounds_intersection(value: [f64; 4], bounds: [f64; 4]) -> Option<[f64; 4]> {
+    let clipped = [
+        value[0].max(bounds[0]),
+        value[1].max(bounds[1]),
+        value[2].min(bounds[2]),
+        value[3].min(bounds[3]),
+    ];
+    (clipped[0] < clipped[2] && clipped[1] < clipped[3]).then_some(clipped)
 }
 
 fn deployment_package(package: &Package) -> DeploymentPackage<'_> {
@@ -732,8 +786,8 @@ mod tests {
             NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(&root).unwrap();
-        let edges = b"id,section,type,certainty,zoomlevel,fromyear,toyear,descriptionid,length,fromnode,tonode,wkt,slopemultiplier\n1,A,land,1,2,1500,,x,100,1,2,\"LINESTRING(10 53,10.5 53.2,11 53.3)\",1\n2,B,land,1,6,1500,,x,100,2,3,\"LINESTRING(11 53.3,11.123456 53.345678,11.5 53.5)\",1\n";
-        let water = b"WKT\n\"MULTIPOLYGON (((10 52,11 52,11 53,10 52)))\"\n";
+        let edges = b"id,section,type,certainty,zoomlevel,fromyear,toyear,descriptionid,length,fromnode,tonode,wkt,slopemultiplier\n1,A,land,1,2,1500,,x,100,1,2,\"LINESTRING(9 51,10 51.2,11 51.3)\",1\n2,B,land,1,6,1500,,x,100,2,3,\"LINESTRING(10 51.3,10.123456 51.345678,10.5 51.5)\",1\n";
+        let water = b"WKT\n\"MULTIPOLYGON (((9 51,10 51,10 52,9 51)))\"\n";
         fs::write(root.join("edges.csv"), edges).unwrap();
         fs::write(root.join("water-1500.csv"), water).unwrap();
         let manifest = serde_json::json!({"record_url":RECORD_URL,"version":"2","files":[
@@ -762,19 +816,19 @@ mod tests {
             elevation: ElevationLayer {
                 source: layer_source(),
                 cells: vec![raster::ElevationCell {
-                    bounds: [10.0, 53.0, 10.25, 53.25],
+                    bounds: [9.0, 51.0, 9.25, 51.25],
                     band_m: 100,
                 }],
                 contours: vec![raster::ElevationContour {
                     elevation_m: 100,
-                    points: vec![[10.0, 53.0], [10.25, 53.25]],
+                    points: vec![[9.0, 51.0], [9.25, 51.25]],
                 }],
             },
             forest: ForestLayer {
                 source: layer_source(),
-                coverage: vec![[10.0, 53.0, 11.0, 54.0]],
+                coverage: vec![[9.0, 51.0, 10.0, 52.0]],
                 regions: vec![raster::ForestRegion {
-                    bounds: [10.0, 53.0, 10.05, 53.05],
+                    bounds: [9.0, 51.0, 9.05, 51.05],
                     density: 2,
                     kind: "mixed".into(),
                 }],
@@ -829,7 +883,7 @@ mod tests {
         assert_eq!(first_manifest.gutter, 4);
         assert_eq!(first.roads.len(), 1);
         assert_eq!(first.routing_roads.len(), 2);
-        assert_eq!(first.routing_roads[1][1], Point([11.123456, 53.345678]));
+        assert_eq!(first.routing_roads[1][1], Point([10.123456, 51.345678]));
         assert_eq!(first.water.len(), 1);
         assert_eq!(first.water[0].rings.len(), 1);
 
@@ -900,17 +954,17 @@ mod tests {
     #[test]
     fn clipping_drops_outside_geometry_and_bounds_crossings() {
         assert!(clip_polyline(&[Point([-20.0, 40.0]), Point([-15.0, 41.0])], BOUNDS).is_empty());
-        let crossing = clip_polyline(&[Point([-20.0, 50.0]), Point([40.0, 50.0])], BOUNDS);
+        let crossing = clip_polyline(&[Point([0.0, 51.5]), Point([20.0, 51.5])], BOUNDS);
         assert_eq!(
             crossing,
-            vec![vec![Point([-11.0, 50.0]), Point([31.0, 50.0])]]
+            vec![vec![Point([BOUNDS[0], 51.5]), Point([BOUNDS[2], 51.5])]]
         );
         let polygon = clip_polygon(
             &[
-                Point([-20.0, 50.0]),
-                Point([0.0, 50.0]),
-                Point([0.0, 60.0]),
-                Point([-20.0, 50.0]),
+                Point([8.0, 51.0]),
+                Point([10.0, 51.0]),
+                Point([10.0, 53.0]),
+                Point([8.0, 51.0]),
             ],
             BOUNDS,
         );

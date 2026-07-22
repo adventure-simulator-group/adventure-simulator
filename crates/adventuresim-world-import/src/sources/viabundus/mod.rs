@@ -5,6 +5,7 @@ use std::{
 
 use adventuresim_world_schema::{
     EdgeEndpoint, SpatialGridSpec, TravelEdgeKind, WorldBuildReport, WorldNodeImport,
+    coordinates_in_bounds,
 };
 use serde::{Deserialize, Deserializer, de};
 
@@ -83,6 +84,7 @@ pub(crate) fn compile(
     directory: &Path,
     year: i32,
     spatial_grid: SpatialGridSpec,
+    bounds: Option<[f64; 4]>,
 ) -> Result<WorldDraft<SettlementDraft>> {
     let nodes_path = require(directory, "nodes.csv")?;
     let edges_path = require(directory, "edges.csv")?;
@@ -184,9 +186,16 @@ pub(crate) fn compile(
             increment(&mut excluded_edges, "self-loop".into());
             continue;
         }
-        endpoint_ids.extend([from_node_id, to_node_id]);
         let from_node = &nodes_by_id[&from_node_id];
         let to_node = &nodes_by_id[&to_node_id];
+        if bounds.is_some_and(|bounds| {
+            !coordinates_in_bounds(from_node.longitude, from_node.latitude, bounds)
+                || !coordinates_in_bounds(to_node.longitude, to_node.latitude, bounds)
+        }) {
+            increment(&mut excluded_edges, "outside-playable-bounds".into());
+            continue;
+        }
+        endpoint_ids.extend([from_node_id, to_node_id]);
         let route = match kind {
             TravelEdgeKind::Ferry => TravelRouteDraft::Ferry,
             TravelEdgeKind::Land => TravelRouteDraft::Land {
@@ -229,6 +238,11 @@ pub(crate) fn compile(
         if !node.is_settlement || !node.settlement_interval.contains(year) {
             continue;
         }
+        if bounds
+            .is_some_and(|bounds| !coordinates_in_bounds(node.longitude, node.latitude, bounds))
+        {
+            continue;
+        }
         settlement_node_ids.insert(node.id);
         let population = population_by_node.get(&node.id).copied();
         let estimate = population.map(|(_, value)| value);
@@ -268,7 +282,13 @@ pub(crate) fn compile(
         let parents: Vec<_> = required_nodes
             .iter()
             .filter_map(|node_id| nodes_by_id[node_id].parent_node_id)
-            .filter(|parent_id| nodes_by_id.contains_key(parent_id))
+            .filter(|parent_id| {
+                nodes_by_id.get(parent_id).is_some_and(|parent| {
+                    bounds.is_none_or(|bounds| {
+                        coordinates_in_bounds(parent.longitude, parent.latitude, bounds)
+                    })
+                })
+            })
             .collect();
         let previous_len = required_nodes.len();
         required_nodes.extend(parents);
@@ -281,7 +301,9 @@ pub(crate) fn compile(
         .filter(|node| required_nodes.contains(&node.id))
         .map(|node| WorldNodeImport {
             id: node.id,
-            parent_node_id: node.parent_node_id,
+            parent_node_id: node
+                .parent_node_id
+                .filter(|parent| required_nodes.contains(parent)),
             latitude: node.latitude,
             longitude: node.longitude,
             is_settlement: node.is_settlement,

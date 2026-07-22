@@ -1,5 +1,12 @@
 # Viabundus world data
 
+Canonical MVP compilation retains only nodes, settlements, and complete road
+edges whose endpoints are within `[8.965, 50.877, 11.110, 52.211]`. This
+filter runs before environmental enrichment, so out-of-bounds settlements do
+not consume raster sampling work or enter SpacetimeDB. The independently
+generated presentation map clips full-precision road and water geometry at the
+same exact boundary.
+
 The strategic world-import pipeline uses **Viabundus Pre-modern Street Map 2**,
 version 2 (released 25 April 2025), edited by Bart Holterman et al.
 
@@ -80,7 +87,7 @@ distributed under CC BY-SA 4.0 rather than the repository software's AGPL.
 Every bundle must retain the generated `STRATEGIC_MAP_DATA_LICENSE.md` notice
 or provide a reasonably prominent link to the canonical `MAP_DATA_LICENSE.md`;
 the server exposes the latter at `/map/data-license`.
-The compact schema-3 deployment manifest carries renderer revision 7, reviewed
+The compact schema-3 deployment manifest carries renderer revision 8, reviewed
 source identities, coverage counts, and the indexed AVIF pyramid, but not the
 offline roads, compound water rings, elevation cells/contours, or forest
 regions used to render it. Its embedded SHA-256 covers every deployed field;
