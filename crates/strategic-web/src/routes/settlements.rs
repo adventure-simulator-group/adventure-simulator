@@ -1,6 +1,7 @@
 //! Settlement route handlers
 
 use adventuresim_core::{
+    bestiary::ThreatId,
     equipment::{EncumbranceSummary, encumbrance_capacity_kg},
     prelude::{
         PartyProvisioningInputs, STANDARD_TRAVEL_RATION_ID, STANDARD_WATERSKIN_ID,
@@ -2393,12 +2394,19 @@ fn service_quest_details(
     low: i32,
     high: i32,
 ) -> String {
+    let threat = quest.enemy_type.parse::<ThreatId>().ok();
+    let threat_name = threat
+        .map(|id| id.display_name(high.max(0) as u32).to_lowercase())
+        .unwrap_or_else(|| "unknown threats".to_string());
+    let preparation = threat
+        .map(|id| id.profile().investigation.preparation_advice)
+        .unwrap_or("Learn more before committing to a fight.");
     let situation = match service_id {
         "weapons" => format!(
-            "the thieves are hiding with the stolen arms near the road between {settlement_name} and {neighboring_name}"
+            "smugglers are hiding with the stolen arms near the road between {settlement_name} and {neighboring_name}"
         ),
         "armor" => format!(
-            "the old mine between {settlement_name} and {neighboring_name} is choked with giant spiders, and no miner will go near it"
+            "the old mine between {settlement_name} and {neighboring_name} is occupied by kobolds, and no miner will go near it"
         ),
         "clothing" => format!(
             "the wolves are ranging through the grazing land between {settlement_name} and {neighboring_name}, where our shepherds cannot avoid them"
@@ -2414,8 +2422,8 @@ fn service_quest_details(
         ),
     };
     format!(
-        "Yes, {situation}. I believe there are about {low} or {high} {}, give or take. I'd offer {} coin to anyone who clears them out. Are you",
-        quest.enemy_type, quest.gold_reward,
+        "Yes, {situation}. I believe there are about {low} or {high} {threat_name}, give or take. I'd offer {} coin to anyone who clears them out. Preparation: {preparation} Are you",
+        quest.gold_reward,
     )
 }
 

@@ -27,14 +27,10 @@ pub const TRAVEL_RATION_ID: &str = STANDARD_TRAVEL_RATION_ID;
 pub const WATERSKIN_ID: &str = STANDARD_WATERSKIN_ID;
 
 fn enemy_fear_multiplier(enemy_type: &str) -> f32 {
-    let enemy = enemy_type.to_ascii_lowercase();
-    if enemy.contains("demon") {
-        3.0
-    } else if enemy.contains("undead") || enemy.contains("skeleton") || enemy.contains("zombie") {
-        1.5
-    } else {
-        1.0
-    }
+    enemy_type
+        .parse::<adventuresim_core::bestiary::ThreatId>()
+        .map(|id| 1.0 + f32::from(id.profile().combat.fear) / 50.0)
+        .unwrap_or(1.0)
 }
 
 /// Durable strategic inputs for blood loss and religious morale relationships.

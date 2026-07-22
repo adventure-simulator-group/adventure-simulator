@@ -380,6 +380,10 @@ pub struct Combatant {
     /// Cut damage committed at the tactical/strategic boundary. This is durable
     /// wound provenance, not tactical tick state.
     pub cut_damage: f32,
+    /// Bestiary-owned physical response to incoming damage. Ordinary humans
+    /// use 1.0; unusual anatomies can make weapon choice consequential.
+    pub incoming_cut_multiplier: f32,
+    pub incoming_blunt_multiplier: f32,
     #[doc(hidden)]
     pub initial_ammunition: u32,
     #[doc(hidden)]
@@ -403,6 +407,8 @@ impl Combatant {
             imbalance: 0.0,
             blood_loss_fraction: 0.0,
             cut_damage: 0.0,
+            incoming_cut_multiplier: 1.0,
+            incoming_blunt_multiplier: 1.0,
             initial_ammunition: 0,
             ranged_attack_progress: 0.0,
         }
@@ -1211,7 +1217,6 @@ fn apply_attack_result(
         AttackResult::ToDefender { balance_damage, .. } => {
             defender.imbalance += balance_damage.max(0.0);
             let damage = health_damage_from_attack(result, part);
-            let applied = defender.body.apply_damage(part, damage);
             let raw_cut = match result {
                 AttackResult::ToDefender { cut_damage, .. } => cut_damage.max(0.0),
                 _ => 0.0,
@@ -1224,6 +1229,17 @@ fn apply_attack_result(
                 } => (cut_damage + blunt_damage).max(0.0),
                 _ => 0.0,
             };
+            let raw_blunt = (raw_total - raw_cut).max(0.0);
+            let anatomy_multiplier = if raw_total > 0.0 {
+                (raw_cut * defender.incoming_cut_multiplier
+                    + raw_blunt * defender.incoming_blunt_multiplier)
+                    / raw_total
+            } else {
+                1.0
+            };
+            let applied = defender
+                .body
+                .apply_damage(part, damage * anatomy_multiplier);
             defender.cut_damage += if raw_total > 0.0 {
                 applied * raw_cut / raw_total
             } else {
@@ -2001,5 +2017,38 @@ mod tests {
             })
             .count();
         assert!(strong_wins > weak_wins, "{strong_wins} versus {weak_wins}");
+    }
+
+    #[test]
+    fn skeletal_anatomy_makes_blunt_contact_decisively_better_than_cutting() {
+        let mut attacker = fighter(1, 3.0, false);
+        let skeleton = || {
+            let mut target = fighter(2, 2.0, false);
+            target.incoming_cut_multiplier = 0.35;
+            target.incoming_blunt_multiplier = 1.8;
+            target
+        };
+        let strike = |cut_damage, blunt_damage| AttackResult::ToDefender {
+            cut_damage,
+            blunt_damage,
+            balance_damage: 0.0,
+            contact_force: cut_damage + blunt_damage,
+            armor_contact: false,
+        };
+        let mut cut_target = skeleton();
+        let cut = apply_attack_result(
+            &mut attacker,
+            &mut cut_target,
+            strike(0.4, 0.0),
+            BodyPart::Chest,
+        );
+        let mut blunt_target = skeleton();
+        let blunt = apply_attack_result(
+            &mut attacker,
+            &mut blunt_target,
+            strike(0.0, 0.4),
+            BodyPart::Chest,
+        );
+        assert!(blunt.health_damage > cut.health_damage * 2.0);
     }
 }

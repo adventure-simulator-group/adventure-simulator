@@ -4,6 +4,8 @@
 //! retries cannot change which journey/seed encounters a party. Mount support
 //! is intentionally represented as a speed input; absent mounts are neutral.
 
+use crate::bestiary::{ActivityTime, Habitat, ThreatId, habitat_weight};
+
 pub const ENCOUNTER_ROLL_INTERVAL_MINUTES: u64 = 180;
 pub const BASE_ENCOUNTER_BASIS_POINTS: u32 = 180;
 pub const QUEST_PROXIMITY_MINUTES: u64 = 120;
@@ -43,12 +45,16 @@ pub struct AcceptedQuestInfluence {
 }
 
 impl EncounterArchetype {
-    pub const fn enemy_speed_m_per_minute(self) -> u32 {
+    pub const fn threat_id(self) -> ThreatId {
         match self {
-            Self::Bandits => 80,
-            Self::Goblins => 88,
-            Self::Undead => 58,
+            Self::Bandits => ThreatId::Bandit,
+            Self::Goblins => ThreatId::Goblin,
+            Self::Undead => ThreatId::Skeleton,
         }
+    }
+
+    pub const fn enemy_speed_m_per_minute(self) -> u32 {
+        self.threat_id().profile().combat.speed_m_per_minute
     }
 }
 
@@ -211,16 +217,19 @@ pub fn select_at(
         return None;
     }
 
-    let mut weights = match context.terrain {
-        EncounterTerrain::Road => [65_u32, 25, 10],
-        EncounterTerrain::Open => [45, 40, 15],
-        EncounterTerrain::SparseWoods => [30, 55, 15],
-        EncounterTerrain::DeepWoods => [20, 55, 25],
+    let habitat = match context.terrain {
+        EncounterTerrain::Road => Habitat::Road,
+        EncounterTerrain::Open => Habitat::Open,
+        EncounterTerrain::SparseWoods => Habitat::SparseWoods,
+        EncounterTerrain::DeepWoods => Habitat::DeepWoods,
     };
-    if context.night {
-        weights[2] += 45;
-        weights[0] = weights[0].saturating_sub(10);
-    }
+    // Profiles own the forward context likelihood and keep ecological prior
+    // separate from curation pressure. The roll domains below are unchanged.
+    let mut weights = [
+        encounter_weight(ThreatId::Bandit, habitat, context.night),
+        encounter_weight(ThreatId::Goblin, habitat, context.night),
+        encounter_weight(ThreatId::Skeleton, habitat, context.night),
+    ];
     if let Some(quest) = context.accepted_active_quest {
         let bonus = (u64::from(QUEST_ARCHETYPE_WEIGHT_BONUS) * quest_strength
             / QUEST_PROXIMITY_MINUTES) as u32;
@@ -239,10 +248,22 @@ pub fn select_at(
     } else {
         EncounterArchetype::Undead
     };
-    let count = enemy_count(seed, index, context.combat_capable_members);
+    let count = scale_enemy_count(
+        enemy_count(seed, index, context.combat_capable_members),
+        archetype,
+    );
     let party_roll = (domain_roll(seed, index, 3) % 1000) as u16;
     let enemy_roll = (domain_roll(seed, index, 4) % 1000) as u16;
-    let awareness = awareness_from_rolls(party_roll, enemy_roll, context);
+    let awareness = awareness_from_rolls(
+        party_roll,
+        enemy_roll,
+        EncounterContext {
+            enemy_awareness: context
+                .enemy_awareness
+                .saturating_add(u16::from(archetype.threat_id().profile().combat.perception)),
+            ..context
+        },
+    );
     (awareness != Awareness::Neither).then_some(EncounterSelection {
         boundary_minute: minute,
         roll_index: index,
@@ -254,6 +275,18 @@ pub fn select_at(
     })
 }
 
+fn encounter_weight(id: ThreatId, habitat: Habitat, night: bool) -> u32 {
+    let profile = id.profile();
+    let habitat = u32::from(habitat_weight(id, habitat));
+    let activity = match (profile.investigation.activity, night) {
+        (ActivityTime::Night, true) | (ActivityTime::Day, false) | (ActivityTime::Any, _) => 100,
+        _ => 20,
+    };
+    (u32::from(profile.base_weight) * habitat * activity / 10_000)
+        .saturating_add(u32::from(profile.curation_weight) / 10)
+        .max(1)
+}
+
 /// Returns the deterministic enemy count for an encounter roll.
 ///
 /// This is exposed separately so a strategic interruption can recompute the
@@ -262,6 +295,19 @@ pub fn enemy_count(seed: u64, index: u64, combat_capable_members: u16) -> u16 {
     let capable = combat_capable_members.max(1);
     let spread = (capable / 2).max(1);
     capable.saturating_add((domain_roll(seed, index, 2) % u64::from(spread + 1)) as u16)
+}
+
+pub fn scale_enemy_count(count: u16, archetype: EncounterArchetype) -> u16 {
+    let basis_points = u32::from(
+        archetype
+            .threat_id()
+            .profile()
+            .combat
+            .encounter_scale_basis_points,
+    );
+    ((u32::from(count) * basis_points).div_ceil(10_000))
+        .max(1)
+        .min(u32::from(u16::MAX)) as u16
 }
 
 pub const fn awareness_from_rolls(
