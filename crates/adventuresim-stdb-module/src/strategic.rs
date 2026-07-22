@@ -31,6 +31,7 @@ use crate::{
     tactical::tactical_server_request,
     time::{
         advance_travel_time, character_apprenticeship, character_time, character_training_schedule,
+        preview_travel_time,
     },
 };
 use std::collections::{BinaryHeap, HashMap, HashSet};
@@ -6197,7 +6198,7 @@ fn validate_journey_route_payload(
     let minimum_minutes = route
         .distance_m
         .saturating_mul(MINUTES_PER_HOUR)
-        .div_ceil((WALKING_SPEED_KM_PER_HOUR * 3 / 2) * METERS_PER_KILOMETER)
+        .div_ceil(7_500)
         .max(1);
     if route.minutes < minimum_minutes {
         return Err("Terrain route duration is faster than the maximum travel speed".into());
@@ -6209,14 +6210,9 @@ fn validate_journey_route_payload(
             + u32::from(span.terrain.hills)
             + u32::from(span.terrain.urban);
         if weight_sum != 1_000
+            || span.terrain.urban != 0
             || span.training_multiplier_permille > 1_000
             || span.check_millirank > 5_000
-            || match span.kind {
-                JourneyTerrainKind::Road => {
-                    ![150, 200, 250].contains(&span.training_multiplier_permille)
-                }
-                _ => span.training_multiplier_permille != 1_000,
-            }
         {
             return Err("Terrain route span has invalid bounded skill metadata".into());
         }
@@ -6896,6 +6892,37 @@ fn terrain_training_exposure(spans: &[JourneyTerrainSpan], start: u64, end: u64)
     exposure
 }
 
+fn advance_party_movement(
+    ctx: &ReducerContext,
+    party_id: &str,
+    traveler_ids: &[u64],
+    requested_minutes: u64,
+) -> Result<(u64, bool), String> {
+    let mut safe_prefixes = Vec::with_capacity(traveler_ids.len());
+    for member_id in traveler_ids {
+        safe_prefixes.push(preview_travel_time(ctx, *member_id, requested_minutes)?);
+    }
+    let actual_minutes = common_movement_prefix(requested_minutes, safe_prefixes);
+    if actual_minutes == 0 {
+        return Ok((0, false));
+    }
+    let mut all_survived = true;
+    for member_id in traveler_ids.iter().copied() {
+        all_survived &= advance_travel_time(ctx, member_id, actual_minutes)?;
+    }
+    // Training is committed only after every participant's authoritative
+    // clock has committed the same safe movement prefix.
+    train_party_terrain_movement(ctx, party_id, actual_minutes)?;
+    Ok((actual_minutes, all_survived))
+}
+
+fn common_movement_prefix(
+    requested_minutes: u64,
+    safe_prefixes: impl IntoIterator<Item = u64>,
+) -> u64 {
+    safe_prefixes.into_iter().fold(requested_minutes, u64::min)
+}
+
 pub(crate) fn refresh_party_journey_forecast(
     ctx: &ReducerContext,
     party_id: &str,
@@ -7400,6 +7427,13 @@ mod departure_invariant_tests {
         bad.spans[0].terrain.plains = 999;
         assert!(validate_journey_route_payload(&bad, (10.0, 53.0), (10.01, 53.0)).is_err());
 
+        for index in 0..2 {
+            let mut bad = route.clone();
+            bad.spans[index].terrain.plains -= 1;
+            bad.spans[index].terrain.urban = 1;
+            assert!(validate_journey_route_payload(&bad, (10.0, 53.0), (10.01, 53.0)).is_err());
+        }
+
         let mut bad = route.clone();
         bad.minutes = 1;
         bad.spans = vec![JourneyTerrainSpan {
@@ -7423,6 +7457,20 @@ mod departure_invariant_tests {
     }
 
     #[test]
+    fn max_rank_seventy_five_hundred_metres_per_hour_route_is_accepted() {
+        let mut route = route_fixture();
+        route.minutes = route.distance_m.saturating_mul(60).div_ceil(7_500);
+        route.spans[0].duration_minutes = 2;
+        route.spans[1].start_minute = 2;
+        route.spans[1].duration_minutes = route.minutes - 2;
+        for span in &mut route.spans {
+            span.check_millirank = 5_000;
+        }
+        assert_eq!(route.minutes, 6);
+        assert!(validate_journey_route_payload(&route, (10.0, 53.0), (10.01, 53.0)).is_ok());
+    }
+
+    #[test]
     fn terrain_training_uses_exact_overlap_and_conserves_mixed_exposure() {
         let spans = route_fixture().spans;
         let exposure = terrain_training_exposure(&spans, 3, 9);
@@ -7431,6 +7479,23 @@ mod departure_invariant_tests {
         assert_eq!(exposure[1..], [0.0, 0.0, 0.0]);
         let none = terrain_training_exposure(&spans, 12, 30);
         assert_eq!(none, [0.0; 4]);
+    }
+
+    #[test]
+    fn terminal_prefix_and_retry_train_each_committed_minute_once() {
+        let spans = route_fixture().spans;
+        let first = common_movement_prefix(12, [12, 4]);
+        assert_eq!(
+            first, 4,
+            "the earliest death boundary limits the whole party"
+        );
+        let retry = common_movement_prefix(12 - first, [8]);
+        let chunked = terrain_training_exposure(&spans, 0, first);
+        let resumed = terrain_training_exposure(&spans, first, first + retry);
+        let whole = terrain_training_exposure(&spans, 0, 12);
+        for index in 0..4 {
+            assert!((chunked[index] + resumed[index] - whole[index]).abs() < 0.0001);
+        }
     }
 
     #[test]
@@ -7578,14 +7643,12 @@ fn travel_to_quest_impl(
         .id()
         .find(&party_id)
         .ok_or("Party changed while its waterskins were filled")?;
-    let leg_minutes =
+    let proposed_leg_minutes =
         travel_minutes.min(party_next_walking_minutes(ctx, &party.id, travel_minutes)?);
+    let (leg_minutes, _) =
+        advance_party_movement(ctx, &party_id, &traveler_ids, proposed_leg_minutes)?;
     if leg_minutes < travel_minutes {
-        train_party_terrain_movement(ctx, &party_id, leg_minutes)?;
-        for member_id in traveler_ids.iter().copied() {
-            if !advance_travel_time(ctx, member_id, leg_minutes)? {
-                return Ok(());
-            }
+        for member_id in living_party_member_ids(ctx, &party_id) {
             let mut member = ctx
                 .db
                 .character()
@@ -7602,15 +7665,13 @@ fn travel_to_quest_impl(
         party.camp_destination_kind = Some("quest".into());
         party.camp_remaining_minutes = travel_minutes.saturating_sub(leg_minutes);
         ctx.db.party().id().update(party);
-        record_party_journey_camp(ctx, &party_id, leg_minutes)?;
+        if leg_minutes > 0 {
+            record_party_journey_camp(ctx, &party_id, leg_minutes)?;
+        }
         return Ok(());
     }
-    train_party_terrain_movement(ctx, &party_id, travel_minutes)?;
     for member_id in traveler_ids {
         if let Some(mut member) = ctx.db.character().id().find(member_id) {
-            if !advance_travel_time(ctx, member.id, travel_minutes)? {
-                return Ok(());
-            }
             member.current_settlement_id = None;
             member.current_quest_location_id = Some(quest_id.clone());
             ctx.db.character().id().update(member);
@@ -7815,15 +7876,15 @@ fn travel_to_settlement_impl(
     for traveler_id in traveler_ids.iter().copied() {
         crate::condition::prepare_character_waterskins(ctx, traveler_id, departing_settlement)?;
     }
+    let mut party_movement_committed = false;
     if let Some(ref mut party) = party {
-        let leg_minutes =
+        let proposed_leg_minutes =
             travel_minutes.min(party_next_walking_minutes(ctx, &party.id, travel_minutes)?);
+        let (leg_minutes, _) =
+            advance_party_movement(ctx, &party.id, &traveler_ids, proposed_leg_minutes)?;
+        party_movement_committed = true;
         if leg_minutes < travel_minutes {
-            train_party_terrain_movement(ctx, &party.id, leg_minutes)?;
-            for traveler_id in traveler_ids {
-                if !advance_travel_time(ctx, traveler_id, leg_minutes)? {
-                    return Ok(());
-                }
+            for traveler_id in living_party_member_ids(ctx, &party.id) {
                 let mut traveler = ctx
                     .db
                     .character()
@@ -7840,15 +7901,14 @@ fn travel_to_settlement_impl(
             party.camp_destination_kind = Some("settlement".into());
             party.camp_remaining_minutes = travel_minutes.saturating_sub(leg_minutes);
             ctx.db.party().id().update(party.clone());
-            record_party_journey_camp(ctx, &party.id, leg_minutes)?;
+            if leg_minutes > 0 {
+                record_party_journey_camp(ctx, &party.id, leg_minutes)?;
+            }
             return Ok(());
         }
     }
-    if let Some(party) = party.as_ref() {
-        train_party_terrain_movement(ctx, &party.id, travel_minutes)?;
-    }
     for traveler_id in traveler_ids {
-        if !advance_travel_time(ctx, traveler_id, travel_minutes)? {
+        if !party_movement_committed && !advance_travel_time(ctx, traveler_id, travel_minutes)? {
             return Ok(());
         }
         let mut traveler = ctx
@@ -8007,25 +8067,23 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
     // This also upgrades pre elapsed-itinerary rows before any celestial or
     // progress coordinates are used.
     refresh_party_journey_forecast(ctx, &party_id)?;
-    let leg_minutes = party.camp_remaining_minutes.min(party_next_walking_minutes(
+    let proposed_leg_minutes = party.camp_remaining_minutes.min(party_next_walking_minutes(
         ctx,
         &party.id,
         party.camp_remaining_minutes,
     )?);
-    if leg_minutes == 0 {
+    if proposed_leg_minutes == 0 {
         return Err("Rest until the party reaches its next daylight walking window".into());
     }
     let traveler_ids = living_party_member_ids(ctx, &party_id);
-    train_party_terrain_movement(ctx, &party_id, leg_minutes)?;
-    for member_id in traveler_ids.iter().copied() {
-        if !advance_travel_time(ctx, member_id, leg_minutes)? {
-            return Ok(());
-        }
-    }
+    let (leg_minutes, _) =
+        advance_party_movement(ctx, &party_id, &traveler_ids, proposed_leg_minutes)?;
     party.camp_remaining_minutes = party.camp_remaining_minutes.saturating_sub(leg_minutes);
     if party.camp_remaining_minutes > 0 {
         ctx.db.party().id().update(party);
-        record_party_journey_camp(ctx, &party_id, leg_minutes)?;
+        if leg_minutes > 0 {
+            record_party_journey_camp(ctx, &party_id, leg_minutes)?;
+        }
         return Ok(());
     }
     match destination_kind.as_str() {

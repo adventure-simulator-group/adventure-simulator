@@ -1111,12 +1111,27 @@ fn compact_spans(spans: &mut Vec<TerrainSpan>, total_minutes: u64, cap: usize) {
             continue;
         }
         let mut durations = [0_u64; 5];
+        let mut training_mass = 0_u128;
+        let mut check_mass = 0_u128;
+        let mut terrain_training_mass = [0_u128; 4];
         for span in &source {
             let span_end = span.start_minute + span.duration_minutes;
             let overlap = end
                 .min(span_end)
                 .saturating_sub(start.max(span.start_minute));
             durations[surface_index(span.surface)] += overlap;
+            let overlap = u128::from(overlap);
+            let training = u128::from(span.training_multiplier_permille);
+            training_mass += overlap * training;
+            check_mass += overlap * u128::from(span.check_millirank);
+            for (mass, weight) in terrain_training_mass.iter_mut().zip([
+                span.terrain.plains,
+                span.terrain.forest,
+                span.terrain.hills,
+                span.terrain.urban,
+            ]) {
+                *mass += overlap * training * u128::from(weight);
+            }
         }
         let surface = [
             Surface::Road,
@@ -1130,35 +1145,59 @@ fn compact_spans(spans: &mut Vec<TerrainSpan>, total_minutes: u64, cap: usize) {
         .max_by_key(|(index, _)| (durations[*index], Reverse(*index)))
         .map(|(_, surface)| surface)
         .unwrap_or(Surface::Open);
-        let representative = source
-            .iter()
-            .filter(|span| span.surface == surface)
-            .max_by_key(|span| {
-                let span_end = span.start_minute + span.duration_minutes;
-                end.min(span_end)
-                    .saturating_sub(start.max(span.start_minute))
-            })
-            .expect("selected surface has an overlapping span");
+        let duration = u128::from(end - start);
+        let training_multiplier_permille = ((training_mass + duration / 2) / duration) as u16;
+        let check_millirank = ((check_mass + duration / 2) / duration) as u16;
+        let weights = normalized_weighted_parts(terrain_training_mass, training_mass);
+        let terrain = TerrainWeights {
+            plains: weights[0],
+            forest: weights[1],
+            hills: weights[2],
+            urban: weights[3],
+        };
         if let Some(previous) = compacted.last_mut().filter(|previous| {
             previous.surface == surface
-                && previous.terrain == representative.terrain
-                && previous.training_multiplier_permille
-                    == representative.training_multiplier_permille
-                && previous.check_millirank == representative.check_millirank
+                && previous.terrain == terrain
+                && previous.training_multiplier_permille == training_multiplier_permille
+                && previous.check_millirank == check_millirank
         }) {
             previous.duration_minutes += end - start;
         } else {
             compacted.push(TerrainSpan {
                 surface,
-                terrain: representative.terrain,
-                training_multiplier_permille: representative.training_multiplier_permille,
-                check_millirank: representative.check_millirank,
+                terrain,
+                training_multiplier_permille,
+                check_millirank,
                 start_minute: start,
                 duration_minutes: end - start,
             });
         }
     }
     *spans = compacted;
+}
+
+fn normalized_weighted_parts(numerators: [u128; 4], denominator: u128) -> [u16; 4] {
+    if denominator == 0 {
+        return [TerrainWeights::TOTAL, 0, 0, 0];
+    }
+    let mut result = [0_u16; 4];
+    let mut remainders = [0_u128; 4];
+    for index in 0..4 {
+        result[index] = (numerators[index] / denominator) as u16;
+        remainders[index] = numerators[index] % denominator;
+    }
+    let mut missing = TerrainWeights::TOTAL - result.iter().sum::<u16>();
+    let mut awarded = [false; 4];
+    while missing > 0 {
+        let index = (0..4)
+            .filter(|index| !awarded[*index])
+            .max_by_key(|index| (remainders[*index], Reverse(*index)))
+            .expect("normalization deficit is at most one unit per terrain");
+        result[index] += 1;
+        awarded[index] = true;
+        missing -= 1;
+    }
+    result
 }
 
 fn surface_index(surface: Surface) -> usize {
@@ -1436,6 +1475,83 @@ mod tests {
             .windows(2)
             .all(|pair| pair[0].start_minute + pair[0].duration_minutes
                 == pair[1].start_minute));
+    }
+
+    #[test]
+    fn span_compaction_conserves_weighted_skill_exposure_with_road_discounts() {
+        let terrains = [
+            TerrainWeights {
+                plains: 1_000,
+                forest: 0,
+                hills: 0,
+                urban: 0,
+            },
+            TerrainWeights {
+                plains: 0,
+                forest: 1_000,
+                hills: 0,
+                urban: 0,
+            },
+            TerrainWeights {
+                plains: 0,
+                forest: 0,
+                hills: 1_000,
+                urban: 0,
+            },
+            TerrainWeights {
+                plains: 400,
+                forest: 300,
+                hills: 300,
+                urban: 0,
+            },
+        ];
+        let mut spans = (0..300_u64)
+            .map(|minute| TerrainSpan {
+                surface: if minute % 3 == 0 {
+                    Surface::Road
+                } else {
+                    Surface::Open
+                },
+                terrain: terrains[minute as usize % terrains.len()],
+                training_multiplier_permille: if minute % 3 == 0 {
+                    [150, 200, 250][minute as usize / 3 % 3]
+                } else {
+                    1_000
+                },
+                check_millirank: (minute % 6) as u16 * 1_000,
+                start_minute: minute,
+                duration_minutes: 1,
+            })
+            .collect::<Vec<_>>();
+        let exposure = |values: &[TerrainSpan]| {
+            let mut result = [0.0_f64; 4];
+            for span in values {
+                for (total, weight) in result.iter_mut().zip([
+                    span.terrain.plains,
+                    span.terrain.forest,
+                    span.terrain.hills,
+                    span.terrain.urban,
+                ]) {
+                    *total += span.duration_minutes as f64
+                        * f64::from(span.training_multiplier_permille)
+                        / 1_000.0
+                        * f64::from(weight)
+                        / 1_000.0;
+                }
+            }
+            result
+        };
+        let before = exposure(&spans);
+        compact_spans(&mut spans, 300, 8);
+        let after = exposure(&spans);
+        assert!(spans.len() <= 8);
+        assert!(spans.iter().all(|span| span.terrain.is_normalized()));
+        for (before, after) in before.into_iter().zip(after) {
+            assert!(
+                (before - after).abs() <= before.max(1.0) * 0.005,
+                "{before} != {after}"
+            );
+        }
     }
 
     #[test]

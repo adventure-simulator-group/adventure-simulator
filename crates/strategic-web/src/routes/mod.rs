@@ -30,9 +30,9 @@ use crate::live::LiveState;
 use crate::session::{CHARACTER_COOKIE, Session};
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterSkills, CharacterStats, CharacterStrategicCondition,
-    CharacterTime, Party, PartyActionRequest, PartyJourney, PartyJourneyRoute, PartyMember, Quest,
-    Settlement, SpacetimeClient, WorldClock,
+    Character, CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats,
+    CharacterStrategicCondition, CharacterTime, Party, PartyActionRequest, PartyJourney,
+    PartyJourneyRoute, PartyMember, Quest, Settlement, SpacetimeClient, WorldClock,
 };
 
 /// Application state shared across routes
@@ -74,7 +74,7 @@ pub(crate) fn redirect_to_local(return_to: &str, fallback: &str) -> Redirect {
 
 #[cfg(test)]
 mod return_url_tests {
-    use super::local_return_url;
+    use super::{local_return_url, terrain_mental_check};
 
     #[test]
     fn return_urls_are_local_paths_with_optional_query_and_fragment() {
@@ -98,6 +98,16 @@ mod return_url_tests {
         assert_eq!(split_party_purchase_payment(8, 20, 15), Some((8, 7)));
         assert_eq!(split_party_purchase_payment(20, 8, 15), Some((15, 0)));
         assert_eq!(split_party_purchase_payment(4, 5, 10), None);
+    }
+
+    #[test]
+    fn terrain_mental_check_applies_authoritative_head_health() {
+        let healthy = terrain_mental_check(2.0, 2.0, 2.0, 1.0, 1.0);
+        let injured = terrain_mental_check(2.0, 2.0, 2.0, 1.0, 0.5);
+        let destroyed = terrain_mental_check(2.0, 2.0, 2.0, 1.0, 0.0);
+        assert_eq!(healthy, 3.0);
+        assert_eq!(injured, 2.0);
+        assert_eq!(destroyed, 1.0);
     }
 }
 
@@ -286,6 +296,16 @@ pub(crate) async fn party_terrain_profile(
         else {
             continue;
         };
+        let Some(limbs) = state
+            .db
+            .query_one::<CharacterLimbs>(&format!(
+                "SELECT * FROM character_limbs WHERE character_id = {id}"
+            ))
+            .await
+            .map_err(|e| e.to_string())?
+        else {
+            continue;
+        };
         let Some(skills) = state
             .db
             .query_one::<CharacterSkills>(&format!(
@@ -296,8 +316,6 @@ pub(crate) async fn party_terrain_profile(
         else {
             continue;
         };
-        let attribute_check =
-            attributes.instinct + attributes.intelligence * stats.focus.clamp(0.0, 1.0);
         for (index, (skill, hours)) in [
             (
                 adventuresim_core::skill::Skill::TerrainPlains,
@@ -319,8 +337,13 @@ pub(crate) async fn party_terrain_profile(
         .into_iter()
         .enumerate()
         {
-            checks[index]
-                .push(((skill.training_rank(hours) + attribute_check) * 0.5).clamp(0.0, 5.0));
+            checks[index].push(terrain_mental_check(
+                skill.training_rank(hours),
+                attributes.instinct,
+                attributes.intelligence,
+                stats.focus,
+                limbs.head_health,
+            ));
         }
     }
     let aggregate = |values: &[f32]| {
@@ -335,6 +358,19 @@ pub(crate) async fn party_terrain_profile(
         hills: aggregate(&checks[2]),
         urban: aggregate(&checks[3]),
     })
+}
+
+fn terrain_mental_check(
+    training_rank: f32,
+    instinct: f32,
+    intelligence: f32,
+    focus: f32,
+    head_health: f32,
+) -> f32 {
+    let head_health = head_health.clamp(0.0, 1.0);
+    let attribute_check =
+        instinct * head_health + intelligence * head_health * focus.clamp(0.0, 1.0);
+    ((training_rank + attribute_check) * 0.5).clamp(0.0, 5.0)
 }
 
 async fn planned_travel_call(

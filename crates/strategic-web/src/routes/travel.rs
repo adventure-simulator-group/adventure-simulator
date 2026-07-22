@@ -74,19 +74,6 @@ impl TerrainPlanner {
         self.pack.digest()
     }
 
-    pub async fn plan(
-        &self,
-        start: (f64, f64),
-        goal: (f64, f64),
-    ) -> Result<adventuresim_terrain::RoutePlan, String> {
-        self.plan_with_profile(
-            start,
-            goal,
-            adventuresim_terrain::TerrainSkillProfile::default(),
-        )
-        .await
-    }
-
     pub async fn plan_with_profile(
         &self,
         start: (f64, f64),
@@ -695,12 +682,31 @@ mod tests {
     #[test]
     fn terrain_cache_keys_normalize_sub_metre_coordinate_noise() {
         assert_eq!(
-            TerrainPlanKey::new((53.500_000_1, 10.000_000_1), (53.6, 10.1)),
-            TerrainPlanKey::new((53.500_000_2, 10.000_000_2), (53.6, 10.1))
+            TerrainPlanKey::new(
+                (53.500_000_1, 10.000_000_1),
+                (53.6, 10.1),
+                Default::default()
+            ),
+            TerrainPlanKey::new(
+                (53.500_000_2, 10.000_000_2),
+                (53.6, 10.1),
+                Default::default()
+            )
         );
         assert_ne!(
-            TerrainPlanKey::new((53.500_02, 10.0), (53.6, 10.1)),
-            TerrainPlanKey::new((53.500_04, 10.0), (53.6, 10.1))
+            TerrainPlanKey::new((53.500_02, 10.0), (53.6, 10.1), Default::default()),
+            TerrainPlanKey::new((53.500_04, 10.0), (53.6, 10.1), Default::default())
+        );
+        assert_ne!(
+            TerrainPlanKey::new((53.5, 10.0), (53.6, 10.1), Default::default()),
+            TerrainPlanKey::new(
+                (53.5, 10.0),
+                (53.6, 10.1),
+                adventuresim_terrain::TerrainSkillProfile {
+                    forest: 1_000,
+                    ..Default::default()
+                },
+            )
         );
     }
 
