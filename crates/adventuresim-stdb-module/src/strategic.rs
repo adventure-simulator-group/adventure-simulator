@@ -7361,8 +7361,8 @@ mod departure_invariant_tests {
     use super::{
         CampDurationMode, JourneyRoutePlan, JourneyRoutePoint, JourneyTerrainKind,
         JourneyTerrainSpan, Party, PartyJourneyRoute, common_movement_prefix,
-        departure_snapshot_allows_travel, reconstruct_legacy_journey_coordinates,
-        party_can_continue_travel, route_position_at_minute, set_party_journey_state,
+        departure_snapshot_allows_travel, party_can_continue_travel,
+        reconstruct_legacy_journey_coordinates, route_position_at_minute, set_party_journey_state,
         straight_line_distance_m, validate_journey_route_payload,
         zero_boundary_requires_settlement,
     };

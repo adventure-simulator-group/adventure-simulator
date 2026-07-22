@@ -3585,7 +3585,7 @@ fn terrain_skill_rows(skills: &CharacterSkills, schedule_context: bool) -> Marku
             }
             td class="religion-expand-cell" {
                 button type="button" class="religion-expand-button" data-terrain-expand aria-expanded="false" aria-label="Expand Terrain skills" title="Expand Terrain" {
-                    span class="religion-expand-chevron" aria-hidden="true" { "â€º" }
+                    span class="religion-expand-chevron" aria-hidden="true" { "›" }
                 }
             }
         }

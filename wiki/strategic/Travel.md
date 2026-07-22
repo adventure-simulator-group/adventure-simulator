@@ -47,7 +47,7 @@ penalty. Water blocks movement unless road infrastructure identifies a
 crossing. Each cell mixes Plains, Forest, and Hills from independent canopy and
 hill coverage. Urban expertise is available on characters but is not inferred
 from roads and has no route weight until built-up coverage is sourced.
-The bounded party Terrain check for that mixture provides a 1.0â€“1.5 speed
+The bounded party Terrain check for that mixture provides a 1.0–1.5 speed
 multiplier and participates directly in A*, so different parties can prefer
 different paths. Confirming recomputes the route at execution time, uses its aggregate
 distance and terrain-weighted duration, and persists its package digest,
