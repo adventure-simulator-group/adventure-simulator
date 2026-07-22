@@ -115,7 +115,7 @@ Skills are divided into two categories: mental and physical. The former is gover
 ## Training
 Skills increase on a much longer timescale than is conventional for RPGs. They are not increased via an abstract XP/leveling system, and very little of their value comes from using them during tactical play. Instead they are trained through activities in the character's off-screen settlement-downtime schedule. Individual skill-study allocations are not available.
 
-Combat Training practices Melee, Ranged, Dodge, Block, Will, and Balance and includes both sparring and target practice. Carousing trains Humor, improves Morale, and carries a small Virtue penalty. Prayer, Labor, Thievery, and Raiding retain their related training and strategic results. Profession activities cover Medicine, Surgeon, Smithing, Command, and direct knowledge of the settlement church's religious tradition. An activity conserves its training time when it covers several skills rather than awarding the full allocation to every skill. Travel never performs scheduled settlement activities. Activity rows preview the signed Gold, Virtue, Morale, and Fatigue generated per day by the current allocation; notoriety-producing activities display that cost as negative Virtue. Leisure is the unallocated remainder and includes sleep.
+Combat Training practices the leaf skills relevant to the equipped weapons plus Dodge, Block, Balance, and Will; it includes both sparring and target practice. Carousing trains Humor, improves Morale, and carries a small Virtue penalty. Prayer, Labor, Thievery, and Raiding retain their related training and strategic results. Profession activities cover Medicine, Anatomy, Knife, Tailoring, Smithing, Command, and knowledge of the settlement church's religious tradition. An activity conserves its training time when it covers several skills rather than awarding the full allocation to every skill. Travel never performs scheduled settlement activities. Activity rows preview the signed Gold, Virtue, Morale, and Fatigue generated per day by the current allocation; notoriety-producing activities display that cost as negative Virtue. Leisure is the unallocated remainder and includes sleep.
 
 A character discovers a service profession by speaking with its NPC and following the linked profession and apprenticeship topics. Apprenticeship unlocks that profession's training activity, costs Gold, and produces no wage. Once every skill associated with the profession reaches rank 2, the character is a journeyman and may practice independently in cities for a small income. At rank 4 the character is a master and earns a good income, representing paid work and the instruction of apprentices. Religious professions use the tradition-neutral titles novice, cleric, and teacher for these same tiers; their practice earns Virtue instead of Gold. These records describe training and professional standing only: guild affiliations, membership conflicts, exclusivity, and settlement restrictions are not modeled.
 
@@ -127,7 +127,9 @@ The rank meter is a five-segment display using the same yellow-green, yellow, or
 
 The main difference between this and directly allocating skill points is that if your character is [convalescing](Health.md) or [traveling](../strategic/Travel.md) they cannot train. Not all skills are equal though in terms of how much training time they need to be effective, they all have their own falloff curve. The number in the parentheses next to a listed skill here is the number of hours that it takes for it to be 50% effective. The rate of increase from training is lower the higher they get, providing an upper-asymptote for how skilled a character can be in a particular skill. Additionally, skills atrophy with disuse, so even an immortal elf or vampire cannot become optimal at everything (though they may get close) due to there being only so many hours in a day.
 
-Combat is a computed meta-skill over Melee, Ranged, Dodge, and Block; it has no stored hours and is never used directly for a tactical check. Its displayed rank is the unweighted arithmetic mean of the currently relevant sub-skill ranks, with injury-adjusted ranks averaged separately. Dodge is always relevant. Equipped melee and ranged weapons make their corresponding skills relevant. A shield gives Block full relevance; without one, the best-balanced equipped melee weapon gives Block a weight of `1 - balance`. Ranged-weapon balance is ignored, though a melee sidearm still supplies its Block weight. Auto-train is enabled by default and spends the aggregate Combat budget by raising the lowest trained-hours-to-weight skills first, so a newly adopted weapon catches up and partial Block relevance receives proportionally fewer long-run hours. Disabling Auto-train preserves direct allocations for all four skills. The expanded skill rail always shows all four sub-skills.
+The skill rail has three computed combat groups: **Melee**, **Ranged**, and **Defense**. They have no stored hours and are never used directly for a tactical check. Melee expands to Polearm, Axe, Bludgeon, Sword, and Knife; Ranged expands to Bow, Crossbow, Firearm, and Throw; Defense expands to Dodge, Block, Balance, and Will. Equipped weapon distributions determine the relevant weapon leaves. A shield gives Block full relevance; without one, the best-balanced equipped melee weapon gives Block a weight of `1 - balance`. Combat Training and Raiding divide their conserved activity award deterministically across those relevance weights.
+
+Every weapon stores a nine-field skill distribution. A halberd uses Polearm, Axe, and Bludgeon equally; a glaive uses Polearm and Sword; short swords and daggers use Sword and Knife; a hand axe uses Axe and Knife. An attack averages the complete leaf-skill checks using those weights, including each check's attributes and penalties. Knife means short weapons rather than only literal knives.
 ## Intuitive vs Trained
 Intuitive skills can be attempted without training, the check is an average between their associated attribute and the training rank. Trained skills on the other hand receive no benefit without actual training regardless of how high their associated attribute is, the training value is a ceiling. Most skills relevant to the MVP happen to be intuitive.
 
@@ -255,7 +257,7 @@ A solo character retains their exact individual check. The result never exceeds 
 5. Can treat all organ damage and all diseases
 
 ### Religion (trained, 5000 hours per tradition)
-Religion represents knowledge, not conviction. It includes Roman Catholicism, Lutheranism, Reformed Christianity, Anglicanism, Eastern Orthodoxy, Islam, and Judaism. Canonical state records only hours directly studied in each tradition. Effective hours for a tradition are derived once by multiplying those direct hours by the symmetric correlation matrix; derived hours are never stored or recursively correlated. In the skill rail, the collapsed row is the tradition Auto-train would currently select: the character's professed religion, or otherwise the settlement's church. Expanding it shows only the other traditions in which the character has directly studied more than zero hours, as blue-purple icons rather than repeating the selected one. Each meter's hover text reports effective and directly studied hours. With Auto-train enabled, only the collapsed automatic budget is editable and manual allocations are muted; disabling it enables direct per-tradition allocation, with the selected tradition remaining available in the collapsed row.
+Religion represents knowledge, not conviction. It includes Roman Catholicism, Lutheranism, Reformed Christianity, Anglicanism, Eastern Orthodoxy, Islam, and Judaism. Canonical state records only hours learned in each tradition. Effective hours for a tradition are derived once by multiplying those hours by the symmetric correlation matrix; derived hours are never stored or recursively correlated. Prayer activity teaches the character's professed tradition. The skill rail can expand a primary tradition to show other traditions with nonzero direct knowledge, and each meter's hover text reports effective and directly learned hours.
 
 The diagonal is 1.0. The upper-triangle correlations in stable order (Roman Catholic, Lutheran, Reformed, Anglican, Eastern Orthodox, Islam, Judaism) are: RC to the remaining traditions `0.80, 0.75, 0.80, 0.65, 0.10, 0.10`; Lutheran `0.90, 0.85, 0.50, 0.10, 0.10`; Reformed `0.85, 0.45, 0.10, 0.10`; Anglican `0.55, 0.10, 0.10`; Eastern Orthodox `0.15, 0.10`; and Islam to Judaism `0.35`.
 
@@ -264,8 +266,8 @@ A party's check for a particular religion includes every living member's effecti
 Conviction lives on the personality axis instead: Zealous contributes 5.0 pressure, Neutral 2.5, and Irreverent 0.0. A profession and conviction are separate; an Irreverent character may still officially profess a religion.
 
 ## Physical
-### Melee (intuitive, 8000 hours)
-Agility helps you hit enemies that are actively trying to dodge or block your [attacks](../tactical/Combat.md), precision helps you hit enemies that are unaware of you or staggered.
+### Polearm, Axe, Bludgeon, Sword, and Knife (intuitive, 8000 hours)
+These are the five melee weapon leaves. Agility helps against active defense, while Precision helps against unaware or staggered targets. Hybrid weapons use a weighted average of all tagged leaves. Knife covers short weapons, including daggers, short swords, hand axes, and compact butchery tools.
 
 0. Has never been shown how to use a weapon or observed for an extended period of time
 1. Can split firewood with an axe, zombies
@@ -274,8 +276,8 @@ Agility helps you hit enemies that are actively trying to dodge or block your [a
 4. Knight
 5. Elven warrior
 
-### Ranged (intuitive, 15000 hours)
-You have to aim at a target for awhile to get your precision bonus, whereas agility helps more with point-shooting
+### Bow, Crossbow, Firearm, and Throw (intuitive, 15000 hours)
+These are the four ranged weapon leaves. Aiming builds the Precision contribution, whereas Agility helps more with point-shooting. Hybrid or throwable weapons may use more than one leaf.
 
 0. Never practiced even throwing a baseball
 1. Orcs, untrained peasants
@@ -322,12 +324,11 @@ Relevant both for poise in melee and speed in difficult terrain
 4. Skilled gymnast or martial artist, can walk a tightrope
 5. Graceful elf
 
-### Surgeon (trained, 10000 hours)
-Surgery is strictly individual. A character's check controls procedure time, projectile extraction, and stitching quality; party members never contribute a passive aggregate bonus. Backup surgeons instead matter when the primary surgeon is wounded or several critical patients need triage at once.
+### Anatomy (trained, 10000 hours)
+Anatomy is the medical knowledge that turns ordinary craft and weapon skills into treatment skills. Bandaging and splinting use Anatomy; projectile extraction uses Anatomy plus Knife; stitching uses Anatomy plus Tailoring. Procedures are strictly individual and self-treatment applies a penalty.
 
-0. Cannot reliably apply a bandage
-1. Can dress a wound or apply a tourniquet
-2. Can stitch skin, probably shouldn't
-3. Can remove a bullet, good at stitching skin
-4. Can remove an appendix or stitch an organ
-5. Brain/heart surgeries
+### Tailoring (trained, 10000 hours)
+Tailoring makes and repairs cloth goods. Settlement tailors and field maintenance use it for clothing durability, while wound stitching combines it with Anatomy.
+
+### Smithing (trained, 10000 hours)
+Smithing makes and repairs weapons, armor, and shields. It does not repair clothing.

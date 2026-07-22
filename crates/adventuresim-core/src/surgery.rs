@@ -26,6 +26,22 @@ pub fn effective_skill(skill: f32, self_treatment: bool) -> f32 {
     .max(0.0)
 }
 
+/// Compose the procedure's complete leaf checks and apply self-treatment once.
+pub fn procedure_skill(
+    procedure: &str,
+    anatomy: f32,
+    knife: f32,
+    tailoring: f32,
+    self_treatment: bool,
+) -> f32 {
+    let composite = match procedure {
+        "extract" => (anatomy + knife) * 0.5,
+        "stitch" => (anatomy + tailoring) * 0.5,
+        _ => anatomy,
+    };
+    effective_skill(composite, self_treatment)
+}
+
 pub fn procedure_duration_minutes(procedure: &str, skill: f32, dc: f32) -> u64 {
     let base = match procedure {
         "bandage" => 30.0,
@@ -163,6 +179,15 @@ mod tests {
     #[test]
     fn self_treatment_penalty_is_shared() {
         assert!(effective_skill(2.0, false) > effective_skill(4.0, true));
+    }
+
+    #[test]
+    fn procedure_composition_distinguishes_extraction_from_stitching() {
+        assert_eq!(procedure_skill("extract", 5.0, 5.0, 0.0, false), 5.0);
+        assert_eq!(procedure_skill("stitch", 5.0, 5.0, 0.0, false), 2.5);
+        assert!(procedure_skill("extract", 5.0, 5.0, 0.0, false) >= 4.0);
+        assert!(procedure_skill("stitch", 5.0, 5.0, 0.0, false) < 4.0);
+        assert_eq!(procedure_skill("extract", 5.0, 5.0, 0.0, true), 2.5);
     }
 
     #[test]

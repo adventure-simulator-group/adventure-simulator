@@ -196,8 +196,8 @@ fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Combatant {
     };
     let training = rating * 1_500.0;
     combatant.skills = CombatSkills {
-        melee_hours: training,
-        ranged_hours: if profile.ranged { training * 2.0 } else { 0.0 },
+        sword_hours: training,
+        bow_hours: if profile.ranged { training * 2.0 } else { 0.0 },
         dodge_hours: training,
         block_hours: training * profile.block_training_multiplier,
         will_hours: training,
@@ -206,6 +206,17 @@ fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Combatant {
     };
     combatant.body.weight_kg = profile.weight_kg;
     let weapon = CombatWeapon {
+        skills: if profile.ranged {
+            adventuresim_core::equipment::WeaponSkillDistribution {
+                bow: 1.0,
+                ..Default::default()
+            }
+        } else {
+            adventuresim_core::equipment::WeaponSkillDistribution {
+                sword: 1.0,
+                ..Default::default()
+            }
+        },
         melee: !profile.ranged,
         ranged: profile.ranged,
         blunt: profile.blunt,

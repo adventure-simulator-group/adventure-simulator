@@ -63,7 +63,7 @@ use crate::{attribute::*, body::*, combat::*, equipment::*, essential::*, skill:
 /// let _strength = player.attr(LimbAttribute::Strength);
 ///
 /// // We can call PlayerSkills methods via the trait
-/// let _hours = player.skill_hours_trained(Skill::Melee);
+/// let _hours = player.skill_hours_trained(Skill::Sword);
 /// ```
 ///
 /// ## Combined/Shorthand Methods
@@ -87,7 +87,7 @@ use crate::{attribute::*, body::*, combat::*, equipment::*, essential::*, skill:
 ///
 /// // Calling skill_check_by_parts explicitly uses the same component values.
 /// let check_explicit = skills.skill_check_by_parts(
-///     Skill::Melee,
+///     Skill::Sword,
 ///     &attributes,
 ///     &body,
 ///     &essentials,
@@ -104,7 +104,7 @@ use crate::{attribute::*, body::*, combat::*, equipment::*, essential::*, skill:
 ///     .with_skills(skills);
 ///
 /// // Use the shorthand - combines skills, attributes, essentials, and equipment internally
-/// let check = player.skill_check(Skill::Melee, weights);
+/// let check = player.skill_check(Skill::Sword, weights);
 ///
 /// assert_eq!(check, check_explicit);
 /// ```

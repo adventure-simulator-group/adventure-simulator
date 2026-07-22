@@ -10,6 +10,7 @@ pub struct SettlementSmith {
     pub settlement_id: String,
     pub weaponsmith_skill: u8,
     pub armourer_skill: u8,
+    pub tailor_skill: u8,
 }
 
 impl __sdk::InModule for SettlementSmith {
@@ -23,6 +24,7 @@ pub struct SettlementSmithCols {
     pub settlement_id: __sdk::__query_builder::Col<SettlementSmith, String>,
     pub weaponsmith_skill: __sdk::__query_builder::Col<SettlementSmith, u8>,
     pub armourer_skill: __sdk::__query_builder::Col<SettlementSmith, u8>,
+    pub tailor_skill: __sdk::__query_builder::Col<SettlementSmith, u8>,
 }
 
 impl __sdk::__query_builder::HasCols for SettlementSmith {
@@ -32,6 +34,7 @@ impl __sdk::__query_builder::HasCols for SettlementSmith {
             settlement_id: __sdk::__query_builder::Col::new(table_name, "settlement_id"),
             weaponsmith_skill: __sdk::__query_builder::Col::new(table_name, "weaponsmith_skill"),
             armourer_skill: __sdk::__query_builder::Col::new(table_name, "armourer_skill"),
+            tailor_skill: __sdk::__query_builder::Col::new(table_name, "tailor_skill"),
         }
     }
 }

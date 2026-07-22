@@ -323,10 +323,17 @@ fn live_skills(character_id: u64, profile: &AgentProfile) -> CharacterSkills {
     let s = profile.initial_skills;
     CharacterSkills {
         character_id,
-        melee_hours: s.melee,
+        polearm_hours: s.polearm,
+        axe_hours: s.axe,
+        bludgeon_hours: s.bludgeon,
+        sword_hours: s.sword,
+        knife_hours: s.knife,
         dodge_hours: s.dodge,
         block_hours: s.block,
-        ranged_hours: s.ranged,
+        bow_hours: s.bow,
+        crossbow_hours: s.crossbow,
+        firearm_hours: s.firearm,
+        throw_hours: s.throw,
         will_hours: s.will,
         insight_hours: s.insight,
         self_awareness_hours: s.self_awareness,
@@ -346,7 +353,8 @@ fn live_skills(character_id: u64, profile: &AgentProfile) -> CharacterSkills {
         },
         stealth_hours: s.stealth,
         balance_hours: s.balance,
-        surgeon_hours: s.surgeon,
+        anatomy_hours: s.anatomy,
+        tailoring_hours: s.tailoring,
         smithing_hours: s.smithing,
     }
 }
@@ -354,41 +362,16 @@ fn live_skills(character_id: u64, profile: &AgentProfile) -> CharacterSkills {
 fn live_schedule(profile: &AgentProfile) -> ScheduleAllocation {
     let s = profile.schedule;
     ScheduleAllocation {
-        combat_training_minutes: 0,
-        carousing_minutes: 0,
-        apprenticeship_minutes: 0,
-        apprenticeship_service_id: None,
-        profession_practice_minutes: 0,
-        profession_service_id: None,
-        combat_minutes: s.combat,
-        combat_auto_train: s.combat_auto_train,
-        melee_minutes: s.melee,
-        dodge_minutes: s.dodge,
-        block_minutes: s.block,
-        ranged_minutes: s.ranged,
-        will_minutes: s.will,
-        insight_minutes: s.insight,
-        self_awareness_minutes: s.self_awareness,
-        humor_minutes: s.humor,
-        command_minutes: s.command,
-        deception_minutes: s.deception,
-        seduction_minutes: s.seduction,
-        medicine_minutes: s.medicine,
-        religion_minutes: s.religion,
-        religion_auto_train: s.religion_auto_train,
-        religion_minutes_by_tradition: adventuresim_stdb_client::ReligionMinutes {
-            roman_catholic: s.religions.roman_catholic,
-            lutheran: s.religions.lutheran,
-            reformed: s.religions.reformed,
-            anglican: s.religions.anglican,
-            eastern_orthodox: s.religions.eastern_orthodox,
-            islamic: s.religions.islamic,
-            judaism: s.religions.judaism,
-        },
-        stealth_minutes: s.stealth,
-        balance_minutes: s.balance,
-        surgeon_minutes: s.surgeon,
-        smithing_minutes: s.smithing,
+        combat_training_minutes: s.combat_training_minutes,
+        carousing_minutes: s.carousing_minutes,
+        apprenticeship_minutes: s.apprenticeship_minutes,
+        apprenticeship_service_id: s
+            .apprenticeship_service_id
+            .map(|id| id.service_id().to_string()),
+        profession_practice_minutes: s.profession_practice_minutes,
+        profession_service_id: s
+            .profession_service_id
+            .map(|id| id.service_id().to_string()),
         labor_minutes: s.labor,
         prayer_minutes: s.prayer,
         thievery_minutes: s.thievery,
@@ -404,35 +387,6 @@ fn medical_rest_schedule() -> ScheduleAllocation {
         apprenticeship_service_id: None,
         profession_practice_minutes: 0,
         profession_service_id: None,
-        combat_minutes: 0,
-        combat_auto_train: true,
-        melee_minutes: 0,
-        dodge_minutes: 0,
-        block_minutes: 0,
-        ranged_minutes: 0,
-        will_minutes: 0,
-        insight_minutes: 0,
-        self_awareness_minutes: 0,
-        humor_minutes: 0,
-        command_minutes: 0,
-        deception_minutes: 0,
-        seduction_minutes: 0,
-        medicine_minutes: 0,
-        religion_minutes: 0,
-        religion_auto_train: true,
-        religion_minutes_by_tradition: adventuresim_stdb_client::ReligionMinutes {
-            roman_catholic: 0,
-            lutheran: 0,
-            reformed: 0,
-            anglican: 0,
-            eastern_orthodox: 0,
-            islamic: 0,
-            judaism: 0,
-        },
-        stealth_minutes: 0,
-        balance_minutes: 0,
-        surgeon_minutes: 0,
-        smithing_minutes: 0,
         labor_minutes: 0,
         prayer_minutes: 0,
         thievery_minutes: 0,
@@ -1192,9 +1146,10 @@ impl LiveRunner {
                 else {
                     continue;
                 };
-                let skill = match definition.kind {
-                    ItemKind::Weapon | ItemKind::Shield => smith.weaponsmith_skill,
-                    ItemKind::Armor => smith.armourer_skill,
+                let (skill, service) = match definition.kind {
+                    ItemKind::Weapon | ItemKind::Shield => (smith.weaponsmith_skill, "weapons"),
+                    ItemKind::Armor => (smith.armourer_skill, "armor"),
+                    ItemKind::Clothing => (smith.tailor_skill, "clothing"),
                     _ => continue,
                 };
                 let Some(condition) = self
@@ -1232,6 +1187,7 @@ impl LiveRunner {
                         .submit_item_for_repair_then(
                             character_id,
                             settlement.clone(),
+                            service.to_string(),
                             owned.id,
                             cb
                         ));
@@ -2571,23 +2527,10 @@ mod tests {
         let rest = medical_rest_schedule();
         assert_eq!(
             [
-                rest.melee_minutes,
-                rest.dodge_minutes,
-                rest.block_minutes,
-                rest.ranged_minutes,
-                rest.will_minutes,
-                rest.insight_minutes,
-                rest.self_awareness_minutes,
-                rest.humor_minutes,
-                rest.command_minutes,
-                rest.deception_minutes,
-                rest.seduction_minutes,
-                rest.medicine_minutes,
-                rest.religion_minutes,
-                rest.stealth_minutes,
-                rest.balance_minutes,
-                rest.surgeon_minutes,
-                rest.smithing_minutes,
+                rest.combat_training_minutes,
+                rest.carousing_minutes,
+                rest.apprenticeship_minutes,
+                rest.profession_practice_minutes,
                 rest.labor_minutes,
                 rest.prayer_minutes,
                 rest.thievery_minutes,

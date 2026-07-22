@@ -4,6 +4,7 @@
 //! Tactical positions and ticks remain transient; only committed hit outcomes
 //! cross into these rows.
 
+use adventuresim_core::prelude::*;
 use adventuresim_core::strategic_time::MINUTES_PER_DAY;
 #[cfg(test)]
 use adventuresim_core::surgery::untreated_cut_progress;
@@ -15,8 +16,8 @@ use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
 
 use crate::character::character;
 use crate::{
-    CharacterLimbs, character_condition, character_limbs, character_time, infection_episode,
-    inventory_item,
+    CharacterLimbs, character_attributes, character_condition, character_equip, character_limbs,
+    character_skills, character_stats, character_time, infection_episode, inventory_item,
 };
 
 pub const BRUISE_HEALING_PER_DAY: f32 = 0.035;
@@ -655,10 +656,59 @@ fn consume_one(ctx: &ReducerContext, character_id: u64, item_id: &str) -> Result
     Ok(())
 }
 
-fn surgeon_check(ctx: &ReducerContext, actor_id: u64, patient_id: u64) -> Result<f32, String> {
-    let skill = crate::capability::evaluate_character(ctx, actor_id)?.surgery;
-    Ok(adventuresim_core::surgery::effective_skill(
-        skill,
+fn procedure_check(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    patient_id: u64,
+    procedure: &str,
+) -> Result<f32, String> {
+    let attributes = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(actor_id)
+        .ok_or("Character attributes not found")?;
+    let attributes = crate::disease::effective_attributes(ctx, actor_id, attributes)?;
+    let skills = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(actor_id)
+        .ok_or("Character skills not found")?;
+    let equip = ctx
+        .db
+        .character_equip()
+        .character_id()
+        .find(actor_id)
+        .ok_or("Character equipment not found")?;
+    let body = ctx
+        .db
+        .character_limbs()
+        .character_id()
+        .find(actor_id)
+        .ok_or("Character limbs not found")?;
+    let essentials = ctx
+        .db
+        .character_stats()
+        .character_id()
+        .find(actor_id)
+        .ok_or("Character stats not found")?;
+    let equipment = crate::capability::StrategicEquipment::load(ctx, actor_id, &equip);
+    let check = |skill| {
+        skills.skill_check_by_parts(
+            skill,
+            &attributes,
+            &body,
+            &essentials,
+            &equipment,
+            LimbWeights::both_arms(),
+        )
+    };
+    Ok(adventuresim_core::surgery::procedure_skill(
+        procedure,
+        check(Skill::Anatomy),
+        check(Skill::Knife),
+        check(Skill::Tailoring),
         actor_id == patient_id,
     ))
 }
@@ -763,7 +813,7 @@ pub fn treat_limb(
     crate::item::upsert_surgery_items(ctx);
     require_together(ctx, actor_id, patient_id)?;
     let limb = LimbRegion::parse(&limb_slug).ok_or("Unknown limb")?;
-    let skill = surgeon_check(ctx, actor_id, patient_id)?;
+    let skill = procedure_check(ctx, actor_id, patient_id, &procedure)?;
     let mut injury = injury_for(ctx, patient_id, limb);
     let projectile = projectile_id.and_then(|id| ctx.db.retained_projectile().id().find(id));
     let dc = match procedure.as_str() {
@@ -789,7 +839,7 @@ pub fn treat_limb(
     };
     if skill < dc {
         return Err(format!(
-            "Insufficient Surgery skill: this procedure requires {dc:.1}"
+            "Insufficient procedure skill: this procedure requires {dc:.1}"
         ));
     }
     if procedure == "stitch" && item_quantity(ctx, actor_id, "surgery_kit") == 0 {

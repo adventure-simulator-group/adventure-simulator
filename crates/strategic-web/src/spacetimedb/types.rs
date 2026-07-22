@@ -532,6 +532,9 @@ pub struct CharacterCapability {
     pub athletics: f32,
     pub endurance: f32,
     pub medicine: f32,
+    pub anatomy: f32,
+    pub knife: f32,
+    pub tailoring: f32,
     pub surgery: f32,
     pub command: f32,
     pub religion: f32,
@@ -658,6 +661,8 @@ pub struct ItemDefinition {
     #[serde(default)]
     pub ranged: bool,
     #[serde(default)]
+    pub weapon_skills: WeaponSkillDistribution,
+    #[serde(default)]
     pub blunt: bool,
     #[serde(default)]
     pub slash: bool,
@@ -697,6 +702,36 @@ pub struct ItemDefinition {
     pub handling_sensitivity: f32,
 }
 
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+pub struct WeaponSkillDistribution {
+    pub polearm: f32,
+    pub axe: f32,
+    pub bludgeon: f32,
+    pub sword: f32,
+    pub knife: f32,
+    pub bow: f32,
+    pub crossbow: f32,
+    pub firearm: f32,
+    #[serde(alias = "throw")]
+    pub throw_skill: f32,
+}
+
+impl WeaponSkillDistribution {
+    pub fn core(self) -> adventuresim_core::equipment::WeaponSkillDistribution {
+        adventuresim_core::equipment::WeaponSkillDistribution {
+            polearm: self.polearm,
+            axe: self.axe,
+            bludgeon: self.bludgeon,
+            sword: self.sword,
+            knife: self.knife,
+            bow: self.bow,
+            crossbow: self.crossbow,
+            firearm: self.firearm,
+            throw: self.throw_skill,
+        }
+    }
+}
+
 impl Default for ItemDefinition {
     fn default() -> Self {
         Self {
@@ -717,6 +752,7 @@ impl Default for ItemDefinition {
             balance: 0.0,
             melee: false,
             ranged: false,
+            weapon_skills: WeaponSkillDistribution::default(),
             blunt: false,
             slash: false,
             pierce: false,
@@ -777,6 +813,7 @@ pub struct SettlementSmith {
     pub settlement_id: String,
     pub weaponsmith_skill: u8,
     pub armourer_skill: u8,
+    pub tailor_skill: u8,
 }
 
 #[allow(dead_code)]
@@ -876,13 +913,20 @@ pub struct CharacterAttributes {
     pub right_leg_agility: f32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CharacterSkills {
     pub character_id: u64,
-    pub melee_hours: f32,
+    pub polearm_hours: f32,
+    pub axe_hours: f32,
+    pub bludgeon_hours: f32,
+    pub sword_hours: f32,
+    pub knife_hours: f32,
     pub dodge_hours: f32,
     pub block_hours: f32,
-    pub ranged_hours: f32,
+    pub bow_hours: f32,
+    pub crossbow_hours: f32,
+    pub firearm_hours: f32,
+    pub throw_hours: f32,
     pub will_hours: f32,
     pub insight_hours: f32,
     pub self_awareness_hours: f32,
@@ -894,7 +938,8 @@ pub struct CharacterSkills {
     pub religion_hours: adventuresim_world_schema::ReligionHours,
     pub stealth_hours: f32,
     pub balance_hours: f32,
-    pub surgeon_hours: f32,
+    pub anatomy_hours: f32,
+    pub tailoring_hours: f32,
     pub smithing_hours: f32,
 }
 
@@ -969,27 +1014,6 @@ pub struct ScheduleAllocation {
     pub apprenticeship_service_id: Option<String>,
     pub profession_practice_minutes: u16,
     pub profession_service_id: Option<String>,
-    pub combat_minutes: u16,
-    pub combat_auto_train: bool,
-    pub melee_minutes: u16,
-    pub dodge_minutes: u16,
-    pub block_minutes: u16,
-    pub ranged_minutes: u16,
-    pub will_minutes: u16,
-    pub insight_minutes: u16,
-    pub self_awareness_minutes: u16,
-    pub humor_minutes: u16,
-    pub command_minutes: u16,
-    pub deception_minutes: u16,
-    pub seduction_minutes: u16,
-    pub medicine_minutes: u16,
-    pub religion_minutes: u16,
-    pub religion_auto_train: bool,
-    pub religion_minutes_by_tradition: adventuresim_world_schema::ReligionMinutes,
-    pub stealth_minutes: u16,
-    pub balance_minutes: u16,
-    pub surgeon_minutes: u16,
-    pub smithing_minutes: u16,
     pub labor_minutes: u16,
     pub prayer_minutes: u16,
     pub thievery_minutes: u16,
