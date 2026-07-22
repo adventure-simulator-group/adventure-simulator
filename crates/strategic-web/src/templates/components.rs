@@ -121,7 +121,13 @@ pub fn item_type_header() -> Markup {
 pub fn stat_game_icon_name(icon: &str) -> &'static str {
     match icon {
         "will" => "inner-self",
+        "social" => "conversation",
+        "insight" => "awareness",
+        "self-awareness" => "inner-self",
+        "humor" => "juggler",
         "command" => "crown",
+        "deception" => "conversation",
+        "seduction" => "rose",
         "medicine" => "medical-pack",
         "faith" => "holy-symbol",
         "melee" => "sword-clash",
@@ -257,6 +263,18 @@ mod icon_tests {
             stat_game_icon_name("melee"),
             "the Combat aggregate needs a distinct icon from its Melee detail row"
         );
+        for (key, expected) in [
+            ("social", "conversation"),
+            ("insight", "awareness"),
+            ("self-awareness", "inner-self"),
+            ("humor", "juggler"),
+            ("command", "crown"),
+            ("deception", "conversation"),
+            ("seduction", "rose"),
+        ] {
+            assert_eq!(stat_game_icon_name(key), expected);
+            assert_ne!(stat_game_icon_name(key), "help");
+        }
         assert_eq!(
             religion_icon_path(Some("roman_catholic")),
             "/static/icons/religion/catholic-cross-bottony.png"

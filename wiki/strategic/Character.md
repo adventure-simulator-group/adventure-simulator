@@ -35,7 +35,18 @@ approach to the same topic has a cooldown even if the source row is refreshed.
 Characters use Self-awareness to Reflect on their own concern; reflection can
 revise a self-belief but never changes Affinity or Familiarity. The interface
 shows only a qualitative, familiarity-weighted affinity estimate rather than
-the authoritative value.
+the authoritative value. Observed traits and morale-source interpretations use
+greyer text when confidence is lower; their exact confidence is available on
+hover together with a hint about which approaches that trait may favor or
+resent.
+
+The available social approaches are filtered by the concern rather than showing
+every Social skill for every problem. Commiseration is always available as one
+action: it uses Insight when the actor currently shares that kind of concern and
+Deception when they do not, so sincere and feigned variants never appear at the
+same time. Action labels remain grounded in facts the simulation actually knows.
+The character sheet groups the six skills beneath an expandable **Social** row,
+whose displayed value is their average.
 
 When mortal creation is reworked, players should choose among several generated whole characters with different personality tags. Players will not customize individual tags: personality is part of choosing an existing mortal person rather than assembling one stat by stat.
 

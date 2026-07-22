@@ -3697,8 +3697,28 @@ async fn party_social(
         return Html("<h1>Social actions require a living, co-located party member</h1>".into());
     }
     let party_members = get_active_party_members(&state, Some(&active)).await;
+    let attributes =
+        query_single::<CharacterAttributes>(&state, "character_attributes", target_id).await;
+    let limbs = query_single::<CharacterLimbs>(&state, "character_limbs", target_id).await;
     let condition = get_strategic_condition(&state, target_id).await;
     let sources = get_morale_sources(&state, target_id).await;
+    let filth = state
+        .db
+        .query::<CharacterFilth>(&format!(
+            "SELECT * FROM character_filth WHERE character_id = {target_id}"
+        ))
+        .await
+        .unwrap_or_default();
+    let actor_sources = get_morale_sources(&state, active.id).await;
+    let mut shared_concerns = actor_sources
+        .iter()
+        .filter(|source| {
+            adventuresim_core::social::social_source_eligible(&source.kind, source.magnitude)
+        })
+        .filter_map(|source| adventuresim_core::social::topic_for_source_kind(&source.kind))
+        .collect::<Vec<_>>();
+    shared_concerns.sort_by_key(|topic| format!("{topic:?}"));
+    shared_concerns.dedup();
     let religion_id = query_single::<CharacterCondition>(&state, "character_condition", target_id)
         .await
         .and_then(|value| value.religion_id);
@@ -3765,6 +3785,7 @@ async fn party_social(
         religion_id,
         virtue,
         beliefs,
+        shared_concerns,
         unavailable: !beliefs_available || !affinity_available || !familiarity_available,
     };
     Html(
@@ -3773,8 +3794,11 @@ async fn party_social(
             &selected,
             &active,
             &party_members,
+            attributes.as_ref(),
+            limbs.as_ref(),
             condition.as_ref(),
             &sources,
+            &filth,
             &social,
         )
         .into_string(),

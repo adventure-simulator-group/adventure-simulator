@@ -217,7 +217,7 @@ Ability to resist [pain](../tactical/Combat.md) or avoid [morale](Morale.md) pen
 ### Social skills (intuitive)
 There's no persuasion system or anything for the MVP, this is just a [morale](Morale.md) buff for the party. You lose focus during combat, so instinct gives you tactical morale while intelligence gives you traveling morale.
 
-Insight reads others, Self-awareness reads oneself, Humor relieves tension, Command rallies and coordinates, Deception sustains false impressions, and Seduction handles romantic interest. Party Command is led by the strongest individual check. Additional members receive a saturating coordination benefit, then contribute half of their deviation from a 2.5 baseline. Checks above 2.5 help and checks below 2.5 burden the party's social leadership. The result is capped from 0 to 5; adding arbitrarily many low-Command members cannot manufacture a high result.
+Insight reads others, Self-awareness reads oneself, Humor relieves tension, Command rallies and coordinates, Deception sustains false impressions, and Seduction handles romantic interest. Party Command is led by the strongest individual check. Additional members receive a saturating coordination benefit, then contribute half of their deviation from a 2.5 baseline. Checks above 2.5 help and checks below 2.5 burden the party's social leadership. The result is capped from 0 to 5; adding arbitrarily many low-Command members cannot manufacture a high result. Character sheets summarize these six skills with an expandable Social meta-skill whose rank is their average.
 
 0. Autistic
 1. Cold and aloof

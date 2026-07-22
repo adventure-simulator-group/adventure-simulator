@@ -338,6 +338,17 @@ fn sensitivity(ctx: &ReducerContext, target_id: u64, topic: SocialTopic) -> f32 
     }
 }
 
+fn shares_concern(ctx: &ReducerContext, character_id: u64, topic: SocialTopic) -> bool {
+    ctx.db
+        .character_morale_source()
+        .character_id()
+        .filter(character_id)
+        .any(|source| {
+            social_source_eligible(&source.kind, source.magnitude)
+                && topic_for_source_kind(&source.kind) == Some(topic)
+        })
+}
+
 fn personality_truth(ctx: &ReducerContext, target_id: u64, axis: PersonalityAxis) -> Option<i8> {
     let p = ctx
         .db
@@ -419,6 +430,9 @@ pub fn perform_social_action(
         return Err("Only current, negative, recognized morale sources can be addressed".into());
     }
     let topic = topic_for_source_kind(&source.kind).ok_or("Morale source is not actionable")?;
+    if !action.available_for(topic) {
+        return Err("That social approach does not fit this concern".into());
+    }
     let now = ctx
         .db
         .character_time()
@@ -447,10 +461,12 @@ pub fn perform_social_action(
     } else {
         current_affinity(ctx, target_id, actor_id)
     };
+    let actor_shares_concern = shares_concern(ctx, actor_id, topic);
     let skill = match action {
         SocialActionKind::Reflect => Skill::SelfAwareness,
         SocialActionKind::Listen => Skill::Insight,
-        SocialActionKind::Commiserate => Skill::Insight,
+        SocialActionKind::Commiserate if actor_shares_concern => Skill::Insight,
+        SocialActionKind::Commiserate => Skill::Deception,
         SocialActionKind::LightenMood => Skill::Humor,
         SocialActionKind::Rally => Skill::Command,
         SocialActionKind::Reframe => Skill::Deception,

@@ -99,11 +99,12 @@ pub enum SocialActionKind {
 }
 
 impl SocialActionKind {
-    pub const fn skill_name(self) -> &'static str {
+    pub const fn skill_name(self, shares_concern: bool) -> &'static str {
         match self {
             Self::Reflect => "Self-awareness",
             Self::Listen => "Insight",
-            Self::Commiserate => "Insight",
+            Self::Commiserate if shares_concern => "Insight",
+            Self::Commiserate => "Deception",
             Self::LightenMood => "Humor",
             Self::Rally => "Command",
             Self::Reframe => "Deception",
@@ -111,18 +112,69 @@ impl SocialActionKind {
         }
     }
 
-    pub const fn description(self, topic: SocialTopic) -> &'static str {
-        match (self, topic) {
-            (Self::Reflect, _) => "Reflect on why this affects you",
-            (Self::Listen, _) => "Ask how they are feeling",
-            (Self::Commiserate, SocialTopic::Defeat) => "Commiserate about recent defeat",
-            (Self::Commiserate, _) => "Acknowledge what is troubling them",
-            (Self::LightenMood, SocialTopic::Defeat) => "Make light of the setback",
-            (Self::LightenMood, _) => "Try to lighten the mood",
-            (Self::Rally, SocialTopic::Defeat) => "Rally them after the setback",
-            (Self::Rally, _) => "Offer firm encouragement",
-            (Self::Reframe, _) => "Offer a reassuring interpretation",
-            (Self::Flirt, _) => "Offer personal encouragement",
+    pub const fn available_for(self, topic: SocialTopic) -> bool {
+        match self {
+            Self::Reflect | Self::Listen | Self::Commiserate => true,
+            Self::LightenMood => !matches!(topic, SocialTopic::Faith),
+            Self::Rally => matches!(
+                topic,
+                SocialTopic::Defeat | SocialTopic::Fatigue | SocialTopic::Faith
+            ),
+            Self::Reframe => matches!(
+                topic,
+                SocialTopic::Defeat | SocialTopic::Injury | SocialTopic::Faith
+            ),
+            Self::Flirt => matches!(topic, SocialTopic::Defeat | SocialTopic::Injury),
+        }
+    }
+
+    pub const fn description(self, topic: SocialTopic, shares_concern: bool) -> &'static str {
+        match (self, topic, shares_concern) {
+            (Self::Reflect, _, _) => "Reflect on why this affects you",
+            (Self::Listen, SocialTopic::Defeat, _) => "Ask how they feel about the defeat",
+            (Self::Listen, SocialTopic::Injury, _) => "Ask how the injury is affecting them",
+            (Self::Listen, SocialTopic::Fatigue, _) => "Ask how exhaustion is wearing on them",
+            (Self::Listen, SocialTopic::Hunger, _) => "Ask how hunger is affecting them",
+            (Self::Listen, SocialTopic::Faith, _) => "Ask what is troubling their conscience",
+            (Self::Listen, SocialTopic::Filth, _) => "Ask why the grime is bothering them",
+            (Self::Commiserate, SocialTopic::Defeat, true) => "Commiserate about the defeat",
+            (Self::Commiserate, SocialTopic::Injury, true) => "Commiserate about being injured",
+            (Self::Commiserate, SocialTopic::Fatigue, true) => "Commiserate about the exhaustion",
+            (Self::Commiserate, SocialTopic::Hunger, true) => "Commiserate about going hungry",
+            (Self::Commiserate, SocialTopic::Faith, true) => "Commiserate about the moral setback",
+            (Self::Commiserate, SocialTopic::Filth, true) => "Commiserate about being filthy",
+            (Self::Commiserate, SocialTopic::Defeat, false) => "Feign sympathy about the defeat",
+            (Self::Commiserate, SocialTopic::Injury, false) => "Feign sympathy about the injury",
+            (Self::Commiserate, SocialTopic::Fatigue, false) => {
+                "Feign sympathy about the exhaustion"
+            }
+            (Self::Commiserate, SocialTopic::Hunger, false) => "Feign sympathy about going hungry",
+            (Self::Commiserate, SocialTopic::Faith, false) => {
+                "Feign sympathy about the moral setback"
+            }
+            (Self::Commiserate, SocialTopic::Filth, false) => "Feign sympathy about being filthy",
+            (Self::LightenMood, SocialTopic::Defeat, _) => "Joke about bouncing back from defeat",
+            (Self::LightenMood, SocialTopic::Injury, _) => "Joke to distract them from the pain",
+            (Self::LightenMood, SocialTopic::Fatigue, _) => "Joke to help keep them awake",
+            (Self::LightenMood, SocialTopic::Hunger, _) => "Joke about the empty provisions",
+            (Self::LightenMood, SocialTopic::Filth, _) => "Joke about the mess they are in",
+            (Self::Rally, SocialTopic::Defeat, _) => "Rally them after the defeat",
+            (Self::Rally, SocialTopic::Fatigue, _) => "Urge them to keep going despite exhaustion",
+            (Self::Rally, SocialTopic::Faith, _) => "Call on them to stand by their convictions",
+            (Self::Reframe, SocialTopic::Defeat, _) => "Cast the defeat as a lesson",
+            (Self::Reframe, SocialTopic::Injury, _) => {
+                "Claim the injury is less serious than it looks"
+            }
+            (Self::Reframe, SocialTopic::Faith, _) => {
+                "Offer a reassuring interpretation of the moral setback"
+            }
+            (Self::Flirt, SocialTopic::Defeat, _) => {
+                "Tell them they remain impressive despite the defeat"
+            }
+            (Self::Flirt, SocialTopic::Injury, _) => "Tell them the scar makes them look striking",
+            // Callers must check `available_for`; this keeps malformed clients
+            // from eliciting invented topic-specific copy.
+            _ => "This approach does not fit the concern",
         }
     }
 
@@ -359,6 +411,29 @@ mod tests {
         assert_eq!(
             canonical_cooldown_id(1, 2, SocialTopic::Defeat, "listen"),
             "1:2:defeat:listen"
+        );
+    }
+
+    #[test]
+    fn social_catalog_keeps_one_commiseration_path_and_filters_bad_fits() {
+        for topic in [
+            SocialTopic::Defeat,
+            SocialTopic::Injury,
+            SocialTopic::Fatigue,
+            SocialTopic::Hunger,
+            SocialTopic::Faith,
+            SocialTopic::Filth,
+        ] {
+            assert!(SocialActionKind::Commiserate.available_for(topic));
+        }
+        assert_eq!(SocialActionKind::Commiserate.skill_name(true), "Insight");
+        assert_eq!(SocialActionKind::Commiserate.skill_name(false), "Deception");
+        assert!(!SocialActionKind::Flirt.available_for(SocialTopic::Hunger));
+        assert!(!SocialActionKind::Rally.available_for(SocialTopic::Filth));
+        assert!(!SocialActionKind::LightenMood.available_for(SocialTopic::Faith));
+        assert_eq!(
+            SocialActionKind::Flirt.description(SocialTopic::Injury, false),
+            "Tell them the scar makes them look striking"
         );
     }
 

@@ -479,6 +479,14 @@
       root.querySelectorAll('.combat-detail-row').forEach((row) => { row.hidden = !expanded; });
       return;
     }
+    const socialExpand = event.target.closest?.('[data-social-expand]');
+    if (socialExpand) {
+      const root = socialExpand.closest('[data-skill-schedule]') || socialExpand.closest('table');
+      const expanded = socialExpand.getAttribute('aria-expanded') !== 'true';
+      socialExpand.setAttribute('aria-expanded', String(expanded));
+      root.querySelectorAll('.social-detail-row').forEach((row) => { row.hidden = !expanded; });
+      return;
+    }
     const retry = event.target.closest?.('[data-schedule-retry]');
     if (retry) {
       const root = retry.closest('[data-skill-schedule]');

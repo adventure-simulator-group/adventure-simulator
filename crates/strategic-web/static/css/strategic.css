@@ -2433,8 +2433,11 @@ button.party-portrait-action {
 }
 
 .morale-meter {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
   position: relative;
-  padding: 0.15rem 0 0.65rem;
+  padding: 0.15rem 0.45rem 0.65rem;
   border: 2px solid transparent;
   border-radius: 0.4rem;
   outline: none;
@@ -2546,7 +2549,11 @@ button.party-portrait-action {
 .perceived-traits,
 .social-source-list { display: grid; gap: 0.55rem; padding: 0; margin: 0.65rem 0 0; list-style: none; }
 .perceived-traits li { display: grid; grid-template-columns: 1fr auto; gap: 0.1rem 0.5rem; text-transform: capitalize; }
-.perceived-traits small { grid-column: 1 / -1; color: var(--text-muted); }
+.perceived-trait,
+.social-source-context p.belief-copy {
+  color: color-mix(in srgb, var(--text-muted), #fff var(--belief-confidence));
+  cursor: help;
+}
 .social-source { overflow: hidden; border: 1px solid var(--border-color); border-radius: 0.4rem; background: var(--panel-bg); }
 .social-source-negative { border-left: 3px solid var(--danger); }
 .social-source-positive { border-left: 3px solid var(--success); }
