@@ -17,6 +17,9 @@ pub struct CatalogDocument {
 pub struct Conversation {
     pub id: String,
     pub roles: BTreeMap<String, Role>,
+    /// Responses evaluated once, authoritatively, when a new session starts.
+    #[serde(default)]
+    pub on_start: Vec<Response>,
     pub topics: Vec<Topic>,
 }
 
@@ -243,8 +246,22 @@ pub fn select_response<'a>(
     topic: &'a Topic,
     facts: &FactContext,
 ) -> Result<&'a Response, DialogueError> {
-    let eligible: Vec<_> = topic
-        .responses
+    select_response_set(&topic.id, &topic.responses, facts)
+}
+
+pub fn select_start_response<'a>(
+    conversation: &'a Conversation,
+    facts: &FactContext,
+) -> Result<&'a Response, DialogueError> {
+    select_response_set("conversation_start", &conversation.on_start, facts)
+}
+
+fn select_response_set<'a>(
+    trigger: &str,
+    responses: &'a [Response],
+    facts: &FactContext,
+) -> Result<&'a Response, DialogueError> {
+    let eligible: Vec<_> = responses
         .iter()
         .filter(|r| facts.matches(&r.conditions))
         .collect();
@@ -252,12 +269,12 @@ pub fn select_response<'a>(
         .iter()
         .map(|r| r.priority)
         .max()
-        .ok_or_else(|| DialogueError::NoEligibleResponse(topic.id.clone()))?;
+        .ok_or_else(|| DialogueError::NoEligibleResponse(trigger.to_owned()))?;
     let mut winners = eligible.into_iter().filter(|r| r.priority == best);
     let winner = winners.next().unwrap();
     if winners.next().is_some() {
         return Err(DialogueError::AmbiguousPriority {
-            topic: topic.id.clone(),
+            topic: trigger.to_owned(),
             priority: best,
         });
     }
@@ -275,6 +292,29 @@ pub fn validate(documents: &[CatalogDocument]) -> Result<(), Vec<DialogueError>>
             for (name, role) in &conversation.roles {
                 if role.min == 0 || role.max < role.min {
                     errors.push(DialogueError::InvalidCardinality(name.clone()));
+                }
+            }
+            for response in &conversation.on_start {
+                if !ids.insert(format!("{}:start:{}", conversation.id, response.id)) {
+                    errors.push(DialogueError::DuplicateId(response.id.clone()));
+                }
+                for turn in &response.turns {
+                    if !conversation.roles.contains_key(&turn.speaker) {
+                        errors.push(DialogueError::UnknownRole(turn.speaker.clone()));
+                    }
+                }
+                if response.prompt.is_some() {
+                    errors.push(DialogueError::InvalidPrompt(response.id.clone()));
+                }
+            }
+            for (index, response) in conversation.on_start.iter().enumerate() {
+                if conversation.on_start[index + 1..].iter().any(|other| {
+                    other.priority == response.priority && other.conditions == response.conditions
+                }) {
+                    errors.push(DialogueError::AmbiguousPriority {
+                        topic: "conversation_start".into(),
+                        priority: response.priority,
+                    });
                 }
             }
             for topic in &conversation.topics {
@@ -344,6 +384,35 @@ pub fn find_conversation(id: &str) -> Option<&'static Conversation> {
         .iter()
         .flat_map(|d| &d.conversations)
         .find(|c| c.id == id)
+}
+
+pub fn source_for_start_fragment(
+    conversation_id: &str,
+    response_id: &str,
+    turn: usize,
+    fragment: usize,
+    field: &str,
+) -> Option<&'static SourceRef> {
+    for (document_index, document) in catalog().iter().enumerate() {
+        if let Some((conversation_index, conversation)) = document
+            .conversations
+            .iter()
+            .enumerate()
+            .find(|(_, conversation)| conversation.id == conversation_id)
+        {
+            let response_index = conversation
+                .on_start
+                .iter()
+                .position(|response| response.id == response_id)?;
+            let path = format!(
+                "conversations.{conversation_index}.on_start.{response_index}.turns.{turn}.fragments.{fragment}.{field}"
+            );
+            return source_map()
+                .iter()
+                .find(|source| source.document == document_index && source.path == path);
+        }
+    }
+    None
 }
 
 pub fn source_for_fragment(
@@ -555,6 +624,24 @@ mod tests {
         f.facts
             .insert(FactKey::TimePeriod, FactValue::Text("morning".into()));
         assert_eq!(select_response(topic, &f).unwrap().id, "morning");
+    }
+    #[test]
+    fn conversation_start_selects_contextual_authored_greeting() {
+        let conversation = find_conversation("service-professions").unwrap();
+        let mut facts = FactContext::default();
+        facts.facts.insert(
+            FactKey::Service {
+                role: "professional".into(),
+            },
+            FactValue::Text("armor".into()),
+        );
+        let greeting = select_start_response(conversation, &facts).unwrap();
+        assert_eq!(greeting.id, "armourer-greeting");
+        let source =
+            source_for_start_fragment("service-professions", "armourer-greeting", 0, 0, "value")
+                .expect("start-trigger text has an exact source span");
+        assert_eq!(source.file, "content/dialogue/services.yaml");
+        assert!(source.line > 0);
     }
     #[test]
     fn known_intersection_is_eligible() {

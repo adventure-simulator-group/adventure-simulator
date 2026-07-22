@@ -10,7 +10,11 @@ servers do not read loose content files.
 
 Each conversation has a stable ID and named participant roles. A role declares
 `player` or `npc` plus minimum/maximum cardinality, so one authored exchange can
-require a shopkeeper and assistant or address several players. Topics have
+require a shopkeeper and assistant or address several players. Optional
+`on_start` responses use the same conditions, priority rules, attributed turns,
+effects, and automatic source mapping as topic responses. The server evaluates
+one start response exactly once when it creates a session; use it for greetings
+instead of making the browser select a topic implicitly. Topics have
 stable IDs, labels, knowledge/eligibility conditions, and explicitly prioritized
 responses. A response contains attributed turns composed of text and inline
 topic fragments. Prompts support `yes_no`, `single`, and `multi` choices and
