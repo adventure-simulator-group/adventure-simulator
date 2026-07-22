@@ -44,7 +44,9 @@ pub fn topic_for_source_kind(kind: &str) -> Option<SocialTopic> {
         "injury" | "pain" => Some(SocialTopic::Injury),
         "fatigue" => Some(SocialTopic::Fatigue),
         "hunger" | "thirst" => Some(SocialTopic::Hunger),
-        "religion" | "faith" | "holy_day" => Some(SocialTopic::Faith),
+        "religion" | "faith" | "holy_day" | "religious_discord" | "prayer" => {
+            Some(SocialTopic::Faith)
+        }
         "filth" | "cleanliness" => Some(SocialTopic::Filth),
         _ => None,
     }
@@ -340,6 +342,11 @@ mod tests {
     #[test]
     fn source_topics_are_closed_and_negative_only() {
         assert_eq!(topic_for_source_kind("defeat"), Some(SocialTopic::Defeat));
+        assert_eq!(
+            topic_for_source_kind("religious_discord"),
+            Some(SocialTopic::Faith)
+        );
+        assert_eq!(topic_for_source_kind("prayer"), Some(SocialTopic::Faith));
         assert_eq!(topic_for_source_kind("social_interaction"), None);
         assert_eq!(topic_for_source_kind("made_up"), None);
         assert!(social_source_eligible("defeat", -1.0));

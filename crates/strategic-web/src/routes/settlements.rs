@@ -95,15 +95,15 @@ use crate::spacetimedb::{
     AlcoholConsumption, Character, CharacterAffinity, CharacterAttributes, CharacterCapability,
     CharacterCondition, CharacterEquip, CharacterFamiliarity, CharacterFilth, CharacterLimbs,
     CharacterMoraleSource, CharacterNeeds, CharacterNotoriety, CharacterPersonality,
-    CharacterSkills, CharacterStats,
-    CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, EquippedMedication,
-    HerbalistExaminationRow, InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget,
-    ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury, LimbRegion,
-    MedicalExaminationRow, Party, PartyInventoryItem, PartyJourney, PartyJourneyItinerary,
-    PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, Quest, QuestIssuer,
-    QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder, RetainedProjectile,
-    ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription, SettlementSmith,
-    SocialBelief, TravelEdge,
+    CharacterSkills, CharacterStats, CharacterStrategicCondition, CharacterTime,
+    CharacterTrainingSchedule, CharacterVirtue,
+    EquippedMedication, HerbalistExaminationRow, InfectionEpisodeRow, InventoryItem,
+    InventoryQuantityTarget, ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury,
+    LimbRegion, MedicalExaminationRow, Party, PartyInventoryItem, PartyJourney,
+    PartyJourneyItinerary, PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, Quest,
+    QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
+    RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription,
+    SettlementSmith, SocialBelief, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
@@ -3696,7 +3696,7 @@ async fn party_social(
     let religion_id = query_single::<CharacterCondition>(&state, "character_condition", target_id)
         .await
         .and_then(|value| value.religion_id);
-    let virtue = query_single::<CharacterNotoriety>(&state, "character_notoriety", target_id)
+    let virtue = query_single::<CharacterVirtue>(&state, "character_virtue", target_id)
         .await
         .map_or(0.0, |value| value.value);
     let target_minute = query_single::<CharacterTime>(&state, "character_time", target_id)

@@ -2015,8 +2015,8 @@ pub fn party_social_page(
                     div { dt { "Virtue" } dd { (format!("{:+.1}", social.virtue)) } }
                     @if !is_self {
                         div { dt { "Affinity toward you" } dd { (affinity_label) " (" (affinity_certainty) ")" } }
+                        div { dt { "Familiarity" } dd { (format!("{:.1} hours", social.familiarity_hours)) } }
                     }
-                    div { dt { "Familiarity" } dd { (format!("{:.1} hours", social.familiarity_hours)) } }
                 }
                 @if social.unavailable {
                     p class="social-unavailable" role="status" { "Your impressions are unavailable right now." }
