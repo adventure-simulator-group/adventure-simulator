@@ -518,9 +518,33 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
             world.settlements.len(),
         )
     {
-        return Err(Error::Validation(
-            "build report counts do not match the compiled world".into(),
-        ));
+        let actual = serde_json::json!({
+            "nodes": world.nodes.len(),
+            "edges": world.edges.len(),
+            "settlements": world.settlements.len(),
+            "settlement_aliases": world.settlement_aliases.len(),
+            "settlement_descriptions": world.settlement_descriptions.len(),
+            "route_crossings": world.edges.iter().filter(|edge| edge.route.has_crossing()).count(),
+            "toll_edges": world.edges.iter().filter(|edge| edge.toll.is_some()).count(),
+            "tree_species_fallbacks": world.settlements.iter().filter(|settlement| matches!(settlement.tree_species, TreeSpeciesProfile::Inferred(_))).count(),
+            "tree_species_candidates": world.settlements.iter().map(|settlement| match &settlement.tree_species {
+                TreeSpeciesProfile::Modeled(profile) => profile.candidates().len(),
+                TreeSpeciesProfile::Inferred(profile) => profile.species().len(),
+            }).sum::<usize>(),
+            "soil_fallbacks": world.settlements.iter().filter(|settlement| settlement.soil.evidence == SoilEvidence::DeterministicInference).count(),
+            "geology_fallbacks": world.settlements.iter().filter(|settlement| matches!(settlement.geology, SurfaceGeology::Inferred(_))).count(),
+            "drought_fallbacks": world.settlements.iter().filter(|settlement| matches!(settlement.drought, DroughtProfile::Inferred(_))).count(),
+            "hydrology_landlocked_settlements": world.settlements.iter().filter(|settlement| settlement.hydrology == SettlementHydrology::default()).count(),
+            "hydrology_edge_crossings": world.edges.iter().map(|edge| match &edge.route {
+                TravelRoute::Land(route) => route.water_crossings.len(),
+                TravelRoute::Ferry(_) => 0,
+            }).sum::<usize>(),
+            "ferry_edges": world.edges.iter().filter(|edge| matches!(edge.route, TravelRoute::Ferry(_))).count(),
+        });
+        return Err(Error::Validation(format!(
+            "build report counts do not match the compiled world; report={} actual={actual}",
+            serde_json::to_string(&world.report).expect("world build report serializes")
+        )));
     }
     Ok(())
 }
@@ -689,11 +713,12 @@ fn land_use_counts_are_consistent(
     normalized: usize,
     settlements: usize,
 ) -> bool {
+    const HYDE_SOURCE_FILES: usize = 4;
     samples == settlements
         && fallbacks <= samples
         && normalized <= samples - fallbacks
-        && ((settlements == 0 && (rasters == 0 || rasters == 5))
-            || (settlements > 0 && rasters == 5))
+        && ((settlements == 0 && (rasters == 0 || rasters == HYDE_SOURCE_FILES))
+            || (settlements > 0 && rasters == HYDE_SOURCE_FILES))
 }
 
 fn elevation_counts_are_consistent(
@@ -835,13 +860,13 @@ mod tests {
 
     #[test]
     fn land_use_report_requires_all_source_rasters_and_samples() {
-        assert!(land_use_counts_are_consistent(5, 3, 1, 1, 3));
+        assert!(land_use_counts_are_consistent(4, 3, 1, 1, 3));
         assert!(land_use_counts_are_consistent(0, 0, 0, 0, 0));
-        assert!(land_use_counts_are_consistent(5, 0, 0, 0, 0));
-        assert!(!land_use_counts_are_consistent(4, 3, 0, 0, 3));
-        assert!(!land_use_counts_are_consistent(5, 2, 0, 0, 3));
-        assert!(!land_use_counts_are_consistent(5, 3, 4, 0, 3));
-        assert!(!land_use_counts_are_consistent(5, 3, 1, 3, 3));
+        assert!(land_use_counts_are_consistent(4, 0, 0, 0, 0));
+        assert!(!land_use_counts_are_consistent(5, 3, 0, 0, 3));
+        assert!(!land_use_counts_are_consistent(4, 2, 0, 0, 3));
+        assert!(!land_use_counts_are_consistent(4, 3, 4, 0, 3));
+        assert!(!land_use_counts_are_consistent(4, 3, 1, 3, 3));
     }
 
     #[test]

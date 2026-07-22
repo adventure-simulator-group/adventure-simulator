@@ -375,9 +375,16 @@ unstructured Markdown `sources` field for future debugging; it is persisted but
 not currently displayed. `just load-world` sends that same compiled
 data in bounded batches to a published local module. Run it after
 `just publish-reset`, without `_seed-world`, when using the historical world.
-Interrupted loads can be resumed with the identical compiled artifact. The
-module rejects a different artifact or any additional batches after completion;
-use `just publish-reset` before loading changed source data or a different year.
+Interrupted loads can be resumed without recompiling by loading the identical
+artifact directly:
+
+```powershell
+cargo run --package adventuresim-world-import --bin adventuresim-world-import -- --input target/world-1544.json --load --server http://localhost:3000 --database adventuresim
+```
+
+The module rejects a different artifact or any additional batches after
+completion; use `just publish-reset` before loading changed source data or a
+different year.
 
 The compiler defaults to the canonical 1,000 m spatial grid. Pass
 `--grid-cell-size-meters 250` (or another multiple of 250 from 250 through

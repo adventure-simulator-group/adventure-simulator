@@ -811,6 +811,11 @@ fn read_feature_table(
             "NULL".into()
         }
     };
+    // Some official EU-Hydro basin packages declare their categorical code
+    // fields as REAL even though every populated value is integral. Normalize
+    // those codes at the source boundary so rusqlite does not reject the row
+    // before the canonical sentinel and range handling below can run.
+    let integer_value = |name: &str| format!("CAST({} AS INTEGER)", value(name));
     let rtree = format!("rtree_{table}_{geometry_column}");
     let use_rtree = bounds.is_some()
         && layout.integer_primary_key.is_some()
@@ -849,9 +854,9 @@ fn read_feature_table(
     let sql = format!(
         "SELECT f.{}, {}, {}, {}, {} FROM {from}{where_clause}{order_by}",
         quote_identifier(geometry_column),
-        value("STRAHLER"),
-        value("HYP"),
-        value("NVS"),
+        integer_value("STRAHLER"),
+        integer_value("HYP"),
+        integer_value("NVS"),
         value("AREA_GEO"),
     );
     let mut statement = connection

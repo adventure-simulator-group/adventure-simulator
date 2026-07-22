@@ -356,10 +356,14 @@ impl Raster {
 
     fn pixel(&self, latitude: f64, longitude: f64) -> Result<(u32, u32)> {
         let (mut column, mut row) = self.georeference.nearest_pixel(latitude, longitude);
-        if longitude == 180.0 && column == i64::from(self.width) {
+        // Pixel-is-point tiles place their edge samples half a pixel inside the
+        // nominal degree boundary. Coordinates in that final half pixel round
+        // one index past the raster even though the nominal tile's edge sample
+        // remains closer than the adjacent tile's first sample.
+        if column == i64::from(self.width) {
             column -= 1;
         }
-        if latitude == -90.0 && row == i64::from(self.height) {
+        if row == i64::from(self.height) {
             row -= 1;
         }
         if column < 0 || row < 0 || column >= i64::from(self.width) || row >= i64::from(self.height)
@@ -530,27 +534,14 @@ impl RasterMetadata {
         })
     }
 
-    fn nearest_sample_tile(
-        &self,
-        mut tile: TileKey,
-        latitude: f64,
-        longitude: f64,
-    ) -> Result<TileKey> {
+    fn nearest_sample_tile(&self, tile: TileKey, latitude: f64, longitude: f64) -> Result<TileKey> {
         let (column, row) = self.georeference.nearest_pixel(latitude, longitude);
-        if column == i64::from(self.width) {
-            if tile.west < 179 {
-                tile.west += 1;
-            }
-        } else if !(0..i64::from(self.width)).contains(&column) {
+        if column != i64::from(self.width) && !(0..i64::from(self.width)).contains(&column) {
             return Err(Error::Validation(format!(
                 "longitude {longitude} is outside its parsed GLO-30 point grid"
             )));
         }
-        if row == i64::from(self.height) {
-            if tile.south > -90 {
-                tile.south -= 1;
-            }
-        } else if !(0..i64::from(self.height)).contains(&row) {
+        if row != i64::from(self.height) && !(0..i64::from(self.height)).contains(&row) {
             return Err(Error::Validation(format!(
                 "latitude {latitude} is outside its parsed GLO-30 point grid"
             )));
@@ -627,14 +618,9 @@ mod tests {
             georeference: raster.georeference,
         };
         let tile = TileKey { south: 48, west: 0 };
-        assert_eq!(
-            metadata.nearest_sample_tile(tile, 48.5, 0.7).unwrap().west,
-            1
-        );
-        assert_eq!(
-            metadata.nearest_sample_tile(tile, 48.3, 0.5).unwrap().south,
-            47
-        );
+        assert_eq!(metadata.nearest_sample_tile(tile, 48.5, 0.7).unwrap(), tile);
+        assert_eq!(metadata.nearest_sample_tile(tile, 48.3, 0.5).unwrap(), tile);
+        assert_eq!(raster.pixel(48.3, 0.7).unwrap(), (2, 2));
     }
 
     #[test]

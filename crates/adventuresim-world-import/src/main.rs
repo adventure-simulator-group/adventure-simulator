@@ -3,7 +3,9 @@ use std::{
     process::{Command, ExitCode},
 };
 
-use adventuresim_world_import::{Error, Result, WorldBuilder, derive_owda_profiles};
+use adventuresim_world_import::{
+    Error, Result, WorldBuilder, derive_owda_profiles, validate_world,
+};
 use adventuresim_world_schema::{
     AgriculturalLimitation, AvailableWaterCapacity, CationExchangeCapacity, CompiledWorld,
     CrossingTraversal, CrossingWatercourse, DerivedHistoricalVegetationCover,
@@ -64,6 +66,12 @@ struct Args {
     grid_cell_size_meters: GridCellSizeMeters,
     #[arg(long)]
     output: Option<PathBuf>,
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "validate and optionally load an existing compiled world artifact"
+    )]
+    input: Option<PathBuf>,
     #[arg(long)]
     load: bool,
     #[arg(long, default_value = "spacetime")]
@@ -107,6 +115,24 @@ fn run(args: Args) -> Result<()> {
     if let Some(output) = &args.derive_owda_profiles {
         return derive_owda_profiles(&args.viabundus_dir, &args.drought_netcdf, output, args.year);
     }
+    if let Some(input) = &args.input {
+        let mut artifact = std::fs::read(input)?;
+        if artifact.last() == Some(&b'\n') {
+            artifact.pop();
+        }
+        if artifact.last() == Some(&b'\r') {
+            artifact.pop();
+        }
+        let world: CompiledWorld = serde_json::from_slice(&artifact)?;
+        validate_world(&world)?;
+        let artifact_id = blake3::hash(&artifact).to_hex().to_string();
+        print_world_summary(&world);
+        println!("Read compiled world from {}", input.display());
+        if args.load {
+            load_world(&world, &artifact_id, &args)?;
+        }
+        return Ok(());
+    }
     let world = WorldBuilder::new(args.year)
         .with_spatial_grid(SpatialGridSpec::new(args.grid_cell_size_meters))
         .with_playable_bounds()
@@ -134,7 +160,19 @@ fn run(args: Args) -> Result<()> {
     let artifact_id = blake3::hash(&artifact).to_hex().to_string();
     artifact.push(b'\n');
     std::fs::write(&output, artifact)?;
-    println!("{}", serde_json::to_string_pretty(&world.report)?);
+    print_world_summary(&world);
+    println!("Wrote compiled world to {}", output.display());
+    if args.load {
+        load_world(&world, &artifact_id, &args)?;
+    }
+    Ok(())
+}
+
+fn print_world_summary(world: &CompiledWorld) {
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&world.report).expect("world report serializes")
+    );
     println!(
         "Source manifest {} ({} distributions):",
         world.metadata.manifest_digest,
@@ -152,11 +190,6 @@ fn run(args: Args) -> Result<()> {
             }
         );
     }
-    println!("Wrote compiled world to {}", output.display());
-    if args.load {
-        load_world(&world, &artifact_id, &args)?;
-    }
-    Ok(())
 }
 
 fn load_world(world: &CompiledWorld, artifact_id: &str, args: &Args) -> Result<()> {
@@ -259,7 +292,10 @@ fn serialize_batches<T>(
     batch_size: usize,
     encode: fn(&T) -> Result<Value>,
 ) -> Result<Vec<Vec<Value>>> {
-    let rows = rows.iter().map(encode).collect::<Result<Vec<_>>>()?;
+    let rows = rows
+        .iter()
+        .map(|row| encode(row).map(normalize_variant_keys))
+        .collect::<Result<Vec<_>>>()?;
     let mut batches = Vec::new();
     let mut batch = Vec::new();
     let mut code_units = 2;
@@ -288,6 +324,33 @@ fn serialize_batches<T>(
         batches.push(batch);
     }
     Ok(batches)
+}
+
+fn normalize_variant_keys(value: Value) -> Value {
+    match value {
+        Value::Array(values) => {
+            Value::Array(values.into_iter().map(normalize_variant_keys).collect())
+        }
+        Value::Object(values) => Value::Object(
+            values
+                .into_iter()
+                .map(|(key, value)| {
+                    let key = key
+                        .chars()
+                        .next()
+                        .filter(|character| character.is_ascii_uppercase())
+                        .map(|first| {
+                            let mut normalized = first.to_ascii_lowercase().to_string();
+                            normalized.push_str(&key[first.len_utf8()..]);
+                            normalized
+                        })
+                        .unwrap_or(key);
+                    (key, normalize_variant_keys(value))
+                })
+                .collect(),
+        ),
+        scalar => scalar,
+    }
 }
 
 fn encode_world_node(node: &WorldNodeImport) -> Result<Value> {
@@ -529,36 +592,36 @@ fn encode_religious_status(status: SettlementReligiousStatus) -> Value {
     };
     let arrangement = |value| match value {
         WesternChristianArrangement::CatholicLutheran { church } => json!({
-            "CatholicLutheran": { "church": enum_unit(match church {
+            "CatholicLutheran": enum_unit(match church {
                 adventuresim_world_schema::CatholicLutheranChurch::RomanCatholic => "RomanCatholic",
                 adventuresim_world_schema::CatholicLutheranChurch::Lutheran => "Lutheran",
-            }) }
+            })
         }),
         WesternChristianArrangement::CatholicReformed { church } => json!({
-            "CatholicReformed": { "church": enum_unit(match church {
+            "CatholicReformed": enum_unit(match church {
                 adventuresim_world_schema::CatholicReformedChurch::RomanCatholic => "RomanCatholic",
                 adventuresim_world_schema::CatholicReformedChurch::Reformed => "Reformed",
-            }) }
+            })
         }),
         WesternChristianArrangement::LutheranReformed { church } => json!({
-            "LutheranReformed": { "church": enum_unit(match church {
+            "LutheranReformed": enum_unit(match church {
                 adventuresim_world_schema::LutheranReformedChurch::Lutheran => "Lutheran",
                 adventuresim_world_schema::LutheranReformedChurch::Reformed => "Reformed",
-            }) }
+            })
         }),
     };
     match status {
         SettlementReligiousStatus::Established { religion: value } => {
-            json!({ "Established": { "religion": religion(value) } })
+            json!({ "Established": religion(value) })
         }
         SettlementReligiousStatus::Parity { arrangement: value } => {
-            json!({ "Parity": { "arrangement": arrangement(value) } })
+            json!({ "Parity": arrangement(value) })
         }
         SettlementReligiousStatus::MultiConfessional { arrangement: value } => {
-            json!({ "MultiConfessional": { "arrangement": arrangement(value) } })
+            json!({ "MultiConfessional": arrangement(value) })
         }
         SettlementReligiousStatus::LocallyDetermined { church } => {
-            json!({ "LocallyDetermined": { "church": religion(church) } })
+            json!({ "LocallyDetermined": religion(church) })
         }
     }
 }
@@ -1199,20 +1262,20 @@ mod tests {
         let batches = serialize_batches(&[edge], 100, encode_travel_edge).unwrap();
         assert_eq!(
             batches[0][0]["route"],
-            serde_json::json!({ "Land": { "bridge": { "some": { "To": [] } }, "water_crossings": [] } })
+            serde_json::json!({ "land": { "bridge": { "some": { "to": [] } }, "water_crossings": [] } })
         );
         assert_eq!(
             batches[0][0]["toll"],
-            serde_json::json!({ "some": { "From": [] } })
+            serde_json::json!({ "some": { "from": [] } })
         );
         assert_eq!(batches[0][0]["sources"], "- Test source.");
         assert_eq!(
             batches[0][0]["terrain"]["class"],
-            serde_json::json!({ "Flat": [] })
+            serde_json::json!({ "flat": [] })
         );
         assert_eq!(
             batches[0][0]["terrain"]["encounter_tags"][0],
-            serde_json::json!({ "Flat": [] })
+            serde_json::json!({ "flat": [] })
         );
     }
 
@@ -1349,7 +1412,7 @@ mod tests {
         assert_eq!(
             encode_settlement(&settlement).unwrap()["religious_status"],
             serde_json::json!({
-                "Established": { "religion": { "RomanCatholic": [] } }
+                "Established": { "RomanCatholic": [] }
             })
         );
         settlement.religious_status = SettlementReligiousStatus::MultiConfessional {
@@ -1361,9 +1424,7 @@ mod tests {
             encode_settlement(&settlement).unwrap()["religious_status"],
             serde_json::json!({
                 "MultiConfessional": {
-                    "arrangement": {
-                        "CatholicLutheran": { "church": { "Lutheran": [] } }
-                    }
+                    "CatholicLutheran": { "Lutheran": [] }
                 }
             })
         );
