@@ -20,6 +20,8 @@ pub mod autoresolve_quest_reducer;
 pub mod autoresolve_report_table;
 pub mod autoresolve_report_type;
 pub mod available_water_capacity_type;
+pub mod backend_character_affinities_table;
+pub mod backend_character_familiarities_table;
 pub mod backend_committed_cuts_table;
 pub mod backend_herbalist_examinations_table;
 pub mod backend_infection_episodes_table;
@@ -50,7 +52,6 @@ pub mod catholic_lutheran_church_type;
 pub mod catholic_reformed_church_type;
 pub mod cation_exchange_capacity_type;
 pub mod change_inventory_item_reducer;
-pub mod character_affinity_table;
 pub mod character_affinity_type;
 pub mod character_apprenticeship_table;
 pub mod character_apprenticeship_type;
@@ -64,7 +65,6 @@ pub mod character_death_table;
 pub mod character_death_type;
 pub mod character_equip_table;
 pub mod character_equip_type;
-pub mod character_familiarity_table;
 pub mod character_familiarity_type;
 pub mod character_filth_table;
 pub mod character_filth_type;
@@ -377,7 +377,6 @@ pub mod simulation_run_type;
 pub mod sociability_type;
 pub mod social_action_cooldown_type;
 pub mod social_belief_type;
-pub mod social_interaction_table;
 pub mod social_interaction_type;
 pub mod soil_acidity_type;
 pub mod soil_basis_points_type;
@@ -457,6 +456,8 @@ pub use autoresolve_quest_reducer::autoresolve_quest;
 pub use autoresolve_report_table::*;
 pub use autoresolve_report_type::AutoresolveReport;
 pub use available_water_capacity_type::AvailableWaterCapacity;
+pub use backend_character_affinities_table::*;
+pub use backend_character_familiarities_table::*;
 pub use backend_committed_cuts_table::*;
 pub use backend_herbalist_examinations_table::*;
 pub use backend_infection_episodes_table::*;
@@ -487,7 +488,6 @@ pub use catholic_lutheran_church_type::CatholicLutheranChurch;
 pub use catholic_reformed_church_type::CatholicReformedChurch;
 pub use cation_exchange_capacity_type::CationExchangeCapacity;
 pub use change_inventory_item_reducer::change_inventory_item;
-pub use character_affinity_table::*;
 pub use character_affinity_type::CharacterAffinity;
 pub use character_apprenticeship_table::*;
 pub use character_apprenticeship_type::CharacterApprenticeship;
@@ -501,7 +501,6 @@ pub use character_death_table::*;
 pub use character_death_type::CharacterDeath;
 pub use character_equip_table::*;
 pub use character_equip_type::CharacterEquip;
-pub use character_familiarity_table::*;
 pub use character_familiarity_type::CharacterFamiliarity;
 pub use character_filth_table::*;
 pub use character_filth_type::CharacterFilth;
@@ -814,7 +813,6 @@ pub use simulation_run_type::SimulationRun;
 pub use sociability_type::Sociability;
 pub use social_action_cooldown_type::SocialActionCooldown;
 pub use social_belief_type::SocialBelief;
-pub use social_interaction_table::*;
 pub use social_interaction_type::SocialInteraction;
 pub use soil_acidity_type::SoilAcidity;
 pub use soil_basis_points_type::SoilBasisPoints;
@@ -1114,7 +1112,6 @@ pub enum Reducer {
         actor_id: u64,
         target_id: u64,
         source_id: String,
-        topic: String,
         action_kind: String,
     },
     PurchaseFromHerbalist {
@@ -1857,13 +1854,11 @@ Reducer::CancelMissionRequest{
                 actor_id,
                 target_id,
                 source_id,
-                topic,
                 action_kind,
 }             => __sats::bsatn::to_vec(&perform_social_action_reducer::PerformSocialActionArgs {
                 actor_id: actor_id.clone(),
                 target_id: target_id.clone(),
                 source_id: source_id.clone(),
-                topic: topic.clone(),
                 action_kind: action_kind.clone(),
 }),
             Reducer::PurchaseFromHerbalist{
@@ -2268,6 +2263,8 @@ Reducer::VoteForPartyLeader{
 pub struct DbUpdate {
     alcohol_consumption: __sdk::TableUpdate<AlcoholConsumption>,
     autoresolve_report: __sdk::TableUpdate<AutoresolveReport>,
+    backend_character_affinities: __sdk::TableUpdate<CharacterAffinity>,
+    backend_character_familiarities: __sdk::TableUpdate<CharacterFamiliarity>,
     backend_committed_cuts: __sdk::TableUpdate<CommittedCut>,
     backend_herbalist_examinations: __sdk::TableUpdate<HerbalistExamination>,
     backend_infection_episodes: __sdk::TableUpdate<InfectionEpisodeRow>,
@@ -2277,14 +2274,12 @@ pub struct DbUpdate {
     battle_participant: __sdk::TableUpdate<BattleParticipant>,
     battle_result: __sdk::TableUpdate<BattleResult>,
     character: __sdk::TableUpdate<Character>,
-    character_affinity: __sdk::TableUpdate<CharacterAffinity>,
     character_apprenticeship: __sdk::TableUpdate<CharacterApprenticeship>,
     character_attributes: __sdk::TableUpdate<CharacterAttributes>,
     character_capability: __sdk::TableUpdate<CharacterCapability>,
     character_condition: __sdk::TableUpdate<CharacterCondition>,
     character_death: __sdk::TableUpdate<CharacterDeath>,
     character_equip: __sdk::TableUpdate<CharacterEquip>,
-    character_familiarity: __sdk::TableUpdate<CharacterFamiliarity>,
     character_filth: __sdk::TableUpdate<CharacterFilth>,
     character_illness_status: __sdk::TableUpdate<CharacterIllnessStatus>,
     character_limbs: __sdk::TableUpdate<CharacterLimbs>,
@@ -2332,7 +2327,6 @@ pub struct DbUpdate {
     settlement_smith: __sdk::TableUpdate<SettlementSmith>,
     simulation_character: __sdk::TableUpdate<SimulationCharacter>,
     simulation_run: __sdk::TableUpdate<SimulationRun>,
-    social_interaction: __sdk::TableUpdate<SocialInteraction>,
     strategic_gateway_authority: __sdk::TableUpdate<StrategicGatewayAuthority>,
     strategic_incident: __sdk::TableUpdate<StrategicIncident>,
     tactical_server: __sdk::TableUpdate<TacticalServer>,
@@ -2355,6 +2349,14 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "autoresolve_report" => db_update
                     .autoresolve_report
                     .append(autoresolve_report_table::parse_table_update(table_update)?),
+                "backend_character_affinities" => db_update.backend_character_affinities.append(
+                    backend_character_affinities_table::parse_table_update(table_update)?,
+                ),
+                "backend_character_familiarities" => {
+                    db_update.backend_character_familiarities.append(
+                        backend_character_familiarities_table::parse_table_update(table_update)?,
+                    )
+                }
                 "backend_committed_cuts" => db_update.backend_committed_cuts.append(
                     backend_committed_cuts_table::parse_table_update(table_update)?,
                 ),
@@ -2384,9 +2386,6 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "character" => db_update
                     .character
                     .append(character_table::parse_table_update(table_update)?),
-                "character_affinity" => db_update
-                    .character_affinity
-                    .append(character_affinity_table::parse_table_update(table_update)?),
                 "character_apprenticeship" => db_update.character_apprenticeship.append(
                     character_apprenticeship_table::parse_table_update(table_update)?,
                 ),
@@ -2405,9 +2404,6 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "character_equip" => db_update
                     .character_equip
                     .append(character_equip_table::parse_table_update(table_update)?),
-                "character_familiarity" => db_update.character_familiarity.append(
-                    character_familiarity_table::parse_table_update(table_update)?,
-                ),
                 "character_filth" => db_update
                     .character_filth
                     .append(character_filth_table::parse_table_update(table_update)?),
@@ -2549,9 +2545,6 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "simulation_run" => db_update
                     .simulation_run
                     .append(simulation_run_table::parse_table_update(table_update)?),
-                "social_interaction" => db_update
-                    .social_interaction
-                    .append(social_interaction_table::parse_table_update(table_update)?),
                 "strategic_gateway_authority" => db_update.strategic_gateway_authority.append(
                     strategic_gateway_authority_table::parse_table_update(table_update)?,
                 ),
@@ -2629,12 +2622,6 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.character = cache
             .apply_diff_to_table::<Character>("character", &self.character)
             .with_updates_by_pk(|row| &row.id);
-        diff.character_affinity = cache
-            .apply_diff_to_table::<CharacterAffinity>(
-                "character_affinity",
-                &self.character_affinity,
-            )
-            .with_updates_by_pk(|row| &row.id);
         diff.character_apprenticeship = cache
             .apply_diff_to_table::<CharacterApprenticeship>(
                 "character_apprenticeship",
@@ -2665,12 +2652,6 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.character_equip = cache
             .apply_diff_to_table::<CharacterEquip>("character_equip", &self.character_equip)
             .with_updates_by_pk(|row| &row.character_id);
-        diff.character_familiarity = cache
-            .apply_diff_to_table::<CharacterFamiliarity>(
-                "character_familiarity",
-                &self.character_familiarity,
-            )
-            .with_updates_by_pk(|row| &row.id);
         diff.character_filth = cache
             .apply_diff_to_table::<CharacterFilth>("character_filth", &self.character_filth)
             .with_updates_by_pk(|row| &row.id);
@@ -2866,12 +2847,6 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.simulation_run = cache
             .apply_diff_to_table::<SimulationRun>("simulation_run", &self.simulation_run)
             .with_updates_by_pk(|row| &row.id);
-        diff.social_interaction = cache
-            .apply_diff_to_table::<SocialInteraction>(
-                "social_interaction",
-                &self.social_interaction,
-            )
-            .with_updates_by_pk(|row| &row.id);
         diff.strategic_gateway_authority = cache
             .apply_diff_to_table::<StrategicGatewayAuthority>(
                 "strategic_gateway_authority",
@@ -2905,6 +2880,14 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.world_node = cache
             .apply_diff_to_table::<WorldNode>("world_node", &self.world_node)
             .with_updates_by_pk(|row| &row.id);
+        diff.backend_character_affinities = cache.apply_diff_to_table::<CharacterAffinity>(
+            "backend_character_affinities",
+            &self.backend_character_affinities,
+        );
+        diff.backend_character_familiarities = cache.apply_diff_to_table::<CharacterFamiliarity>(
+            "backend_character_familiarities",
+            &self.backend_character_familiarities,
+        );
         diff.backend_committed_cuts = cache.apply_diff_to_table::<CommittedCut>(
             "backend_committed_cuts",
             &self.backend_committed_cuts,
@@ -2940,6 +2923,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "autoresolve_report" => db_update
                     .autoresolve_report
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_affinities" => db_update
+                    .backend_character_affinities
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_familiarities" => db_update
+                    .backend_character_familiarities
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_committed_cuts" => db_update
                     .backend_committed_cuts
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -2967,9 +2956,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character" => db_update
                     .character
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_affinity" => db_update
-                    .character_affinity
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_apprenticeship" => db_update
                     .character_apprenticeship
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -2987,9 +2973,6 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_equip" => db_update
                     .character_equip
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_familiarity" => db_update
-                    .character_familiarity
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_filth" => db_update
                     .character_filth
@@ -3131,9 +3114,6 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "simulation_run" => db_update
                     .simulation_run
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "social_interaction" => db_update
-                    .social_interaction
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "strategic_gateway_authority" => db_update
                     .strategic_gateway_authority
@@ -3178,6 +3158,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "autoresolve_report" => db_update
                     .autoresolve_report
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_affinities" => db_update
+                    .backend_character_affinities
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_familiarities" => db_update
+                    .backend_character_familiarities
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_committed_cuts" => db_update
                     .backend_committed_cuts
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -3205,9 +3191,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character" => db_update
                     .character
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_affinity" => db_update
-                    .character_affinity
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_apprenticeship" => db_update
                     .character_apprenticeship
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -3225,9 +3208,6 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_equip" => db_update
                     .character_equip
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_familiarity" => db_update
-                    .character_familiarity
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_filth" => db_update
                     .character_filth
@@ -3370,9 +3350,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 "simulation_run" => db_update
                     .simulation_run
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "social_interaction" => db_update
-                    .social_interaction
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "strategic_gateway_authority" => db_update
                     .strategic_gateway_authority
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -3414,6 +3391,8 @@ impl __sdk::DbUpdate for DbUpdate {
 pub struct AppliedDiff<'r> {
     alcohol_consumption: __sdk::TableAppliedDiff<'r, AlcoholConsumption>,
     autoresolve_report: __sdk::TableAppliedDiff<'r, AutoresolveReport>,
+    backend_character_affinities: __sdk::TableAppliedDiff<'r, CharacterAffinity>,
+    backend_character_familiarities: __sdk::TableAppliedDiff<'r, CharacterFamiliarity>,
     backend_committed_cuts: __sdk::TableAppliedDiff<'r, CommittedCut>,
     backend_herbalist_examinations: __sdk::TableAppliedDiff<'r, HerbalistExamination>,
     backend_infection_episodes: __sdk::TableAppliedDiff<'r, InfectionEpisodeRow>,
@@ -3423,14 +3402,12 @@ pub struct AppliedDiff<'r> {
     battle_participant: __sdk::TableAppliedDiff<'r, BattleParticipant>,
     battle_result: __sdk::TableAppliedDiff<'r, BattleResult>,
     character: __sdk::TableAppliedDiff<'r, Character>,
-    character_affinity: __sdk::TableAppliedDiff<'r, CharacterAffinity>,
     character_apprenticeship: __sdk::TableAppliedDiff<'r, CharacterApprenticeship>,
     character_attributes: __sdk::TableAppliedDiff<'r, CharacterAttributes>,
     character_capability: __sdk::TableAppliedDiff<'r, CharacterCapability>,
     character_condition: __sdk::TableAppliedDiff<'r, CharacterCondition>,
     character_death: __sdk::TableAppliedDiff<'r, CharacterDeath>,
     character_equip: __sdk::TableAppliedDiff<'r, CharacterEquip>,
-    character_familiarity: __sdk::TableAppliedDiff<'r, CharacterFamiliarity>,
     character_filth: __sdk::TableAppliedDiff<'r, CharacterFilth>,
     character_illness_status: __sdk::TableAppliedDiff<'r, CharacterIllnessStatus>,
     character_limbs: __sdk::TableAppliedDiff<'r, CharacterLimbs>,
@@ -3478,7 +3455,6 @@ pub struct AppliedDiff<'r> {
     settlement_smith: __sdk::TableAppliedDiff<'r, SettlementSmith>,
     simulation_character: __sdk::TableAppliedDiff<'r, SimulationCharacter>,
     simulation_run: __sdk::TableAppliedDiff<'r, SimulationRun>,
-    social_interaction: __sdk::TableAppliedDiff<'r, SocialInteraction>,
     strategic_gateway_authority: __sdk::TableAppliedDiff<'r, StrategicGatewayAuthority>,
     strategic_incident: __sdk::TableAppliedDiff<'r, StrategicIncident>,
     tactical_server: __sdk::TableAppliedDiff<'r, TacticalServer>,
@@ -3508,6 +3484,16 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<AutoresolveReport>(
             "autoresolve_report",
             &self.autoresolve_report,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterAffinity>(
+            "backend_character_affinities",
+            &self.backend_character_affinities,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterFamiliarity>(
+            "backend_character_familiarities",
+            &self.backend_character_familiarities,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CommittedCut>(
@@ -3551,11 +3537,6 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             event,
         );
         callbacks.invoke_table_row_callbacks::<Character>("character", &self.character, event);
-        callbacks.invoke_table_row_callbacks::<CharacterAffinity>(
-            "character_affinity",
-            &self.character_affinity,
-            event,
-        );
         callbacks.invoke_table_row_callbacks::<CharacterApprenticeship>(
             "character_apprenticeship",
             &self.character_apprenticeship,
@@ -3584,11 +3565,6 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<CharacterEquip>(
             "character_equip",
             &self.character_equip,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterFamiliarity>(
-            "character_familiarity",
-            &self.character_familiarity,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CharacterFilth>(
@@ -3800,11 +3776,6 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<SimulationRun>(
             "simulation_run",
             &self.simulation_run,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<SocialInteraction>(
-            "social_interaction",
-            &self.social_interaction,
             event,
         );
         callbacks.invoke_table_row_callbacks::<StrategicGatewayAuthority>(
@@ -4497,6 +4468,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         alcohol_consumption_table::register_table(client_cache);
         autoresolve_report_table::register_table(client_cache);
+        backend_character_affinities_table::register_table(client_cache);
+        backend_character_familiarities_table::register_table(client_cache);
         backend_committed_cuts_table::register_table(client_cache);
         backend_herbalist_examinations_table::register_table(client_cache);
         backend_infection_episodes_table::register_table(client_cache);
@@ -4506,14 +4479,12 @@ impl __sdk::SpacetimeModule for RemoteModule {
         battle_participant_table::register_table(client_cache);
         battle_result_table::register_table(client_cache);
         character_table::register_table(client_cache);
-        character_affinity_table::register_table(client_cache);
         character_apprenticeship_table::register_table(client_cache);
         character_attributes_table::register_table(client_cache);
         character_capability_table::register_table(client_cache);
         character_condition_table::register_table(client_cache);
         character_death_table::register_table(client_cache);
         character_equip_table::register_table(client_cache);
-        character_familiarity_table::register_table(client_cache);
         character_filth_table::register_table(client_cache);
         character_illness_status_table::register_table(client_cache);
         character_limbs_table::register_table(client_cache);
@@ -4561,7 +4532,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         settlement_smith_table::register_table(client_cache);
         simulation_character_table::register_table(client_cache);
         simulation_run_table::register_table(client_cache);
-        social_interaction_table::register_table(client_cache);
         strategic_gateway_authority_table::register_table(client_cache);
         strategic_incident_table::register_table(client_cache);
         tactical_server_table::register_table(client_cache);
@@ -4574,6 +4544,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
     const ALL_TABLE_NAMES: &'static [&'static str] = &[
         "alcohol_consumption",
         "autoresolve_report",
+        "backend_character_affinities",
+        "backend_character_familiarities",
         "backend_committed_cuts",
         "backend_herbalist_examinations",
         "backend_infection_episodes",
@@ -4583,14 +4555,12 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "battle_participant",
         "battle_result",
         "character",
-        "character_affinity",
         "character_apprenticeship",
         "character_attributes",
         "character_capability",
         "character_condition",
         "character_death",
         "character_equip",
-        "character_familiarity",
         "character_filth",
         "character_illness_status",
         "character_limbs",
@@ -4638,7 +4608,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "settlement_smith",
         "simulation_character",
         "simulation_run",
-        "social_interaction",
         "strategic_gateway_authority",
         "strategic_incident",
         "tactical_server",

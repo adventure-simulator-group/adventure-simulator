@@ -1922,52 +1922,49 @@ pub fn party_stats_page(
 pub struct SocialPresentation {
     pub affinity: f32,
     pub familiarity_hours: f32,
+    pub religion_id: Option<String>,
+    pub virtue: f32,
     pub beliefs: Vec<crate::spacetimedb::SocialBelief>,
     pub unavailable: bool,
 }
 
-fn social_topic(kind: &str) -> adventuresim_core::social::SocialTopic {
-    use adventuresim_core::social::SocialTopic;
-    match kind {
-        "defeat" => SocialTopic::Defeat,
-        "injury" | "pain" => SocialTopic::Injury,
-        "fatigue" => SocialTopic::Fatigue,
-        "hunger" | "thirst" => SocialTopic::Hunger,
-        "filth" => SocialTopic::Filth,
-        kind if kind.contains("relig") || kind.contains("faith") => SocialTopic::Faith,
-        _ => SocialTopic::General,
-    }
-}
-
-fn topic_slug(topic: adventuresim_core::social::SocialTopic) -> &'static str {
-    use adventuresim_core::social::SocialTopic::*;
-    match topic {
-        General => "general",
-        Defeat => "defeat",
-        Injury => "injury",
-        Fatigue => "fatigue",
-        Hunger => "hunger",
-        Faith => "faith",
-        Filth => "filth",
-    }
-}
-
 fn social_actions(
-    _topic: adventuresim_core::social::SocialTopic,
-) -> [(
+    is_self: bool,
+) -> Vec<(
     &'static str,
     adventuresim_core::social::SocialActionKind,
     &'static str,
-); 6] {
+)> {
     use adventuresim_core::social::SocialActionKind::*;
-    [
+    if is_self {
+        return vec![("inner-self", Reflect, "reflect")];
+    }
+    vec![
         ("awareness", Listen, "listen"),
-        ("inner-self", Commiserate, "commiserate"),
+        ("conversation", Commiserate, "commiserate"),
         ("juggler", LightenMood, "humor"),
         ("crown", Rally, "command"),
         ("conversation", Reframe, "deception"),
         ("rose", Flirt, "seduction"),
     ]
+}
+
+fn perceived_trait(axis: &str, value: i8) -> (&'static str, &'static str) {
+    match (axis, value.signum()) {
+        ("drive", 1) => ("Drive", "Ambitious"),
+        ("drive", -1) => ("Drive", "Content"),
+        ("self_regard", 1) => ("Self-regard", "Proud"),
+        ("self_regard", -1) => ("Self-regard", "Humble"),
+        ("conviction", 1) => ("Conviction", "Zealous"),
+        ("conviction", -1) => ("Conviction", "Irreverent"),
+        ("hygiene", 1) => ("Hygiene", "Cleanly"),
+        ("hygiene", -1) => ("Hygiene", "Slovenly"),
+        ("drive", _) => ("Drive", "Neutral"),
+        ("self_regard", _) => ("Self-regard", "Neutral"),
+        ("conviction", _) => ("Conviction", "Neutral"),
+        ("hygiene", _) => ("Hygiene", "Neutral"),
+        _ => ("Personality", "Uncertain"),
+    }
 }
 
 /// Dedicated social view. It intentionally receives observer-specific beliefs
@@ -1993,6 +1990,14 @@ pub fn party_social_page(
         value if value <= -15.0 => "Cold",
         _ => "Neutral",
     };
+    let is_self = selected.id == active_character.id;
+    let affinity_certainty = if social.familiarity_hours >= 48.0 {
+        "fairly certain"
+    } else if social.familiarity_hours >= 8.0 {
+        "tentative"
+    } else {
+        "uncertain"
+    };
     let content = html! {
         aside class="left-sidebar" {
             (strategic_condition_rail(condition, morale_sources, &[], &social_href))
@@ -2006,7 +2011,11 @@ pub fn party_social_page(
             (sidebar_section("What you believe", html! {
                 dl class="social-biography" {
                     div { dt { "Age" } dd { (selected.age_years) } }
-                    div { dt { "Affinity toward you" } dd { (affinity_label) " " (format!("({:+.0})", social.affinity)) } }
+                    div { dt { "Religion" } dd { (religion_name(social.religion_id.as_deref())) } }
+                    div { dt { "Virtue" } dd { (format!("{:+.1}", social.virtue)) } }
+                    @if !is_self {
+                        div { dt { "Affinity toward you" } dd { (affinity_label) " (" (affinity_certainty) ")" } }
+                    }
                     div { dt { "Familiarity" } dd { (format!("{:.1} hours", social.familiarity_hours)) } }
                 }
                 @if social.unavailable {
@@ -2016,9 +2025,10 @@ pub fn party_social_page(
                 } @else {
                     ul class="perceived-traits" aria-label="Perceived personality traits" {
                         @for belief in &social.beliefs {
+                            @let (axis, value) = perceived_trait(&belief.axis, belief.perceived_value);
                             li {
-                                strong { (&belief.axis) }
-                                span { (if belief.perceived_value > 0 { "leans strongly" } else if belief.perceived_value < 0 { "leans away" } else { "seems neutral" }) }
+                                strong { (axis) }
+                                span { (value) }
                                 small { (format!("{:.0}% confidence", belief.confidence.clamp(0.0, 1.0) * 100.0)) }
                             }
                         }
@@ -2029,27 +2039,35 @@ pub fn party_social_page(
                 @if morale_sources.is_empty() { p class="text-muted" { "No current morale effects." } }
                 div class="social-source-list" {
                     @for source in morale_sources {
-                        @let topic = social_topic(&source.kind);
+                        @let topic = adventuresim_core::social::topic_for_source_kind(&source.kind);
                         article class=(if source.magnitude < 0.0 { "social-source social-source-negative" } else { "social-source social-source-positive" }) {
                             div class="social-source-context" {
                                 div { strong { (&source.label) } span { (format!("{:+.1}", source.magnitude)) } }
-                                @if let Some(belief) = social.beliefs.iter().find(|belief| belief.axis == topic_slug(topic)) {
-                                    p { "You think their " (topic_slug(topic)) " sensitivity may matter (" (format!("{:.0}% confidence", belief.confidence * 100.0)) ")." }
+                                @if let Some(axis) = topic.and_then(adventuresim_core::social::axis_for_topic) {
+                                    @if let Some(belief) = social.beliefs.iter().find(|belief| belief.axis == axis.slug()) {
+                                        @let (axis_name, value) = perceived_trait(&belief.axis, belief.perceived_value);
+                                        p { "You think their " (axis_name) " is " (value) " (" (format!("{:.0}% confidence", belief.confidence * 100.0)) ")." }
+                                    } @else {
+                                        p { "The relevant personality trait is uncertain." }
+                                    }
                                 } @else {
-                                    p { "Their sensitivity to this subject is uncertain." }
+                                    p { "No specific personality trait is known to govern this concern." }
                                 }
                             }
-                            div class="social-actions" aria-label=(format!("Actions for {}", source.label)) {
-                                @for (icon, action, value) in social_actions(topic) {
-                                    @let description = action.description(topic);
+                            @if source.magnitude < 0.0 {
+                                @if let Some(topic) = topic {
+                                  div class="social-actions" aria-label=(format!("Actions for {}", source.label)) {
+                                    @for (icon, action, value) in social_actions(is_self) {
+                                      @let description = action.description(topic);
                                     form method="post" action=(&social_href) {
                                         input type="hidden" name="source_id" value=(&source.id);
-                                        input type="hidden" name="topic" value=(topic_slug(topic));
                                         button type="submit" name="action_kind" value=(value) class="social-action"
                                             aria-label=(description) title=(description) data-strategic-tooltip=(format!("{}\n{} · {} risk", description, action.skill_name(), if action.risk() >= 0.6 { "high" } else if action.risk() >= 0.3 { "moderate" } else { "low" })) {
                                             (decorative_game_icon(icon))
                                         }
                                     }
+                                    }
+                                  }
                                 }
                             }
                         }
@@ -5410,12 +5428,16 @@ mod tests {
         let defeat = SocialActionKind::Commiserate.description(SocialTopic::Defeat);
         assert_eq!(defeat, "Commiserate about recent defeat");
         assert!(!defeat.to_ascii_lowercase().contains("goblin"));
-        let actions = social_actions(SocialTopic::Defeat);
+        let actions = social_actions(false);
         assert_eq!(actions.len(), 6);
         assert!(
             actions
                 .iter()
                 .any(|(_, action, _)| *action == SocialActionKind::Listen)
+        );
+        assert_eq!(
+            social_actions(true),
+            vec![("inner-self", SocialActionKind::Reflect, "reflect")]
         );
     }
 

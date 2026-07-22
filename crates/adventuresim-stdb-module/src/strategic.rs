@@ -1657,7 +1657,7 @@ pub(crate) fn require_strategic_gateway(
         .find(0)
         .ok_or("Strategic gateway is not registered")?;
     if authority.identity != ctx.sender() {
-        return Err("Travel reducers may only be called by the strategic gateway".into());
+        return Err("This reducer may only be called by the strategic gateway".into());
     }
     Ok(authority)
 }

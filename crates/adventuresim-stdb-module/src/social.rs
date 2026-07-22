@@ -2,20 +2,22 @@
 
 use adventuresim_core::skill::Skill;
 use adventuresim_core::social::{
-    AFFINITY_MAX, AFFINITY_MIN, SOCIAL_COOLDOWN_MINUTES, SocialActionKind, SocialAttempt,
-    SocialTopic, affinity_gain, canonical_pair, diagnosed_axis, resolve_social_attempt,
-    settle_affinity,
+    AFFINITY_MAX, AFFINITY_MIN, PersonalityAxis, SOCIAL_COOLDOWN_MINUTES, SocialActionKind,
+    SocialAttempt, SocialTopic, affinity_gain, axis_for_topic, canonical_cooldown_id,
+    canonical_pair, diagnosed_axis, diagnosis_for_axis, resolve_social_attempt, settle_affinity,
+    social_source_eligible, topic_for_source_kind,
 };
 use spacetimedb::{ReducerContext, Table, ViewContext, reducer, table, view};
 
 use crate::character::character;
 use crate::condition::morale_event;
+use crate::strategic::strategic_gateway_authority__view;
 use crate::{
     character_morale_source, character_personality, character_strategic_condition, character_time,
 };
 
 #[derive(Clone, Debug)]
-#[table(accessor = character_affinity, public)]
+#[table(accessor = character_affinity)]
 pub struct CharacterAffinity {
     #[primary_key]
     pub id: String,
@@ -29,7 +31,7 @@ pub struct CharacterAffinity {
 
 /// Symmetric relationship time. `low_id` is always lower than `high_id`.
 #[derive(Clone, Debug)]
-#[table(accessor = character_familiarity, public)]
+#[table(accessor = character_familiarity)]
 pub struct CharacterFamiliarity {
     #[primary_key]
     pub id: String,
@@ -59,10 +61,45 @@ pub struct SocialBelief {
     pub observed_at_minute: u64,
 }
 
+fn is_strategic_gateway(ctx: &ViewContext) -> bool {
+    ctx.db
+        .strategic_gateway_authority()
+        .id()
+        .find(0)
+        .is_some_and(|authority| authority.identity == ctx.sender())
+}
+
+#[view(accessor = backend_character_affinities, public)]
+pub fn backend_character_affinities(ctx: &ViewContext) -> Vec<CharacterAffinity> {
+    if !is_strategic_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .character_affinity()
+        .subject_id()
+        .filter(0u64..)
+        .collect()
+}
+
+#[view(accessor = backend_character_familiarities, public)]
+pub fn backend_character_familiarities(ctx: &ViewContext) -> Vec<CharacterFamiliarity> {
+    if !is_strategic_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .character_familiarity()
+        .low_id()
+        .filter(0u64..)
+        .collect()
+}
+
 /// Trusted SSR projection boundary. Browsers do not receive this view in the
 /// live subscription set; the gateway filters it to the active observer.
 #[view(accessor = backend_social_beliefs, public)]
 pub fn backend_social_beliefs(ctx: &ViewContext) -> Vec<SocialBelief> {
+    if !is_strategic_gateway(ctx) {
+        return Vec::new();
+    }
     ctx.db
         .social_belief()
         .observer_id()
@@ -71,7 +108,7 @@ pub fn backend_social_beliefs(ctx: &ViewContext) -> Vec<SocialBelief> {
 }
 
 #[derive(Clone, Debug)]
-#[table(accessor = social_interaction, public)]
+#[table(accessor = social_interaction)]
 pub struct SocialInteraction {
     #[primary_key]
     #[auto_inc]
@@ -95,7 +132,7 @@ pub struct SocialActionCooldown {
     pub id: String,
     pub actor_id: u64,
     pub target_id: u64,
-    pub source_id: String,
+    pub topic: String,
     pub action_kind: String,
     pub available_at_minute: u64,
 }
@@ -246,20 +283,9 @@ pub fn reset_familiarity_after_join(ctx: &ReducerContext, character_id: u64) {
     }
 }
 
-fn parse_topic(value: &str) -> Result<SocialTopic, String> {
-    match value {
-        "general" => Ok(SocialTopic::General),
-        "defeat" => Ok(SocialTopic::Defeat),
-        "injury" => Ok(SocialTopic::Injury),
-        "fatigue" => Ok(SocialTopic::Fatigue),
-        "hunger" => Ok(SocialTopic::Hunger),
-        "faith" => Ok(SocialTopic::Faith),
-        "filth" => Ok(SocialTopic::Filth),
-        _ => Err("Unknown social topic".into()),
-    }
-}
 fn parse_action(value: &str) -> Result<SocialActionKind, String> {
     match value {
+        "reflect" => Ok(SocialActionKind::Reflect),
         "listen" => Ok(SocialActionKind::Listen),
         "commiserate" => Ok(SocialActionKind::Commiserate),
         "humor" => Ok(SocialActionKind::LightenMood),
@@ -281,28 +307,28 @@ fn sensitivity(ctx: &ReducerContext, target_id: u64, topic: SocialTopic) -> f32 
     };
     match topic {
         SocialTopic::Defeat => {
-            if format!("{:?}", p.drive) == "Ambitious" {
+            if p.drive == crate::personality::Drive::Ambitious {
                 1.0
             } else {
                 0.45
             }
         }
         SocialTopic::Faith => {
-            if format!("{:?}", p.conviction) == "Zealous" {
+            if p.conviction == crate::personality::Conviction::Zealous {
                 1.0
             } else {
                 0.5
             }
         }
         SocialTopic::Filth => {
-            if format!("{:?}", p.hygiene) == "Cleanly" {
+            if p.hygiene == crate::personality::Hygiene::Cleanly {
                 0.9
             } else {
                 0.35
             }
         }
         SocialTopic::Injury => {
-            if format!("{:?}", p.self_regard) == "Proud" {
+            if p.self_regard == crate::personality::SelfRegard::Proud {
                 0.8
             } else {
                 0.4
@@ -312,16 +338,34 @@ fn sensitivity(ctx: &ReducerContext, target_id: u64, topic: SocialTopic) -> f32 
     }
 }
 
-fn source_matches_topic(kind: &str, topic: SocialTopic) -> bool {
-    match topic {
-        SocialTopic::General => true,
-        SocialTopic::Defeat => kind == "defeat",
-        SocialTopic::Injury => kind.contains("injur") || kind.contains("pain"),
-        SocialTopic::Fatigue => kind.contains("fatigue"),
-        SocialTopic::Hunger => kind.contains("hunger") || kind.contains("thirst"),
-        SocialTopic::Faith => kind.contains("relig") || kind.contains("faith"),
-        SocialTopic::Filth => kind.contains("filth"),
-    }
+fn personality_truth(ctx: &ReducerContext, target_id: u64, axis: PersonalityAxis) -> Option<i8> {
+    let p = ctx
+        .db
+        .character_personality()
+        .character_id()
+        .find(target_id)?;
+    Some(match axis {
+        PersonalityAxis::Drive => match p.drive {
+            crate::personality::Drive::Ambitious => 1,
+            crate::personality::Drive::Content => -1,
+            crate::personality::Drive::Neutral => 0,
+        },
+        PersonalityAxis::SelfRegard => match p.self_regard {
+            crate::personality::SelfRegard::Proud => 1,
+            crate::personality::SelfRegard::Humble => -1,
+            crate::personality::SelfRegard::Neutral => 0,
+        },
+        PersonalityAxis::Conviction => match p.conviction {
+            crate::personality::Conviction::Zealous => 1,
+            crate::personality::Conviction::Irreverent => -1,
+            crate::personality::Conviction::Neutral => 0,
+        },
+        PersonalityAxis::Hygiene => match p.hygiene {
+            crate::personality::Hygiene::Cleanly => 1,
+            crate::personality::Hygiene::Slovenly => -1,
+            crate::personality::Hygiene::Neutral => 0,
+        },
+    })
 }
 
 #[reducer]
@@ -330,11 +374,13 @@ pub fn perform_social_action(
     actor_id: u64,
     target_id: u64,
     source_id: String,
-    topic: String,
     action_kind: String,
 ) -> Result<(), String> {
-    if actor_id == target_id {
-        return Err("Cannot use a social action on yourself".into());
+    crate::strategic::require_strategic_gateway(ctx)?;
+    let action = parse_action(&action_kind)?;
+    let is_self = actor_id == target_id;
+    if is_self != (action == SocialActionKind::Reflect) {
+        return Err("Reflect is self-only; other social actions require a companion".into());
     }
     let actor = ctx
         .db
@@ -351,11 +397,12 @@ pub fn perform_social_action(
     if !actor.alive || !target.alive {
         return Err("Both characters must be living".into());
     }
-    if actor.party_id.is_none() || actor.party_id != target.party_id {
+    if !is_self && (actor.party_id.is_none() || actor.party_id != target.party_id) {
         return Err("Social actions require the same party".into());
     }
-    if actor.current_settlement_id != target.current_settlement_id
-        || actor.current_quest_location_id != target.current_quest_location_id
+    if !is_self
+        && (actor.current_settlement_id != target.current_settlement_id
+            || actor.current_quest_location_id != target.current_quest_location_id)
     {
         return Err("Characters must be co-located".into());
     }
@@ -365,21 +412,20 @@ pub fn perform_social_action(
         .id()
         .find(&source_id)
         .ok_or("Morale source is stale")?;
-    if source.character_id != target_id || !source.magnitude.is_finite() {
+    if source.character_id != target_id {
         return Err("Morale source does not belong to target".into());
     }
-    let topic = parse_topic(&topic)?;
-    if !source_matches_topic(&source.kind, topic) {
-        return Err("Topic does not match morale source".into());
+    if !social_source_eligible(&source.kind, source.magnitude) {
+        return Err("Only current, negative, recognized morale sources can be addressed".into());
     }
-    let action = parse_action(&action_kind)?;
+    let topic = topic_for_source_kind(&source.kind).ok_or("Morale source is not actionable")?;
     let now = ctx
         .db
         .character_time()
         .character_id()
         .find(target_id)
         .map_or(0, |v| v.minutes);
-    let cooldown_id = format!("{actor_id}:{target_id}:{source_id}:{action_kind}");
+    let cooldown_id = canonical_cooldown_id(actor_id, target_id, topic, &action_kind);
     if ctx
         .db
         .social_action_cooldown()
@@ -390,29 +436,47 @@ pub fn perform_social_action(
         return Err("That approach needs time before it can be tried again".into());
     }
 
-    settle_shared_party_time(ctx, actor_id);
+    if !is_self {
+        settle_shared_party_time(ctx, actor_id);
+    }
     let familiarity = canonical_pair(actor_id, target_id)
         .and_then(|(l, h)| ctx.db.character_familiarity().id().find(&pair_id(l, h)))
         .map_or(0.0, |v| v.shared_minutes as f32 / 60.0);
-    let affinity = current_affinity(ctx, target_id, actor_id);
+    let affinity = if is_self {
+        0.0
+    } else {
+        current_affinity(ctx, target_id, actor_id)
+    };
     let skill = match action {
+        SocialActionKind::Reflect => Skill::SelfAwareness,
         SocialActionKind::Listen => Skill::Insight,
-        SocialActionKind::Commiserate => Skill::SelfAwareness,
+        SocialActionKind::Commiserate => Skill::Insight,
         SocialActionKind::LightenMood => Skill::Humor,
         SocialActionKind::Rally => Skill::Command,
         SocialActionKind::Reframe => Skill::Deception,
         SocialActionKind::Flirt => Skill::Seduction,
     };
     let skill_check = crate::condition::mental_check(ctx, actor_id, skill)?;
-    let target_deception = crate::condition::mental_check(ctx, target_id, Skill::Deception)?;
+    let target_deception = if is_self {
+        0.0
+    } else {
+        crate::condition::mental_check(ctx, target_id, Skill::Deception)?
+    };
     let roll = (ctx.random::<u64>() as f64 / u64::MAX as f64) as f32;
-    let diagnosis_correct = ctx
-        .db
-        .social_belief()
-        .iter()
-        .filter(|b| b.observer_id == actor_id && b.subject_id == target_id)
-        .max_by_key(|b| b.observed_at_minute)
-        .is_none_or(|b| b.confidence >= 0.5);
+    let relevant_axis = axis_for_topic(topic);
+    let truth = relevant_axis.and_then(|axis| personality_truth(ctx, target_id, axis));
+    let relevant_belief = relevant_axis.and_then(|axis| {
+        ctx.db
+            .social_belief()
+            .id()
+            .find(&format!("{actor_id}:{target_id}:{}", axis.slug()))
+            .map(|belief| (axis, belief.perceived_value))
+    });
+    let diagnosis_correct = diagnosis_for_axis(
+        relevant_axis,
+        truth,
+        &relevant_belief.into_iter().collect::<Vec<_>>(),
+    );
     let outcome = resolve_social_attempt(SocialAttempt {
         action,
         topic,
@@ -429,27 +493,35 @@ pub fn perform_social_action(
         .character_id()
         .find(target_id)
         .map_or(0.0, |v| v.morale);
-    let event_source = format!("social:{actor_id}:{target_id}:{source_id}:{action_kind}:{now}");
-    crate::condition::record_morale_event(
-        ctx,
-        target_id,
-        "social_interaction",
-        outcome.morale_delta,
-        Some(event_source),
-    )?;
+    if !is_self {
+        let event_source = format!("social:{actor_id}:{target_id}:{source_id}:{action_kind}:{now}");
+        crate::condition::record_morale_event(
+            ctx,
+            target_id,
+            "social_interaction",
+            outcome.morale_delta,
+            Some(event_source),
+        )?;
+    }
     let after = ctx
         .db
         .character_strategic_condition()
         .character_id()
         .find(target_id)
         .map_or(before + outcome.morale_delta, |v| v.morale);
-    let realized_gain = (after - before).max(0.0);
+    let realized_gain = if is_self {
+        0.0
+    } else {
+        (after - before).max(0.0)
+    };
     let affinity_delta = if outcome.succeeded {
         affinity_gain(affinity, realized_gain)
     } else {
         outcome.affinity_delta.min(0.0)
     };
-    put_affinity(ctx, target_id, actor_id, affinity + affinity_delta);
+    if !is_self {
+        put_affinity(ctx, target_id, actor_id, affinity + affinity_delta);
+    }
     ctx.db.social_interaction().insert(SocialInteraction {
         id: 0,
         actor_id,
@@ -457,15 +529,15 @@ pub fn perform_social_action(
         source_id: source_id.clone(),
         topic: format!("{topic:?}").to_ascii_lowercase(),
         action_kind: action_kind.clone(),
-        succeeded: outcome.succeeded,
-        morale_delta: outcome.morale_delta,
+        succeeded: if is_self { true } else { outcome.succeeded },
+        morale_delta: if is_self { 0.0 } else { outcome.morale_delta },
         occurred_at_minute: now,
     });
     let cooldown = SocialActionCooldown {
         id: cooldown_id.clone(),
         actor_id,
         target_id,
-        source_id,
+        topic: format!("{topic:?}").to_ascii_lowercase(),
         action_kind,
         available_at_minute: now.saturating_add(SOCIAL_COOLDOWN_MINUTES),
     };
@@ -480,26 +552,11 @@ pub fn perform_social_action(
     } else {
         ctx.db.social_action_cooldown().insert(cooldown);
     }
-    if outcome.revealed_belief {
-        let truth = match topic {
-            SocialTopic::Defeat => {
-                if sensitivity(ctx, target_id, topic) > 0.7 {
-                    1
-                } else {
-                    0
-                }
-            }
-            SocialTopic::Faith | SocialTopic::Filth | SocialTopic::Injury => {
-                if sensitivity(ctx, target_id, topic) > 0.7 {
-                    1
-                } else {
-                    -1
-                }
-            }
-            _ => 0,
-        };
+    if outcome.revealed_belief
+        && let (Some(axis), Some(truth)) = (relevant_axis, truth)
+    {
         let (value, confidence) = diagnosed_axis(truth, skill_check, target_deception, roll);
-        let axis = format!("{topic:?}").to_ascii_lowercase();
+        let axis = axis.slug().to_owned();
         let id = format!("{actor_id}:{target_id}:{axis}");
         let row = SocialBelief {
             id: id.clone(),
@@ -643,10 +700,10 @@ pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
     }
     // Deliberately wrong but plausible: truth remains authoritative for outcomes.
     let belief = SocialBelief {
-        id: format!("{VIEWER}:{TARGET}:defeat"),
+        id: format!("{VIEWER}:{TARGET}:drive"),
         observer_id: VIEWER,
         subject_id: TARGET,
-        axis: "defeat".into(),
+        axis: "drive".into(),
         perceived_value: -1,
         confidence: 0.64,
         observed_at_minute: now,

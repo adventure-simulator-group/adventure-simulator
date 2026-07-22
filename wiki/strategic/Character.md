@@ -29,7 +29,13 @@ The former Charisma skill is replaced by the Social family: **Insight**,
 Social outcomes combine the action skill, current Affinity and Familiarity,
 the actor's diagnosis, the target's true personality and topic sensitivity,
 and a server roll. Listening is low-risk exploration; more presumptuous actions
-have greater upside and downside.
+have greater upside and downside. Only recognized negative morale concerns are
+actionable. Their topic is derived by the server, and repeating the same
+approach to the same topic has a cooldown even if the source row is refreshed.
+Characters use Self-awareness to Reflect on their own concern; reflection can
+revise a self-belief but never changes Affinity or Familiarity. The interface
+shows only a qualitative, familiarity-weighted affinity estimate rather than
+the authoritative value.
 
 When mortal creation is reworked, players should choose among several generated whole characters with different personality tags. Players will not customize individual tags: personality is part of choosing an existing mortal person rather than assembling one stat by stat.
 

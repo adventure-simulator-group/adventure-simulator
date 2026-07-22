@@ -11,7 +11,6 @@ pub const SOCIAL_COOLDOWN_MINUTES: u64 = 24 * 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SocialTopic {
-    General,
     Defeat,
     Injury,
     Fatigue,
@@ -21,7 +20,74 @@ pub enum SocialTopic {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PersonalityAxis {
+    Drive,
+    SelfRegard,
+    Conviction,
+    Hygiene,
+}
+
+impl PersonalityAxis {
+    pub const fn slug(self) -> &'static str {
+        match self {
+            Self::Drive => "drive",
+            Self::SelfRegard => "self_regard",
+            Self::Conviction => "conviction",
+            Self::Hygiene => "hygiene",
+        }
+    }
+}
+
+pub fn topic_for_source_kind(kind: &str) -> Option<SocialTopic> {
+    match kind {
+        "defeat" => Some(SocialTopic::Defeat),
+        "injury" | "pain" => Some(SocialTopic::Injury),
+        "fatigue" => Some(SocialTopic::Fatigue),
+        "hunger" | "thirst" => Some(SocialTopic::Hunger),
+        "religion" | "faith" | "holy_day" => Some(SocialTopic::Faith),
+        "filth" | "cleanliness" => Some(SocialTopic::Filth),
+        _ => None,
+    }
+}
+
+pub fn social_source_eligible(kind: &str, magnitude: f32) -> bool {
+    magnitude.is_finite() && magnitude < 0.0 && topic_for_source_kind(kind).is_some()
+}
+
+pub const fn axis_for_topic(topic: SocialTopic) -> Option<PersonalityAxis> {
+    match topic {
+        SocialTopic::Defeat => Some(PersonalityAxis::Drive),
+        SocialTopic::Injury => Some(PersonalityAxis::SelfRegard),
+        SocialTopic::Faith => Some(PersonalityAxis::Conviction),
+        SocialTopic::Filth => Some(PersonalityAxis::Hygiene),
+        SocialTopic::Fatigue | SocialTopic::Hunger => None,
+    }
+}
+
+pub fn diagnosis_for_axis(
+    axis: Option<PersonalityAxis>,
+    truth: Option<i8>,
+    beliefs: &[(PersonalityAxis, i8)],
+) -> Option<bool> {
+    let axis = axis?;
+    let truth = truth?;
+    beliefs
+        .iter()
+        .find_map(|(belief_axis, value)| (*belief_axis == axis).then_some(*value == truth))
+}
+
+pub fn canonical_cooldown_id(
+    actor_id: u64,
+    target_id: u64,
+    topic: SocialTopic,
+    action_kind: &str,
+) -> String {
+    format!("{actor_id}:{target_id}:{topic:?}:{action_kind}").to_ascii_lowercase()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SocialActionKind {
+    Reflect,
     Listen,
     Commiserate,
     LightenMood,
@@ -33,8 +99,9 @@ pub enum SocialActionKind {
 impl SocialActionKind {
     pub const fn skill_name(self) -> &'static str {
         match self {
+            Self::Reflect => "Self-awareness",
             Self::Listen => "Insight",
-            Self::Commiserate => "Self-awareness",
+            Self::Commiserate => "Insight",
             Self::LightenMood => "Humor",
             Self::Rally => "Command",
             Self::Reframe => "Deception",
@@ -44,6 +111,7 @@ impl SocialActionKind {
 
     pub const fn description(self, topic: SocialTopic) -> &'static str {
         match (self, topic) {
+            (Self::Reflect, _) => "Reflect on why this affects you",
             (Self::Listen, _) => "Ask how they are feeling",
             (Self::Commiserate, SocialTopic::Defeat) => "Commiserate about recent defeat",
             (Self::Commiserate, _) => "Acknowledge what is troubling them",
@@ -58,6 +126,7 @@ impl SocialActionKind {
 
     pub const fn risk(self) -> f32 {
         match self {
+            Self::Reflect => 0.05,
             Self::Listen => 0.05,
             Self::Commiserate => 0.2,
             Self::LightenMood => 0.45,
@@ -75,7 +144,7 @@ pub struct SocialAttempt {
     pub skill_check: f32,
     pub affinity: f32,
     pub familiarity_hours: f32,
-    pub diagnosis_correct: bool,
+    pub diagnosis_correct: Option<bool>,
     /// How touchy the true personality makes this topic, from 0 to 1.
     pub sensitivity: f32,
     /// Injected deterministic roll, from 0 to 1.
@@ -130,10 +199,10 @@ pub fn resolve_social_attempt(attempt: SocialAttempt) -> SocialOutcome {
     let risk = attempt.action.risk();
     let relationship = (attempt.affinity / 100.0).clamp(-1.0, 1.0) * 0.18
         + (attempt.familiarity_hours / 100.0).min(1.0) * 0.12;
-    let diagnosis = if attempt.diagnosis_correct {
-        0.15
-    } else {
-        -0.22 - risk * 0.18
+    let diagnosis = match attempt.diagnosis_correct {
+        Some(true) => 0.15,
+        Some(false) => -0.22 - risk * 0.18,
+        None => 0.0,
     };
     let presumptuousness = risk
         * attempt.sensitivity.clamp(0.0, 1.0)
@@ -157,7 +226,10 @@ pub fn resolve_social_attempt(attempt: SocialAttempt) -> SocialOutcome {
         succeeded,
         morale_delta,
         affinity_delta,
-        revealed_belief: attempt.action == SocialActionKind::Listen,
+        revealed_belief: matches!(
+            attempt.action,
+            SocialActionKind::Listen | SocialActionKind::Reflect
+        ),
     }
 }
 
@@ -214,7 +286,7 @@ mod tests {
             skill_check: 3.0,
             affinity: 0.0,
             familiarity_hours: 0.0,
-            diagnosis_correct: true,
+            diagnosis_correct: Some(true),
             sensitivity: 0.0,
             roll: 0.0,
         };
@@ -241,14 +313,14 @@ mod tests {
             skill_check: 2.0,
             affinity: -20.0,
             familiarity_hours: 0.0,
-            diagnosis_correct: true,
+            diagnosis_correct: Some(true),
             sensitivity: 0.0,
             roll: 0.4,
         };
         assert!(resolve_social_attempt(base).succeeded);
         assert!(
             !resolve_social_attempt(SocialAttempt {
-                diagnosis_correct: false,
+                diagnosis_correct: Some(false),
                 sensitivity: 1.0,
                 ..base
             })
@@ -262,6 +334,61 @@ mod tests {
         assert_eq!(
             diagnosed_axis(1, 0.0, 5.0, 0.9),
             diagnosed_axis(1, 0.0, 5.0, 0.9)
+        );
+    }
+
+    #[test]
+    fn source_topics_are_closed_and_negative_only() {
+        assert_eq!(topic_for_source_kind("defeat"), Some(SocialTopic::Defeat));
+        assert_eq!(topic_for_source_kind("social_interaction"), None);
+        assert_eq!(topic_for_source_kind("made_up"), None);
+        assert!(social_source_eligible("defeat", -1.0));
+        assert!(!social_source_eligible("defeat", 1.0));
+        assert!(!social_source_eligible("social_interaction", -1.0));
+    }
+
+    #[test]
+    fn cooldown_identity_does_not_depend_on_source_row() {
+        assert_eq!(
+            canonical_cooldown_id(1, 2, SocialTopic::Defeat, "listen"),
+            "1:2:defeat:listen"
+        );
+    }
+
+    #[test]
+    fn only_relevant_axis_can_be_a_correct_diagnosis() {
+        assert_eq!(
+            axis_for_topic(SocialTopic::Defeat),
+            Some(PersonalityAxis::Drive)
+        );
+        assert_eq!(axis_for_topic(SocialTopic::Fatigue), None);
+        assert_eq!(
+            diagnosis_for_axis(Some(PersonalityAxis::Drive), Some(1), &[]),
+            None
+        );
+        assert_eq!(
+            diagnosis_for_axis(
+                Some(PersonalityAxis::Drive),
+                Some(1),
+                &[(PersonalityAxis::Conviction, 1)]
+            ),
+            None
+        );
+        assert_eq!(
+            diagnosis_for_axis(
+                Some(PersonalityAxis::Drive),
+                Some(1),
+                &[(PersonalityAxis::Drive, 1)]
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            diagnosis_for_axis(
+                Some(PersonalityAxis::Drive),
+                Some(1),
+                &[(PersonalityAxis::Drive, -1)]
+            ),
+            Some(false)
         );
     }
 }

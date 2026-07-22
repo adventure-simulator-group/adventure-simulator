@@ -10,7 +10,6 @@ pub(super) struct PerformSocialActionArgs {
     pub actor_id: u64,
     pub target_id: u64,
     pub source_id: String,
-    pub topic: String,
     pub action_kind: String,
 }
 
@@ -20,7 +19,6 @@ impl From<PerformSocialActionArgs> for super::Reducer {
             actor_id: args.actor_id,
             target_id: args.target_id,
             source_id: args.source_id,
-            topic: args.topic,
             action_kind: args.action_kind,
         }
     }
@@ -46,17 +44,9 @@ pub trait perform_social_action {
         actor_id: u64,
         target_id: u64,
         source_id: String,
-        topic: String,
         action_kind: String,
     ) -> __sdk::Result<()> {
-        self.perform_social_action_then(
-            actor_id,
-            target_id,
-            source_id,
-            topic,
-            action_kind,
-            |_, _| {},
-        )
+        self.perform_social_action_then(actor_id, target_id, source_id, action_kind, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `perform_social_action` to run as soon as possible,
@@ -70,7 +60,6 @@ pub trait perform_social_action {
         actor_id: u64,
         target_id: u64,
         source_id: String,
-        topic: String,
         action_kind: String,
 
         callback: impl FnOnce(
@@ -87,7 +76,6 @@ impl perform_social_action for super::RemoteReducers {
         actor_id: u64,
         target_id: u64,
         source_id: String,
-        topic: String,
         action_kind: String,
 
         callback: impl FnOnce(
@@ -101,7 +89,6 @@ impl perform_social_action for super::RemoteReducers {
                 actor_id,
                 target_id,
                 source_id,
-                topic,
                 action_kind,
             },
             callback,

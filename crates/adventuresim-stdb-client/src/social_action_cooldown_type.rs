@@ -10,7 +10,7 @@ pub struct SocialActionCooldown {
     pub id: String,
     pub actor_id: u64,
     pub target_id: u64,
-    pub source_id: String,
+    pub topic: String,
     pub action_kind: String,
     pub available_at_minute: u64,
 }
@@ -26,7 +26,7 @@ pub struct SocialActionCooldownCols {
     pub id: __sdk::__query_builder::Col<SocialActionCooldown, String>,
     pub actor_id: __sdk::__query_builder::Col<SocialActionCooldown, u64>,
     pub target_id: __sdk::__query_builder::Col<SocialActionCooldown, u64>,
-    pub source_id: __sdk::__query_builder::Col<SocialActionCooldown, String>,
+    pub topic: __sdk::__query_builder::Col<SocialActionCooldown, String>,
     pub action_kind: __sdk::__query_builder::Col<SocialActionCooldown, String>,
     pub available_at_minute: __sdk::__query_builder::Col<SocialActionCooldown, u64>,
 }
@@ -38,7 +38,7 @@ impl __sdk::__query_builder::HasCols for SocialActionCooldown {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             actor_id: __sdk::__query_builder::Col::new(table_name, "actor_id"),
             target_id: __sdk::__query_builder::Col::new(table_name, "target_id"),
-            source_id: __sdk::__query_builder::Col::new(table_name, "source_id"),
+            topic: __sdk::__query_builder::Col::new(table_name, "topic"),
             action_kind: __sdk::__query_builder::Col::new(table_name, "action_kind"),
             available_at_minute: __sdk::__query_builder::Col::new(
                 table_name,

@@ -744,9 +744,7 @@ fn base_morale(
             "cleanliness".into(),
             "cleanliness".into(),
             if hygiene_morale > 0.0 {
-                "Clean (Cleanly)".into()
-            } else if personality.hygiene == crate::personality::Hygiene::Cleanly {
-                "Filthy (Cleanly)".into()
+                "Clean".into()
             } else {
                 "Filthy".into()
             },
@@ -894,11 +892,7 @@ fn base_morale(
             let stimulus = crate::personality::morale_event_stimulus(&event.kind);
             add_source(
                 format!("event-{}", event.id),
-                if event.kind == "leisure" {
-                    "leisure".into()
-                } else {
-                    "event".into()
-                },
+                event.kind.clone(),
                 match event.kind.as_str() {
                     "victory" => "Recent victory".into(),
                     "defeat" => "Recent defeat".into(),

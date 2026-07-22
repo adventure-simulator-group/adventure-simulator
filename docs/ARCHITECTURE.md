@@ -311,12 +311,16 @@ servers cannot supply an arbitrary XP award.
 | `character` / `party` location fields | Current settlement or quest location (never tactical positions) |
 | `port_allocation` | Tactical server port allocation (singleton) |
 
-`character_personality` and `social_belief` are private module tables. The
-trusted SSR gateway reads only the current observer's belief projection and
-fails closed when that projection is unavailable; browsers do not subscribe to
-true personality. Social reducers revalidate living state, distinct actors,
-party membership, co-location, source ownership/topic, and cooldown, then write
-one interaction and one morale event atomically. Strategic relationship state
+`character_personality`, `character_affinity`, `character_familiarity`,
+`social_belief`, and `social_interaction` are private module tables. Gateway-
+guarded views expose relationship state and observer beliefs only to the trusted
+SSR identity and return no rows to other callers; browsers do not subscribe to
+true personality or relationship history. Social reducers require that same
+gateway identity, derive a closed topic from a current negative morale source,
+and revalidate living state, party membership, co-location, source ownership,
+and a topic/action cooldown. External attempts write one interaction and one
+morale event atomically; self-only Reflection updates a self-belief without
+changing Affinity or Familiarity. Strategic relationship state
 never contains tactical positions, HP, damage ticks, or enemies.
 
 This is a pre-launch clean schema change. Development databases must be

@@ -3678,7 +3678,8 @@ async fn party_social(
             None => return Html("<h1>Party member not found</h1>".into()),
         }
     };
-    let same_party = active.party_id.is_some() && active.party_id == selected.party_id;
+    let same_party = target_id == active.id
+        || (active.party_id.is_some() && active.party_id == selected.party_id);
     let colocated = active.current_settlement_id == selected.current_settlement_id
         && active.current_quest_location_id == selected.current_quest_location_id;
     if !same_party
@@ -3692,34 +3693,41 @@ async fn party_social(
     let party_members = get_active_party_members(&state, Some(&active)).await;
     let condition = get_strategic_condition(&state, target_id).await;
     let sources = get_morale_sources(&state, target_id).await;
+    let religion_id = query_single::<CharacterCondition>(&state, "character_condition", target_id)
+        .await
+        .and_then(|value| value.religion_id);
+    let virtue = query_single::<CharacterNotoriety>(&state, "character_notoriety", target_id)
+        .await
+        .map_or(0.0, |value| value.value);
     let target_minute = query_single::<CharacterTime>(&state, "character_time", target_id)
         .await
         .map_or(0, |v| v.minutes);
     let affinity_id = format!("{target_id}:{}", active.id);
-    let affinity = state
+    let affinity_result = state
         .db
         .query_one::<CharacterAffinity>(&format!(
-            "SELECT * FROM character_affinity WHERE id = {}",
+            "SELECT * FROM backend_character_affinities WHERE id = {}",
             sql_string_literal(&affinity_id)
         ))
-        .await
-        .ok()
-        .flatten()
-        .map_or(0.0, |v| {
-            adventuresim_core::social::settle_affinity(
-                v.anchor,
-                target_minute.saturating_sub(v.anchor_minute),
-            )
-        });
+        .await;
+    let affinity_available = affinity_result.is_ok();
+    let affinity = affinity_result.ok().flatten().map_or(0.0, |v| {
+        adventuresim_core::social::settle_affinity(
+            v.anchor,
+            target_minute.saturating_sub(v.anchor_minute),
+        )
+    });
     let (low, high) = (active.id.min(target_id), active.id.max(target_id));
     let familiarity_id = format!("{low}:{high}");
-    let shared_minutes = state
+    let familiarity_result = state
         .db
         .query_one::<CharacterFamiliarity>(&format!(
-            "SELECT * FROM character_familiarity WHERE id = {}",
+            "SELECT * FROM backend_character_familiarities WHERE id = {}",
             sql_string_literal(&familiarity_id)
         ))
-        .await
+        .await;
+    let familiarity_available = familiarity_result.is_ok();
+    let shared_minutes = familiarity_result
         .ok()
         .flatten()
         .map_or(0, |v| v.shared_minutes);
@@ -3748,8 +3756,10 @@ async fn party_social(
             party_members.iter().filter(|v| v.alive).count(),
             true,
         ),
+        religion_id,
+        virtue,
         beliefs,
-        unavailable: !beliefs_available,
+        unavailable: !beliefs_available || !affinity_available || !familiarity_available,
     };
     Html(
         party_social_page(
@@ -3768,7 +3778,6 @@ async fn party_social(
 #[derive(Deserialize)]
 struct SocialActionForm {
     source_id: String,
-    topic: String,
     action_kind: String,
 }
 
@@ -3791,7 +3800,6 @@ async fn perform_social_action(
                 json!(actor_id),
                 json!(target_id),
                 json!(form.source_id),
-                json!(form.topic),
                 json!(form.action_kind),
             ],
         )
