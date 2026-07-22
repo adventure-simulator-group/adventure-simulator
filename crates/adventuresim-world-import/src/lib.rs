@@ -19,3 +19,4 @@ pub use sources::forest_cover::{
     PREPARED_FOREST_FORMAT, PreparedForestRaster, read_prepared_forest_raster,
     validate_prepared_forest_manifest,
 };
+pub use validation::validate as validate_world;
