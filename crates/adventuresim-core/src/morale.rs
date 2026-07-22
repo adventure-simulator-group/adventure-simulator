@@ -7,8 +7,8 @@
 pub const MINIMUM_WILL_CHECK: f32 = 0.25;
 /// Surplus morale which produces roughly 63% of a character's maximum ally bonus.
 pub const MORALE_BONUS_CURVE_SCALE: f32 = 10.0;
-/// Maximum ally morale restored per point of the speaker's Charisma check.
-pub const MORALE_BONUS_PER_CHARISMA: f32 = 0.05;
+/// Maximum ally morale restored per point of the speaker's Command check.
+pub const MORALE_BONUS_PER_COMMAND: f32 = 0.05;
 /// Raw interreligious discord created by each point of foreign conviction pressure
 /// which the party's social leadership cannot absorb.
 pub const RELIGIOUS_DISCORD_SEVERITY: f32 = 3.0;
@@ -18,8 +18,8 @@ pub const FERVOR_PRESSURE_BASELINE: f32 = 2.5;
 pub const FERVOR_CURVE_SCALE: f32 = 5.0;
 /// Maximum raw morale cost of neglecting a conviction demand.
 pub const MAX_RELIGIOUS_NEGLECT_MORALE: f32 = 8.0;
-/// Raw neglect morale removed per point of aggregate party Charisma.
-pub const RELIGIOUS_NEGLECT_CHARISMA_RELIEF: f32 = 1.6;
+/// Raw neglect morale removed per point of aggregate party Command.
+pub const RELIGIOUS_NEGLECT_COMMAND_RELIEF: f32 = 1.6;
 /// Losing this fraction of maximum blood volume fully incapacitates a character.
 pub const BLOOD_LOSS_INCAPACITATION_FRACTION: f32 = 0.30;
 
@@ -86,19 +86,19 @@ pub fn resolve_morale(
 ///
 /// The bonus is based only on the speaker's pre-bonus surplus, which prevents
 /// two positive characters from recursively increasing one another's output.
-pub fn morale_bonus_fraction(surplus_morale: f32, charisma_check: f32) -> f32 {
+pub fn morale_bonus_fraction(surplus_morale: f32, command_check: f32) -> f32 {
     let surplus = surplus_morale.max(0.0);
-    let charisma = charisma_check.max(0.0);
+    let command = command_check.max(0.0);
     let saturation = 1.0 - (-surplus / MORALE_BONUS_CURVE_SCALE).exp();
-    saturation * MORALE_BONUS_PER_CHARISMA * charisma
+    saturation * MORALE_BONUS_PER_COMMAND * command
 }
 
-/// Raw negative morale from mixed-faith tension. Party Charisma is subtracted
+/// Raw negative morale from mixed-faith tension. Party Command is subtracted
 /// from foreign faith pressure so sufficiently capable leadership removes the
 /// penalty entirely instead of merely reducing it proportionally.
-pub fn religious_discord(foreign_conviction_pressure: f32, party_charisma: f32) -> f32 {
+pub fn religious_discord(foreign_conviction_pressure: f32, party_command: f32) -> f32 {
     RELIGIOUS_DISCORD_SEVERITY
-        * (foreign_conviction_pressure.max(0.0) - party_charisma.max(0.0)).max(0.0)
+        * (foreign_conviction_pressure.max(0.0) - party_command.max(0.0)).max(0.0)
 }
 
 /// Bounded religious pressure used by the strategic Fervor meter.
@@ -106,12 +106,12 @@ pub fn fervor_fraction(
     individual_conviction: f32,
     same_religion_conviction: f32,
     surplus_morale: f32,
-    party_charisma: f32,
+    party_command: f32,
 ) -> f32 {
     let pressure = (individual_conviction.max(0.0)
         + same_religion_conviction.max(0.0)
         + surplus_morale.max(0.0) / MORALE_BONUS_CURVE_SCALE
-        - party_charisma.max(0.0)
+        - party_command.max(0.0)
         - FERVOR_PRESSURE_BASELINE)
         .max(0.0);
     1.0 - (-pressure / FERVOR_CURVE_SCALE).exp()
@@ -122,11 +122,11 @@ pub fn fervor_event_occurs(fervor: f32, roll: f32) -> bool {
     roll.clamp(0.0, 1.0) < fervor.clamp(0.0, 1.0)
 }
 
-/// Raw morale cost of declining prayer or holy-day observance. Charisma is
+/// Raw morale cost of declining prayer or holy-day observance. Command is
 /// subtractive and can eliminate the cost entirely.
-pub fn religious_neglect_morale(fervor: f32, party_charisma: f32) -> f32 {
+pub fn religious_neglect_morale(fervor: f32, party_command: f32) -> f32 {
     (MAX_RELIGIOUS_NEGLECT_MORALE * fervor.clamp(0.0, 1.0)
-        - RELIGIOUS_NEGLECT_CHARISMA_RELIEF * party_charisma.clamp(0.0, 5.0))
+        - RELIGIOUS_NEGLECT_COMMAND_RELIEF * party_command.clamp(0.0, 5.0))
     .max(0.0)
 }
 
@@ -200,7 +200,7 @@ mod tests {
     }
 
     #[test]
-    fn morale_bonus_approaches_five_percent_per_charisma() {
+    fn morale_bonus_approaches_five_percent_per_command() {
         let at_scale = morale_bonus_fraction(MORALE_BONUS_CURVE_SCALE, 4.0);
         assert!((at_scale - 0.126_424).abs() < 0.000_01);
         assert_eq!(morale_bonus_fraction(0.0, 5.0), 0.0);
@@ -208,23 +208,23 @@ mod tests {
     }
 
     #[test]
-    fn party_charisma_prevents_independent_bonus_stacking() {
-        let party_charisma = crate::capability::aggregate_party_charisma([4.0; 5]);
-        assert_eq!(party_charisma, 5.0);
-        let shared_cap = MORALE_BONUS_PER_CHARISMA * party_charisma;
+    fn party_command_prevents_independent_bonus_stacking() {
+        let party_command = crate::capability::aggregate_party_command([4.0; 5]);
+        assert_eq!(party_command, 5.0);
+        let shared_cap = MORALE_BONUS_PER_COMMAND * party_command;
         assert!((shared_cap - 0.25).abs() < 0.000_01);
-        assert!(shared_cap < 5.0 * (MORALE_BONUS_PER_CHARISMA * 4.0));
+        assert!(shared_cap < 5.0 * (MORALE_BONUS_PER_COMMAND * 4.0));
     }
 
     #[test]
-    fn charisma_subtracts_from_mixed_faith_pressure() {
+    fn command_subtracts_from_mixed_faith_pressure() {
         assert_eq!(religious_discord(4.0, 1.0), 9.0);
         assert_eq!(religious_discord(4.0, 4.0), 0.0);
         assert_eq!(religious_discord(4.0, 5.0), 0.0);
     }
 
     #[test]
-    fn fervor_is_bounded_and_charisma_mitigates_it() {
+    fn fervor_is_bounded_and_command_mitigates_it() {
         let unmitigated = fervor_fraction(5.0, 5.0, 10.0, 0.0);
         let led = fervor_fraction(5.0, 5.0, 10.0, 5.0);
         assert!(unmitigated > led);
@@ -241,7 +241,7 @@ mod tests {
     }
 
     #[test]
-    fn charisma_can_eliminate_religious_neglect() {
+    fn command_can_eliminate_religious_neglect() {
         assert!((religious_neglect_morale(0.75, 1.0) - 4.4).abs() < 0.001);
         assert_eq!(religious_neglect_morale(0.75, 3.75), 0.0);
         assert_eq!(religious_neglect_morale(1.0, 5.0), 0.0);

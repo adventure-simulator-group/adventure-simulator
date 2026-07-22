@@ -91,7 +91,7 @@ impl ProfessionTier {
 }
 
 const CHARISMA: &[ProfessionSkillWeight] = &[ProfessionSkillWeight {
-    skill: Skill::Charisma,
+    skill: Skill::Command,
     weight: 1.0,
 }];
 const SMITHING: &[ProfessionSkillWeight] = &[ProfessionSkillWeight {

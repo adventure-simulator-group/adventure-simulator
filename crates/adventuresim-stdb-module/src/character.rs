@@ -219,7 +219,12 @@ pub struct CharacterSkills {
     pub block_hours: f32,
     pub ranged_hours: f32,
     pub will_hours: f32,
-    pub charisma_hours: f32,
+    pub insight_hours: f32,
+    pub self_awareness_hours: f32,
+    pub humor_hours: f32,
+    pub command_hours: f32,
+    pub deception_hours: f32,
+    pub seduction_hours: f32,
     pub medicine_hours: f32,
     pub religion_hours: adventuresim_world_schema::ReligionHours,
     pub stealth_hours: f32,
@@ -461,6 +466,7 @@ pub(crate) fn delete_temporary_character(
     {
         ctx.db.character_morale_source().id().delete(&row.id);
     }
+    crate::social::cleanup_character_social(ctx, character.id);
     for row in ctx
         .db
         .religious_demand()
@@ -949,7 +955,12 @@ fn insert_character_with_origin(
         block_hours: 1000.0,
         ranged_hours: 1000.0,
         will_hours: 1000.0,
-        charisma_hours: 1000.0,
+        insight_hours: 1000.0,
+        self_awareness_hours: 1000.0,
+        humor_hours: 1000.0,
+        command_hours: 1000.0,
+        deception_hours: 1000.0,
+        seduction_hours: 1000.0,
         medicine_hours: 1000.0,
         religion_hours: adventuresim_world_schema::ReligionHours {
             roman_catholic: 1000.0,

@@ -292,6 +292,10 @@ servers cannot supply an arbitrary XP award.
 | `character_personality` | Nine immutable strategic personality axes, including Temperance; one typed row per newly created character |
 | `alcohol_consumption` | Durable per-character/per-evening fixed-point ethanol history and idempotent morale-evaluation marker |
 | `inventory_item` / `item` | Persistent concrete stacks and explicit definitions; alcohol serving volume, ABV, net hydration, medical protection, and disinfectant effectiveness are definition data rather than inferred IDs |
+| `character_affinity` | Directional subject-to-actor signed anchor, lazily decayed on the subject's personal strategic clock |
+| `character_familiarity` | Canonical symmetric pair and shared-party strategic minutes |
+| `social_belief` | Private observer-specific perceived personality axis, confidence, and observation minute |
+| `social_interaction` | One durable record per authoritative social attempt and its realized morale outcome |
 | `party` | Party groups, active quest, and aggregate skill-check targets; every character belongs to at least a solo party |
 | `party_member` | Party membership, including the recruitment role that filled a slot |
 | `party_recruitment_role` | Named party-independent role requirements and slot quantities |
@@ -307,6 +311,22 @@ servers cannot supply an arbitrary XP award.
 | `character` / `party` location fields | Current settlement or quest location (never tactical positions) |
 | `port_allocation` | Tactical server port allocation (singleton) |
 
+`character_personality`, `character_affinity`, `character_familiarity`,
+`social_belief`, and `social_interaction` are private module tables. Gateway-
+guarded views expose relationship state and observer beliefs only to the trusted
+SSR identity and return no rows to other callers; browsers do not subscribe to
+true personality or relationship history. Social reducers require that same
+gateway identity, derive a closed topic from a current negative morale source,
+and revalidate living state, party membership, co-location, source ownership,
+and a topic/action cooldown. External attempts write one interaction and one
+morale event atomically; self-only Reflection updates a self-belief without
+changing Affinity or Familiarity. Strategic relationship state
+never contains tactical positions, HP, damage ticks, or enemies.
+
+This is a pre-launch clean schema change. Development databases must be
+recreated/reseeded; there is intentionally no Charisma compatibility field,
+migration, dual-read path, or preservation of disposable characters.
+
 ### Key Reducers
 
 | Reducer | Description |
@@ -318,7 +338,7 @@ servers cannot supply an arbitrary XP award.
 | internal `transition_character_to_dead` | Idempotently commit a durable death outcome and trigger leadership reevaluation |
 | `create_recruitment_role` / `update_recruitment_role` / `delete_recruitment_role` | Create, resize, edit, and remove grouped party recruitment slots |
 | `save_recruitment_role` / `delete_saved_recruitment_role` | Manage reusable role presets |
-| `update_party_check_targets` | Configure non-filtering Medicine, Charisma, and Religion aggregate goals; Surgery is individual only |
+| `update_party_check_targets` | Configure non-filtering Medicine, Command, and Religion aggregate goals; Surgery is individual only |
 | `upgrade_manual_surgery` | Idempotently adopt legacy limb deficits into injury rows and upsert surgery item definitions |
 | `treat_limb` | Perform one individual bandage, stitch, splint, splint removal, or projectile extraction with participant-local time |
 | `request_to_join_party` / `accept_party_join_request` / `reject_party_join_request` | Role recruitment and atomic party merging; destination leadership remains intact while source members, pooled assets, and stakes transfer |

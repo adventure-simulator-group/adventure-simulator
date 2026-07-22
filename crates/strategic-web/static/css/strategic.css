@@ -2452,10 +2452,19 @@ button.party-portrait-action {
 }
 
 .morale-meter {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
   position: relative;
-  padding: 0.15rem 0 0.65rem;
+  padding: 0.15rem 0.45rem 0.65rem;
+  border: 2px solid transparent;
+  border-radius: 0.4rem;
   outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
+.morale-meter { color: inherit; text-decoration: none; cursor: pointer; }
+.morale-meter:hover,
+.morale-meter:focus-visible { border-color: var(--accent-hover); outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-hover) 35%, transparent); }
 
 :root {
   --incap-pain: #d973a2;
@@ -2551,6 +2560,46 @@ button.party-portrait-action {
 .morale-source-popup .positive strong { color: var(--success); }
 .morale-source-popup .negative strong { color: var(--danger); }
 .morale-source-popup p { margin: 0.4rem 0 0; color: var(--text-muted); }
+
+.social-biography { display: grid; gap: 0.35rem; margin: 0; }
+.social-biography > div { display: flex; justify-content: space-between; gap: 1rem; }
+.social-biography dt { color: var(--text-muted); }
+.social-biography dd { margin: 0; text-align: right; font-weight: 700; }
+.perceived-traits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0;
+  margin: 0.65rem 0 0;
+  list-style: none;
+}
+.perceived-trait {
+  padding: 0.18rem 0.45rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  font-size: var(--font-size-xs);
+  line-height: 1.25;
+}
+.social-source-list { display: grid; gap: 0.55rem; padding: 0; margin: 0.65rem 0 0; list-style: none; }
+.perceived-trait,
+.social-source-context p.belief-copy {
+  color: color-mix(in srgb, var(--text-muted), #fff var(--belief-confidence));
+  cursor: help;
+}
+.social-source { overflow: hidden; border: 1px solid var(--border-color); border-radius: 0.4rem; background: var(--panel-bg); }
+.social-source-negative { border-left: 3px solid var(--danger); }
+.social-source-positive { border-left: 3px solid var(--success); }
+.social-source-context { padding: 0.55rem 0.65rem; }
+.social-source-context > div { display: flex; justify-content: space-between; gap: 0.75rem; }
+.social-source-context p { margin: 0.3rem 0 0; color: var(--text-muted); font-size: var(--font-size-xs); }
+.social-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; padding: 0.45rem 0.6rem; border-top: 1px solid var(--border-color); background: color-mix(in srgb, var(--panel-bg) 75%, black); }
+.social-actions form { margin: 0; }
+.social-action { display: grid; width: 2rem; height: 2rem; padding: 0.3rem; place-items: center; border: 1px solid var(--border-color); border-radius: 0.3rem; background: var(--panel-bg); color: var(--text); cursor: pointer; }
+.social-action:hover,
+.social-action:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+.social-action .game-icon { width: 1.15rem; height: 1.15rem; }
+.social-unavailable { color: var(--danger); }
 
 .fervor-meter {
   position: relative;
@@ -3564,7 +3613,7 @@ body.chat-resizing {
 .schedule-header-icon .game-icon { width: 0.78rem; height: 0.78rem; }
 
 .stat-icon-will,
-.stat-icon-charisma,
+.stat-icon-command,
 .stat-icon-medicine,
 .stat-icon-faith {
   --stat-icon-color: var(--icon-mental);

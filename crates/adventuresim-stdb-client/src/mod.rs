@@ -20,10 +20,13 @@ pub mod autoresolve_quest_reducer;
 pub mod autoresolve_report_table;
 pub mod autoresolve_report_type;
 pub mod available_water_capacity_type;
+pub mod backend_character_affinities_table;
+pub mod backend_character_familiarities_table;
 pub mod backend_committed_cuts_table;
 pub mod backend_herbalist_examinations_table;
 pub mod backend_infection_episodes_table;
 pub mod backend_medical_examinations_table;
+pub mod backend_social_beliefs_table;
 pub mod backfill_character_deaths_and_leadership_reducer;
 pub mod backfill_equipment_condition_and_smiths_reducer;
 pub mod backfill_item_values_reducer;
@@ -49,6 +52,7 @@ pub mod catholic_lutheran_church_type;
 pub mod catholic_reformed_church_type;
 pub mod cation_exchange_capacity_type;
 pub mod change_inventory_item_reducer;
+pub mod character_affinity_type;
 pub mod character_apprenticeship_table;
 pub mod character_apprenticeship_type;
 pub mod character_attributes_table;
@@ -61,6 +65,7 @@ pub mod character_death_table;
 pub mod character_death_type;
 pub mod character_equip_table;
 pub mod character_equip_type;
+pub mod character_familiarity_type;
 pub mod character_filth_table;
 pub mod character_filth_type;
 pub mod character_illness_status_table;
@@ -269,6 +274,7 @@ pub mod party_table;
 pub mod party_type;
 pub mod pasture_cover_type;
 pub mod peat_cutting_industry_type;
+pub mod perform_social_action_reducer;
 pub mod potential_vegetation_class_type;
 pub mod potential_vegetation_posterior_type;
 pub mod potential_vegetation_type;
@@ -370,6 +376,9 @@ pub mod simulation_character_type;
 pub mod simulation_run_table;
 pub mod simulation_run_type;
 pub mod sociability_type;
+pub mod social_action_cooldown_type;
+pub mod social_belief_type;
+pub mod social_interaction_type;
 pub mod soil_acidity_type;
 pub mod soil_basis_points_type;
 pub mod soil_depth_type;
@@ -448,10 +457,13 @@ pub use autoresolve_quest_reducer::autoresolve_quest;
 pub use autoresolve_report_table::*;
 pub use autoresolve_report_type::AutoresolveReport;
 pub use available_water_capacity_type::AvailableWaterCapacity;
+pub use backend_character_affinities_table::*;
+pub use backend_character_familiarities_table::*;
 pub use backend_committed_cuts_table::*;
 pub use backend_herbalist_examinations_table::*;
 pub use backend_infection_episodes_table::*;
 pub use backend_medical_examinations_table::*;
+pub use backend_social_beliefs_table::*;
 pub use backfill_character_deaths_and_leadership_reducer::backfill_character_deaths_and_leadership;
 pub use backfill_equipment_condition_and_smiths_reducer::backfill_equipment_condition_and_smiths;
 pub use backfill_item_values_reducer::backfill_item_values;
@@ -477,6 +489,7 @@ pub use catholic_lutheran_church_type::CatholicLutheranChurch;
 pub use catholic_reformed_church_type::CatholicReformedChurch;
 pub use cation_exchange_capacity_type::CationExchangeCapacity;
 pub use change_inventory_item_reducer::change_inventory_item;
+pub use character_affinity_type::CharacterAffinity;
 pub use character_apprenticeship_table::*;
 pub use character_apprenticeship_type::CharacterApprenticeship;
 pub use character_attributes_table::*;
@@ -489,6 +502,7 @@ pub use character_death_table::*;
 pub use character_death_type::CharacterDeath;
 pub use character_equip_table::*;
 pub use character_equip_type::CharacterEquip;
+pub use character_familiarity_type::CharacterFamiliarity;
 pub use character_filth_table::*;
 pub use character_filth_type::CharacterFilth;
 pub use character_illness_status_table::*;
@@ -697,6 +711,7 @@ pub use party_table::*;
 pub use party_type::Party;
 pub use pasture_cover_type::PastureCover;
 pub use peat_cutting_industry_type::PeatCuttingIndustry;
+pub use perform_social_action_reducer::perform_social_action;
 pub use potential_vegetation_class_type::PotentialVegetationClass;
 pub use potential_vegetation_posterior_type::PotentialVegetationPosterior;
 pub use potential_vegetation_type::PotentialVegetation;
@@ -798,6 +813,9 @@ pub use simulation_character_type::SimulationCharacter;
 pub use simulation_run_table::*;
 pub use simulation_run_type::SimulationRun;
 pub use sociability_type::Sociability;
+pub use social_action_cooldown_type::SocialActionCooldown;
+pub use social_belief_type::SocialBelief;
+pub use social_interaction_type::SocialInteraction;
 pub use soil_acidity_type::SoilAcidity;
 pub use soil_basis_points_type::SoilBasisPoints;
 pub use soil_depth_type::SoilDepth;
@@ -1085,6 +1103,12 @@ pub enum Reducer {
         party_inventory_item_ids: Vec<u64>,
         quantities: Vec<u32>,
     },
+    PerformSocialAction {
+        actor_id: u64,
+        target_id: u64,
+        source_id: String,
+        action_kind: String,
+    },
     PurchaseFromHerbalist {
         patient_id: u64,
         settlement_id: String,
@@ -1277,7 +1301,7 @@ pub enum Reducer {
     UpdatePartyCheckTargets {
         leader_id: u64,
         medicine: f32,
-        charisma: f32,
+        command: f32,
         religion: f32,
     },
     UpdateRecruitmentRole {
@@ -1372,6 +1396,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::LeaveMission { .. } => "leave_mission",
             Reducer::LeaveParty { .. } => "leave_party",
             Reducer::LiquidatePartyInventory { .. } => "liquidate_party_inventory",
+            Reducer::PerformSocialAction { .. } => "perform_social_action",
             Reducer::PurchaseFromHerbalist { .. } => "purchase_from_herbalist",
             Reducer::RefreshCapabilities { .. } => "refresh_capabilities",
             Reducer::RefreshStrategicCondition { .. } => "refresh_strategic_condition",
@@ -1806,6 +1831,17 @@ Reducer::CancelMissionRequest{
                 party_inventory_item_ids: party_inventory_item_ids.clone(),
                 quantities: quantities.clone(),
 }),
+            Reducer::PerformSocialAction{
+                actor_id,
+                target_id,
+                source_id,
+                action_kind,
+}             => __sats::bsatn::to_vec(&perform_social_action_reducer::PerformSocialActionArgs {
+                actor_id: actor_id.clone(),
+                target_id: target_id.clone(),
+                source_id: source_id.clone(),
+                action_kind: action_kind.clone(),
+}),
             Reducer::PurchaseFromHerbalist{
                 patient_id,
                 settlement_id,
@@ -2147,12 +2183,12 @@ Reducer::CancelMissionRequest{
             Reducer::UpdatePartyCheckTargets{
                 leader_id,
                 medicine,
-                charisma,
+                command,
                 religion,
 }             => __sats::bsatn::to_vec(&update_party_check_targets_reducer::UpdatePartyCheckTargetsArgs {
                 leader_id: leader_id.clone(),
                 medicine: medicine.clone(),
-                charisma: charisma.clone(),
+                command: command.clone(),
                 religion: religion.clone(),
 }),
             Reducer::UpdateRecruitmentRole{
@@ -2208,10 +2244,13 @@ Reducer::VoteForPartyLeader{
 pub struct DbUpdate {
     alcohol_consumption: __sdk::TableUpdate<AlcoholConsumption>,
     autoresolve_report: __sdk::TableUpdate<AutoresolveReport>,
+    backend_character_affinities: __sdk::TableUpdate<CharacterAffinity>,
+    backend_character_familiarities: __sdk::TableUpdate<CharacterFamiliarity>,
     backend_committed_cuts: __sdk::TableUpdate<CommittedCut>,
     backend_herbalist_examinations: __sdk::TableUpdate<HerbalistExamination>,
     backend_infection_episodes: __sdk::TableUpdate<InfectionEpisodeRow>,
     backend_medical_examinations: __sdk::TableUpdate<MedicalExamination>,
+    backend_social_beliefs: __sdk::TableUpdate<SocialBelief>,
     battle_loot_item: __sdk::TableUpdate<BattleLootItem>,
     battle_participant: __sdk::TableUpdate<BattleParticipant>,
     battle_result: __sdk::TableUpdate<BattleResult>,
@@ -2292,6 +2331,14 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "autoresolve_report" => db_update
                     .autoresolve_report
                     .append(autoresolve_report_table::parse_table_update(table_update)?),
+                "backend_character_affinities" => db_update.backend_character_affinities.append(
+                    backend_character_affinities_table::parse_table_update(table_update)?,
+                ),
+                "backend_character_familiarities" => {
+                    db_update.backend_character_familiarities.append(
+                        backend_character_familiarities_table::parse_table_update(table_update)?,
+                    )
+                }
                 "backend_committed_cuts" => db_update.backend_committed_cuts.append(
                     backend_committed_cuts_table::parse_table_update(table_update)?,
                 ),
@@ -2305,6 +2352,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 ),
                 "backend_medical_examinations" => db_update.backend_medical_examinations.append(
                     backend_medical_examinations_table::parse_table_update(table_update)?,
+                ),
+                "backend_social_beliefs" => db_update.backend_social_beliefs.append(
+                    backend_social_beliefs_table::parse_table_update(table_update)?,
                 ),
                 "battle_loot_item" => db_update
                     .battle_loot_item
@@ -2821,6 +2871,14 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.world_node = cache
             .apply_diff_to_table::<WorldNode>("world_node", &self.world_node)
             .with_updates_by_pk(|row| &row.id);
+        diff.backend_character_affinities = cache.apply_diff_to_table::<CharacterAffinity>(
+            "backend_character_affinities",
+            &self.backend_character_affinities,
+        );
+        diff.backend_character_familiarities = cache.apply_diff_to_table::<CharacterFamiliarity>(
+            "backend_character_familiarities",
+            &self.backend_character_familiarities,
+        );
         diff.backend_committed_cuts = cache.apply_diff_to_table::<CommittedCut>(
             "backend_committed_cuts",
             &self.backend_committed_cuts,
@@ -2837,6 +2895,10 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_medical_examinations",
             &self.backend_medical_examinations,
         );
+        diff.backend_social_beliefs = cache.apply_diff_to_table::<SocialBelief>(
+            "backend_social_beliefs",
+            &self.backend_social_beliefs,
+        );
         diff.connected_players = cache
             .apply_diff_to_table::<ConnectedPlayer>("connected_players", &self.connected_players);
 
@@ -2852,6 +2914,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "autoresolve_report" => db_update
                     .autoresolve_report
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_affinities" => db_update
+                    .backend_character_affinities
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_familiarities" => db_update
+                    .backend_character_familiarities
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_committed_cuts" => db_update
                     .backend_committed_cuts
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -2863,6 +2931,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_medical_examinations" => db_update
                     .backend_medical_examinations
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_social_beliefs" => db_update
+                    .backend_social_beliefs
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "battle_loot_item" => db_update
                     .battle_loot_item
@@ -3081,6 +3152,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "autoresolve_report" => db_update
                     .autoresolve_report
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_affinities" => db_update
+                    .backend_character_affinities
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_familiarities" => db_update
+                    .backend_character_familiarities
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_committed_cuts" => db_update
                     .backend_committed_cuts
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -3092,6 +3169,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_medical_examinations" => db_update
                     .backend_medical_examinations
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_social_beliefs" => db_update
+                    .backend_social_beliefs
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "battle_loot_item" => db_update
                     .battle_loot_item
@@ -3308,10 +3388,13 @@ impl __sdk::DbUpdate for DbUpdate {
 pub struct AppliedDiff<'r> {
     alcohol_consumption: __sdk::TableAppliedDiff<'r, AlcoholConsumption>,
     autoresolve_report: __sdk::TableAppliedDiff<'r, AutoresolveReport>,
+    backend_character_affinities: __sdk::TableAppliedDiff<'r, CharacterAffinity>,
+    backend_character_familiarities: __sdk::TableAppliedDiff<'r, CharacterFamiliarity>,
     backend_committed_cuts: __sdk::TableAppliedDiff<'r, CommittedCut>,
     backend_herbalist_examinations: __sdk::TableAppliedDiff<'r, HerbalistExamination>,
     backend_infection_episodes: __sdk::TableAppliedDiff<'r, InfectionEpisodeRow>,
     backend_medical_examinations: __sdk::TableAppliedDiff<'r, MedicalExamination>,
+    backend_social_beliefs: __sdk::TableAppliedDiff<'r, SocialBelief>,
     battle_loot_item: __sdk::TableAppliedDiff<'r, BattleLootItem>,
     battle_participant: __sdk::TableAppliedDiff<'r, BattleParticipant>,
     battle_result: __sdk::TableAppliedDiff<'r, BattleResult>,
@@ -3401,6 +3484,16 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.autoresolve_report,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<CharacterAffinity>(
+            "backend_character_affinities",
+            &self.backend_character_affinities,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterFamiliarity>(
+            "backend_character_familiarities",
+            &self.backend_character_familiarities,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<CommittedCut>(
             "backend_committed_cuts",
             &self.backend_committed_cuts,
@@ -3419,6 +3512,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<MedicalExamination>(
             "backend_medical_examinations",
             &self.backend_medical_examinations,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<SocialBelief>(
+            "backend_social_beliefs",
+            &self.backend_social_beliefs,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BattleLootItem>(
@@ -4373,10 +4471,13 @@ impl __sdk::SpacetimeModule for RemoteModule {
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         alcohol_consumption_table::register_table(client_cache);
         autoresolve_report_table::register_table(client_cache);
+        backend_character_affinities_table::register_table(client_cache);
+        backend_character_familiarities_table::register_table(client_cache);
         backend_committed_cuts_table::register_table(client_cache);
         backend_herbalist_examinations_table::register_table(client_cache);
         backend_infection_episodes_table::register_table(client_cache);
         backend_medical_examinations_table::register_table(client_cache);
+        backend_social_beliefs_table::register_table(client_cache);
         battle_loot_item_table::register_table(client_cache);
         battle_participant_table::register_table(client_cache);
         battle_result_table::register_table(client_cache);
@@ -4447,10 +4548,13 @@ impl __sdk::SpacetimeModule for RemoteModule {
     const ALL_TABLE_NAMES: &'static [&'static str] = &[
         "alcohol_consumption",
         "autoresolve_report",
+        "backend_character_affinities",
+        "backend_character_familiarities",
         "backend_committed_cuts",
         "backend_herbalist_examinations",
         "backend_infection_episodes",
         "backend_medical_examinations",
+        "backend_social_beliefs",
         "battle_loot_item",
         "battle_participant",
         "battle_result",

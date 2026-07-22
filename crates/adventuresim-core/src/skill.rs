@@ -20,9 +20,24 @@ pub enum Skill {
     /// Mental. Intuitive. Resist pain and morale penalties. (5000h)
     #[assoc(max_hours = 5000.0, kind = SkillKind::Mental, is_trained = false)]
     Will,
-    /// Mental. Intuitive. Party morale buff, traveling focus. (20000h)
+    /// Mental. Intuitive. Reading another character's motives and temperament.
+    #[assoc(max_hours = 10000.0, kind = SkillKind::Mental, is_trained = false)]
+    Insight,
+    /// Mental. Intuitive. Recognizing one's own motives and temperament.
+    #[assoc(max_hours = 10000.0, kind = SkillKind::Mental, is_trained = false)]
+    SelfAwareness,
+    /// Mental. Intuitive. Relieving tension through levity.
+    #[assoc(max_hours = 12000.0, kind = SkillKind::Mental, is_trained = false)]
+    Humor,
+    /// Mental. Intuitive. Rallying and coordinating others.
     #[assoc(max_hours = 20000.0, kind = SkillKind::Mental, is_trained = false)]
-    Charisma,
+    Command,
+    /// Mental. Intuitive. Sustaining a plausible false impression.
+    #[assoc(max_hours = 15000.0, kind = SkillKind::Mental, is_trained = false)]
+    Deception,
+    /// Mental. Intuitive. Reading and expressing romantic interest.
+    #[assoc(max_hours = 15000.0, kind = SkillKind::Mental, is_trained = false)]
+    Seduction,
     /// Mental. Trained. Party health recovery bonus. (10000h)
     #[assoc(max_hours = 10000.0, kind = SkillKind::Mental, is_trained = true)]
     Medicine,

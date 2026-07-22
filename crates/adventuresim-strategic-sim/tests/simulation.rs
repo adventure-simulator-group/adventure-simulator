@@ -220,7 +220,12 @@ fn bounded_skill_state_remains_finite_for_maximum_duration() {
         block: MAX_INITIAL_SKILL_HOURS,
         ranged: MAX_INITIAL_SKILL_HOURS,
         will: MAX_INITIAL_SKILL_HOURS,
-        charisma: MAX_INITIAL_SKILL_HOURS,
+        insight: MAX_INITIAL_SKILL_HOURS,
+        self_awareness: MAX_INITIAL_SKILL_HOURS,
+        humor: MAX_INITIAL_SKILL_HOURS,
+        command: MAX_INITIAL_SKILL_HOURS,
+        deception: MAX_INITIAL_SKILL_HOURS,
+        seduction: MAX_INITIAL_SKILL_HOURS,
         medicine: MAX_INITIAL_SKILL_HOURS,
         religion: adventuresim_world_schema::ReligionHours {
             roman_catholic: MAX_INITIAL_SKILL_HOURS,

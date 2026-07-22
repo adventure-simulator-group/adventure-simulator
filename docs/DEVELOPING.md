@@ -581,3 +581,18 @@ network panel. Requests abandoned by a navigating browser are logged as
 canceled rather than silently disappearing. Set
 `RUST_LOG=strategic_web=info` if a shell-level log filter suppresses these
 diagnostics.
+# Social panel demo
+
+Start the isolated strategic stack with the guarded visual fixtures:
+
+```powershell
+just web-isolated-strategic social-demo 23100
+```
+
+Select **Social Demo**, open **Greta the Guard**, and select the Morale meter.
+The fixture includes defeat and injury penalties, established Familiarity,
+positive Affinity, and one deliberately incorrect perceived sensitivity so the
+privacy boundary and outcome rules are visible. The bootstrap capability is
+compiled only for the isolated workflow; there is no standalone public fixture
+reducer. Schema changes are destructive in this pre-launch workflow, so rerun
+the isolated profile to recreate its database.

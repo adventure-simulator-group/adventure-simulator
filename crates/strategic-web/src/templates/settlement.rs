@@ -167,6 +167,14 @@ impl LocationView {
         format!("/locations/{}/{}", self.kind, self.id)
     }
 
+    pub fn preserve_building(&self, path: String) -> String {
+        self.active_building
+            .as_deref()
+            .map_or(path.clone(), |building| {
+                format!("{path}?building={building}")
+            })
+    }
+
     fn render_layout(&self, title: &str, content: Markup, logged_in_as: Option<&str>) -> Markup {
         if self.kind == LocationKind::Settlement {
             settlement_layout_with_session(
@@ -1734,7 +1742,7 @@ pub fn party_personal_page(
     let content = html! {
         aside class="left-sidebar" {
             (party_attributes_rail("Your attributes", attributes, limbs, medical, Some(&format!("{}/party/{}/surgery", location.base_path(), active_character.id)), injuries, projectiles))
-            (strategic_condition_rail(condition, morale_sources, filth))
+            (strategic_condition_rail(condition, morale_sources, filth, &location.preserve_building(format!("{}/party/{}/social", location.base_path(), active_character.id))))
             (medical_rail(medical, &location.base_path(), active_character.id, active_character.id, true))
             @if let Some(demand) = religious_demand {
                 (religious_demand_rail(demand, &location.base_path(), active_character.id))
@@ -1835,7 +1843,7 @@ fn religious_demand_rail(
                 h3 { (&demand.title) }
                 p { (&demand.description) }
                 p class="text-muted small-copy" {
-                    "Observe and bear the practical cost, or decline. Party Charisma automatically reduces the morale cost of neglect and can remove it entirely."
+                    "Observe and bear the practical cost, or decline. Party Command automatically reduces the morale cost of neglect and can remove it entirely."
                 }
                 form method="post" action=(action) class="religious-demand-actions" {
                     button type="submit" name="choice" value="observe" class="btn btn-primary" { "Observe" }
@@ -1875,7 +1883,7 @@ pub fn party_stats_page(
     let content = html! {
         aside class="left-sidebar" {
             (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs, medical, Some(&format!("{}/party/{}/surgery", location.base_path(), selected.id)), injuries, projectiles))
-            (strategic_condition_rail(condition, morale_sources, filth))
+            (strategic_condition_rail(condition, morale_sources, filth, &location.preserve_building(format!("{}/party/{}/social", location.base_path(), selected.id))))
             (medical_rail(medical, &location.base_path(), active_character.id, selected.id, true))
         }
         main class="center-content settlement-main party-member-stage" {
@@ -1935,6 +1943,236 @@ pub fn party_stats_page(
         }
     };
     location.render_layout("Party stats", content, Some(&active_character.name))
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SocialPresentation {
+    pub affinity: f32,
+    pub familiarity_hours: f32,
+    pub religion_id: Option<String>,
+    pub virtue: f32,
+    pub beliefs: Vec<crate::spacetimedb::SocialBelief>,
+    pub shared_concerns: Vec<adventuresim_core::social::SocialTopic>,
+    pub unavailable: bool,
+}
+
+fn social_actions(
+    is_self: bool,
+    topic: adventuresim_core::social::SocialTopic,
+) -> Vec<(
+    &'static str,
+    adventuresim_core::social::SocialActionKind,
+    &'static str,
+)> {
+    use adventuresim_core::social::SocialActionKind::*;
+    if is_self {
+        return vec![("inner-self", Reflect, "reflect")];
+    }
+    [
+        ("awareness", Listen, "listen"),
+        ("awareness", Commiserate, "commiserate"),
+        ("juggler", LightenMood, "humor"),
+        ("crown", Rally, "command"),
+        ("conversation", Reframe, "deception"),
+        ("rose", Flirt, "seduction"),
+    ]
+    .into_iter()
+    .filter(|(_, action, _)| action.available_for(topic))
+    .collect()
+}
+
+fn perceived_trait(axis: &str, value: i8) -> (&'static str, &'static str) {
+    match (axis, value.signum()) {
+        ("drive", 1) => ("Drive", "Ambitious"),
+        ("drive", -1) => ("Drive", "Content"),
+        ("self_regard", 1) => ("Self-regard", "Proud"),
+        ("self_regard", -1) => ("Self-regard", "Humble"),
+        ("conviction", 1) => ("Conviction", "Zealous"),
+        ("conviction", -1) => ("Conviction", "Irreverent"),
+        ("hygiene", 1) => ("Hygiene", "Cleanly"),
+        ("hygiene", -1) => ("Hygiene", "Slovenly"),
+        ("drive", _) => ("Drive", "Neutral"),
+        ("self_regard", _) => ("Self-regard", "Neutral"),
+        ("conviction", _) => ("Conviction", "Neutral"),
+        ("hygiene", _) => ("Hygiene", "Neutral"),
+        _ => ("Personality", "Uncertain"),
+    }
+}
+
+fn familiarity_label(hours: f32) -> String {
+    if hours.is_finite() && hours > 0.0 && hours < 1.0 {
+        "<1 hours".into()
+    } else {
+        format!("{:.0} hours", hours.max(0.0))
+    }
+}
+
+fn belief_style(confidence: f32) -> String {
+    format!(
+        "--belief-confidence:{:.0}%",
+        confidence.clamp(0.0, 1.0) * 100.0
+    )
+}
+
+fn personality_reaction_hint(axis: &str, value: i8) -> &'static str {
+    match (axis, value.signum()) {
+        ("drive", 1) => {
+            "Likely reaction: Rallying can motivate them after defeat; pity or flippancy may offend."
+        }
+        ("drive", -1) => {
+            "Likely reaction: Listening and commiseration are safer than pressuring them to prove themselves."
+        }
+        ("self_regard", 1) => {
+            "Likely reaction: Injury is touchy; admiration may land better than pity or minimizing the wound."
+        }
+        ("self_regard", -1) => {
+            "Likely reaction: Plain sympathy is safer; conspicuous flattery may feel insincere."
+        }
+        ("conviction", 1) => {
+            "Likely reaction: Treat moral concerns seriously; jokes and false reassurance are especially risky."
+        }
+        ("conviction", -1) => {
+            "Likely reaction: Gentle reframing may work better than appeals to duty or conviction."
+        }
+        ("hygiene", 1) => {
+            "Likely reaction: Filth is genuinely upsetting; acknowledge it rather than dismissing the concern."
+        }
+        ("hygiene", -1) => {
+            "Likely reaction: They may not share strong concern about grime, so forceful reassurance can seem strange."
+        }
+        _ => "Likely reaction: Their response to riskier social actions remains uncertain.",
+    }
+}
+
+fn belief_tooltip(belief: &crate::spacetimedb::SocialBelief) -> String {
+    format!(
+        "Confidence: {:.0}%\n{}",
+        belief.confidence.clamp(0.0, 1.0) * 100.0,
+        personality_reaction_hint(&belief.axis, belief.perceived_value)
+    )
+}
+
+/// Dedicated social view. It intentionally receives observer-specific beliefs
+/// rather than authoritative personality.
+pub fn party_social_page(
+    location: &LocationView,
+    selected: &Character,
+    active_character: &Character,
+    party_members: &[Character],
+    attributes: Option<&CharacterAttributes>,
+    limbs: Option<&CharacterLimbs>,
+    condition: Option<&CharacterStrategicCondition>,
+    morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
+    filth: &[crate::spacetimedb::CharacterFilth],
+    social: &SocialPresentation,
+) -> Markup {
+    let social_href = location.preserve_building(format!(
+        "{}/party/{}/social",
+        location.base_path(),
+        selected.id
+    ));
+    let affinity_label = match social.affinity {
+        value if value >= 50.0 => "Devoted",
+        value if value >= 15.0 => "Warm",
+        value if value <= -50.0 => "Hostile",
+        value if value <= -15.0 => "Cold",
+        _ => "Neutral",
+    };
+    let is_self = selected.id == active_character.id;
+    let affinity_certainty = if social.familiarity_hours >= 48.0 {
+        "fairly certain"
+    } else if social.familiarity_hours >= 8.0 {
+        "tentative"
+    } else {
+        "uncertain"
+    };
+    let medical = MedicalPresentation::default();
+    let attribute_title = format!("{}'s attributes", selected.name);
+    let content = html! {
+        aside class="left-sidebar" {
+            (party_attributes_rail(&attribute_title, attributes, limbs, &medical, None, &[], &[]))
+            (strategic_condition_rail(condition, morale_sources, filth, &social_href))
+        }
+        main class="center-content settlement-main party-member-stage" {
+            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id), false))
+            (visual_stage("character", &selected.name, "Relationship and morale"))
+            (player_chat_area(selected, active_character))
+        }
+        aside class="right-sidebar social-rail" data-social-panel data-target-id=(selected.id) {
+            (sidebar_section("What you believe", html! {
+                dl class="social-biography" {
+                    div { dt { "Age" } dd { (selected.age_years) } }
+                    div { dt { "Religion" } dd { (religion_name(social.religion_id.as_deref())) } }
+                    div { dt { "Virtue" } dd { (format!("{:+.0}", social.virtue)) } }
+                    @if !is_self {
+                        div { dt { "Affinity toward you" } dd { (affinity_label) " (" (affinity_certainty) ")" } }
+                        div { dt { "Familiarity" } dd { (familiarity_label(social.familiarity_hours)) } }
+                    }
+                }
+                @if social.unavailable {
+                    p class="social-unavailable" role="status" { "Your impressions are unavailable right now." }
+                } @else if social.beliefs.is_empty() {
+                    p class="text-muted small-copy" { "You have not formed a confident impression of their personality yet." }
+                } @else {
+                    ul class="perceived-traits" aria-label="Perceived personality traits" {
+                        @for belief in &social.beliefs {
+                            @let (_, value) = perceived_trait(&belief.axis, belief.perceived_value);
+                            li class="perceived-trait" style=(belief_style(belief.confidence))
+                                tabindex="0" data-strategic-tooltip=(belief_tooltip(belief)) {
+                                (value)
+                            }
+                        }
+                    }
+                }
+            }))
+            (sidebar_section("Morale sources", html! {
+                @if morale_sources.is_empty() { p class="text-muted" { "No current morale effects." } }
+                div class="social-source-list" {
+                    @for source in morale_sources {
+                        @let topic = adventuresim_core::social::topic_for_source_kind(&source.kind);
+                        article class=(if source.magnitude < 0.0 { "social-source social-source-negative" } else { "social-source social-source-positive" }) {
+                            div class="social-source-context" {
+                                div { strong { (&source.label) } span { (format!("{:+.1}", source.magnitude)) } }
+                                @if let Some(axis) = topic.and_then(adventuresim_core::social::axis_for_topic) {
+                                    @if let Some(belief) = social.beliefs.iter().find(|belief| belief.axis == axis.slug()) {
+                                        @let (axis_name, value) = perceived_trait(&belief.axis, belief.perceived_value);
+                                        p class="belief-copy" style=(belief_style(belief.confidence))
+                                            tabindex="0" data-strategic-tooltip=(belief_tooltip(belief)) {
+                                            "You think their " (axis_name) " is " (value) "."
+                                        }
+                                    } @else {
+                                        p { "The relevant personality trait is uncertain." }
+                                    }
+                                } @else {
+                                    p { "No specific personality trait is known to govern this concern." }
+                                }
+                            }
+                            @if source.magnitude < 0.0 {
+                                @if let Some(topic) = topic {
+                                  div class="social-actions" aria-label=(format!("Actions for {}", source.label)) {
+                                    @let shares_concern = social.shared_concerns.contains(&topic);
+                                    @for (default_icon, action, value) in social_actions(is_self, topic) {
+                                      @let action_shares_concern = action != adventuresim_core::social::SocialActionKind::Commiserate || shares_concern;
+                                      @let icon = if action == adventuresim_core::social::SocialActionKind::Commiserate && !shares_concern { "conversation" } else { default_icon };
+                                      @let description = action.description(topic, action_shares_concern);
+                                    form method="post" action=(&social_href) {
+                                        input type="hidden" name="source_id" value=(&source.id);
+                                        button type="submit" name="action_kind" value=(value) class="social-action"
+                                            aria-label=(description) title=(description) data-strategic-tooltip=(format!("{}\n{} · {} risk", description, action.skill_name(action_shares_concern), if action.risk() >= 0.6 { "high" } else if action.risk() >= 0.3 { "moderate" } else { "low" })) {
+                                            (decorative_game_icon(icon))
+                                        }
+                                    }
+                                    }
+                                  }
+                                }
+                            }
+                        }
+                    }
+                }
+            }))
+        }
+    };
+    location.render_layout("Social", content, Some(&selected.name))
 }
 
 fn surgery_limb_name(limb: LimbRegion) -> &'static str {
@@ -2252,7 +2490,7 @@ fn service_page(
                 div class="service-left-stack" {
                     div class="service-inventory-area" {
                         (sidebar_section("Church services", html! {
-                            p title=[active_character.is_some().then_some("Speak with the priest to profess this faith. Renunciation is available from your biography. Shared conviction strengthens allied Charisma; conflicting conviction penalizes morale.")] {
+                            p title=[active_character.is_some().then_some("Speak with the priest to profess this faith. Renunciation is available from your biography. Shared conviction strengthens allied Command; conflicting conviction penalizes morale.")] {
                                 "Faith: " strong { (religion_name(Some(&settlement.religion_id))) }
                             }
                         }))
@@ -3243,7 +3481,7 @@ fn skills_table(
                 } }
                 tbody {
                     @if skills.will_hours > 0.0 { (party_skill_row("Will", "will", Skill::Will, skills.will_hours, head_health, schedule.is_some())) }
-                    @if skills.charisma_hours > 0.0 { (party_skill_row("Charisma", "charisma", Skill::Charisma, skills.charisma_hours, head_health, schedule.is_some())) }
+                    (social_skill_rows(skills, head_health, schedule))
                     @if skills.medicine_hours > 0.0 { (party_skill_row("Medicine", "medicine", Skill::Medicine, skills.medicine_hours, head_health, schedule.is_some())) }
                     (religion_skill_rows(skills, head_health, schedule, training_religion))
                     (combat_skill_rows(skills, upper_health, lower_health, schedule, combat_profile))
@@ -3277,7 +3515,7 @@ fn skills_table(
                             },
                         ))
                         (schedule_special_row("Combat Training", "crossed-swords", "combat_training_minutes", schedule.downtime.combat_training_minutes, true, ActivityEffectRates::default(), None, "Sparring and target practice train equipped Combat skills together with Will and Balance."))
-                        (schedule_special_row("Carousing", "beer-stein", "carousing_minutes", schedule.downtime.carousing_minutes, true, ActivityEffectRates::linear(-0.5, -0.05, 0.5, 0.0), None, "Drink and socialize to improve morale and train Charisma at 25% speed, at a small cost to Virtue."))
+                        (schedule_special_row("Carousing", "beer-stein", "carousing_minutes", schedule.downtime.carousing_minutes, true, ActivityEffectRates::linear(-0.5, -0.05, 0.5, 0.0), None, "Drink and socialize to improve morale and train Humor at 25% speed, at a small cost to Virtue."))
                         @if let Some(service_id) = schedule.downtime.apprenticeship_service_id.as_deref() {
                             (schedule_service_selection("apprenticeship_service_id", service_id))
                             (schedule_special_row(&format!("Apprenticeship — {}", profession_label(service_id)), "open-book", "apprenticeship_minutes", schedule.downtime.apprenticeship_minutes, true, ActivityEffectRates::linear(-1.0, 0.0, 0.0, 0.0), None, "Pay for instruction in an enrolled profession. Religious students are called novices."))
@@ -3371,6 +3609,73 @@ fn religion_skill_rows(
                 td class="religion-expand-cell" {}
             }
           }
+        }
+    }
+}
+
+fn social_skill_rows(
+    skills: &CharacterSkills,
+    health: f32,
+    schedule: Option<&CharacterTrainingSchedule>,
+) -> Markup {
+    let entries = [
+        ("Insight", "insight", Skill::Insight, skills.insight_hours),
+        (
+            "Self-awareness",
+            "self-awareness",
+            Skill::SelfAwareness,
+            skills.self_awareness_hours,
+        ),
+        ("Humor", "humor", Skill::Humor, skills.humor_hours),
+        ("Command", "command", Skill::Command, skills.command_hours),
+        (
+            "Deception",
+            "deception",
+            Skill::Deception,
+            skills.deception_hours,
+        ),
+        (
+            "Seduction",
+            "seduction",
+            Skill::Seduction,
+            skills.seduction_hours,
+        ),
+    ];
+    if entries.iter().all(|entry| entry.3 <= 0.0) {
+        return html! {};
+    }
+    let rank = entries
+        .iter()
+        .map(|entry| entry.2.training_rank(entry.3))
+        .sum::<f32>()
+        / entries.len() as f32;
+    let effective_rank = rank * health.clamp(0.0, 1.0);
+    html! {
+        tr class="party-skill-row social-primary-row" data-social-primary {
+            th scope="row" class="party-skill-name party-skill-icon-cell" {
+                (stat_icon("Social", "skills", "social", false))
+            }
+            td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
+                (skill_rank_bar(rank, effective_rank, "Average of all six Social skills", skill_rail_bar_options()))
+            }
+            td class="religion-expand-cell" {
+                button type="button" class="religion-expand-button" data-social-expand
+                    aria-expanded="false" aria-label="Expand Social skills" title="Expand Social" {
+                    span class="religion-expand-chevron" aria-hidden="true" { "›" }
+                }
+            }
+        }
+        @for (name, icon, skill, hours) in entries {
+            tr class="party-skill-row social-detail-row" data-social-detail hidden {
+                th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
+                    (stat_icon(name, "skills", icon, false))
+                }
+                td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
+                    @let sub_rank = skill.training_rank(hours);
+                    (skill_rank_bar(sub_rank, sub_rank * health.clamp(0.0, 1.0), &format!("{:.0} hours invested", hours.max(0.0)), skill_rail_bar_options()))
+                }
+                td class="religion-expand-cell" {}
+            }
         }
     }
 }
@@ -3614,7 +3919,12 @@ fn core_daily_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
         block: schedule.block_minutes,
         ranged: schedule.ranged_minutes,
         will: schedule.will_minutes,
-        charisma: schedule.charisma_minutes,
+        insight: schedule.insight_minutes,
+        self_awareness: schedule.self_awareness_minutes,
+        humor: schedule.humor_minutes,
+        command: schedule.command_minutes,
+        deception: schedule.deception_minutes,
+        seduction: schedule.seduction_minutes,
         medicine: schedule.medicine_minutes,
         religion: schedule.religion_minutes,
         religion_auto_train: schedule.religion_auto_train,
@@ -3726,7 +4036,7 @@ fn activity_training_cell(label: &str, allocation_name: &str, minutes: u16) -> M
             ("Will".into(), 1.0),
             ("Balance".into(), 1.0),
         ],
-        "carousing_minutes" => vec![("Charisma".into(), 0.25)],
+        "carousing_minutes" => vec![("Humor".into(), 0.25)],
         "labor_minutes" => vec![("Will".into(), 0.25)],
         "thievery_minutes" => vec![("Stealth".into(), 0.25)],
         "raiding_minutes" => vec![("Combat".into(), 0.25)],
@@ -4132,8 +4442,9 @@ mod personality_tests {
 
 fn strategic_condition_rail(
     condition: Option<&CharacterStrategicCondition>,
-    morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
+    _morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
     filth: &[crate::spacetimedb::CharacterFilth],
+    social_href: &str,
 ) -> Markup {
     let Some(condition) = condition else {
         return html! {};
@@ -4173,7 +4484,7 @@ fn strategic_condition_rail(
     ];
     html! {
         (sidebar_section("Status", html! {
-            div class=(if condition.fear > 0.0 { "morale-meter is-fearful" } else { "morale-meter" }) tabindex="0" style=(meter_style) aria-label=(format!(
+            a class=(if condition.fear > 0.0 { "morale-meter is-fearful" } else { "morale-meter" }) href=(social_href) style=(meter_style) aria-label=(format!(
                 "Morale {:.1}; fear {}; inspiration {:.1}%",
                 condition.morale,
                 percent(condition.fear),
@@ -4193,21 +4504,6 @@ fn strategic_condition_rail(
                     span { "Neutral" }
                     span { (format!("{:.1}% inspiration", condition.morale_bonus * 100.0)) }
                 }
-                div class="morale-source-popup" role="tooltip" {
-                    strong { "Morale sources" }
-                    @if morale_sources.is_empty() {
-                        p { "No current morale effects." }
-                    } @else {
-                        ul {
-                            @for source in morale_sources {
-                                li class=(if source.magnitude >= 0.0 { "positive" } else { "negative" }) {
-                                    span { (&source.label) }
-                                    strong { (format!("{:+.1}", source.magnitude)) }
-                                }
-                            }
-                        }
-                    }
-                }
             }
             div class="fervor-meter" tabindex="0" style=(format!("--fervor: {:.0}%", condition.fervor.clamp(0.0, 1.0) * 100.0)) aria-label=(format!("Fervor {}", percent(condition.fervor))) {
                 div class="fervor-meter-heading" {
@@ -4221,7 +4517,7 @@ fn strategic_condition_rail(
                     span { "Frenzy" }
                 }
                 p class="fervor-help" role="tooltip" {
-                    "Personality Conviction, a strong same-profession cohort, and surplus morale raise Fervor. Party Charisma restrains it. Characters without a professed religion have no Fervor."
+                    "Personality Conviction, a strong same-profession cohort, and surplus morale raise Fervor. Party Command restrains it. Characters without a professed religion have no Fervor."
                 }
             }
             div class="incapacitation-overview" tabindex="0" title=(format!("{} incapacitation", percent(condition.incapacitation))) {
@@ -5277,10 +5573,89 @@ mod tests {
             check_multiplier: 1.0,
             status: "ready".into(),
         };
-        let markup = strategic_condition_rail(Some(&condition), &[], &[]).into_string();
+        let markup = strategic_condition_rail(Some(&condition), &[], &[], "/social").into_string();
+        assert!(markup.contains("<a class=\"morale-meter\" href=\"/social\""));
         let water = markup.find("Water").expect("water meter");
         let filth = markup.find("Filth").expect("filth meter");
         assert!(water < filth);
+    }
+
+    #[test]
+    fn social_catalog_labels_are_generic_grounded_and_accessible() {
+        use adventuresim_core::social::{SocialActionKind, SocialTopic};
+        let defeat = SocialActionKind::Commiserate.description(SocialTopic::Defeat, true);
+        assert_eq!(defeat, "Commiserate about the defeat");
+        assert!(!defeat.to_ascii_lowercase().contains("goblin"));
+        let actions = social_actions(false, SocialTopic::Defeat);
+        assert_eq!(actions.len(), 6);
+        assert!(
+            actions
+                .iter()
+                .any(|(_, action, _)| *action == SocialActionKind::Listen)
+        );
+        assert_eq!(
+            social_actions(true, SocialTopic::Defeat),
+            vec![("inner-self", SocialActionKind::Reflect, "reflect")]
+        );
+        assert_eq!(social_actions(false, SocialTopic::Hunger).len(), 3);
+        assert_eq!(social_actions(false, SocialTopic::Faith).len(), 4);
+        assert_eq!(SocialActionKind::Commiserate.skill_name(false), "Deception");
+        assert_eq!(
+            SocialActionKind::Flirt.description(SocialTopic::Injury, false),
+            "Tell them the scar makes them look striking"
+        );
+        assert_eq!(familiarity_label(0.0), "0 hours");
+        assert_eq!(familiarity_label(0.4), "<1 hours");
+        assert_eq!(familiarity_label(9.4), "9 hours");
+        let tooltip = belief_tooltip(&crate::spacetimedb::SocialBelief {
+            id: "belief".into(),
+            observer_id: 1,
+            subject_id: 2,
+            axis: "self_regard".into(),
+            perceived_value: 1,
+            confidence: 0.64,
+            observed_at_minute: 0,
+        });
+        assert!(tooltip.contains("Confidence: 64%"));
+        assert!(tooltip.contains("Injury is touchy"));
+    }
+
+    #[test]
+    fn social_skill_family_has_an_average_and_six_expandable_icon_rows() {
+        let skills = CharacterSkills {
+            character_id: 7,
+            melee_hours: 0.0,
+            dodge_hours: 0.0,
+            block_hours: 0.0,
+            ranged_hours: 0.0,
+            will_hours: 0.0,
+            insight_hours: 100.0,
+            self_awareness_hours: 80.0,
+            humor_hours: 60.0,
+            command_hours: 40.0,
+            deception_hours: 20.0,
+            seduction_hours: 10.0,
+            medicine_hours: 0.0,
+            religion_hours: Default::default(),
+            stealth_hours: 0.0,
+            balance_hours: 0.0,
+            surgeon_hours: 0.0,
+            smithing_hours: 0.0,
+        };
+        let markup = social_skill_rows(&skills, 1.0, None).into_string();
+        assert!(markup.contains("data-social-primary"));
+        assert!(markup.contains("Average of all six Social skills"));
+        assert_eq!(markup.matches("data-social-detail").count(), 6);
+        for icon in [
+            "conversation.svg",
+            "awareness.svg",
+            "inner-self.svg",
+            "juggler.svg",
+            "crown.svg",
+            "rose.svg",
+        ] {
+            assert!(markup.contains(icon), "missing social icon {icon}");
+        }
     }
 
     #[test]
@@ -5896,7 +6271,12 @@ mod tests {
             block_hours: 0.0,
             ranged_hours: 0.0,
             will_hours: 0.0,
-            charisma_hours: 0.0,
+            insight_hours: 0.0,
+            self_awareness_hours: 0.0,
+            humor_hours: 0.0,
+            command_hours: 0.0,
+            deception_hours: 0.0,
+            seduction_hours: 0.0,
             medicine_hours: 0.0,
             religion_hours: adventuresim_world_schema::ReligionHours {
                 roman_catholic: 1_000.0,
@@ -6045,7 +6425,7 @@ mod tests {
 
         let carousing = activity_training_cell("Carousing", "carousing_minutes", 120).into_string();
         assert!(carousing.contains(">+0.50h<"));
-        assert!(carousing.contains("Charisma: +0.50h"));
+        assert!(carousing.contains("Humor: +0.50h"));
 
         let apprenticeship =
             activity_training_cell("Apprenticeship — herbalist", "apprenticeship_minutes", 120)
@@ -7014,6 +7394,8 @@ mod tests {
         assert!(schedule.contains("function calculateLeisurePreview"));
         assert!(schedule.contains("row.dataset.leisureFatiguePreviewDivisor"));
         assert!(schedule.contains("function mountSchedules(root = document)"));
+        assert!(schedule.contains("[data-social-expand]"));
+        assert!(schedule.contains(".social-detail-row"));
         assert!(schedule.contains("'strategic-live-regions-refreshed'"));
         assert!(schedule.contains("event.detail.regions.includes('left-sidebar')"));
         assert!(schedule.contains("function createLatestSaveQueue(send"));

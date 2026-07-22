@@ -18,6 +18,7 @@ pub mod profession;
 pub mod provisioning;
 pub mod simulation_security;
 pub mod skill;
+pub mod social;
 pub mod strategic_currency;
 pub mod strategic_economy;
 pub mod strategic_schedule;
@@ -42,6 +43,7 @@ pub mod prelude {
     pub use crate::profession::*;
     pub use crate::provisioning::*;
     pub use crate::skill::*;
+    pub use crate::social::*;
     pub use crate::strategic_economy::*;
     pub use crate::strategic_schedule::*;
     pub use crate::strategic_time::*;

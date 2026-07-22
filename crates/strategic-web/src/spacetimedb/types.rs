@@ -264,7 +264,7 @@ pub struct Party {
     pub camp_remaining_minutes: u64,
     pub pooled_water_ml: f32,
     pub medicine_target: f32,
-    pub charisma_target: f32,
+    pub command_target: f32,
     pub religion_target: f32,
 }
 
@@ -469,7 +469,7 @@ pub struct RecruitmentRequirements {
     pub endurance: u8,
     pub medicine: u8,
     pub surgery: u8,
-    pub charisma: u8,
+    pub command: u8,
     pub religion: u8,
 }
 
@@ -533,7 +533,7 @@ pub struct CharacterCapability {
     pub endurance: f32,
     pub medicine: f32,
     pub surgery: f32,
-    pub charisma: f32,
+    pub command: f32,
     pub religion: f32,
     pub weapon_precision: f32,
 }
@@ -569,7 +569,7 @@ impl CharacterCapability {
             (self.endurance, "Endurance"),
             (self.medicine, "Medicine"),
             (self.surgery, "Surgery"),
-            (self.charisma, "Charisma"),
+            (self.command, "Command"),
             (self.religion, "Religion"),
         ] {
             if adventuresim_core::capability::rating(value)
@@ -884,7 +884,12 @@ pub struct CharacterSkills {
     pub block_hours: f32,
     pub ranged_hours: f32,
     pub will_hours: f32,
-    pub charisma_hours: f32,
+    pub insight_hours: f32,
+    pub self_awareness_hours: f32,
+    pub humor_hours: f32,
+    pub command_hours: f32,
+    pub deception_hours: f32,
+    pub seduction_hours: f32,
     pub medicine_hours: f32,
     pub religion_hours: adventuresim_world_schema::ReligionHours,
     pub stealth_hours: f32,
@@ -971,7 +976,12 @@ pub struct ScheduleAllocation {
     pub block_minutes: u16,
     pub ranged_minutes: u16,
     pub will_minutes: u16,
-    pub charisma_minutes: u16,
+    pub insight_minutes: u16,
+    pub self_awareness_minutes: u16,
+    pub humor_minutes: u16,
+    pub command_minutes: u16,
+    pub deception_minutes: u16,
+    pub seduction_minutes: u16,
     pub medicine_minutes: u16,
     pub religion_minutes: u16,
     pub religion_auto_train: bool,
@@ -996,6 +1006,12 @@ pub struct CharacterTrainingSchedule {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterNotoriety {
+    pub character_id: u64,
+    pub value: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterVirtue {
     pub character_id: u64,
     pub value: f32,
 }
@@ -1103,6 +1119,35 @@ pub struct CharacterMoraleSource {
     pub kind: String,
     pub label: String,
     pub magnitude: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterAffinity {
+    pub id: String,
+    pub subject_id: u64,
+    pub actor_id: u64,
+    pub anchor: f32,
+    pub anchor_minute: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterFamiliarity {
+    pub id: String,
+    pub low_id: u64,
+    pub high_id: u64,
+    pub shared_minutes: u64,
+    pub joint_minute_anchor: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialBelief {
+    pub id: String,
+    pub observer_id: u64,
+    pub subject_id: u64,
+    pub axis: String,
+    pub perceived_value: i8,
+    pub confidence: f32,
+    pub observed_at_minute: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

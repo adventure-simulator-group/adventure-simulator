@@ -261,7 +261,12 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
         block: initial(&mut rng),
         ranged: initial(&mut rng),
         will: initial(&mut rng),
-        charisma: initial(&mut rng),
+        insight: initial(&mut rng),
+        self_awareness: initial(&mut rng),
+        humor: initial(&mut rng),
+        command: initial(&mut rng),
+        deception: initial(&mut rng),
+        seduction: initial(&mut rng),
         medicine: initial(&mut rng),
         religion: ReligionHours {
             roman_catholic: initial(&mut rng),

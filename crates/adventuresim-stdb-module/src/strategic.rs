@@ -1463,7 +1463,7 @@ pub struct Party {
     #[default(0.0)]
     pub medicine_target: f32,
     #[default(0.0)]
-    pub charisma_target: f32,
+    pub command_target: f32,
     #[default(0.0)]
     pub religion_target: f32,
 }
@@ -1657,7 +1657,7 @@ pub(crate) fn require_strategic_gateway(
         .find(0)
         .ok_or("Strategic gateway is not registered")?;
     if authority.identity != ctx.sender() {
-        return Err("Travel reducers may only be called by the strategic gateway".into());
+        return Err("This reducer may only be called by the strategic gateway".into());
     }
     Ok(authority)
 }
@@ -1873,7 +1873,7 @@ pub struct RecruitmentRequirements {
     pub endurance: u8,
     pub medicine: u8,
     pub surgery: u8,
-    pub charisma: u8,
+    pub command: u8,
     pub religion: u8,
 }
 
@@ -1897,7 +1897,7 @@ impl From<RecruitmentRequirements> for adventuresim_core::capability::RoleRequir
             endurance: value.endurance,
             medicine: value.medicine,
             surgery: value.surgery,
-            charisma: value.charisma,
+            command: value.command,
             religion: value.religion,
         }
     }
@@ -2022,7 +2022,7 @@ enum ApprovedPartyAction {
     },
     UpdatePartyCheckTargets {
         medicine: f32,
-        charisma: f32,
+        command: f32,
         religion: f32,
     },
     SetInventoryQuantityTarget {
@@ -2117,9 +2117,9 @@ impl ApprovedPartyAction {
             Self::AutoresolveQuest { quest_id } => autoresolve_quest(ctx, leader_id, quest_id),
             Self::UpdatePartyCheckTargets {
                 medicine,
-                charisma,
+                command,
                 religion,
-            } => update_party_check_targets(ctx, leader_id, medicine, charisma, religion),
+            } => update_party_check_targets(ctx, leader_id, medicine, command, religion),
             Self::SetInventoryQuantityTarget { item_id, quantity } => {
                 set_inventory_quantity_target(ctx, leader_id, true, item_id, quantity)
             }
@@ -2599,7 +2599,7 @@ pub(crate) fn create_solo_party_for_character(
             camp_remaining_minutes: 0,
             pooled_water_ml: 0.0,
             medicine_target: 0.0,
-            charisma_target: 0.0,
+            command_target: 0.0,
             religion_target: 0.0,
         });
         ctx.db.party_member().insert(PartyMember {
@@ -2613,6 +2613,7 @@ pub(crate) fn create_solo_party_for_character(
     }
     character.party_id = Some(party_id.clone());
     ctx.db.character().id().update(character);
+    crate::social::reset_familiarity_after_join(ctx, character_id);
     normalize_and_elect_party_leader(ctx, &party_id)?;
     Ok(party_id)
 }
@@ -2808,6 +2809,7 @@ pub(crate) fn attach_seeded_party_member(
     member.current_settlement_id = leader.current_settlement_id.clone();
     member.current_quest_location_id = leader.current_quest_location_id.clone();
     ctx.db.character().id().update(member);
+    crate::social::reset_familiarity_after_join(ctx, member_id);
     ctx.db.party_member().insert(PartyMember {
         id: 0,
         party_id: party_id.clone(),
@@ -2863,7 +2865,7 @@ pub fn create_recruitment_role(
         requirements.endurance,
         requirements.medicine,
         requirements.surgery,
-        requirements.charisma,
+        requirements.command,
         requirements.religion,
     ]
     .iter()
@@ -3120,11 +3122,11 @@ pub fn update_party_check_targets(
     ctx: &ReducerContext,
     leader_id: u64,
     medicine: f32,
-    charisma: f32,
+    command: f32,
     religion: f32,
 ) -> Result<(), String> {
     crate::character::require_living_character(ctx, leader_id)?;
-    if [medicine, charisma, religion]
+    if [medicine, command, religion]
         .into_iter()
         .any(|value| !value.is_finite() || !(0.0..=5.0).contains(&value) || value.fract() != 0.0)
     {
@@ -3147,7 +3149,7 @@ pub fn update_party_check_targets(
         return Err("Only the party leader can configure party checks".into());
     }
     party.medicine_target = medicine;
-    party.charisma_target = charisma;
+    party.command_target = command;
     party.religion_target = religion;
     ctx.db.party().id().update(party);
     Ok(())
@@ -3188,7 +3190,7 @@ fn role_requirements(
     requirements.weapon_precision = requirements.weapon_precision.max(role.weapon_precision);
     requirements.medicine = 0;
     requirements.surgery = 0;
-    requirements.charisma = 0;
+    requirements.command = 0;
     requirements.religion = 0;
     requirements
 }
@@ -3418,6 +3420,7 @@ pub fn accept_party_join_request(
             source_character.current_settlement_id = party.current_settlement_id.clone();
             source_character.current_quest_location_id = party.current_quest_location_id.clone();
             ctx.db.character().id().update(source_character);
+            crate::social::reset_familiarity_after_join(ctx, member.character_id);
         }
     }
 
@@ -7159,6 +7162,7 @@ pub fn bootstrap_development_world(
     if include_visual_demos {
         crate::character::seed_damaged_character(ctx)?;
         crate::character::seed_religion_scholar_character(ctx)?;
+        crate::social::seed_social_demo(ctx)?;
     }
     Ok(())
 }
@@ -7443,15 +7447,15 @@ fn ensure_npc_quest_parties(ctx: &ReducerContext, settlement_id: &str) -> Result
             party.name = format!("{}'s company", leader.name);
         }
         if party.medicine_target == 0.0
-            && party.charisma_target == 0.0
+            && party.command_target == 0.0
             && party.religion_target == 0.0
         {
             party.medicine_target = 4.0;
-            party.charisma_target = 5.0;
+            party.command_target = 5.0;
             party.religion_target = 4.0;
         }
         party.medicine_target = party.medicine_target.round().clamp(0.0, 5.0);
-        party.charisma_target = party.charisma_target.round().clamp(0.0, 5.0);
+        party.command_target = party.command_target.round().clamp(0.0, 5.0);
         party.religion_target = party.religion_target.round().clamp(0.0, 5.0);
         ctx.db.party().id().update(party);
     }
@@ -7497,7 +7501,7 @@ fn ensure_npc_quest_parties(ctx: &ReducerContext, settlement_id: &str) -> Result
         party.current_settlement_id = Some(settlement_id.to_string());
         party.active_quest_id = Some(quest.id.clone());
         party.medicine_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
-        party.charisma_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
+        party.command_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
         party.religion_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
         ctx.db.party().id().update(party);
 

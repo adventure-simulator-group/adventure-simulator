@@ -424,7 +424,7 @@ mod tests {
     }
 
     #[test]
-    fn sociability_is_separate_from_charisma_and_caps_can_apply_after_it() {
+    fn sociability_is_separate_from_command_and_caps_can_apply_after_it() {
         let mut p = CharacterPersonality::neutral(1);
         p.sociability = Sociability::Gregarious;
         let (multiplier, _) = ally_restoration_multiplier(&p);
