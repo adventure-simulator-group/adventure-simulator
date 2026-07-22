@@ -894,6 +894,13 @@ pub(crate) fn map_destination_detail(
                             span class="travel-provisioning-icons" {
                                 span class="travel-provisioning-icon food" { (game_icon("Food", "meal")) }
                                 span class="travel-provisioning-icon water" { (game_icon("Water", "water-drop")) }
+                                @if let Some(forecast) = provision_forecast {
+                                    span class="travel-provisioning-icon alcohol"
+                                        title=(format!("Emergency alcohol adds {:.2} days of hydration", forecast.emergency_alcohol_days)) {
+                                        (game_icon("Emergency alcohol hydration", "beer-stein"))
+                                        span class="travel-provisioning-alcohol-days" { (format!("+{:.2}d", forecast.emergency_alcohol_days)) }
+                                    }
+                                }
                             }
                             @if let Some(forecast) = provision_forecast {
                                 a class="btn btn-secondary" data-provision-buy
@@ -1133,7 +1140,7 @@ pub(crate) fn travel_planner_bar_for(
                     div class="travel-resource-row food" aria-label="Food provisions" {
                         span class="travel-resource-icon" { (game_icon("Food", "meal")) }
                         svg class="travel-resource-track" viewBox="0 0 32 100" preserveAspectRatio="none" aria-hidden="true" {
-                            path class="travel-resource-path base" d="M 16 3 V 97" pathLength="100" {}
+                            path class="travel-resource-path base" d="M 16 0 V 100" pathLength="100" {}
                             path class="travel-resource-path target" data-resource-target pathLength="100" {}
                             path class="travel-resource-path actual" data-resource-fill pathLength="100" {}
                         }
@@ -1142,17 +1149,11 @@ pub(crate) fn travel_planner_bar_for(
                     div class="travel-resource-row water" aria-label="Water provisions" {
                         span class="travel-resource-icon" { (game_icon("Water", "water-drop")) }
                         svg class="travel-resource-track" viewBox="0 0 32 100" preserveAspectRatio="none" aria-hidden="true" {
-                            path class="travel-resource-path base" d="M 16 3 V 97" pathLength="100" {}
+                            path class="travel-resource-path base" d="M 16 0 V 100" pathLength="100" {}
                             path class="travel-resource-path target" data-resource-target pathLength="100" {}
                             path class="travel-resource-path actual" data-resource-fill pathLength="100" {}
                         }
                         span class="sr-only" data-surplus-summary="water" {}
-                    }
-                    div class="travel-resource-row alcohol" aria-label="Emergency alcohol hydration" {
-                        span class="travel-resource-icon" { (game_icon("Emergency alcohol hydration", "beer-stein")) }
-                        @if let Some(forecast) = provision_forecast {
-                            span class="small-copy" data-emergency-alcohol-summary { (format!("+{:.2} d", forecast.emergency_alcohol_days)) }
-                        }
                     }
                     div class="travel-resource-row fatigue" aria-label="Party fatigue" {
                         span class="travel-resource-icon" { (game_icon("Fatigue", "heart-minus")) }
