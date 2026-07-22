@@ -1801,7 +1801,7 @@ fn cooking_activity_page(
                         alt="Placeholder for the cooking vessel and fire";
                     p class="text-muted small-copy" { "Cooking scene placeholder" }
                 }
-                form class="cooking-submit-form" method="post"
+                form id="cooking-submit-form" class="cooking-submit-form" method="post"
                     action=(format!("{}/party/{}/cook", location.base_path(), active_character.id)) {
                     input type="hidden" name="inventory_item_ids" value="" data-cooking-ids;
                     input type="hidden" name="quantities" value="" data-cooking-quantities;
@@ -1870,7 +1870,8 @@ fn cooking_method(
     html! {
         label class=(if available { "cooking-method" } else { "cooking-method disabled" })
             title=(if available { label } else { reason }) {
-            input type="radio" name="method" value=(value) checked[selected] disabled[!available]
+            input type="radio" name="method" value=(value) form="cooking-submit-form"
+                checked[selected] disabled[!available]
                 data-cooking-method data-unavailable-reason=[(!available).then_some(reason)];
             span class="cooking-method-icon"
                 style=(format!("--cooking-method-icon: url('/static/icons/game/{icon}.svg')"))
