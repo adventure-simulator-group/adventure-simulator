@@ -11,7 +11,7 @@ pub enum ProfessionId {
     Armourer,
     Tailor,
     Herbalist,
-    Innkeeper,
+    Cook,
     Religion,
 }
 
@@ -23,7 +23,7 @@ impl ProfessionId {
             Self::Armourer => "armor",
             Self::Tailor => "clothing",
             Self::Herbalist => "herbalist",
-            Self::Innkeeper => "inn",
+            Self::Cook => "inn",
             Self::Religion => "religion",
         }
     }
@@ -35,7 +35,7 @@ impl ProfessionId {
             "armor" => Some(Self::Armourer),
             "clothing" => Some(Self::Tailor),
             "herbalist" => Some(Self::Herbalist),
-            "inn" => Some(Self::Innkeeper),
+            "inn" => Some(Self::Cook),
             "religion" => Some(Self::Religion),
             _ => None,
         }
@@ -120,6 +120,10 @@ const MEDICAL: &[ProfessionSkillWeight] = &[
         weight: 1.0 / 6.0,
     },
 ];
+const COOKING: &[ProfessionSkillWeight] = &[ProfessionSkillWeight {
+    skill: Skill::Cooking,
+    weight: 1.0,
+}];
 const RELIGION: &[ProfessionSkillWeight] = &[ProfessionSkillWeight {
     skill: Skill::Religion,
     weight: 1.0,
@@ -173,11 +177,11 @@ pub const PROFESSIONS: &[ProfessionDefinition] = &[
         practice_reward: PracticeReward::Gold,
     },
     ProfessionDefinition {
-        id: ProfessionId::Innkeeper,
+        id: ProfessionId::Cook,
         service_id: "inn",
-        label: "innkeeper",
-        description: "Innkeepers practice hospitality, conversation, and the management of a busy public house.",
-        skills: CHARISMA,
+        label: "cook",
+        description: "Cooks prepare safe, nourishing meals and manage a busy tavern kitchen.",
+        skills: COOKING,
         religious: false,
         practice_reward: PracticeReward::Gold,
     },
@@ -271,6 +275,11 @@ mod tests {
             "weaponsmith"
         );
         assert_eq!(profession_for_service("religion").unwrap().religious, true);
+        assert_eq!(
+            profession_for_service("inn").unwrap().id,
+            ProfessionId::Cook
+        );
+        assert_eq!(profession_for_service("inn").unwrap().skills, COOKING);
         assert!(profession_for_service("smith").is_none());
         for profession in PROFESSIONS {
             assert_eq!(profession.id.service_id(), profession.service_id);

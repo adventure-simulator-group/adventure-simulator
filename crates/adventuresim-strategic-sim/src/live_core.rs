@@ -342,6 +342,7 @@ fn live_skills(character_id: u64, profile: &AgentProfile) -> CharacterSkills {
         deception_hours: s.deception,
         seduction_hours: s.seduction,
         medicine_hours: s.medicine,
+        cooking_hours: s.cooking,
         religion_hours: adventuresim_stdb_client::ReligionHours {
             roman_catholic: s.religion.roman_catholic,
             lutheran: s.religion.lutheran,

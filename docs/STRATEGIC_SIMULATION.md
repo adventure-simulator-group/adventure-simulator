@@ -1,5 +1,8 @@
 # Strategic NPC simulation
 
+Provision scenarios use multiple food definitions and aggregate useful calories
+across independent lots. Drivers must not assume all food is `travel_ration`.
+
 `adventuresim-strategic-sim` is a native, deterministic experiment harness for
 balance exploration and regression reproduction. It has two deliberately
 different backends: a fast native settlement-activity model for multi-year

@@ -1,5 +1,10 @@
 Damage and recuperation are based on real values, but if you did this in basically any other RPG it would become extremely boring and punishing. However, in our case [combat](../tactical/Combat.md) is designed around the assumption that players will reliably be able to avoid taking damage, either by dodging, blocking, or it being absorbed by armor, so this isn't a completely unreasonable target.
 
+Foodborne illness uses existing Dysentery / Bloody flux. Eating evaluates a
+direct dose from the lot's lazily grown contamination and amount consumed;
+immunity applies and duplicate unresolved infection is prevented. Contamination
+details remain private simulation state.
+
 However, inevitably damage will occur, and to prevent this from being a fun-killer we must use the two [approaches](../Meta.md) to skip the tedium:
 # Abstraction-based Approach
 The first of which is that even if it takes a very long time to heal from injuries, we can simply [skip ahead](../strategic/Time.md) until your character is healed. This only works well when resting at [settlements](../strategic/Settlement.md) though. If your party is mid-quest and you take a serious injury, you're either going to have to call it off or fight with a handicap. Unless...

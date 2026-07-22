@@ -1,5 +1,10 @@
 > TODO: rewrite for HTML-based strategic interface
 
+Movement spends calories. On crossing zero, travel consumes useful calories
+from shared food lots first and personal lots second, oldest first, and stops
+exactly at zero. Arrival clears positive stomach fullness so dinner is possible.
+Provision previews sum calories across all food lots rather than ration counts.
+
 We technically have an open world, but its not really an open world game in the sense that most people consider it. If you've played the 1.0 version of Mount and Blade (before you could walk around in settlements), Battle Brothers, or early versions of Starsector you should have an idea of what to expect here.
 
 Essentially, the travel map is a minigame where each "party" (players or enemies) has three stats: speed, detection, and stealth.

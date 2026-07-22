@@ -233,6 +233,7 @@ pub struct CharacterSkills {
     pub deception_hours: f32,
     pub seduction_hours: f32,
     pub medicine_hours: f32,
+    pub cooking_hours: f32,
     pub religion_hours: adventuresim_world_schema::ReligionHours,
     pub stealth_hours: f32,
     pub balance_hours: f32,
@@ -413,6 +414,7 @@ pub(crate) fn delete_temporary_character(
             ctx.db.repair_order().id().delete(repair.id);
         }
         ctx.db.inventory_item().id().delete(row.id);
+        crate::food::delete_personal_food_lot(ctx, row.id);
     }
 
     for row in ctx
@@ -983,6 +985,7 @@ fn insert_character_with_origin(
         deception_hours: 1000.0,
         seduction_hours: 1000.0,
         medicine_hours: 1000.0,
+        cooking_hours: 0.0,
         religion_hours: adventuresim_world_schema::ReligionHours {
             roman_catholic: 1000.0,
             ..Default::default()

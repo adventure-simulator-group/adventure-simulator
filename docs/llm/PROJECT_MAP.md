@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (977)
+## Files (985)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -52,6 +52,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/equipment.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/essential.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/filth.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/food.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/leadership.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/morale.rs` — Rust source module for this component.
@@ -175,6 +176,8 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/construction_industry_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/continue_camp_travel_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/conviction_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/cook_food_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/cooking_method_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/craft_medication_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/create_character_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/create_named_character_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -220,6 +223,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/drive_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/drought_history_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/drought_profile_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/eat_food_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/edge_endpoint_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/edge_progress_permille_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/elevation_meters_type.rs` — Generated SpacetimeDB data type.
@@ -249,6 +253,10 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/fishing_industry_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/flow_persistence_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/flowing_water_access_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/food_contamination_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/food_lot_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/food_lot_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/food_preparation_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/forest_commodity_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/forest_cover_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/forestry_industry_type.rs` — Generated SpacetimeDB data type.
@@ -537,6 +545,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/condition.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/disease.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/filth.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-module/src/food.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/item.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/personality.rs` — Rust source module for this component.
@@ -669,6 +678,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/background-fetch.js` — Repository support file.
 - `crates/strategic-web/static/building-state.js` — Repository support file.
 - `crates/strategic-web/static/chat-resize.js` — Repository support file.
+- `crates/strategic-web/static/cooking.js` — Repository support file.
 - `crates/strategic-web/static/css/base.css` — Browser UI styling.
 - `crates/strategic-web/static/css/components.css` — Browser UI styling.
 - `crates/strategic-web/static/css/layout.css` — Browser UI styling.
@@ -896,10 +906,13 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/training-schedule.js` — Repository support file.
 - `crates/strategic-web/static/travel-planner.js` — Repository support file.
 - `crates/strategic-web/tests/building-assets.test.cjs` — Repository support file.
+- `crates/strategic-web/tests/cooking.dom.test.cjs` — Repository support file.
+- `crates/strategic-web/tests/cooking.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/currency-backend-source.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/developer-mode.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/dialogue-client.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/environment.test.cjs` — Repository support file.
+- `crates/strategic-web/tests/food-remediation.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/icon-rendering.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/inventory-browser.dom.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/inventory-browser.test.cjs` — Repository support file.
@@ -919,6 +932,7 @@ development, or wiki document before changing a subsystem.
 - `docs/DROUGHT.md` — Project documentation.
 - `docs/ELEVATION.md` — Project documentation.
 - `docs/EQUIPMENT.md` — Project documentation.
+- `docs/FOOD_AND_COOKING.md` — Project documentation.
 - `docs/FOREST_COVER.md` — Project documentation.
 - `docs/GEOLOGY.md` — Project documentation.
 - `docs/HISTORICAL_LAND_USE.md` — Project documentation.

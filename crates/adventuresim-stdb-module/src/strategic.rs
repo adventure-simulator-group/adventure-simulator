@@ -4701,6 +4701,43 @@ pub fn transfer_party_item(
         return Ok(());
     }
 
+    let food = ctx
+        .db
+        .item()
+        .id()
+        .find(&source_item.item_id)
+        .is_some_and(|row| row.kind == crate::ItemKind::Food)
+        || adventuresim_core::food::definition(&source_item.item_id).is_some();
+    if food {
+        if source_item.quantity == quantity {
+            let mut moved = source_item;
+            moved.character_id = to_character_id;
+            ctx.db.inventory_item().id().update(moved);
+        } else {
+            let original_quantity = source_item.quantity;
+            let item_id = source_item.item_id.clone();
+            let mut remaining = source_item;
+            remaining.quantity -= quantity;
+            ctx.db.inventory_item().id().update(remaining);
+            let destination = ctx.db.inventory_item().insert(InventoryItem {
+                id: 0,
+                character_id: to_character_id,
+                item_id,
+                quantity,
+            });
+            crate::food::split_lot(
+                ctx,
+                inventory_item_id,
+                destination.id,
+                quantity,
+                original_quantity,
+            )?;
+        }
+        crate::capability::refresh_character_capability(ctx, from_character_id)?;
+        crate::capability::refresh_character_capability(ctx, to_character_id)?;
+        return Ok(());
+    }
+
     let destination_item = ctx
         .db
         .inventory_item()
@@ -4744,6 +4781,47 @@ fn objective_item_value(ctx: &ReducerContext, item_id: &str) -> Result<u64, Stri
         .ok_or_else(|| format!("Item {item_id} has no objective value"))
 }
 
+fn food_lot_value(value: f32) -> Result<u64, String> {
+    if !value.is_finite() || value < 0.0 {
+        return Err("Food lot has invalid value".into());
+    }
+    Ok(value.floor() as u64)
+}
+
+fn personal_inventory_value(
+    ctx: &ReducerContext,
+    inventory: &InventoryItem,
+    quantity: u32,
+) -> Result<u64, String> {
+    if let Some(lot) = crate::food::personal_lot(ctx, inventory.id) {
+        if quantity != inventory.quantity {
+            return Err("Food batches must move as complete lots".into());
+        }
+        food_lot_value(lot.total_value)
+    } else {
+        objective_item_value(ctx, &inventory.item_id)?
+            .checked_mul(u64::from(quantity))
+            .ok_or_else(|| "Party asset liquidation line value overflow".into())
+    }
+}
+
+fn party_inventory_value(
+    ctx: &ReducerContext,
+    inventory: &PartyInventoryItem,
+    quantity: u32,
+) -> Result<u64, String> {
+    if let Some(lot) = crate::food::party_lot(ctx, inventory.id) {
+        if quantity != inventory.quantity {
+            return Err("Food batches must move as complete lots".into());
+        }
+        food_lot_value(lot.total_value)
+    } else {
+        objective_item_value(ctx, &inventory.item_id)?
+            .checked_mul(u64::from(quantity))
+            .ok_or_else(|| "Inventory value overflow".into())
+    }
+}
+
 fn item_is_durable(ctx: &ReducerContext, item_id: &str) -> bool {
     ctx.db
         .item()
@@ -4764,6 +4842,32 @@ pub(crate) fn add_to_party_inventory(
     quantity: u32,
 ) {
     if quantity == 0 {
+        return;
+    }
+    if ctx
+        .db
+        .item()
+        .id()
+        .find(item_id.to_string())
+        .is_some_and(|row| row.kind == crate::ItemKind::Food)
+        || adventuresim_core::food::definition(item_id).is_some()
+    {
+        let minute = ctx
+            .db
+            .party()
+            .id()
+            .find(&party_id.to_string())
+            .and_then(|party| ctx.db.character_time().character_id().find(party.leader_id))
+            .map_or(0, |time| time.minutes);
+        for _ in 0..quantity {
+            let row = ctx.db.party_inventory_item().insert(PartyInventoryItem {
+                id: 0,
+                party_id: party_id.into(),
+                item_id: item_id.into(),
+                quantity: 1,
+            });
+            crate::food::create_party_food_lot(ctx, row.id, item_id, 1, minute);
+        }
         return;
     }
     if item_is_durable(ctx, item_id) {
@@ -5082,7 +5186,7 @@ pub fn deposit_party_inventory_item(
     {
         return Err("Unequip an item before depositing it".into());
     }
-    let value = objective_item_value(ctx, &inventory.item_id)?.saturating_mul(u64::from(quantity));
+    let value = personal_inventory_value(ctx, &inventory, quantity)?;
     let durable = item_is_durable(ctx, &inventory.item_id);
     if durable && (quantity != 1 || inventory.quantity != 1) {
         return Err("Equipment instances must be deposited individually".into());
@@ -5095,7 +5199,24 @@ pub fn deposit_party_inventory_item(
     } else {
         None
     };
-    add_to_party_inventory(ctx, &party_id, &inventory.item_id, quantity);
+    let food = crate::food::personal_lot(ctx, inventory.id).is_some();
+    if food {
+        let party_row = ctx.db.party_inventory_item().insert(PartyInventoryItem {
+            id: 0,
+            party_id: party_id.clone(),
+            item_id: inventory.item_id.clone(),
+            quantity,
+        });
+        crate::food::move_or_split_to_party(
+            ctx,
+            inventory.id,
+            party_row.id,
+            quantity,
+            inventory.quantity,
+        )?;
+    } else {
+        add_to_party_inventory(ctx, &party_id, &inventory.item_id, quantity);
+    }
     if let Some(condition) = preserved_condition {
         let party_row = ctx
             .db
@@ -5128,6 +5249,7 @@ pub fn deposit_party_inventory_item(
         inventory.quantity -= quantity;
         ctx.db.inventory_item().id().update(inventory);
     }
+    crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(())
 }
 
@@ -5292,7 +5414,7 @@ pub fn withdraw_party_inventory_item(
     if quantity == 0 || inventory.party_id != party_id || inventory.quantity < quantity {
         return Err("Invalid party inventory withdrawal".into());
     }
-    let cost = objective_item_value(ctx, &inventory.item_id)?.saturating_mul(u64::from(quantity));
+    let cost = party_inventory_value(ctx, &inventory, quantity)?;
     let mut stake = ctx
         .db
         .party_stake()
@@ -5317,8 +5439,25 @@ pub fn withdraw_party_inventory_item(
         .party_item_condition()
         .party_inventory_item_id()
         .find(inventory.id);
-    let new_inventory_id =
-        crate::add_inventory_item(ctx, character_id, &inventory.item_id, quantity);
+    let food = crate::food::party_lot(ctx, inventory.id).is_some();
+    let new_inventory_id = if food {
+        let row = ctx.db.inventory_item().insert(InventoryItem {
+            id: 0,
+            character_id,
+            item_id: inventory.item_id.clone(),
+            quantity,
+        });
+        crate::food::move_or_split_to_personal(
+            ctx,
+            inventory.id,
+            row.id,
+            quantity,
+            inventory.quantity,
+        )?;
+        Some(row.id)
+    } else {
+        crate::add_inventory_item(ctx, character_id, &inventory.item_id, quantity)
+    };
     if let (Some(condition), Some(new_id)) = (preserved_condition, new_inventory_id) {
         ctx.db
             .item_condition()
@@ -5342,6 +5481,7 @@ pub fn withdraw_party_inventory_item(
         inventory.quantity -= quantity;
         ctx.db.party_inventory_item().id().update(inventory);
     }
+    crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(())
 }
 
@@ -5387,9 +5527,7 @@ pub fn liquidate_party_inventory(
         {
             return Err("Invalid party asset liquidation".into());
         }
-        let line_value = objective_item_value(ctx, &entry.item_id)?
-            .checked_mul(u64::from(quantity))
-            .ok_or("Party asset liquidation line value overflow")?;
+        let line_value = party_inventory_value(ctx, &entry, quantity)?;
         proceeds = proceeds
             .checked_add(line_value)
             .ok_or("Party asset liquidation total overflow")?;
@@ -5398,6 +5536,10 @@ pub fn liquidate_party_inventory(
     let proceeds =
         u32::try_from(proceeds).map_err(|_| "Party asset liquidation exceeds currency limits")?;
     for (mut entry, quantity) in staged {
+        let is_food = crate::food::party_lot(ctx, entry.id).is_some();
+        if is_food {
+            crate::food::remove_party_lot_quantity(ctx, entry.id, quantity, entry.quantity)?;
+        }
         if entry.quantity == quantity {
             ctx.db.party_inventory_item().id().delete(entry.id);
             ctx.db
@@ -5456,11 +5598,14 @@ pub fn discard_inventory_items(
         if item.quantity == quantity {
             ctx.db.inventory_item().id().delete(item.id);
             ctx.db.item_condition().inventory_item_id().delete(item.id);
+            crate::food::delete_personal_food_lot(ctx, item.id);
         } else {
+            crate::food::remove_lot_quantity(ctx, item.id, quantity, item.quantity)?;
             item.quantity -= quantity;
             ctx.db.inventory_item().id().update(item);
         }
     }
+    crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(())
 }
 
@@ -5582,7 +5727,7 @@ pub fn finalize_merchant_trade(
     }
     let mut proceeds = 0_u64;
     for (inventory_id, quantity) in sell_inventory_ids.iter().zip(&sell_quantities) {
-        let (item_id, available) = if party_scope {
+        let (item_id, available, food_value) = if party_scope {
             let inventory = ctx
                 .db
                 .party_inventory_item()
@@ -5592,7 +5737,8 @@ pub fn finalize_merchant_trade(
             if Some(&inventory.party_id) != party_id.as_ref() {
                 return Err("Invalid party inventory sale".into());
             }
-            (inventory.item_id, inventory.quantity)
+            let food_value = crate::food::party_lot(ctx, inventory.id).map(|lot| lot.total_value);
+            (inventory.item_id, inventory.quantity, food_value)
         } else {
             let inventory = ctx
                 .db
@@ -5603,7 +5749,9 @@ pub fn finalize_merchant_trade(
             if inventory.character_id != character_id {
                 return Err("Invalid merchant sale".into());
             }
-            (inventory.item_id, inventory.quantity)
+            let food_value =
+                crate::food::personal_lot(ctx, inventory.id).map(|lot| lot.total_value);
+            (inventory.item_id, inventory.quantity, food_value)
         };
         let Some(item) = ctx.db.item().id().find(&item_id) else {
             return Err("Item definition not found".into());
@@ -5627,11 +5775,21 @@ pub fn finalize_merchant_trade(
         {
             return Err("Unequip an item before selling it".into());
         }
-        let line = adventuresim_core::strategic_economy::checked_merchant_line_total(
-            adventuresim_core::strategic_economy::merchant_sell_price(item.base_value.unwrap_or(1)),
-            *quantity,
-        )
-        .ok_or("Merchant sale total overflow")?;
+        let line = if let Some(value) = food_value {
+            if *quantity != available || !value.is_finite() || value < 0.0 {
+                return Err("Food batches must be sold as complete valid lots".into());
+            }
+            adventuresim_core::strategic_economy::merchant_sell_food_lot_value(value)
+                .ok_or("Food lot has invalid value")?
+        } else {
+            adventuresim_core::strategic_economy::checked_merchant_line_total(
+                adventuresim_core::strategic_economy::merchant_sell_price(
+                    item.base_value.unwrap_or(1),
+                ),
+                *quantity,
+            )
+            .ok_or("Merchant sale total overflow")?
+        };
         proceeds = adventuresim_core::strategic_economy::checked_add_merchant_total(proceeds, line)
             .ok_or("Merchant sale total overflow")?;
     }
@@ -5658,24 +5816,42 @@ pub fn finalize_merchant_trade(
                 .find(*inventory_id)
                 .unwrap();
             if inventory.quantity == *quantity {
+                crate::food::delete_party_food_lot(ctx, *inventory_id);
                 ctx.db.party_inventory_item().id().delete(*inventory_id);
                 ctx.db
                     .party_item_condition()
                     .party_inventory_item_id()
                     .delete(*inventory_id);
             } else {
+                if crate::food::party_lot(ctx, inventory.id).is_some() {
+                    crate::food::remove_party_lot_quantity(
+                        ctx,
+                        *inventory_id,
+                        *quantity,
+                        inventory.quantity,
+                    )?;
+                }
                 inventory.quantity -= quantity;
                 ctx.db.party_inventory_item().id().update(inventory);
             }
         } else {
             let mut inventory = ctx.db.inventory_item().id().find(*inventory_id).unwrap();
             if inventory.quantity == *quantity {
+                crate::food::delete_personal_food_lot(ctx, *inventory_id);
                 ctx.db.inventory_item().id().delete(*inventory_id);
                 ctx.db
                     .item_condition()
                     .inventory_item_id()
                     .delete(*inventory_id);
             } else {
+                if crate::food::personal_lot(ctx, inventory.id).is_some() {
+                    crate::food::remove_lot_quantity(
+                        ctx,
+                        *inventory_id,
+                        *quantity,
+                        inventory.quantity,
+                    )?;
+                }
                 inventory.quantity -= quantity;
                 ctx.db.inventory_item().id().update(inventory);
             }
@@ -5695,7 +5871,15 @@ pub fn finalize_merchant_trade(
                 crate::ItemKind::Weapon | crate::ItemKind::Armor | crate::ItemKind::Shield
             )
         });
+        let food = ctx
+            .db
+            .item()
+            .id()
+            .find(item_id)
+            .is_some_and(|definition| definition.kind == crate::ItemKind::Food)
+            || adventuresim_core::food::definition(item_id).is_some();
         if !durable
+            && !food
             && let Some(mut stack) = ctx
                 .db
                 .inventory_item()
@@ -5756,6 +5940,7 @@ pub fn finalize_merchant_trade(
             u32::try_from(receives).map_err(|_| "Merchant proceeds exceed inventory capacity")?,
         )?;
     }
+    crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(())
 }
 

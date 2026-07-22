@@ -37,6 +37,7 @@ const BUILDINGS: &[&str] = &[
 #[derive(Clone, Debug, Default, Deserialize)]
 struct BuildingQuery {
     building: Option<String>,
+    cook: Option<bool>,
 }
 
 impl BuildingQuery {
@@ -52,6 +53,10 @@ impl BuildingQuery {
             |building| format!("{path}?building={building}"),
         )
     }
+
+    fn cooking(&self) -> bool {
+        self.cook == Some(true)
+    }
 }
 
 #[cfg(test)]
@@ -62,6 +67,7 @@ mod building_query_tests {
     fn building_query_is_closed_and_preserved_on_redirects() {
         let valid = BuildingQuery {
             building: Some("inn".into()),
+            ..Default::default()
         };
         assert_eq!(valid.valid(), Some("inn"));
         assert_eq!(
@@ -70,6 +76,7 @@ mod building_query_tests {
         );
         let invalid = BuildingQuery {
             building: Some("../religion".into()),
+            ..Default::default()
         };
         assert_eq!(invalid.valid(), None);
         assert_eq!(
@@ -96,20 +103,22 @@ use crate::spacetimedb::{
     CharacterCondition, CharacterEquip, CharacterFamiliarity, CharacterFilth, CharacterLimbs,
     CharacterMoraleSource, CharacterNeeds, CharacterNotoriety, CharacterPersonality,
     CharacterSkills, CharacterStats, CharacterStrategicCondition, CharacterTime,
-    CharacterTrainingSchedule, CharacterVirtue, EquippedMedication, HerbalistExaminationRow,
-    InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget, ItemCondition, ItemDefinition,
-    ItemKind, ItemSlot, LimbInjury, LimbRegion, MedicalExaminationRow, Party, PartyInventoryItem,
-    PartyJourney, PartyJourneyItinerary, PartyJourneyRoute, PartyMember, PartyRecruitmentRole,
-    PartyStake, Quest, QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand,
-    RepairOrder, RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias,
-    SettlementDescription, SettlementSmith, SocialBelief, TravelEdge,
+    CharacterTrainingSchedule, CharacterVirtue, EquippedMedication, FoodLot,
+    HerbalistExaminationRow, InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget,
+    ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury, LimbRegion,
+    MedicalExaminationRow, Party, PartyInventoryItem, PartyJourney, PartyJourneyItinerary,
+    PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, Quest, QuestIssuer,
+    QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder, RetainedProjectile,
+    ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription, SettlementSmith,
+    SocialBelief, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
-    RestSummary, SoapRestPreview, SocialPresentation, alchemy_page, camp_page, inn_page,
+    RestSummary, SoapRestPreview, SocialPresentation, alchemy_page, camp_page,
     live_merchant_shop_page, merchants_page, party_discard_page, party_inventory_page,
     party_personal_page, party_pool_page, party_social_page, party_stats_page, religion_page,
-    rest_result_page, settlement_map_page, settlement_overview_page, surgery_page,
+    rest_default_minutes, rest_result_page, settlement_map_page, settlement_overview_page,
+    surgery_page,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -161,6 +170,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/locations/{kind}/{id}/party/{character_id}",
             get(party_personal),
+        )
+        .route(
+            "/locations/{kind}/{id}/party/{character_id}/cook",
+            post(cook_food),
         )
         .route(
             "/locations/{kind}/{id}/party/{character_id}/inventory",
@@ -1718,7 +1731,13 @@ async fn travel_provision_forecast_for_minutes(
     let Some(waterskin) = items.iter().find(|item| item.id == STANDARD_WATERSKIN_ID) else {
         return Ok(None);
     };
+    let food_lots: Vec<FoodLot> = state
+        .db
+        .query("SELECT * FROM food_lot")
+        .await
+        .map_err(|error| error.to_string())?;
     let mut food_reserve_kcal = 0.0;
+    let mut food_lot_kcal = 0.0;
     let mut water_reserve_ml = 0.0;
     let mut ration_count = 0;
     let mut waterskin_count = 0;
@@ -1834,6 +1853,14 @@ async fn travel_provision_forecast_for_minutes(
                 .sum::<u32>()
         };
         food_reserve_kcal += needs.food_balance_kcal;
+        food_lot_kcal += food_lots
+            .iter()
+            .filter(|lot| {
+                lot.inventory_item_id
+                    .is_some_and(|id| inventory.iter().any(|entry| entry.id == id))
+            })
+            .map(|lot| lot.nutrition_kcal.max(0.0))
+            .sum::<f32>();
         water_reserve_ml += needs.water_balance_ml;
         ration_count += owned(STANDARD_TRAVEL_RATION_ID);
         let skins = owned(STANDARD_WATERSKIN_ID);
@@ -1875,6 +1902,14 @@ async fn travel_provision_forecast_for_minutes(
             .filter(|row| row.item_id == STANDARD_TRAVEL_RATION_ID)
             .map(|row| row.quantity)
             .sum::<u32>();
+        food_lot_kcal += food_lots
+            .iter()
+            .filter(|lot| {
+                lot.party_inventory_item_id
+                    .is_some_and(|id| pooled.iter().any(|entry| entry.id == id))
+            })
+            .map(|lot| lot.nutrition_kcal.max(0.0))
+            .sum::<f32>();
         let party_skins = pooled
             .iter()
             .filter(|row| row.item_id == STANDARD_WATERSKIN_ID)
@@ -1900,6 +1935,7 @@ async fn travel_provision_forecast_for_minutes(
         planning_minutes,
         living_members: travelers.len() as u32,
         food_reserve_kcal,
+        food_lot_kcal,
         water_reserve_ml,
         ration_count,
         waterskin_count,
@@ -2521,7 +2557,7 @@ async fn party_personal(
         }
     };
     location.active_building = building.valid().map(str::to_owned);
-    let Some((active_character, _)) =
+    let Some((active_character, active_inventory)) =
         get_active_character(&state, session.character_id_u64()).await
     else {
         return Html("<h1>Choose a character first</h1>".to_string());
@@ -2638,6 +2674,16 @@ async fn party_personal(
         ))
         .await
         .unwrap_or_default();
+    let food_lots = state
+        .db
+        .query::<FoodLot>("SELECT * FROM food_lot")
+        .await
+        .unwrap_or_default();
+    let item_definitions = state
+        .db
+        .query::<ItemDefinition>("SELECT * FROM item")
+        .await
+        .unwrap_or_default();
     Html(
         party_personal_page(
             &location,
@@ -2662,9 +2708,80 @@ async fn party_personal(
             &injuries,
             &projectiles,
             &filth,
+            building.cooking(),
+            &active_inventory,
+            &food_lots,
+            &item_definitions,
         )
         .into_string(),
     )
+}
+
+#[derive(Deserialize)]
+struct CookFoodForm {
+    method: String,
+    inventory_item_ids: String,
+    quantities: String,
+}
+
+async fn cook_food(
+    State(state): State<AppState>,
+    Path((kind, id, character_id)): Path<(String, String, u64)>,
+    session: Session,
+    Form(form): Form<CookFoodForm>,
+) -> Response {
+    if session.character_id_u64() != Some(character_id) {
+        return (
+            StatusCode::FORBIDDEN,
+            "Only the selected character can cook",
+        )
+            .into_response();
+    }
+    let parse = |value: &str| -> Result<Vec<u64>, _> {
+        value
+            .split(',')
+            .filter(|value| !value.is_empty())
+            .map(str::parse)
+            .collect()
+    };
+    let ids = match parse(&form.inventory_item_ids) {
+        Ok(value) => value,
+        Err(_) => return (StatusCode::BAD_REQUEST, "Invalid ingredient selection").into_response(),
+    };
+    let quantities = match form
+        .quantities
+        .split(',')
+        .filter(|value| !value.is_empty())
+        .map(str::parse::<u32>)
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(value) => value,
+        Err(_) => {
+            return (StatusCode::BAD_REQUEST, "Invalid ingredient quantities").into_response();
+        }
+    };
+    let method = match form.method.as_str() {
+        "pan-fry" => json!({ "panFry": {} }),
+        "stew" => json!({ "stew": {} }),
+        "roast" => json!({ "roast": {} }),
+        "bake" => json!({ "bake": {} }),
+        _ => return (StatusCode::BAD_REQUEST, "Invalid cooking method").into_response(),
+    };
+    if let Err(error) = state
+        .db
+        .call(
+            "cook_food",
+            &[json!(character_id), method, json!(ids), json!(quantities)],
+        )
+        .await
+    {
+        tracing::warn!(%error, character_id, "cooking failed");
+        return (StatusCode::BAD_REQUEST, error.to_string()).into_response();
+    }
+    Redirect::to(&format!(
+        "/locations/{kind}/{id}/party/{character_id}?cook=true"
+    ))
+    .into_response()
 }
 
 async fn party_religion_knowledge_check(
@@ -2921,16 +3038,27 @@ async fn party_member(
         .query("SELECT * FROM item")
         .await
         .unwrap_or_default();
+    let food_lots: Vec<FoodLot> = state
+        .db
+        .query("SELECT * FROM food_lot")
+        .await
+        .unwrap_or_default();
     let selected_targets = personal_inventory_targets(&state, selected.id).await;
     let active_targets = personal_inventory_targets(&state, active_character.id).await;
     let encumbrance_rows =
         EncumbranceRows::query(&state, &[selected.id, active_character.id]).await;
-    let selected_encumbrance =
-        personal_encumbrance(selected.id, &selected_inventory, &items, &encumbrance_rows);
+    let selected_encumbrance = personal_encumbrance(
+        selected.id,
+        &selected_inventory,
+        &items,
+        &food_lots,
+        &encumbrance_rows,
+    );
     let active_encumbrance = personal_encumbrance(
         active_character.id,
         &active_inventory,
         &items,
+        &food_lots,
         &encumbrance_rows,
     );
 
@@ -4011,87 +4139,7 @@ async fn inn(
     Path(id): Path<String>,
     session: Session,
 ) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM settlement WHERE id = {}",
-            sql_string_literal(&id)
-        ))
-        .await
-        .unwrap_or_default();
-
-    let settlement = match settlements.first() {
-        Some(s) => s,
-        None => return Html("<h1>Settlement not found</h1>".to_string()),
-    };
-
-    let active_character = get_active_character(&state, session.character_id_u64()).await;
-    let party_members = get_active_party_members(
-        &state,
-        active_character.as_ref().map(|(character, _)| character),
-    )
-    .await;
-    let logged_in_as = active_character
-        .as_ref()
-        .map(|(character, _)| character.name.clone());
-    let limbs = match active_character.as_ref() {
-        Some((character, _)) => {
-            query_single::<CharacterLimbs>(&state, "character_limbs", character.id).await
-        }
-        None => None,
-    };
-    let stats = match active_character.as_ref() {
-        Some((character, _)) => {
-            query_single::<CharacterStats>(&state, "character_stats", character.id).await
-        }
-        None => None,
-    };
-    let condition = match active_character.as_ref() {
-        Some((character, _)) => {
-            query_single::<CharacterCondition>(&state, "character_condition", character.id).await
-        }
-        None => None,
-    };
-    let (field_repair_minutes, smith_wait_minutes) = match active_character.as_ref() {
-        Some((character, inventory)) => {
-            equipment_rest_recommendation(&state, character.id, &id, inventory).await
-        }
-        None => (0, 0),
-    };
-    let items = state
-        .db
-        .query::<ItemDefinition>("SELECT * FROM item")
-        .await
-        .unwrap_or_default();
-    let soap_preview = soap_rest_preview(
-        &state,
-        active_character
-            .as_ref()
-            .map_or(&[][..], |(character, _)| std::slice::from_ref(character)),
-        active_character
-            .as_ref()
-            .and_then(|(character, _)| character.party_id.as_deref()),
-    )
-    .await;
-    Html(
-        inn_page(
-            settlement,
-            active_character.as_ref().map(|(character, _)| character),
-            active_character
-                .as_ref()
-                .map_or(&[], |(_, inventory)| inventory.as_slice()),
-            &items,
-            &party_members,
-            limbs.as_ref(),
-            stats.as_ref(),
-            condition.as_ref(),
-            field_repair_minutes,
-            smith_wait_minutes,
-            soap_preview,
-            logged_in_as.as_deref(),
-        )
-        .into_string(),
-    )
+    merchant_shop(state, id, session, MerchantShop::Inn).await
 }
 
 #[derive(Deserialize)]
@@ -4413,6 +4461,7 @@ fn skill_deltas(before: &CharacterSkills, after: &CharacterSkills) -> Vec<(Strin
         ("Deception", before.deception_hours, after.deception_hours),
         ("Seduction", before.seduction_hours, after.seduction_hours),
         ("Medicine", before.medicine_hours, after.medicine_hours),
+        ("Cooking", before.cooking_hours, after.cooking_hours),
         (
             "Religion",
             before.religion_hours.total_direct(),
@@ -4862,9 +4911,10 @@ async fn merchant_shop(
         "SELECT * FROM character_time WHERE character_id = {}",
         character.id
     );
-    let (party_members, items, equip, trade_context, conditions, smiths, orders, times) = tokio::join!(
+    let (party_members, items, food_lots, equip, trade_context, conditions, smiths, orders, times) = tokio::join!(
         get_active_party_members(&state, Some(character)),
         state.db.query::<ItemDefinition>("SELECT * FROM item"),
+        state.db.query::<FoodLot>("SELECT * FROM food_lot"),
         state.db.query::<CharacterEquip>(&equip_sql),
         inventory_trade_context(&state, character),
         state.db.query::<ItemCondition>(&condition_sql),
@@ -4885,12 +4935,40 @@ async fn merchant_shop(
         !matches!(shop, MerchantShop::Herbalist),
     )
     .await;
+    let (inn_rest_default, inn_soap_preview) = if matches!(shop, MerchantShop::Inn) {
+        let (limbs, stats, condition) = tokio::join!(
+            query_single::<CharacterLimbs>(&state, "character_limbs", character.id),
+            query_single::<CharacterStats>(&state, "character_stats", character.id),
+            query_single::<CharacterCondition>(&state, "character_condition", character.id),
+        );
+        let (field_repair_minutes, smith_wait_minutes) =
+            equipment_rest_recommendation(&state, character.id, &id, inventory).await;
+        let soap = soap_rest_preview(
+            &state,
+            std::slice::from_ref(character),
+            character.party_id.as_deref(),
+        )
+        .await;
+        (
+            rest_default_minutes(
+                limbs.as_ref(),
+                stats.as_ref(),
+                condition.as_ref(),
+                field_repair_minutes,
+                smith_wait_minutes,
+            ),
+            soap,
+        )
+    } else {
+        (None, SoapRestPreview::default())
+    };
     Html(
         live_merchant_shop_page(
             settlement,
             character,
             inventory,
             &items,
+            &food_lots.unwrap_or_default(),
             &party_members,
             equip.first(),
             &personal_targets,
@@ -4906,6 +4984,8 @@ async fn merchant_shop(
                 .map_or(0, |time| time.minutes),
             encumbrance.personal,
             encumbrance.party,
+            inn_rest_default,
+            inn_soap_preview,
         )
         .into_string(),
     )
@@ -5170,10 +5250,21 @@ async fn inventory_encumbrance_summaries(
         .flatten()
         .collect::<Vec<_>>();
     let rows = EncumbranceRows::query(state, &encumbrance_ids).await;
+    let food_lots = state
+        .db
+        .query::<FoodLot>("SELECT * FROM food_lot")
+        .await
+        .unwrap_or_default();
     InventoryEncumbranceSummaries {
-        personal: personal_encumbrance(active_character.id, active_inventory, items, &rows),
+        personal: personal_encumbrance(
+            active_character.id,
+            active_inventory,
+            items,
+            &food_lots,
+            &rows,
+        ),
         party: include_party
-            .then(|| party_encumbrance(members, &all_inventories, pooled, items, &rows))
+            .then(|| party_encumbrance(members, &all_inventories, pooled, items, &food_lots, &rows))
             .unwrap_or_default(),
     }
 }
@@ -5227,6 +5318,7 @@ fn personal_encumbrance(
     character_id: u64,
     inventory: &[InventoryItem],
     items: &[ItemDefinition],
+    food_lots: &[FoodLot],
     rows: &EncumbranceRows,
 ) -> EncumbranceSummary {
     let body_weight = rows
@@ -5242,7 +5334,15 @@ fn personal_encumbrance(
     let inventory_weight = inventory
         .iter()
         .filter(|row| row.character_id == character_id)
-        .map(|row| item_stack_weight_kg(&row.item_id, row.qty, items))
+        .map(|row| {
+            food_lots
+                .iter()
+                .find(|lot| lot.inventory_item_id == Some(row.id))
+                .map_or_else(
+                    || item_stack_weight_kg(&row.item_id, row.qty, items),
+                    |lot| lot.mass_kg.max(0.0),
+                )
+        })
         .sum::<f32>();
     let capacity = rows
         .attributes
@@ -5269,17 +5369,32 @@ fn party_encumbrance(
     inventories: &[InventoryItem],
     pooled: &[PartyInventoryItem],
     items: &[ItemDefinition],
+    food_lots: &[FoodLot],
     rows: &EncumbranceRows,
 ) -> EncumbranceSummary {
     let member_summary = members.iter().filter(|member| member.alive).fold(
         EncumbranceSummary::default(),
         |summary, member| {
-            summary.combined(personal_encumbrance(member.id, inventories, items, rows))
+            summary.combined(personal_encumbrance(
+                member.id,
+                inventories,
+                items,
+                food_lots,
+                rows,
+            ))
         },
     );
     let pooled_weight = pooled
         .iter()
-        .map(|row| item_stack_weight_kg(&row.item_id, row.quantity, items))
+        .map(|row| {
+            food_lots
+                .iter()
+                .find(|lot| lot.party_inventory_item_id == Some(row.id))
+                .map_or_else(
+                    || item_stack_weight_kg(&row.item_id, row.quantity, items),
+                    |lot| lot.mass_kg.max(0.0),
+                )
+        })
         .sum::<f32>();
     member_summary.combined(EncumbranceSummary::new(pooled_weight, 0.0))
 }
@@ -5860,7 +5975,7 @@ mod encumbrance_tests {
     };
     use crate::spacetimedb::{
         Character, CharacterAttributes, CharacterCondition, CharacterLimbs, CharacterNeeds,
-        InventoryItem, ItemDefinition, PartyInventoryItem,
+        FoodLot, FoodPreparation, InventoryItem, ItemDefinition, PartyInventoryItem,
     };
     use serde_json::json;
 
@@ -5953,7 +6068,7 @@ mod encumbrance_tests {
             item_id: "sword".into(),
             qty: 3,
         }];
-        let summary = personal_encumbrance(1, &inventory, &[item("sword", 4.0)], &rows());
+        let summary = personal_encumbrance(1, &inventory, &[item("sword", 4.0)], &[], &rows());
         assert_eq!(summary.burden_kg, 84.5);
         assert_eq!(summary.capacity_kg, 300.0);
     }
@@ -5985,6 +6100,7 @@ mod encumbrance_tests {
             &inventories,
             &pooled,
             &[item("sword", 4.0)],
+            &[],
             &rows(),
         );
         assert_eq!(summary.burden_kg, 92.5);
@@ -6013,10 +6129,48 @@ mod encumbrance_tests {
                 qty: 4,
             }],
             &[],
+            &[],
             &EncumbranceRows::default(),
         );
         assert_eq!(summary.burden_kg, 0.0);
         assert_eq!(summary.capacity_kg, 0.0);
         assert_eq!(summary.penalty_fraction(), 1.0);
+    }
+
+    #[test]
+    fn linked_food_lot_mass_replaces_static_item_weight() {
+        let inventory = vec![InventoryItem {
+            id: 40,
+            character_id: 1,
+            item_id: "cooked_meal".into(),
+            qty: 1,
+        }];
+        let lots = vec![FoodLot {
+            id: 5,
+            inventory_item_id: Some(40),
+            party_inventory_item_id: None,
+            display_name: "Large stew".into(),
+            preparation: FoodPreparation::Stewed,
+            ingredient_item_ids: vec!["raw_venison".into()],
+            ingredient_quantities: vec![25.0],
+            mass_kg: 25.0,
+            nutrition_kcal: 10_000.0,
+            total_value: 25.0,
+            created_at_minute: 1,
+        }];
+        let summary =
+            personal_encumbrance(1, &inventory, &[item("cooked_meal", 0.0)], &lots, &rows());
+        assert_eq!(summary.burden_kg, 97.5);
+
+        let mut partial = lots[0].clone();
+        partial.mass_kg = 6.25;
+        let summary = personal_encumbrance(
+            1,
+            &inventory,
+            &[item("cooked_meal", 0.0)],
+            &[partial],
+            &rows(),
+        );
+        assert_eq!(summary.burden_kg, 78.75);
     }
 }

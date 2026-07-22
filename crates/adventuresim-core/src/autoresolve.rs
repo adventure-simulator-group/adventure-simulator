@@ -185,6 +185,7 @@ impl PlayerSkills for CombatSkills {
             Skill::Deception => self.deception_hours,
             Skill::Seduction => self.seduction_hours,
             Skill::Medicine => self.medicine_hours,
+            Skill::Cooking => 0.0,
             Skill::Religion => self.religion_hours,
             Skill::Stealth => self.stealth_hours,
             Skill::Balance => self.balance_hours,

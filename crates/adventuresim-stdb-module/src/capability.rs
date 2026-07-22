@@ -3,6 +3,7 @@ use adventuresim_core::prelude::*;
 use spacetimedb::{ReducerContext, Table, reducer, table};
 
 use crate::condition::{character_condition as _, character_needs as _};
+use crate::food::food_lot as _;
 use crate::item::item as _;
 use crate::repair::item_condition as _;
 use crate::{
@@ -235,6 +236,7 @@ impl PlayerSkills for CharacterSkills {
             Skill::Deception => self.deception_hours,
             Skill::Seduction => self.seduction_hours,
             Skill::Medicine => self.medicine_hours,
+            Skill::Cooking => self.cooking_hours,
             // Generic recruitment/tactical summaries use the character's best-covered
             // tradition. Authoritative religious morale always selects a tradition.
             Skill::Religion => self.religion_hours.maximum_effective(),
@@ -375,6 +377,14 @@ impl StrategicEquipment {
             .character_id()
             .filter(character_id)
             .filter_map(|inventory: InventoryItem| {
+                if let Some(lot) = ctx
+                    .db
+                    .food_lot()
+                    .iter()
+                    .find(|lot| lot.inventory_item_id == Some(inventory.id))
+                {
+                    return Some(lot.mass_kg.max(0.0));
+                }
                 ctx.db
                     .item()
                     .id()

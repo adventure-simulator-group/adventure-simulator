@@ -525,6 +525,85 @@
   color: #000;
 }
 
+.cooking-activity { display: contents; }
+
+.cooking-pot .inventory-browser {
+  transition: opacity 120ms ease;
+}
+
+.cooking-pot:has([data-cooking-pot-empty]:not([hidden])) .inventory-browser {
+  opacity: .55;
+}
+
+.cooking-workspace {
+  position: absolute;
+  inset: 14% 12% auto;
+  z-index: 3;
+  display: grid;
+  justify-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid rgb(215 180 116 / 28%);
+  border-radius: var(--radius-md);
+  background: rgb(18 14 10 / 72%);
+  box-shadow: var(--shadow-md);
+}
+
+.cooking-method-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(2.4rem, 1fr));
+  gap: .4rem;
+  width: min(22rem, 100%);
+}
+
+.cooking-method {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  aspect-ratio: 1;
+  padding: .45rem;
+  background: rgb(18 14 10 / 88%);
+  border: 1px solid rgb(215 180 116 / 35%);
+  border-radius: .2rem;
+  cursor: pointer;
+}
+
+.cooking-method input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cooking-method:has(input:checked) {
+  border-color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--text-primary);
+}
+
+.cooking-method-icon {
+  width: 1.75rem;
+  height: 1.75rem;
+  background: currentColor;
+  mask: var(--cooking-method-icon) center / contain no-repeat;
+}
+
+.cooking-method.disabled {
+  opacity: .48;
+  cursor: not-allowed;
+}
+
+.cooking-stage-placeholder {
+  width: clamp(5rem, 22%, 8rem);
+  max-height: 8rem;
+  opacity: .42;
+  filter: sepia(.3);
+}
+
+.cooking-actions {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+}
+
 #loot-transfer-offer {
   gap: 0.65rem;
 }
@@ -943,12 +1022,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.smith-wares-scroll .trade-inventory-table :is(.currency-parent-row, .alcohol-parent-row) .inventory-item-label {
+.smith-wares-scroll .trade-inventory-table :is(.currency-parent-row, .alcohol-parent-row, .food-parent-row) .inventory-item-label {
   display: inline-block;
   max-width: calc(100% - 1.5rem);
   vertical-align: middle;
 }
-.smith-wares-scroll .trade-inventory-table :is(.currency-parent-row, .alcohol-parent-row) .currency-disclosure {
+.smith-wares-scroll .trade-inventory-table :is(.currency-parent-row, .alcohol-parent-row, .food-parent-row) .currency-disclosure {
   vertical-align: middle;
 }
 .repair-custody-panel {
@@ -3701,6 +3780,7 @@ body.chat-resizing {
 .stat-icon-will,
 .stat-icon-command,
 .stat-icon-medicine,
+.stat-icon-cooking,
 .stat-icon-faith {
   --stat-icon-color: var(--icon-mental);
 }

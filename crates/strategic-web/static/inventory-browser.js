@@ -367,14 +367,82 @@
     components.forEach((component) => { component.hidden = !wasExpanded; });
   }
 
+  function groupFoodRows(browser) {
+    const body = browser.querySelector("tbody");
+    if (!body) return;
+    const previousParent = body.querySelector(":scope > .food-parent-row");
+    const wasExpanded = previousParent
+      ? previousParent.getAttribute("aria-expanded") === "true"
+      : browser.dataset.inventoryBrowser === "cooking-inventory-right";
+    previousParent?.remove();
+    const components = [...body.querySelectorAll(":scope > tr.trade-inventory-row")]
+      .filter((row) => !row.classList.contains("food-parent-row") && row.querySelector('[data-item-kind="food"], [data-food-lot="true"]'));
+    if (!components.length) return;
+    const first = components[0];
+    const parent = first.cloneNode(true);
+    parent.classList.add("food-parent-row");
+    parent.classList.remove("food-component-row");
+    parent.dataset.itemKey = "food";
+    parent.dataset.merchantItem = "food";
+    parent.querySelectorAll("[data-item-name]").forEach((label) => {
+      label.dataset.itemName = "Food";
+      label.textContent = "Food";
+    });
+    const total = components.reduce((sum, row) => sum + currencyRowQuantity(row), 0);
+    const totalWeight = components.reduce((sum, row) => sum
+      + currencyRowQuantity(row) * currencyNumber(row.querySelector(".inventory-weight")), 0);
+    const totalValue = components.reduce((sum, row) => sum
+      + currencyRowQuantity(row) * currencyNumber(row.querySelector(".inventory-gold")), 0);
+    parent.querySelectorAll("button,input,select").forEach((control) => control.remove());
+    const count = parent.querySelector(".inventory-count");
+    const weight = parent.querySelector(".inventory-weight");
+    const value = parent.querySelector(".inventory-gold");
+    if (count) count.textContent = String(total);
+    const showsQuantity = !components.every((row) => row.dataset.groupSummary === "catalog");
+    if (count && !showsQuantity) {
+      count.hidden = true;
+      count.setAttribute("hidden", "");
+    }
+    if (showsQuantity) {
+      if (weight) { weight.textContent = totalWeight.toFixed(2).replace(/\.00$/, ""); weight.dataset.sortValue = String(totalWeight); }
+      if (value) { value.textContent = String(totalValue); value.dataset.sortValue = String(totalValue); }
+    } else {
+      if (weight) { weight.textContent = "—"; weight.dataset.sortValue = ""; }
+      if (value) { value.textContent = "—"; value.dataset.sortValue = ""; }
+    }
+    const nameCell = parent.querySelector(".inventory-item-name");
+    if (nameCell) {
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "currency-disclosure";
+      toggle.dataset.foodToggle = "true";
+      toggle.textContent = "›";
+      toggle.setAttribute("aria-label", "Show food lots");
+      toggle.setAttribute("aria-expanded", String(Boolean(wasExpanded)));
+      const label = nameCell.querySelector("[data-item-name]");
+      if (label) label.after(toggle);
+      else nameCell.append(toggle);
+    }
+    components.forEach((row) => {
+      row.classList.add("food-component-row");
+      row.hidden = true;
+      row.tabIndex = -1;
+    });
+    first.before(parent);
+    parent._foodComponents = components;
+    parent.setAttribute("aria-expanded", String(Boolean(wasExpanded)));
+    components.forEach((component) => { component.hidden = !wasExpanded; });
+  }
+
   function apply(browser, state) {
     groupCurrencyRows(browser);
     groupAlcoholRows(browser);
+    groupFoodRows(browser);
     const body = browser.querySelector("tbody");
     if (!body) return;
-    const rows = [...body.querySelectorAll(":scope > tr.trade-inventory-row:not(.inventory-detail-row):not(.currency-component-row):not(.alcohol-component-row)")];
+    const rows = [...body.querySelectorAll(":scope > tr.trade-inventory-row:not(.inventory-detail-row):not(.currency-component-row):not(.alcohol-component-row):not(.food-component-row)")];
     rows.forEach((row) => normalizeDestinationRow(row, browser));
-    body.querySelectorAll(":scope > tr.alcohol-component-row")
+    body.querySelectorAll(":scope > tr.alcohol-component-row, :scope > tr.food-component-row")
       .forEach((row) => normalizeDestinationRow(row, browser));
     rows.forEach((row) => {
       row.tabIndex = 0;
@@ -383,16 +451,17 @@
       row.hidden = !name.includes(state.query.toLocaleLowerCase());
       Object.keys(OPTIONAL_COLUMNS).forEach((column) => optionalCell(row, column).hidden = !state.columns.includes(column));
       if (row._inventoryDetail) { row._inventoryDetail.remove(); row._inventoryDetail = null; }
-      if (row.getAttribute("aria-expanded") === "true" && !row._currencyComponents && !row._alcoholComponents) createDetail(row, browser);
+      if (row.getAttribute("aria-expanded") === "true" && !row._currencyComponents && !row._alcoholComponents && !row._foodComponents) createDetail(row, browser);
     });
     browser.querySelectorAll("thead [data-inventory-column]").forEach((header) => { header.hidden = !state.columns.includes(header.dataset.inventoryColumn); });
     rows.map((row, index) => ({ row, index })).sort((a, b) => {
-      const groupRank = (row) => row.classList.contains("currency-parent-row") ? 0 : row.classList.contains("alcohol-parent-row") ? 1 : 2;
+      const groupRank = (row) => row.classList.contains("currency-parent-row") ? 0 : row.classList.contains("alcohol-parent-row") ? 1 : row.classList.contains("food-parent-row") ? 2 : 3;
       return groupRank(a.row) - groupRank(b.row) || compareValues(rowValue(a.row, state.sort), rowValue(b.row, state.sort), state.direction) || a.index - b.index;
     }).forEach(({ row }) => {
       body.append(row);
       if (row._currencyComponents) row._currencyComponents.forEach((component) => body.append(component));
       if (row._alcoholComponents) row._alcoholComponents.forEach((component) => body.append(component));
+      if (row._foodComponents) row._foodComponents.forEach((component) => body.append(component));
       const detail = row._inventoryDetail;
       if (detail) body.append(detail);
     });
@@ -448,6 +517,11 @@
     if (row._alcoholComponents) {
       row.querySelector("[data-alcohol-toggle]")?.setAttribute("aria-expanded", String(!open));
       row._alcoholComponents.forEach((component) => { component.hidden = open || row.hidden; });
+      return;
+    }
+    if (row._foodComponents) {
+      row.querySelector("[data-food-toggle]")?.setAttribute("aria-expanded", String(!open));
+      row._foodComponents.forEach((component) => { component.hidden = open || row.hidden; });
       return;
     }
     if (!open) createDetail(row, browser);
@@ -515,6 +589,8 @@
       if (coinToggle) { event.preventDefault(); toggleExpanded(coinToggle.closest(".currency-parent-row"), browser); return; }
       const alcoholToggle = event.target.closest("[data-alcohol-toggle]");
       if (alcoholToggle) { event.preventDefault(); toggleExpanded(alcoholToggle.closest(".alcohol-parent-row"), browser); return; }
+      const foodToggle = event.target.closest("[data-food-toggle]");
+      if (foodToggle) { event.preventDefault(); toggleExpanded(foodToggle.closest(".food-parent-row"), browser); return; }
       const sort = event.target.closest("[data-inventory-sort]");
       if (sort) { const key = sort.dataset.inventorySort; state.direction = state.sort === key && state.direction === "asc" ? "desc" : "asc"; state.sort = key; updateHistory(browser, state); apply(browser, state); return; }
       const row = event.target.closest("tr.trade-inventory-row");
@@ -537,7 +613,7 @@
       else apply(browser, browser._inventoryState || parsePanelState(global.location.search, browser.dataset.inventoryBrowser, browser.dataset.optionalColumns.split(",").filter(Boolean)));
     });
   }
-  const api = { parsePanelState, serializePanelState, compareValues, normalizeSortValue, rowValue, groupCurrencyRows, mountAll, refresh, syncPanelWidth };
+  const api = { parsePanelState, serializePanelState, compareValues, normalizeSortValue, rowValue, groupCurrencyRows, groupFoodRows, mountAll, refresh, syncPanelWidth };
   global.strategicInventoryBrowser = api;
   if (typeof module !== "undefined") module.exports = api;
   if (global.document) { global.addEventListener("DOMContentLoaded", () => mountAll()); global.addEventListener("popstate", () => mountAll()); }

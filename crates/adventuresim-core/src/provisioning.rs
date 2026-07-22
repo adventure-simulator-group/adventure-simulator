@@ -36,6 +36,8 @@ pub struct PartyProvisioningInputs {
     pub target_surplus_days: f32,
     pub living_members: u32,
     pub food_reserve_kcal: f32,
+    /// Useful calories across every carried/shared food lot.
+    pub food_lot_kcal: f32,
     pub water_reserve_ml: f32,
     pub ration_count: u32,
     pub waterskin_count: u32,
@@ -60,8 +62,8 @@ impl PartyProvisioningInputs {
         let members = self.living_members.max(1) as f32;
         let food_per_day = members * STRATEGIC_TRAVEL_KCAL_PER_DAY;
         let water_per_day = members * STRATEGIC_TRAVEL_WATER_ML_PER_DAY;
-        let food = (self.food_reserve_kcal + self.ration_count as f32 * self.ration_kcal.max(0.0))
-            .max(0.0);
+        let legacy_rations = self.ration_count as f32 * self.ration_kcal.max(0.0);
+        let food = (self.food_reserve_kcal + self.food_lot_kcal.max(legacy_rations)).max(0.0);
         let ordinary_water = (self.water_reserve_ml
             + self.waterskin_count as f32 * self.waterskin_capacity_ml as f32)
             .max(0.0);
@@ -122,6 +124,21 @@ mod tests {
             shared_then_personal_volume(3_000.0, 2_500.0, 4_000.0),
             (2_500.0, 500.0)
         );
+    }
+
+    #[test]
+    fn food_lot_calories_cover_mixed_provisions_without_double_counting_rations() {
+        let forecast = PartyProvisioningInputs {
+            planning_minutes: 24 * 60,
+            living_members: 1,
+            food_lot_kcal: 4_000.0,
+            ration_count: 1,
+            ration_kcal: 3_000.0,
+            ..Default::default()
+        }
+        .forecast();
+        assert_eq!(forecast.rations_to_buy, 1);
+        assert!((forecast.food_days - (4_000.0 / STRATEGIC_TRAVEL_KCAL_PER_DAY)).abs() < 0.001);
     }
 
     #[test]

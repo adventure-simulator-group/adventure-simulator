@@ -22,6 +22,17 @@ function ordinaryRow(id, name, quantity) {
   </tr>`;
 }
 
+function foodRow(id, name, quantity, weight, value) {
+  return `<tr class="trade-inventory-row" data-inventory-quantity="${quantity}" data-item-key="${id}">
+    <td class="inventory-item-type"></td>
+    <td class="inventory-item-name"><span class="inventory-item-label" data-item-name="${name}" data-item-kind="food" data-food-lot="true">${name}</span>
+      <span class="inventory-row-actions"><button type="button" class="trade-transfer" aria-label="Buy one ${name}">→</button></span>
+    </td>
+    <td class="inventory-count">${quantity}</td>
+    <td class="inventory-weight">${weight}</td><td class="inventory-gold">${value}</td>
+  </tr>`;
+}
+
 function alcoholRow(id, name, quantity, weight, value, target = 0) {
   return `<tr class="trade-inventory-row" data-inventory-quantity="${quantity}" data-item-key="${id}">
     <td class="inventory-item-type"><span class="game-icon" role="img" aria-label="Item type: ${name}" title="Item type: ${name}"></span></td>
@@ -39,6 +50,8 @@ function fixture() {
       <input data-inventory-search><div data-inventory-column-options></div>
       <table class="trade-inventory-table"><thead><tr><th>Name</th><th class="inventory-column-count">#</th></tr></thead><tbody>
         ${ordinaryRow("apple", "Apple", 999)}
+        ${foodRow("rye_bread", "Rye bread", 2, 0.5, 3)}
+        ${foodRow("raw_venison", "Raw venison", 1, 0.5, 4)}
         ${alcoholRow("small_beer", "Small beer", 2, 0.5, 2)}
         ${alcoholRow("table_wine", "Table wine", 1, 0.25, 3)}
         ${currencyRow("lubeck_mark", "Lübeck mark", 3, 1)}
@@ -124,6 +137,32 @@ test("alcohol types collapse into a non-fungible aggregate and retain component 
   assert.equal(components[0].querySelector(".trade-transfer").getAttribute("aria-label"), "Transfer one Small beer");
 });
 
+test("food disclosure stays beside its label and reveals every concrete food row", () => {
+  const { document, browser } = fixture();
+  delete require.cache[require.resolve("../static/inventory-browser.js")];
+  const inventory = require("../static/inventory-browser.js");
+  inventory.mountAll(document);
+
+  const parent = browser.querySelector(".food-parent-row");
+  const label = parent.querySelector("[data-item-name]");
+  const toggle = parent.querySelector("[data-food-toggle]");
+  const components = [...browser.querySelectorAll(".food-component-row")];
+  assert.equal(label.textContent, "Food");
+  assert.equal(label.nextElementSibling, toggle);
+  assert.equal(toggle.getAttribute("aria-expanded"), "false");
+  assert.equal(parent.querySelector(".inventory-weight").textContent, "1.50");
+  assert.equal(parent.querySelector(".inventory-gold").textContent, "10");
+  assert.deepEqual(components.map((row) => row.querySelector("[data-item-name]").textContent), ["Rye bread", "Raw venison"]);
+  assert.ok(components.every((row) => row.hidden));
+
+  toggle.click();
+  assert.equal(toggle.getAttribute("aria-expanded"), "true");
+  assert.ok(components.every((row) => !row.hidden));
+
+  inventory.refresh(browser);
+  assert.ok([...browser.querySelectorAll(".food-component-row")].every((row) => !row.hidden));
+});
+
 test("merchant Alcohol parent does not present aggregate stock as one unit", () => {
   const { document, browser } = fixture();
   browser.querySelectorAll('[data-item-group="alcohol"]').forEach((label) => {
@@ -136,6 +175,22 @@ test("merchant Alcohol parent does not present aggregate stock as one unit", () 
   const parent = browser.querySelector(".alcohol-parent-row");
   assert.equal(parent.querySelector(".inventory-weight").textContent, "—");
   assert.equal(parent.querySelector(".inventory-gold").textContent, "—");
+});
+
+test("merchant Food parent does not total infinite catalog stock", () => {
+  const { document, browser } = fixture();
+  browser.querySelectorAll('[data-item-kind="food"], [data-food-lot="true"]').forEach((label) => {
+    label.closest("tr").dataset.groupSummary = "catalog";
+  });
+  delete require.cache[require.resolve("../static/inventory-browser.js")];
+  const inventory = require("../static/inventory-browser.js");
+  inventory.mountAll(document);
+
+  const parent = browser.querySelector(".food-parent-row");
+  assert.equal(parent.querySelector(".inventory-weight").textContent, "—");
+  assert.equal(parent.querySelector(".inventory-weight").dataset.sortValue, "");
+  assert.equal(parent.querySelector(".inventory-gold").textContent, "—");
+  assert.equal(parent.querySelector(".inventory-gold").dataset.sortValue, "");
 });
 
 test("aggregate Coin one, all, and target actions route coherently to component rows", () => {
