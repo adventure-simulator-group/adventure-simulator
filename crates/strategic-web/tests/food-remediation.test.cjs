@@ -17,10 +17,21 @@ test("food acquisitions remain independent lots instead of merchant-merged stack
   assert.match(strategic, /for _ in 0\.\.quantity \{[\s\S]*quantity: 1[\s\S]*create_party_food_lot\(ctx, row\.id, item_id, 1, minute\)/);
 });
 
-test("food reducers reject tactical actors and interrupted cooking rolls back", () => {
+test("food reducers require the registered gateway and reject tactical actors", () => {
+  assert.equal((food.match(/crate::strategic::require_strategic_gateway\(ctx\)\?/g) || []).length, 2);
+  assert.match(strategic, /pub\(crate\) fn require_strategic_gateway[\s\S]*authority\.identity != ctx\.sender\(\)/);
   assert.match(food, /Eating is unavailable during a tactical encounter/);
   assert.match(food, /Cooking is unavailable during a tactical encounter/);
-  assert.match(food, /if !crate::time::advance_character_wait_time[\s\S]*return Err\("Cooking was interrupted/);
+});
+
+test("interrupted cooking commits its safe time prefix without consuming inputs", () => {
+  const cook = food.match(/pub fn cook_food[\s\S]*?\n}\n\n#\[cfg\(test\)\]/)?.[0];
+  assert.ok(cook, "cook reducer boundary");
+  const wait = cook.indexOf("advance_character_wait_time");
+  const water = cook.indexOf("party.pooled_water_ml -=");
+  const ingredients = cook.indexOf("delete_personal_food_lot");
+  assert.ok(wait >= 0 && wait < water && wait < ingredients);
+  assert.match(cook, /if !crate::time::advance_character_wait_time[\s\S]*return Ok\(\(\)\)/);
 });
 
 test("food mass, value, and provenance are lot-authoritative", () => {
@@ -28,6 +39,9 @@ test("food mass, value, and provenance are lot-authoritative", () => {
   assert.match(food, /retain_lot_fraction\(&mut lot, 1\.0 - ratio\)/);
   assert.match(strategic, /Food batches must be sold as complete valid lots/);
   assert.match(capability, /food_lot\(\)[\s\S]*lot\.mass_kg\.max\(0\.0\)/);
+  assert.match(food, /consume_food_amount\(ctx, character_id, output\.id[\s\S]*refresh_character_capability\(ctx, character_id\)/);
+  assert.match(template, /merchant_inventory_sell_price\(definition, food_lot\)/);
+  assert.match(template, /merchant_inventory_weight\(definition, food_lot\)/);
 });
 
 test("character activity navigation exposes cooking and all edible lots aggregate", () => {

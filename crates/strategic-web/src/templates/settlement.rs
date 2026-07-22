@@ -2769,6 +2769,7 @@ pub fn live_merchant_shop_page(
     character: &Character,
     inventory: &[InventoryItem],
     items: &[crate::spacetimedb::ItemDefinition],
+    food_lots: &[FoodLot],
     party_members: &[Character],
     equip: Option<&CharacterEquip>,
     personal_targets: &[InventoryQuantityTarget],
@@ -2850,9 +2851,10 @@ pub fn live_merchant_shop_page(
                 (trade_inventory_table("merchant-player-right", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, true, true, matches!(shop, MerchantShop::Weapons | MerchantShop::Armor | MerchantShop::Clothing), html! {
                     @for item in inventory.iter().filter(|item| items.iter().find(|definition| definition.id == item.item_id).is_some_and(|definition| shop.shows_inventory(definition.kind))) {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                        @let food_lot = food_lots.iter().find(|lot| lot.inventory_item_id == Some(item.id));
                         @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
                         @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
-                        @let sell_price = definition.map_or(0, |definition| (definition.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32);
+                        @let sell_price = merchant_inventory_sell_price(definition, food_lot);
                         @let target = target_quantity(personal_targets, &item.item_id);
                         tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-merchant-equipped=(is_equipped) data-inventory-quantity=(item.qty) data-target=(target) {
                         @let condition = conditions.iter().find(|condition| condition.inventory_item_id == item.id);
@@ -2862,7 +2864,7 @@ pub fn live_merchant_shop_page(
                         @let can_sell = !is_currency && !is_equipped;
                         td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                         td class="inventory-item-name" { (item_name_with_quality(&item.item_id, definition)) @if !matches!(shop, MerchantShop::Herbalist) && (can_sell || service_matches) { (merchant_sell_repair_controls(item.id, &item.item_id, sell_price, item.qty, target, can_sell, service_matches.then(|| repair_submit_control(settlement, service_id, item.id, condition, repair_skill)))) } }
-                        td class="inventory-count" { (quantity_target_control(item.qty, target, &item.item_id, false)) } td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped)) } td class="inventory-durability" { @if durable_item { (condition_bar(condition, service_matches.then_some(repair_skill))) } @else { "—" } } td class="inventory-weight" { (item_weight(definition)) } td class="inventory-gold" { (sell_price) }
+                        td class="inventory-count" { (quantity_target_control(item.qty, target, &item.item_id, false)) } td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped)) } td class="inventory-durability" { @if durable_item { (condition_bar(condition, service_matches.then_some(repair_skill))) } @else { "—" } } td class="inventory-weight" { (merchant_inventory_weight(definition, food_lot)) } td class="inventory-gold" { (sell_price) }
                     }}
                     @for target in personal_targets.iter().filter(|target| target.quantity > 0 && !inventory.iter().any(|item| item.item_id == target.item_id) && items.iter().find(|definition| definition.id == target.item_id).is_some_and(|definition| shop.shows_inventory(definition.kind))) {
                         @let definition = items.iter().find(|definition| definition.id == target.item_id);
@@ -2886,14 +2888,15 @@ pub fn live_merchant_shop_page(
                 (trade_inventory_table("merchant-party-right", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, true, false, false, html! {
                     @for item in pooled.iter().filter(|item| items.iter().find(|definition| definition.id == item.item_id).is_some_and(|definition| shop.shows_inventory(definition.kind))) {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                        @let food_lot = food_lots.iter().find(|lot| lot.party_inventory_item_id == Some(item.id));
                         @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
-                        @let sell_price = definition.map_or(0, |definition| (definition.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32);
+                        @let sell_price = merchant_inventory_sell_price(definition, food_lot);
                         @let target = target_quantity(party_targets, &item.item_id);
                         tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-party-inventory-id=(item.id) data-inventory-quantity=(item.quantity) data-target=(target) {
                             td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                             td class="inventory-item-name" { (item_name_with_quality(&item.item_id, definition)) @if !is_currency { (merchant_sell_controls(item.id, &item.item_id, sell_price, item.quantity, target)) } }
                             td class="inventory-count" { (quantity_target_control(item.quantity, target, &item.item_id, true)) }
-                            td class="inventory-weight" { (item_weight(definition)) }
+                            td class="inventory-weight" { (merchant_inventory_weight(definition, food_lot)) }
                             td class="inventory-gold" { (sell_price) }
                         }
                     }
@@ -3030,6 +3033,36 @@ pub fn party_pool_page(
 
 fn item_weight(item: Option<&crate::spacetimedb::ItemDefinition>) -> String {
     item.map_or_else(|| "—".to_owned(), |item| weight_display(item.weight))
+}
+
+fn merchant_inventory_weight(
+    definition: Option<&crate::spacetimedb::ItemDefinition>,
+    food_lot: Option<&FoodLot>,
+) -> String {
+    food_lot.map_or_else(
+        || item_weight(definition),
+        |lot| weight_display(lot.mass_kg),
+    )
+}
+
+fn merchant_inventory_sell_price(
+    definition: Option<&crate::spacetimedb::ItemDefinition>,
+    food_lot: Option<&FoodLot>,
+) -> u32 {
+    food_lot.map_or_else(
+        || {
+            definition.map_or(0, |definition| {
+                adventuresim_core::strategic_economy::merchant_sell_price(
+                    definition.base_value.unwrap_or(1),
+                )
+            })
+        },
+        |lot| {
+            adventuresim_core::strategic_economy::merchant_sell_food_lot_value(lot.total_value)
+                .and_then(|value| u32::try_from(value).ok())
+                .unwrap_or(0)
+        },
+    )
 }
 
 fn encumbrance_inventory_rail(
@@ -5612,13 +5645,38 @@ mod tests {
     use super::{
         Character, CharacterCondition, LocationKind, MerchantShop, encumbrance_inventory_rail,
         encumbrance_meter, filth_status_bar, format_rest_duration, live_merchant_shop_page,
-        need_balance_meter, repair_custody_panel, repair_submit_control, rest_default_minutes,
+        merchant_inventory_sell_price, merchant_inventory_weight, need_balance_meter,
+        repair_custody_panel, repair_submit_control, rest_default_minutes,
         settlement_rest_duration_control, strategic_condition_rail,
     };
     use crate::spacetimedb::{
-        CharacterFilth, CharacterStrategicCondition, FilthOrigin, FilthSubstance, ItemKind,
+        CharacterFilth, CharacterStrategicCondition, FilthOrigin, FilthSubstance, FoodLot,
+        FoodPreparation, ItemKind,
     };
     use adventuresim_core::equipment::EncumbranceSummary;
+
+    #[test]
+    fn merchant_food_quote_and_weight_follow_remaining_lot() {
+        let mut lot = FoodLot {
+            id: 1,
+            inventory_item_id: Some(9),
+            party_inventory_item_id: None,
+            display_name: "Cooked meal".into(),
+            preparation: FoodPreparation::Stewed,
+            ingredient_item_ids: vec!["raw_venison".into()],
+            ingredient_quantities: vec![1.0],
+            mass_kg: 25.0,
+            nutrition_kcal: 5_000.0,
+            total_value: 10.0,
+            created_at_minute: 1,
+        };
+        assert_eq!(merchant_inventory_weight(None, Some(&lot)), "25");
+        assert_eq!(merchant_inventory_sell_price(None, Some(&lot)), 8);
+        lot.mass_kg = 6.25;
+        lot.total_value = 2.5;
+        assert_eq!(merchant_inventory_weight(None, Some(&lot)), "6.25");
+        assert_eq!(merchant_inventory_sell_price(None, Some(&lot)), 2);
+    }
 
     #[test]
     fn public_filth_serialization_and_template_expose_only_aggregate_origin() {
@@ -5866,6 +5924,7 @@ mod tests {
             live_merchant_shop_page(
                 &settlement(),
                 &character,
+                &[],
                 &[],
                 &[],
                 &[],

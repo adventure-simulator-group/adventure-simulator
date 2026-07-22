@@ -4981,9 +4981,10 @@ async fn merchant_shop(
         "SELECT * FROM character_time WHERE character_id = {}",
         character.id
     );
-    let (party_members, items, equip, trade_context, conditions, smiths, orders, times) = tokio::join!(
+    let (party_members, items, food_lots, equip, trade_context, conditions, smiths, orders, times) = tokio::join!(
         get_active_party_members(&state, Some(character)),
         state.db.query::<ItemDefinition>("SELECT * FROM item"),
+        state.db.query::<FoodLot>("SELECT * FROM food_lot"),
         state.db.query::<CharacterEquip>(&equip_sql),
         inventory_trade_context(&state, character),
         state.db.query::<ItemCondition>(&condition_sql),
@@ -5010,6 +5011,7 @@ async fn merchant_shop(
             character,
             inventory,
             &items,
+            &food_lots.unwrap_or_default(),
             &party_members,
             equip.first(),
             &personal_targets,

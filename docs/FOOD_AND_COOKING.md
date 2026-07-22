@@ -33,9 +33,11 @@ before carried water. Tools are retained.
 
 Duration is method setup plus the slowest ingredient's safety/doneness time plus
 square-root batch scaling. The reducer preflights actor, state, selections,
-tools, water, and arithmetic before mutation. It consumes inputs, advances
-neutral strategic time, creates a derived meal, and immediately attempts to eat
-it up to the one-day fullness cap. Tactical actors are rejected. A terminal
-interruption returns an error so reducer atomicity rolls back ingredients and
-water rather than committing an incomplete meal. Remainders stay as independent
-lots, and their current lot mass drives encumbrance. Cooking trains no skill.
+tools, water, and arithmetic before mutation. It advances neutral strategic
+time, consumes inputs, creates a derived meal, and immediately attempts to eat
+it up to the one-day fullness cap. Only the registered strategic gateway may
+invoke eating or cooking, and tactical actors are rejected. Cooking advances its
+safe time prefix before consuming supplies: a terminal interruption commits the
+elapsed time and terminal event, leaves ingredients and water untouched, and
+creates no meal. Remainders stay as independent lots, and their current lot mass
+and value drive encumbrance and merchant quotes. Cooking trains no skill.

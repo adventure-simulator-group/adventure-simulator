@@ -4,7 +4,7 @@ use adventuresim_core::{
     disease::{self, DiseaseId},
     food,
 };
-use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
+use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
 
 use crate::{
     character::{character, character_attributes},
@@ -734,9 +734,7 @@ pub fn eat_food(
     character_id: u64,
     inventory_item_id: u64,
 ) -> Result<(), String> {
-    if ctx.sender() == Identity::ZERO {
-        return Err("Eating requires authentication".into());
-    }
+    crate::strategic::require_strategic_gateway(ctx)?;
     crate::character::require_living_character(ctx, character_id)?;
     let actor = ctx
         .db
@@ -759,16 +757,14 @@ pub fn cook_food(
     inventory_item_ids: Vec<u64>,
     quantities: Vec<u32>,
 ) -> Result<(), String> {
-    if ctx.sender() == Identity::ZERO {
-        return Err("Cooking requires authentication".into());
-    }
+    crate::strategic::require_strategic_gateway(ctx)?;
     let actor = crate::character::require_living_character(ctx, character_id)?;
     if actor.in_server {
         return Err("Cooking is unavailable during a tactical encounter".into());
     }
     let duration = preview_cooking(ctx, character_id, method, &inventory_item_ids, &quantities)?;
     initialize_character_condition(ctx, character_id)?;
-    let mut needs = ctx
+    let needs = ctx
         .db
         .character_needs()
         .character_id()
@@ -785,6 +781,18 @@ pub fn cook_food(
             return Err("Stew requires enough pooled or carried water".into());
         }
     }
+    // Advance the safe strategic-time prefix before consuming anything. A
+    // terminal disease/injury boundary commits through the successful reducer,
+    // but leaves ingredients and water untouched and produces no meal.
+    if !crate::time::advance_character_wait_time(ctx, character_id, duration as u64)? {
+        return Ok(());
+    }
+    let mut needs = ctx
+        .db
+        .character_needs()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character needs not found after cooking time")?;
     let minute = current_minute(ctx, character_id);
     let mut name_parts = Vec::new();
     let mut ingredients = Vec::new();
@@ -812,7 +820,7 @@ pub fn cook_food(
         growth.push(cont.growth_per_hour);
         loads.push(current * lot.mass_kg * ratio);
     }
-    // All validation precedes mutation; reducer failure gives SpacetimeDB atomic rollback.
+    // Ingredient and water mutation begins only after the wait completed.
     if method == CookingMethod::Stew {
         let required = 500.0 + quantities.iter().map(|q| *q as f32).sum::<f32>() * 100.0;
         if let Some(party_id) = actor.party_id.as_deref()
@@ -841,9 +849,6 @@ pub fn cook_food(
             retain_lot_fraction(&mut remaining, 1.0 - ratio);
             ctx.db.food_lot().id().update(remaining);
         }
-    }
-    if !crate::time::advance_character_wait_time(ctx, character_id, duration as u64)? {
-        return Err("Cooking was interrupted before the meal was completed".into());
     }
     let output = ctx.db.inventory_item().insert(crate::InventoryItem {
         id: 0,
@@ -880,6 +885,9 @@ pub fn cook_food(
         anchor_minute: out_minute,
     });
     consume_food_amount(ctx, character_id, output.id, f32::MAX, true)?;
+    // A full character consumes zero calories, so the helper may return before
+    // its mutation refresh. The retained output mass must still be persisted.
+    crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(())
 }
 
