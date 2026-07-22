@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use adventuresim_world_schema::PLAYABLE_BOUNDS;
+use adventuresim_world_schema::{CompiledWorld, PLAYABLE_BOUNDS, TravelEdgeProvenance};
 use clap::Parser;
 use raster::{ElevationLayer, ForestLayer, MapRasterLayers};
 use serde::{Deserialize, Serialize};
@@ -15,8 +15,8 @@ mod raster;
 #[path = "build-strategic-map/tiles.rs"]
 mod tiles;
 
-const PACKAGE_SCHEMA: u32 = 3;
-const RENDERER_REVISION: u32 = 8;
+const PACKAGE_SCHEMA: u32 = 4;
+const RENDERER_REVISION: u32 = 9;
 const YEAR: i32 = 1544;
 const VIABUNDUS_DOI: &str = "https://doi.org/10.5281/zenodo.16611998";
 const RECORD_URL: &str = "https://zenodo.org/api/records/16611998";
@@ -28,12 +28,18 @@ const DATA_LICENSE: &str = include_str!("../../../../MAP_DATA_LICENSE.md");
 #[derive(Parser)]
 #[command(about = "Build the bounded AVIF strategic-map package from initialized world data")]
 struct Args {
+    #[arg(long, help = "build only the documented-road base terrain contract")]
+    base_only: bool,
     #[arg(long, default_value = "viabundus")]
     viabundus_dir: PathBuf,
     #[arg(long, default_value = "target/world-data-sources/raw/elevation")]
     elevation_dir: PathBuf,
     #[arg(long, default_value = "target/world-data-sources/raw/forest-cover")]
     forest_cover_dir: PathBuf,
+    #[arg(long, default_value = "target/world-data-sources/raw/jung-pnv")]
+    potential_vegetation_dir: PathBuf,
+    #[arg(long, default_value = "target/world-1544.json")]
+    compiled_world: PathBuf,
     #[arg(long, default_value = "target/strategic-map/strategic-map-v1.json")]
     output: PathBuf,
     #[arg(
@@ -41,10 +47,20 @@ struct Args {
         default_value = "target/strategic-map/strategic-map-tiles-v1.pack"
     )]
     tiles_output: PathBuf,
-    #[arg(long, default_value = "target/strategic-map/terrain-routing-v1.json")]
+    #[arg(long, default_value = "target/strategic-map/terrain-routing-v2.json")]
     terrain_output: PathBuf,
-    #[arg(long, default_value = "target/strategic-map/terrain-routing-v1.pack")]
+    #[arg(long, default_value = "target/strategic-map/terrain-routing-v2.pack")]
     terrain_pack_output: PathBuf,
+    #[arg(
+        long,
+        default_value = "target/strategic-map/terrain-routing-base-v2.json"
+    )]
+    base_terrain_output: PathBuf,
+    #[arg(
+        long,
+        default_value = "target/strategic-map/terrain-routing-base-v2.pack"
+    )]
+    base_terrain_pack_output: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -85,6 +101,7 @@ struct Package {
     /// Presentation filtering and simplification must never affect it.
     routing_roads: Vec<Vec<Point>>,
     water: Vec<WaterPolygon>,
+    wetlands: Vec<WaterPolygon>,
     elevation: ElevationLayer,
     forest: ForestLayer,
     tiles: TilePyramid,
@@ -105,6 +122,9 @@ struct DeploymentPackage<'a> {
     elevation: DeploymentLayer<'a>,
     forest: DeploymentForestLayer<'a>,
     tiles: &'a TilePyramid,
+    terrain_package_sha256: String,
+    inferred_road_geometry_sha256: String,
+    wetland_source_sha256: String,
     package_sha256: String,
 }
 
@@ -167,24 +187,63 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let layers = raster::load(&args.elevation_dir, &args.forest_cover_dir, BOUNDS)?;
     let mut package = build(&args.viabundus_dir, layers)?;
-    let terrain_features = adventuresim_terrain::builder::Features {
-        roads: package
-            .routing_roads
-            .iter()
-            .map(|line| line.iter().map(|point| point.0).collect())
-            .collect(),
-        water: package
-            .water
-            .iter()
-            .map(|polygon| {
-                polygon
-                    .rings
-                    .iter()
-                    .map(|ring| ring.iter().map(|point| point.0).collect())
-                    .collect()
-            })
-            .collect(),
-    };
+    let wetland =
+        adventuresim_world_import::wetland_spatial_data(&args.potential_vegetation_dir, BOUNDS)?;
+    package.wetlands = wetland
+        .polygons
+        .iter()
+        .map(|rings| WaterPolygon {
+            rings: rings
+                .iter()
+                .map(|ring| ring.iter().copied().map(Point).collect())
+                .collect(),
+        })
+        .collect();
+    let base_features = terrain_features(
+        &package,
+        wetland.polygons.clone(),
+        wetland.source_sha256.clone(),
+    );
+    if args.base_only {
+        let terrain = adventuresim_terrain::builder::build(
+            &args.elevation_dir,
+            &args.forest_cover_dir,
+            BOUNDS,
+            &args.base_terrain_output,
+            &args.base_terrain_pack_output,
+            &base_features,
+            adventuresim_terrain::TerrainPurpose::DocumentedBase,
+        )?;
+        write_data_license(&[&args.base_terrain_output, &args.base_terrain_pack_output])?;
+        println!(
+            "Wrote documented-road base terrain {} (digest {}, {} wetland pixels)",
+            args.base_terrain_output.display(),
+            terrain.package_sha256,
+            terrain.wetland_cells
+        );
+        return Ok(());
+    }
+    let base = adventuresim_terrain::TerrainPack::load(
+        &args.base_terrain_output,
+        &args.base_terrain_pack_output,
+    )?;
+    if base.purpose() != adventuresim_terrain::TerrainPurpose::DocumentedBase {
+        return Err("base terrain has the wrong purpose".into());
+    }
+    let world: CompiledWorld = serde_json::from_slice(&fs::read(&args.compiled_world)?)?;
+    adventuresim_world_import::validate_world(&world)?;
+    if world.report.base_terrain_package_sha256 != base.package_sha256() {
+        return Err("compiled world was inferred against a different base terrain digest".into());
+    }
+    append_inferred_roads(&mut package, &world);
+    package.roads.sort_by(|a, b| {
+        a.kind
+            .cmp(&b.kind)
+            .then_with(|| a.importance.cmp(&b.importance))
+            .then_with(|| point_order(&a.points, &b.points))
+    });
+    package.routing_roads.sort_by(|a, b| point_order(a, b));
+    let terrain_features = terrain_features(&package, wetland.polygons, wetland.source_sha256);
     let terrain = adventuresim_terrain::builder::build(
         &args.elevation_dir,
         &args.forest_cover_dir,
@@ -192,7 +251,17 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         &args.terrain_output,
         &args.terrain_pack_output,
         &terrain_features,
+        adventuresim_terrain::TerrainPurpose::Final,
     )?;
+    let expected_road_digest = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&terrain_features.roads)?)
+    );
+    if terrain.road_geometry_sha256 != expected_road_digest {
+        return Err(
+            "final terrain road mask identity differs from rendered routing geometry".into(),
+        );
+    }
     let native_terrain =
         adventuresim_terrain::TerrainPack::load(&args.terrain_output, &args.terrain_pack_output)?;
     let (tile_manifest, tile_bytes) = tiles::build(
@@ -201,7 +270,12 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         tiles::TileConfig::default(),
     )?;
     package.tiles = tile_manifest;
-    let mut deployment = deployment_package(&package);
+    let mut deployment = deployment_package(
+        &package,
+        &terrain.package_sha256,
+        &world.report.inferred_road_geometry_sha256,
+        &terrain.wetland_source_sha256,
+    );
     deployment.package_sha256 = package_digest(&deployment)?;
     let mut bytes = serde_json::to_vec(&deployment)?;
     bytes.push(b'\n');
@@ -238,6 +312,61 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         terrain.package_sha256
     );
     Ok(())
+}
+
+fn append_inferred_roads(package: &mut Package, world: &CompiledWorld) {
+    let geometries = world
+        .edges
+        .iter()
+        .filter(|edge| edge.provenance == TravelEdgeProvenance::InferredWalkingLink)
+        .map(|edge| edge.geometry.as_slice())
+        .collect::<Vec<_>>();
+    append_inferred_geometry(package, &geometries);
+}
+
+fn append_inferred_geometry(
+    package: &mut Package,
+    geometries: &[&[adventuresim_world_schema::TravelGeometryPoint]],
+) {
+    for geometry in geometries {
+        let points = geometry
+            .iter()
+            .map(|point| Point([point.longitude(), point.latitude()]))
+            .collect::<Vec<_>>();
+        package.routing_roads.push(points.clone());
+        package.roads.push(Line {
+            kind: "inferred".into(),
+            importance: 4,
+            points,
+        });
+    }
+}
+
+fn terrain_features(
+    package: &Package,
+    wetlands: Vec<Vec<Vec<[f64; 2]>>>,
+    wetland_source_sha256: String,
+) -> adventuresim_terrain::builder::Features {
+    adventuresim_terrain::builder::Features {
+        roads: package
+            .routing_roads
+            .iter()
+            .map(|line| line.iter().map(|point| point.0).collect())
+            .collect(),
+        water: package
+            .water
+            .iter()
+            .map(|polygon| {
+                polygon
+                    .rings
+                    .iter()
+                    .map(|ring| ring.iter().map(|point| point.0).collect())
+                    .collect()
+            })
+            .collect(),
+        wetlands,
+        wetland_source_sha256,
+    }
 }
 
 fn write_data_license(outputs: &[&Path]) -> std::io::Result<()> {
@@ -388,6 +517,7 @@ fn build(root: &Path, layers: MapRasterLayers) -> Result<Package, Box<dyn std::e
         roads,
         routing_roads,
         water,
+        wetlands: Vec::new(),
         elevation: layers.elevation,
         forest: layers.forest,
         tiles: TilePyramid {
@@ -455,7 +585,12 @@ fn bounds_intersection(value: [f64; 4], bounds: [f64; 4]) -> Option<[f64; 4]> {
     (clipped[0] < clipped[2] && clipped[1] < clipped[3]).then_some(clipped)
 }
 
-fn deployment_package(package: &Package) -> DeploymentPackage<'_> {
+fn deployment_package<'a>(
+    package: &'a Package,
+    terrain_package_sha256: &str,
+    inferred_geometry_sha256: &str,
+    wetland_source_sha256: &str,
+) -> DeploymentPackage<'a> {
     DeploymentPackage {
         schema: PACKAGE_SCHEMA,
         renderer_revision: RENDERER_REVISION,
@@ -470,6 +605,9 @@ fn deployment_package(package: &Package) -> DeploymentPackage<'_> {
             coverage_tiles: package.forest.coverage.len(),
         },
         tiles: &package.tiles,
+        terrain_package_sha256: terrain_package_sha256.into(),
+        inferred_road_geometry_sha256: inferred_geometry_sha256.into(),
+        wetland_source_sha256: wetland_source_sha256.into(),
         package_sha256: "0".repeat(64),
     }
 }
@@ -889,7 +1027,8 @@ mod tests {
 
         let mut rendered = first.clone();
         rendered.tiles = first_manifest;
-        let mut deployment = deployment_package(&rendered);
+        let mut deployment =
+            deployment_package(&rendered, &"0".repeat(64), &"1".repeat(64), &"2".repeat(64));
         deployment.package_sha256 = package_digest(&deployment).unwrap();
         let value = serde_json::to_value(&deployment).unwrap();
         assert_eq!(value["schema"], PACKAGE_SCHEMA);
@@ -923,6 +1062,27 @@ mod tests {
         assert_eq!(
             fs::read_to_string(terrain_dir.join(DATA_LICENSE_FILENAME)).unwrap(),
             DATA_LICENSE
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn inferred_geometry_is_identical_in_visible_and_routing_inputs() {
+        let root = fixture();
+        let mut package = build(&root, layers()).unwrap();
+        let geometry = [
+            adventuresim_world_schema::TravelGeometryPoint::new(9.2, 51.2).unwrap(),
+            adventuresim_world_schema::TravelGeometryPoint::new(9.3, 51.25).unwrap(),
+        ];
+        append_inferred_geometry(&mut package, &[&geometry]);
+        let visible = &package.roads.last().unwrap().points;
+        let routing = package.routing_roads.last().unwrap();
+        assert_eq!(visible, routing);
+        assert_eq!(package.roads.last().unwrap().kind, "inferred");
+        let features = terrain_features(&package, Vec::new(), "0".repeat(64));
+        assert_eq!(
+            features.roads.last().unwrap(),
+            &routing.iter().map(|point| point.0).collect::<Vec<_>>()
         );
         fs::remove_dir_all(root).unwrap();
     }

@@ -18,7 +18,7 @@ use std::{
     time::Instant,
 };
 
-pub const SCHEMA: u32 = 3;
+pub const SCHEMA: u32 = 4;
 pub const CHUNK_SIDE: u16 = 256;
 pub const MAX_ENTRIES: usize = 20_000;
 pub const MAX_PACK_BYTES: usize = 2 * 1024 * 1024 * 1024;
@@ -58,6 +58,7 @@ pub enum Surface {
     SparseWoods,
     DeepWoods,
     Water,
+    Wetland,
 }
 
 impl Surface {
@@ -68,6 +69,7 @@ impl Surface {
             Self::SparseWoods => 1_000,
             Self::DeepWoods => 750,
             Self::Water => 0,
+            Self::Wetland => 500,
         }
     }
 }
@@ -160,11 +162,22 @@ impl Cell {
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
     pub schema: u32,
+    pub purpose: TerrainPurpose,
     pub bounds: [f64; 4],
     pub source_resolution_m: u16,
     pub content_sha256: String,
+    pub road_geometry_sha256: String,
+    pub wetland_source_sha256: String,
+    pub wetland_cells: u64,
     pub entries: Vec<Entry>,
     pub package_sha256: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TerrainPurpose {
+    DocumentedBase,
+    Final,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -277,6 +290,22 @@ impl TerrainPack {
         })
     }
 
+    pub const fn purpose(&self) -> TerrainPurpose {
+        self.manifest.purpose
+    }
+    pub fn package_sha256(&self) -> &str {
+        &self.manifest.package_sha256
+    }
+    pub fn road_geometry_sha256(&self) -> &str {
+        &self.manifest.road_geometry_sha256
+    }
+    pub fn wetland_source_sha256(&self) -> &str {
+        &self.manifest.wetland_source_sha256
+    }
+    pub const fn wetland_cells(&self) -> u64 {
+        self.manifest.wetland_cells
+    }
+
     pub fn digest(&self) -> &str {
         &self.manifest.package_sha256
     }
@@ -360,7 +389,7 @@ impl TerrainPack {
         if decoded.len() != expected || hex_sha(&decoded) != entry.decoded_sha256 {
             return Err(Error::Validation("chunk is corrupt or truncated".into()));
         }
-        if decoded.chunks_exact(CELL_BYTES).any(|bytes| bytes[2] > 4) {
+        if decoded.chunks_exact(CELL_BYTES).any(|bytes| bytes[2] > 5) {
             return Err(Error::Validation(
                 "chunk contains an unknown surface discriminant".into(),
             ));
@@ -375,6 +404,7 @@ impl TerrainPack {
                     2 => Surface::SparseWoods,
                     3 => Surface::DeepWoods,
                     4 => Surface::Water,
+                    5 => Surface::Wetland,
                     _ => unreachable!("surface discriminants were validated"),
                 },
                 crossing: bytes[3] & 1 != 0,
@@ -645,21 +675,27 @@ fn aggregate_cells(cells: &[Cell]) -> Cell {
             hilly_fraction_percent: 0,
         };
     }
-    let mut counts = [0_usize; 3];
+    let mut counts = [0_usize; 4];
     for cell in &passable {
         match cell.surface {
             Surface::Open => counts[0] += 1,
             Surface::SparseWoods => counts[1] += 1,
             Surface::DeepWoods => counts[2] += 1,
+            Surface::Wetland => counts[3] += 1,
             _ => {}
         }
     }
-    let surface = [Surface::Open, Surface::SparseWoods, Surface::DeepWoods]
-        .into_iter()
-        .enumerate()
-        .max_by_key(|(index, _)| (counts[*index], *index))
-        .map(|(_, surface)| surface)
-        .unwrap_or(Surface::Open);
+    let surface = [
+        Surface::Open,
+        Surface::SparseWoods,
+        Surface::DeepWoods,
+        Surface::Wetland,
+    ]
+    .into_iter()
+    .enumerate()
+    .max_by_key(|(index, _)| (counts[*index], *index))
+    .map(|(_, surface)| surface)
+    .unwrap_or(Surface::Open);
     Cell {
         elevation_m: (passable
             .iter()
@@ -754,6 +790,12 @@ fn validate_manifest(manifest: &Manifest) -> Result<()> {
     }
     if !valid_digest(&manifest.content_sha256) || !valid_digest(&manifest.package_sha256) {
         return Err(Error::Validation("invalid digest".into()));
+    }
+    if !valid_digest(&manifest.road_geometry_sha256)
+        || !valid_digest(&manifest.wetland_source_sha256)
+        || manifest.wetland_cells > 100_000
+    {
+        return Err(Error::Validation("invalid terrain feature identity".into()));
     }
     for entry in &manifest.entries {
         if ![1_800, 2_400, 3_600].contains(&entry.tile_width)
@@ -1116,7 +1158,7 @@ fn compact_spans(spans: &mut Vec<TerrainSpan>, total_minutes: u64, cap: usize) {
         if start == end {
             continue;
         }
-        let mut durations = [0_u64; 5];
+        let mut durations = [0_u64; 6];
         let mut training_mass = 0_u128;
         let mut check_mass = 0_u128;
         let mut terrain_training_mass = [0_u128; 4];
@@ -1145,6 +1187,7 @@ fn compact_spans(spans: &mut Vec<TerrainSpan>, total_minutes: u64, cap: usize) {
             Surface::SparseWoods,
             Surface::DeepWoods,
             Surface::Water,
+            Surface::Wetland,
         ]
         .into_iter()
         .enumerate()
@@ -1213,6 +1256,7 @@ fn surface_index(surface: Surface) -> usize {
         Surface::SparseWoods => 2,
         Surface::DeepWoods => 3,
         Surface::Water => 4,
+        Surface::Wetland => 5,
     }
 }
 
@@ -1630,15 +1674,19 @@ mod tests {
             std::process::id()
         ));
         std::fs::create_dir_all(&root).unwrap();
-        let decoded = [0, 0, 5, 0, 0];
+        let decoded = [0, 0, 6, 0, 0];
         let mut encoder = DeflateEncoder::new(Vec::new(), Compression::fast());
         encoder.write_all(&decoded).unwrap();
         let compressed = encoder.finish().unwrap();
         let mut manifest = Manifest {
             schema: SCHEMA,
+            purpose: TerrainPurpose::Final,
             bounds: [10.0, 50.0, 11.0, 51.0],
             source_resolution_m: 30,
             content_sha256: hex_sha(&compressed),
+            road_geometry_sha256: hex_sha(b"roads"),
+            wetland_source_sha256: hex_sha(b"wetlands"),
+            wetland_cells: 0,
             entries: vec![Entry {
                 south: 50,
                 west: 10,

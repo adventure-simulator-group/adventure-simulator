@@ -1,7 +1,7 @@
-//! Deterministic strategic route terrain derived from straight endpoint geometry.
+//! Deterministic strategic route terrain derived from canonical edge geometry.
 //!
-//! Viabundus does not provide route polylines, so v5 deliberately interpolates
-//! endpoints in EPSG:3035. This describes strategic travel and static encounter
+//! Documented Viabundus edges use endpoint interpolation; inferred edges use
+//! their terrain-routed schema-v25 polyline. This describes travel and encounter
 //! selection only; tactical positions, combatants, HP, and tick state remain transient.
 
 #[cfg(test)]
@@ -60,14 +60,25 @@ pub(crate) fn enrich(
         let a = projection.project(from.0, from.1)?;
         let b = projection.project(to.0, to.1)?;
         let cell = world.metadata.spatial_grid.cell_size_meters().get();
-        let route_direction = (
-            b.easting_millimeters() - a.easting_millimeters(),
-            b.northing_millimeters() - a.northing_millimeters(),
-        );
         let segments = edge.length_m.div_ceil(cell).clamp(1, 1_000);
-        let mut local = Vec::with_capacity(segments as usize + 1);
-        for index in 0..=segments {
-            let point = interpolate(a, b, index, segments)?;
+        let path = if edge.geometry.is_empty() {
+            (0..=segments)
+                .map(|index| interpolate(a, b, index, segments))
+                .collect::<Result<Vec<_>>>()?
+        } else {
+            edge.geometry
+                .iter()
+                .map(|point| projection.project(point.latitude(), point.longitude()))
+                .collect::<Result<Vec<_>>>()?
+        };
+        let mut local = Vec::with_capacity(path.len());
+        for (index, point) in path.iter().copied().enumerate() {
+            let previous = path[index.saturating_sub(1)];
+            let next = path[(index + 1).min(path.len() - 1)];
+            let route_direction = (
+                next.easting_millimeters() - previous.easting_millimeters(),
+                next.northing_millimeters() - previous.northing_millimeters(),
+            );
             let sample = local_sample(&projection, &mut sampler, point, cell, route_direction)?;
             dem_samples += 9;
             dem_fallbacks += sample.fallback;
@@ -82,12 +93,21 @@ pub(crate) fn enrich(
         .map_err(Error::Validation)?;
         edge.terrain = terrain;
         let fallback = local.iter().any(|v| v.fallback > 0);
-        let note = if fallback {
-            "- **Route terrain rules v5:** Straight endpoint geometry was interpolated in EPSG:3035 and sampled from GLO-30 with a 3x3 canonical-grid neighborhood; missing/void pixels used the bounded deterministic sea-level fallback. Nearest EU-Hydro facts within 2 km, including zero-distance crossings/ferries, drive static seasonal/encounter tags. Viabundus slope_multiplier remains only a source cost hint."
+        let geometry = if edge.geometry.is_empty() {
+            "straight endpoint geometry"
         } else {
-            "- **Route terrain rules v5:** Straight endpoint geometry was interpolated in EPSG:3035 and sampled from GLO-30 with a 3x3 canonical-grid neighborhood. Nearest EU-Hydro facts within 2 km, including zero-distance crossings/ferries, drive static seasonal/encounter tags. Viabundus slope_multiplier remains only a source cost hint."
+            "canonical terrain-routed inferred geometry"
         };
-        append_required_note(&mut edge.sources, note, edge.id)?;
+        let note = if fallback {
+            format!(
+                "- **Route terrain rules v6:** {geometry} was sampled from GLO-30 with a 3x3 canonical-grid neighborhood; missing/void pixels used the bounded deterministic sea-level fallback. Nearest EU-Hydro facts within 2 km drive static seasonal/encounter tags. Viabundus slope_multiplier remains only a source cost hint."
+            )
+        } else {
+            format!(
+                "- **Route terrain rules v6:** {geometry} was sampled from GLO-30 with a 3x3 canonical-grid neighborhood. Nearest EU-Hydro facts within 2 km drive static seasonal/encounter tags. Viabundus slope_multiplier remains only a source cost hint."
+            )
+        };
+        append_required_note(&mut edge.sources, &note, edge.id)?;
     }
     world.report.route_terrain_edges = world.edges.len();
     world.report.route_terrain_dem_samples = dem_samples;

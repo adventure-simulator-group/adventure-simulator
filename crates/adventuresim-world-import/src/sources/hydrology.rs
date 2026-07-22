@@ -154,6 +154,7 @@ fn finish_edge(
         to_node_id: edge.to_node_id,
         route,
         provenance: edge.provenance,
+        geometry: Vec::new(),
         toll: edge.toll,
         length_m: edge.length_m,
         slope_multiplier: edge.slope_multiplier,

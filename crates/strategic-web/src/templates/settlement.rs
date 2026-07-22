@@ -1264,6 +1264,7 @@ fn format_terrain_spans(destination: &TravelDestination) -> String {
                         adventuresim_terrain::Surface::Open => "open",
                         adventuresim_terrain::Surface::SparseWoods => "sparse-woods",
                         adventuresim_terrain::Surface::DeepWoods => "deep-woods",
+                        adventuresim_terrain::Surface::Wetland => "wetland",
                         adventuresim_terrain::Surface::Water => return None,
                     };
                     Some(format!(

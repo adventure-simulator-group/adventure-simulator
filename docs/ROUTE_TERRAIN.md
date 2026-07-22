@@ -1,15 +1,15 @@
 # Strategic route terrain
 
-World schema v19 and inference rules v5 attach a required `RouteTerrain` to
+World schema v25 and inference rules v9 attach a required `RouteTerrain` to
 every imported travel edge. The record is a static strategic fact used for
 travel planning and encounter selection. It never persists tactical positions,
 damage, HP, enemies, or simulation ticks.
 
 ## Geometry and elevation
 
-Viabundus currently supplies topology and endpoint coordinates rather than
-road polylines. The compiler projects endpoints to EPSG:3035 and interpolates
-the documented straight segment. It chooses
+Viabundus supplies topology and endpoint coordinates rather than complete road
+polylines. Documented edges therefore retain the endpoint interpolation below.
+Terrain-inferred edges instead sample their canonical A* polyline. The compiler chooses
 `N = min(1000, max(1, ceil(length / grid-cell-size)))` segments, yielding a
 bounded profile of two through 1,001 samples with unique permille progress and
 required 0/1000 endpoints.
@@ -29,7 +29,7 @@ The 3x3 neighborhoods produce Horn slope/aspect, mean absolute center-neighbor
 difference (TRI), and relief. Aspect is `Flat` below 10 permille mean slope;
 otherwise a circular mean selects one of eight closed compass directions.
 
-Rules v5 classify a route as:
+Rules v6 classify a route as:
 
 - `Flat`: maximum slope below 30 permille and relief below 30 m.
 - `Rolling`: below 80 permille and 100 m.
@@ -68,7 +68,7 @@ document does not claim issue #62 complete.
 
 ## Native routing skill mixture
 
-The separate native terrain-routing pack retains canopy and hill coverage
+The separate native terrain-routing pack (schema 4) retains canopy and hill coverage
 independently. Runtime routing cells normalize them to exactly 1,000 permille:
 Forest follows canopy density, Hills receives the hill-covered share of the
 remaining non-forest ground, and Plains receives the remainder. Urban is part
@@ -88,3 +88,9 @@ normalized mixture. Non-road movement grants one exposure hour per movement
 hour. Roads still train their underlying terrain, discounted by underlying
 off-road speed divided by 5 km/h: 0.25 open, 0.20 sparse woods, and 0.15 deep
 woods. Camp intervals grant no Terrain training.
+
+`terrain-routing-base-v2` is a documented-road-only inference input and cannot
+be served as the final pack. `terrain-routing-v2` is rebuilt after world
+compilation with the accepted inferred polylines. Both manifests carry a purpose,
+road-geometry digest, Jung wetland source digest, and package digest. Wetland
+ground moves at 0.5 km/h unless overridden by water or a road.

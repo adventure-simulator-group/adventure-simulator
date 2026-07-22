@@ -33,6 +33,7 @@ const NORTH: f64 = 5_416_000.0;
 const PIXEL: f64 = 1_000.0;
 const TILE: u32 = 512;
 const MAX_TILE_CACHE_BYTES: usize = 64 * 1024 * 1024;
+const MAX_WETLAND_PIXELS: usize = 100_000;
 const GEO_KEYS: [u16; 80] = [
     1, 1, 0, 19, 1024, 0, 1, 1, 1025, 0, 1, 1, 1026, 34737, 8, 0, 2048, 0, 1, 32767, 2049, 34737,
     80, 8, 2050, 0, 1, 32767, 2054, 0, 1, 9102, 2056, 0, 1, 7019, 2057, 34736, 1, 5, 2059, 34736,
@@ -149,6 +150,100 @@ struct ManifestFile {
     md5: String,
     sha256: String,
     url: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct WetlandSpatialData {
+    pub polygons: Vec<Vec<Vec<[f64; 2]>>>,
+    pub source_sha256: String,
+}
+
+/// Extract the bounded 1 km Jung wetland posterior/categorical mask for the
+/// playable WGS84 bounds. Posterior mean >= 0.5 is wetland; categorical class
+/// 5 is used only where the posterior pixel is nodata.
+pub fn wetland_spatial_data(directory: &Path, bounds: [f64; 4]) -> Result<WetlandSpatialData> {
+    validate_manifest_and_files(directory)?;
+    let projection = SpatialProjection::new()?;
+    let [west, south, east, north] = bounds;
+    let projected = [
+        projection.project(south, west)?,
+        projection.project(south, east)?,
+        projection.project(north, west)?,
+        projection.project(north, east)?,
+        projection.project((south + north) * 0.5, west)?,
+        projection.project((south + north) * 0.5, east)?,
+    ];
+    let min_x = projected
+        .iter()
+        .map(|p| p.easting_meters())
+        .fold(f64::INFINITY, f64::min);
+    let max_x = projected
+        .iter()
+        .map(|p| p.easting_meters())
+        .fold(f64::NEG_INFINITY, f64::max);
+    let min_y = projected
+        .iter()
+        .map(|p| p.northing_meters())
+        .fold(f64::INFINITY, f64::min);
+    let max_y = projected
+        .iter()
+        .map(|p| p.northing_meters())
+        .fold(f64::NEG_INFINITY, f64::max);
+    let first_col = ((min_x - WEST) / PIXEL).floor().max(0.0) as u32;
+    let last_col = ((max_x - WEST) / PIXEL).ceil().min(f64::from(WIDTH)) as u32;
+    let first_row = ((NORTH - max_y) / PIXEL).floor().max(0.0) as u32;
+    let last_row = ((NORTH - min_y) / PIXEL).ceil().min(f64::from(HEIGHT)) as u32;
+    let candidates = (last_col.saturating_sub(first_col) as usize)
+        .checked_mul(last_row.saturating_sub(first_row) as usize)
+        .ok_or_else(|| Error::Validation("wetland window overflow".into()))?;
+    if candidates > MAX_WETLAND_PIXELS {
+        return Err(Error::Validation(
+            "wetland window exceeds its pixel bound".into(),
+        ));
+    }
+    let mut posterior = JungRaster::open(
+        &directory.join("pnv_Wetlands_current_laea_1km.tif"),
+        RasterKind::Posterior,
+    )?;
+    let mut categorical = JungRaster::open(&directory.join(CATEGORICAL), RasterKind::Categorical)?;
+    let mut polygons = Vec::new();
+    for row in first_row..last_row {
+        for col in first_col..last_col {
+            let wet = match posterior.value(col, row)? {
+                Some(value) => value >= 0.5,
+                None => categorical.value(col, row)? == Some(5.0),
+            };
+            if !wet {
+                continue;
+            }
+            let x0 = WEST + f64::from(col) * PIXEL;
+            let x1 = x0 + PIXEL;
+            let y1 = NORTH - f64::from(row) * PIXEL;
+            let y0 = y1 - PIXEL;
+            let (center_lat, center_lon) = projection.unproject(
+                crate::spatial::ProjectedCoordinate::from_meters((x0 + x1) * 0.5, (y0 + y1) * 0.5)?,
+            )?;
+            if center_lon < west || center_lon > east || center_lat < south || center_lat > north {
+                continue;
+            }
+            let mut ring = Vec::with_capacity(5);
+            for (x, y) in [(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)] {
+                let (lat, lon) = projection
+                    .unproject(crate::spatial::ProjectedCoordinate::from_meters(x, y)?)?;
+                ring.push([lon, lat]);
+            }
+            polygons.push(vec![ring]);
+        }
+    }
+    Ok(WetlandSpatialData {
+        polygons,
+        source_sha256: PINNED_FILES
+            .iter()
+            .find(|file| file.filename == "pnv_Wetlands_current_laea_1km.tif")
+            .expect("pinned wetland raster exists")
+            .sha256
+            .into(),
+    })
 }
 
 pub(crate) fn enrich(

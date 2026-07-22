@@ -686,6 +686,7 @@ mod tests {
                     waterway: FerryWaterway::TidalWater,
                 }),
                 provenance: adventuresim_world_schema::TravelEdgeProvenance::DocumentedViabundus,
+                geometry: Vec::new(),
                 toll: None,
                 length_m: 10,
                 slope_multiplier: 1.0,

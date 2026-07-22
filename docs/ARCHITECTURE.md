@@ -549,18 +549,20 @@ remain separate from `BattleResult` and quest completion.
 
 Language is strategic state. Compiled settlements persist a versioned, deterministic vernacular profile inferred inside the exact playable bounds; the three German shares total exactly 10,000 basis points. Characters persist direct Oral and Written hours. Effective proficiency is derived once from symmetric correlation matrices and is never recursively stored. The importer CLI can inspect a coordinate with `--infer-languages LONGITUDE LATITUDE`.
 
-Rules-v8 adds two immutable gameplay projections. A bounded settlement economy
+Rules-v9 adds two immutable gameplay projections. A bounded settlement economy
 profile combines population, route access, documented town status, and the
 canonical industry profile into prosperity, service availability,
 specializations, and relative stock categories. Every gap-fill stock fact is
 typed as deterministic fabrication rather than attributed to an upstream
 dataset. Authoritative reducers consult the profile; it is not a UI-only hint.
 
-Inferred road publication remains deferred until world compilation and terrain
-pack generation share a canonical route-geometry and digest contract. Endpoint
-distance or endpoint-only terrain evidence is not sufficient to publish a
-historical road: the full proposed route must be evaluated without allowing the
-new road to lower its own cost, and accepted geometry must feed both the runtime
-graph and the rendered terrain mask. Likewise, canonical settlement-scale
-wetland evidence is retained, but terrain packs do not claim wetland cells until
-a bounded spatial source is wired into pack generation.
+Road inference uses a two-stage artifact contract. The documented-base terrain
+pack contains only Viabundus roads plus source-mapped water, forest, elevation,
+and Jung wetlands. World compilation runs bounded A* against that immutable
+digest, so a proposed road cannot lower its own cost. Accepted polylines are
+stored in schema 25 with explicit inferred provenance. Final map generation
+requires the same base digest and feeds those exact polylines to both the visible
+quiet road layer and the final routing road mask; both identities are recorded.
+Jung v1.1 wetland posterior/categorical pixels are bounded to playable coverage;
+water remains impassable, roads take precedence, and other wetland cells use the
+distinct slow terrain surface.

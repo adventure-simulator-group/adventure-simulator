@@ -9,8 +9,9 @@ use serde::{Deserialize, Serialize};
 
 mod language;
 pub use language::*;
-pub const WORLD_SCHEMA_VERSION: u32 = 24;
-pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 8;
+pub const WORLD_SCHEMA_VERSION: u32 = 25;
+pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 9;
+pub const MAX_EDGE_GEOMETRY_POINTS: usize = 512;
 pub const MAX_SOURCES_MARKDOWN_CHARS: usize = 32_768;
 
 /// Authoritative MVP playable area in `[west, south, east, north]` order.
@@ -1867,6 +1868,37 @@ pub enum TravelEdgeKind {
 pub enum TravelEdgeProvenance {
     DocumentedViabundus,
     InferredWalkingLink,
+}
+
+/// A bounded, deterministic WGS84 point in canonical offline edge geometry.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct TravelGeometryPoint {
+    pub longitude_e7: i32,
+    pub latitude_e7: i32,
+}
+
+impl TravelGeometryPoint {
+    pub fn new(longitude: f64, latitude: f64) -> Result<Self, String> {
+        if !longitude.is_finite()
+            || !latitude.is_finite()
+            || !(-180.0..=180.0).contains(&longitude)
+            || !(-90.0..=90.0).contains(&latitude)
+        {
+            return Err("invalid travel geometry coordinate".into());
+        }
+        Ok(Self {
+            longitude_e7: (longitude * 10_000_000.0).round() as i32,
+            latitude_e7: (latitude * 10_000_000.0).round() as i32,
+        })
+    }
+
+    pub fn longitude(self) -> f64 {
+        f64::from(self.longitude_e7) / 10_000_000.0
+    }
+    pub fn latitude(self) -> f64 {
+        f64::from(self.latitude_e7) / 10_000_000.0
+    }
 }
 
 impl TravelEdgeKind {
@@ -4172,6 +4204,9 @@ pub struct WorldBuildReport {
     pub industry_charcoal_outputs: usize,
     pub industry_saltmaking_outputs: usize,
     pub industry_construction_outputs: usize,
+    pub base_terrain_package_sha256: String,
+    pub inferred_road_edges: usize,
+    pub inferred_road_geometry_sha256: String,
     pub excluded_edges: std::collections::BTreeMap<String, usize>,
 }
 
@@ -4208,6 +4243,9 @@ pub struct TravelEdgeImport {
     pub to_node_id: u64,
     pub route: TravelRoute,
     pub provenance: TravelEdgeProvenance,
+    /// Exact offline geometry for inferred links. Documented Viabundus edges
+    /// keep their source geometry outside this normalized topology artifact.
+    pub geometry: Vec<TravelGeometryPoint>,
     pub toll: Option<EdgeEndpoint>,
     pub length_m: u32,
     pub slope_multiplier: f32,

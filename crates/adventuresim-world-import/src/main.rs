@@ -60,6 +60,16 @@ struct Args {
     derive_owda_profiles: Option<PathBuf>,
     #[arg(long, default_value_os_t = default_hydrology_directory())]
     hydrology_dir: PathBuf,
+    #[arg(
+        long,
+        default_value = "target/strategic-map/terrain-routing-base-v2.json"
+    )]
+    base_terrain: PathBuf,
+    #[arg(
+        long,
+        default_value = "target/strategic-map/terrain-routing-base-v2.pack"
+    )]
+    base_terrain_pack: PathBuf,
     #[arg(long, default_value_t = WORLD_YEAR)]
     year: i32,
     #[arg(long, default_value_t = GridCellSizeMeters::default())]
@@ -144,10 +154,12 @@ fn run(args: Args) -> Result<()> {
         }
         return Ok(());
     }
+    let base_terrain =
+        adventuresim_terrain::TerrainPack::load(&args.base_terrain, &args.base_terrain_pack)?;
     let world = WorldBuilder::new(args.year)
         .with_spatial_grid(SpatialGridSpec::new(args.grid_cell_size_meters))
         .with_playable_bounds()
-        .build_from_sources(
+        .build_from_sources_with_base_terrain(
             &args.viabundus_dir,
             &args.elevation_dir,
             &args.land_use_dir,
@@ -159,6 +171,7 @@ fn run(args: Args) -> Result<()> {
             &args.religion_regions,
             &args.drought_netcdf,
             &args.hydrology_dir,
+            &base_terrain,
         )?;
     let output = args
         .output
@@ -403,6 +416,10 @@ fn encode_travel_edge(edge: &TravelEdgeImport) -> Result<Value> {
         "to_node_id": edge.to_node_id,
         "route": route,
         "provenance": enum_unit(match edge.provenance { adventuresim_world_schema::TravelEdgeProvenance::DocumentedViabundus => "DocumentedViabundus", adventuresim_world_schema::TravelEdgeProvenance::InferredWalkingLink => "InferredWalkingLink" }),
+        "geometry": edge.geometry.iter().map(|point| json!({
+            "longitude_e7": point.longitude_e7,
+            "latitude_e7": point.latitude_e7,
+        })).collect::<Vec<_>>(),
         "toll": encode_endpoint(edge.toll),
         "length_m": edge.length_m,
         "slope_multiplier": edge.slope_multiplier,
@@ -1312,6 +1329,7 @@ mod tests {
                 water_crossings: Vec::new(),
             }),
             provenance: adventuresim_world_schema::TravelEdgeProvenance::DocumentedViabundus,
+            geometry: Vec::new(),
             toll: Some(EdgeEndpoint::From),
             length_m: 4,
             slope_multiplier: 1.0,

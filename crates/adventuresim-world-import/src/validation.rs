@@ -2,10 +2,12 @@ use std::collections::HashSet;
 
 use adventuresim_world_schema::{
     CURRENT_INFERENCE_RULES_VERSION, CompiledWorld, DerivedHistoricalVegetationMethod,
-    DroughtProfile, HistoricalVegetation, SettlementHydrology, SettlementImport, SoilEvidence,
-    SurfaceGeology, TravelRoute, TreeSpeciesProfile, WORLD_SCHEMA_VERSION,
-    historical_vegetation_matches_context, valid_sources_markdown,
+    DroughtProfile, HistoricalVegetation, MAX_EDGE_GEOMETRY_POINTS, SettlementHydrology,
+    SettlementImport, SoilEvidence, SurfaceGeology, TravelEdgeProvenance, TravelRoute,
+    TreeSpeciesProfile, WORLD_SCHEMA_VERSION, historical_vegetation_matches_context,
+    valid_sources_markdown,
 };
+use sha2::{Digest, Sha256};
 
 use crate::{Error, Result};
 
@@ -148,6 +150,29 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
                 edge.id
             )));
         }
+        match edge.provenance {
+            TravelEdgeProvenance::DocumentedViabundus if !edge.geometry.is_empty() => {
+                return Err(Error::Validation(format!(
+                    "documented edge {} unexpectedly embeds normalized geometry",
+                    edge.id
+                )));
+            }
+            TravelEdgeProvenance::InferredWalkingLink => {
+                if edge.geometry.len() < 2 || edge.geometry.len() > MAX_EDGE_GEOMETRY_POINTS {
+                    return Err(Error::Validation(format!(
+                        "inferred edge {} has invalid geometry size",
+                        edge.id
+                    )));
+                }
+                if edge.id >> 63 != 1 || !matches!(edge.route, TravelRoute::Land(_)) {
+                    return Err(Error::Validation(format!(
+                        "inferred edge {} has invalid identity or route",
+                        edge.id
+                    )));
+                }
+            }
+            _ => {}
+        }
         if edge.length_m == 0 {
             return Err(Error::Validation(format!(
                 "travel edge {} has zero length",
@@ -179,6 +204,27 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
                 edge.id
             )));
         }
+    }
+    let inferred = world
+        .edges
+        .iter()
+        .filter(|edge| edge.provenance == TravelEdgeProvenance::InferredWalkingLink)
+        .collect::<Vec<_>>();
+    let geometry_bytes = serde_json::to_vec(
+        &inferred
+            .iter()
+            .map(|edge| (&edge.id, &edge.geometry))
+            .collect::<Vec<_>>(),
+    )?;
+    let geometry_sha = format!("{:x}", Sha256::digest(geometry_bytes));
+    if world.report.inferred_road_edges != inferred.len()
+        || (!inferred.is_empty()
+            && (world.report.base_terrain_package_sha256.len() != 64
+                || world.report.inferred_road_geometry_sha256 != geometry_sha))
+    {
+        return Err(Error::Validation(
+            "inferred-road report identity does not reconcile".into(),
+        ));
     }
     let sum = |f: fn(&adventuresim_world_schema::RouteTerrain) -> usize| {
         world.edges.iter().map(|e| f(&e.terrain)).sum::<usize>()

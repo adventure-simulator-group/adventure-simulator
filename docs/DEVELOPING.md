@@ -192,7 +192,9 @@ just verify-db-client   # Fail if committed bindings differ from the module ABI
 just init-viabundus   # Download Viabundus v2 CSV data into viabundus/
 just verify-world-data-bundle /path/to/archive.zip /path/to/archive.release.json <published-descriptor-sha256> # Verify a reviewed input collection
 just install-world-data /path/to/archive.zip /path/to/archive.release.json <published-descriptor-sha256> # Install it without source-by-source downloads
-just compile-world      # Compile initialized sources into the 1544 world in target/
+just build-base-terrain # Build documented-road-only inference terrain
+just compile-world      # Build base terrain, then compile the 1544 world
+just build-strategic-map # Build base, world, and final map/terrain artifacts
 just normalise-viabundus # Compatibility alias for compile-world
 just load-world         # Load it into a published local SpacetimeDB module
 ```
@@ -267,10 +269,15 @@ local download. The command records the source URLs and SHA-256 checksums in
 `viabundus/.viabundus-source.json`.
 
 After Viabundus and the world-data inputs are installed, run `just
-build-strategic-map` to regenerate
+build-strategic-map`. The dependency chain first writes the immutable
+`terrain-routing-base-v2.json`/`.pack`, compiles `target/world-1544.json`
+against that digest, then regenerates
 `target/strategic-map/strategic-map-v1.json` and the derived
 `target/strategic-map/strategic-map-tiles-v1.pack`, plus the independent
-`terrain-routing-v1.json`/`.pack` native-detail artifact. The compiler also
+`terrain-routing-v2.json`/`.pack` final native-detail artifact. The base pack is
+an inference input and must not be served. The final pack adds the exact inferred
+polylines from the compiled world to its road mask and records the geometry,
+Jung wetland, content, and package identities. The compiler also
 writes `STRATEGIC_MAP_DATA_LICENSE.md` beside every output directory. Keep that
 notice with any copied, published, or hosted bundle; it is the artifact-level
 licence and attribution boundary described by the repository's
@@ -353,7 +360,7 @@ bundle, set `STRATEGIC_MAP_PREVIEW_PNG` to an output path and run the focused
 `representative_paper_tile_has_deterministic_png_preview_hook` test with the
 `strategic-map-renderer` feature.
 
-The deployment manifest is schema 3 with renderer revision 8. It contains only
+The deployment manifest is schema 4 with renderer revision 9. It contains only
 bounds, attribution/source metadata, coverage counts, the tile index, and
 content digests; source roads, water rings, elevation cells/contours, and
 forest regions stay in the offline compiler and are not shipped to

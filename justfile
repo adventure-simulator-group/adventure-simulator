@@ -323,12 +323,16 @@ install-world-data archive descriptor descriptor_sha256:
 replace-world-data archive descriptor descriptor_sha256:
 	@{{python_bin}} scripts/world_data_bundle.py install {{quote(archive)}} --descriptor {{quote(descriptor)}} --descriptor-sha256 {{quote(descriptor_sha256)}} --repository . --replace
 
+# Build the immutable documented-road terrain pack used only for inference.
+build-base-terrain:
+	@cargo run --package adventuresim-world-import --features strategic-map-renderer --bin build-strategic-map -- --base-only
+
 # Compile all initialized sources into the 1544 strategic world artifact.
-compile-world:
+compile-world: build-base-terrain
 	@cargo run --package adventuresim-world-import --bin adventuresim-world-import --
 
 # Derive the bounded metadata package and offline Paper AVIF tile bundle.
-build-strategic-map:
+build-strategic-map: compile-world
 	@cargo run --package adventuresim-world-import --features strategic-map-renderer --bin build-strategic-map --
 
 # Compatibility name for the former Python normalizer.

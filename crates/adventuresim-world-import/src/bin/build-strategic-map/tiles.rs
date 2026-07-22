@@ -335,10 +335,13 @@ struct Palette {
     paper_fleck: [u8; 4],
     water: [u8; 4],
     water_edge: [u8; 4],
+    wetland: [u8; 4],
+    wetland_edge: [u8; 4],
     road: [u8; 4],
     ferry: [u8; 4],
     forest_sparse: [u8; 4],
     forest_deep: [u8; 4],
+    inferred_road: [u8; 4],
     hilly_open: [u8; 4],
 }
 
@@ -348,10 +351,13 @@ const PAPER: Palette = Palette {
     paper_fleck: [151, 125, 86, 7],
     water: [184, 201, 197, 255],
     water_edge: [103, 119, 116, 190],
+    wetland: [112, 139, 102, 105],
+    wetland_edge: [74, 104, 72, 120],
     road: [92, 79, 57, 230],
     ferry: [91, 88, 78, 180],
     forest_sparse: [105, 139, 91, 120],
     forest_deep: [49, 94, 55, 155],
+    inferred_road: [118, 91, 61, 145],
     hilly_open: [191, 159, 115, 180],
 };
 
@@ -551,6 +557,18 @@ fn render_with_forest_field(
         origin,
         palette,
     )?;
+    for polygon in &package.wetlands {
+        stroke_and_fill_source_polygon(
+            &mut pixmap,
+            polygon,
+            package.bounds,
+            scale,
+            origin,
+            logical_bounds,
+            Some(palette.wetland),
+            Some((palette.wetland_edge, 0.65)),
+        );
+    }
     for polygon in &package.water {
         stroke_and_fill_source_polygon(
             &mut pixmap,
@@ -564,9 +582,7 @@ fn render_with_forest_field(
         );
     }
     for road in &package.roads {
-        let Some((shade, width)) =
-            road_style(road.importance, scale, road.kind == "ferry", palette)
-        else {
+        let Some((shade, width)) = road_style(road.importance, scale, &road.kind, palette) else {
             continue;
         };
         stroke_source_path(
@@ -635,7 +651,7 @@ fn draw_parchment_texture(pixmap: &mut Pixmap, scale: f64, origin: (f64, f64), p
     }
 }
 
-fn road_style(importance: u8, scale: f64, ferry: bool, palette: Palette) -> Option<([u8; 4], f32)> {
+fn road_style(importance: u8, scale: f64, kind: &str, palette: Palette) -> Option<([u8; 4], f32)> {
     let maximum_importance = if scale < 2.0 {
         0
     } else if scale < 4.0 {
@@ -650,8 +666,11 @@ fn road_style(importance: u8, scale: f64, ferry: bool, palette: Palette) -> Opti
     if importance > maximum_importance {
         return None;
     }
-    if ferry {
+    if kind == "ferry" {
         return Some((with_alpha(palette.ferry, 165), 0.95));
+    }
+    if kind == "inferred" {
+        return (scale >= 8.0).then_some((palette.inferred_road, 0.82));
     }
     let base_width = if scale >= 16.0 { 1.75 } else { 1.45 };
     let width = (base_width - f32::from(importance) * 0.16).max(0.85);
@@ -1080,6 +1099,7 @@ mod tests {
             roads: Vec::new(),
             routing_roads: Vec::new(),
             water: Vec::new(),
+            wetlands: Vec::new(),
             elevation: ElevationLayer {
                 source: layer_source(),
                 cells: vec![ElevationCell {
@@ -1270,11 +1290,32 @@ mod tests {
 
     #[test]
     fn road_hierarchy_filters_and_weights_minor_routes() {
-        assert!(road_style(4, 8.0, false, PAPER).is_none());
-        let major = road_style(0, 64.0, false, PAPER).unwrap();
-        let minor = road_style(4, 64.0, false, PAPER).unwrap();
+        assert!(road_style(4, 8.0, "land", PAPER).is_none());
+        let major = road_style(0, 64.0, "land", PAPER).unwrap();
+        let minor = road_style(4, 64.0, "land", PAPER).unwrap();
         assert!(major.1 > minor.1);
         assert!(major.0[3] > minor.0[3]);
+        let inferred = road_style(4, 64.0, "inferred", PAPER).unwrap();
+        assert_ne!(inferred.0, minor.0);
+        assert!(inferred.1 < minor.1);
+    }
+
+    #[test]
+    fn wetland_map_fill_is_distinct_from_plain_and_water() {
+        let mut package = flat_fixture();
+        package.wetlands = vec![super::super::WaterPolygon {
+            rings: vec![vec![
+                Point([10.0, 750.0]),
+                Point([50.0, 750.0]),
+                Point([50.0, 790.0]),
+                Point([10.0, 790.0]),
+                Point([10.0, 750.0]),
+            ]],
+        }];
+        let tile = render(&package, 64, TILE_GUTTER, 1.0, 0, 0, PAPER).unwrap();
+        let wet = pixel(&tile, 24, 24);
+        assert_ne!(wet, PAPER.land);
+        assert_ne!(wet, PAPER.water);
     }
 
     #[test]
