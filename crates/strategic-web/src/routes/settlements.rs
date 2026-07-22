@@ -3673,7 +3673,13 @@ async fn party_social(
     let selected = if target_id == active.id {
         active.clone()
     } else {
-        match query_single::<Character>(&state, "character", target_id).await {
+        match state
+            .db
+            .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {target_id}"))
+            .await
+            .ok()
+            .flatten()
+        {
             Some(value) => value,
             None => return Html("<h1>Party member not found</h1>".into()),
         }

@@ -2435,11 +2435,14 @@ button.party-portrait-action {
 .morale-meter {
   position: relative;
   padding: 0.15rem 0 0.65rem;
+  border: 2px solid transparent;
+  border-radius: 0.4rem;
   outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 .morale-meter { color: inherit; text-decoration: none; cursor: pointer; }
 .morale-meter:hover,
-.morale-meter:focus-visible { border-color: var(--accent); outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent); }
+.morale-meter:focus-visible { border-color: var(--accent-hover); outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-hover) 35%, transparent); }
 
 :root {
   --incap-pain: #d973a2;
