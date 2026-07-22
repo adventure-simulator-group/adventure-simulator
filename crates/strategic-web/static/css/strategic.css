@@ -4190,10 +4190,10 @@ body.chat-resizing {
 }
 
 .limb-surgery-link {
-    position: absolute;
-    inset: 0;
-    z-index: 3;
+    display: block;
     border-radius: .25rem;
+    color: inherit;
+    text-decoration: none;
 }
 
 .limb-surgery-link:hover,
