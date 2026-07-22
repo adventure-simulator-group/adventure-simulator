@@ -5,11 +5,15 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::journey_terrain_kind_type::JourneyTerrainKind;
+use super::journey_terrain_weights_type::JourneyTerrainWeights;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct JourneyTerrainSpan {
     pub kind: JourneyTerrainKind,
+    pub terrain: JourneyTerrainWeights,
+    pub training_multiplier_permille: u16,
+    pub check_millirank: u16,
     pub start_minute: u64,
     pub duration_minutes: u64,
 }

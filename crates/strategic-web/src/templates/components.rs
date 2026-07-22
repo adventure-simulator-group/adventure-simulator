@@ -157,7 +157,9 @@ pub fn stat_game_icon_name(icon: &str) -> &'static str {
 /// Resolve the source used by a stat mask. The original limb and immunity
 /// artwork remains clearer at the compact sizes used by the attribute rail.
 pub fn stat_icon_path(category: &str, icon: &str) -> String {
-    if category == "attributes"
+    if category == "terrain" {
+        format!("/static/icons/stats/terrain/{icon}.png")
+    } else if category == "attributes"
         && matches!(
             icon,
             "strength-arm" | "strength-leg" | "agility-arm" | "agility-leg" | "immunity"
@@ -250,6 +252,16 @@ mod icon_tests {
             "immunity",
         ]) {
             assert_eq!(path, &format!("/static/icons/stats/attributes/{icon}.png"));
+        }
+    }
+
+    #[test]
+    fn terrain_skill_family_uses_generated_local_masks() {
+        for icon in ["terrain", "plains", "forest", "hills", "urban"] {
+            assert_eq!(
+                stat_icon_path("terrain", icon),
+                format!("/static/icons/stats/terrain/{icon}.png")
+            );
         }
     }
 

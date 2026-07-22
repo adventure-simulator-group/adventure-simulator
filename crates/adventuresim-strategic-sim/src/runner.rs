@@ -785,6 +785,10 @@ impl PlayerSkills for SimSkills {
             Skill::Religion => self.0.religion.maximum_effective(),
             Skill::Stealth => self.0.stealth,
             Skill::Balance => self.0.balance,
+            Skill::TerrainPlains
+            | Skill::TerrainForest
+            | Skill::TerrainHills
+            | Skill::TerrainUrban => 0.0,
             Skill::Anatomy => self.0.anatomy,
             Skill::Tailoring => self.0.tailoring,
             Skill::Smithing => self.0.smithing,
