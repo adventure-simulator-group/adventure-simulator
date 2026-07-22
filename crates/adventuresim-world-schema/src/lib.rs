@@ -2918,7 +2918,6 @@ pub fn infer_settlement_economy(
         }
     }
     let mut stock = BTreeMap::<StockCategory, SettlementStock>::new();
-    let mut specializations = BTreeSet::new();
     let mut add = |category, abundance, provenance| {
         stock
             .entry(category)
@@ -2928,9 +2927,6 @@ pub fn infer_settlement_economy(
                 abundance,
                 provenance,
             });
-        if abundance >= 4 {
-            specializations.insert(category);
-        }
     };
     for evidence in industries.outputs() {
         let IndustryEvidence::Derived(industry) = evidence else {
@@ -3015,12 +3011,23 @@ pub fn infer_settlement_economy(
             gap,
         );
     }
+    let mut specializations = stock
+        .values()
+        .filter(|value| value.abundance >= 4)
+        .map(|value| (value.category, value.abundance))
+        .collect::<Vec<_>>();
+    specializations.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+    specializations.truncate(SettlementEconomyProfile::MAX_SPECIALIZATIONS);
+    specializations.sort_by_key(|(category, _)| *category);
     let profile = SettlementEconomyProfile {
         rules_version: CURRENT_INFERENCE_RULES_VERSION,
         prosperity_score: score,
         prosperity_tier: tier,
         services: services.into_iter().collect(),
-        specializations: specializations.into_iter().collect(),
+        specializations: specializations
+            .into_iter()
+            .map(|(category, _)| category)
+            .collect(),
         stock: stock.into_values().collect(),
     };
     profile.validate()?;
@@ -4351,14 +4358,90 @@ mod tests {
     use std::str::FromStr;
 
     use super::{
-        CanopyDensity, DroughtHistory, ElevationBand, ElevationMeters, ForestCover, GeologicUnitId,
-        HabitatSuitability, HumanLandUseIntensity, InferredTreeSpeciesProfile, LandUseFraction,
-        LandUseProfile, LanguageCode, ModeledTreeSpecies, ModeledTreeSpeciesProfile,
-        NativeRangeEvidence, OfficialReligion, PalmerDroughtSeverityIndex, PotentialVegetation,
-        PotentialVegetationClass, PotentialVegetationPosterior, ReligionHours, ReligionMinutes,
-        SettlementReligiousStatus, SoilBasisPoints, StoneContentPercent, SuitabilityBasisPoints,
-        SummerHydroclimate, TreeSpeciesId,
+        AgriculturalCommodity, AgricultureIndustry, CanopyDensity, DerivedIndustry, DroughtHistory,
+        ElevationBand, ElevationMeters, FishCommodity, FishingIndustry, ForestCommodity,
+        ForestCover, ForestryIndustry, GeologicUnitId, HabitatSuitability, HumanLandUseIntensity,
+        IndustryEvidence, InferredIndustryProfile, InferredTreeSpeciesProfile, LandUseFraction,
+        LandUseProfile, LanguageCode, MinedCommodity, MiningIndustry, ModeledTreeSpecies,
+        ModeledTreeSpeciesProfile, NativeRangeEvidence, OfficialReligion,
+        PalmerDroughtSeverityIndex, PotentialVegetation, PotentialVegetationClass,
+        PotentialVegetationPosterior, PotteryCommodity, PotteryIndustry, ProductionScale,
+        QuarryCommodity, QuarryingIndustry, ReligionHours, ReligionMinutes, SaltSource,
+        SaltmakingIndustry, SettlementEconomyProfile, SettlementReligiousStatus, SoilBasisPoints,
+        StockCategory, StoneContentPercent, SuitabilityBasisPoints, SummerHydroclimate,
+        TreeSpeciesId, infer_settlement_economy,
     };
+
+    #[test]
+    fn maximal_industry_diversity_keeps_the_strongest_bounded_specializations() {
+        let regional = ProductionScale::Regional;
+        let local = ProductionScale::Local;
+        let industries = InferredIndustryProfile::new(vec![
+            IndustryEvidence::Derived(DerivedIndustry::Agriculture(AgricultureIndustry {
+                commodity: AgriculturalCommodity::Grain,
+                scale: regional,
+            })),
+            IndustryEvidence::Derived(DerivedIndustry::Agriculture(AgricultureIndustry {
+                commodity: AgriculturalCommodity::Flax,
+                scale: regional,
+            })),
+            IndustryEvidence::Derived(DerivedIndustry::Agriculture(AgricultureIndustry {
+                commodity: AgriculturalCommodity::Dairy,
+                scale: regional,
+            })),
+            IndustryEvidence::Derived(DerivedIndustry::Agriculture(AgricultureIndustry {
+                commodity: AgriculturalCommodity::Hides,
+                scale: regional,
+            })),
+            IndustryEvidence::Derived(DerivedIndustry::Fishing(FishingIndustry {
+                commodity: FishCommodity::Freshwater,
+                scale: regional,
+            })),
+            IndustryEvidence::Derived(DerivedIndustry::Quarrying(QuarryingIndustry {
+                commodity: QuarryCommodity::Limestone,
+                scale: regional,
+            })),
+            IndustryEvidence::Derived(DerivedIndustry::Mining(MiningIndustry {
+                commodity: MinedCommodity::Coal,
+                scale: regional,
+            })),
+            IndustryEvidence::Derived(DerivedIndustry::Pottery(PotteryIndustry {
+                commodity: PotteryCommodity::Earthenware,
+                scale: regional,
+            })),
+            IndustryEvidence::Derived(DerivedIndustry::Forestry(ForestryIndustry {
+                commodity: ForestCommodity::Hardwood,
+                scale: local,
+            })),
+            IndustryEvidence::Derived(DerivedIndustry::Saltmaking(SaltmakingIndustry {
+                source: SaltSource::Evaporite,
+                scale: local,
+            })),
+        ])
+        .unwrap();
+
+        let profile = infer_settlement_economy(5, 50_000, 8, true, &industries).unwrap();
+
+        assert_eq!(
+            profile.specializations.len(),
+            SettlementEconomyProfile::MAX_SPECIALIZATIONS
+        );
+        assert_eq!(
+            profile.specializations,
+            vec![
+                StockCategory::Grain,
+                StockCategory::Dairy,
+                StockCategory::Fish,
+                StockCategory::Cloth,
+                StockCategory::Hides,
+                StockCategory::Fuel,
+                StockCategory::Stone,
+                StockCategory::Pottery,
+            ]
+        );
+        assert!(profile.specializations.windows(2).all(|v| v[0] < v[1]));
+        profile.validate().unwrap();
+    }
 
     #[test]
     fn religion_correlations_are_identity_symmetric_and_non_recursive() {
