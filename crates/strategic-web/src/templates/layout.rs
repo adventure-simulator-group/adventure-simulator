@@ -156,7 +156,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/base.css?v=environment-14";
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=subtle-material-lines-1-dialogue-source-icons-1";
+                link rel="stylesheet" href="/static/css/layout.css?v=subtle-material-lines-1-dialogue-source-icons-2";
                 link rel="stylesheet" href="/static/css/components.css?v=lowercase-display-type-1";
                 link rel="stylesheet" href="/static/css/strategic.css?v=strategic-ui-overhaul-4-paper-map-2-data-license-1-grouped-alcohol-2-rest-supplies-1-dialogue-pane-1";
                 link rel="stylesheet" href="/static/css/utilities.css?v=strategic-ui-overhaul-1";

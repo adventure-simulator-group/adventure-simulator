@@ -18,6 +18,7 @@ test("developer mode is persisted off by default and controls only source links"
   assert.match(dialogue, /dialogue-source-icon/);
   assert.doesNotMatch(dialogue, /link\.textContent = "Edit"/);
   assert.match(layoutCss, /\.dialogue-source-link[\s\S]*border-radius: 50%/);
+  assert.match(layoutCss, /\.dialogue-source-link\[hidden\] \{ display: none; \}/);
   assert.match(layoutCss, /\.dialogue-source-icon[\s\S]*hammer-nails\.svg/);
 });
 

@@ -122,6 +122,8 @@
   text-decoration: none;
 }
 
+.dialogue-source-link[hidden] { display: none; }
+
 .dialogue-source-link:is(:hover, :focus-visible) {
   border-color: currentcolor;
   background: color-mix(in srgb, currentcolor 16%, transparent);
