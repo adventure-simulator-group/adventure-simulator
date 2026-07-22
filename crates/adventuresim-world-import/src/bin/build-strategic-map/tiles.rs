@@ -948,7 +948,7 @@ fn stroke_and_fill_source_polygon(
                 .map(|point| project(point.0[0], point.0[1], map_bounds))
                 .collect::<Vec<_>>();
             if smooth_boundary {
-                smooth_closed_ring(&projected)
+                organic_closed_ring(&projected)
             } else {
                 projected
             }
@@ -1004,9 +1004,10 @@ fn stroke_and_fill_source_polygon(
     }
 }
 
-/// One Chaikin subdivision pass softens the staircase left by dissolving a
-/// categorical raster without changing the terrain geometry used by routing.
-fn smooth_closed_ring(points: &[(f64, f64)]) -> Vec<(f64, f64)> {
+/// Gently warp source-cell vertices, then repeatedly corner-cut the closed
+/// contour. This makes wetlands read as natural regions instead of rounded
+/// raster cells without changing the exact terrain geometry used by routing.
+fn organic_closed_ring(points: &[(f64, f64)]) -> Vec<(f64, f64)> {
     let mut vertices = points;
     if points.len() > 1 && points.first() == points.last() {
         vertices = &points[..points.len() - 1];
@@ -1014,21 +1015,59 @@ fn smooth_closed_ring(points: &[(f64, f64)]) -> Vec<(f64, f64)> {
     if vertices.len() < 3 {
         return points.to_vec();
     }
-    let mut smoothed = Vec::with_capacity(vertices.len() * 2 + 1);
+
+    let mut contour = Vec::with_capacity(vertices.len());
     for index in 0..vertices.len() {
+        let previous = vertices[(index + vertices.len() - 1) % vertices.len()];
         let current = vertices[index];
         let next = vertices[(index + 1) % vertices.len()];
-        smoothed.push((
-            current.0 * 0.75 + next.0 * 0.25,
-            current.1 * 0.75 + next.1 * 0.25,
-        ));
-        smoothed.push((
-            current.0 * 0.25 + next.0 * 0.75,
-            current.1 * 0.25 + next.1 * 0.75,
-        ));
+        let chord = (next.0 - previous.0, next.1 - previous.1);
+        let chord_length = chord.0.hypot(chord.1);
+        let local_scale = (current.0 - previous.0)
+            .hypot(current.1 - previous.1)
+            .min((next.0 - current.0).hypot(next.1 - current.1));
+        let noise = organic_vertex_noise(current);
+        let displacement = (noise - 0.5) * local_scale * 0.22;
+        if chord_length > f64::EPSILON {
+            contour.push((
+                current.0 - chord.1 / chord_length * displacement,
+                current.1 + chord.0 / chord_length * displacement,
+            ));
+        } else {
+            contour.push(current);
+        }
     }
-    smoothed.push(smoothed[0]);
-    smoothed
+
+    for _ in 0..3 {
+        let mut smoothed = Vec::with_capacity(contour.len() * 2);
+        for index in 0..contour.len() {
+            let current = contour[index];
+            let next = contour[(index + 1) % contour.len()];
+            smoothed.push((
+                current.0 * 0.75 + next.0 * 0.25,
+                current.1 * 0.75 + next.1 * 0.25,
+            ));
+            smoothed.push((
+                current.0 * 0.25 + next.0 * 0.75,
+                current.1 * 0.25 + next.1 * 0.75,
+            ));
+        }
+        contour = smoothed;
+    }
+    contour.push(contour[0]);
+    contour
+}
+
+fn organic_vertex_noise(point: (f64, f64)) -> f64 {
+    let x = (point.0 * 16.0).round() as i64 as u64;
+    let y = (point.1 * 16.0).round() as i64 as u64;
+    let mut value = x.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ y.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value ^= value >> 30;
+    value = value.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value ^= value >> 27;
+    value = value.wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^= value >> 31;
+    (value >> 11) as f64 / ((1_u64 << 53) - 1) as f64
 }
 
 fn tile_path(points: &[(f64, f64)], scale: f64, origin: (f64, f64), close: bool) -> Option<Path> {
@@ -1325,14 +1364,17 @@ mod tests {
     }
 
     #[test]
-    fn wetland_boundary_smoothing_closes_and_rounds_a_cell_outline() {
+    fn wetland_boundary_smoothing_is_closed_organic_and_deterministic() {
         let square = vec![(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0), (0.0, 0.0)];
-        let smoothed = smooth_closed_ring(&square);
+        let smoothed = organic_closed_ring(&square);
         assert_eq!(smoothed.first(), smoothed.last());
-        assert_eq!(smoothed.len(), 9);
-        assert_eq!(smoothed[0], (1.0, 0.0));
-        assert_eq!(smoothed[1], (3.0, 0.0));
+        assert_eq!(smoothed.len(), 33);
         assert!(!smoothed.contains(&(0.0, 0.0)));
+        assert_eq!(smoothed, organic_closed_ring(&square));
+        assert_ne!(
+            organic_vertex_noise((0.0, 0.0)),
+            organic_vertex_noise((4.0, 0.0))
+        );
     }
 
     #[test]
