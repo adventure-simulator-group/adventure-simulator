@@ -80,9 +80,16 @@ pub struct Prompt {
     pub id: String,
     pub respondent: String,
     pub mode: PromptMode,
+    #[serde(default = "one_usize")]
+    pub min_choices: usize,
+    #[serde(default = "one_usize")]
+    pub max_choices: usize,
     #[serde(default = "first_response")]
     pub resolution: ResolutionPolicy,
     pub choices: Vec<Choice>,
+}
+fn one_usize() -> usize {
+    1
 }
 fn first_response() -> ResolutionPolicy {
     ResolutionPolicy::FirstResponse
@@ -111,6 +118,9 @@ pub struct Choice {
     pub label: String,
     #[serde(default)]
     pub effects: Vec<Effect>,
+    /// Authored transcript turns appended after this choice wins resolution.
+    #[serde(default)]
+    pub result_turns: Vec<Turn>,
 }
 
 /// Closed, auditable effect vocabulary. Clients submit only response/choice IDs.
@@ -122,7 +132,6 @@ pub enum Effect {
     TurnInQuest { quest: String },
     BeginApprenticeship { profession: String },
     ExamineDisease,
-    RecruitRole { role: String },
     SetFlag { flag: String, value: bool },
 }
 
@@ -153,6 +162,8 @@ pub enum FactKey {
     ParticipantProfession { role: String },
     ParticipantFamiliarity { left: String, right: String },
     ParticipantClothingCategory { role: String },
+    ParticipantCount { role: String },
+    PartyLeader { role: String },
     Service { role: String },
     Location,
     TimePeriod,
@@ -186,10 +197,12 @@ impl FactContext {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct SourceRef {
+    pub document: usize,
     pub path: String,
     pub file: String,
     pub line: usize,
     pub column: usize,
+    pub value_json: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -269,15 +282,37 @@ pub fn validate(documents: &[CatalogDocument]) -> Result<(), Vec<DialogueError>>
                     errors.push(DialogueError::DuplicateId(topic.id.clone()));
                 }
                 for response in &topic.responses {
+                    if !ids.insert(format!("{}:{}:{}", conversation.id, topic.id, response.id)) {
+                        errors.push(DialogueError::DuplicateId(response.id.clone()));
+                    }
                     for turn in &response.turns {
                         if !conversation.roles.contains_key(&turn.speaker) {
                             errors.push(DialogueError::UnknownRole(turn.speaker.clone()));
                         }
                     }
                     if let Some(prompt) = &response.prompt {
+                        if !ids.insert(format!("{}:prompt:{}", conversation.id, prompt.id)) {
+                            errors.push(DialogueError::DuplicateId(prompt.id.clone()));
+                        }
+                        let mut choice_ids = BTreeSet::new();
+                        for choice in &prompt.choices {
+                            if !choice_ids.insert(&choice.id) {
+                                errors.push(DialogueError::DuplicateId(choice.id.clone()));
+                            }
+                            for turn in &choice.result_turns {
+                                if !conversation.roles.contains_key(&turn.speaker) {
+                                    errors.push(DialogueError::UnknownRole(turn.speaker.clone()));
+                                }
+                            }
+                        }
                         if !conversation.roles.contains_key(&prompt.respondent)
                             || prompt.choices.len() < 2
+                            || prompt.min_choices == 0
+                            || prompt.max_choices < prompt.min_choices
+                            || prompt.max_choices > prompt.choices.len()
                             || (prompt.mode == PromptMode::YesNo && prompt.choices.len() != 2)
+                            || (prompt.mode != PromptMode::Multi
+                                && (prompt.min_choices != 1 || prompt.max_choices != 1))
                         {
                             errors.push(DialogueError::InvalidPrompt(prompt.id.clone()));
                         }
@@ -309,6 +344,140 @@ pub fn find_conversation(id: &str) -> Option<&'static Conversation> {
         .iter()
         .flat_map(|d| &d.conversations)
         .find(|c| c.id == id)
+}
+
+pub fn source_for_fragment(
+    conversation_id: &str,
+    topic_id: &str,
+    response_id: &str,
+    turn: usize,
+    fragment: usize,
+    field: &str,
+) -> Option<&'static SourceRef> {
+    for (document_index, document) in catalog().iter().enumerate() {
+        if let Some((conversation_index, conversation)) = document
+            .conversations
+            .iter()
+            .enumerate()
+            .find(|(_, c)| c.id == conversation_id)
+        {
+            let topic_index = conversation
+                .topics
+                .iter()
+                .position(|topic| topic.id == topic_id)?;
+            let response_index = conversation.topics[topic_index]
+                .responses
+                .iter()
+                .position(|response| response.id == response_id)?;
+            let path = format!(
+                "conversations.{conversation_index}.topics.{topic_index}.responses.{response_index}.turns.{turn}.fragments.{fragment}.{field}"
+            );
+            return source_map()
+                .iter()
+                .find(|source| source.document == document_index && source.path == path);
+        }
+    }
+    None
+}
+
+pub fn source_for_topic(conversation_id: &str, topic_id: &str) -> Option<&'static SourceRef> {
+    for (document_index, document) in catalog().iter().enumerate() {
+        if let Some((conversation_index, conversation)) = document
+            .conversations
+            .iter()
+            .enumerate()
+            .find(|(_, c)| c.id == conversation_id)
+        {
+            let topic_index = conversation
+                .topics
+                .iter()
+                .position(|topic| topic.id == topic_id)?;
+            let path = format!("conversations.{conversation_index}.topics.{topic_index}.label");
+            return source_map()
+                .iter()
+                .find(|source| source.document == document_index && source.path == path);
+        }
+    }
+    None
+}
+
+pub fn source_for_choice(
+    conversation_id: &str,
+    topic_id: &str,
+    response_id: &str,
+    choice_id: &str,
+) -> Option<&'static SourceRef> {
+    for (document_index, document) in catalog().iter().enumerate() {
+        if let Some((conversation_index, conversation)) = document
+            .conversations
+            .iter()
+            .enumerate()
+            .find(|(_, c)| c.id == conversation_id)
+        {
+            let topic_index = conversation
+                .topics
+                .iter()
+                .position(|topic| topic.id == topic_id)?;
+            let response_index = conversation.topics[topic_index]
+                .responses
+                .iter()
+                .position(|response| response.id == response_id)?;
+            let choice_index = conversation.topics[topic_index].responses[response_index]
+                .prompt
+                .as_ref()?
+                .choices
+                .iter()
+                .position(|choice| choice.id == choice_id)?;
+            let path = format!(
+                "conversations.{conversation_index}.topics.{topic_index}.responses.{response_index}.prompt.choices.{choice_index}.label"
+            );
+            return source_map()
+                .iter()
+                .find(|source| source.document == document_index && source.path == path);
+        }
+    }
+    None
+}
+
+pub fn source_for_choice_fragment(
+    conversation_id: &str,
+    topic_id: &str,
+    response_id: &str,
+    choice_id: &str,
+    turn: usize,
+    fragment: usize,
+    field: &str,
+) -> Option<&'static SourceRef> {
+    for (document_index, document) in catalog().iter().enumerate() {
+        if let Some((conversation_index, conversation)) = document
+            .conversations
+            .iter()
+            .enumerate()
+            .find(|(_, conversation)| conversation.id == conversation_id)
+        {
+            let topic_index = conversation
+                .topics
+                .iter()
+                .position(|topic| topic.id == topic_id)?;
+            let response_index = conversation.topics[topic_index]
+                .responses
+                .iter()
+                .position(|response| response.id == response_id)?;
+            let choice_index = conversation.topics[topic_index].responses[response_index]
+                .prompt
+                .as_ref()?
+                .choices
+                .iter()
+                .position(|choice| choice.id == choice_id)?;
+            let path = format!(
+                "conversations.{conversation_index}.topics.{topic_index}.responses.{response_index}.prompt.choices.{choice_index}.result_turns.{turn}.fragments.{fragment}.{field}"
+            );
+            return source_map()
+                .iter()
+                .find(|source| source.document == document_index && source.path == path);
+        }
+    }
+    None
 }
 
 /// Builds a web-editor URL from centrally configured repository/ref values.
@@ -355,6 +524,28 @@ mod tests {
                 .iter()
                 .all(|s| s.file.starts_with("content/dialogue/") && s.line > 0 && s.column > 0)
         );
+        let kind_spans: Vec<_> = source_map()
+            .iter()
+            .filter(|source| source.path.ends_with(".kind"))
+            .map(|source| (source.document, source.line, source.column))
+            .collect();
+        assert!(kind_spans.len() > 4);
+        assert_eq!(
+            kind_spans.iter().collect::<BTreeSet<_>>().len(),
+            kind_spans.len()
+        );
+        let result_source = source_for_choice_fragment(
+            "service-professions",
+            "apprenticeship",
+            "offer-apprenticeship",
+            "yes",
+            0,
+            0,
+            "value",
+        )
+        .expect("authored prompt results have exact source spans");
+        assert_eq!(result_source.file, "content/dialogue/services.yaml");
+        assert!(result_source.line > 0);
     }
     #[test]
     fn specificity_uses_typed_facts_and_priority() {
@@ -383,10 +574,12 @@ mod tests {
     #[test]
     fn source_urls_are_safe_and_web_editable() {
         let s = SourceRef {
+            document: 0,
             path: "x".into(),
             file: "content/dialogue/a file.yaml".into(),
             line: 7,
             column: 2,
+            value_json: "\"x\"".into(),
         };
         assert_eq!(
             github_edit_url("owner/repo", "main", &s).unwrap(),

@@ -15,6 +15,8 @@ stable IDs, labels, knowledge/eligibility conditions, and explicitly prioritized
 responses. A response contains attributed turns composed of text and inline
 topic fragments. Prompts support `yes_no`, `single`, and `multi` choices and
 `first_response`, `unanimous`, `majority`, or `all_respondents` resolution.
+Choices may contain `result_turns`; these are appended to the durable transcript
+only after the prompt resolves and its effects succeed.
 
 Conditions are a typed tree: `always`, `all`, `any`, `not`, and `fact`. Fact keys
 are allowlisted in `FactKey`; participant profession, familiarity, clothing,
@@ -32,11 +34,14 @@ as ambiguous instead of depending on file order.
 ## Persistence and multiplayer
 
 SpacetimeDB stores dialogue sessions, named participants, attributed events,
-open prompts, idempotent per-character answers, and per-character topic
-knowledge. Reducers verify membership, shared settlement, catalog revision, and
-stable choice IDs. Synthetic service actors (`<settlement>:<service>`) remain a
-temporary NPC identity boundary. Free-form `local_chat_message` remains an
-independent stream.
+open prompts, idempotent action receipts, per-character answers, and
+per-character topic knowledge. Answer and knowledge rows are private; the web
+gateway exposes only a participant-authorized conversation view and never sends
+the authored condition/effect catalog to browsers. Reducers verify gateway
+authority, membership, shared settlement, role cardinality, catalog and session
+revisions, topic eligibility, and stable choice IDs. Synthetic service actors
+(`<settlement>:<service>`) remain a temporary NPC identity boundary. Free-form
+`local_chat_message` remains an independent stream.
 
 ## Developer mode and source editing
 

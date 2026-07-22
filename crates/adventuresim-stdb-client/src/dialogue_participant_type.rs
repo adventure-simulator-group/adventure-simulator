@@ -12,6 +12,7 @@ pub struct DialogueParticipant {
     pub role: String,
     pub character_id: Option<u64>,
     pub actor_id: String,
+    pub display_name: String,
 }
 
 impl __sdk::InModule for DialogueParticipant {
@@ -27,6 +28,7 @@ pub struct DialogueParticipantCols {
     pub role: __sdk::__query_builder::Col<DialogueParticipant, String>,
     pub character_id: __sdk::__query_builder::Col<DialogueParticipant, Option<u64>>,
     pub actor_id: __sdk::__query_builder::Col<DialogueParticipant, String>,
+    pub display_name: __sdk::__query_builder::Col<DialogueParticipant, String>,
 }
 
 impl __sdk::__query_builder::HasCols for DialogueParticipant {
@@ -38,6 +40,7 @@ impl __sdk::__query_builder::HasCols for DialogueParticipant {
             role: __sdk::__query_builder::Col::new(table_name, "role"),
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
             actor_id: __sdk::__query_builder::Col::new(table_name, "actor_id"),
+            display_name: __sdk::__query_builder::Col::new(table_name, "display_name"),
         }
     }
 }

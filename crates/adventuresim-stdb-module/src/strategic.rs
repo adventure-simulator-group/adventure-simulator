@@ -28,7 +28,9 @@ use crate::{
     item::{InventoryItem, inventory_item, item},
     repair::item_condition,
     tactical::tactical_server_request,
-    time::{advance_travel_time, character_time, character_training_schedule},
+    time::{
+        advance_travel_time, character_apprenticeship, character_time, character_training_schedule,
+    },
 };
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
@@ -2172,6 +2174,7 @@ pub struct DialogueSession {
     pub catalog_revision: String,
     pub settlement_id: String,
     pub state: String,
+    pub revision: u64,
     pub created_micros: i64,
 }
 
@@ -2185,6 +2188,7 @@ pub struct DialogueParticipant {
     pub role: String,
     pub character_id: Option<u64>,
     pub actor_id: String,
+    pub display_name: String,
 }
 
 #[derive(Clone, Debug)]
@@ -2198,6 +2202,7 @@ pub struct DialogueEvent {
     pub response_id: String,
     pub speaker_role: String,
     pub fragments_json: String,
+    pub source_refs_json: String,
     pub created_micros: i64,
 }
 
@@ -2213,11 +2218,27 @@ pub struct DialoguePrompt {
     pub respondent_role: String,
     pub resolution_policy: String,
     pub choices_json: String,
+    pub min_choices: u32,
+    pub max_choices: u32,
     pub state: String,
+    pub resolved_choice_ids_json: String,
+    pub source_refs_json: String,
 }
 
 #[derive(Clone, Debug)]
-#[table(accessor = dialogue_answer, public)]
+#[table(accessor = dialogue_action)]
+pub struct DialogueAction {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub session_id: String,
+    pub action_id: String,
+    pub action_kind: String,
+    pub resulting_revision: u64,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = dialogue_answer)]
 pub struct DialogueAnswer {
     #[primary_key]
     pub id: String,
@@ -2229,7 +2250,7 @@ pub struct DialogueAnswer {
 }
 
 #[derive(Clone, Debug)]
-#[table(accessor = character_topic_knowledge, public)]
+#[table(accessor = character_topic_knowledge)]
 pub struct CharacterTopicKnowledge {
     #[primary_key]
     pub id: String,
@@ -2240,12 +2261,38 @@ pub struct CharacterTopicKnowledge {
     pub learned_micros: i64,
 }
 
+#[derive(Clone, Debug)]
+#[table(accessor = dialogue_topic_option, public)]
+pub struct DialogueTopicOption {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub session_id: String,
+    pub topic_id: String,
+    pub label: String,
+    pub source_ref_json: String,
+}
+
 fn require_dialogue_revision(revision: &str) -> Result<(), String> {
     if revision == adventuresim_dialogue::CATALOG_DIGEST {
         Ok(())
     } else {
         Err("Dialogue catalog revision is stale".into())
     }
+}
+
+fn service_actor_display_name(actor_id: &str, role: &str) -> String {
+    match actor_id.split(':').nth(1).unwrap_or(role) {
+        "merchants" => "Merchant",
+        "weapons" => "Weaponsmith",
+        "armor" => "Armourer",
+        "clothing" => "Tailor",
+        "herbalist" => "Herbalist",
+        "inn" => "Innkeeper",
+        "religion" => "Priest",
+        _ => role,
+    }
+    .to_string()
 }
 
 #[reducer]
@@ -2257,6 +2304,7 @@ pub fn start_dialogue(
     npc_actor_id: String,
     catalog_revision: String,
 ) -> Result<(), String> {
+    require_strategic_gateway(ctx)?;
     require_dialogue_revision(&catalog_revision)?;
     crate::character::require_living_character(ctx, character_id)?;
     let character = ctx
@@ -2268,6 +2316,15 @@ pub fn start_dialogue(
     let settlement_id = character
         .current_settlement_id
         .ok_or("Dialogue requires a settlement")?;
+    let expected_conversation = match npc_actor_id.strip_prefix(&format!("{settlement_id}:")) {
+        Some("herbalist") => "herbalist-examination",
+        Some("religion") => "religion-service",
+        Some("merchants" | "weapons" | "armor" | "clothing" | "inn") => "service-professions",
+        _ => return Err("Dialogue actor is not an authoritative settlement service".into()),
+    };
+    if conversation_id != expected_conversation {
+        return Err("Dialogue conversation is not valid for this service actor".into());
+    }
     if !npc_actor_id.starts_with(&format!("{settlement_id}:")) {
         return Err("Dialogue actor is not at this settlement".into());
     }
@@ -2281,20 +2338,28 @@ pub fn start_dialogue(
         .find(|(_, role)| role.kind == adventuresim_dialogue::ParticipantKind::Player)
         .map(|(name, _)| name.clone())
         .ok_or("Conversation has no player role")?;
-    let npc_role = conversation
+    if !conversation
         .roles
-        .iter()
-        .find(|(_, role)| role.kind == adventuresim_dialogue::ParticipantKind::Npc)
-        .map(|(name, _)| name.clone())
-        .ok_or("Conversation has no NPC role")?;
+        .values()
+        .any(|role| role.kind == adventuresim_dialogue::ParticipantKind::Npc)
+    {
+        return Err("Conversation has no NPC role".into());
+    }
     if !session_id.starts_with(&format!("dialogue:{character_id}:"))
         || session_id.len() > 160
         || session_id.chars().any(char::is_control)
     {
         return Err("Invalid dialogue session ID".into());
     }
-    if ctx.db.dialogue_session().id().find(&session_id).is_some() {
-        return Ok(());
+    if let Some(existing) = ctx.db.dialogue_session().id().find(&session_id) {
+        return if existing.conversation_id == conversation_id
+            && existing.settlement_id == settlement_id
+            && existing.catalog_revision == catalog_revision
+        {
+            Ok(())
+        } else {
+            Err("Dialogue session ID conflicts with another request".into())
+        };
     }
     let id = session_id;
     ctx.db.dialogue_session().insert(DialogueSession {
@@ -2303,6 +2368,7 @@ pub fn start_dialogue(
         catalog_revision,
         settlement_id,
         state: "active".into(),
+        revision: 0,
         created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
     });
     ctx.db.dialogue_participant().insert(DialogueParticipant {
@@ -2311,14 +2377,38 @@ pub fn start_dialogue(
         role: player_role,
         character_id: Some(character_id),
         actor_id: format!("character:{character_id}"),
+        display_name: character.name.clone(),
     });
-    ctx.db.dialogue_participant().insert(DialogueParticipant {
-        id: format!("{id}:npc:{npc_actor_id}"),
-        session_id: id,
-        role: npc_role,
-        character_id: None,
-        actor_id: npc_actor_id,
-    });
+    for (index, (role_name, role)) in conversation
+        .roles
+        .iter()
+        .filter(|(_, role)| role.kind == adventuresim_dialogue::ParticipantKind::Npc)
+        .enumerate()
+    {
+        if role.min > 1 {
+            return Err("Synthetic service roles currently support one actor per NPC role".into());
+        }
+        let actor_id = if index == 0 {
+            npc_actor_id.clone()
+        } else {
+            format!("{npc_actor_id}:{role_name}")
+        };
+        ctx.db.dialogue_participant().insert(DialogueParticipant {
+            id: format!("{id}:npc:{role_name}"),
+            session_id: id.clone(),
+            role: role_name.clone(),
+            character_id: None,
+            display_name: service_actor_display_name(&actor_id, role_name),
+            actor_id,
+        });
+    }
+    let session = ctx
+        .db
+        .dialogue_session()
+        .id()
+        .find(&id)
+        .ok_or("Dialogue session not found")?;
+    refresh_dialogue_topic_options(ctx, &session, character_id)?;
     Ok(())
 }
 
@@ -2328,11 +2418,19 @@ pub fn join_dialogue_session(
     character_id: u64,
     session_id: String,
     role: String,
+    action_id: String,
+    expected_revision: u64,
     catalog_revision: String,
 ) -> Result<(), String> {
+    require_strategic_gateway(ctx)?;
     require_dialogue_revision(&catalog_revision)?;
     crate::character::require_living_character(ctx, character_id)?;
-    let session = ctx
+    validate_dialogue_action_id(&action_id)?;
+    let action_row_id = format!("{session_id}:{action_id}");
+    if ctx.db.dialogue_action().id().find(&action_row_id).is_some() {
+        return Ok(());
+    }
+    let mut session = ctx
         .db
         .dialogue_session()
         .id()
@@ -2340,6 +2438,9 @@ pub fn join_dialogue_session(
         .ok_or("Dialogue session not found")?;
     if session.catalog_revision != catalog_revision || session.state != "active" {
         return Err("Dialogue session is stale or closed".into());
+    }
+    if session.revision != expected_revision {
+        return Err("Dialogue join used a stale session revision".into());
     }
     let character = ctx
         .db
@@ -2364,20 +2465,31 @@ pub fn join_dialogue_session(
         .filter(&session_id)
         .filter(|participant| participant.role == role)
         .count();
-    if count >= usize::from(specification.max) {
-        return Err("Dialogue role is full".into());
-    }
     let id = format!("{session_id}:character:{character_id}");
     if ctx.db.dialogue_participant().id().find(&id).is_some() {
         return Ok(());
     }
+    if count >= usize::from(specification.max) {
+        return Err("Dialogue role is full".into());
+    }
     ctx.db.dialogue_participant().insert(DialogueParticipant {
         id,
-        session_id,
+        session_id: session_id.clone(),
         role,
         character_id: Some(character_id),
         actor_id: format!("character:{character_id}"),
+        display_name: character.name,
     });
+    session.revision += 1;
+    ctx.db.dialogue_session().id().update(session.clone());
+    ctx.db.dialogue_action().insert(DialogueAction {
+        id: action_row_id,
+        session_id,
+        action_id,
+        action_kind: "join".into(),
+        resulting_revision: session.revision,
+    });
+    refresh_dialogue_topic_options(ctx, &session, character_id)?;
     Ok(())
 }
 
@@ -2416,18 +2528,245 @@ fn require_session_member(
     Ok(session)
 }
 
+fn validate_dialogue_action_id(action_id: &str) -> Result<(), String> {
+    if action_id.is_empty()
+        || action_id.len() > 100
+        || action_id.chars().any(|c| c.is_control() || c == ':')
+    {
+        Err("Invalid dialogue action ID".into())
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_dialogue_cardinality(
+    ctx: &ReducerContext,
+    session: &DialogueSession,
+    conversation: &adventuresim_dialogue::Conversation,
+) -> Result<(), String> {
+    let participants: Vec<_> = ctx
+        .db
+        .dialogue_participant()
+        .session_id()
+        .filter(&session.id)
+        .collect();
+    for (role_name, role) in &conversation.roles {
+        let count = participants
+            .iter()
+            .filter(|participant| participant.role == *role_name)
+            .count();
+        if count < usize::from(role.min) || count > usize::from(role.max) {
+            return Err(format!(
+                "Dialogue role {role_name} does not meet its cardinality"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn dialogue_fact_context(
+    ctx: &ReducerContext,
+    session: &DialogueSession,
+    character_id: u64,
+) -> Result<adventuresim_dialogue::FactContext, String> {
+    use adventuresim_dialogue::{FactKey, FactValue};
+    let mut result = adventuresim_dialogue::FactContext::default();
+    result.facts.insert(
+        FactKey::Location,
+        FactValue::Text(session.settlement_id.clone()),
+    );
+    let participants: Vec<_> = ctx
+        .db
+        .dialogue_participant()
+        .session_id()
+        .filter(&session.id)
+        .collect();
+    for participant in &participants {
+        result.facts.insert(
+            FactKey::ParticipantCount {
+                role: participant.role.clone(),
+            },
+            FactValue::Integer(
+                participants
+                    .iter()
+                    .filter(|other| other.role == participant.role)
+                    .count() as i64,
+            ),
+        );
+        if participant.character_id.is_none() {
+            result.facts.insert(
+                FactKey::Service {
+                    role: participant.role.clone(),
+                },
+                FactValue::Text(
+                    participant
+                        .actor_id
+                        .split(':')
+                        .nth(1)
+                        .unwrap_or_default()
+                        .to_owned(),
+                ),
+            );
+        }
+        if let Some(id) = participant.character_id {
+            if let Some(apprenticeship) = ctx
+                .db
+                .character_apprenticeship()
+                .character_id()
+                .filter(id)
+                .next()
+            {
+                result.facts.insert(
+                    FactKey::ParticipantProfession {
+                        role: participant.role.clone(),
+                    },
+                    FactValue::Text(apprenticeship.service_id),
+                );
+            }
+            if let Some(character) = ctx.db.character().id().find(id) {
+                if let Some(party_id) = character.party_id.as_ref() {
+                    let leader = ctx
+                        .db
+                        .party()
+                        .id()
+                        .find(party_id)
+                        .is_some_and(|party| party.leader_id == id);
+                    result.facts.insert(
+                        FactKey::PartyLeader {
+                            role: participant.role.clone(),
+                        },
+                        FactValue::Bool(leader),
+                    );
+                }
+            }
+            if let Some(equipment) = ctx.db.character_equip().character_id().find(id) {
+                let equipped = [
+                    equipment.left_hand_item_id,
+                    equipment.right_hand_item_id,
+                    equipment.left_arm_armor_id,
+                    equipment.right_arm_armor_id,
+                    equipment.left_leg_armor_id,
+                    equipment.right_leg_armor_id,
+                    equipment.head_armor_id,
+                    equipment.chest_armor_id,
+                    equipment.stomach_armor_id,
+                ];
+                let clothing = equipped
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|inventory_id| ctx.db.inventory_item().id().find(inventory_id))
+                    .filter_map(|inventory| ctx.db.item().id().find(&inventory.item_id))
+                    .find(|item| item.kind == crate::item::ItemKind::Clothing);
+                if let Some(item) = clothing {
+                    result.facts.insert(
+                        FactKey::ParticipantClothingCategory {
+                            role: participant.role.clone(),
+                        },
+                        FactValue::Text(item.id),
+                    );
+                }
+            }
+        }
+    }
+    if let Some(time) = ctx.db.character_time().character_id().find(character_id) {
+        let period = match time.minutes % 1440 {
+            300..720 => "morning",
+            720..1020 => "afternoon",
+            1020..1260 => "evening",
+            _ => "night",
+        };
+        result
+            .facts
+            .insert(FactKey::TimePeriod, FactValue::Text(period.into()));
+    }
+    let service = dialogue_service_id(ctx, session)?;
+    if let Some(issuer) = ctx
+        .db
+        .quest_issuer()
+        .service_id()
+        .filter(&service)
+        .find(|issuer| issuer.settlement_id == session.settlement_id)
+    {
+        if let Some(quest) = ctx.db.quest().id().find(&issuer.quest_id) {
+            result.facts.insert(
+                FactKey::QuestState {
+                    quest: "selected-service-quest".into(),
+                },
+                FactValue::Text(format!("{:?}", quest.status).to_lowercase()),
+            );
+        }
+    }
+    Ok(result)
+}
+
+fn refresh_dialogue_topic_options(
+    ctx: &ReducerContext,
+    session: &DialogueSession,
+    character_id: u64,
+) -> Result<(), String> {
+    let conversation = adventuresim_dialogue::find_conversation(&session.conversation_id)
+        .ok_or("Unknown dialogue conversation")?;
+    let facts = dialogue_fact_context(ctx, session, character_id)?;
+    let existing: Vec<_> = ctx
+        .db
+        .dialogue_topic_option()
+        .session_id()
+        .filter(&session.id)
+        .map(|row| row.id)
+        .collect();
+    for id in existing {
+        ctx.db.dialogue_topic_option().id().delete(&id);
+    }
+    for topic in &conversation.topics {
+        let known = topic.initially_known
+            || ctx
+                .db
+                .character_topic_knowledge()
+                .character_id()
+                .filter(character_id)
+                .any(|row| {
+                    row.conversation_id == session.conversation_id && row.topic_id == topic.id
+                });
+        if known && facts.matches(&topic.conditions) {
+            ctx.db.dialogue_topic_option().insert(DialogueTopicOption {
+                id: format!("{}:{}", session.id, topic.id),
+                session_id: session.id.clone(),
+                topic_id: topic.id.clone(),
+                label: topic.label.clone(),
+                source_ref_json: serde_json::to_string(&adventuresim_dialogue::source_for_topic(
+                    &session.conversation_id,
+                    &topic.id,
+                ))
+                .map_err(|_| "Could not encode topic source")?,
+            });
+        }
+    }
+    Ok(())
+}
+
 #[reducer]
 pub fn choose_dialogue_topic(
     ctx: &ReducerContext,
     character_id: u64,
     session_id: String,
     topic_id: String,
+    action_id: String,
+    expected_revision: u64,
     catalog_revision: String,
 ) -> Result<(), String> {
+    require_strategic_gateway(ctx)?;
     require_dialogue_revision(&catalog_revision)?;
-    let session = require_session_member(ctx, &session_id, character_id)?;
+    validate_dialogue_action_id(&action_id)?;
+    let action_row_id = format!("{session_id}:{action_id}");
+    if ctx.db.dialogue_action().id().find(&action_row_id).is_some() {
+        return Ok(());
+    }
+    let mut session = require_session_member(ctx, &session_id, character_id)?;
     if session.catalog_revision != catalog_revision {
         return Err("Dialogue session revision is stale".into());
+    }
+    if session.revision != expected_revision {
+        return Err("Dialogue action used a stale session revision".into());
     }
     let conversation = adventuresim_dialogue::find_conversation(&session.conversation_id)
         .ok_or("Unknown dialogue conversation")?;
@@ -2436,11 +2775,23 @@ pub fn choose_dialogue_topic(
         .iter()
         .find(|topic| topic.id == topic_id)
         .ok_or("Unknown dialogue topic")?;
-    let response = adventuresim_dialogue::select_response(
-        topic,
-        &adventuresim_dialogue::FactContext::default(),
-    )
-    .map_err(|_| "No unambiguous eligible dialogue response")?;
+    let known = topic.initially_known
+        || ctx
+            .db
+            .character_topic_knowledge()
+            .character_id()
+            .filter(character_id)
+            .any(|row| row.conversation_id == session.conversation_id && row.topic_id == topic.id);
+    if !known {
+        return Err("Dialogue topic is not known by this character".into());
+    }
+    validate_dialogue_cardinality(ctx, &session, conversation)?;
+    let facts = dialogue_fact_context(ctx, &session, character_id)?;
+    if !facts.matches(&topic.conditions) {
+        return Err("Dialogue topic is not eligible in this context".into());
+    }
+    let response = adventuresim_dialogue::select_response(topic, &facts)
+        .map_err(|_| "No unambiguous eligible dialogue response")?;
     let sequence = ctx
         .db
         .dialogue_event()
@@ -2448,6 +2799,25 @@ pub fn choose_dialogue_topic(
         .filter(&session_id)
         .count() as u32;
     for (offset, turn) in response.turns.iter().enumerate() {
+        let source_refs: Vec<_> = turn
+            .fragments
+            .iter()
+            .enumerate()
+            .map(|(fragment, authored)| {
+                let field = match authored {
+                    adventuresim_dialogue::Fragment::Text { .. } => "value",
+                    adventuresim_dialogue::Fragment::Topic { .. } => "label",
+                };
+                adventuresim_dialogue::source_for_fragment(
+                    &session.conversation_id,
+                    &topic.id,
+                    &response.id,
+                    offset,
+                    fragment,
+                    field,
+                )
+            })
+            .collect();
         ctx.db.dialogue_event().insert(DialogueEvent {
             id: format!("{session_id}:event:{}", sequence + offset as u32),
             session_id: session_id.clone(),
@@ -2456,6 +2826,8 @@ pub fn choose_dialogue_topic(
             speaker_role: turn.speaker.clone(),
             fragments_json: serde_json::to_string(&turn.fragments)
                 .map_err(|_| "Could not encode dialogue turn")?,
+            source_refs_json: serde_json::to_string(&source_refs)
+                .map_err(|_| "Could not encode dialogue sources")?,
             created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
         });
     }
@@ -2463,21 +2835,49 @@ pub fn choose_dialogue_topic(
         apply_dialogue_effect(ctx, character_id, &session, effect)?;
     }
     if let Some(prompt) = &response.prompt {
-        let id = format!("{session_id}:prompt:{}", prompt.id);
+        let id = format!("{session_id}:prompt:{}:{action_id}", prompt.id);
         if ctx.db.dialogue_prompt().id().find(&id).is_none() {
             ctx.db.dialogue_prompt().insert(DialoguePrompt {
                 id,
-                session_id,
+                session_id: session_id.clone(),
                 prompt_id: prompt.id.clone(),
                 mode: format!("{:?}", prompt.mode),
                 respondent_role: prompt.respondent.clone(),
                 resolution_policy: format!("{:?}", prompt.resolution),
                 choices_json: serde_json::to_string(&prompt.choices)
                     .map_err(|_| "Could not encode dialogue choices")?,
+                min_choices: prompt.min_choices as u32,
+                max_choices: prompt.max_choices as u32,
                 state: "open".into(),
+                resolved_choice_ids_json: "[]".into(),
+                source_refs_json: serde_json::to_string(
+                    &prompt
+                        .choices
+                        .iter()
+                        .map(|choice| {
+                            adventuresim_dialogue::source_for_choice(
+                                &session.conversation_id,
+                                &topic.id,
+                                &response.id,
+                                &choice.id,
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                )
+                .map_err(|_| "Could not encode prompt sources")?,
             });
         }
     }
+    session.revision += 1;
+    ctx.db.dialogue_session().id().update(session.clone());
+    ctx.db.dialogue_action().insert(DialogueAction {
+        id: action_row_id,
+        session_id,
+        action_id,
+        action_kind: "topic".into(),
+        resulting_revision: session.revision,
+    });
+    refresh_dialogue_topic_options(ctx, &session, character_id)?;
     Ok(())
 }
 
@@ -2487,27 +2887,51 @@ pub fn answer_dialogue_prompt(
     character_id: u64,
     prompt_row_id: String,
     choice_ids_json: String,
+    action_id: String,
+    expected_revision: u64,
     catalog_revision: String,
 ) -> Result<(), String> {
+    require_strategic_gateway(ctx)?;
     require_dialogue_revision(&catalog_revision)?;
+    validate_dialogue_action_id(&action_id)?;
     let prompt = ctx
         .db
         .dialogue_prompt()
         .id()
         .find(&prompt_row_id)
         .ok_or("Dialogue prompt not found")?;
+    let action_row_id = format!("{}:{action_id}", prompt.session_id);
+    if ctx.db.dialogue_action().id().find(&action_row_id).is_some() {
+        return Ok(());
+    }
     if prompt.state != "open" {
         return Err("Dialogue prompt is closed".into());
     }
-    let session = require_session_member(ctx, &prompt.session_id, character_id)?;
+    let mut session = require_session_member(ctx, &prompt.session_id, character_id)?;
     if session.catalog_revision != catalog_revision {
         return Err("Dialogue session revision is stale".into());
+    }
+    if session.revision != expected_revision {
+        return Err("Dialogue answer used a stale session revision".into());
+    }
+    let participant = ctx
+        .db
+        .dialogue_participant()
+        .session_id()
+        .filter(&prompt.session_id)
+        .find(|participant| participant.character_id == Some(character_id))
+        .ok_or("Character is not a dialogue participant")?;
+    if participant.role != prompt.respondent_role {
+        return Err("Character is not an eligible respondent for this prompt".into());
     }
     let chosen: Vec<String> =
         serde_json::from_str(&choice_ids_json).map_err(|_| "Invalid dialogue choices")?;
     let allowed: Vec<adventuresim_dialogue::Choice> =
         serde_json::from_str(&prompt.choices_json).map_err(|_| "Invalid authoritative choices")?;
-    if chosen.is_empty()
+    let unique: std::collections::BTreeSet<_> = chosen.iter().collect();
+    if chosen.len() != unique.len()
+        || chosen.len() < prompt.min_choices as usize
+        || chosen.len() > prompt.max_choices as usize
         || chosen
             .iter()
             .any(|id| !allowed.iter().any(|choice| &choice.id == id))
@@ -2526,11 +2950,6 @@ pub fn answer_dialogue_prompt(
         choice_ids_json: serde_json::to_string(&chosen).unwrap(),
         created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
     });
-    for choice in allowed.iter().filter(|choice| chosen.contains(&choice.id)) {
-        for effect in &choice.effects {
-            apply_dialogue_effect(ctx, character_id, &session, effect)?;
-        }
-    }
     let answer_count = ctx
         .db
         .dialogue_answer()
@@ -2544,16 +2963,129 @@ pub fn answer_dialogue_prompt(
         .filter(&prompt.session_id)
         .filter(|participant| participant.role == prompt.respondent_role)
         .count();
-    let resolved = prompt.resolution_policy.contains("FirstResponse")
-        || (prompt.resolution_policy.contains("Majority") && answer_count > respondent_count / 2)
-        || ((prompt.resolution_policy.contains("Unanimous")
-            || prompt.resolution_policy.contains("AllRespondents"))
-            && answer_count >= respondent_count);
-    if resolved {
+    let answers: Vec<_> = ctx
+        .db
+        .dialogue_answer()
+        .prompt_row_id()
+        .filter(&prompt.id)
+        .collect();
+    let ballots: Vec<Vec<String>> = answers
+        .iter()
+        .filter_map(|answer| serde_json::from_str(&answer.choice_ids_json).ok())
+        .collect();
+    let mut vote_counts = std::collections::BTreeMap::<String, usize>::new();
+    for ballot in &ballots {
+        for choice in ballot {
+            *vote_counts.entry(choice.clone()).or_default() += 1;
+        }
+    }
+    let winning = if prompt.resolution_policy.contains("FirstResponse") {
+        ballots.first().cloned()
+    } else if prompt.resolution_policy.contains("Majority") {
+        vote_counts
+            .iter()
+            .filter(|(_, count)| **count > respondent_count / 2)
+            .map(|(choice, _)| vec![choice.clone()])
+            .next()
+    } else if prompt.resolution_policy.contains("Unanimous")
+        && answer_count >= respondent_count
+        && ballots.windows(2).all(|pair| pair[0] == pair[1])
+    {
+        ballots.first().cloned()
+    } else if prompt.resolution_policy.contains("AllRespondents")
+        && answer_count >= respondent_count
+    {
+        vote_counts
+            .iter()
+            .max_by_key(|(choice, count)| (**count, std::cmp::Reverse((*choice).clone())))
+            .map(|(choice, _)| vec![choice.clone()])
+    } else {
+        None
+    };
+    if let Some(winning) = winning {
+        for choice in allowed.iter().filter(|choice| winning.contains(&choice.id)) {
+            for effect in &choice.effects {
+                apply_dialogue_effect(ctx, character_id, &session, effect)?;
+            }
+            let topic = adventuresim_dialogue::find_conversation(&session.conversation_id)
+                .and_then(|conversation| {
+                    conversation.topics.iter().find(|topic| {
+                        topic.responses.iter().any(|response| {
+                            response
+                                .prompt
+                                .as_ref()
+                                .is_some_and(|authored| authored.id == prompt.prompt_id)
+                        })
+                    })
+                })
+                .ok_or("Dialogue prompt topic is no longer authored")?;
+            let response = topic
+                .responses
+                .iter()
+                .find(|response| {
+                    response
+                        .prompt
+                        .as_ref()
+                        .is_some_and(|authored| authored.id == prompt.prompt_id)
+                })
+                .ok_or("Dialogue prompt response is no longer authored")?;
+            let mut sequence = ctx
+                .db
+                .dialogue_event()
+                .session_id()
+                .filter(&session.id)
+                .count() as u32;
+            for (turn_index, turn) in choice.result_turns.iter().enumerate() {
+                let source_refs: Vec<_> = turn
+                    .fragments
+                    .iter()
+                    .enumerate()
+                    .map(|(fragment_index, fragment)| {
+                        let field = match fragment {
+                            adventuresim_dialogue::Fragment::Text { .. } => "value",
+                            adventuresim_dialogue::Fragment::Topic { .. } => "label",
+                        };
+                        adventuresim_dialogue::source_for_choice_fragment(
+                            &session.conversation_id,
+                            &topic.id,
+                            &response.id,
+                            &choice.id,
+                            turn_index,
+                            fragment_index,
+                            field,
+                        )
+                    })
+                    .collect();
+                ctx.db.dialogue_event().insert(DialogueEvent {
+                    id: format!("{}:event:{sequence}", session.id),
+                    session_id: session.id.clone(),
+                    sequence,
+                    response_id: format!("{}:{}", response.id, choice.id),
+                    speaker_role: turn.speaker.clone(),
+                    fragments_json: serde_json::to_string(&turn.fragments)
+                        .map_err(|_| "Could not encode dialogue result")?,
+                    source_refs_json: serde_json::to_string(&source_refs)
+                        .map_err(|_| "Could not encode dialogue result sources")?,
+                    created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
+                });
+                sequence += 1;
+            }
+        }
         let mut prompt = prompt;
         prompt.state = "resolved".into();
+        prompt.resolved_choice_ids_json = serde_json::to_string(&winning).unwrap();
         ctx.db.dialogue_prompt().id().update(prompt);
     }
+    session.revision += 1;
+    ctx.db.dialogue_session().id().update(session.clone());
+    ctx.db.dialogue_action().insert(DialogueAction {
+        id: action_row_id,
+        session_id: session.id.clone(),
+        action_id,
+        action_kind: "answer".into(),
+        resulting_revision: session.revision,
+    });
+    refresh_dialogue_topic_options(ctx, &session, character_id)?;
     Ok(())
 }
 
@@ -2663,10 +3195,20 @@ fn apply_dialogue_effect(
             }
             turn_in_quest(ctx, character_id, quest_id)
         }
-        adventuresim_dialogue::Effect::RecruitRole { .. }
-        | adventuresim_dialogue::Effect::SetFlag { .. } => {
-            Err("Dialogue effect is not available in this context".into())
+        adventuresim_dialogue::Effect::SetFlag { flag, value } if flag == "profess-local-faith" => {
+            let religion_id = if *value {
+                ctx.db
+                    .settlement()
+                    .id()
+                    .find(&session.settlement_id)
+                    .ok_or("Dialogue settlement not found")?
+                    .religion_id
+            } else {
+                String::new()
+            };
+            crate::condition::set_character_religion(ctx, character_id, religion_id)
         }
+        adventuresim_dialogue::Effect::SetFlag { .. } => Err("Unknown dialogue flag".into()),
     }
 }
 

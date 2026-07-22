@@ -10,6 +10,8 @@ pub(super) struct JoinDialogueSessionArgs {
     pub character_id: u64,
     pub session_id: String,
     pub role: String,
+    pub action_id: String,
+    pub expected_revision: u64,
     pub catalog_revision: String,
 }
 
@@ -19,6 +21,8 @@ impl From<JoinDialogueSessionArgs> for super::Reducer {
             character_id: args.character_id,
             session_id: args.session_id,
             role: args.role,
+            action_id: args.action_id,
+            expected_revision: args.expected_revision,
             catalog_revision: args.catalog_revision,
         }
     }
@@ -44,9 +48,19 @@ pub trait join_dialogue_session {
         character_id: u64,
         session_id: String,
         role: String,
+        action_id: String,
+        expected_revision: u64,
         catalog_revision: String,
     ) -> __sdk::Result<()> {
-        self.join_dialogue_session_then(character_id, session_id, role, catalog_revision, |_, _| {})
+        self.join_dialogue_session_then(
+            character_id,
+            session_id,
+            role,
+            action_id,
+            expected_revision,
+            catalog_revision,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `join_dialogue_session` to run as soon as possible,
@@ -60,6 +74,8 @@ pub trait join_dialogue_session {
         character_id: u64,
         session_id: String,
         role: String,
+        action_id: String,
+        expected_revision: u64,
         catalog_revision: String,
 
         callback: impl FnOnce(
@@ -76,6 +92,8 @@ impl join_dialogue_session for super::RemoteReducers {
         character_id: u64,
         session_id: String,
         role: String,
+        action_id: String,
+        expected_revision: u64,
         catalog_revision: String,
 
         callback: impl FnOnce(
@@ -89,6 +107,8 @@ impl join_dialogue_session for super::RemoteReducers {
                 character_id,
                 session_id,
                 role,
+                action_id,
+                expected_revision,
                 catalog_revision,
             },
             callback,

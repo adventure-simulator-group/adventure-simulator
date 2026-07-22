@@ -10,6 +10,8 @@ pub(super) struct ChooseDialogueTopicArgs {
     pub character_id: u64,
     pub session_id: String,
     pub topic_id: String,
+    pub action_id: String,
+    pub expected_revision: u64,
     pub catalog_revision: String,
 }
 
@@ -19,6 +21,8 @@ impl From<ChooseDialogueTopicArgs> for super::Reducer {
             character_id: args.character_id,
             session_id: args.session_id,
             topic_id: args.topic_id,
+            action_id: args.action_id,
+            expected_revision: args.expected_revision,
             catalog_revision: args.catalog_revision,
         }
     }
@@ -44,12 +48,16 @@ pub trait choose_dialogue_topic {
         character_id: u64,
         session_id: String,
         topic_id: String,
+        action_id: String,
+        expected_revision: u64,
         catalog_revision: String,
     ) -> __sdk::Result<()> {
         self.choose_dialogue_topic_then(
             character_id,
             session_id,
             topic_id,
+            action_id,
+            expected_revision,
             catalog_revision,
             |_, _| {},
         )
@@ -66,6 +74,8 @@ pub trait choose_dialogue_topic {
         character_id: u64,
         session_id: String,
         topic_id: String,
+        action_id: String,
+        expected_revision: u64,
         catalog_revision: String,
 
         callback: impl FnOnce(
@@ -82,6 +92,8 @@ impl choose_dialogue_topic for super::RemoteReducers {
         character_id: u64,
         session_id: String,
         topic_id: String,
+        action_id: String,
+        expected_revision: u64,
         catalog_revision: String,
 
         callback: impl FnOnce(
@@ -95,6 +107,8 @@ impl choose_dialogue_topic for super::RemoteReducers {
                 character_id,
                 session_id,
                 topic_id,
+                action_id,
+                expected_revision,
                 catalog_revision,
             },
             callback,

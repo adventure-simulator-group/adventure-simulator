@@ -13,6 +13,7 @@ pub struct DialogueEvent {
     pub response_id: String,
     pub speaker_role: String,
     pub fragments_json: String,
+    pub source_refs_json: String,
     pub created_micros: i64,
 }
 
@@ -30,6 +31,7 @@ pub struct DialogueEventCols {
     pub response_id: __sdk::__query_builder::Col<DialogueEvent, String>,
     pub speaker_role: __sdk::__query_builder::Col<DialogueEvent, String>,
     pub fragments_json: __sdk::__query_builder::Col<DialogueEvent, String>,
+    pub source_refs_json: __sdk::__query_builder::Col<DialogueEvent, String>,
     pub created_micros: __sdk::__query_builder::Col<DialogueEvent, i64>,
 }
 
@@ -43,6 +45,7 @@ impl __sdk::__query_builder::HasCols for DialogueEvent {
             response_id: __sdk::__query_builder::Col::new(table_name, "response_id"),
             speaker_role: __sdk::__query_builder::Col::new(table_name, "speaker_role"),
             fragments_json: __sdk::__query_builder::Col::new(table_name, "fragments_json"),
+            source_refs_json: __sdk::__query_builder::Col::new(table_name, "source_refs_json"),
             created_micros: __sdk::__query_builder::Col::new(table_name, "created_micros"),
         }
     }

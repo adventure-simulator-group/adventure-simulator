@@ -14,7 +14,11 @@ pub struct DialoguePrompt {
     pub respondent_role: String,
     pub resolution_policy: String,
     pub choices_json: String,
+    pub min_choices: u32,
+    pub max_choices: u32,
     pub state: String,
+    pub resolved_choice_ids_json: String,
+    pub source_refs_json: String,
 }
 
 impl __sdk::InModule for DialoguePrompt {
@@ -32,7 +36,11 @@ pub struct DialoguePromptCols {
     pub respondent_role: __sdk::__query_builder::Col<DialoguePrompt, String>,
     pub resolution_policy: __sdk::__query_builder::Col<DialoguePrompt, String>,
     pub choices_json: __sdk::__query_builder::Col<DialoguePrompt, String>,
+    pub min_choices: __sdk::__query_builder::Col<DialoguePrompt, u32>,
+    pub max_choices: __sdk::__query_builder::Col<DialoguePrompt, u32>,
     pub state: __sdk::__query_builder::Col<DialoguePrompt, String>,
+    pub resolved_choice_ids_json: __sdk::__query_builder::Col<DialoguePrompt, String>,
+    pub source_refs_json: __sdk::__query_builder::Col<DialoguePrompt, String>,
 }
 
 impl __sdk::__query_builder::HasCols for DialoguePrompt {
@@ -46,7 +54,14 @@ impl __sdk::__query_builder::HasCols for DialoguePrompt {
             respondent_role: __sdk::__query_builder::Col::new(table_name, "respondent_role"),
             resolution_policy: __sdk::__query_builder::Col::new(table_name, "resolution_policy"),
             choices_json: __sdk::__query_builder::Col::new(table_name, "choices_json"),
+            min_choices: __sdk::__query_builder::Col::new(table_name, "min_choices"),
+            max_choices: __sdk::__query_builder::Col::new(table_name, "max_choices"),
             state: __sdk::__query_builder::Col::new(table_name, "state"),
+            resolved_choice_ids_json: __sdk::__query_builder::Col::new(
+                table_name,
+                "resolved_choice_ids_json",
+            ),
+            source_refs_json: __sdk::__query_builder::Col::new(table_name, "source_refs_json"),
         }
     }
 }

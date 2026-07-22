@@ -5181,30 +5181,11 @@ fn chat_area(
     local_context: Option<(&str, String)>,
     info_messages: &[String],
 ) -> Markup {
-    let dialogue_source_url = service_context.and_then(|_| {
-        adventuresim_dialogue::source_map()
-            .iter()
-            .find(|source| source.file == "content/dialogue/services.yaml")
-            .and_then(|source| {
-                adventuresim_dialogue::github_edit_url(
-                    "adventure-simulator-group/adventure-simulator",
-                    option_env!("ADVENTURESIM_SOURCE_REF").unwrap_or("main"),
-                    source,
-                )
-            })
-    });
-    let dialogue_conversation = service_context.map(|(_, service)| match service {
-        "herbalist" => "herbalist-examination",
-        "religion" => "religion-service",
-        _ => "service-professions",
-    });
     html! {
         section class="settlement-chat" aria-label="Settlement chat"
             data-service-quest-settlement=[service_context.map(|context| context.0)]
             data-service-quest-id=[service_context.map(|context| context.1)]
             data-dialogue-catalog-revision=[service_context.map(|_| adventuresim_dialogue::CATALOG_DIGEST)]
-            data-dialogue-conversation=[dialogue_conversation]
-            data-dialogue-source-url=[dialogue_source_url.as_deref()]
             data-herbalist-exam-fee=[service_context
                 .filter(|context| context.1 == "herbalist")
                 .map(|_| adventuresim_core::strategic_economy::NPC_HERBALIST_EXAM_FEE)]

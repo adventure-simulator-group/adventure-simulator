@@ -10,6 +10,8 @@ pub(super) struct AnswerDialoguePromptArgs {
     pub character_id: u64,
     pub prompt_row_id: String,
     pub choice_ids_json: String,
+    pub action_id: String,
+    pub expected_revision: u64,
     pub catalog_revision: String,
 }
 
@@ -19,6 +21,8 @@ impl From<AnswerDialoguePromptArgs> for super::Reducer {
             character_id: args.character_id,
             prompt_row_id: args.prompt_row_id,
             choice_ids_json: args.choice_ids_json,
+            action_id: args.action_id,
+            expected_revision: args.expected_revision,
             catalog_revision: args.catalog_revision,
         }
     }
@@ -44,12 +48,16 @@ pub trait answer_dialogue_prompt {
         character_id: u64,
         prompt_row_id: String,
         choice_ids_json: String,
+        action_id: String,
+        expected_revision: u64,
         catalog_revision: String,
     ) -> __sdk::Result<()> {
         self.answer_dialogue_prompt_then(
             character_id,
             prompt_row_id,
             choice_ids_json,
+            action_id,
+            expected_revision,
             catalog_revision,
             |_, _| {},
         )
@@ -66,6 +74,8 @@ pub trait answer_dialogue_prompt {
         character_id: u64,
         prompt_row_id: String,
         choice_ids_json: String,
+        action_id: String,
+        expected_revision: u64,
         catalog_revision: String,
 
         callback: impl FnOnce(
@@ -82,6 +92,8 @@ impl answer_dialogue_prompt for super::RemoteReducers {
         character_id: u64,
         prompt_row_id: String,
         choice_ids_json: String,
+        action_id: String,
+        expected_revision: u64,
         catalog_revision: String,
 
         callback: impl FnOnce(
@@ -95,6 +107,8 @@ impl answer_dialogue_prompt for super::RemoteReducers {
                 character_id,
                 prompt_row_id,
                 choice_ids_json,
+                action_id,
+                expected_revision,
                 catalog_revision,
             },
             callback,

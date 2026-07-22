@@ -12,6 +12,7 @@ pub struct DialogueSession {
     pub catalog_revision: String,
     pub settlement_id: String,
     pub state: String,
+    pub revision: u64,
     pub created_micros: i64,
 }
 
@@ -28,6 +29,7 @@ pub struct DialogueSessionCols {
     pub catalog_revision: __sdk::__query_builder::Col<DialogueSession, String>,
     pub settlement_id: __sdk::__query_builder::Col<DialogueSession, String>,
     pub state: __sdk::__query_builder::Col<DialogueSession, String>,
+    pub revision: __sdk::__query_builder::Col<DialogueSession, u64>,
     pub created_micros: __sdk::__query_builder::Col<DialogueSession, i64>,
 }
 
@@ -40,6 +42,7 @@ impl __sdk::__query_builder::HasCols for DialogueSession {
             catalog_revision: __sdk::__query_builder::Col::new(table_name, "catalog_revision"),
             settlement_id: __sdk::__query_builder::Col::new(table_name, "settlement_id"),
             state: __sdk::__query_builder::Col::new(table_name, "state"),
+            revision: __sdk::__query_builder::Col::new(table_name, "revision"),
             created_micros: __sdk::__query_builder::Col::new(table_name, "created_micros"),
         }
     }
