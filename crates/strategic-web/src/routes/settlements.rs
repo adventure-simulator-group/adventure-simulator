@@ -5243,7 +5243,7 @@ pub(crate) async fn soap_rest_preview(
     members: &[Character],
     party_id: Option<&str>,
 ) -> SoapRestPreview {
-    let (filth, personal, shared) = tokio::join!(
+    let (filth, personal, shared, definitions, personalities) = tokio::join!(
         state
             .db
             .query::<CharacterFilth>("SELECT * FROM character_filth"),
@@ -5253,14 +5253,104 @@ pub(crate) async fn soap_rest_preview(
         state
             .db
             .query::<PartyInventoryItem>("SELECT * FROM party_inventory_item"),
+        state.db.query::<ItemDefinition>("SELECT * FROM item"),
+        state
+            .db
+            .query::<CharacterPersonality>("SELECT * FROM character_personality"),
     );
-    calculate_soap_rest_preview(
+    let personal = personal.unwrap_or_default();
+    let shared = shared.unwrap_or_default();
+    let mut preview = calculate_soap_rest_preview(
         members,
         &filth.unwrap_or_default(),
-        &personal.unwrap_or_default(),
-        &shared.unwrap_or_default(),
+        &personal,
+        &shared,
         party_id,
-    )
+    );
+    calculate_rest_supply_availability(
+        &mut preview,
+        members,
+        &personal,
+        &shared,
+        &definitions.unwrap_or_default(),
+        &personalities.unwrap_or_default(),
+        party_id,
+    );
+    preview
+}
+
+fn calculate_rest_supply_availability(
+    preview: &mut SoapRestPreview,
+    members: &[Character],
+    personal: &[InventoryItem],
+    shared: &[PartyInventoryItem],
+    definitions: &[ItemDefinition],
+    personalities: &[CharacterPersonality],
+    party_id: Option<&str>,
+) {
+    const SOAP_ITEM_ID: &str = "soft_soap";
+    let living_ids = members
+        .iter()
+        .filter(|member| member.alive)
+        .map(|member| member.id)
+        .collect::<std::collections::BTreeSet<_>>();
+    let is_temperate = |character_id| {
+        personalities
+            .iter()
+            .find(|personality| personality.character_id == character_id)
+            .is_some_and(|personality| {
+                personality.temperance == crate::spacetimedb::Temperance::Temperate
+            })
+    };
+    let alcoholic_ids = definitions
+        .iter()
+        .filter(|item| {
+            item.alcohol_potable
+                && item.alcohol_serving_ml > 0
+                && item.alcohol_abv_basis_points > 0
+                && !item.alcohol_disinfectant_focused
+        })
+        .map(|item| item.id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+
+    let personal_soap = personal
+        .iter()
+        .filter(|stack| living_ids.contains(&stack.character_id) && stack.item_id == SOAP_ITEM_ID)
+        .map(|stack| stack.qty)
+        .sum::<u32>();
+    let shared_soap = party_id.map_or(0, |party_id| {
+        shared
+            .iter()
+            .filter(|stack| stack.party_id == party_id && stack.item_id == SOAP_ITEM_ID)
+            .map(|stack| stack.quantity)
+            .sum::<u32>()
+    });
+    preview.available_units = personal_soap.saturating_add(shared_soap);
+
+    let personal_alcohol = personal.iter().any(|stack| {
+        living_ids.contains(&stack.character_id)
+            && stack.qty > 0
+            && alcoholic_ids.contains(stack.item_id.as_str())
+    });
+    let personal_drink = personal.iter().any(|stack| {
+        living_ids.contains(&stack.character_id)
+            && !is_temperate(stack.character_id)
+            && stack.qty > 0
+            && alcoholic_ids.contains(stack.item_id.as_str())
+    });
+    let shared_alcohol = party_id.is_some_and(|party_id| {
+        shared.iter().any(|stack| {
+            stack.party_id == party_id
+                && stack.quantity > 0
+                && alcoholic_ids.contains(stack.item_id.as_str())
+        })
+    });
+    let has_non_temperate_member = living_ids
+        .iter()
+        .any(|character_id| !is_temperate(*character_id));
+    preview.alcohol_available = personal_alcohol || shared_alcohol;
+    preview.alcohol_will_be_consumed =
+        personal_drink || (shared_alcohol && has_non_temperate_member);
 }
 
 fn calculate_soap_rest_preview(
@@ -5301,6 +5391,7 @@ fn calculate_soap_rest_preview(
         total_units: personal_units.saturating_add(shared_units),
         personal_units,
         shared_units,
+        ..SoapRestPreview::default()
     }
 }
 
@@ -5309,11 +5400,15 @@ mod rest_form_tests {
     use adventuresim_core::strategic_time::{is_walking_time, minutes_until_next_walking_start};
 
     use super::{
-        RestForm, calculate_soap_rest_preview, settlement_rest_minutes, travel_rest_minutes,
+        RestForm, calculate_rest_supply_availability, calculate_soap_rest_preview,
+        settlement_rest_minutes, travel_rest_minutes,
     };
     use crate::spacetimedb::{
-        Character, CharacterFilth, FilthOrigin, FilthSubstance, InventoryItem, PartyInventoryItem,
+        Character, CharacterFilth, CharacterPersonality, Conscience, Conviction, Drive,
+        FilthOrigin, FilthSubstance, Hygiene, InventoryItem, ItemDefinition, Nerve, Outlook,
+        PartyInventoryItem, SelfRegard, Sociability, Temperance,
     };
+    use crate::templates::settlement::SoapRestPreview;
 
     fn form(duration: &str, unit: &str, requested_minutes: Option<u64>) -> RestForm {
         RestForm {
@@ -5336,6 +5431,21 @@ mod rest_form_tests {
             age_years: 30,
             alive: true,
             temporary: false,
+        }
+    }
+
+    fn personality(character_id: u64, temperance: Temperance) -> CharacterPersonality {
+        CharacterPersonality {
+            character_id,
+            nerve: Nerve::Neutral,
+            drive: Drive::Neutral,
+            outlook: Outlook::Neutral,
+            sociability: Sociability::Neutral,
+            conscience: Conscience::Neutral,
+            self_regard: SelfRegard::Neutral,
+            conviction: Conviction::Neutral,
+            hygiene: Hygiene::Neutral,
+            temperance,
         }
     }
 
@@ -5381,6 +5491,55 @@ mod rest_form_tests {
         assert_eq!(preview.personal_units, 1);
         assert_eq!(preview.shared_units, 2);
         assert_eq!(preview.total_units, 3);
+    }
+
+    #[test]
+    fn rest_supply_availability_greys_alcohol_for_temperate_characters() {
+        let supplies = [
+            InventoryItem {
+                id: 1,
+                character_id: 1,
+                item_id: "soft_soap".into(),
+                qty: 1,
+            },
+            InventoryItem {
+                id: 2,
+                character_id: 1,
+                item_id: "table_wine".into(),
+                qty: 1,
+            },
+        ];
+        let alcohol = ItemDefinition {
+            id: "table_wine".into(),
+            alcohol_serving_ml: 250,
+            alcohol_abv_basis_points: 1_200,
+            alcohol_potable: true,
+            ..ItemDefinition::default()
+        };
+        let mut preview = SoapRestPreview::default();
+        calculate_rest_supply_availability(
+            &mut preview,
+            &[member(1)],
+            &supplies,
+            &[],
+            &[alcohol.clone()],
+            &[personality(1, Temperance::Temperate)],
+            Some("party"),
+        );
+        assert_eq!(preview.available_units, 1);
+        assert!(preview.alcohol_available);
+        assert!(!preview.alcohol_will_be_consumed);
+
+        calculate_rest_supply_availability(
+            &mut preview,
+            &[member(1)],
+            &supplies,
+            &[],
+            &[alcohol],
+            &[personality(1, Temperance::Neutral)],
+            Some("party"),
+        );
+        assert!(preview.alcohol_will_be_consumed);
     }
 
     #[test]

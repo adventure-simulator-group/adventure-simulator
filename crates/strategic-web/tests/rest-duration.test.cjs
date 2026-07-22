@@ -51,6 +51,19 @@ test("markup reuses the accessible wake-time control for settlement and field re
   assert.match(source, /data-rest-scheduled-wake-minute/);
 });
 
+test("wake slider uses the travel rail's solid time-period colors", () => {
+  const css = require("node:fs").readFileSync("crates/strategic-web/static/css/strategic.css", "utf8");
+  const tracks = [...css.matchAll(/\.rest-wake-time input\[type="range"\]::(?:-webkit-slider-runnable-track|-moz-range-track) \{([\s\S]*?)\}/g)];
+  assert.equal(tracks.length, 2);
+  for (const [, rule] of tracks) {
+    assert.match(rule, /#14223a 0 25%/);
+    assert.match(rule, /#c98255 25% 33\.333%/);
+    assert.match(rule, /#d9b95f 33\.333% 75%/);
+    assert.match(rule, /#b96850 75% 83\.333%/);
+    assert.doesNotMatch(rule, /#4ba6e6|#59b9f4|#4a9fdd/);
+  }
+});
+
 test("controls remount after replacement and keep independent days state", () => {
   const fs = require("node:fs");
   const vm = require("node:vm");
