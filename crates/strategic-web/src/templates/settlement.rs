@@ -3567,19 +3567,39 @@ fn skills_table(
 
 fn terrain_skill_rows(skills: &CharacterSkills, schedule_context: bool) -> Markup {
     let entries = [
-        ("Plains", Skill::TerrainPlains, skills.terrain_plains_hours),
-        ("Forest", Skill::TerrainForest, skills.terrain_forest_hours),
-        ("Hills", Skill::TerrainHills, skills.terrain_hills_hours),
-        ("Urban", Skill::TerrainUrban, skills.terrain_urban_hours),
+        (
+            "Plains",
+            "plains",
+            Skill::TerrainPlains,
+            skills.terrain_plains_hours,
+        ),
+        (
+            "Forest",
+            "forest",
+            Skill::TerrainForest,
+            skills.terrain_forest_hours,
+        ),
+        (
+            "Hills",
+            "hills",
+            Skill::TerrainHills,
+            skills.terrain_hills_hours,
+        ),
+        (
+            "Urban",
+            "urban",
+            Skill::TerrainUrban,
+            skills.terrain_urban_hours,
+        ),
     ];
     let rank = entries
         .iter()
-        .map(|entry| entry.1.training_rank(entry.2))
+        .map(|entry| entry.2.training_rank(entry.3))
         .sum::<f32>()
         / 4.0;
     html! {
         tr class="party-skill-row terrain-primary-row" data-terrain-primary {
-            th scope="row" class="party-skill-name party-skill-icon-cell" { (stat_icon("Terrain", "skills", "balance", false)) }
+            th scope="row" class="party-skill-name party-skill-icon-cell" { (stat_icon("Terrain", "terrain", "terrain", false)) }
             td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
                 (skill_rank_bar(rank, rank, "Unweighted mean; route previews use the local terrain mixture", skill_rail_bar_options()))
             }
@@ -3589,9 +3609,11 @@ fn terrain_skill_rows(skills: &CharacterSkills, schedule_context: bool) -> Marku
                 }
             }
         }
-        @for (name, skill, hours) in entries {
+        @for (name, icon, skill, hours) in entries {
             tr class="party-skill-row terrain-detail-row" data-terrain-detail hidden {
-                th scope="row" class="party-skill-name religion-subskill-name" { (name) }
+                th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
+                    (stat_icon(name, "terrain", icon, false))
+                }
                 td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
                     @let sub_rank = skill.training_rank(hours);
                     (skill_rank_bar(sub_rank, sub_rank, &format!("{:.1} hours invested", hours.max(0.0)), skill_rail_bar_options()))
@@ -5679,6 +5701,10 @@ mod tests {
             religion_hours: Default::default(),
             stealth_hours: 0.0,
             balance_hours: 0.0,
+            terrain_plains_hours: 0.0,
+            terrain_forest_hours: 0.0,
+            terrain_hills_hours: 0.0,
+            terrain_urban_hours: 0.0,
             surgeon_hours: 0.0,
             smithing_hours: 0.0,
         };

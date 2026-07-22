@@ -3723,6 +3723,12 @@ body.chat-resizing {
 .stat-icon-strength-arm,
 .stat-icon-strength-leg { --stat-icon-color: var(--icon-strength); }
 
+.stat-icon-terrain,
+.stat-icon-plains,
+.stat-icon-forest,
+.stat-icon-hills,
+.stat-icon-urban { --stat-icon-color: #a8c082; }
+
 .character-select-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
