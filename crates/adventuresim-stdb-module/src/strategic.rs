@@ -8842,8 +8842,8 @@ fn reconstruct_legacy_journey_coordinates(
 mod departure_invariant_tests {
     use super::{
         CampDurationMode, JourneyRoutePlan, JourneyRoutePoint, JourneyTerrainKind,
-        JourneyTerrainSpan, Party, PartyJourneyRoute, common_movement_prefix,
-        departure_snapshot_allows_travel, party_can_continue_travel,
+        JourneyTerrainSpan, JourneyTerrainWeights, Party, PartyJourneyRoute,
+        common_movement_prefix, departure_snapshot_allows_travel, party_can_continue_travel,
         reconstruct_legacy_journey_coordinates, route_position_at_minute, set_party_journey_state,
         straight_line_distance_m, validate_journey_route_payload,
         zero_boundary_requires_settlement,
@@ -9050,7 +9050,7 @@ mod departure_invariant_tests {
             camp_remaining_minutes: 30,
             pooled_water_ml: 0.0,
             medicine_target: 0.0,
-            charisma_target: 0.0,
+            command_target: 0.0,
             religion_target: 0.0,
         };
         set_party_journey_state(
