@@ -163,6 +163,8 @@ pub struct Settlement {
     pub category: SettlementCategory,
     pub languages: adventuresim_world_schema::SettlementLanguageProfile,
     pub industries: adventuresim_world_schema::InferredIndustryProfile,
+    pub economy: adventuresim_world_schema::SettlementEconomyProfile,
+    pub religious_status: adventuresim_world_schema::SettlementReligiousStatus,
     pub scene_key: String,
     pub religion_id: String,
     pub currency_id: String,

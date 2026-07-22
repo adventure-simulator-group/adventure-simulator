@@ -318,6 +318,7 @@
 .travel-terrain-segment.open { background-color: #9eb27b; background-image: radial-gradient(#d8dfbd 1px, transparent 1px); }
 .travel-terrain-segment.sparse-woods { background-color: #64845b; background-image: repeating-linear-gradient(45deg, transparent 0 4px, #b3c69a 4px 5px); }
 .travel-terrain-segment.deep-woods { background-color: #365b3c; background-image: repeating-linear-gradient(-45deg, transparent 0 3px, #7f9f75 3px 4px); }
+.travel-terrain-segment.wetland { background-color: #355c59; background-image: repeating-linear-gradient(0deg, transparent 0 4px, #8aaba0 4px 5px); }
 .travel-terrain-segment.stopped { background: #555; opacity: .55; }
 .travel-daylight-segment.day { background: #d9b95f; }
 .travel-daylight-segment.sunrise { background: #c98255; }

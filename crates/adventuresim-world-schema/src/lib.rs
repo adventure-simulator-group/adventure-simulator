@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 
 mod language;
 pub use language::*;
-
 pub const WORLD_SCHEMA_VERSION: u32 = 24;
 pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 8;
 pub const MAX_SOURCES_MARKDOWN_CHARS: usize = 32_768;
@@ -1860,6 +1859,16 @@ pub enum TravelEdgeKind {
     Ferry,
 }
 
+/// Whether an active strategic connection is directly documented or a
+/// conservative gap-fill inferred by the versioned world compiler.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+#[serde(rename_all = "snake_case")]
+pub enum TravelEdgeProvenance {
+    DocumentedViabundus,
+    InferredWalkingLink,
+}
+
 impl TravelEdgeKind {
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -2692,6 +2701,127 @@ fn canonical_historical_woodland(v: HistoricalVegetation) -> Option<DominantLeaf
             _ => None,
         },
         HistoricalVegetation::Direct(_) => None,
+    }
+}
+
+/// Versioned, immutable settlement economy computed at world-build time.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum ProsperityTier {
+    Subsistence,
+    Modest,
+    Comfortable,
+    Prosperous,
+    Wealthy,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum SettlementService {
+    GeneralStore,
+    Inn,
+    GeneralBlacksmith,
+    Market,
+    Weaponsmith,
+    Armorer,
+    Tailor,
+    Herbalist,
+    Temple,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum StockCategory {
+    Grain,
+    Dairy,
+    Meat,
+    Fish,
+    Cloth,
+    Hides,
+    Timber,
+    Fuel,
+    Stone,
+    Pottery,
+    Salt,
+    Metalwares,
+    Weapons,
+    Armor,
+    Herbs,
+    GeneralGoods,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub enum ProfileFactProvenance {
+    ImportedEvidence,
+    DerivedFromCanonicalEvidence,
+    DeterministicGapFill,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct SettlementStock {
+    pub category: StockCategory,
+    /// Stable 1..=5 relative abundance, not mutable shop quantity.
+    pub abundance: u8,
+    pub provenance: ProfileFactProvenance,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct SettlementEconomyProfile {
+    pub rules_version: u32,
+    pub prosperity_score: u16,
+    pub prosperity_tier: ProsperityTier,
+    pub services: Vec<SettlementService>,
+    pub specializations: Vec<StockCategory>,
+    pub stock: Vec<SettlementStock>,
+}
+
+impl SettlementEconomyProfile {
+    pub const MAX_SERVICES: usize = 9;
+    pub const MAX_SPECIALIZATIONS: usize = 8;
+    pub const MAX_STOCK: usize = 16;
+
+    pub fn stage_placeholder() -> Self {
+        Self {
+            rules_version: CURRENT_INFERENCE_RULES_VERSION,
+            prosperity_score: 0,
+            prosperity_tier: ProsperityTier::Subsistence,
+            services: vec![SettlementService::Inn],
+            specializations: vec![],
+            stock: vec![SettlementStock {
+                category: StockCategory::GeneralGoods,
+                abundance: 1,
+                provenance: ProfileFactProvenance::DeterministicGapFill,
+            }],
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.rules_version != CURRENT_INFERENCE_RULES_VERSION || self.prosperity_score > 1_000 {
+            return Err("settlement economy has unsupported rules or prosperity".into());
+        }
+        if self.services.is_empty()
+            || self.services.len() > Self::MAX_SERVICES
+            || self.specializations.len() > Self::MAX_SPECIALIZATIONS
+            || self.stock.is_empty()
+            || self.stock.len() > Self::MAX_STOCK
+            || self.services.windows(2).any(|v| v[0] >= v[1])
+            || self.specializations.windows(2).any(|v| v[0] >= v[1])
+            || self
+                .stock
+                .windows(2)
+                .any(|v| v[0].category >= v[1].category)
+            || self.stock.iter().any(|v| !(1..=5).contains(&v.abundance))
+        {
+            return Err("settlement economy collections are not bounded canonical sets".into());
+        }
+        Ok(())
+    }
+
+    pub fn has_service(&self, service: SettlementService) -> bool {
+        self.services.binary_search(&service).is_ok()
     }
 }
 
@@ -3905,6 +4035,7 @@ pub struct TravelEdgeImport {
     pub from_node_id: u64,
     pub to_node_id: u64,
     pub route: TravelRoute,
+    pub provenance: TravelEdgeProvenance,
     pub toll: Option<EdgeEndpoint>,
     pub length_m: u32,
     pub slope_multiplier: f32,
@@ -3939,6 +4070,7 @@ pub struct SettlementImport {
     pub drought: DroughtProfile,
     pub hydrology: SettlementHydrology,
     pub industries: InferredIndustryProfile,
+    pub economy: SettlementEconomyProfile,
     pub scene_key: String,
     pub sources: String,
 }

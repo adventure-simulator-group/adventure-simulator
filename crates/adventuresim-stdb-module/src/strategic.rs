@@ -10,13 +10,14 @@ use adventuresim_world_schema::{
     ModeledTreeSpecies, ModeledTreeSpeciesProfile, OfficialReligion, PalmerDroughtSeverityIndex,
     PotentialVegetation, PotentialVegetationClass, ProductionScale, RouteTerrain,
     SETTLEMENT_ALIAS_NAME_MAX_BYTES, SETTLEMENT_ALIAS_PREFIX_MAX_BYTES,
-    SETTLEMENT_DESCRIPTION_MAX_BYTES, SettlementDescriptionKind, SettlementHydrology,
-    SettlementImport, SettlementReligiousStatus, SoilAcidity, SoilBasisPoints, SoilDepth,
-    SoilEvidence, SoilFertility, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
-    StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport,
-    TravelRoute, TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION,
-    Woodland, WorldNodeImport, historical_vegetation_matches_context,
-    industry_profile_is_canonical, valid_bounded_source_text, valid_sources_markdown,
+    SETTLEMENT_DESCRIPTION_MAX_BYTES, SettlementDescriptionKind, SettlementEconomyProfile,
+    SettlementHydrology, SettlementImport, SettlementReligiousStatus, SoilAcidity, SoilBasisPoints,
+    SoilDepth, SoilEvidence, SoilFertility, SoilProfile, SoilProperties, SoilSubstrate,
+    SoilWaterRegime, StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon,
+    TravelEdgeImport, TravelEdgeProvenance, TravelRoute, TreeSpeciesId, TreeSpeciesProfile,
+    UnconsolidatedDeposit, WORLD_SCHEMA_VERSION, Woodland, WorldNodeImport,
+    historical_vegetation_matches_context, industry_profile_is_canonical,
+    valid_bounded_source_text, valid_sources_markdown,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -620,6 +621,7 @@ pub struct Settlement {
     pub drought: DroughtProfile,
     pub hydrology: SettlementHydrology,
     pub industries: InferredIndustryProfile,
+    pub economy: SettlementEconomyProfile,
     pub scene_key: String,
     /// The single faith represented by this settlement's church and priest.
     pub religion_id: String,
@@ -632,6 +634,24 @@ pub struct Settlement {
     /// Unstructured Markdown explaining source evidence and deterministic
     /// inferences. Reserved for a future debug view.
     pub sources: String,
+}
+
+pub(crate) fn require_settlement_service(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+    service: adventuresim_world_schema::SettlementService,
+) -> Result<(), String> {
+    let settlement = ctx
+        .db
+        .settlement()
+        .id()
+        .find(settlement_id.to_owned())
+        .ok_or("Settlement not found")?;
+    if settlement.economy.has_service(service) {
+        Ok(())
+    } else {
+        Err("This settlement does not offer that service".into())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -706,6 +726,7 @@ pub struct TravelEdge {
     #[index(btree)]
     pub to_node_id: u64,
     pub route: TravelRoute,
+    pub provenance: TravelEdgeProvenance,
     pub toll_at: Option<EdgeEndpoint>,
     pub length_m: u32,
     pub slope_multiplier: f32,
@@ -886,6 +907,7 @@ pub fn import_travel_edges(
             from_node_id: edge.from_node_id,
             to_node_id: edge.to_node_id,
             route: edge.route,
+            provenance: edge.provenance,
             toll_at: edge.toll,
             length_m: edge.length_m,
             slope_multiplier: edge.slope_multiplier,
@@ -1023,6 +1045,9 @@ pub fn import_settlements(
                 settlement.id
             ));
         }
+        settlement.economy.validate().map_err(|reason| {
+            format!("Settlement {} has invalid economy: {reason}", settlement.id)
+        })?;
         // Route batches are resumable and may arrive before or after settlement
         // batches. Exact industry/profile equality is therefore checked against
         // the final edge table by `finish_world_data_import`.
@@ -1087,6 +1112,7 @@ pub fn import_settlements(
             drought,
             hydrology: settlement.hydrology,
             industries: settlement.industries,
+            economy: settlement.economy,
             source_node_id: Some(settlement.source_node_id),
             sources: settlement.sources,
         };
@@ -5691,6 +5717,19 @@ pub fn liquidate_party_inventory(
     if character.current_settlement_id.as_deref() != Some(&settlement_id) {
         return Err("Character must be at this settlement to liquidate party assets".into());
     }
+    if require_settlement_service(
+        ctx,
+        &settlement_id,
+        adventuresim_world_schema::SettlementService::Market,
+    )
+    .is_err()
+    {
+        require_settlement_service(
+            ctx,
+            &settlement_id,
+            adventuresim_world_schema::SettlementService::GeneralStore,
+        )?;
+    }
     let party_id = character.party_id.ok_or("Character has no party")?;
     let mut staged = Vec::new();
     let mut proceeds = 0_u64;
@@ -5870,6 +5909,19 @@ pub fn finalize_merchant_trade(
     party_scope: bool,
 ) -> Result<(), String> {
     crate::character::require_living_character(ctx, character_id)?;
+    if require_settlement_service(
+        ctx,
+        &settlement_id,
+        adventuresim_world_schema::SettlementService::Market,
+    )
+    .is_err()
+    {
+        require_settlement_service(
+            ctx,
+            &settlement_id,
+            adventuresim_world_schema::SettlementService::GeneralStore,
+        )?;
+    }
     if buy_item_ids.len() != buy_quantities.len()
         || sell_inventory_ids.len() != sell_quantities.len()
     {
@@ -10066,6 +10118,7 @@ pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                 bridge: None,
                 water_crossings: vec![],
             }),
+            provenance: TravelEdgeProvenance::DocumentedViabundus,
             toll_at: None,
             length_m: 19_000,
             slope_multiplier: 1.0,
@@ -10214,6 +10267,7 @@ pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                         adventuresim_world_schema::FallbackIndustry::WoodlandFuelwood,
                     ),
                 ]).unwrap(),
+                economy: SettlementEconomyProfile::stage_placeholder(),
                 scene_key: scene.into(),
                 religion_id: religious_status.church().religion_id().into(),
                 currency_id: crate::item::settlement_currency_id(id).into(),

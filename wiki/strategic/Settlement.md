@@ -147,3 +147,13 @@ None of these player-run social hub features should be in the MVP, we will just 
 ## Languages
 
 Each imported settlement has an inferred East-central, West-central, and Low vernacular distribution totaling 100%. Low rises northward; longitude divides the central dialects, with southern Thuringia favoring East-central. Yiddish is a small per-person incidence, never a town-exclusive language. Deterministically selected Yiddish NPCs are fluent in Yiddish and have a 0.8 best-shared-language coefficient with a fluent local German; direct German hours account for the Yiddish/German correlation. Demo settlements use explicit fallback profiles. Books, libraries, and tavern/priest translators require future item and service systems.
+
+Each settlement also has a deterministic, versioned economy profile. Population,
+prosperity, road access, and nearby production jointly decide which services
+exist and which stock categories are common. A tiny settlement may expose only
+an inn and general store; a village uses a general blacksmith; prosperous towns
+split weaponsmith and armorer services. Generalists carry broader categories
+where specialists are absent. The server enforces service availability for
+trade, herbalist care, and repairs. The overview exposes prosperity,
+specializations, and every religion represented by the canonical legal status,
+not merely the faith selected for the single church/priest presentation.

@@ -435,6 +435,7 @@ mod tests {
                 FallbackIndustry::CommonAggregate,
             )])
             .unwrap(),
+            economy: adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder(),
             scene_key: "village".into(),
             sources: "- test".into(),
         }

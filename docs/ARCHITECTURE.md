@@ -548,3 +548,26 @@ remain separate from `BattleResult` and quest completion.
 ## Language persistence
 
 Language is strategic state. Compiled settlements persist a versioned, deterministic vernacular profile inferred inside the exact playable bounds; the three German shares total exactly 10,000 basis points. Characters persist direct Oral and Written hours. Effective proficiency is derived once from symmetric correlation matrices and is never recursively stored. The importer CLI can inspect a coordinate with `--infer-languages LONGITUDE LATITUDE`.
+
+Rules-v8 adds two immutable gameplay projections. A bounded settlement economy
+profile combines population, route access, documented town status, and the
+canonical industry profile into prosperity, service availability,
+specializations, and relative stock categories. Every gap-fill stock fact is
+typed as deterministic fabrication rather than attributed to an upstream
+dataset. Authoritative reducers consult the profile; it is not a UI-only hint.
+
+The same rules may add sparse inferred walking links where Viabundus topology
+has a local gap. Candidates are reorder-stable, capped at eight examined
+neighbors and two inferred links per endpoint, reject water-adjacent endpoints,
+and must fit bounded off-road walking distance/time. They carry typed inferred
+provenance and then receive the same GLO-30 route profile as documented edges.
+Because the canonical artifact has topology rather than historical road
+polylines, these straight segments assert plausible connectivity only, not an
+exact historical alignment. They never fabricate a bridge, ford, or ferry.
+
+Wetland is a distinct slow surface in terrain-pack schema 4 and has a separate
+accessible route-strip treatment. The compiler does not extrapolate wetland
+raster coverage from settlement samples: only a future bounded polygon/raster
+source passed to the terrain builder may set those cells. Until then, canonical
+settlement wetland evidence remains visible in environment/economy facts and
+route-adjacent seasonal mud/flood risks, without claiming whole-area coverage.

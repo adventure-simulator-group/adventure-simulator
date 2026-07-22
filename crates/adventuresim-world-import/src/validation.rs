@@ -11,6 +11,7 @@ use crate::{Error, Result};
 
 pub fn validate(world: &CompiledWorld) -> Result<()> {
     crate::sources::industries::validate_semantics(world)?;
+    crate::sources::economies::validate_semantics(world)?;
     if world.metadata.schema_version != WORLD_SCHEMA_VERSION {
         return Err(Error::Validation(format!(
             "schema version {} is not supported (expected {WORLD_SCHEMA_VERSION})",

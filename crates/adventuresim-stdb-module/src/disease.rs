@@ -1261,6 +1261,11 @@ pub fn examine_by_herbalist(
     if patient.current_settlement_id.as_deref() != Some(&settlement_id) {
         return Err("Patient must be at this herbalist's settlement".into());
     }
+    crate::strategic::require_settlement_service(
+        ctx,
+        &settlement_id,
+        adventuresim_world_schema::SettlementService::Herbalist,
+    )?;
     let herbalist = ensure_settlement_herbalist(ctx, &settlement_id);
     crate::strategic::consume_personal_gold(
         ctx,
@@ -1362,6 +1367,11 @@ pub fn purchase_from_herbalist(
     item_ids: Vec<String>,
     quantities: Vec<u32>,
 ) -> Result<(), String> {
+    crate::strategic::require_settlement_service(
+        ctx,
+        &settlement_id,
+        adventuresim_world_schema::SettlementService::Herbalist,
+    )?;
     let patient = crate::require_living_character(ctx, patient_id)?;
     if patient.current_settlement_id.as_deref() != Some(&settlement_id) {
         return Err("Patient must be at this herbalist's settlement".into());

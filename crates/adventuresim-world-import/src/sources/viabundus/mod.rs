@@ -212,6 +212,7 @@ pub(crate) fn compile(
             from_node_id,
             to_node_id,
             route,
+            provenance: adventuresim_world_schema::TravelEdgeProvenance::DocumentedViabundus,
             toll: endpoints(from_node.toll.active_in(year), to_node.toll.active_in(year)),
             length_m: required_number(&edges_path, "length", &raw.length)?,
             slope_multiplier: if raw.slopemultiplier.trim().is_empty() {

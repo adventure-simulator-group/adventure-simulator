@@ -502,6 +502,10 @@ pub fn settlement_overview_page(
                     dl class="location-stat-list" {
                         div { dt { "Population" } dd { (format_population(settlement)) } }
                         div { dt { "Size" } dd { (population_description(settlement.population_level)) } }
+                        div { dt { "Prosperity" } dd { (format!("{:?} ({}/1000)", settlement.economy.prosperity_tier, settlement.economy.prosperity_score)) } }
+                        div { dt { "Services" } dd { (settlement.economy.services.iter().map(|v| format!("{:?}", v)).collect::<Vec<_>>().join(", ")) } }
+                        div { dt { "Specialties" } dd { (settlement.economy.specializations.iter().map(|v| format!("{:?}", v)).collect::<Vec<_>>().join(", ")) } }
+                        div { dt { "Faiths" } dd { (settlement.religious_status.represented_religions().iter().map(|r| r.label()).collect::<Vec<_>>().join(", ")) } }
                         div { dt { "Coordinates" } dd { (format!("{}, {}", settlement.coord_x as i32, settlement.coord_y as i32)) } }
                         div { dt { "Languages" } dd { (format!(
                             "East-central {:.1}% · West-central {:.1}% · Low {:.1}%",
@@ -1217,6 +1221,7 @@ fn format_terrain_spans(destination: &TravelDestination) -> String {
                         adventuresim_terrain::Surface::Open => "open",
                         adventuresim_terrain::Surface::SparseWoods => "sparse-woods",
                         adventuresim_terrain::Surface::DeepWoods => "deep-woods",
+                        adventuresim_terrain::Surface::Wetland => "wetland",
                         adventuresim_terrain::Surface::Water => return None,
                     };
                     Some(format!(

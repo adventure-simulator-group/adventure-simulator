@@ -153,6 +153,7 @@ fn finish_edge(
         from_node_id: edge.from_node_id,
         to_node_id: edge.to_node_id,
         route,
+        provenance: edge.provenance,
         toll: edge.toll,
         length_m: edge.length_m,
         slope_multiplier: edge.slope_multiplier,

@@ -515,7 +515,7 @@ pub fn strategic_map(
                             @let symbol_kind = settlement_symbol_kind(&settlement.category);
                             @let label_priority = settlement_label_priority(settlement, is_current, is_connected, is_selected);
                             @let label_width = (settlement.name.chars().count() as u16 * 7 + 8).clamp(44, 180);
-                            @let label = if is_current { format!("{}, current settlement", settlement.name) } else if is_connected { format!("{}, direct route available", settlement.name) } else { format!("{}, no direct route", settlement.name) };
+                            @let label = if is_current { format!("{}, {:?} prosperity, current settlement", settlement.name, settlement.economy.prosperity_tier) } else if is_connected { format!("{}, {:?} prosperity, direct route available", settlement.name, settlement.economy.prosperity_tier) } else { format!("{}, {:?} prosperity, no direct route", settlement.name, settlement.economy.prosperity_tier) };
                             a href=(format!("{map_path}?destination={}", settlement.id))
                                 class="map-pin-link" aria-label=(&label) data-strategic-tooltip=(&label) aria-current=[is_selected.then_some("true")]
                                 data-map-pin data-settlement-id=(&settlement.id) data-connected=(is_connected) {

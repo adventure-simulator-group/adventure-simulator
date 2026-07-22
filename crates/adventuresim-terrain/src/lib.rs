@@ -18,7 +18,7 @@ use std::{
     time::Instant,
 };
 
-pub const SCHEMA: u32 = 3;
+pub const SCHEMA: u32 = 4;
 pub const CHUNK_SIDE: u16 = 256;
 pub const MAX_ENTRIES: usize = 20_000;
 pub const MAX_PACK_BYTES: usize = 2 * 1024 * 1024 * 1024;
@@ -58,6 +58,8 @@ pub enum Surface {
     SparseWoods,
     DeepWoods,
     Water,
+    /// Source-mapped marsh, bog, or seasonally saturated ground.
+    Wetland,
 }
 
 impl Surface {
@@ -68,6 +70,7 @@ impl Surface {
             Self::SparseWoods => 1_000,
             Self::DeepWoods => 750,
             Self::Water => 0,
+            Self::Wetland => 500,
         }
     }
 }
@@ -369,7 +372,8 @@ impl TerrainPack {
                     1 => Surface::Open,
                     2 => Surface::SparseWoods,
                     3 => Surface::DeepWoods,
-                    _ => Surface::Water,
+                    4 => Surface::Water,
+                    _ => Surface::Wetland,
                 },
                 crossing: bytes[3] & 1 != 0,
                 hilly_fraction_percent: if bytes[3] & 2 != 0 { 100 } else { 0 },
@@ -639,21 +643,27 @@ fn aggregate_cells(cells: &[Cell]) -> Cell {
             hilly_fraction_percent: 0,
         };
     }
-    let mut counts = [0_usize; 3];
+    let mut counts = [0_usize; 4];
     for cell in &passable {
         match cell.surface {
             Surface::Open => counts[0] += 1,
             Surface::SparseWoods => counts[1] += 1,
             Surface::DeepWoods => counts[2] += 1,
+            Surface::Wetland => counts[3] += 1,
             _ => {}
         }
     }
-    let surface = [Surface::Open, Surface::SparseWoods, Surface::DeepWoods]
-        .into_iter()
-        .enumerate()
-        .max_by_key(|(index, _)| (counts[*index], *index))
-        .map(|(_, surface)| surface)
-        .unwrap_or(Surface::Open);
+    let surface = [
+        Surface::Open,
+        Surface::SparseWoods,
+        Surface::DeepWoods,
+        Surface::Wetland,
+    ]
+    .into_iter()
+    .enumerate()
+    .max_by_key(|(index, _)| (counts[*index], *index))
+    .map(|(_, surface)| surface)
+    .unwrap_or(Surface::Open);
     Cell {
         elevation_m: (passable
             .iter()
@@ -1110,7 +1120,7 @@ fn compact_spans(spans: &mut Vec<TerrainSpan>, total_minutes: u64, cap: usize) {
         if start == end {
             continue;
         }
-        let mut durations = [0_u64; 5];
+        let mut durations = [0_u64; 6];
         let mut training_mass = 0_u128;
         let mut check_mass = 0_u128;
         let mut terrain_training_mass = [0_u128; 4];
@@ -1139,6 +1149,7 @@ fn compact_spans(spans: &mut Vec<TerrainSpan>, total_minutes: u64, cap: usize) {
             Surface::SparseWoods,
             Surface::DeepWoods,
             Surface::Water,
+            Surface::Wetland,
         ]
         .into_iter()
         .enumerate()
@@ -1207,6 +1218,7 @@ fn surface_index(surface: Surface) -> usize {
         Surface::SparseWoods => 2,
         Surface::DeepWoods => 3,
         Surface::Water => 4,
+        Surface::Wetland => 5,
     }
 }
 
@@ -1313,6 +1325,11 @@ mod tests {
             g.cells[0].surface = surface;
             assert_eq!(astar(&g, (0, 0), (1, 0)).unwrap().minutes, minutes);
         }
+    }
+
+    #[test]
+    fn source_mapped_wetland_is_slower_than_open_ground() {
+        assert!(Surface::Wetland.speed_metres_per_hour() < Surface::Open.speed_metres_per_hour());
     }
 
     #[test]
