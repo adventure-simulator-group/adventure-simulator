@@ -1,7 +1,6 @@
 (() => {
-  const states = new WeakMap();
-  let lastSnapshot = Number(window.strategicCharacterMinutes || 0);
-
+  const ACCRUAL_SCALE = 1440;
+  const FOCUSABLE_SELECTOR = 'button:not(:disabled), input:not([type="hidden"]):not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
   const clock = (minutes) => {
     const wrapped = ((minutes % 1440) + 1440) % 1440;
     return `${String(Math.floor(wrapped / 60)).padStart(2, '0')}:${String(wrapped % 60).padStart(2, '0')}`;
@@ -14,6 +13,25 @@
     return result > 0 ? `+${shown}` : shown;
   };
   const activityKind = (allocation) => allocation.replace(/_minutes$/, '');
+  const professionReward = ({ accrued, threshold, sign, reward }, minutes) => {
+    if (!(threshold > 0)) return { gold: 0, virtue: 0 };
+    const delta = (Math.floor((accrued + minutes * ACCRUAL_SCALE) / threshold)
+      - Math.floor(accrued / threshold)) * sign;
+    return reward === 'virtue' ? { gold: 0, virtue: delta } : { gold: delta, virtue: 0 };
+  };
+  const wrappedFocusTarget = (active, focusable, backwards) => {
+    if (!focusable.length) return null;
+    if (backwards && active === focusable[0]) return focusable[focusable.length - 1];
+    if (!backwards && active === focusable[focusable.length - 1]) return focusable[0];
+    return null;
+  };
+
+  const exported = { activityKind, clock, signed, professionReward, wrappedFocusTarget, FOCUSABLE_SELECTOR };
+  if (typeof module !== 'undefined') module.exports = exported;
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+  const states = new WeakMap();
+  let lastSnapshot = Number(window.strategicCharacterMinutes || 0);
 
   function copyPreview(source, target, hours) {
     const minutes = hours * 60;
@@ -27,6 +45,14 @@
         : hours * Number(source.dataset.moraleRate || 0),
       fatigue: hours * Number(source.dataset.fatigueRate || 0),
     };
+    if (source.dataset.professionThreshold) {
+      Object.assign(values, professionReward({
+        accrued: Number(source.dataset.professionAccrued || 0),
+        threshold: Number(source.dataset.professionThreshold),
+        sign: Number(source.dataset.professionSign || 1),
+        reward: source.dataset.professionReward,
+      }, minutes));
+    }
     Object.entries(values).forEach(([kind, value]) => {
       const cell = target.querySelector(`[data-activity-effect="${kind}"]`);
       const result = rounded(kind, value);
@@ -69,6 +95,7 @@
       modal.hidden = true;
       document.body.classList.remove('activity-modal-open');
       state.opener?.focus();
+      document.dispatchEvent(new Event('strategic-editor-idle'));
     };
     const open = (button) => {
       state.opener = button;
@@ -78,8 +105,10 @@
       const allocation = button.dataset.activityOpen;
       const kind = activityKind(allocation);
       const label = state.source.querySelector('.sr-only')?.textContent?.trim() || 'Activity';
-      modal.querySelector('[data-activity-title]').textContent = `Perform ${label}`;
-      modal.querySelector('[data-activity-preview-label]').textContent = label;
+      const tier = state.source.dataset.professionTier;
+      const previewLabel = tier ? `${label} (${tier})` : label;
+      modal.querySelector('[data-activity-title]').textContent = `Perform ${previewLabel}`;
+      modal.querySelector('[data-activity-preview-label]').textContent = previewLabel;
       modal.querySelector('[data-activity-kind]').value = kind;
       const schedule = button.closest('[data-skill-schedule]')
         || modal.parentElement?.querySelector('[data-skill-schedule]');
@@ -101,11 +130,10 @@
         close();
       }
       if (event.key === 'Tab') {
-        const focusable = [...panel.querySelectorAll('button:not(:disabled), input:not(:disabled)')];
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+        const focusable = [...panel.querySelectorAll(FOCUSABLE_SELECTOR)]
+          .filter((element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true');
+        const target = wrappedFocusTarget(document.activeElement, focusable, event.shiftKey);
+        if (target) { event.preventDefault(); target.focus(); }
       }
     });
     modal.closest('.left-sidebar, .right-sidebar, body')?.addEventListener('click', (event) => {
@@ -122,6 +150,4 @@
   document.addEventListener('strategic-time-ready', (event) => {
     lastSnapshot = Number(event.detail?.characterMinutes || 0);
   });
-
-  if (typeof module !== 'undefined') module.exports = { activityKind, clock, signed };
 })();

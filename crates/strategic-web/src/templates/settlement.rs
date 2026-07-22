@@ -30,13 +30,13 @@ use super::{
 use crate::medical::MedicalPresentation;
 use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
-    CharacterLimbs, CharacterSkills, CharacterStats, CharacterStrategicCondition,
-    CharacterTrainingSchedule, FoodLot, InventoryItem, InventoryQuantityTarget, ItemDefinition,
-    ItemSlot, JourneyTerrainKind, LimbInjury, LimbRegion, Party, PartyInventoryItem, PartyJourney,
-    PartyJourneyItinerary, PartyJourneyRoute, ProjectileKind, Quest, QuestStatus,
-    RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementCategory,
-    SettlementDescription, SettlementDescriptionKind,
+    Character, CharacterApprenticeship, CharacterAttributes, CharacterCapability,
+    CharacterCondition, CharacterEquip, CharacterLimbs, CharacterSkills, CharacterStats,
+    CharacterStrategicCondition, CharacterTrainingSchedule, FoodLot, InventoryItem,
+    InventoryQuantityTarget, ItemDefinition, ItemSlot, JourneyTerrainKind, LimbInjury, LimbRegion,
+    Party, PartyInventoryItem, PartyJourney, PartyJourneyItinerary, PartyJourneyRoute,
+    ProjectileKind, Quest, QuestStatus, RetainedProjectile, ScheduleAllocation, Settlement,
+    SettlementAlias, SettlementCategory, SettlementDescription, SettlementDescriptionKind,
 };
 
 #[derive(Clone, Debug)]
@@ -49,7 +49,7 @@ pub struct LocationView {
     pub active_building: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct ActivityPreviewRates {
     labor_gold_per_hour: f32,
     thievery_gold_per_hour: f32,
@@ -57,6 +57,47 @@ pub struct ActivityPreviewRates {
     raiding_gold_per_hour: f32,
     raiding_virtue_per_hour: f32,
     current_fatigue: f32,
+    profession: std::collections::BTreeMap<String, ProfessionActivityPreview>,
+}
+
+#[derive(Clone, Debug)]
+struct ProfessionActivityPreview {
+    training_rates: Vec<(String, f32)>,
+    apprenticeship_accrued: u64,
+    practice_accrued: u64,
+    practice_threshold: u64,
+    practice_reward: &'static str,
+    tier_label: &'static str,
+}
+
+const PROFESSION_ACCRUAL_SCALE: u64 = MINUTES_PER_DAY;
+const APPRENTICESHIP_REWARD_THRESHOLD: u64 = 8 * 60 * PROFESSION_ACCRUAL_SCALE;
+
+impl ProfessionActivityPreview {
+    fn reward_delta(&self, allocation_name: &str, minutes: u16) -> [f32; 2] {
+        let (accrued, threshold, sign, reward) = match allocation_name {
+            "apprenticeship_minutes" => (
+                self.apprenticeship_accrued,
+                APPRENTICESHIP_REWARD_THRESHOLD,
+                -1.0,
+                "gold",
+            ),
+            "profession_practice_minutes" => (
+                self.practice_accrued,
+                self.practice_threshold,
+                1.0,
+                self.practice_reward,
+            ),
+            _ => return [0.0, 0.0],
+        };
+        let after = accrued.saturating_add(u64::from(minutes) * PROFESSION_ACCRUAL_SCALE);
+        let delta = (after / threshold).saturating_sub(accrued / threshold) as f32 * sign;
+        if reward == "virtue" {
+            [0.0, delta]
+        } else {
+            [delta, 0.0]
+        }
+    }
 }
 
 impl ActivityPreviewRates {
@@ -126,7 +167,63 @@ impl ActivityPreviewRates {
             raiding_gold_per_hour: (2.0 + combat.max(0.0)) / 6.0,
             raiding_virtue_per_hour: -1.5,
             current_fatigue,
+            profession: Default::default(),
         }
+    }
+
+    pub fn with_professions(
+        mut self,
+        skills: Option<&CharacterSkills>,
+        apprenticeships: &[CharacterApprenticeship],
+    ) -> Self {
+        let Some(skills) = skills else { return self };
+        for row in apprenticeships {
+            let Some(definition) =
+                adventuresim_core::profession::profession_for_service(&row.service_id)
+            else {
+                continue;
+            };
+            let hours = |skill: Skill| match skill {
+                Skill::Command => skills.command_hours,
+                Skill::Smithing => skills.smithing_hours,
+                Skill::Tailoring => skills.tailoring_hours,
+                Skill::Medicine => skills.medicine_hours,
+                Skill::Anatomy => skills.anatomy_hours,
+                Skill::Knife => skills.knife_hours,
+                Skill::Cooking => skills.cooking_hours,
+                Skill::Religion => row
+                    .religion_id
+                    .as_deref()
+                    .and_then(OfficialReligion::from_id)
+                    .map_or(0.0, |religion| skills.religion_hours.direct(religion)),
+                _ => 0.0,
+            };
+            let tier = adventuresim_core::profession::profession_tier(definition, hours);
+            let practice_threshold = match tier {
+                adventuresim_core::profession::ProfessionTier::Master => 2 * 60 * MINUTES_PER_DAY,
+                _ => 8 * 60 * MINUTES_PER_DAY,
+            };
+            let practice_reward = match definition.practice_reward {
+                adventuresim_core::profession::PracticeReward::Gold => "gold",
+                adventuresim_core::profession::PracticeReward::Virtue => "virtue",
+            };
+            self.profession.insert(
+                row.service_id.clone(),
+                ProfessionActivityPreview {
+                    training_rates: definition
+                        .skills
+                        .iter()
+                        .map(|entry| (format!("{:?}", entry.skill), entry.weight))
+                        .collect(),
+                    apprenticeship_accrued: row.apprenticeship_minutes_accrued,
+                    practice_accrued: row.practice_minutes_accrued,
+                    practice_threshold,
+                    practice_reward,
+                    tier_label: tier.title(definition.religious),
+                },
+            );
+        }
+        self
     }
 }
 
@@ -3601,14 +3698,16 @@ fn party_skills_rail(
                             title, skills, head_health, upper_health, lower_health, Some(schedule),
                             activity_preview, professes_religion, prayer_religion_check,
                             training_religion_id.and_then(OfficialReligion::from_id),
-                            combat_profile,
+                            combat_profile, action.starts_with("/locations/settlement/"),
                         ))
                         div class="schedule-save-status" data-schedule-save-status role="status" aria-live="polite" hidden {
                             span { "Schedule could not be saved." }
                             button type="button" data-schedule-retry { "Retry" }
                         }
                     }
-                    (immediate_activity_dialog(&action.replace("/schedule", "/activity")))
+                    @if action.starts_with("/locations/settlement/") {
+                        (immediate_activity_dialog(&action.replace("/schedule", "/activity")))
+                    }
                     script src="/static/training-schedule.js?v=apprentice-system-1" {}
                     script src="/static/immediate-activity.js?v=manual-activities-1" {}
                 } @else {
@@ -3616,7 +3715,7 @@ fn party_skills_rail(
                         title, skills, head_health, upper_health, lower_health, None, None,
                         professes_religion, prayer_religion_check,
                         training_religion_id.and_then(OfficialReligion::from_id),
-                        combat_profile,
+                        combat_profile, false,
                     ))
                     script src="/static/training-schedule.js?v=apprentice-system-1" {}
                 }
@@ -3640,6 +3739,7 @@ fn skills_table(
     prayer_religion_check: f32,
     training_religion: Option<OfficialReligion>,
     combat_profile: CombatTrainingProfile,
+    immediate_actions: bool,
 ) -> Markup {
     html! {
             table class="party-skills-table" {
@@ -3697,30 +3797,35 @@ fn skills_table(
                         (schedule_special_row(
                             if professes_religion { "Prayer" } else { "Meditate" },
                             if professes_religion { "prayer" } else { "inner-self" },
-                            "prayer_minutes", schedule.downtime.prayer_minutes, true,
+                            "prayer_minutes", schedule.downtime.prayer_minutes, true, immediate_actions,
                             if professes_religion { ActivityEffectRates::prayer(prayer_religion_check / 5.0) } else { ActivityEffectRates::meditation() }, None,
+                            None,
                             if professes_religion {
                                 "Prayer trains the professed Religion at 25% speed; morale depends on party knowledge and satisfies Fervor-driven needs."
                             } else {
                                 "Meditation gives modest morale independently of party Religion knowledge and does not train Religion or create Fervor."
                             },
                         ))
-                        (schedule_special_row("Combat Training", "crossed-swords", "combat_training_minutes", schedule.downtime.combat_training_minutes, true, ActivityEffectRates::default(), None, "Sparring and target practice train equipped Combat skills together with Will and Balance."))
-                        (schedule_special_row("Carousing", "beer-stein", "carousing_minutes", schedule.downtime.carousing_minutes, true, ActivityEffectRates::carousing(), None, "Drink and socialize to improve morale and train Humor at 25% speed, at a small cost to Virtue."))
+                        (schedule_special_row("Combat Training", "crossed-swords", "combat_training_minutes", schedule.downtime.combat_training_minutes, true, immediate_actions, ActivityEffectRates::default(), None, None, "Sparring and target practice train equipped Combat skills together with Will and Balance."))
+                        (schedule_special_row("Carousing", "beer-stein", "carousing_minutes", schedule.downtime.carousing_minutes, true, immediate_actions, ActivityEffectRates::carousing(), None, None, "Drink and socialize to improve morale and train Humor at 25% speed, at a small cost to Virtue."))
                         @if let Some(service_id) = schedule.downtime.apprenticeship_service_id.as_deref() {
                             (schedule_service_selection("apprenticeship_service_id", service_id))
-                            (schedule_special_row(&format!("Apprenticeship — {}", profession_label(service_id)), "open-book", "apprenticeship_minutes", schedule.downtime.apprenticeship_minutes, true, ActivityEffectRates::linear(-0.125, 0.0, 0.0, 0.0), None, "Pay one coin per eight hours of instruction in an enrolled profession. Religious students are called novices."))
+                            (schedule_special_row(&format!("Apprenticeship — {}", profession_label(service_id)), "open-book", "apprenticeship_minutes", schedule.downtime.apprenticeship_minutes, true, immediate_actions && preview.profession.contains_key(service_id), ActivityEffectRates::default(), None, preview.profession.get(service_id), "Pay one coin per completed eight hours of instruction in an enrolled profession. Religious students are called novices."))
                         }
                         @if let Some(service_id) = schedule.downtime.profession_service_id.as_deref() {
-                            @let religious = service_id == "religion";
                             (schedule_service_selection("profession_service_id", service_id))
-                            (schedule_special_row(&format!("Profession Practice — {}", profession_label(service_id)), if religious { "holy-symbol" } else { "anvil" }, "profession_practice_minutes", schedule.downtime.profession_practice_minutes, true, if religious { ActivityEffectRates::linear(0.0, 0.125, 0.0, 0.0) } else { ActivityEffectRates::linear(0.125, 0.0, 0.0, 0.0) }, None, if religious { "Practice as a cleric or teacher to serve the community and earn Virtue; teachers earn faster than clerics." } else { "Practice an enrolled profession independently. Journeymen earn one coin per eight hours; masters earn one per two hours." }))
+                            @if let Some(profession) = preview.profession.get(service_id) {
+                                @if profession.tier_label != "apprentice" && profession.tier_label != "novice" {
+                                    @let religious = service_id == "religion";
+                                    (schedule_special_row(&format!("Profession Practice — {}", profession_label(service_id)), if religious { "holy-symbol" } else { "anvil" }, "profession_practice_minutes", schedule.downtime.profession_practice_minutes, true, immediate_actions, ActivityEffectRates::default(), None, Some(profession), if religious { "Practice as a cleric or teacher to serve the community and earn Virtue; teachers earn faster than clerics." } else { "Practice an enrolled profession independently. Journeymen earn one coin per eight hours; masters earn one per two hours." }))
+                                }
+                            }
                         }
-                        (schedule_special_row("Labor", "hammer-sickle", "labor_minutes", schedule.downtime.labor_minutes, true, ActivityEffectRates::linear(preview.labor_gold_per_hour, 0.0, 0.0, LABOR_FATIGUE_PER_HOUR / FATIGUE_RESERVOIR_PER_PREVIEW_POINT), None, "Earn coin during settlement downtime from Strength and Endurance checks; trains Will at 25% speed and generates fatigue."))
-                        (schedule_special_row("Thievery", "lockpicks", "thievery_minutes", schedule.downtime.thievery_minutes, true, ActivityEffectRates::linear(preview.thievery_gold_per_hour, preview.thievery_virtue_per_hour, 0.0, 0.0), None, "Settlement downtime can earn coin and risk discovery while training Stealth at 25% speed."))
-                        (schedule_special_row("Raiding", "mounted-knight", "raiding_minutes", schedule.downtime.raiding_minutes, true, ActivityEffectRates::linear(preview.raiding_gold_per_hour, preview.raiding_virtue_per_hour, 0.0, 0.0), None, "Settlement downtime can earn coin and risk retaliation while feeding the equipment-derived Combat training distribution at 25% speed."))
+                        (schedule_special_row("Labor", "hammer-sickle", "labor_minutes", schedule.downtime.labor_minutes, true, immediate_actions, ActivityEffectRates::linear(preview.labor_gold_per_hour, 0.0, 0.0, LABOR_FATIGUE_PER_HOUR / FATIGUE_RESERVOIR_PER_PREVIEW_POINT), None, None, "Earn coin during settlement downtime from Strength and Endurance checks; trains Will at 25% speed and generates fatigue."))
+                        (schedule_special_row("Thievery", "lockpicks", "thievery_minutes", schedule.downtime.thievery_minutes, true, immediate_actions, ActivityEffectRates::linear(preview.thievery_gold_per_hour, preview.thievery_virtue_per_hour, 0.0, 0.0), None, None, "Settlement downtime can earn coin and risk discovery while training Stealth at 25% speed."))
+                        (schedule_special_row("Raiding", "mounted-knight", "raiding_minutes", schedule.downtime.raiding_minutes, true, immediate_actions, ActivityEffectRates::linear(preview.raiding_gold_per_hour, preview.raiding_virtue_per_hour, 0.0, 0.0), None, None, "Settlement downtime can earn coin and risk retaliation while feeding the equipment-derived Combat training distribution at 25% speed."))
                         @let leisure = leisure_preview(&schedule.downtime, preview.current_fatigue);
-                        (schedule_special_row("Leisure", "bed", "leisure_minutes", 0, false, ActivityEffectRates::default(), Some(leisure), "Unallocated downtime first offsets baseline and activity fatigue; only surplus recovery improves morale."))
+                        (schedule_special_row("Leisure", "bed", "leisure_minutes", 0, false, false, ActivityEffectRates::default(), Some(leisure), None, "Unallocated downtime first offsets baseline and activity fatigue; only surplus recovery improves morale."))
                     }
             }
         }
@@ -4258,7 +4363,12 @@ fn activity_effect_cell(kind: &str, value: f32) -> Markup {
     }
 }
 
-fn activity_training_cell(label: &str, allocation_name: &str, minutes: u16) -> Markup {
+fn activity_training_cell(
+    label: &str,
+    allocation_name: &str,
+    minutes: u16,
+    profession: Option<&ProfessionActivityPreview>,
+) -> Markup {
     let hours = f32::from(minutes) / 60.0;
     let rates: Vec<(String, f32)> = match allocation_name {
         "combat_training_minutes" => vec![("Relevant combat skills".into(), 1.0)],
@@ -4267,16 +4377,8 @@ fn activity_training_cell(label: &str, allocation_name: &str, minutes: u16) -> M
         "thievery_minutes" => vec![("Stealth".into(), 0.25)],
         "raiding_minutes" => vec![("Relevant combat skills".into(), 0.25)],
         "prayer_minutes" if label == "Prayer" => vec![("Religion".into(), 0.25)],
-        "apprenticeship_minutes" => adventuresim_core::profession::PROFESSIONS
-            .iter()
-            .find(|profession| label.contains(profession.label))
-            .map(|profession| {
-                profession
-                    .skills
-                    .iter()
-                    .map(|entry| (format!("{:?}", entry.skill), entry.weight))
-                    .collect()
-            })
+        "apprenticeship_minutes" | "profession_practice_minutes" => profession
+            .map(|preview| preview.training_rates.clone())
             .unwrap_or_default(),
         _ => Vec::new(),
     };
@@ -4309,14 +4411,21 @@ fn schedule_special_row(
     allocation_name: &str,
     allocation_minutes: u16,
     editable: bool,
+    actionable: bool,
     effects: ActivityEffectRates,
     leisure: Option<LeisurePreview>,
+    profession: Option<&ProfessionActivityPreview>,
     description: &str,
 ) -> Markup {
-    let values = leisure.map_or_else(
+    let mut values = leisure.map_or_else(
         || effects.values(allocation_minutes),
         |preview| [0.0, 0.0, preview.outcome.morale, preview.fatigue_display],
     );
+    if let Some(profession) = profession {
+        let reward = profession.reward_delta(allocation_name, allocation_minutes);
+        values[0] = reward[0];
+        values[1] = reward[1];
+    }
     html! {
         tr class="party-skill-row schedule-special-row" title=(description)
             data-activity-row data-activity-allocation=(allocation_name)
@@ -4328,6 +4437,11 @@ fn schedule_special_row(
             data-prayer-morale-limit=[effects.prayer_morale.then_some(effects.morale_limit)]
             data-prayer-morale-scale=[effects.prayer_morale.then_some(effects.morale_scale_minutes)]
             data-prayer-morale-multiplier=[effects.prayer_morale.then_some(effects.prayer_morale_multiplier)]
+            data-profession-accrued=[profession.map(|preview| if allocation_name == "apprenticeship_minutes" { preview.apprenticeship_accrued } else { preview.practice_accrued })]
+            data-profession-threshold=[profession.map(|preview| if allocation_name == "apprenticeship_minutes" { APPRENTICESHIP_REWARD_THRESHOLD } else { preview.practice_threshold })]
+            data-profession-reward=[profession.map(|preview| if allocation_name == "apprenticeship_minutes" { "gold" } else { preview.practice_reward })]
+            data-profession-sign=[profession.map(|_| if allocation_name == "apprenticeship_minutes" { -1 } else { 1 })]
+            data-profession-tier=[profession.map(|preview| preview.tier_label)]
             data-leisure-current-fatigue=[leisure.map(|preview| preview.current_fatigue)]
             data-leisure-baseline-fatigue=[leisure.map(|_| BASELINE_FATIGUE_PER_DAY)]
             data-leisure-labor-fatigue-rate=[leisure.map(|_| LABOR_FATIGUE_PER_HOUR)]
@@ -4336,14 +4450,14 @@ fn schedule_special_row(
             data-leisure-morale-scale=[leisure.map(|_| LEISURE_MORALE_SCALE_FATIGUE)]
             data-leisure-fatigue-preview-divisor=[leisure.map(|_| FATIGUE_RESERVOIR_PER_PREVIEW_POINT)] {
             th scope="row" class="party-skill-name party-skill-icon-cell" {
-                (schedule_icon(label, icon, editable, allocation_name))
+                (schedule_icon(label, icon, actionable, allocation_name))
                 span class="sr-only" { (label) }
             }
             (activity_effect_cell("gold", values[0]))
             (activity_effect_cell("virtue", values[1]))
             (activity_effect_cell("morale", values[2]))
             (activity_effect_cell("fatigue", values[3]))
-            (activity_training_cell(label, allocation_name, allocation_minutes))
+            (activity_training_cell(label, allocation_name, allocation_minutes, profession))
             td class="religion-auto-toggle-cell" {}
             (schedule_allocation_cell(allocation_name, allocation_minutes, editable))
             td class="religion-expand-cell" {}
@@ -6704,6 +6818,7 @@ mod tests {
             0.0,
             Some(OfficialReligion::Judaism),
             CombatTrainingProfile::default(),
+            false,
         )
         .into_string();
 
@@ -6778,6 +6893,23 @@ mod tests {
         assert!(rail.contains("data-schedule-save-status"));
         assert!(rail.contains("role=\"status\" aria-live=\"polite\" hidden"));
         assert!(rail.contains("data-schedule-retry>Retry</button>"));
+        assert!(!rail.contains("data-activity-modal"));
+        assert!(!rail.contains("data-activity-open"));
+        let settlement_rail = party_skills_rail(
+            "Your skills",
+            Some(&skills),
+            None,
+            Some(&schedule),
+            Some("/locations/settlement/lubeck/party/1/schedule"),
+            None,
+            false,
+            0.0,
+            Some("judaism"),
+            CombatTrainingProfile::default(),
+        )
+        .into_string();
+        assert!(settlement_rail.contains("data-activity-modal"));
+        assert!(settlement_rail.contains("data-activity-open"));
         assert!(!rail.contains(">⚙</span>"));
         assert!(!rail.contains("aria-label=\"Automatic training\""));
     }
@@ -6820,7 +6952,9 @@ mod tests {
             "thievery_minutes",
             120,
             true,
+            true,
             ActivityEffectRates::linear(2.0, -1.0, 0.0, 0.0),
+            None,
             None,
             "Test activity",
         )
@@ -6841,26 +6975,86 @@ mod tests {
     #[test]
     fn activity_training_column_totals_and_explains_effective_skill_hours() {
         let combat =
-            activity_training_cell("Combat Training", "combat_training_minutes", 120).into_string();
+            activity_training_cell("Combat Training", "combat_training_minutes", 120, None)
+                .into_string();
         assert!(combat.contains(">+2.00h<"));
         assert!(combat.contains("Relevant combat skills: +2.00h"));
 
-        let carousing = activity_training_cell("Carousing", "carousing_minutes", 120).into_string();
+        let carousing =
+            activity_training_cell("Carousing", "carousing_minutes", 120, None).into_string();
         assert!(carousing.contains(">+0.50h<"));
         assert!(carousing.contains("Humor: +0.50h"));
 
-        let apprenticeship =
-            activity_training_cell("Apprenticeship — herbalist", "apprenticeship_minutes", 120)
-                .into_string();
+        let profession = ProfessionActivityPreview {
+            training_rates: vec![
+                ("Medicine".into(), 0.5),
+                ("Anatomy".into(), 1.0 / 6.0),
+                ("Knife".into(), 1.0 / 6.0),
+                ("Tailoring".into(), 1.0 / 6.0),
+            ],
+            apprenticeship_accrued: 0,
+            practice_accrued: 0,
+            practice_threshold: 8 * 60 * PROFESSION_ACCRUAL_SCALE,
+            practice_reward: "gold",
+            tier_label: "apprentice",
+        };
+        let apprenticeship = activity_training_cell(
+            "Apprenticeship — herbalist",
+            "apprenticeship_minutes",
+            120,
+            Some(&profession),
+        )
+        .into_string();
         assert!(apprenticeship.contains(">+2.00h<"));
         assert!(apprenticeship.contains("Medicine: +1.00h"));
         assert!(apprenticeship.contains("Anatomy: +0.33h"));
         assert!(apprenticeship.contains("Knife: +0.33h"));
         assert!(apprenticeship.contains("Tailoring: +0.33h"));
 
-        let leisure = activity_training_cell("Leisure", "leisure_minutes", 480).into_string();
+        let leisure = activity_training_cell("Leisure", "leisure_minutes", 480, None).into_string();
         assert!(leisure.contains(">—<"));
         assert!(leisure.contains("No skill training"));
+    }
+
+    #[test]
+    fn profession_preview_uses_accrual_tier_reward_and_training_distribution() {
+        let threshold = APPRENTICESHIP_REWARD_THRESHOLD;
+        let row = CharacterApprenticeship {
+            id: 1,
+            character_id: 7,
+            service_id: "weapons".into(),
+            religion_id: None,
+            started_minute: 0,
+            apprenticeship_minutes_accrued: threshold - 60 * PROFESSION_ACCRUAL_SCALE,
+            practice_minutes_accrued: 0,
+        };
+        let journeyman = CharacterSkills {
+            smithing_hours: 4_000.0,
+            ..Default::default()
+        };
+        let preview = ActivityPreviewRates::default()
+            .with_professions(Some(&journeyman), std::slice::from_ref(&row));
+        let smith = preview.profession.get("weapons").unwrap();
+        assert_eq!(smith.tier_label, "journeyman");
+        assert_eq!(smith.practice_threshold, 8 * 60 * PROFESSION_ACCRUAL_SCALE);
+        assert_eq!(
+            smith.reward_delta("apprenticeship_minutes", 60),
+            [-1.0, 0.0]
+        );
+        assert_eq!(smith.training_rates, vec![("Smithing".into(), 1.0)]);
+
+        let master = CharacterSkills {
+            smithing_hours: 25_000.0,
+            ..Default::default()
+        };
+        let preview = ActivityPreviewRates::default().with_professions(Some(&master), &[row]);
+        let smith = preview.profession.get("weapons").unwrap();
+        assert_eq!(smith.tier_label, "master");
+        assert_eq!(smith.practice_threshold, 2 * 60 * PROFESSION_ACCRUAL_SCALE);
+        assert_eq!(
+            smith.reward_delta("profession_practice_minutes", 240),
+            [2.0, 0.0]
+        );
     }
 
     #[test]
@@ -6913,8 +7107,10 @@ mod tests {
             "leisure_minutes",
             0,
             false,
+            false,
             ActivityEffectRates::default(),
             Some(leisure),
+            None,
             "Test leisure",
         )
         .into_string();
@@ -7809,6 +8005,7 @@ mod tests {
         let numeric = include_str!("../../static/numeric-editor.js");
         let equipment = include_str!("../../static/equipment-toggle.js");
         let live_regions = include_str!("../../static/live-regions.js");
+        let immediate_activity = include_str!("../../static/immediate-activity.js");
         let css = include_str!("../../static/css/strategic.css");
         assert!(schedule.contains("function parseClock(value)"));
         assert!(schedule.contains("window.StrategicNumericEditor.open"));
@@ -7842,9 +8039,14 @@ mod tests {
         assert!(live_regions.contains("region.scrollTop = offsets.top"));
         assert!(live_regions.contains("replaced.includes(\"left-sidebar\")"));
         assert!(live_regions.contains("document.querySelector('.numeric-editor')"));
+        assert!(live_regions.contains("[data-activity-modal]:not([hidden])"));
         assert!(live_regions.contains("scheduleEditorIsPending"));
         assert!(live_regions.contains("const schedulePendingAtStart = scheduleEditorIsPending()"));
         assert!(live_regions.contains("!schedulePendingAtStart && !scheduleEditorIsPending()"));
+        assert!(immediate_activity.contains("typeof window === 'undefined'"));
+        assert!(immediate_activity.contains("input:not([type=\"hidden\"]):not(:disabled)"));
+        assert!(immediate_activity.contains("wrappedFocusTarget"));
+        assert!(immediate_activity.contains("strategic-editor-idle"));
         assert!(css.contains(".numeric-editor-input {"));
         assert!(css.contains("position: fixed;"));
         assert!(css.contains("z-index: 80;"));

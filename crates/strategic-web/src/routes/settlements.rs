@@ -2601,6 +2601,13 @@ async fn party_personal(
         ))
         .await
         .unwrap_or_default();
+    let apprenticeships: Vec<crate::spacetimedb::CharacterApprenticeship> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM character_apprenticeship WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default();
     let capability = get_character_capability(&state, character_id).await;
     let combat_profile = get_combat_training_profile(&state, character_id).await;
     let can_examine = get_character_capability(&state, active_character.id)
@@ -2629,7 +2636,8 @@ async fn party_personal(
         capability.as_ref(),
         settlement.as_ref(),
         stats.as_ref(),
-    );
+    )
+    .with_professions(skills.first(), &apprenticeships);
     let condition = get_strategic_condition(&state, character_id).await;
     let morale_sources = get_morale_sources(&state, character_id).await;
     let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
