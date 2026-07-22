@@ -262,5 +262,7 @@ test("alcohol chronology, authority, and automatic surgery consumption stay redu
   assert.match(time, /require_strategic_character_authority\(ctx, character_id\)[\s\S]+Settlement rest requires the character to be at a settlement/);
   assert.match(time, /requested_minutes > MINUTES_PER_YEAR[\s\S]+Camp rest cannot exceed one year/);
   assert.match(surgery, /require_strategic_character_authority\(ctx, actor_id\)[\s\S]+best_disinfectant[\s\S]+consume_inventory_row[\s\S]+surgery_control_bonus/);
-  assert.match(settlements, /travelers\.sort_by_key[\s\S]+rest_evenings[\s\S]+expected_morale_demands\.push\(\(traveler\.id, target\)\)/);
+  assert.match(settlements, /itinerary_segments[\s\S]+ItinerarySegmentKind::Camp[\s\S]+rest_intervals/);
+  assert.match(settlements, /remaining_rest_intervals[\s\S]+completed_elapsed_minutes[\s\S]+forecast_camp_intervals/);
+  assert.match(settlements, /travelers\.sort_by_key[\s\S]+rest_evenings[\s\S]+expected_morale_demands\.push\(\(evening, traveler\.id, target\)\)[\s\S]+sort_by_key\(\|\(evening, character_id/);
 });

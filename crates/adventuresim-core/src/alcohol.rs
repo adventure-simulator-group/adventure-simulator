@@ -687,6 +687,41 @@ mod tests {
     }
 
     #[test]
+    fn forecast_allocates_shared_stock_by_evening_then_character() {
+        let beer = AlcoholProperties {
+            serving_ml: 500,
+            abv_basis_points: 300,
+            net_hydration_ml: 400,
+            potable: true,
+            ..AlcoholProperties::default()
+        };
+        let supplies = vec![
+            ScopedAlcoholSupply {
+                properties: beer,
+                quantity: 2,
+                item_id: "small_beer".into(),
+                stable_id: 1,
+                owner: None,
+            },
+            ScopedAlcoholSupply {
+                properties: beer,
+                quantity: 2,
+                item_id: "small_beer".into(),
+                stable_id: 2,
+                owner: Some(2),
+            },
+        ];
+        // Runtime processes both characters on evening 10 before evening 11.
+        // Character-major ordering would spend both shared units on character
+        // 1 and incorrectly consume all of character 2's personal stock.
+        let evening_then_character = [(1, 15), (2, 15), (1, 15), (2, 15)];
+        assert_eq!(
+            hydration_after_expected_drinking(supplies, &evening_then_character),
+            400
+        );
+    }
+
+    #[test]
     fn settlement_reserves_and_tavern_purchase_are_whole_unit_and_coin_bounded() {
         assert_eq!(consumable_units(5, 3, true), 2);
         assert_eq!(consumable_units(2, 3, true), 0);

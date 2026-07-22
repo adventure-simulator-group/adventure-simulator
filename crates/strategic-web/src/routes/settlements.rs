@@ -1447,11 +1447,37 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
             row.total_elapsed_minutes
                 .saturating_sub(row.completed_elapsed_minutes)
         });
+    let remaining_rest_intervals: Vec<_> = journey
+        .as_ref()
+        .zip(itinerary.as_ref())
+        .into_iter()
+        .flat_map(|(journey, itinerary)| {
+            let remaining_start = journey.completed_elapsed_minutes;
+            let remaining_end = journey.total_elapsed_minutes;
+            itinerary
+                .forecast_camp_intervals
+                .iter()
+                .filter_map(move |camp| {
+                    let camp_start = camp.elapsed_start_minute.max(remaining_start);
+                    let camp_end = camp
+                        .elapsed_start_minute
+                        .saturating_add(camp.elapsed_minutes)
+                        .min(remaining_end);
+                    (camp_end > camp_start).then(|| {
+                        (
+                            journey.departure_minute.saturating_add(camp_start),
+                            camp_end - camp_start,
+                        )
+                    })
+                })
+        })
+        .collect();
     let provision_forecast = travel_provision_forecast_for_minutes(
         &state,
         Some(&party),
         &party_members,
         remaining_journey_minutes,
+        &remaining_rest_intervals,
         false,
     )
     .await
@@ -1602,11 +1628,27 @@ pub(crate) async fn travel_provision_forecast(
     destination: &TravelDestination,
     departing_settlement: bool,
 ) -> Result<Option<TravelProvisionForecast>, String> {
+    let rest_intervals: Vec<_> = destination
+        .itinerary_segments
+        .iter()
+        .filter(|segment| {
+            segment.kind == adventuresim_core::strategic_time::ItinerarySegmentKind::Camp
+        })
+        .map(|segment| {
+            (
+                destination
+                    .departure_minute
+                    .saturating_add(segment.elapsed_start),
+                segment.elapsed_minutes,
+            )
+        })
+        .collect();
     travel_provision_forecast_for_minutes(
         state,
         party,
         travelers,
         destination.itinerary_total_elapsed_minutes,
+        &rest_intervals,
         departing_settlement,
     )
     .await
@@ -1617,6 +1659,7 @@ async fn travel_provision_forecast_for_minutes(
     party: Option<&Party>,
     travelers: &[Character],
     planning_minutes: u64,
+    rest_intervals: &[(u64, u64)],
     departing_settlement: bool,
 ) -> Result<Option<TravelProvisionForecast>, String> {
     let mut travelers: Vec<_> = travelers.iter().filter(|traveler| traveler.alive).collect();
@@ -1682,7 +1725,7 @@ async fn travel_provision_forecast_for_minutes(
         let time = query_single::<CharacterTime>(state, "character_time", traveler.id).await;
         let personality =
             query_single::<CharacterPersonality>(state, "character_personality", traveler.id).await;
-        if let Some(time) = time {
+        if time.is_some() {
             let history = state
                 .db
                 .query::<AlcoholConsumption>(&format!(
@@ -1691,25 +1734,35 @@ async fn travel_provision_forecast_for_minutes(
                 ))
                 .await
                 .map_err(|error| error.to_string())?;
-            let evenings: Vec<_> = adventuresim_core::alcohol::rest_evenings(
-                time.minutes,
-                time.minutes.saturating_add(planning_minutes),
-            )
-            .map_err(str::to_string)?
-            .filter(|evening| {
-                !history
-                    .iter()
-                    .any(|row| row.evening_id == *evening && row.morale_evaluated)
-            })
-            .collect();
+            let mut evenings: Vec<_> = rest_intervals
+                .iter()
+                .map(|(start, minutes)| {
+                    adventuresim_core::alcohol::rest_evenings(
+                        *start,
+                        start.saturating_add(*minutes),
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .flatten()
+                .filter(|evening| {
+                    !history
+                        .iter()
+                        .any(|row| row.evening_id == *evening && row.morale_evaluated)
+                })
+                .collect();
+            evenings.sort_unstable();
+            evenings.dedup();
             match personality.map(|p| p.temperance) {
                 Some(crate::spacetimedb::Temperance::Temperate) => {}
                 Some(crate::spacetimedb::Temperance::Drunkard) => {
-                    expected_morale_demands.extend(
-                        evenings
-                            .into_iter()
-                            .map(|_| (traveler.id, adventuresim_core::alcohol::HEAVY_ETHANOL_ML)),
-                    );
+                    expected_morale_demands.extend(evenings.into_iter().map(|evening| {
+                        (
+                            evening,
+                            traveler.id,
+                            adventuresim_core::alcohol::HEAVY_ETHANOL_ML,
+                        )
+                    }));
                 }
                 _ => {
                     let mut heavy_evenings: Vec<u64> = history
@@ -1728,7 +1781,7 @@ async fn travel_provision_forecast_for_minutes(
                             heavy_evenings.push(evening);
                             adventuresim_core::alcohol::HEAVY_ETHANOL_ML
                         };
-                        expected_morale_demands.push((traveler.id, target));
+                        expected_morale_demands.push((evening, traveler.id, target));
                     }
                 }
             }
@@ -1793,10 +1846,15 @@ async fn travel_provision_forecast_for_minutes(
             water_reserve_ml += party.pooled_water_ml.max(0.0);
         }
     }
+    expected_morale_demands.sort_by_key(|(evening, character_id, _)| (*evening, *character_id));
+    let ordered_morale_demands: Vec<_> = expected_morale_demands
+        .into_iter()
+        .map(|(_, character_id, target)| (character_id, target))
+        .collect();
     let emergency_alcohol_hydration_ml =
         adventuresim_core::alcohol::hydration_after_expected_drinking(
             alcohol_supplies,
-            &expected_morale_demands,
+            &ordered_morale_demands,
         );
     let inputs = PartyProvisioningInputs {
         planning_minutes,
