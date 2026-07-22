@@ -14,7 +14,7 @@ use adventuresim_world_schema::{
     SettlementHydrology, SettlementImport, SettlementReligiousStatus, SoilAcidity, SoilBasisPoints,
     SoilDepth, SoilEvidence, SoilFertility, SoilProfile, SoilProperties, SoilSubstrate,
     SoilWaterRegime, StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon,
-    TravelEdgeImport, TravelEdgeProvenance, TravelRoute, TreeSpeciesId, TreeSpeciesProfile,
+    TravelEdgeLoad, TravelEdgeProvenance, TravelRoute, TreeSpeciesId, TreeSpeciesProfile,
     UnconsolidatedDeposit, WORLD_SCHEMA_VERSION, Woodland, WorldNodeImport,
     historical_vegetation_matches_context, industry_profile_is_canonical,
     valid_bounded_source_text, valid_sources_markdown,
@@ -878,15 +878,18 @@ pub fn import_world_nodes(ctx: &ReducerContext, nodes: Vec<WorldNodeImport>) -> 
 }
 
 #[reducer]
-pub fn import_travel_edges(
-    ctx: &ReducerContext,
-    edges: Vec<TravelEdgeImport>,
-) -> Result<(), String> {
+pub fn import_travel_edges(ctx: &ReducerContext, edges: Vec<TravelEdgeLoad>) -> Result<(), String> {
     require_active_world_import(ctx)?;
     if edges.is_empty() {
         return Err("Travel-edge batch is empty".into());
     }
     for edge in edges {
+        if edge.provenance == TravelEdgeProvenance::InferredWalkingLink && edge.id >> 63 != 1 {
+            return Err(format!(
+                "Inferred travel edge {} lacks its stable high-bit identity",
+                edge.id
+            ));
+        }
         validate_travel_edge_endpoints(edge.id, edge.from_node_id, edge.to_node_id)?;
         if ctx.db.world_node().id().find(edge.from_node_id).is_none()
             || ctx.db.world_node().id().find(edge.to_node_id).is_none()

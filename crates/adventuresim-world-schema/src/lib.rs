@@ -12,6 +12,7 @@ pub use language::*;
 pub const WORLD_SCHEMA_VERSION: u32 = 25;
 pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 9;
 pub const MAX_EDGE_GEOMETRY_POINTS: usize = 512;
+pub const MAX_WORLD_GEOMETRY_POINTS: usize = 200_000;
 pub const MAX_SOURCES_MARKDOWN_CHARS: usize = 32_768;
 
 /// Authoritative MVP playable area in `[west, south, east, north]` order.
@@ -2992,16 +2993,20 @@ pub fn infer_settlement_economy(
             if score >= 600 { 4 } else { 2 },
             gap,
         );
+    }
+    if services.contains(&SettlementService::GeneralBlacksmith) {
+        add(StockCategory::Weapons, 1, gap);
+        add(StockCategory::Armor, 1, gap);
+    }
+    if services.contains(&SettlementService::Weaponsmith) {
         add(
             StockCategory::Weapons,
-            if score >= 700 { 4 } else { 1 },
+            if score >= 700 { 4 } else { 2 },
             gap,
         );
     }
-    if services.contains(&SettlementService::Armorer)
-        || services.contains(&SettlementService::GeneralBlacksmith)
-    {
-        add(StockCategory::Armor, if score >= 700 { 4 } else { 1 }, gap);
+    if services.contains(&SettlementService::Armorer) {
+        add(StockCategory::Armor, if score >= 700 { 4 } else { 2 }, gap);
     }
     if services.contains(&SettlementService::Herbalist) {
         add(
@@ -4250,6 +4255,25 @@ pub struct TravelEdgeImport {
     pub length_m: u32,
     pub slope_multiplier: f32,
     /// Viabundus's source cost hint remains distinct from DEM-derived grade.
+    pub terrain: RouteTerrain,
+    pub certainty: u8,
+    pub section: String,
+    pub sources: String,
+}
+
+/// Bounded reducer transport projection. Offline geometry is deliberately
+/// omitted after compiled-artifact validation because runtime tables do not use it.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "spacetimedb", derive(spacetimedb::SpacetimeType))]
+pub struct TravelEdgeLoad {
+    pub id: u64,
+    pub from_node_id: u64,
+    pub to_node_id: u64,
+    pub route: TravelRoute,
+    pub provenance: TravelEdgeProvenance,
+    pub toll: Option<EdgeEndpoint>,
+    pub length_m: u32,
+    pub slope_multiplier: f32,
     pub terrain: RouteTerrain,
     pub certainty: u8,
     pub section: String,

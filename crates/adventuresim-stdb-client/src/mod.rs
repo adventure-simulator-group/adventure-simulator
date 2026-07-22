@@ -447,12 +447,11 @@ pub mod tactical_server_type;
 pub mod temperance_type;
 pub mod topsoil_organic_carbon_type;
 pub mod transfer_party_item_reducer;
-pub mod travel_edge_import_type;
+pub mod travel_edge_load_type;
 pub mod travel_edge_provenance_type;
 pub mod travel_edge_table;
 pub mod travel_edge_type;
 pub mod travel_filth_progress_type;
-pub mod travel_geometry_point_type;
 pub mod travel_route_type;
 pub mod travel_to_quest_planned_reducer;
 pub mod travel_to_quest_reducer;
@@ -927,12 +926,11 @@ pub use tactical_server_type::TacticalServer;
 pub use temperance_type::Temperance;
 pub use topsoil_organic_carbon_type::TopsoilOrganicCarbon;
 pub use transfer_party_item_reducer::transfer_party_item;
-pub use travel_edge_import_type::TravelEdgeImport;
+pub use travel_edge_load_type::TravelEdgeLoad;
 pub use travel_edge_provenance_type::TravelEdgeProvenance;
 pub use travel_edge_table::*;
 pub use travel_edge_type::TravelEdge;
 pub use travel_filth_progress_type::TravelFilthProgress;
-pub use travel_geometry_point_type::TravelGeometryPoint;
 pub use travel_route_type::TravelRoute;
 pub use travel_to_quest_planned_reducer::travel_to_quest_planned;
 pub use travel_to_quest_reducer::travel_to_quest;
@@ -1194,7 +1192,7 @@ pub enum Reducer {
         settlements: Vec<SettlementImport>,
     },
     ImportTravelEdges {
-        edges: Vec<TravelEdgeImport>,
+        edges: Vec<TravelEdgeLoad>,
     },
     ImportWorldNodes {
         nodes: Vec<WorldNodeImport>,

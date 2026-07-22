@@ -29,8 +29,8 @@ const ROUTE_MIN_VIEW_HEIGHT: f64 = ROUTE_MIN_VIEW_WIDTH / VIEW_ASPECT_RATIO;
 pub(crate) const TILE_PATH_PREFIX: &str = "/map/tiles/";
 pub(crate) const DATA_LICENSE_PATH: &str = "/map/data-license";
 const DATA_LICENSE: &str = include_str!("../../../MAP_DATA_LICENSE.md");
-const PACKAGE_SCHEMA: u32 = 3;
-const RENDERER_REVISION: u32 = 8;
+const PACKAGE_SCHEMA: u32 = 4;
+const RENDERER_REVISION: u32 = 9;
 const MIN_TILE_SIZE: u32 = 64;
 const MAX_TILE_SIZE: u32 = 2_048;
 const MAX_TILE_ENTRIES: usize = 100_000;
@@ -47,6 +47,9 @@ struct Package {
     elevation: ElevationLayer,
     forest: ForestLayer,
     tiles: TilePyramid,
+    terrain_package_sha256: String,
+    inferred_road_geometry_sha256: String,
+    wetland_source_sha256: String,
     package_sha256: String,
 }
 
@@ -146,6 +149,19 @@ impl StrategicMap {
             package.schema == PACKAGE_SCHEMA,
             "unsupported strategic map package schema"
         );
+        for digest in [
+            &package.terrain_package_sha256,
+            &package.inferred_road_geometry_sha256,
+            &package.wetland_source_sha256,
+        ] {
+            anyhow::ensure!(
+                digest.len() == 64
+                    && digest
+                        .bytes()
+                        .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()),
+                "invalid strategic map dependency digest"
+            );
+        }
         anyhow::ensure!(
             package.renderer_revision == RENDERER_REVISION,
             "unsupported strategic map renderer revision"
@@ -222,6 +238,36 @@ impl StrategicMap {
             tile_index,
         })
     }
+
+    pub fn validate_terrain_identity(
+        &self,
+        terrain: &adventuresim_terrain::TerrainPack,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            terrain_identity_matches(
+                &self.package,
+                terrain.purpose(),
+                terrain.package_sha256(),
+                terrain.wetland_source_sha256(),
+                terrain.bounds()
+            ),
+            "map/terrain purpose, package, wetland, or bounds identity mismatch"
+        );
+        Ok(())
+    }
+}
+
+fn terrain_identity_matches(
+    package: &Package,
+    purpose: adventuresim_terrain::TerrainPurpose,
+    terrain_sha: &str,
+    wetland_sha: &str,
+    bounds: [f64; 4],
+) -> bool {
+    purpose == adventuresim_terrain::TerrainPurpose::Final
+        && terrain_sha == package.terrain_package_sha256
+        && wetland_sha == package.wetland_source_sha256
+        && bounds == package.bounds
 }
 
 fn tile_grid_size(tile_size: u32, zoom: u8) -> Option<(u32, u32)> {
@@ -647,9 +693,9 @@ mod tests {
         let placeholder = "0".repeat(64);
         let unsigned = format!(
             concat!(
-                r#"{{"schema":3,"renderer_revision":3,"year":1544,"bounds":[-10.0,40.0,30.0,70.0],"source":{{"name":"Test roads","url":"https://doi.org/10.5281/zenodo.16611998","license":"CC0","verification_status":"verified"}},"elevation":{{"source":{{"name":"Test elevation","url":"https://doi.org/10.5270/ESA-c5d3d65","file_count":1}}}},"forest":{{"source":{{"name":"Test forest","url":"https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a","file_count":1}},"coverage_tiles":1}},"tiles":{{"format":"avif","tile_size":2048,"gutter":4,"max_zoom":0,"content_sha256":"{}","entries":[{{"theme":"paper","zoom":0,"x":0,"y":0,"offset":0,"length":12}}]}},"package_sha256":"{}"}}"#
+                r#"{{"schema":4,"renderer_revision":3,"year":1544,"bounds":[-10.0,40.0,30.0,70.0],"source":{{"name":"Test roads","url":"https://doi.org/10.5281/zenodo.16611998","license":"CC0","verification_status":"verified"}},"elevation":{{"source":{{"name":"Test elevation","url":"https://doi.org/10.5270/ESA-c5d3d65","file_count":1}}}},"forest":{{"source":{{"name":"Test forest","url":"https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a","file_count":1}},"coverage_tiles":1}},"tiles":{{"format":"avif","tile_size":2048,"gutter":4,"max_zoom":0,"content_sha256":"{}","entries":[{{"theme":"paper","zoom":0,"x":0,"y":0,"offset":0,"length":12}}]}},"terrain_package_sha256":"{}","inferred_road_geometry_sha256":"{}","wetland_source_sha256":"{}","package_sha256":"{}"}}"#
             ),
-            tile_digest, placeholder
+            tile_digest, placeholder, placeholder, placeholder, placeholder
         )
         .replace(
             "\"renderer_revision\":3",
@@ -709,6 +755,42 @@ mod tests {
         let loaded = StrategicMap::load(&root);
         std::fs::remove_dir_all(&root).expect("remove test map bundle");
         loaded.expect("load test map bundle")
+    }
+
+    #[test]
+    fn terrain_identity_requires_final_matching_package_wetland_and_bounds() {
+        let map = map_bundle();
+        let terrain = map.package.terrain_package_sha256.clone();
+        let wet = map.package.wetland_source_sha256.clone();
+        let bounds = map.package.bounds;
+        assert!(terrain_identity_matches(
+            &map.package,
+            adventuresim_terrain::TerrainPurpose::Final,
+            &terrain,
+            &wet,
+            bounds
+        ));
+        assert!(!terrain_identity_matches(
+            &map.package,
+            adventuresim_terrain::TerrainPurpose::DocumentedBase,
+            &terrain,
+            &wet,
+            bounds
+        ));
+        assert!(!terrain_identity_matches(
+            &map.package,
+            adventuresim_terrain::TerrainPurpose::Final,
+            &"f".repeat(64),
+            &wet,
+            bounds
+        ));
+        assert!(!terrain_identity_matches(
+            &map.package,
+            adventuresim_terrain::TerrainPurpose::Final,
+            &terrain,
+            &"e".repeat(64),
+            bounds
+        ));
     }
 
     fn settlement(id: &str, name: &str, longitude: f64, latitude: f64) -> Settlement {

@@ -66,10 +66,12 @@ pub(crate) fn enrich(
                 .map(|index| interpolate(a, b, index, segments))
                 .collect::<Result<Vec<_>>>()?
         } else {
-            edge.geometry
+            let vertices = edge
+                .geometry
                 .iter()
                 .map(|point| projection.project(point.latitude(), point.longitude()))
-                .collect::<Result<Vec<_>>>()?
+                .collect::<Result<Vec<_>>>()?;
+            densify_polyline(&vertices, cell)?
         };
         let mut local = Vec::with_capacity(path.len());
         for (index, point) in path.iter().copied().enumerate() {
@@ -130,6 +132,30 @@ pub(crate) fn enrich(
         .map(|e| e.terrain.encounter_tags.len())
         .sum();
     Ok(world)
+}
+
+fn densify_polyline(
+    vertices: &[ProjectedCoordinate],
+    interval_m: u32,
+) -> Result<Vec<ProjectedCoordinate>> {
+    if vertices.len() < 2 || interval_m == 0 {
+        return Err(Error::Validation(
+            "route geometry cannot be densified".into(),
+        ));
+    }
+    let mut output = vec![vertices[0]];
+    for pair in vertices.windows(2) {
+        let dx = pair[1].easting_millimeters() - pair[0].easting_millimeters();
+        let dy = pair[1].northing_millimeters() - pair[0].northing_millimeters();
+        let distance_mm = ((dx as f64).hypot(dy as f64)).ceil() as u64;
+        let count = distance_mm.div_ceil(u64::from(interval_m) * 1_000).max(1);
+        let count = u32::try_from(count)
+            .map_err(|_| Error::Validation("route densification overflowed".into()))?;
+        for index in 1..=count {
+            output.push(interpolate(pair[0], pair[1], index, count)?);
+        }
+    }
+    Ok(output)
 }
 
 fn append_required_note(sources: &mut String, note: &str, edge_id: u64) -> Result<()> {
@@ -725,6 +751,20 @@ mod tests {
         assert_eq!(forward, reverse);
         assert_eq!(forward[2].easting_millimeters(), 1);
         assert_eq!(forward[2].northing_millimeters(), -2);
+    }
+
+    #[test]
+    fn inferred_polyline_densification_preserves_collinear_ridge_vertex_and_midpoints() {
+        let vertices = [
+            ProjectedCoordinate::from_meters(0.0, 0.0).unwrap(),
+            ProjectedCoordinate::from_meters(1_000.0, 0.0).unwrap(),
+            ProjectedCoordinate::from_meters(2_000.0, 0.0).unwrap(),
+        ];
+        let samples = densify_polyline(&vertices, 500).unwrap();
+        assert_eq!(samples.len(), 5);
+        assert_eq!(samples[2], vertices[1]);
+        assert_eq!(samples[1].easting_meters(), 500.0);
+        assert_eq!(samples[3].easting_meters(), 1_500.0);
     }
 
     #[test]

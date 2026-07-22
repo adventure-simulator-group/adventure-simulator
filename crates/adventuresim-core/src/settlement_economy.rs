@@ -143,4 +143,68 @@ mod tests {
             CatalogKind::Weapon
         ));
     }
+
+    #[test]
+    fn inferred_general_blacksmith_stocks_limited_weapon_and_armor_categories() {
+        let industries = adventuresim_world_schema::InferredIndustryProfile::new(vec![
+            adventuresim_world_schema::IndustryEvidence::Fallback(
+                adventuresim_world_schema::FallbackIndustry::CommonAggregate,
+            ),
+        ])
+        .unwrap();
+        let general =
+            adventuresim_world_schema::infer_settlement_economy(2, 500, 1, false, &industries)
+                .unwrap();
+        assert!(storefront_stocks(
+            &general,
+            Storefront::Weapons,
+            "club",
+            CatalogKind::Weapon
+        ));
+        assert!(storefront_stocks(
+            &general,
+            Storefront::Armor,
+            "leather vest",
+            CatalogKind::Armor
+        ));
+        assert_eq!(
+            general
+                .stock
+                .iter()
+                .find(|s| s.category == Stock::Weapons)
+                .unwrap()
+                .abundance,
+            1
+        );
+        assert_eq!(
+            general
+                .stock
+                .iter()
+                .find(|s| s.category == Stock::Armor)
+                .unwrap()
+                .abundance,
+            1
+        );
+        let specialist =
+            adventuresim_world_schema::infer_settlement_economy(4, 5_000, 4, true, &industries)
+                .unwrap();
+        assert!(
+            specialist
+                .stock
+                .iter()
+                .find(|s| s.category == Stock::Weapons)
+                .unwrap()
+                .abundance
+                >= 2
+        );
+        assert!(
+            specialist
+                .stock
+                .iter()
+                .find(|s| s.category == Stock::Armor)
+                .unwrap()
+                .abundance
+                >= 2
+        );
+    }
 }

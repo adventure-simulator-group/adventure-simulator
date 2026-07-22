@@ -518,8 +518,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/temperance_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/topsoil_organic_carbon_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/transfer_party_item_reducer.rs` — Generated SpacetimeDB reducer interface.
-- `crates/adventuresim-stdb-client/src/travel_edge_import_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/travel_geometry_point_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/travel_edge_load_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/travel_edge_provenance_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/travel_edge_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/travel_edge_type.rs` — Generated SpacetimeDB data type.

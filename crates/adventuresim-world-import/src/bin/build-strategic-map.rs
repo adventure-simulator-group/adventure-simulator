@@ -227,8 +227,23 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         &args.base_terrain_output,
         &args.base_terrain_pack_output,
     )?;
-    if base.purpose() != adventuresim_terrain::TerrainPurpose::DocumentedBase {
-        return Err("base terrain has the wrong purpose".into());
+    let current_base_road_digest = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&base_features.roads)?)
+    );
+    if !base_contract_matches(
+        base.purpose(),
+        base.bounds(),
+        base.source_resolution_m(),
+        base.road_geometry_sha256(),
+        base.wetland_source_sha256(),
+        &current_base_road_digest,
+        &base_features.wetland_source_sha256,
+    ) {
+        return Err(
+            "base terrain does not match current documented roads, wetlands, bounds, or resolution"
+                .into(),
+        );
     }
     let world: CompiledWorld = serde_json::from_slice(&fs::read(&args.compiled_world)?)?;
     adventuresim_world_import::validate_world(&world)?;
@@ -312,6 +327,22 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         terrain.package_sha256
     );
     Ok(())
+}
+
+fn base_contract_matches(
+    purpose: adventuresim_terrain::TerrainPurpose,
+    bounds: [f64; 4],
+    resolution: u16,
+    road_digest: &str,
+    wetland_digest: &str,
+    current_road_digest: &str,
+    current_wetland_digest: &str,
+) -> bool {
+    purpose == adventuresim_terrain::TerrainPurpose::DocumentedBase
+        && bounds == BOUNDS
+        && resolution == 30
+        && road_digest == current_road_digest
+        && wetland_digest == current_wetland_digest
 }
 
 fn append_inferred_roads(package: &mut Package, world: &CompiledWorld) {
@@ -1085,6 +1116,48 @@ mod tests {
             &routing.iter().map(|point| point.0).collect::<Vec<_>>()
         );
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn current_base_inputs_must_match_loaded_contract() {
+        let digest = "a".repeat(64);
+        let wet = "b".repeat(64);
+        assert!(base_contract_matches(
+            adventuresim_terrain::TerrainPurpose::DocumentedBase,
+            BOUNDS,
+            30,
+            &digest,
+            &wet,
+            &digest,
+            &wet
+        ));
+        assert!(!base_contract_matches(
+            adventuresim_terrain::TerrainPurpose::Final,
+            BOUNDS,
+            30,
+            &digest,
+            &wet,
+            &digest,
+            &wet
+        ));
+        assert!(!base_contract_matches(
+            adventuresim_terrain::TerrainPurpose::DocumentedBase,
+            BOUNDS,
+            30,
+            &digest,
+            &wet,
+            &"c".repeat(64),
+            &wet
+        ));
+        assert!(!base_contract_matches(
+            adventuresim_terrain::TerrainPurpose::DocumentedBase,
+            BOUNDS,
+            30,
+            &digest,
+            &wet,
+            &digest,
+            &"d".repeat(64)
+        ));
     }
 
     #[test]

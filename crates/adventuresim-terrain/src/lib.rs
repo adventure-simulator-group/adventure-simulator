@@ -302,6 +302,9 @@ impl TerrainPack {
     pub fn wetland_source_sha256(&self) -> &str {
         &self.manifest.wetland_source_sha256
     }
+    pub const fn source_resolution_m(&self) -> u16 {
+        self.manifest.source_resolution_m
+    }
     pub const fn wetland_cells(&self) -> u64 {
         self.manifest.wetland_cells
     }

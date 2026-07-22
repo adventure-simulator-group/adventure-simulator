@@ -416,10 +416,8 @@ fn encode_travel_edge(edge: &TravelEdgeImport) -> Result<Value> {
         "to_node_id": edge.to_node_id,
         "route": route,
         "provenance": enum_unit(match edge.provenance { adventuresim_world_schema::TravelEdgeProvenance::DocumentedViabundus => "DocumentedViabundus", adventuresim_world_schema::TravelEdgeProvenance::InferredWalkingLink => "InferredWalkingLink" }),
-        "geometry": edge.geometry.iter().map(|point| json!({
-            "longitude_e7": point.longitude_e7,
-            "latitude_e7": point.latitude_e7,
-        })).collect::<Vec<_>>(),
+        // Canonical geometry is consumed only by offline validation and map
+        // generation; the reducer's TravelEdgeLoad DTO intentionally omits it.
         "toll": encode_endpoint(edge.toll),
         "length_m": edge.length_m,
         "slope_multiplier": edge.slope_multiplier,
@@ -1347,6 +1345,7 @@ mod tests {
             batches[0][0]["toll"],
             serde_json::json!({ "some": { "from": [] } })
         );
+        assert!(batches[0][0].get("geometry").is_none());
         assert_eq!(batches[0][0]["sources"], "- Test source.");
         assert_eq!(
             batches[0][0]["terrain"]["class"],

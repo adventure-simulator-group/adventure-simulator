@@ -142,7 +142,7 @@ pub(crate) fn enrich(mut world: CompiledWorld, terrain: &TerrainPack) -> Result<
         {
             continue;
         }
-        let geometry = plan
+        let mut geometry = plan
             .points
             .iter()
             .map(|p| TravelGeometryPoint::new(p.longitude, p.latitude).map_err(Error::Validation))
@@ -150,8 +150,23 @@ pub(crate) fn enrich(mut world: CompiledWorld, terrain: &TerrainPack) -> Result<
         if geometry.len() < 2 || geometry.len() > MAX_EDGE_GEOMETRY_POINTS {
             continue;
         }
+        geometry[0] = TravelGeometryPoint::new(a.1, a.0).map_err(Error::Validation)?;
+        let last = geometry.len() - 1;
+        geometry[last] = TravelGeometryPoint::new(b.1, b.0).map_err(Error::Validation)?;
         let id = stable_id(candidate.from, candidate.to, &existing_ids, &accepted);
-        let length_m = u32::try_from(plan.distance_m)
+        let length_m = geometry
+            .windows(2)
+            .map(|pair| {
+                haversine_m(
+                    (pair[0].latitude(), pair[0].longitude()),
+                    (pair[1].latitude(), pair[1].longitude()),
+                ) as u64
+            })
+            .sum::<u64>();
+        if length_m == 0 || length_m > MAX_ROUTE_METRES {
+            continue;
+        }
+        let length_m = u32::try_from(length_m)
             .map_err(|_| Error::Validation("inferred road length overflow".into()))?;
         accepted.push(TravelEdgeImport {
             id, from_node_id: candidate.from, to_node_id: candidate.to,
