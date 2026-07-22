@@ -32,8 +32,8 @@ use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
 use crate::spacetimedb::{
     Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
     CharacterLimbs, CharacterSkills, CharacterStats, CharacterStrategicCondition,
-    CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, ItemSlot,
-    JourneyTerrainKind, LimbInjury, LimbRegion, Party, PartyInventoryItem, PartyJourney,
+    CharacterTrainingSchedule, FoodLot, InventoryItem, InventoryQuantityTarget, ItemDefinition,
+    ItemSlot, JourneyTerrainKind, LimbInjury, LimbRegion, Party, PartyInventoryItem, PartyJourney,
     PartyJourneyItinerary, PartyJourneyRoute, ProjectileKind, Quest, QuestStatus,
     RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementCategory,
     SettlementDescription, SettlementDescriptionKind,
@@ -1738,7 +1738,21 @@ pub fn party_personal_page(
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
     filth: &[crate::spacetimedb::CharacterFilth],
+    cooking: bool,
+    inventory: &[InventoryItem],
+    food_lots: &[FoodLot],
+    item_definitions: &[ItemDefinition],
 ) -> Markup {
+    if cooking {
+        return cooking_activity_page(
+            location,
+            active_character,
+            party_members,
+            inventory,
+            food_lots,
+            item_definitions,
+        );
+    }
     let content = html! {
         aside class="left-sidebar" {
             (party_attributes_rail("Your attributes", attributes, limbs, medical, Some(&format!("{}/party/{}/surgery", location.base_path(), active_character.id)), injuries, projectiles))
@@ -1773,6 +1787,84 @@ pub fn party_personal_page(
         }
     };
     location.render_layout("Party", content, Some(&active_character.name))
+}
+
+fn cooking_activity_page(
+    location: &LocationView,
+    active_character: &Character,
+    party_members: &[Character],
+    inventory: &[InventoryItem],
+    food_lots: &[FoodLot],
+    item_definitions: &[ItemDefinition],
+) -> Markup {
+    let owns = |item_id: &str| {
+        inventory
+            .iter()
+            .any(|row| row.item_id == item_id && row.qty > 0)
+    };
+    let pan = owns("cooking_pan");
+    let pot = owns("cooking_pot");
+    let oven = owns("portable_oven");
+    let content = html! {
+        form class="cooking-activity" data-cooking-activity method="post"
+            action=(format!("{}/party/{}/cook", location.base_path(), active_character.id)) {
+            aside class="left-sidebar cooking-methods" aria-label="Cooking instrument" {
+                (sidebar_section("Cooking instrument", html! {
+                    (cooking_method("pan-fry", "Pan-fry", pan, "A pan is required", false))
+                    (cooking_method("stew", "Stew", pot, "A pot and water are required", false))
+                    (cooking_method("roast", "Roast / skewer", true, "", true))
+                    (cooking_method("bake", "Bake", oven, "A portable oven is required", false))
+                }))
+            }
+            main class="center-content settlement-main party-member-stage cooking-stage" {
+                (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(active_character.id), false))
+                (visual_stage("service", "Cooking fire", "Prepare a meal from the selected ingredients"))
+                input type="hidden" name="inventory_item_ids" value="" data-cooking-ids;
+                input type="hidden" name="quantities" value="" data-cooking-quantities;
+                div class="party-offer cooking-actions" {
+                    a class="party-offer-cancel" href=(format!("{}/party/{}", location.base_path(), active_character.id)) { "Cancel" }
+                    button type="submit" disabled title="Select at least one ingredient" data-cook-submit { "Cook" }
+                }
+            }
+            aside class="right-sidebar cooking-ingredients" aria-label="Ingredient inventory" {
+                (sidebar_section("Ingredients", html! {
+                    @for lot in food_lots.iter().filter(|lot| lot.inventory_item_id.is_some_and(|id| inventory.iter().any(|row| row.id == id))) {
+                        @let inventory_row = inventory.iter().find(|row| Some(row.id) == lot.inventory_item_id).unwrap();
+                        @let definition = item_definitions.iter().find(|item| item.id == inventory_row.item_id);
+                        label class="cooking-ingredient-row" {
+                            input type="checkbox" data-cooking-lot=(inventory_row.id)
+                                data-mass=(format!("{:.4}", lot.mass_kg / inventory_row.qty.max(1) as f32))
+                                data-safety=(definition.and_then(|_| adventuresim_core::food::definition(&inventory_row.item_id)).map_or(5, |food| food.cooking_minutes));
+                            span class="cooking-ingredient-name" { (&lot.display_name) }
+                            span class="cooking-ingredient-details" { (format!("{:.0} kcal · {:.2} kg", lot.nutrition_kcal, lot.mass_kg)) }
+                            input type="number" min="1" max=(inventory_row.qty) value="1" aria-label=(format!("Amount of {}", lot.display_name)) data-cooking-quantity;
+                        }
+                    }
+                    @if !food_lots.iter().any(|lot| lot.inventory_item_id.is_some_and(|id| inventory.iter().any(|row| row.id == id))) {
+                        (empty_state("No food ingredients are available.", None, None))
+                    }
+                }))
+            }
+        }
+    };
+    location.render_layout("Cooking", content, Some(&active_character.name))
+}
+
+fn cooking_method(
+    value: &str,
+    label: &str,
+    available: bool,
+    reason: &str,
+    selected: bool,
+) -> Markup {
+    html! {
+        label class=(if available { "cooking-method" } else { "cooking-method disabled" }) title=[(!available).then_some(reason)] {
+            input type="radio" name="method" value=(value) checked[selected] disabled[!available]
+                data-cooking-method data-unavailable-reason=[(!available).then_some(reason)];
+            span { (label) }
+            @if !available { span class="sr-only" { (reason) } }
+        }
+    }
 }
 
 fn filth_status_bar(deposits: &[crate::spacetimedb::CharacterFilth]) -> Markup {

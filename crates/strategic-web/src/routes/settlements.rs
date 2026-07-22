@@ -37,6 +37,7 @@ const BUILDINGS: &[&str] = &[
 #[derive(Clone, Debug, Default, Deserialize)]
 struct BuildingQuery {
     building: Option<String>,
+    activity: Option<String>,
 }
 
 impl BuildingQuery {
@@ -52,6 +53,10 @@ impl BuildingQuery {
             |building| format!("{path}?building={building}"),
         )
     }
+
+    fn cooking(&self) -> bool {
+        self.activity.as_deref() == Some("cooking")
+    }
 }
 
 #[cfg(test)]
@@ -62,6 +67,7 @@ mod building_query_tests {
     fn building_query_is_closed_and_preserved_on_redirects() {
         let valid = BuildingQuery {
             building: Some("inn".into()),
+            ..Default::default()
         };
         assert_eq!(valid.valid(), Some("inn"));
         assert_eq!(
@@ -70,6 +76,7 @@ mod building_query_tests {
         );
         let invalid = BuildingQuery {
             building: Some("../religion".into()),
+            ..Default::default()
         };
         assert_eq!(invalid.valid(), None);
         assert_eq!(
@@ -96,13 +103,14 @@ use crate::spacetimedb::{
     CharacterCondition, CharacterEquip, CharacterFamiliarity, CharacterFilth, CharacterLimbs,
     CharacterMoraleSource, CharacterNeeds, CharacterNotoriety, CharacterPersonality,
     CharacterSkills, CharacterStats, CharacterStrategicCondition, CharacterTime,
-    CharacterTrainingSchedule, CharacterVirtue, EquippedMedication, HerbalistExaminationRow,
-    InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget, ItemCondition, ItemDefinition,
-    ItemKind, ItemSlot, LimbInjury, LimbRegion, MedicalExaminationRow, Party, PartyInventoryItem,
-    PartyJourney, PartyJourneyItinerary, PartyJourneyRoute, PartyMember, PartyRecruitmentRole,
-    PartyStake, Quest, QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand,
-    RepairOrder, RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias,
-    SettlementDescription, SettlementSmith, SocialBelief, TravelEdge,
+    CharacterTrainingSchedule, CharacterVirtue, EquippedMedication, FoodLot,
+    HerbalistExaminationRow, InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget,
+    ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury, LimbRegion,
+    MedicalExaminationRow, Party, PartyInventoryItem, PartyJourney, PartyJourneyItinerary,
+    PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, Quest, QuestIssuer,
+    QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder, RetainedProjectile,
+    ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription, SettlementSmith,
+    SocialBelief, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
@@ -161,6 +169,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/locations/{kind}/{id}/party/{character_id}",
             get(party_personal),
+        )
+        .route(
+            "/locations/{kind}/{id}/party/{character_id}/cook",
+            post(cook_food),
         )
         .route(
             "/locations/{kind}/{id}/party/{character_id}/inventory",
@@ -1710,7 +1722,13 @@ async fn travel_provision_forecast_for_minutes(
     let Some(waterskin) = items.iter().find(|item| item.id == STANDARD_WATERSKIN_ID) else {
         return Ok(None);
     };
+    let food_lots: Vec<FoodLot> = state
+        .db
+        .query("SELECT * FROM food_lot")
+        .await
+        .map_err(|error| error.to_string())?;
     let mut food_reserve_kcal = 0.0;
+    let mut food_lot_kcal = 0.0;
     let mut water_reserve_ml = 0.0;
     let mut ration_count = 0;
     let mut waterskin_count = 0;
@@ -1826,6 +1844,14 @@ async fn travel_provision_forecast_for_minutes(
                 .sum::<u32>()
         };
         food_reserve_kcal += needs.food_balance_kcal;
+        food_lot_kcal += food_lots
+            .iter()
+            .filter(|lot| {
+                lot.inventory_item_id
+                    .is_some_and(|id| inventory.iter().any(|entry| entry.id == id))
+            })
+            .map(|lot| lot.nutrition_kcal.max(0.0))
+            .sum::<f32>();
         water_reserve_ml += needs.water_balance_ml;
         ration_count += owned(STANDARD_TRAVEL_RATION_ID);
         let skins = owned(STANDARD_WATERSKIN_ID);
@@ -1867,6 +1893,14 @@ async fn travel_provision_forecast_for_minutes(
             .filter(|row| row.item_id == STANDARD_TRAVEL_RATION_ID)
             .map(|row| row.quantity)
             .sum::<u32>();
+        food_lot_kcal += food_lots
+            .iter()
+            .filter(|lot| {
+                lot.party_inventory_item_id
+                    .is_some_and(|id| pooled.iter().any(|entry| entry.id == id))
+            })
+            .map(|lot| lot.nutrition_kcal.max(0.0))
+            .sum::<f32>();
         let party_skins = pooled
             .iter()
             .filter(|row| row.item_id == STANDARD_WATERSKIN_ID)
@@ -1892,6 +1926,7 @@ async fn travel_provision_forecast_for_minutes(
         planning_minutes,
         living_members: travelers.len() as u32,
         food_reserve_kcal,
+        food_lot_kcal,
         water_reserve_ml,
         ration_count,
         waterskin_count,
@@ -2513,7 +2548,7 @@ async fn party_personal(
         }
     };
     location.active_building = building.valid().map(str::to_owned);
-    let Some((active_character, _)) =
+    let Some((active_character, active_inventory)) =
         get_active_character(&state, session.character_id_u64()).await
     else {
         return Html("<h1>Choose a character first</h1>".to_string());
@@ -2630,6 +2665,16 @@ async fn party_personal(
         ))
         .await
         .unwrap_or_default();
+    let food_lots = state
+        .db
+        .query::<FoodLot>("SELECT * FROM food_lot")
+        .await
+        .unwrap_or_default();
+    let item_definitions = state
+        .db
+        .query::<ItemDefinition>("SELECT * FROM item")
+        .await
+        .unwrap_or_default();
     Html(
         party_personal_page(
             &location,
@@ -2654,9 +2699,80 @@ async fn party_personal(
             &injuries,
             &projectiles,
             &filth,
+            building.cooking(),
+            &active_inventory,
+            &food_lots,
+            &item_definitions,
         )
         .into_string(),
     )
+}
+
+#[derive(Deserialize)]
+struct CookFoodForm {
+    method: String,
+    inventory_item_ids: String,
+    quantities: String,
+}
+
+async fn cook_food(
+    State(state): State<AppState>,
+    Path((kind, id, character_id)): Path<(String, String, u64)>,
+    session: Session,
+    Form(form): Form<CookFoodForm>,
+) -> Response {
+    if session.character_id_u64() != Some(character_id) {
+        return (
+            StatusCode::FORBIDDEN,
+            "Only the selected character can cook",
+        )
+            .into_response();
+    }
+    let parse = |value: &str| -> Result<Vec<u64>, _> {
+        value
+            .split(',')
+            .filter(|value| !value.is_empty())
+            .map(str::parse)
+            .collect()
+    };
+    let ids = match parse(&form.inventory_item_ids) {
+        Ok(value) => value,
+        Err(_) => return (StatusCode::BAD_REQUEST, "Invalid ingredient selection").into_response(),
+    };
+    let quantities = match form
+        .quantities
+        .split(',')
+        .filter(|value| !value.is_empty())
+        .map(str::parse::<u32>)
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(value) => value,
+        Err(_) => {
+            return (StatusCode::BAD_REQUEST, "Invalid ingredient quantities").into_response();
+        }
+    };
+    let method = match form.method.as_str() {
+        "pan-fry" => json!({ "panFry": {} }),
+        "stew" => json!({ "stew": {} }),
+        "roast" => json!({ "roast": {} }),
+        "bake" => json!({ "bake": {} }),
+        _ => return (StatusCode::BAD_REQUEST, "Invalid cooking method").into_response(),
+    };
+    if let Err(error) = state
+        .db
+        .call(
+            "cook_food",
+            &[json!(character_id), method, json!(ids), json!(quantities)],
+        )
+        .await
+    {
+        tracing::warn!(%error, character_id, "cooking failed");
+        return (StatusCode::BAD_REQUEST, error.to_string()).into_response();
+    }
+    Redirect::to(&format!(
+        "/locations/{kind}/{id}/party/{character_id}?activity=cooking"
+    ))
+    .into_response()
 }
 
 async fn party_religion_knowledge_check(

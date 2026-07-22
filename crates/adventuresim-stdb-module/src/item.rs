@@ -53,6 +53,7 @@ pub enum ItemKind {
     Currency,
     Ingredient,
     Medication,
+    Food,
 }
 
 #[derive(SpacetimeType, Default, Clone, Copy, Debug, PartialEq)]
@@ -939,11 +940,24 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
             ..Item::default()
         });
     }
+    for food in adventuresim_core::food::FOOD_CATALOG {
+        // Garlic and sage retain Ingredient semantics for the herbalist while
+        // also being accepted by the food-lot/cooking rules.
+        if matches!(food.id, "garlic" | "sage") {
+            continue;
+        }
+        ctx.db.item().insert(Item {
+            id: food.id.into(),
+            weight: food.mass_kg_per_unit,
+            base_value: Some(food.value_per_unit.ceil() as u32),
+            nutrition_kcal: food.kcal_per_unit,
+            kind: ItemKind::Food,
+            ..Item::default()
+        });
+    }
     ctx.db.item().insert(Item {
-        id: "travel_ration".into(),
-        weight: 1.0,
-        base_value: Some(3),
-        nutrition_kcal: 6_000.0,
+        id: "cooked_meal".into(),
+        kind: ItemKind::Food,
         ..Item::default()
     });
     for item in [
@@ -989,6 +1003,18 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
             ));
         }
         ctx.db.item().insert(item);
+    }
+    for (id, weight, value) in [
+        ("cooking_pan", 1.2, 6),
+        ("cooking_pot", 2.2, 8),
+        ("portable_oven", 8.0, 25),
+    ] {
+        ctx.db.item().insert(Item {
+            id: id.into(),
+            weight,
+            base_value: Some(value),
+            ..Item::default()
+        });
     }
     ctx.db.item().insert(Item {
         id: "waterskin".into(),
@@ -1138,6 +1164,7 @@ pub fn backfill_item_values(ctx: &ReducerContext) {
             ItemKind::Currency => 1.0,
             ItemKind::Ingredient => 10.0,
             ItemKind::Medication => 1.0,
+            ItemKind::Food => 4.0,
         };
         item.base_value = Some((item.weight * multiplier).ceil() as u32);
         ctx.db.item().id().update(item);
@@ -1273,6 +1300,8 @@ pub fn add_inventory_item(
             ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield | ItemKind::Clothing
         )
     });
+    let food =
+        kind == Some(ItemKind::Food) || adventuresim_core::food::definition(item_id).is_some();
     let individual = durable || kind == Some(ItemKind::Medication);
     let count = if individual { quantity } else { 1 };
     let mut first = None;
@@ -1285,6 +1314,16 @@ pub fn add_inventory_item(
         });
         if durable {
             crate::repair::initialize_item_condition(ctx, &item);
+        }
+        if food {
+            crate::food::create_personal_food_lot(
+                ctx,
+                character_id,
+                item.id,
+                item_id,
+                if individual { 1 } else { quantity },
+            )
+            .ok()?;
         }
         first.get_or_insert(item.id);
     }
@@ -1470,6 +1509,48 @@ pub fn change_inventory_item(
                     .character_id()
                     .update(equip.expect("equipment exists when it changed"));
                 crate::capability::refresh_character_capability(ctx, character_id)?;
+            }
+        }
+        return Ok(());
+    }
+    let food = ctx
+        .db
+        .item()
+        .id()
+        .find(item_id.to_owned())
+        .is_some_and(|definition| definition.kind == ItemKind::Food)
+        || adventuresim_core::food::definition(item_id).is_some();
+    if food {
+        if by_quantity > 0 {
+            add_inventory_item(ctx, character_id, item_id, by_quantity as u32)
+                .ok_or("food definition not found")?;
+            return Ok(());
+        }
+        if by_quantity < 0 {
+            let mut remaining = by_quantity.unsigned_abs();
+            let mut items: Vec<_> = ctx
+                .db
+                .inventory_item()
+                .character_and_item_id()
+                .filter((character_id, item_id))
+                .collect();
+            items.sort_by_key(|row| row.id);
+            if items.iter().map(|row| row.quantity as u64).sum::<u64>() < remaining as u64 {
+                return Err("not enough inventory quantity to remove".into());
+            }
+            for mut row in items {
+                let take = row.quantity.min(remaining);
+                crate::food::remove_lot_quantity(ctx, row.id, take, row.quantity)?;
+                row.quantity -= take;
+                remaining -= take;
+                if row.quantity == 0 {
+                    ctx.db.inventory_item().id().delete(row.id);
+                } else {
+                    ctx.db.inventory_item().id().update(row);
+                }
+                if remaining == 0 {
+                    break;
+                }
             }
         }
         return Ok(());

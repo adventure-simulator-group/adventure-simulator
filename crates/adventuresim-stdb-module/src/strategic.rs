@@ -4688,6 +4688,41 @@ pub fn transfer_party_item(
         return Ok(());
     }
 
+    let food = ctx
+        .db
+        .item()
+        .id()
+        .find(&source_item.item_id)
+        .is_some_and(|row| row.kind == crate::ItemKind::Food)
+        || adventuresim_core::food::definition(&source_item.item_id).is_some();
+    if food {
+        if source_item.quantity == quantity {
+            let mut moved = source_item;
+            moved.character_id = to_character_id;
+            ctx.db.inventory_item().id().update(moved);
+        } else {
+            let original_quantity = source_item.quantity;
+            let item_id = source_item.item_id.clone();
+            let mut remaining = source_item;
+            remaining.quantity -= quantity;
+            ctx.db.inventory_item().id().update(remaining);
+            let destination = ctx.db.inventory_item().insert(InventoryItem {
+                id: 0,
+                character_id: to_character_id,
+                item_id,
+                quantity,
+            });
+            crate::food::split_lot(
+                ctx,
+                inventory_item_id,
+                destination.id,
+                quantity,
+                original_quantity,
+            )?;
+        }
+        return Ok(());
+    }
+
     let destination_item = ctx
         .db
         .inventory_item()
@@ -4751,6 +4786,29 @@ pub(crate) fn add_to_party_inventory(
     quantity: u32,
 ) {
     if quantity == 0 {
+        return;
+    }
+    if ctx
+        .db
+        .item()
+        .id()
+        .find(item_id.to_string())
+        .is_some_and(|row| row.kind == crate::ItemKind::Food)
+    {
+        let row = ctx.db.party_inventory_item().insert(PartyInventoryItem {
+            id: 0,
+            party_id: party_id.into(),
+            item_id: item_id.into(),
+            quantity,
+        });
+        let minute = ctx
+            .db
+            .party()
+            .id()
+            .find(&party_id.to_string())
+            .and_then(|party| ctx.db.character_time().character_id().find(party.leader_id))
+            .map_or(0, |time| time.minutes);
+        crate::food::create_party_food_lot(ctx, row.id, item_id, quantity, minute);
         return;
     }
     if item_is_durable(ctx, item_id) {
@@ -5082,7 +5140,29 @@ pub fn deposit_party_inventory_item(
     } else {
         None
     };
-    add_to_party_inventory(ctx, &party_id, &inventory.item_id, quantity);
+    let food = ctx
+        .db
+        .item()
+        .id()
+        .find(&inventory.item_id)
+        .is_some_and(|row| row.kind == crate::ItemKind::Food);
+    if food {
+        let party_row = ctx.db.party_inventory_item().insert(PartyInventoryItem {
+            id: 0,
+            party_id: party_id.clone(),
+            item_id: inventory.item_id.clone(),
+            quantity,
+        });
+        crate::food::move_or_split_to_party(
+            ctx,
+            inventory.id,
+            party_row.id,
+            quantity,
+            inventory.quantity,
+        )?;
+    } else {
+        add_to_party_inventory(ctx, &party_id, &inventory.item_id, quantity);
+    }
     if let Some(condition) = preserved_condition {
         let party_row = ctx
             .db
@@ -5304,8 +5384,30 @@ pub fn withdraw_party_inventory_item(
         .party_item_condition()
         .party_inventory_item_id()
         .find(inventory.id);
-    let new_inventory_id =
-        crate::add_inventory_item(ctx, character_id, &inventory.item_id, quantity);
+    let food = ctx
+        .db
+        .item()
+        .id()
+        .find(&inventory.item_id)
+        .is_some_and(|row| row.kind == crate::ItemKind::Food);
+    let new_inventory_id = if food {
+        let row = ctx.db.inventory_item().insert(InventoryItem {
+            id: 0,
+            character_id,
+            item_id: inventory.item_id.clone(),
+            quantity,
+        });
+        crate::food::move_or_split_to_personal(
+            ctx,
+            inventory.id,
+            row.id,
+            quantity,
+            inventory.quantity,
+        )?;
+        Some(row.id)
+    } else {
+        crate::add_inventory_item(ctx, character_id, &inventory.item_id, quantity)
+    };
     if let (Some(condition), Some(new_id)) = (preserved_condition, new_inventory_id) {
         ctx.db
             .item_condition()
@@ -5385,6 +5487,15 @@ pub fn liquidate_party_inventory(
     let proceeds =
         u32::try_from(proceeds).map_err(|_| "Party asset liquidation exceeds currency limits")?;
     for (mut entry, quantity) in staged {
+        let is_food = ctx
+            .db
+            .item()
+            .id()
+            .find(&entry.item_id)
+            .is_some_and(|item| item.kind == crate::ItemKind::Food);
+        if is_food {
+            crate::food::remove_party_lot_quantity(ctx, entry.id, quantity, entry.quantity)?;
+        }
         if entry.quantity == quantity {
             ctx.db.party_inventory_item().id().delete(entry.id);
             ctx.db
@@ -5443,7 +5554,9 @@ pub fn discard_inventory_items(
         if item.quantity == quantity {
             ctx.db.inventory_item().id().delete(item.id);
             ctx.db.item_condition().inventory_item_id().delete(item.id);
+            crate::food::delete_personal_food_lot(ctx, item.id);
         } else {
+            crate::food::remove_lot_quantity(ctx, item.id, quantity, item.quantity)?;
             item.quantity -= quantity;
             ctx.db.inventory_item().id().update(item);
         }
@@ -5645,24 +5758,54 @@ pub fn finalize_merchant_trade(
                 .find(*inventory_id)
                 .unwrap();
             if inventory.quantity == *quantity {
+                crate::food::delete_party_food_lot(ctx, *inventory_id);
                 ctx.db.party_inventory_item().id().delete(*inventory_id);
                 ctx.db
                     .party_item_condition()
                     .party_inventory_item_id()
                     .delete(*inventory_id);
             } else {
+                if ctx
+                    .db
+                    .item()
+                    .id()
+                    .find(&inventory.item_id)
+                    .is_some_and(|item| item.kind == crate::ItemKind::Food)
+                {
+                    crate::food::remove_party_lot_quantity(
+                        ctx,
+                        *inventory_id,
+                        *quantity,
+                        inventory.quantity,
+                    )?;
+                }
                 inventory.quantity -= quantity;
                 ctx.db.party_inventory_item().id().update(inventory);
             }
         } else {
             let mut inventory = ctx.db.inventory_item().id().find(*inventory_id).unwrap();
             if inventory.quantity == *quantity {
+                crate::food::delete_personal_food_lot(ctx, *inventory_id);
                 ctx.db.inventory_item().id().delete(*inventory_id);
                 ctx.db
                     .item_condition()
                     .inventory_item_id()
                     .delete(*inventory_id);
             } else {
+                if ctx
+                    .db
+                    .item()
+                    .id()
+                    .find(&inventory.item_id)
+                    .is_some_and(|item| item.kind == crate::ItemKind::Food)
+                {
+                    crate::food::remove_lot_quantity(
+                        ctx,
+                        *inventory_id,
+                        *quantity,
+                        inventory.quantity,
+                    )?;
+                }
                 inventory.quantity -= quantity;
                 ctx.db.inventory_item().id().update(inventory);
             }

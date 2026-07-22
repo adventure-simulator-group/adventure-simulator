@@ -1119,6 +1119,7 @@ fn rest_for_minutes(
     }
 
     crate::condition::apply_rest_condition(ctx, character_id, elapsed)?;
+    crate::food::clear_stomach_fullness(ctx, character_id);
     crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(())
 }
@@ -1388,6 +1389,7 @@ pub fn rest_at_camp(
             false,
         )?;
         crate::condition::apply_camp_rest_recovery_condition(ctx, member_id, member_elapsed)?;
+        crate::food::clear_stomach_fullness(ctx, member_id);
         let convalescing = convalescing.min(member_elapsed);
         let (smithing_skill, tailoring_skill) = ctx
             .db

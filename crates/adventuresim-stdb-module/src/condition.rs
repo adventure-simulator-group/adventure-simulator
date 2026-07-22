@@ -203,65 +203,6 @@ fn water_capacity_ml(ctx: &ReducerContext, character_id: u64) -> u32 {
     inventory_quantity(ctx, character_id, WATERSKIN_ID).saturating_mul(capacity_per_container)
 }
 
-fn consume_inventory(
-    ctx: &ReducerContext,
-    character_id: u64,
-    item_id: &str,
-    mut quantity: u32,
-) -> u32 {
-    let requested = quantity;
-    let stacks: Vec<_> = ctx
-        .db
-        .inventory_item()
-        .character_and_item_id()
-        .filter((character_id, item_id))
-        .collect();
-    for mut stack in stacks {
-        if quantity == 0 {
-            break;
-        }
-        let consumed = stack.quantity.min(quantity);
-        quantity -= consumed;
-        stack.quantity -= consumed;
-        if stack.quantity == 0 {
-            ctx.db.inventory_item().id().delete(stack.id);
-        } else {
-            ctx.db.inventory_item().id().update(stack);
-        }
-    }
-    requested - quantity
-}
-
-fn consume_party_inventory(
-    ctx: &ReducerContext,
-    party_id: &str,
-    item_id: &str,
-    mut quantity: u32,
-) -> u32 {
-    let requested = quantity;
-    let stacks: Vec<_> = ctx
-        .db
-        .party_inventory_item()
-        .party_id()
-        .filter(party_id)
-        .filter(|row| row.item_id == item_id)
-        .collect();
-    for mut stack in stacks {
-        if quantity == 0 {
-            break;
-        }
-        let consumed = stack.quantity.min(quantity);
-        quantity -= consumed;
-        stack.quantity -= consumed;
-        if stack.quantity == 0 {
-            ctx.db.party_inventory_item().id().delete(stack.id);
-        } else {
-            ctx.db.party_inventory_item().id().update(stack);
-        }
-    }
-    requested - quantity
-}
-
 pub fn prepare_party_waterskins(
     ctx: &ReducerContext,
     party_id: &str,
@@ -328,7 +269,9 @@ pub fn replenish_needs_at_settlement(
         .character_id()
         .find(character_id)
         .ok_or("Character needs not found")?;
-    needs.food_balance_kcal = FOOD_RESERVE_KCAL;
+    // Arrival grants no free provisions and clears any travel surplus so the
+    // character can immediately eat a deliberate dinner.
+    needs.food_balance_kcal = needs.food_balance_kcal.min(0.0);
     needs.water_balance_ml = HYDRATION_RESERVE_ML;
     needs.carried_water_ml = water_capacity_ml(ctx, character_id) as f32;
     ctx.db.character_needs().character_id().update(needs);
@@ -350,44 +293,17 @@ pub fn apply_elapsed_needs(
         .ok_or("Character needs not found")?;
 
     needs.food_balance_kcal -= elapsed_days * TRAVEL_CALORIES_PER_DAY;
-    let ration_kcal = ctx
+    ctx.db
+        .character_needs()
+        .character_id()
+        .update(needs.clone());
+    crate::food::consume_travel_food_to_zero(ctx, character_id)?;
+    needs = ctx
         .db
-        .item()
-        .id()
-        .find(TRAVEL_RATION_ID.to_string())
-        .map_or(TRAVEL_CALORIES_PER_DAY, |item| item.nutrition_kcal);
-    if needs.food_balance_kcal < 0.0 && ration_kcal > 0.0 {
-        let wanted = ((-needs.food_balance_kcal) / ration_kcal).ceil() as u32;
-        let shared_available = ctx
-            .db
-            .character()
-            .id()
-            .find(character_id)
-            .and_then(|row| row.party_id)
-            .map_or(0, |party_id| {
-                ctx.db
-                    .party_inventory_item()
-                    .party_id()
-                    .filter(&party_id)
-                    .filter(|row| row.item_id == TRAVEL_RATION_ID)
-                    .map(|row| row.quantity)
-                    .sum()
-            });
-        let (shared_wanted, personal_wanted) =
-            shared_then_personal_units(wanted, shared_available, u32::MAX);
-        let party_eaten = ctx
-            .db
-            .character()
-            .id()
-            .find(character_id)
-            .and_then(|row| row.party_id)
-            .map_or(0, |party_id| {
-                consume_party_inventory(ctx, &party_id, TRAVEL_RATION_ID, shared_wanted)
-            });
-        let eaten =
-            party_eaten + consume_inventory(ctx, character_id, TRAVEL_RATION_ID, personal_wanted);
-        needs.food_balance_kcal += eaten as f32 * ration_kcal;
-    }
+        .character_needs()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character needs not found")?;
 
     needs.water_balance_ml -= elapsed_days * TRAVEL_WATER_ML_PER_DAY;
     if needs.water_balance_ml < 0.0 {
@@ -1585,7 +1501,6 @@ pub fn apply_rest_condition(
     _elapsed_minutes: u64,
 ) -> Result<(), String> {
     initialize_character_condition(ctx, character_id)?;
-    replenish_needs_at_settlement(ctx, character_id)?;
     refresh_character_strategic_condition(ctx, character_id).map(|_| ())
 }
 

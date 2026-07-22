@@ -594,6 +594,31 @@ pub struct InventoryItem {
     pub qty: u32,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum FoodPreparation {
+    Raw,
+    Preserved,
+    PanFried,
+    Stewed,
+    Roasted,
+    Baked,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FoodLot {
+    pub id: u64,
+    pub inventory_item_id: Option<u64>,
+    pub party_inventory_item_id: Option<u64>,
+    pub display_name: String,
+    pub preparation: FoodPreparation,
+    pub ingredient_item_ids: Vec<String>,
+    pub ingredient_quantities: Vec<u32>,
+    pub mass_kg: f32,
+    pub nutrition_kcal: f32,
+    pub total_value: f32,
+    pub created_at_minute: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterNeeds {
     pub character_id: u64,
@@ -888,6 +913,8 @@ pub enum ItemKind {
     Ingredient,
     #[serde(alias = "Medication", alias = "medication")]
     Medication,
+    #[serde(alias = "Food", alias = "food")]
+    Food,
 }
 
 /// Attribute values for a character. These mirror the public strategic tables

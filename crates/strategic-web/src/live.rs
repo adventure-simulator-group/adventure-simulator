@@ -40,6 +40,7 @@ use adventuresim_stdb_client::{
     dialogue_session_table::DialogueSessionTableAccess,
     dialogue_topic_option_table::DialogueTopicOptionTableAccess,
     equipped_medication_table::EquippedMedicationTableAccess,
+    food_lot_table::FoodLotTableAccess,
     inventory_item_table::InventoryItemTableAccess,
     inventory_quantity_target_table::InventoryQuantityTargetTableAccess,
     item_condition_table::ItemConditionTableAccess, limb_injury_table::LimbInjuryTableAccess,
@@ -154,6 +155,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.settlement_alias());
         invalidate_on_changes!(state.0._connection.db.settlement_description());
         invalidate_on_changes!(state.0._connection.db.inventory_item());
+        invalidate_on_changes!(state.0._connection.db.food_lot());
         invalidate_on_changes!(state.0._connection.db.item_condition());
         invalidate_on_changes!(state.0._connection.db.repair_order());
         invalidate_on_changes!(state.0._connection.db.settlement_smith());
@@ -225,6 +227,7 @@ impl LiveState {
             .add_query(|query| query.from.character_training_schedule())
             .add_query(|query| query.from.connected_players())
             .add_query(|query| query.from.inventory_item())
+            .add_query(|query| query.from.food_lot())
             .add_query(|query| query.from.inventory_quantity_target())
             .add_query(|query| query.from.item())
             .add_query(|query| query.from.item_condition())

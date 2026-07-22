@@ -409,6 +409,7 @@ pub(crate) fn delete_temporary_character(
             ctx.db.repair_order().id().delete(repair.id);
         }
         ctx.db.inventory_item().id().delete(row.id);
+        crate::food::delete_personal_food_lot(ctx, row.id);
     }
 
     for row in ctx

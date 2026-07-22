@@ -109,6 +109,8 @@ pub mod construction_commodity_type;
 pub mod construction_industry_type;
 pub mod continue_camp_travel_reducer;
 pub mod conviction_type;
+pub mod cook_food_reducer;
+pub mod cooking_method_type;
 pub mod craft_medication_reducer;
 pub mod create_character_reducer;
 pub mod create_named_character_reducer;
@@ -154,6 +156,7 @@ pub mod dominant_leaf_type_type;
 pub mod drive_type;
 pub mod drought_history_type;
 pub mod drought_profile_type;
+pub mod eat_food_reducer;
 pub mod edge_endpoint_type;
 pub mod edge_progress_permille_type;
 pub mod elevation_meters_type;
@@ -183,6 +186,10 @@ pub mod fish_commodity_type;
 pub mod fishing_industry_type;
 pub mod flow_persistence_type;
 pub mod flowing_water_access_type;
+pub mod food_contamination_type;
+pub mod food_lot_table;
+pub mod food_lot_type;
+pub mod food_preparation_type;
 pub mod forest_commodity_type;
 pub mod forest_cover_type;
 pub mod forestry_industry_type;
@@ -563,6 +570,8 @@ pub use construction_commodity_type::ConstructionCommodity;
 pub use construction_industry_type::ConstructionIndustry;
 pub use continue_camp_travel_reducer::continue_camp_travel;
 pub use conviction_type::Conviction;
+pub use cook_food_reducer::cook_food;
+pub use cooking_method_type::CookingMethod;
 pub use craft_medication_reducer::craft_medication;
 pub use create_character_reducer::create_character;
 pub use create_named_character_reducer::create_named_character;
@@ -608,6 +617,7 @@ pub use dominant_leaf_type_type::DominantLeafType;
 pub use drive_type::Drive;
 pub use drought_history_type::DroughtHistory;
 pub use drought_profile_type::DroughtProfile;
+pub use eat_food_reducer::eat_food;
 pub use edge_endpoint_type::EdgeEndpoint;
 pub use edge_progress_permille_type::EdgeProgressPermille;
 pub use elevation_meters_type::ElevationMeters;
@@ -637,6 +647,10 @@ pub use fish_commodity_type::FishCommodity;
 pub use fishing_industry_type::FishingIndustry;
 pub use flow_persistence_type::FlowPersistence;
 pub use flowing_water_access_type::FlowingWaterAccess;
+pub use food_contamination_type::FoodContamination;
+pub use food_lot_table::*;
+pub use food_lot_type::FoodLot;
+pub use food_preparation_type::FoodPreparation;
 pub use forest_commodity_type::ForestCommodity;
 pub use forest_cover_type::ForestCover;
 pub use forestry_industry_type::ForestryIndustry;
@@ -1010,6 +1024,12 @@ pub enum Reducer {
     ContinueCampTravel {
         character_id: u64,
     },
+    CookFood {
+        character_id: u64,
+        method: CookingMethod,
+        inventory_item_ids: Vec<u64>,
+        quantities: Vec<u32>,
+    },
     CraftMedication {
         character_id: u64,
         disease_id: String,
@@ -1075,6 +1095,10 @@ pub enum Reducer {
     DismissPartyActionRequest {
         leader_id: u64,
         request_id: u64,
+    },
+    EatFood {
+        character_id: u64,
+        inventory_item_id: u64,
     },
     EndTacticalServer {
         success: bool,
@@ -1430,6 +1454,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::ClaimSimulationRun { .. } => "claim_simulation_run",
             Reducer::ConfigureSimulationCharacter { .. } => "configure_simulation_character",
             Reducer::ContinueCampTravel { .. } => "continue_camp_travel",
+            Reducer::CookFood { .. } => "cook_food",
             Reducer::CraftMedication { .. } => "craft_medication",
             Reducer::CreateCharacter { .. } => "create_character",
             Reducer::CreateNamedCharacter { .. } => "create_named_character",
@@ -1445,6 +1470,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::DismissHerbalistExamination { .. } => "dismiss_herbalist_examination",
             Reducer::DismissMedicalExamination { .. } => "dismiss_medical_examination",
             Reducer::DismissPartyActionRequest { .. } => "dismiss_party_action_request",
+            Reducer::EatFood { .. } => "eat_food",
             Reducer::EndTacticalServer { .. } => "end_tactical_server",
             Reducer::EnsureSettlementActivity { .. } => "ensure_settlement_activity",
             Reducer::EnterMission { .. } => "enter_mission",
@@ -1679,6 +1705,17 @@ Reducer::CancelMissionRequest{
 }             => __sats::bsatn::to_vec(&continue_camp_travel_reducer::ContinueCampTravelArgs {
                 character_id: character_id.clone(),
 }),
+            Reducer::CookFood{
+                character_id,
+                method,
+                inventory_item_ids,
+                quantities,
+}             => __sats::bsatn::to_vec(&cook_food_reducer::CookFoodArgs {
+                character_id: character_id.clone(),
+                method: method.clone(),
+                inventory_item_ids: inventory_item_ids.clone(),
+                quantities: quantities.clone(),
+}),
             Reducer::CraftMedication{
                 character_id,
                 disease_id,
@@ -1795,6 +1832,13 @@ Reducer::CancelMissionRequest{
 }             => __sats::bsatn::to_vec(&dismiss_party_action_request_reducer::DismissPartyActionRequestArgs {
                 leader_id: leader_id.clone(),
                 request_id: request_id.clone(),
+}),
+            Reducer::EatFood{
+                character_id,
+                inventory_item_id,
+}             => __sats::bsatn::to_vec(&eat_food_reducer::EatFoodArgs {
+                character_id: character_id.clone(),
+                inventory_item_id: inventory_item_id.clone(),
 }),
             Reducer::EndTacticalServer{
                 success,
@@ -2411,6 +2455,7 @@ pub struct DbUpdate {
     dialogue_session: __sdk::TableUpdate<DialogueSession>,
     dialogue_topic_option: __sdk::TableUpdate<DialogueTopicOption>,
     equipped_medication: __sdk::TableUpdate<EquippedMedication>,
+    food_lot: __sdk::TableUpdate<FoodLot>,
     inventory_item: __sdk::TableUpdate<InventoryItem>,
     inventory_quantity_target: __sdk::TableUpdate<InventoryQuantityTarget>,
     item: __sdk::TableUpdate<Item>,
@@ -2581,6 +2626,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "equipped_medication" => db_update
                     .equipped_medication
                     .append(equipped_medication_table::parse_table_update(table_update)?),
+                "food_lot" => db_update
+                    .food_lot
+                    .append(food_lot_table::parse_table_update(table_update)?),
                 "inventory_item" => db_update
                     .inventory_item
                     .append(inventory_item_table::parse_table_update(table_update)?),
@@ -2871,6 +2919,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.equipped_medication,
             )
             .with_updates_by_pk(|row| &row.inventory_item_id);
+        diff.food_lot = cache
+            .apply_diff_to_table::<FoodLot>("food_lot", &self.food_lot)
+            .with_updates_by_pk(|row| &row.id);
         diff.inventory_item = cache
             .apply_diff_to_table::<InventoryItem>("inventory_item", &self.inventory_item)
             .with_updates_by_pk(|row| &row.id);
@@ -3196,6 +3247,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "equipped_medication" => db_update
                     .equipped_medication
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "food_lot" => db_update
+                    .food_lot
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "inventory_item" => db_update
                     .inventory_item
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -3449,6 +3503,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "equipped_medication" => db_update
                     .equipped_medication
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "food_lot" => db_update
+                    .food_lot
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "inventory_item" => db_update
                     .inventory_item
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -3626,6 +3683,7 @@ pub struct AppliedDiff<'r> {
     dialogue_session: __sdk::TableAppliedDiff<'r, DialogueSession>,
     dialogue_topic_option: __sdk::TableAppliedDiff<'r, DialogueTopicOption>,
     equipped_medication: __sdk::TableAppliedDiff<'r, EquippedMedication>,
+    food_lot: __sdk::TableAppliedDiff<'r, FoodLot>,
     inventory_item: __sdk::TableAppliedDiff<'r, InventoryItem>,
     inventory_quantity_target: __sdk::TableAppliedDiff<'r, InventoryQuantityTarget>,
     item: __sdk::TableAppliedDiff<'r, Item>,
@@ -3871,6 +3929,7 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.equipped_medication,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<FoodLot>("food_lot", &self.food_lot, event);
         callbacks.invoke_table_row_callbacks::<InventoryItem>(
             "inventory_item",
             &self.inventory_item,
@@ -4739,6 +4798,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         dialogue_session_table::register_table(client_cache);
         dialogue_topic_option_table::register_table(client_cache);
         equipped_medication_table::register_table(client_cache);
+        food_lot_table::register_table(client_cache);
         inventory_item_table::register_table(client_cache);
         inventory_quantity_target_table::register_table(client_cache);
         item_table::register_table(client_cache);
@@ -4821,6 +4881,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "dialogue_session",
         "dialogue_topic_option",
         "equipped_medication",
+        "food_lot",
         "inventory_item",
         "inventory_quantity_target",
         "item",

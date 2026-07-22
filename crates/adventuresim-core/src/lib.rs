@@ -12,6 +12,7 @@ pub mod durability;
 pub mod equipment;
 pub mod essential;
 pub mod filth;
+pub mod food;
 pub mod leadership;
 pub mod morale;
 pub mod profession;

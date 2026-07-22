@@ -347,7 +347,8 @@ fn spawn_connected_player(
             | ItemKind::Clothing
             | ItemKind::Currency
             | ItemKind::Ingredient
-            | ItemKind::Medication => {}
+            | ItemKind::Medication
+            | ItemKind::Food => {}
             ItemKind::Weapon => {
                 item_cmd.insert(WeaponItem {
                     skill_weights: [
