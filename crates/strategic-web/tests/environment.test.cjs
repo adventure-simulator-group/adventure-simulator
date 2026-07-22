@@ -9,6 +9,11 @@ const baseCss = fs.readFileSync("crates/strategic-web/static/css/base.css", "utf
 const layoutCss = fs.readFileSync("crates/strategic-web/static/css/layout.css", "utf8");
 const componentsCss = fs.readFileSync("crates/strategic-web/static/css/components.css", "utf8");
 const strategicCss = fs.readFileSync("crates/strategic-web/static/css/strategic.css", "utf8");
+
+test("grouped inventory disclosures stay beside their labels in narrow merchant rails", () => {
+  assert.match(strategicCss, /:is\(\.currency-parent-row, \.alcohol-parent-row\) \.inventory-item-label \{[\s\S]*display: inline-block;[\s\S]*max-width: calc\(100% - 1\.5rem\);/);
+  assert.match(strategicCss, /:is\(\.currency-parent-row, \.alcohol-parent-row\) \.currency-disclosure \{[\s\S]*vertical-align: middle;/);
+});
 const layoutTemplate = fs.readFileSync("crates/strategic-web/src/templates/layout.rs", "utf8");
 const settlementTemplate = fs.readFileSync("crates/strategic-web/src/templates/settlement.rs", "utf8");
 const window = {

@@ -943,6 +943,14 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.smith-wares-scroll .trade-inventory-table :is(.currency-parent-row, .alcohol-parent-row) .inventory-item-label {
+  display: inline-block;
+  max-width: calc(100% - 1.5rem);
+  vertical-align: middle;
+}
+.smith-wares-scroll .trade-inventory-table :is(.currency-parent-row, .alcohol-parent-row) .currency-disclosure {
+  vertical-align: middle;
+}
 .repair-custody-panel {
   flex: 0 1 50%;
   max-height: 50%;
