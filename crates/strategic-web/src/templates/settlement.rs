@@ -3907,27 +3907,33 @@ fn terrain_skill_rows(skills: &CharacterSkills, schedule_context: bool) -> Marku
 
 fn language_skill_rows(skills: &CharacterSkills, schedule_context: bool) -> Markup {
     use adventuresim_world_schema::{OralLanguage, WrittenLanguage};
-    let oral_rank = OralLanguage::ALL
+    let oral_effective = OralLanguage::ALL
         .into_iter()
         .map(|language| skills.oral_languages.effective(language))
-        .fold(0.0, f32::max)
-        / 1_000.0;
-    let written_rank = WrittenLanguage::ALL
+        .fold(0.0, f32::max);
+    let oral_direct = OralLanguage::ALL
+        .into_iter()
+        .map(|language| skills.oral_languages.direct(language).max(0.0))
+        .sum::<f32>();
+    let written_effective = WrittenLanguage::ALL
         .into_iter()
         .map(|language| skills.written_languages.effective(language))
-        .fold(0.0, f32::max)
-        / 1_000.0;
+        .fold(0.0, f32::max);
+    let written_direct = WrittenLanguage::ALL
+        .into_iter()
+        .map(|language| skills.written_languages.direct(language).max(0.0))
+        .sum::<f32>();
     html! {
-        @for (family, rank, kind) in [("Oral",oral_rank,"oral"),("Written",written_rank,"written")] {
+        @for (family, effective, direct, kind) in [("Oral",oral_effective,oral_direct,"oral"),("Written",written_effective,written_direct,"written")] {
             tr class=(format!("party-skill-row language-primary-row language-{kind}")) {
-                th scope="row" class="party-skill-name party-skill-icon-cell" { span class=(format!("language-monogram language-{kind}")) aria-hidden="true" { (if kind=="oral" {"O"} else {"W"}) } span class="sr-only" { (family) } }
-                td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { (skill_rank_bar(rank.clamp(0.0,5.0),rank.clamp(0.0,5.0),&format!("Best effective {family} language"),skill_rail_bar_options())) }
+                th scope="row" class="party-skill-name party-skill-icon-cell" { span class=(format!("language-monogram language-{kind}")) title=(format!("{family} languages")) aria-hidden="true" { (if kind=="oral" {"O"} else {"W"}) } span class="sr-only" { (family) } }
+                td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { (skill_rank_bar((effective/1000.0).clamp(0.0,5.0),(effective/1000.0).clamp(0.0,5.0),&format!("{effective:.1} effective hours; {direct:.1} directly studied hours across {family} languages"),skill_rail_bar_options())) }
                 td class="religion-expand-cell" { button type="button" class="religion-expand-button" data-language-expand=(kind) aria-expanded="false" aria-label=(format!("Expand {family} languages")) { span class="religion-expand-chevron" aria-hidden="true" { "›" } } }
             }
             @if kind=="oral" { @for language in OralLanguage::ALL { @let descriptor=language.descriptor();
-                tr class="party-skill-row language-detail-row" data-language-detail="oral" hidden { th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" { span class=(if descriptor.germanic_style {"language-monogram language-oral language-blackletter"} else {"language-monogram language-oral"}) aria-hidden="true" { (descriptor.monogram) } span class="sr-only" { (descriptor.english) } } td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let hours=skills.oral_languages.direct(language); (skill_rank_bar((hours/1000.0).clamp(0.0,5.0),(hours/1000.0).clamp(0.0,5.0),&format!("{} · {} · {hours:.1} direct hours",descriptor.english,descriptor.native),skill_rail_bar_options())) } td class="religion-expand-cell" {} }
+                tr class="party-skill-row language-detail-row" data-language-detail="oral" hidden { th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" { span class=(if descriptor.germanic_style {"language-monogram language-oral language-blackletter"} else {"language-monogram language-oral"}) title=(format!("{} — {}",descriptor.english,descriptor.native)) aria-hidden="true" { (descriptor.monogram) } span class="sr-only" { (descriptor.english) } } td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let direct=skills.oral_languages.direct(language).max(0.0); @let effective=skills.oral_languages.effective(language); (skill_rank_bar((effective/1000.0).clamp(0.0,5.0),(effective/1000.0).clamp(0.0,5.0),&format!("{effective:.1} effective hours; {direct:.1} directly studied hours"),skill_rail_bar_options())) } td class="religion-expand-cell" {} }
             }} @else { @for language in WrittenLanguage::ALL { @let descriptor=language.descriptor();
-                tr class="party-skill-row language-detail-row" data-language-detail="written" hidden { th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" { span class=(if descriptor.germanic_style {"language-monogram language-written language-blackletter"} else {"language-monogram language-written"}) aria-hidden="true" { (descriptor.monogram) } span class="sr-only" { (descriptor.english) } } td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let hours=skills.written_languages.direct(language); (skill_rank_bar((hours/1000.0).clamp(0.0,5.0),(hours/1000.0).clamp(0.0,5.0),&format!("{} · {} · {hours:.1} direct hours",descriptor.english,descriptor.native),skill_rail_bar_options())) } td class="religion-expand-cell" {} }
+                tr class="party-skill-row language-detail-row" data-language-detail="written" hidden { th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" { span class=(if descriptor.germanic_style {"language-monogram language-written language-blackletter"} else {"language-monogram language-written"}) title=(format!("{} — {}",descriptor.english,descriptor.native)) aria-hidden="true" { (descriptor.monogram) } span class="sr-only" { (descriptor.english) } } td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let direct=skills.written_languages.direct(language).max(0.0); @let effective=skills.written_languages.effective(language); (skill_rank_bar((effective/1000.0).clamp(0.0,5.0),(effective/1000.0).clamp(0.0,5.0),&format!("{effective:.1} effective hours; {direct:.1} directly studied hours"),skill_rail_bar_options())) } td class="religion-expand-cell" {} }
             }}
         }
     }
@@ -7020,6 +7026,14 @@ mod tests {
         assert!(rendered.contains("Expand Written languages"));
         assert!(rendered.contains("language-oral language-blackletter"));
         assert!(rendered.contains("language-written language-blackletter"));
+        assert!(rendered.contains(
+            "5000.0 effective hours; 5000.0 directly studied hours across Oral languages"
+        ));
+        assert!(rendered.contains(
+            "1000.0 effective hours; 1000.0 directly studied hours across Written languages"
+        ));
+        assert!(rendered.contains("title=\"East-central — Ostmitteldeutsch\""));
+        assert!(rendered.contains("5000.0 effective hours; 5000.0 directly studied hours"));
         assert_eq!(rendered.matches("data-language-detail=\"oral\"").count(), 8);
         assert_eq!(
             rendered.matches("data-language-detail=\"written\"").count(),
