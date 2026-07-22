@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (1007)
+## Files (1015)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -950,8 +950,6 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/tests/tooltips.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/training-schedule.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/travel-planner-behavior.test.cjs` — Repository support file.
-- `docs/ARCHITECTURE.md` — Project documentation.
-- `docs/ARCHITECTURE.md` — Project documentation.
 - `docs/ARCHITECTURE.md` — Project documentation.
 - `docs/DEVELOPING.md` — Project documentation.
 - `docs/DIALOGUE.md` — Project documentation.

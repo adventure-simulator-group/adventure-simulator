@@ -10,6 +10,16 @@ evidence, not an exact observation of an individual settlement.
 
 ## Manual preparation contract
 
+Download the three HYDE 3.5 c9 April 2025 NetCDF inputs from Utrecht
+University's public HYDE vault:
+
+<https://geo.public.data.uu.nl/vault-hyde/hyde35_c9_apr2025%5B1749214444%5D/original/gbc2025_7apr_base/NetCDF/>
+
+The directory is protected by an interactive anti-bot page, so the repository
+initializer does not automate this download. Use a normal browser and retain
+the release filenames. The separate `general_files.zip` release input is still
+required for the matching `general_files/garea_cr.asc` cell-area grid.
+
 Place exactly these release files in the Git-ignored
 `target/world-data-sources/raw/hyde35-land-use/` directory, or point
 `--land-use-dir` at another directory:
