@@ -281,8 +281,10 @@ Jung wetland, content, and package identities. The compiler also
 writes `STRATEGIC_MAP_DATA_LICENSE.md` beside every output directory. Keep that
 notice with any copied, published, or hosted bundle; it is the artifact-level
 licence and attribution boundary described by the repository's
-`MAP_DATA_LICENSE.md`. These deterministic presentation assets verify
-the initialized v2 edge and water files against
+`MAP_DATA_LICENSE.md`. Adjacent Jung wetland raster cells are dissolved and
+their display-only boundaries are softened so source-cell seams do not appear
+on the map; routing still rasterizes the exact source cells. These deterministic
+presentation assets verify the initialized v2 edge and water files against
 their recorded SHA-256 identities, retains only active 1544 overview roads and
 ferries for presentation, and separately rasterizes every active full-precision
 Viabundus road into the routing pack. It classifies installed native GLO-30

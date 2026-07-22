@@ -567,6 +567,7 @@ fn render_with_forest_field(
             logical_bounds,
             Some(palette.wetland),
             Some((palette.wetland_edge, 0.65)),
+            true,
         );
     }
     for polygon in &package.water {
@@ -579,6 +580,7 @@ fn render_with_forest_field(
             logical_bounds,
             Some(palette.water),
             Some((palette.water_edge, 1.1)),
+            false,
         );
     }
     for road in &package.roads {
@@ -935,14 +937,21 @@ fn stroke_and_fill_source_polygon(
     tile_bounds: [f64; 4],
     fill: Option<[u8; 4]>,
     stroke: Option<([u8; 4], f32)>,
+    smooth_boundary: bool,
 ) {
     let projected: Vec<Vec<_>> = polygon
         .rings
         .iter()
         .map(|ring| {
-            ring.iter()
+            let projected = ring
+                .iter()
                 .map(|point| project(point.0[0], point.0[1], map_bounds))
-                .collect()
+                .collect::<Vec<_>>();
+            if smooth_boundary {
+                smooth_closed_ring(&projected)
+            } else {
+                projected
+            }
         })
         .collect();
     let bounds = projected
@@ -993,6 +1002,33 @@ fn stroke_and_fill_source_polygon(
         };
         pixmap.stroke_path(&path, &paint(shade), &stroke, Transform::identity(), None);
     }
+}
+
+/// One Chaikin subdivision pass softens the staircase left by dissolving a
+/// categorical raster without changing the terrain geometry used by routing.
+fn smooth_closed_ring(points: &[(f64, f64)]) -> Vec<(f64, f64)> {
+    let mut vertices = points;
+    if points.len() > 1 && points.first() == points.last() {
+        vertices = &points[..points.len() - 1];
+    }
+    if vertices.len() < 3 {
+        return points.to_vec();
+    }
+    let mut smoothed = Vec::with_capacity(vertices.len() * 2 + 1);
+    for index in 0..vertices.len() {
+        let current = vertices[index];
+        let next = vertices[(index + 1) % vertices.len()];
+        smoothed.push((
+            current.0 * 0.75 + next.0 * 0.25,
+            current.1 * 0.75 + next.1 * 0.25,
+        ));
+        smoothed.push((
+            current.0 * 0.25 + next.0 * 0.75,
+            current.1 * 0.25 + next.1 * 0.75,
+        ));
+    }
+    smoothed.push(smoothed[0]);
+    smoothed
 }
 
 fn tile_path(points: &[(f64, f64)], scale: f64, origin: (f64, f64), close: bool) -> Option<Path> {
@@ -1286,6 +1322,17 @@ mod tests {
             CanopyPyramid::from_base([0.0, 0.0, 0.002, 0.002], 2, 2, vec![u8::MAX, 0, 0, 0]);
         assert_eq!(pyramid.coverage_at(0.0015, 0.0005, 0.001, 0.001), 1.0);
         assert_eq!(pyramid.coverage_at(0.0015, 0.0015, 0.001, 0.001), 0.0);
+    }
+
+    #[test]
+    fn wetland_boundary_smoothing_closes_and_rounds_a_cell_outline() {
+        let square = vec![(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0), (0.0, 0.0)];
+        let smoothed = smooth_closed_ring(&square);
+        assert_eq!(smoothed.first(), smoothed.last());
+        assert_eq!(smoothed.len(), 9);
+        assert_eq!(smoothed[0], (1.0, 0.0));
+        assert_eq!(smoothed[1], (3.0, 0.0));
+        assert!(!smoothed.contains(&(0.0, 0.0)));
     }
 
     #[test]

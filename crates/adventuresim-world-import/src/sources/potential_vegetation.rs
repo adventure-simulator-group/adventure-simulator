@@ -1,7 +1,7 @@
 //! Jung/IIASA European potential-natural-vegetation v1.1 COG sampling.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs::{self, File},
     io::{BufReader, Read},
     path::{Path, PathBuf},
@@ -154,7 +154,10 @@ struct ManifestFile {
 
 #[derive(Clone, Debug)]
 pub struct WetlandSpatialData {
+    /// Exact source cells retained for terrain/pathfinding rasterization.
     pub polygons: Vec<Vec<Vec<[f64; 2]>>>,
+    /// Adjacent source cells dissolved into bounded presentation polygons.
+    pub presentation_polygons: Vec<Vec<Vec<[f64; 2]>>>,
     pub source_sha256: String,
 }
 
@@ -207,6 +210,7 @@ pub fn wetland_spatial_data(directory: &Path, bounds: [f64; 4]) -> Result<Wetlan
     )?;
     let mut categorical = JungRaster::open(&directory.join(CATEGORICAL), RasterKind::Categorical)?;
     let mut polygons = Vec::new();
+    let mut wet_cells = BTreeSet::new();
     for row in first_row..last_row {
         for col in first_col..last_col {
             let wet = match posterior.value(col, row)? {
@@ -216,6 +220,7 @@ pub fn wetland_spatial_data(directory: &Path, bounds: [f64; 4]) -> Result<Wetlan
             if !wet {
                 continue;
             }
+            wet_cells.insert((col, row));
             let x0 = WEST + f64::from(col) * PIXEL;
             let x1 = x0 + PIXEL;
             let y1 = NORTH - f64::from(row) * PIXEL;
@@ -236,6 +241,7 @@ pub fn wetland_spatial_data(directory: &Path, bounds: [f64; 4]) -> Result<Wetlan
         }
     }
     Ok(WetlandSpatialData {
+        presentation_polygons: dissolve_wetland_cells(&wet_cells, &projection)?,
         polygons,
         source_sha256: PINNED_FILES
             .iter()
@@ -244,6 +250,132 @@ pub fn wetland_spatial_data(directory: &Path, bounds: [f64; 4]) -> Result<Wetlan
             .sha256
             .into(),
     })
+}
+
+type GridPoint = (u32, u32);
+
+fn dissolve_wetland_cells(
+    cells: &BTreeSet<GridPoint>,
+    projection: &SpatialProjection,
+) -> Result<Vec<Vec<Vec<[f64; 2]>>>> {
+    let mut edges = BTreeSet::new();
+    for &(column, row) in cells {
+        let west = column.saturating_sub(1);
+        let north = row.saturating_sub(1);
+        if row == 0 || !cells.contains(&(column, north)) {
+            edges.insert(((column, row), (column + 1, row)));
+        }
+        if !cells.contains(&(column + 1, row)) {
+            edges.insert(((column + 1, row), (column + 1, row + 1)));
+        }
+        if !cells.contains(&(column, row + 1)) {
+            edges.insert(((column + 1, row + 1), (column, row + 1)));
+        }
+        if column == 0 || !cells.contains(&(west, row)) {
+            edges.insert(((column, row + 1), (column, row)));
+        }
+    }
+
+    let mut rings = Vec::new();
+    while let Some(first) = edges.first().copied() {
+        edges.remove(&first);
+        let mut ring = vec![first.0, first.1];
+        while *ring.last().expect("ring has an endpoint") != ring[0] {
+            let previous = ring[ring.len() - 2];
+            let current = ring[ring.len() - 1];
+            let next = edges
+                .iter()
+                .filter(|edge| edge.0 == current)
+                .min_by_key(|edge| boundary_turn_rank(previous, current, edge.1))
+                .copied()
+                .ok_or_else(|| Error::Validation("wetland cell boundary is open".into()))?;
+            edges.remove(&next);
+            ring.push(next.1);
+        }
+        rings.push(ring);
+    }
+
+    let mut exteriors = rings
+        .iter()
+        .filter(|ring| signed_grid_area(ring) > 0)
+        .cloned()
+        .map(|ring| vec![ring])
+        .collect::<Vec<_>>();
+    for hole in rings.into_iter().filter(|ring| signed_grid_area(ring) < 0) {
+        let point = hole[0];
+        let Some((index, _)) = exteriors
+            .iter()
+            .enumerate()
+            .filter(|(_, polygon)| grid_ring_contains(&polygon[0], point))
+            .min_by_key(|(_, polygon)| signed_grid_area(&polygon[0]).unsigned_abs())
+        else {
+            return Err(Error::Validation(
+                "wetland hole has no containing exterior".into(),
+            ));
+        };
+        exteriors[index].push(hole);
+    }
+
+    exteriors
+        .into_iter()
+        .map(|polygon| {
+            polygon
+                .into_iter()
+                .map(|ring| {
+                    ring.into_iter()
+                        .map(|(column, row)| {
+                            let x = WEST + f64::from(column) * PIXEL;
+                            let y = NORTH - f64::from(row) * PIXEL;
+                            projection
+                                .unproject(crate::spatial::ProjectedCoordinate::from_meters(x, y)?)
+                                .map(|(latitude, longitude)| [longitude, latitude])
+                        })
+                        .collect::<Result<Vec<_>>>()
+                })
+                .collect::<Result<Vec<_>>>()
+        })
+        .collect()
+}
+
+fn boundary_turn_rank(previous: GridPoint, current: GridPoint, next: GridPoint) -> u8 {
+    let incoming = (
+        i64::from(current.0) - i64::from(previous.0),
+        i64::from(current.1) - i64::from(previous.1),
+    );
+    let outgoing = (
+        i64::from(next.0) - i64::from(current.0),
+        i64::from(next.1) - i64::from(current.1),
+    );
+    let cross = incoming.0 * outgoing.1 - incoming.1 * outgoing.0;
+    let dot = incoming.0 * outgoing.0 + incoming.1 * outgoing.1;
+    match (cross.cmp(&0), dot.cmp(&0)) {
+        (std::cmp::Ordering::Greater, _) => 0,
+        (std::cmp::Ordering::Equal, std::cmp::Ordering::Greater) => 1,
+        (std::cmp::Ordering::Less, _) => 2,
+        _ => 3,
+    }
+}
+
+fn signed_grid_area(ring: &[GridPoint]) -> i64 {
+    ring.windows(2)
+        .map(|pair| {
+            i64::from(pair[0].0) * i64::from(pair[1].1)
+                - i64::from(pair[1].0) * i64::from(pair[0].1)
+        })
+        .sum()
+}
+
+fn grid_ring_contains(ring: &[GridPoint], point: GridPoint) -> bool {
+    let (x, y) = (f64::from(point.0) + 0.25, f64::from(point.1) + 0.25);
+    let mut inside = false;
+    for pair in ring.windows(2) {
+        let (x1, y1) = (f64::from(pair[0].0), f64::from(pair[0].1));
+        let (x2, y2) = (f64::from(pair[1].0), f64::from(pair[1].1));
+        if (y1 > y) != (y2 > y) && x < x1 + (y - y1) * (x2 - x1) / (y2 - y1) {
+            inside = !inside;
+        }
+    }
+    inside
 }
 
 pub(crate) fn enrich(
@@ -871,6 +1003,27 @@ mod tests {
         PotentialVegetationClass, SpatialGridSpec,
     };
     use std::path::Path;
+
+    #[test]
+    fn adjacent_wetland_cells_are_dissolved_with_holes_preserved() {
+        let projection = super::SpatialProjection::new().unwrap();
+        let adjacent = [(10, 10), (11, 10)].into_iter().collect();
+        let polygons = super::dissolve_wetland_cells(&adjacent, &projection).unwrap();
+        assert_eq!(polygons.len(), 1);
+        assert_eq!(polygons[0].len(), 1);
+
+        let diagonal = [(10, 10), (11, 11)].into_iter().collect();
+        let polygons = super::dissolve_wetland_cells(&diagonal, &projection).unwrap();
+        assert_eq!(polygons.len(), 2);
+
+        let cells = (20..23)
+            .flat_map(|column| (20..23).map(move |row| (column, row)))
+            .filter(|cell| *cell != (21, 21))
+            .collect();
+        let polygons = super::dissolve_wetland_cells(&cells, &projection).unwrap();
+        assert_eq!(polygons.len(), 1);
+        assert_eq!(polygons[0].len(), 2);
+    }
     #[test]
     fn normal_posterior_tile_cache_is_bounded_below_64_mib() {
         let tile_bytes =

@@ -190,7 +190,7 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let wetland =
         adventuresim_world_import::wetland_spatial_data(&args.potential_vegetation_dir, BOUNDS)?;
     package.wetlands = wetland
-        .polygons
+        .presentation_polygons
         .iter()
         .map(|rings| WaterPolygon {
             rings: rings
