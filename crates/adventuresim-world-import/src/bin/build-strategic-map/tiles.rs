@@ -16,7 +16,7 @@ const MIN_TILE_SIZE: u32 = 64;
 const MAX_TILE_SIZE: u32 = 2_048;
 const MAX_TILE_COUNT: usize = 100_000;
 const RENDER_MARGIN: u32 = 12;
-const NATIVE_DETAIL_BOUNDS: [f64; 4] = [5.0, 50.0, 16.0, 56.0];
+const NATIVE_DETAIL_BOUNDS: [f64; 4] = adventuresim_world_schema::PLAYABLE_BOUNDS;
 const FOREST_CANOPY_THRESHOLD_PERCENT: f64 = 20.0;
 const CANOPY_CELLS_PER_DEGREE: usize = 1_000;
 const RELIEF_STEP_DEGREES: f64 = 0.01;
@@ -120,27 +120,16 @@ impl CanopyPyramid {
             return Err("terrain bounds cannot produce a canopy pyramid".into());
         }
         let mut coverage = vec![0_u8; width * height];
-        let west_degree = bounds[0].round() as i16;
-        let south_degree = bounds[1].round() as i16;
-        let east_degree = bounds[2].round() as i16;
-        let north_degree = bounds[3].round() as i16;
-        for south in south_degree..north_degree {
-            let row_base = usize::try_from(north_degree - south - 1)? * CANOPY_CELLS_PER_DEGREE;
-            for west in west_degree..east_degree {
-                let column_base = usize::try_from(west - west_degree)? * CANOPY_CELLS_PER_DEGREE;
-                for local_y in 0..CANOPY_CELLS_PER_DEGREE {
-                    let latitude = f64::from(south + 1)
-                        - (local_y as f64 + 0.5) / CANOPY_CELLS_PER_DEGREE as f64;
-                    let output = (row_base + local_y) * width + column_base;
-                    for local_x in 0..CANOPY_CELLS_PER_DEGREE {
-                        let longitude = f64::from(west)
-                            + (local_x as f64 + 0.5) / CANOPY_CELLS_PER_DEGREE as f64;
-                        let forest = terrain.cell(latitude, longitude)?.is_some_and(|cell| {
-                            f64::from(cell.canopy_percent) >= FOREST_CANOPY_THRESHOLD_PERCENT
-                        });
-                        coverage[output + local_x] = if forest { u8::MAX } else { 0 };
-                    }
-                }
+        let longitude_step = (bounds[2] - bounds[0]) / width as f64;
+        let latitude_step = (bounds[3] - bounds[1]) / height as f64;
+        for y in 0..height {
+            let latitude = bounds[3] - (y as f64 + 0.5) * latitude_step;
+            for x in 0..width {
+                let longitude = bounds[0] + (x as f64 + 0.5) * longitude_step;
+                let forest = terrain.cell(latitude, longitude)?.is_some_and(|cell| {
+                    f64::from(cell.canopy_percent) >= FOREST_CANOPY_THRESHOLD_PERCENT
+                });
+                coverage[y * width + x] = if forest { u8::MAX } else { 0 };
             }
         }
         Ok(Self::from_base(bounds, width, height, coverage))
@@ -332,7 +321,9 @@ impl Default for TileConfig {
     fn default() -> Self {
         Self {
             tile_size: 512,
-            max_zoom: 7,
+            // The bounded map reaches approximately 25 m/pixel at z3. The
+            // former continental map needed z7 for equivalent native detail.
+            max_zoom: 3,
         }
     }
 }

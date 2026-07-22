@@ -10,7 +10,7 @@ about the exact historical tree cover around a settlement.
 - DLT dataset DOI: <https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a>
 - Terms: Copernicus full, free, and open data policy
 
-Initialize the default northern-Germany coverage with:
+Initialize the default playable-area coverage with:
 
 ```bash
 just plan-forest-cover
@@ -25,13 +25,18 @@ credentials. They do not authorize direct CDSE OData or S3 object downloads;
 the initializer instead uses the official Sentinel Hub Process API and its
 public CLMS BYOC collections.
 
-The default integer EPSG:4326 bounds are 5-16 degrees east and 50-56 degrees
-north: 66 one-degree tiles covering Germany and useful adjoining parts of the
-Netherlands, Denmark, Poland, Czechia, and the Baltic coast. Override them with
-`--west`, `--south`, `--east`, and `--north`. Each request is independently
-restartable in a staging directory. The existing source directory is replaced
-only after all 132 output rasters verify; the previous directory is retained
-below `target/world-data-backups/`.
+The authoritative playable bounds are 8.965-11.110 degrees east and
+50.877-52.211 degrees north. The default integer EPSG:4326 source envelope is
+therefore 8-12 degrees east and 50-53 degrees north: the smallest 12
+one-degree tiles that cover the playable area. Override them with `--west`,
+`--south`, `--east`, and `--north`. Each request is independently restartable
+in a staging directory. The existing source directory is replaced only after
+all 24 output rasters verify; the previous directory is retained below
+`target/world-data-backups/`.
+When an existing installation already contains valid cells from the requested
+envelope, preparation reuses them in staging instead of downloading them
+again. This makes narrowing an older broad installation cheap and preserves
+the broad set in the normal recoverable backup.
 
 The prepared source inventory records the exact byte size and SHA-256 of every
 consumed TCD/DLT tile. A source-separated world-data bundle therefore pins the

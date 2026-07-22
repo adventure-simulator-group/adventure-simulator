@@ -38,15 +38,23 @@ class ForestCoverInitializerTests(unittest.TestCase):
             ):
                 self.assertEqual(module.credentials(path), ("environment", "secret"))
 
-    def test_default_plan_covers_northern_germany(self):
+    def test_default_plan_covers_playable_area_source_envelope(self):
         with tempfile.TemporaryDirectory() as directory:
             env = Path(directory) / ".env"
-            env.write_text("COPERNICUS_CLIENT_ID=x\nCOPERNICUS_CLIENT_SECRET=y\n")
+            client_id = "credential-client-id-marker"
+            client_secret = "credential-client-secret-marker"
+            env.write_text(
+                f"COPERNICUS_CLIENT_ID={client_id}\n"
+                f"COPERNICUS_CLIENT_SECRET={client_secret}\n"
+            )
             result = module.plan(env, Path(directory) / "forest", module.DEFAULT_BOUNDS)
-            self.assertEqual(result["degree_tiles"], 66)
-            self.assertEqual(result["prepared_files"], 132)
+            self.assertEqual(result["bounds"], [8, 50, 12, 53])
+            self.assertEqual(result["degree_tiles"], 12)
+            self.assertEqual(result["prepared_files"], 24)
             self.assertEqual(result["credential_preflight"], "present (values redacted)")
-            self.assertNotIn("x", json.dumps(result))
+            serialized = json.dumps(result)
+            self.assertNotIn(client_id, serialized)
+            self.assertNotIn(client_secret, serialized)
 
     def test_tile_names_are_importer_compatible(self):
         self.assertEqual(module.tile_key(53, 9), "N53_E009")

@@ -20,15 +20,27 @@ pub struct Features {
 pub fn build(
     elevation_dir: &Path,
     forest_dir: &Path,
-    bounds: [i16; 4],
+    bounds: [f64; 4],
     manifest_path: &Path,
     pack_path: &Path,
     features: &Features,
 ) -> crate::Result<Manifest> {
+    let [west, south, east, north] = bounds;
+    if !bounds.into_iter().all(f64::is_finite) || west >= east || south >= north {
+        return Err(crate::Error::Validation(
+            "invalid terrain build bounds".into(),
+        ));
+    }
+    let source_bounds = [
+        west.floor() as i16,
+        south.floor() as i16,
+        east.ceil() as i16,
+        north.ceil() as i16,
+    ];
     let mut entries = Vec::new();
     let mut pack = Vec::new();
-    for south in bounds[1]..bounds[3] {
-        for west in bounds[0]..bounds[2] {
+    for south in source_bounds[1]..source_bounds[3] {
+        for west in source_bounds[0]..source_bounds[2] {
             let path = elevation_path(elevation_dir, south, west)?;
             let (width, height, elevations, synthetic_water) = if path.is_file() {
                 let mut decoder = Decoder::new(BufReader::new(File::open(&path)?))
@@ -79,6 +91,19 @@ pub fn build(
                         (width - chunk_x * u32::from(CHUNK_SIDE)).min(u32::from(CHUNK_SIDE));
                     let chunk_height =
                         (height - chunk_y * u32::from(CHUNK_SIDE)).min(u32::from(CHUNK_SIDE));
+                    if !chunk_intersects_bounds(
+                        south,
+                        west,
+                        width,
+                        height,
+                        chunk_x,
+                        chunk_y,
+                        chunk_width,
+                        chunk_height,
+                        bounds,
+                    ) {
+                        continue;
+                    }
                     let mut decoded =
                         Vec::with_capacity(chunk_width as usize * chunk_height as usize * 5);
                     for local_y in 0..chunk_height {
@@ -148,7 +173,7 @@ pub fn build(
     let content_sha256 = hex_sha(&pack);
     let mut manifest = Manifest {
         schema: SCHEMA,
-        bounds: bounds.map(f64::from),
+        bounds,
         source_resolution_m: 30,
         content_sha256,
         entries,
@@ -166,6 +191,51 @@ pub fn build(
     fs::write(pack_path, pack)?;
     fs::write(manifest_path, json)?;
     Ok(manifest)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn chunk_intersects_bounds(
+    south: i16,
+    west: i16,
+    tile_width: u32,
+    tile_height: u32,
+    chunk_x: u32,
+    chunk_y: u32,
+    chunk_width: u32,
+    chunk_height: u32,
+    bounds: [f64; 4],
+) -> bool {
+    let x = chunk_x * u32::from(CHUNK_SIDE);
+    let y = chunk_y * u32::from(CHUNK_SIDE);
+    let chunk_bounds = [
+        f64::from(west) + f64::from(x) / f64::from(tile_width),
+        f64::from(south + 1) - f64::from(y + chunk_height) / f64::from(tile_height),
+        f64::from(west) + f64::from(x + chunk_width) / f64::from(tile_width),
+        f64::from(south + 1) - f64::from(y) / f64::from(tile_height),
+    ];
+    chunk_bounds[2] > bounds[0]
+        && chunk_bounds[0] < bounds[2]
+        && chunk_bounds[3] > bounds[1]
+        && chunk_bounds[1] < bounds[3]
+}
+
+#[cfg(test)]
+mod bounds_tests {
+    use super::*;
+
+    #[test]
+    fn only_chunks_intersecting_exact_bounds_are_emitted() {
+        let bounds = [8.965, 50.877, 11.110, 52.211];
+        assert!(!chunk_intersects_bounds(
+            50, 8, 3_600, 3_600, 0, 0, 256, 256, bounds
+        ));
+        assert!(chunk_intersects_bounds(
+            50, 8, 3_600, 3_600, 13, 0, 256, 256, bounds
+        ));
+        assert!(!chunk_intersects_bounds(
+            52, 11, 3_600, 3_600, 0, 4, 256, 256, bounds
+        ));
+    }
 }
 
 fn native_cell_is_hilly(

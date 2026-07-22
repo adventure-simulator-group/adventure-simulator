@@ -77,8 +77,22 @@ struct Args {
 }
 
 fn main() -> ExitCode {
-    match run(Args::parse()) {
-        Ok(()) => ExitCode::SUCCESS,
+    let args = Args::parse();
+    let result = std::thread::Builder::new()
+        .name("world-import".into())
+        .stack_size(32 * 1024 * 1024)
+        .spawn(move || run(args))
+        .and_then(|thread| {
+            thread
+                .join()
+                .map_err(|_| std::io::Error::other("world importer worker thread panicked"))
+        });
+    match result {
+        Ok(Ok(())) => ExitCode::SUCCESS,
+        Ok(Err(error)) => {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        }
         Err(error) => {
             eprintln!("error: {error}");
             ExitCode::FAILURE
@@ -95,6 +109,7 @@ fn run(args: Args) -> Result<()> {
     }
     let world = WorldBuilder::new(args.year)
         .with_spatial_grid(SpatialGridSpec::new(args.grid_cell_size_meters))
+        .with_playable_bounds()
         .build_from_sources(
             &args.viabundus_dir,
             &args.elevation_dir,

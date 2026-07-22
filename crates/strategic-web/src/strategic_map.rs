@@ -30,7 +30,7 @@ pub(crate) const TILE_PATH_PREFIX: &str = "/map/tiles/";
 pub(crate) const DATA_LICENSE_PATH: &str = "/map/data-license";
 const DATA_LICENSE: &str = include_str!("../../../MAP_DATA_LICENSE.md");
 const PACKAGE_SCHEMA: u32 = 3;
-const RENDERER_REVISION: u32 = 7;
+const RENDERER_REVISION: u32 = 8;
 const MIN_TILE_SIZE: u32 = 64;
 const MAX_TILE_SIZE: u32 = 2_048;
 const MAX_TILE_ENTRIES: usize = 100_000;
@@ -349,6 +349,24 @@ fn has_geographic_quest(quest: &Quest) -> bool {
         && quest.location_coord_y.is_finite()
 }
 
+fn has_geographic_source_in_bounds(settlement: &Settlement, bounds: [f64; 4]) -> bool {
+    has_geographic_source(settlement)
+        && adventuresim_world_schema::coordinates_in_bounds(
+            settlement.coord_x,
+            settlement.coord_y,
+            bounds,
+        )
+}
+
+fn has_geographic_quest_in_bounds(quest: &Quest, bounds: [f64; 4]) -> bool {
+    has_geographic_quest(quest)
+        && adventuresim_world_schema::coordinates_in_bounds(
+            quest.location_coord_x,
+            quest.location_coord_y,
+            bounds,
+        )
+}
+
 fn settlement_symbol_kind(category: &SettlementCategory) -> &'static str {
     match category {
         SettlementCategory::City | SettlementCategory::Capital => "city",
@@ -393,24 +411,25 @@ pub fn strategic_map(
     terrain_route: Option<&adventuresim_terrain::RoutePlan>,
 ) -> Markup {
     let package = &map.package;
-    let current = settlements
-        .iter()
-        .find(|settlement| settlement.id == current_id);
+    let current = settlements.iter().find(|settlement| {
+        settlement.id == current_id && has_geographic_source_in_bounds(settlement, package.bounds)
+    });
     let (origin_x, origin_y) = current.map_or((WIDTH / 2.0, HEIGHT / 2.0), |settlement| {
         project(settlement.coord_x, settlement.coord_y, package.bounds)
     });
     let settlement_destination = selected_id
         .and_then(|selected_id| {
             settlements.iter().find(|settlement| {
-                settlement.id == selected_id && has_geographic_source(settlement)
+                settlement.id == selected_id
+                    && has_geographic_source_in_bounds(settlement, package.bounds)
             })
         })
         .map(|settlement| project(settlement.coord_x, settlement.coord_y, package.bounds));
     let quest_destination = selected_id
         .and_then(|selected_id| {
-            quests
-                .iter()
-                .find(|quest| quest.id == selected_id && has_geographic_quest(quest))
+            quests.iter().find(|quest| {
+                quest.id == selected_id && has_geographic_quest_in_bounds(quest, package.bounds)
+            })
         })
         .map(|quest| {
             project(
@@ -479,7 +498,7 @@ pub fn strategic_map(
                                 x1=(format!("{origin_x:.3}")) y1=(format!("{origin_y:.3}"))
                                 x2=(format!("{destination_x:.3}")) y2=(format!("{destination_y:.3}")) {}
                         }
-                        @for settlement in settlements.iter().filter(|settlement| has_geographic_source(settlement)) {
+                        @for settlement in settlements.iter().filter(|settlement| has_geographic_source_in_bounds(settlement, package.bounds)) {
                             @let (x, y) = project(settlement.coord_x, settlement.coord_y, package.bounds);
                             @let is_current = settlement.id == current_id;
                             @let is_connected = connected_ids.contains(settlement.id.as_str());
@@ -511,7 +530,7 @@ pub fn strategic_map(
                                 }
                             }
                         }
-                        @for quest in quests.iter().filter(|quest| has_geographic_quest(quest)) {
+                        @for quest in quests.iter().filter(|quest| has_geographic_quest_in_bounds(quest, package.bounds)) {
                             @let (x, y) = project(quest.location_coord_x, quest.location_coord_y, package.bounds);
                             @let is_selected = selected_id == Some(quest.id.as_str());
                             @let is_active = quest.status != QuestStatus::Available;
@@ -541,7 +560,7 @@ pub fn strategic_map(
                         // Settlement symbols take pointer priority when a generated quest happens
                         // to overlap them. The visible/accessibility link remains above; this
                         // transparent duplicate is mouse-only and is rendered last in SVG order.
-                        @for settlement in settlements.iter().filter(|settlement| has_geographic_source(settlement)) {
+                        @for settlement in settlements.iter().filter(|settlement| has_geographic_source_in_bounds(settlement, package.bounds)) {
                             @let (x, y) = project(settlement.coord_x, settlement.coord_y, package.bounds);
                             a href=(format!("{map_path}?destination={}", settlement.id))
                                 class="map-settlement-hit-link" aria-hidden="true" tabindex="-1" {
@@ -776,6 +795,7 @@ mod tests {
             settlement("origin", "Origin", 10.0, 53.0),
             settlement("near", "Nearby", 11.0, 53.2),
             settlement("far", "Far away", 20.0, 60.0),
+            settlement("outside", "Outside package", 40.0, 80.0),
             source_less,
         ];
         let connected = BTreeSet::from(["near"]);
@@ -799,6 +819,7 @@ mod tests {
         assert!(markup.contains("?destination=near"));
         assert!(markup.contains("Nearby, direct route available"));
         assert!(markup.contains("Far away, no direct route"));
+        assert!(!markup.contains("Outside package"));
         assert!(!markup.contains("?destination=demo"));
         assert!(!markup.contains("role=\"img\""));
         assert!(markup.contains("aria-current=\"true\""));

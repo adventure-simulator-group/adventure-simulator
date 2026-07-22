@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import struct
 import tempfile
 import time
@@ -31,7 +32,7 @@ FORMAT = "adventuresim-copernicus-forest-2018-v1"
 SOURCE = "clms-forest-2018"
 VERSION = "2018"
 PIXELS = 1_000
-DEFAULT_BOUNDS = (5, 50, 16, 56)
+DEFAULT_BOUNDS = (8, 50, 12, 53)
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 MAX_TOTAL_BYTES = 512 * 1024 * 1024
 ATTEMPTS = 6
@@ -451,6 +452,15 @@ def prepare(output: Path, env_file: Path, bounds: tuple[int, int, int, int]) -> 
                         continue
                     except RuntimeError:
                         destination.unlink(missing_ok=True)
+                existing = output / destination.name
+                if existing.is_file():
+                    try:
+                        validate_tiff(existing, latitude, longitude)
+                        shutil.copy2(existing, destination)
+                        complete += 1
+                        continue
+                    except RuntimeError:
+                        pass
                 print(f"[{complete + 1}/{len(names)}] {destination.name}", flush=True)
                 download_tiff(provider, kind, latitude, longitude, destination)
                 complete += 1

@@ -283,7 +283,7 @@ slopes and multi-scale relief, and reduces every available prepared forest tile
 into bounded canopy-density and leaf-type regions. Missing forest tiles remain absent and their coverage is
 reported as partial; they do not block map generation. The command clips and
 simplifies presentation geometry, renders a Paper AVIF pyramid through zoom
-level 7 (native detail at 5–16°E, 50–56°N), concatenates the independently addressable images into one pack,
+level 3 (approximately 25 m/pixel native detail within the exact 8.965–11.110°E, 50.877–52.211°N playable bounds), concatenates the independently addressable images into one pack,
 and embeds a digest
 over every presentation-affecting package field. The
 versioned filename is stable rather than content-addressed. Legacy Viabundus
@@ -353,7 +353,7 @@ bundle, set `STRATEGIC_MAP_PREVIEW_PNG` to an output path and run the focused
 `representative_paper_tile_has_deterministic_png_preview_hook` test with the
 `strategic-map-renderer` feature.
 
-The deployment manifest is schema 3 with renderer revision 7. It contains only
+The deployment manifest is schema 3 with renderer revision 8. It contains only
 bounds, attribution/source metadata, coverage counts, the tile index, and
 content digests; source roads, water rings, elevation cells/contours, and
 forest regions stay in the offline compiler and are not shipped to
@@ -408,7 +408,7 @@ Every source has `plan-*`, `init-*`, and `verify-*` targets. EU-Trees4F is an
 automated anonymous immutable download (`tree-species`); it is size/hash
 checked and atomically published. Copernicus forest uses the dedicated
 `scripts/init_forest_cover.py` workflow: it reads redacted Sentinel Hub OAuth
-credentials from `.env`, prepares the official 2018 TCD/DLT northern-Germany
+credentials from `.env`, prepares the official 2018 TCD/DLT playable-area
 coverage, resumes interrupted requests, and atomically publishes an exact
 size/SHA-256 inventory. Religion is a validation-only workflow and never
 mirrors the rights-reserved IEG images. GLO-30 (`glo30`) and EU-Hydro
@@ -432,8 +432,8 @@ The stacked compiler requires them; override that directory with
 `--land-use-dir`.
 
 Initialize the paired Copernicus TCD/DLT one-degree GeoTIFFs documented in
-`docs/FOREST_COVER.md` with `just init-forest-cover`. The default 66-tile
-northern-Germany set is written under
+`docs/FOREST_COVER.md` with `just init-forest-cover`. The default 12-tile
+playable-area set is written under
 `target/world-data-sources/raw/forest-cover/`; the world compiler can override
 that directory with `--forest-cover-dir`.
 

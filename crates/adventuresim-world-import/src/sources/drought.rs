@@ -282,6 +282,7 @@ pub fn derive_profiles(
         viabundus_directory,
         year,
         adventuresim_world_schema::SpatialGridSpec::default(),
+        None,
     )?;
     let mut profiles = Vec::with_capacity(draft.settlements.len());
     for settlement in draft.settlements {
@@ -1014,6 +1015,7 @@ mod tests {
             Path::new(&viabundus),
             1544,
             adventuresim_world_schema::SpatialGridSpec::default(),
+            None,
         )
         .unwrap();
         let mut direct = 0;

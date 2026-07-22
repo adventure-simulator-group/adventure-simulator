@@ -16,6 +16,15 @@ production NPC rows or persist tactical state.
 
 ## Offline world compilation
 
+The MVP playable area is the exact EPSG:4326 box
+`[8.965, 50.877, 11.110, 52.211]`. The shared world-schema constant is the
+authority for canonical import, map clipping, terrain lookup, and routing.
+Viabundus topology is filtered before environmental enrichment: settlements
+and edge endpoints outside the box are not canonical world records. Raster
+readers may consume the smallest enclosing whole-degree source cells
+`[8, 50, 12, 53]`, but generated manifests and runtime access retain the exact
+decimal boundary.
+
 Raw historical and geographic datasets are compiled outside SpacetimeDB by the
 native `adventuresim-world-import` crate. Each upstream format has an isolated
 source module; the outer builder combines them into a validated canonical
