@@ -500,7 +500,7 @@ mod tests {
             ActivityTrainingProfile::default(),
         );
         assert!((skills.cooking - 3.0).abs() < 0.001);
-        assert_eq!(skills.charisma, 0.0);
+        assert_eq!(skills.command, 0.0);
     }
 
     fn item(melee: bool, ranged: bool, shield: bool, balance: f32) -> EquippedCombatItem {

@@ -250,6 +250,10 @@ pub fn routes() -> Router<AppState> {
             post(update_training_schedule),
         )
         .route(
+            "/locations/{kind}/{id}/party/{character_id}/activity",
+            post(perform_immediate_activity),
+        )
+        .route(
             "/locations/{kind}/{id}/party/{character_id}/religion/renounce",
             post(renounce_religion),
         )
@@ -2597,6 +2601,13 @@ async fn party_personal(
         ))
         .await
         .unwrap_or_default();
+    let apprenticeships: Vec<crate::spacetimedb::CharacterApprenticeship> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM character_apprenticeship WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default();
     let capability = get_character_capability(&state, character_id).await;
     let combat_profile = get_combat_training_profile(&state, character_id).await;
     let can_examine = get_character_capability(&state, active_character.id)
@@ -2625,7 +2636,8 @@ async fn party_personal(
         capability.as_ref(),
         settlement.as_ref(),
         stats.as_ref(),
-    );
+    )
+    .with_professions(skills.first(), &apprenticeships);
     let condition = get_strategic_condition(&state, character_id).await;
     let morale_sources = get_morale_sources(&state, character_id).await;
     let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
@@ -2954,6 +2966,81 @@ async fn update_training_schedule(
             tracing::warn!(%error, character_id, "failed to update training schedule");
             (StatusCode::BAD_REQUEST, error.to_string()).into_response()
         }
+    }
+}
+
+#[derive(Deserialize)]
+struct ImmediateActivityForm {
+    activity: String,
+    requested_minutes: u64,
+    #[serde(default)]
+    service_id: Option<String>,
+}
+
+fn immediate_activity_arg(activity: &str) -> Option<serde_json::Value> {
+    let tag = match activity {
+        "prayer" => "prayer",
+        "combat_training" => "combatTraining",
+        "carousing" => "carousing",
+        "apprenticeship" => "apprenticeship",
+        "profession_practice" => "professionPractice",
+        "labor" => "labor",
+        "thievery" => "thievery",
+        "raiding" => "raiding",
+        _ => return None,
+    };
+    Some(json!({ (tag): {} }))
+}
+
+async fn perform_immediate_activity(
+    State(state): State<AppState>,
+    Path((kind, id, character_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
+    session: Session,
+    Form(form): Form<ImmediateActivityForm>,
+) -> Response {
+    if session.character_id_u64() != Some(character_id) {
+        return (
+            StatusCode::FORBIDDEN,
+            "Select this character before performing an activity",
+        )
+            .into_response();
+    }
+    let Some(activity) = immediate_activity_arg(&form.activity) else {
+        return (StatusCode::BAD_REQUEST, "Unknown activity").into_response();
+    };
+    if form.requested_minutes < 60
+        || form.requested_minutes > 1_440
+        || form.requested_minutes % 60 != 0
+    {
+        return (StatusCode::BAD_REQUEST, "Choose one to 24 whole hours").into_response();
+    }
+    let service_id = form.service_id.filter(|value| !value.is_empty());
+    match state
+        .db
+        .call(
+            "perform_immediate_activity",
+            &[
+                json!(character_id),
+                activity,
+                json!(form.requested_minutes),
+                json!(service_id),
+            ],
+        )
+        .await
+    {
+        Ok(()) => {
+            if let Some((character, _)) = get_active_character(&state, Some(character_id)).await
+                && let Some(quest_id) = character.current_quest_location_id
+            {
+                return Redirect::to(&format!("/locations/quest/{quest_id}")).into_response();
+            }
+            Redirect::to(
+                &building.append_to(format!("/locations/{kind}/{id}/party/{character_id}")),
+            )
+            .into_response()
+        }
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     }
 }
 

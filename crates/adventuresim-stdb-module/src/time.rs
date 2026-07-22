@@ -74,6 +74,21 @@ pub struct ScheduleAllocation {
     pub raiding_minutes: u16,
 }
 
+/// An explicit settlement activity selected by the player.  Profession
+/// variants use the separate `service_id` reducer argument so this remains a
+/// small, stable discriminator in generated clients.
+#[derive(Clone, Copy, Debug, SpacetimeType)]
+pub enum ImmediateActivity {
+    Prayer,
+    CombatTraining,
+    Carousing,
+    Apprenticeship,
+    ProfessionPractice,
+    Labor,
+    Thievery,
+    Raiding,
+}
+
 /// Daily settlement plan. The empty travel allocation is retained temporarily
 /// for database/client compatibility; travel never applies it.
 #[derive(Clone, Debug)]
@@ -713,6 +728,41 @@ fn apply_activity_outcomes(
     elapsed: u64,
     interval_end_minute: u64,
 ) -> Result<ActivityRisks, String> {
+    apply_activity_outcomes_inner(
+        ctx,
+        character_id,
+        schedule,
+        elapsed,
+        interval_end_minute,
+        true,
+    )
+}
+
+fn apply_activity_outcomes_without_leisure(
+    ctx: &ReducerContext,
+    character_id: u64,
+    schedule: &ScheduleAllocation,
+    elapsed: u64,
+    interval_end_minute: u64,
+) -> Result<ActivityRisks, String> {
+    apply_activity_outcomes_inner(
+        ctx,
+        character_id,
+        schedule,
+        elapsed,
+        interval_end_minute,
+        false,
+    )
+}
+
+fn apply_activity_outcomes_inner(
+    ctx: &ReducerContext,
+    character_id: u64,
+    schedule: &ScheduleAllocation,
+    elapsed: u64,
+    interval_end_minute: u64,
+    apply_leisure: bool,
+) -> Result<ActivityRisks, String> {
     let character = ctx
         .db
         .character()
@@ -839,17 +889,146 @@ fn apply_activity_outcomes(
             .character_id()
             .update(notoriety);
     }
-    crate::condition::apply_settlement_leisure_condition(
-        ctx,
-        character_id,
-        core_schedule(schedule),
-        elapsed,
-        interval_end_minute,
-    )?;
+    if apply_leisure {
+        crate::condition::apply_settlement_leisure_condition(
+            ctx,
+            character_id,
+            core_schedule(schedule),
+            elapsed,
+            interval_end_minute,
+        )?;
+    }
     Ok(ActivityRisks {
         thievery_discovery: outcome.thievery_discovery_chance,
         raiding_retaliation: outcome.raiding_retaliation_chance,
     })
+}
+
+fn immediate_activity_schedule(
+    activity: ImmediateActivity,
+    minutes: u16,
+    service_id: Option<&str>,
+) -> ScheduleAllocation {
+    let mut schedule = ScheduleAllocation::default();
+    match activity {
+        ImmediateActivity::Prayer => schedule.prayer_minutes = minutes,
+        ImmediateActivity::CombatTraining => schedule.combat_training_minutes = minutes,
+        ImmediateActivity::Carousing => schedule.carousing_minutes = minutes,
+        ImmediateActivity::Apprenticeship => {
+            schedule.apprenticeship_minutes = minutes;
+            schedule.apprenticeship_service_id = service_id.map(str::to_owned);
+        }
+        ImmediateActivity::ProfessionPractice => {
+            schedule.profession_practice_minutes = minutes;
+            schedule.profession_service_id = service_id.map(str::to_owned);
+        }
+        ImmediateActivity::Labor => schedule.labor_minutes = minutes,
+        ImmediateActivity::Thievery => schedule.thievery_minutes = minutes,
+        ImmediateActivity::Raiding => schedule.raiding_minutes = minutes,
+    }
+    schedule
+}
+
+/// Perform one selected activity continuously. Unlike settlement rest this
+/// neither convalesces, repairs, washes, heals, supplies an inn, nor consults
+/// or mutates the saved daily plan.
+#[reducer]
+pub fn perform_immediate_activity(
+    ctx: &ReducerContext,
+    character_id: u64,
+    activity: ImmediateActivity,
+    requested_minutes: u64,
+    service_id: Option<&str>,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    if character.current_settlement_id.is_none() {
+        return Err("Activities may only be performed at a settlement".into());
+    }
+    if !(60..=MINUTES_PER_DAY).contains(&requested_minutes) || requested_minutes % 60 != 0 {
+        return Err("Activity duration must use whole hours from one to 24 hours".into());
+    }
+    ensure_character_time(ctx, character_id)?;
+    let _ = refresh_clock(ctx)?;
+    let minutes = u16::try_from(requested_minutes).map_err(|_| "Activity duration is too long")?;
+    let schedule = immediate_activity_schedule(activity, minutes, service_id);
+    validate_profession_schedule(ctx, character_id, &schedule)?;
+
+    let mut character_time = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character time record not found")?;
+    let injury_limit =
+        crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested_minutes, false)?;
+    let (elapsed, terminal) =
+        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, false)?;
+    let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, false)?;
+    let elapsed = settled.elapsed;
+    character_time.minutes = character_time
+        .minutes
+        .checked_add(elapsed)
+        .ok_or("Character clock overflow")?;
+    let interval_end = character_time.minutes;
+    ctx.db
+        .character_time()
+        .character_id()
+        .update(character_time);
+    crate::social::settle_shared_party_time(ctx, character_id);
+    crate::condition::apply_elapsed_needs(ctx, character_id, elapsed)?;
+    crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    if terminal.is_some() || !settled.alive {
+        return Ok(());
+    }
+
+    // The activity allocation describes this one interval directly. Applying
+    // it over one canonical day makes both linear and saturating effects use
+    // the selected number of minutes, while the personal clock advances only
+    // by the actual interval (which may have been clipped by an incident).
+    let effective_minutes = u16::try_from(elapsed.min(requested_minutes)).unwrap_or(minutes);
+    let effective_schedule = immediate_activity_schedule(activity, effective_minutes, service_id);
+    let mut skills = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character skills not found")?;
+    let profile = activity_training_profile(ctx, character_id)?;
+    apply_training(
+        ctx,
+        character_id,
+        &mut skills,
+        &effective_schedule,
+        MINUTES_PER_DAY,
+        profile,
+    );
+    ctx.db.character_skills().character_id().update(skills);
+    let risks = apply_activity_outcomes_without_leisure(
+        ctx,
+        character_id,
+        &effective_schedule,
+        MINUTES_PER_DAY,
+        interval_end,
+    )?;
+    if matches!(activity, ImmediateActivity::Prayer) {
+        crate::condition::record_immediate_prayer_morale(ctx, character_id, effective_minutes)?;
+    }
+    if matches!(activity, ImmediateActivity::Labor) {
+        let mut stats = ctx
+            .db
+            .character_stats()
+            .character_id()
+            .find(character_id)
+            .ok_or("Character stats not found")?;
+        stats.calories_used += f32::from(effective_minutes) / 60.0
+            * adventuresim_core::strategic_schedule::LABOR_FATIGUE_PER_HOUR;
+        ctx.db.character_stats().character_id().update(stats);
+    }
+    crate::strategic::maybe_trigger_activity_incident(ctx, character_id, risks)?;
+    crate::capability::refresh_character_capability(ctx, character_id)?;
+    crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
+    Ok(())
 }
 
 const ACTIVITY_MINUTE_SCALE: u64 = MINUTES_PER_DAY;
@@ -1659,6 +1838,21 @@ pub fn update_training_schedule(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn immediate_activity_schedule_contains_only_the_selected_interval() {
+        let schedule = immediate_activity_schedule(
+            ImmediateActivity::ProfessionPractice,
+            180,
+            Some("weapons"),
+        );
+        assert_eq!(schedule.profession_practice_minutes, 180);
+        assert_eq!(schedule.profession_service_id.as_deref(), Some("weapons"));
+        assert_eq!(schedule.allocated_minutes(), 180);
+        let prayer = immediate_activity_schedule(ImmediateActivity::Prayer, 60, None);
+        assert_eq!(prayer.prayer_minutes, 60);
+        assert_eq!(prayer.allocated_minutes(), 60);
+    }
 
     #[test]
     fn activity_training_uses_the_daily_minute_allocation() {

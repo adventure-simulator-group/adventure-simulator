@@ -1509,6 +1509,40 @@ body:has(.settlement-top-bar) .main-grid .settlement-card:hover {
 
 .rest-wake-time input[type="range"]:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 3px; }
 
+.schedule-activity-button {
+  display: grid;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  place-items: center;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.schedule-activity-button:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }
+.schedule-activity-button:hover .schedule-special-icon { filter: brightness(1.25); }
+body.activity-modal-open { overflow: hidden; }
+.activity-modal { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 1rem; }
+.activity-modal[hidden] { display: none; }
+.activity-modal-backdrop { position: absolute; inset: 0; width: 100%; border: 0; background: rgb(0 0 0 / 70%); cursor: default; }
+.activity-modal-panel {
+  position: relative;
+  width: min(34rem, 100%);
+  padding: 1rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  background: var(--background, #171717);
+  box-shadow: 0 1rem 3rem rgb(0 0 0 / 65%);
+}
+.activity-modal-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.activity-modal-header h3 { margin: 0; }
+.activity-modal-close { border: 0; background: transparent; color: var(--text-primary); font-size: 1.5rem; cursor: pointer; }
+.activity-duration-control { display: grid; gap: 0.45rem; margin-block: 1rem; }
+.activity-duration-control input[type="range"] { width: 100%; accent-color: var(--accent); }
+.activity-duration-summary { display: flex; justify-content: space-between; margin: 0; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.activity-preview-table { width: 100%; margin-bottom: 1rem; }
+.activity-submit { width: 100%; padding: 0.55rem; cursor: pointer; }
+
 .rest-consumable-indicators {
   display: flex;
   justify-content: center;

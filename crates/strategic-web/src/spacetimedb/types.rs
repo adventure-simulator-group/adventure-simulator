@@ -993,6 +993,17 @@ pub struct CharacterTime {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterApprenticeship {
+    pub id: u64,
+    pub character_id: u64,
+    pub service_id: String,
+    pub religion_id: Option<String>,
+    pub started_minute: u64,
+    pub apprenticeship_minutes_accrued: u64,
+    pub practice_minutes_accrued: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AlcoholConsumption {
     pub id: String,
     pub character_id: u64,
