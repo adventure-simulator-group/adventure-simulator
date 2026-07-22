@@ -150,6 +150,8 @@ test("food disclosure stays beside its label and reveals every concrete food row
   assert.equal(label.textContent, "Food");
   assert.equal(label.nextElementSibling, toggle);
   assert.equal(toggle.getAttribute("aria-expanded"), "false");
+  assert.equal(parent.querySelector(".inventory-weight").textContent, "1.50");
+  assert.equal(parent.querySelector(".inventory-gold").textContent, "10");
   assert.deepEqual(components.map((row) => row.querySelector("[data-item-name]").textContent), ["Rye bread", "Raw venison"]);
   assert.ok(components.every((row) => row.hidden));
 
@@ -173,6 +175,22 @@ test("merchant Alcohol parent does not present aggregate stock as one unit", () 
   const parent = browser.querySelector(".alcohol-parent-row");
   assert.equal(parent.querySelector(".inventory-weight").textContent, "—");
   assert.equal(parent.querySelector(".inventory-gold").textContent, "—");
+});
+
+test("merchant Food parent does not total infinite catalog stock", () => {
+  const { document, browser } = fixture();
+  browser.querySelectorAll('[data-item-kind="food"], [data-food-lot="true"]').forEach((label) => {
+    label.closest("tr").dataset.groupSummary = "catalog";
+  });
+  delete require.cache[require.resolve("../static/inventory-browser.js")];
+  const inventory = require("../static/inventory-browser.js");
+  inventory.mountAll(document);
+
+  const parent = browser.querySelector(".food-parent-row");
+  assert.equal(parent.querySelector(".inventory-weight").textContent, "—");
+  assert.equal(parent.querySelector(".inventory-weight").dataset.sortValue, "");
+  assert.equal(parent.querySelector(".inventory-gold").textContent, "—");
+  assert.equal(parent.querySelector(".inventory-gold").dataset.sortValue, "");
 });
 
 test("aggregate Coin one, all, and target actions route coherently to component rows", () => {

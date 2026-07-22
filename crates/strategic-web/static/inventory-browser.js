@@ -396,8 +396,18 @@
     const weight = parent.querySelector(".inventory-weight");
     const value = parent.querySelector(".inventory-gold");
     if (count) count.textContent = String(total);
-    if (weight) { weight.textContent = totalWeight.toFixed(2).replace(/\.00$/, ""); weight.dataset.sortValue = String(totalWeight); }
-    if (value) { value.textContent = String(totalValue); value.dataset.sortValue = String(totalValue); }
+    const showsQuantity = !components.every((row) => row.dataset.groupSummary === "catalog");
+    if (count && !showsQuantity) {
+      count.hidden = true;
+      count.setAttribute("hidden", "");
+    }
+    if (showsQuantity) {
+      if (weight) { weight.textContent = totalWeight.toFixed(2).replace(/\.00$/, ""); weight.dataset.sortValue = String(totalWeight); }
+      if (value) { value.textContent = String(totalValue); value.dataset.sortValue = String(totalValue); }
+    } else {
+      if (weight) { weight.textContent = "—"; weight.dataset.sortValue = ""; }
+      if (value) { value.textContent = "—"; value.dataset.sortValue = ""; }
+    }
     const nameCell = parent.querySelector(".inventory-item-name");
     if (nameCell) {
       const toggle = document.createElement("button");
