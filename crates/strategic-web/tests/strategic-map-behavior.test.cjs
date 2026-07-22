@@ -74,6 +74,24 @@ test("keyboard pan and reset change only the SVG viewBox", () => {
   assert.equal(svg.getAttribute("viewBox"), "100.00 100.00 400.00 200.00");
 });
 
+test("visible controls zoom and reset through the shared camera", () => {
+  const { document, helpers } = load();
+  document.body.innerHTML = `<section data-strategic-map>
+    <button data-map-action="zoom-in"></button><button data-map-action="zoom-out"></button><button data-map-action="reset"></button>
+    <svg data-map-svg viewBox="100 100 400 200"></svg>
+  </section>`;
+  const map = document.querySelector("section");
+  helpers.initializeMap(map);
+  const svg = map.querySelector("svg");
+  map.querySelector('[data-map-action="zoom-in"]').click();
+  assert.equal(svg.getAttribute("viewBox"), "140.00 120.00 320.00 160.00");
+  map.querySelector('[data-map-action="zoom-out"]').click();
+  assert.equal(svg.getAttribute("viewBox"), "100.00 100.00 400.00 200.00");
+  map.querySelector('[data-map-action="zoom-in"]').click();
+  map.querySelector('[data-map-action="reset"]').click();
+  assert.equal(svg.getAttribute("viewBox"), "100.00 100.00 400.00 200.00");
+});
+
 test("pin symbols retain their screen size while zooming and resetting", () => {
   const { document, helpers } = load();
   document.body.innerHTML = `<section data-strategic-map><svg data-map-svg viewBox="100 100 195 130"><g data-map-pin-symbol></g></svg></section>`;
@@ -92,7 +110,7 @@ test("pin symbols retain their screen size while zooming and resetting", () => {
   assert.equal(symbol.getAttribute("transform"), "scale(0.50000)");
 });
 
-test("two-pointer pinch zooms without visible controls", () => {
+test("two-pointer pinch remains available independently of visible controls", () => {
   const { document, helpers } = load();
   document.body.innerHTML = `<section data-strategic-map><svg data-map-svg viewBox="100 100 400 200"></svg></section>`;
   const map = document.querySelector("section");

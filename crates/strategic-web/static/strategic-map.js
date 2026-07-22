@@ -227,6 +227,14 @@
     if (globalThis.ResizeObserver) new ResizeObserver(resize).observe(svg);
     else globalThis.addEventListener?.("resize", resize);
     const zoom = (factor) => updateView(zoomedView(parseViewBox(svg), factor));
+    map.querySelectorAll("[data-map-action]").forEach((control) => {
+      control.addEventListener("click", () => {
+        if (control.dataset.mapAction === "zoom-in") zoom(0.8);
+        else if (control.dataset.mapAction === "zoom-out") zoom(1.25);
+        else if (control.dataset.mapAction === "reset") updateView(initial);
+        svg.focus?.({ preventScroll: true });
+      });
+    });
     svg.addEventListener("wheel", (event) => { event.preventDefault(); zoom(event.deltaY < 0 ? 0.85 : 1.18); }, { passive: false });
     svg.addEventListener("keydown", (event) => {
       const [, , width, height] = parseViewBox(svg);

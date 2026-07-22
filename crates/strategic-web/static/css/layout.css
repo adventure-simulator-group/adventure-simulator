@@ -612,6 +612,7 @@
 }
 
 .settlement-services .nav-tab:hover { filter: brightness(1.12); }
+.settlement-services .nav-tab:focus-visible { z-index: 5; outline: 2px solid var(--accent-light); outline-offset: 2px; }
 .settlement-services .nav-tab.active {
   color: var(--text-primary);
   background: color-mix(in srgb, var(--building-tint) var(--building-light, 78%), black);
@@ -1203,11 +1204,11 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
     order: 3;
     width: 100%;
     gap: 0.62rem;
-    padding: 0.75rem 0.5rem 0.35rem;
+    padding: 0.75rem 0.5rem 0.65rem;
     overflow-x: auto;
     overflow-y: hidden;
     justify-content: flex-start;
-    padding-bottom: 0.35rem;
+    padding-bottom: 0.65rem;
     scrollbar-width: thin;
     mask-image: linear-gradient(to right, transparent, #000 0.75rem, #000 calc(100% - 0.75rem), transparent);
   }

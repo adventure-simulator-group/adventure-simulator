@@ -156,9 +156,9 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/base.css?v=environment-14";
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=subtle-material-lines-1-dialogue-source-icons-2";
+                link rel="stylesheet" href="/static/css/layout.css?v=strategic-ux-review-1";
                 link rel="stylesheet" href="/static/css/components.css?v=lowercase-display-type-1";
-                link rel="stylesheet" href="/static/css/strategic.css?v=strategic-ui-overhaul-4-paper-map-2-data-license-1-grouped-alcohol-2-grouped-food-1-rest-supplies-1-dialogue-pane-1-cooking-trade-1";
+                link rel="stylesheet" href="/static/css/strategic.css?v=strategic-ux-review-1";
                 link rel="stylesheet" href="/static/css/utilities.css?v=strategic-ui-overhaul-1";
 
                 // Datastar
@@ -186,7 +186,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}
                     script src="/static/building-state.js?v=village-building-tabs-1" defer {}
                     script src="/static/travel-planner.js?v=travel-polish-6" defer {}
-                    script src="/static/strategic-map.js?v=responsive-map-viewport-1" defer {}
+                    script src="/static/strategic-map.js?v=map-controls-environment-1" defer {}
                     script src="/static/rest-duration.js?v=wake-time-3" defer {}
                 }
             }
@@ -277,7 +277,7 @@ fn settlement_top_bar(
                         data-service-id=(path)
                         data-service-label=(label)
                         aria-label=(label)
-                        title=(label)
+                        data-strategic-tooltip=(label)
                         aria-current=(if active_service == path { "page" } else { "false" })
                     {
                         span class="service-tab-building" aria-hidden="true" {}
@@ -306,7 +306,7 @@ fn settlement_top_bar(
                 }
             }
         }
-        script src="/static/strategic-time.js?v=wake-time-1" {}
+        script src="/static/strategic-time.js?v=continuous-environment-1" {}
     }
 }
 
@@ -344,7 +344,7 @@ fn quest_location_top_bar(
                     span class="nav-tab active quest-context-tab"
                         style=(format!("--building-tint:{enemy_tint}"))
                         data-location-view="camp"
-                        aria-current="page" aria-label="Camp" title="Camp" {
+                        aria-current="page" aria-label="Camp" data-strategic-tooltip="Camp" {
                         span class="service-tab-building wilderness-tab-prop" aria-hidden="true" {}
                         span class="topbar-scene-effect-plane" aria-hidden="true" {
                             @if camp_fire_lit {
@@ -359,7 +359,7 @@ fn quest_location_top_bar(
                     style=(format!("--building-tint:{map_tint}"))
                     data-location-view="map"
                     aria-current=(if active_tab == "map" { "page" } else { "false" })
-                    aria-label="Map" title="Map" {
+                    aria-label="Map" data-strategic-tooltip="Map" {
                     span class="service-tab-building wilderness-tab-prop" aria-hidden="true" {}
                 }
                 a href=(format!("/locations/quest/{}/enemy", location_id))
@@ -367,7 +367,7 @@ fn quest_location_top_bar(
                     style=(format!("--building-tint:{enemy_tint}"))
                     data-location-view="enemy"
                     aria-current=(if active_tab == "enemy" { "page" } else { "false" })
-                    aria-label="Enemy" title="Enemy" {
+                    aria-label="Enemy" data-strategic-tooltip="Enemy" {
                     span class="service-tab-building wilderness-tab-prop" aria-hidden="true" {}
                     span class="service-tab-icon service-tab-icon-enemy" aria-hidden="true" {}
                 }
@@ -379,7 +379,7 @@ fn quest_location_top_bar(
                 }
             }
         }
-        script src="/static/strategic-time.js?v=client-clock-2" {}
+        script src="/static/strategic-time.js?v=continuous-environment-1" {}
     }
 }
 
