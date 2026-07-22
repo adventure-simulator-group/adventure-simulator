@@ -5196,41 +5196,54 @@ fn chat_area(
                 aria-valuenow="184" tabindex="0" title="Drag to resize chat" {
                 span aria-hidden="true" {}
             }
-            div class="settlement-chat-filters" role="group" aria-label="Visible chat channels" {
-                @for (channel, label, abbreviation) in [
-                    ("local", "Local", "L"),
-                    ("party", "Party", "P"),
-                    ("settlement", "Settlement", "S"),
-                    ("dm", "DMs", "D"),
-                    ("guild", "Guild", "G"),
-                    ("info", "Info", "I"),
-                ] {
-                    label class=(format!("chat-channel-filter chat-channel-filter-{channel}")) title=(label) {
-                        input type="checkbox" checked data-chat-filter=(channel)
-                            aria-label=(label) title=(label);
-                        span aria-hidden="true" { (abbreviation) }
+            div class="settlement-chat-layout" {
+                div class="settlement-chat-conversation" {
+                    div class="settlement-chat-filters" role="group" aria-label="Visible chat channels" {
+                        @for (channel, label, abbreviation) in [
+                            ("local", "Local", "L"),
+                            ("party", "Party", "P"),
+                            ("settlement", "Settlement", "S"),
+                            ("dm", "DMs", "D"),
+                            ("guild", "Guild", "G"),
+                            ("info", "Info", "I"),
+                        ] {
+                            label class=(format!("chat-channel-filter chat-channel-filter-{channel}")) title=(label) {
+                                input type="checkbox" checked data-chat-filter=(channel)
+                                    aria-label=(label) title=(label);
+                                span aria-hidden="true" { (abbreviation) }
+                            }
+                        }
+                    }
+                    div class="settlement-chat-messages" aria-live="polite" {
+                        @if local_context.is_none() { div class="chat-system-message" data-chat-channel="info" {
+                            span class="chat-timestamp" { "[--:--] " }
+                            " Select a local character or settlement service to begin talking."
+                        } }
+                        @for message in info_messages {
+                            div class="chat-system-message" data-chat-channel="info" {
+                                span class="chat-timestamp" { "[--:--] " }
+                                (message)
+                            }
+                        }
+                    }
+                    div class="settlement-chat-composer" {
+                        div class="settlement-chat-input-shell" {
+                            span class="settlement-chat-completion" data-dialogue-completion aria-hidden="true" {}
+                            input type="text" name="body" disabled[local_context.is_none()]
+                                aria-label="Local message"
+                                autocomplete="off"
+                                placeholder=(format!("Message {location} (Local)"));
+                        }
+                        button type="button" class="btn btn-primary btn-icon" disabled[local_context.is_none()]
+                            aria-label="Send message" {
+                            (decorative_game_icon("plain-arrow"))
+                        }
                     }
                 }
-            }
-            div class="settlement-chat-messages" aria-live="polite" {
-                @if local_context.is_none() { div class="chat-system-message" data-chat-channel="info" {
-                    span class="chat-timestamp" { "[--:--] " }
-                    " Select a local character or settlement service to begin talking."
-                } }
-                @for message in info_messages {
-                    div class="chat-system-message" data-chat-channel="info" {
-                        span class="chat-timestamp" { "[--:--] " }
-                        (message)
-                    }
-                }
-            }
-            div class="settlement-chat-composer" {
-                input type="text" name="body" disabled[local_context.is_none()]
-                    aria-label="Local message"
-                    placeholder=(format!("Message {location} (Local)"));
-                button type="button" class="btn btn-primary btn-icon" disabled[local_context.is_none()]
-                    aria-label="Send message" {
-                    (decorative_game_icon("plain-arrow"))
+                aside class="settlement-chat-topics" data-dialogue-topic-pane hidden
+                    aria-label="Dialogue topics" {
+                    h3 { "Topics" }
+                    ul data-dialogue-topic-list {}
                 }
             }
         }
@@ -7128,6 +7141,11 @@ mod tests {
         }
         assert!(markup.contains("data-chat-channel=\"info\""));
         assert!(!markup.contains("chat-channel-badge"));
+        assert!(markup.contains("class=\"settlement-chat-layout\""));
+        assert!(markup.contains("data-dialogue-topic-pane"));
+        assert!(markup.contains("data-dialogue-topic-list"));
+        assert!(markup.contains("data-dialogue-completion"));
+        assert!(markup.contains("autocomplete=\"off\""));
         for label in ["Local", "Party", "Settlement", "DMs", "Guild", "Info"] {
             assert!(markup.contains(&format!("aria-label=\"{label}\" title=\"{label}\"")));
             assert!(!markup.contains(&format!(">{label}</")));

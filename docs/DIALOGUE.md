@@ -47,6 +47,16 @@ revisions, topic eligibility, and stable choice IDs. Synthetic service actors
 (`<settlement>:<service>`) remain a temporary NPC identity boundary. Free-form
 `local_chat_message` remains an independent stream.
 
+The web conversation surface keeps known eligible topics in a pane on the
+right side of the chat itself. The transcript and shared composer occupy the
+left side. Clicking an inline or listed topic remains supported; keyboard users
+can instead type a topic label and press Enter. A unique label prefix appears
+as grey inline completion and Tab accepts it. While a prompt is open, the same
+composer matches its choices instead of topics. Multi-select answers use
+comma-separated choice labels. Text that does not exactly match the active
+dialogue topics or choices continues through the independent free-form chat
+stream.
+
 ## Developer mode and source editing
 
 The hammer button immediately left of the character portrait toggles developer
