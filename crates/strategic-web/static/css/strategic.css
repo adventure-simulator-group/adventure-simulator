@@ -1396,7 +1396,7 @@ body:has(.settlement-top-bar) .main-grid .settlement-card:hover {
   height: 0.55rem;
   border: 1px solid rgb(255 255 255 / 38%);
   border-radius: 999px;
-  background: linear-gradient(90deg, #02040c 0%, #080c1d 18%, #ed7a3f 27%, #4ba6e6 38%, #59b9f4 54%, #4a9fdd 68%, #e87339 77%, #090b16 86%, #02040c 100%);
+  background: linear-gradient(90deg, #14223a 0 25%, #c98255 25% 33.333%, #d9b95f 33.333% 75%, #b96850 75% 83.333%, #14223a 83.333% 100%);
   box-shadow: inset 0 1px 2px rgb(0 0 0 / 45%);
 }
 
@@ -1404,7 +1404,7 @@ body:has(.settlement-top-bar) .main-grid .settlement-card:hover {
   height: 0.55rem;
   border: 1px solid rgb(255 255 255 / 38%);
   border-radius: 999px;
-  background: linear-gradient(90deg, #02040c 0%, #080c1d 18%, #ed7a3f 27%, #4ba6e6 38%, #59b9f4 54%, #4a9fdd 68%, #e87339 77%, #090b16 86%, #02040c 100%);
+  background: linear-gradient(90deg, #14223a 0 25%, #c98255 25% 33.333%, #d9b95f 33.333% 75%, #b96850 75% 83.333%, #14223a 83.333% 100%);
   box-shadow: inset 0 1px 2px rgb(0 0 0 / 45%);
 }
 
@@ -1429,6 +1429,25 @@ body:has(.settlement-top-bar) .main-grid .settlement-card:hover {
 }
 
 .rest-wake-time input[type="range"]:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 3px; }
+
+.rest-consumable-indicators {
+  display: flex;
+  justify-content: center;
+  gap: 0.55rem;
+  margin-top: 0.55rem;
+}
+
+.rest-consumable-indicator {
+  display: grid;
+  width: 1.45rem;
+  height: 1.45rem;
+  place-items: center;
+  color: #fff;
+}
+
+.rest-consumable-indicator.unavailable { color: #737373; }
+.rest-consumable-indicator .game-icon { width: 1.15rem; height: 1.15rem; }
+.rest-consumable-indicator:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }
 
 .inventory-trade-row {
   overflow: visible;

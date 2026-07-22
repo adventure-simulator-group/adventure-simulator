@@ -1432,24 +1432,51 @@ pub struct SoapRestPreview {
     pub total_units: u32,
     pub personal_units: u32,
     pub shared_units: u32,
+    pub available_units: u32,
+    pub alcohol_available: bool,
+    pub alcohol_will_be_consumed: bool,
 }
 
 fn soap_wash_preview(preview: SoapRestPreview) -> Markup {
+    let soap_tooltip = if preview.total_units > 0 {
+        let source = if preview.personal_units > 0 && preview.shared_units > 0 {
+            format!(
+                " ({} personal, {} shared)",
+                preview.personal_units, preview.shared_units
+            )
+        } else if preview.shared_units > 0 {
+            " (shared)".to_string()
+        } else {
+            " (personal)".to_string()
+        };
+        format!(
+            "Washing before rest will use {} soft soap{}. Soap is also a surgical supply.",
+            preview.total_units, source
+        )
+    } else if preview.available_units > 0 {
+        "Soft soap is available, but none is needed for washing before this rest. Soap is also a surgical supply."
+            .to_string()
+    } else {
+        "No soft soap is available for washing before rest. Soap is also a surgical supply."
+            .to_string()
+    };
+    let alcohol_tooltip = if preview.alcohol_will_be_consumed {
+        "Alcohol is available and will be consumed automatically during nightly rest."
+    } else if preview.alcohol_available {
+        "Alcohol is available, but no eligible character will drink it. Temperate characters do not drink."
+    } else {
+        "No alcohol is available for automatic consumption during nightly rest."
+    };
     html! {
-        @if preview.total_units > 0 {
-            p class="text-muted small-copy rest-soap-preview" {
-                "Washing before rest will use " (preview.total_units) " soft soap"
-                @if preview.personal_units > 0 && preview.shared_units > 0 {
-                    " (" (preview.personal_units) " personal, " (preview.shared_units) " shared)"
-                } @else if preview.shared_units > 0 {
-                    " (shared)"
-                } @else {
-                    " (personal)"
-                }
-                ". Soap is also a surgical supply."
+        div class="rest-consumable-indicators" aria-label="Automatic rest supplies" {
+            span class=(if preview.available_units > 0 { "rest-consumable-indicator available" } else { "rest-consumable-indicator unavailable" })
+                role="img" tabindex="0" aria-label="Soap" title=(soap_tooltip) {
+                (decorative_game_icon("water-drop"))
             }
-        } @else {
-            p class="text-muted small-copy rest-soap-preview" { "No soap will be used for washing." }
+            span class=(if preview.alcohol_will_be_consumed { "rest-consumable-indicator available" } else { "rest-consumable-indicator unavailable" })
+                role="img" tabindex="0" aria-label="Alcohol" title=(alcohol_tooltip) {
+                (decorative_game_icon("beer-stein"))
+            }
         }
     }
 }
@@ -5429,6 +5456,27 @@ mod tests {
         assert!(markup.contains("aria-label=\"Wake time\""));
         assert!(markup.contains("aria-valuetext=\"08:00\""));
         assert!(markup.contains("name=\"requested_minutes\""));
+    }
+
+    #[test]
+    fn rest_supplies_are_icons_with_hover_only_details() {
+        let markup = soap_wash_preview(SoapRestPreview {
+            total_units: 1,
+            personal_units: 1,
+            available_units: 1,
+            alcohol_available: true,
+            alcohol_will_be_consumed: false,
+            ..SoapRestPreview::default()
+        })
+        .into_string();
+        assert!(markup.contains("aria-label=\"Soap\""));
+        assert!(markup.contains("aria-label=\"Alcohol\""));
+        assert!(markup.contains("water-drop.svg"));
+        assert!(markup.contains("beer-stein.svg"));
+        assert!(markup.contains("rest-consumable-indicator available"));
+        assert!(markup.contains("rest-consumable-indicator unavailable"));
+        assert!(!markup.contains("rest-soap-preview"));
+        assert!(markup.contains("Temperate characters do not drink"));
     }
 
     #[test]
