@@ -282,6 +282,7 @@ pub mod party_item_condition_table;
 pub mod party_item_condition_type;
 pub mod party_join_request_table;
 pub mod party_join_request_type;
+pub mod party_journey_encounter_authority_type;
 pub mod party_journey_itinerary_table;
 pub mod party_journey_itinerary_type;
 pub mod party_journey_route_table;
@@ -335,6 +336,7 @@ pub mod request_tactical_server_for_scene_reducer;
 pub mod request_tactical_server_reducer;
 pub mod request_to_join_party_reducer;
 pub mod resolve_religious_demand_reducer;
+pub mod resolve_strategic_encounter_reducer;
 pub mod resolved_party_action_type;
 pub mod rest_at_camp_reducer;
 pub mod rest_at_settlement_hours_reducer;
@@ -419,6 +421,9 @@ pub mod start_dialogue_reducer;
 pub mod stone_content_percent_type;
 pub mod store_battle_loot_reducer;
 pub mod strahler_order_type;
+pub mod strategic_encounter_loss_type;
+pub mod strategic_encounter_table;
+pub mod strategic_encounter_type;
 pub mod strategic_gateway_authority_table;
 pub mod strategic_gateway_authority_type;
 pub mod strategic_incident_table;
@@ -749,6 +754,7 @@ pub use party_item_condition_table::*;
 pub use party_item_condition_type::PartyItemCondition;
 pub use party_join_request_table::*;
 pub use party_join_request_type::PartyJoinRequest;
+pub use party_journey_encounter_authority_type::PartyJourneyEncounterAuthority;
 pub use party_journey_itinerary_table::*;
 pub use party_journey_itinerary_type::PartyJourneyItinerary;
 pub use party_journey_route_table::*;
@@ -802,6 +808,7 @@ pub use request_tactical_server_for_scene_reducer::request_tactical_server_for_s
 pub use request_tactical_server_reducer::request_tactical_server;
 pub use request_to_join_party_reducer::request_to_join_party;
 pub use resolve_religious_demand_reducer::resolve_religious_demand;
+pub use resolve_strategic_encounter_reducer::resolve_strategic_encounter;
 pub use resolved_party_action_type::ResolvedPartyAction;
 pub use rest_at_camp_reducer::rest_at_camp;
 pub use rest_at_settlement_hours_reducer::rest_at_settlement_hours;
@@ -886,6 +893,9 @@ pub use start_dialogue_reducer::start_dialogue;
 pub use stone_content_percent_type::StoneContentPercent;
 pub use store_battle_loot_reducer::store_battle_loot;
 pub use strahler_order_type::StrahlerOrder;
+pub use strategic_encounter_loss_type::StrategicEncounterLoss;
+pub use strategic_encounter_table::*;
+pub use strategic_encounter_type::StrategicEncounter;
 pub use strategic_gateway_authority_table::*;
 pub use strategic_gateway_authority_type::StrategicGatewayAuthority;
 pub use strategic_incident_table::*;
@@ -1265,6 +1275,10 @@ pub enum Reducer {
         demand_id: u64,
         choice: String,
     },
+    ResolveStrategicEncounter {
+        character_id: u64,
+        choice: String,
+    },
     RestAtCamp {
         character_id: u64,
         requested_minutes: u64,
@@ -1524,6 +1538,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::RequestTacticalServerForScene { .. } => "request_tactical_server_for_scene",
             Reducer::RequestToJoinParty { .. } => "request_to_join_party",
             Reducer::ResolveReligiousDemand { .. } => "resolve_religious_demand",
+            Reducer::ResolveStrategicEncounter { .. } => "resolve_strategic_encounter",
             Reducer::RestAtCamp { .. } => "rest_at_camp",
             Reducer::RestAtSettlement { .. } => "rest_at_settlement",
             Reducer::RestAtSettlementHours { .. } => "rest_at_settlement_hours",
@@ -2130,6 +2145,13 @@ Reducer::CancelMissionRequest{
                 demand_id: demand_id.clone(),
                 choice: choice.clone(),
 }),
+            Reducer::ResolveStrategicEncounter{
+                character_id,
+                choice,
+}             => __sats::bsatn::to_vec(&resolve_strategic_encounter_reducer::ResolveStrategicEncounterArgs {
+                character_id: character_id.clone(),
+                choice: choice.clone(),
+}),
             Reducer::RestAtCamp{
                 character_id,
                 requested_minutes,
@@ -2519,6 +2541,7 @@ pub struct DbUpdate {
     settlement_smith: __sdk::TableUpdate<SettlementSmith>,
     simulation_character: __sdk::TableUpdate<SimulationCharacter>,
     simulation_run: __sdk::TableUpdate<SimulationRun>,
+    strategic_encounter: __sdk::TableUpdate<StrategicEncounter>,
     strategic_gateway_authority: __sdk::TableUpdate<StrategicGatewayAuthority>,
     strategic_incident: __sdk::TableUpdate<StrategicIncident>,
     tactical_server: __sdk::TableUpdate<TacticalServer>,
@@ -2758,6 +2781,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "simulation_run" => db_update
                     .simulation_run
                     .append(simulation_run_table::parse_table_update(table_update)?),
+                "strategic_encounter" => db_update
+                    .strategic_encounter
+                    .append(strategic_encounter_table::parse_table_update(table_update)?),
                 "strategic_gateway_authority" => db_update.strategic_gateway_authority.append(
                     strategic_gateway_authority_table::parse_table_update(table_update)?,
                 ),
@@ -3090,6 +3116,12 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.simulation_run = cache
             .apply_diff_to_table::<SimulationRun>("simulation_run", &self.simulation_run)
             .with_updates_by_pk(|row| &row.id);
+        diff.strategic_encounter = cache
+            .apply_diff_to_table::<StrategicEncounter>(
+                "strategic_encounter",
+                &self.strategic_encounter,
+            )
+            .with_updates_by_pk(|row| &row.party_id);
         diff.strategic_gateway_authority = cache
             .apply_diff_to_table::<StrategicGatewayAuthority>(
                 "strategic_gateway_authority",
@@ -3379,6 +3411,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "simulation_run" => db_update
                     .simulation_run
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "strategic_encounter" => db_update
+                    .strategic_encounter
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "strategic_gateway_authority" => db_update
                     .strategic_gateway_authority
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -3635,6 +3670,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "simulation_run" => db_update
                     .simulation_run
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "strategic_encounter" => db_update
+                    .strategic_encounter
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "strategic_gateway_authority" => db_update
                     .strategic_gateway_authority
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -3747,6 +3785,7 @@ pub struct AppliedDiff<'r> {
     settlement_smith: __sdk::TableAppliedDiff<'r, SettlementSmith>,
     simulation_character: __sdk::TableAppliedDiff<'r, SimulationCharacter>,
     simulation_run: __sdk::TableAppliedDiff<'r, SimulationRun>,
+    strategic_encounter: __sdk::TableAppliedDiff<'r, StrategicEncounter>,
     strategic_gateway_authority: __sdk::TableAppliedDiff<'r, StrategicGatewayAuthority>,
     strategic_incident: __sdk::TableAppliedDiff<'r, StrategicIncident>,
     tactical_server: __sdk::TableAppliedDiff<'r, TacticalServer>,
@@ -4099,6 +4138,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<SimulationRun>(
             "simulation_run",
             &self.simulation_run,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<StrategicEncounter>(
+            "strategic_encounter",
+            &self.strategic_encounter,
             event,
         );
         callbacks.invoke_table_row_callbacks::<StrategicGatewayAuthority>(
@@ -4862,6 +4906,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         settlement_smith_table::register_table(client_cache);
         simulation_character_table::register_table(client_cache);
         simulation_run_table::register_table(client_cache);
+        strategic_encounter_table::register_table(client_cache);
         strategic_gateway_authority_table::register_table(client_cache);
         strategic_incident_table::register_table(client_cache);
         tactical_server_table::register_table(client_cache);
@@ -4945,6 +4990,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "settlement_smith",
         "simulation_character",
         "simulation_run",
+        "strategic_encounter",
         "strategic_gateway_authority",
         "strategic_incident",
         "tactical_server",

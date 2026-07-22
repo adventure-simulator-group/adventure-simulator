@@ -37,6 +37,7 @@ use crate::spacetimedb::{
     Party, PartyInventoryItem, PartyJourney, PartyJourneyItinerary, PartyJourneyRoute,
     ProjectileKind, Quest, QuestStatus, RetainedProjectile, ScheduleAllocation, Settlement,
     SettlementAlias, SettlementCategory, SettlementDescription, SettlementDescriptionKind,
+    StrategicEncounter,
 };
 
 #[derive(Clone, Debug)]
@@ -1425,6 +1426,7 @@ pub fn camp_page(
     soap_preview: SoapRestPreview,
     planned_wake_minute: u16,
     can_continue_travel: bool,
+    encounter: Option<&StrategicEncounter>,
     logged_in_as: Option<&str>,
 ) -> Markup {
     let camp_fire_lit = camp_fire_is_lit(journey, itinerary);
@@ -1455,16 +1457,18 @@ pub fn camp_page(
                 }))
             }
             }
-            section class="rest-service-menu camp-rest-menu" aria-label="Camp rest" {
-                (party_rest_menu(
-                    "/camp/rest",
-                    "camp-rest",
-                    "Rest at camp",
-                    "Rest party",
-                    default_rest_minutes,
-                    Some(planned_wake_minute),
-                    soap_preview,
-                ))
+            @if encounter.is_none_or(|encounter| encounter.status != "awaiting_choice") {
+                section class="rest-service-menu camp-rest-menu" aria-label="Camp rest" {
+                    (party_rest_menu(
+                        "/camp/rest",
+                        "camp-rest",
+                        "Rest at camp",
+                        "Rest party",
+                        default_rest_minutes,
+                        Some(planned_wake_minute),
+                        soap_preview,
+                    ))
+                }
             }
         }
         main class="center-content settlement-main settlement-overview" {
@@ -1473,6 +1477,9 @@ pub fn camp_page(
             (settlement_chat_area("Camp", active_character))
         }
         aside class="right-sidebar camp-journey-sidebar" {
+            @if let Some(encounter) = encounter.filter(|encounter| encounter.status == "awaiting_choice") {
+                (strategic_encounter_panel(encounter))
+            }
             div class="sidebar-section camp-journey-section" {
                 h3 class="sidebar-header" { "Journey" }
                 div class="travel-planner-vertical" {
@@ -1498,6 +1505,59 @@ pub fn camp_page(
         content,
         logged_in_as,
     )
+}
+
+fn strategic_encounter_panel(encounter: &StrategicEncounter) -> Markup {
+    let awareness = match (encounter.party_aware, encounter.enemy_aware) {
+        (true, false) => "Your party spotted them first",
+        (false, true) => "The enemy surprised your party",
+        (true, true) => "Both sides are aware",
+        (false, false) => "Neither side is aware",
+    };
+    html! {
+        section class="sidebar-section strategic-encounter" aria-label="Random encounter" {
+            h3 class="sidebar-header" { "Encounter" }
+            p class="encounter-summary" {
+                strong { (encounter.enemy_count) " " (encounter.archetype.as_str()) }
+                " on " (encounter.terrain.as_str())
+            }
+            p { (awareness) }
+            p class="text-muted small-copy" { (encounter.selection_explanation.as_str()) }
+            @if let Some(reason) = encounter.run_ineligibility.as_deref() {
+                p class="encounter-warning" { "Cannot run: " (reason) }
+            }
+            @if !encounter.loss_preview.is_empty() {
+                details class="encounter-surrender-preview" {
+                    summary { "Exact surrender losses" }
+                    ul {
+                        @for loss in &encounter.loss_preview {
+                            li {
+                                (loss.quantity) " × " (loss.item_id.as_str())
+                                " (" (loss.value_each) " value each, " (loss.owner_kind.as_str()) ")"
+                            }
+                        }
+                    }
+                }
+            }
+            div class="encounter-actions" {
+                @for choice in &encounter.available_choices {
+                    form action="/camp/encounter" method="post" {
+                        input type="hidden" name="choice" value=(choice);
+                        button type="submit" class="btn btn-primary btn-small btn-block" {
+                            (match choice.as_str() {
+                                "sneak" => "Sneak past",
+                                "detour" => "Take a detour",
+                                "attack" => "Attack",
+                                "run" => "Run",
+                                "surrender" => "Surrender",
+                                _ => choice.as_str(),
+                            })
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn format_persisted_terrain_spans(route: Option<&PartyJourneyRoute>) -> String {
@@ -5996,13 +6056,57 @@ mod tests {
         encumbrance_meter, filth_status_bar, format_rest_duration, live_merchant_shop_page,
         merchant_inventory_sell_price, merchant_inventory_weight, need_balance_meter,
         repair_custody_panel, repair_submit_control, rest_default_minutes,
-        settlement_rest_duration_control, strategic_condition_rail,
+        settlement_rest_duration_control, strategic_condition_rail, strategic_encounter_panel,
     };
     use crate::spacetimedb::{
         CharacterFilth, CharacterStrategicCondition, FilthOrigin, FilthSubstance, FoodLot,
-        FoodPreparation, ItemKind,
+        FoodPreparation, ItemKind, StrategicEncounter, StrategicEncounterLoss,
     };
     use adventuresim_core::equipment::EncumbranceSummary;
+
+    #[test]
+    fn encounter_panel_renders_only_authoritative_choices_and_exact_losses() {
+        let encounter = StrategicEncounter {
+            party_id: "party".into(),
+            encounter_id: "party:3".into(),
+            archetype: "bandits".into(),
+            enemy_count: 4,
+            roll_index: 3,
+            journey_movement_minute: 540,
+            journey_elapsed_minute: 700,
+            absolute_minute: 1_700,
+            longitude_e7: 1,
+            latitude_e7: 2,
+            terrain: "road".into(),
+            party_aware: false,
+            enemy_aware: true,
+            available_choices: vec!["attack".into(), "surrender".into()],
+            status: "awaiting_choice".into(),
+            selected_choice: None,
+            selection_explanation: "deterministic awareness".into(),
+            party_speed_m_per_minute: 60,
+            enemy_speed_m_per_minute: 80,
+            run_ineligibility: Some("too slow".into()),
+            penalty_minutes: 0,
+            loss_preview: vec![StrategicEncounterLoss {
+                owner_kind: "member".into(),
+                owner_id: 7,
+                inventory_id: 8,
+                item_id: "gold_coin".into(),
+                quantity: 12,
+                value_each: 1,
+            }],
+            outcome: None,
+        };
+        let rendered = strategic_encounter_panel(&encounter).into_string();
+        assert!(rendered.contains("The enemy surprised your party"));
+        assert!(rendered.contains("Cannot run: too slow"));
+        assert!(rendered.contains("12 × gold_coin"));
+        assert!(rendered.contains("value=\"attack\""));
+        assert!(rendered.contains("value=\"surrender\""));
+        assert!(!rendered.contains("value=\"run\""));
+        assert!(!rendered.contains("value=\"sneak\""));
+    }
 
     #[test]
     fn merchant_food_quote_and_weight_follow_remaining_lot() {
@@ -6137,7 +6241,7 @@ mod tests {
             command_hours: 40.0,
             deception_hours: 20.0,
             seduction_hours: 10.0,
-            ..Default::default()
+            ..CharacterSkills::default()
         };
         let markup = social_skill_rows(&skills, 1.0, None).into_string();
         assert!(markup.contains("data-social-primary"));

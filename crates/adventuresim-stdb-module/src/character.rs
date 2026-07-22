@@ -1125,6 +1125,7 @@ pub fn equip_item(
     inventory_item_id: u64,
     destination: ItemSlot,
 ) -> Result<(), String> {
+    crate::strategic::require_character_no_unresolved_encounter(ctx, character_id)?;
     require_living_character(ctx, character_id)?;
     let inventory = ctx
         .db

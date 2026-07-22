@@ -110,7 +110,7 @@ use crate::spacetimedb::{
     PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, Quest, QuestIssuer,
     QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder, RetainedProjectile,
     ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription, SettlementSmith,
-    SocialBelief, TravelEdge,
+    SocialBelief, StrategicEncounter, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
@@ -150,6 +150,7 @@ pub fn routes() -> Router<AppState> {
             post(update_camp_travel_configuration),
         )
         .route("/camp/continue", post(continue_camp_travel))
+        .route("/camp/encounter", post(resolve_camp_encounter))
         .route("/camp/destination/{id}", post(change_camp_destination))
         .route(
             "/api/settlements/{id}/service-quests",
@@ -1473,6 +1474,15 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
         .await
         .ok()
         .flatten();
+    let encounter = state
+        .db
+        .query_one::<StrategicEncounter>(&format!(
+            "SELECT * FROM strategic_encounter WHERE party_id = {}",
+            sql_string_literal(&party.id)
+        ))
+        .await
+        .ok()
+        .flatten();
     let stats: Vec<CharacterStats> = state
         .db
         .query("SELECT * FROM character_stats")
@@ -1493,11 +1503,14 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
     .max(1);
     let planned_wake_minute =
         (current_party_minute.saturating_add(default_rest_minutes) % 1_440) as u16;
-    let can_continue_travel = is_walking_time(
-        current_party_minute,
-        party.walking_minutes_per_day,
-        party.travel_at_night,
-    );
+    let can_continue_travel = encounter
+        .as_ref()
+        .is_none_or(|encounter| encounter.status != "awaiting_choice")
+        && is_walking_time(
+            current_party_minute,
+            party.walking_minutes_per_day,
+            party.travel_at_night,
+        );
     let remaining_journey_minutes = journey
         .as_ref()
         .map_or(party.camp_remaining_minutes, |row| {
@@ -1557,11 +1570,38 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
             soap_preview,
             planned_wake_minute,
             can_continue_travel,
+            encounter.as_ref(),
             Some(&character.name),
         )
         .into_string(),
     )
     .into_response()
+}
+
+#[derive(Debug, Deserialize)]
+struct EncounterChoiceForm {
+    choice: String,
+}
+
+async fn resolve_camp_encounter(
+    State(state): State<AppState>,
+    session: Session,
+    Form(form): Form<EncounterChoiceForm>,
+) -> Response {
+    let Some(character_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    match state
+        .db
+        .call(
+            "resolve_strategic_encounter",
+            &[json!(character_id), json!(form.choice)],
+        )
+        .await
+    {
+        Ok(()) => Redirect::to("/camp").into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
 }
 
 async fn camp_settlement_destinations(
