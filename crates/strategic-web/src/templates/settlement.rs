@@ -211,6 +211,7 @@ pub enum MerchantShop {
     Armor,
     Clothing,
     Herbalist,
+    Inn,
 }
 
 pub struct RestSummary {
@@ -230,6 +231,7 @@ impl MerchantShop {
             Self::Armor => "armor",
             Self::Clothing => "clothing",
             Self::Herbalist => "herbalist",
+            Self::Inn => "inn",
         }
     }
 
@@ -240,10 +242,12 @@ impl MerchantShop {
             Self::Armor => "Armourer",
             Self::Clothing => "Tailor",
             Self::Herbalist => "Herbalist",
+            Self::Inn => "The Inn",
         }
     }
 
-    fn stocks(self, kind: crate::spacetimedb::ItemKind) -> bool {
+    fn stocks(self, item: &crate::spacetimedb::ItemDefinition) -> bool {
+        let kind = item.kind;
         match self {
             Self::General => !matches!(
                 kind,
@@ -261,11 +265,18 @@ impl MerchantShop {
                 kind,
                 crate::spacetimedb::ItemKind::Ingredient | crate::spacetimedb::ItemKind::Medication
             ),
+            Self::Inn => {
+                adventuresim_core::food::definition(&item.id).is_some()
+                    || matches!(
+                        item.id.as_str(),
+                        "cooking_pan" | "cooking_pot" | "portable_oven"
+                    )
+            }
         }
     }
 
-    fn shows_inventory(self, kind: crate::spacetimedb::ItemKind) -> bool {
-        kind == crate::spacetimedb::ItemKind::Currency || self.stocks(kind)
+    fn shows_inventory(self, item: &crate::spacetimedb::ItemDefinition) -> bool {
+        item.kind == crate::spacetimedb::ItemKind::Currency || self.stocks(item)
     }
 }
 
@@ -1562,44 +1573,6 @@ pub fn merchants_page(
     )
 }
 
-/// Inn interface.
-pub fn inn_page(
-    settlement: &Settlement,
-    active_character: Option<&Character>,
-    inventory: &[InventoryItem],
-    items: &[crate::spacetimedb::ItemDefinition],
-    party_members: &[Character],
-    limbs: Option<&CharacterLimbs>,
-    stats: Option<&CharacterStats>,
-    condition: Option<&CharacterCondition>,
-    field_repair_minutes: u64,
-    smith_wait_minutes: u64,
-    soap_preview: SoapRestPreview,
-    logged_in_as: Option<&str>,
-) -> Markup {
-    service_page(
-        settlement,
-        "inn",
-        "The Inn",
-        "Innkeeper",
-        "Rest, recover, and manage your downtime from the lodging menu.",
-        active_character,
-        inventory,
-        items,
-        party_members,
-        logged_in_as,
-        rest_default_minutes(
-            limbs,
-            stats,
-            condition,
-            field_repair_minutes,
-            smith_wait_minutes,
-        ),
-        None,
-        soap_preview,
-    )
-}
-
 /// Church interface.
 pub fn religion_page(
     settlement: &Settlement,
@@ -1755,14 +1728,6 @@ pub fn party_personal_page(
     }
     let content = html! {
         aside class="left-sidebar" {
-            (sidebar_section("Activities", html! {
-                nav class="character-activity-menu" aria-label="Character activities" {
-                    a class="btn btn-small" data-character-activity="cooking"
-                        href=(format!("{}/party/{}?activity=cooking", location.base_path(), active_character.id)) {
-                        "Cooking"
-                    }
-                }
-            }))
             (party_attributes_rail("Your attributes", attributes, limbs, medical, Some(&format!("{}/party/{}/surgery", location.base_path(), active_character.id)), injuries, projectiles))
             (strategic_condition_rail(condition, morale_sources, filth, &location.preserve_building(format!("{}/party/{}/social", location.base_path(), active_character.id))))
             (medical_rail(medical, &location.base_path(), active_character.id, active_character.id, true))
@@ -1818,10 +1783,12 @@ fn cooking_activity_page(
             action=(format!("{}/party/{}/cook", location.base_path(), active_character.id)) {
             aside class="left-sidebar cooking-methods" aria-label="Cooking instrument" {
                 (sidebar_section("Cooking instrument", html! {
-                    (cooking_method("pan-fry", "Pan-fry", pan, "A pan is required", false))
-                    (cooking_method("stew", "Stew", pot, "A pot and water are required", false))
-                    (cooking_method("roast", "Roast / skewer", true, "", true))
-                    (cooking_method("bake", "Bake", oven, "A portable oven is required", false))
+                    div class="cooking-method-list" {
+                        (cooking_method("pan-fry", "Pan-fry", "meal", pan, "A pan is required", false))
+                        (cooking_method("stew", "Stew", "water-bottle", pot, "A pot and water are required", false))
+                        (cooking_method("roast", "Roast / skewer", "campfire", true, "", true))
+                        (cooking_method("bake", "Bake", "bread", oven, "A portable oven is required", false))
+                    }
                 }))
             }
             main class="center-content settlement-main party-member-stage cooking-stage" {
@@ -1861,15 +1828,20 @@ fn cooking_activity_page(
 fn cooking_method(
     value: &str,
     label: &str,
+    icon: &str,
     available: bool,
     reason: &str,
     selected: bool,
 ) -> Markup {
     html! {
-        label class=(if available { "cooking-method" } else { "cooking-method disabled" }) title=[(!available).then_some(reason)] {
+        label class=(if available { "cooking-method" } else { "cooking-method disabled" })
+            title=(if available { label } else { reason }) {
             input type="radio" name="method" value=(value) checked[selected] disabled[!available]
                 data-cooking-method data-unavailable-reason=[(!available).then_some(reason)];
-            span { (label) }
+            span class="cooking-method-icon"
+                style=(format!("--cooking-method-icon: url('/static/icons/game/{icon}.svg')"))
+                aria-hidden="true" {}
+            span class="sr-only" { (label) }
             @if !available { span class="sr-only" { (reason) } }
         }
     }
@@ -2782,6 +2754,8 @@ pub fn live_merchant_shop_page(
     now_minutes: u64,
     personal_encumbrance: EncumbranceSummary,
     party_encumbrance: EncumbranceSummary,
+    rest_default_minutes: Option<u64>,
+    soap_preview: SoapRestPreview,
 ) -> Markup {
     let title = shop.title();
     let service_id = shop.service_id();
@@ -2811,10 +2785,13 @@ pub fn live_merchant_shop_page(
         )
     };
     let content = html! {
-        aside class="left-sidebar smith-wares-column" { (sidebar_section(if matches!(shop, MerchantShop::Herbalist) { "Prepared medicines and ingredients" } else { "Merchant stock" }, html! {
+        aside class=(if matches!(shop, MerchantShop::Inn) { "left-sidebar smith-wares-column service-left-sidebar" } else { "left-sidebar smith-wares-column" }) {
+        div class=(if matches!(shop, MerchantShop::Inn) { "service-left-stack" } else { "merchant-stock-stack" }) {
+        div class=(if matches!(shop, MerchantShop::Inn) { "service-inventory-area" } else { "merchant-stock-area" }) {
+        (sidebar_section(if matches!(shop, MerchantShop::Herbalist) { "Prepared medicines and ingredients" } else if matches!(shop, MerchantShop::Inn) { "Cooking supplies" } else { "Merchant stock" }, html! {
             div class="smith-wares-scroll" {
             (trade_inventory_table("merchant-left", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, false, false, false, html! {
-                @for item in items.iter().filter(|item| shop.stocks(item.kind)) {
+                @for item in items.iter().filter(|item| shop.stocks(item)) {
                     @let is_currency = item.kind == crate::spacetimedb::ItemKind::Currency;
                     @let medication_recipe = adventuresim_core::disease::medication_recipe_for_item(&item.id);
                     @let buy_price = medication_recipe.map_or_else(
@@ -2833,6 +2810,11 @@ pub fn live_merchant_shop_page(
             }
             }
         }))
+        }
+        @if matches!(shop, MerchantShop::Inn) {
+            (rest_service_menu("Inn", &settlement.id, "inn", rest_default_minutes, None, soap_preview))
+        }
+        }
         @if matches!(shop, MerchantShop::Weapons | MerchantShop::Armor | MerchantShop::Clothing) {
             (repair_custody_panel(settlement, shop, repair_orders, conditions, items, now_minutes, smith_skill))
         }
@@ -2849,7 +2831,7 @@ pub fn live_merchant_shop_page(
             div class="sidebar-section" {
                 (encumbrance_inventory_rail(html! {
                 (trade_inventory_table("merchant-player-right", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, true, true, matches!(shop, MerchantShop::Weapons | MerchantShop::Armor | MerchantShop::Clothing), html! {
-                    @for item in inventory.iter().filter(|item| items.iter().find(|definition| definition.id == item.item_id).is_some_and(|definition| shop.shows_inventory(definition.kind))) {
+                    @for item in inventory.iter().filter(|item| items.iter().find(|definition| definition.id == item.item_id).is_some_and(|definition| shop.shows_inventory(definition))) {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         @let food_lot = food_lots.iter().find(|lot| lot.inventory_item_id == Some(item.id));
                         @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
@@ -2866,7 +2848,7 @@ pub fn live_merchant_shop_page(
                         td class="inventory-item-name" { (item_name_with_quality(&item.item_id, definition)) @if !matches!(shop, MerchantShop::Herbalist) && (can_sell || service_matches) { (merchant_sell_repair_controls(item.id, &item.item_id, sell_price, item.qty, target, can_sell, service_matches.then(|| repair_submit_control(settlement, service_id, item.id, condition, repair_skill)))) } }
                         td class="inventory-count" { (quantity_target_control(item.qty, target, &item.item_id, false)) } td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped)) } td class="inventory-durability" { @if durable_item { (condition_bar(condition, service_matches.then_some(repair_skill))) } @else { "—" } } td class="inventory-weight" { (merchant_inventory_weight(definition, food_lot)) } td class="inventory-gold" { (sell_price) }
                     }}
-                    @for target in personal_targets.iter().filter(|target| target.quantity > 0 && !inventory.iter().any(|item| item.item_id == target.item_id) && items.iter().find(|definition| definition.id == target.item_id).is_some_and(|definition| shop.shows_inventory(definition.kind))) {
+                    @for target in personal_targets.iter().filter(|target| target.quantity > 0 && !inventory.iter().any(|item| item.item_id == target.item_id) && items.iter().find(|definition| definition.id == target.item_id).is_some_and(|definition| shop.shows_inventory(definition))) {
                         @let definition = items.iter().find(|definition| definition.id == target.item_id);
                         tr class="trade-inventory-row trade-row-player" data-merchant-item=(&target.item_id) data-inventory-quantity="0" data-target=(target.quantity) {
                             td class="inventory-item-type" { (item_type_icon(&target.item_id)) }
@@ -2886,7 +2868,7 @@ pub fn live_merchant_shop_page(
             div class="sidebar-section" {
                 (encumbrance_inventory_rail(html! {
                 (trade_inventory_table("merchant-party-right", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, true, false, false, html! {
-                    @for item in pooled.iter().filter(|item| items.iter().find(|definition| definition.id == item.item_id).is_some_and(|definition| shop.shows_inventory(definition.kind))) {
+                    @for item in pooled.iter().filter(|item| items.iter().find(|definition| definition.id == item.item_id).is_some_and(|definition| shop.shows_inventory(definition))) {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
                         @let food_lot = food_lots.iter().find(|lot| lot.party_inventory_item_id == Some(item.id));
                         @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
@@ -2913,7 +2895,7 @@ pub fn live_merchant_shop_page(
                             td class="inventory-gold" { (item_value(definition)) }
                         }
                     }
-                    @for target in party_targets.iter().filter(|target| target.quantity > 0 && !pooled.iter().any(|item| item.item_id == target.item_id) && items.iter().find(|definition| definition.id == target.item_id).is_some_and(|definition| shop.shows_inventory(definition.kind))) {
+                    @for target in party_targets.iter().filter(|target| target.quantity > 0 && !pooled.iter().any(|item| item.item_id == target.item_id) && items.iter().find(|definition| definition.id == target.item_id).is_some_and(|definition| shop.shows_inventory(definition))) {
                         @let definition = items.iter().find(|definition| definition.id == target.item_id);
                         tr class="trade-inventory-row trade-row-player" data-merchant-item=(&target.item_id) data-inventory-quantity="0" data-target=(target.quantity) {
                             td class="inventory-item-type" { (item_type_icon(&target.item_id)) }
@@ -3423,7 +3405,7 @@ fn repair_custody_panel(
                 && items
                     .iter()
                     .find(|item| item.id == order.item_id)
-                    .is_some_and(|item| shop.stocks(item.kind))
+                    .is_some_and(|item| shop.stocks(item))
         })
         .collect();
     matching.sort_by_key(|order| (order.submitted_at_minutes, order.id));
@@ -3635,6 +3617,7 @@ fn skills_table(
                     @if skills.will_hours > 0.0 { (party_skill_row("Will", "will", Skill::Will, skills.will_hours, head_health, schedule.is_some())) }
                     (social_skill_rows(skills, head_health, schedule))
                     @if skills.medicine_hours > 0.0 { (party_skill_row("Medicine", "medicine", Skill::Medicine, skills.medicine_hours, head_health, schedule.is_some())) }
+                    (party_skill_row("Cooking", "cooking", Skill::Cooking, skills.cooking_hours, head_health, schedule.is_some()))
                     (religion_skill_rows(skills, head_health, schedule, training_religion))
                     (combat_skill_rows(skills, head_health, upper_health, lower_health, schedule, combat_profile))
                     @if skills.stealth_hours > 0.0 { (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, upper_health, schedule.is_some())) }
@@ -5197,6 +5180,16 @@ pub(crate) fn party_portrait_overlay(
                         }
                         @if member.alive && active_character.is_some_and(|character| character.alive) {
                         span class="party-portrait-actions" aria-label=(format!("Actions for {}", member.name)) {
+                            @if is_active {
+                                a href=(format!("{location_path}/party/{}?cook=true", member.id))
+                                    class="party-portrait-action party-cooking-action"
+                                    title="Cook"
+                                    aria-label="Cook" {
+                                    span class="party-action-icon"
+                                        style="--party-action-icon: url('/static/icons/game/meal.svg')"
+                                        aria-hidden="true" {}
+                                }
+                            }
                             @if is_active && can_examine && location_path.starts_with("/locations/settlement/") {
                                 a href=(format!("{location_path}/alchemy"))
                                     class="party-portrait-action party-alchemy-action"
@@ -5606,7 +5599,7 @@ fn days_to_full_health(limbs: &CharacterLimbs) -> u16 {
     ((1.0 - lowest_health).max(0.0) / 0.05).ceil() as u16
 }
 
-fn rest_default_minutes(
+pub(crate) fn rest_default_minutes(
     limbs: Option<&CharacterLimbs>,
     stats: Option<&CharacterStats>,
     condition: Option<&CharacterCondition>,
@@ -5811,8 +5804,28 @@ mod tests {
 
     #[test]
     fn herbalist_stock_template_includes_every_prepared_course_and_ingredients() {
-        assert!(MerchantShop::Herbalist.stocks(ItemKind::Ingredient));
-        assert!(MerchantShop::Herbalist.stocks(ItemKind::Medication));
+        let ingredient = crate::spacetimedb::ItemDefinition {
+            kind: ItemKind::Ingredient,
+            ..Default::default()
+        };
+        let medication = crate::spacetimedb::ItemDefinition {
+            kind: ItemKind::Medication,
+            ..Default::default()
+        };
+        assert!(MerchantShop::Herbalist.stocks(&ingredient));
+        assert!(MerchantShop::Herbalist.stocks(&medication));
+        let apple = crate::spacetimedb::ItemDefinition {
+            id: "apple".into(),
+            kind: ItemKind::Food,
+            ..Default::default()
+        };
+        let pan = crate::spacetimedb::ItemDefinition {
+            id: "cooking_pan".into(),
+            ..Default::default()
+        };
+        assert!(MerchantShop::Inn.stocks(&apple));
+        assert!(MerchantShop::Inn.stocks(&pan));
+        assert!(!MerchantShop::Inn.stocks(&medication));
         assert_eq!(adventuresim_core::disease::MEDICATION_RECIPES.len(), 8);
         let definition = crate::spacetimedb::ItemDefinition {
             id: "black_death_tonic".into(),
@@ -5939,6 +5952,8 @@ mod tests {
                 0,
                 EncumbranceSummary::new(10.0, 100.0),
                 EncumbranceSummary::new(30.0, 200.0),
+                None,
+                SoapRestPreview::default(),
             )
             .into_string()
         };
@@ -5952,6 +5967,10 @@ mod tests {
         assert!(herbalist.contains(">10.0 / 100.0 kg<"));
         assert!(!herbalist.contains("data-inventory-pane=\"party\""));
         assert!(!herbalist.contains(">30.0 / 200.0 kg<"));
+
+        let inn = render(MerchantShop::Inn);
+        assert!(inn.contains("Cooking supplies"));
+        assert!(inn.contains("aria-label=\"Inn rest service\""));
     }
 
     #[test]
@@ -6472,6 +6491,7 @@ mod tests {
             deception_hours: 0.0,
             seduction_hours: 0.0,
             medicine_hours: 0.0,
+            cooking_hours: 0.0,
             religion_hours: adventuresim_world_schema::ReligionHours {
                 roman_catholic: 1_000.0,
                 ..Default::default()

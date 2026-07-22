@@ -782,6 +782,7 @@ impl PlayerSkills for SimSkills {
             Skill::Deception => self.0.deception,
             Skill::Seduction => self.0.seduction,
             Skill::Medicine => self.0.medicine,
+            Skill::Cooking => self.0.cooking,
             Skill::Religion => self.0.religion.maximum_effective(),
             Skill::Stealth => self.0.stealth,
             Skill::Balance => self.0.balance,

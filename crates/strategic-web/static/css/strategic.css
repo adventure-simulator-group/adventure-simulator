@@ -525,7 +525,6 @@
   color: #000;
 }
 
-.cooking-method,
 .cooking-ingredient-row {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -536,6 +535,42 @@
   background: rgb(18 14 10 / 88%);
   border: 1px solid rgb(215 180 116 / 35%);
   border-radius: .2rem;
+}
+
+.cooking-method-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(2.4rem, 1fr));
+  gap: .4rem;
+}
+
+.cooking-method {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  aspect-ratio: 1;
+  padding: .45rem;
+  background: rgb(18 14 10 / 88%);
+  border: 1px solid rgb(215 180 116 / 35%);
+  border-radius: .2rem;
+  cursor: pointer;
+}
+
+.cooking-method input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cooking-method:has(input:checked) {
+  border-color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--text-primary);
+}
+
+.cooking-method-icon {
+  width: 1.75rem;
+  height: 1.75rem;
+  background: currentColor;
+  mask: var(--cooking-method-icon) center / contain no-repeat;
 }
 
 .cooking-method.disabled {
@@ -3734,6 +3769,7 @@ body.chat-resizing {
 .stat-icon-will,
 .stat-icon-command,
 .stat-icon-medicine,
+.stat-icon-cooking,
 .stat-icon-faith {
   --stat-icon-color: var(--icon-mental);
 }

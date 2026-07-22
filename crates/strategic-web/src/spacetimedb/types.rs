@@ -962,6 +962,7 @@ pub struct CharacterSkills {
     pub deception_hours: f32,
     pub seduction_hours: f32,
     pub medicine_hours: f32,
+    pub cooking_hours: f32,
     pub religion_hours: adventuresim_world_schema::ReligionHours,
     pub stealth_hours: f32,
     pub balance_hours: f32,

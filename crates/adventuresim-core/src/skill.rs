@@ -41,6 +41,9 @@ pub enum Skill {
     /// Mental. Trained. Party health recovery bonus. (10000h)
     #[assoc(max_hours = 10000.0, kind = SkillKind::Mental, is_trained = true)]
     Medicine,
+    /// Mental. Trained. Food preparation, safety, and kitchen technique. (10000h)
+    #[assoc(max_hours = 10000.0, kind = SkillKind::Mental, is_trained = true)]
+    Cooking,
     /// Mental. Trained. Knowledge of a specific religious tradition. (5000h)
     #[assoc(max_hours = 5000.0, kind = SkillKind::Mental, is_trained = true)]
     Religion,

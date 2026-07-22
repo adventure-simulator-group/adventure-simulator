@@ -25,11 +25,13 @@ applies and an unresolved Dysentery episode prevents duplicate infection.
 
 ## Cooking
 
-The character page accepts `?activity=cooking`. Its left rail selects pan-fry,
-stew, roast/skewer, or bake; its right rail stages arbitrary positive bounded
-amounts from owned food lots. Roast is always available. Pan-fry requires a pan,
-stew a pot plus water, and bake a portable oven. Stew draws pooled party water
-before carried water. Tools are retained.
+Hovering the active character portrait exposes a cooking icon that opens the
+cooking panel. Its left rail presents pan-fry, stew, roast/skewer, and bake as a
+horizontal icon row; its right rail stages arbitrary positive bounded amounts
+from owned food lots. Roast is always available. Pan-fry requires a pan, stew a
+pot plus water, and bake a portable oven. Stew draws pooled party water before
+carried water. Tools are retained. Inns sell the food ingredients and reusable
+implements needed by this interface.
 
 Duration is method setup plus the slowest ingredient's safety/doneness time plus
 square-root batch scaling. The reducer preflights actor, state, selections,
@@ -40,4 +42,8 @@ invoke eating or cooking, and tactical actors are rejected. Cooking advances its
 safe time prefix before consuming supplies: a terminal interruption commits the
 elapsed time and terminal event, leaves ingredients and water untouched, and
 creates no meal. Remainders stay as independent lots, and their current lot mass
-and value drive encumbrance and merchant quotes. Cooking trains no skill.
+and value drive encumbrance and merchant quotes. Completing a meal trains the
+mental, trained Cooking skill for the elapsed cooking time. A character can
+also apprentice as a cook through the inn's ordinary profession dialogue;
+apprenticeship and later independent practice follow the same progression and
+payment rules as the other non-religious settlement professions.

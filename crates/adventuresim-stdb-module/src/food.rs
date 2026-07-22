@@ -7,7 +7,7 @@ use adventuresim_core::{
 use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
 
 use crate::{
-    character::{character, character_attributes},
+    character::{character, character_attributes, character_skills},
     condition::{character_needs, initialize_character_condition},
     disease::{InfectionEpisodeRow, infection_episode},
     inventory_item,
@@ -884,6 +884,10 @@ pub fn cook_food(
         growth_per_hour: food::cooked_growth_per_hour(&growth, method.core()),
         anchor_minute: out_minute,
     });
+    if let Some(mut skills) = ctx.db.character_skills().character_id().find(character_id) {
+        skills.cooking_hours += duration as f32 / 60.0;
+        ctx.db.character_skills().character_id().update(skills);
+    }
     consume_food_amount(ctx, character_id, output.id, f32::MAX, true)?;
     // A full character consumes zero calories, so the helper may return before
     // its mutation refresh. The retained output mass must still be persisted.

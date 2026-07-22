@@ -275,6 +275,7 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
         deception: initial(&mut rng),
         seduction: initial(&mut rng),
         medicine: initial(&mut rng),
+        cooking: initial(&mut rng),
         religion: ReligionHours {
             roman_catholic: initial(&mut rng),
             ..Default::default()

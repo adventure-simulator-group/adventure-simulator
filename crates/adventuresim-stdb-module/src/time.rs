@@ -380,6 +380,7 @@ fn profession_training_hours(
         Skill::Seduction => skills.seduction_hours,
         Skill::Smithing => skills.smithing_hours,
         Skill::Medicine => skills.medicine_hours,
+        Skill::Cooking => skills.cooking_hours,
         Skill::Anatomy => skills.anatomy_hours,
         Skill::Knife => skills.knife_hours,
         Skill::Tailoring => skills.tailoring_hours,
@@ -565,6 +566,7 @@ fn apply_training(
         deception: skills.deception_hours,
         seduction: skills.seduction_hours,
         medicine: skills.medicine_hours,
+        cooking: skills.cooking_hours,
         religion: skills.religion_hours,
         stealth: skills.stealth_hours,
         balance: skills.balance_hours,
@@ -628,6 +630,7 @@ fn apply_training(
     skills.deception_hours = hours.deception;
     skills.seduction_hours = hours.seduction;
     skills.medicine_hours = hours.medicine;
+    skills.cooking_hours = hours.cooking;
     skills.religion_hours = hours.religion;
     skills.stealth_hours = hours.stealth;
     skills.balance_hours = hours.balance;

@@ -44,8 +44,13 @@ test("food mass, value, and provenance are lot-authoritative", () => {
   assert.match(template, /merchant_inventory_weight\(definition, food_lot\)/);
 });
 
-test("character activity navigation exposes cooking and all edible lots aggregate", () => {
-  assert.match(template, /data-character-activity="cooking"[\s\S]*\?activity=cooking/);
+test("portrait navigation exposes cooking and all edible lots aggregate", () => {
+  assert.match(template, /party-cooking-action/);
+  assert.match(template, /\?cook=true/);
+  assert.doesNotMatch(template, /data-character-activity="cooking"/);
+  assert.match(template, /class="cooking-method-list"/);
+  assert.match(template, /cooking_method\("pan-fry", "Pan-fry", "meal"/);
   assert.match(template, /data-food-lot=\[adventuresim_core::food::definition/);
   assert.match(inventoryBrowser, /data-food-lot="true"/);
+  assert.doesNotMatch(inventoryBrowser, /â|Ã|�/);
 });

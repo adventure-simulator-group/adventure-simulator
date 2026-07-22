@@ -42,6 +42,7 @@ pub struct SkillHours {
     pub deception: f32,
     pub seduction: f32,
     pub medicine: f32,
+    pub cooking: f32,
     pub religion: ReligionHours,
     pub stealth: f32,
     pub balance: f32,
@@ -72,6 +73,7 @@ impl SkillHours {
             self.deception,
             self.seduction,
             self.medicine,
+            self.cooking,
             self.religion.total_direct(),
             self.stealth,
             self.balance,
@@ -354,6 +356,7 @@ fn apply_profession_training(
             skills.knife += hours / 6.0;
             skills.tailoring += hours / 6.0;
         }
+        Some(ProfessionId::Cook) => skills.cooking += hours,
         // Religion is tradition-specific and is applied by the authoritative
         // caller after resolving the settlement tradition.
         _ => {}
@@ -480,6 +483,24 @@ mod tests {
         assert!((skills.anatomy - 1.0 / 3.0).abs() < 0.001);
         assert!((skills.knife - 1.0 / 3.0).abs() < 0.001);
         assert!((skills.tailoring - 1.0 / 3.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn cooks_profession_trains_only_cooking() {
+        let mut skills = SkillHours::default();
+        let schedule = DailySchedule {
+            apprenticeship_minutes: 180,
+            apprenticeship_service_id: Some(ProfessionId::Cook),
+            ..Default::default()
+        };
+        apply_schedule_training(
+            &mut skills,
+            schedule,
+            MINUTES_PER_DAY,
+            ActivityTrainingProfile::default(),
+        );
+        assert!((skills.cooking - 3.0).abs() < 0.001);
+        assert_eq!(skills.charisma, 0.0);
     }
 
     fn item(melee: bool, ranged: bool, shield: bool, balance: f32) -> EquippedCombatItem {

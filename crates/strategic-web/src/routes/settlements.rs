@@ -37,7 +37,7 @@ const BUILDINGS: &[&str] = &[
 #[derive(Clone, Debug, Default, Deserialize)]
 struct BuildingQuery {
     building: Option<String>,
-    activity: Option<String>,
+    cook: Option<bool>,
 }
 
 impl BuildingQuery {
@@ -55,7 +55,7 @@ impl BuildingQuery {
     }
 
     fn cooking(&self) -> bool {
-        self.activity.as_deref() == Some("cooking")
+        self.cook == Some(true)
     }
 }
 
@@ -117,7 +117,8 @@ use crate::templates::settlement::{
     RestSummary, SoapRestPreview, SocialPresentation, alchemy_page, camp_page, inn_page,
     live_merchant_shop_page, merchants_page, party_discard_page, party_inventory_page,
     party_personal_page, party_pool_page, party_social_page, party_stats_page, religion_page,
-    rest_result_page, settlement_map_page, settlement_overview_page, surgery_page,
+    rest_default_minutes, rest_result_page, settlement_map_page, settlement_overview_page,
+    surgery_page,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -2770,7 +2771,7 @@ async fn cook_food(
         return (StatusCode::BAD_REQUEST, error.to_string()).into_response();
     }
     Redirect::to(&format!(
-        "/locations/{kind}/{id}/party/{character_id}?activity=cooking"
+        "/locations/{kind}/{id}/party/{character_id}?cook=true"
     ))
     .into_response()
 }
@@ -4130,87 +4131,7 @@ async fn inn(
     Path(id): Path<String>,
     session: Session,
 ) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM settlement WHERE id = {}",
-            sql_string_literal(&id)
-        ))
-        .await
-        .unwrap_or_default();
-
-    let settlement = match settlements.first() {
-        Some(s) => s,
-        None => return Html("<h1>Settlement not found</h1>".to_string()),
-    };
-
-    let active_character = get_active_character(&state, session.character_id_u64()).await;
-    let party_members = get_active_party_members(
-        &state,
-        active_character.as_ref().map(|(character, _)| character),
-    )
-    .await;
-    let logged_in_as = active_character
-        .as_ref()
-        .map(|(character, _)| character.name.clone());
-    let limbs = match active_character.as_ref() {
-        Some((character, _)) => {
-            query_single::<CharacterLimbs>(&state, "character_limbs", character.id).await
-        }
-        None => None,
-    };
-    let stats = match active_character.as_ref() {
-        Some((character, _)) => {
-            query_single::<CharacterStats>(&state, "character_stats", character.id).await
-        }
-        None => None,
-    };
-    let condition = match active_character.as_ref() {
-        Some((character, _)) => {
-            query_single::<CharacterCondition>(&state, "character_condition", character.id).await
-        }
-        None => None,
-    };
-    let (field_repair_minutes, smith_wait_minutes) = match active_character.as_ref() {
-        Some((character, inventory)) => {
-            equipment_rest_recommendation(&state, character.id, &id, inventory).await
-        }
-        None => (0, 0),
-    };
-    let items = state
-        .db
-        .query::<ItemDefinition>("SELECT * FROM item")
-        .await
-        .unwrap_or_default();
-    let soap_preview = soap_rest_preview(
-        &state,
-        active_character
-            .as_ref()
-            .map_or(&[][..], |(character, _)| std::slice::from_ref(character)),
-        active_character
-            .as_ref()
-            .and_then(|(character, _)| character.party_id.as_deref()),
-    )
-    .await;
-    Html(
-        inn_page(
-            settlement,
-            active_character.as_ref().map(|(character, _)| character),
-            active_character
-                .as_ref()
-                .map_or(&[], |(_, inventory)| inventory.as_slice()),
-            &items,
-            &party_members,
-            limbs.as_ref(),
-            stats.as_ref(),
-            condition.as_ref(),
-            field_repair_minutes,
-            smith_wait_minutes,
-            soap_preview,
-            logged_in_as.as_deref(),
-        )
-        .into_string(),
-    )
+    merchant_shop(state, id, session, MerchantShop::Inn).await
 }
 
 #[derive(Deserialize)]
@@ -4532,6 +4453,7 @@ fn skill_deltas(before: &CharacterSkills, after: &CharacterSkills) -> Vec<(Strin
         ("Deception", before.deception_hours, after.deception_hours),
         ("Seduction", before.seduction_hours, after.seduction_hours),
         ("Medicine", before.medicine_hours, after.medicine_hours),
+        ("Cooking", before.cooking_hours, after.cooking_hours),
         (
             "Religion",
             before.religion_hours.total_direct(),
@@ -5005,6 +4927,33 @@ async fn merchant_shop(
         !matches!(shop, MerchantShop::Herbalist),
     )
     .await;
+    let (inn_rest_default, inn_soap_preview) = if matches!(shop, MerchantShop::Inn) {
+        let (limbs, stats, condition) = tokio::join!(
+            query_single::<CharacterLimbs>(&state, "character_limbs", character.id),
+            query_single::<CharacterStats>(&state, "character_stats", character.id),
+            query_single::<CharacterCondition>(&state, "character_condition", character.id),
+        );
+        let (field_repair_minutes, smith_wait_minutes) =
+            equipment_rest_recommendation(&state, character.id, &id, inventory).await;
+        let soap = soap_rest_preview(
+            &state,
+            std::slice::from_ref(character),
+            character.party_id.as_deref(),
+        )
+        .await;
+        (
+            rest_default_minutes(
+                limbs.as_ref(),
+                stats.as_ref(),
+                condition.as_ref(),
+                field_repair_minutes,
+                smith_wait_minutes,
+            ),
+            soap,
+        )
+    } else {
+        (None, SoapRestPreview::default())
+    };
     Html(
         live_merchant_shop_page(
             settlement,
@@ -5027,6 +4976,8 @@ async fn merchant_shop(
                 .map_or(0, |time| time.minutes),
             encumbrance.personal,
             encumbrance.party,
+            inn_rest_default,
+            inn_soap_preview,
         )
         .into_string(),
     )
