@@ -1389,6 +1389,44 @@ pub fn record_morale_event(
     Ok(())
 }
 
+/// Replace one durable, refreshable morale stimulus at an explicit strategic
+/// minute. Callers performing a chronological batch should refresh the derived
+/// condition once after the batch completes.
+pub fn upsert_refreshable_morale_event_at_without_refresh(
+    ctx: &ReducerContext,
+    character_id: u64,
+    kind: &str,
+    magnitude: f32,
+    occurred_at_minute: u64,
+    source_id: &str,
+) -> Result<(), String> {
+    if magnitude == 0.0 || !magnitude.is_finite() {
+        return Ok(());
+    }
+    let duration = stored_morale_event_duration(ctx, character_id, magnitude);
+    let existing = ctx
+        .db
+        .morale_event()
+        .character_id()
+        .filter(character_id)
+        .find(|event| event.source_id.as_deref() == Some(source_id));
+    let event = MoraleEvent {
+        id: existing.as_ref().map_or(0, |event| event.id),
+        character_id,
+        kind: kind.into(),
+        magnitude,
+        occurred_at_minute,
+        expires_at_minute: occurred_at_minute.saturating_add(duration),
+        source_id: Some(source_id.into()),
+    };
+    if existing.is_some() {
+        ctx.db.morale_event().id().update(event);
+    } else {
+        ctx.db.morale_event().insert(event);
+    }
+    Ok(())
+}
+
 fn insert_morale_event_without_refresh(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1450,20 +1488,32 @@ pub fn apply_travel_condition(
     elapsed_minutes: u64,
     prayer_minutes: u16,
 ) -> Result<(), String> {
-    apply_elapsed_needs(ctx, character_id, elapsed_minutes)?;
-    // Movement alone may spend potable alcohol as emergency hydration. Generic
-    // waits and camp downtime deliberately stop after ordinary water above.
-    if let Some(mut needs) = ctx.db.character_needs().character_id().find(character_id)
-        && needs.water_balance_ml < 0.0
+    if elapsed_minutes > adventuresim_core::alcohol::MAX_ALCOHOL_INTERVAL_MINUTES {
+        return Err("Travel condition interval cannot exceed one year".into());
+    }
+    let interval_end = starting_minute
+        .checked_add(elapsed_minutes)
+        .ok_or("Travel condition interval overflow")?;
+    for (segment_start, segment_end, history_minute) in
+        adventuresim_core::alcohol::travel_evening_segments(starting_minute, interval_end)
+            .map_err(str::to_string)?
     {
-        let supplied = crate::alcohol::consume_emergency_hydration(
-            ctx,
-            character_id,
-            -needs.water_balance_ml,
-            starting_minute.saturating_add(elapsed_minutes),
-        );
-        needs.water_balance_ml += supplied as f32;
-        ctx.db.character_needs().character_id().update(needs);
+        apply_elapsed_needs(ctx, character_id, segment_end - segment_start)?;
+        // Movement alone may spend potable alcohol as emergency hydration.
+        // Attribute each whole serving to the evening in which the deficit
+        // arose; generic waits and camp downtime never invoke this fallback.
+        if let Some(mut needs) = ctx.db.character_needs().character_id().find(character_id)
+            && needs.water_balance_ml < 0.0
+        {
+            let supplied = crate::alcohol::consume_emergency_hydration(
+                ctx,
+                character_id,
+                -needs.water_balance_ml,
+                history_minute,
+            );
+            needs.water_balance_ml += supplied as f32;
+            ctx.db.character_needs().character_id().update(needs);
+        }
     }
     let mut stats = ctx
         .db

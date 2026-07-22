@@ -1,9 +1,9 @@
 //! Discrete alcohol consumption, durable evening history, and shared selection.
 
 use adventuresim_core::alcohol::{
-    AlcoholProperties, HEAVY_ETHANOL_ML, LOW_MORALE_THRESHOLD, ROLLING_WEEK_DAYS,
-    TemperancePreference, crossed_evenings, emergency_hydration_ml, ethanol_ml, evening_target,
-    morale_change,
+    AlcoholProperties, HEAVY_ETHANOL_ML, LOW_MORALE_THRESHOLD, NIGHTLY_MORALE_SOURCE_ID,
+    ROLLING_WEEK_DAYS, TemperancePreference, emergency_hydration_ml, ethanol_ml, evening_target,
+    nightly_morale_effect, rest_evenings,
 };
 use spacetimedb::{ReducerContext, Table, table};
 
@@ -99,16 +99,17 @@ fn available_stacks(
                     && ethanol_ml(p) > 0
                     && (!hydration || emergency_hydration_ml(p) > 0)
                     && (allow_medical || !p.disinfectant_focused)
-                    && (!settled
-                        || ctx
-                            .db
+                    && adventuresim_core::alcohol::consumable_units(
+                        ctx.db
                             .party_inventory_item()
                             .party_id()
                             .filter(party_id)
                             .filter(|row| row.item_id == stack.item_id)
                             .map(|row| row.quantity)
-                            .sum::<u32>()
-                            > target_for(ctx, party.leader_id, true, &stack.item_id))
+                            .sum::<u32>(),
+                        target_for(ctx, party.leader_id, true, &stack.item_id),
+                        settled,
+                    ) > 0
                 {
                     rows.push((Stack::Party(stack), def));
                 }
@@ -122,16 +123,17 @@ fn available_stacks(
                 && ethanol_ml(p) > 0
                 && (!hydration || emergency_hydration_ml(p) > 0)
                 && (allow_medical || !p.disinfectant_focused)
-                && (!settled
-                    || ctx
-                        .db
+                && adventuresim_core::alcohol::consumable_units(
+                    ctx.db
                         .inventory_item()
                         .character_id()
                         .filter(character_id)
                         .filter(|row| row.item_id == stack.item_id)
                         .map(|row| row.quantity)
-                        .sum::<u32>()
-                        > target_for(ctx, character_id, false, &stack.item_id))
+                        .sum::<u32>(),
+                    target_for(ctx, character_id, false, &stack.item_id),
+                    settled,
+                ) > 0
             {
                 rows.push((Stack::Personal(stack), def));
             }
@@ -264,8 +266,16 @@ fn tavern_purchase(ctx: &ReducerContext, character_id: u64, target: u32) -> u32 
     };
     let each = ethanol_ml(properties(&def));
     let price = u64::from(def.base_value.unwrap_or(0));
-    let mut bought = 0;
-    while bought < target && each > 0 && price > 0 {
+    let mut bought = 0_u32;
+    let units = adventuresim_core::alcohol::tavern_units_affordable(
+        target,
+        each,
+        price,
+        crate::item::personal_currency_total(ctx, character_id),
+    );
+    for _ in 0..units {
+        // Affordability was computed from the same personal-only balance. Keep
+        // the reducer transaction authoritative if inventory changed.
         if crate::item::consume_personal_currency(ctx, character_id, price).is_err() {
             break;
         }
@@ -283,7 +293,11 @@ pub fn process_rest_evenings(
 ) -> Result<(), String> {
     use crate::personality::Temperance;
     let temperament = crate::personality::personality_or_neutral(ctx, character_id).temperance;
-    for evening in crossed_evenings(start, end) {
+    if temperament == Temperance::Temperate {
+        return Ok(());
+    }
+    let mut morale_changed = false;
+    for evening in rest_evenings(start, end).map_err(str::to_string)? {
         let id = ledger_id(character_id, evening);
         if ctx
             .db
@@ -355,22 +369,21 @@ pub fn process_rest_evenings(
         } else {
             ctx.db.alcohol_consumption().insert(row);
         }
-        let magnitude = f32::from(morale_change(
-            preference,
-            had_recent_heavy,
-            consumed >= target,
-        ));
-        crate::condition::record_morale_event(
+        let effect =
+            nightly_morale_effect(evening, preference, had_recent_heavy, consumed >= target)
+                .ok_or("Alcohol morale effect unexpectedly absent")?;
+        crate::condition::upsert_refreshable_morale_event_at_without_refresh(
             ctx,
             character_id,
-            if magnitude >= 0.0 {
-                "alcohol_satisfied"
-            } else {
-                "alcohol_unsatisfied"
-            },
-            magnitude,
-            Some(format!("alcohol-evening:{evening}")),
+            effect.kind,
+            f32::from(effect.magnitude),
+            effect.occurred_at_minute,
+            NIGHTLY_MORALE_SOURCE_ID,
         )?;
+        morale_changed = true;
+    }
+    if morale_changed {
+        crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     }
     Ok(())
 }

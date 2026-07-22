@@ -248,3 +248,19 @@ test("authoritative travel guards stale sync, bounded legacy vectors, and termin
     "settlement departure reloads the party after preparing shared waterskins",
   );
 });
+
+test("alcohol chronology, authority, and automatic surgery consumption stay reducer-authoritative", () => {
+  const moduleRoot = path.join(root, "..", "adventuresim-stdb-module", "src");
+  const alcohol = fs.readFileSync(path.join(moduleRoot, "alcohol.rs"), "utf8");
+  const condition = fs.readFileSync(path.join(moduleRoot, "condition.rs"), "utf8");
+  const surgery = fs.readFileSync(path.join(moduleRoot, "surgery.rs"), "utf8");
+  const time = fs.readFileSync(path.join(moduleRoot, "time.rs"), "utf8");
+  const settlements = fs.readFileSync(path.join(root, "src", "routes", "settlements.rs"), "utf8");
+  assert.match(alcohol, /rest_evenings\(start, end\)[\s\S]+nightly_morale_effect[\s\S]+upsert_refreshable_morale_event_at_without_refresh/);
+  assert.match(alcohol, /tavern_units_affordable[\s\S]+personal_currency_total/);
+  assert.match(condition, /travel_evening_segments[\s\S]+apply_elapsed_needs[\s\S]+consume_emergency_hydration/);
+  assert.match(time, /require_strategic_character_authority\(ctx, character_id\)[\s\S]+Settlement rest requires the character to be at a settlement/);
+  assert.match(time, /requested_minutes > MINUTES_PER_YEAR[\s\S]+Camp rest cannot exceed one year/);
+  assert.match(surgery, /require_strategic_character_authority\(ctx, actor_id\)[\s\S]+best_disinfectant[\s\S]+consume_inventory_row[\s\S]+surgery_control_bonus/);
+  assert.match(settlements, /travelers\.sort_by_key[\s\S]+rest_evenings[\s\S]+expected_morale_demands\.push\(\(traveler\.id, target\)\)/);
+});

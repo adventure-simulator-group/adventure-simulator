@@ -208,13 +208,18 @@ Movement consumes pooled water and then personal carried water before touching
 alcohol. If a character still has a hydration deficit, travel may consume
 ordinary potable alcohol whose explicit net-hydration value is positive;
 medical-only/non-potable preparations and non-hydrating strong spirits are
-never used. Each whole serving's ethanol is also recorded in that character's
-nightly history. Generic waits do not invoke this fallback.
+never used. Multi-day movement is split at absolute evening boundaries for
+needs processing, and each whole serving's ethanol is recorded in the nightly
+history where its hydration deficit arose. Long reducer intervals and bounded
+travel chunks therefore produce the same history. Generic waits do not invoke
+this fallback.
 
 The journey forecast uses the same item metadata and ordinary-alcohol
 eligibility rules. It first reserves the whole servings expected to satisfy
-Temperance-driven morale drinking during evenings crossed by the itinerary,
-then counts the remaining net hydration. The planner presents ordinary water
+Temperance-driven morale drinking during nightly opportunities in the
+itinerary, rounding and selecting concrete units separately for each evening
+and character in runtime character-ID order, then counts the remaining net
+hydration. The planner presents ordinary water
 and emergency alcohol separately, while its overall water-sufficiency verdict
 uses their sum. Provisioning still stages waterskins only; it does not disguise
 alcohol as water or automatically purchase it as a water container.

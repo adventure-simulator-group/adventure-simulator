@@ -1023,6 +1023,7 @@ pub fn rest_at_settlement(
     requested_days: u16,
     at_inn: bool,
 ) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
     rest_for_minutes(
         ctx,
         character_id,
@@ -1042,6 +1043,7 @@ pub fn rest_at_settlement_hours(
     requested_minutes: u64,
     at_inn: bool,
 ) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
     rest_for_minutes(ctx, character_id, requested_minutes, at_inn, true)
 }
 
@@ -1052,7 +1054,10 @@ fn rest_for_minutes(
     at_inn: bool,
     explicit: bool,
 ) -> Result<(), String> {
-    crate::character::require_living_character(ctx, character_id)?;
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    if character.current_settlement_id.is_none() {
+        return Err("Settlement rest requires the character to be at a settlement".into());
+    }
     ensure_character_time(ctx, character_id)?;
     let _ = refresh_clock(ctx)?;
     let mut character_time = ctx
@@ -1360,9 +1365,13 @@ pub fn rest_at_camp(
     character_id: u64,
     requested_minutes: u64,
 ) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
     crate::character::require_living_character(ctx, character_id)?;
     if requested_minutes == 0 {
         return Ok(());
+    }
+    if requested_minutes > MINUTES_PER_YEAR {
+        return Err("Camp rest cannot exceed one year".into());
     }
     let character = ctx
         .db

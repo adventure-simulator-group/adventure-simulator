@@ -25,8 +25,6 @@ pub const STITCH_HEALING_BONUS_PER_LEVEL: f32 = 0.006;
 pub const RETAINED_PROJECTILE_HEALING_MULTIPLIER: f32 = 0.60;
 pub const FRACTURE_SINGLE_HIT_THRESHOLD: f32 = 0.18;
 pub const STANDING_INFECTION_CHECK_EXPOSURE: f32 = 0.05;
-pub const SOAP_SURGERY_CONTROL_BONUS: f32 = 2.0;
-pub const ALCOHOL_SURGERY_CONTROL_DIVISOR: f32 = 25.0;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
 pub enum LimbRegion {
     LeftArm,
@@ -761,6 +759,7 @@ pub fn treat_limb(
     projectile_id: Option<u64>,
     use_soap: bool,
 ) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, actor_id)?;
     crate::item::upsert_surgery_items(ctx);
     require_together(ctx, actor_id, patient_id)?;
     let limb = LimbRegion::parse(&limb_slug).ok_or("Unknown limb")?;
@@ -830,16 +829,12 @@ pub fn treat_limb(
         crate::alcohol::consume_inventory_row(ctx, *inventory_id)?;
     }
     let clean_check = infection_control_check(ctx, actor_id, skill)
-        + if use_soap {
-            SOAP_SURGERY_CONTROL_BONUS
-        } else {
-            0.0
-        }
-        + selected_alcohol
-            .as_ref()
-            .map_or(0.0, |(_, _, effectiveness)| {
-                f32::from(*effectiveness) / ALCOHOL_SURGERY_CONTROL_DIVISOR
-            });
+        + adventuresim_core::alcohol::surgery_control_bonus(
+            use_soap,
+            selected_alcohol
+                .as_ref()
+                .map(|(_, _, effectiveness)| *effectiveness),
+        );
     match procedure.as_str() {
         "bandage" => {
             consume_one(ctx, actor_id, "bandage")?;

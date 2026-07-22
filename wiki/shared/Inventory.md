@@ -43,7 +43,10 @@ Alcohol remains a discrete whole-unit supply. One small beer, table-wine
 serving, or aqua-vitae measure is one stack unit used consistently by drinking,
 travel, and surgery; partially consumed containers are deferred to #150. Item
 definitions explicitly record serving volume, ABV in basis points, net
-emergency hydration, and disinfectant effectiveness. Quantity targets become
+emergency hydration, and disinfectant effectiveness. ABV must be at most
+10,000 basis points, and usable hydration is clamped to the serving's physical
+non-alcohol water volume; invalid seeded definitions fail initialization.
+Quantity targets become
 reserve floors only while resting at a settlement. Nightly drinking first uses
 surplus shared-party stacks, then surplus personal stacks, and finally buys a
 table-wine serving for immediate consumption with that character's personal
@@ -56,6 +59,7 @@ disinfectant-focused alcohol. A Drunkard below -10 morale may consume the
 protected strong supply only after ordinary potable alcohol is exhausted.
 Shared stacks precede personal stacks, then weak disinfectant effectiveness,
 item ID, and inventory-row ID provide stable tie-breaking.
+
 # Inventory icons
 
 Inventory tables include a narrow **Type** column before the item name. Its

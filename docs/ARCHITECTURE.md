@@ -326,7 +326,7 @@ servers cannot supply an arbitrary XP award.
 | `send_local_chat_message` / `record_local_npc_message` | Persist location-gated, party-owned Local conversations |
 | `refresh_capabilities` | Recompute automatic character tags through the shared core evaluator |
 | `refresh_strategic_condition` | Recompute morale, pain, blood loss, fear, fatigue, readiness, and check effectiveness |
-| explicit rest reducers | Atomically plan party washing, consume personal soap before shared soap, then advance rest; scarce shared soap is assigned by deterministic disease risk |
+| explicit rest reducers | Require the registered strategic gateway (or the owner of the target disposable simulation character), validate the physical rest location and one-year work bound, atomically plan washing, then advance rest and nightly alcohol chronology |
 | `set_character_religion` | Record church conversion or biography renunciation for religious relationships |
 | `ensure_settlement_activity` | Maintain 3–5 visible quests and 1–2 locally generated recruiting NPC quest parties |
 | `start_mission` | Allocate port, record mission |
@@ -340,6 +340,10 @@ servers cannot supply an arbitrary XP award.
 The current strategic module does not yet persist a player-identity-to-character ownership mapping.
 Most strategic reducers therefore rely on the authenticated strategic gateway and simulator's
 database connection as a system-wide trust boundary; character IDs alone are not authorization.
+The public rest and surgery reducers enforce that boundary directly: only the registered gateway
+may mutate a normal character, while a simulation-run owner may act only through a character
+registered to that disposable run. Settlement rest additionally derives tavern eligibility from
+the character's persisted settlement presence rather than trusting a caller flag.
 Reducers that already have a concrete identity relationship (world imports, simulation runs,
 tactical servers, and religious-demand ownership) validate `ctx.sender()` directly. Equipment
 repair follows the existing strategic boundary until ownership is introduced consistently for all

@@ -920,6 +920,12 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
             ..Item::default()
         },
     ] {
+        if !adventuresim_core::alcohol::properties_valid(crate::alcohol::properties(&item)) {
+            return Err(format!(
+                "Alcohol definition {} has invalid ABV or hydration metadata",
+                item.id
+            ));
+        }
         ctx.db.item().insert(item);
     }
     ctx.db.item().insert(Item {

@@ -1647,7 +1647,9 @@ pub fn register_strategic_gateway(
     Ok(())
 }
 
-fn require_strategic_gateway(ctx: &ReducerContext) -> Result<StrategicGatewayAuthority, String> {
+pub(crate) fn require_strategic_gateway(
+    ctx: &ReducerContext,
+) -> Result<StrategicGatewayAuthority, String> {
     let authority = ctx
         .db
         .strategic_gateway_authority()
@@ -1658,6 +1660,19 @@ fn require_strategic_gateway(ctx: &ReducerContext) -> Result<StrategicGatewayAut
         return Err("Travel reducers may only be called by the strategic gateway".into());
     }
     Ok(authority)
+}
+
+pub(crate) fn require_strategic_character_authority(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<(), String> {
+    if require_strategic_gateway(ctx).is_ok()
+        || crate::simulation::sender_owns_simulation_character(ctx, character_id)
+    {
+        Ok(())
+    } else {
+        Err("Character-mutating strategic reducers may only be called by the strategic gateway or the owner of the target disposable simulation character".into())
+    }
 }
 
 #[derive(Clone, Debug)]

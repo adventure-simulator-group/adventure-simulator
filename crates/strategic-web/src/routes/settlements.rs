@@ -1619,7 +1619,8 @@ async fn travel_provision_forecast_for_minutes(
     planning_minutes: u64,
     departing_settlement: bool,
 ) -> Result<Option<TravelProvisionForecast>, String> {
-    let travelers: Vec<_> = travelers.iter().filter(|traveler| traveler.alive).collect();
+    let mut travelers: Vec<_> = travelers.iter().filter(|traveler| traveler.alive).collect();
+    travelers.sort_by_key(|traveler| traveler.id);
     let items: Vec<ItemDefinition> = state
         .db
         .query("SELECT * FROM item")
@@ -1672,6 +1673,7 @@ async fn travel_provision_forecast_for_minutes(
                         potable: def.alcohol_potable,
                     },
                     quantity: entry.qty,
+                    item_id: def.id.clone(),
                     stable_id: entry.id,
                     owner: Some(traveler.id),
                 });
@@ -1681,29 +1683,41 @@ async fn travel_provision_forecast_for_minutes(
         let personality =
             query_single::<CharacterPersonality>(state, "character_personality", traveler.id).await;
         if let Some(time) = time {
-            let evenings: Vec<_> = adventuresim_core::alcohol::crossed_evenings(
+            let history = state
+                .db
+                .query::<AlcoholConsumption>(&format!(
+                    "SELECT * FROM alcohol_consumption WHERE character_id = {}",
+                    traveler.id
+                ))
+                .await
+                .map_err(|error| error.to_string())?;
+            let evenings: Vec<_> = adventuresim_core::alcohol::rest_evenings(
                 time.minutes,
                 time.minutes.saturating_add(planning_minutes),
             )
+            .map_err(str::to_string)?
+            .filter(|evening| {
+                !history
+                    .iter()
+                    .any(|row| row.evening_id == *evening && row.morale_evaluated)
+            })
             .collect();
-            let demand = match personality.map(|p| p.temperance) {
-                Some(crate::spacetimedb::Temperance::Temperate) => 0,
-                Some(crate::spacetimedb::Temperance::Drunkard) => (evenings.len() as u32)
-                    .saturating_mul(adventuresim_core::alcohol::HEAVY_ETHANOL_ML),
+            match personality.map(|p| p.temperance) {
+                Some(crate::spacetimedb::Temperance::Temperate) => {}
+                Some(crate::spacetimedb::Temperance::Drunkard) => {
+                    expected_morale_demands.extend(
+                        evenings
+                            .into_iter()
+                            .map(|_| (traveler.id, adventuresim_core::alcohol::HEAVY_ETHANOL_ML)),
+                    );
+                }
                 _ => {
-                    let mut heavy_evenings: Vec<u64> = state
-                        .db
-                        .query::<AlcoholConsumption>(&format!(
-                            "SELECT * FROM alcohol_consumption WHERE character_id = {}",
-                            traveler.id
-                        ))
-                        .await
-                        .map_err(|error| error.to_string())?
-                        .into_iter()
+                    let mut heavy_evenings: Vec<u64> = history
+                        .iter()
                         .filter(|row| adventuresim_core::alcohol::qualifying_heavy(row.ethanol_ml))
                         .map(|row| row.evening_id)
                         .collect();
-                    evenings.into_iter().fold(0_u32, |total, evening| {
+                    for evening in evenings {
                         let had_recent_heavy = heavy_evenings.iter().any(|prior| {
                             *prior < evening
                                 && evening - *prior < adventuresim_core::alcohol::ROLLING_WEEK_DAYS
@@ -1714,11 +1728,10 @@ async fn travel_provision_forecast_for_minutes(
                             heavy_evenings.push(evening);
                             adventuresim_core::alcohol::HEAVY_ETHANOL_ML
                         };
-                        total.saturating_add(target)
-                    })
+                        expected_morale_demands.push((traveler.id, target));
+                    }
                 }
-            };
-            expected_morale_demands.push((traveler.id, demand));
+            }
         }
         let owned = |item_id: &str| {
             inventory
@@ -1758,6 +1771,7 @@ async fn travel_provision_forecast_for_minutes(
                         potable: def.alcohol_potable,
                     },
                     quantity: entry.quantity,
+                    item_id: def.id.clone(),
                     stable_id: entry.id,
                     owner: None,
                 });
