@@ -23,7 +23,7 @@ pub struct CharacterCapability {
     pub endurance: f32,
     pub medicine: f32,
     pub surgery: f32,
-    pub charisma: f32,
+    pub command: f32,
     pub religion: f32,
     pub weapon_precision: f32,
 }
@@ -52,7 +52,7 @@ pub struct CharacterCapabilityCols {
     pub endurance: __sdk::__query_builder::Col<CharacterCapability, f32>,
     pub medicine: __sdk::__query_builder::Col<CharacterCapability, f32>,
     pub surgery: __sdk::__query_builder::Col<CharacterCapability, f32>,
-    pub charisma: __sdk::__query_builder::Col<CharacterCapability, f32>,
+    pub command: __sdk::__query_builder::Col<CharacterCapability, f32>,
     pub religion: __sdk::__query_builder::Col<CharacterCapability, f32>,
     pub weapon_precision: __sdk::__query_builder::Col<CharacterCapability, f32>,
 }
@@ -80,7 +80,7 @@ impl __sdk::__query_builder::HasCols for CharacterCapability {
             endurance: __sdk::__query_builder::Col::new(table_name, "endurance"),
             medicine: __sdk::__query_builder::Col::new(table_name, "medicine"),
             surgery: __sdk::__query_builder::Col::new(table_name, "surgery"),
-            charisma: __sdk::__query_builder::Col::new(table_name, "charisma"),
+            command: __sdk::__query_builder::Col::new(table_name, "command"),
             religion: __sdk::__query_builder::Col::new(table_name, "religion"),
             weapon_precision: __sdk::__query_builder::Col::new(table_name, "weapon_precision"),
         }

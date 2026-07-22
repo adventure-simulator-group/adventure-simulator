@@ -33,7 +33,6 @@ use adventuresim_stdb_client::{
     character_death_table::CharacterDeathTableAccess,
     character_equip_table::CharacterEquipTableAccess,
     character_illness_status_table::CharacterIllnessStatusTableAccess,
-    character_personality_table::CharacterPersonalityTableAccess,
     character_strategic_condition_table::CharacterStrategicConditionTableAccess,
     character_table::CharacterTableAccess, character_time_table::CharacterTimeTableAccess,
     character_training_schedule_table::CharacterTrainingScheduleTableAccess,
@@ -329,7 +328,12 @@ fn live_skills(character_id: u64, profile: &AgentProfile) -> CharacterSkills {
         block_hours: s.block,
         ranged_hours: s.ranged,
         will_hours: s.will,
-        charisma_hours: s.charisma,
+        insight_hours: s.insight,
+        self_awareness_hours: s.self_awareness,
+        humor_hours: s.humor,
+        command_hours: s.command,
+        deception_hours: s.deception,
+        seduction_hours: s.seduction,
         medicine_hours: s.medicine,
         religion_hours: adventuresim_stdb_client::ReligionHours {
             roman_catholic: s.religion.roman_catholic,
@@ -363,7 +367,12 @@ fn live_schedule(profile: &AgentProfile) -> ScheduleAllocation {
         block_minutes: s.block,
         ranged_minutes: s.ranged,
         will_minutes: s.will,
-        charisma_minutes: s.charisma,
+        insight_minutes: s.insight,
+        self_awareness_minutes: s.self_awareness,
+        humor_minutes: s.humor,
+        command_minutes: s.command,
+        deception_minutes: s.deception,
+        seduction_minutes: s.seduction,
         medicine_minutes: s.medicine,
         religion_minutes: s.religion,
         religion_auto_train: s.religion_auto_train,
@@ -402,7 +411,12 @@ fn medical_rest_schedule() -> ScheduleAllocation {
         block_minutes: 0,
         ranged_minutes: 0,
         will_minutes: 0,
-        charisma_minutes: 0,
+        insight_minutes: 0,
+        self_awareness_minutes: 0,
+        humor_minutes: 0,
+        command_minutes: 0,
+        deception_minutes: 0,
+        seduction_minutes: 0,
         medicine_minutes: 0,
         religion_minutes: 0,
         religion_auto_train: true,
@@ -2047,7 +2061,6 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
         .add_query(|query| query.from.character_death())
         .add_query(|query| query.from.character_equip())
         .add_query(|query| query.from.character_illness_status())
-        .add_query(|query| query.from.character_personality())
         .add_query(|query| query.from.character_strategic_condition())
         .add_query(|query| query.from.character_time())
         .add_query(|query| query.from.character_training_schedule())
@@ -2158,16 +2171,6 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
                 cb,
             ));
         runner.call(result)?;
-        let authoritative_personality = runner
-            .connection
-            .db
-            .character_personality()
-            .iter()
-            .find(|row| row.character_id == character_id)
-            .ok_or("configured character has no authoritative personality")?;
-        if authoritative_personality != personality {
-            return Err("authoritative personality does not match deterministic profile".into());
-        }
         let fixture_item = runner
             .connection
             .db
@@ -2573,7 +2576,12 @@ mod tests {
                 rest.block_minutes,
                 rest.ranged_minutes,
                 rest.will_minutes,
-                rest.charisma_minutes,
+                rest.insight_minutes,
+                rest.self_awareness_minutes,
+                rest.humor_minutes,
+                rest.command_minutes,
+                rest.deception_minutes,
+                rest.seduction_minutes,
                 rest.medicine_minutes,
                 rest.religion_minutes,
                 rest.stealth_minutes,

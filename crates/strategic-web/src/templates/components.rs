@@ -121,7 +121,7 @@ pub fn item_type_header() -> Markup {
 pub fn stat_game_icon_name(icon: &str) -> &'static str {
     match icon {
         "will" => "inner-self",
-        "charisma" => "conversation",
+        "command" => "crown",
         "medicine" => "medical-pack",
         "faith" => "holy-symbol",
         "melee" => "sword-clash",

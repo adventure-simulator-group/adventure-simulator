@@ -74,7 +74,12 @@ pub struct ScheduleAllocation {
     pub block_minutes: u16,
     pub ranged_minutes: u16,
     pub will_minutes: u16,
-    pub charisma_minutes: u16,
+    pub insight_minutes: u16,
+    pub self_awareness_minutes: u16,
+    pub humor_minutes: u16,
+    pub command_minutes: u16,
+    pub deception_minutes: u16,
+    pub seduction_minutes: u16,
     pub medicine_minutes: u16,
     pub religion_minutes: u16,
     pub religion_auto_train: bool,
@@ -147,7 +152,12 @@ impl ScheduleAllocation {
                     .saturating_add(self.ranged_minutes)
             },
             self.will_minutes,
-            self.charisma_minutes,
+            self.insight_minutes,
+            self.self_awareness_minutes,
+            self.humor_minutes,
+            self.command_minutes,
+            self.deception_minutes,
+            self.seduction_minutes,
             self.medicine_minutes,
             if self.religion_auto_train {
                 self.religion_minutes
@@ -177,7 +187,12 @@ impl ScheduleAllocation {
             self.block_minutes,
             self.ranged_minutes,
             self.will_minutes,
-            self.charisma_minutes,
+            self.insight_minutes,
+            self.self_awareness_minutes,
+            self.humor_minutes,
+            self.command_minutes,
+            self.deception_minutes,
+            self.seduction_minutes,
             self.medicine_minutes,
             self.religion_minutes,
             self.stealth_minutes,
@@ -279,6 +294,7 @@ pub fn advance_character_time(
         .character_time()
         .character_id()
         .update(character_time);
+    crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
     if terminal.is_some() || !settled.alive {
         return Ok(false);
@@ -343,6 +359,7 @@ pub fn advance_character_wait_time(
     let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, true)?;
     time.minutes = time.minutes.saturating_add(settled.elapsed);
     ctx.db.character_time().character_id().update(time);
+    crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
     if terminal.is_some() || !settled.alive {
         return Ok(false);
@@ -428,7 +445,12 @@ fn profession_training_hours(
     skill: Skill,
 ) -> f32 {
     match skill {
-        Skill::Charisma => skills.charisma_hours,
+        Skill::Insight => skills.insight_hours,
+        Skill::SelfAwareness => skills.self_awareness_hours,
+        Skill::Humor => skills.humor_hours,
+        Skill::Command => skills.command_hours,
+        Skill::Deception => skills.deception_hours,
+        Skill::Seduction => skills.seduction_hours,
         Skill::Smithing => skills.smithing_hours,
         Skill::Medicine => skills.medicine_hours,
         Skill::Surgeon => skills.surgeon_hours,
@@ -600,7 +622,12 @@ fn apply_training(
         block: skills.block_hours,
         ranged: skills.ranged_hours,
         will: skills.will_hours,
-        charisma: skills.charisma_hours,
+        insight: skills.insight_hours,
+        self_awareness: skills.self_awareness_hours,
+        humor: skills.humor_hours,
+        command: skills.command_hours,
+        deception: skills.deception_hours,
+        seduction: skills.seduction_hours,
         medicine: skills.medicine_hours,
         religion: skills.religion_hours,
         stealth: skills.stealth_hours,
@@ -644,7 +671,12 @@ fn apply_training(
     skills.block_hours = hours.block;
     skills.ranged_hours = hours.ranged;
     skills.will_hours = hours.will;
-    skills.charisma_hours = hours.charisma;
+    skills.insight_hours = hours.insight;
+    skills.self_awareness_hours = hours.self_awareness;
+    skills.humor_hours = hours.humor;
+    skills.command_hours = hours.command;
+    skills.deception_hours = hours.deception;
+    skills.seduction_hours = hours.seduction;
     skills.medicine_hours = hours.medicine;
     skills.religion_hours = hours.religion;
     skills.stealth_hours = hours.stealth;
@@ -709,7 +741,12 @@ pub(crate) fn core_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
         block: schedule.block_minutes,
         ranged: schedule.ranged_minutes,
         will: schedule.will_minutes,
-        charisma: schedule.charisma_minutes,
+        insight: schedule.insight_minutes,
+        self_awareness: schedule.self_awareness_minutes,
+        humor: schedule.humor_minutes,
+        command: schedule.command_minutes,
+        deception: schedule.deception_minutes,
+        seduction: schedule.seduction_minutes,
         medicine: schedule.medicine_minutes,
         religion: schedule.religion_minutes,
         religion_auto_train: schedule.religion_auto_train,
@@ -1106,6 +1143,7 @@ fn rest_for_minutes(
         .character_time()
         .character_id()
         .update(character_time);
+    crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
     if terminal.is_some() || !settled.alive {
         return Ok(());
@@ -1265,6 +1303,7 @@ fn advance_personal_camp_time(
     let elapsed = settled.elapsed;
     time.minutes = time.minutes.saturating_add(elapsed);
     ctx.db.character_time().character_id().update(time);
+    crate::social::settle_shared_party_time(ctx, member_id);
     crate::condition::apply_elapsed_needs(ctx, member_id, elapsed)?;
     crate::disease::finish_disease_interval(ctx, member_id, terminal)?;
     if terminal.is_some() || !settled.alive {
@@ -1432,6 +1471,7 @@ pub fn rest_at_camp(
         time.minutes = time.minutes.saturating_add(member_elapsed);
         let interval_end_minute = time.minutes;
         ctx.db.character_time().character_id().update(time);
+        crate::social::settle_shared_party_time(ctx, member_id);
         crate::condition::apply_elapsed_needs(ctx, member_id, member_elapsed)?;
         crate::disease::finish_disease_interval(ctx, member_id, terminal)?;
         if terminal.is_some() || !settled.alive {
@@ -1590,6 +1630,7 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         .character_time()
         .character_id()
         .update(character_time);
+    crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
     if terminal.is_some() || !settled.alive {
         return Ok(forced_catch_up);
@@ -1687,7 +1728,12 @@ mod tests {
             block_hours: 0.0,
             ranged_hours: 0.0,
             will_hours: 0.0,
-            charisma_hours: 0.0,
+            insight_hours: 0.0,
+            self_awareness_hours: 0.0,
+            humor_hours: 0.0,
+            command_hours: 0.0,
+            deception_hours: 0.0,
+            seduction_hours: 0.0,
             medicine_hours: 0.0,
             religion_hours: adventuresim_world_schema::ReligionHours::default(),
             stealth_hours: 0.0,
@@ -1703,7 +1749,12 @@ mod tests {
             block_minutes: 0,
             ranged_minutes: 0,
             will_minutes: 0,
-            charisma_minutes: 0,
+            insight_minutes: 0,
+            self_awareness_minutes: 0,
+            humor_minutes: 0,
+            command_minutes: 0,
+            deception_minutes: 0,
+            seduction_minutes: 0,
             medicine_minutes: 0,
             religion_minutes: 0,
             religion_auto_train: false,

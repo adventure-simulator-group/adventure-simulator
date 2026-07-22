@@ -494,7 +494,12 @@ fn quantize_skills(skills: &mut SkillHours) {
     skills.block = q32(skills.block);
     skills.ranged = q32(skills.ranged);
     skills.will = q32(skills.will);
-    skills.charisma = q32(skills.charisma);
+    skills.insight = q32(skills.insight);
+    skills.self_awareness = q32(skills.self_awareness);
+    skills.humor = q32(skills.humor);
+    skills.command = q32(skills.command);
+    skills.deception = q32(skills.deception);
+    skills.seduction = q32(skills.seduction);
     skills.medicine = q32(skills.medicine);
     for religion in OfficialReligion::ALL {
         *skills.religion.direct_mut(religion) = q32(skills.religion.direct(religion));
@@ -768,7 +773,12 @@ impl PlayerSkills for SimSkills {
             Skill::Block => self.0.block,
             Skill::Ranged => self.0.ranged,
             Skill::Will => self.0.will,
-            Skill::Charisma => self.0.charisma,
+            Skill::Insight => self.0.insight,
+            Skill::SelfAwareness => self.0.self_awareness,
+            Skill::Humor => self.0.humor,
+            Skill::Command => self.0.command,
+            Skill::Deception => self.0.deception,
+            Skill::Seduction => self.0.seduction,
             Skill::Medicine => self.0.medicine,
             Skill::Religion => self.0.religion.maximum_effective(),
             Skill::Stealth => self.0.stealth,

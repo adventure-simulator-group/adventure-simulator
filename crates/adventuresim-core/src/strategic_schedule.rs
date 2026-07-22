@@ -5,7 +5,7 @@ use crate::{activity::*, strategic_time::training_hours_increment};
 use adventuresim_world_schema::{OfficialReligion, ReligionHours, ReligionMinutes};
 
 /// Stable order used by reports and schedule arrays.
-pub const SKILL_COUNT: usize = 12;
+pub const SKILL_COUNT: usize = 17;
 /// Ordinary sleep pressure accumulated over a full day without tiring activity.
 pub const BASELINE_FATIGUE_PER_DAY: f32 = 600.0;
 /// Fatigue added by an hour of sustained ordinary labor.
@@ -27,7 +27,12 @@ pub struct SkillHours {
     pub block: f32,
     pub ranged: f32,
     pub will: f32,
-    pub charisma: f32,
+    pub insight: f32,
+    pub self_awareness: f32,
+    pub humor: f32,
+    pub command: f32,
+    pub deception: f32,
+    pub seduction: f32,
     pub medicine: f32,
     pub religion: ReligionHours,
     pub stealth: f32,
@@ -44,7 +49,12 @@ impl SkillHours {
             self.block,
             self.ranged,
             self.will,
-            self.charisma,
+            self.insight,
+            self.self_awareness,
+            self.humor,
+            self.command,
+            self.deception,
+            self.seduction,
             self.medicine,
             self.religion.total_direct(),
             self.stealth,
@@ -68,7 +78,7 @@ impl SkillHours {
 pub struct DailySchedule {
     /// Structured combat practice, including weapon drills, will, and balance.
     pub combat_training_minutes: u16,
-    /// Social recreation which trains Charisma at the activity rate.
+    /// Social recreation which trains Humor at the activity rate.
     pub carousing_minutes: u16,
     /// Supervised work in an unlocked profession.
     pub apprenticeship_minutes: u16,
@@ -85,7 +95,12 @@ pub struct DailySchedule {
     pub block: u16,
     pub ranged: u16,
     pub will: u16,
-    pub charisma: u16,
+    pub insight: u16,
+    pub self_awareness: u16,
+    pub humor: u16,
+    pub command: u16,
+    pub deception: u16,
+    pub seduction: u16,
     pub medicine: u16,
     /// Aggregate automatic Religion budget. Ignored when `religion_auto_train` is false.
     pub religion: u16,
@@ -121,7 +136,12 @@ impl DailySchedule {
             + religion
             + [
                 self.will,
-                self.charisma,
+                self.insight,
+                self.self_awareness,
+                self.humor,
+                self.command,
+                self.deception,
+                self.seduction,
                 self.medicine,
                 self.stealth,
                 self.balance,
@@ -280,13 +300,18 @@ pub fn apply_schedule_training(
 ) {
     let increment = |minutes| training_hours_increment(elapsed_minutes, minutes);
     skills.will += increment(schedule.will);
-    skills.charisma += increment(schedule.charisma);
+    skills.insight += increment(schedule.insight);
+    skills.self_awareness += increment(schedule.self_awareness);
+    skills.humor += increment(schedule.humor);
+    skills.command += increment(schedule.command);
+    skills.deception += increment(schedule.deception);
+    skills.seduction += increment(schedule.seduction);
     skills.medicine += increment(schedule.medicine);
     skills.stealth += increment(schedule.stealth);
     skills.balance += increment(schedule.balance);
     skills.surgeon += increment(schedule.surgeon);
     skills.smithing += increment(schedule.smithing);
-    skills.charisma += increment(schedule.carousing_minutes) * ACTIVITY_TRAINING_RATE;
+    skills.humor += increment(schedule.carousing_minutes) * ACTIVITY_TRAINING_RATE;
     skills.will += increment(schedule.labor) * ACTIVITY_TRAINING_RATE;
     skills.stealth += increment(schedule.thievery) * ACTIVITY_TRAINING_RATE;
     let days = elapsed_minutes as f32 / crate::strategic_time::MINUTES_PER_DAY as f32;
@@ -350,7 +375,7 @@ fn apply_profession_training(
     hours: f32,
 ) {
     match service_id {
-        Some(ProfessionId::Merchant | ProfessionId::Innkeeper) => skills.charisma += hours,
+        Some(ProfessionId::Merchant | ProfessionId::Innkeeper) => skills.command += hours,
         Some(ProfessionId::Weaponsmith | ProfessionId::Armourer | ProfessionId::Tailor) => {
             skills.smithing += hours
         }
@@ -562,7 +587,7 @@ mod tests {
             + skills.will
             + skills.balance;
         assert!((combat_total - 6.0).abs() < 0.001);
-        assert!((skills.charisma - 1.0).abs() < 0.001);
+        assert!((skills.humor - 1.0).abs() < 0.001);
         assert!((skills.medicine - 1.0).abs() < 0.001);
         assert!((skills.surgeon - 1.0).abs() < 0.001);
     }

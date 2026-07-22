@@ -91,12 +91,12 @@ pub fn aggregate_bounded_party_contribution(current: &[f32], candidate: f32) -> 
     (after - before).max(0.0)
 }
 
-/// Aggregate Charisma as a lead speaker supported (or burdened) by the party.
+/// Aggregate Command as a lead speaker supported (or burdened) by the party.
 ///
 /// The strongest member establishes the base check. Additional members provide
 /// a rapidly saturating coordination benefit, then help or hinder according to
 /// how far their individual check is above or below the neutral 2.5 baseline.
-pub fn aggregate_party_charisma(values: impl IntoIterator<Item = f32>) -> f32 {
+pub fn aggregate_party_command(values: impl IntoIterator<Item = f32>) -> f32 {
     let mut values: Vec<f32> = values
         .into_iter()
         .filter(|value| value.is_finite())
@@ -118,9 +118,9 @@ pub fn aggregate_party_charisma(values: impl IntoIterator<Item = f32>) -> f32 {
     (leader + coordination + support).clamp(0.0, 5.0)
 }
 
-pub fn aggregate_party_charisma_contribution(current: &[f32], candidate: f32) -> f32 {
-    aggregate_party_charisma(current.iter().copied().chain([candidate]))
-        - aggregate_party_charisma(current.iter().copied())
+pub fn aggregate_party_command_contribution(current: &[f32], candidate: f32) -> f32 {
+    aggregate_party_command(current.iter().copied().chain([candidate]))
+        - aggregate_party_command(current.iter().copied())
 }
 pub const FULL_ARMOR_MIN_REGION_COVERAGE: f32 = 0.75;
 pub const WEAPON_PRECISION_CLUB: f32 = 0.5;
@@ -142,7 +142,7 @@ pub struct CharacterCapabilities {
     pub endurance: f32,
     pub medicine: f32,
     pub surgery: f32,
-    pub charisma: f32,
+    pub command: f32,
     pub religion: f32,
 }
 
@@ -160,7 +160,7 @@ pub struct RoleRequirements {
     pub endurance: u8,
     pub medicine: u8,
     pub surgery: u8,
-    pub charisma: u8,
+    pub command: u8,
     pub religion: u8,
 }
 
@@ -178,7 +178,7 @@ impl CharacterCapabilities {
             && rating(self.endurance) >= requirements.endurance
             && rating(self.medicine) >= requirements.medicine
             && rating(self.surgery) >= requirements.surgery
-            && rating(self.charisma) >= requirements.charisma
+            && rating(self.command) >= requirements.command
             && rating(self.religion) >= requirements.religion
     }
 }
@@ -298,9 +298,9 @@ pub fn evaluate_capabilities(
                 LimbWeights::both_arms(),
             )
             .clamp(0.0, 5.0),
-        charisma: skills
+        command: skills
             .skill_check_by_parts(
-                Skill::Charisma,
+                Skill::Command,
                 attributes,
                 body,
                 essentials,
@@ -498,20 +498,20 @@ mod tests {
     }
 
     #[test]
-    fn party_charisma_matches_target_compositions() {
+    fn party_command_matches_target_compositions() {
         for (party, expected) in [
             (vec![4.5], 4.5),
             (vec![3.0, 3.0, 3.0], 4.5),
             (vec![4.0, 2.0], 4.5),
         ] {
-            assert!((aggregate_party_charisma(party) - expected).abs() < 0.001);
+            assert!((aggregate_party_command(party) - expected).abs() < 0.001);
         }
     }
 
     #[test]
-    fn low_charisma_party_size_cannot_brute_force_a_high_check() {
-        assert!(aggregate_party_charisma([1.0; 100]) < 1.0);
-        assert!(aggregate_party_charisma([2.0; 100]) < 1.0);
-        assert!(aggregate_party_charisma([4.0; 1].into_iter().chain([2.0; 10])) < 3.0);
+    fn low_command_party_size_cannot_brute_force_a_high_check() {
+        assert!(aggregate_party_command([1.0; 100]) < 1.0);
+        assert!(aggregate_party_command([2.0; 100]) < 1.0);
+        assert!(aggregate_party_command([4.0; 1].into_iter().chain([2.0; 10])) < 3.0);
     }
 }

@@ -1,4 +1,4 @@
-Morale is a signed strategic stat. Zero is emotionally neutral. Negative morale creates fear incapacitation, while surplus morale above zero lets a charismatic character lift the spirits of allies who are below zero.
+Morale is a signed strategic stat. Zero is emotionally neutral. Negative morale creates fear incapacitation, while surplus morale above zero lets a character with Command lift the spirits of allies who are below zero.
 
 # Morale sources
 
@@ -48,36 +48,36 @@ morale source.
 
 Reactions modify each raw source before positive/negative ranking and Will mitigation. Brave/Fearful halves/doubles outmatched fear; Ambitious/Content multiplies victory and defeat by 1.5/0.5; Sanguine favors positive sources by 1.25 and negative sources by 0.75 while Brooding does the reverse. Sanguine negative events last half the normal duration and Brooding ones last twice as long. Proud multiplies victory by 1.5 and defeat by 3, while Humble multiplies both by 0.75. Zealous/Irreverent multiplies religious conviction, prayer, discord, neglect, and religious events by 1.5/0.5. Gregarious/Solitary multiplies incoming named ally restoration by 1.5/0.5 before the existing cap at neutral morale.
 
-Applied tags are appended to the source label so the breakdown remains auditable. Personality changes what an event means; Will still governs coping with ranked negative morale, Charisma still governs the party restoration budget, Religion governs tradition-specific knowledge, and Conviction governs personal and cohort ardor.
+Personality changes what an event means, but true tags are never appended to public source labels. Will governs coping with ranked negative morale, Command governs the party restoration budget, Religion governs tradition-specific knowledge, and Conviction governs personal and cohort ardor.
 
 # Lifting allies
 
-Party Charisma no longer contributes a permanent flat morale source. Instead, positive-morale party members share one party-wide restoration budget. Charisma uses its own social-coverage aggregation rather than the generic party skill formula. The strongest member supplies the base check. Additional members provide a rapidly saturating coordination bonus, then help or hinder according to how far their individual check is above or below the neutral 2.5 baseline:
+Party Command does not contribute a permanent flat morale source. Instead, positive-morale party members share one party-wide restoration budget. Command uses its own social-coverage aggregation rather than the generic party skill formula. The strongest member supplies the base check. Additional members provide a rapidly saturating coordination bonus, then help or hinder according to how far their individual check is above or below the neutral 2.5 baseline:
 
 ```rs
 let coordination = 1.125 * (1.0 - (1.0 / 3.0).powi(supporter_count));
 let support = supporters.map(|check| 0.5 * (check - 2.5)).sum();
-let party_charisma = (best_check + coordination + support).clamp(0.0, 5.0);
+let party_command = (best_check + coordination + support).clamp(0.0, 5.0);
 ```
 
 This produces approximately 4.5 from one character at 4.5, three characters at 3, or a 4 and a 2. Adding large numbers of characters at 1 or 2 lowers the result once their limited coordination benefit is exhausted.
 
-The party's positive base-morale values are aggregated with the same ranked diminishing returns. The resulting restoration percentage approaches, but never reaches, a limit of 5% per point of the aggregate party Charisma check:
+The party's positive base-morale values are aggregated with the same ranked diminishing returns. The resulting restoration percentage approaches, but never reaches, a limit of 5% per point of the aggregate party Command check:
 
 ```rs
-let party_charisma = aggregate_party_charisma(member_charisma_checks);
+let party_command = aggregate_party_command(member_command_checks);
 let party_surplus = cumulative_morale(member_positive_base_morale);
 let saturation = 1.0 - (-party_surplus / 10.0).exp();
-let party_restoration = saturation * 0.05 * party_charisma;
+let party_restoration = saturation * 0.05 * party_command;
 ```
 
-Ten aggregated surplus morale reaches about 63% of the party's limit, 20 reaches about 86%, and 30 reaches about 95%. Party Charisma is capped at 5, so the shared restoration limit cannot exceed 25% regardless of party size.
+Ten aggregated surplus morale reaches about 63% of the party's limit, 20 reaches about 86%, and 30 reaches about 95%. Party Command is capped at 5, so the shared restoration limit cannot exceed 25% regardless of party size.
 
 The party budget is divided among positive-morale members in proportion to their individual surplus, allowing the UI to show who is doing the encouraging without applying the party bonus more than once. All surplus values are calculated before receiving help from allies. This makes the relationship acyclic: two high-morale characters cannot recursively increase one another's output. If support would restore more than the listener's entire deficit, the named contributions are reduced proportionally. Ally support can lift a character only to zero and can never create surplus morale.
 
 # Fear and the morale meter
 
-Each negative morale point produces one percentage point of fear incapacitation, so -100 morale is the meaningful left endpoint of the meter. The center represents neutral morale. The right side shows the character's allocated share of the party's current ally-restoration percentage relative to the party's present `5% × aggregate Charisma` limit. Hovering or focusing the meter shows every named contribution and its signed value.
+Each negative morale point produces one percentage point of fear incapacitation, so -100 morale is the meaningful left endpoint of the meter. The center represents neutral morale. The right side shows the character's allocated share of the party's current ally-restoration percentage relative to the party's present `5% × aggregate Command` limit. Selecting the meter opens the dedicated social panel and source actions.
 
 The strategic condition and morale-source tables are refreshable projections. Durable state remains in character condition, injuries, strategic time, time-stamped morale events, and static personality. A negative event's persisted expiration already includes its Sanguine or Brooding duration adjustment, so `expires_at_minute` is authoritative rather than a projection-only reinterpretation. Personality is assigned before ordinary NPC events are recorded and is immutable thereafter. Personality is strategic identity, never tactical tick state. A missing legacy personality row is safely treated as fully neutral.
 
@@ -87,22 +87,22 @@ A character makes or changes their religious profession by speaking with a pries
 
 Only a professed Zealous character receives the positive religious-leadership morale source. Its magnitude comes from the party's aggregate effective Religion check for that character's own tradition, and any living member may contribute regardless of profession. Same-profession social pressure instead comes from personality Conviction: Zealous contributes 5.0, Neutral 2.5, and Irreverent 0.0. A character with no professed religion receives neither this source nor religious pressure.
 
-For each believer, the other religious cohorts are combined into foreign faith pressure. Mixed-faith tension is deliberately subtractive: party Charisma is subtracted from that pressure, and only the uncovered remainder becomes raw negative morale. This means capable social leadership can remove discord entirely rather than merely dividing it down:
+For each believer, the other religious cohorts are combined into foreign faith pressure. Mixed-faith tension is deliberately subtractive: party Command is subtracted from that pressure, and only the uncovered remainder becomes raw negative morale. This means capable social leadership can remove discord entirely rather than merely dividing it down:
 
 ```rs
 let foreign_pressure = aggregate_party_check(other_cohort_checks).clamp(0.0, 5.0);
-let discord = 3.0 * (foreign_pressure - party_charisma).max(0.0);
+let discord = 3.0 * (foreign_pressure - party_command).max(0.0);
 ```
 
 The resulting `Religious discord` source then receives the same negative-source ranking and Will mitigation as other morale penalties. A unified party therefore gets the largest available conviction benefit without discord; a mixed party retains the conviction of each faith but generally pays a leadership-dependent cost.
 
 # Fervor
 
-Fervor is a bounded strategic pressure meter, not another morale source. It shows how close religious conviction is to becoming inflexible behavior. Individual personality Conviction, the character's same-profession Conviction cohort, and surplus morale raise pressure; aggregate party Charisma is subtracted as restraint. Characters with no professed religion always have zero Fervor.
+Fervor is a bounded strategic pressure meter, not another morale source. It shows how close religious conviction is to becoming inflexible behavior. Individual personality Conviction, the character's same-profession Conviction cohort, and surplus morale raise pressure; aggregate party Command is subtracted as restraint. Characters with no professed religion always have zero Fervor.
 
 ```rs
 let pressure = (individual_conviction + cohort_conviction + positive_morale / 10.0
-    - party_charisma - 2.5).max(0.0);
+    - party_command - 2.5).max(0.0);
 let fervor = 1.0 - (-pressure / 5.0).exp();
 ```
 
@@ -113,7 +113,7 @@ Daily prayer is an activity in the settlement-downtime schedule rather than a di
 Sunday remains an explicit demand rather than a random Fervor event. Day 7 and every seventh calendar day thereafter is Sunday. A professing character with nonzero Fervor who is at a settlement receives the choice once that Sunday:
 
 - **Observe:** spend one full day in settlement. The character receives a small positive morale event.
-- **Do not observe:** keep complete freedom of action. The raw morale penalty is `max(0, 8 × Fervor − 1.6 × party Charisma)`, so both Fervor and Charisma change the result continuously and a Charisma check of 5 eliminates even the maximum penalty.
+- **Do not observe:** keep complete freedom of action. The raw morale penalty is `max(0, 8 × Fervor − 1.6 × party Command)`, so both Fervor and Command change the result continuously and a Command check of 5 eliminates even the maximum penalty.
 
 Any strategic journey that overlaps Sunday counts as choosing not to observe it and applies exactly the same penalty once per character for that Sunday. This includes leaving Saturday night and returning Monday morning. A pending Sunday prompt is resolved as refused on departure, while an already answered Sunday cannot be charged twice. Demands are choices, not involuntary character actions, but spending Sunday on the road is itself the party leader's choice.
 
@@ -128,3 +128,17 @@ The incident deliberately reuses the quest-location combat flow. Arrival is inte
 - Open the encounter map and travel away without fighting.
 
 The incident temporarily occupies the party's active-encounter slot while preserving any real active quest. Winning or leaving restores that quest. Leaving marks the incident avoided and does not immediately trigger another incident at the destination reached by that retreat. The same shared encounter machinery also handles Thievery and Raiding discoveries, although those activities use their own scenario text and risk formulas. There are no religious quest-choice demands; quest dialogue consequences for mixed-faith parties remain future work.
+# Social responses
+
+Morale sources are not dialogue memories. Each source has a closed topic such
+as defeat, injury, fatigue, hunger, faith, or filth. The character page's
+Morale meter opens a social panel where a party member can listen, commiserate,
+use humor, rally with Command, offer a deceptive reframe, or flirt. Labels are
+generic and grounded in the durable source; the game does not invent incidental
+details about a battle or conversation.
+
+Successful realized morale improvement increases the recipient's directional
+Affinity toward the actor. Gains diminish near the positive cap. Failure,
+exposure, or a boundary-crossing response can lower Affinity. Repeating the same
+approach to the same source has a 24-hour target-clock cooldown. Passive party
+morale projection uses Command but never creates Affinity.

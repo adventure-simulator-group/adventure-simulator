@@ -92,9 +92,10 @@ use super::travel::{
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    AlcoholConsumption, Character, CharacterAttributes, CharacterCapability, CharacterCondition,
-    CharacterEquip, CharacterFilth, CharacterLimbs, CharacterMoraleSource, CharacterNeeds,
-    CharacterNotoriety, CharacterPersonality, CharacterSkills, CharacterStats,
+    AlcoholConsumption, Character, CharacterAffinity, CharacterAttributes, CharacterCapability,
+    CharacterCondition, CharacterEquip, CharacterFamiliarity, CharacterFilth, CharacterLimbs,
+    CharacterMoraleSource, CharacterNeeds, CharacterNotoriety, CharacterPersonality,
+    CharacterSkills, CharacterStats,
     CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, EquippedMedication,
     HerbalistExaminationRow, InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget,
     ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury, LimbRegion,
@@ -102,14 +103,14 @@ use crate::spacetimedb::{
     PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, Quest, QuestIssuer,
     QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder, RetainedProjectile,
     ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription, SettlementSmith,
-    TravelEdge,
+    SocialBelief, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
-    RestSummary, SoapRestPreview, alchemy_page, camp_page, inn_page, live_merchant_shop_page,
-    merchants_page, party_discard_page, party_inventory_page, party_personal_page, party_pool_page,
-    party_stats_page, religion_page, rest_result_page, settlement_map_page,
-    settlement_overview_page, surgery_page,
+    RestSummary, SoapRestPreview, SocialPresentation, alchemy_page, camp_page, inn_page,
+    live_merchant_shop_page, merchants_page, party_discard_page, party_inventory_page,
+    party_personal_page, party_pool_page, party_social_page, party_stats_page, religion_page,
+    rest_result_page, settlement_map_page, settlement_overview_page, surgery_page,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -203,6 +204,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/locations/{kind}/{id}/party/{character_id}/stats",
             get(party_stats),
+        )
+        .route(
+            "/locations/{kind}/{id}/party/{character_id}/social",
+            get(party_social).post(perform_social_action),
         )
         .route(
             "/locations/{kind}/{id}/party/{character_id}/surgery/{limb}",
@@ -2564,8 +2569,9 @@ async fn party_personal(
     let notoriety = query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id)
         .await
         .map_or(0.0, |notoriety| notoriety.value);
-    let personality =
-        query_single::<CharacterPersonality>(&state, "character_personality", character_id).await;
+    // Authoritative personality is private. Ordinary pages render only
+    // observer-specific beliefs through the dedicated social route.
+    let personality: Option<CharacterPersonality> = None;
     let medical = medical_presentation(&state, character_id, character_id).await;
     let injuries = state
         .db
@@ -2735,7 +2741,12 @@ struct TrainingScheduleForm {
     block_minutes: u16,
     ranged_minutes: u16,
     will_minutes: u16,
-    charisma_minutes: u16,
+    insight_minutes: u16,
+    self_awareness_minutes: u16,
+    humor_minutes: u16,
+    command_minutes: u16,
+    deception_minutes: u16,
+    seduction_minutes: u16,
     medicine_minutes: u16,
     #[serde(default)]
     religion_minutes: u16,
@@ -2774,7 +2785,7 @@ mod training_schedule_form_tests {
     fn omitted_checkbox_and_inactive_religion_inputs_deserialize_as_false_and_zero() {
         let form: TrainingScheduleForm = serde_json::from_value(json!({
             "melee_minutes": 0, "dodge_minutes": 0, "block_minutes": 0,
-            "ranged_minutes": 0, "will_minutes": 0, "charisma_minutes": 0,
+            "ranged_minutes": 0, "will_minutes": 0, "command_minutes": 0,
             "medicine_minutes": 0, "stealth_minutes": 0, "balance_minutes": 0,
             "surgeon_minutes": 0, "smithing_minutes": 0, "labor_minutes": 0,
             "prayer_minutes": 0, "thievery_minutes": 0, "raiding_minutes": 0
@@ -2791,7 +2802,7 @@ mod training_schedule_form_tests {
     fn submitted_schedule_retains_both_religion_allocation_branches() {
         let form: TrainingScheduleForm = serde_json::from_value(json!({
             "melee_minutes": 0, "dodge_minutes": 0, "block_minutes": 0,
-            "ranged_minutes": 0, "will_minutes": 0, "charisma_minutes": 0,
+            "ranged_minutes": 0, "will_minutes": 0, "command_minutes": 0,
             "medicine_minutes": 0, "combat_minutes": 90, "combat_auto_train": true,
             "religion_minutes": 120,
             "religion_auto_train": false, "religion_judaism_minutes": 45,
@@ -2836,7 +2847,12 @@ async fn update_training_schedule(
         block_minutes: form.block_minutes,
         ranged_minutes: form.ranged_minutes,
         will_minutes: form.will_minutes,
-        charisma_minutes: form.charisma_minutes,
+        insight_minutes: form.insight_minutes,
+        self_awareness_minutes: form.self_awareness_minutes,
+        humor_minutes: form.humor_minutes,
+        command_minutes: form.command_minutes,
+        deception_minutes: form.deception_minutes,
+        seduction_minutes: form.seduction_minutes,
         medicine_minutes: form.medicine_minutes,
         religion_minutes: form.religion_minutes,
         religion_auto_train: form.religion_auto_train,
@@ -3461,8 +3477,7 @@ async fn party_stats(
     let notoriety = query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id)
         .await
         .map_or(0.0, |notoriety| notoriety.value);
-    let personality =
-        query_single::<CharacterPersonality>(&state, "character_personality", character_id).await;
+    let personality: Option<CharacterPersonality> = None;
     let medical = medical_presentation(&state, active_character.id, character_id).await;
     let injuries = state
         .db
@@ -3636,6 +3651,156 @@ async fn get_morale_sources(state: &AppState, character_id: u64) -> Vec<Characte
         .unwrap_or_default();
     sources.sort_by(|left, right| right.magnitude.abs().total_cmp(&left.magnitude.abs()));
     sources
+}
+
+async fn party_social(
+    State(state): State<AppState>,
+    Path((kind, id, target_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
+    session: Session,
+) -> Html<String> {
+    let mut location = match resolve_location(&state, &kind, &id).await {
+        LocationLookup::Found(location) => location,
+        LocationLookup::NotFound => return Html("<h1>Location not found</h1>".into()),
+        LocationLookup::Unavailable => {
+            return Html("<h1>Strategic data is unavailable</h1>".into());
+        }
+    };
+    location.active_building = building.valid().map(str::to_owned);
+    let Some((active, _)) = get_active_character(&state, session.character_id_u64()).await else {
+        return Html("<h1>Choose a character first</h1>".into());
+    };
+    let selected = if target_id == active.id {
+        active.clone()
+    } else {
+        match query_single::<Character>(&state, "character", target_id).await {
+            Some(value) => value,
+            None => return Html("<h1>Party member not found</h1>".into()),
+        }
+    };
+    let same_party = active.party_id.is_some() && active.party_id == selected.party_id;
+    let colocated = active.current_settlement_id == selected.current_settlement_id
+        && active.current_quest_location_id == selected.current_quest_location_id;
+    if !same_party
+        || !colocated
+        || !active.alive
+        || !selected.alive
+        || !character_is_at_location(&active, &location)
+    {
+        return Html("<h1>Social actions require a living, co-located party member</h1>".into());
+    }
+    let party_members = get_active_party_members(&state, Some(&active)).await;
+    let condition = get_strategic_condition(&state, target_id).await;
+    let sources = get_morale_sources(&state, target_id).await;
+    let target_minute = query_single::<CharacterTime>(&state, "character_time", target_id)
+        .await
+        .map_or(0, |v| v.minutes);
+    let affinity_id = format!("{target_id}:{}", active.id);
+    let affinity = state
+        .db
+        .query_one::<CharacterAffinity>(&format!(
+            "SELECT * FROM character_affinity WHERE id = {}",
+            sql_string_literal(&affinity_id)
+        ))
+        .await
+        .ok()
+        .flatten()
+        .map_or(0.0, |v| {
+            adventuresim_core::social::settle_affinity(
+                v.anchor,
+                target_minute.saturating_sub(v.anchor_minute),
+            )
+        });
+    let (low, high) = (active.id.min(target_id), active.id.max(target_id));
+    let familiarity_id = format!("{low}:{high}");
+    let shared_minutes = state
+        .db
+        .query_one::<CharacterFamiliarity>(&format!(
+            "SELECT * FROM character_familiarity WHERE id = {}",
+            sql_string_literal(&familiarity_id)
+        ))
+        .await
+        .ok()
+        .flatten()
+        .map_or(0, |v| v.shared_minutes);
+    let beliefs_result = state
+        .db
+        .query::<SocialBelief>(&format!(
+            "SELECT * FROM backend_social_beliefs WHERE observer_id = {}",
+            active.id
+        ))
+        .await;
+    let beliefs_available = beliefs_result.is_ok();
+    let beliefs = match beliefs_result {
+        Ok(rows) => rows
+            .into_iter()
+            .filter(|row| row.subject_id == target_id)
+            .collect(),
+        Err(error) => {
+            tracing::error!(%error, observer_id=active.id, target_id, "private social belief query failed closed");
+            Vec::new()
+        }
+    };
+    let social = SocialPresentation {
+        affinity,
+        familiarity_hours: adventuresim_core::social::effective_familiarity_hours(
+            shared_minutes,
+            party_members.iter().filter(|v| v.alive).count(),
+            true,
+        ),
+        beliefs,
+        unavailable: !beliefs_available,
+    };
+    Html(
+        party_social_page(
+            &location,
+            &selected,
+            &active,
+            &party_members,
+            condition.as_ref(),
+            &sources,
+            &social,
+        )
+        .into_string(),
+    )
+}
+
+#[derive(Deserialize)]
+struct SocialActionForm {
+    source_id: String,
+    topic: String,
+    action_kind: String,
+}
+
+async fn perform_social_action(
+    State(state): State<AppState>,
+    Path((kind, id, target_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
+    session: Session,
+    Form(form): Form<SocialActionForm>,
+) -> Response {
+    let Some(actor_id) = session.character_id_u64() else {
+        return (StatusCode::UNAUTHORIZED, "Choose a character first").into_response();
+    };
+    // The actor is derived exclusively from the signed session, never form input.
+    if let Err(error) = state
+        .db
+        .call(
+            "perform_social_action",
+            &[
+                json!(actor_id),
+                json!(target_id),
+                json!(form.source_id),
+                json!(form.topic),
+                json!(form.action_kind),
+            ],
+        )
+        .await
+    {
+        tracing::warn!(%error, actor_id, target_id, "social action rejected");
+    }
+    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party/{target_id}/social")))
+        .into_response()
 }
 
 #[derive(Deserialize)]
@@ -4249,7 +4414,16 @@ fn skill_deltas(before: &CharacterSkills, after: &CharacterSkills) -> Vec<(Strin
         ("Block", before.block_hours, after.block_hours),
         ("Ranged", before.ranged_hours, after.ranged_hours),
         ("Will", before.will_hours, after.will_hours),
-        ("Charisma", before.charisma_hours, after.charisma_hours),
+        ("Insight", before.insight_hours, after.insight_hours),
+        (
+            "Self-awareness",
+            before.self_awareness_hours,
+            after.self_awareness_hours,
+        ),
+        ("Humor", before.humor_hours, after.humor_hours),
+        ("Command", before.command_hours, after.command_hours),
+        ("Deception", before.deception_hours, after.deception_hours),
+        ("Seduction", before.seduction_hours, after.seduction_hours),
         ("Medicine", before.medicine_hours, after.medicine_hours),
         (
             "Religion",

@@ -5,7 +5,6 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::character_attributes_type::CharacterAttributes;
-use super::character_personality_type::CharacterPersonality;
 use super::character_skills_type::CharacterSkills;
 use super::schedule_allocation_type::ScheduleAllocation;
 
@@ -19,7 +18,14 @@ pub(super) struct ConfigureSimulationCharacterArgs {
     pub attributes: CharacterAttributes,
     pub skills: CharacterSkills,
     pub downtime: ScheduleAllocation,
-    pub personality: CharacterPersonality,
+    pub nerve: String,
+    pub drive: String,
+    pub outlook: String,
+    pub sociability: String,
+    pub conscience: String,
+    pub self_regard: String,
+    pub conviction: String,
+    pub hygiene: String,
 }
 
 impl From<ConfigureSimulationCharacterArgs> for super::Reducer {
@@ -32,7 +38,14 @@ impl From<ConfigureSimulationCharacterArgs> for super::Reducer {
             attributes: args.attributes,
             skills: args.skills,
             downtime: args.downtime,
-            personality: args.personality,
+            nerve: args.nerve,
+            drive: args.drive,
+            outlook: args.outlook,
+            sociability: args.sociability,
+            conscience: args.conscience,
+            self_regard: args.self_regard,
+            conviction: args.conviction,
+            hygiene: args.hygiene,
         }
     }
 }
@@ -61,7 +74,14 @@ pub trait configure_simulation_character {
         attributes: CharacterAttributes,
         skills: CharacterSkills,
         downtime: ScheduleAllocation,
-        personality: CharacterPersonality,
+        nerve: String,
+        drive: String,
+        outlook: String,
+        sociability: String,
+        conscience: String,
+        self_regard: String,
+        conviction: String,
+        hygiene: String,
     ) -> __sdk::Result<()> {
         self.configure_simulation_character_then(
             nonce,
@@ -71,7 +91,14 @@ pub trait configure_simulation_character {
             attributes,
             skills,
             downtime,
-            personality,
+            nerve,
+            drive,
+            outlook,
+            sociability,
+            conscience,
+            self_regard,
+            conviction,
+            hygiene,
             |_, _| {},
         )
     }
@@ -91,7 +118,14 @@ pub trait configure_simulation_character {
         attributes: CharacterAttributes,
         skills: CharacterSkills,
         downtime: ScheduleAllocation,
-        personality: CharacterPersonality,
+        nerve: String,
+        drive: String,
+        outlook: String,
+        sociability: String,
+        conscience: String,
+        self_regard: String,
+        conviction: String,
+        hygiene: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -111,7 +145,14 @@ impl configure_simulation_character for super::RemoteReducers {
         attributes: CharacterAttributes,
         skills: CharacterSkills,
         downtime: ScheduleAllocation,
-        personality: CharacterPersonality,
+        nerve: String,
+        drive: String,
+        outlook: String,
+        sociability: String,
+        conscience: String,
+        self_regard: String,
+        conviction: String,
+        hygiene: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -128,7 +169,14 @@ impl configure_simulation_character for super::RemoteReducers {
                 attributes,
                 skills,
                 downtime,
-                personality,
+                nerve,
+                drive,
+                outlook,
+                sociability,
+                conscience,
+                self_regard,
+                conviction,
+                hygiene,
             },
             callback,
         )

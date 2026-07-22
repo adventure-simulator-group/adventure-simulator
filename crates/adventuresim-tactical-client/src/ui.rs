@@ -191,9 +191,9 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                                 children![(SkillSpan(Skill::Will), TextSpan::default())]
                             ),
                             (
-                                Name::new("charisma"),
-                                Text::new("Charisma hours:\n"),
-                                children![(SkillSpan(Skill::Charisma), TextSpan::default())]
+                                Name::new("command"),
+                                Text::new("Command hours:\n"),
+                                children![(SkillSpan(Skill::Command), TextSpan::default())]
                             ),
                             (
                                 Name::new("medicine"),
@@ -362,7 +362,12 @@ fn update_skills_ui(
             Skill::Block => format!("{:.2}", skills.block_hours),
             Skill::Ranged => format!("{:.2}", skills.ranged_hours),
             Skill::Will => format!("{:.2}", skills.will_hours),
-            Skill::Charisma => format!("{:.2}", skills.charisma_hours),
+            Skill::Insight => format!("{:.2}", skills.insight_hours),
+            Skill::SelfAwareness => format!("{:.2}", skills.self_awareness_hours),
+            Skill::Humor => format!("{:.2}", skills.humor_hours),
+            Skill::Command => format!("{:.2}", skills.command_hours),
+            Skill::Deception => format!("{:.2}", skills.deception_hours),
+            Skill::Seduction => format!("{:.2}", skills.seduction_hours),
             Skill::Medicine => format!("{:.2}", skills.medicine_hours),
             Skill::Religion => format!("{:.2}", skills.religion_hours),
             Skill::Stealth => format!("{:.2}", skills.stealth_hours),

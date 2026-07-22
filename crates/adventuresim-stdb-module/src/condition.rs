@@ -87,7 +87,7 @@ pub struct CharacterStrategicCondition {
     pub morale: f32,
     /// This character's allocated share of the party's ally-restoration fraction.
     pub morale_bonus: f32,
-    /// Maximum party restoration fraction at the current aggregate Charisma check.
+    /// Maximum party restoration fraction at the current aggregate Command check.
     pub morale_bonus_cap: f32,
     /// Bounded strategic pressure toward inflexible religious behavior.
     pub fervor: f32,
@@ -433,7 +433,11 @@ fn total_damage(limbs: &CharacterLimbs) -> f32 {
     .sum()
 }
 
-fn mental_check(ctx: &ReducerContext, character_id: u64, skill: Skill) -> Result<f32, String> {
+pub(crate) fn mental_check(
+    ctx: &ReducerContext,
+    character_id: u64,
+    skill: Skill,
+) -> Result<f32, String> {
     let attributes = ctx
         .db
         .character_attributes()
@@ -542,7 +546,7 @@ fn rank_morale_sources(raw_sources: &mut [ProjectedMoraleSource], will: f32) {
 struct PartyReligionContext {
     own_cohort: f32,
     foreign_pressure: f32,
-    party_charisma: f32,
+    party_command: f32,
     knowledge: f32,
 }
 
@@ -612,10 +616,10 @@ fn party_religion_context(
     party_members: &[u64],
 ) -> Result<Option<(String, PartyReligionContext)>, String> {
     let mut cohorts: BTreeMap<String, Vec<f32>> = BTreeMap::new();
-    let mut charismas = Vec::with_capacity(party_members.len());
+    let mut commands = Vec::with_capacity(party_members.len());
     for member_id in party_members.iter().copied() {
         initialize_character_condition(ctx, member_id)?;
-        charismas.push(mental_check(ctx, member_id, Skill::Charisma)?);
+        commands.push(mental_check(ctx, member_id, Skill::Command)?);
         if let Some(religion_id) = ctx
             .db
             .character_condition()
@@ -652,7 +656,7 @@ fn party_religion_context(
         PartyReligionContext {
             own_cohort,
             foreign_pressure,
-            party_charisma: aggregate_party_charisma(charismas),
+            party_command: aggregate_party_command(commands),
             knowledge: aggregate_party_check(knowledge_checks).clamp(0.0, 5.0),
         },
     )))
@@ -698,12 +702,9 @@ fn base_morale(
                           label: String,
                           magnitude: f32,
                           stimulus: crate::personality::MoraleStimulus| {
-        let (magnitude, traits) = crate::personality::react_raw(&personality, stimulus, magnitude);
-        let label = if traits.is_empty() {
-            label
-        } else {
-            format!("{label} ({})", traits.join(", "))
-        };
+        // True personality changes the authoritative magnitude, but labels are
+        // public presentation data and must never reveal that private truth.
+        let (magnitude, _) = crate::personality::react_raw(&personality, stimulus, magnitude);
         raw_sources.push(ProjectedMoraleSource {
             key,
             kind,
@@ -769,7 +770,7 @@ fn base_morale(
                 crate::personality::MoraleStimulus::Religious,
             );
         }
-        let discord = religious_discord(religion.foreign_pressure, religion.party_charisma);
+        let discord = religious_discord(religion.foreign_pressure, religion.party_command);
         if discord > 0.0 {
             add_source(
                 "religious-discord".into(),
@@ -798,9 +799,9 @@ fn base_morale(
             personality.conviction.strength(),
             religion.own_cohort,
             0.0,
-            religion.party_charisma,
+            religion.party_command,
         );
-        let neglect = religious_neglect_morale(prayer_fervor, religion.party_charisma)
+        let neglect = religious_neglect_morale(prayer_fervor, religion.party_command)
             * (1.0 - prayer_observance(prayer_fervor, prayer_minutes));
         if neglect > 0.0 {
             add_source(
@@ -919,20 +920,20 @@ fn party_morale_support(
     ctx: &ReducerContext,
     party_members: &[u64],
 ) -> Result<(f32, Vec<(u64, f32)>), String> {
-    let mut charismas = Vec::new();
+    let mut commands = Vec::new();
     let mut surplus_weights = Vec::new();
     for member_id in party_members.iter().copied() {
-        charismas.push(mental_check(ctx, member_id, Skill::Charisma)?);
+        commands.push(mental_check(ctx, member_id, Skill::Command)?);
         let (member_base_morale, _) = base_morale(ctx, member_id)?;
         let surplus = member_base_morale.max(0.0);
         if surplus > 0.0 {
             surplus_weights.push((member_id, surplus));
         }
     }
-    let party_charisma = aggregate_party_charisma(charismas);
-    let bonus_cap = MORALE_BONUS_PER_CHARISMA * party_charisma;
+    let party_command = aggregate_party_command(commands);
+    let bonus_cap = MORALE_BONUS_PER_COMMAND * party_command;
     let combined_surplus = cumulative_morale(surplus_weights.iter().map(|(_, surplus)| *surplus));
-    let total_bonus = morale_bonus_fraction(combined_surplus, party_charisma);
+    let total_bonus = morale_bonus_fraction(combined_surplus, party_command);
     let total_weight: f32 = surplus_weights.iter().map(|(_, surplus)| *surplus).sum();
     let shares = surplus_weights
         .into_iter()
@@ -966,7 +967,7 @@ fn evaluate_strategic_condition(
                     .strength(),
                 religion.own_cohort,
                 listener_base_morale.max(0.0),
-                religion.party_charisma,
+                religion.party_command,
             )
         } else {
             0.0
@@ -1001,14 +1002,11 @@ fn evaluate_strategic_condition(
         } else {
             1.0
         };
-        for (member_id, name, lift, social_trait) in ally_lifts {
+        for (member_id, name, lift, _social_trait) in ally_lifts {
             sources.push(ProjectedMoraleSource {
                 key: format!("ally-{member_id}"),
                 kind: "ally".into(),
-                label: social_trait.map_or_else(
-                    || format!("Encouraged by {name}"),
-                    |tag| format!("Encouraged by {name} ({tag})"),
-                ),
+                label: format!("Encouraged by {name}"),
                 magnitude: lift * scale,
             });
         }
@@ -1261,12 +1259,12 @@ fn refuse_expired_holy_day_demands(
         return Ok(false);
     }
 
-    let charisma = party_charisma(ctx, character_id)?;
+    let command = party_command(ctx, character_id)?;
     for mut demand in pending {
         demand.status = "resolved".into();
         demand.resolved_at_minute = Some(current_minute);
         demand.resolution = Some("refuse".into());
-        let penalty = religious_neglect_morale(demand.fervor, charisma);
+        let penalty = religious_neglect_morale(demand.fervor, command);
         let source_id = format!("religious-demand:{}", demand.id);
         ctx.db.religious_demand().id().update(demand);
         if penalty > 0.0 && !has_morale_source(ctx, character_id, &source_id) {
@@ -1337,13 +1335,13 @@ pub fn resolve_religious_demand(
         }
         "refuse" => {
             let party_ids = party_character_ids(ctx, demand.character_id)?;
-            let party_charisma = aggregate_party_charisma(
+            let party_command = aggregate_party_command(
                 party_ids
                     .into_iter()
-                    .map(|id| mental_check(ctx, id, Skill::Charisma))
+                    .map(|id| mental_check(ctx, id, Skill::Command))
                     .collect::<Result<Vec<_>, _>>()?,
             );
-            let penalty = religious_neglect_morale(demand.fervor, party_charisma);
+            let penalty = religious_neglect_morale(demand.fervor, party_command);
             if penalty > 0.0 {
                 record_morale_event(
                     ctx,
@@ -1461,11 +1459,11 @@ fn stored_morale_event_duration(ctx: &ReducerContext, character_id: u64, magnitu
     }
 }
 
-fn party_charisma(ctx: &ReducerContext, character_id: u64) -> Result<f32, String> {
-    Ok(aggregate_party_charisma(
+fn party_command(ctx: &ReducerContext, character_id: u64) -> Result<f32, String> {
+    Ok(aggregate_party_command(
         party_character_ids(ctx, character_id)?
             .into_iter()
-            .map(|id| mental_check(ctx, id, Skill::Charisma))
+            .map(|id| mental_check(ctx, id, Skill::Command))
             .collect::<Result<Vec<_>, _>>()?,
     ))
 }
@@ -1533,8 +1531,8 @@ pub fn apply_travel_condition(
         .find(character_id)
         .is_some_and(|row| row.religion_id.is_some());
     if professes_religion && condition.fervor > 0.0 {
-        let charisma = party_charisma(ctx, character_id)?;
-        let daily_penalty = religious_neglect_morale(condition.fervor, charisma);
+        let command = party_command(ctx, character_id)?;
+        let daily_penalty = religious_neglect_morale(condition.fervor, command);
         let missed_prayer = 1.0 - prayer_observance(condition.fervor, prayer_minutes);
         let elapsed_days = elapsed_minutes as f32 / MINUTES_PER_DAY as f32;
         let prayer_penalty = daily_penalty * missed_prayer * elapsed_days;

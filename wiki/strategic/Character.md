@@ -5,7 +5,31 @@ You aren't exactly spawning a character into the world; ostensibly, you are obta
 
 ## Personality
 
-Characters have an immutable sparse personality drawn from eight discrete axes. Only non-neutral tags are displayed. Generated NPCs receive two to four randomly selected non-neutral axes; the current direct player-character creation path remains neutral. Personality changes raw morale reactions rather than replacing Will, Charisma, or Religion knowledge. The hygiene axis is Slovenly/Cleanly: Slovenly characters ignore filth morale, while Cleanly characters strongly dislike filth and appreciate being completely clean.
+Characters have an immutable sparse personality drawn from eight discrete axes. Generated NPCs receive two to four randomly selected non-neutral axes; the current direct player-character creation path remains neutral. Personality changes raw morale reactions rather than replacing Will, Social skills, or Religion knowledge. The hygiene axis is Slovenly/Cleanly: Slovenly characters ignore filth morale, while Cleanly characters strongly dislike filth and appreciate being completely clean. Other characters never see these authoritative tags directly.
+
+Authoritative personality is private. Other characters instead keep durable,
+observer-specific beliefs with confidence and observation time. Beliefs may be
+wrong and can later be corrected. Insight forms beliefs about other people and
+is opposed by Deception where applicable; Self-awareness governs beliefs about
+oneself. Public morale labels never reveal the true trait that changed a
+reaction.
+
+## Relationships
+
+Affinity is directional: how the subject currently regards a particular actor.
+It is anchored to the subject's personal strategic clock and exponentially
+decays toward neutral with a 30-day half-life without crossing neutral.
+Familiarity is symmetric shared-party time stored once for the canonical
+character pair. Its displayed effective hours divide shared time by current
+party size while both characters remain together, and use the undivided total
+after they separate.
+
+The former Charisma skill is replaced by the Social family: **Insight**,
+**Self-awareness**, **Humor**, **Command**, **Deception**, and **Seduction**.
+Social outcomes combine the action skill, current Affinity and Familiarity,
+the actor's diagnosis, the target's true personality and topic sensitivity,
+and a server roll. Listening is low-risk exploration; more presumptuous actions
+have greater upside and downside.
 
 When mortal creation is reworked, players should choose among several generated whole characters with different personality tags. Players will not customize individual tags: personality is part of choosing an existing mortal person rather than assembling one stat by stat.
 
