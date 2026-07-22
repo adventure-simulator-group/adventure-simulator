@@ -235,6 +235,8 @@ pub struct CharacterSkills {
     pub medicine_hours: f32,
     pub cooking_hours: f32,
     pub religion_hours: adventuresim_world_schema::ReligionHours,
+    pub oral_languages: adventuresim_world_schema::OralLanguageHours,
+    pub written_languages: adventuresim_world_schema::WrittenLanguageHours,
     pub stealth_hours: f32,
     pub balance_hours: f32,
     pub terrain_plains_hours: f32,
@@ -927,6 +929,50 @@ pub(crate) fn insert_new_npc_character(
     insert_character_with_origin(ctx, name, id, temporary, true)
 }
 
+pub(crate) fn set_character_languages_for_settlement(
+    ctx: &ReducerContext,
+    character_id: u64,
+    settlement_id: &str,
+    npc: bool,
+) -> Result<(), String> {
+    let settlement = ctx
+        .db
+        .settlement()
+        .id()
+        .find(&settlement_id.to_string())
+        .ok_or_else(|| format!("Unknown settlement {settlement_id}"))?;
+    let mut skills = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(character_id)
+        .ok_or_else(|| format!("Character {character_id} has no skills"))?;
+    let (oral, written) = adventuresim_world_schema::initial_character_languages(
+        settlement.languages,
+        character_id,
+        npc,
+    );
+    skills.oral_languages = oral;
+    skills.written_languages = written;
+    ctx.db.character_skills().character_id().update(skills);
+    Ok(())
+}
+
+pub(crate) fn shared_language_coefficient(
+    ctx: &ReducerContext,
+    left_id: u64,
+    right_id: u64,
+) -> f32 {
+    let Some(left) = ctx.db.character_skills().character_id().find(left_id) else {
+        return 0.0;
+    };
+    let Some(right) = ctx.db.character_skills().character_id().find(right_id) else {
+        return 0.0;
+    };
+    adventuresim_world_schema::best_common_oral_language(left.oral_languages, right.oral_languages)
+        .1
+}
+
 fn insert_character_with_origin(
     ctx: &ReducerContext,
     name: String,
@@ -964,6 +1010,8 @@ fn insert_character_with_origin(
         calories_used: 0.0,
         focus: 1.0,
     });
+    let (oral_languages, written_languages) =
+        adventuresim_world_schema::initial_character_languages(start_settlement.languages, id, npc);
     let _character_skills = ctx.db.character_skills().insert(CharacterSkills {
         character_id: id,
         polearm_hours: 2000.0,
@@ -990,6 +1038,8 @@ fn insert_character_with_origin(
             roman_catholic: 1000.0,
             ..Default::default()
         },
+        oral_languages,
+        written_languages,
         stealth_hours: 1000.0,
         balance_hours: 1000.0,
         terrain_plains_hours: 0.0,
