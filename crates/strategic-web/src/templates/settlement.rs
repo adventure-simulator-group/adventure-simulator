@@ -6162,6 +6162,46 @@ mod tests {
     }
 
     #[test]
+    fn inferred_general_blacksmith_exposes_limited_weapon_and_armor_stock() {
+        let industries = adventuresim_world_schema::InferredIndustryProfile::new(vec![
+            adventuresim_world_schema::IndustryEvidence::Fallback(
+                adventuresim_world_schema::FallbackIndustry::CommonAggregate,
+            ),
+        ])
+        .unwrap();
+        let economy =
+            adventuresim_world_schema::infer_settlement_economy(2, 500, 1, false, &industries)
+                .unwrap();
+
+        assert!(adventuresim_core::settlement_economy::storefront_stocks(
+            &economy,
+            adventuresim_core::settlement_economy::Storefront::Weapons,
+            "club",
+            adventuresim_core::settlement_economy::CatalogKind::Weapon,
+        ));
+        assert!(adventuresim_core::settlement_economy::storefront_stocks(
+            &economy,
+            adventuresim_core::settlement_economy::Storefront::Armor,
+            "leather vest",
+            adventuresim_core::settlement_economy::CatalogKind::Armor,
+        ));
+        for category in [
+            adventuresim_world_schema::StockCategory::Weapons,
+            adventuresim_world_schema::StockCategory::Armor,
+        ] {
+            assert_eq!(
+                economy
+                    .stock
+                    .iter()
+                    .find(|stock| stock.category == category)
+                    .unwrap()
+                    .abundance,
+                1
+            );
+        }
+    }
+
+    #[test]
     fn merchant_food_quote_and_weight_follow_remaining_lot() {
         let mut lot = FoodLot {
             id: 1,
@@ -6620,6 +6660,10 @@ mod tests {
                 ),
             ])
             .unwrap(),
+            economy: adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder(),
+            religious_status: adventuresim_world_schema::SettlementReligiousStatus::Established {
+                religion: adventuresim_world_schema::OfficialReligion::RomanCatholic,
+            },
             scene_key: "hills".into(),
             religion_id: "western_church".into(),
             currency_id: "lubeck_mark".into(),

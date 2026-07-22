@@ -814,6 +814,10 @@ mod tests {
                 ),
             ])
             .unwrap(),
+            economy: adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder(),
+            religious_status: adventuresim_world_schema::SettlementReligiousStatus::Established {
+                religion: adventuresim_world_schema::OfficialReligion::RomanCatholic,
+            },
             scene_key: "hills".into(),
             religion_id: "western_church".into(),
             currency_id: "coin".into(),

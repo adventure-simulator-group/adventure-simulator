@@ -678,7 +678,7 @@ mod tests {
         ] {
             assert_eq!(building_tier(&category), tier);
             let markup =
-                settlement_top_bar("Place", "p", &category, "map", None, None).into_string();
+                settlement_top_bar("Place", "p", &category, "map", None, None, None).into_string();
             assert!(markup.contains(&format!("data-building-tier=\"{tier}\"")));
         }
     }
@@ -705,6 +705,7 @@ mod tests {
             "stable-place",
             &SettlementCategory::Town,
             "map",
+            None,
             None,
             None,
         )
@@ -744,6 +745,7 @@ mod tests {
             "religion",
             Some("roman_catholic"),
             None,
+            None,
         )
         .into_string();
         assert_eq!(markup.matches("class=\"service-tab-building\"").count(), 8);
@@ -781,6 +783,7 @@ mod tests {
             &SettlementCategory::City,
             "inn",
             None,
+            None,
             html! {},
             None,
         )
@@ -815,6 +818,7 @@ mod tests {
             "religion",
             None,
             None,
+            None,
         )
         .into_string();
         assert!(church.contains(&format!(
@@ -830,6 +834,7 @@ mod tests {
             "s",
             &SettlementCategory::Village,
             "map",
+            None,
             None,
             Some("Ada"),
         )
@@ -879,6 +884,7 @@ mod tests {
             "s",
             &SettlementCategory::Village,
             "",
+            None,
             None,
             None,
         )
@@ -948,6 +954,7 @@ mod tests {
             "s",
             &SettlementCategory::Village,
             "weapons",
+            None,
             None,
             None,
         )
