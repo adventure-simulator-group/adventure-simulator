@@ -126,18 +126,18 @@ use super::travel::{
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    AlcoholConsumption, Character, CharacterAffinity, CharacterAttributes, CharacterCapability,
-    CharacterCondition, CharacterEquip, CharacterFamiliarity, CharacterFilth, CharacterLimbs,
-    CharacterMoraleSource, CharacterNeeds, CharacterNotoriety, CharacterPersonality,
-    CharacterSkills, CharacterStats, CharacterStrategicCondition, CharacterTime,
-    CharacterTrainingSchedule, CharacterVirtue, EquippedMedication, FoodLot,
-    HerbalistExaminationRow, InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget,
-    ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury, LimbRegion,
-    MedicalExaminationRow, Party, PartyInventoryItem, PartyJourney, PartyJourneyItinerary,
-    PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, Quest, QuestIssuer,
-    QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder, RetainedProjectile,
-    ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription, SettlementSmith,
-    SocialBelief, StrategicEncounter, TravelEdge,
+    AlcoholConsumption, BackendLocalProblemTradeEffect, Character, CharacterAffinity,
+    CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
+    CharacterFamiliarity, CharacterFilth, CharacterLimbs, CharacterMoraleSource, CharacterNeeds,
+    CharacterNotoriety, CharacterPersonality, CharacterSkills, CharacterStats,
+    CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, CharacterVirtue,
+    EquippedMedication, FoodLot, HerbalistExaminationRow, InfectionEpisodeRow, InventoryItem,
+    InventoryQuantityTarget, ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury,
+    LimbRegion, MedicalExaminationRow, Party, PartyInventoryItem, PartyJourney,
+    PartyJourneyItinerary, PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, Quest,
+    QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
+    RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription,
+    SettlementSmith, SocialBelief, StrategicEncounter, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
@@ -5270,7 +5270,22 @@ async fn merchant_shop(
         "SELECT * FROM character_time WHERE character_id = {}",
         character.id
     );
-    let (party_members, items, food_lots, equip, trade_context, conditions, smiths, orders, times) = tokio::join!(
+    let consequence_sql = format!(
+        "SELECT * FROM backend_local_problem_trade_effects WHERE character_id = {}",
+        character.id
+    );
+    let (
+        party_members,
+        items,
+        food_lots,
+        equip,
+        trade_context,
+        conditions,
+        smiths,
+        orders,
+        times,
+        consequences,
+    ) = tokio::join!(
         get_active_party_members(&state, Some(character)),
         state.db.query::<ItemDefinition>("SELECT * FROM item"),
         state.db.query::<FoodLot>("SELECT * FROM food_lot"),
@@ -5280,6 +5295,9 @@ async fn merchant_shop(
         state.db.query::<SettlementSmith>(&smith_sql),
         state.db.query::<RepairOrder>(&order_sql),
         state.db.query::<CharacterTime>(&time_sql),
+        state
+            .db
+            .query::<BackendLocalProblemTradeEffect>(&consequence_sql),
     );
     let items = items.unwrap_or_default();
     let equip = equip.unwrap_or_default();
@@ -5329,6 +5347,21 @@ async fn merchant_shop(
         adventuresim_world_schema::ORAL_FLUENCY_HOURS;
     let (_, shared_language) =
         adventuresim_world_schema::best_common_oral_language(speaker, merchant_languages);
+    let now_minutes = times
+        .as_ref()
+        .ok()
+        .and_then(|rows| rows.first())
+        .map_or(0, |time| time.minutes);
+    let problem_effects = consequences
+        .unwrap_or_default()
+        .into_iter()
+        .find(|row| row.character_id == character.id && row.settlement_id == id)
+        .unwrap_or(BackendLocalProblemTradeEffect {
+            character_id: character.id,
+            settlement_id: id.clone(),
+            buy_bps: 0,
+            sell_penalty_bps: 0,
+        });
     Html(
         live_merchant_shop_page(
             settlement,
@@ -5343,13 +5376,12 @@ async fn merchant_shop(
             &pooled,
             shop,
             shared_language,
+            problem_effects.buy_bps,
+            problem_effects.sell_penalty_bps,
             &conditions.unwrap_or_default(),
             smiths.unwrap_or_default().first(),
             &orders.unwrap_or_default(),
-            times
-                .unwrap_or_default()
-                .first()
-                .map_or(0, |time| time.minutes),
+            now_minutes,
             encumbrance.personal,
             encumbrance.party,
             inn_rest_default,

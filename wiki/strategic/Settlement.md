@@ -1,5 +1,8 @@
 # Services
 
+Unresolved local problems can impose capped trade and disease consequences. The
+inn is the discovery funnel; a settlement without an available inn uses overview.
+
 ## People and locations
 
 Every seeded or imported settlement has persistent local NPC identities in addition to

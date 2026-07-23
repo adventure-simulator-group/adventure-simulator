@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (1033)
+## Files (1049)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -57,6 +57,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/food.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/leadership.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/lib.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/local_problem.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/morale.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/profession.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/provisioning.rs` — Rust source module for this component.
@@ -97,6 +98,10 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/backend_committed_cuts_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_herbalist_examinations_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_infection_episodes_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/backend_local_problem_rumor_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/backend_local_problem_rumors_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/backend_local_problem_trade_effect_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/backend_local_problem_trade_effects_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_medical_examinations_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_social_beliefs_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backfill_character_deaths_and_leadership_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -321,6 +326,13 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/liquidate_party_inventory_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/local_chat_message_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/local_chat_message_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/local_problem_authority_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/local_problem_generation_explanation_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/local_problem_outcome_receipt_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/local_problem_receipt_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/local_problem_rumor_delivery_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/local_problem_symptom_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/local_problem_symptom_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/located_route_landform_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/lutheran_reformed_church_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/mapped_surface_geology_type.rs` — Generated SpacetimeDB data type.
@@ -576,6 +588,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/food.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/item.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/lib.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-module/src/local_problem.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/personality.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/repair.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/settlement_population.rs` — Rust source module for this component.
@@ -975,6 +988,7 @@ development, or wiki document before changing a subsystem.
 - `docs/HISTORICAL_LAND_USE.md` — Project documentation.
 - `docs/HYDROLOGY.md` — Project documentation.
 - `docs/INDUSTRIES.md` — Project documentation.
+- `docs/LOCAL_PROBLEMS.md` — Project documentation.
 - `docs/POTENTIAL_VEGETATION.md` — Project documentation.
 - `docs/RELIGION.md` — Project documentation.
 - `docs/ROUTE_TERRAIN.md` — Project documentation.
@@ -988,7 +1002,6 @@ development, or wiki document before changing a subsystem.
 - `docs/llm/README.md` — Component overview and usage notes.
 - `flake.lock` — Nix environment configuration or lockfile.
 - `flake.nix` — Nix environment configuration or lockfile.
-- `headtmp.rs` — Rust source module.
 - `justfile` — Repository support file.
 - `rust-toolchain.toml` — Tooling or build configuration.
 - `scripts/build_wasm.py` — Development or documentation automation script.
