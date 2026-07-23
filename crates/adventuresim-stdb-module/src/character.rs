@@ -1,4 +1,6 @@
-use adventuresim_core::starting_character::{StartingCharacterSpec, StartingSlot};
+use adventuresim_core::starting_character::{
+    StartingCharacterSpec, StartingPersonalityTrait, StartingSlot,
+};
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use strum::VariantArray;
@@ -1174,13 +1176,44 @@ fn insert_character_with_origin(
         right_leg_agility: generated_attributes.map_or(3.0, |a| a.agility),
     });
     if starting.is_some() {
-        let mut state = id;
-        let personality = crate::personality::random_personality(id, || {
-            state ^= state << 13;
-            state ^= state >> 7;
-            state ^= state << 17;
-            state
-        });
+        let mut personality = crate::personality::CharacterPersonality::neutral(id);
+        for personality_trait in &starting.expect("checked above").personality.traits {
+            use crate::personality::{
+                Conscience, Conviction, Drive, Hygiene, Nerve, Outlook, SelfRegard, Sociability,
+                Temperance,
+            };
+            match personality_trait {
+                StartingPersonalityTrait::Brave => personality.nerve = Nerve::Brave,
+                StartingPersonalityTrait::Fearful => personality.nerve = Nerve::Fearful,
+                StartingPersonalityTrait::Ambitious => personality.drive = Drive::Ambitious,
+                StartingPersonalityTrait::Content => personality.drive = Drive::Content,
+                StartingPersonalityTrait::Sanguine => personality.outlook = Outlook::Sanguine,
+                StartingPersonalityTrait::Brooding => personality.outlook = Outlook::Brooding,
+                StartingPersonalityTrait::Gregarious => {
+                    personality.sociability = Sociability::Gregarious
+                }
+                StartingPersonalityTrait::Solitary => {
+                    personality.sociability = Sociability::Solitary
+                }
+                StartingPersonalityTrait::Compassionate => {
+                    personality.conscience = Conscience::Compassionate
+                }
+                StartingPersonalityTrait::Callous => personality.conscience = Conscience::Callous,
+                StartingPersonalityTrait::Cruel => personality.conscience = Conscience::Cruel,
+                StartingPersonalityTrait::Proud => personality.self_regard = SelfRegard::Proud,
+                StartingPersonalityTrait::Humble => personality.self_regard = SelfRegard::Humble,
+                StartingPersonalityTrait::Zealous => personality.conviction = Conviction::Zealous,
+                StartingPersonalityTrait::Irreverent => {
+                    personality.conviction = Conviction::Irreverent
+                }
+                StartingPersonalityTrait::Slovenly => personality.hygiene = Hygiene::Slovenly,
+                StartingPersonalityTrait::Cleanly => personality.hygiene = Hygiene::Cleanly,
+                StartingPersonalityTrait::Temperate => {
+                    personality.temperance = Temperance::Temperate
+                }
+                StartingPersonalityTrait::Drunkard => personality.temperance = Temperance::Drunkard,
+            }
+        }
         ctx.db.character_personality().insert(personality);
     } else {
         crate::personality::initialize_personality(ctx, id, npc);

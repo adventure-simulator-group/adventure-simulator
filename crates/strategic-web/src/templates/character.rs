@@ -4,7 +4,7 @@ use maud::{Markup, html};
 
 use super::{entry_layout, panel, sidebar_section};
 use crate::spacetimedb::Character;
-use adventuresim_core::starting_character::StartingCharacterSpec;
+use adventuresim_core::starting_character::{StartingCharacterSpec, personality_description};
 
 /// List all characters and select the adventurer who enters the strategic layer.
 pub fn characters_list_page(characters: &[Character], current_character_id: Option<u64>) -> Markup {
@@ -112,9 +112,9 @@ pub fn character_candidates_page(
     version: u16,
     seed: &str,
     candidates: &[StartingCharacterSpec],
-    selected: u8,
+    selected: Option<u8>,
 ) -> Markup {
-    let candidate = &candidates[selected as usize];
+    let candidate = &candidates[selected.unwrap_or(0) as usize];
     let close_href = format!("/characters/candidates?version={version}&seed={seed}");
     let content = html! {
         aside class="left-sidebar candidate-rail" {
@@ -130,31 +130,36 @@ pub fn character_candidates_page(
         main class="center-content candidate-stage" data-candidate-roster {
             p class="prototype-disclaimer" role="note" { (PROTOTYPE_NOTICE) }
             h2 class="page-title" { "Choose your adventurer" }
-            div class="candidate-portraits" role="list" aria-label="Five candidate adventurers" {
+            ul class="candidate-portraits" aria-label="Five candidate adventurers" {
                 @for (slot, entry) in candidates.iter().enumerate() {
-                    a class=(if slot == selected as usize { "party-portrait candidate-portrait active" } else { "party-portrait candidate-portrait" })
-                        role="listitem" aria-current=[(slot == selected as usize).then_some("true")]
-                        href=(format!("/characters/candidates?version={version}&seed={seed}&selected={slot}")) {
-                        span class="party-portrait-initial" aria-hidden="true" { span class="party-portrait-face" { (entry.name.chars().next().unwrap_or('?')) } }
-                        span class="party-portrait-name" { (&entry.name) }
+                    li {
+                        a class=(if selected == Some(slot as u8) { "party-portrait candidate-portrait active" } else { "party-portrait candidate-portrait" })
+                            aria-current=[(selected == Some(slot as u8)).then_some("true")]
+                            data-candidate-slot=(slot)
+                            href=(format!("/characters/candidates?version={version}&seed={seed}&selected={slot}")) {
+                            span class="party-portrait-initial" aria-hidden="true" { span class="party-portrait-face" { (entry.name.chars().next().unwrap_or('?')) } }
+                            span class="party-portrait-name" { (&entry.name) }
+                        }
                     }
                 }
             }
             (panel(&candidate.name, html! {
                 p class="candidate-byline" { (candidate.age_years) " years old · " (&candidate.background) }
-                p { (&candidate.personality) }
+                p { (personality_description(&candidate.personality)) }
             }))
-            section class="candidate-confirm-backdrop" data-candidate-dialog-backdrop {
-                div class="candidate-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="candidate-dialog-title" tabindex="-1" data-candidate-dialog {
-                    h3 id="candidate-dialog-title" { "Begin as " (&candidate.name) "?" }
-                    p { "This choice creates the adventurer and enters the game." }
-                    form action="/characters/candidates" method="post" data-candidate-confirm-form {
-                        input type="hidden" name="version" value=(version);
-                        input type="hidden" name="seed" value=(seed);
-                        input type="hidden" name="slot" value=(selected);
-                        div class="form-actions" {
-                            a href=(close_href) class="btn btn-secondary" data-candidate-dialog-close { "Keep looking" }
-                            button type="submit" class="btn btn-primary" { "Begin as " (&candidate.name) }
+            @if let Some(selected) = selected {
+                section class="candidate-confirm-backdrop" data-candidate-dialog-backdrop {
+                    div class="candidate-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="candidate-dialog-title" tabindex="-1" data-candidate-dialog {
+                        h3 id="candidate-dialog-title" { "Begin as " (&candidate.name) "?" }
+                        p { "This choice creates the adventurer and enters the game." }
+                        form action="/characters/candidates" method="post" data-candidate-confirm-form {
+                            input type="hidden" name="version" value=(version);
+                            input type="hidden" name="seed" value=(seed);
+                            input type="hidden" name="slot" value=(selected);
+                            div class="form-actions" {
+                                a href=(close_href) class="btn btn-secondary" data-candidate-dialog-close { "Keep looking" }
+                                button type="submit" class="btn btn-primary" { "Begin as " (&candidate.name) }
+                            }
                         }
                     }
                 }
@@ -187,15 +192,27 @@ mod creation_tests {
     use adventuresim_core::starting_character::roster;
 
     #[test]
-    fn roster_has_five_portraits_disclaimer_and_accessible_dialog_without_customization() {
+    fn initial_roster_has_preview_but_no_dialog_or_customization() {
         let candidates = roster(1, "00112233445566778899aabbccddeeff").unwrap();
         let markup =
-            character_candidates_page(1, "00112233445566778899aabbccddeeff", &candidates, 0)
+            character_candidates_page(1, "00112233445566778899aabbccddeeff", &candidates, None)
                 .into_string();
         assert_eq!(markup.matches("candidate-portrait").count(), 5);
         assert!(markup.contains(PROTOTYPE_NOTICE));
+        assert!(!markup.contains("role=\"dialog\""));
+        assert!(!markup.contains("role=\"listitem\""));
+        assert!(markup.contains("<ul"));
+        assert!(!markup.contains("name=\"name\""));
+    }
+
+    #[test]
+    fn explicit_selection_opens_accessible_confirmation_dialog() {
+        let candidates = roster(1, "00112233445566778899aabbccddeeff").unwrap();
+        let markup =
+            character_candidates_page(1, "00112233445566778899aabbccddeeff", &candidates, Some(2))
+                .into_string();
         assert!(markup.contains("role=\"dialog\""));
         assert!(markup.contains("aria-modal=\"true\""));
-        assert!(!markup.contains("name=\"name\""));
+        assert!(markup.contains("name=\"slot\" value=\"2\""));
     }
 }

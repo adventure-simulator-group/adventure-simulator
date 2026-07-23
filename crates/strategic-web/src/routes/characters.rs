@@ -80,10 +80,7 @@ async fn candidate_roster(Query(query): Query<CandidateQuery>) -> Response {
                 .into_response();
         }
     };
-    let selected = query
-        .selected
-        .filter(|slot| *slot < candidates.len() as u8)
-        .unwrap_or(0);
+    let selected = query.selected.filter(|slot| *slot < candidates.len() as u8);
     Html(character_candidates_page(version, seed, &candidates, selected).into_string())
         .into_response()
 }
@@ -128,18 +125,4 @@ async fn select_character(State(state): State<AppState>, Path(id): Path<u64>) ->
 
 async fn switch_character() -> Response {
     clear_character_cookie("/characters")
-}
-
-/// Helper to get character name for session display
-async fn get_character_name(state: &AppState, character_id: Option<u64>) -> Option<String> {
-    let Some(id) = character_id else {
-        return None;
-    };
-    match super::data::character(state, id).await {
-        Ok(character) => character.map(|character| character.name),
-        Err(error) => {
-            tracing::error!(%error, "failed to load selected character");
-            None
-        }
-    }
 }

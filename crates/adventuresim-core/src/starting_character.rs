@@ -60,13 +60,87 @@ pub struct StartingSkills {
     pub cooking: f32,
 }
 
+/// Exact non-neutral personality axes persisted for a generated character.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StartingPersonalityTrait {
+    Brave,
+    Fearful,
+    Ambitious,
+    Content,
+    Sanguine,
+    Brooding,
+    Gregarious,
+    Solitary,
+    Compassionate,
+    Callous,
+    Cruel,
+    Proud,
+    Humble,
+    Zealous,
+    Irreverent,
+    Slovenly,
+    Cleanly,
+    Temperate,
+    Drunkard,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StartingPersonality {
+    pub traits: Vec<StartingPersonalityTrait>,
+}
+
+pub fn personality_description(personality: &StartingPersonality) -> String {
+    let names: Vec<_> = personality
+        .traits
+        .iter()
+        .map(|value| match value {
+            StartingPersonalityTrait::Brave => "brave",
+            StartingPersonalityTrait::Fearful => "fearful",
+            StartingPersonalityTrait::Ambitious => "ambitious",
+            StartingPersonalityTrait::Content => "content",
+            StartingPersonalityTrait::Sanguine => "sanguine",
+            StartingPersonalityTrait::Brooding => "brooding",
+            StartingPersonalityTrait::Gregarious => "gregarious",
+            StartingPersonalityTrait::Solitary => "solitary",
+            StartingPersonalityTrait::Compassionate => "compassionate",
+            StartingPersonalityTrait::Callous => "callous",
+            StartingPersonalityTrait::Cruel => "cruel",
+            StartingPersonalityTrait::Proud => "proud",
+            StartingPersonalityTrait::Humble => "humble",
+            StartingPersonalityTrait::Zealous => "zealous",
+            StartingPersonalityTrait::Irreverent => "irreverent",
+            StartingPersonalityTrait::Slovenly => "slovenly",
+            StartingPersonalityTrait::Cleanly => "cleanly",
+            StartingPersonalityTrait::Temperate => "temperate",
+            StartingPersonalityTrait::Drunkard => "a drunkard",
+        })
+        .collect();
+    match names.as_slice() {
+        [] => "Reserved".into(),
+        [one] => capitalize(one),
+        [left, right] => capitalize(&format!("{left} and {right}")),
+        _ => capitalize(&format!(
+            "{}, and {}",
+            names[..names.len() - 1].join(", "),
+            names[names.len() - 1]
+        )),
+    }
+}
+
+fn capitalize(value: &str) -> String {
+    let mut chars = value.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect()
+    })
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct StartingCharacterSpec {
     pub id: u64,
     pub name: String,
     pub age_years: u16,
     pub background: String,
-    pub personality: String,
+    pub personality: StartingPersonality,
     pub attributes: StartingAttributes,
     pub skills: StartingSkills,
     pub currency: u32,
@@ -146,11 +220,12 @@ pub fn generate(version: u16, seed: &str, slot: u8) -> Result<StartingCharacterS
             "Winter",
         ],
     );
+    use StartingPersonalityTrait as Trait;
     let (background, personality, weapon, weapon_slot, armor, primary, defense, currency_base) =
         match slot {
             0 => (
                 "Militia runner",
-                "Brave and gregarious",
+                vec![Trait::Brave, Trait::Gregarious],
                 "katzbalger",
                 StartingSlot::RightHand,
                 "arming_doublet",
@@ -160,7 +235,7 @@ pub fn generate(version: u16, seed: &str, slot: u8) -> Result<StartingCharacterS
             ),
             1 => (
                 "Woodland hunter",
-                "Solitary and patient",
+                vec![Trait::Solitary, Trait::Sanguine],
                 "longbow",
                 StartingSlot::RightHand,
                 "quilted_sleeve",
@@ -170,7 +245,7 @@ pub fn generate(version: u16, seed: &str, slot: u8) -> Result<StartingCharacterS
             ),
             2 => (
                 "Caravan guard",
-                "Steady and compassionate",
+                vec![Trait::Content, Trait::Compassionate],
                 "hunting_spear",
                 StartingSlot::RightHand,
                 "padded_chausses",
@@ -180,7 +255,7 @@ pub fn generate(version: u16, seed: &str, slot: u8) -> Result<StartingCharacterS
             ),
             3 => (
                 "Town watch apprentice",
-                "Ambitious and proud",
+                vec![Trait::Ambitious, Trait::Proud],
                 "light_crossbow",
                 StartingSlot::RightHand,
                 "arming_cap",
@@ -190,7 +265,7 @@ pub fn generate(version: u16, seed: &str, slot: u8) -> Result<StartingCharacterS
             ),
             _ => (
                 "Camp follower turned scout",
-                "Sanguine and resourceful",
+                vec![Trait::Sanguine, Trait::Humble],
                 "bauernwehr",
                 StartingSlot::RightHand,
                 "padded_skirt",
@@ -256,12 +331,21 @@ pub fn generate(version: u16, seed: &str, slot: u8) -> Result<StartingCharacterS
     if defense == "block" {
         inventory.push(item("buckler", 1, Some(StartingSlot::LeftHand)));
     }
+    if matches!(weapon, "longbow" | "light_crossbow") {
+        inventory.push(item(
+            "arrow",
+            18 + (hash("arrows", seed, slot) % 13) as u32,
+            None,
+        ));
+    }
     Ok(StartingCharacterSpec {
         id: hash("character-id", seed, slot) | 0x8000_0000_0000_0000,
         name: format!("{first} {byname}"),
         age_years: 16 + (hash("age", seed, slot) % 19) as u16,
         background: background.into(),
-        personality: personality.into(),
+        personality: StartingPersonality {
+            traits: personality,
+        },
         attributes: StartingAttributes {
             endurance: variation("endurance"),
             immunity: variation("immunity"),
@@ -312,6 +396,27 @@ mod tests {
         }));
         let ids: std::collections::HashSet<_> = r.iter().map(|c| c.id).collect();
         assert_eq!(ids.len(), 5);
+    }
+    #[test]
+    fn ranged_candidates_have_ammunition_and_personality_copy_is_derived() {
+        let roster = roster(1, SEED).unwrap();
+        for candidate in &roster {
+            let ranged = candidate
+                .inventory
+                .iter()
+                .any(|item| matches!(item.item_id.as_str(), "longbow" | "light_crossbow"));
+            if ranged {
+                assert!(
+                    candidate
+                        .inventory
+                        .iter()
+                        .any(|item| item.item_id == "arrow" && item.quantity >= 18)
+                );
+            }
+            let description = personality_description(&candidate.personality);
+            assert!(!description.is_empty());
+            assert_eq!(description.matches(" and ").count(), 1);
+        }
     }
     #[test]
     fn ages_are_young_biased_and_bounded() {
