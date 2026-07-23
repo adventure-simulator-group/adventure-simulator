@@ -269,7 +269,10 @@ impl LocationView {
         self.active_building
             .as_deref()
             .map_or(path.clone(), |building| {
-                format!("{path}?building={building}")
+                format!(
+                    "{path}{}building={building}",
+                    if path.contains('?') { "&" } else { "?" }
+                )
             })
     }
 
@@ -1889,22 +1892,30 @@ pub fn party_personal_page(
     inventory: &[InventoryItem],
     food_lots: &[FoodLot],
     item_definitions: &[ItemDefinition],
+    character_action_dialog: Option<Markup>,
+    surgery_open: Option<&str>,
+    social_open: bool,
 ) -> Markup {
     let cooking_href = location.preserve_building(format!(
         "{}/party/{}?cook=true",
         location.base_path(),
         active_character.id
     ));
-    let examination_action = format!(
+    let examination_action = location.preserve_building(format!(
         "{}/party/{}/examine",
         location.base_path(),
         active_character.id
-    );
+    ));
     let cooking_open = cooking && medical.examination_id.is_none();
+    let surgery_path_template = location.preserve_building(format!(
+        "{}/party/{}/surgery/__limb__",
+        location.base_path(),
+        active_character.id
+    ));
     let content = html! {
         aside class="left-sidebar" {
-            (party_attributes_rail("Your attributes", attributes, limbs, medical, Some((&format!("{}/party/{}/surgery", location.base_path(), active_character.id), None)), injuries, projectiles))
-            (strategic_condition_rail(condition, morale_sources, filth, &location.preserve_building(format!("{}/party/{}/social", location.base_path(), active_character.id)), false))
+            (party_attributes_rail("Your attributes", attributes, limbs, medical, Some((&surgery_path_template, surgery_open)), injuries, projectiles))
+            (strategic_condition_rail(condition, morale_sources, filth, &location.preserve_building(format!("{}/party/{}/social", location.base_path(), active_character.id)), social_open))
             (medical_rail(medical, &location.base_path(), active_character.id, active_character.id, true))
             @if let Some(demand) = religious_demand {
                 (religious_demand_rail(demand, &location.base_path(), active_character.id))
@@ -1920,7 +1931,7 @@ pub fn party_personal_page(
             ))
             (visual_stage("character", &active_character.name, "Your identity, condition, and capabilities"))
             (settlement_chat_area(&active_character.name, Some(active_character)))
-            (medical_examination_popup(medical, &location.base_path(), active_character.id, limbs, injuries, projectiles))
+            (medical_examination_popup(medical, location, active_character.id, limbs, injuries, projectiles))
         }
         aside class="right-sidebar" {
             (character_summary_rail(capability))
@@ -1941,6 +1952,8 @@ pub fn party_personal_page(
         }
         @if cooking_open {
             (cooking_activity_dialog(location, active_character, inventory, food_lots, item_definitions))
+        } @else if medical.examination_id.is_none() {
+            @if let Some(dialog) = character_action_dialog { (dialog) }
         }
     };
     location.render_layout("Party", content, Some(&active_character.name))
@@ -1953,6 +1966,16 @@ fn cooking_activity_dialog(
     food_lots: &[FoodLot],
     item_definitions: &[ItemDefinition],
 ) -> Markup {
+    let close_href = location.preserve_building(format!(
+        "{}/party/{}",
+        location.base_path(),
+        active_character.id
+    ));
+    let cook_action = location.preserve_building(format!(
+        "{}/party/{}/cook",
+        location.base_path(),
+        active_character.id
+    ));
     let owns = |item_id: &str| {
         inventory
             .iter()
@@ -1971,11 +1994,11 @@ fn cooking_activity_dialog(
         .collect::<Vec<_>>();
     html! {
         div class="character-action-overlay" data-character-action-dialog data-initial-focus="[data-cooking-method]:checked" {
-            a class="character-action-backdrop" href=(format!("{}/party/{}", location.base_path(), active_character.id)) aria-label="Close cooking dialog" {}
+            a class="character-action-backdrop" href=(&close_href) aria-label="Close cooking dialog" {}
             section class="character-action-dialog cooking-dialog" role="dialog" aria-modal="true" aria-labelledby="cooking-dialog-title" tabindex="-1" {
             header class="character-action-dialog-header" {
                 h2 id="cooking-dialog-title" { "Cooking" }
-                a class="character-action-dialog-close" href=(format!("{}/party/{}", location.base_path(), active_character.id)) aria-label="Close cooking dialog" { "×" }
+                a class="character-action-dialog-close" href=(&close_href) aria-label="Close cooking dialog" { "×" }
             }
             div class="cooking-activity" data-cooking-activity {
             aside class="cooking-pot" aria-label="Cooking pot" {
@@ -1999,11 +2022,11 @@ fn cooking_activity_dialog(
                     p class="text-muted small-copy" { "Cooking scene placeholder" }
                 }
                 form id="cooking-submit-form" class="cooking-submit-form" method="post"
-                    action=(format!("{}/party/{}/cook", location.base_path(), active_character.id)) {
+                    action=(&cook_action) {
                     input type="hidden" name="inventory_item_ids" value="" data-cooking-ids;
                     input type="hidden" name="quantities" value="" data-cooking-quantities;
                     div class="party-offer cooking-actions" {
-                        a class="party-offer-cancel" href=(format!("{}/party/{}", location.base_path(), active_character.id)) { "Cancel" }
+                        a class="party-offer-cancel" href=(&close_href) { "Cancel" }
                         button type="submit" disabled title="Select at least one ingredient" data-cook-submit { "Cook" }
                     }
                 }
@@ -2182,15 +2205,30 @@ pub fn party_stats_page(
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
     filth: &[crate::spacetimedb::CharacterFilth],
+    character_action_dialog: Option<Markup>,
+    surgery_open: Option<&str>,
+    social_open: bool,
 ) -> Markup {
     let selected_attributes_title = format!("{}'s attributes", selected.name);
     let selected_skills_title = format!("{}'s skills", selected.name);
-    let examination_action = format!("{}/party/{}/examine", location.base_path(), selected.id);
+    let examination_action = location.preserve_building(format!(
+        "{}/party/{}/examine",
+        location.base_path(),
+        selected.id
+    ));
+    let surgery_path_template = location.preserve_building(format!(
+        "{}/party/{}/surgery/__limb__",
+        location.base_path(),
+        selected.id
+    ));
     let content = html! {
         aside class="left-sidebar" {
-            (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs, medical, Some((&format!("{}/party/{}/surgery", location.base_path(), selected.id), None)), injuries, projectiles))
-            (strategic_condition_rail(condition, morale_sources, filth, &location.preserve_building(format!("{}/party/{}/social", location.base_path(), selected.id)), false))
+            (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs, medical, Some((&surgery_path_template, surgery_open)), injuries, projectiles))
+            (strategic_condition_rail(condition, morale_sources, filth, &location.preserve_building(format!("{}/party/{}/social", location.base_path(), selected.id)), social_open))
             (medical_rail(medical, &location.base_path(), active_character.id, selected.id, true))
+        }
+        @if medical.examination_id.is_none() {
+            @if let Some(dialog) = character_action_dialog { (dialog) }
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(
@@ -2202,7 +2240,7 @@ pub fn party_stats_page(
             ))
             (visual_stage("character", &selected.name, "Party member identity and capabilities"))
             (player_chat_area(selected, active_character))
-            (medical_examination_popup(medical, &location.base_path(), selected.id, selected_limbs, injuries, projectiles))
+            (medical_examination_popup(medical, location, selected.id, selected_limbs, injuries, projectiles))
         }
         aside class="right-sidebar" {
             (character_summary_rail(capability))
@@ -2365,16 +2403,11 @@ fn belief_tooltip(belief: &crate::spacetimedb::SocialBelief) -> String {
 
 /// Dedicated social view. It intentionally receives observer-specific beliefs
 /// rather than authoritative personality.
-pub fn party_social_page(
+pub fn party_social_dialog(
     location: &LocationView,
     selected: &Character,
     active_character: &Character,
-    party_members: &[Character],
-    attributes: Option<&CharacterAttributes>,
-    limbs: Option<&CharacterLimbs>,
-    condition: Option<&CharacterStrategicCondition>,
     morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
-    filth: &[crate::spacetimedb::CharacterFilth],
     social: &SocialPresentation,
 ) -> Markup {
     let social_href = location.preserve_building(format!(
@@ -2397,32 +2430,18 @@ pub fn party_social_page(
     } else {
         "uncertain"
     };
-    let medical = MedicalPresentation::default();
-    let attribute_title = format!("{}'s attributes", selected.name);
-    let content = html! {
-        aside class="left-sidebar" {
-            (party_attributes_rail(&attribute_title, attributes, limbs, &medical, None, &[], &[]))
-            (strategic_condition_rail(condition, morale_sources, filth, &social_href, true))
-        }
-        main class="center-content settlement-main party-member-stage" {
-            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id), false))
-            (visual_stage("character", &selected.name, "Relationship and morale"))
-            (player_chat_area(selected, active_character))
-        }
-        aside class="right-sidebar" {
-            (sidebar_section("Summary", html! {
-                dl class="social-biography" {
-                    div { dt { "Age" } dd { (selected.age_years) } }
-                    div { dt { "Religion" } dd { (religion_name(social.religion_id.as_deref())) } }
-                }
-            }))
-        }
+    let close_href = location.preserve_building(if is_self {
+        format!("{}/party/{}", location.base_path(), selected.id)
+    } else {
+        format!("{}/party/{}/stats", location.base_path(), selected.id)
+    });
+    html! {
         div class="character-action-overlay" data-character-action-dialog {
-            a class="character-action-backdrop" href=(if is_self { format!("{}/party/{}", location.base_path(), selected.id) } else { format!("{}/party/{}/stats", location.base_path(), selected.id) }) aria-label="Close social dialog" {}
+            a class="character-action-backdrop" href=(&close_href) aria-label="Close social dialog" {}
             section class="character-action-dialog social-dialog" role="dialog" aria-modal="true" aria-labelledby="social-dialog-title" tabindex="-1" {
                 header class="character-action-dialog-header" {
                     h2 id="social-dialog-title" { "Social — " (selected.name) }
-                    a class="character-action-dialog-close" href=(if is_self { format!("{}/party/{}", location.base_path(), selected.id) } else { format!("{}/party/{}/stats", location.base_path(), selected.id) }) aria-label="Close social dialog" { "×" }
+                    a class="character-action-dialog-close" href=(&close_href) aria-label="Close social dialog" { "×" }
                 }
                 div class="social-rail" data-social-panel data-target-id=(selected.id) {
             (sidebar_section("What you believe", html! {
@@ -2499,8 +2518,7 @@ pub fn party_social_page(
                 }
             }
         }
-    };
-    location.render_layout("Social", content, Some(&selected.name))
+    }
 }
 
 fn surgery_limb_name(limb: LimbRegion) -> &'static str {
@@ -2696,17 +2714,10 @@ fn surgery_procedure_row(
 
 /// Manual limb treatment is an SSR-open dialog over the ordinary character rails.
 #[allow(clippy::too_many_arguments)]
-pub fn surgery_page(
+pub fn surgery_dialog(
     location: &LocationView,
     active_character: &Character,
     patient: &Character,
-    party_members: &[Character],
-    capability: Option<&CharacterCapability>,
-    attributes: Option<&CharacterAttributes>,
-    skills: Option<&CharacterSkills>,
-    limbs: Option<&CharacterLimbs>,
-    medical: &MedicalPresentation,
-    combat_profile: CombatTrainingProfile,
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
     selected_limb: LimbRegion,
@@ -2718,8 +2729,12 @@ pub fn surgery_page(
     selected_alcohol: Option<&str>,
     procedure_checks: [f32; 3],
 ) -> Markup {
-    let base = format!("{}/party/{}/surgery", location.base_path(), patient.id);
-    let action = format!("{base}/{}/procedure", surgery_limb_slug(selected_limb));
+    let action = location.preserve_building(format!(
+        "{}/party/{}/surgery/{}/procedure",
+        location.base_path(),
+        patient.id,
+        surgery_limb_slug(selected_limb)
+    ));
     let selected = injuries.iter().find(|injury| injury.limb == selected_limb);
     let cut = selected.map_or(0.0, |injury| injury.cut_damage.max(0.0));
     let bruise = selected.map_or(0.0, |injury| injury.bruise_damage.max(0.0));
@@ -2734,25 +2749,18 @@ pub fn surgery_page(
     let anatomy_skill = procedure_skill("bandage");
     let extraction_skill = procedure_skill("extract");
     let stitching_skill = procedure_skill("stitch");
-    let content = html! {
-        aside class="left-sidebar" {
-            (party_attributes_rail(&format!("{}'s attributes", patient.name), attributes, limbs, medical, Some((&base, Some(surgery_limb_slug(selected_limb)))), injuries, projectiles))
-        }
-        main class="center-content settlement-main party-member-stage" {
-            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(patient.id), false))
-            (visual_stage("npc", &patient.name, &format!("TODO: {} portrait", patient.name.to_lowercase())))
-            (player_chat_area(patient, active_character))
-        }
-        aside class="right-sidebar" {
-            (character_summary_rail(capability))
-            (party_skills_rail(&format!("{}'s skills", patient.name), skills, limbs, None, None, None, false, 0.0, None, combat_profile, CharacterSkillActions::default()))
-        }
+    let close_href = location.preserve_building(if self_treatment {
+        format!("{}/party/{}", location.base_path(), patient.id)
+    } else {
+        format!("{}/party/{}/stats", location.base_path(), patient.id)
+    });
+    html! {
         div class="character-action-overlay" data-character-action-dialog {
-            a class="character-action-backdrop" href=(if self_treatment { format!("{}/party/{}", location.base_path(), patient.id) } else { format!("{}/party/{}/stats", location.base_path(), patient.id) }) aria-label="Close surgery dialog" {}
+            a class="character-action-backdrop" href=(&close_href) aria-label="Close surgery dialog" {}
             section class="character-action-dialog surgery-dialog" role="dialog" aria-modal="true" aria-labelledby="surgery-dialog-title" tabindex="-1" {
                 header class="character-action-dialog-header" {
                     h2 id="surgery-dialog-title" { (patient.name) " — " (surgery_limb_name(selected_limb)) }
-                    a class="character-action-dialog-close" href=(if self_treatment { format!("{}/party/{}", location.base_path(), patient.id) } else { format!("{}/party/{}/stats", location.base_path(), patient.id) }) aria-label="Close surgery dialog" { "×" }
+                    a class="character-action-dialog-close" href=(&close_href) aria-label="Close surgery dialog" { "×" }
                 }
                 div class="surgery-rail" {
                 div class="surgery-supplies" aria-label="Surgery supplies" {
@@ -2785,8 +2793,7 @@ pub fn surgery_page(
                 }
             }
         }
-    };
-    location.render_layout("Surgery", content, Some(&active_character.name))
+    }
 }
 
 fn service_page(
@@ -3822,7 +3829,8 @@ fn skill_action_icon(name: &str, icon: &str, action: SkillAction<'_>, inside_for
         @match action {
             SkillAction::Get { .. } => {
                 a class=(if open { "character-menu-button is-open" } else { "character-menu-button" })
-                    href=(href) title=(label) aria-label=(label) aria-haspopup="dialog" aria-expanded=(open) {
+                    href=(href) title=(label) aria-label=(label) aria-haspopup="dialog" aria-expanded=(open)
+                    data-dialog-opener=(href) {
                     span class="stat-icon" style=(format!("--stat-icon: url('/static/icons/game/{icon}.svg')")) aria-hidden="true" {}
                     @if open { span class="sr-only" { " (open)" } }
                 }
@@ -3831,14 +3839,16 @@ fn skill_action_icon(name: &str, icon: &str, action: SkillAction<'_>, inside_for
                 @if inside_form {
                     button type="submit" class=(if open { "character-menu-button is-open" } else { "character-menu-button" })
                         formaction=(href) formmethod="post"
-                        title=(label) aria-label=(label) aria-haspopup="dialog" aria-expanded=(open) {
+                        title=(label) aria-label=(label) aria-haspopup="dialog" aria-expanded=(open)
+                        data-dialog-opener=(href) {
                         span class="stat-icon" style=(format!("--stat-icon: url('/static/icons/game/{icon}.svg')")) aria-hidden="true" {}
                         @if open { span class="sr-only" { " (open)" } }
                     }
                 } @else {
                     form method="post" action=(href) class="character-menu-button-form" {
                         button type="submit" class=(if open { "character-menu-button is-open" } else { "character-menu-button" })
-                            title=(label) aria-label=(label) aria-haspopup="dialog" aria-expanded=(open) {
+                            title=(label) aria-label=(label) aria-haspopup="dialog" aria-expanded=(open)
+                            data-dialog-opener=(href) {
                             span class="stat-icon" style=(format!("--stat-icon: url('/static/icons/game/{icon}.svg')")) aria-hidden="true" {}
                             @if open { span class="sr-only" { " (open)" } }
                         }
@@ -5259,7 +5269,7 @@ fn medical_rail(
 
 fn medical_examination_popup(
     medical: &MedicalPresentation,
-    location_path: &str,
+    location: &LocationView,
     target_id: u64,
     limbs: Option<&CharacterLimbs>,
     injuries: &[LimbInjury],
@@ -5268,10 +5278,14 @@ fn medical_examination_popup(
     let Some(examination_id) = medical.examination_id else {
         return html! {};
     };
+    let dismiss_url = location.preserve_building(format!(
+        "{}/party/{target_id}/examination/{examination_id}/dismiss",
+        location.base_path()
+    ));
     html! {
         div class="medical-examination-overlay" role="dialog" aria-modal="true" aria-labelledby="medical-examination-title"
             data-medical-examination
-            data-dismiss-url=(format!("{location_path}/party/{target_id}/examination/{examination_id}/dismiss")) {
+            data-dismiss-url=(&dismiss_url) {
             section class="medical-examination-popup" {
                 header class="medical-examination-heading" {
                     div {
@@ -5280,7 +5294,7 @@ fn medical_examination_popup(
                             p class="text-muted small-copy" { "Observed at personal minute " (examined_at) "." }
                         }
                     }
-                    form method="post" action=(format!("{location_path}/party/{target_id}/examination/{examination_id}/dismiss")) {
+                    form method="post" action=(&dismiss_url) {
                         button type="submit" class="medical-examination-close" aria-label="Close examination findings" { "×" }
                     }
                 }
@@ -5478,10 +5492,10 @@ fn attribute_group_with_labels(
         }) {
             div class="attribute-group-heading" {
                 span { (name) }
-                @if let Some((base, open_limb)) = surgery {
+                @if let Some((path_template, open_limb)) = surgery {
                     @let open = open_limb == Some(slug);
                     a class=(if open { "character-menu-button limb-surgery-button is-open" } else { "character-menu-button limb-surgery-button" })
-                        href=(format!("{base}/{slug}")) title=(format!("Treat {name}")) aria-label=(format!("Open surgery menu for {name}"))
+                        href=(path_template.replace("__limb__", slug)) title=(format!("Treat {name}")) aria-label=(format!("Open surgery menu for {name}"))
                         aria-haspopup="dialog" aria-expanded=(open) {
                         span class="stat-icon" style="--stat-icon: url('/static/icons/game/scalpel.svg')" aria-hidden="true" {}
                         @if open { span class="sr-only" { " (open)" } }
@@ -8499,8 +8513,16 @@ mod tests {
         assert!(!sidebar.contains("Possible ailments"));
         assert!(!sidebar.contains("Observed at personal minute"));
 
+        let location = LocationView {
+            kind: LocationKind::Quest,
+            id: "location".into(),
+            name: "Location".into(),
+            religion_id: None,
+            category: None,
+            active_building: Some("inn".into()),
+        };
         let popup =
-            medical_examination_popup(&presentation, "/location", 2, None, &[], &[]).into_string();
+            medical_examination_popup(&presentation, &location, 2, None, &[], &[]).into_string();
         assert!(popup.contains("medical-examination-overlay"));
         assert!(popup.contains("aria-modal=\"true\""));
         assert!(popup.contains("Possible ailments"));
@@ -8511,6 +8533,7 @@ mod tests {
         assert!(popup.contains('×'));
         assert!(!popup.contains("This result is discarded"));
         assert!(popup.contains("/examination/44/dismiss"));
+        assert!(popup.contains("?building=inn"));
         assert!(popup.contains("data-medical-examination"));
         let lifecycle = include_str!("../../static/medical-examination.js");
         assert!(lifecycle.contains("pagehide"));

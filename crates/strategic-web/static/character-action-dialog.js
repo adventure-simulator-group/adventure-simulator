@@ -14,17 +14,19 @@
     if (!backwards && current === length - 1) return 0;
     return current + (backwards ? -1 : 1);
   };
+  const dialogOwnsBodyLock = (hasCharacterDialog, hasExamination) => hasCharacterDialog || hasExamination;
+  const openerIdentity = (opener) => opener?.dataset?.dialogOpener || opener?.getAttribute?.("aria-label") || null;
 
-  if (typeof module !== "undefined") module.exports = { wrappedFocusIndex };
+  if (typeof module !== "undefined") module.exports = { wrappedFocusIndex, dialogOwnsBodyLock, openerIdentity };
   if (typeof document === "undefined") return;
 
   const restoreKey = "adventuresim-character-dialog-opener";
   document.addEventListener("click", (event) => {
     const opener = event.target.closest?.("[aria-haspopup='dialog']");
-    if (opener?.getAttribute("aria-label")) {
-      sessionStorage.setItem(restoreKey, opener.getAttribute("aria-label"));
+    if (opener) {
+      sessionStorage.setItem(restoreKey, openerIdentity(opener));
     }
-    if (event.target.closest?.(".character-action-dialog-close, .character-action-backdrop")) {
+    if (event.target.closest?.(".character-action-dialog-close, .character-action-backdrop, .medical-examination-close")) {
       sessionStorage.setItem(`${restoreKey}-pending`, "true");
     }
   });
@@ -33,13 +35,17 @@
   const overlay = overlays[0];
   overlays.slice(1).forEach((extra) => { extra.hidden = true; });
   if (!overlay) {
+    if (dialogOwnsBodyLock(false, Boolean(document.querySelector("[data-medical-examination]")))) {
+      document.body.classList.add("character-action-dialog-open");
+      return;
+    }
     document.body.classList.remove("character-action-dialog-open");
     if (sessionStorage.getItem(`${restoreKey}-pending`) === "true") {
       sessionStorage.removeItem(`${restoreKey}-pending`);
-      const label = sessionStorage.getItem(restoreKey);
-      if (label) {
+      const identity = sessionStorage.getItem(restoreKey);
+      if (identity) {
         requestAnimationFrame(() => [...document.querySelectorAll("[aria-haspopup='dialog']")]
-          .find((element) => element.getAttribute("aria-label") === label)?.focus());
+          .find((element) => openerIdentity(element) === identity)?.focus());
       }
     }
     return;

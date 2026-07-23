@@ -1640,6 +1640,8 @@ body.character-action-dialog-open { overflow: hidden; }
 @media (pointer: coarse) {
   .character-menu-button { width: 2.5rem; min-width: 2.5rem; height: 2.5rem; }
   .schedule-activity-button { width: 2.5rem; min-width: 2.5rem; height: 2.5rem; }
+  .party-skill-name-column,
+  .skill-schedule .party-skill-name-column { width: 2.75rem; }
 }
 @media (max-width: 760px) {
   .cooking-activity { grid-template-columns: 1fr; }
