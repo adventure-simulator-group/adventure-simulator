@@ -2,7 +2,7 @@
 use crate::{
     character::{character, character__view},
     settlement_population::{settlement_npc, settlement_npc_presence},
-    strategic::{settlement, strategic_gateway_authority__view},
+    strategic::{quest_generation_authority, settlement, strategic_gateway_authority__view},
     time::{character_time, character_time__view, world_clock},
 };
 use adventuresim_core::local_problem as lp;
@@ -18,7 +18,9 @@ pub struct LocalProblemAuthority {
     #[index(btree)]
     pub scope_key: String,
     pub scope_json: String,
-    pub cause: String,
+    /// Symptom-to-effect mechanism only. Canonical cause belongs exclusively
+    /// to the linked generated case manifest.
+    pub consequence_mechanism: String,
     pub symptom: String,
     pub buy_bps: i32,
     pub sell_penalty_bps: i32,
@@ -76,6 +78,7 @@ pub struct LocalProblemReceipt {
     pub problem_id: String,
     pub opaque_case_ref: String,
     pub source_npc_id: String,
+    pub discovery_session_id: String,
     pub contact_npc_id: String,
     pub expected_location_id: String,
     pub safe_summary: String,
@@ -154,13 +157,12 @@ fn safe_summary(value: lp::Symptom) -> &'static str {
         lp::Symptom::VanishedLivestock => "Livestock have been disappearing from nearby holdings.",
     }
 }
-fn cause_name(value: lp::Cause) -> &'static str {
+fn route_mechanism(value: lp::Symptom) -> &'static str {
     match value {
-        lp::Cause::Bandits => "bandits",
-        lp::Cause::Goblins => "goblins",
-        lp::Cause::Ghouls => "ghouls",
-        lp::Cause::ContaminatedWell => "contaminated_well",
-        lp::Cause::Smugglers => "smugglers",
+        lp::Symptom::MissingCaravans | lp::Symptom::EmptyStalls => "route_supply_disruption",
+        lp::Symptom::NightScreams => "route_nighttime_insecurity",
+        lp::Symptom::SickLocals => "route_illness_pressure",
+        lp::Symptom::VanishedLivestock => "route_livestock_losses",
     }
 }
 fn archetype_name(value: Option<lp::EncounterArchetype>) -> &'static str {
@@ -260,6 +262,63 @@ fn official_minute(ctx: &ReducerContext) -> u64 {
         .map_or(0, |r| r.official_minutes)
 }
 
+/// Materialize only symptom and consequence authority from a fully validated
+/// canonical generated case. The caller owns the surrounding transaction.
+pub(crate) fn materialize_generated_problem(
+    ctx: &ReducerContext,
+    case: &adventuresim_core::quest_generation::GeneratedCase,
+    settlement_id: &str,
+) -> Result<(), String> {
+    let consequence = &case.consequence;
+    let scope = lp::Scope::Settlement {
+        settlement_id: settlement_id.into(),
+    };
+    let scope_key = scope_key(&scope);
+    let starts_at = official_minute(ctx);
+    let ends_at = starts_at.saturating_add(30 * 1_440);
+    let mechanism = match consequence.symptom {
+        lp::Symptom::MissingCaravans => "supply_disruption",
+        lp::Symptom::NightScreams => "nighttime_insecurity",
+        lp::Symptom::SickLocals => "community_illness",
+        lp::Symptom::EmptyStalls => "trade_disruption",
+        lp::Symptom::VanishedLivestock => "livestock_losses",
+    };
+    ctx.db
+        .local_problem_authority()
+        .insert(LocalProblemAuthority {
+            id: case.problem_id.clone(),
+            scope_key,
+            scope_json: serde_json::to_string(&scope)
+                .map_err(|_| "Could not encode generated problem scope")?,
+            consequence_mechanism: mechanism.into(),
+            symptom: symptom_name(consequence.symptom).into(),
+            buy_bps: consequence.effects.buy_bps,
+            sell_penalty_bps: consequence.effects.sell_penalty_bps,
+            encounter_frequency_bps: consequence.effects.encounter_frequency_bps,
+            encounter_archetype: archetype_name(consequence.effects.encounter_archetype).into(),
+            disease_intensity: consequence.effects.disease_intensity,
+            disease_id: if consequence.effects.disease_intensity > 0 {
+                "influenza".into()
+            } else {
+                String::new()
+            },
+            starts_at,
+            ends_at,
+            mitigation_bps: 0,
+            resolved_at: None,
+            opaque_case_ref: case.canonical_case_id.clone(),
+        });
+    ctx.db.local_problem_symptom().insert(LocalProblemSymptom {
+        problem_id: case.problem_id.clone(),
+        settlement_id: settlement_id.into(),
+        symptom: symptom_name(consequence.symptom).into(),
+        public_summary: consequence.public_summary.clone(),
+        active_from: starts_at,
+        active_until: ends_at,
+    });
+    Ok(())
+}
+
 pub fn ensure_settlement_problems(ctx: &ReducerContext, settlement_id: &str) -> Result<(), String> {
     let scope = lp::Scope::Settlement {
         settlement_id: settlement_id.into(),
@@ -297,7 +356,7 @@ pub fn ensure_settlement_problems(ctx: &ReducerContext, settlement_id: &str) -> 
             scope_key: key,
             scope_json: serde_json::to_string(&scope)
                 .map_err(|_| "Could not encode problem scope")?,
-            cause: cause_name(problem.cause).into(),
+            consequence_mechanism: route_mechanism(problem.symptom).into(),
             symptom: symptom_name(problem.symptom).into(),
             buy_bps: problem.effects.buy_bps,
             sell_penalty_bps: problem.effects.sell_penalty_bps,
@@ -366,7 +425,7 @@ pub fn ensure_route_problem(
             scope_key: key,
             scope_json: serde_json::to_string(&scope)
                 .map_err(|_| "Could not encode route scope")?,
-            cause: cause_name(problem.cause).into(),
+            consequence_mechanism: route_mechanism(problem.symptom).into(),
             symptom: symptom_name(problem.symptom).into(),
             buy_bps: 0,
             sell_penalty_bps: 0,
@@ -649,19 +708,35 @@ pub fn surface_problem(
     }) else {
         return Ok(());
     };
-    let mut contacts: Vec<_> = ctx
+    let generation = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&problem.opaque_case_ref)
+        .ok_or("Local problem has no generated case authority")?;
+    let generated: adventuresim_core::quest_generation::GeneratedCase =
+        serde_json::from_str(&generation.manifest_json)
+            .map_err(|_| "Generated referral manifest is invalid")?;
+    let witness = generated
+        .witnesses
+        .first()
+        .ok_or("Generated case has no primary witness")?;
+    let contact = ctx
+        .db
+        .settlement_npc()
+        .id()
+        .find(&witness.npc_id)
+        .ok_or("Generated witness is no longer a persistent local NPC")?;
+    let presence = ctx
         .db
         .settlement_npc_presence()
-        .settlement_id()
-        .filter(&settlement_id)
-        .filter(|p| p.location_id != "inn")
-        .filter_map(|p| ctx.db.settlement_npc().id().find(&p.npc_id).map(|n| (p, n)))
-        .collect();
-    contacts.sort_by(|a, b| a.1.id.cmp(&b.1.id));
-    let (presence, contact) = contacts
-        .into_iter()
-        .next()
-        .ok_or("Local problem has no reliable referral contact")?;
+        .npc_id()
+        .find(&witness.npc_id)
+        .filter(|presence| {
+            presence.settlement_id == settlement_id
+                && presence.location_id == witness.expected_location
+        })
+        .ok_or("Generated witness presence no longer matches its referral tab")?;
     let symptom = ctx
         .db
         .local_problem_symptom()
@@ -677,6 +752,7 @@ pub fn surface_problem(
         problem_id: problem.id,
         opaque_case_ref: problem.opaque_case_ref,
         source_npc_id: source_npc_id.into(),
+        discovery_session_id: session_id.into(),
         contact_npc_id: contact.id,
         expected_location_id: presence.location_id,
         safe_summary: symptom.public_summary,

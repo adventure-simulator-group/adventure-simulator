@@ -34,9 +34,10 @@ use crate::{
     investigation::{
         CaseSiteAuthority, CaseSiteId, EvidencePresentationKind, PartyCaseSiteTracking,
         case_site_authority, disclose_exact_case_site, exact_case_site_for_observer,
-        investigation_belief, investigation_case_authority, investigation_evidence_authority,
+        investigation_area_authority, investigation_belief, investigation_case_authority,
+        investigation_event_authority, investigation_evidence_authority,
         investigation_evidence_knowledge, investigation_lead, investigation_received_testimony,
-        mark_case_site_visited, party_case_site_tracking,
+        investigation_testimony_bundle, mark_case_site_visited, party_case_site_tracking,
     },
     item::{InventoryItem, inventory_item, item},
     local_problem::{local_problem_receipt, local_problem_rumor_delivery},
@@ -50,7 +51,7 @@ use crate::{
         preview_travel_time, settle_travel_boundary,
     },
 };
-use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 
 const WALKING_SPEED_KM_PER_HOUR: u64 = 5;
 const QUEST_TRAVEL_SPEED_DIVISOR: u64 = 4;
@@ -2226,6 +2227,21 @@ pub struct CaseAuthority {
     pub resolved_by_party_id: Option<String>,
 }
 
+/// Immutable private replay authority for one generated case. The manifest and
+/// factor trace include canonical truth and must never be exposed by a public
+/// table or view.
+#[derive(Clone, Debug)]
+#[table(accessor = quest_generation_authority)]
+pub struct QuestGenerationAuthority {
+    #[primary_key]
+    pub case_id: String,
+    pub seed: u64,
+    pub catalog_revision: String,
+    pub context_snapshot_json: String,
+    pub manifest_json: String,
+    pub factor_trace_json: String,
+}
+
 /// A separately accepted agreement concerning a case. This row is private:
 /// the web gateway builds observer-safe disclosures rather than subscribing
 /// clients to undiscovered postings or acceptance state.
@@ -2250,8 +2266,8 @@ pub struct Contract {
     pub issuer_npc_id: String,
     pub status: ContractStatus,
     pub accepted_by: Option<String>,
-    pub enemy_type: String,
-    pub enemy_count: i32,
+    pub opposition_wording: String,
+    pub opposition_count_wording: String,
     pub accepted_at_minute: Option<u64>,
     pub paid_at_minute: Option<u64>,
 }
@@ -2272,8 +2288,8 @@ pub struct BackendContract {
     pub issuer_npc_id: String,
     pub status: ContractStatus,
     pub accepted_by: Option<String>,
-    pub enemy_type: String,
-    pub enemy_count: i32,
+    pub opposition_wording: String,
+    pub opposition_count_wording: String,
     pub accepted_at_minute: Option<u64>,
     pub paid_at_minute: Option<u64>,
 }
@@ -2300,8 +2316,8 @@ pub fn backend_contracts(ctx: &ViewContext) -> Vec<BackendContract> {
             issuer_npc_id: row.issuer_npc_id,
             status: row.status,
             accepted_by: row.accepted_by,
-            enemy_type: row.enemy_type,
-            enemy_count: row.enemy_count,
+            opposition_wording: row.opposition_wording,
+            opposition_count_wording: row.opposition_count_wording,
             accepted_at_minute: row.accepted_at_minute,
             paid_at_minute: row.paid_at_minute,
         })
@@ -4310,34 +4326,28 @@ pub fn start_dialogue(
             receipt.id.clone(),
             format!("receive-rumor:{character_id}:{}", receipt.id),
         )?;
-        let reliability = match receipt
-            .problem_id
-            .bytes()
-            .fold(0u8, |sum, byte| sum.wrapping_add(byte))
-            % 5
+        let authority = ctx
+            .db
+            .quest_generation_authority()
+            .case_id()
+            .find(&receipt.opaque_case_ref)
+            .ok_or("Rumor is not backed by a generated case")?;
+        let generated: adventuresim_core::quest_generation::GeneratedCase =
+            serde_json::from_str(&authority.manifest_json)
+                .map_err(|_| "Generated testimony manifest is invalid")?;
+        if session.id != receipt.discovery_session_id
+            && let Some(witness) = generated
+                .witnesses
+                .iter()
+                .find(|witness| witness.npc_id == npc_actor_id)
         {
-            0 => adventuresim_dialogue::TestimonyReliability::Truthful,
-            1 => adventuresim_dialogue::TestimonyReliability::Mistaken,
-            2 => adventuresim_dialogue::TestimonyReliability::Evasive,
-            3 => adventuresim_dialogue::TestimonyReliability::Deceptive,
-            _ => adventuresim_dialogue::TestimonyReliability::PartlyTruthful,
-        };
-        let public_case_id = adventuresim_core::investigation::compound_id(&[
-            "case",
-            "problem",
-            &receipt.problem_id,
-        ]);
-        crate::investigation::persist_runtime_testimony(
-            ctx,
-            character_id,
-            &receipt.opaque_case_ref,
-            &public_case_id,
-            &receipt.source_npc_id,
-            "local eyewitness",
-            reliability,
-            &receipt.safe_summary,
-            "The witness was nearby for a private reason.",
-        )?;
+            crate::investigation::persist_generated_testimony(
+                ctx,
+                character_id,
+                &generated,
+                witness,
+            )?;
+        }
     }
     refresh_dialogue_topic_options(ctx, &session, character_id)?;
     Ok(())
@@ -11823,7 +11833,19 @@ fn maybe_interrupt_travel(
                 .find(&journey.destination.case_site_id().unwrap().to_string())
                 .is_some_and(|site| site.case_id == contract.case_id)
         })
-        .and_then(|contract| quest_encounter_archetype(&contract.enemy_type));
+        .and_then(|contract| {
+            ctx.db
+                .case_site_authority()
+                .case_id()
+                .filter(&contract.case_id)
+                .find_map(|site| {
+                    ctx.db
+                        .hostile_group_authority()
+                        .iter()
+                        .find(|group| group.case_site_id == site.id)
+                })
+        })
+        .and_then(|group| quest_encounter_archetype(&group.enemy_type));
     let member_ids = living_party_member_ids(ctx, party_id);
     let capable = member_ids
         .iter()
@@ -15748,7 +15770,6 @@ fn ensure_settlement_activity_inner(
     settlement_id: &str,
 ) -> Result<(), String> {
     crate::settlement_population::ensure_settlement_population(ctx, settlement_id)?;
-    crate::local_problem::ensure_settlement_problems(ctx, settlement_id)?;
     for mut contract in ctx
         .db
         .contract_authority()
@@ -15907,286 +15928,331 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
     Ok(())
 }
 
-fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> Result<(), String> {
-    let Some(settlement) = ctx.db.settlement().id().find(&settlement_id.to_string()) else {
-        return Err("Settlement not found".into());
-    };
-    let archetypes = [
-        (
-            "Clear the Goblin Cave",
-            "Goblins have been attacking travelers on the road after dark.",
-            "goblin",
-            "cave",
-            "You arrive at a cave.",
-            2,
-            "inn",
-        ),
-        (
-            "Break Up the Bandit Camp",
-            "Bandits have been raiding merchant caravans.",
-            "bandit",
-            "camp",
-            "You arrive at a rough camp.",
-            3,
-            "merchants",
-        ),
-        (
-            "Hunt the Wolf Pack",
-            "Wolves have been attacking the flocks that supply wool and hides.",
-            "wolf",
-            "woods",
-            "You arrive at a wooded hollow.",
-            1,
-            "clothing",
-        ),
-        (
-            "Purge the Old Mine",
-            "Kobolds have cut off the armourer's supply of ore.",
-            "kobold",
-            "mine",
-            "You arrive at an old mine.",
-            3,
-            "armor",
-        ),
-        (
-            "Recover the Stolen Arms",
-            "Thieves are hiding with a stolen shipment of weapons.",
-            "smuggler",
-            "camp",
-            "You arrive at a hidden camp.",
-            2,
-            "weapons",
-        ),
-        (
-            "Quiet the Restless Dead",
-            "A necromancer has raised skeletons in a nearby crypt.",
-            "skeleton",
-            "ruins",
-            "You arrive at ruined chapel.",
-            4,
-            "religion",
-        ),
-        (
-            "Drive Orcs from the Ruins",
-            "Armored orcs have occupied a ruined watch post.",
-            "orc",
-            "ruins",
-            "You arrive at a ruined watch post.",
-            4,
-            "armor",
-        ),
-        (
-            "Hunt the Great Bear",
-            "A large bear has made the nearby woods unsafe.",
-            "bear",
-            "woods",
-            "You arrive at a trampled woodland clearing.",
-            3,
-            "clothing",
-        ),
-        (
-            "Cleanse the Grave Eaters",
-            "Ghouls have been feeding in the old graveyard.",
-            "ghoul",
-            "ruins",
-            "You arrive at a desecrated graveyard.",
-            4,
-            "religion",
-        ),
-        (
-            "Break the Deserter Camp",
-            "Armed deserters are extorting travelers at a road camp.",
-            "deserter",
-            "camp",
-            "You arrive above a disciplined roadside camp.",
-            4,
-            "weapons",
-        ),
-        (
-            "Stop the Poachers",
-            "Poachers have wounded foresters and stripped the local woods.",
-            "poacher",
-            "woods",
-            "You arrive at a concealed hunting camp.",
-            2,
-            "merchants",
-        ),
-        (
-            "Investigate the Black Hound",
-            "Travelers report a black hound haunting the graveyard road at night.",
-            "spectral_hound",
-            "ruins",
-            "You arrive at the graveyard road near dusk.",
-            3,
-            "inn",
-        ),
-        (
-            "End the Night Visitations",
-            "Several households report an unseen visitor pressing on sleepers.",
-            "alp",
-            "ruins",
-            "You arrive at an abandoned house implicated by the reports.",
-            2,
-            "inn",
-        ),
-        (
-            "Find the Shroud Eater",
-            "Recent burials are disturbed and sickness follows each funeral.",
-            "nachzehrer",
-            "ruins",
-            "You arrive at the settlement's outlying burial ground.",
-            3,
-            "religion",
-        ),
-    ];
-    let tracked_quests: HashSet<String> = ctx
-        .db
-        .party_authority()
-        .iter()
-        .filter_map(|party| party.active_contract_id)
-        .collect();
-    let occupied: HashSet<String> = ctx
-        .db
-        .contract_authority()
-        .settlement_id()
-        .filter(&settlement.id)
-        .filter(|quest| {
-            matches!(
-                quest.status,
-                ContractStatus::Offered | ContractStatus::Accepted
-            ) || (quest.status == ContractStatus::ReadyToReport
-                && tracked_quests.contains(&quest.id))
-        })
-        .map(|quest| quest.title)
-        .collect();
-    let start = ctx.random::<u64>() as usize % archetypes.len();
-    let Some((title, description, enemy, scene, arrival, difficulty, service_id)) = (0..archetypes
-        .len())
-        .map(|offset| archetypes[(start + offset) % archetypes.len()])
-        .find(|archetype| !occupied.contains(&format!("{} near {}", archetype.0, settlement.name)))
-    else {
-        return Err("No distinct quest archetype is available".into());
-    };
-    let distance_m = 4_000 + ctx.random::<u64>() % 17_000;
-    let angle = (ctx.random::<u64>() as f64 / u64::MAX as f64) * std::f64::consts::TAU;
-    let geographic = settlement.source_node_id.is_some();
-    let (offset_x, offset_y) = if geographic {
-        let distance_km = distance_m as f64 / 1_000.0;
-        let latitude_scale = 111.0;
-        let longitude_scale = latitude_scale * settlement.coord_y.to_radians().cos().abs().max(0.1);
-        (
-            angle.cos() * distance_km / longitude_scale,
-            angle.sin() * distance_km / latitude_scale,
-        )
-    } else {
-        let distance_km = distance_m as f64 / 1_000.0;
-        (angle.cos() * distance_km, angle.sin() * distance_km)
-    };
-    let enemy_count = difficulty * 2 + (ctx.random::<u64>() % 4) as i32;
-    let nonce = ctx.random::<u64>();
-    let quest_id = format!("{}-{nonce:016x}", settlement.id);
-    let contract_id = format!("contract:{quest_id}");
-    let case_id = format!("case:{quest_id}");
-    let hostile_group_id = format!("hostile-group:case-site:{case_id}");
-    let issuer = ctx
+fn generated_witness_candidates(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+) -> Vec<adventuresim_core::quest_generation::WitnessCandidate> {
+    use adventuresim_core::quest_generation::{Circumstance, WitnessCandidate, WitnessDemographic};
+    let mut candidates = ctx
         .db
         .settlement_npc()
         .home_settlement_id()
-        .filter(&settlement.id)
-        .filter(|npc| npc.service_id == service_id)
-        .min_by(|left, right| left.id.cmp(&right.id))
-        .ok_or_else(|| format!("Settlement has no persistent {service_id} service provider"))?;
-    let objective = adventuresim_core::case::ObjectiveExpression::new(vec![
-        adventuresim_core::case::ObjectivePath {
-            objectives: vec![adventuresim_core::case::Objective {
-                id: adventuresim_core::case::ObjectiveId::new(format!(
-                    "objective:defeat-{nonce:016x}"
-                ))
-                .map_err(|_| "Generated objective ID is invalid")?,
-                requirement: adventuresim_core::case::ObjectiveRequirement::Defeat {
-                    hostile_group_id,
-                    count: enemy_count as u32,
-                },
-            }],
+        .filter(&settlement_id.to_string())
+        .filter_map(|npc| {
+            let presence = ctx.db.settlement_npc_presence().npc_id().find(&npc.id)?;
+            let demographic = match npc.age_band {
+                crate::settlement_population::NpcAgeBand::Child
+                | crate::settlement_population::NpcAgeBand::Adolescent => WitnessDemographic::Child,
+                crate::settlement_population::NpcAgeBand::Adult
+                | crate::settlement_population::NpcAgeBand::Elder => {
+                    if npc.profession.contains("merchant") {
+                        WitnessDemographic::Merchant
+                    } else if npc.profession.contains("cleric") {
+                        WitnessDemographic::Cleric
+                    } else if npc.profession.contains("guard")
+                        || npc.local_role.contains("retainer")
+                    {
+                        WitnessDemographic::Guard
+                    } else if npc.local_role.contains("lord") {
+                        WitnessDemographic::Noble
+                    } else {
+                        WitnessDemographic::Laborer
+                    }
+                }
+            };
+            let mut circumstances = BTreeSet::from([
+                Circumstance::NightWindow,
+                Circumstance::RoadJourney,
+                Circumstance::LivestockWatch,
+            ]);
+            if presence.location_id == "church" {
+                circumstances.insert(Circumstance::GraveDuty);
+            }
+            if presence.location_id == "adult_venue"
+                || !matches!(demographic, WitnessDemographic::Child)
+            {
+                circumstances.insert(Circumstance::AdultVenue);
+            }
+            if !matches!(demographic, WitnessDemographic::Child) {
+                circumstances.insert(Circumstance::SecretRiversideMeeting);
+            }
+            Some(WitnessCandidate {
+                npc_id: npc.id,
+                demographic,
+                profession: npc.profession,
+                visible_description: format!(
+                    "{}, {}, with {} hair, wearing {}",
+                    npc.height, npc.build, npc.hair, npc.clothing
+                ),
+                expected_location: presence.location_id,
+                allowed_circumstances: circumstances,
+            })
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| left.npc_id.cmp(&right.npc_id));
+    candidates
+}
+
+fn generated_scene_key(kind: adventuresim_core::quest_generation::SiteKind) -> &'static str {
+    use adventuresim_core::quest_generation::SiteKind;
+    match kind {
+        SiteKind::Cave | SiteKind::Crypt => "cave",
+        SiteKind::ForestCamp | SiteKind::AbandonedFarm => "woods",
+        SiteKind::OccupiedHouse | SiteKind::Graveyard => "ruins",
+        SiteKind::Riverside | SiteKind::Roadside => "camp",
+    }
+}
+
+fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> Result<(), String> {
+    use adventuresim_core::quest_generation as qg;
+    let settlement = ctx
+        .db
+        .settlement()
+        .id()
+        .find(&settlement_id.to_string())
+        .ok_or("Settlement not found")?;
+    let ordinal = ctx
+        .db
+        .quest_generation_authority()
+        .iter()
+        .filter(|row| {
+            serde_json::from_str::<qg::GenerationContext>(&row.context_snapshot_json)
+                .is_ok_and(|context| context.settlement_id == settlement_id)
+        })
+        .count() as u16;
+    let seed = ctx.random::<u64>();
+    let context = qg::GenerationContext {
+        seed,
+        settlement_id: settlement_id.into(),
+        settlement_name: settlement.name.clone(),
+        scope: adventuresim_core::local_problem::Scope::Settlement {
+            settlement_id: settlement_id.into(),
         },
-    ])
-    .map_err(|_| "Generated objective expression is invalid")?;
+        ordinal,
+        now_minute: crate::time::refresh_clock(ctx)?,
+        requested_family: (ordinal < 2).then_some(if ordinal == 0 {
+            qg::TemplateFamily::RecurringDepredation
+        } else {
+            qg::TemplateFamily::DisappearanceOrLoss
+        }),
+        witness_candidates: generated_witness_candidates(ctx, settlement_id),
+    };
+    let generated = qg::generate(&context)
+        .map_err(|error| format!("Quest generator exhausted its bounded search: {error:?}"))?;
+    qg::validate(&generated)
+        .map_err(|errors| format!("Generated quest manifest is invalid: {}", errors.join("; ")))?;
+
     ctx.db.case_authority().insert(CaseAuthority {
-        id: case_id.clone(),
-        investigation_case_id: case_id.clone(),
-        local_problem_id: None,
-        objective_expression_json: serde_json::to_string(&objective)
-            .map_err(|_| "Could not encode case objectives")?,
+        id: generated.canonical_case_id.clone(),
+        investigation_case_id: generated.canonical_case_id.clone(),
+        local_problem_id: Some(generated.problem_id.clone()),
+        objective_expression_json: serde_json::to_string(&generated.objectives)
+            .map_err(|_| "Could not encode generated objectives")?,
         resolution_status: CaseResolutionStatus::Open,
         resolved_by_party_id: None,
     });
-    ctx.db.case_finale_authority().insert(CaseFinaleAuthority {
-        id: format!("finale:{case_id}:record"),
-        case_id: case_id.clone(),
-        kind: FinaleKind::RecordResolution,
-        resolution_status: CaseResolutionStatus::Resolved,
-        eligible_path_index: Some(0),
-        priority: 100,
-        status: FinaleStatus::Available,
-    });
-    if ctx
-        .db
-        .investigation_case_authority()
-        .id()
-        .find(&case_id)
-        .is_none()
-    {
-        ctx.db.investigation_case_authority().insert(
-            crate::investigation::InvestigationCaseAuthority {
-                id: case_id.clone(),
-                problem_id: String::new(),
-                hidden_target_json: serde_json::json!({
-                    "threat_id": enemy,
-                    "hostile_group_id": format!("hostile-group:case-site:{case_id}")
-                })
-                .to_string(),
-                generation_explanation_json: serde_json::json!({
-                    "template": "direct-bounty",
-                    "nonce": nonce
-                })
-                .to_string(),
+    ctx.db.investigation_case_authority().insert(
+        crate::investigation::InvestigationCaseAuthority {
+            id: generated.canonical_case_id.clone(),
+            problem_id: generated.problem_id.clone(),
+            hidden_target_json: serde_json::to_string(&generated.cause)
+                .map_err(|_| "Could not encode canonical generated cause")?,
+            generation_explanation_json: serde_json::to_string(&generated.factor_trace)
+                .map_err(|_| "Could not encode generated factor trace")?,
+        },
+    );
+    for event in &generated.canonical_events {
+        ctx.db.investigation_event_authority().insert(
+            crate::investigation::InvestigationEventAuthority {
+                id: event.id.clone(),
+                case_id: generated.canonical_case_id.clone(),
+                canonical_propositions_json: serde_json::to_string(&[serde_json::json!({
+                    "id": event.proposition_id,
+                    "subject": event.subject,
+                    "predicate": event.predicate,
+                    "object": event.object,
+                })])
+                .map_err(|_| "Could not encode generated event")?,
+                occurred_at: event.occurred_at,
             },
         );
     }
+
+    let geographic = settlement.source_node_id.is_some();
+    let mut site_rows = BTreeMap::new();
+    for (index, site) in generated.sites.iter().enumerate() {
+        let distance_m = 4_000 + (seed.rotate_left(index as u32) % 17_000);
+        let angle_seed = seed.rotate_left((index as u32).saturating_mul(11));
+        let angle = (angle_seed as f64 / u64::MAX as f64) * std::f64::consts::TAU;
+        let distance_km = distance_m as f64 / 1_000.0;
+        let (offset_x, offset_y) = if geographic {
+            let latitude_scale = 111.0;
+            let longitude_scale =
+                latitude_scale * settlement.coord_y.to_radians().cos().abs().max(0.1);
+            (
+                angle.cos() * distance_km / longitude_scale,
+                angle.sin() * distance_km / latitude_scale,
+            )
+        } else {
+            (angle.cos() * distance_km, angle.sin() * distance_km)
+        };
+        let row = CaseSiteAuthority {
+            id_key: site.id.0.clone(),
+            id: CaseSiteId::from(site.id.0.clone()),
+            case_id: generated.canonical_case_id.clone(),
+            origin_settlement_id: settlement_id.into(),
+            name: site.safe_label.clone(),
+            description: format!("You arrive at {}.", site.safe_label),
+            scene_key: generated_scene_key(site.kind).into(),
+            longitude_e7: ((settlement.coord_x + offset_x) * 10_000_000.0).round() as i32,
+            latitude_e7: ((settlement.coord_y + offset_y) * 10_000_000.0).round() as i32,
+            coordinates_are_geographic: geographic,
+            distance_m,
+        };
+        ctx.db.case_site_authority().insert(row.clone());
+        site_rows.insert(site.id.clone(), row);
+    }
+    for area in &generated.areas {
+        ctx.db.investigation_area_authority().insert(
+            crate::investigation::InvestigationAreaAuthority {
+                id: area.id.clone(),
+                case_id: generated.canonical_case_id.clone(),
+                origin_settlement_id: settlement_id.into(),
+                safe_label: area.safe_label.clone(),
+                center_longitude_e7: (settlement.coord_x * 10_000_000.0).round() as i32,
+                center_latitude_e7: (settlement.coord_y * 10_000_000.0).round() as i32,
+                radius_m: 5_000,
+                coordinates_are_geographic: geographic,
+                terrain: serde_json::to_string(&area.terrain)
+                    .map_err(|_| "Could not encode generated area terrain")?
+                    .trim_matches('"')
+                    .into(),
+            },
+        );
+    }
+    for evidence in &generated.evidence {
+        ctx.db.investigation_evidence_authority().insert(
+            crate::investigation::InvestigationEvidenceAuthority {
+                id: evidence.id.0.clone(),
+                case_id: generated.canonical_case_id.clone(),
+                proposition_id: evidence.proposition_id.clone(),
+                presentation_kind: crate::investigation::EvidencePresentationKind::Physical,
+                authority_json: serde_json::to_string(evidence)
+                    .map_err(|_| "Could not encode generated evidence")?,
+                hidden_coordinates_json: serde_json::to_string(&evidence.site_id)
+                    .map_err(|_| "Could not encode generated evidence site")?,
+            },
+        );
+    }
+    for witness in &generated.witnesses {
+        ctx.db.investigation_testimony_bundle().insert(
+            crate::investigation::InvestigationTestimonyBundle {
+                id: witness.id.0.clone(),
+                case_id: generated.canonical_case_id.clone(),
+                witness_ref: witness.npc_id.clone(),
+                reliability_json: serde_json::to_string(
+                    &witness
+                        .testimony
+                        .iter()
+                        .map(|draft| draft.reliability)
+                        .collect::<Vec<_>>(),
+                )
+                .map_err(|_| "Could not encode testimony reliability")?,
+                stages_json: serde_json::to_string(&witness.testimony)
+                    .map_err(|_| "Could not encode testimony drafts")?,
+            },
+        );
+    }
+    for (group_id, site_id, threat, count) in &generated.hostile_groups {
+        let site = site_rows
+            .get(site_id)
+            .ok_or("Generated hostile group references a missing site")?;
+        let group = materialize_hostile_group(ctx, site, threat.as_str().into(), *count, 2)?;
+        if group.id != *group_id {
+            return Err("Generated hostile-group identity does not match mission authority".into());
+        }
+    }
+    seed_case_custody(
+        ctx,
+        &generated.canonical_case_id,
+        &generated
+            .sites
+            .iter()
+            .find(|site| site.role == qg::SiteRole::Finale)
+            .ok_or("Generated case has no finale site")?
+            .id
+            .0,
+        &generated.objectives,
+    )?;
+    for (path_index, _) in generated.objectives.alternatives.iter().enumerate() {
+        ctx.db.case_finale_authority().insert(CaseFinaleAuthority {
+            id: format!("finale:{}:{path_index}", generated.canonical_case_id),
+            case_id: generated.canonical_case_id.clone(),
+            kind: FinaleKind::RecordResolution,
+            resolution_status: CaseResolutionStatus::Resolved,
+            eligible_path_index: Some(path_index as u16),
+            priority: 100u16.saturating_sub(path_index as u16),
+            status: FinaleStatus::Available,
+        });
+    }
+    ctx.db.case_finale_authority().insert(CaseFinaleAuthority {
+        id: format!("finale:{}:problem", generated.canonical_case_id),
+        case_id: generated.canonical_case_id.clone(),
+        kind: FinaleKind::ResolveLocalProblem,
+        resolution_status: CaseResolutionStatus::Resolved,
+        eligible_path_index: None,
+        priority: 1,
+        status: FinaleStatus::Available,
+    });
+    let contract = generated
+        .contract
+        .as_ref()
+        .ok_or("Generated case lacks its optional development contract")?;
+    let issuer = ctx
+        .db
+        .settlement_npc()
+        .id()
+        .find(&contract.issuer_npc_id)
+        .ok_or("Generated contract issuer no longer exists")?;
     ctx.db.contract_authority().insert(Contract {
-        id: contract_id.clone(),
+        id: format!(
+            "contract:{}",
+            generated.canonical_case_id.trim_start_matches("case:")
+        ),
         gateway_bucket: 0,
-        case_id: case_id.clone(),
-        title: format!("{title} near {}", settlement.name),
-        description: description.into(),
-        difficulty,
-        gold_reward: difficulty * 35 + distance_m.div_ceil(1_000) as i32 * 2,
-        xp_reward: difficulty * 20,
-        settlement_id: settlement.id.clone(),
-        service_id: service_id.into(),
-        issuer_npc_id: issuer.id,
+        case_id: generated.canonical_case_id.clone(),
+        title: contract.issuer_belief_title.clone(),
+        description: contract.issuer_belief_description.clone(),
+        difficulty: 2,
+        gold_reward: contract.reward,
+        xp_reward: 40,
+        settlement_id: settlement_id.into(),
+        service_id: if issuer.service_id.is_empty() {
+            "inn".into()
+        } else {
+            issuer.service_id
+        },
+        issuer_npc_id: contract.issuer_npc_id.clone(),
         status: ContractStatus::Offered,
         accepted_by: None,
-        enemy_type: enemy.into(),
-        enemy_count,
+        opposition_wording: contract.opposition_wording.clone(),
+        opposition_count_wording: contract.opposition_count_wording.clone(),
         accepted_at_minute: None,
         paid_at_minute: None,
     });
-    let site = CaseSiteAuthority {
-        id_key: format!("case-site:{case_id}"),
-        id: CaseSiteId::from(format!("case-site:{case_id}")),
-        case_id: case_id.clone(),
-        origin_settlement_id: settlement.id.clone(),
-        name: format!("{title} near {}", settlement.name),
-        description: arrival.into(),
-        scene_key: scene.into(),
-        longitude_e7: ((settlement.coord_x + offset_x) * 10_000_000.0).round() as i32,
-        latitude_e7: ((settlement.coord_y + offset_y) * 10_000_000.0).round() as i32,
-        coordinates_are_geographic: geographic,
-        distance_m,
-    };
-    ctx.db.case_site_authority().insert(site.clone());
-    seed_case_custody(ctx, &case_id, &site.id.value, &objective)?;
-    materialize_hostile_group(ctx, &site, enemy.into(), enemy_count as u32, difficulty)?;
+    crate::local_problem::materialize_generated_problem(ctx, &generated, settlement_id)?;
+    ctx.db
+        .quest_generation_authority()
+        .insert(QuestGenerationAuthority {
+            case_id: generated.canonical_case_id.clone(),
+            seed,
+            catalog_revision: generated.catalog_revision.clone(),
+            context_snapshot_json: serde_json::to_string(&context)
+                .map_err(|_| "Could not encode quest generation context")?,
+            manifest_json: serde_json::to_string(&generated)
+                .map_err(|_| "Could not encode quest generation manifest")?,
+            factor_trace_json: serde_json::to_string(&generated.factor_trace)
+                .map_err(|_| "Could not encode quest generation trace")?,
+        });
     Ok(())
 }

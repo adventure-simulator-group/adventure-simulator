@@ -7,9 +7,9 @@ use crate::{
     strategic::{
         CustodyHolderKind, CustodyObjectKind, case_authority, case_custody,
         coordinate_distance_e7_m, living_party_member_ids, party_authority,
-        party_journey_authority, require_no_unresolved_encounter, require_party_ready,
-        require_strategic_character_authority, require_strategic_gateway, settlement,
-        strategic_gateway_authority__view,
+        party_journey_authority, quest_generation_authority, require_no_unresolved_encounter,
+        require_party_ready, require_strategic_character_authority, require_strategic_gateway,
+        settlement, strategic_gateway_authority__view,
     },
     time::{
         advance_investigation_time, character_time, synchronize_party_activity_time, world_clock,
@@ -261,6 +261,7 @@ pub struct InvestigationLead {
     pub owner_character_id: u64,
     #[index(btree)]
     pub case_id: String,
+    pub proposition_id: String,
     pub summary: String,
     pub source_label: String,
     pub confidence_bps: u16,
@@ -346,6 +347,16 @@ pub struct InvestigationActionCapability {
     pub required_action_id: String,
     pub alternate_route_action_id: String,
     pub active: bool,
+}
+
+/// Private typed output blueprint for generated capabilities. Free-form
+/// result wording never grants evidence, custody, or destination knowledge.
+#[derive(Clone, Debug)]
+#[table(accessor = investigation_generated_action_output)]
+pub struct InvestigationGeneratedActionOutput {
+    #[primary_key]
+    pub capability_id: String,
+    pub outputs_json: String,
 }
 
 #[derive(Clone, Debug)]
@@ -987,6 +998,118 @@ fn issue_rumor_action_graph(
     contact_id: &str,
     safe_summary: &str,
 ) -> Result<(), String> {
+    if let Some(authority) = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&case_id.to_string())
+    {
+        let manifest: adventuresim_core::quest_generation::GeneratedCase =
+            serde_json::from_str(&authority.manifest_json)
+                .map_err(|_| "Generated action blueprint is invalid")?;
+        for generated in &manifest.actions {
+            let capability_id = inv::compound_id(&[
+                "generated-action",
+                &owner_character_id.to_string(),
+                &generated.id.0,
+            ]);
+            if ctx
+                .db
+                .investigation_action_capability()
+                .id()
+                .find(&capability_id)
+                .is_some()
+            {
+                continue;
+            }
+            let remap = |id: &adventuresim_core::quest_generation::ActionId| {
+                inv::compound_id(&["generated-action", &owner_character_id.to_string(), &id.0])
+            };
+            let site_terrain = manifest
+                .sites
+                .iter()
+                .find(|site| site.id.0 == generated.target_id)
+                .map(|site| site.terrain);
+            let area_terrain = manifest
+                .areas
+                .iter()
+                .find(|area| area.id == generated.target_id)
+                .map(|area| area.terrain);
+            let consequence = generated
+                .outputs
+                .iter()
+                .find_map(|output| match output {
+                    adventuresim_core::quest_generation::GeneratedActionOutput::Consequence {
+                        consequence:
+                            adventuresim_core::quest_generation::GeneratedActionConsequence::RetrieveAsset {
+                                asset_id,
+                                next_version,
+                            },
+                    } => Some(InvestigationActionConsequence::RetrieveAsset {
+                        asset_id: asset_id.clone(),
+                        version: *next_version,
+                    }),
+                    adventuresim_core::quest_generation::GeneratedActionOutput::Consequence {
+                        consequence:
+                            adventuresim_core::quest_generation::GeneratedActionConsequence::RescueSubject {
+                                subject_id,
+                                next_version,
+                            },
+                    } => Some(InvestigationActionConsequence::RescueSubject {
+                        subject_id: subject_id.clone(),
+                        version: *next_version,
+                    }),
+                    _ => None,
+                })
+                .unwrap_or(InvestigationActionConsequence::None);
+            issue_investigation_action_capability(
+                ctx,
+                capability_id,
+                owner_character_id,
+                case_id.to_string(),
+                generated.kind,
+                generated.target_kind.clone(),
+                generated.target_id.clone(),
+                site_terrain.or(area_terrain).unwrap_or(action::Terrain::Settlement),
+                stable_action_seed(&generated.id.0, action_method(generated.kind)),
+                7_000,
+                generated.safe_summary.clone(),
+                "Complete the preceding generated lead and remain with your ready, co-located party."
+                    .into(),
+                "The investigation produces a new, source-attributed lead.".into(),
+                consequence,
+                generated.prerequisite.as_ref().map_or_else(String::new, remap),
+                remap(&generated.alternate),
+            )?;
+            ctx.db.investigation_generated_action_output().insert(
+                InvestigationGeneratedActionOutput {
+                    capability_id: inv::compound_id(&[
+                        "generated-action",
+                        &owner_character_id.to_string(),
+                        &generated.id.0,
+                    ]),
+                    outputs_json: serde_json::to_string(&generated.outputs)
+                        .map_err(|_| "Could not encode generated action outputs")?,
+                },
+            );
+        }
+        for generated in manifest
+            .actions
+            .iter()
+            .filter(|action| action.active_initially)
+        {
+            set_action_active(
+                ctx,
+                &inv::compound_id(&[
+                    "generated-action",
+                    &owner_character_id.to_string(),
+                    &generated.id.0,
+                ]),
+                true,
+            )?;
+        }
+        return validate_action_route_graph(ctx, owner_character_id, case_id);
+    }
     let area_id = inv::compound_id(&["area", lead_id]);
     if ctx
         .db
@@ -1284,23 +1407,79 @@ fn persist_action_result_lead(
     attempt_id: &str,
     resolution: &action::Resolution,
 ) -> Result<(), String> {
-    let kind = parse_action_kind(&capability.method)?;
-    let exact = resolution.success
-        && capability.target_kind == "site"
-        && (kind == action::InvestigationActionKind::InspectSite
-            || resolution.resulting_uncertainty_bps <= 1_500);
-    let site = exact
-        .then(|| {
-            ctx.db
-                .case_site_authority()
-                .id_key()
-                .find(&capability.target_id)
+    let public_case_id = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&capability.case_id)
+        .and_then(|authority| {
+            serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(
+                &authority.manifest_json,
+            )
+            .ok()
         })
-        .flatten();
+        .map_or_else(
+            || capability.case_id.clone(),
+            |generated| generated.public_case_id,
+        );
+    let kind = parse_action_kind(&capability.method)?;
+    let generated_outputs = ctx
+        .db
+        .investigation_generated_action_output()
+        .capability_id()
+        .find(&capability.id)
+        .map(|row| {
+            serde_json::from_str::<Vec<adventuresim_core::quest_generation::GeneratedActionOutput>>(
+                &row.outputs_json,
+            )
+            .map_err(|_| "Generated action output authority is invalid")
+        })
+        .transpose()?;
+    let typed_destination = generated_outputs.as_ref().and_then(|outputs| {
+        outputs.iter().find_map(|output| match output {
+            adventuresim_core::quest_generation::GeneratedActionOutput::Destination {
+                stage,
+                site_id,
+            } => Some((*stage, site_id.as_ref())),
+            _ => None,
+        })
+    });
+    let exact_site_id = typed_destination.and_then(|(stage, site_id)| {
+        (stage == adventuresim_core::quest_generation::GeneratedDestinationStage::Exact)
+            .then_some(site_id)
+            .flatten()
+    });
+    let exact = resolution.success
+        && if generated_outputs.is_some() {
+            exact_site_id.is_some()
+        } else {
+            capability.target_kind == "site"
+                && (kind == action::InvestigationActionKind::InspectSite
+                    || resolution.resulting_uncertainty_bps <= 1_500)
+        };
+    let site = if exact {
+        let site_id =
+            exact_site_id.map_or_else(|| capability.target_id.clone(), |site_id| site_id.0.clone());
+        ctx.db.case_site_authority().id_key().find(&site_id)
+    } else {
+        None
+    };
     let lead_id = inv::compound_id(&["lead", "action", attempt_id]);
     if ctx.db.investigation_lead().id().find(&lead_id).is_some() {
         return Ok(());
     }
+    let typed_stage = typed_destination.map(|(stage, _)| match stage {
+        adventuresim_core::quest_generation::GeneratedDestinationStage::Unknown => "unknown",
+        adventuresim_core::quest_generation::GeneratedDestinationStage::Textual => "textual",
+        adventuresim_core::quest_generation::GeneratedDestinationStage::Landmark => "landmark",
+        adventuresim_core::quest_generation::GeneratedDestinationStage::ApproximateArea => {
+            "approximate_area"
+        }
+        adventuresim_core::quest_generation::GeneratedDestinationStage::RouteSegment => {
+            "route_segment"
+        }
+        adventuresim_core::quest_generation::GeneratedDestinationStage::Exact => "exact_believed",
+    });
     let (stage, exact_location_id, latitude_e7, longitude_e7) = if let Some(site) = site {
         (
             "exact_believed",
@@ -1309,14 +1488,20 @@ fn persist_action_result_lead(
             site.longitude_e7,
         )
     } else if resolution.success {
-        ("approximate_area", String::new(), 0, 0)
+        (
+            typed_stage.unwrap_or("approximate_area"),
+            String::new(),
+            0,
+            0,
+        )
     } else {
         ("unknown", String::new(), 0, 0)
     };
     ctx.db.investigation_lead().insert(InvestigationLead {
         id: lead_id,
         owner_character_id: capability.owner_character_id,
-        case_id: capability.case_id.clone(),
+        case_id: public_case_id,
+        proposition_id: String::new(),
         summary: if resolution.success {
             capability.safe_result_on_success.clone()
         } else {
@@ -1343,6 +1528,24 @@ fn persist_action_result_lead(
         corrected_by: String::new(),
         recorded_at: official_minute(ctx),
     });
+    if resolution.success
+        && let Some(outputs) = generated_outputs
+    {
+        for evidence_id in outputs.iter().filter_map(|output| match output {
+            adventuresim_core::quest_generation::GeneratedActionOutput::Evidence {
+                evidence_id,
+            } => Some(&evidence_id.0),
+            _ => None,
+        }) {
+            record_evidence_knowledge(
+                ctx,
+                capability.owner_character_id,
+                &capability.case_id,
+                evidence_id,
+                attempt_id,
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -2100,6 +2303,7 @@ pub(crate) fn disclose_exact_case_site(
         id,
         owner_character_id: observer_character_id,
         case_id: case_id.into(),
+        proposition_id: String::new(),
         summary: format!("Exact destination disclosed: {}", site.name),
         source_label: source_label.into(),
         confidence_bps: 10_000,
@@ -2333,13 +2537,24 @@ pub fn receive_local_problem_rumor(
     });
     // Never expose the private opaque case seam. This observer-facing stable ID
     // derives only from the already-public problem identifier.
-    let case_id = inv::compound_id(&["case", "problem", &receipt.problem_id]);
+    let canonical_case_id = receipt.opaque_case_ref.clone();
+    let generation = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&canonical_case_id)
+        .ok_or("Rumor is not linked to a real generated case")?;
+    let generated: adventuresim_core::quest_generation::GeneratedCase =
+        serde_json::from_str(&generation.manifest_json)
+            .map_err(|_| "Generated rumor manifest is invalid")?;
+    let case_id = generated.public_case_id;
     let lead_id = inv::compound_id(&["lead", "rumor", &receipt.id]);
     if ctx.db.investigation_lead().id().find(&lead_id).is_none() {
         ctx.db.investigation_lead().insert(InvestigationLead {
             id: lead_id.clone(),
             owner_character_id: character_id,
             case_id: case_id.clone(),
+            proposition_id: String::new(),
             summary: receipt.safe_summary.clone(),
             source_label: "local rumor".into(),
             confidence_bps: 5_000,
@@ -2369,7 +2584,7 @@ pub fn receive_local_problem_rumor(
     issue_rumor_action_graph(
         ctx,
         character_id,
-        &case_id,
+        &canonical_case_id,
         &lead_id,
         &receipt.settlement_id,
         &receipt.contact_npc_id,
@@ -2525,71 +2740,25 @@ pub(crate) fn stage_investigation_claim(
     Ok(())
 }
 
-pub(crate) fn persist_runtime_testimony(
+pub(crate) fn persist_generated_testimony(
     ctx: &ReducerContext,
     character_id: u64,
-    private_case_id: &str,
-    public_case_id: &str,
-    witness_ref: &str,
-    safe_source_label: &str,
-    reliability: adventuresim_dialogue::TestimonyReliability,
-    event_statement: &str,
-    circumstance_statement: &str,
+    generated: &adventuresim_core::quest_generation::GeneratedCase,
+    witness: &adventuresim_core::quest_generation::WitnessBinding,
 ) -> Result<(), String> {
     use adventuresim_core::investigation::{
         AtomicProposition, CaseId, DisclosureMode, EventId, MemoryCondition, PerceptionCondition,
         PipelineInput, PropositionId, TransmissionCondition,
     };
-    let event = adventuresim_dialogue::PropositionTestimony {
-        proposition_id: inv::compound_id(&["proposition", private_case_id, "event"]),
-        statement: event_statement.into(),
-        confidence_bps: 7_000,
-        disclosed: true,
-    };
-    let circumstance = adventuresim_dialogue::PropositionTestimony {
-        proposition_id: inv::compound_id(&["proposition", private_case_id, "circumstance"]),
-        statement: circumstance_statement.into(),
-        confidence_bps: 6_000,
-        disclosed: true,
-    };
-    let stages = adventuresim_dialogue::build_testimony_bundle(
-        reliability.clone(),
-        event,
-        circumstance,
-        "I remember a smaller, stooped figure instead.",
-        "I saw nothing unusual there.",
-    );
-    let bundle_id = inv::compound_id(&["testimony", private_case_id, witness_ref]);
-    let stages_json = serde_json::to_string(&stages).map_err(|e| e.to_string())?;
-    let reliability_json = serde_json::to_string(&reliability).map_err(|e| e.to_string())?;
-    if let Some(existing) = ctx
-        .db
-        .investigation_testimony_bundle()
-        .id()
-        .find(&bundle_id)
-    {
-        if existing.stages_json != stages_json || existing.reliability_json != reliability_json {
-            return Err("Testimony bundle identity conflicts with authority".into());
-        }
-    } else {
-        ctx.db
-            .investigation_testimony_bundle()
-            .insert(InvestigationTestimonyBundle {
-                id: bundle_id.clone(),
-                case_id: private_case_id.into(),
-                witness_ref: witness_ref.into(),
-                reliability_json,
-                stages_json,
-            });
+    use adventuresim_core::quest_generation::Reliability;
+    if witness.testimony.is_empty() {
+        return Err("Generated witness has no proposition testimony".into());
     }
-    for (index, stage) in stages.into_iter().enumerate() {
-        let Some(disclosed) = stage.disclosed_text.clone() else {
-            continue;
-        };
+    for (index, draft) in witness.testimony.iter().enumerate() {
         let receipt_id = inv::compound_id(&[
-            "safe-testimony",
+            "generated-testimony",
             &character_id.to_string(),
-            &bundle_id,
+            &witness.id.0,
             &index.to_string(),
         ]);
         if ctx
@@ -2602,63 +2771,158 @@ pub(crate) fn persist_runtime_testimony(
             continue;
         }
         let proposition_id =
-            PropositionId::new(stage.proposition_id.clone()).map_err(|_| "Invalid proposition")?;
-        let proposition = AtomicProposition::new(
-            proposition_id,
-            witness_ref,
-            "reported",
-            &stage.perceived_text,
-        )
-        .map_err(|_| "Invalid testimony proposition")?;
+            PropositionId::new(draft.proposition_id.clone()).map_err(|_| "Invalid proposition")?;
         let pipeline = PipelineInput {
-            case_id: CaseId::new(private_case_id).map_err(|_| "Invalid case ID")?,
-            event_id: EventId::new(inv::compound_id(&["event", &bundle_id, &index.to_string()]))
-                .map_err(|_| "Invalid event ID")?,
-            proposition,
-            observer_ref: witness_ref.into(),
-            speaker_ref: witness_ref.into(),
+            case_id: CaseId::new(&generated.canonical_case_id)
+                .map_err(|_| "Invalid canonical generated case ID")?,
+            event_id: EventId::new(inv::compound_id(&[
+                "event",
+                &witness.id.0,
+                &index.to_string(),
+            ]))
+            .map_err(|_| "Invalid generated testimony event ID")?,
+            proposition: AtomicProposition::new(
+                proposition_id,
+                &witness.npc_id,
+                "reported",
+                &draft.truthful_text,
+            )
+            .map_err(|_| "Invalid generated testimony proposition")?,
+            observer_ref: witness.npc_id.clone(),
+            speaker_ref: witness.npc_id.clone(),
             receipt_identity: receipt_id.clone(),
             recollection_revision: 1,
-            perceived_text: stage.perceived_text,
-            recalled_text: stage.recalled_text,
-            disclosed_text: Some(disclosed),
-            transmitted_text: stage.transmitted_text,
+            perceived_text: draft.truthful_text.clone(),
+            recalled_text: match draft.reliability {
+                Reliability::Truthful | Reliability::PartlyTruthful => draft.truthful_text.clone(),
+                _ => draft.spoken_text.clone(),
+            },
+            disclosed_text: Some(draft.spoken_text.clone()),
+            transmitted_text: draft.spoken_text.clone(),
             perception: PerceptionCondition::Clear,
-            memory: if matches!(
-                reliability,
-                adventuresim_dialogue::TestimonyReliability::Mistaken
-            ) {
+            memory: if draft.reliability == Reliability::Mistaken {
                 MemoryCondition::Confused
             } else {
                 MemoryCondition::Accurate
             },
-            disclosure: if matches!(
-                reliability,
-                adventuresim_dialogue::TestimonyReliability::Deceptive
-            ) {
-                DisclosureMode::Distort
-            } else {
-                DisclosureMode::Disclose
+            disclosure: match draft.reliability {
+                Reliability::Deceptive => DisclosureMode::Distort,
+                Reliability::Evasive => DisclosureMode::Conceal,
+                _ => DisclosureMode::Disclose,
             },
             transmission: TransmissionCondition::Clear,
             received_at: official_minute(ctx),
         };
+        let correction_belief_id = draft
+            .corrects_proposition_id
+            .as_ref()
+            .and_then(|proposition_id| {
+                ctx.db
+                    .investigation_belief()
+                    .owner_character_id()
+                    .filter(character_id)
+                    .find(|belief| {
+                        belief.case_id == generated.public_case_id
+                            && belief.proposition_id == *proposition_id
+                    })
+                    .map(|belief| belief.id)
+            })
+            .unwrap_or_default();
         stage_investigation_claim(
             ctx,
             character_id,
             receipt_id.clone(),
-            serde_json::to_string(&pipeline).map_err(|e| e.to_string())?,
-            public_case_id.into(),
-            safe_source_label.into(),
-            inv::compound_id(&["conflict", public_case_id, &stage.proposition_id]),
-            String::new(),
+            serde_json::to_string(&pipeline)
+                .map_err(|_| "Could not encode generated testimony pipeline")?,
+            generated.public_case_id.clone(),
+            "the referred local witness".into(),
+            inv::compound_id(&["conflict", &generated.public_case_id, &draft.proposition_id]),
+            correction_belief_id,
         )?;
         receive_investigation_claim(
             ctx,
             character_id,
-            inv::compound_id(&["receive-testimony", &receipt_id]),
-            receipt_id,
+            inv::compound_id(&["receive-generated-testimony", &receipt_id]),
+            receipt_id.clone(),
         )?;
+
+        let site = draft
+            .site_id
+            .as_ref()
+            .and_then(|site_id| ctx.db.case_site_authority().id_key().find(&site_id.0));
+        let exact = draft.destination_stage == "exact_believed";
+        let lead_id = inv::compound_id(&[
+            "lead",
+            "generated-testimony",
+            &character_id.to_string(),
+            &witness.id.0,
+            &index.to_string(),
+        ]);
+        if ctx.db.investigation_lead().id().find(&lead_id).is_none() {
+            let npc = ctx
+                .db
+                .settlement_npc()
+                .id()
+                .find(&witness.npc_id)
+                .ok_or("Generated witness is no longer persistent")?;
+            ctx.db.investigation_lead().insert(InvestigationLead {
+                id: lead_id.clone(),
+                owner_character_id: character_id,
+                case_id: generated.public_case_id.clone(),
+                proposition_id: draft.proposition_id.clone(),
+                summary: draft.spoken_text.clone(),
+                source_label: "the referred local witness".into(),
+                confidence_bps: if draft.reliability == Reliability::Truthful {
+                    8_000
+                } else {
+                    5_000
+                },
+                destination_stage: draft.destination_stage.clone(),
+                directions: if exact {
+                    String::new()
+                } else {
+                    draft.spoken_text.clone()
+                },
+                exact_location_id: site
+                    .as_ref()
+                    .filter(|_| exact)
+                    .map_or_else(String::new, |site| site.id.value.clone()),
+                latitude_e7: site
+                    .as_ref()
+                    .filter(|_| exact)
+                    .map_or(0, |site| site.latitude_e7),
+                longitude_e7: site
+                    .as_ref()
+                    .filter(|_| exact)
+                    .map_or(0, |site| site.longitude_e7),
+                witness_name: npc.name,
+                witness_description: witness.visible_description.clone(),
+                witness_occupation_or_relationship: npc.profession,
+                expected_location: witness.expected_location.clone(),
+                current_learned_location: witness.expected_location.clone(),
+                contradiction_group: format!("generated-location:{}", generated.public_case_id),
+                corrected_by: String::new(),
+                recorded_at: official_minute(ctx),
+            });
+            if let Some(corrected_proposition) = &draft.corrects_proposition_id {
+                for mut prior in ctx
+                    .db
+                    .investigation_lead()
+                    .owner_character_id()
+                    .filter(character_id)
+                    .filter(|prior| {
+                        prior.case_id == generated.public_case_id
+                            && prior.proposition_id == *corrected_proposition
+                            && prior.id != lead_id
+                            && prior.corrected_by.is_empty()
+                    })
+                    .collect::<Vec<_>>()
+                {
+                    prior.corrected_by = lead_id.clone();
+                    ctx.db.investigation_lead().id().update(prior);
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -2947,6 +3211,7 @@ pub fn discover_investigation_lead(
         id: lead_id,
         owner_character_id: character_id,
         case_id: receipt.public_case_id.clone(),
+        proposition_id: String::new(),
         summary: receipt.summary.clone(),
         source_label: receipt.safe_source_label.clone(),
         confidence_bps: receipt.confidence_bps,
@@ -3215,6 +3480,7 @@ mod tests {
             id: "lead".into(),
             owner_character_id: 1,
             case_id: "case".into(),
+            proposition_id: String::new(),
             summary: "somewhere north".into(),
             source_label: "witness".into(),
             confidence_bps: 5000,

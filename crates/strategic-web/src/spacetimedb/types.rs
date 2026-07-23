@@ -380,8 +380,8 @@ pub struct ContractPresentation {
     pub issuer_npc_id: String,
     pub status: ContractPresentationStatus,
     pub accepted_by: Option<String>,
-    pub enemy_type: String,
-    pub enemy_count: i32,
+    pub opposition_wording: String,
+    pub opposition_count_wording: String,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

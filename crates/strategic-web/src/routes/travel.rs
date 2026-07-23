@@ -7,7 +7,6 @@ use std::{
 };
 
 use adventuresim_core::{
-    bestiary::ThreatId,
     strategic_schedule::DailySchedule,
     strategic_time::{CampDurationPolicy, ItineraryMember, ItinerarySegment, forecast_itinerary},
 };
@@ -126,12 +125,10 @@ impl TerrainPlanner {
 }
 
 pub(crate) fn active_contract_summary(contract: &ContractPresentation) -> String {
-    let name = contract
-        .enemy_type
-        .parse::<ThreatId>()
-        .map(|id| id.display_name(contract.enemy_count.max(0) as u32))
-        .unwrap_or_else(|_| "Unknown threat".to_string());
-    format!("Active quest · {} {name}", contract.enemy_count)
+    format!(
+        "Active quest · {} {}",
+        contract.opposition_count_wording, contract.opposition_wording
+    )
 }
 
 pub(crate) fn active_contract_tooltip(contract: &ContractPresentation) -> String {
@@ -515,8 +512,8 @@ mod tests {
             issuer_npc_id: String::new(),
             status,
             accepted_by: None,
-            enemy_type: String::new(),
-            enemy_count: 1,
+            opposition_wording: "unknown opposition".into(),
+            opposition_count_wording: "an unknown number of".into(),
         }
     }
 
@@ -530,8 +527,8 @@ mod tests {
     fn active_quest_tooltip_includes_encounter_summary() {
         let mut quest = quest("crypt", "riverdale", ContractPresentationStatus::Accepted);
         quest.description = "A necromancer has raised the dead.".into();
-        quest.enemy_count = 11;
-        quest.enemy_type = "skeleton".into();
+        quest.opposition_count_wording = "perhaps eleven".into();
+        quest.opposition_wording = "walking dead".into();
 
         assert_eq!(
             active_contract_tooltip(&quest),

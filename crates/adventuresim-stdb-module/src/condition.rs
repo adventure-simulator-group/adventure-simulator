@@ -7,7 +7,9 @@ use crate::character::character;
 use crate::filth::character_filth;
 use crate::investigation::case_site_authority;
 use crate::item::item;
-use crate::strategic::{contract_authority, party_authority, party_inventory_item, settlement};
+use crate::strategic::{
+    hostile_group_authority, party_authority, party_inventory_item, settlement,
+};
 use crate::{
     CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, character_attributes,
     character_equip, character_limbs, character_skills, character_stats, character_time,
@@ -768,28 +770,27 @@ fn base_morale(
 
     if let Some(case_site_id) = crate::investigation::character_case_site_id(ctx, character.id)
         && let Some(site) = ctx.db.case_site_authority().id_key().find(&case_site_id)
-        && let Some(quest) = ctx
+        && let Some(group) = ctx
             .db
-            .contract_authority()
-            .case_id()
-            .filter(&site.case_id)
-            .next()
+            .hostile_group_authority()
+            .iter()
+            .find(|group| group.case_site_id == site.id)
     {
-        let enemy_power = quest.enemy_count.max(1) as f32 * (quest.difficulty.max(1) as f32 + 4.0);
+        let enemy_power = group.enemy_count.max(1) as f32 * (group.difficulty.max(1) as f32 + 4.0);
         let difference = allied_power - enemy_power;
         if difference != 0.0 {
             add_source(
-                format!("power-{}", quest.id),
+                format!("power-{}", group.id),
                 "power".into(),
                 if difference > 0.0 {
                     "Superior allied strength".into()
                 } else {
-                    format!("Outmatched by {}", quest.enemy_type)
+                    format!("Outmatched by {}", group.enemy_type)
                 },
                 if difference > 0.0 {
                     difference
                 } else {
-                    difference.abs() * -enemy_fear_multiplier(&quest.enemy_type)?
+                    difference.abs() * -enemy_fear_multiplier(&group.enemy_type)?
                 },
                 if difference < 0.0 {
                     crate::personality::MoraleStimulus::Threat
