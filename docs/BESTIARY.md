@@ -29,6 +29,11 @@ investigative generator and future tactical combat; they are not all simulated
 yet. Tactical servers do not yet receive bestiary identity, and tactical enemy
 instances, position, HP, and damage remain transient.
 
+Innate protection and `Protection::Armored` cannot currently coexist in one
+catalog profile because autoresolve has not modeled overlapping anatomical and
+worn layers. Catalog validation rejects that combination rather than silently
+overwriting either layer.
+
 ## Weighted context and inference
 
 The catalog owns sparse forward likelihoods. Ecological base rate and curation

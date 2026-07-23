@@ -285,6 +285,12 @@ pub struct CombatProfile {
     pub loot_item_id: Option<&'static str>,
 }
 
+fn has_unsupported_layered_protection(combat: CombatProfile) -> bool {
+    (combat.innate_protection.resistance_joules > 0.0
+        || combat.innate_protection.padding_joules > 0.0)
+        && matches!(combat.protection, Protection::Armored)
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct InvestigationProfile {
     pub habitats: &'static [Habitat],
@@ -1611,6 +1617,14 @@ pub fn validate_catalog() -> Vec<CatalogDiagnostic> {
                 message: format!("invalid numeric combat profile {}", id.as_str()),
             });
         }
+        if has_unsupported_layered_protection(combat) {
+            errors.push(CatalogDiagnostic {
+                message: format!(
+                    "innate and worn armor composition is unsupported for {}",
+                    id.as_str()
+                ),
+            });
+        }
         if has_duplicates(p.aliases)
             || has_duplicates(p.investigation.tracks)
             || has_duplicates(p.investigation.wounds)
@@ -1972,6 +1986,18 @@ mod tests {
                 .investigation
                 .countermeasure_hypotheses
                 .contains(&CountermeasureHypothesis::Silver)
+        );
+    }
+
+    #[test]
+    fn catalog_rejects_combined_innate_and_worn_armor_until_layers_are_modeled() {
+        let mut unsupported = profile(ThreatId::Skeleton).combat;
+        unsupported.protection = Protection::Armored;
+        assert!(has_unsupported_layered_protection(unsupported));
+        assert!(
+            ALL_THREATS
+                .iter()
+                .all(|id| !has_unsupported_layered_protection(profile(*id).combat))
         );
     }
 }

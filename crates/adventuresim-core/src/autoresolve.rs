@@ -2052,6 +2052,7 @@ mod tests {
         let cutting = resolved_melee_health_damage(
             CombatWeapon {
                 slash: true,
+                // Hand axe and sword catalog coefficient.
                 penetration: 1.0,
                 ..Default::default()
             },
@@ -2060,7 +2061,8 @@ mod tests {
         let blunt = resolved_melee_health_damage(
             CombatWeapon {
                 blunt: true,
-                penetration: 1.5,
+                // Flanged mace and war hammer catalog coefficient.
+                penetration: 0.5,
                 ..Default::default()
             },
             protection,
@@ -2096,7 +2098,7 @@ mod tests {
         let unprotected_blunt = resolved_melee_health_damage(
             CombatWeapon {
                 blunt: true,
-                penetration: 1.5,
+                penetration: 0.5,
                 ..Default::default()
             },
             CombatArmor::default(),

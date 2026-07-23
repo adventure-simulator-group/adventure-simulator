@@ -148,7 +148,11 @@ Morale only starts affecting incapacitation when it goes below 0, at which point
 This does not significantly accumulate in the course of combat, but is more a function of marching all day or going too long without sleeping. This probably has a threshold after which it starts applying nonlinearly ~halfway through the day.
 
 ## Penetrating
-Each piece of armor has a "resistance" and "padding", both are in terms of joules. When attack connects, the imparted_joules is subtracted by the resistance to determine how much energy penetrates the armor, if any. Weapons also have a "penetration" coefficient. The actual resistance used for the attack is:
+Each piece of armor has a "resistance" and "padding", both are in terms of
+joules. Resistance opposes cutting edges and piercing points. When one of those
+attacks connects, the imparted joules are reduced by resistance to determine
+how much energy penetrates, if any. Weapons also have a "penetration"
+coefficient. The actual resistance used for an edged or pointed attack is:
 
 $$
 \mathrm{resistance_{\text{final}}} = \mathrm{resistance_{\text{base}}} - \mathrm{flexibility} \cdot \mathrm{resistance_{\text{base}}} \cdot \mathrm{penetration}
@@ -161,9 +165,14 @@ Penetration coefficient examples:
 - Broadhead arrows or spear: 2.0
 - Mail breaker, rapier, or bodkin arrows: 4.0 
 
-Any energy that penetrates is then applied as cut damage.
+Any edged or pointed energy that penetrates is then applied as cut damage.
 
-Energy which is absorbed by the resistance, is the blunt energy. 50% of blunt energy is applied as unbalance, as described above, and the other 50% is subtracted by the padding to determine blunt damage.
+Pure blunt contact does not test against edge resistance: its force is
+transmitted directly to padding, which dissipates energy before blunt damage is
+applied. For mixed blunt-and-edged weapon definitions, penetrated force is
+partitioned evenly between the two modes so it is not counted twice. Energy
+absorbed by resistance still transmits 50% as blunt force and applies the other
+50% as unbalance, as described above.
 ## Damage
 ### Cut
 Cut damage is divided by the penetration coefficient before being applied. This represents the greater surface area of flesh that is being torn up. Essentially, this makes axes and swords particularly ineffective against armor, but does extra damage against flesh.
