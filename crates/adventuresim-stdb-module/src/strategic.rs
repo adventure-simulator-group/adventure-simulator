@@ -39,8 +39,7 @@ use crate::{
     repair::item_condition,
     settlement_population::{settlement_npc, settlement_npc_presence},
     tactical::{
-        tactical_server, tactical_server_authority, tactical_server_claim, tactical_server_request,
-        tactical_server_request_authority,
+        tactical_server_authority, tactical_server_claim, tactical_server_request_authority,
     },
     time::{
         advance_travel_time, character_apprenticeship, character_time, character_training_schedule,
@@ -10892,9 +10891,8 @@ pub fn bootstrap_development_world(
     Ok(())
 }
 
-/// Seed a standalone tactical mission: a solo party with an accepted quest
-/// bound to `scene_key`, then a [`crate::tactical::TacticalServerRequest`]
-/// for `mission_id` through the normal `request_tactical_server` reducer.
+/// Seed a standalone tactical mission: a solo party occupying a typed case
+/// site with a bound hostile group, mission, and tactical-server request.
 ///
 /// Lets an isolated, strategic-layer-free SpacetimeDB instance host a
 /// standalone tactical server/client test without hand-authoring party and
@@ -10917,14 +10915,20 @@ pub fn seed_standalone_tactical_mission(
     }
     if ctx
         .db
-        .tactical_server_request()
+        .tactical_server_request_authority()
         .mission_id()
         .find(&mission_id)
         .is_some()
-        || ctx.db.tactical_server().mission_id().find(&mission_id).is_some()
+        || ctx
+            .db
+            .tactical_server_authority()
+            .mission_id()
+            .find(&mission_id)
+            .is_some()
     {
         return Ok(());
     }
+    adventuresim_core::mission::MissionId::new(mission_id.clone()).map_err(str::to_string)?;
 
     if ctx.db.character().id().find(character_id).is_none() {
         crate::character::insert_new_character(
@@ -10941,48 +10945,85 @@ pub fn seed_standalone_tactical_mission(
         .settlement()
         .iter()
         .find(|settlement| settlement.scene_key == scene_key)
-        .ok_or_else(|| format!("No settlement with scene_key '{scene_key}' to host a debug quest"))?;
-
-    ctx.db.quest().insert(Quest {
-        id: mission_id.clone(),
-        title: "Standalone Tactical Test".into(),
-        description: "Seeded for isolated tactical testing".into(),
-        difficulty: 1,
-        gold_reward: 0,
-        xp_reward: 0,
-        settlement_id: settlement.id.clone(),
-        status: QuestStatus::Accepted,
-        accepted_by: Some(party_id.clone()),
-        enemy_type: "bandit".into(),
-        enemy_count: required_enemy_kills as i32,
-        location_description: "Standalone tactical test location".into(),
-        location_scene_key: scene_key.clone(),
-        location_coord_x: settlement.coord_x,
-        location_coord_y: settlement.coord_y,
-        coordinates_are_geographic: settlement.source_node_id.is_some(),
-        distance_m: 0,
-    });
+        .ok_or_else(|| {
+            format!("No settlement with scene_key '{scene_key}' to host a debug mission")
+        })?;
+    let case_site_id = CaseSiteId::from(format!("case-site:standalone:{mission_id}"));
+    let case_site = if let Some(existing) = ctx
+        .db
+        .case_site_authority()
+        .id_key()
+        .find(&case_site_id.value)
+    {
+        existing
+    } else {
+        ctx.db.case_site_authority().insert(CaseSiteAuthority {
+            id_key: case_site_id.value.clone(),
+            id: case_site_id.clone(),
+            case_id: format!("case:standalone:{mission_id}"),
+            origin_settlement_id: settlement.id.clone(),
+            name: "Standalone Tactical Test".into(),
+            description: "Seeded for isolated tactical testing".into(),
+            scene_key: scene_key.clone(),
+            longitude_e7: (settlement.coord_x * 10_000_000.0).round() as i32,
+            latitude_e7: (settlement.coord_y * 10_000_000.0).round() as i32,
+            coordinates_are_geographic: settlement.source_node_id.is_some(),
+            distance_m: 0,
+        })
+    };
+    let hostile_group_id = format!("hostile-group:standalone:{mission_id}");
+    if ctx
+        .db
+        .hostile_group_authority()
+        .id()
+        .find(&hostile_group_id)
+        .is_none()
+    {
+        ctx.db
+            .hostile_group_authority()
+            .insert(HostileGroupAuthority {
+                id: hostile_group_id.clone(),
+                case_site_id: case_site.id.clone(),
+                enemy_type: "bandit".into(),
+                enemy_count: required_enemy_kills,
+                difficulty: 1,
+                drop_item_id: autoresolve_drop("bandit")?.map(str::to_string),
+                drop_quantity: required_enemy_kills,
+                defeated: false,
+            });
+    }
 
     let mut party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
-    party.current_quest_location_id = Some(mission_id.clone());
-    party.active_quest_id = Some(mission_id.clone());
-    ctx.db.party().id().update(party);
-
-    let mut character = ctx
-        .db
-        .character()
-        .id()
-        .find(character_id)
-        .ok_or("Character not found")?;
-    character.current_quest_location_id = Some(mission_id.clone());
-    ctx.db.character().id().update(character);
-
-    crate::tactical::request_tactical_server(ctx, character_id, mission_id, scene_key)
+    party.current_settlement_id = None;
+    party.current_case_site_id = Some(case_site.id.clone());
+    party.active_quest_id = None;
+    ctx.db.party_authority().id().update(party);
+    crate::investigation::set_character_case_site(
+        ctx,
+        character_id,
+        Some(case_site.id.value.clone()),
+    );
+    let mission =
+        ensure_bound_mission_authority(ctx, &mission_id, &party_id, &case_site, &scene_key)?;
+    if mission.hostile_group_id.as_deref() != Some(&hostile_group_id) {
+        return Err("Standalone mission resolved to an unexpected hostile group".into());
+    }
+    ctx.db
+        .tactical_server_request_authority()
+        .insert(crate::tactical::TacticalServerRequest {
+            mission_id,
+            gateway_bucket: 0,
+            scene_key,
+            party_id,
+            requested_by: character_id,
+            required_enemy_kills,
+        });
+    Ok(())
 }
 
 pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
