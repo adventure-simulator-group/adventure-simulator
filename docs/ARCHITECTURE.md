@@ -40,6 +40,15 @@ production NPC rows or persist tactical state.
 
 **Tactical gameplay state (HP, damage, positions, enemies, loot drops) lives ONLY in the adventuresim-tactical-server game state.**
 
+Authenticated tactical completion is opaque to strategic objective authority:
+the tactical process reports failure or success but never receives or chooses
+a case objective, nonlethal result, capture subject, or weight. For successful
+case-bound combat, SpacetimeDB deterministically samples a currently valid
+result from the mission's private immutable observer-authorized manifest, then
+atomically commits the case fact, hostile disposition, capture custody change,
+and defeat-only loot. Allied autoresolve uses the same boundary. Random
+encounters remain unbound and defeat-only.
+
 ## Offline world compilation
 
 The MVP playable area is the exact EPSG:4326 box
