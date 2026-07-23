@@ -1,9 +1,5 @@
 # Dialogue architecture
 
-Settlement dialogue is the markerless discovery boundary for local problems.
-Inns surface unknown unresolved symptoms; overview is fallback only when no inn
-NPC is available. Locals repeat referrals. Hidden causes and destinations stay private.
-
 ## Persistent settlement actors
 
 Settlement dialogue is authorized against persistent `settlement_npc` identities and

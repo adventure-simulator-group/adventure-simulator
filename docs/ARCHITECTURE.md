@@ -1,10 +1,5 @@
 # Architecture MVP - Adventure Simulator
 
-Persistent local problems and their privacy boundary are specified in
-[LOCAL_PROBLEMS.md](LOCAL_PROBLEMS.md). Their strategic authority is stored in
-SpacetimeDB; generation and consequence evaluation are pure shared-core logic.
-They never persist tactical tick state.
-
 Strategic threat identity and evidence vocabulary live in
 `adventuresim-core::bestiary`; see [BESTIARY.md](BESTIARY.md). Stable IDs cross
 existing strategic persistence boundaries while display names remain

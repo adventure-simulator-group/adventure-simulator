@@ -2678,13 +2678,6 @@ pub fn start_dialogue(
         }
     }
     refresh_dialogue_topic_options(ctx, &session, character_id)?;
-    crate::local_problem::surface_problem(
-        ctx,
-        character_id,
-        &session.id,
-        &npc_actor_id,
-        &session.location_id,
-    )?;
     Ok(())
 }
 
@@ -6057,14 +6050,6 @@ pub fn finalize_merchant_trade(
     let (_, shared_language) =
         adventuresim_world_schema::best_common_oral_language(speaker, merchant);
     let settlement_economy = settlement.economy.clone();
-    let problem_minute = ctx
-        .db
-        .character_time()
-        .character_id()
-        .find(character_id)
-        .map_or(0, |time| time.minutes);
-    let problem_effects =
-        crate::local_problem::settlement_effects(ctx, &settlement_id, problem_minute);
     // Sales are inventory-instance operations. Preserve each submitted stack
     // and quantity rather than netting by item ID, which can assign the whole
     // net sale to every matching stack.
@@ -6104,15 +6089,16 @@ pub fn finalize_merchant_trade(
         ) {
             return Err("This settlement does not stock that merchant item".into());
         }
-        let quoted = adventuresim_core::strategic_economy::language_adjusted_buy_price(
-            adventuresim_core::strategic_economy::merchant_buy_price(item.base_value.unwrap_or(1)),
-            shared_language,
-        );
-        let quoted =
-            adventuresim_core::local_problem::adjust_price(quoted, problem_effects.buy_bps);
-        let line =
-            adventuresim_core::strategic_economy::checked_merchant_line_total(quoted, *quantity)
-                .ok_or("Merchant purchase total overflow")?;
+        let line = adventuresim_core::strategic_economy::checked_merchant_line_total(
+            adventuresim_core::strategic_economy::language_adjusted_buy_price(
+                adventuresim_core::strategic_economy::merchant_buy_price(
+                    item.base_value.unwrap_or(1),
+                ),
+                shared_language,
+            ),
+            *quantity,
+        )
+        .ok_or("Merchant purchase total overflow")?;
         cost = adventuresim_core::strategic_economy::checked_add_merchant_total(cost, line)
             .ok_or("Merchant purchase total overflow")?;
     }
@@ -6172,27 +6158,23 @@ pub fn finalize_merchant_trade(
             }
             let base = adventuresim_core::strategic_economy::merchant_sell_food_lot_value(value)
                 .ok_or("Food lot has invalid value")?;
-            let quoted = adventuresim_core::strategic_economy::language_adjusted_sell_price(
-                u32::try_from(base).map_err(|_| "Food lot quote overflow")?,
-                shared_language,
-            );
-            u64::from(adventuresim_core::local_problem::adjust_price(
-                quoted,
-                -problem_effects.sell_penalty_bps,
-            ))
-        } else {
-            let quoted = adventuresim_core::strategic_economy::language_adjusted_sell_price(
-                adventuresim_core::strategic_economy::merchant_sell_price(
-                    item.base_value.unwrap_or(1),
+            u64::from(
+                adventuresim_core::strategic_economy::language_adjusted_sell_price(
+                    u32::try_from(base).map_err(|_| "Food lot quote overflow")?,
+                    shared_language,
                 ),
-                shared_language,
-            );
-            let quoted = adventuresim_core::local_problem::adjust_price(
-                quoted,
-                -problem_effects.sell_penalty_bps,
-            );
-            adventuresim_core::strategic_economy::checked_merchant_line_total(quoted, *quantity)
-                .ok_or("Merchant sale total overflow")?
+            )
+        } else {
+            adventuresim_core::strategic_economy::checked_merchant_line_total(
+                adventuresim_core::strategic_economy::language_adjusted_sell_price(
+                    adventuresim_core::strategic_economy::merchant_sell_price(
+                        item.base_value.unwrap_or(1),
+                    ),
+                    shared_language,
+                ),
+                *quantity,
+            )
+            .ok_or("Merchant sale total overflow")?
         };
         proceeds = adventuresim_core::strategic_economy::checked_add_merchant_total(proceeds, line)
             .ok_or("Merchant sale total overflow")?;
@@ -8077,17 +8059,6 @@ fn maybe_interrupt_travel(
     else {
         return Ok((requested_minutes, None, 1));
     };
-    let absolute_start = journey
-        .departure_minute
-        .saturating_add(journey.completed_elapsed_minutes);
-    if journey.origin_kind == "settlement" && journey.destination_kind == "settlement" {
-        crate::local_problem::ensure_route_problem(
-            ctx,
-            &journey.origin_id,
-            &journey.destination_id,
-            absolute_start,
-        )?;
-    }
     let authority = ctx
         .db
         .party_journey_encounter_authority()
@@ -8123,7 +8094,10 @@ fn maybe_interrupt_travel(
         .count()
         .max(1) as u16;
     let completed = journey.completed_minutes;
-    let selection = adventuresim_core::encounter::first_encounter_with_problem(
+    let absolute_start = journey
+        .departure_minute
+        .saturating_add(journey.completed_elapsed_minutes);
+    let selection = adventuresim_core::encounter::first_encounter(
         authority.seed,
         completed,
         requested_minutes,
@@ -8151,19 +8125,6 @@ fn maybe_interrupt_travel(
                 party_speed_m_per_minute:
                     adventuresim_core::encounter::PARTY_WALKING_SPEED_M_PER_MINUTE,
             }
-        },
-        |minute| {
-            let absolute_minute = absolute_start.saturating_add(minute.saturating_sub(completed));
-            (journey.origin_kind == "settlement" && journey.destination_kind == "settlement")
-                .then(|| {
-                    crate::local_problem::route_encounter_influence(
-                        ctx,
-                        &journey.origin_id,
-                        &journey.destination_id,
-                        absolute_minute,
-                    )
-                })
-                .flatten()
         },
     );
     let crossed_end = completed.saturating_add(requested_minutes);
@@ -10470,7 +10431,6 @@ fn ensure_settlement_activity_inner(
     settlement_id: &str,
 ) -> Result<(), String> {
     crate::settlement_population::ensure_settlement_population(ctx, settlement_id)?;
-    crate::local_problem::ensure_settlement_problems(ctx, settlement_id)?;
     let tracked_quests: HashSet<String> = ctx
         .db
         .party()

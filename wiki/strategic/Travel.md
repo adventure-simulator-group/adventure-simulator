@@ -1,8 +1,5 @@
 > TODO: rewrite for HTML-based strategic interface
 
-Route problems use canonical unordered settlement endpoint pairs and influence
-only existing deterministic encounter boundaries, preserving roll domains and chunking.
-
 Movement spends calories. On crossing zero, travel consumes useful calories
 from shared food lots first and personal lots second, oldest first, and stops
 exactly at zero. Arrival clears positive stomach fullness so dinner is possible.

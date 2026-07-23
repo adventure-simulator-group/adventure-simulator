@@ -38,7 +38,6 @@ impl __sdk::__query_builder::HasCols for CharacterTime {
 /// Provides typed access to indexed columns for query building.
 pub struct CharacterTimeIxCols {
     pub character_id: __sdk::__query_builder::IxCol<CharacterTime, u64>,
-    pub minutes: __sdk::__query_builder::IxCol<CharacterTime, u64>,
 }
 
 impl __sdk::__query_builder::HasIxCols for CharacterTime {
@@ -46,7 +45,6 @@ impl __sdk::__query_builder::HasIxCols for CharacterTime {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         CharacterTimeIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
-            minutes: __sdk::__query_builder::IxCol::new(table_name, "minutes"),
         }
     }
 }

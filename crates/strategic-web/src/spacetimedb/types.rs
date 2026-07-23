@@ -1,12 +1,5 @@
 //! SpacetimeDB response types
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct BackendLocalProblemTradeEffect {
-    pub character_id: u64,
-    pub settlement_id: String,
-    pub buy_bps: i32,
-    pub sell_penalty_bps: i32,
-}
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use serde_json::Value;
 

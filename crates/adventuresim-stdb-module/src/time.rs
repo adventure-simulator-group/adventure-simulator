@@ -56,7 +56,6 @@ pub struct WorldClockSchedule {
 pub struct CharacterTime {
     #[primary_key]
     pub character_id: u64,
-    #[index(btree)]
     pub minutes: u64,
 }
 
