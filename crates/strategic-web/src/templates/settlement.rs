@@ -1147,13 +1147,13 @@ pub(crate) fn travel_planner_bar_for(
     preview_segments: &str,
     terrain_spans: &str,
 ) -> Markup {
-    let journey_origin_name = journey.map_or("", |item| item.origin_name.as_str());
-    let journey_destination_name = journey.map_or("", |item| item.destination_name.as_str());
+    let journey_origin_name = journey.map_or("", |item| item.origin.name());
+    let journey_destination_name = journey.map_or("", |item| item.destination.name());
     let journey_turnaround_minutes = journey
-        .filter(|item| item.destination_kind == "quest")
+        .filter(|item| item.destination.case_site_id().is_some())
         .map_or(0, |item| item.total_minutes);
     let journey_total_minutes = journey.map_or(0, |item| {
-        if item.destination_kind == "quest" {
+        if item.destination.case_site_id().is_some() {
             item.total_minutes.saturating_add(
                 journey_route
                     .and_then(|route| route.return_route.as_ref())
@@ -1169,7 +1169,7 @@ pub(crate) fn travel_planner_bar_for(
     });
     let journey_forecast_stops = journey.map_or_else(String::new, |item| {
         let mut stops = item.forecast_camp_stop_minutes.clone();
-        if item.destination_kind == "quest" {
+        if item.destination.case_site_id().is_some() {
             stops.extend(
                 item.camp_stop_minutes
                     .iter()
@@ -1389,7 +1389,7 @@ fn format_persisted_itinerary(journey: &PartyJourney, itinerary: &PartyJourneyIt
             merged.push((camp, actual, forecast));
         }
     }
-    let total_movement = if journey.destination_kind == "quest" {
+    let total_movement = if journey.destination.case_site_id().is_some() {
         journey.total_minutes.saturating_mul(2)
     } else {
         journey.total_minutes
@@ -1453,7 +1453,7 @@ fn format_persisted_itinerary(journey: &PartyJourney, itinerary: &PartyJourneyIt
 }
 
 fn format_legacy_persisted_itinerary(journey: &PartyJourney) -> String {
-    let total_movement = if journey.destination_kind == "quest" {
+    let total_movement = if journey.destination.case_site_id().is_some() {
         journey.total_minutes.saturating_mul(2)
     } else {
         journey.total_minutes

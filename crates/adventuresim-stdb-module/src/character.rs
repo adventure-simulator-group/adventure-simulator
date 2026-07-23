@@ -18,7 +18,7 @@ use crate::{
     item::item,
     personality::character_personality,
     repair::{item_condition, repair_order},
-    strategic::{inventory_quantity_target, party, party_member, settlement},
+    strategic::{inventory_quantity_target, party_authority, party_member, settlement},
     surgery::{limb_injury, retained_projectile},
     tactical::tactical_server,
     time::{character_notoriety, character_time, character_training_schedule},
@@ -35,8 +35,6 @@ pub struct Character {
     pub level: u32,
     pub gold: u32,
     pub current_settlement_id: Option<String>,
-    /// The case site occupied by this character, mutually exclusive with a settlement.
-    pub current_case_site_id: Option<String>,
     pub party_id: Option<String>,
     #[index(btree)]
     pub server: Identity,
@@ -167,7 +165,12 @@ pub fn backfill_character_deaths_and_leadership(ctx: &ReducerContext) -> Result<
             Some("legacy-backfill".into()),
         )?;
     }
-    let party_ids: Vec<_> = ctx.db.party().iter().map(|party| party.id).collect();
+    let party_ids: Vec<_> = ctx
+        .db
+        .party_authority()
+        .iter()
+        .map(|party| party.id)
+        .collect();
     for party_id in party_ids {
         crate::strategic::normalize_and_elect_party_leader(ctx, &party_id)?;
     }
@@ -997,7 +1000,6 @@ fn insert_character_with_origin(
         // authoritative in inventory.
         gold: 0,
         current_settlement_id: Some(start_settlement.id.clone()),
-        current_case_site_id: None,
         party_id: None,
         server: Identity::ZERO,
         in_server: false,

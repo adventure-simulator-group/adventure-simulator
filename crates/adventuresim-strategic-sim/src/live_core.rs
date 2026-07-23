@@ -622,7 +622,7 @@ impl LiveRunner {
     fn travel_camps(&mut self, party_id: &str) -> Result<(), String> {
         for _ in 0..MAX_CAMPS_PER_LEG {
             let party = self.party_by_id(party_id)?;
-            if party.camp_destination_id.is_none() {
+            if party.camp_destination.is_none() {
                 self.metrics.travel_legs += 1;
                 return Ok(());
             }
@@ -728,8 +728,7 @@ impl LiveRunner {
                 format!("remaining_before={remaining_before}"),
             );
             let after = self.party_by_id(party_id)?;
-            if after.camp_destination_id.is_some()
-                && after.camp_remaining_minutes >= remaining_before
+            if after.camp_destination.is_some() && after.camp_remaining_minutes >= remaining_before
             {
                 self.metrics.stuck_detections += 1;
                 return Err("camp continuation made no progress".into());

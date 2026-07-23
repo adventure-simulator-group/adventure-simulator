@@ -31,9 +31,10 @@ use crate::live::LiveState;
 use crate::session::{CHARACTER_COOKIE, Session};
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    BackendCaseSitePin, Character, CharacterAttributes, CharacterLimbs, CharacterSkills,
-    CharacterStats, CharacterStrategicCondition, CharacterTime, Party, PartyActionRequest,
-    PartyJourney, PartyJourneyRoute, PartyMember, Settlement, SpacetimeClient, WorldClock,
+    BackendCaseSitePin, BackendCharacterCaseSiteLocation, Character, CharacterAttributes,
+    CharacterLimbs, CharacterSkills, CharacterStats, CharacterStrategicCondition, CharacterTime,
+    Party, PartyActionRequest, PartyJourney, PartyJourneyRoute, PartyMember, Settlement,
+    SpacetimeClient, WorldClock,
 };
 
 /// Application state shared across routes
@@ -116,6 +117,20 @@ mod return_url_tests {
 /// participate in readiness checks that gate survivor actions.
 pub(crate) fn participates_in_party_readiness(alive: bool) -> bool {
     alive
+}
+
+pub(crate) async fn character_case_site_id(
+    state: &AppState,
+    character_id: u64,
+) -> Result<Option<String>, String> {
+    state
+        .db
+        .query_one::<BackendCharacterCaseSiteLocation>(&format!(
+            "SELECT * FROM backend_character_case_site_locations WHERE character_id = {character_id}"
+        ))
+        .await
+        .map(|row| row.map(|location| location.case_site_id.value))
+        .map_err(|error| error.to_string())
 }
 
 /// Execute a leader action immediately, or persist the same validated intent for
@@ -436,12 +451,12 @@ async fn planned_travel_call(
             .map_err(|error| error.to_string())?
             .ok_or("Origin settlement not found")?;
         (settlement.coord_y, settlement.coord_x)
-    } else if let Some(id) = character.current_case_site_id.as_deref() {
+    } else if let Some(id) = character_case_site_id(state, actor_id).await? {
         let site = state
             .db
             .query_one::<BackendCaseSitePin>(&format!(
                 "SELECT * FROM backend_case_site_pins WHERE owner_character_id = {actor_id} AND case_site_id = {}",
-                sql_string_literal(id)
+                sql_string_literal(&id)
             ))
             .await
             .map_err(|error| error.to_string())?

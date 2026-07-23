@@ -363,7 +363,10 @@ never include raw investigation tables. See
 | private `case_site_authority` | Stable case-site identity, origin, scene, distance, and physical coordinates |
 | private `party_case_site_tracking` | Per-party presentation/navigation selection; it grants no knowledge, acceptance, objective progress, or reward |
 | gateway-only `backend_case_site_pins` | Observer-owned exact site projection, emitted only from unrevised exact/visited investigation knowledge |
-| `character` / `party` location fields | Current settlement or typed case site (never tactical positions) |
+| public `character` | Public identity and current settlement only; case-site occupancy is never globally subscribable |
+| private `character_case_site_occupancy` | Typed per-character `CaseSiteId` occupancy authority |
+| private `party` / `party_journey` / `party_journey_route` authority | Typed party occupancy, endpoints, camp destination, and exact route geometry |
+| gateway-only party/journey/location views | Owner-facing movement presentation for strategic-web and the simulator |
 | `port_allocation` | Tactical server port allocation (singleton) |
 
 `character_personality`, `character_affinity`, `character_familiarity`,

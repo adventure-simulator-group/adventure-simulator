@@ -11,7 +11,7 @@ use crate::{
     condition::{character_needs, initialize_character_condition},
     disease::{InfectionEpisodeRow, infection_episode},
     inventory_item,
-    strategic::{party, party_inventory_item},
+    strategic::{party_authority, party_inventory_item},
     time::character_time,
 };
 
@@ -775,7 +775,7 @@ pub fn cook_food(
         let pooled = actor
             .party_id
             .as_deref()
-            .and_then(|id| ctx.db.party().id().find(id.to_string()))
+            .and_then(|id| ctx.db.party_authority().id().find(id.to_string()))
             .map_or(0.0, |row| row.pooled_water_ml);
         if pooled + needs.carried_water_ml < required {
             return Err("Stew requires enough pooled or carried water".into());
@@ -824,11 +824,11 @@ pub fn cook_food(
     if method == CookingMethod::Stew {
         let required = 500.0 + quantities.iter().map(|q| *q as f32).sum::<f32>() * 100.0;
         if let Some(party_id) = actor.party_id.as_deref()
-            && let Some(mut party) = ctx.db.party().id().find(party_id.to_string())
+            && let Some(mut party) = ctx.db.party_authority().id().find(party_id.to_string())
         {
             let used = required.min(party.pooled_water_ml);
             party.pooled_water_ml -= used;
-            ctx.db.party().id().update(party);
+            ctx.db.party_authority().id().update(party);
             needs.carried_water_ml -= required - used;
         } else {
             needs.carried_water_ml -= required;

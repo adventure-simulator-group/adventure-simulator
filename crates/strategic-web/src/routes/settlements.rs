@@ -1389,7 +1389,7 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
             .flatten();
         if party
             .as_ref()
-            .is_some_and(|party| party.camp_destination_id.is_some())
+            .is_some_and(|party| party.camp_destination.is_some())
         {
             break;
         }
@@ -1400,33 +1400,10 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
     let Some(party) = party else {
         return Redirect::to("/").into_response();
     };
-    let Some(destination_id) = party.camp_destination_id.as_deref() else {
+    let Some(destination) = party.camp_destination.as_ref() else {
         return Redirect::to("/").into_response();
     };
-    let destination_name = match party.camp_destination_kind.as_deref() {
-        Some("settlement") => state
-            .db
-            .query_one::<Settlement>(&format!(
-                "SELECT * FROM settlement WHERE id = {}",
-                sql_string_literal(destination_id)
-            ))
-            .await
-            .ok()
-            .flatten()
-            .map(|item| item.name),
-        Some("quest") => state
-            .db
-            .query_one::<Quest>(&format!(
-                "SELECT * FROM quest WHERE id = {}",
-                sql_string_literal(destination_id)
-            ))
-            .await
-            .ok()
-            .flatten()
-            .map(|item| item.title),
-        _ => None,
-    }
-    .unwrap_or_else(|| "Unknown destination".into());
+    let destination_name = destination.name().to_string();
     // The party and journey rows are committed atomically, but the SQL view
     // can observe the camp row a fraction before the journey projection.
     // Retry briefly so the first camp render retains the original start.
@@ -1466,7 +1443,7 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
         legacy.completed_elapsed_minutes = legacy.completed_minutes;
         legacy.departure_minute =
             current_party_minute.saturating_sub(legacy.completed_elapsed_minutes);
-        legacy.total_elapsed_minutes = if legacy.destination_kind == "quest" {
+        legacy.total_elapsed_minutes = if legacy.destination.case_site_id().is_some() {
             legacy.total_minutes.saturating_mul(2)
         } else {
             legacy.total_minutes
@@ -1629,12 +1606,14 @@ async fn camp_settlement_destinations(
         return Vec::new();
     };
     let mut endpoints = Vec::new();
-    if journey.origin_kind == "settlement" && journey.completed_minutes > 0 {
-        endpoints.push((journey.origin_id.as_str(), journey.completed_minutes));
+    if let Some(origin_id) = journey.origin.settlement_id()
+        && journey.completed_minutes > 0
+    {
+        endpoints.push((origin_id, journey.completed_minutes));
     }
-    if journey.destination_kind == "settlement" {
+    if let Some(destination_id) = journey.destination.settlement_id() {
         endpoints.push((
-            journey.destination_id.as_str(),
+            destination_id,
             journey
                 .total_minutes
                 .saturating_sub(journey.completed_minutes),
@@ -1660,8 +1639,11 @@ async fn camp_settlement_destinations(
             .flatten();
         if let Some(settlement) = settlement {
             destinations.push(CampTravelDestination {
-                current: party.camp_destination_kind.as_deref() == Some("settlement")
-                    && party.camp_destination_id.as_deref() == Some(id),
+                current: party
+                    .camp_destination
+                    .as_ref()
+                    .and_then(|destination| destination.settlement_id())
+                    == Some(id),
                 id: settlement.id,
                 name: settlement.name,
                 journey_minutes,

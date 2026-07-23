@@ -413,7 +413,8 @@ pub fn perform_social_action(
     }
     if !is_self
         && (actor.current_settlement_id != target.current_settlement_id
-            || actor.current_case_site_id != target.current_case_site_id)
+            || crate::investigation::character_case_site_id(ctx, actor.id)
+                != crate::investigation::character_case_site_id(ctx, target.id))
     {
         return Err("Characters must be co-located".into());
     }
