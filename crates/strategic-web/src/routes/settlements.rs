@@ -1,7 +1,6 @@
 //! Settlement route handlers
 
 use adventuresim_core::{
-    bestiary::ThreatId,
     equipment::{EncumbranceSummary, encumbrance_capacity_kg},
     prelude::{
         PartyProvisioningInputs, STANDARD_TRAVEL_RATION_ID, STANDARD_WATERSKIN_ID,
@@ -1298,8 +1297,8 @@ mod map_quest_tests {
             issuer_npc_id: String::new(),
             status,
             accepted_by: Some("party".into()),
-            enemy_type: String::new(),
-            enemy_count: 1,
+            opposition_wording: "unknown opposition".into(),
+            opposition_count_wording: "an unknown number of".into(),
         }
     }
 
@@ -2351,8 +2350,6 @@ async fn service_quest_offers(
                     return None;
                 };
                 let problem = quest.description.trim_end_matches('.').to_lowercase();
-                let low = (quest.enemy_count - 2).max(1);
-                let high = quest.enemy_count + 2;
                 let (npc_name, greeting) = service_quest_greeting(&quest.service_id);
                 Some(ServiceQuestOffer {
                     id: quest.id.clone(),
@@ -2368,8 +2365,6 @@ async fn service_quest_offers(
                         quest,
                         &settlement.name,
                         &neighboring_name,
-                        low,
-                        high,
                     ),
                     acceptance: "Splendid! And please, do be careful! You wouldn't be the first men they've slain.",
                     state,
@@ -2420,22 +2415,13 @@ fn service_quest_details(
     quest: &ContractPresentation,
     _settlement_name: &str,
     _neighboring_name: &str,
-    low: i32,
-    high: i32,
 ) -> String {
-    let threat = quest.enemy_type.parse::<ThreatId>().ok();
-    let threat_name = threat
-        .map(|id| id.display_name(high.max(0) as u32).to_lowercase())
-        .unwrap_or_else(|| "unknown threats".to_string());
-    let preparation = threat
-        .map(|id| id.profile().investigation.preparation_advice)
-        .unwrap_or("Learn more before committing to a fight.");
     // The generated quest is authoritative. Service identifies the speaker,
     // never the threat or location; several templates intentionally share it.
     let situation = &quest.description;
     format!(
-        "Yes, {situation}. I believe there are about {low} or {high} {threat_name}, give or take. I'd offer {} coin to anyone who clears them out. Preparation: {preparation} Are you",
-        quest.gold_reward,
+        "Yes, {situation}. I believe it involves {} {}, but that account may be wrong. I'd offer {} coin for a verified resolution. Learn more before committing to a fight. Are you",
+        quest.opposition_count_wording, quest.opposition_wording, quest.gold_reward,
     )
 }
 
@@ -2443,7 +2429,7 @@ fn service_quest_details(
 mod bestiary_quest_presentation_tests {
     use super::*;
 
-    fn quest(enemy_type: &str, description: &str) -> ContractPresentation {
+    fn quest(opposition_wording: &str, description: &str) -> ContractPresentation {
         ContractPresentation {
             id: "q".into(),
             case_id: "case:q".into(),
@@ -2457,8 +2443,8 @@ mod bestiary_quest_presentation_tests {
             issuer_npc_id: String::new(),
             status: ContractPresentationStatus::Offered,
             accepted_by: None,
-            enemy_type: enemy_type.into(),
-            enemy_count: 3,
+            opposition_wording: opposition_wording.into(),
+            opposition_count_wording: "perhaps several".into(),
         }
     }
 

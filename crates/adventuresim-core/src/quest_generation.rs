@@ -272,7 +272,8 @@ pub struct TestimonyDraft {
     pub spoken_text: String,
     pub destination_stage: String,
     pub site_id: Option<SiteId>,
-    pub correction_proposition_id: Option<String>,
+    /// Proposition superseded by this claim. Set only on the later correction.
+    pub corrects_proposition_id: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -308,7 +309,47 @@ pub struct GeneratedAction {
     pub alternate: ActionId,
     pub active_initially: bool,
     pub safe_summary: String,
-    pub produces: Vec<String>,
+    pub outputs: Vec<GeneratedActionOutput>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum GeneratedActionOutput {
+    Destination {
+        stage: GeneratedDestinationStage,
+        site_id: Option<SiteId>,
+    },
+    Evidence {
+        evidence_id: EvidenceId,
+    },
+    AmbushReady,
+    Consequence {
+        consequence: GeneratedActionConsequence,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GeneratedDestinationStage {
+    Unknown,
+    Textual,
+    Landmark,
+    ApproximateArea,
+    RouteSegment,
+    Exact,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum GeneratedActionConsequence {
+    RetrieveAsset {
+        asset_id: String,
+        next_version: u32,
+    },
+    RescueSubject {
+        subject_id: String,
+        next_version: u32,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1029,7 +1070,7 @@ fn build_actions(
     finale: &SiteId,
     evidence_site: &SiteId,
     area_id: &str,
-    witness: &WitnessId,
+    witness_npc_id: &str,
 ) -> Vec<GeneratedAction> {
     let make = |name: &str,
                 kind,
@@ -1040,7 +1081,7 @@ fn build_actions(
                 alternate: &str,
                 active,
                 summary: &str,
-                produces: Vec<&str>| GeneratedAction {
+                outputs: Vec<GeneratedActionOutput>| GeneratedAction {
         id: ActionId::new(format!("{prefix}:action:{name}")),
         kind,
         route,
@@ -1050,7 +1091,7 @@ fn build_actions(
         alternate: ActionId::new(format!("{prefix}:action:{alternate}")),
         active_initially: active,
         safe_summary: summary.into(),
-        produces: produces.into_iter().map(str::to_owned).collect(),
+        outputs,
     };
     match family {
         TemplateFamily::RecurringDepredation => vec![
@@ -1064,7 +1105,10 @@ fn build_actions(
                 "watch",
                 true,
                 "Approach the last reported incident.",
-                vec!["approximate_area"],
+                vec![GeneratedActionOutput::Destination {
+                    stage: GeneratedDestinationStage::ApproximateArea,
+                    site_id: None,
+                }],
             ),
             make(
                 "search",
@@ -1076,7 +1120,9 @@ fn build_actions(
                 "patrol",
                 false,
                 "Search for physical traces.",
-                vec!["tracks"],
+                vec![GeneratedActionOutput::Evidence {
+                    evidence_id: EvidenceId::new(format!("{prefix}:evidence:tracks")),
+                }],
             ),
             make(
                 "follow",
@@ -1088,19 +1134,25 @@ fn build_actions(
                 "ambush",
                 false,
                 "Follow the physical trail.",
-                vec!["exact_site"],
+                vec![GeneratedActionOutput::Destination {
+                    stage: GeneratedDestinationStage::Exact,
+                    site_id: Some(finale.clone()),
+                }],
             ),
             make(
                 "watch",
                 InvestigationActionKind::Watch,
                 RouteClass::PatternSurveillance,
                 "contact",
-                witness.0.clone(),
+                witness_npc_id.into(),
                 None,
                 "approach",
                 true,
                 "Watch where incidents recur.",
-                vec!["pattern"],
+                vec![GeneratedActionOutput::Destination {
+                    stage: GeneratedDestinationStage::Textual,
+                    site_id: None,
+                }],
             ),
             make(
                 "patrol",
@@ -1112,7 +1164,10 @@ fn build_actions(
                 "search",
                 false,
                 "Patrol at the reported time.",
-                vec!["route_segment"],
+                vec![GeneratedActionOutput::Destination {
+                    stage: GeneratedDestinationStage::RouteSegment,
+                    site_id: Some(finale.clone()),
+                }],
             ),
             make(
                 "ambush",
@@ -1124,7 +1179,13 @@ fn build_actions(
                 "follow",
                 false,
                 "Lay an ambush along the established route.",
-                vec!["ambush_ready", "exact_site"],
+                vec![
+                    GeneratedActionOutput::AmbushReady,
+                    GeneratedActionOutput::Destination {
+                        stage: GeneratedDestinationStage::Exact,
+                        site_id: Some(finale.clone()),
+                    },
+                ],
             ),
         ],
         TemplateFamily::DisappearanceOrLoss => vec![
@@ -1138,7 +1199,9 @@ fn build_actions(
                 "locate_contact",
                 true,
                 "Inspect the last-known place.",
-                vec!["evidence"],
+                vec![GeneratedActionOutput::Evidence {
+                    evidence_id: EvidenceId::new(format!("{prefix}:evidence:tracks")),
+                }],
             ),
             make(
                 "follow",
@@ -1150,19 +1213,25 @@ fn build_actions(
                 "approach_social",
                 false,
                 "Follow traces away from the last-known place.",
-                vec!["exact_site"],
+                vec![GeneratedActionOutput::Destination {
+                    stage: GeneratedDestinationStage::Exact,
+                    site_id: Some(finale.clone()),
+                }],
             ),
             make(
                 "locate_contact",
                 InvestigationActionKind::LocateContact,
                 RouteClass::SocialInquiry,
                 "contact",
-                witness.0.clone(),
+                witness_npc_id.into(),
                 None,
                 "inspect_last_known",
                 true,
                 "Find the referred witness.",
-                vec!["testimony"],
+                vec![GeneratedActionOutput::Destination {
+                    stage: GeneratedDestinationStage::Textual,
+                    site_id: None,
+                }],
             ),
             make(
                 "approach_social",
@@ -1174,7 +1243,10 @@ fn build_actions(
                 "follow",
                 false,
                 "Approach the social lead or fence.",
-                vec!["exact_site", "identity"],
+                vec![GeneratedActionOutput::Destination {
+                    stage: GeneratedDestinationStage::Exact,
+                    site_id: Some(finale.clone()),
+                }],
             ),
         ],
     }
@@ -1220,6 +1292,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         "I saw signs pointing toward {}, but I could not identify the culprit.",
         label(site)
     );
+    let description_prop = format!("{prefix}:proposition:description");
     let correction_prop = format!("{prefix}:proposition:location:corrected");
     let reliability = match hash(context.seed, "reliability") % 5 {
         0 => Reliability::Truthful,
@@ -1279,7 +1352,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             expected_location: primary.expected_location.clone(),
             visible_description: primary.visible_description.clone(),
             testimony: vec![TestimonyDraft {
-                proposition_id: format!("{prefix}:proposition:description"),
+                proposition_id: description_prop.clone(),
                 reliability,
                 truthful_text: true_statement,
                 spoken_text: false_statement,
@@ -1294,8 +1367,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 } else {
                     decoy_site.clone()
                 }),
-                correction_proposition_id: (reliability != Reliability::Truthful)
-                    .then(|| correction_prop.clone()),
+                corrects_proposition_id: None,
             }],
         },
         WitnessBinding {
@@ -1307,7 +1379,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             expected_location: secondary.expected_location.clone(),
             visible_description: secondary.visible_description.clone(),
             testimony: vec![TestimonyDraft {
-                proposition_id: correction_prop.clone(),
+                proposition_id: description_prop.clone(),
                 reliability: Reliability::Truthful,
                 truthful_text: "The earlier location does not fit the tracks; they lead elsewhere."
                     .into(),
@@ -1316,7 +1388,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                         .into(),
                 destination_stage: "route_segment".into(),
                 site_id: Some(finale_site.clone()),
-                correction_proposition_id: Some(format!("{prefix}:proposition:description")),
+                corrects_proposition_id: Some(description_prop),
             }],
         },
     ];
@@ -1343,18 +1415,42 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         },
     ];
     let area_id = format!("{prefix}:area:incident");
-    let actions = build_actions(
+    let hostile_id = format!("hostile-group:{}", finale_site.0);
+    let id_suffix = prefix.trim_start_matches("case:");
+    let subject = SubjectId::new(format!("subject:{id_suffix}")).expect("generated subject id");
+    let asset = AssetId::new(format!("asset:{id_suffix}")).expect("generated asset id");
+    let mut actions = build_actions(
         &prefix,
         family,
         &finale_site,
         &evidence_site,
         &area_id,
-        &witness1,
+        &primary.npc_id,
     );
-    let hostile_id = format!("{prefix}:hostiles");
-    let id_suffix = prefix.trim_start_matches("case:");
-    let subject = SubjectId::new(format!("subject:{id_suffix}")).expect("generated subject id");
-    let asset = AssetId::new(format!("asset:{id_suffix}")).expect("generated asset id");
+    if family == TemplateFamily::DisappearanceOrLoss {
+        if let Some(follow) = actions
+            .iter_mut()
+            .find(|action| action.id.0.ends_with(":action:follow"))
+        {
+            follow.outputs.push(GeneratedActionOutput::Consequence {
+                consequence: GeneratedActionConsequence::RetrieveAsset {
+                    asset_id: asset.as_str().into(),
+                    next_version: 1,
+                },
+            });
+        }
+        if let Some(social) = actions
+            .iter_mut()
+            .find(|action| action.id.0.ends_with(":action:approach_social"))
+        {
+            social.outputs.push(GeneratedActionOutput::Consequence {
+                consequence: GeneratedActionConsequence::RescueSubject {
+                    subject_id: subject.as_str().into(),
+                    next_version: 1,
+                },
+            });
+        }
+    }
     let issuer = context
         .witness_candidates
         .get(2)
@@ -1593,7 +1689,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
             "contact" => case
                 .witnesses
                 .iter()
-                .any(|witness| witness.id.0 == action.target_id),
+                .any(|witness| witness.npc_id == action.target_id),
             _ => false,
         };
         if !target_exists {
@@ -1637,9 +1733,9 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
             errors.push(format!("bridge {} has no evidence authority", bridge.id.0));
         }
         if !case.actions.iter().any(|a| {
-            a.produces
+            a.outputs
                 .iter()
-                .any(|output| output == "evidence" || output == "tracks" || output == "testimony")
+                .any(|output| matches!(output, GeneratedActionOutput::Evidence { .. }))
         }) {
             errors.push(format!("bridge {} has no playable lead path", bridge.id.0));
         }
@@ -1653,6 +1749,61 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
         .any(|id| !case.sites.iter().any(|s| &s.id == id))
     {
         errors.push("finale references missing site".into());
+    }
+    let true_site = true_sites.first().map(|site| &site.id);
+    for route in &route_classes {
+        if !case
+            .actions
+            .iter()
+            .filter(|action| &action.route == route)
+            .any(|action| {
+                action.outputs.iter().any(|output| {
+                    matches!(
+                        output,
+                        GeneratedActionOutput::Destination {
+                            stage: GeneratedDestinationStage::Exact,
+                            site_id: Some(site_id),
+                        } if Some(site_id) == true_site
+                    )
+                })
+            })
+        {
+            errors.push(format!("{route:?} has no exact finale-site output"));
+        }
+    }
+    for finale in &case.finales {
+        let produced = match finale.kind {
+            FinaleKind::Defeat | FinaleKind::DriveOff => case
+                .hostile_groups
+                .iter()
+                .any(|(id, site, _, _)| {
+                    finale.hostile_group_id.as_deref() == Some(id) && site == &finale.site_id
+                }),
+            FinaleKind::Rescue => case.actions.iter().any(|action| {
+                action.outputs.iter().any(|output| {
+                    matches!(
+                        output,
+                        GeneratedActionOutput::Consequence {
+                            consequence: GeneratedActionConsequence::RescueSubject { subject_id, .. }
+                        } if finale.subject_id.as_deref() == Some(subject_id)
+                    )
+                })
+            }),
+            FinaleKind::RetrieveReturn => case.actions.iter().any(|action| {
+                action.outputs.iter().any(|output| {
+                    matches!(
+                        output,
+                        GeneratedActionOutput::Consequence {
+                            consequence: GeneratedActionConsequence::RetrieveAsset { asset_id, .. }
+                        } if finale.asset_id.as_deref() == Some(asset_id)
+                    )
+                })
+            }),
+            FinaleKind::Expose | FinaleKind::Negotiate | FinaleKind::Capture => true,
+        };
+        if !produced {
+            errors.push(format!("{:?} has no concrete owning producer", finale.kind));
+        }
     }
     if case.contract.as_ref().is_some_and(|c| {
         c.opposition_wording
