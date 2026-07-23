@@ -239,3 +239,12 @@ also writes a compact report containing the seed, victor, round count, summary,
 and an expandable exchange log. Enemy health and temporary combat state remain
 transient, so this diagnostic report does not change the tactical persistence
 boundary.
+
+Strategic encounters pass an explicit `Normal`, `AlliesSurprise`, or
+`EnemiesSurprise` opening into autoresolve. Awareness is not rolled again in
+combat, and exactly one side receives a surprise turn. Quest and random combat
+share the complete persistent-outcome commit path (injuries and retained
+projectiles, blood loss, ammunition, weapon/shield/armor contact wear, combat
+dirt and blood filth, morale, loot classification, and diagnostics). Random
+encounter reports use encounter IDs and never create quest battle results or
+complete an active quest.

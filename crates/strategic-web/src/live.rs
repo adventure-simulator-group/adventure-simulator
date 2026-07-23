@@ -63,6 +63,7 @@ use adventuresim_stdb_client::{
     settlement_description_table::SettlementDescriptionTableAccess,
     settlement_outbreak_table::SettlementOutbreakTableAccess,
     settlement_smith_table::SettlementSmithTableAccess,
+    strategic_encounter_table::StrategicEncounterTableAccess,
     strategic_incident_table::StrategicIncidentTableAccess,
     tactical_server_request_table::TacticalServerRequestTableAccess,
     tactical_server_table::TacticalServerTableAccess,
@@ -175,6 +176,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.morale_event());
         invalidate_on_changes!(state.0._connection.db.religious_demand());
         invalidate_on_changes!(state.0._connection.db.strategic_incident());
+        invalidate_on_changes!(state.0._connection.db.strategic_encounter());
         invalidate_on_changes!(state.0._connection.db.quest());
         invalidate_on_changes!(state.0._connection.db.quest_issuer());
         invalidate_on_changes!(state.0._connection.db.local_chat_message());
@@ -207,6 +209,7 @@ impl LiveState {
             .add_query(|query| query.from.battle_participant())
             .add_query(|query| query.from.battle_result())
             .add_query(|query| query.from.autoresolve_report())
+            .add_query(|query| query.from.strategic_encounter())
             .add_query(|query| query.from.character())
             .add_query(|query| query.from.character_attributes())
             .add_query(|query| query.from.character_capability())

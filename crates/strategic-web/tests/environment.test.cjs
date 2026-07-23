@@ -274,6 +274,7 @@ test("skill schedule columns fit inside a framed left rail", () => {
   assert.match(strategicCss, /\.skill-schedule \.religion-auto-column \{ width: 1\.45rem; \}/);
   assert.match(strategicCss, /\.skill-schedule \.party-skill-time-column \{ width: 2\.25rem; \}/);
   assert.match(strategicCss, /\.skill-schedule \.religion-expand-column \{ width: 1\.35rem; \}/);
+  assert.match(strategicCss, /\.religion-expand-cell \{[\s\S]*position: sticky;[\s\S]*right: 0;[\s\S]*background:/);
 });
 
 test("character selection actions wrap long adventurer names inside their cards", () => {
