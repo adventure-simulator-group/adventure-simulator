@@ -1,4 +1,11 @@
-For the MVP, quests are not based on the state of the world. Each settlement generates three to five quests and assigns each one to an NPC service relevant to its premise. Merchants report caravan bandits, priests report restless dead, and the innkeeper, armorer, weaponsmith, and clothier each have one corresponding prototype archetype. A quest owns the posting, target, difficulty, reward, and acceptance state. Its off-road destination is a separate typed case site with its own physical authority and observer-specific knowledge. The MVP quests are bounties to defeat parties of enemies.
+Cases are persistent world problems with private investigation truth and a
+typed AND/OR resolution graph. Contracts are separate agreements offered by
+NPCs concerning those cases. Accepting or abandoning a contract never creates
+or deletes its case. The current direct-bounty generator remains the first
+golden path: it creates a case, a defeat objective bound to one materialized
+hostile group, a separate contract, and an independently known case site.
+Combat contributes an authenticated outcome fact; the objective evaluator,
+not tactical code, decides whether the case is resolved.
 
 A party leader may request one of an NPC company's open roles while both parties occupy the same location and the company's typed recruitment offer remains open and unexpired. The company and offer are generated independently from quests. Acceptance merges the applying party into the destination party: the destination leader retains command, the applying leader fills the selected role, and every other source member becomes an ordinary member. Source recruitment roles and pending applications close, while party-inventory items, reserve value, and each character's absolute stake transfer intact. Generated NPC leaders auto-approve these requests in local development so the complete merge flow can be previewed.
 

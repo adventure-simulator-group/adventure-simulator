@@ -1032,6 +1032,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/tests/travel-planner-behavior.test.cjs` — Repository support file.
 - `docs/ARCHITECTURE.md` — Project documentation.
 - `docs/BESTIARY.md` — Project documentation.
+- `docs/CASES_AND_CONTRACTS.md` — Strategic case, objective, contract, outcome-fact, and custody authority.
 - `docs/DEVELOPING.md` — Project documentation.
 - `docs/DIALOGUE.md` — Project documentation.
 - `docs/DROUGHT.md` — Project documentation.

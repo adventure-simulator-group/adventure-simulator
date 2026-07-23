@@ -705,29 +705,8 @@ fn end_tactical_server_by_instance(
                     drops,
                     true,
                 )?;
-                if committed
-                    && let Some(group_id) = mission.hostile_group_id.as_deref()
-                    && !crate::strategic::finish_incident_for_hostile_group(ctx, group_id)?
-                    && let Some(group) = ctx
-                        .db
-                        .hostile_group_authority()
-                        .id()
-                        .find(&group_id.to_string())
-                    && let Some(site) = ctx
-                        .db
-                        .case_site_authority()
-                        .id_key()
-                        .find(&group.case_site_id.value)
-                    && ctx
-                        .db
-                        .party_authority()
-                        .id()
-                        .find(&server.party_id)
-                        .is_some_and(|party| {
-                            party.active_quest_id.as_deref() == Some(site.case_id.as_str())
-                        })
-                {
-                    crate::complete_quest(ctx, site.case_id)?;
+                if committed && let Some(group_id) = mission.hostile_group_id.as_deref() {
+                    crate::strategic::finish_incident_for_hostile_group(ctx, group_id)?;
                 }
             }
         }

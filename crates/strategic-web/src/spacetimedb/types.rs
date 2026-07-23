@@ -337,12 +337,15 @@ pub struct TravelEdge {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Quest {
     pub id: String,
+    pub case_id: String,
     pub title: String,
     pub description: String,
     pub difficulty: i32,
     pub gold_reward: i32,
     pub xp_reward: i32,
     pub settlement_id: String,
+    pub service_id: String,
+    pub issuer_npc_id: String,
     pub status: QuestStatus,
     pub accepted_by: Option<String>,
     pub enemy_type: String,
@@ -351,19 +354,19 @@ pub struct Quest {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum QuestStatus {
-    #[serde(alias = "available")]
+    #[serde(alias = "available", alias = "offered", alias = "Offered")]
     Available,
-    #[serde(alias = "accepted")]
+    #[serde(alias = "accepted", alias = "Accepted")]
     Accepted,
-    #[serde(alias = "completed")]
+    #[serde(
+        alias = "completed",
+        alias = "readyToReport",
+        alias = "ready_to_report",
+        alias = "ReadyToReport"
+    )]
     Completed,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QuestIssuer {
-    pub quest_id: String,
-    pub settlement_id: String,
-    pub service_id: String,
+    Paid,
+    Withdrawn,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -405,7 +408,7 @@ pub struct Party {
     pub leader_id: u64,
     pub current_settlement_id: Option<String>,
     pub current_case_site_id: Option<String>,
-    pub active_quest_id: Option<String>,
+    pub active_contract_id: Option<String>,
     pub is_solo: bool,
     pub camp_fatigue_percent: u8,
     pub walking_minutes_per_day: u16,

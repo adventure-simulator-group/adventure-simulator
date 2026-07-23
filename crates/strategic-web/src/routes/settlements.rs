@@ -134,7 +134,7 @@ use crate::spacetimedb::{
     InventoryQuantityTarget, ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury,
     LimbRegion, MedicalExaminationRow, Party, PartyInventoryItem, PartyJourney,
     PartyJourneyItinerary, PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, Quest,
-    QuestIssuer, QuestStatus, RecruitmentOffer, RecruitmentOfferStatus, RecruitmentRequirements,
+    QuestStatus, RecruitmentOffer, RecruitmentOfferStatus, RecruitmentRequirements,
     ReligiousDemand, RepairOrder, RetainedProjectile, ScheduleAllocation, Settlement,
     SettlementAlias, SettlementDescription, SettlementSmith, SocialBelief, StrategicEncounter,
     TravelEdge,
@@ -1048,7 +1048,7 @@ async fn settlement_map(
     };
     let quests: Vec<Quest> = state
         .db
-        .query("SELECT * FROM quest")
+        .query("SELECT * FROM backend_contracts")
         .await
         .unwrap_or_default();
     let active_character = get_active_character(&state, session.character_id_u64()).await;
@@ -1071,7 +1071,7 @@ async fn settlement_map(
     };
     let active_quest_id = active_party
         .as_ref()
-        .and_then(|party| party.active_quest_id.as_deref());
+        .and_then(|party| party.active_contract_id.as_deref());
     let active_quest = active_quest_id.and_then(|id| quests.iter().find(|quest| quest.id == id));
     let case_sites = if let Some(character_id) = session.character_id_u64() {
         state
@@ -1283,12 +1283,15 @@ mod map_quest_tests {
     fn quest(status: QuestStatus) -> Quest {
         Quest {
             id: "active".into(),
+            case_id: "case:active".into(),
             title: "Active quest".into(),
             description: String::new(),
             difficulty: 1,
             gold_reward: 1,
             xp_reward: 1,
             settlement_id: "issuer".into(),
+            service_id: "inn".into(),
+            issuer_npc_id: String::new(),
             status,
             accepted_by: Some("party".into()),
             enemy_type: String::new(),
@@ -2151,18 +2154,10 @@ async fn service_quest_offers(
             recruitment: Vec::new(),
         });
     };
-    let issuers: Vec<QuestIssuer> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM quest_issuer WHERE settlement_id = {}",
-            sql_string_literal(&id)
-        ))
-        .await
-        .unwrap_or_default();
     let quests: Vec<Quest> = state
         .db
         .query(&format!(
-            "SELECT * FROM quest WHERE settlement_id = {}",
+            "SELECT * FROM backend_contracts WHERE settlement_id = {}",
             sql_string_literal(&id)
         ))
         .await
@@ -2198,7 +2193,7 @@ async fn service_quest_offers(
         character.current_settlement_id.as_deref() == Some(id.as_str())
             && active_party
                 .as_ref()
-                .is_some_and(|party| party.active_quest_id.is_none())
+                .is_some_and(|party| party.active_contract_id.is_none())
     });
     let can_turn_in = active_character.as_ref().is_some_and(|(character, _)| {
         character.current_settlement_id.as_deref() == Some(id.as_str()) && active_party.is_some()
@@ -2333,12 +2328,11 @@ async fn service_quest_offers(
             })
         })
         .collect();
-    let quest_offers = issuers
-            .into_iter()
-            .filter_map(|issuer| {
-                let quest = quests.iter().find(|quest| quest.id == issuer.quest_id)?;
+    let quest_offers = quests
+            .iter()
+            .filter_map(|quest| {
                 let is_current = active_party.as_ref().is_some_and(|party| {
-                    party.active_quest_id.as_deref() == Some(quest.id.as_str())
+                    party.active_contract_id.as_deref() == Some(quest.id.as_str())
                         && quest.accepted_by.as_deref() == Some(party.id.as_str())
                 });
                 let state = if quest.status == QuestStatus::Available {
@@ -2353,18 +2347,18 @@ async fn service_quest_offers(
                 let problem = quest.description.trim_end_matches('.').to_lowercase();
                 let low = (quest.enemy_count - 2).max(1);
                 let high = quest.enemy_count + 2;
-                let (npc_name, greeting) = service_quest_greeting(&issuer.service_id);
+                let (npc_name, greeting) = service_quest_greeting(&quest.service_id);
                 Some(ServiceQuestOffer {
                     id: quest.id.clone(),
                     title: quest.title.clone(),
                     description: active_quest_tooltip(quest),
-                    service_id: issuer.service_id.clone(),
+                    service_id: quest.service_id.clone(),
                     npc_name,
                     greeting: greeting.to_string(),
                     follow_up: format!("{problem}?"),
                     problem,
                     details: service_quest_details(
-                        &issuer.service_id,
+                        &quest.service_id,
                         quest,
                         &settlement.name,
                         &neighboring_name,
@@ -2446,12 +2440,15 @@ mod bestiary_quest_presentation_tests {
     fn quest(enemy_type: &str, description: &str) -> Quest {
         Quest {
             id: "q".into(),
+            case_id: "case:q".into(),
             title: "Problem".into(),
             description: description.into(),
             difficulty: 2,
             gold_reward: 40,
             xp_reward: 20,
             settlement_id: "s".into(),
+            service_id: "inn".into(),
+            issuer_npc_id: String::new(),
             status: QuestStatus::Available,
             accepted_by: None,
             enemy_type: enemy_type.into(),
@@ -2604,7 +2601,7 @@ async fn resolve_location(state: &AppState, kind: &str, id: &str) -> LocationLoo
         LocationKind::Quest => state
             .db
             .query_one::<Quest>(&format!(
-                "SELECT * FROM quest WHERE id = {}",
+                "SELECT * FROM backend_contracts WHERE id = {}",
                 sql_string_literal(id)
             ))
             .await
