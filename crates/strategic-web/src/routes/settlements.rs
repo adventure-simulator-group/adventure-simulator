@@ -144,8 +144,8 @@ use crate::templates::settlement::{
     RestSummary, SoapRestPreview, SocialPresentation, alchemy_page, camp_page,
     live_merchant_shop_page, merchants_page, party_discard_page, party_inventory_page,
     party_personal_page, party_pool_page, party_social_dialog, party_stats_page, religion_page,
-    rest_default_minutes, rest_result_page, settlement_map_page, settlement_overview_page,
-    settlement_npc_location_page, surgery_dialog,
+    rest_default_minutes, rest_result_page, settlement_map_page, settlement_npc_location_page,
+    settlement_overview_page, surgery_dialog,
 };
 
 pub fn routes() -> Router<AppState> {

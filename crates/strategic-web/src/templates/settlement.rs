@@ -639,7 +639,7 @@ pub fn settlement_npc_location_page(
             }))
         }
         main class="center-content settlement-main settlement-overview" {
-            (party_portrait_overlay(party_members, Some(active_character), &format!("/settlements/{}/places/{location_id}", settlement.id), None, false))
+            (party_portrait_overlay(party_members, Some(active_character), &format!("/locations/settlement/{}", settlement.id), None, false))
             (npc_portrait_strip(&settlement.id, location_id))
             (npc_description_stage(title, description))
             (settlement_npc_chat_area(title, Some(active_character), &settlement.id, location_id, None))
@@ -653,6 +653,7 @@ pub fn settlement_npc_location_page(
         &settlement.category,
         location_id,
         Some(&settlement.religion_id),
+        Some(&settlement.economy),
         content,
         logged_in_as,
     )
@@ -8338,6 +8339,9 @@ mod tests {
             assert!(markup.contains("data-npc-strip"));
             assert!(markup.contains("data-dialogue-catalog-revision"));
             assert!(markup.contains("aria-label=\"Settlement places\""));
+            assert!(markup.contains("href=\"/locations/settlement/viabundus-1/party/1\""));
+            assert!(markup.contains("href=\"/locations/settlement/viabundus-1/party-inventory\""));
+            assert!(!markup.contains(&format!("/places/{location}/party/")));
         }
     }
 

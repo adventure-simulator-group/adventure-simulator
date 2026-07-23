@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (1020)
+## Files (1031)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -61,6 +61,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/profession.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/provisioning.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/settlement_economy.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/settlement_population.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/simulation_security.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/skill.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/social.rs` — Rust source module for this component.
@@ -338,6 +339,8 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/morale_event_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/native_range_evidence_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/nerve_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/npc_age_band_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/npc_sex_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/official_religion_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/oral_language_hours_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/organic_soil_type.rs` — Generated SpacetimeDB data type.
@@ -468,6 +471,11 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/settlement_hydrology_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/settlement_import_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/settlement_language_profile_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/settlement_npc_presence_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/settlement_npc_presence_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/settlement_npc_seed_explanation_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/settlement_npc_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/settlement_npc_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/settlement_outbreak_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/settlement_outbreak_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/settlement_religious_status_type.rs` — Generated SpacetimeDB data type.
@@ -570,6 +578,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/personality.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/repair.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-module/src/settlement_population.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/simulation.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/social.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/strategic.rs` — Rust source module for this component.
