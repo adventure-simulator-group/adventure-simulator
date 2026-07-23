@@ -168,6 +168,14 @@ The strategic browser is server-authoritative. Browsers submit discrete commands
 to `strategic-web` and never connect to SpacetimeDB directly. The current web
 process is explicitly an anonymous, loopback-only, single-user development
 surface: its character cookie is a selector, not per-user authentication.
+
+First-character onboarding is a separate, non-live entry surface at
+`/characters/candidates`. A browser-tab seed and generator version reproduce five
+preview-only candidates without database writes. Confirmation submits only the
+version, seed, and slot; the reducer regenerates the specification, atomically
+materializes its strategic rows, and records an idempotency claim. The candidate
+generator contains no tactical tick state. `/characters` remains the persisted
+character switcher.
 Non-loopback binding requires the clearly named insecure-development opt-in.
 `strategic-web` owns a single generated-client WebSocket subscription to the
 mutable tables that invalidate strategic UI fragments and fans those database
@@ -403,6 +411,7 @@ effects are committed only by their owning strategic adapters.
 | Table | Description |
 |-------|-------------|
 | `character` | Character progression, location, and life state; no tactical tick state |
+| `starting_character_claim` | Idempotency receipt binding one versioned browser-seed slot to its generated character |
 | `character_limbs` | Health projection derived from durable per-limb strategic injuries |
 | `limb_injury` | Per-character, per-limb cut, bruise, fracture, bandage, stitch, and applied-splint state |
 | `retained_projectile` | Durable retained arrowhead/ball records with extraction difficulty; no tactical anatomy or tick state |

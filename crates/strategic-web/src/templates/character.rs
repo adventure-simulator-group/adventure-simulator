@@ -2,8 +2,9 @@
 
 use maud::{Markup, html};
 
-use super::{entry_layout, input_field, item_type_header, item_type_icon, panel, sidebar_section};
+use super::{entry_layout, panel, sidebar_section};
 use crate::spacetimedb::Character;
+use adventuresim_core::starting_character::StartingCharacterSpec;
 
 /// List all characters and select the adventurer who enters the strategic layer.
 pub fn characters_list_page(characters: &[Character], current_character_id: Option<u64>) -> Markup {
@@ -11,7 +12,6 @@ pub fn characters_list_page(characters: &[Character], current_character_id: Opti
         aside class="left-sidebar" {
             (sidebar_section("Choose an adventurer", html! {
                 p class="small-copy text-muted" { "A character must be selected before entering the strategic layer." }
-                a href="/characters/new" class="btn btn-primary btn-block mt-1" { "Create adventurer" }
             }))
         }
 
@@ -19,8 +19,7 @@ pub fn characters_list_page(characters: &[Character], current_character_id: Opti
             h2 class="page-title" { "Select your adventurer" }
             @if characters.is_empty() {
                 div class="center-welcome" {
-                    p { "Create your first adventurer to begin." }
-                    a href="/characters/new" class="btn btn-primary mt-1" { "Create adventurer" }
+                    p { "No persisted adventurers are available." }
                 }
             } @else {
                 div class="character-select-grid" {
@@ -93,69 +92,110 @@ mod tests {
     }
 }
 
-/// Character creation form.
-pub fn character_new_page(_logged_in_as: Option<&str>) -> Markup {
-    character_new_page_with_error(None, None)
+const PROTOTYPE_NOTICE: &str = "Early prototype: All text and images are placeholders. Features and saved progress may change or be reset during development.";
+
+pub fn character_candidates_bootstrap_page(version: u16) -> Markup {
+    let content = html! {
+        main class="center-content candidate-bootstrap" {
+            p class="prototype-disclaimer" role="note" { (PROTOTYPE_NOTICE) }
+            h2 class="page-title" { "Gathering candidates…" }
+            p class="small-copy text-muted" { "Preparing your first company." }
+            noscript { p role="alert" { "JavaScript is required to prepare a private candidate roster." } }
+            div data-candidate-bootstrap data-generator-version=(version) {}
+            script src="/static/character-candidates.js?v=1" defer {}
+        }
+    };
+    entry_layout("Choose Your Adventurer", content)
 }
 
-pub fn character_new_page_with_error(name: Option<&str>, error: Option<&str>) -> Markup {
+pub fn character_candidates_page(
+    version: u16,
+    seed: &str,
+    candidates: &[StartingCharacterSpec],
+    selected: u8,
+) -> Markup {
+    let candidate = &candidates[selected as usize];
+    let close_href = format!("/characters/candidates?version={version}&seed={seed}");
     let content = html! {
-        aside class="left-sidebar" {
-            (sidebar_section("Tips", html! {
-                (panel("", html! {
-                    p style="font-size:var(--font-size-sm)" {
-                        "Choose a name for your adventurer. You'll start with "
-                        "100 coin and some basic supplies."
-                    }
-                }))
-            }))
-        }
-
-        main class="center-content" {
-            h2 class="page-title" { "Create Character" }
-            (panel("Character Details", html! {
-                form # "character-form" action="/characters" method="post" {
-                    (input_field("name", "Character Name", "text", true, name))
-                    @if let Some(error) = error {
-                        p class="form-error" role="alert" { (error) }
-                    }
-                    div class="form-actions" {
-                        button type="submit" class="btn btn-primary" { "Create Character" }
-                        a href="/characters" class="btn btn-secondary" { "Cancel" }
+        aside class="left-sidebar candidate-rail" {
+            (sidebar_section("Attributes", html! {
+                div class="candidate-stat-list" {
+                    @for (label, value) in [("Endurance", candidate.attributes.endurance), ("Precision", candidate.attributes.precision), ("Intelligence", candidate.attributes.intelligence), ("Instinct", candidate.attributes.instinct), ("Strength", candidate.attributes.strength), ("Agility", candidate.attributes.agility)] {
+                        div class="stat-item" { span class="stat-label" { (label) } span class="stat-value" { (format!("{value:.1}")) } }
                     }
                 }
             }))
         }
 
-        aside class="right-sidebar" {
-            (sidebar_section("Starting Equipment", html! {
-                (panel("", html! {
-                    table class="trade-inventory-table starting-equipment-table" {
-                        thead { tr { (item_type_header()) th scope="col" { "Item" } th scope="col" { "#" } } }
-                        tbody {
-                            tr { td class="inventory-item-type" { (item_type_icon("torch")) } td { "Torch" } td class="inventory-count" { "1" } }
-                            tr { td class="inventory-item-type" { (item_type_icon("bandage")) } td { "Bandage" } td class="inventory-count" { "3" } }
+        main class="center-content candidate-stage" data-candidate-roster {
+            p class="prototype-disclaimer" role="note" { (PROTOTYPE_NOTICE) }
+            h2 class="page-title" { "Choose your adventurer" }
+            div class="candidate-portraits" role="list" aria-label="Five candidate adventurers" {
+                @for (slot, entry) in candidates.iter().enumerate() {
+                    a class=(if slot == selected as usize { "party-portrait candidate-portrait active" } else { "party-portrait candidate-portrait" })
+                        role="listitem" aria-current=[(slot == selected as usize).then_some("true")]
+                        href=(format!("/characters/candidates?version={version}&seed={seed}&selected={slot}")) {
+                        span class="party-portrait-initial" aria-hidden="true" { span class="party-portrait-face" { (entry.name.chars().next().unwrap_or('?')) } }
+                        span class="party-portrait-name" { (&entry.name) }
+                    }
+                }
+            }
+            (panel(&candidate.name, html! {
+                p class="candidate-byline" { (candidate.age_years) " years old · " (&candidate.background) }
+                p { (&candidate.personality) }
+            }))
+            section class="candidate-confirm-backdrop" data-candidate-dialog-backdrop {
+                div class="candidate-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="candidate-dialog-title" tabindex="-1" data-candidate-dialog {
+                    h3 id="candidate-dialog-title" { "Begin as " (&candidate.name) "?" }
+                    p { "This choice creates the adventurer and enters the game." }
+                    form action="/characters/candidates" method="post" data-candidate-confirm-form {
+                        input type="hidden" name="version" value=(version);
+                        input type="hidden" name="seed" value=(seed);
+                        input type="hidden" name="slot" value=(selected);
+                        div class="form-actions" {
+                            a href=(close_href) class="btn btn-secondary" data-candidate-dialog-close { "Keep looking" }
+                            button type="submit" class="btn btn-primary" { "Begin as " (&candidate.name) }
                         }
                     }
-                }))
+                }
+            }
+            script src="/static/character-candidates.js?v=1" defer {}
+        }
+        aside class="right-sidebar candidate-rail" {
+            (sidebar_section("Training", html! {
+                div class="candidate-skill-list" {
+                    @for (label, hours) in [("Polearm", candidate.skills.polearm), ("Sword", candidate.skills.sword), ("Knife", candidate.skills.knife), ("Bow", candidate.skills.bow), ("Crossbow", candidate.skills.crossbow), ("Block", candidate.skills.block), ("Dodge", candidate.skills.dodge), ("Medicine", candidate.skills.medicine)] {
+                        @if hours >= 500.0 { div class="stat-item" { span class="stat-label" { (label) } span class="stat-value" { (format!("{hours:.0} h")) } } }
+                    }
+                }
+            }))
+            (sidebar_section("Equipment & coin", html! {
+                ul class="candidate-equipment" {
+                    @for item in &candidate.inventory { li { (item.item_id.replace('_', " ")) @if item.quantity > 1 { " ×" (item.quantity) } @if item.equipped.is_some() { " (equipped)" } } }
+                }
+                p class="candidate-currency" { strong { (candidate.currency) " coin" } }
             }))
         }
     };
 
-    entry_layout("Create Character", content)
+    entry_layout("Choose Your Adventurer", content)
 }
 
 #[cfg(test)]
 mod creation_tests {
-    use super::character_new_page;
+    use super::{PROTOTYPE_NOTICE, character_candidates_page};
+    use adventuresim_core::starting_character::roster;
 
     #[test]
-    fn starting_equipment_uses_accessible_exact_item_icons() {
-        let markup = character_new_page(None).into_string();
-        assert!(markup.contains("starting-equipment-table"));
-        assert!(markup.contains("aria-label=\"Item type\""));
-        assert!(markup.contains("/static/icons/game/torch.svg"));
-        assert!(markup.contains("/static/icons/game/bandage-roll.svg"));
-        assert!(markup.find("inventory-column-type").unwrap() < markup.find(">Item</th>").unwrap());
+    fn roster_has_five_portraits_disclaimer_and_accessible_dialog_without_customization() {
+        let candidates = roster(1, "00112233445566778899aabbccddeeff").unwrap();
+        let markup =
+            character_candidates_page(1, "00112233445566778899aabbccddeeff", &candidates, 0)
+                .into_string();
+        assert_eq!(markup.matches("candidate-portrait").count(), 5);
+        assert!(markup.contains(PROTOTYPE_NOTICE));
+        assert!(markup.contains("role=\"dialog\""));
+        assert!(markup.contains("aria-modal=\"true\""));
+        assert!(!markup.contains("name=\"name\""));
     }
 }

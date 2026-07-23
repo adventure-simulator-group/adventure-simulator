@@ -48,7 +48,7 @@ same time. Action labels remain grounded in facts the simulation actually knows.
 The character sheet groups the six skills beneath an expandable **Social** row,
 whose displayed value is their average.
 
-When mortal creation is reworked, players should choose among several generated whole characters with different personality tags. Players will not customize individual tags: personality is part of choosing an existing mortal person rather than assembling one stat by stat.
+First-time players choose among five generated whole characters with different backgrounds, attributes, combat training, equipment, and personality presentations. They cannot customize individual fields: personality and tradeoffs are part of choosing an existing mortal person rather than assembling one stat by stat. The roster is reproduced from a private random seed stored for the browser tab, but nothing is stored on the server until a candidate is confirmed.
 
 ## Mortal
 

@@ -174,6 +174,7 @@ pub mod create_character_reducer;
 pub mod create_named_character_reducer;
 pub mod create_named_character_with_id_reducer;
 pub mod create_recruitment_role_reducer;
+pub mod create_starting_character_reducer;
 pub mod create_tactical_server_for_request_reducer;
 pub mod create_temporary_character_reducer;
 pub mod cropland_cover_type;
@@ -559,6 +560,8 @@ pub mod soil_water_regime_type;
 pub mod spawn_developer_quest_reducer;
 pub mod stage_investigation_lead_reducer;
 pub mod start_dialogue_reducer;
+pub mod starting_character_claim_table;
+pub mod starting_character_claim_type;
 pub mod stock_category_type;
 pub mod stone_content_percent_type;
 pub mod store_battle_loot_reducer;
@@ -790,6 +793,7 @@ pub use create_character_reducer::create_character;
 pub use create_named_character_reducer::create_named_character;
 pub use create_named_character_with_id_reducer::create_named_character_with_id;
 pub use create_recruitment_role_reducer::create_recruitment_role;
+pub use create_starting_character_reducer::create_starting_character;
 pub use create_tactical_server_for_request_reducer::create_tactical_server_for_request;
 pub use create_temporary_character_reducer::create_temporary_character;
 pub use cropland_cover_type::CroplandCover;
@@ -1175,6 +1179,8 @@ pub use soil_water_regime_type::SoilWaterRegime;
 pub use spawn_developer_quest_reducer::spawn_developer_quest;
 pub use stage_investigation_lead_reducer::stage_investigation_lead;
 pub use start_dialogue_reducer::start_dialogue;
+pub use starting_character_claim_table::*;
+pub use starting_character_claim_type::StartingCharacterClaim;
 pub use stock_category_type::StockCategory;
 pub use stone_content_percent_type::StoneContentPercent;
 pub use store_battle_loot_reducer::store_battle_loot;
@@ -1370,6 +1376,11 @@ pub enum Reducer {
         requirements: RecruitmentRequirements,
         weapon_precision: f32,
         save_role: bool,
+    },
+    CreateStartingCharacter {
+        generator_version: u16,
+        seed: String,
+        slot: u8,
     },
     CreateTacticalServerForRequest {
         mission_id: String,
@@ -1887,6 +1898,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::CreateNamedCharacter { .. } => "create_named_character",
             Reducer::CreateNamedCharacterWithId { .. } => "create_named_character_with_id",
             Reducer::CreateRecruitmentRole { .. } => "create_recruitment_role",
+            Reducer::CreateStartingCharacter { .. } => "create_starting_character",
             Reducer::CreateTacticalServerForRequest { .. } => "create_tactical_server_for_request",
             Reducer::CreateTemporaryCharacter { .. } => "create_temporary_character",
             Reducer::DeleteRecruitmentRole { .. } => "delete_recruitment_role",
@@ -2218,6 +2230,15 @@ Reducer::CancelMissionRequest{
                 requirements: requirements.clone(),
                 weapon_precision: weapon_precision.clone(),
                 save_role: save_role.clone(),
+}),
+            Reducer::CreateStartingCharacter{
+                generator_version,
+                seed,
+                slot,
+}             => __sats::bsatn::to_vec(&create_starting_character_reducer::CreateStartingCharacterArgs {
+                generator_version: generator_version.clone(),
+                seed: seed.clone(),
+                slot: slot.clone(),
 }),
             Reducer::CreateTacticalServerForRequest{
                 mission_id,
@@ -3165,6 +3186,7 @@ pub struct DbUpdate {
     settlement_smith: __sdk::TableUpdate<SettlementSmith>,
     simulation_character: __sdk::TableUpdate<SimulationCharacter>,
     simulation_run: __sdk::TableUpdate<SimulationRun>,
+    starting_character_claim: __sdk::TableUpdate<StartingCharacterClaim>,
     strategic_encounter: __sdk::TableUpdate<StrategicEncounter>,
     strategic_gateway_authority: __sdk::TableUpdate<StrategicGatewayAuthority>,
     tactical_server: __sdk::TableUpdate<TacticalServer>,
@@ -3479,6 +3501,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "simulation_run" => db_update
                     .simulation_run
                     .append(simulation_run_table::parse_table_update(table_update)?),
+                "starting_character_claim" => db_update.starting_character_claim.append(
+                    starting_character_claim_table::parse_table_update(table_update)?,
+                ),
                 "strategic_encounter" => db_update
                     .strategic_encounter
                     .append(strategic_encounter_table::parse_table_update(table_update)?),
@@ -3781,6 +3806,12 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.simulation_run = cache
             .apply_diff_to_table::<SimulationRun>("simulation_run", &self.simulation_run)
             .with_updates_by_pk(|row| &row.id);
+        diff.starting_character_claim = cache
+            .apply_diff_to_table::<StartingCharacterClaim>(
+                "starting_character_claim",
+                &self.starting_character_claim,
+            )
+            .with_updates_by_pk(|row| &row.request_key);
         diff.strategic_encounter = cache
             .apply_diff_to_table::<StrategicEncounter>(
                 "strategic_encounter",
@@ -4222,6 +4253,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "simulation_run" => db_update
                     .simulation_run
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "starting_character_claim" => db_update
+                    .starting_character_claim
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "strategic_encounter" => db_update
                     .strategic_encounter
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -4529,6 +4563,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "simulation_run" => db_update
                     .simulation_run
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "starting_character_claim" => db_update
+                    .starting_character_claim
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "strategic_encounter" => db_update
                     .strategic_encounter
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -4663,6 +4700,7 @@ pub struct AppliedDiff<'r> {
     settlement_smith: __sdk::TableAppliedDiff<'r, SettlementSmith>,
     simulation_character: __sdk::TableAppliedDiff<'r, SimulationCharacter>,
     simulation_run: __sdk::TableAppliedDiff<'r, SimulationRun>,
+    starting_character_claim: __sdk::TableAppliedDiff<'r, StartingCharacterClaim>,
     strategic_encounter: __sdk::TableAppliedDiff<'r, StrategicEncounter>,
     strategic_gateway_authority: __sdk::TableAppliedDiff<'r, StrategicGatewayAuthority>,
     tactical_server: __sdk::TableAppliedDiff<'r, TacticalServer>,
@@ -5104,6 +5142,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<SimulationRun>(
             "simulation_run",
             &self.simulation_run,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<StartingCharacterClaim>(
+            "starting_character_claim",
+            &self.starting_character_claim,
             event,
         );
         callbacks.invoke_table_row_callbacks::<StrategicEncounter>(
@@ -5884,6 +5927,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         settlement_smith_table::register_table(client_cache);
         simulation_character_table::register_table(client_cache);
         simulation_run_table::register_table(client_cache);
+        starting_character_claim_table::register_table(client_cache);
         strategic_encounter_table::register_table(client_cache);
         strategic_gateway_authority_table::register_table(client_cache);
         tactical_server_table::register_table(client_cache);
@@ -5984,6 +6028,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "settlement_smith",
         "simulation_character",
         "simulation_run",
+        "starting_character_claim",
         "strategic_encounter",
         "strategic_gateway_authority",
         "tactical_server",
