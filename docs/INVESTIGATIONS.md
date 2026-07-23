@@ -122,6 +122,13 @@ defined as before 06:00 or from 20:00 onward. Browser estimates are broad
 method-derived duration ranges; exact terrain, needs, fatigue, success, and
 risk remain authoritative.
 
+Location is revalidated at execution, not merely at issuance. Contact actions
+use the referred NPC's current settlement and presence window (or the same
+settlement as a bound ask-around action). Track actions remain bound to the
+materialized predecessor area until they disclose the site, and later
+site-targeting actions require actual site occupancy. Traveling elsewhere
+invalidates the attempt before time is spent or a lead is written.
+
 Retrieve and rescue consequences re-read current custody and require the case objective,
 object kind, site holder, occupied site, and next version to agree. A purely
 stale version reissues the capability without spending time; a holder, site,
