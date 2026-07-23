@@ -1,5 +1,12 @@
 Morale is a signed strategic stat. Zero is emotionally neutral. Negative morale creates fear incapacitation, while surplus morale above zero lets a character with Command lift the spirits of allies who are below zero.
 
+The character-sheet morale meter is informational. A raised Social meta-skill
+icon beside its heading opens the observer-specific morale sources, beliefs,
+and available social actions in a modal dialog without replacing either
+character rail. The icon remains inset while that dialog is open; the privacy
+boundary remains the active observer's beliefs rather than authoritative
+personality state.
+
 # Morale sources
 
 Every current morale effect is retained as a named signed source for the UI. Positive and negative sources are ranked separately by absolute magnitude. The strongest source on each side contributes fully, the second contributes one half, the third one third, and so on. Will mitigates only the ranked negative contributions:

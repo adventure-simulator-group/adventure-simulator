@@ -56,6 +56,23 @@ pub enum ItemKind {
     Food,
 }
 
+pub(crate) const fn economy_catalog_kind(
+    kind: ItemKind,
+) -> adventuresim_core::settlement_economy::CatalogKind {
+    use adventuresim_core::settlement_economy::CatalogKind as C;
+    match kind {
+        ItemKind::Simple => C::Simple,
+        ItemKind::Weapon => C::Weapon,
+        ItemKind::Armor => C::Armor,
+        ItemKind::Shield => C::Shield,
+        ItemKind::Clothing => C::Clothing,
+        ItemKind::Currency => C::Currency,
+        ItemKind::Ingredient => C::Ingredient,
+        ItemKind::Medication => C::Medication,
+        ItemKind::Food => C::Food,
+    }
+}
+
 #[derive(SpacetimeType, Default, Clone, Copy, Debug, PartialEq)]
 pub struct WeaponSkillDistribution {
     pub polearm: f32,

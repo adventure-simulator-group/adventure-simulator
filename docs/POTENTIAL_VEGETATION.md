@@ -36,7 +36,7 @@ non-unknown class inferred from already typed forest, elevation, latitude, and
 HYDE 3.5 context. Reports reconcile posterior, categorical, and inferred outcomes
 exactly to settlement count.
 
-Inference-rules version 4 and world schema version 17 identify the complete
+Inference-rules version 9 and world schema version 25 identify the complete
 post-hydrology synthesis contract. Older artifacts or caches cannot share
 identity with Jung-derived or reconstructed historical results.
 
@@ -56,3 +56,9 @@ transitional water requires tidal evidence.
 Attribution/modification notice: Adventure Simulator downloads Jung's published
 v1.1 rasters unchanged, then projects settlement cells, area-aggregates posterior
 means, quantizes values, and applies documented categorical/inference fallbacks.
+
+The terrain pipeline separately extracts a bounded wetland mask from the pinned
+1 km wetland posterior (`mean >= 0.5`), using categorical class 5 only where the
+posterior is nodata. Pixel centers are clipped to playable bounds and capped at
+100,000 candidates. The pinned SHA-256, accepted pixel count, and terrain package
+digest are recorded; this is source coverage, not settlement extrapolation.

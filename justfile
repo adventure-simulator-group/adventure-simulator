@@ -244,10 +244,6 @@ generate-db-client: spacetime-version-check
 verify-db-client: spacetime-version-check
 	@{{python_bin}} scripts/dev_stack.py verify-bindings
 
-# Download and extract the Viabundus v2 CSV source data into viabundus/.
-init-viabundus:
-	@python3 scripts/init_viabundus.py
-
 # Download and verify the pinned NOAA OWDA v1.0 NetCDF source.
 init-owda:
 	@python3 scripts/init_owda.py
@@ -316,6 +312,12 @@ init-world-data:
 	@{{python_bin}} scripts/init_world_data.py --repository .
 rebuild-world-data:
 	@{{python_bin}} scripts/init_world_data.py --repository . --rebuild
+
+# Install the small pinned compiled world, map, and final terrain bundle.
+init-world-runtime:
+	@{{python_bin}} scripts/init_world_runtime.py --repository .
+replace-world-runtime:
+	@{{python_bin}} scripts/init_world_runtime.py --repository . --replace
 verify-world-data-bundle archive descriptor descriptor_sha256:
 	@{{python_bin}} scripts/world_data_bundle.py verify {{quote(archive)}} --descriptor {{quote(descriptor)}} --descriptor-sha256 {{quote(descriptor_sha256)}}
 install-world-data archive descriptor descriptor_sha256:
@@ -323,24 +325,28 @@ install-world-data archive descriptor descriptor_sha256:
 replace-world-data archive descriptor descriptor_sha256:
 	@{{python_bin}} scripts/world_data_bundle.py install {{quote(archive)}} --descriptor {{quote(descriptor)}} --descriptor-sha256 {{quote(descriptor_sha256)}} --repository . --replace
 
+# Build the immutable documented-road terrain pack used only for inference.
+build-base-terrain:
+	@cargo run --package adventuresim-world-import --features strategic-map-renderer --bin build-strategic-map -- --base-only
+
 # Compile all initialized sources into the 1544 strategic world artifact.
-compile-world:
+compile-world: build-base-terrain
 	@cargo run --package adventuresim-world-import --bin adventuresim-world-import --
 
 # Derive the bounded metadata package and offline Paper AVIF tile bundle.
-build-strategic-map:
+build-strategic-map: compile-world
 	@cargo run --package adventuresim-world-import --features strategic-map-renderer --bin build-strategic-map --
 
 # Compatibility name for the former Python normalizer.
 normalise-viabundus: compile-world
 
-# Compile and load the world into the published local module.
-load-world server=spacetime_url: spacetime-version-check
-	@cargo run --package adventuresim-world-import --bin adventuresim-world-import -- --load --server {{server}} --database {{spacetime_module}}
+# Download the pinned compiled runtime when absent, then load it without rebuilding.
+load-world server=spacetime_url: spacetime-version-check init-world-runtime
+	@cargo run --package adventuresim-world-import --bin adventuresim-world-import -- --input target/world-1544.json --load --server {{server}} --database {{spacetime_module}}
 
 # Compatibility name for the former Viabundus-only loader.
-load-viabundus-world server=spacetime_url: spacetime-version-check
-	@cargo run --package adventuresim-world-import --bin adventuresim-world-import -- --load --server {{server}} --database {{spacetime_module}}
+load-viabundus-world server=spacetime_url: spacetime-version-check init-world-runtime
+	@cargo run --package adventuresim-world-import --bin adventuresim-world-import -- --input target/world-1544.json --load --server {{server}} --database {{spacetime_module}}
 
 # Build the tactical server and spawner
 build-tactical: verify-db-client

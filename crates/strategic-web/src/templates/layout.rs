@@ -84,6 +84,7 @@ pub fn settlement_layout_with_session(
     category: &SettlementCategory,
     active_service: &str,
     religion_id: Option<&str>,
+    economy: Option<&adventuresim_world_schema::SettlementEconomyProfile>,
     content: Markup,
     logged_in_as: Option<&str>,
 ) -> Markup {
@@ -95,6 +96,7 @@ pub fn settlement_layout_with_session(
             category,
             active_service,
             religion_id,
+            economy,
             logged_in_as,
         ),
         content,
@@ -158,7 +160,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=strategic-ux-review-2";
                 link rel="stylesheet" href="/static/css/components.css?v=lowercase-display-type-1";
-                link rel="stylesheet" href="/static/css/strategic.css?v=travel-rails-1";
+                link rel="stylesheet" href="/static/css/strategic.css?v=map-tiles-2";
                 link rel="stylesheet" href="/static/css/utilities.css?v=strategic-ui-overhaul-1";
 
                 // Datastar
@@ -167,6 +169,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 script src="/static/developer-mode.js?v=dialogue-sources-1" defer {}
                 script src="/static/tooltips.js?v=styled-tooltips-2" defer {}
                 script src="/static/medical-examination.js?v=strategic-dialogs-1" defer {}
+                script src="/static/character-action-dialog.js?v=character-actions-1" defer {}
                 @if scripts != ScriptProfile::Entry {
                     script src="/static/live-state.js?v=sse-3" defer {}
                     script src="/static/live-regions.js?v=floating-time-editor-1" defer {}
@@ -186,7 +189,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}
                     script src="/static/building-state.js?v=village-building-tabs-1" defer {}
                     script src="/static/travel-planner.js?v=travel-rails-1" defer {}
-                    script src="/static/strategic-map.js?v=map-controls-environment-2" defer {}
+                    script src="/static/strategic-map.js?v=population-culling-3" defer {}
                     script src="/static/rest-duration.js?v=wake-time-3" defer {}
                 }
             }
@@ -226,6 +229,7 @@ fn settlement_top_bar(
     category: &SettlementCategory,
     active_service: &str,
     religion_id: Option<&str>,
+    economy: Option<&adventuresim_world_schema::SettlementEconomyProfile>,
     logged_in_as: Option<&str>,
 ) -> Markup {
     let services = [
@@ -262,6 +266,8 @@ fn settlement_top_bar(
             nav class="top-bar-center settlement-services" aria-label="Settlement services"
                 data-settlement-id=(settlement_id) {
                 @for (path, label, icon) in services {
+                    @let available = economy.is_none_or(|profile| service_tab_available(profile, path));
+                    @if available {
                     @let href = if path == "map" {
                         format!("/locations/settlement/{}/map", settlement_id)
                     } else if path.is_empty() {
@@ -298,6 +304,7 @@ fn settlement_top_bar(
                             span class="service-notification-badge service-quest-badge" data-service-quest-badge hidden { "!" }
                         }
                     }
+                    }
                 }
             }
 
@@ -308,6 +315,25 @@ fn settlement_top_bar(
             }
         }
         script src="/static/strategic-time.js?v=continuous-environment-1" {}
+    }
+}
+
+fn service_tab_available(
+    profile: &adventuresim_world_schema::SettlementEconomyProfile,
+    path: &str,
+) -> bool {
+    use adventuresim_core::settlement_economy::{Storefront, storefront_available};
+    use adventuresim_world_schema::SettlementService as S;
+    match path {
+        "map" => true,
+        "merchants" => storefront_available(profile, Storefront::General),
+        "weapons" => storefront_available(profile, Storefront::Weapons),
+        "armor" => storefront_available(profile, Storefront::Armor),
+        "clothing" => storefront_available(profile, Storefront::Clothing),
+        "herbalist" => storefront_available(profile, Storefront::Herbalist),
+        "inn" => storefront_available(profile, Storefront::Inn),
+        "religion" => profile.has_service(S::Temple),
+        _ => false,
     }
 }
 
@@ -653,7 +679,7 @@ mod tests {
         ] {
             assert_eq!(building_tier(&category), tier);
             let markup =
-                settlement_top_bar("Place", "p", &category, "map", None, None).into_string();
+                settlement_top_bar("Place", "p", &category, "map", None, None, None).into_string();
             assert!(markup.contains(&format!("data-building-tier=\"{tier}\"")));
         }
     }
@@ -680,6 +706,7 @@ mod tests {
             "stable-place",
             &SettlementCategory::Town,
             "map",
+            None,
             None,
             None,
         )
@@ -719,6 +746,7 @@ mod tests {
             "religion",
             Some("roman_catholic"),
             None,
+            None,
         )
         .into_string();
         assert_eq!(markup.matches("class=\"service-tab-building\"").count(), 8);
@@ -756,6 +784,7 @@ mod tests {
             &SettlementCategory::City,
             "inn",
             None,
+            None,
             html! {},
             None,
         )
@@ -790,6 +819,7 @@ mod tests {
             "religion",
             None,
             None,
+            None,
         )
         .into_string();
         assert!(church.contains(&format!(
@@ -805,6 +835,7 @@ mod tests {
             "s",
             &SettlementCategory::Village,
             "map",
+            None,
             None,
             Some("Ada"),
         )
@@ -854,6 +885,7 @@ mod tests {
             "s",
             &SettlementCategory::Village,
             "",
+            None,
             None,
             None,
         )
@@ -923,6 +955,7 @@ mod tests {
             "s",
             &SettlementCategory::Village,
             "weapons",
+            None,
             None,
             None,
         )

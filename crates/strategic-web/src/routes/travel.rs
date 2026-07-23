@@ -613,6 +613,10 @@ mod tests {
                 FallbackIndustry::WoodlandFuelwood,
             )])
             .unwrap(),
+            economy: adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder(),
+            religious_status: adventuresim_world_schema::SettlementReligiousStatus::Established {
+                religion: adventuresim_world_schema::OfficialReligion::RomanCatholic,
+            },
             scene_key: String::new(),
             religion_id: String::new(),
             currency_id: "rhenish_gulden".into(),

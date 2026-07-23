@@ -26,7 +26,7 @@ settlements show an explicit map-data-not-initialized state, and source-less
 destinations are omitted from the geographic SVG rather than interpreting
 their nongeographic coordinates as longitude and latitude.
 
-The backend classifies every materialized settlement by population as Hamlet, Village, Town, City, or Capital, with population level as the fallback when no estimate exists. Each service tab layers its existing service SVG over a grayscale, CSS-tinted building background. Unknown settlements, hamlets, and villages use the village set; towns use town overrides when present; and cities or capitals use city overrides when present. A missing higher-tier image falls back to that service's village building. The location header is twice the height of compact application headers so the low silhouettes and large service marks remain legible. The tabs meet the lower edge of the sky and the active building is shown by an underline. The settlement name and saved character time share one carved or engraved rectangular sign island. The active tint carries through both interface rails, whose recessed interiors, edge beams, square corner blocks, and darker interactive rows are all derived from that tint, as well as through character inspection via the validated `building` URL parameter. Quest destinations use green environmental framing. The location header renders a continuously interpolated sky from the active character's saved time snapshot: daylight is bright blue, dawn and dusk are warm, and nighttime plus the building surfaces are darker still. The sun or moon follows an edge-to-edge arc that peaks over the center at noon or midnight, while other header text uses protected dark labels for reliable contrast.
+The backend classifies every materialized settlement by population as Hamlet (under 2,000), Village (2,000-3,999), Town (4,000-7,999), City (8,000-12,999), or Capital (13,000 and above), with population level as the fallback when no estimate exists. These regional bands ensure the imported 1544 playable area represents all five settlement scales. The strategic map progressively hides lower-level settlement pins as the camera zooms out while always retaining the current and selected settlements. Each service tab layers its existing service SVG over a grayscale, CSS-tinted building background. Unknown settlements, hamlets, and villages use the village set; towns use town overrides when present; and cities or capitals use city overrides when present. A missing higher-tier image falls back to that service's village building. The location header is twice the height of compact application headers so the low silhouettes and large service marks remain legible. The tabs meet the lower edge of the sky and the active building is shown by an underline. The settlement name and saved character time share one carved or engraved rectangular sign island. The active tint carries through both interface rails, whose recessed interiors, edge beams, square corner blocks, and darker interactive rows are all derived from that tint, as well as through character inspection via the validated `building` URL parameter. Quest destinations use green environmental framing. The location header renders a continuously interpolated sky from the active character's saved time snapshot: daylight is bright blue, dawn and dusk are warm, and nighttime plus the building surfaces are darker still. The sun or moon follows an edge-to-edge arc that peaks over the center at noon or midnight, while other header text uses protected dark labels for reliable contrast.
 
 Weaponsmith chimneys add a subtle decorative SVG smoke layer without changing
 the raster building or service semantics. Quest destinations use two physical
@@ -104,10 +104,12 @@ The default chat channel is **Local**. NPC conversations belong to the active pa
 
 Clicking any filled character portrait selects that character. The left rail shows their automatic capability summary before attributes and skills, while the right rail shows their age, sparse personality tags, and religion. Neutral personality axes are omitted, and each shown tag has a tooltip stating its exact morale multiplier and any event-duration multiplier. On one's own biography, hovering or focusing the Religion entry reveals a **Renounce** action when the character currently professes a faith. Numeric skill tags appear only at rating 3 or better and show their name without the underlying score. Athletics combines the climbing and swimming evaluations. These tags reuse the shared stat, skill, equipment, armor, and encumbrance calculations; injuries do not affect recruitment tags. Heavy weapons require at least 4 kg weapon weight and average arm strength 3. The shared weapon-precision scale replaces the former precise, slash, pierce, and blunt recruitment tags: 0.5 is club/hammer precision, 1.0 axe precision, 1.5 sword/spear precision, and 2.0 rapier/bodkin precision. Encumbrance includes all carried inventory, not only equipped items.
 
-A living active character with Medicine 2 or better also sees a medical action
-icon in the contextual controls beneath each living party portrait. It begins
-the 15-minute examination directly; the character details rail does not repeat
-the action. The same character sees an alchemy action beneath their own portrait.
+A living active character with Medicine 2 or better sees the selected
+character's Medicine skill icon as a raised action button. It begins the
+15-minute examination directly and presents the one-shot findings as a modal
+dialog; the portrait hover controls do not duplicate this action. The active
+character's Cooking skill icon similarly opens cooking. The same character
+continues to see an alchemy action beneath their own portrait.
 Alchemy lists all recipes at or below their Medicine rank regardless of current
 diagnoses, and its ingredient rail switches between personal and party inventory
 while retaining the normal quantity-target controls. Herbalists greet visitors
@@ -147,3 +149,13 @@ None of these player-run social hub features should be in the MVP, we will just 
 ## Languages
 
 Each imported settlement has an inferred East-central, West-central, and Low vernacular distribution totaling 100%. Low rises northward; longitude divides the central dialects, with southern Thuringia favoring East-central. Yiddish is a small per-person incidence, never a town-exclusive language. Deterministically selected Yiddish NPCs are fluent in Yiddish and have a 0.8 best-shared-language coefficient with a fluent local German; direct German hours account for the Yiddish/German correlation. Demo settlements use explicit fallback profiles. Books, libraries, and tavern/priest translators require future item and service systems.
+
+Each settlement also has a deterministic, versioned economy profile. Population,
+prosperity, road access, and nearby production jointly decide which services
+exist and which stock categories are common. A tiny settlement may expose only
+an inn and general store; a village uses a general blacksmith; prosperous towns
+split weaponsmith and armorer services. Generalists carry broader categories
+where specialists are absent. The server enforces service availability for
+trade, herbalist care, and repairs. The overview exposes prosperity,
+specializations, and every religion represented by the canonical legal status,
+not merely the faith selected for the single church/priest presentation.

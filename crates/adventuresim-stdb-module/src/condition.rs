@@ -1790,7 +1790,12 @@ pub fn set_character_religion(
             .id()
             .find(&settlement_id)
             .ok_or("Character's settlement not found")?;
-        if settlement.religion_id != religion_id {
+        if !settlement
+            .religious_status
+            .represented_religions()
+            .iter()
+            .any(|religion| religion.religion_id() == religion_id)
+        {
             return Err("This settlement's priest cannot receive that profession of faith".into());
         }
     }
