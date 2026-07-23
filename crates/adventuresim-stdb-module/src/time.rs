@@ -17,7 +17,8 @@ use crate::{
     CharacterAttributes, CharacterSkills, CharacterStats, character_attributes, character_equip,
     character_limbs, character_skills, character_stats, settlement,
 };
-use adventuresim_world_schema::OfficialReligion;
+use adventuresim_world_schema::{OfficialReligion, OralLanguage, WrittenLanguage};
+use std::collections::BTreeMap;
 
 /// Natural recovery without useful medical support while taking full
 /// settlement downtime.
@@ -629,6 +630,27 @@ fn apply_training(
         prayer_religion,
         schedule.prayer_minutes,
     );
+    if let Some(character) = ctx.db.character().id().find(character_id) {
+        if let Some(settlement_id) = character.current_settlement_id {
+            if let Some(settlement) = ctx.db.settlement().id().find(&settlement_id) {
+                // Ordinary life supplies bounded ambient exposure during the
+                // waking two-thirds of actual elapsed settlement time.
+                let exposure = elapsed as f32 / 60.0 * (2.0 / 3.0);
+                skills.oral_languages.add_direct(
+                    OralLanguage::EastCentral,
+                    exposure * f32::from(settlement.languages.east_central_bp) / 10_000.0,
+                );
+                skills.oral_languages.add_direct(
+                    OralLanguage::WestCentral,
+                    exposure * f32::from(settlement.languages.west_central_bp) / 10_000.0,
+                );
+                skills.oral_languages.add_direct(
+                    OralLanguage::Low,
+                    exposure * f32::from(settlement.languages.low_bp) / 10_000.0,
+                );
+            }
+        }
+    }
     for (minutes, service_id) in [
         (
             schedule.apprenticeship_minutes,
@@ -639,6 +661,56 @@ fn apply_training(
             schedule.profession_service_id.as_deref(),
         ),
     ] {
+        if minutes > 0 {
+            if let Some(service_id) = service_id {
+                let work_hours =
+                    elapsed as f32 / MINUTES_PER_DAY as f32 * f32::from(minutes) / 60.0;
+                let profile =
+                    adventuresim_core::profession::profession_literacy_profile(service_id);
+                let vernacular = ctx
+                    .db
+                    .character()
+                    .id()
+                    .find(character_id)
+                    .and_then(|character| character.current_settlement_id)
+                    .and_then(|id| ctx.db.settlement().id().find(&id))
+                    .map_or(WrittenLanguage::German, |settlement| {
+                        if settlement.languages.dominant_german() == OralLanguage::Low {
+                            WrittenLanguage::Low
+                        } else {
+                            WrittenLanguage::German
+                        }
+                    });
+                skills
+                    .written_languages
+                    .add_direct(vernacular, work_hours * profile.vernacular);
+                skills
+                    .written_languages
+                    .add_direct(WrittenLanguage::Latin, work_hours * profile.latin);
+                if profile.religious {
+                    let religion = apprenticeship_for_service(ctx, character_id, "religion")
+                        .and_then(|row| row.religion_id)
+                        .as_deref()
+                        .and_then(OfficialReligion::from_id);
+                    match religion {
+                        Some(OfficialReligion::RomanCatholic) => skills
+                            .written_languages
+                            .add_direct(WrittenLanguage::Latin, work_hours),
+                        Some(OfficialReligion::Judaism) => {
+                            skills
+                                .written_languages
+                                .add_direct(WrittenLanguage::Hebrew, work_hours * 0.75);
+                            skills
+                                .written_languages
+                                .add_direct(WrittenLanguage::Yiddish, work_hours * 0.25);
+                        }
+                        _ => skills
+                            .written_languages
+                            .add_direct(WrittenLanguage::German, work_hours),
+                    }
+                }
+            }
+        }
         if minutes == 0 || service_id != Some("religion") {
             continue;
         }
@@ -1208,6 +1280,21 @@ fn rest_for_minutes(
     if requested_minutes == 0 {
         return Ok(());
     }
+    let conversation_choice = character.party_id.as_ref().and_then(|party_id| {
+        let snapshot: Vec<_> = crate::strategic::living_party_member_ids(ctx, party_id)
+            .into_iter()
+            .filter_map(|id| {
+                ctx.db
+                    .character_skills()
+                    .character_id()
+                    .find(id)
+                    .map(|skills| (id, skills.oral_languages))
+            })
+            .collect();
+        adventuresim_world_schema::party_common_oral_choices(&snapshot)
+            .into_iter()
+            .find(|choice| choice.0 == character_id)
+    });
 
     if !(MIN_SETTLEMENT_REST_MINUTES..=MAX_SETTLEMENT_REST_MINUTES).contains(&requested_minutes)
         || requested_minutes % MIN_SETTLEMENT_REST_MINUTES != 0
@@ -1314,6 +1401,12 @@ fn rest_for_minutes(
             training_elapsed,
             activities,
         );
+        if let Some((_, language, coefficient)) = conversation_choice {
+            skills.oral_languages.add_direct(
+                language,
+                training_elapsed as f32 / 60.0 * (2.0 / 3.0) * coefficient,
+            );
+        }
         ctx.db.character_skills().character_id().update(skills);
         let risks = apply_activity_outcomes(
             ctx,
@@ -1516,6 +1609,7 @@ pub fn rest_at_camp(
     requested_minutes: u64,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
+    crate::strategic::require_character_no_unresolved_encounter(ctx, character_id)?;
     crate::character::require_living_character(ctx, character_id)?;
     if requested_minutes == 0 {
         return Ok(());
@@ -1559,6 +1653,21 @@ pub fn rest_at_camp(
             Ok::<u64, String>(limit.min(disease).min(injury))
         })?;
     let fatigue_before = party_fatigue_summary(ctx, &members)?;
+    let language_snapshot: Vec<_> = members
+        .iter()
+        .filter_map(|id| {
+            ctx.db
+                .character_skills()
+                .character_id()
+                .find(*id)
+                .map(|skills| (*id, skills.oral_languages))
+        })
+        .collect();
+    let language_choices: BTreeMap<_, _> =
+        adventuresim_world_schema::party_common_oral_choices(&language_snapshot)
+            .into_iter()
+            .map(|(id, language, coefficient)| (id, (language, coefficient)))
+            .collect();
     for member_id in members {
         ensure_character_time(ctx, member_id)?;
         let mut time = ctx
@@ -1640,6 +1749,12 @@ pub fn rest_at_camp(
                 .ok_or("Character skill record not found")?;
             let activities = activity_training_profile(ctx, member_id)?;
             apply_training(ctx, member_id, &mut skills, &allowed, downtime, activities);
+            if let Some((language, coefficient)) = language_choices.get(&member_id) {
+                skills.oral_languages.add_direct(
+                    *language,
+                    downtime as f32 / 60.0 * (2.0 / 3.0) * coefficient,
+                );
+            }
             ctx.db.character_skills().character_id().update(skills);
             crate::condition::apply_settlement_leisure_condition(
                 ctx,

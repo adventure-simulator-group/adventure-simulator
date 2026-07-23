@@ -10,17 +10,19 @@ use adventuresim_world_schema::{
     ModeledTreeSpecies, ModeledTreeSpeciesProfile, OfficialReligion, PalmerDroughtSeverityIndex,
     PotentialVegetation, PotentialVegetationClass, ProductionScale, RouteTerrain,
     SETTLEMENT_ALIAS_NAME_MAX_BYTES, SETTLEMENT_ALIAS_PREFIX_MAX_BYTES,
-    SETTLEMENT_DESCRIPTION_MAX_BYTES, SettlementDescriptionKind, SettlementHydrology,
-    SettlementImport, SettlementReligiousStatus, SoilAcidity, SoilBasisPoints, SoilDepth,
-    SoilEvidence, SoilFertility, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
-    StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport,
-    TravelRoute, TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION,
-    Woodland, WorldNodeImport, historical_vegetation_matches_context,
-    industry_profile_is_canonical, valid_bounded_source_text, valid_sources_markdown,
+    SETTLEMENT_DESCRIPTION_MAX_BYTES, SettlementDescriptionKind, SettlementEconomyProfile,
+    SettlementHydrology, SettlementImport, SettlementReligiousStatus, SoilAcidity, SoilBasisPoints,
+    SoilDepth, SoilEvidence, SoilFertility, SoilProfile, SoilProperties, SoilSubstrate,
+    SoilWaterRegime, StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon,
+    TravelEdgeLoad, TravelEdgeProvenance, TravelRoute, TreeSpeciesId, TreeSpeciesProfile,
+    UnconsolidatedDeposit, WORLD_SCHEMA_VERSION, Woodland, WorldNodeImport,
+    historical_vegetation_matches_context, industry_profile_is_canonical,
+    valid_bounded_source_text, valid_sources_markdown,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
 use crate::{
+    capability::character_capability,
     character::{
         character, character_attributes, character_equip, character_limbs, character_skills,
         character_stats,
@@ -169,6 +171,23 @@ impl EnemyArchetype {
                 drop: Some("club"),
             },
         }
+    }
+}
+
+fn quest_encounter_archetype(
+    enemy_type: &str,
+) -> Option<adventuresim_core::encounter::EncounterArchetype> {
+    use adventuresim_core::encounter::EncounterArchetype;
+
+    let label = enemy_type.to_ascii_lowercase();
+    if label.contains("undead") || label.contains("skeleton") || label.contains("zombie") {
+        Some(EncounterArchetype::Undead)
+    } else if label.contains("goblin") {
+        Some(EncounterArchetype::Goblins)
+    } else if label.contains("bandit") || label.contains("thieve") {
+        Some(EncounterArchetype::Bandits)
+    } else {
+        None
     }
 }
 
@@ -358,7 +377,8 @@ fn record_autoresolve_report(
 
 #[cfg(test)]
 mod healing_tests {
-    use super::{EnemyArchetype, autoresolve_drop};
+    use super::{EnemyArchetype, autoresolve_drop, quest_encounter_archetype};
+    use adventuresim_core::encounter::EncounterArchetype;
 
     #[test]
     fn enemy_archetypes_keep_combat_and_loot_classification_together() {
@@ -372,6 +392,95 @@ mod healing_tests {
 
         assert_eq!(autoresolve_drop("giant spiders"), None);
         assert_eq!(autoresolve_drop("unknown menace"), Some("club"));
+    }
+
+    #[test]
+    fn only_supported_active_quest_enemies_influence_random_encounters() {
+        assert_eq!(
+            quest_encounter_archetype("restless skeletons"),
+            Some(EncounterArchetype::Undead)
+        );
+        assert_eq!(
+            quest_encounter_archetype("forest goblins"),
+            Some(EncounterArchetype::Goblins)
+        );
+        assert_eq!(
+            quest_encounter_archetype("road bandits"),
+            Some(EncounterArchetype::Bandits)
+        );
+        assert_eq!(quest_encounter_archetype("giant spiders"), None);
+    }
+
+    #[test]
+    fn random_encounter_battle_cannot_complete_or_record_a_quest() {
+        let source = include_str!("strategic.rs");
+        let random_battle = source
+            .split("fn resolve_random_encounter_battle")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn resolve_strategic_encounter").next())
+            .expect("random encounter battle implementation");
+        assert!(!random_battle.contains("complete_quest("));
+        assert!(!random_battle.contains("record_battle_result("));
+    }
+
+    #[test]
+    fn encounter_resolution_requires_character_authority_and_uses_private_entropy() {
+        let source = include_str!("strategic.rs");
+        let reducer = source
+            .split("pub fn resolve_strategic_encounter")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn complete_quest").next())
+            .expect("encounter resolution reducer");
+        assert!(reducer.contains("require_strategic_character_authority(ctx, character_id)?"));
+        assert!(reducer.contains("party_journey_encounter_authority()"));
+
+        let encounter = source
+            .split("pub struct StrategicEncounter")
+            .nth(1)
+            .and_then(|tail| tail.split("pub struct PartyJourneyItinerary").next())
+            .expect("public encounter schema");
+        assert!(!encounter.contains("pub seed:"));
+    }
+
+    #[test]
+    fn unresolved_encounters_guard_party_and_preview_mutations() {
+        let source = include_str!("strategic.rs");
+        for (function, guard) in [
+            ("vote_for_party_leader", "require_no_unresolved_encounter"),
+            (
+                "accept_party_join_request",
+                "require_no_unresolved_encounter",
+            ),
+            (
+                "finalize_party_offer",
+                "require_character_no_unresolved_encounter",
+            ),
+            (
+                "remove_party_member",
+                "require_character_no_unresolved_encounter",
+            ),
+            ("abandon_quest", "require_character_no_unresolved_encounter"),
+        ] {
+            let body = source
+                .split(&format!("pub fn {function}"))
+                .nth(1)
+                .and_then(|tail| tail.split("#[reducer]").next())
+                .unwrap_or_else(|| panic!("{function} reducer body"));
+            assert!(body.contains(guard), "{function} must call {guard}");
+        }
+    }
+
+    #[test]
+    fn quest_autoresolve_routes_consequences_through_shared_commit() {
+        let source = include_str!("strategic.rs");
+        let body = source
+            .split("pub fn autoresolve_quest")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("quest autoresolve reducer body");
+        assert!(body.contains("commit_autoresolve_outcome("));
+        assert!(!body.contains("record_autoresolve_report("));
+        assert!(!body.contains("consume_autoresolve_ammunition("));
     }
 }
 
@@ -433,8 +542,8 @@ pub(crate) const fn settlement_category(
         match population_estimate {
             0..=1_999 => SettlementCategory::Hamlet,
             2_000..=3_999 => SettlementCategory::Village,
-            4_000..=10_999 => SettlementCategory::Town,
-            11_000..=50_999 => SettlementCategory::City,
+            4_000..=7_999 => SettlementCategory::Town,
+            8_000..=12_999 => SettlementCategory::City,
             _ => SettlementCategory::Capital,
         }
     } else {
@@ -454,17 +563,17 @@ mod settlement_category_tests {
     use super::{SettlementCategory, settlement_category};
 
     #[test]
-    fn population_estimate_boundaries_use_existing_bands() {
+    fn population_estimate_boundaries_use_regional_bands() {
         let cases = [
             (1, SettlementCategory::Hamlet),
             (1_999, SettlementCategory::Hamlet),
             (2_000, SettlementCategory::Village),
             (3_999, SettlementCategory::Village),
             (4_000, SettlementCategory::Town),
-            (10_999, SettlementCategory::Town),
-            (11_000, SettlementCategory::City),
-            (50_999, SettlementCategory::City),
-            (51_000, SettlementCategory::Capital),
+            (7_999, SettlementCategory::Town),
+            (8_000, SettlementCategory::City),
+            (12_999, SettlementCategory::City),
+            (13_000, SettlementCategory::Capital),
         ];
         for (population, expected) in cases {
             assert_eq!(settlement_category(population, -1), expected);
@@ -508,9 +617,11 @@ pub struct Settlement {
     pub soil: SoilProfile,
     pub geology: SurfaceGeology,
     pub religious_status: SettlementReligiousStatus,
+    pub languages: adventuresim_world_schema::SettlementLanguageProfile,
     pub drought: DroughtProfile,
     pub hydrology: SettlementHydrology,
     pub industries: InferredIndustryProfile,
+    pub economy: SettlementEconomyProfile,
     pub scene_key: String,
     /// The single faith represented by this settlement's church and priest.
     pub religion_id: String,
@@ -523,6 +634,24 @@ pub struct Settlement {
     /// Unstructured Markdown explaining source evidence and deterministic
     /// inferences. Reserved for a future debug view.
     pub sources: String,
+}
+
+pub(crate) fn require_settlement_service(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+    service: adventuresim_world_schema::SettlementService,
+) -> Result<(), String> {
+    let settlement = ctx
+        .db
+        .settlement()
+        .id()
+        .find(settlement_id.to_owned())
+        .ok_or("Settlement not found")?;
+    if settlement.economy.has_service(service) {
+        Ok(())
+    } else {
+        Err("This settlement does not offer that service".into())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -597,6 +726,7 @@ pub struct TravelEdge {
     #[index(btree)]
     pub to_node_id: u64,
     pub route: TravelRoute,
+    pub provenance: TravelEdgeProvenance,
     pub toll_at: Option<EdgeEndpoint>,
     pub length_m: u32,
     pub slope_multiplier: f32,
@@ -711,6 +841,7 @@ pub fn finish_world_data_import(ctx: &ReducerContext, artifact_id: String) -> Re
         return Err("Cannot finish a different world artifact".into());
     }
     validate_final_settlement_industries(ctx)?;
+    validate_final_settlement_economies(ctx)?;
     import.completed = true;
     ctx.db.world_data_import().id().update(import);
     Ok(())
@@ -747,15 +878,18 @@ pub fn import_world_nodes(ctx: &ReducerContext, nodes: Vec<WorldNodeImport>) -> 
 }
 
 #[reducer]
-pub fn import_travel_edges(
-    ctx: &ReducerContext,
-    edges: Vec<TravelEdgeImport>,
-) -> Result<(), String> {
+pub fn import_travel_edges(ctx: &ReducerContext, edges: Vec<TravelEdgeLoad>) -> Result<(), String> {
     require_active_world_import(ctx)?;
     if edges.is_empty() {
         return Err("Travel-edge batch is empty".into());
     }
     for edge in edges {
+        if edge.provenance == TravelEdgeProvenance::InferredWalkingLink && edge.id >> 63 != 1 {
+            return Err(format!(
+                "Inferred travel edge {} lacks its stable high-bit identity",
+                edge.id
+            ));
+        }
         validate_travel_edge_endpoints(edge.id, edge.from_node_id, edge.to_node_id)?;
         if ctx.db.world_node().id().find(edge.from_node_id).is_none()
             || ctx.db.world_node().id().find(edge.to_node_id).is_none()
@@ -777,6 +911,7 @@ pub fn import_travel_edges(
             from_node_id: edge.from_node_id,
             to_node_id: edge.to_node_id,
             route: edge.route,
+            provenance: edge.provenance,
             toll_at: edge.toll,
             length_m: edge.length_m,
             slope_multiplier: edge.slope_multiplier,
@@ -897,6 +1032,26 @@ pub fn import_settlements(
                 settlement.id
             )
         })?;
+        if !adventuresim_world_schema::coordinates_in_bounds(
+            settlement.longitude,
+            settlement.latitude,
+            adventuresim_world_schema::PLAYABLE_BOUNDS,
+        ) || !settlement.languages.is_valid()
+            || adventuresim_world_schema::infer_settlement_language_profile(
+                settlement.longitude,
+                settlement.latitude,
+            )
+            .ok()
+                != Some(settlement.languages)
+        {
+            return Err(format!(
+                "Settlement {} has an invalid language profile",
+                settlement.id
+            ));
+        }
+        settlement.economy.validate().map_err(|reason| {
+            format!("Settlement {} has invalid economy: {reason}", settlement.id)
+        })?;
         // Route batches are resumable and may arrive before or after settlement
         // batches. Exact industry/profile equality is therefore checked against
         // the final edge table by `finish_world_data_import`.
@@ -957,9 +1112,11 @@ pub fn import_settlements(
             religion_id: settlement.religious_status.church().religion_id().into(),
             currency_id,
             religious_status: settlement.religious_status,
+            languages: settlement.languages,
             drought,
             hydrology: settlement.hydrology,
             industries: settlement.industries,
+            economy: settlement.economy,
             source_node_id: Some(settlement.source_node_id),
             sources: settlement.sources,
         };
@@ -1048,6 +1205,40 @@ fn validate_final_settlement_industries(ctx: &ReducerContext) -> Result<(), Stri
         ) {
             return Err(format!(
                 "Settlement {} industries do not match the final travel-edge graph",
+                settlement.id
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_final_settlement_economies(ctx: &ReducerContext) -> Result<(), String> {
+    for settlement in ctx.db.settlement().iter() {
+        let Some(node_id) = settlement.source_node_id else {
+            continue;
+        };
+        let routes = ctx
+            .db
+            .travel_edge()
+            .iter()
+            .filter(|e| e.from_node_id == node_id || e.to_node_id == node_id)
+            .count();
+        let documented_town = ctx
+            .db
+            .world_node()
+            .id()
+            .find(node_id)
+            .is_some_and(|n| n.is_town);
+        let expected = adventuresim_world_schema::infer_settlement_economy(
+            settlement.population_level,
+            settlement.population_estimate,
+            u16::try_from(routes).unwrap_or(u16::MAX),
+            documented_town,
+            &settlement.industries,
+        )?;
+        if settlement.economy != expected {
+            return Err(format!(
+                "Settlement {} economy does not match canonical facts and final travel graph",
                 settlement.id
             ));
         }
@@ -1542,6 +1733,58 @@ pub struct PartyJourney {
     pub camp_duration_mode: CampDurationMode,
     #[default(0u16)]
     pub fixed_camp_minutes: u16,
+}
+
+/// Private encounter authority. Public journey and encounter projections never
+/// reveal future-roll entropy to clients.
+#[derive(Clone, Debug)]
+#[table(accessor = party_journey_encounter_authority)]
+pub struct PartyJourneyEncounterAuthority {
+    #[primary_key]
+    pub party_id: String,
+    pub seed: u64,
+    pub next_roll: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, SpacetimeType)]
+pub struct StrategicEncounterLoss {
+    pub owner_kind: String,
+    pub owner_id: u64,
+    pub inventory_id: u64,
+    pub item_id: String,
+    pub quantity: u32,
+    pub value_each: u32,
+}
+
+/// Durable strategic interruption only. Tactical exchanges, positions, HP,
+/// and enemies remain transient and are committed only through final outcomes.
+#[derive(Clone, Debug)]
+#[table(accessor = strategic_encounter, public)]
+pub struct StrategicEncounter {
+    #[primary_key]
+    pub party_id: String,
+    pub encounter_id: String,
+    pub archetype: String,
+    pub enemy_count: u16,
+    pub roll_index: u64,
+    pub journey_movement_minute: u64,
+    pub journey_elapsed_minute: u64,
+    pub absolute_minute: u64,
+    pub longitude_e7: i32,
+    pub latitude_e7: i32,
+    pub terrain: String,
+    pub party_aware: bool,
+    pub enemy_aware: bool,
+    pub available_choices: Vec<String>,
+    pub status: String,
+    pub selected_choice: Option<String>,
+    pub selection_explanation: String,
+    pub party_speed_m_per_minute: u32,
+    pub enemy_speed_m_per_minute: u32,
+    pub run_ineligibility: Option<String>,
+    pub penalty_minutes: u64,
+    pub loss_preview: Vec<StrategicEncounterLoss>,
+    pub outcome: Option<String>,
 }
 
 /// Typed elapsed-time camp coordinates for the journey tracker. Keeping these
@@ -3590,6 +3833,7 @@ pub fn vote_for_party_leader(
         return Err("Dead characters cannot vote".into());
     }
     let party_id = voter.party_id.ok_or("Voter has no party")?;
+    require_no_unresolved_encounter(ctx, &party_id)?;
     ctx.db
         .party()
         .id()
@@ -4436,6 +4680,7 @@ pub fn accept_party_join_request(
     let Some(party) = ctx.db.party().id().find(&request.party_id) else {
         return Err("Party not found".into());
     };
+    require_no_unresolved_encounter(ctx, &request.party_id)?;
     if party.leader_id != leader_id {
         return Err("Only the party leader can accept join requests".into());
     }
@@ -4455,6 +4700,7 @@ pub fn accept_party_join_request(
         .find(request.character_id)
         .ok_or("Applicant not found")?;
     let source_party_id = character.party_id.clone().ok_or("Applicant has no party")?;
+    require_no_unresolved_encounter(ctx, &source_party_id)?;
     let source_party = ctx
         .db
         .party()
@@ -4660,6 +4906,7 @@ pub fn transfer_party_item(
     inventory_item_id: u64,
     quantity: u32,
 ) -> Result<(), String> {
+    require_character_no_unresolved_encounter(ctx, from_character_id)?;
     crate::character::require_living_character(ctx, from_character_id)?;
     crate::character::require_living_character(ctx, to_character_id)?;
     if quantity == 0 || from_character_id == to_character_id {
@@ -5160,6 +5407,7 @@ pub fn deposit_party_inventory_item(
     inventory_item_id: u64,
     quantity: u32,
 ) -> Result<(), String> {
+    require_character_no_unresolved_encounter(ctx, character_id)?;
     crate::character::require_living_character(ctx, character_id)?;
     let character = ctx
         .db
@@ -5397,6 +5645,7 @@ pub fn withdraw_party_inventory_item(
     party_inventory_item_id: u64,
     quantity: u32,
 ) -> Result<(), String> {
+    require_character_no_unresolved_encounter(ctx, character_id)?;
     crate::character::require_living_character(ctx, character_id)?;
     let character = ctx
         .db
@@ -5506,6 +5755,19 @@ pub fn liquidate_party_inventory(
     if character.current_settlement_id.as_deref() != Some(&settlement_id) {
         return Err("Character must be at this settlement to liquidate party assets".into());
     }
+    if require_settlement_service(
+        ctx,
+        &settlement_id,
+        adventuresim_world_schema::SettlementService::Market,
+    )
+    .is_err()
+    {
+        require_settlement_service(
+            ctx,
+            &settlement_id,
+            adventuresim_world_schema::SettlementService::GeneralStore,
+        )?;
+    }
     let party_id = character.party_id.ok_or("Character has no party")?;
     let mut staged = Vec::new();
     let mut proceeds = 0_u64;
@@ -5562,6 +5824,7 @@ pub fn discard_inventory_items(
     inventory_item_ids: Vec<u64>,
     quantities: Vec<u32>,
 ) -> Result<(), String> {
+    require_character_no_unresolved_encounter(ctx, character_id)?;
     crate::character::require_living_character(ctx, character_id)?;
     if inventory_item_ids.is_empty() || inventory_item_ids.len() != quantities.len() {
         return Err("Discarded item IDs and quantities must be non-empty and aligned".into());
@@ -5618,6 +5881,7 @@ pub fn finalize_party_offer(
     quantities: Vec<u32>,
 ) -> Result<(), String> {
     for character_id in from_character_ids.iter().chain(&to_character_ids) {
+        require_character_no_unresolved_encounter(ctx, *character_id)?;
         crate::character::require_living_character(ctx, *character_id)?;
     }
     if from_character_ids.len() != to_character_ids.len()
@@ -5683,6 +5947,19 @@ pub fn finalize_merchant_trade(
     party_scope: bool,
 ) -> Result<(), String> {
     crate::character::require_living_character(ctx, character_id)?;
+    if require_settlement_service(
+        ctx,
+        &settlement_id,
+        adventuresim_world_schema::SettlementService::Market,
+    )
+    .is_err()
+    {
+        require_settlement_service(
+            ctx,
+            &settlement_id,
+            adventuresim_world_schema::SettlementService::GeneralStore,
+        )?;
+    }
     if buy_item_ids.len() != buy_quantities.len()
         || sell_inventory_ids.len() != sell_quantities.len()
     {
@@ -5695,6 +5972,25 @@ pub fn finalize_merchant_trade(
         return Err("Character must be at this settlement to trade".into());
     }
     let party_id = character.party_id.clone();
+    let settlement = ctx
+        .db
+        .settlement()
+        .id()
+        .find(&settlement_id)
+        .ok_or("Settlement not found")?;
+    let speaker = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character skills not found")?
+        .oral_languages;
+    let mut merchant = adventuresim_world_schema::OralLanguageHours::default();
+    *merchant.direct_mut(settlement.languages.dominant_german()) =
+        adventuresim_world_schema::ORAL_FLUENCY_HOURS;
+    let (_, shared_language) =
+        adventuresim_world_schema::best_common_oral_language(speaker, merchant);
+    let settlement_economy = settlement.economy.clone();
     // Sales are inventory-instance operations. Preserve each submitted stack
     // and quantity rather than netting by item ID, which can assign the whole
     // net sale to every matching stack.
@@ -5717,8 +6013,30 @@ pub fn finalize_merchant_trade(
         {
             return Err("Invalid merchant purchase".into());
         }
+        use adventuresim_core::settlement_economy::{CatalogKind as C, Storefront as S};
+        let catalog_kind = crate::item::economy_catalog_kind(item.kind);
+        let storefront = match catalog_kind {
+            C::Weapon | C::Shield => S::Weapons,
+            C::Armor => S::Armor,
+            C::Clothing => S::Clothing,
+            C::Food => S::Inn,
+            _ => S::General,
+        };
+        if !adventuresim_core::settlement_economy::storefront_stocks(
+            &settlement_economy,
+            storefront,
+            item_id,
+            catalog_kind,
+        ) {
+            return Err("This settlement does not stock that merchant item".into());
+        }
         let line = adventuresim_core::strategic_economy::checked_merchant_line_total(
-            adventuresim_core::strategic_economy::merchant_buy_price(item.base_value.unwrap_or(1)),
+            adventuresim_core::strategic_economy::language_adjusted_buy_price(
+                adventuresim_core::strategic_economy::merchant_buy_price(
+                    item.base_value.unwrap_or(1),
+                ),
+                shared_language,
+            ),
             *quantity,
         )
         .ok_or("Merchant purchase total overflow")?;
@@ -5779,12 +6097,21 @@ pub fn finalize_merchant_trade(
             if *quantity != available || !value.is_finite() || value < 0.0 {
                 return Err("Food batches must be sold as complete valid lots".into());
             }
-            adventuresim_core::strategic_economy::merchant_sell_food_lot_value(value)
-                .ok_or("Food lot has invalid value")?
+            let base = adventuresim_core::strategic_economy::merchant_sell_food_lot_value(value)
+                .ok_or("Food lot has invalid value")?;
+            u64::from(
+                adventuresim_core::strategic_economy::language_adjusted_sell_price(
+                    u32::try_from(base).map_err(|_| "Food lot quote overflow")?,
+                    shared_language,
+                ),
+            )
         } else {
             adventuresim_core::strategic_economy::checked_merchant_line_total(
-                adventuresim_core::strategic_economy::merchant_sell_price(
-                    item.base_value.unwrap_or(1),
+                adventuresim_core::strategic_economy::language_adjusted_sell_price(
+                    adventuresim_core::strategic_economy::merchant_sell_price(
+                        item.base_value.unwrap_or(1),
+                    ),
+                    shared_language,
                 ),
                 *quantity,
             )
@@ -5946,6 +6273,7 @@ pub fn finalize_merchant_trade(
 
 #[reducer]
 pub fn leave_party(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+    require_character_no_unresolved_encounter(ctx, character_id)?;
     crate::character::require_living_character(ctx, character_id)?;
     remove_party_member(ctx, character_id, character_id)
 }
@@ -5958,6 +6286,7 @@ pub fn remove_party_member(
     actor_character_id: u64,
     member_character_id: u64,
 ) -> Result<(), String> {
+    require_character_no_unresolved_encounter(ctx, actor_character_id)?;
     crate::character::require_living_character(ctx, actor_character_id)?;
     let Some(actor) = ctx.db.character().id().find(actor_character_id) else {
         return Err("Acting character not found".into());
@@ -6047,6 +6376,7 @@ fn settle_temporary_member_stake(
 
 #[reducer]
 pub fn disband_party(ctx: &ReducerContext, leader_id: u64, party_id: String) -> Result<(), String> {
+    require_no_unresolved_encounter(ctx, &party_id)?;
     crate::character::require_living_character(ctx, leader_id)?;
     let Some(party) = ctx.db.party().id().find(&party_id) else {
         return Err("Party not found".into());
@@ -6208,6 +6538,7 @@ pub fn abandon_quest(
     character_id: u64,
     quest_id: String,
 ) -> Result<(), String> {
+    require_character_no_unresolved_encounter(ctx, character_id)?;
     crate::character::require_living_character(ctx, character_id)?;
     let Some(character) = ctx.db.character().id().find(character_id) else {
         return Err("Character not found".into());
@@ -6894,6 +7225,16 @@ fn start_party_journey(
     departure_minute: u64,
     route: Option<&JourneyRoutePlan>,
 ) -> Result<(), String> {
+    require_no_unresolved_encounter(ctx, &party.id)?;
+    if ctx
+        .db
+        .strategic_encounter()
+        .party_id()
+        .find(&party.id)
+        .is_some()
+    {
+        ctx.db.strategic_encounter().party_id().delete(&party.id);
+    }
     if ctx.db.party_journey().party_id().find(&party.id).is_some() {
         ctx.db.party_journey().party_id().delete(&party.id);
     }
@@ -6965,6 +7306,13 @@ fn start_party_journey(
         fixed_camp_minutes: party.fixed_camp_minutes,
     });
     ctx.db
+        .party_journey_encounter_authority()
+        .insert(PartyJourneyEncounterAuthority {
+            party_id: party.id.clone(),
+            seed: ctx.random(),
+            next_roll: 1,
+        });
+    ctx.db
         .party_journey_itinerary()
         .insert(PartyJourneyItinerary {
             party_id: party.id.clone(),
@@ -7010,6 +7358,24 @@ fn record_party_journey_camp(
     }
     ctx.db.party_journey().party_id().update(journey);
     Ok(())
+}
+
+fn record_party_journey_interruption(ctx: &ReducerContext, party_id: &str, movement_minutes: u64) {
+    if let Some(mut journey) = ctx
+        .db
+        .party_journey()
+        .party_id()
+        .find(&party_id.to_string())
+    {
+        journey.completed_minutes = journey
+            .completed_minutes
+            .saturating_add(movement_minutes)
+            .min(journey.total_minutes);
+        journey.completed_elapsed_minutes = journey
+            .completed_elapsed_minutes
+            .saturating_add(movement_minutes);
+        ctx.db.party_journey().party_id().update(journey);
+    }
 }
 
 /// Award conserved terrain exposure for the exact movement interval about to
@@ -7059,6 +7425,34 @@ fn train_party_terrain_movement(
     Ok(())
 }
 
+/// Give each traveler at most one interval of conversational exposure. Choices
+/// are made from one sorted pre-gain snapshot, so party iteration cannot affect
+/// the result and additional companions cannot multiply elapsed time.
+fn train_party_oral_communication(ctx: &ReducerContext, party_id: &str, movement_minutes: u64) {
+    if movement_minutes == 0 {
+        return;
+    }
+    let mut snapshot: Vec<_> = living_party_member_ids(ctx, party_id)
+        .into_iter()
+        .filter_map(|id| {
+            ctx.db
+                .character_skills()
+                .character_id()
+                .find(id)
+                .map(|skills| (id, skills.oral_languages))
+        })
+        .collect();
+    snapshot.sort_by_key(|(id, _)| *id);
+    let interval_hours = movement_minutes as f32 / 60.0;
+    let gains = adventuresim_world_schema::party_oral_training_gains(&snapshot, interval_hours);
+    for (id, language, hours) in gains {
+        if let Some(mut skills) = ctx.db.character_skills().character_id().find(id) {
+            skills.oral_languages.add_direct(language, hours);
+            ctx.db.character_skills().character_id().update(skills);
+        }
+    }
+}
+
 fn terrain_training_exposure(spans: &[JourneyTerrainSpan], start: u64, end: u64) -> [f32; 4] {
     let mut exposure = [0.0_f32; 4];
     for span in spans {
@@ -7104,6 +7498,7 @@ fn advance_party_movement(
     // Training is committed only after every participant's authoritative
     // clock has committed the same safe movement prefix.
     train_party_terrain_movement(ctx, party_id, actual_minutes)?;
+    train_party_oral_communication(ctx, party_id, actual_minutes);
     Ok((actual_minutes, all_survived))
 }
 
@@ -7313,6 +7708,18 @@ fn finish_party_journey(ctx: &ReducerContext, party_id: &str) {
     }
     if ctx
         .db
+        .party_journey_encounter_authority()
+        .party_id()
+        .find(&party_id)
+        .is_some()
+    {
+        ctx.db
+            .party_journey_encounter_authority()
+            .party_id()
+            .delete(&party_id);
+    }
+    if ctx
+        .db
         .party_journey_route()
         .party_id()
         .find(&party_id)
@@ -7387,6 +7794,1004 @@ fn route_position_at_minute(route: &PartyJourneyRoute, minute: u64) -> Option<(f
         traversed = traversed.saturating_add(length);
     }
     route.points.last().map(coordinate)
+}
+
+fn unresolved_encounter(ctx: &ReducerContext, party_id: &str) -> Option<StrategicEncounter> {
+    ctx.db
+        .strategic_encounter()
+        .party_id()
+        .find(&party_id.to_string())
+        .filter(|encounter| encounter.status == "awaiting_choice")
+}
+
+pub(crate) fn require_no_unresolved_encounter(
+    ctx: &ReducerContext,
+    party_id: &str,
+) -> Result<(), String> {
+    if unresolved_encounter(ctx, party_id).is_some() {
+        Err("Resolve the strategic encounter before changing or continuing travel".into())
+    } else {
+        Ok(())
+    }
+}
+
+pub(crate) fn require_character_no_unresolved_encounter(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<(), String> {
+    if let Some(party_id) = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .and_then(|character| character.party_id)
+    {
+        require_no_unresolved_encounter(ctx, &party_id)?;
+    }
+    Ok(())
+}
+
+fn encounter_terrain_at(route: Option<&PartyJourneyRoute>, minute: u64) -> JourneyTerrainKind {
+    route
+        .and_then(|route| {
+            route.spans.iter().find(|span| {
+                minute >= span.start_minute
+                    && minute < span.start_minute.saturating_add(span.duration_minutes)
+            })
+        })
+        .map_or(JourneyTerrainKind::Open, |span| span.kind)
+}
+
+fn core_encounter_terrain(
+    kind: JourneyTerrainKind,
+) -> adventuresim_core::encounter::EncounterTerrain {
+    use adventuresim_core::encounter::EncounterTerrain;
+    match kind {
+        JourneyTerrainKind::Road => EncounterTerrain::Road,
+        JourneyTerrainKind::Open => EncounterTerrain::Open,
+        JourneyTerrainKind::SparseWoods => EncounterTerrain::SparseWoods,
+        JourneyTerrainKind::DeepWoods => EncounterTerrain::DeepWoods,
+    }
+}
+
+fn journey_fallback_position(
+    ctx: &ReducerContext,
+    journey: &PartyJourney,
+    minute: u64,
+) -> (f64, f64) {
+    let endpoint = |kind: &str, id: &str| -> Option<(f64, f64)> {
+        match kind {
+            "settlement" => ctx
+                .db
+                .settlement()
+                .id()
+                .find(&id.to_string())
+                .map(|v| (v.coord_x, v.coord_y)),
+            "quest" => ctx
+                .db
+                .quest()
+                .id()
+                .find(&id.to_string())
+                .map(|v| (v.location_coord_x, v.location_coord_y)),
+            _ => None,
+        }
+    };
+    let start = endpoint(&journey.origin_kind, &journey.origin_id).unwrap_or((0.0, 0.0));
+    let end = endpoint(&journey.destination_kind, &journey.destination_id).unwrap_or(start);
+    let progress = minute.min(journey.total_minutes) as f64 / journey.total_minutes.max(1) as f64;
+    (
+        start.0 + (end.0 - start.0) * progress,
+        start.1 + (end.1 - start.1) * progress,
+    )
+}
+
+fn party_encumbrance_remaining_basis_points(
+    ctx: &ReducerContext,
+    party_id: &str,
+    member_ids: &[u64],
+) -> u32 {
+    let personal_burden: f32 = member_ids
+        .iter()
+        .flat_map(|member_id| ctx.db.inventory_item().character_id().filter(*member_id))
+        .map(|row| {
+            ctx.db
+                .item()
+                .id()
+                .find(&row.item_id)
+                .map_or(0.0, |item| item.weight * row.quantity as f32)
+        })
+        .sum();
+    let party_burden: f32 = ctx
+        .db
+        .party_inventory_item()
+        .party_id()
+        .filter(party_id)
+        .map(|row| {
+            ctx.db
+                .item()
+                .id()
+                .find(&row.item_id)
+                .map_or(0.0, |item| item.weight * row.quantity as f32)
+        })
+        .sum();
+    let capacity: f32 = member_ids
+        .iter()
+        .map(|member_id| {
+            let Some(attributes) = ctx
+                .db
+                .character_attributes()
+                .character_id()
+                .find(*member_id)
+            else {
+                return 0.0;
+            };
+            let Some(limbs) = ctx.db.character_limbs().character_id().find(*member_id) else {
+                return 0.0;
+            };
+            let adjusted_leg_strength = (attributes.left_leg_strength * limbs.left_leg_health
+                + attributes.right_leg_strength * limbs.right_leg_health)
+                * 0.5;
+            adventuresim_core::equipment::encumbrance_capacity_kg(adjusted_leg_strength)
+        })
+        .sum();
+    let body_burden = member_ids.len() as f32 * 70.0;
+    let remaining = adventuresim_core::equipment::encumbrance_remaining_multiplier(
+        body_burden + personal_burden + party_burden,
+        capacity,
+    );
+    (remaining.clamp(0.0, 1.0) * 10_000.0).round() as u32
+}
+
+fn current_party_fatigue_percent(ctx: &ReducerContext, member_ids: &[u64]) -> u8 {
+    member_ids
+        .iter()
+        .filter_map(|member_id| {
+            let attributes = ctx
+                .db
+                .character_attributes()
+                .character_id()
+                .find(*member_id)?;
+            let limbs = ctx.db.character_limbs().character_id().find(*member_id)?;
+            let stats = ctx.db.character_stats().character_id().find(*member_id)?;
+            let capacity = attributes
+                .attr_by_parts(SimpleAttribute::Endurance, &limbs)
+                .max(0.01)
+                * 1_000.0;
+            Some(((stats.calories_used.max(0.0) / capacity) * 100.0).round() as u16)
+        })
+        .max()
+        .unwrap_or(0)
+        .min(100) as u8
+}
+
+fn whole_party_sneak_score(ctx: &ReducerContext, member_ids: &[u64]) -> u16 {
+    member_ids
+        .iter()
+        .filter_map(|member_id| {
+            let skills = ctx.db.character_skills().character_id().find(*member_id)?;
+            let attributes = ctx
+                .db
+                .character_attributes()
+                .character_id()
+                .find(*member_id)?;
+            let training =
+                adventuresim_core::prelude::Skill::Stealth.training_rank(skills.stealth_hours);
+            let agility = (attributes.left_arm_agility + attributes.right_arm_agility) * 0.5;
+            Some((training.min(agility).max(0.0) * 100.0).round() as u16)
+        })
+        .min()
+        .unwrap_or(0)
+}
+
+/// Truncates a walking leg at its first canonical random-encounter boundary.
+/// The caller advances ordinary time/needs/fatigue by the returned duration.
+fn maybe_interrupt_travel(
+    ctx: &ReducerContext,
+    party_id: &str,
+    requested_minutes: u64,
+) -> Result<(u64, Option<StrategicEncounter>, u64), String> {
+    require_no_unresolved_encounter(ctx, party_id)?;
+    let Some(journey) = ctx
+        .db
+        .party_journey()
+        .party_id()
+        .find(&party_id.to_string())
+    else {
+        return Ok((requested_minutes, None, 1));
+    };
+    let authority = ctx
+        .db
+        .party_journey_encounter_authority()
+        .party_id()
+        .find(&party_id.to_string())
+        .ok_or("Journey encounter authority is missing")?;
+    let route = ctx
+        .db
+        .party_journey_route()
+        .party_id()
+        .find(&party_id.to_string());
+    let active_quest_archetype = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id.to_string())
+        .and_then(|party| party.active_quest_id)
+        .filter(|quest_id| {
+            journey.destination_kind == "quest" && *quest_id == journey.destination_id
+        })
+        .and_then(|quest_id| ctx.db.quest().id().find(&quest_id))
+        .and_then(|quest| quest_encounter_archetype(&quest.enemy_type));
+    let member_ids = living_party_member_ids(ctx, party_id);
+    let capable = member_ids
+        .iter()
+        .filter(|id| {
+            ctx.db
+                .character_capability()
+                .character_id()
+                .find(**id)
+                .is_some_and(|capability| capability.melee || capability.ranged)
+        })
+        .count()
+        .max(1) as u16;
+    let completed = journey.completed_minutes;
+    let absolute_start = journey
+        .departure_minute
+        .saturating_add(journey.completed_elapsed_minutes);
+    let selection = adventuresim_core::encounter::first_encounter(
+        authority.seed,
+        completed,
+        requested_minutes,
+        |minute| {
+            let terrain = core_encounter_terrain(encounter_terrain_at(route.as_ref(), minute));
+            let absolute_minute = absolute_start.saturating_add(minute.saturating_sub(completed));
+            let night = absolute_minute % 1_440 < 360 || absolute_minute % 1_440 >= 1_200;
+            adventuresim_core::encounter::EncounterContext {
+                terrain,
+                night,
+                accepted_active_quest: active_quest_archetype.map(|archetype| {
+                    adventuresim_core::encounter::AcceptedQuestInfluence {
+                        archetype,
+                        distance_minutes: journey.total_minutes.saturating_sub(minute),
+                    }
+                }),
+                combat_capable_members: capable,
+                party_awareness: 250,
+                enemy_awareness: 250
+                    + if night {
+                        adventuresim_core::encounter::NIGHT_ENEMY_AWARENESS_BONUS
+                    } else {
+                        0
+                    },
+                party_speed_m_per_minute:
+                    adventuresim_core::encounter::PARTY_WALKING_SPEED_M_PER_MINUTE,
+            }
+        },
+    );
+    let crossed_end = completed.saturating_add(requested_minutes);
+    let next_roll = crossed_end / adventuresim_core::encounter::ENCOUNTER_ROLL_INTERVAL_MINUTES + 1;
+    let Some(selection) = selection else {
+        return Ok((requested_minutes, None, next_roll));
+    };
+
+    use adventuresim_core::encounter::{Awareness, EncounterArchetype};
+    let (party_aware, enemy_aware) = match selection.awareness {
+        Awareness::PartyOnly => (true, false),
+        Awareness::EnemyOnly => (false, true),
+        Awareness::Both => (true, true),
+        Awareness::Neither => return Ok((requested_minutes, None, next_roll)),
+    };
+    let archetype = match selection.archetype {
+        EncounterArchetype::Bandits => "bandits",
+        EncounterArchetype::Goblins => "goblins",
+        EncounterArchetype::Undead => "undead",
+    };
+    let encounter_terrain = core_encounter_terrain(encounter_terrain_at(
+        route.as_ref(),
+        selection.boundary_minute,
+    ));
+    let party_speed = adventuresim_core::encounter::sustainable_speed_m_per_minute(
+        journey.fatigue_percent,
+        party_encumbrance_remaining_basis_points(ctx, party_id, &member_ids),
+        member_ids.len().min(u16::MAX as usize) as u16,
+        encounter_terrain,
+    );
+    let enemy_speed = selection.archetype.enemy_speed_m_per_minute();
+    let run_eligible =
+        adventuresim_core::encounter::run_is_eligible(party_speed, selection.archetype);
+    let choices = adventuresim_core::encounter::available_choices(
+        selection.awareness,
+        selection.archetype,
+        party_speed,
+    )
+    .into_iter()
+    .map(|choice| match choice {
+        adventuresim_core::encounter::EncounterChoice::Sneak => "sneak",
+        adventuresim_core::encounter::EncounterChoice::Detour => "detour",
+        adventuresim_core::encounter::EncounterChoice::Attack => "attack",
+        adventuresim_core::encounter::EncounterChoice::Run => "run",
+        adventuresim_core::encounter::EncounterChoice::Surrender => "surrender",
+    })
+    .map(str::to_string)
+    .collect();
+    let position = route
+        .as_ref()
+        .and_then(|route| route_position_at_minute(route, selection.boundary_minute))
+        .unwrap_or_else(|| journey_fallback_position(ctx, &journey, selection.boundary_minute));
+    let terrain = encounter_terrain_at(route.as_ref(), selection.boundary_minute);
+    let mut encounter = StrategicEncounter {
+        party_id: party_id.into(),
+        encounter_id: format!("{}:{}", party_id, selection.roll_index),
+        archetype: archetype.into(),
+        enemy_count: selection.count,
+        roll_index: selection.roll_index,
+        journey_movement_minute: selection.boundary_minute,
+        journey_elapsed_minute: journey
+            .completed_elapsed_minutes
+            .saturating_add(selection.boundary_minute.saturating_sub(completed)),
+        absolute_minute: absolute_start
+            .saturating_add(selection.boundary_minute.saturating_sub(completed)),
+        longitude_e7: (position.0 * 10_000_000.0).round() as i32,
+        latitude_e7: (position.1 * 10_000_000.0).round() as i32,
+        terrain: format!("{terrain:?}").to_ascii_lowercase(),
+        party_aware,
+        enemy_aware,
+        available_choices: choices,
+        status: "awaiting_choice".into(),
+        selected_choice: None,
+        selection_explanation: format!(
+            "Canonical journey roll {} in {:?}; party awareness {} vs enemy awareness {}",
+            selection.roll_index, terrain, selection.party_roll, selection.enemy_roll
+        ),
+        party_speed_m_per_minute: party_speed,
+        enemy_speed_m_per_minute: enemy_speed,
+        run_ineligibility: (!run_eligible).then(|| {
+            format!(
+                "Party speed {party_speed} m/min does not exceed enemy speed {enemy_speed} m/min"
+            )
+        }),
+        penalty_minutes: 0,
+        loss_preview: Vec::new(),
+        outcome: None,
+    };
+    if encounter
+        .available_choices
+        .iter()
+        .any(|choice| choice == "surrender")
+    {
+        encounter.loss_preview = encounter_loss_preview(ctx, party_id);
+    }
+    Ok((
+        selection.boundary_minute.saturating_sub(completed),
+        Some(encounter),
+        selection.roll_index.saturating_add(1),
+    ))
+}
+
+fn advance_party_movement_until_encounter(
+    ctx: &ReducerContext,
+    party_id: &str,
+    traveler_ids: &[u64],
+    proposed_leg_minutes: u64,
+) -> Result<(u64, Option<StrategicEncounter>, u64), String> {
+    let (requested_leg_minutes, mut encounter, mut next_roll) =
+        maybe_interrupt_travel(ctx, party_id, proposed_leg_minutes)?;
+    let (actual_minutes, _) =
+        advance_party_movement(ctx, party_id, traveler_ids, requested_leg_minutes)?;
+    if actual_minutes < requested_leg_minutes {
+        let (rescanned_minutes, rescanned_encounter, rescanned_next_roll) =
+            maybe_interrupt_travel(ctx, party_id, actual_minutes)?;
+        debug_assert_eq!(rescanned_minutes, actual_minutes);
+        encounter = rescanned_encounter;
+        next_roll = rescanned_next_roll;
+    }
+    Ok((actual_minutes, encounter, next_roll))
+}
+
+/// Commits the scan cursor and, when one was found, materializes the encounter
+/// only after every traveler has reached the same canonical boundary.
+fn commit_encounter_scan(
+    ctx: &ReducerContext,
+    party_id: &str,
+    next_roll: u64,
+    encounter: Option<StrategicEncounter>,
+) -> Result<(), String> {
+    let mut authority = ctx
+        .db
+        .party_journey_encounter_authority()
+        .party_id()
+        .find(&party_id.to_string())
+        .ok_or("Journey encounter authority is missing")?;
+    authority.next_roll = next_roll;
+    let seed = authority.seed;
+    ctx.db
+        .party_journey_encounter_authority()
+        .party_id()
+        .update(authority);
+
+    let Some(mut encounter) = encounter else {
+        return Ok(());
+    };
+    let member_ids = living_party_member_ids(ctx, party_id);
+    if member_ids.is_empty() {
+        return Err("A party with no living members cannot enter an encounter".into());
+    }
+    let capable = member_ids
+        .iter()
+        .filter(|id| {
+            ctx.db
+                .character_capability()
+                .character_id()
+                .find(**id)
+                .is_some_and(|capability| capability.melee || capability.ranged)
+        })
+        .count()
+        .max(1) as u16;
+    let archetype = match encounter.archetype.as_str() {
+        "bandits" => adventuresim_core::encounter::EncounterArchetype::Bandits,
+        "goblins" => adventuresim_core::encounter::EncounterArchetype::Goblins,
+        "undead" => adventuresim_core::encounter::EncounterArchetype::Undead,
+        _ => return Err("Encounter has an unknown archetype".into()),
+    };
+    let awareness = match (encounter.party_aware, encounter.enemy_aware) {
+        (true, false) => adventuresim_core::encounter::Awareness::PartyOnly,
+        (false, true) => adventuresim_core::encounter::Awareness::EnemyOnly,
+        (true, true) => adventuresim_core::encounter::Awareness::Both,
+        (false, false) => return Err("Encounter has no aware participants".into()),
+    };
+    let terrain = core_encounter_terrain(match encounter.terrain.as_str() {
+        "road" => JourneyTerrainKind::Road,
+        "open" => JourneyTerrainKind::Open,
+        "sparsewoods" | "sparse_woods" => JourneyTerrainKind::SparseWoods,
+        "deepwoods" | "deep_woods" => JourneyTerrainKind::DeepWoods,
+        _ => JourneyTerrainKind::Open,
+    });
+    encounter.enemy_count =
+        adventuresim_core::encounter::enemy_count(seed, encounter.roll_index, capable);
+    encounter.party_speed_m_per_minute =
+        adventuresim_core::encounter::sustainable_speed_m_per_minute(
+            current_party_fatigue_percent(ctx, &member_ids),
+            party_encumbrance_remaining_basis_points(ctx, party_id, &member_ids),
+            member_ids.len().min(u16::MAX as usize) as u16,
+            terrain,
+        );
+    let run_eligible = adventuresim_core::encounter::run_is_eligible(
+        encounter.party_speed_m_per_minute,
+        archetype,
+    );
+    encounter.available_choices = adventuresim_core::encounter::available_choices(
+        awareness,
+        archetype,
+        encounter.party_speed_m_per_minute,
+    )
+    .into_iter()
+    .map(|choice| match choice {
+        adventuresim_core::encounter::EncounterChoice::Sneak => "sneak",
+        adventuresim_core::encounter::EncounterChoice::Detour => "detour",
+        adventuresim_core::encounter::EncounterChoice::Attack => "attack",
+        adventuresim_core::encounter::EncounterChoice::Run => "run",
+        adventuresim_core::encounter::EncounterChoice::Surrender => "surrender",
+    })
+    .map(str::to_string)
+    .collect();
+    encounter.run_ineligibility = (!run_eligible).then(|| {
+        format!(
+            "Party speed {} m/min does not exceed enemy speed {} m/min",
+            encounter.party_speed_m_per_minute, encounter.enemy_speed_m_per_minute
+        )
+    });
+    encounter.loss_preview = if encounter
+        .available_choices
+        .iter()
+        .any(|choice| choice == "surrender")
+    {
+        encounter_loss_preview(ctx, party_id)
+    } else {
+        Vec::new()
+    };
+    if ctx
+        .db
+        .strategic_encounter()
+        .party_id()
+        .find(&party_id.to_string())
+        .is_some()
+    {
+        ctx.db.strategic_encounter().party_id().update(encounter);
+    } else {
+        ctx.db.strategic_encounter().insert(encounter);
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ParsedEncounterChoice {
+    Sneak,
+    Detour,
+    Attack,
+    Run,
+    Surrender,
+}
+
+impl ParsedEncounterChoice {
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "sneak" => Ok(Self::Sneak),
+            "detour" => Ok(Self::Detour),
+            "attack" => Ok(Self::Attack),
+            "run" => Ok(Self::Run),
+            "surrender" => Ok(Self::Surrender),
+            _ => Err("Unknown encounter choice".into()),
+        }
+    }
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Sneak => "sneak",
+            Self::Detour => "detour",
+            Self::Attack => "attack",
+            Self::Run => "run",
+            Self::Surrender => "surrender",
+        }
+    }
+}
+
+fn encounter_loss_preview(ctx: &ReducerContext, party_id: &str) -> Vec<StrategicEncounterLoss> {
+    let minimum = adventuresim_core::encounter::SURRENDER_MINIMUM_ITEM_VALUE;
+    let mut losses = Vec::new();
+    for row in ctx.db.party_inventory_item().party_id().filter(party_id) {
+        let currency = crate::item::is_currency(ctx, &row.item_id);
+        let value = ctx
+            .db
+            .item()
+            .id()
+            .find(&row.item_id)
+            .and_then(|item| item.base_value)
+            .unwrap_or(0);
+        if currency || value >= minimum {
+            losses.push(StrategicEncounterLoss {
+                owner_kind: "party".into(),
+                owner_id: 0,
+                inventory_id: row.id,
+                item_id: row.item_id,
+                quantity: row.quantity,
+                value_each: value,
+            });
+        }
+    }
+    let mut member_ids: Vec<_> = ctx
+        .db
+        .party_member()
+        .party_id()
+        .filter(party_id)
+        .map(|membership| membership.character_id)
+        .collect();
+    member_ids.sort_unstable();
+    member_ids.dedup();
+    for member_id in member_ids {
+        for row in ctx.db.inventory_item().character_id().filter(member_id) {
+            let currency = crate::item::is_currency(ctx, &row.item_id);
+            let value = ctx
+                .db
+                .item()
+                .id()
+                .find(&row.item_id)
+                .and_then(|item| item.base_value)
+                .unwrap_or(0);
+            if currency || value >= minimum {
+                losses.push(StrategicEncounterLoss {
+                    owner_kind: "member".into(),
+                    owner_id: member_id,
+                    inventory_id: row.id,
+                    item_id: row.item_id,
+                    quantity: row.quantity,
+                    value_each: value,
+                });
+            }
+        }
+    }
+    losses.sort_by(|a, b| {
+        (&a.owner_kind, a.owner_id, a.inventory_id).cmp(&(
+            &b.owner_kind,
+            b.owner_id,
+            b.inventory_id,
+        ))
+    });
+    losses
+}
+
+fn commit_encounter_surrender(
+    ctx: &ReducerContext,
+    party_id: &str,
+    current: &[StrategicEncounterLoss],
+) -> Result<(), String> {
+    for loss in current {
+        if loss.owner_kind == "party" {
+            ctx.db
+                .party_item_condition()
+                .party_inventory_item_id()
+                .delete(loss.inventory_id);
+            ctx.db.party_inventory_item().id().delete(loss.inventory_id);
+        } else {
+            if let Some(mut equip) = ctx.db.character_equip().character_id().find(loss.owner_id)
+                && crate::repair::is_equipped(&equip, loss.inventory_id)
+            {
+                crate::repair::unequip(&mut equip, loss.inventory_id);
+                ctx.db.character_equip().character_id().update(equip);
+            }
+            ctx.db
+                .item_condition()
+                .inventory_item_id()
+                .delete(loss.inventory_id);
+            ctx.db.inventory_item().id().delete(loss.inventory_id);
+        }
+    }
+    reconcile_party_pool_ledger(ctx, party_id)?;
+    for member_id in living_party_member_ids(ctx, party_id) {
+        crate::capability::refresh_character_capability(ctx, member_id)?;
+    }
+    Ok(())
+}
+
+fn reconcile_party_pool_ledger(ctx: &ReducerContext, party_id: &str) -> Result<(), String> {
+    let remaining_value = ctx
+        .db
+        .party_inventory_item()
+        .party_id()
+        .filter(party_id)
+        .try_fold(0_u64, |total, row| {
+            Ok::<_, String>(total.saturating_add(
+                objective_item_value(ctx, &row.item_id)?.saturating_mul(u64::from(row.quantity)),
+            ))
+        })?;
+    let mut stakes: Vec<_> = ctx.db.party_stake().party_id().filter(party_id).collect();
+    stakes.sort_by_key(|stake| stake.id);
+    let prior_reserve = ctx
+        .db
+        .party_inventory_state()
+        .party_id()
+        .find(&party_id.to_string())
+        .map_or(0, |state| state.reserve_value);
+    let total_claims = stakes.iter().fold(prior_reserve, |total, stake| {
+        total.saturating_add(stake.value)
+    });
+    let mut allocated = 0_u64;
+    for mut stake in stakes {
+        stake.value = if total_claims == 0 {
+            0
+        } else {
+            ((u128::from(stake.value) * u128::from(remaining_value)) / u128::from(total_claims))
+                as u64
+        };
+        allocated = allocated.saturating_add(stake.value);
+        ctx.db.party_stake().id().update(stake);
+    }
+    let reserve_value = remaining_value.saturating_sub(allocated);
+    if let Some(mut state) = ctx
+        .db
+        .party_inventory_state()
+        .party_id()
+        .find(&party_id.to_string())
+    {
+        state.reserve_value = reserve_value;
+        ctx.db.party_inventory_state().party_id().update(state);
+    } else {
+        ctx.db.party_inventory_state().insert(PartyInventoryState {
+            party_id: party_id.to_string(),
+            reserve_value,
+        });
+    }
+    Ok(())
+}
+
+fn encounter_core_terrain(value: &str) -> adventuresim_core::encounter::EncounterTerrain {
+    use adventuresim_core::encounter::EncounterTerrain;
+    match value {
+        "road" => EncounterTerrain::Road,
+        "sparsewoods" => EncounterTerrain::SparseWoods,
+        "deepwoods" => EncounterTerrain::DeepWoods,
+        _ => EncounterTerrain::Open,
+    }
+}
+
+fn advance_encounter_penalty(
+    ctx: &ReducerContext,
+    encounter: &mut StrategicEncounter,
+    choice: ParsedEncounterChoice,
+) -> Result<(), String> {
+    use adventuresim_core::encounter::EncounterChoice;
+    let core_choice = match choice {
+        ParsedEncounterChoice::Detour => EncounterChoice::Detour,
+        ParsedEncounterChoice::Run => EncounterChoice::Run,
+        _ => return Ok(()),
+    };
+    let minutes = adventuresim_core::encounter::penalty_minutes(
+        encounter_core_terrain(&encounter.terrain),
+        core_choice,
+    );
+    for member_id in living_party_member_ids(ctx, &encounter.party_id) {
+        if !advance_travel_time(ctx, member_id, minutes)? {
+            return Err(
+                "Every living party member must be able to complete the encounter delay".into(),
+            );
+        }
+    }
+    if let Some(mut journey) = ctx.db.party_journey().party_id().find(&encounter.party_id) {
+        journey.completed_elapsed_minutes =
+            journey.completed_elapsed_minutes.saturating_add(minutes);
+        ctx.db.party_journey().party_id().update(journey);
+    }
+    encounter.penalty_minutes = minutes;
+    Ok(())
+}
+
+/// Commit every persistent consequence shared by quest and random autoresolve.
+/// The battle itself remains transient; only its bounded summary and strategic
+/// condition effects cross into SpacetimeDB.
+fn commit_autoresolve_outcome(
+    ctx: &ReducerContext,
+    source_id: &str,
+    party_id: &str,
+    member_ids: &[u64],
+    defeat_morale_penalty: f32,
+    outcome: &adventuresim_core::autoresolve::BattleOutcome,
+) -> Result<(), String> {
+    record_autoresolve_report(ctx, source_id, party_id, outcome);
+    for member_id in member_ids {
+        crate::filth::deposit_now(
+            ctx,
+            *member_id,
+            crate::filth::FilthSubstance::Dirt,
+            None,
+            adventuresim_core::filth::COMBAT_DIRT,
+        )?;
+    }
+    for exchange in &outcome.log {
+        if exchange.cut_damage > 0.0 && member_ids.contains(&exchange.attacker_id) {
+            crate::filth::deposit_now(
+                ctx,
+                exchange.attacker_id,
+                crate::filth::FilthSubstance::Blood,
+                member_ids
+                    .contains(&exchange.defender_id)
+                    .then_some(exchange.defender_id),
+                (exchange.cut_damage * 35.0).ceil().clamp(1.0, 15.0) as u16,
+            )?;
+        }
+        if let Some(id) = exchange.weapon_inventory_item_id {
+            crate::repair::apply_impact(ctx, id, exchange.contact_stress);
+        }
+        if let Some(id) = exchange.defender_contact_item_id {
+            crate::repair::apply_impact(ctx, id, exchange.contact_stress);
+        }
+        if exchange.armor_contact
+            && exchange.contact_stress > 0.0
+            && let Some(equip) = ctx
+                .db
+                .character_equip()
+                .character_id()
+                .find(exchange.defender_id)
+        {
+            let armor_id = match exchange.body_part {
+                BodyPart::LeftArm => equip.left_arm_armor_id,
+                BodyPart::RightArm => equip.right_arm_armor_id,
+                BodyPart::LeftLeg => equip.left_leg_armor_id,
+                BodyPart::RightLeg => equip.right_leg_armor_id,
+                BodyPart::Chest => equip.chest_armor_id,
+                BodyPart::Stomach => equip.stomach_armor_id,
+                BodyPart::Head => equip.head_armor_id,
+            };
+            if let Some(id) = armor_id {
+                crate::repair::apply_impact(ctx, id, exchange.contact_stress);
+            }
+        }
+    }
+    for member in &outcome.allies {
+        consume_autoresolve_ammunition(ctx, member.id, member.ammunition_used);
+        for exchange in outcome
+            .log
+            .iter()
+            .filter(|exchange| exchange.defender_id == member.id && exchange.health_damage > 0.0)
+        {
+            let limb = match exchange.body_part {
+                BodyPart::LeftArm => crate::surgery::LimbRegion::LeftArm,
+                BodyPart::RightArm => crate::surgery::LimbRegion::RightArm,
+                BodyPart::LeftLeg => crate::surgery::LimbRegion::LeftLeg,
+                BodyPart::RightLeg => crate::surgery::LimbRegion::RightLeg,
+                BodyPart::Chest => crate::surgery::LimbRegion::Chest,
+                BodyPart::Stomach => crate::surgery::LimbRegion::Stomach,
+                BodyPart::Head => crate::surgery::LimbRegion::Head,
+            };
+            let projectile = exchange.projectile_kind.map(|kind| match kind {
+                adventuresim_core::autoresolve::CombatProjectileKind::Arrowhead => {
+                    crate::surgery::ProjectileKind::Arrowhead
+                }
+                adventuresim_core::autoresolve::CombatProjectileKind::Ball => {
+                    crate::surgery::ProjectileKind::Ball
+                }
+            });
+            crate::surgery::commit_hit_injury(
+                ctx,
+                member.id,
+                limb,
+                exchange.cut_damage,
+                exchange.blunt_damage,
+                projectile,
+            )?;
+        }
+        crate::condition::apply_blood_loss(ctx, member.id, member.blood_loss_fraction)?;
+        crate::capability::refresh_character_capability(ctx, member.id)?;
+    }
+    if outcome.victor != BattleVictor::Allies {
+        for member_id in member_ids {
+            crate::condition::record_morale_event(
+                ctx,
+                *member_id,
+                "defeat",
+                -defeat_morale_penalty,
+                Some(source_id.to_string()),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn resolve_random_encounter_battle(
+    ctx: &ReducerContext,
+    encounter: &StrategicEncounter,
+    seed: u64,
+    opening: BattleOpening,
+) -> Result<String, String> {
+    let member_ids = living_party_member_ids(ctx, &encounter.party_id);
+    let allies = member_ids
+        .iter()
+        .map(|id| {
+            let condition = crate::condition::refresh_character_strategic_condition(ctx, *id)?;
+            crate::capability::load_combatant(
+                ctx,
+                *id,
+                condition.incapacitation,
+                condition.pain,
+                condition.blood_loss,
+            )
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let difficulty = i32::from(encounter.enemy_count.max(1));
+    let enemies = (0..u64::from(encounter.enemy_count))
+        .map(|index| {
+            autoresolve_enemy(
+                u64::MAX.saturating_sub(index),
+                &encounter.archetype,
+                difficulty,
+            )
+        })
+        .collect();
+    let outcome = resolve_battle(allies, enemies, seed ^ encounter.roll_index, opening);
+    commit_autoresolve_outcome(
+        ctx,
+        &encounter.encounter_id,
+        &encounter.party_id,
+        &member_ids,
+        5.0 + f32::from(encounter.enemy_count),
+        &outcome,
+    )?;
+    if outcome.victor == BattleVictor::Allies {
+        if let Some(item_id) = autoresolve_drop(&encounter.archetype) {
+            add_to_party_inventory(
+                ctx,
+                &encounter.party_id,
+                item_id,
+                u32::from(encounter.enemy_count),
+            );
+        }
+        for member_id in &member_ids {
+            crate::condition::record_morale_event(
+                ctx,
+                *member_id,
+                "victory",
+                5.0 + f32::from(encounter.enemy_count),
+                Some(encounter.encounter_id.clone()),
+            )?;
+        }
+    }
+    Ok(match outcome.victor {
+        BattleVictor::Allies => "victory",
+        BattleVictor::Enemies => "defeat",
+        BattleVictor::Stalemate => "stalemate",
+    }
+    .into())
+}
+
+#[reducer]
+pub fn resolve_strategic_encounter(
+    ctx: &ReducerContext,
+    character_id: u64,
+    choice: String,
+) -> Result<(), String> {
+    require_strategic_character_authority(ctx, character_id)?;
+    crate::character::require_living_character(ctx, character_id)?;
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    let party_id = character.party_id.ok_or("Character is not in a party")?;
+    let party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != character_id {
+        return Err("Only the party leader can resolve an encounter".into());
+    }
+    let parsed = ParsedEncounterChoice::parse(&choice)?;
+    let mut encounter = unresolved_encounter(ctx, &party_id).ok_or("No unresolved encounter")?;
+    let seed = ctx
+        .db
+        .party_journey_encounter_authority()
+        .party_id()
+        .find(&party_id)
+        .ok_or("Journey encounter authority is missing")?
+        .seed;
+    if !encounter
+        .available_choices
+        .iter()
+        .any(|available| available == parsed.label())
+    {
+        return Err("That choice is not available for this encounter".into());
+    }
+    encounter.selected_choice = Some(parsed.label().into());
+    match parsed {
+        ParsedEncounterChoice::Sneak => {
+            if adventuresim_core::encounter::sneak_succeeds(
+                seed,
+                encounter.roll_index,
+                whole_party_sneak_score(ctx, &living_party_member_ids(ctx, &party_id)),
+                250,
+            ) {
+                encounter.outcome = Some("avoided".into());
+            } else {
+                encounter.outcome = Some(resolve_random_encounter_battle(
+                    ctx,
+                    &encounter,
+                    seed,
+                    BattleOpening::Normal,
+                )?);
+            }
+        }
+        ParsedEncounterChoice::Detour | ParsedEncounterChoice::Run => {
+            if parsed == ParsedEncounterChoice::Run
+                && encounter.party_speed_m_per_minute <= encounter.enemy_speed_m_per_minute
+            {
+                return Err("The party is not fast enough to run".into());
+            }
+            advance_encounter_penalty(ctx, &mut encounter, parsed)?;
+            encounter.outcome = Some("avoided".into());
+        }
+        ParsedEncounterChoice::Attack => {
+            let opening = match (encounter.party_aware, encounter.enemy_aware) {
+                (true, false) => BattleOpening::AlliesSurprise,
+                (false, true) => BattleOpening::EnemiesSurprise,
+                _ => BattleOpening::Normal,
+            };
+            encounter.outcome = Some(resolve_random_encounter_battle(
+                ctx, &encounter, seed, opening,
+            )?);
+        }
+        ParsedEncounterChoice::Surrender => {
+            let current = encounter_loss_preview(ctx, &party_id);
+            if current != encounter.loss_preview {
+                encounter.selected_choice = None;
+                encounter.loss_preview = current;
+                ctx.db.strategic_encounter().party_id().update(encounter);
+                return Ok(());
+            }
+            commit_encounter_surrender(ctx, &party_id, &current)?;
+            encounter.outcome = Some("surrendered".into());
+        }
+    }
+    encounter.status = "resolved".into();
+    ctx.db.strategic_encounter().party_id().update(encounter);
+    Ok(())
 }
 
 fn redirect_camped_party_to_settlement(
@@ -7545,8 +8950,8 @@ fn reconstruct_legacy_journey_coordinates(
 mod departure_invariant_tests {
     use super::{
         CampDurationMode, JourneyRoutePlan, JourneyRoutePoint, JourneyTerrainKind,
-        JourneyTerrainSpan, Party, PartyJourneyRoute, common_movement_prefix,
-        departure_snapshot_allows_travel, party_can_continue_travel,
+        JourneyTerrainSpan, JourneyTerrainWeights, Party, PartyJourneyRoute,
+        common_movement_prefix, departure_snapshot_allows_travel, party_can_continue_travel,
         reconstruct_legacy_journey_coordinates, route_position_at_minute, set_party_journey_state,
         straight_line_distance_m, validate_journey_route_payload,
         zero_boundary_requires_settlement,
@@ -7753,7 +9158,7 @@ mod departure_invariant_tests {
             camp_remaining_minutes: 30,
             pooled_water_ml: 0.0,
             medicine_target: 0.0,
-            charisma_target: 0.0,
+            command_target: 0.0,
             religion_target: 0.0,
         };
         set_party_journey_state(
@@ -7836,6 +9241,7 @@ fn travel_to_quest_impl(
     if party.leader_id != character_id {
         return Err("Only the party leader can travel".into());
     }
+    require_no_unresolved_encounter(ctx, &party_id)?;
     if party.camp_destination_id.is_some() {
         return Err("Break camp and continue the current journey first".into());
     }
@@ -7925,15 +9331,20 @@ fn travel_to_quest_impl(
         .ok_or("Party changed while its waterskins were filled")?;
     let proposed_leg_minutes =
         travel_minutes.min(party_next_walking_minutes(ctx, &party.id, travel_minutes)?);
-    let (leg_minutes, _) =
-        advance_party_movement(ctx, &party_id, &traveler_ids, proposed_leg_minutes)?;
+    let (leg_minutes, encounter, next_roll) = advance_party_movement_until_encounter(
+        ctx,
+        &party_id,
+        &traveler_ids,
+        proposed_leg_minutes,
+    )?;
     party = ctx
         .db
         .party()
         .id()
         .find(&party_id)
         .ok_or("Party changed during travel")?;
-    if leg_minutes < travel_minutes {
+    let interrupted = encounter.is_some();
+    if interrupted || leg_minutes < travel_minutes {
         for member_id in living_party_member_ids(ctx, &party_id) {
             let mut member = ctx
                 .db
@@ -7954,8 +9365,14 @@ fn travel_to_quest_impl(
             travel_minutes.saturating_sub(leg_minutes),
         );
         ctx.db.party().id().update(party);
-        if leg_minutes > 0 {
-            record_party_journey_camp(ctx, &party_id, leg_minutes)?;
+        if interrupted {
+            record_party_journey_interruption(ctx, &party_id, leg_minutes);
+            commit_encounter_scan(ctx, &party_id, next_roll, encounter)?;
+        } else {
+            if leg_minutes > 0 {
+                record_party_journey_camp(ctx, &party_id, leg_minutes)?;
+            }
+            commit_encounter_scan(ctx, &party_id, next_roll, None)?;
         }
         return Ok(());
     }
@@ -8022,6 +9439,7 @@ fn travel_to_settlement_impl(
         if party.leader_id != character_id {
             return Err("Only the party leader can travel".into());
         }
+        require_no_unresolved_encounter(ctx, &party.id)?;
     }
 
     // Choosing a different camp destination only changes the planned route.
@@ -8166,8 +9584,12 @@ fn travel_to_settlement_impl(
         let party_id = current_party.id.clone();
         let proposed_leg_minutes =
             travel_minutes.min(party_next_walking_minutes(ctx, &party_id, travel_minutes)?);
-        let (leg_minutes, _) =
-            advance_party_movement(ctx, &party_id, &traveler_ids, proposed_leg_minutes)?;
+        let (leg_minutes, encounter, next_roll) = advance_party_movement_until_encounter(
+            ctx,
+            &party_id,
+            &traveler_ids,
+            proposed_leg_minutes,
+        )?;
         party = Some(
             ctx.db
                 .party()
@@ -8176,7 +9598,8 @@ fn travel_to_settlement_impl(
                 .ok_or("Party changed during travel")?,
         );
         party_movement_committed = true;
-        if leg_minutes < travel_minutes {
+        let interrupted = encounter.is_some();
+        if interrupted || leg_minutes < travel_minutes {
             for traveler_id in living_party_member_ids(ctx, &party_id) {
                 let mut traveler = ctx
                     .db
@@ -8198,8 +9621,14 @@ fn travel_to_settlement_impl(
                 travel_minutes.saturating_sub(leg_minutes),
             );
             ctx.db.party().id().update(party.clone());
-            if leg_minutes > 0 {
-                record_party_journey_camp(ctx, &party.id, leg_minutes)?;
+            if interrupted {
+                record_party_journey_interruption(ctx, &party.id, leg_minutes);
+                commit_encounter_scan(ctx, &party.id, next_roll, encounter)?;
+            } else {
+                if leg_minutes > 0 {
+                    record_party_journey_camp(ctx, &party.id, leg_minutes)?;
+                }
+                commit_encounter_scan(ctx, &party.id, next_roll, None)?;
             }
             return Ok(());
         }
@@ -8349,6 +9778,7 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
     if !party_can_continue_travel(&party, character_id) {
         return Err("Only the party leader can continue travel".into());
     }
+    require_no_unresolved_encounter(ctx, &party_id)?;
     let destination_id = party
         .camp_destination_id
         .clone()
@@ -8369,19 +9799,30 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
         return Err("Rest until the party reaches its next daylight walking window".into());
     }
     let traveler_ids = living_party_member_ids(ctx, &party_id);
-    let (leg_minutes, _) =
-        advance_party_movement(ctx, &party_id, &traveler_ids, proposed_leg_minutes)?;
+    let (leg_minutes, encounter, next_roll) = advance_party_movement_until_encounter(
+        ctx,
+        &party_id,
+        &traveler_ids,
+        proposed_leg_minutes,
+    )?;
     party = ctx
         .db
         .party()
         .id()
         .find(&party_id)
         .ok_or("Party changed during travel")?;
+    let interrupted = encounter.is_some();
     party.camp_remaining_minutes = party.camp_remaining_minutes.saturating_sub(leg_minutes);
-    if party.camp_remaining_minutes > 0 {
+    if interrupted || party.camp_remaining_minutes > 0 {
         ctx.db.party().id().update(party);
-        if leg_minutes > 0 {
-            record_party_journey_camp(ctx, &party_id, leg_minutes)?;
+        if interrupted {
+            record_party_journey_interruption(ctx, &party_id, leg_minutes);
+            commit_encounter_scan(ctx, &party_id, next_roll, encounter)?;
+        } else {
+            if leg_minutes > 0 {
+                record_party_journey_camp(ctx, &party_id, leg_minutes)?;
+            }
+            commit_encounter_scan(ctx, &party_id, next_roll, None)?;
         }
         return Ok(());
     }
@@ -8614,109 +10055,17 @@ pub fn autoresolve_quest(
         })
         .collect();
     let seed = ctx.random();
-    let outcome = resolve_battle(allies, enemies, seed);
-    record_autoresolve_report(ctx, &quest_id, &party_id, &outcome);
-
-    for member_id in &member_ids {
-        crate::filth::deposit_now(
-            ctx,
-            *member_id,
-            crate::filth::FilthSubstance::Dirt,
-            None,
-            adventuresim_core::filth::COMBAT_DIRT,
-        )?;
-    }
-
-    // Tactical exchanges remain transient; condition crosses the boundary only
-    // here, alongside wounds and ammunition in the final autoresolve result.
-    for exchange in &outcome.log {
-        if exchange.cut_damage > 0.0 && member_ids.contains(&exchange.attacker_id) {
-            crate::filth::deposit_now(
-                ctx,
-                exchange.attacker_id,
-                crate::filth::FilthSubstance::Blood,
-                member_ids
-                    .contains(&exchange.defender_id)
-                    .then_some(exchange.defender_id),
-                (exchange.cut_damage * 35.0).ceil().clamp(1.0, 15.0) as u16,
-            )?;
-        }
-        if let Some(id) = exchange.weapon_inventory_item_id {
-            crate::repair::apply_impact(ctx, id, exchange.contact_stress);
-        }
-        if let Some(id) = exchange.defender_contact_item_id {
-            crate::repair::apply_impact(ctx, id, exchange.contact_stress);
-        }
-        if exchange.armor_contact && exchange.contact_stress > 0.0 {
-            if let Some(equip) = ctx
-                .db
-                .character_equip()
-                .character_id()
-                .find(exchange.defender_id)
-            {
-                let armor_id = match exchange.body_part {
-                    BodyPart::LeftArm => equip.left_arm_armor_id,
-                    BodyPart::RightArm => equip.right_arm_armor_id,
-                    BodyPart::LeftLeg => equip.left_leg_armor_id,
-                    BodyPart::RightLeg => equip.right_leg_armor_id,
-                    BodyPart::Chest => equip.chest_armor_id,
-                    BodyPart::Stomach => equip.stomach_armor_id,
-                    BodyPart::Head => equip.head_armor_id,
-                };
-                if let Some(id) = armor_id {
-                    crate::repair::apply_impact(ctx, id, exchange.contact_stress);
-                }
-            }
-        }
-    }
-
-    for member in &outcome.allies {
-        consume_autoresolve_ammunition(ctx, member.id, member.ammunition_used);
-        for exchange in outcome
-            .log
-            .iter()
-            .filter(|exchange| exchange.defender_id == member.id && exchange.health_damage > 0.0)
-        {
-            let limb = match exchange.body_part {
-                BodyPart::LeftArm => crate::surgery::LimbRegion::LeftArm,
-                BodyPart::RightArm => crate::surgery::LimbRegion::RightArm,
-                BodyPart::LeftLeg => crate::surgery::LimbRegion::LeftLeg,
-                BodyPart::RightLeg => crate::surgery::LimbRegion::RightLeg,
-                BodyPart::Chest => crate::surgery::LimbRegion::Chest,
-                BodyPart::Stomach => crate::surgery::LimbRegion::Stomach,
-                BodyPart::Head => crate::surgery::LimbRegion::Head,
-            };
-            let projectile = exchange.projectile_kind.map(|kind| match kind {
-                adventuresim_core::autoresolve::CombatProjectileKind::Arrowhead => {
-                    crate::surgery::ProjectileKind::Arrowhead
-                }
-                adventuresim_core::autoresolve::CombatProjectileKind::Ball => {
-                    crate::surgery::ProjectileKind::Ball
-                }
-            });
-            crate::surgery::commit_hit_injury(
-                ctx,
-                member.id,
-                limb,
-                exchange.cut_damage,
-                exchange.blunt_damage,
-                projectile,
-            )?;
-        }
-        crate::condition::apply_blood_loss(ctx, member.id, member.blood_loss_fraction)?;
-        crate::capability::refresh_character_capability(ctx, member.id)?;
-    }
+    let outcome = resolve_battle(allies, enemies, seed, BattleOpening::Normal);
+    commit_autoresolve_outcome(
+        ctx,
+        &quest_id,
+        &party_id,
+        &member_ids,
+        5.0 + quest.difficulty.max(0) as f32,
+        &outcome,
+    )?;
 
     if outcome.victor != BattleVictor::Allies {
-        for member_id in member_ids {
-            crate::condition::record_morale_event(
-                ctx,
-                member_id,
-                "defeat",
-                -(5.0 + quest.difficulty.max(0) as f32),
-                Some(quest_id.clone()),
-            )?;
-        }
         return Ok(());
     }
 
@@ -8825,6 +10174,7 @@ pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                 bridge: None,
                 water_crossings: vec![],
             }),
+            provenance: TravelEdgeProvenance::DocumentedViabundus,
             toll_at: None,
             length_m: 19_000,
             slope_multiplier: 1.0,
@@ -8876,6 +10226,26 @@ pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
 
     for (id, name, x, y, source_node_id, pop, scene, religious_status) in settlements {
         if ctx.db.settlement().id().find(&id.to_string()).is_none() {
+            let languages = match id {
+                "oakenshire" => adventuresim_world_schema::SettlementLanguageProfile {
+                    east_central_bp: 1_500,
+                    west_central_bp: 7_500,
+                    low_bp: 1_000,
+                    yiddish_incidence_bp: 75,
+                },
+                "ravenmoor" => adventuresim_world_schema::SettlementLanguageProfile {
+                    east_central_bp: 7_500,
+                    west_central_bp: 1_500,
+                    low_bp: 1_000,
+                    yiddish_incidence_bp: 75,
+                },
+                _ => adventuresim_world_schema::SettlementLanguageProfile {
+                    east_central_bp: 1_000,
+                    west_central_bp: 1_000,
+                    low_bp: 8_000,
+                    yiddish_incidence_bp: 75,
+                },
+            };
             ctx.db.settlement().insert(Settlement {
                 id: id.into(),
                 name: name.into(),
@@ -8937,6 +10307,7 @@ pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                     age: GeologicEra::Quaternary,
                 }),
                 religious_status,
+                languages,
                 drought: DroughtProfile::Inferred(
                     DroughtHistory::new(
                         PalmerDroughtSeverityIndex::new(0).unwrap(),
@@ -8952,6 +10323,7 @@ pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                         adventuresim_world_schema::FallbackIndustry::WoodlandFuelwood,
                     ),
                 ]).unwrap(),
+                economy: SettlementEconomyProfile::stage_placeholder(),
                 scene_key: scene.into(),
                 religion_id: religious_status.church().religion_id().into(),
                 currency_id: crate::item::settlement_currency_id(id).into(),
@@ -9120,6 +10492,12 @@ fn ensure_npc_quest_parties(ctx: &ReducerContext, settlement_id: &str) -> Result
         let mut leader = ctx.db.character().id().find(leader_id).unwrap();
         leader.current_settlement_id = Some(settlement_id.to_string());
         ctx.db.character().id().update(leader.clone());
+        crate::character::set_character_languages_for_settlement(
+            ctx,
+            leader_id,
+            settlement_id,
+            true,
+        )?;
         let party_id = leader.party_id.clone().ok_or("NPC leader has no party")?;
         let mut party = ctx.db.party().id().find(&party_id).unwrap();
         party.name = format!("{}'s company", leader_name);

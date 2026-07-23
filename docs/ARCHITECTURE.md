@@ -45,6 +45,14 @@ serves the same notice at `/map/data-license`. Deployments must retain that
 notice so source-specific attribution and pass-through conditions travel with
 the otherwise optional file-backed artifacts.
 
+Normal development consumes a separately pinned compiled runtime ZIP containing
+`world-1544.json`, the AVIF strategic-map package, and the coherent final
+terrain-routing package. `just load-world` installs that small immutable bundle
+when absent and loads the compiled JSON; raw source initialization and offline
+geospatial compilation are release-maintainer workflows, not fresh-checkout
+requirements. The runtime archive carries both the strategic-map licence and a
+generated notice derived from the compiled world's embedded source manifests.
+
 Every gridded enrichment shares the canonical `SpatialGridSpec` described in
 `docs/SPATIAL_GRID.md`. The complete spec and inference-rules version are
 serialized in world metadata, so either changing alters the content-addressed
@@ -528,3 +536,41 @@ Spawn points are defined in GLB/GLTF files using node naming:
 - **Idempotent commit**: Prevents double-counting rewards
 - **Tactical state is ephemeral**: HP/damage/positions disappear when mission ends
 - **Quest locations are strategic places**: their identity and travel coordinates persist, but no enemies, tactical positions, or combat ticks are stored there. Autoresolve writes only final injury and reward results.
+
+## Strategic random encounters
+
+Random encounters are canonical journey events, not tactical state. A private
+authority row persists one journey entropy seed and its next three-hour roll
+cursor; neither value is exposed through subscriptions. Terrain, day/night,
+and distance plus matching enemy archetype for that party's accepted active
+quest affect bounded selection rolls. An interruption row persists the exact route position,
+movement/elapsed/absolute minute, awareness result, available typed choices,
+and surrender preview. It never persists enemy HP, positions, or combat ticks.
+
+Unresolved encounters guard travel, rest, party membership, quest abandonment,
+equipment, and inventory mutations that could bypass or invalidate them. Combat
+uses the shared final autoresolve commit path for wounds, blood, ammunition,
+equipment contact wear, filth, morale, loot, and diagnostics. Random victories
+remain separate from `BattleResult` and quest completion.
+
+## Language persistence
+
+Language is strategic state. Compiled settlements persist a versioned, deterministic vernacular profile inferred inside the exact playable bounds; the three German shares total exactly 10,000 basis points. Characters persist direct Oral and Written hours. Effective proficiency is derived once from symmetric correlation matrices and is never recursively stored. The importer CLI can inspect a coordinate with `--infer-languages LONGITUDE LATITUDE`.
+
+Rules-v9 adds two immutable gameplay projections. A bounded settlement economy
+profile combines population, route access, documented town status, and the
+canonical industry profile into prosperity, service availability,
+specializations, and relative stock categories. Every gap-fill stock fact is
+typed as deterministic fabrication rather than attributed to an upstream
+dataset. Authoritative reducers consult the profile; it is not a UI-only hint.
+
+Road inference uses a two-stage artifact contract. The documented-base terrain
+pack contains only Viabundus roads plus source-mapped water, forest, elevation,
+and Jung wetlands. World compilation runs bounded A* against that immutable
+digest, so a proposed road cannot lower its own cost. Accepted polylines are
+stored in schema 25 with explicit inferred provenance. Final map generation
+requires the same base digest and feeds those exact polylines to both the visible
+quiet road layer and the final routing road mask; both identities are recorded.
+Jung v1.1 wetland posterior/categorical pixels are bounded to playable coverage;
+water remains impassable, roads take precedence, and other wetland cells use the
+distinct slow terrain surface.

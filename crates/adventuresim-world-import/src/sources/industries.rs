@@ -419,6 +419,8 @@ mod tests {
             religious_status: SettlementReligiousStatus::Established {
                 religion: OfficialReligion::Lutheran,
             },
+            languages: adventuresim_world_schema::infer_settlement_language_profile(10.0, 51.0)
+                .unwrap(),
             drought: DroughtProfile::Inferred(
                 DroughtHistory::new(
                     PalmerDroughtSeverityIndex::new(0).unwrap(),
@@ -433,6 +435,7 @@ mod tests {
                 FallbackIndustry::CommonAggregate,
             )])
             .unwrap(),
+            economy: adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder(),
             scene_key: "village".into(),
             sources: "- test".into(),
         }

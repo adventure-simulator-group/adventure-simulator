@@ -6,15 +6,17 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::edge_endpoint_type::EdgeEndpoint;
 use super::route_terrain_type::RouteTerrain;
+use super::travel_edge_provenance_type::TravelEdgeProvenance;
 use super::travel_route_type::TravelRoute;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct TravelEdgeImport {
+pub struct TravelEdgeLoad {
     pub id: u64,
     pub from_node_id: u64,
     pub to_node_id: u64,
     pub route: TravelRoute,
+    pub provenance: TravelEdgeProvenance,
     pub toll: Option<EdgeEndpoint>,
     pub length_m: u32,
     pub slope_multiplier: f32,
@@ -24,6 +26,6 @@ pub struct TravelEdgeImport {
     pub sources: String,
 }
 
-impl __sdk::InModule for TravelEdgeImport {
+impl __sdk::InModule for TravelEdgeLoad {
     type Module = super::RemoteModule;
 }

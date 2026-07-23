@@ -535,7 +535,10 @@ fn party_religion_context(
     let mut commands = Vec::with_capacity(party_members.len());
     for member_id in party_members.iter().copied() {
         initialize_character_condition(ctx, member_id)?;
-        commands.push(mental_check(ctx, member_id, Skill::Command)?);
+        commands.push(adventuresim_world_schema::language_scaled_effect(
+            mental_check(ctx, member_id, Skill::Command)?,
+            crate::character::shared_language_coefficient(ctx, member_id, character_id),
+        ));
         if let Some(religion_id) = ctx
             .db
             .character_condition()
@@ -1791,7 +1794,12 @@ pub fn set_character_religion(
             .id()
             .find(&settlement_id)
             .ok_or("Character's settlement not found")?;
-        if settlement.religion_id != religion_id {
+        if !settlement
+            .religious_status
+            .represented_religions()
+            .iter()
+            .any(|religion| religion.religion_id() == religion_id)
+        {
             return Err("This settlement's priest cannot receive that profession of faith".into());
         }
     }

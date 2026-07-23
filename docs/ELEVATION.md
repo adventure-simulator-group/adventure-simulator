@@ -57,7 +57,7 @@ elevation is never used as a proxy for terrain along an entire road edge.
 
 `build-strategic-map` reads the 12 whole-degree source tiles intersecting the
 exact 8.965–11.110°E, 50.877–52.211°N playable bounds into
-`terrain-routing-v1.json` and `terrain-routing-v1.pack`. The pack preserves
+the documented base and final `terrain-routing-*-v2.json`/`.pack` artifacts. The packs preserve
 each source tile's native 1,800/2,400/3,600 by 3,600 grid instead of expanding
 it into database rows or `ElevationCell` structs. Independently deflated
 256×256 chunks carry signed elevation, road/open/sparse-woods/deep-woods/water

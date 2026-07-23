@@ -15,13 +15,28 @@ Download the basin GeoPackage distribution and extract its `.gpkg` files under
 `target/world-data-sources/raw/hydrology/`. Nested basin directories are
 accepted. Override the directory with `--hydrology-dir`.
 
-The official full archive is not currently present in the development data
-directory, so only the strict source boundary has been verified using
-read-focused SQLite fixtures with GeoPackage core metadata, a real EPSG:3035
-definition, synthetic geometries, and manually populated RTree tables. The
-fixtures exercise the reader but are not a writable GeoPackage conformance
-suite. Do not describe a full-world hydrology audit as complete until the
-official archive has been run.
+The importer has been exercised against the official Elbe basin GeoPackage as
+part of a complete world build. That distribution uses the valid legacy
+GeoPackage 1.1 `GP11` application identifier and mixes ISO dimensional type
+codes on collection roots with equivalent EWKB Z/M flags on their children.
+The source boundary accepts the OGC `GP10`, `GP11`, and current `GPKG`
+identifiers and normalizes only those equivalent nested Z/M flags before
+decoding. It continues to reject unknown application identifiers, embedded
+EWKB SRIDs, incompatible child types or dimensions, truncated geometry,
+overflow, empty geometry structures, and trailing bytes. Geometry parsing is
+bounded by blob size, nesting depth, structural nodes (including polygon
+rings), and coordinate count. X/Y ordinates must be finite and fall in the
+deliberately generous -1,000,000 to 10,000,000 metre safety envelope, which
+contains the EPSG:3035 European area of use and EU-Hydro source extent. A
+feature may occupy at most 10,000 ten-kilometre spatial-index cells. These
+limits are cumulative as well: one import accepts at most 256 GeoPackages,
+1,000,000 decoded features, 50,000,000 decoded coordinates, and 10,000,000
+spatial-index references. Polygon rings must contain at least four coordinates
+and be exactly closed in every dimension; lines must contain at least two
+coordinates. These defense-in-depth limits keep malformed source data from
+causing unbounded parsing or index construction. Read-focused SQLite fixtures
+cover those contracts alongside an ignored integration test for a locally
+installed official distribution.
 
 `just plan-hydrology` performs a redacted `CLMS_TOKEN_FILE` preflight and
 prints the fixed v1.3 request contract. Because official archive/item IDs and

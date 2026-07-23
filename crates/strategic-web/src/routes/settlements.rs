@@ -21,6 +21,7 @@ use futures_util::{
     future::join_all,
     stream::{self, StreamExt},
 };
+use maud::Markup;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -50,7 +51,12 @@ impl BuildingQuery {
     fn append_to(&self, path: String) -> String {
         self.valid().map_or_else(
             || path.clone(),
-            |building| format!("{path}?building={building}"),
+            |building| {
+                format!(
+                    "{path}{}building={building}",
+                    if path.contains('?') { "&" } else { "?" }
+                )
+            },
         )
     }
 
@@ -61,7 +67,7 @@ impl BuildingQuery {
 
 #[cfg(test)]
 mod building_query_tests {
-    use super::BuildingQuery;
+    use super::{BuildingQuery, character_details_path};
 
     #[test]
     fn building_query_is_closed_and_preserved_on_redirects() {
@@ -74,6 +80,10 @@ mod building_query_tests {
             valid.append_to("/locations/settlement/x/party/1".into()),
             "/locations/settlement/x/party/1?building=inn"
         );
+        assert_eq!(
+            valid.append_to("/locations/settlement/x/party/1?cook=true".into()),
+            "/locations/settlement/x/party/1?cook=true&building=inn"
+        );
         let invalid = BuildingQuery {
             building: Some("../religion".into()),
             ..Default::default()
@@ -82,6 +92,22 @@ mod building_query_tests {
         assert_eq!(
             invalid.append_to("/locations/settlement/x/party/1".into()),
             "/locations/settlement/x/party/1"
+        );
+    }
+
+    #[test]
+    fn examination_returns_to_the_same_character_shell_and_building() {
+        let building = BuildingQuery {
+            building: Some("inn".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            building.append_to(character_details_path("settlement", "x", 7, Some(7))),
+            "/locations/settlement/x/party/7?building=inn"
+        );
+        assert_eq!(
+            building.append_to(character_details_path("settlement", "x", 7, Some(3))),
+            "/locations/settlement/x/party/7/stats?building=inn"
         );
     }
 }
@@ -110,15 +136,15 @@ use crate::spacetimedb::{
     PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, Quest, QuestIssuer,
     QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder, RetainedProjectile,
     ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription, SettlementSmith,
-    SocialBelief, TravelEdge,
+    SocialBelief, StrategicEncounter, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
     RestSummary, SoapRestPreview, SocialPresentation, alchemy_page, camp_page,
     live_merchant_shop_page, merchants_page, party_discard_page, party_inventory_page,
-    party_personal_page, party_pool_page, party_social_page, party_stats_page, religion_page,
+    party_personal_page, party_pool_page, party_social_dialog, party_stats_page, religion_page,
     rest_default_minutes, rest_result_page, settlement_map_page, settlement_overview_page,
-    surgery_page,
+    surgery_dialog,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -150,6 +176,7 @@ pub fn routes() -> Router<AppState> {
             post(update_camp_travel_configuration),
         )
         .route("/camp/continue", post(continue_camp_travel))
+        .route("/camp/encounter", post(resolve_camp_encounter))
         .route("/camp/destination/{id}", post(change_camp_destination))
         .route(
             "/api/settlements/{id}/service-quests",
@@ -309,6 +336,7 @@ fn parse_surgery_limb(slug: &str) -> Option<LimbRegion> {
 async fn surgery(
     State(state): State<AppState>,
     Path((kind, id, patient_id, limb)): Path<(String, String, u64, String)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Html<String> {
     let Some(actor_id) = session.character_id_u64() else {
@@ -317,13 +345,14 @@ async fn surgery(
     let Some(selected_limb) = parse_surgery_limb(&limb) else {
         return Html("<h1>Limb not found</h1>".into());
     };
-    let location = match resolve_location(&state, &kind, &id).await {
+    let mut location = match resolve_location(&state, &kind, &id).await {
         LocationLookup::Found(location) => location,
         LocationLookup::NotFound => return Html("<h1>Location not found</h1>".into()),
         LocationLookup::Unavailable => {
             return Html("<h1>Strategic data is unavailable</h1>".into());
         }
     };
+    location.active_building = building.valid().map(str::to_owned);
     let Some((active, _)) = get_active_character(&state, Some(actor_id)).await else {
         return Html("<h1>Choose a character first</h1>".into());
     };
@@ -430,39 +459,48 @@ async fn surgery(
         })
         .map(|item| item.qty)
         .sum();
-    let patient_capability = get_character_capability(&state, patient_id).await;
-    let patient_attributes =
-        query_single::<CharacterAttributes>(&state, "character_attributes", patient_id).await;
-    let patient_skills =
-        query_single::<CharacterSkills>(&state, "character_skills", patient_id).await;
-    let patient_limbs = query_single::<CharacterLimbs>(&state, "character_limbs", patient_id).await;
-    let medical = medical_presentation(&state, actor_id, patient_id).await;
-    let combat_profile = get_combat_training_profile(&state, patient_id).await;
-    Html(
-        surgery_page(
-            &location,
-            &active,
-            &patient,
-            &party_members,
-            patient_capability.as_ref(),
-            patient_attributes.as_ref(),
-            patient_skills.as_ref(),
-            patient_limbs.as_ref(),
-            &medical,
-            combat_profile,
-            &injuries,
-            &projectiles,
-            selected_limb,
-            quantity("bandage"),
-            quantity("surgery_kit"),
-            available_splints,
-            quantity("soft_soap"),
-            alcohol_count,
-            selected_alcohol,
-            procedure_checks,
+    let dialog = surgery_dialog(
+        &location,
+        &active,
+        &patient,
+        &injuries,
+        &projectiles,
+        selected_limb,
+        quantity("bandage"),
+        quantity("surgery_kit"),
+        available_splints,
+        quantity("soft_soap"),
+        alcohol_count,
+        selected_alcohol,
+        procedure_checks,
+    );
+    if patient_id == active.id {
+        render_party_personal(
+            &state,
+            &kind,
+            &id,
+            patient_id,
+            building,
+            &session,
+            Some(dialog),
+            Some(&limb),
+            false,
         )
-        .into_string(),
-    )
+        .await
+    } else {
+        render_party_stats(
+            &state,
+            &kind,
+            &id,
+            patient_id,
+            building,
+            &session,
+            Some(dialog),
+            Some(&limb),
+            false,
+        )
+        .await
+    }
 }
 
 #[derive(Deserialize)]
@@ -529,15 +567,16 @@ mod surgery_reducer_argument_tests {
 async fn perform_surgery(
     State(state): State<AppState>,
     Path((kind, id, patient_id, limb)): Path<(String, String, u64, String)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
     Form(form): Form<SurgeryProcedureForm>,
 ) -> Redirect {
     let destination = format!("/locations/{kind}/{id}/party/{patient_id}/surgery/{limb}");
     let Some(actor_id) = session.character_id_u64() else {
-        return Redirect::to(&destination);
+        return Redirect::to(&building.append_to(destination));
     };
     if parse_surgery_limb(&limb).is_none() {
-        return Redirect::to(&destination);
+        return Redirect::to(&building.append_to(destination));
     }
     if let Err(error) = state
         .db
@@ -556,7 +595,7 @@ async fn perform_surgery(
     {
         tracing::warn!(?error, "Manual surgery procedure failed");
     }
-    Redirect::to(&destination)
+    Redirect::to(&building.append_to(destination))
 }
 
 #[derive(Default, Deserialize)]
@@ -1473,6 +1512,15 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
         .await
         .ok()
         .flatten();
+    let encounter = state
+        .db
+        .query_one::<StrategicEncounter>(&format!(
+            "SELECT * FROM strategic_encounter WHERE party_id = {}",
+            sql_string_literal(&party.id)
+        ))
+        .await
+        .ok()
+        .flatten();
     let stats: Vec<CharacterStats> = state
         .db
         .query("SELECT * FROM character_stats")
@@ -1493,11 +1541,14 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
     .max(1);
     let planned_wake_minute =
         (current_party_minute.saturating_add(default_rest_minutes) % 1_440) as u16;
-    let can_continue_travel = is_walking_time(
-        current_party_minute,
-        party.walking_minutes_per_day,
-        party.travel_at_night,
-    );
+    let can_continue_travel = encounter
+        .as_ref()
+        .is_none_or(|encounter| encounter.status != "awaiting_choice")
+        && is_walking_time(
+            current_party_minute,
+            party.walking_minutes_per_day,
+            party.travel_at_night,
+        );
     let remaining_journey_minutes = journey
         .as_ref()
         .map_or(party.camp_remaining_minutes, |row| {
@@ -1557,11 +1608,38 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
             soap_preview,
             planned_wake_minute,
             can_continue_travel,
+            encounter.as_ref(),
             Some(&character.name),
         )
         .into_string(),
     )
     .into_response()
+}
+
+#[derive(Debug, Deserialize)]
+struct EncounterChoiceForm {
+    choice: String,
+}
+
+async fn resolve_camp_encounter(
+    State(state): State<AppState>,
+    session: Session,
+    Form(form): Form<EncounterChoiceForm>,
+) -> Response {
+    let Some(character_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    match state
+        .db
+        .call(
+            "resolve_strategic_encounter",
+            &[json!(character_id), json!(form.choice)],
+        )
+        .await
+    {
+        Ok(()) => Redirect::to("/camp").into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
 }
 
 async fn camp_settlement_destinations(
@@ -2553,6 +2631,32 @@ async fn party_personal(
     Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Html<String> {
+    render_party_personal(
+        &state,
+        &kind,
+        &id,
+        character_id,
+        building,
+        &session,
+        None,
+        None,
+        false,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn render_party_personal(
+    state: &AppState,
+    kind: &str,
+    id: &str,
+    character_id: u64,
+    building: BuildingQuery,
+    session: &Session,
+    dialog: Option<Markup>,
+    surgery_open: Option<&str>,
+    social_open: bool,
+) -> Html<String> {
     let mut location = match resolve_location(&state, &kind, &id).await {
         LocationLookup::Found(location) => location,
         LocationLookup::NotFound => return Html("<h1>Location not found</h1>".to_string()),
@@ -2724,6 +2828,9 @@ async fn party_personal(
             &active_inventory,
             &food_lots,
             &item_definitions,
+            dialog,
+            surgery_open,
+            social_open,
         )
         .into_string(),
     )
@@ -2739,6 +2846,7 @@ struct CookFoodForm {
 async fn cook_food(
     State(state): State<AppState>,
     Path((kind, id, character_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
     Form(form): Form<CookFoodForm>,
 ) -> Response {
@@ -2790,9 +2898,9 @@ async fn cook_food(
         tracing::warn!(%error, character_id, "cooking failed");
         return (StatusCode::BAD_REQUEST, error.to_string()).into_response();
     }
-    Redirect::to(&format!(
+    Redirect::to(&building.append_to(format!(
         "/locations/{kind}/{id}/party/{character_id}?cook=true"
-    ))
+    )))
     .into_response()
 }
 
@@ -3536,6 +3644,32 @@ async fn party_stats(
     Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Html<String> {
+    render_party_stats(
+        &state,
+        &kind,
+        &id,
+        character_id,
+        building,
+        &session,
+        None,
+        None,
+        false,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn render_party_stats(
+    state: &AppState,
+    kind: &str,
+    id: &str,
+    character_id: u64,
+    building: BuildingQuery,
+    session: &Session,
+    dialog: Option<Markup>,
+    surgery_open: Option<&str>,
+    social_open: bool,
+) -> Html<String> {
     let mut location = match resolve_location(&state, &kind, &id).await {
         LocationLookup::Found(location) => location,
         LocationLookup::NotFound => return Html("<h1>Location not found</h1>".to_string()),
@@ -3681,6 +3815,9 @@ async fn party_stats(
             &injuries,
             &projectiles,
             &filth,
+            dialog,
+            surgery_open,
+            social_open,
         )
         .into_string(),
     )
@@ -3752,9 +3889,11 @@ pub(crate) async fn medical_presentation(
 async fn examine_patient(
     State(state): State<AppState>,
     Path((kind, id, target_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Redirect {
-    if let Some(doctor_id) = session.character_id_u64()
+    let doctor_id = session.character_id_u64();
+    if let Some(doctor_id) = doctor_id
         && let Err(error) = state
             .db
             .call("examine_patient", &[json!(doctor_id), json!(target_id)])
@@ -3762,15 +3901,17 @@ async fn examine_patient(
     {
         tracing::warn!(%error, doctor_id, target_id, "patient examination rejected");
     }
-    Redirect::to(&format!("/locations/{kind}/{id}/party/{target_id}/stats"))
+    Redirect::to(&building.append_to(character_details_path(&kind, &id, target_id, doctor_id)))
 }
 
 async fn dismiss_medical_examination(
     State(state): State<AppState>,
     Path((kind, id, target_id, examination_id)): Path<(String, String, u64, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Redirect {
-    if let Some(doctor_id) = session.character_id_u64()
+    let doctor_id = session.character_id_u64();
+    if let Some(doctor_id) = doctor_id
         && let Err(error) = state
             .db
             .call(
@@ -3781,7 +3922,15 @@ async fn dismiss_medical_examination(
     {
         tracing::warn!(%error, doctor_id, target_id, examination_id, "examination dismissal rejected");
     }
-    Redirect::to(&format!("/locations/{kind}/{id}/party/{target_id}/stats"))
+    Redirect::to(&building.append_to(character_details_path(&kind, &id, target_id, doctor_id)))
+}
+
+fn character_details_path(kind: &str, id: &str, target_id: u64, viewer_id: Option<u64>) -> String {
+    if viewer_id == Some(target_id) {
+        format!("/locations/{kind}/{id}/party/{target_id}")
+    } else {
+        format!("/locations/{kind}/{id}/party/{target_id}/stats")
+    }
 }
 
 async fn get_strategic_condition(
@@ -3855,18 +4004,7 @@ async fn party_social(
         return Html("<h1>Social actions require a living, co-located party member</h1>".into());
     }
     let party_members = get_active_party_members(&state, Some(&active)).await;
-    let attributes =
-        query_single::<CharacterAttributes>(&state, "character_attributes", target_id).await;
-    let limbs = query_single::<CharacterLimbs>(&state, "character_limbs", target_id).await;
-    let condition = get_strategic_condition(&state, target_id).await;
     let sources = get_morale_sources(&state, target_id).await;
-    let filth = state
-        .db
-        .query::<CharacterFilth>(&format!(
-            "SELECT * FROM character_filth WHERE character_id = {target_id}"
-        ))
-        .await
-        .unwrap_or_default();
     let actor_sources = get_morale_sources(&state, active.id).await;
     let mut shared_concerns = actor_sources
         .iter()
@@ -3946,21 +4084,34 @@ async fn party_social(
         shared_concerns,
         unavailable: !beliefs_available || !affinity_available || !familiarity_available,
     };
-    Html(
-        party_social_page(
-            &location,
-            &selected,
-            &active,
-            &party_members,
-            attributes.as_ref(),
-            limbs.as_ref(),
-            condition.as_ref(),
-            &sources,
-            &filth,
-            &social,
+    let dialog = party_social_dialog(&location, &selected, &active, &sources, &social);
+    if target_id == active.id {
+        render_party_personal(
+            &state,
+            &kind,
+            &id,
+            target_id,
+            building,
+            &session,
+            Some(dialog),
+            None,
+            true,
         )
-        .into_string(),
-    )
+        .await
+    } else {
+        render_party_stats(
+            &state,
+            &kind,
+            &id,
+            target_id,
+            building,
+            &session,
+            Some(dialog),
+            None,
+            true,
+        )
+        .await
+    }
 }
 
 #[derive(Deserialize)]
@@ -4792,6 +4943,7 @@ struct ReligionForm {
 struct ReligionDialogue {
     religion_id: Option<String>,
     priest_religion_id: String,
+    represented_religion_ids: Vec<String>,
     can_choose: bool,
 }
 
@@ -4814,11 +4966,22 @@ async fn religion_dialogue(
         .as_ref()
         .map(|settlement| settlement.religion_id.clone())
         .unwrap_or_default();
+    let represented_religion_ids = settlement
+        .as_ref()
+        .map(|s| {
+            s.religious_status
+                .represented_religions()
+                .into_iter()
+                .map(|r| r.religion_id().to_string())
+                .collect()
+        })
+        .unwrap_or_default();
     let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
     else {
         return Json(ReligionDialogue {
             religion_id: None,
             priest_religion_id,
+            represented_religion_ids,
             can_choose: false,
         });
     };
@@ -4837,6 +5000,7 @@ async fn religion_dialogue(
     Json(ReligionDialogue {
         religion_id: condition.and_then(|condition| condition.religion_id),
         priest_religion_id,
+        represented_religion_ids,
         can_choose,
     })
 }
@@ -4872,7 +5036,12 @@ async fn set_religion(
             message: "There is no church here to receive your profession.",
         });
     };
-    if religion_id != settlement.religion_id {
+    if !settlement
+        .religious_status
+        .represented_religions()
+        .iter()
+        .any(|religion| religion.religion_id() == religion_id)
+    {
         return Json(ReligionChange {
             changed: false,
             religion_id: None,
@@ -4967,6 +5136,18 @@ async fn merchant_shop(
     let Some(settlement) = settlements.first() else {
         return Html("<h1>Settlement not found</h1>".to_string());
     };
+    if !shop.available_at(settlement) {
+        return Html(
+            crate::templates::strategic_notice_page(
+                "Service unavailable",
+                "This settlement does not offer that service.",
+                &format!("/locations/settlement/{}", settlement.id),
+                "Return to settlement",
+                None,
+            )
+            .into_string(),
+        );
+    }
     let logged_in_as = active_character
         .as_ref()
         .map(|(character, _)| character.name.clone());
@@ -5049,6 +5230,14 @@ async fn merchant_shop(
     } else {
         (None, SoapRestPreview::default())
     };
+    let speaker = query_single::<CharacterSkills>(&state, "character_skills", character.id)
+        .await
+        .map_or_default(|skills| skills.oral_languages);
+    let mut merchant_languages = adventuresim_world_schema::OralLanguageHours::default();
+    *merchant_languages.direct_mut(settlement.languages.dominant_german()) =
+        adventuresim_world_schema::ORAL_FLUENCY_HOURS;
+    let (_, shared_language) =
+        adventuresim_world_schema::best_common_oral_language(speaker, merchant_languages);
     Html(
         live_merchant_shop_page(
             settlement,
@@ -5062,6 +5251,7 @@ async fn merchant_shop(
             &party_targets,
             &pooled,
             shop,
+            shared_language,
             &conditions.unwrap_or_default(),
             smiths.unwrap_or_default().first(),
             &orders.unwrap_or_default(),

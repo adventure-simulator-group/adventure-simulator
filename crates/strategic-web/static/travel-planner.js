@@ -6,8 +6,8 @@
   const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   const MAX_U32 = 4294967295;
-  const TRACK_START = 3;
-  const TRACK_END = 97;
+  const TRACK_START = 0;
+  const TRACK_END = 100;
   const DAWN = 6 * 60;
   const DAYLIGHT = 8 * 60;
   const SUNSET = 18 * 60;
@@ -31,7 +31,7 @@
       const duration = Number(durationText);
       const check = Number(checkText) / 1000;
       const weights = [plainsText, forestText, hillsText, urbanText].map(Number);
-      if (!["road", "open", "sparse-woods", "deep-woods"].includes(kind)
+      if (!["road", "open", "sparse-woods", "deep-woods", "wetland"].includes(kind)
           || !Number.isSafeInteger(start) || start < 0
           || !Number.isSafeInteger(duration) || duration <= 0
           || start !== cursor || !Number.isFinite(check) || check < 0 || check > 5
@@ -279,7 +279,7 @@
     const description = planner.querySelector("[data-terrain-course-description]");
     if (!track) return;
     track.replaceChildren();
-    const labels = { road: "Road", open: "Open", "sparse-woods": "Sparse woods", "deep-woods": "Deep woods" };
+    const labels = { road: "Road", open: "Open", "sparse-woods": "Sparse woods", "deep-woods": "Deep woods", wetland: "Wetland" };
     const pieces = terrainPieces(terrain, itinerary, movementTotal, roundTrip);
     for (const piece of pieces) {
       const node = document.createElement("span");
@@ -428,8 +428,6 @@
           label.textContent += ` (${Number(ordinaryWaterDays.toFixed(1))} ordinary water + ${Number(emergencyAlcoholDays.toFixed(1))} emergency alcohol)`;
         }
       });
-      const alcoholSummary = planner.querySelector("[data-emergency-alcohol-summary]");
-      if (alcoholSummary && Number.isFinite(emergencyAlcoholDays)) alcoholSummary.textContent = `+${Number(emergencyAlcoholDays.toFixed(2))} d`;
       const rationKcal = Number(planner.dataset.provisionRationKcal);
       const skinMl = Number(planner.dataset.provisionWaterskinMl);
       const remainingDays = Math.max(0, totalDays - completedDays);

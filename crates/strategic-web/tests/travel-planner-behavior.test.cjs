@@ -240,7 +240,7 @@ test("authoritative travel guards stale sync, bounded legacy vectors, and termin
   assert.match(strategic, /plan_version == 0[\s\S]+reconstruct_legacy_journey_coordinates/);
   assert.match(
     strategic,
-    /prepare_party_waterskins\(ctx, &party_id, true\)[\s\S]+\.find\(&party_id\)[\s\S]+let\s+\(?leg_minutes/,
+    /prepare_party_waterskins\(ctx, &party_id, true\)[\s\S]+\.find\(&party_id\)[\s\S]+let\s+\((?:leg_minutes|requested_leg_minutes)/,
     "quest departure reloads the party after filling shared waterskins before writing camp state",
   );
   assert.match(

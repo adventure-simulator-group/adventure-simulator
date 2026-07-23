@@ -597,10 +597,20 @@ mod tests {
             population_level: 0,
             population_estimate: 0,
             category: crate::spacetimedb::SettlementCategory::Unknown,
+            languages: adventuresim_world_schema::SettlementLanguageProfile {
+                east_central_bp: 10_000,
+                west_central_bp: 0,
+                low_bp: 0,
+                yiddish_incidence_bp: 75,
+            },
             industries: InferredIndustryProfile::new(vec![IndustryEvidence::Fallback(
                 FallbackIndustry::WoodlandFuelwood,
             )])
             .unwrap(),
+            economy: adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder(),
+            religious_status: adventuresim_world_schema::SettlementReligiousStatus::Established {
+                religion: adventuresim_world_schema::OfficialReligion::RomanCatholic,
+            },
             scene_key: String::new(),
             religion_id: String::new(),
             currency_id: "rhenish_gulden".into(),
