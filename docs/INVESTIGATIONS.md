@@ -98,6 +98,11 @@ success thresholds, and weights never enter browser state.
 
 The initial action vocabulary is inspect site, search area, follow or reacquire
 tracks, locate a contact, watch, patrol, lay an ambush, and approach a lead.
+Rumors materialize all nine as two linked routes: witness-led search and
+observation-led interception. Only the two roots begin active; successful
+actions unlock their successors and failed actions reactivate a validated
+same-owner, same-case alternate. Approximate areas are private strategic
+geometry, not client-authored destinations.
 Resolution uses authoritative terrain, time of day, evidence age, relevant
 skills, bounded party assistance, and observer familiarity. Weather is
 explicitly unavailable until the strategic layer owns authoritative weather;
@@ -109,3 +114,16 @@ silently invalidate alternate investigation routes. Approximate discoveries
 remain directions or areas. An exact map pin is disclosed only when an
 authoritative result supports exact observer knowledge. Watches, patrols, and
 ambushes remain strategic actions; they do not persist tactical tick state.
+Before spending time the reducer revalidates party readiness, co-location,
+journey and camp state, unresolved encounters, predecessor knowledge,
+position, and typed prerequisites. Party clocks synchronize first, with night
+defined as before 06:00 or from 20:00 onward. Browser estimates are broad
+method-derived duration ranges; exact terrain, needs, fatigue, success, and
+risk remain authoritative.
+
+Custody consequences re-read current custody and require the case objective,
+object kind, site holder, occupied site, and next version to agree. A purely
+stale version reissues the capability without spending time; a holder, site,
+or case mismatch fails closed. A canonical site-bound ambush can drive an
+active hostile group away, while capture additionally requires the bound
+subject alive in controlled site custody.

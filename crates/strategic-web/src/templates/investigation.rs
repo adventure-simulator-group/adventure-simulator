@@ -46,9 +46,8 @@ pub fn journal_page(
                             h3 { (&action.summary) }
                             p { (&action.known_prerequisites) }
                             p class="journal-action-cost" {
-                                (action.duration_minutes) " minutes; fatigue "
-                                (action.fatigue) "; provisions "
-                                (action.food_units) " food / " (action.water_units) " water."
+                                "Estimated duration: " (action.duration_min_minutes) "–"
+                                (action.duration_max_minutes) " minutes. Needs and fatigue are settled authoritatively when the action is performed."
                             }
                             p class="journal-action-skills" {
                                 "Relevant contributions: " (&action.skill_contributions)
