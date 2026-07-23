@@ -45,6 +45,23 @@ pub struct BackendInvestigationLead {
     pub corrected_by: String,
     pub recorded_at: u64,
 }
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BackendCaseSitePin {
+    pub owner_character_id: u64,
+    pub case_id: String,
+    pub case_site_id: String,
+    pub origin_settlement_id: String,
+    pub name: String,
+    pub description: String,
+    pub scene_key: String,
+    pub longitude_e7: i32,
+    pub latitude_e7: i32,
+    pub coordinates_are_geographic: bool,
+    pub distance_m: u64,
+    pub knowledge_stage: String,
+    pub tracked: bool,
+}
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use serde_json::Value;
 
@@ -90,7 +107,7 @@ pub struct Character {
     pub level: u32,
     pub gold: u32,
     pub current_settlement_id: Option<String>,
-    pub current_quest_location_id: Option<String>,
+    pub current_case_site_id: Option<String>,
     pub party_id: Option<String>,
     pub age_years: u16,
     pub alive: bool,
@@ -329,12 +346,6 @@ pub struct Quest {
     pub accepted_by: Option<String>,
     pub enemy_type: String,
     pub enemy_count: i32,
-    pub location_description: String,
-    pub location_scene_key: String,
-    pub location_coord_x: f64,
-    pub location_coord_y: f64,
-    pub coordinates_are_geographic: bool,
-    pub distance_m: u64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -360,7 +371,7 @@ pub struct Party {
     pub name: String,
     pub leader_id: u64,
     pub current_settlement_id: Option<String>,
-    pub current_quest_location_id: Option<String>,
+    pub current_case_site_id: Option<String>,
     pub active_quest_id: Option<String>,
     pub is_solo: bool,
     pub camp_fatigue_percent: u8,

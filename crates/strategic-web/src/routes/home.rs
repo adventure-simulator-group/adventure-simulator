@@ -45,13 +45,13 @@ async fn home(State(state): State<AppState>, session: Session) -> Response {
     }
     match (
         &character.current_settlement_id,
-        &character.current_quest_location_id,
+        &character.current_case_site_id,
     ) {
         (Some(settlement_id), _) => {
             Redirect::to(&format!("/locations/settlement/{settlement_id}")).into_response()
         }
-        (_, Some(quest_id)) => {
-            Redirect::to(&format!("/locations/quest/{quest_id}")).into_response()
+        (_, Some(case_site_id)) => {
+            Redirect::to(&format!("/locations/case-site/{case_site_id}")).into_response()
         }
         _ => Redirect::to("/characters").into_response(),
     }

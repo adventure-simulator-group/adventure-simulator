@@ -733,8 +733,8 @@ fn require_together(ctx: &ReducerContext, actor_id: u64, patient_id: u64) -> Res
     let patient = crate::require_living_character(ctx, patient_id)?;
     let same_place = actor.current_settlement_id.is_some()
         && actor.current_settlement_id == patient.current_settlement_id
-        || actor.current_quest_location_id.is_some()
-            && actor.current_quest_location_id == patient.current_quest_location_id;
+        || actor.current_case_site_id.is_some()
+            && actor.current_case_site_id == patient.current_case_site_id;
     if !same_place {
         return Err("Surgeon and patient must be together".into());
     }

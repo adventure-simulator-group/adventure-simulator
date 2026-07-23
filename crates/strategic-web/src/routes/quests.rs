@@ -18,15 +18,15 @@ use super::{
         travel_rest_minutes,
     },
     travel::{
-        QuestMapMarkers, TravelDestination, TravelForm, apply_terrain_route,
-        populate_itinerary_forecasts, settlement_destination,
+        TravelDestination, TravelForm, apply_terrain_route, populate_itinerary_forecasts,
+        settlement_destination,
     },
 };
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    AutoresolveReport, BattleLootItem, BattleResult, Character, CharacterAttributes,
-    CharacterLimbs, CharacterStats, CharacterTime, CharacterTrainingSchedule,
+    AutoresolveReport, BackendCaseSitePin, BattleLootItem, BattleResult, Character,
+    CharacterAttributes, CharacterLimbs, CharacterStats, CharacterTime, CharacterTrainingSchedule,
     InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem, PartyStake, Quest,
     QuestStatus, Settlement,
 };
@@ -37,17 +37,21 @@ pub fn routes() -> Router<AppState> {
         .route("/api/quests/{id}/accept", post(accept_quest_api))
         .route("/api/quests/{id}/turn-in", post(turn_in_quest_api))
         .route("/quests/{id}/abandon", post(abandon_quest))
-        .route("/quests/{id}/travel", post(travel_to_quest))
-        .route("/locations/quest/{id}", get(quest_location_base))
-        .route("/locations/quest/{id}/map", get(quest_location_map))
-        .route("/locations/quest/{id}/enemy", get(quest_location_enemy))
+        .route("/case-sites/{id}/travel", post(travel_to_case_site))
+        .route("/case-sites/{id}/track", post(track_case_site))
+        .route("/locations/case-site/{id}", get(quest_location_base))
+        .route("/locations/case-site/{id}/map", get(quest_location_map))
+        .route("/locations/case-site/{id}/enemy", get(quest_location_enemy))
         .route(
-            "/locations/quest/{id}/loot",
+            "/locations/case-site/{id}/loot",
             get(quest_location_legacy_loot),
         )
-        .route("/locations/quest/{id}/rest", post(rest_at_quest_location))
         .route(
-            "/locations/quest/{id}/map/rest",
+            "/locations/case-site/{id}/rest",
+            post(rest_at_quest_location),
+        )
+        .route(
+            "/locations/case-site/{id}/map/rest",
             post(rest_at_quest_location_map),
         )
         .route("/quests/{id}/autoresolve", post(autoresolve_quest))
@@ -197,7 +201,7 @@ async fn abandon_quest(
     )
 }
 
-async fn travel_to_quest(
+async fn travel_to_case_site(
     State(state): State<AppState>,
     Path(id): Path<String>,
     session: Session,
@@ -209,18 +213,36 @@ async fn travel_to_quest(
     let outcome = execute_or_request_party_action(
         &state,
         character_id,
-        PartyAction::TravelToQuest {
-            quest_id: id.clone(),
+        PartyAction::TravelToCaseSite {
+            case_site_id: id.clone(),
         },
     )
     .await;
     if let Err(ref error) = outcome {
-        tracing::error!("Failed to travel to quest: {error:?}");
+        tracing::error!("Failed to travel to case site: {error:?}");
         return (StatusCode::BAD_REQUEST, error.clone()).into_response();
     }
     match outcome.unwrap() {
         PartyActionOutcome::Executed => StatusCode::NO_CONTENT.into_response(),
         PartyActionOutcome::Requested => StatusCode::ACCEPTED.into_response(),
+    }
+}
+
+async fn track_case_site(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    session: Session,
+) -> Response {
+    let Some(character_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    match state
+        .db
+        .call("track_case_site", &[json!(character_id), json!(id)])
+        .await
+    {
+        Ok(()) => Redirect::to("/").into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     }
 }
 
@@ -266,7 +288,19 @@ async fn store_battle_loot(
     {
         tracing::error!("Failed to store battle loot: {error:?}");
     }
-    Redirect::to(&format!("/locations/quest/{id}/enemy"))
+    let case_site_id = state
+        .db
+        .query_one::<Character>(&format!(
+            "SELECT * FROM character WHERE id = {character_id}"
+        ))
+        .await
+        .ok()
+        .flatten()
+        .and_then(|character| character.current_case_site_id);
+    case_site_id.map_or_else(
+        || Redirect::to("/"),
+        |case_site_id| Redirect::to(&format!("/locations/case-site/{case_site_id}/enemy")),
+    )
 }
 
 #[derive(Default, serde::Deserialize)]
@@ -305,7 +339,7 @@ async fn quest_location_enemy(
 }
 
 async fn quest_location_legacy_loot(Path(id): Path<String>) -> Redirect {
-    Redirect::to(&format!("/locations/quest/{id}/enemy"))
+    Redirect::to(&format!("/locations/case-site/{id}/enemy"))
 }
 
 async fn rest_at_quest_location(
@@ -319,7 +353,7 @@ async fn rest_at_quest_location(
         id.clone(),
         session,
         form,
-        &format!("/locations/quest/{id}/enemy"),
+        &format!("/locations/case-site/{id}/enemy"),
     )
     .await
 }
@@ -335,7 +369,7 @@ async fn rest_at_quest_location_map(
         id.clone(),
         session,
         form,
-        &format!("/locations/quest/{id}/map"),
+        &format!("/locations/case-site/{id}/map"),
     )
     .await
 }
@@ -360,7 +394,7 @@ async fn rest_at_quest_location_with_redirect(
         .flatten();
     if character
         .as_ref()
-        .and_then(|row| row.current_quest_location_id.as_deref())
+        .and_then(|row| row.current_case_site_id.as_deref())
         != Some(id.as_str())
     {
         return (
@@ -388,15 +422,51 @@ async fn rest_at_quest_location_with_redirect(
 
 async fn render_quest_location(
     state: AppState,
-    id: String,
+    case_site_id: String,
     session: Session,
     tab: QuestLocationTab,
 ) -> Response {
+    let Some(character_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    let character = state
+        .db
+        .query_one::<Character>(&format!(
+            "SELECT * FROM character WHERE id = {character_id}"
+        ))
+        .await
+        .ok()
+        .flatten();
+    let known_site = state
+        .db
+        .query_one::<BackendCaseSitePin>(&format!(
+            "SELECT * FROM backend_case_site_pins WHERE owner_character_id = {character_id} AND case_site_id = {}",
+            sql_string_literal(&case_site_id)
+        ))
+        .await
+        .ok()
+        .flatten();
+    let Some(site) = known_site.as_ref() else {
+        return (
+            StatusCode::NOT_FOUND,
+            Html(
+                crate::templates::strategic_notice_page(
+                    "Case site not found",
+                    "That exact destination has not been disclosed to this character.",
+                    "/characters",
+                    "Return to character select",
+                    character.as_ref().map(|character| character.name.as_str()),
+                )
+                .into_string(),
+            ),
+        )
+            .into_response();
+    };
     let matching_quests: Vec<Quest> = state
         .db
         .query(&format!(
             "SELECT * FROM quest WHERE id = {}",
-            sql_string_literal(&id)
+            sql_string_literal(&site.case_id)
         ))
         .await
         .unwrap_or_default();
@@ -416,19 +486,6 @@ async fn render_quest_location(
         )
             .into_response();
     };
-    let character = match session.character_id_u64() {
-        Some(character_id) => {
-            let characters: Vec<Character> = state
-                .db
-                .query(&format!(
-                    "SELECT * FROM character WHERE id = {character_id}"
-                ))
-                .await
-                .unwrap_or_default();
-            characters.into_iter().next()
-        }
-        None => None,
-    };
     let party = if let Some(party_id) = character.as_ref().and_then(|c| c.party_id.as_ref()) {
         state
             .db
@@ -445,7 +502,7 @@ async fn render_quest_location(
     };
     let is_at_location = character
         .as_ref()
-        .is_some_and(|c| c.current_quest_location_id.as_deref() == Some(&quest.id));
+        .is_some_and(|c| c.current_case_site_id.as_deref() == Some(&site.case_site_id));
     if !is_at_location {
         let return_href = character
             .as_ref()
@@ -472,26 +529,14 @@ async fn render_quest_location(
         .query("SELECT * FROM settlement")
         .await
         .unwrap_or_default();
-    let quests: Vec<Quest> = state
-        .db
-        .query("SELECT * FROM quest")
-        .await
-        .unwrap_or_default();
-    let markers = QuestMapMarkers::new(
-        &quests,
-        party
-            .as_ref()
-            .and_then(|party| party.active_quest_id.as_deref()),
-    );
     let mut nearby: Vec<TravelDestination> = settlements
         .iter()
         .cloned()
         .map(|settlement| {
-            let distance_m = straight_line_distance_m(quest, &settlement);
+            let distance_m = straight_line_distance_m(site, &settlement);
             settlement_destination(settlement, distance_m, offroad_journey_minutes(distance_m))
         })
         .collect();
-    let _ = markers;
     nearby.sort_by_key(|destination| destination.distance_m);
     nearby.truncate(5);
     if let QuestLocationTab::Map(Some(selected_id)) = &tab
@@ -512,7 +557,10 @@ async fn render_quest_location(
         apply_terrain_route(
             destination,
             state.terrain.as_deref(),
-            (quest.location_coord_y, quest.location_coord_x),
+            (
+                f64::from(site.latitude_e7) / 10_000_000.0,
+                f64::from(site.longitude_e7) / 10_000_000.0,
+            ),
             (settlement.coord_y, settlement.coord_x),
             terrain_profile,
         )
@@ -681,6 +729,7 @@ async fn render_quest_location(
     let page = match tab {
         QuestLocationTab::Map(selected) => quest_location_map_page(
             quest,
+            site,
             &nearby,
             selected.as_deref(),
             character.as_ref(),
@@ -697,6 +746,7 @@ async fn render_quest_location(
         ),
         QuestLocationTab::Enemy => quest_location_enemy_page(
             quest,
+            site,
             character.as_ref(),
             &party_members,
             can_fight,
@@ -783,14 +833,28 @@ async fn autoresolve_quest(
     if let Err(ref error) = outcome {
         tracing::error!("Failed to autoresolve quest: {error:?}");
     }
-    autoresolve_redirect(&id, outcome)
+    let case_site_id = state
+        .db
+        .query_one::<Character>(&format!(
+            "SELECT * FROM character WHERE id = {character_id}"
+        ))
+        .await
+        .ok()
+        .flatten()
+        .and_then(|character| character.current_case_site_id);
+    autoresolve_redirect(case_site_id.as_deref(), outcome)
 }
 
-fn autoresolve_redirect<E>(id: &str, outcome: Result<PartyActionOutcome, E>) -> Redirect {
+fn autoresolve_redirect<E>(
+    case_site_id: Option<&str>,
+    outcome: Result<PartyActionOutcome, E>,
+) -> Redirect {
     match outcome {
-        Ok(PartyActionOutcome::Executed) => Redirect::to(&format!("/locations/quest/{id}/enemy")),
+        Ok(PartyActionOutcome::Executed) | Err(_) => case_site_id.map_or_else(
+            || Redirect::to("/"),
+            |id| Redirect::to(&format!("/locations/case-site/{id}/enemy")),
+        ),
         Ok(PartyActionOutcome::Requested) => Redirect::to("/?party-requested=autoresolve"),
-        Err(_) => Redirect::to(&format!("/locations/quest/{id}/enemy")),
     }
 }
 
@@ -798,19 +862,20 @@ pub(crate) fn offroad_journey_minutes(distance_m: u64) -> u64 {
     ((distance_m as f64 / 1_250.0) * 60.0).ceil() as u64
 }
 
-pub(crate) fn straight_line_distance_m(quest: &Quest, settlement: &Settlement) -> u64 {
-    if quest.coordinates_are_geographic && settlement.source_node_id.is_some() {
-        let lat1 = quest.location_coord_y.to_radians();
+pub(crate) fn straight_line_distance_m(site: &BackendCaseSitePin, settlement: &Settlement) -> u64 {
+    let longitude = f64::from(site.longitude_e7) / 10_000_000.0;
+    let latitude = f64::from(site.latitude_e7) / 10_000_000.0;
+    if site.coordinates_are_geographic && settlement.source_node_id.is_some() {
+        let lat1 = latitude.to_radians();
         let lat2 = settlement.coord_y.to_radians();
-        let delta_lat = (settlement.coord_y - quest.location_coord_y).to_radians();
-        let delta_lon = (settlement.coord_x - quest.location_coord_x).to_radians();
+        let delta_lat = (settlement.coord_y - latitude).to_radians();
+        let delta_lon = (settlement.coord_x - longitude).to_radians();
         let a = (delta_lat / 2.0).sin().powi(2)
             + lat1.cos() * lat2.cos() * (delta_lon / 2.0).sin().powi(2);
         (6_371_000.0 * 2.0 * a.sqrt().atan2((1.0 - a).sqrt())).round() as u64
     } else {
-        (((quest.location_coord_x - settlement.coord_x).powi(2)
-            + (quest.location_coord_y - settlement.coord_y).powi(2))
-        .sqrt()
+        (((longitude - settlement.coord_x).powi(2) + (latitude - settlement.coord_y).powi(2))
+            .sqrt()
             * 1_000.0)
             .round() as u64
     }
@@ -835,21 +900,21 @@ mod quest_route_tests {
 
     #[test]
     fn autoresolve_stays_on_the_enemy_lifecycle_except_while_requesting_approval() {
-        let enemy = "/locations/quest/quest-1/enemy";
+        let enemy = "/locations/case-site/case-site-1/enemy";
         assert_eq!(
             redirect_location(autoresolve_redirect::<()>(
-                "quest-1",
+                Some("case-site-1"),
                 Ok(PartyActionOutcome::Executed),
             )),
             enemy,
         );
         assert_eq!(
-            redirect_location(autoresolve_redirect::<()>("quest-1", Err(()))),
+            redirect_location(autoresolve_redirect::<()>(Some("case-site-1"), Err(()))),
             enemy,
         );
         assert_eq!(
             redirect_location(autoresolve_redirect::<()>(
-                "quest-1",
+                Some("case-site-1"),
                 Ok(PartyActionOutcome::Requested),
             )),
             "/?party-requested=autoresolve",

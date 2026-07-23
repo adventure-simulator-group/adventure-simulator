@@ -11,8 +11,8 @@ pub(crate) enum PartyAction {
     TravelToSettlement {
         settlement_id: String,
     },
-    TravelToQuest {
-        quest_id: String,
+    TravelToCaseSite {
+        case_site_id: String,
     },
     RemovePartyMember {
         character_id: u64,
@@ -77,7 +77,7 @@ impl PartyAction {
     pub(super) fn requires_ready_party(&self) -> bool {
         matches!(
             self,
-            Self::TravelToQuest { .. }
+            Self::TravelToCaseSite { .. }
                 | Self::AutoresolveQuest { .. }
                 | Self::RequestTacticalServer { .. }
         )
@@ -85,7 +85,7 @@ impl PartyAction {
 
     pub(super) fn kind(&self) -> String {
         match self {
-            Self::TravelToSettlement { .. } | Self::TravelToQuest { .. } => "travel".into(),
+            Self::TravelToSettlement { .. } | Self::TravelToCaseSite { .. } => "travel".into(),
             Self::RemovePartyMember { .. } => "kick".into(),
             Self::CreateRecruitmentRole { .. } => "add_role".into(),
             Self::UpdateRecruitmentRole { .. } => "edit_role".into(),
@@ -109,7 +109,9 @@ impl PartyAction {
             Self::TravelToSettlement { settlement_id, .. } => {
                 format!("Travel to settlement {settlement_id}")
             }
-            Self::TravelToQuest { quest_id, .. } => format!("Travel to quest {quest_id}"),
+            Self::TravelToCaseSite { case_site_id, .. } => {
+                format!("Travel to case site {case_site_id}")
+            }
             Self::RemovePartyMember { character_id } => {
                 format!("Remove party member {character_id}")
             }
@@ -138,9 +140,10 @@ impl PartyAction {
                 "travel_to_settlement",
                 vec![json!(actor_id), json!(settlement_id)],
             ),
-            Self::TravelToQuest { quest_id } => {
-                ("travel_to_quest", vec![json!(actor_id), json!(quest_id)])
-            }
+            Self::TravelToCaseSite { case_site_id } => (
+                "travel_to_case_site",
+                vec![json!(actor_id), json!(case_site_id)],
+            ),
             Self::RemovePartyMember { character_id } => (
                 "remove_party_member",
                 vec![json!(actor_id), json!(character_id)],
@@ -249,12 +252,12 @@ mod tests {
 
     #[test]
     fn approval_rebinds_actor_from_the_typed_variant() {
-        let action = PartyAction::TravelToQuest {
-            quest_id: "quest-7".into(),
+        let action = PartyAction::TravelToCaseSite {
+            case_site_id: "case-site-7".into(),
         };
         assert_eq!(
             action.reducer_call(42),
-            ("travel_to_quest", vec![json!(42), json!("quest-7")])
+            ("travel_to_case_site", vec![json!(42), json!("case-site-7")])
         );
     }
 

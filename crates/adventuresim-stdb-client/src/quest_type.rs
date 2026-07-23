@@ -20,12 +20,6 @@ pub struct Quest {
     pub accepted_by: Option<String>,
     pub enemy_type: String,
     pub enemy_count: i32,
-    pub location_description: String,
-    pub location_scene_key: String,
-    pub location_coord_x: f64,
-    pub location_coord_y: f64,
-    pub coordinates_are_geographic: bool,
-    pub distance_m: u64,
 }
 
 impl __sdk::InModule for Quest {
@@ -47,12 +41,6 @@ pub struct QuestCols {
     pub accepted_by: __sdk::__query_builder::Col<Quest, Option<String>>,
     pub enemy_type: __sdk::__query_builder::Col<Quest, String>,
     pub enemy_count: __sdk::__query_builder::Col<Quest, i32>,
-    pub location_description: __sdk::__query_builder::Col<Quest, String>,
-    pub location_scene_key: __sdk::__query_builder::Col<Quest, String>,
-    pub location_coord_x: __sdk::__query_builder::Col<Quest, f64>,
-    pub location_coord_y: __sdk::__query_builder::Col<Quest, f64>,
-    pub coordinates_are_geographic: __sdk::__query_builder::Col<Quest, bool>,
-    pub distance_m: __sdk::__query_builder::Col<Quest, u64>,
 }
 
 impl __sdk::__query_builder::HasCols for Quest {
@@ -70,18 +58,6 @@ impl __sdk::__query_builder::HasCols for Quest {
             accepted_by: __sdk::__query_builder::Col::new(table_name, "accepted_by"),
             enemy_type: __sdk::__query_builder::Col::new(table_name, "enemy_type"),
             enemy_count: __sdk::__query_builder::Col::new(table_name, "enemy_count"),
-            location_description: __sdk::__query_builder::Col::new(
-                table_name,
-                "location_description",
-            ),
-            location_scene_key: __sdk::__query_builder::Col::new(table_name, "location_scene_key"),
-            location_coord_x: __sdk::__query_builder::Col::new(table_name, "location_coord_x"),
-            location_coord_y: __sdk::__query_builder::Col::new(table_name, "location_coord_y"),
-            coordinates_are_geographic: __sdk::__query_builder::Col::new(
-                table_name,
-                "coordinates_are_geographic",
-            ),
-            distance_m: __sdk::__query_builder::Col::new(table_name, "distance_m"),
         }
     }
 }

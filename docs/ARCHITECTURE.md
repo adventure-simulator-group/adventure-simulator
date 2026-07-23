@@ -359,8 +359,11 @@ never include raw investigation tables. See
 | `character_capability` | Cached automatic equipment, attribute, skill, and mobility tags |
 | `mission` | Active and completed missions |
 | `mission_commit` | Idempotent mission result tracking |
-| `quest` | Settlement-owned generated postings, off-road locations, and acceptance state |
-| `character` / `party` location fields | Current settlement or quest location (never tactical positions) |
+| `quest` | Settlement-owned generated postings, opposition, reward, and acceptance state; it is not destination authority |
+| private `case_site_authority` | Stable case-site identity, origin, scene, distance, and physical coordinates |
+| private `party_case_site_tracking` | Per-party presentation/navigation selection; it grants no knowledge, acceptance, objective progress, or reward |
+| gateway-only `backend_case_site_pins` | Observer-owned exact site projection, emitted only from unrevised exact/visited investigation knowledge |
+| `character` / `party` location fields | Current settlement or typed case site (never tactical positions) |
 | `port_allocation` | Tactical server port allocation (singleton) |
 
 `character_personality`, `character_affinity`, `character_familiarity`,
@@ -404,8 +407,9 @@ migration, dual-read path, or preservation of disposable characters.
 | `start_mission` | Allocate port, record mission |
 | **`commit_mission`** | **Apply mission results (XP, items) - idempotent** |
 | `cancel_mission` | Cancel active mission |
-| `start_quest` / `complete_quest` | Quest management |
-| `travel_to_quest` | Advance strategic time and move a party to its off-road quest location |
+| `accept_quest` / `complete_quest` | Legacy bounty-contract management; direct bounties explicitly disclose their seeded case site on acceptance |
+| `track_case_site` | Select an already-known exact site for party navigation without accepting a contract, moving, progressing an objective, or paying a reward |
+| `travel_to_case_site` | Authorize through observer-safe exact knowledge, advance strategic time, and move a party to the typed off-road case site |
 | `autoresolve_quest` | Run the bounded shared-core melee/ranged simulation, commit per-hit cut/blunt/projectile facts into manual limb injuries, blood loss, and spent ammunition, retain a seeded summary and expandable combat log, and complete or retain the quest according to the outcome |
 | `treat_limb` | Align one treating character and patient on their personal clocks, advance only those participants, and perform one validated Anatomy-based projectile-removal, bandage, stitch, or splint procedure |
 

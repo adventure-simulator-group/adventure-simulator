@@ -21,6 +21,8 @@ pub mod autoresolve_quest_reducer;
 pub mod autoresolve_report_table;
 pub mod autoresolve_report_type;
 pub mod available_water_capacity_type;
+pub mod backend_case_site_pin_type;
+pub mod backend_case_site_pins_table;
 pub mod backend_character_affinities_table;
 pub mod backend_character_familiarities_table;
 pub mod backend_committed_cuts_table;
@@ -57,6 +59,7 @@ pub mod camp_duration_mode_type;
 pub mod canal_watercourse_type;
 pub mod cancel_mission_request_reducer;
 pub mod canopy_density_type;
+pub mod case_site_authority_type;
 pub mod catholic_lutheran_church_type;
 pub mod catholic_reformed_church_type;
 pub mod cation_exchange_capacity_type;
@@ -305,6 +308,7 @@ pub mod outlook_type;
 pub mod palmer_drought_severity_index_type;
 pub mod party_action_request_table;
 pub mod party_action_request_type;
+pub mod party_case_site_tracking_type;
 pub mod party_inventory_item_table;
 pub mod party_inventory_item_type;
 pub mod party_inventory_state_table;
@@ -488,6 +492,7 @@ pub mod tactical_server_table;
 pub mod tactical_server_type;
 pub mod temperance_type;
 pub mod topsoil_organic_carbon_type;
+pub mod track_case_site_reducer;
 pub mod transfer_party_item_reducer;
 pub mod travel_edge_load_type;
 pub mod travel_edge_provenance_type;
@@ -495,8 +500,8 @@ pub mod travel_edge_table;
 pub mod travel_edge_type;
 pub mod travel_filth_progress_type;
 pub mod travel_route_type;
-pub mod travel_to_quest_planned_reducer;
-pub mod travel_to_quest_reducer;
+pub mod travel_to_case_site_planned_reducer;
+pub mod travel_to_case_site_reducer;
 pub mod travel_to_settlement_planned_reducer;
 pub mod travel_to_settlement_reducer;
 pub mod treat_limb_reducer;
@@ -542,6 +547,8 @@ pub use autoresolve_quest_reducer::autoresolve_quest;
 pub use autoresolve_report_table::*;
 pub use autoresolve_report_type::AutoresolveReport;
 pub use available_water_capacity_type::AvailableWaterCapacity;
+pub use backend_case_site_pin_type::BackendCaseSitePin;
+pub use backend_case_site_pins_table::*;
 pub use backend_character_affinities_table::*;
 pub use backend_character_familiarities_table::*;
 pub use backend_committed_cuts_table::*;
@@ -578,6 +585,7 @@ pub use camp_duration_mode_type::CampDurationMode;
 pub use canal_watercourse_type::CanalWatercourse;
 pub use cancel_mission_request_reducer::cancel_mission_request;
 pub use canopy_density_type::CanopyDensity;
+pub use case_site_authority_type::CaseSiteAuthority;
 pub use catholic_lutheran_church_type::CatholicLutheranChurch;
 pub use catholic_reformed_church_type::CatholicReformedChurch;
 pub use cation_exchange_capacity_type::CationExchangeCapacity;
@@ -826,6 +834,7 @@ pub use outlook_type::Outlook;
 pub use palmer_drought_severity_index_type::PalmerDroughtSeverityIndex;
 pub use party_action_request_table::*;
 pub use party_action_request_type::PartyActionRequest;
+pub use party_case_site_tracking_type::PartyCaseSiteTracking;
 pub use party_inventory_item_table::*;
 pub use party_inventory_item_type::PartyInventoryItem;
 pub use party_inventory_state_table::*;
@@ -1009,6 +1018,7 @@ pub use tactical_server_table::*;
 pub use tactical_server_type::TacticalServer;
 pub use temperance_type::Temperance;
 pub use topsoil_organic_carbon_type::TopsoilOrganicCarbon;
+pub use track_case_site_reducer::track_case_site;
 pub use transfer_party_item_reducer::transfer_party_item;
 pub use travel_edge_load_type::TravelEdgeLoad;
 pub use travel_edge_provenance_type::TravelEdgeProvenance;
@@ -1016,8 +1026,8 @@ pub use travel_edge_table::*;
 pub use travel_edge_type::TravelEdge;
 pub use travel_filth_progress_type::TravelFilthProgress;
 pub use travel_route_type::TravelRoute;
-pub use travel_to_quest_planned_reducer::travel_to_quest_planned;
-pub use travel_to_quest_reducer::travel_to_quest;
+pub use travel_to_case_site_planned_reducer::travel_to_case_site_planned;
+pub use travel_to_case_site_reducer::travel_to_case_site;
 pub use travel_to_settlement_planned_reducer::travel_to_settlement_planned;
 pub use travel_to_settlement_reducer::travel_to_settlement;
 pub use treat_limb_reducer::treat_limb;
@@ -1526,19 +1536,23 @@ pub enum Reducer {
     SynchronizeCharacterTime {
         character_id: u64,
     },
+    TrackCaseSite {
+        character_id: u64,
+        case_site_id: String,
+    },
     TransferPartyItem {
         from_character_id: u64,
         to_character_id: u64,
         inventory_item_id: u64,
         quantity: u32,
     },
-    TravelToQuest {
+    TravelToCaseSite {
         character_id: u64,
-        quest_id: String,
+        case_site_id: String,
     },
-    TravelToQuestPlanned {
+    TravelToCaseSitePlanned {
         character_id: u64,
-        quest_id: String,
+        case_site_id: String,
         route: JourneyRoutePlan,
     },
     TravelToSettlement {
@@ -1715,9 +1729,10 @@ impl __sdk::Reducer for Reducer {
             Reducer::SubmitAllRepairableItems { .. } => "submit_all_repairable_items",
             Reducer::SubmitItemForRepair { .. } => "submit_item_for_repair",
             Reducer::SynchronizeCharacterTime { .. } => "synchronize_character_time",
+            Reducer::TrackCaseSite { .. } => "track_case_site",
             Reducer::TransferPartyItem { .. } => "transfer_party_item",
-            Reducer::TravelToQuest { .. } => "travel_to_quest",
-            Reducer::TravelToQuestPlanned { .. } => "travel_to_quest_planned",
+            Reducer::TravelToCaseSite { .. } => "travel_to_case_site",
+            Reducer::TravelToCaseSitePlanned { .. } => "travel_to_case_site_planned",
             Reducer::TravelToSettlement { .. } => "travel_to_settlement",
             Reducer::TravelToSettlementPlanned { .. } => "travel_to_settlement_planned",
             Reducer::TreatLimb { .. } => "treat_limb",
@@ -2581,6 +2596,13 @@ Reducer::CancelMissionRequest{
 }             => __sats::bsatn::to_vec(&synchronize_character_time_reducer::SynchronizeCharacterTimeArgs {
                 character_id: character_id.clone(),
 }),
+            Reducer::TrackCaseSite{
+                character_id,
+                case_site_id,
+}             => __sats::bsatn::to_vec(&track_case_site_reducer::TrackCaseSiteArgs {
+                character_id: character_id.clone(),
+                case_site_id: case_site_id.clone(),
+}),
             Reducer::TransferPartyItem{
                 from_character_id,
                 to_character_id,
@@ -2592,20 +2614,20 @@ Reducer::CancelMissionRequest{
                 inventory_item_id: inventory_item_id.clone(),
                 quantity: quantity.clone(),
 }),
-            Reducer::TravelToQuest{
+            Reducer::TravelToCaseSite{
                 character_id,
-                quest_id,
-}             => __sats::bsatn::to_vec(&travel_to_quest_reducer::TravelToQuestArgs {
+                case_site_id,
+}             => __sats::bsatn::to_vec(&travel_to_case_site_reducer::TravelToCaseSiteArgs {
                 character_id: character_id.clone(),
-                quest_id: quest_id.clone(),
+                case_site_id: case_site_id.clone(),
 }),
-            Reducer::TravelToQuestPlanned{
+            Reducer::TravelToCaseSitePlanned{
                 character_id,
-                quest_id,
+                case_site_id,
                 route,
-}             => __sats::bsatn::to_vec(&travel_to_quest_planned_reducer::TravelToQuestPlannedArgs {
+}             => __sats::bsatn::to_vec(&travel_to_case_site_planned_reducer::TravelToCaseSitePlannedArgs {
                 character_id: character_id.clone(),
-                quest_id: quest_id.clone(),
+                case_site_id: case_site_id.clone(),
                 route: route.clone(),
 }),
             Reducer::TravelToSettlement{
@@ -2724,6 +2746,7 @@ Reducer::VoteForPartyLeader{
 pub struct DbUpdate {
     alcohol_consumption: __sdk::TableUpdate<AlcoholConsumption>,
     autoresolve_report: __sdk::TableUpdate<AutoresolveReport>,
+    backend_case_site_pins: __sdk::TableUpdate<BackendCaseSitePin>,
     backend_character_affinities: __sdk::TableUpdate<CharacterAffinity>,
     backend_character_familiarities: __sdk::TableUpdate<CharacterFamiliarity>,
     backend_committed_cuts: __sdk::TableUpdate<CommittedCut>,
@@ -2825,6 +2848,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "autoresolve_report" => db_update
                     .autoresolve_report
                     .append(autoresolve_report_table::parse_table_update(table_update)?),
+                "backend_case_site_pins" => db_update.backend_case_site_pins.append(
+                    backend_case_site_pins_table::parse_table_update(table_update)?,
+                ),
                 "backend_character_affinities" => db_update.backend_character_affinities.append(
                     backend_character_affinities_table::parse_table_update(table_update)?,
                 ),
@@ -3456,6 +3482,10 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.world_node = cache
             .apply_diff_to_table::<WorldNode>("world_node", &self.world_node)
             .with_updates_by_pk(|row| &row.id);
+        diff.backend_case_site_pins = cache.apply_diff_to_table::<BackendCaseSitePin>(
+            "backend_case_site_pins",
+            &self.backend_case_site_pins,
+        );
         diff.backend_character_affinities = cache.apply_diff_to_table::<CharacterAffinity>(
             "backend_character_affinities",
             &self.backend_character_affinities,
@@ -3516,6 +3546,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "autoresolve_report" => db_update
                     .autoresolve_report
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_case_site_pins" => db_update
+                    .backend_case_site_pins
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_character_affinities" => db_update
                     .backend_character_affinities
@@ -3797,6 +3830,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "autoresolve_report" => db_update
                     .autoresolve_report
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_case_site_pins" => db_update
+                    .backend_case_site_pins
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_character_affinities" => db_update
                     .backend_character_affinities
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -4075,6 +4111,7 @@ impl __sdk::DbUpdate for DbUpdate {
 pub struct AppliedDiff<'r> {
     alcohol_consumption: __sdk::TableAppliedDiff<'r, AlcoholConsumption>,
     autoresolve_report: __sdk::TableAppliedDiff<'r, AutoresolveReport>,
+    backend_case_site_pins: __sdk::TableAppliedDiff<'r, BackendCaseSitePin>,
     backend_character_affinities: __sdk::TableAppliedDiff<'r, CharacterAffinity>,
     backend_character_familiarities: __sdk::TableAppliedDiff<'r, CharacterFamiliarity>,
     backend_committed_cuts: __sdk::TableAppliedDiff<'r, CommittedCut>,
@@ -4184,6 +4221,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<AutoresolveReport>(
             "autoresolve_report",
             &self.autoresolve_report,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendCaseSitePin>(
+            "backend_case_site_pins",
+            &self.backend_case_site_pins,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CharacterAffinity>(
@@ -5239,6 +5281,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         alcohol_consumption_table::register_table(client_cache);
         autoresolve_report_table::register_table(client_cache);
+        backend_case_site_pins_table::register_table(client_cache);
         backend_character_affinities_table::register_table(client_cache);
         backend_character_familiarities_table::register_table(client_cache);
         backend_committed_cuts_table::register_table(client_cache);
@@ -5330,6 +5373,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
     const ALL_TABLE_NAMES: &'static [&'static str] = &[
         "alcohol_consumption",
         "autoresolve_report",
+        "backend_case_site_pins",
         "backend_character_affinities",
         "backend_character_familiarities",
         "backend_committed_cuts",

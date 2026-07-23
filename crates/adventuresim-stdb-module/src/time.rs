@@ -1636,7 +1636,7 @@ pub fn rest_at_camp(
     }
     if party.current_settlement_id.is_none()
         && party.camp_destination_id.is_none()
-        && party.current_quest_location_id.is_none()
+        && party.current_case_site_id.is_none()
     {
         return Err("The party is not at a field rest location".into());
     }

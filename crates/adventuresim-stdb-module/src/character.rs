@@ -35,8 +35,8 @@ pub struct Character {
     pub level: u32,
     pub gold: u32,
     pub current_settlement_id: Option<String>,
-    /// The quest location occupied by this character, mutually exclusive with a settlement.
-    pub current_quest_location_id: Option<String>,
+    /// The case site occupied by this character, mutually exclusive with a settlement.
+    pub current_case_site_id: Option<String>,
     pub party_id: Option<String>,
     #[index(btree)]
     pub server: Identity,
@@ -997,7 +997,7 @@ fn insert_character_with_origin(
         // authoritative in inventory.
         gold: 0,
         current_settlement_id: Some(start_settlement.id.clone()),
-        current_quest_location_id: None,
+        current_case_site_id: None,
         party_id: None,
         server: Identity::ZERO,
         in_server: false,

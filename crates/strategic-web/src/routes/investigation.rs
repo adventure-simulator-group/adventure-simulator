@@ -67,13 +67,20 @@ mod tests {
     #[test]
     fn route_filters_both_safe_views_to_the_session_observer() {
         let source = include_str!("investigation.rs");
-        assert_eq!(
-            source
-                .matches("WHERE owner_character_id = {character_id}")
-                .count(),
-            2
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production source");
+        assert!(
+            production.contains(
+                "backend_investigation_journal WHERE owner_character_id = {character_id}"
+            )
         );
-        assert!(!source.contains("investigation_case_authority"));
-        assert!(!source.contains("investigation_evidence_authority"));
+        assert!(
+            production
+                .contains("backend_investigation_leads WHERE owner_character_id = {character_id}")
+        );
+        assert!(!production.contains("investigation_case_authority"));
+        assert!(!production.contains("investigation_evidence_authority"));
     }
 }

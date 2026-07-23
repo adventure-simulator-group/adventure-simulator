@@ -12,7 +12,8 @@ use serde::Deserialize;
 use super::{AppState, PartyAction, PartyActionOutcome, execute_or_request_party_action};
 use crate::session::Session;
 use crate::spacetimedb::{
-    BattleResult, Character, Party, TacticalServer, TacticalServerRequest, sql_string_literal,
+    BackendCaseSitePin, BattleResult, Character, Party, TacticalServer, TacticalServerRequest,
+    sql_string_literal,
 };
 use crate::templates::mission::{mission_status_fragment, mission_status_page};
 
@@ -63,13 +64,22 @@ async fn enter_mission(State(state): State<AppState>, session: Session) -> Redir
     let Some(quest_id) = &party.active_quest_id else {
         return Redirect::to("/");
     };
-    if character.current_quest_location_id.as_ref() != Some(quest_id) {
+    let Some(case_site_id) = character.current_case_site_id.as_deref() else {
         return Redirect::to("/");
-    }
-
-    let scene_key = quest_scene_key(&state, quest_id)
+    };
+    let site = state
+        .db
+        .query_one::<BackendCaseSitePin>(&format!(
+            "SELECT * FROM backend_case_site_pins WHERE owner_character_id = {character_id} AND case_site_id = {}",
+            sql_string_literal(case_site_id)
+        ))
         .await
-        .unwrap_or_else(|| "hills".to_string());
+        .ok()
+        .flatten();
+    let Some(site) = site.filter(|site| site.case_id == *quest_id) else {
+        return Redirect::to("/");
+    };
+    let scene_key = site.scene_key;
     let mission_id = format!("party-{}-{}", party_id, super::data::new_id());
 
     let outcome = execute_or_request_party_action(
@@ -148,12 +158,17 @@ async fn mission_status(
                     .into_response();
             }
         };
-        if let Some(result) = results
+        if let Some(_result) = results
             .first()
             .filter(|result| viewer.party_id.as_deref() == Some(&result.party_id))
         {
-            return Redirect::to(&format!("/locations/quest/{}/enemy", result.quest_id))
-                .into_response();
+            return viewer.current_case_site_id.as_deref().map_or_else(
+                || Redirect::to("/").into_response(),
+                |case_site_id| {
+                    Redirect::to(&format!("/locations/case-site/{case_site_id}/enemy"))
+                        .into_response()
+                },
+            );
         }
         return (StatusCode::NOT_FOUND, "Mission not found").into_response();
     };
@@ -220,19 +235,6 @@ async fn cancel_mission(
     Redirect::to("/").into_response()
 }
 
-async fn quest_scene_key(state: &AppState, quest_id: &str) -> Option<String> {
-    let quests: Vec<crate::spacetimedb::Quest> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM quest WHERE id = {}",
-            sql_string_literal(quest_id)
-        ))
-        .await
-        .ok()?;
-    let quest = quests.first()?;
-    Some(quest.location_scene_key.clone())
-}
-
 async fn get_mission_for_viewer(
     state: &AppState,
     mission_id: &str,
@@ -294,7 +296,7 @@ mod tests {
             level: 1,
             gold: 0,
             current_settlement_id: None,
-            current_quest_location_id: None,
+            current_case_site_id: None,
             party_id: Some(party_id.into()),
             age_years: 18,
             alive: true,

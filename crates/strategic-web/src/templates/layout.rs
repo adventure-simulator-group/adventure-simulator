@@ -364,7 +364,7 @@ fn quest_location_top_bar(
                     @if active_tab == "camp" {
                         a href="/camp" class="settlement-name" aria-current="page" { (location_name) }
                     } @else {
-                        a href=(format!("/locations/quest/{}", location_id)) class="settlement-name" { (location_name) }
+                        a href=(format!("/locations/case-site/{}", location_id)) class="settlement-name" { (location_name) }
                     }
                     span class="settlement-time" data-player-time { "1st of First Seed · 08:00" }
                 }
@@ -386,7 +386,7 @@ fn quest_location_top_bar(
                         span class="service-tab-label" aria-hidden="true" { "Camp" }
                     }
                 } @else {
-                a href=(format!("/locations/quest/{}", location_id))
+                a href=(format!("/locations/case-site/{}", location_id))
                     class=(if active_tab == "map" { "nav-tab active" } else { "nav-tab" })
                     style=(format!("--building-tint:{map_tint}"))
                     data-location-view="map"
@@ -396,7 +396,7 @@ fn quest_location_top_bar(
                     span class="service-tab-building wilderness-tab-prop" aria-hidden="true" {}
                     span class="service-tab-label" aria-hidden="true" { "Map" }
                 }
-                a href=(format!("/locations/quest/{}/enemy", location_id))
+                a href=(format!("/locations/case-site/{}/enemy", location_id))
                     class=(if active_tab == "enemy" { "nav-tab active" } else { "nav-tab" })
                     style=(format!("--building-tint:{enemy_tint}"))
                     data-location-view="enemy"
@@ -853,7 +853,7 @@ mod tests {
         assert!(!markup.contains("data-current-quest"));
         assert!(!markup.contains("current-quest.js"));
         assert!(!markup.contains("data-settlement-turn-in-badge"));
-        assert!(markup.contains("data-map-quest-badge"));
+        assert!(!markup.contains("data-map-quest-badge"));
         let developer = markup.find("data-developer-mode-toggle").unwrap();
         let portrait = markup.find("class=\"character-switcher\"").unwrap();
         assert!(
@@ -898,11 +898,11 @@ mod tests {
 
         let map = quest_location_top_bar("Ruins", "q", "map", false, None).into_string();
         assert!(map.contains("aria-label=\"Map\""));
-        assert!(map.contains("href=\"/locations/quest/q\" class=\"nav-tab active\""));
+        assert!(map.contains("href=\"/locations/case-site/q\" class=\"nav-tab active\""));
 
         let enemy = quest_location_top_bar("Ruins", "q", "enemy", false, None).into_string();
         assert!(enemy.contains("aria-label=\"Enemy\""));
-        assert!(enemy.contains("href=\"/locations/quest/q/enemy\" class=\"nav-tab active\""));
+        assert!(enemy.contains("href=\"/locations/case-site/q/enemy\" class=\"nav-tab active\""));
 
         let camp = quest_location_top_bar("Camp", "party-7", "camp", true, None).into_string();
         assert!(camp.contains("aria-label=\"Camp\""));
@@ -917,9 +917,9 @@ mod tests {
         assert_eq!(camp.matches("campfire-smoke").count(), 1);
         assert_eq!(camp.matches("class=\"fire-particle\"").count(), 16);
         assert_eq!(camp.matches("class=\"smoke-puff\"").count(), 18);
-        assert!(!camp.contains("/locations/quest/party-7"));
-        assert!(!camp.contains("/locations/quest/party-7/map"));
-        assert!(!camp.contains("/locations/quest/party-7/enemy"));
+        assert!(!camp.contains("/locations/case-site/party-7"));
+        assert!(!camp.contains("/locations/case-site/party-7/map"));
+        assert!(!camp.contains("/locations/case-site/party-7/enemy"));
 
         let rested_camp =
             quest_location_top_bar("Camp", "party-7", "camp", false, None).into_string();
@@ -941,8 +941,8 @@ mod tests {
                 .count(),
             2
         );
-        assert!(markup.contains("href=\"/locations/quest/q\""));
-        assert!(markup.contains("href=\"/locations/quest/q/enemy\""));
+        assert!(markup.contains("href=\"/locations/case-site/q\""));
+        assert!(markup.contains("href=\"/locations/case-site/q/enemy\""));
         for label in ["Map", "Enemy"] {
             assert!(markup.contains(&format!("aria-label=\"{label}\"")));
         }

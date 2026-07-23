@@ -26,6 +26,7 @@ use adventuresim_stdb_client::{
     accept_party_join_request_reducer::accept_party_join_request,
     accept_quest_reducer::accept_quest, autoresolve_quest_reducer::autoresolve_quest,
     autoresolve_report_table::AutoresolveReportTableAccess,
+    backend_case_site_pins_table::BackendCaseSitePinsTableAccess,
     backend_herbalist_examinations_table::BackendHerbalistExaminationsTableAccess,
     battle_loot_item_table::BattleLootItemTableAccess,
     battle_result_table::BattleResultTableAccess,
@@ -65,8 +66,8 @@ use adventuresim_stdb_client::{
     simulation_run_table::SimulationRunTableAccess, store_battle_loot_reducer::store_battle_loot,
     strategic_encounter_table::StrategicEncounterTableAccess,
     submit_item_for_repair_reducer::submit_item_for_repair,
-    travel_to_quest_reducer::travel_to_quest, travel_to_settlement_reducer::travel_to_settlement,
-    turn_in_quest_reducer::turn_in_quest,
+    travel_to_case_site_reducer::travel_to_case_site,
+    travel_to_settlement_reducer::travel_to_settlement, turn_in_quest_reducer::turn_in_quest,
     update_training_schedule_reducer::update_training_schedule,
     withdraw_party_inventory_item_reducer::withdraw_party_inventory_item,
 };
@@ -1538,6 +1539,13 @@ impl LiveRunner {
             .reducers
             .accept_quest_then(leader, quest.id.clone(), cb));
         self.call(result)?;
+        let case_site = self
+            .connection
+            .db
+            .backend_case_site_pins()
+            .iter()
+            .find(|site| site.owner_character_id == leader && site.case_id == quest.id)
+            .ok_or("accepted quest did not disclose an exact case site")?;
         self.event(
             leader_agent,
             CoreLoopEventKind::AcceptQuest,
@@ -1548,19 +1556,19 @@ impl LiveRunner {
                 quest.difficulty,
                 quest.enemy_type,
                 quest.enemy_count,
-                quest.distance_m
+                case_site.distance_m
             ),
         );
 
-        let result = reducer_call!(self, "travel_to_quest", |cb| self
+        let result = reducer_call!(self, "travel_to_case_site", |cb| self
             .connection
             .reducers
-            .travel_to_quest_then(leader, quest.id.clone(), cb));
+            .travel_to_case_site_then(leader, case_site.case_site_id.clone(), cb));
         self.call(result)?;
         self.event(
             leader_agent,
             CoreLoopEventKind::Travel,
-            format!("outbound={}", quest.id),
+            format!("outbound={}", case_site.case_site_id),
         );
         self.travel_camps(party_id)?;
 
@@ -1668,10 +1676,10 @@ impl LiveRunner {
                 return Ok(());
             };
             leader = current;
-            let result = reducer_call!(self, "retry_travel_to_quest", |cb| self
+            let result = reducer_call!(self, "retry_travel_to_case_site", |cb| self
                 .connection
                 .reducers
-                .travel_to_quest_then(leader, quest.id.clone(), cb));
+                .travel_to_case_site_then(leader, case_site.case_site_id.clone(), cb));
             self.call(result)?;
             self.travel_camps(party_id)?;
             self.observe_deaths();
@@ -2123,6 +2131,7 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
         // particular, never transport backend infection episodes, committed
         // cuts, or full medical examinations into the simulator process.
         .add_query(|query| query.from.autoresolve_report())
+        .add_query(|query| query.from.backend_case_site_pins())
         .add_query(|query| query.from.backend_herbalist_examinations())
         .add_query(|query| query.from.battle_loot_item())
         .add_query(|query| query.from.battle_result())

@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use crate::capability::StrategicEquipment;
 use crate::character::character;
 use crate::filth::character_filth;
+use crate::investigation::case_site_authority;
 use crate::item::item;
 use crate::strategic::{party, party_inventory_item, quest, settlement};
 use crate::{
@@ -765,14 +766,15 @@ fn base_morale(
             };
     }
 
-    if let Some(quest_id) = character.current_quest_location_id
-        && let Some(quest) = ctx.db.quest().id().find(&quest_id)
+    if let Some(case_site_id) = character.current_case_site_id
+        && let Some(site) = ctx.db.case_site_authority().id().find(&case_site_id)
+        && let Some(quest) = ctx.db.quest().id().find(&site.case_id)
     {
         let enemy_power = quest.enemy_count.max(1) as f32 * (quest.difficulty.max(1) as f32 + 4.0);
         let difference = allied_power - enemy_power;
         if difference != 0.0 {
             add_source(
-                format!("power-{quest_id}"),
+                format!("power-{}", quest.id),
                 "power".into(),
                 if difference > 0.0 {
                     "Superior allied strength".into()

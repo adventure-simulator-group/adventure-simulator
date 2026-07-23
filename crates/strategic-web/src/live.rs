@@ -385,10 +385,10 @@ async fn navigation(State(state): State<AppState>, session: Session) -> Json<Nav
                 id: None,
             });
         }
-        if let Some(id) = character.current_quest_location_id {
+        if let Some(id) = character.current_case_site_id {
             return Json(NavigationState {
-                kind: Some("quest"),
-                path: format!("/locations/quest/{id}"),
+                kind: Some("case_site"),
+                path: format!("/locations/case-site/{id}"),
                 id: Some(id),
             });
         }
