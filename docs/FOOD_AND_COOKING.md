@@ -25,10 +25,8 @@ applies and an unresolved Dysentery episode prevents duplicate infection.
 
 ## Cooking
 
-The active character's Cooking skill icon is a raised menu button; flat skill
-icons remain informational. Activating Cooking opens a wide, responsive modal
-dialog over the unchanged character sheet. It uses the same two-sided inventory
-browser as trading and
+Hovering the active character portrait exposes a cooking icon that opens the
+cooking panel. It uses the same two-sided inventory browser as trading and
 looting: the cooking pot is on the left, the character's full inventory is on
 the right, and transfer arrows stage bounded amounts of food between them. The
 center shows a placeholder cooking scene, Cook and Cancel, and a horizontal

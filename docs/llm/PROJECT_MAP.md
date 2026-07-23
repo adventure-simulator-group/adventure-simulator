@@ -699,7 +699,6 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/src/templates/settlement.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/static/background-fetch.js` — Repository support file.
 - `crates/strategic-web/static/building-state.js` — Repository support file.
-- `crates/strategic-web/static/character-action-dialog.js` — Repository support file.
 - `crates/strategic-web/static/chat-resize.js` — Repository support file.
 - `crates/strategic-web/static/cooking.js` — Repository support file.
 - `crates/strategic-web/static/css/base.css` — Browser UI styling.
@@ -930,7 +929,6 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/training-schedule.js` — Repository support file.
 - `crates/strategic-web/static/travel-planner.js` — Repository support file.
 - `crates/strategic-web/tests/building-assets.test.cjs` — Repository support file.
-- `crates/strategic-web/tests/character-action-dialog.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/cooking.dom.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/cooking.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/currency-backend-source.test.cjs` — Repository support file.

@@ -533,15 +533,6 @@ SpacetimeDB. The tactical WASM page remains under
 `crates/adventuresim-stdb-module/static/tactical.html` and is served by
 `strategic-web` at `/tactical/tactical.html`.
 
-Character-sheet action menus follow one interaction contract. Raised,
-old-school beveled icon buttons open modal dialogs; flat skill icons and meters
-are informational. Surgery buttons sit beside limb headings, Social sits beside
-Morale, and Medicine and Cooking use their skill icons. Activity icons use the
-same raised treatment. An inset button means its dialog is open. Dialogs retain
-the underlying rails, lock page scrolling, trap focus, close with Escape, and
-return focus to their launcher. Portrait hover controls remain reserved for
-inventory, membership, alchemy, and other portrait-specific actions.
-
 The local strategic UI is anonymous and single-user. Its cookie selects the
 active character; it does not establish a user identity. The default
 `127.0.0.1:8080` bind is therefore intentional. A non-loopback development bind
@@ -617,8 +608,7 @@ Start the isolated strategic stack with the guarded visual fixtures:
 just web-isolated-strategic social-demo 23100
 ```
 
-Select **Social Demo**, open **Greta the Guard**, and press the raised Social
-icon beside the Morale meter.
+Select **Social Demo**, open **Greta the Guard**, and select the Morale meter.
 The fixture includes defeat and injury penalties, established Familiarity,
 positive Affinity, and one deliberately incorrect perceived sensitivity so the
 privacy boundary and outcome rules are visible. The bootstrap capability is

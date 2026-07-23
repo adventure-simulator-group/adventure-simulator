@@ -269,10 +269,7 @@ impl LocationView {
         self.active_building
             .as_deref()
             .map_or(path.clone(), |building| {
-                format!(
-                    "{path}{}building={building}",
-                    if path.contains('?') { "&" } else { "?" }
-                )
+                format!("{path}?building={building}")
             })
     }
 
@@ -1940,30 +1937,21 @@ pub fn party_personal_page(
     inventory: &[InventoryItem],
     food_lots: &[FoodLot],
     item_definitions: &[ItemDefinition],
-    character_action_dialog: Option<Markup>,
-    surgery_open: Option<&str>,
-    social_open: bool,
 ) -> Markup {
-    let cooking_href = location.preserve_building(format!(
-        "{}/party/{}?cook=true",
-        location.base_path(),
-        active_character.id
-    ));
-    let examination_action = location.preserve_building(format!(
-        "{}/party/{}/examine",
-        location.base_path(),
-        active_character.id
-    ));
-    let cooking_open = cooking && medical.examination_id.is_none();
-    let surgery_path_template = location.preserve_building(format!(
-        "{}/party/{}/surgery/__limb__",
-        location.base_path(),
-        active_character.id
-    ));
+    if cooking {
+        return cooking_activity_page(
+            location,
+            active_character,
+            party_members,
+            inventory,
+            food_lots,
+            item_definitions,
+        );
+    }
     let content = html! {
         aside class="left-sidebar" {
-            (party_attributes_rail("Your attributes", attributes, limbs, medical, Some((&surgery_path_template, surgery_open)), injuries, projectiles))
-            (strategic_condition_rail(condition, morale_sources, filth, &location.preserve_building(format!("{}/party/{}/social", location.base_path(), active_character.id)), social_open))
+            (party_attributes_rail("Your attributes", attributes, limbs, medical, Some(&format!("{}/party/{}/surgery", location.base_path(), active_character.id)), injuries, projectiles))
+            (strategic_condition_rail(condition, morale_sources, filth, &location.preserve_building(format!("{}/party/{}/social", location.base_path(), active_character.id))))
             (medical_rail(medical, &location.base_path(), active_character.id, active_character.id, true))
             @if let Some(demand) = religious_demand {
                 (religious_demand_rail(demand, &location.base_path(), active_character.id))
@@ -1979,7 +1967,7 @@ pub fn party_personal_page(
             ))
             (visual_stage("character", &active_character.name, "Your identity, condition, and capabilities"))
             (settlement_chat_area(&active_character.name, Some(active_character)))
-            (medical_examination_popup(medical, location, active_character.id, limbs, injuries, projectiles))
+            (medical_examination_popup(medical, &location.base_path(), active_character.id, limbs, injuries, projectiles))
         }
         aside class="right-sidebar" {
             (character_summary_rail(capability))
@@ -1990,40 +1978,20 @@ pub fn party_personal_page(
                 Some(activity_preview), religion_id.is_some(), prayer_religion_check,
                 religion_id.or(location.religion_id.as_deref()),
                 combat_profile,
-                CharacterSkillActions {
-                    cooking_href: Some(&cooking_href),
-                    cooking_open,
-                    examination_action: can_examine.then_some(examination_action.as_str()),
-                    examination_open: medical.examination_id.is_some(),
-                },
             ))
-        }
-        @if cooking_open {
-            (cooking_activity_dialog(location, active_character, inventory, food_lots, item_definitions))
-        } @else if medical.examination_id.is_none() {
-            @if let Some(dialog) = character_action_dialog { (dialog) }
         }
     };
     location.render_layout("Party", content, Some(&active_character.name))
 }
 
-fn cooking_activity_dialog(
+fn cooking_activity_page(
     location: &LocationView,
     active_character: &Character,
+    party_members: &[Character],
     inventory: &[InventoryItem],
     food_lots: &[FoodLot],
     item_definitions: &[ItemDefinition],
 ) -> Markup {
-    let close_href = location.preserve_building(format!(
-        "{}/party/{}",
-        location.base_path(),
-        active_character.id
-    ));
-    let cook_action = location.preserve_building(format!(
-        "{}/party/{}/cook",
-        location.base_path(),
-        active_character.id
-    ));
     let owns = |item_id: &str| {
         inventory
             .iter()
@@ -2040,16 +2008,9 @@ fn cooking_activity_dialog(
                 .any(|lot| lot.inventory_item_id == Some(item.id))
         })
         .collect::<Vec<_>>();
-    html! {
-        div class="character-action-overlay" data-character-action-dialog data-initial-focus="[data-cooking-method]:checked" {
-            a class="character-action-backdrop" href=(&close_href) aria-label="Close cooking dialog" {}
-            section class="character-action-dialog cooking-dialog" role="dialog" aria-modal="true" aria-labelledby="cooking-dialog-title" tabindex="-1" {
-            header class="character-action-dialog-header" {
-                h2 id="cooking-dialog-title" { "Cooking" }
-                a class="character-action-dialog-close" href=(&close_href) aria-label="Close cooking dialog" { "×" }
-            }
-            div class="cooking-activity" data-cooking-activity {
-            aside class="cooking-pot" aria-label="Cooking pot" {
+    let content = html! {
+        div class="cooking-activity" data-cooking-activity {
+            aside class="left-sidebar cooking-pot" aria-label="Cooking pot" {
                 (sidebar_section("Pot", html! {
                     p class="text-muted small-copy cooking-pot-empty" data-cooking-pot-empty {
                         "Transfer ingredients here to prepare a meal."
@@ -2057,7 +2018,8 @@ fn cooking_activity_dialog(
                     (trade_inventory_table("cooking-pot-left", InventoryColumnSet::Basic, true, false, false, html! {}))
                 }))
             }
-            main class="cooking-stage" {
+            main class="center-content settlement-main party-member-stage cooking-stage" {
+                (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(active_character.id), false))
                 section class="cooking-workspace" aria-label="Cooking workspace" {
                     div class="cooking-method-list" aria-label="Cooking instrument" {
                         (cooking_method("pan-fry", "Pan-fry", "meal", pan, "A pan is required", false))
@@ -2070,16 +2032,16 @@ fn cooking_activity_dialog(
                     p class="text-muted small-copy" { "Cooking scene placeholder" }
                 }
                 form id="cooking-submit-form" class="cooking-submit-form" method="post"
-                    action=(&cook_action) {
+                    action=(format!("{}/party/{}/cook", location.base_path(), active_character.id)) {
                     input type="hidden" name="inventory_item_ids" value="" data-cooking-ids;
                     input type="hidden" name="quantities" value="" data-cooking-quantities;
                     div class="party-offer cooking-actions" {
-                        a class="party-offer-cancel" href=(&close_href) { "Cancel" }
+                        a class="party-offer-cancel" href=(format!("{}/party/{}", location.base_path(), active_character.id)) { "Cancel" }
                         button type="submit" disabled title="Select at least one ingredient" data-cook-submit { "Cook" }
                     }
                 }
             }
-            aside class="cooking-ingredients" aria-label="Ingredient inventory" {
+            aside class="right-sidebar cooking-ingredients" aria-label="Ingredient inventory" {
                 @let title = format!("{}'s inventory", active_character.name);
                 (sidebar_section(&title, html! {
                     @if ingredients.is_empty() {
@@ -2122,10 +2084,9 @@ fn cooking_activity_dialog(
                     }
                 }))
             }
-            }
-            }
         }
-    }
+    };
+    location.render_layout("Cooking", content, Some(&active_character.name))
 }
 
 fn cooking_method(
@@ -2253,30 +2214,14 @@ pub fn party_stats_page(
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
     filth: &[crate::spacetimedb::CharacterFilth],
-    character_action_dialog: Option<Markup>,
-    surgery_open: Option<&str>,
-    social_open: bool,
 ) -> Markup {
     let selected_attributes_title = format!("{}'s attributes", selected.name);
     let selected_skills_title = format!("{}'s skills", selected.name);
-    let examination_action = location.preserve_building(format!(
-        "{}/party/{}/examine",
-        location.base_path(),
-        selected.id
-    ));
-    let surgery_path_template = location.preserve_building(format!(
-        "{}/party/{}/surgery/__limb__",
-        location.base_path(),
-        selected.id
-    ));
     let content = html! {
         aside class="left-sidebar" {
-            (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs, medical, Some((&surgery_path_template, surgery_open)), injuries, projectiles))
-            (strategic_condition_rail(condition, morale_sources, filth, &location.preserve_building(format!("{}/party/{}/social", location.base_path(), selected.id)), social_open))
+            (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs, medical, Some(&format!("{}/party/{}/surgery", location.base_path(), selected.id)), injuries, projectiles))
+            (strategic_condition_rail(condition, morale_sources, filth, &location.preserve_building(format!("{}/party/{}/social", location.base_path(), selected.id))))
             (medical_rail(medical, &location.base_path(), active_character.id, selected.id, true))
-        }
-        @if medical.examination_id.is_none() {
-            @if let Some(dialog) = character_action_dialog { (dialog) }
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(
@@ -2288,7 +2233,7 @@ pub fn party_stats_page(
             ))
             (visual_stage("character", &selected.name, "Party member identity and capabilities"))
             (player_chat_area(selected, active_character))
-            (medical_examination_popup(medical, location, selected.id, selected_limbs, injuries, projectiles))
+            (medical_examination_popup(medical, &location.base_path(), selected.id, selected_limbs, injuries, projectiles))
         }
         aside class="right-sidebar" {
             (character_summary_rail(capability))
@@ -2304,11 +2249,6 @@ pub fn party_stats_page(
                 &selected_skills_title, selected_skills, selected_limbs, None, None, None,
                 religion_id.is_some(), 0.0, religion_id.or(location.religion_id.as_deref()),
                 combat_profile,
-                CharacterSkillActions {
-                    examination_action: can_examine.then_some(examination_action.as_str()),
-                    examination_open: medical.examination_id.is_some(),
-                    ..Default::default()
-                },
             ))
             @if selected.id != active_character.id {
                 @if active_character.party_id == selected.party_id {
@@ -2451,11 +2391,16 @@ fn belief_tooltip(belief: &crate::spacetimedb::SocialBelief) -> String {
 
 /// Dedicated social view. It intentionally receives observer-specific beliefs
 /// rather than authoritative personality.
-pub fn party_social_dialog(
+pub fn party_social_page(
     location: &LocationView,
     selected: &Character,
     active_character: &Character,
+    party_members: &[Character],
+    attributes: Option<&CharacterAttributes>,
+    limbs: Option<&CharacterLimbs>,
+    condition: Option<&CharacterStrategicCondition>,
     morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
+    filth: &[crate::spacetimedb::CharacterFilth],
     social: &SocialPresentation,
 ) -> Markup {
     let social_href = location.preserve_building(format!(
@@ -2478,20 +2423,19 @@ pub fn party_social_dialog(
     } else {
         "uncertain"
     };
-    let close_href = location.preserve_building(if is_self {
-        format!("{}/party/{}", location.base_path(), selected.id)
-    } else {
-        format!("{}/party/{}/stats", location.base_path(), selected.id)
-    });
-    html! {
-        div class="character-action-overlay" data-character-action-dialog {
-            a class="character-action-backdrop" href=(&close_href) aria-label="Close social dialog" {}
-            section class="character-action-dialog social-dialog" role="dialog" aria-modal="true" aria-labelledby="social-dialog-title" tabindex="-1" {
-                header class="character-action-dialog-header" {
-                    h2 id="social-dialog-title" { "Social — " (selected.name) }
-                    a class="character-action-dialog-close" href=(&close_href) aria-label="Close social dialog" { "×" }
-                }
-                div class="social-rail" data-social-panel data-target-id=(selected.id) {
+    let medical = MedicalPresentation::default();
+    let attribute_title = format!("{}'s attributes", selected.name);
+    let content = html! {
+        aside class="left-sidebar" {
+            (party_attributes_rail(&attribute_title, attributes, limbs, &medical, None, &[], &[]))
+            (strategic_condition_rail(condition, morale_sources, filth, &social_href))
+        }
+        main class="center-content settlement-main party-member-stage" {
+            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id), false))
+            (visual_stage("character", &selected.name, "Relationship and morale"))
+            (player_chat_area(selected, active_character))
+        }
+        aside class="right-sidebar social-rail" data-social-panel data-target-id=(selected.id) {
             (sidebar_section("What you believe", html! {
                 dl class="social-biography" {
                     div { dt { "Age" } dd { (selected.age_years) } }
@@ -2563,10 +2507,9 @@ pub fn party_social_dialog(
                     }
                 }
             }))
-                }
-            }
         }
-    }
+    };
+    location.render_layout("Social", content, Some(&selected.name))
 }
 
 fn surgery_limb_name(limb: LimbRegion) -> &'static str {
@@ -2760,12 +2703,20 @@ fn surgery_procedure_row(
     }
 }
 
-/// Manual limb treatment is an SSR-open dialog over the ordinary character rails.
+/// Manual limb treatment replaces the ordinary right rail while retaining the
+/// portrait stage and a keyboard-navigable list of every limb on the left.
 #[allow(clippy::too_many_arguments)]
-pub fn surgery_dialog(
+pub fn surgery_page(
     location: &LocationView,
     active_character: &Character,
     patient: &Character,
+    party_members: &[Character],
+    capability: Option<&CharacterCapability>,
+    attributes: Option<&CharacterAttributes>,
+    skills: Option<&CharacterSkills>,
+    limbs: Option<&CharacterLimbs>,
+    medical: &MedicalPresentation,
+    combat_profile: CombatTrainingProfile,
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
     selected_limb: LimbRegion,
@@ -2777,12 +2728,8 @@ pub fn surgery_dialog(
     selected_alcohol: Option<&str>,
     procedure_checks: [f32; 3],
 ) -> Markup {
-    let action = location.preserve_building(format!(
-        "{}/party/{}/surgery/{}/procedure",
-        location.base_path(),
-        patient.id,
-        surgery_limb_slug(selected_limb)
-    ));
+    let base = format!("{}/party/{}/surgery", location.base_path(), patient.id);
+    let action = format!("{base}/{}/procedure", surgery_limb_slug(selected_limb));
     let selected = injuries.iter().find(|injury| injury.limb == selected_limb);
     let cut = selected.map_or(0.0, |injury| injury.cut_damage.max(0.0));
     let bruise = selected.map_or(0.0, |injury| injury.bruise_damage.max(0.0));
@@ -2797,20 +2744,19 @@ pub fn surgery_dialog(
     let anatomy_skill = procedure_skill("bandage");
     let extraction_skill = procedure_skill("extract");
     let stitching_skill = procedure_skill("stitch");
-    let close_href = location.preserve_building(if self_treatment {
-        format!("{}/party/{}", location.base_path(), patient.id)
-    } else {
-        format!("{}/party/{}/stats", location.base_path(), patient.id)
-    });
-    html! {
-        div class="character-action-overlay" data-character-action-dialog {
-            a class="character-action-backdrop" href=(&close_href) aria-label="Close surgery dialog" {}
-            section class="character-action-dialog surgery-dialog" role="dialog" aria-modal="true" aria-labelledby="surgery-dialog-title" tabindex="-1" {
-                header class="character-action-dialog-header" {
-                    h2 id="surgery-dialog-title" { (patient.name) " — " (surgery_limb_name(selected_limb)) }
-                    a class="character-action-dialog-close" href=(&close_href) aria-label="Close surgery dialog" { "×" }
-                }
-                div class="surgery-rail" {
+    let content = html! {
+        aside class="left-sidebar" {
+            (character_summary_rail(capability))
+            (party_attributes_rail(&format!("{}'s attributes", patient.name), attributes, limbs, medical, Some(&base), injuries, projectiles))
+            (party_skills_rail(&format!("{}'s skills", patient.name), skills, limbs, None, None, None, false, 0.0, None, combat_profile))
+        }
+        main class="center-content settlement-main party-member-stage" {
+            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(patient.id), false))
+            (visual_stage("npc", &patient.name, &format!("TODO: {} portrait", patient.name.to_lowercase())))
+            (player_chat_area(patient, active_character))
+        }
+        aside class="right-sidebar surgery-rail" {
+            (sidebar_section(&format!("{} — {}", patient.name, surgery_limb_name(selected_limb)), html! {
                 div class="surgery-supplies" aria-label="Surgery supplies" {
                     (surgery_supply("Bandages", "bandage-roll", bandages))
                     (surgery_supply("Surgery kits", "medical-pack", surgery_kits))
@@ -2838,10 +2784,10 @@ pub fn surgery_dialog(
                         p class="text-muted small-copy" { "Bruising must heal on its own." }
                     }
                 }
-                }
-            }
+            }))
         }
-    }
+    };
+    location.render_layout("Surgery", content, Some(&active_character.name))
 }
 
 fn service_page(
@@ -3847,69 +3793,6 @@ fn trade_inventory_table_header(show_equipped: bool, condition_header: Option<Ma
     } } }
 }
 
-#[derive(Clone, Copy, Default)]
-struct CharacterSkillActions<'a> {
-    cooking_href: Option<&'a str>,
-    cooking_open: bool,
-    examination_action: Option<&'a str>,
-    examination_open: bool,
-}
-
-#[derive(Clone, Copy)]
-enum SkillAction<'a> {
-    Get {
-        href: &'a str,
-        label: &'a str,
-        open: bool,
-    },
-    Post {
-        href: &'a str,
-        label: &'a str,
-        open: bool,
-    },
-}
-
-fn skill_action_icon(name: &str, icon: &str, action: SkillAction<'_>, inside_form: bool) -> Markup {
-    let (href, label, open) = match action {
-        SkillAction::Get { href, label, open } | SkillAction::Post { href, label, open } => {
-            (href, label, open)
-        }
-    };
-    html! {
-        @match action {
-            SkillAction::Get { .. } => {
-                a class=(if open { "character-menu-button is-open" } else { "character-menu-button" })
-                    href=(href) title=(label) aria-label=(label) aria-haspopup="dialog" aria-expanded=(open)
-                    data-dialog-opener=(href) {
-                    span class="stat-icon" style=(format!("--stat-icon: url('/static/icons/game/{icon}.svg')")) aria-hidden="true" {}
-                    @if open { span class="sr-only" { " (open)" } }
-                }
-            }
-            SkillAction::Post { .. } => {
-                @if inside_form {
-                    button type="submit" class=(if open { "character-menu-button is-open" } else { "character-menu-button" })
-                        formaction=(href) formmethod="post"
-                        title=(label) aria-label=(label) aria-haspopup="dialog" aria-expanded=(open)
-                        data-dialog-opener=(href) {
-                        span class="stat-icon" style=(format!("--stat-icon: url('/static/icons/game/{icon}.svg')")) aria-hidden="true" {}
-                        @if open { span class="sr-only" { " (open)" } }
-                    }
-                } @else {
-                    form method="post" action=(href) class="character-menu-button-form" {
-                        button type="submit" class=(if open { "character-menu-button is-open" } else { "character-menu-button" })
-                            title=(label) aria-label=(label) aria-haspopup="dialog" aria-expanded=(open)
-                            data-dialog-opener=(href) {
-                            span class="stat-icon" style=(format!("--stat-icon: url('/static/icons/game/{icon}.svg')")) aria-hidden="true" {}
-                            @if open { span class="sr-only" { " (open)" } }
-                        }
-                    }
-                }
-            }
-        }
-        span class="sr-only" { (name) }
-    }
-}
-
 fn party_skills_rail(
     title: &str,
     skills: Option<&CharacterSkills>,
@@ -3921,7 +3804,6 @@ fn party_skills_rail(
     prayer_religion_check: f32,
     training_religion_id: Option<&str>,
     combat_profile: CombatTrainingProfile,
-    actions: CharacterSkillActions<'_>,
 ) -> Markup {
     let head_health = limbs.map_or(1.0, |limbs| limbs.head_health);
     let upper_health = limbs.map_or(1.0, |limbs| {
@@ -3941,7 +3823,6 @@ fn party_skills_rail(
                             activity_preview, professes_religion, prayer_religion_check,
                             training_religion_id.and_then(OfficialReligion::from_id),
                             combat_profile, action.starts_with("/locations/settlement/"),
-                            actions,
                         ))
                         div class="schedule-save-status" data-schedule-save-status role="status" aria-live="polite" hidden {
                             span { "Schedule could not be saved." }
@@ -3959,7 +3840,6 @@ fn party_skills_rail(
                         professes_religion, prayer_religion_check,
                         training_religion_id.and_then(OfficialReligion::from_id),
                         combat_profile, false,
-                        actions,
                     ))
                     script src="/static/training-schedule.js?v=apprentice-system-1" {}
                 }
@@ -3984,7 +3864,6 @@ fn skills_table(
     training_religion: Option<OfficialReligion>,
     combat_profile: CombatTrainingProfile,
     immediate_actions: bool,
-    actions: CharacterSkillActions<'_>,
 ) -> Markup {
     html! {
             table class="party-skills-table" {
@@ -4014,18 +3893,18 @@ fn skills_table(
                     th scope="col" aria-label="Skill details" {}
                 } }
                 tbody {
-                    @if skills.will_hours > 0.0 { (party_skill_row("Will", "will", Skill::Will, skills.will_hours, head_health, schedule.is_some(), None)) }
+                    @if skills.will_hours > 0.0 { (party_skill_row("Will", "will", Skill::Will, skills.will_hours, head_health, schedule.is_some())) }
                     (social_skill_rows(skills, head_health, schedule))
-                    @if skills.medicine_hours > 0.0 { (party_skill_row("Medicine", "medicine", Skill::Medicine, skills.medicine_hours, head_health, schedule.is_some(), actions.examination_action.map(|href| SkillAction::Post { href, label: "Perform medical examination (15 minutes)", open: actions.examination_open }))) }
-                    (party_skill_row("Cooking", "cooking", Skill::Cooking, skills.cooking_hours, head_health, schedule.is_some(), actions.cooking_href.map(|href| SkillAction::Get { href, label: "Open cooking menu", open: actions.cooking_open })))
+                    @if skills.medicine_hours > 0.0 { (party_skill_row("Medicine", "medicine", Skill::Medicine, skills.medicine_hours, head_health, schedule.is_some())) }
+                    (party_skill_row("Cooking", "cooking", Skill::Cooking, skills.cooking_hours, head_health, schedule.is_some()))
                     (religion_skill_rows(skills, head_health, schedule, training_religion))
                     (language_skill_rows(skills, schedule.is_some()))
                     (combat_skill_rows(skills, head_health, upper_health, lower_health, schedule, combat_profile))
-                    @if skills.stealth_hours > 0.0 { (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, upper_health, schedule.is_some(), None)) }
+                    @if skills.stealth_hours > 0.0 { (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, upper_health, schedule.is_some())) }
                     (terrain_skill_rows(skills, schedule.is_some()))
-                    @if skills.anatomy_hours > 0.0 { (party_skill_row("Anatomy", "surgeon", Skill::Anatomy, skills.anatomy_hours, head_health, schedule.is_some(), None)) }
-                    @if skills.tailoring_hours > 0.0 { (party_skill_row("Tailoring", "sewing-needle", Skill::Tailoring, skills.tailoring_hours, upper_health, schedule.is_some(), None)) }
-                    @if skills.smithing_hours > 0.0 { (party_skill_row("Smithing", "smithing", Skill::Smithing, skills.smithing_hours, upper_health, schedule.is_some(), None)) }
+                    @if skills.anatomy_hours > 0.0 { (party_skill_row("Anatomy", "surgeon", Skill::Anatomy, skills.anatomy_hours, head_health, schedule.is_some())) }
+                    @if skills.tailoring_hours > 0.0 { (party_skill_row("Tailoring", "sewing-needle", Skill::Tailoring, skills.tailoring_hours, upper_health, schedule.is_some())) }
+                    @if skills.smithing_hours > 0.0 { (party_skill_row("Smithing", "smithing", Skill::Smithing, skills.smithing_hours, upper_health, schedule.is_some())) }
                     @if let Some(schedule) = schedule {
                         @let preview = activity_preview.unwrap_or_default();
                         tr class="schedule-divider" { td colspan="9" {} }
@@ -4429,7 +4308,6 @@ fn party_skill_row(
     hours: f32,
     health: f32,
     schedule_context: bool,
-    action: Option<SkillAction<'_>>,
 ) -> Markup {
     let rank = skill.training_rank(hours);
     let effective_rank = rank * health.clamp(0.0, 1.0);
@@ -4437,11 +4315,7 @@ fn party_skill_row(
     html! {
         tr class="party-skill-row" {
             th scope="row" class="party-skill-name party-skill-icon-cell" {
-                @if let Some(action) = action {
-                    (skill_action_icon(name, icon, action, schedule_context))
-                } @else {
-                    (stat_icon(name, "skills", icon, false))
-                }
+                (stat_icon(name, "skills", icon, false))
             }
             td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
                 (skill_rank_bar(rank, effective_rank, &format!("{invested_hours} hours invested"), skill_rail_bar_options()))
@@ -4788,8 +4662,7 @@ fn schedule_icon(label: &str, icon: &str, actionable: bool, activity: &str) -> M
     html! {
         @if actionable {
             button type="button" class="schedule-activity-button" data-activity-open=(activity)
-                aria-label=(format!("Perform {label} now")) title=(format!("Perform {label} now"))
-                aria-haspopup="dialog" aria-expanded="false" {
+                aria-label=(format!("Perform {label} now")) title=(format!("Perform {label} now")) {
                 span class="stat-icon schedule-special-icon"
                     style=(format!("--stat-icon: url('/static/icons/game/{icon}.svg')"))
                     aria-hidden="true" {}
@@ -4894,7 +4767,7 @@ pub(crate) fn character_stats_panel(
         (party_attributes_rail(&format!("{}'s attributes", character.name), attributes, limbs, medical, None, &[], &[]))
         (party_skills_rail(
             &format!("{}'s skills", character.name), skills, limbs, None, None, None,
-            false, 0.0, None, CombatTrainingProfile::default(), CharacterSkillActions::default(),
+            false, 0.0, None, CombatTrainingProfile::default(),
         ))
         (medical_rail(medical, "", 0, character.id, false))
     }
@@ -5133,7 +5006,6 @@ fn strategic_condition_rail(
     _morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
     filth: &[crate::spacetimedb::CharacterFilth],
     social_href: &str,
-    social_open: bool,
 ) -> Markup {
     let Some(condition) = condition else {
         return html! {};
@@ -5173,7 +5045,7 @@ fn strategic_condition_rail(
     ];
     html! {
         (sidebar_section("Status", html! {
-            div class=(if condition.fear > 0.0 { "morale-meter is-fearful" } else { "morale-meter" }) style=(meter_style) role="meter" aria-valuemin="-5" aria-valuemax="5" aria-valuenow=(format!("{:.1}", condition.morale)) aria-label=(format!(
+            a class=(if condition.fear > 0.0 { "morale-meter is-fearful" } else { "morale-meter" }) href=(social_href) style=(meter_style) aria-label=(format!(
                 "Morale {:.1}; fear {}; inspiration {:.1}%",
                 condition.morale,
                 percent(condition.fear),
@@ -5181,13 +5053,7 @@ fn strategic_condition_rail(
             )) {
                 div class="morale-meter-heading" {
                     strong class="metric-label" { (decorative_game_icon("sun")) span { "Morale" } }
-                    span class="morale-meter-value" { (format!("{:+.1}", condition.morale)) }
-                    a class=(if social_open { "character-menu-button is-open" } else { "character-menu-button" })
-                        href=(social_href) title="Open social menu" aria-label="Open social menu"
-                        aria-haspopup="dialog" aria-expanded=(social_open) {
-                        span class="stat-icon" style="--stat-icon: url('/static/icons/game/social.svg')" aria-hidden="true" {}
-                        @if social_open { span class="sr-only" { " (open)" } }
-                    }
+                    span { (format!("{:+.1}", condition.morale)) }
                 }
                 div class="morale-meter-track" aria-hidden="true" {
                     span class="morale-meter-fear" {}
@@ -5319,7 +5185,7 @@ fn medical_rail(
 
 fn medical_examination_popup(
     medical: &MedicalPresentation,
-    location: &LocationView,
+    location_path: &str,
     target_id: u64,
     limbs: Option<&CharacterLimbs>,
     injuries: &[LimbInjury],
@@ -5328,14 +5194,10 @@ fn medical_examination_popup(
     let Some(examination_id) = medical.examination_id else {
         return html! {};
     };
-    let dismiss_url = location.preserve_building(format!(
-        "{}/party/{target_id}/examination/{examination_id}/dismiss",
-        location.base_path()
-    ));
     html! {
         div class="medical-examination-overlay" role="dialog" aria-modal="true" aria-labelledby="medical-examination-title"
             data-medical-examination
-            data-dismiss-url=(&dismiss_url) {
+            data-dismiss-url=(format!("{location_path}/party/{target_id}/examination/{examination_id}/dismiss")) {
             section class="medical-examination-popup" {
                 header class="medical-examination-heading" {
                     div {
@@ -5344,7 +5206,7 @@ fn medical_examination_popup(
                             p class="text-muted small-copy" { "Observed at personal minute " (examined_at) "." }
                         }
                     }
-                    form method="post" action=(&dismiss_url) {
+                    form method="post" action=(format!("{location_path}/party/{target_id}/examination/{examination_id}/dismiss")) {
                         button type="submit" class="medical-examination-close" aria-label="Close examination findings" { "×" }
                     }
                 }
@@ -5413,7 +5275,7 @@ fn party_attributes_rail(
     attributes: Option<&CharacterAttributes>,
     limbs: Option<&CharacterLimbs>,
     medical: &MedicalPresentation,
-    surgery: Option<(&str, Option<&str>)>,
+    surgery_base: Option<&str>,
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
 ) -> Markup {
@@ -5430,35 +5292,35 @@ fn party_attributes_rail(
     html! {
         (sidebar_section(title, html! {
             div class="party-attributes-list" aria-label="Character attributes" {
-                (attribute_group("Head", "head", head_health, medical, 6, surgery, injuries, projectiles, &[
+                (attribute_group("Head", "head", head_health, medical, 6, surgery_base, injuries, projectiles, &[
                     ("Intelligence", "intelligence", attributes.intelligence),
                     ("Instinct", "instinct", attributes.instinct),
                     ("Eyesight", "eyesight", attributes.eyesight),
                     ("Hearing", "hearing", attributes.hearing),
                 ]))
-                (attribute_group("Chest", "chest", chest_health, medical, 4, surgery, injuries, projectiles, &[
+                (attribute_group("Chest", "chest", chest_health, medical, 4, surgery_base, injuries, projectiles, &[
                     ("Endurance", "endurance", attributes.endurance),
                 ]))
-                (attribute_group("Stomach", "stomach", stomach_health, medical, 5, surgery, injuries, projectiles, &[
+                (attribute_group("Stomach", "stomach", stomach_health, medical, 5, surgery_base, injuries, projectiles, &[
                     ("Immunity", "immunity", attributes.immunity),
                     ("Gut", "gut", attributes.gut),
                 ]))
                 div class="limb-attribute-pair" {
-                    (limb_attribute_column("Left arm", "left-arm", "limb-left", left_arm_health, medical, 0, surgery, injuries, projectiles, &[
+                    (limb_attribute_column("Left arm", "left-arm", "limb-left", left_arm_health, medical, 0, surgery_base, injuries, projectiles, &[
                         ("Strength", "strength-arm", attributes.left_arm_strength),
                         ("Agility", "agility-arm", attributes.left_arm_agility),
                     ]))
-                    (limb_attribute_column("Right arm", "right-arm", "limb-right", right_arm_health, medical, 1, surgery, injuries, projectiles, &[
+                    (limb_attribute_column("Right arm", "right-arm", "limb-right", right_arm_health, medical, 1, surgery_base, injuries, projectiles, &[
                         ("Strength", "strength-arm", attributes.right_arm_strength),
                         ("Agility", "agility-arm", attributes.right_arm_agility),
                     ]))
                 }
                 div class="limb-attribute-pair" {
-                    (limb_attribute_column("Left leg", "left-leg", "limb-left", left_leg_health, medical, 2, surgery, injuries, projectiles, &[
+                    (limb_attribute_column("Left leg", "left-leg", "limb-left", left_leg_health, medical, 2, surgery_base, injuries, projectiles, &[
                         ("Strength", "strength-leg", attributes.left_leg_strength),
                         ("Agility", "agility-leg", attributes.left_leg_agility),
                     ]))
-                    (limb_attribute_column("Right leg", "right-leg", "limb-right", right_leg_health, medical, 3, surgery, injuries, projectiles, &[
+                    (limb_attribute_column("Right leg", "right-leg", "limb-right", right_leg_health, medical, 3, surgery_base, injuries, projectiles, &[
                         ("Strength", "strength-leg", attributes.right_leg_strength),
                         ("Agility", "agility-leg", attributes.right_leg_agility),
                     ]))
@@ -5475,7 +5337,7 @@ fn limb_attribute_column(
     health: f32,
     medical: &MedicalPresentation,
     region: usize,
-    surgery: Option<(&str, Option<&str>)>,
+    surgery_base: Option<&str>,
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
     rows: &[(&str, &str, f32)],
@@ -5486,7 +5348,7 @@ fn limb_attribute_column(
         health,
         medical,
         region,
-        surgery,
+        surgery_base,
         injuries,
         projectiles,
         rows,
@@ -5501,7 +5363,7 @@ fn attribute_group(
     health: f32,
     medical: &MedicalPresentation,
     region: usize,
-    surgery: Option<(&str, Option<&str>)>,
+    surgery_base: Option<&str>,
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
     rows: &[(&str, &str, f32)],
@@ -5512,7 +5374,7 @@ fn attribute_group(
         health,
         medical,
         region,
-        surgery,
+        surgery_base,
         injuries,
         projectiles,
         rows,
@@ -5527,7 +5389,7 @@ fn attribute_group_with_labels(
     health: f32,
     medical: &MedicalPresentation,
     region: usize,
-    surgery: Option<(&str, Option<&str>)>,
+    surgery_base: Option<&str>,
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
     rows: &[(&str, &str, f32)],
@@ -5540,19 +5402,14 @@ fn attribute_group_with_labels(
             Some(side) => format!("attribute-group limb-attribute-column {side}"),
             None => "attribute-group".to_owned(),
         }) {
-            div class="attribute-group-heading" {
-                span { (name) }
-                @if let Some((path_template, open_limb)) = surgery {
-                    @let open = open_limb == Some(slug);
-                    a class=(if open { "character-menu-button limb-surgery-button is-open" } else { "character-menu-button limb-surgery-button" })
-                        href=(path_template.replace("__limb__", slug)) title=(format!("Treat {name}")) aria-label=(format!("Open surgery menu for {name}"))
-                        aria-haspopup="dialog" aria-expanded=(open) {
-                        span class="stat-icon" style="--stat-icon: url('/static/icons/game/scalpel.svg')" aria-hidden="true" {}
-                        @if open { span class="sr-only" { " (open)" } }
-                    }
+            div class="attribute-group-heading" { (name) }
+            @if let Some(base) = surgery_base {
+                a class="limb-surgery-link" href=(format!("{base}/{slug}")) aria-label=(format!("Treat {name}")) {
+                    (regional_health_bar(name, health, medical, region, injuries, projectiles))
                 }
+            } @else {
+                (regional_health_bar(name, health, medical, region, injuries, projectiles))
             }
-            (regional_health_bar(name, health, medical, region, injuries, projectiles))
             @for (attribute_name, icon, value) in rows {
                 (attribute_row(attribute_name, icon, *value, health, show_labels))
             }
@@ -5792,6 +5649,16 @@ pub(crate) fn party_portrait_overlay(
                         }
                         @if member.alive && active_character.is_some_and(|character| character.alive) {
                         span class="party-portrait-actions" aria-label=(format!("Actions for {}", member.name)) {
+                            @if is_active {
+                                a href=(format!("{location_path}/party/{}?cook=true", member.id))
+                                    class="party-portrait-action party-cooking-action"
+                                    title="Cook"
+                                    aria-label="Cook" {
+                                    span class="party-action-icon"
+                                        style="--party-action-icon: url('/static/icons/game/meal.svg')"
+                                        aria-hidden="true" {}
+                                }
+                            }
                             @if is_active && can_examine && location_path.starts_with("/locations/settlement/") {
                                 a href=(format!("{location_path}/alchemy"))
                                     class="party-portrait-action party-alchemy-action"
@@ -5800,6 +5667,17 @@ pub(crate) fn party_portrait_overlay(
                                     span class="party-action-icon"
                                         style="--party-action-icon: url('/static/icons/game/medical-pack.svg')"
                                         role="img" aria-label="Alchemy" {}
+                                }
+                            }
+                            @if can_examine {
+                                form method="post" action=(format!("{}/party/{}/examine", location_path, member.id)) {
+                                    button type="submit" class="party-portrait-action party-medical-examine"
+                                        title=(format!("Examine {} (15 minutes)", member.name))
+                                        aria-label=(format!("Examine {} (15 minutes)", member.name)) {
+                                        span class="party-action-icon"
+                                            style="--party-action-icon: url('/static/icons/game/scalpel.svg')"
+                                            aria-hidden="true" {}
+                                    }
                                 }
                             }
                             a href=(format!("{}/party/{}/inventory", location_path, member.id))
@@ -6399,11 +6277,8 @@ mod tests {
             check_multiplier: 1.0,
             status: "ready".into(),
         };
-        let markup =
-            strategic_condition_rail(Some(&condition), &[], &[], "/social", false).into_string();
-        assert!(markup.contains("class=\"morale-meter\""));
-        assert!(markup.contains("href=\"/social\" title=\"Open social menu\""));
-        assert!(markup.contains("aria-haspopup=\"dialog\" aria-expanded=\"false\""));
+        let markup = strategic_condition_rail(Some(&condition), &[], &[], "/social").into_string();
+        assert!(markup.contains("<a class=\"morale-meter\" href=\"/social\""));
         let water = markup.find("Water").expect("water meter");
         let filth = markup.find("Filth").expect("filth meter");
         assert!(water < filth);
@@ -7216,7 +7091,6 @@ mod tests {
             Some(OfficialReligion::Judaism),
             CombatTrainingProfile::default(),
             false,
-            CharacterSkillActions::default(),
         )
         .into_string();
 
@@ -7284,7 +7158,6 @@ mod tests {
             0.0,
             Some("judaism"),
             CombatTrainingProfile::default(),
-            CharacterSkillActions::default(),
         )
         .into_string();
         assert!(!rail.contains("class=\"sidebar-header\">Your skills"));
@@ -7305,7 +7178,6 @@ mod tests {
             0.0,
             Some("judaism"),
             CombatTrainingProfile::default(),
-            CharacterSkillActions::default(),
         )
         .into_string();
         assert!(settlement_rail.contains("data-activity-modal"));
@@ -8543,7 +8415,7 @@ mod tests {
     }
 
     #[test]
-    fn medicine_action_moves_from_portrait_to_the_skill_icon() {
+    fn medicine_portrait_action_is_contextual_and_quotes_examination_time() {
         let doctor = Character {
             id: 1,
             name: "Doctor".into(),
@@ -8557,32 +8429,16 @@ mod tests {
             alive: true,
             temporary: false,
         };
-        let portrait = party_portrait_overlay(
-            &[doctor.clone()],
-            Some(&doctor),
-            "/locations/settlement/willowmere",
-            Some(1),
-            true,
-        )
-        .into_string();
-        assert!(!portrait.contains("/examine"));
-        assert!(!portrait.contains("party-medical-examine"));
-        assert!(portrait.contains("party-alchemy-action"));
-
-        let skill = skill_action_icon(
-            "Medicine",
-            "medicine",
-            SkillAction::Post {
-                href: "/place/party/1/examine",
-                label: "Perform medical examination (15 minutes)",
-                open: false,
-            },
-            false,
-        )
-        .into_string();
-        assert!(skill.contains("/place/party/1/examine"));
-        assert!(skill.contains("Perform medical examination (15 minutes)"));
-        assert!(skill.contains("aria-haspopup=\"dialog\" aria-expanded=\"false\""));
+        let hidden =
+            party_portrait_overlay(&[doctor.clone()], Some(&doctor), "/place", Some(1), false)
+                .into_string();
+        let visible =
+            party_portrait_overlay(&[doctor.clone()], Some(&doctor), "/place", Some(1), true)
+                .into_string();
+        assert!(!hidden.contains("/examine"));
+        assert!(visible.contains("/party/1/examine"));
+        assert!(visible.contains("Examine Doctor (15 minutes)"));
+        assert!(visible.contains("party-medical-examine"));
     }
 
     #[test]
@@ -8607,16 +8463,8 @@ mod tests {
         assert!(!sidebar.contains("Possible ailments"));
         assert!(!sidebar.contains("Observed at personal minute"));
 
-        let location = LocationView {
-            kind: LocationKind::Quest,
-            id: "location".into(),
-            name: "Location".into(),
-            religion_id: None,
-            category: None,
-            active_building: Some("inn".into()),
-        };
         let popup =
-            medical_examination_popup(&presentation, &location, 2, None, &[], &[]).into_string();
+            medical_examination_popup(&presentation, "/location", 2, None, &[], &[]).into_string();
         assert!(popup.contains("medical-examination-overlay"));
         assert!(popup.contains("aria-modal=\"true\""));
         assert!(popup.contains("Possible ailments"));
@@ -8627,7 +8475,6 @@ mod tests {
         assert!(popup.contains('×'));
         assert!(!popup.contains("This result is discarded"));
         assert!(popup.contains("/examination/44/dismiss"));
-        assert!(popup.contains("?building=inn"));
         assert!(popup.contains("data-medical-examination"));
         let lifecycle = include_str!("../../static/medical-examination.js");
         assert!(lifecycle.contains("pagehide"));
@@ -8655,30 +8502,29 @@ mod tests {
     }
 
     #[test]
-    fn surgery_button_is_explicit_and_the_health_meter_is_not_clickable() {
+    fn surgery_selection_link_only_wraps_the_region_health_bar() {
         let markup = attribute_group(
             "Head",
             "head",
             0.75,
             &crate::medical::MedicalPresentation::default(),
             6,
-            Some(("/place/party/1/surgery", None)),
+            Some("/place/party/1/surgery"),
             &[],
             &[],
             &[("Intelligence", "intelligence", 3.0)],
         )
         .into_string();
 
-        let link_start = markup.find("limb-surgery-button").unwrap();
+        let link_start = markup.find("class=\"limb-surgery-link\"").unwrap();
         let health_bar = markup.find("class=\"attribute-health-bar\"").unwrap();
         let link_end = markup[link_start..].find("</a>").unwrap() + link_start;
         let attribute_row = markup.find("class=\"party-attribute-row\"").unwrap();
 
-        assert!(link_start < link_end);
-        assert!(link_end < health_bar);
+        assert!(link_start < health_bar);
+        assert!(health_bar < link_end);
         assert!(link_end < attribute_row);
-        assert!(markup.contains("aria-label=\"Open surgery menu for Head\""));
-        assert!(markup.contains("aria-haspopup=\"dialog\" aria-expanded=\"false\""));
+        assert!(markup.contains("aria-label=\"Treat Head\""));
     }
 
     #[test]

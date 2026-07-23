@@ -104,12 +104,10 @@ The default chat channel is **Local**. NPC conversations belong to the active pa
 
 Clicking any filled character portrait selects that character. The left rail shows their automatic capability summary before attributes and skills, while the right rail shows their age, sparse personality tags, and religion. Neutral personality axes are omitted, and each shown tag has a tooltip stating its exact morale multiplier and any event-duration multiplier. On one's own biography, hovering or focusing the Religion entry reveals a **Renounce** action when the character currently professes a faith. Numeric skill tags appear only at rating 3 or better and show their name without the underlying score. Athletics combines the climbing and swimming evaluations. These tags reuse the shared stat, skill, equipment, armor, and encumbrance calculations; injuries do not affect recruitment tags. Heavy weapons require at least 4 kg weapon weight and average arm strength 3. The shared weapon-precision scale replaces the former precise, slash, pierce, and blunt recruitment tags: 0.5 is club/hammer precision, 1.0 axe precision, 1.5 sword/spear precision, and 2.0 rapier/bodkin precision. Encumbrance includes all carried inventory, not only equipped items.
 
-A living active character with Medicine 2 or better sees the selected
-character's Medicine skill icon as a raised action button. It begins the
-15-minute examination directly and presents the one-shot findings as a modal
-dialog; the portrait hover controls do not duplicate this action. The active
-character's Cooking skill icon similarly opens cooking. The same character
-continues to see an alchemy action beneath their own portrait.
+A living active character with Medicine 2 or better also sees a medical action
+icon in the contextual controls beneath each living party portrait. It begins
+the 15-minute examination directly; the character details rail does not repeat
+the action. The same character sees an alchemy action beneath their own portrait.
 Alchemy lists all recipes at or below their Medicine rank regardless of current
 diagnoses, and its ingredient rail switches between personal and party inventory
 while retaining the normal quantity-target controls. Herbalists greet visitors
