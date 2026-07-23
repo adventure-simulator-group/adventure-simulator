@@ -113,7 +113,8 @@ failed attempt. Failure may increase risk or uncertainty, but it does not
 silently invalidate alternate investigation routes. Approximate discoveries
 remain directions or areas. An exact map pin is disclosed only when an
 authoritative result supports exact observer knowledge. Watches, patrols, and
-ambushes remain strategic actions; they do not persist tactical tick state.
+ambush preparation remain strategic actions; they do not persist tactical tick
+state and cannot fabricate a combat result.
 Before spending time the reducer revalidates party readiness, co-location,
 journey and camp state, unresolved encounters, predecessor knowledge,
 position, and typed prerequisites. Party clocks synchronize first, with night
@@ -121,9 +122,10 @@ defined as before 06:00 or from 20:00 onward. Browser estimates are broad
 method-derived duration ranges; exact terrain, needs, fatigue, success, and
 risk remain authoritative.
 
-Custody consequences re-read current custody and require the case objective,
+Retrieve and rescue consequences re-read current custody and require the case objective,
 object kind, site holder, occupied site, and next version to agree. A purely
 stale version reissues the capability without spending time; a holder, site,
-or case mismatch fails closed. A canonical site-bound ambush can drive an
-active hostile group away, while capture additionally requires the bound
-subject alive in controlled site custody.
+or case mismatch fails closed. Investigation can discover, track, position, and
+prepare an ambush, but it never creates a mission, battle receipt, hostile
+disposition, drive-off fact, or capture fact. Authoritative non-kill tactical
+resolution is tracked separately in #207.

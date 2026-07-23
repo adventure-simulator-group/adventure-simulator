@@ -295,9 +295,11 @@ fn record_autoresolve_report(
 mod healing_tests {
     use super::{
         IncidentStatus, RecruitmentOfferStatus, activity_incident_source_id, autoresolve_drop,
-        incident_group_matches, quest_encounter_archetype, refreshed_recruitment_offer_status,
+        case_has_exact_dialogue_provenance, incident_group_matches, player_participant_ids,
+        quest_encounter_archetype, refreshed_recruitment_offer_status,
     };
     use adventuresim_core::encounter::EncounterArchetype;
+    use std::collections::HashSet;
 
     #[test]
     fn enemy_archetypes_keep_combat_and_loot_classification_together() {
