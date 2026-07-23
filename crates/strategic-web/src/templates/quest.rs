@@ -6,8 +6,8 @@ use super::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use super::{empty_state, item_display_name, item_type_icon, sidebar_section};
 use crate::routes::travel::TravelDestination;
 use crate::spacetimedb::{
-    AutoresolveReport, BattleLootItem, InventoryQuantityTarget, ItemDefinition, PartyInventoryItem,
-    Quest,
+    AutoresolveReport, BackendCaseSitePin, BattleLootItem, InventoryQuantityTarget, ItemDefinition,
+    PartyInventoryItem, Quest,
 };
 use crate::{
     spacetimedb::Character,
@@ -19,6 +19,7 @@ use crate::{
 
 pub fn quest_location_map_page(
     quest: &Quest,
+    site: &BackendCaseSitePin,
     nearby: &[TravelDestination],
     selected_id: Option<&str>,
     active_character: Option<&Character>,
@@ -38,11 +39,11 @@ pub fn quest_location_map_page(
         (map_destination_list_with_rest(
             nearby,
             selected_id,
-            &format!("/locations/quest/{}/map", quest.id),
+            &format!("/locations/case-site/{}/map", site.case_site_id),
             html! {
                 section class="rest-service-menu quest-rest-menu" aria-label="Destination rest" {
                     (party_rest_menu(
-                        &format!("/locations/quest/{}/map/rest", quest.id),
+                        &format!("/locations/case-site/{}/map/rest", site.case_site_id),
                         "quest-map-rest",
                         "Rest before battle",
                         "Rest party",
@@ -55,6 +56,7 @@ pub fn quest_location_map_page(
         ))
         (quest_location_center(
             quest,
+            site,
             active_character,
             party_members,
             can_fight,
@@ -66,7 +68,6 @@ pub fn quest_location_map_page(
         (map_destination_detail(
             selected,
             None,
-            None,
             false,
             can_travel,
             false,
@@ -74,13 +75,13 @@ pub fn quest_location_map_page(
             party,
             can_configure_travel,
             None,
-            &format!("/locations/quest/{}/map", quest.id),
+            &format!("/locations/case-site/{}/map", site.case_site_id),
         ))
     };
     super::quest_location_layout_with_session(
         &format!("{} map", quest.title),
         &quest.title,
-        &quest.id,
+        &site.case_site_id,
         "map",
         content,
         logged_in_as,
@@ -89,6 +90,7 @@ pub fn quest_location_map_page(
 
 fn quest_location_center(
     quest: &Quest,
+    site: &BackendCaseSitePin,
     active_character: Option<&Character>,
     party_members: &[Character],
     can_fight: bool,
@@ -103,12 +105,12 @@ fn quest_location_center(
             (party_portrait_overlay(
                 party_members,
                 active_character,
-                &format!("/locations/quest/{}", quest.id),
+                &format!("/locations/case-site/{}", site.case_site_id),
                 None,
                 false,
             ))
             div class="quest-visual-wrap" {
-                (visual_stage("quest", &quest.title, &quest.location_description))
+                (visual_stage("quest", &site.name, &site.description))
                 @if show_combat_actions && (can_fight || !resolved) {
                 div class="quest-combat-actions" aria-label="Quest actions" {
                     @if can_fight {
@@ -148,6 +150,7 @@ fn autoresolve_info_messages(report: Option<&AutoresolveReport>) -> Vec<String> 
 /// Enemy encounter and, once resolved, its loot at an off-road quest location.
 pub fn quest_location_enemy_page(
     quest: &Quest,
+    site: &BackendCaseSitePin,
     active_character: Option<&Character>,
     party_members: &[Character],
     can_fight: bool,
@@ -167,10 +170,10 @@ pub fn quest_location_enemy_page(
     let content = html! {
         aside class="left-sidebar" {
             @if !resolved {
-                (sidebar_section("Location", html! { p { (&quest.location_description) } }))
+                (sidebar_section("Location", html! { p { (&site.description) } }))
                 section class="rest-service-menu quest-rest-menu" aria-label="Destination rest" {
                     (party_rest_menu(
-                        &format!("/locations/quest/{}/rest", quest.id),
+                        &format!("/locations/case-site/{}/rest", site.case_site_id),
                         "quest-rest",
                         "Rest before battle",
                         "Rest party",
@@ -215,6 +218,7 @@ pub fn quest_location_enemy_page(
 
         (quest_location_center(
             quest,
+            site,
             active_character,
             party_members,
             can_fight,
@@ -232,7 +236,7 @@ pub fn quest_location_enemy_page(
                         "Travel preferences",
                         travel_preferences_form(
                             party,
-                            &format!("/locations/quest/{}/map/travel-configuration", quest.id),
+                            &format!("/locations/case-site/{}/map/travel-configuration", site.case_site_id),
                         ),
                     ))
                 }
@@ -267,7 +271,7 @@ pub fn quest_location_enemy_page(
     super::quest_location_layout_with_session(
         &quest.title,
         &quest.title,
-        &quest.id,
+        &site.case_site_id,
         "enemy",
         content,
         logged_in_as,

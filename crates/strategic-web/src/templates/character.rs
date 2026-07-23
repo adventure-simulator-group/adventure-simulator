@@ -77,7 +77,7 @@ mod tests {
             level: 1,
             gold: 100,
             current_settlement_id: Some("ironforge".into()),
-            current_quest_location_id: None,
+            current_case_site_id: None,
             party_id: Some("solo-7".into()),
             age_years: 30,
             alive: false,

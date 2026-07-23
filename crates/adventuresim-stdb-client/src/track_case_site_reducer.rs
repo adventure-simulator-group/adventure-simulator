@@ -6,49 +6,49 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct TravelToQuestArgs {
+pub(super) struct TrackCaseSiteArgs {
     pub character_id: u64,
-    pub quest_id: String,
+    pub case_site_id: String,
 }
 
-impl From<TravelToQuestArgs> for super::Reducer {
-    fn from(args: TravelToQuestArgs) -> Self {
-        Self::TravelToQuest {
+impl From<TrackCaseSiteArgs> for super::Reducer {
+    fn from(args: TrackCaseSiteArgs) -> Self {
+        Self::TrackCaseSite {
             character_id: args.character_id,
-            quest_id: args.quest_id,
+            case_site_id: args.case_site_id,
         }
     }
 }
 
-impl __sdk::InModule for TravelToQuestArgs {
+impl __sdk::InModule for TrackCaseSiteArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `travel_to_quest`.
+/// Extension trait for access to the reducer `track_case_site`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait travel_to_quest {
-    /// Request that the remote module invoke the reducer `travel_to_quest` to run as soon as possible.
+pub trait track_case_site {
+    /// Request that the remote module invoke the reducer `track_case_site` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`travel_to_quest:travel_to_quest_then`] to run a callback after the reducer completes.
-    fn travel_to_quest(&self, character_id: u64, quest_id: String) -> __sdk::Result<()> {
-        self.travel_to_quest_then(character_id, quest_id, |_, _| {})
+    /// /// Use [`track_case_site:track_case_site_then`] to run a callback after the reducer completes.
+    fn track_case_site(&self, character_id: u64, case_site_id: String) -> __sdk::Result<()> {
+        self.track_case_site_then(character_id, case_site_id, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `travel_to_quest` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `track_case_site` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn travel_to_quest_then(
+    fn track_case_site_then(
         &self,
         character_id: u64,
-        quest_id: String,
+        case_site_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -58,11 +58,11 @@ pub trait travel_to_quest {
     ) -> __sdk::Result<()>;
 }
 
-impl travel_to_quest for super::RemoteReducers {
-    fn travel_to_quest_then(
+impl track_case_site for super::RemoteReducers {
+    fn track_case_site_then(
         &self,
         character_id: u64,
-        quest_id: String,
+        case_site_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -71,9 +71,9 @@ impl travel_to_quest for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
-            TravelToQuestArgs {
+            TrackCaseSiteArgs {
                 character_id,
-                quest_id,
+                case_site_id,
             },
             callback,
         )

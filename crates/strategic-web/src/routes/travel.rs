@@ -172,6 +172,8 @@ pub struct TravelDestination {
     pub description: String,
     pub summary: Option<String>,
     pub travel_action: String,
+    pub track_action: Option<String>,
+    pub tracked: bool,
     pub distance_m: u64,
     pub journey_minutes: u64,
     /// Cumulative minutes for server-derived camp forecasts.
@@ -185,25 +187,6 @@ pub struct TravelDestination {
     pub terrain_route: Option<adventuresim_terrain::RoutePlan>,
     pub return_terrain_route: Option<adventuresim_terrain::RoutePlan>,
     pub route_fallback: bool,
-}
-
-/// Active accepted destination lookup. Conventional available, issuer-route,
-/// and turn-in quest markers are intentionally absent.
-pub(crate) struct QuestMapMarkers<'a> {
-    active_quest: Option<&'a Quest>,
-}
-
-impl<'a> QuestMapMarkers<'a> {
-    pub(crate) fn new(quests: &'a [Quest], active_quest_id: Option<&str>) -> Self {
-        Self {
-            active_quest: active_quest_id
-                .and_then(|quest_id| quests.iter().find(|quest| quest.id == quest_id)),
-        }
-    }
-
-    pub(crate) fn active_quest(&self) -> Option<&'a Quest> {
-        self.active_quest
-    }
 }
 
 impl TravelDestination {
@@ -240,6 +223,8 @@ pub(crate) fn settlement_destination(
         .to_string(),
         summary,
         travel_action: format!("/settlements/{}/travel", settlement.id),
+        track_action: None,
+        tracked: false,
         distance_m,
         journey_minutes,
         camp_stop_minutes: Vec::new(),
@@ -475,10 +460,7 @@ fn journey_minutes(distance_m: u64) -> u64 {
 mod tests {
     use super::*;
     use crate::spacetimedb::QuestStatus;
-    use adventuresim_world_schema::{
-        FallbackIndustry, IndustryEvidence, InferredIndustryProfile, LandRoute, RouteTerrain,
-        TravelRoute,
-    };
+    use adventuresim_world_schema::{FallbackIndustry, IndustryEvidence, InferredIndustryProfile};
 
     fn settlement(id: &str, node: u64) -> Settlement {
         Settlement {
@@ -510,23 +492,6 @@ mod tests {
         }
     }
 
-    fn edge(id: u64, from_node_id: u64, to_node_id: u64) -> TravelEdge {
-        TravelEdge {
-            id,
-            from_node_id,
-            to_node_id,
-            route: TravelRoute::Land(LandRoute {
-                bridge: None,
-                water_crossings: vec![],
-            }),
-            length_m: 1_000,
-            slope_multiplier: 1.0,
-            terrain: RouteTerrain::stage_placeholder(),
-            certainty: 100,
-            section: String::new(),
-        }
-    }
-
     fn quest(id: &str, settlement_id: &str, status: QuestStatus) -> Quest {
         Quest {
             id: id.to_string(),
@@ -540,12 +505,6 @@ mod tests {
             accepted_by: None,
             enemy_type: String::new(),
             enemy_count: 1,
-            location_description: String::new(),
-            location_scene_key: String::new(),
-            location_coord_x: 0.0,
-            location_coord_y: 0.0,
-            coordinates_are_geographic: false,
-            distance_m: 1_000,
         }
     }
 
@@ -609,21 +568,6 @@ mod tests {
                     ..Default::default()
                 },
             )
-        );
-    }
-
-    #[test]
-    fn quest_marker_lookup_only_retains_the_selected_active_destination() {
-        let quests = vec![
-            quest("open", "market", QuestStatus::Available),
-            quest("active", "chapel", QuestStatus::Completed),
-            quest("old", "market", QuestStatus::Completed),
-        ];
-        let markers = QuestMapMarkers::new(&quests, Some("active"));
-
-        assert_eq!(
-            markers.active_quest().map(|quest| quest.id.as_str()),
-            Some("active")
         );
     }
 }

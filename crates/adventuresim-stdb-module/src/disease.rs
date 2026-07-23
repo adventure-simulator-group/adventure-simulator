@@ -1523,8 +1523,8 @@ pub fn examine_patient(ctx: &ReducerContext, doctor_id: u64, target_id: u64) -> 
     let target = crate::require_living_character(ctx, target_id)?;
     let same_place = doctor.current_settlement_id.is_some()
         && doctor.current_settlement_id == target.current_settlement_id
-        || doctor.current_quest_location_id.is_some()
-            && doctor.current_quest_location_id == target.current_quest_location_id;
+        || doctor.current_case_site_id.is_some()
+            && doctor.current_case_site_id == target.current_case_site_id;
     if !same_place {
         return Err("Doctor and patient must be together".into());
     }

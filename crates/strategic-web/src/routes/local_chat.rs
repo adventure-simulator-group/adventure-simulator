@@ -75,9 +75,8 @@ async fn actor_and_key(
                 .next()
                 .ok_or("Player not found")?;
             if actor.current_settlement_id != subject.current_settlement_id
-                || actor.current_quest_location_id != subject.current_quest_location_id
-                || (actor.current_settlement_id.is_none()
-                    && actor.current_quest_location_id.is_none())
+                || actor.current_case_site_id != subject.current_case_site_id
+                || (actor.current_settlement_id.is_none() && actor.current_case_site_id.is_none())
             {
                 return Err("Player is not at this location".into());
             }
@@ -207,7 +206,7 @@ async fn incoming(State(state): State<AppState>, session: Session) -> Json<Vec<I
             .filter(|c| {
                 ids.contains(&c.id)
                     && c.current_settlement_id == actor.current_settlement_id
-                    && c.current_quest_location_id == actor.current_quest_location_id
+                    && c.current_case_site_id == actor.current_case_site_id
             })
             .take(MAX_INCOMING_PLAYERS)
             .map(|c| IncomingPlayer {

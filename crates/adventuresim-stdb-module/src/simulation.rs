@@ -255,10 +255,10 @@ pub fn configure_simulation_character(
         return Err("Simulation character must still lead its fresh solo party".into());
     }
     character.current_settlement_id = Some(settlement_id.clone());
-    character.current_quest_location_id = None;
+    character.current_case_site_id = None;
     ctx.db.character().id().update(character);
     solo_party.current_settlement_id = Some(settlement_id);
-    solo_party.current_quest_location_id = None;
+    solo_party.current_case_site_id = None;
     ctx.db.party().id().update(solo_party);
     ctx.db
         .character_attributes()
