@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::battle_result_type::BattleResult;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `battle_result`.
 ///
@@ -49,8 +44,12 @@ impl<'ctx> __sdk::Table for BattleResultTableHandle<'ctx> {
     type Row = BattleResult;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = BattleResult> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = BattleResult> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = BattleResultInsertCallbackId;
 
@@ -96,72 +95,40 @@ impl<'ctx> __sdk::TableWithPrimaryKey for BattleResultTableHandle<'ctx> {
     }
 }
 
-        /// Access to the `battle_id` unique index on the table `battle_result`,
-        /// which allows point queries on the field of the same name
-        /// via the [`BattleResultBattleIdUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.battle_result().battle_id().find(...)`.
-        pub struct BattleResultBattleIdUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<BattleResult, String>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+/// Access to the `battle_id` unique index on the table `battle_result`,
+/// which allows point queries on the field of the same name
+/// via the [`BattleResultBattleIdUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.battle_result().battle_id().find(...)`.
+pub struct BattleResultBattleIdUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<BattleResult, String>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
 
-        impl<'ctx> BattleResultTableHandle<'ctx> {
-            /// Get a handle on the `battle_id` unique index on the table `battle_result`.
-            pub fn battle_id(&self) -> BattleResultBattleIdUnique<'ctx> {
-                BattleResultBattleIdUnique {
-                    imp: self.imp.get_unique_constraint::<String>("battle_id"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
+impl<'ctx> BattleResultTableHandle<'ctx> {
+    /// Get a handle on the `battle_id` unique index on the table `battle_result`.
+    pub fn battle_id(&self) -> BattleResultBattleIdUnique<'ctx> {
+        BattleResultBattleIdUnique {
+            imp: self.imp.get_unique_constraint::<String>("battle_id"),
+            phantom: std::marker::PhantomData,
         }
+    }
+}
 
-        impl<'ctx> BattleResultBattleIdUnique<'ctx> {
-            /// Find the subscribed row whose `battle_id` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &String) -> Option<BattleResult> {
-                self.imp.find(col_val)
-            }
-        }
-        
-        /// Access to the `outcome_source_id` unique index on the table `battle_result`,
-        /// which allows point queries on the field of the same name
-        /// via the [`BattleResultOutcomeSourceIdUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.battle_result().outcome_source_id().find(...)`.
-        pub struct BattleResultOutcomeSourceIdUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<BattleResult, String>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+impl<'ctx> BattleResultBattleIdUnique<'ctx> {
+    /// Find the subscribed row whose `battle_id` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &String) -> Option<BattleResult> {
+        self.imp.find(col_val)
+    }
+}
 
-        impl<'ctx> BattleResultTableHandle<'ctx> {
-            /// Get a handle on the `outcome_source_id` unique index on the table `battle_result`.
-            pub fn outcome_source_id(&self) -> BattleResultOutcomeSourceIdUnique<'ctx> {
-                BattleResultOutcomeSourceIdUnique {
-                    imp: self.imp.get_unique_constraint::<String>("outcome_source_id"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
-        }
-
-        impl<'ctx> BattleResultOutcomeSourceIdUnique<'ctx> {
-            /// Find the subscribed row whose `outcome_source_id` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &String) -> Option<BattleResult> {
-                self.imp.find(col_val)
-            }
-        }
-        
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
     let _table = client_cache.get_or_make_table::<BattleResult>("battle_result");
     _table.add_unique_constraint::<String>("battle_id", |row| &row.battle_id);
-    _table.add_unique_constraint::<String>("outcome_source_id", |row| &row.outcome_source_id);
 }
 
 #[doc(hidden)]
@@ -169,26 +136,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<BattleResult>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<BattleResult>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<BattleResult>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `BattleResult`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait battle_resultQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `BattleResult`.
-            fn battle_result(&self) -> __sdk::__query_builder::Table<BattleResult>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `BattleResult`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait battle_resultQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `BattleResult`.
+    fn battle_result(&self) -> __sdk::__query_builder::Table<BattleResult>;
+}
 
-        impl battle_resultQueryTableAccess for __sdk::QueryTableAccessor {
-            fn battle_result(&self) -> __sdk::__query_builder::Table<BattleResult> {
-                __sdk::__query_builder::Table::new("battle_result")
-            }
-        }
-
+impl battle_resultQueryTableAccess for __sdk::QueryTableAccessor {
+    fn battle_result(&self) -> __sdk::__query_builder::Table<BattleResult> {
+        __sdk::__query_builder::Table::new("battle_result")
+    }
+}

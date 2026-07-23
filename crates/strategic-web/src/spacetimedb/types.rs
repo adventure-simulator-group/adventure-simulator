@@ -639,7 +639,6 @@ pub struct PartyStake {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BattleResult {
     pub battle_id: String,
-    pub outcome_source_id: String,
     pub party_id: String,
 }
 

@@ -2,34 +2,24 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct BattleResult {
     pub battle_id: String,
-    pub outcome_source_id: String,
     pub party_id: String,
 }
-
 
 impl __sdk::InModule for BattleResult {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `BattleResult`.
 ///
 /// Provides typed access to columns for query building.
 pub struct BattleResultCols {
     pub battle_id: __sdk::__query_builder::Col<BattleResult, String>,
-    pub outcome_source_id: __sdk::__query_builder::Col<BattleResult, String>,
     pub party_id: __sdk::__query_builder::Col<BattleResult, String>,
 }
 
@@ -38,9 +28,7 @@ impl __sdk::__query_builder::HasCols for BattleResult {
     fn cols(table_name: &'static str) -> Self::Cols {
         BattleResultCols {
             battle_id: __sdk::__query_builder::Col::new(table_name, "battle_id"),
-            outcome_source_id: __sdk::__query_builder::Col::new(table_name, "outcome_source_id"),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
-
         }
     }
 }
@@ -50,7 +38,6 @@ impl __sdk::__query_builder::HasCols for BattleResult {
 /// Provides typed access to indexed columns for query building.
 pub struct BattleResultIxCols {
     pub battle_id: __sdk::__query_builder::IxCol<BattleResult, String>,
-    pub outcome_source_id: __sdk::__query_builder::IxCol<BattleResult, String>,
     pub party_id: __sdk::__query_builder::IxCol<BattleResult, String>,
 }
 
@@ -59,12 +46,9 @@ impl __sdk::__query_builder::HasIxCols for BattleResult {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         BattleResultIxCols {
             battle_id: __sdk::__query_builder::IxCol::new(table_name, "battle_id"),
-            outcome_source_id: __sdk::__query_builder::IxCol::new(table_name, "outcome_source_id"),
             party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for BattleResult {}
-
