@@ -305,7 +305,7 @@
 .travel-progress-path { fill: none; stroke: #fff; stroke-linecap: butt; stroke-width: 3; vector-effect: non-scaling-stroke; }
 .travel-fatigue-track,
 .travel-terrain-track,
-.travel-daylight-track { position: relative; width: 64%; height: 100%; margin-inline: auto; overflow: visible; background: var(--panel-bg); }
+.travel-daylight-track { position: relative; top: 3%; width: 64%; height: 94%; margin-inline: auto; overflow: visible; background: var(--panel-bg); }
 .travel-fatigue-segment,
 .travel-terrain-segment,
 .travel-daylight-segment { position: absolute; right: 0; left: 0; min-height: 1px; }
@@ -479,8 +479,6 @@
 .travel-provisioning-icon .game-icon { width: .82rem; height: .82rem; }
 .travel-provisioning-icon.food { color: #e9a45d; }
 .travel-provisioning-icon.water { color: #579fd7; }
-.travel-provisioning-icon.alcohol { align-items: center; gap: .08rem; color: #e6e0d0; }
-.travel-provisioning-alcohol-days { color: var(--text-muted); font-size: .52rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 .trade-transfer:not(:disabled) { cursor: pointer; }
 

@@ -6,8 +6,8 @@
   const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   const MAX_U32 = 4294967295;
-  const TRACK_START = 0;
-  const TRACK_END = 100;
+  const TRACK_START = 3;
+  const TRACK_END = 97;
   const DAWN = 6 * 60;
   const DAYLIGHT = 8 * 60;
   const SUNSET = 18 * 60;
@@ -428,6 +428,8 @@
           label.textContent += ` (${Number(ordinaryWaterDays.toFixed(1))} ordinary water + ${Number(emergencyAlcoholDays.toFixed(1))} emergency alcohol)`;
         }
       });
+      const alcoholSummary = planner.querySelector("[data-emergency-alcohol-summary]");
+      if (alcoholSummary && Number.isFinite(emergencyAlcoholDays)) alcoholSummary.textContent = `+${Number(emergencyAlcoholDays.toFixed(2))} d`;
       const rationKcal = Number(planner.dataset.provisionRationKcal);
       const skinMl = Number(planner.dataset.provisionWaterskinMl);
       const remainingDays = Math.max(0, totalDays - completedDays);
