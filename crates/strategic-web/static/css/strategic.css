@@ -318,6 +318,7 @@
 .travel-terrain-segment.open { background-color: #9eb27b; background-image: radial-gradient(#d8dfbd 1px, transparent 1px); }
 .travel-terrain-segment.sparse-woods { background-color: #64845b; background-image: repeating-linear-gradient(45deg, transparent 0 4px, #b3c69a 4px 5px); }
 .travel-terrain-segment.deep-woods { background-color: #365b3c; background-image: repeating-linear-gradient(-45deg, transparent 0 3px, #7f9f75 3px 4px); }
+.travel-terrain-segment.wetland { background-color: #355c59; background-image: repeating-linear-gradient(0deg, transparent 0 4px, #8aaba0 4px 5px); }
 .travel-terrain-segment.stopped { background: #555; opacity: .55; }
 .travel-daylight-segment.day { background: #d9b95f; }
 .travel-daylight-segment.sunrise { background: #c98255; }
@@ -4512,8 +4513,7 @@ body.chat-resizing {
 .strategic-map-license-link:hover, .strategic-map-license-link:focus-visible { background: #f4eed3; text-decoration: underline; }
 .strategic-map-svg:active { cursor: grabbing; }
 .strategic-map-svg:focus-visible { outline: 3px solid #173d72; outline-offset: -3px; }
-.map-tile-layer { pointer-events: none; image-rendering: auto; }
-.map-tile-layer image { filter: brightness(var(--map-light, .9)) saturate(var(--map-saturation, .9)); }
+.map-tile-layer { pointer-events: none; image-rendering: auto; filter: brightness(var(--map-light, .9)) saturate(var(--map-saturation, .9)); }
 .map-atmosphere-layer { fill: var(--environment-tint, #28374d); opacity: var(--map-atmosphere-opacity, .14); pointer-events: none; mix-blend-mode: color; }
 .map-overlay-layer { pointer-events: auto; }
 .strategic-map { --map-land: color-mix(in srgb, #e6e1cb var(--map-land-mix, 92%), var(--environment-tint, #28374d)); --map-water: #b8c9c5; --map-road: #6e654f; --map-ferry: #625f58; --map-pin: #5b5141; --map-connected: #7b201c; --map-selected: #171511; --map-text: #17130e; --map-height-50: #ddd5ba; --map-height-100: #d4c9aa; --map-height-250: #c9b999; --map-height-500: #baa686; --map-height-1000: #aa9277; --map-height-1500: #987f6c; --map-height-2000: #826b60; --map-contour: #665b49; --map-forest: #73806a; --map-forest-conifer: #586a5d; }

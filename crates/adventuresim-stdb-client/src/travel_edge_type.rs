@@ -6,6 +6,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::edge_endpoint_type::EdgeEndpoint;
 use super::route_terrain_type::RouteTerrain;
+use super::travel_edge_provenance_type::TravelEdgeProvenance;
 use super::travel_route_type::TravelRoute;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -15,6 +16,7 @@ pub struct TravelEdge {
     pub from_node_id: u64,
     pub to_node_id: u64,
     pub route: TravelRoute,
+    pub provenance: TravelEdgeProvenance,
     pub toll_at: Option<EdgeEndpoint>,
     pub length_m: u32,
     pub slope_multiplier: f32,
@@ -36,6 +38,7 @@ pub struct TravelEdgeCols {
     pub from_node_id: __sdk::__query_builder::Col<TravelEdge, u64>,
     pub to_node_id: __sdk::__query_builder::Col<TravelEdge, u64>,
     pub route: __sdk::__query_builder::Col<TravelEdge, TravelRoute>,
+    pub provenance: __sdk::__query_builder::Col<TravelEdge, TravelEdgeProvenance>,
     pub toll_at: __sdk::__query_builder::Col<TravelEdge, Option<EdgeEndpoint>>,
     pub length_m: __sdk::__query_builder::Col<TravelEdge, u32>,
     pub slope_multiplier: __sdk::__query_builder::Col<TravelEdge, f32>,
@@ -53,6 +56,7 @@ impl __sdk::__query_builder::HasCols for TravelEdge {
             from_node_id: __sdk::__query_builder::Col::new(table_name, "from_node_id"),
             to_node_id: __sdk::__query_builder::Col::new(table_name, "to_node_id"),
             route: __sdk::__query_builder::Col::new(table_name, "route"),
+            provenance: __sdk::__query_builder::Col::new(table_name, "provenance"),
             toll_at: __sdk::__query_builder::Col::new(table_name, "toll_at"),
             length_m: __sdk::__query_builder::Col::new(table_name, "length_m"),
             slope_multiplier: __sdk::__query_builder::Col::new(table_name, "slope_multiplier"),

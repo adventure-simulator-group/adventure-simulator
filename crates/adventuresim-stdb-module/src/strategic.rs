@@ -10,13 +10,14 @@ use adventuresim_world_schema::{
     ModeledTreeSpecies, ModeledTreeSpeciesProfile, OfficialReligion, PalmerDroughtSeverityIndex,
     PotentialVegetation, PotentialVegetationClass, ProductionScale, RouteTerrain,
     SETTLEMENT_ALIAS_NAME_MAX_BYTES, SETTLEMENT_ALIAS_PREFIX_MAX_BYTES,
-    SETTLEMENT_DESCRIPTION_MAX_BYTES, SettlementDescriptionKind, SettlementHydrology,
-    SettlementImport, SettlementReligiousStatus, SoilAcidity, SoilBasisPoints, SoilDepth,
-    SoilEvidence, SoilFertility, SoilProfile, SoilProperties, SoilSubstrate, SoilWaterRegime,
-    StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon, TravelEdgeImport,
-    TravelRoute, TreeSpeciesId, TreeSpeciesProfile, UnconsolidatedDeposit, WORLD_SCHEMA_VERSION,
-    Woodland, WorldNodeImport, historical_vegetation_matches_context,
-    industry_profile_is_canonical, valid_bounded_source_text, valid_sources_markdown,
+    SETTLEMENT_DESCRIPTION_MAX_BYTES, SettlementDescriptionKind, SettlementEconomyProfile,
+    SettlementHydrology, SettlementImport, SettlementReligiousStatus, SoilAcidity, SoilBasisPoints,
+    SoilDepth, SoilEvidence, SoilFertility, SoilProfile, SoilProperties, SoilSubstrate,
+    SoilWaterRegime, StoneContentPercent, SurfaceGeology, SurfaceLithology, TopsoilOrganicCarbon,
+    TravelEdgeLoad, TravelEdgeProvenance, TravelRoute, TreeSpeciesId, TreeSpeciesProfile,
+    UnconsolidatedDeposit, WORLD_SCHEMA_VERSION, Woodland, WorldNodeImport,
+    historical_vegetation_matches_context, industry_profile_is_canonical,
+    valid_bounded_source_text, valid_sources_markdown,
 };
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 
@@ -541,8 +542,8 @@ pub(crate) const fn settlement_category(
         match population_estimate {
             0..=1_999 => SettlementCategory::Hamlet,
             2_000..=3_999 => SettlementCategory::Village,
-            4_000..=10_999 => SettlementCategory::Town,
-            11_000..=50_999 => SettlementCategory::City,
+            4_000..=7_999 => SettlementCategory::Town,
+            8_000..=12_999 => SettlementCategory::City,
             _ => SettlementCategory::Capital,
         }
     } else {
@@ -562,17 +563,17 @@ mod settlement_category_tests {
     use super::{SettlementCategory, settlement_category};
 
     #[test]
-    fn population_estimate_boundaries_use_existing_bands() {
+    fn population_estimate_boundaries_use_regional_bands() {
         let cases = [
             (1, SettlementCategory::Hamlet),
             (1_999, SettlementCategory::Hamlet),
             (2_000, SettlementCategory::Village),
             (3_999, SettlementCategory::Village),
             (4_000, SettlementCategory::Town),
-            (10_999, SettlementCategory::Town),
-            (11_000, SettlementCategory::City),
-            (50_999, SettlementCategory::City),
-            (51_000, SettlementCategory::Capital),
+            (7_999, SettlementCategory::Town),
+            (8_000, SettlementCategory::City),
+            (12_999, SettlementCategory::City),
+            (13_000, SettlementCategory::Capital),
         ];
         for (population, expected) in cases {
             assert_eq!(settlement_category(population, -1), expected);
@@ -620,6 +621,7 @@ pub struct Settlement {
     pub drought: DroughtProfile,
     pub hydrology: SettlementHydrology,
     pub industries: InferredIndustryProfile,
+    pub economy: SettlementEconomyProfile,
     pub scene_key: String,
     /// The single faith represented by this settlement's church and priest.
     pub religion_id: String,
@@ -632,6 +634,24 @@ pub struct Settlement {
     /// Unstructured Markdown explaining source evidence and deterministic
     /// inferences. Reserved for a future debug view.
     pub sources: String,
+}
+
+pub(crate) fn require_settlement_service(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+    service: adventuresim_world_schema::SettlementService,
+) -> Result<(), String> {
+    let settlement = ctx
+        .db
+        .settlement()
+        .id()
+        .find(settlement_id.to_owned())
+        .ok_or("Settlement not found")?;
+    if settlement.economy.has_service(service) {
+        Ok(())
+    } else {
+        Err("This settlement does not offer that service".into())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -706,6 +726,7 @@ pub struct TravelEdge {
     #[index(btree)]
     pub to_node_id: u64,
     pub route: TravelRoute,
+    pub provenance: TravelEdgeProvenance,
     pub toll_at: Option<EdgeEndpoint>,
     pub length_m: u32,
     pub slope_multiplier: f32,
@@ -820,6 +841,7 @@ pub fn finish_world_data_import(ctx: &ReducerContext, artifact_id: String) -> Re
         return Err("Cannot finish a different world artifact".into());
     }
     validate_final_settlement_industries(ctx)?;
+    validate_final_settlement_economies(ctx)?;
     import.completed = true;
     ctx.db.world_data_import().id().update(import);
     Ok(())
@@ -856,15 +878,18 @@ pub fn import_world_nodes(ctx: &ReducerContext, nodes: Vec<WorldNodeImport>) -> 
 }
 
 #[reducer]
-pub fn import_travel_edges(
-    ctx: &ReducerContext,
-    edges: Vec<TravelEdgeImport>,
-) -> Result<(), String> {
+pub fn import_travel_edges(ctx: &ReducerContext, edges: Vec<TravelEdgeLoad>) -> Result<(), String> {
     require_active_world_import(ctx)?;
     if edges.is_empty() {
         return Err("Travel-edge batch is empty".into());
     }
     for edge in edges {
+        if edge.provenance == TravelEdgeProvenance::InferredWalkingLink && edge.id >> 63 != 1 {
+            return Err(format!(
+                "Inferred travel edge {} lacks its stable high-bit identity",
+                edge.id
+            ));
+        }
         validate_travel_edge_endpoints(edge.id, edge.from_node_id, edge.to_node_id)?;
         if ctx.db.world_node().id().find(edge.from_node_id).is_none()
             || ctx.db.world_node().id().find(edge.to_node_id).is_none()
@@ -886,6 +911,7 @@ pub fn import_travel_edges(
             from_node_id: edge.from_node_id,
             to_node_id: edge.to_node_id,
             route: edge.route,
+            provenance: edge.provenance,
             toll_at: edge.toll,
             length_m: edge.length_m,
             slope_multiplier: edge.slope_multiplier,
@@ -1023,6 +1049,9 @@ pub fn import_settlements(
                 settlement.id
             ));
         }
+        settlement.economy.validate().map_err(|reason| {
+            format!("Settlement {} has invalid economy: {reason}", settlement.id)
+        })?;
         // Route batches are resumable and may arrive before or after settlement
         // batches. Exact industry/profile equality is therefore checked against
         // the final edge table by `finish_world_data_import`.
@@ -1087,6 +1116,7 @@ pub fn import_settlements(
             drought,
             hydrology: settlement.hydrology,
             industries: settlement.industries,
+            economy: settlement.economy,
             source_node_id: Some(settlement.source_node_id),
             sources: settlement.sources,
         };
@@ -1175,6 +1205,40 @@ fn validate_final_settlement_industries(ctx: &ReducerContext) -> Result<(), Stri
         ) {
             return Err(format!(
                 "Settlement {} industries do not match the final travel-edge graph",
+                settlement.id
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_final_settlement_economies(ctx: &ReducerContext) -> Result<(), String> {
+    for settlement in ctx.db.settlement().iter() {
+        let Some(node_id) = settlement.source_node_id else {
+            continue;
+        };
+        let routes = ctx
+            .db
+            .travel_edge()
+            .iter()
+            .filter(|e| e.from_node_id == node_id || e.to_node_id == node_id)
+            .count();
+        let documented_town = ctx
+            .db
+            .world_node()
+            .id()
+            .find(node_id)
+            .is_some_and(|n| n.is_town);
+        let expected = adventuresim_world_schema::infer_settlement_economy(
+            settlement.population_level,
+            settlement.population_estimate,
+            u16::try_from(routes).unwrap_or(u16::MAX),
+            documented_town,
+            &settlement.industries,
+        )?;
+        if settlement.economy != expected {
+            return Err(format!(
+                "Settlement {} economy does not match canonical facts and final travel graph",
                 settlement.id
             ));
         }
@@ -5691,6 +5755,19 @@ pub fn liquidate_party_inventory(
     if character.current_settlement_id.as_deref() != Some(&settlement_id) {
         return Err("Character must be at this settlement to liquidate party assets".into());
     }
+    if require_settlement_service(
+        ctx,
+        &settlement_id,
+        adventuresim_world_schema::SettlementService::Market,
+    )
+    .is_err()
+    {
+        require_settlement_service(
+            ctx,
+            &settlement_id,
+            adventuresim_world_schema::SettlementService::GeneralStore,
+        )?;
+    }
     let party_id = character.party_id.ok_or("Character has no party")?;
     let mut staged = Vec::new();
     let mut proceeds = 0_u64;
@@ -5870,6 +5947,19 @@ pub fn finalize_merchant_trade(
     party_scope: bool,
 ) -> Result<(), String> {
     crate::character::require_living_character(ctx, character_id)?;
+    if require_settlement_service(
+        ctx,
+        &settlement_id,
+        adventuresim_world_schema::SettlementService::Market,
+    )
+    .is_err()
+    {
+        require_settlement_service(
+            ctx,
+            &settlement_id,
+            adventuresim_world_schema::SettlementService::GeneralStore,
+        )?;
+    }
     if buy_item_ids.len() != buy_quantities.len()
         || sell_inventory_ids.len() != sell_quantities.len()
     {
@@ -5900,6 +5990,7 @@ pub fn finalize_merchant_trade(
         adventuresim_world_schema::ORAL_FLUENCY_HOURS;
     let (_, shared_language) =
         adventuresim_world_schema::best_common_oral_language(speaker, merchant);
+    let settlement_economy = settlement.economy.clone();
     // Sales are inventory-instance operations. Preserve each submitted stack
     // and quantity rather than netting by item ID, which can assign the whole
     // net sale to every matching stack.
@@ -5921,6 +6012,23 @@ pub fn finalize_merchant_trade(
         ) || *quantity == 0
         {
             return Err("Invalid merchant purchase".into());
+        }
+        use adventuresim_core::settlement_economy::{CatalogKind as C, Storefront as S};
+        let catalog_kind = crate::item::economy_catalog_kind(item.kind);
+        let storefront = match catalog_kind {
+            C::Weapon | C::Shield => S::Weapons,
+            C::Armor => S::Armor,
+            C::Clothing => S::Clothing,
+            C::Food => S::Inn,
+            _ => S::General,
+        };
+        if !adventuresim_core::settlement_economy::storefront_stocks(
+            &settlement_economy,
+            storefront,
+            item_id,
+            catalog_kind,
+        ) {
+            return Err("This settlement does not stock that merchant item".into());
         }
         let line = adventuresim_core::strategic_economy::checked_merchant_line_total(
             adventuresim_core::strategic_economy::language_adjusted_buy_price(
@@ -8842,8 +8950,8 @@ fn reconstruct_legacy_journey_coordinates(
 mod departure_invariant_tests {
     use super::{
         CampDurationMode, JourneyRoutePlan, JourneyRoutePoint, JourneyTerrainKind,
-        JourneyTerrainSpan, Party, PartyJourneyRoute, common_movement_prefix,
-        departure_snapshot_allows_travel, party_can_continue_travel,
+        JourneyTerrainSpan, JourneyTerrainWeights, Party, PartyJourneyRoute,
+        common_movement_prefix, departure_snapshot_allows_travel, party_can_continue_travel,
         reconstruct_legacy_journey_coordinates, route_position_at_minute, set_party_journey_state,
         straight_line_distance_m, validate_journey_route_payload,
         zero_boundary_requires_settlement,
@@ -9050,7 +9158,7 @@ mod departure_invariant_tests {
             camp_remaining_minutes: 30,
             pooled_water_ml: 0.0,
             medicine_target: 0.0,
-            charisma_target: 0.0,
+            command_target: 0.0,
             religion_target: 0.0,
         };
         set_party_journey_state(
@@ -10066,6 +10174,7 @@ pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                 bridge: None,
                 water_crossings: vec![],
             }),
+            provenance: TravelEdgeProvenance::DocumentedViabundus,
             toll_at: None,
             length_m: 19_000,
             slope_multiplier: 1.0,
@@ -10214,6 +10323,7 @@ pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                         adventuresim_world_schema::FallbackIndustry::WoodlandFuelwood,
                     ),
                 ]).unwrap(),
+                economy: SettlementEconomyProfile::stage_placeholder(),
                 scene_key: scene.into(),
                 religion_id: religious_status.church().religion_id().into(),
                 currency_id: crate::item::settlement_currency_id(id).into(),

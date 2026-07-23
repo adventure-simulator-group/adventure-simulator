@@ -270,3 +270,9 @@ character ID before remaining net hydration is counted. The planner presents ord
 and emergency alcohol separately, while its overall water-sufficiency verdict
 uses their sum. Provisioning still stages waterskins only; it does not disguise
 alcohol as water or automatically purchase it as a water container.
+World compilation may publish sparse inferred local roads after A* evaluates the
+complete alignment against an immutable documented-road base terrain pack.
+Candidates are spatially bounded, limited to eight evaluations and two accepted
+links per settlement, and capped at 12 km/six walking hours. Existing short graph
+routes suppress clique edges. The exact accepted polyline is shared by the
+runtime graph, final routing mask, quiet map styling, and artifact digest.
