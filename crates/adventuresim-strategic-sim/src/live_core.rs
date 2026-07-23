@@ -50,7 +50,6 @@ use adventuresim_stdb_client::{
     equipped_medication_table::EquippedMedicationTableAccess,
     examine_by_herbalist_reducer::examine_by_herbalist,
     finalize_merchant_trade_reducer::finalize_merchant_trade,
-    interact_with_contract_issuer_reducer::interact_with_contract_issuer,
     inventory_item_table::InventoryItemTableAccess, item_condition_table::ItemConditionTableAccess,
     item_table::ItemTableAccess, liquidate_party_inventory_reducer::liquidate_party_inventory,
     party_inventory_item_table::PartyInventoryItemTableAccess,
@@ -67,6 +66,7 @@ use adventuresim_stdb_client::{
     seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage,
     seed_simulation_world_reducer::seed_simulation_world,
     settlement_smith_table::SettlementSmithTableAccess,
+    simulate_contract_issuer_interaction_reducer::simulate_contract_issuer_interaction,
     simulation_run_table::SimulationRunTableAccess, store_battle_loot_reducer::store_battle_loot,
     strategic_encounter_table::StrategicEncounterTableAccess,
     submit_item_for_repair_reducer::submit_item_for_repair,
@@ -1540,7 +1540,7 @@ impl LiveRunner {
         let result = reducer_call!(self, "interact_accept_contract", |cb| self
             .connection
             .reducers
-            .interact_with_contract_issuer_then(
+            .simulate_contract_issuer_interaction_then(
                 leader,
                 quest.id.clone(),
                 ContractInteractionStage::Accept,
@@ -1819,7 +1819,7 @@ impl LiveRunner {
         let result = reducer_call!(self, "interact_report_contract", |cb| self
             .connection
             .reducers
-            .interact_with_contract_issuer_then(
+            .simulate_contract_issuer_interaction_then(
                 leader,
                 quest.id.clone(),
                 ContractInteractionStage::Report,
