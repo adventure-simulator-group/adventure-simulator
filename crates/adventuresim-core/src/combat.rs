@@ -454,7 +454,15 @@ fn calculate_damage_from_force(
     };
     let blunt_force = absorbed_force * 0.5 + transmitted_blunt_force;
     let blunt_damage = (blunt_force - defender_padding).max(0.0);
-    let balance_damage = (absorbed_force * 0.5) / defender_stagger_resistance;
+    // A pure blunt impact still transfers momentum when there is no edge for
+    // resistance to absorb. Edge and mixed contacts retain the absorbed-force
+    // impulse used by the existing model.
+    let stagger_impulse = if has_blunt && !has_edge {
+        attack_force * 0.5
+    } else {
+        absorbed_force * 0.5
+    };
+    let balance_damage = stagger_impulse / defender_stagger_resistance;
     AttackResult::ToDefender {
         cut_damage,
         blunt_damage,
@@ -542,11 +550,63 @@ mod tests {
             &defender,
             true,
         );
+        let AttackResult::ToDefender {
+            cut_damage,
+            blunt_damage,
+            balance_damage,
+            ..
+        } = result
+        else {
+            panic!("an undefended hit must damage the defender");
+        };
+        assert_eq!(cut_damage, 0.0);
+        assert_eq!(blunt_damage, 80.0);
+        assert_eq!(balance_damage, 50.0 / (70.0 * 10.0));
+    }
+
+    #[test]
+    fn penetration_can_cross_resistance_at_armor_limited_force() {
+        let cutting = |penetration| CombatEquipment {
+            weapon: Some(CombatWeapon {
+                slash: true,
+                penetration,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let mut defender = CombatEquipment::default();
+        defender.armor.fill(CombatArmor::innate(150.0, 0.0));
+
+        let lower = calculate_damage_from_force(
+            1.0,
+            100.0,
+            &cutting(0.5),
+            BodyPart::Chest,
+            &StubBody,
+            &defender,
+            true,
+        );
+        let stronger = calculate_damage_from_force(
+            1.0,
+            100.0,
+            &cutting(1.0),
+            BodyPart::Chest,
+            &StubBody,
+            &defender,
+            true,
+        );
+
         assert!(matches!(
-            result,
+            lower,
             AttackResult::ToDefender {
                 cut_damage: 0.0,
-                blunt_damage: 80.0,
+                ..
+            }
+        ));
+        assert!(matches!(
+            stronger,
+            AttackResult::ToDefender {
+                cut_damage: 25.0,
                 ..
             }
         ));

@@ -2072,21 +2072,7 @@ mod tests {
     }
 
     #[test]
-    fn innate_resistance_preserves_penetration_and_unprotected_behavior() {
-        let innate = profile(ThreatId::Skeleton).combat.innate_protection;
-        let protection = CombatArmor::innate(innate.resistance_joules, innate.padding_joules);
-        let cutting = |penetration| {
-            resolved_melee_health_damage(
-                CombatWeapon {
-                    slash: true,
-                    penetration,
-                    ..Default::default()
-                },
-                protection,
-            )
-        };
-        assert!(cutting(1.5) > cutting(0.5));
-
+    fn ordinary_unprotected_damage_remains_coherent() {
         let unprotected_cut = resolved_melee_health_damage(
             CombatWeapon {
                 slash: true,
