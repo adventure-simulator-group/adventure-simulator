@@ -138,6 +138,31 @@ pub fn authorize_tactical_server_claim(
     Ok(())
 }
 
+/// Release an unconsumed claim after the trusted dispatcher fails to start
+/// its child process. Consumed claims and active servers have no row to revoke.
+#[reducer]
+pub fn revoke_tactical_server_claim(
+    ctx: &ReducerContext,
+    mission_id: String,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_gateway(ctx)?;
+    adventuresim_core::mission::MissionId::new(mission_id.clone()).map_err(str::to_string)?;
+    if ctx
+        .db
+        .tactical_server_request_authority()
+        .mission_id()
+        .find(&mission_id)
+        .is_none()
+    {
+        return Err("Tactical server request is no longer pending".into());
+    }
+    ctx.db
+        .tactical_server_claim()
+        .mission_id()
+        .delete(&mission_id);
+    Ok(())
+}
+
 #[derive(SpacetimeType, Clone, Debug)]
 pub struct ConnectedPlayer {
     pub character: Character,
@@ -363,7 +388,10 @@ pub fn request_tactical_server_for_scene(
     character_id: u64,
     scene_key: String,
 ) -> Result<(), String> {
-    let mission_id = format!("{scene_key}-{}", ctx.timestamp.to_micros_since_unix_epoch());
+    let mission_id = format!(
+        "mission:{scene_key}-{}",
+        ctx.timestamp.to_micros_since_unix_epoch()
+    );
     request_tactical_server(ctx, character_id, mission_id, scene_key)
 }
 
@@ -692,6 +720,14 @@ fn end_tactical_server_by_instance(
                         .case_site_authority()
                         .id_key()
                         .find(&group.case_site_id.value)
+                    && ctx
+                        .db
+                        .party_authority()
+                        .id()
+                        .find(&server.party_id)
+                        .is_some_and(|party| {
+                            party.active_quest_id.as_deref() == Some(site.case_id.as_str())
+                        })
                 {
                     crate::complete_quest(ctx, site.case_id)?;
                 }

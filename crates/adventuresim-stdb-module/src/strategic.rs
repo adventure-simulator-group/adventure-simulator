@@ -2176,8 +2176,6 @@ pub struct PartyInventoryState {
 pub struct BattleResult {
     #[primary_key]
     pub battle_id: String,
-    #[unique]
-    pub outcome_source_id: String,
     #[index(btree)]
     pub party_id: String,
 }
@@ -5667,7 +5665,6 @@ pub(crate) fn commit_victorious_battle(
         });
     ctx.db.battle_result().insert(BattleResult {
         battle_id: battle_id.to_string(),
-        outcome_source_id: outcome_source_id.to_string(),
         party_id: party_id.to_string(),
     });
     let difficulty = group.as_ref().map_or(1, |group| group.difficulty);
@@ -10713,15 +10710,6 @@ pub fn autoresolve_mission(
         .and_then(|id| ctx.db.case_site_authority().id_key().find(&id.value))
         .ok_or("Party is not at a case site")?;
     let quest_id = case_site.case_id.clone();
-    let quest = ctx
-        .db
-        .quest()
-        .id()
-        .find(&quest_id)
-        .ok_or("Case combat definition not found")?;
-    if party.active_quest_id.as_deref() != Some(&quest_id) {
-        return Err("Party must be at its active quest location".into());
-    }
     require_party_ready(ctx, &party_id)?;
 
     let mission = ensure_bound_mission_authority(
@@ -10812,7 +10800,7 @@ pub fn autoresolve_mission(
         &battle_id,
         &party_id,
         &member_ids,
-        5.0 + quest.difficulty.max(0) as f32,
+        5.0 + hostile_group.difficulty.max(0) as f32,
         &outcome,
     )?;
 
@@ -10833,7 +10821,7 @@ pub fn autoresolve_mission(
         dropped_items,
         true,
     )?;
-    if committed {
+    if committed && party.active_quest_id.as_deref() == Some(&quest_id) {
         complete_quest(ctx, quest_id)
     } else {
         Ok(())

@@ -63,9 +63,6 @@ pub mod canal_watercourse_type;
 pub mod cancel_mission_request_reducer;
 pub mod canopy_density_type;
 pub mod case_site_authority_type;
-pub mod hostile_group_authority_type;
-pub mod mission_authority_type;
-pub mod outcome_source_authority_type;
 pub mod case_site_id_type;
 pub mod catholic_lutheran_church_type;
 pub mod catholic_reformed_church_type;
@@ -223,6 +220,7 @@ pub mod herbalist_examination_type;
 pub mod historical_vegetation_type;
 pub mod historical_wetland_type;
 pub mod historical_woodland_type;
+pub mod hostile_group_authority_type;
 pub mod hygiene_type;
 pub mod igneous_rock_type;
 pub mod immediate_activity_type;
@@ -302,6 +300,7 @@ pub mod mined_commodity_type;
 pub mod mineral_soil_texture_type;
 pub mod mineral_soil_type;
 pub mod mining_industry_type;
+pub mod mission_authority_type;
 pub mod mixed_lithology_type;
 pub mod modeled_tree_species_profile_type;
 pub mod modeled_tree_species_type;
@@ -315,6 +314,7 @@ pub mod official_religion_type;
 pub mod oral_language_hours_type;
 pub mod organic_soil_type;
 pub mod other_non_textured_soil_type;
+pub mod outcome_source_authority_type;
 pub mod outlook_type;
 pub mod palmer_drought_severity_index_type;
 pub mod party_action_request_table;
@@ -395,6 +395,7 @@ pub mod retained_projectile_table;
 pub mod retained_projectile_type;
 pub mod retrieve_repaired_item_reducer;
 pub mod retrieve_repaired_items_reducer;
+pub mod revoke_tactical_server_claim_reducer;
 pub mod river_access_type;
 pub mod river_and_canal_access_type;
 pub mod river_watercourse_type;
@@ -498,11 +499,11 @@ pub mod suitability_basis_points_type;
 pub mod surface_geology_type;
 pub mod surface_lithology_type;
 pub mod synchronize_character_time_reducer;
+pub mod tactical_server_claim_type;
 pub mod tactical_server_request_table;
 pub mod tactical_server_request_type;
 pub mod tactical_server_table;
 pub mod tactical_server_type;
-pub mod tactical_server_claim_type;
 pub mod temperance_type;
 pub mod topsoil_organic_carbon_type;
 pub mod track_case_site_reducer;
@@ -602,9 +603,6 @@ pub use canal_watercourse_type::CanalWatercourse;
 pub use cancel_mission_request_reducer::cancel_mission_request;
 pub use canopy_density_type::CanopyDensity;
 pub use case_site_authority_type::CaseSiteAuthority;
-pub use hostile_group_authority_type::HostileGroupAuthority;
-pub use mission_authority_type::MissionAuthority;
-pub use outcome_source_authority_type::OutcomeSourceAuthority;
 pub use case_site_id_type::CaseSiteId;
 pub use catholic_lutheran_church_type::CatholicLutheranChurch;
 pub use catholic_reformed_church_type::CatholicReformedChurch;
@@ -762,6 +760,7 @@ pub use herbalist_examination_type::HerbalistExamination;
 pub use historical_vegetation_type::HistoricalVegetation;
 pub use historical_wetland_type::HistoricalWetland;
 pub use historical_woodland_type::HistoricalWoodland;
+pub use hostile_group_authority_type::HostileGroupAuthority;
 pub use hygiene_type::Hygiene;
 pub use igneous_rock_type::IgneousRock;
 pub use immediate_activity_type::ImmediateActivity;
@@ -841,6 +840,7 @@ pub use mined_commodity_type::MinedCommodity;
 pub use mineral_soil_texture_type::MineralSoilTexture;
 pub use mineral_soil_type::MineralSoil;
 pub use mining_industry_type::MiningIndustry;
+pub use mission_authority_type::MissionAuthority;
 pub use mixed_lithology_type::MixedLithology;
 pub use modeled_tree_species_profile_type::ModeledTreeSpeciesProfile;
 pub use modeled_tree_species_type::ModeledTreeSpecies;
@@ -854,6 +854,7 @@ pub use official_religion_type::OfficialReligion;
 pub use oral_language_hours_type::OralLanguageHours;
 pub use organic_soil_type::OrganicSoil;
 pub use other_non_textured_soil_type::OtherNonTexturedSoil;
+pub use outcome_source_authority_type::OutcomeSourceAuthority;
 pub use outlook_type::Outlook;
 pub use palmer_drought_severity_index_type::PalmerDroughtSeverityIndex;
 pub use party_action_request_table::*;
@@ -934,6 +935,7 @@ pub use retained_projectile_table::*;
 pub use retained_projectile_type::RetainedProjectile;
 pub use retrieve_repaired_item_reducer::retrieve_repaired_item;
 pub use retrieve_repaired_items_reducer::retrieve_repaired_items;
+pub use revoke_tactical_server_claim_reducer::revoke_tactical_server_claim;
 pub use river_access_type::RiverAccess;
 pub use river_and_canal_access_type::RiverAndCanalAccess;
 pub use river_watercourse_type::RiverWatercourse;
@@ -1037,11 +1039,11 @@ pub use suitability_basis_points_type::SuitabilityBasisPoints;
 pub use surface_geology_type::SurfaceGeology;
 pub use surface_lithology_type::SurfaceLithology;
 pub use synchronize_character_time_reducer::synchronize_character_time;
+pub use tactical_server_claim_type::TacticalServerClaim;
 pub use tactical_server_request_table::*;
 pub use tactical_server_request_type::TacticalServerRequest;
 pub use tactical_server_table::*;
 pub use tactical_server_type::TacticalServer;
-pub use tactical_server_claim_type::TacticalServerClaim;
 pub use temperance_type::Temperance;
 pub use topsoil_organic_carbon_type::TopsoilOrganicCarbon;
 pub use track_case_site_reducer::track_case_site;
@@ -1458,6 +1460,9 @@ pub enum Reducer {
         item_id: Option<String>,
         limit: u32,
     },
+    RevokeTacticalServerClaim {
+        mission_id: String,
+    },
     SaveRecruitmentRole {
         owner_id: u64,
         name: String,
@@ -1750,6 +1755,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::RestAtSettlementHours { .. } => "rest_at_settlement_hours",
             Reducer::RetrieveRepairedItem { .. } => "retrieve_repaired_item",
             Reducer::RetrieveRepairedItems { .. } => "retrieve_repaired_items",
+            Reducer::RevokeTacticalServerClaim { .. } => "revoke_tactical_server_claim",
             Reducer::SaveRecruitmentRole { .. } => "save_recruitment_role",
             Reducer::SeedSimulationDisease { .. } => "seed_simulation_disease",
             Reducer::SeedSimulationEquipmentDamage { .. } => "seed_simulation_equipment_damage",
@@ -2444,6 +2450,11 @@ Reducer::CancelMissionRequest{
                 service: service.clone(),
                 item_id: item_id.clone(),
                 limit: limit.clone(),
+}),
+            Reducer::RevokeTacticalServerClaim{
+                mission_id,
+}             => __sats::bsatn::to_vec(&revoke_tactical_server_claim_reducer::RevokeTacticalServerClaimArgs {
+                mission_id: mission_id.clone(),
 }),
             Reducer::SaveRecruitmentRole{
                 owner_id,
@@ -3513,15 +3524,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.strategic_incident,
             )
             .with_updates_by_pk(|row| &row.quest_id);
-        diff.tactical_server = cache
-            .apply_diff_to_table::<TacticalServer>("tactical_server", &self.tactical_server)
-            .with_updates_by_pk(|row| &row.identity);
-        diff.tactical_server_request = cache
-            .apply_diff_to_table::<TacticalServerRequest>(
-                "tactical_server_request",
-                &self.tactical_server_request,
-            )
-            .with_updates_by_pk(|row| &row.mission_id);
         diff.travel_edge = cache
             .apply_diff_to_table::<TravelEdge>("travel_edge", &self.travel_edge)
             .with_updates_by_pk(|row| &row.id);
@@ -3601,6 +3603,12 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.party_journey_route = cache.apply_diff_to_table::<PartyJourneyRoute>(
             "party_journey_route",
             &self.party_journey_route,
+        );
+        diff.tactical_server =
+            cache.apply_diff_to_table::<TacticalServer>("tactical_server", &self.tactical_server);
+        diff.tactical_server_request = cache.apply_diff_to_table::<TacticalServerRequest>(
+            "tactical_server_request",
+            &self.tactical_server_request,
         );
 
         diff

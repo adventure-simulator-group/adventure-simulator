@@ -25,7 +25,11 @@ through a gateway-only reducer, and waits for reducer success before spawning.
 The raw claim is passed only in the tactical child's environment; the full
 gateway token is explicitly removed. The child consumes the matching private
 claim exactly once when registering its server identity. Claims are never
-stored in public rows or command-line arguments.
+stored in public rows or command-line arguments. If process creation fails,
+the dispatcher revokes the still-pending claim so the request can be retried.
+A child that exits after process creation but before registration still
+requires cancellation or dispatcher restart; durable child supervision is a
+follow-up operational improvement.
 
 Tactical servers keep positions, health, enemies, and per-tick simulation
 transient. On victory, the owning server submits its bound mission through the

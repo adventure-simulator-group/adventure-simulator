@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use adventuresim_stdb_client::spacetimedb_sdk::{DbContext, Table};
 use adventuresim_stdb_client::{
     DbConnection, TacticalServerRequestTableAccess, authorize_tactical_server_claim,
-    tactical_server_requestQueryTableAccess,
+    revoke_tactical_server_claim, tactical_server_requestQueryTableAccess,
 };
 use clap::Parser;
 use sha2::{Digest, Sha256};
@@ -164,6 +164,14 @@ fn main() {
                             }
                             Err(error) => {
                                 error!("Failed to spawn tactical-server: {error}");
+                                if let Err(revoke_error) = _ctx
+                                    .reducers
+                                    .revoke_tactical_server_claim(mission_id.clone())
+                                {
+                                    error!(
+                                        "Failed to revoke unused tactical claim: {revoke_error}"
+                                    );
+                                }
                             }
                         }
                     }
