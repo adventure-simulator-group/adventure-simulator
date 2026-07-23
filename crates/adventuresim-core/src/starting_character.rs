@@ -180,7 +180,7 @@ fn hash(domain: &str, seed: &str, slot: u8) -> u64 {
 }
 
 fn choose<'a>(domain: &str, seed: &str, slot: u8, choices: &'a [&'a str]) -> &'a str {
-    choices[hash(domain, seed, slot) as usize % choices.len()]
+    choices[(hash(domain, seed, slot) % choices.len() as u64) as usize]
 }
 
 fn item(id: &str, quantity: u32, equipped: Option<StartingSlot>) -> StartingItem {
