@@ -151,6 +151,13 @@ const CANDIDATES: &[Candidate] = &[
         required_bridge: None,
     },
     Candidate {
+        cause: Cause::Bandits,
+        symptom: Symptom::VanishedLivestock,
+        plausibility: 10,
+        curation: 7,
+        required_bridge: None,
+    },
+    Candidate {
         cause: Cause::Ghouls,
         symptom: Symptom::NightScreams,
         plausibility: 25,
@@ -462,6 +469,29 @@ mod tests {
         assert_eq!(a, generate(&ctx("x"), 0, 12).unwrap());
         assert!(a.1.plausibility > 0);
         assert!(a.1.curation > 0);
+    }
+    #[test]
+    fn every_generatable_public_symptom_has_multiple_possible_causes() {
+        let symptoms: BTreeSet<_> = CANDIDATES
+            .iter()
+            .filter(|candidate| candidate.plausibility > 0 && candidate.curation > 0)
+            .map(|candidate| candidate.symptom)
+            .collect();
+        for symptom in symptoms {
+            let causes: BTreeSet<_> = CANDIDATES
+                .iter()
+                .filter(|candidate| {
+                    candidate.symptom == symptom
+                        && candidate.plausibility > 0
+                        && candidate.curation > 0
+                })
+                .map(|candidate| candidate.cause)
+                .collect();
+            assert!(
+                causes.len() >= 2,
+                "public symptom {symptom:?} identifies {causes:?}"
+            );
+        }
     }
     #[test]
     fn hard_zero_and_bridge_are_enforced() {

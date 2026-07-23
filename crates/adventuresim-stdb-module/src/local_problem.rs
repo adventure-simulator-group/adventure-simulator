@@ -194,10 +194,7 @@ pub fn backend_local_problem_trade_effects(
                 .character()
                 .id()
                 .find(time.character_id)
-                .and_then(|c| {
-                    c.current_settlement_id
-                        .map(|s| (c.id, s, time.minutes))
-                })
+                .and_then(|c| c.current_settlement_id.map(|s| (c.id, s, time.minutes)))
         })
         .collect();
     characters.sort();
@@ -485,9 +482,6 @@ pub(crate) fn apply_outcome(
     {
         return Err("Invalid source outcome ID".into());
     }
-    if input.at_minute != official_minute(ctx) {
-        return Err("Outcome minute is not the authoritative strategic minute".into());
-    }
     let fingerprint =
         serde_json::to_string(input).map_err(|_| "Could not encode outcome payload")?;
     let receipt_id = format!("{problem_id}:{}", input.source_outcome_id);
@@ -502,6 +496,9 @@ pub(crate) fn apply_outcome(
         } else {
             Err("Conflicting retry for source outcome ID".into())
         };
+    }
+    if input.at_minute != official_minute(ctx) {
+        return Err("Outcome minute is not the authoritative strategic minute".into());
     }
     let mut problem = ctx
         .db
@@ -584,23 +581,23 @@ pub fn surface_problem(
         .character_id()
         .find(character_id)
         .map_or(0, |t| t.minutes);
-    let mut known: Vec<_> = ctx
+    let scope = format!("settlement:{settlement_id}");
+    let mut active_problems: Vec<_> = ctx
         .db
-        .local_problem_receipt()
-        .character_id()
-        .filter(character_id)
-        .filter(|receipt| receipt.settlement_id == settlement_id)
-        .filter_map(|receipt| {
-            ctx.db
-                .local_problem_authority()
-                .id()
-                .find(&receipt.problem_id)
-                .filter(|p| is_active(p, minute))
-                .map(|_| receipt)
-        })
+        .local_problem_authority()
+        .scope_key()
+        .filter(&scope)
+        .filter(|problem| is_active(problem, minute))
+        .take(lp::MAX_ACTIVE_PER_SCOPE)
         .collect();
-    known.sort_by(|a, b| a.problem_id.cmp(&b.problem_id));
-    if let Some(receipt) = known.into_iter().next() {
+    active_problems.sort_by(|left, right| left.id.cmp(&right.id));
+    let known = active_problems.iter().find_map(|problem| {
+        ctx.db
+            .local_problem_receipt()
+            .id()
+            .find(&format!("{character_id}:{}", problem.id))
+    });
+    if let Some(receipt) = known {
         if let Some(contact) = ctx.db.settlement_npc().id().find(&receipt.contact_npc_id) {
             ctx.db
                 .local_problem_rumor_delivery()
@@ -639,25 +636,13 @@ pub fn surface_problem(
     if lp::discovery_action(location_id, inn_available, false) != lp::DiscoveryAction::NewRumor {
         return Ok(());
     }
-    let known_ids: BTreeSet<_> = ctx
-        .db
-        .local_problem_receipt()
-        .character_id()
-        .filter(character_id)
-        .filter(|r| r.settlement_id == settlement_id)
-        .map(|r| r.problem_id)
-        .collect();
-    let mut rows: Vec<_> = ctx
-        .db
-        .local_problem_authority()
-        .scope_key()
-        .filter(&format!("settlement:{settlement_id}"))
-        .filter(|p| is_active(p, minute))
-        .filter(|p| !known_ids.contains(&p.id))
-        .take(lp::MAX_ACTIVE_PER_SCOPE)
-        .collect();
-    rows.sort_by(|a, b| a.id.cmp(&b.id));
-    let Some(problem) = rows.into_iter().next() else {
+    let Some(problem) = active_problems.into_iter().find(|problem| {
+        ctx.db
+            .local_problem_receipt()
+            .id()
+            .find(&format!("{character_id}:{}", problem.id))
+            .is_none()
+    }) else {
         return Ok(());
     };
     let mut contacts: Vec<_> = ctx
@@ -777,8 +762,9 @@ mod tests {
     fn discovery_and_outcome_boundaries_are_bounded() {
         let source = include_str!("local_problem.rs");
         assert!(source.contains("has_service(adventuresim_world_schema::SettlementService::Inn)"));
-        assert!(source.contains("filter(|receipt| receipt.settlement_id == settlement_id)"));
         assert!(source.contains("take(lp::MAX_ACTIVE_PER_SCOPE)"));
+        let discovery = source.split("pub fn surface_problem").nth(1).unwrap();
+        assert!(!discovery.contains("local_problem_receipt()\n        .character_id()"));
         assert!(source.contains("Conflicting retry for source outcome ID"));
         assert!(source.contains("input.at_minute != official_minute(ctx)"));
     }
