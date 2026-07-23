@@ -120,8 +120,7 @@ use super::inventory_forms::{
 use super::redirect_to_local;
 use super::travel::{
     QuestMapMarkers, TravelDestination, TravelForm, TravelProvisionForecast, active_quest_summary,
-    active_quest_tooltip, connected_destinations, next_settlement_toward,
-    populate_itinerary_forecasts,
+    active_quest_tooltip, connected_destinations, populate_itinerary_forecasts,
 };
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
@@ -1074,9 +1073,6 @@ async fn settlement_map(
         .and_then(|party| party.active_quest_id.as_deref());
     let markers = QuestMapMarkers::new(&quests, active_quest_id);
     let map_quests = map_quests_for_settlement(&quests, &settlement.id, active_quest_id);
-    for destination in &mut destinations {
-        markers.decorate_settlement(destination);
-    }
     let active_quest = markers.active_quest();
     let is_current_settlement = active_character.as_ref().is_some_and(|(character, _)| {
         character.current_settlement_id.as_deref() == Some(&settlement.id)
@@ -1102,42 +1098,11 @@ async fn settlement_map(
                 .saturating_mul(2),
                 itinerary_segments: Vec::new(),
                 quest_in_progress: true,
-                active_quest_route: false,
-                turn_in_ready: false,
-                open_quest_available: false,
                 provision_forecast: None,
                 terrain_route: None,
                 return_terrain_route: None,
                 route_fallback: true,
             });
-        } else if can_travel {
-            if let Some(next_settlement_id) =
-                next_settlement_toward(settlement, &quest.settlement_id, &settlements, &edges)
-            {
-                if let Some(destination) = destinations
-                    .iter_mut()
-                    .find(|destination| destination.id == next_settlement_id)
-                {
-                    destination.active_quest_route = true;
-                }
-            }
-        }
-    }
-    if let Some(quest) = active_quest.filter(|quest| quest.status == QuestStatus::Completed) {
-        for destination in &mut destinations {
-            destination.turn_in_ready = destination.id == quest.settlement_id;
-        }
-        if can_travel && settlement.id != quest.settlement_id {
-            if let Some(next_settlement_id) =
-                next_settlement_toward(settlement, &quest.settlement_id, &settlements, &edges)
-            {
-                if let Some(destination) = destinations
-                    .iter_mut()
-                    .find(|destination| destination.id == next_settlement_id)
-                {
-                    destination.active_quest_route = true;
-                }
-            }
         }
     }
     if let Some(selected_id) = query.destination.as_deref()
@@ -1273,8 +1238,6 @@ async fn settlement_map(
             can_travel,
             provision_forecast,
             is_current_settlement,
-            markers.has_open_quest_at(&settlement.id),
-            markers.completed_quest_turn_in_at(&settlement.id),
             active_quest.filter(|quest| {
                 can_abandon_active_quest(
                     quest,
@@ -1303,10 +1266,9 @@ fn map_quests_for_settlement(
     quests
         .iter()
         .filter(|quest| {
-            quest.settlement_id == settlement_id
-                && (quest.status == QuestStatus::Available
-                    || (quest.status == QuestStatus::Accepted
-                        && active_quest_id == Some(quest.id.as_str())))
+            quest.status == QuestStatus::Accepted
+                && active_quest_id == Some(quest.id.as_str())
+                && quest.settlement_id == settlement_id
         })
         .cloned()
         .collect()
@@ -1355,7 +1317,7 @@ mod map_quest_tests {
     }
 
     #[test]
-    fn map_quest_pins_are_bounded_to_the_local_issuer_and_active_destination() {
+    fn map_quest_pins_include_only_the_known_active_destination() {
         let mut local_available = quest(QuestStatus::Available);
         local_available.id = "local-available".into();
         local_available.accepted_by = None;
@@ -1385,7 +1347,7 @@ mod map_quest_tests {
             .map(|quest| quest.id.as_str())
             .collect::<Vec<_>>();
 
-        assert_eq!(ids, ["local-available", "local-active"]);
+        assert_eq!(ids, ["local-active"]);
     }
 }
 

@@ -33,6 +33,15 @@ pub fn mission_layout(title: &str, content: Markup, logged_in_as: Option<&str>) 
     page_shell(title, header, content, ScriptProfile::Live)
 }
 
+pub fn journal_layout(content: Markup, logged_in_as: Option<&str>) -> Markup {
+    page_shell(
+        "Investigation journal",
+        entry_top_bar_with_session(logged_in_as),
+        content,
+        ScriptProfile::Live,
+    )
+}
+
 /// A complete strategic shell for guard and error states reached from ordinary
 /// navigation. Keeping these responses inside the application prevents a bad
 /// URL or stale action from dropping the player into raw browser text.
@@ -297,12 +306,6 @@ fn settlement_top_bar(
                             style=[(path == "religion").then(|| format!("--service-tab-icon: url('{}')", religion_icon_path(religion_id)))]
                             aria-hidden="true" {}
                         span class="service-tab-label" aria-hidden="true" { (label) }
-                        @if path == "map" {
-                            span class="service-notification-badge service-map-quest-badge"
-                                data-map-quest-badge title="Active quest" aria-hidden="true" hidden { "!" }
-                        } @else {
-                            span class="service-notification-badge service-quest-badge" data-service-quest-badge hidden { "!" }
-                        }
                     }
                     }
                 }
@@ -604,6 +607,7 @@ fn character_switcher(name: &str) -> Markup {
                 }
             }
             div class="character-switcher-menu" {
+                a href="/journal" class="btn btn-small" { "Investigation journal" }
                 form action="/characters/switch" method="post" {
                     button type="submit" class="btn btn-small" { "Character select" }
                 }

@@ -7,6 +7,44 @@ pub struct BackendLocalProblemTradeEffect {
     pub buy_bps: i32,
     pub sell_penalty_bps: i32,
 }
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BackendInvestigationJournalEntry {
+    pub owner_character_id: u64,
+    pub case_id: String,
+    pub record_id: String,
+    pub kind: String,
+    pub summary: String,
+    pub source_label: String,
+    pub confidence_bps: u16,
+    pub contradiction_group: String,
+    pub corrected_by: String,
+    pub supersedes: String,
+    pub recorded_at: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BackendInvestigationLead {
+    pub owner_character_id: u64,
+    pub case_id: String,
+    pub lead_id: String,
+    pub summary: String,
+    pub source_label: String,
+    pub confidence_bps: u16,
+    pub destination_stage: String,
+    pub directions: String,
+    pub exact_location_id: String,
+    pub latitude_e7: i32,
+    pub longitude_e7: i32,
+    pub witness_name: String,
+    pub witness_description: String,
+    pub witness_occupation_or_relationship: String,
+    pub expected_location: String,
+    pub current_learned_location: String,
+    pub contradiction_group: String,
+    pub corrected_by: String,
+    pub recorded_at: u64,
+}
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use serde_json::Value;
 
