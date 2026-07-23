@@ -5292,14 +5292,11 @@ fn attribute_group_with_labels(
             Some(side) => format!("attribute-group limb-attribute-column {side}"),
             None => "attribute-group".to_owned(),
         }) {
-            div class="attribute-group-heading" { (name) }
             @if let Some(base) = surgery_base {
-                a class="limb-surgery-link" href=(format!("{base}/{slug}")) aria-label=(format!("Treat {name}")) {
-                    (regional_health_bar(name, health, medical, region, injuries, projectiles))
-                }
-            } @else {
-                (regional_health_bar(name, health, medical, region, injuries, projectiles))
+                a class="limb-surgery-link" href=(format!("{base}/{slug}")) aria-label=(format!("Treat {name}")) {}
             }
+            div class="attribute-group-heading" { (name) }
+            (regional_health_bar(name, health, medical, region, injuries, projectiles))
             @for (attribute_name, icon, value) in rows {
                 (attribute_row(attribute_name, icon, *value, health, show_labels))
             }
@@ -8301,32 +8298,6 @@ mod tests {
         assert!(markup.contains("Phlegmatic"));
         assert!(markup.contains("role=\"meter\""));
         assert!(markup.contains("Chest:"));
-    }
-
-    #[test]
-    fn surgery_selection_link_only_wraps_the_region_health_bar() {
-        let markup = attribute_group(
-            "Head",
-            "head",
-            0.75,
-            &crate::medical::MedicalPresentation::default(),
-            6,
-            Some("/place/party/1/surgery"),
-            &[],
-            &[],
-            &[("Intelligence", "intelligence", 3.0)],
-        )
-        .into_string();
-
-        let link_start = markup.find("class=\"limb-surgery-link\"").unwrap();
-        let health_bar = markup.find("class=\"attribute-health-bar\"").unwrap();
-        let link_end = markup[link_start..].find("</a>").unwrap() + link_start;
-        let attribute_row = markup.find("class=\"party-attribute-row\"").unwrap();
-
-        assert!(link_start < health_bar);
-        assert!(health_bar < link_end);
-        assert!(link_end < attribute_row);
-        assert!(markup.contains("aria-label=\"Treat Head\""));
     }
 
     #[test]

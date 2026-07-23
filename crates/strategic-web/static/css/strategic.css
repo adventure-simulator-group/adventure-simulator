@@ -3214,11 +3214,7 @@ button.party-portrait-action {
 .religion-auto-toggle-label input { width: 0.9rem; height: 0.9rem; margin: 0; }
 
 .religion-expand-cell {
-  position: sticky;
-  z-index: 2;
-  right: 0;
   padding-left: 0.15rem !important;
-  background: var(--content-surface-recess, var(--panel-bg));
   text-align: center;
 }
 
@@ -4199,10 +4195,10 @@ body.chat-resizing {
 }
 
 .limb-surgery-link {
-    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 3;
     border-radius: .25rem;
-    color: inherit;
-    text-decoration: none;
 }
 
 .limb-surgery-link:hover,
