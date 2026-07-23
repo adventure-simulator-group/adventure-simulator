@@ -174,8 +174,10 @@ First-character onboarding is a separate, non-live entry surface at
 preview-only candidates without database writes. Confirmation submits only the
 version, seed, and slot; the reducer regenerates the specification, atomically
 materializes its strategic rows, and records an idempotency claim. The candidate
-generator contains no tactical tick state. `/characters` remains the persisted
-character switcher.
+generator contains no tactical tick state. Candidate previews use the same
+portrait and character-sheet panels as persisted party members, with gameplay
+activity controls omitted until a candidate is chosen. `/characters` remains
+the persisted character switcher.
 Non-loopback binding requires the clearly named insecure-development opt-in.
 `strategic-web` owns a single generated-client WebSocket subscription to the
 mutable tables that invalidate strategic UI fragments and fans those database

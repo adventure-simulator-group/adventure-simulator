@@ -4124,15 +4124,7 @@ body.chat-resizing {
 
 .prototype-disclaimer { margin: 0 0 1rem; padding: .8rem 1rem; border: 2px solid #d7aa48; background: #342b19; color: #fff2c9; font-weight: 700; text-align: center; }
 .candidate-stage { position: relative; }
-.candidate-portraits { display: flex; justify-content: center; align-items: flex-start; gap: .75rem; flex-wrap: wrap; margin: 1rem 0; padding: 0; list-style: none; }
-.candidate-portrait { position: relative; display: flex; flex-direction: column; align-items: center; width: 7rem; min-height: 7rem; color: inherit; text-decoration: none; }
-.candidate-portrait.active { outline: 3px solid var(--color-accent); outline-offset: 3px; }
-.candidate-rail .stat-item { display: flex; justify-content: space-between; gap: 1rem; }
-.candidate-equipment { padding-left: 1.25rem; text-transform: capitalize; }
-.candidate-confirm-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 1rem; background: rgb(0 0 0 / 65%); }
-.candidate-confirm-dialog { width: min(31rem, 100%); padding: 1.5rem; border: 3px double #b99554; background: #201b16; color: #f6ead7; box-shadow: 0 1rem 3rem #000; }
-.candidate-confirm-dialog:focus { outline: 2px solid #f1d18b; outline-offset: 3px; }
-@media (max-width: 760px) { .candidate-confirm-backdrop { align-items: end; } .candidate-confirm-dialog { max-height: 80vh; overflow: auto; } .candidate-portrait { width: 5.25rem; } }
+.candidate-play-action { display: flex; justify-content: center; margin: 1rem auto; }
 
 .strategic-notice-main { display: grid; min-height: 28rem; place-items: center; background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 55%); }
 .strategic-notice { width: min(32rem, 100%); padding: 2rem; border: 1px solid var(--border-accent); background: var(--panel-bg); box-shadow: var(--shadow-lg); text-align: center; }

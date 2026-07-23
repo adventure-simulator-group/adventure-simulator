@@ -55,6 +55,41 @@ pub(crate) fn character_stats_panel(
     }
 }
 
+pub(crate) fn character_attributes_panel(
+    character: &Character,
+    attributes: Option<&CharacterAttributes>,
+    limbs: Option<&CharacterLimbs>,
+    medical: &MedicalPresentation,
+) -> Markup {
+    party_attributes_rail(
+        &format!("{}'s attributes", character.name),
+        attributes,
+        limbs,
+        medical,
+        None,
+        &[],
+        &[],
+    )
+}
+
+pub(crate) fn character_profile_panels(
+    character: &Character,
+    capability: Option<&CharacterCapability>,
+    skills: Option<&CharacterSkills>,
+    limbs: Option<&CharacterLimbs>,
+    personality: Option<&crate::spacetimedb::CharacterPersonality>,
+    combat_profile: CombatTrainingProfile,
+) -> Markup {
+    html! {
+        (character_summary_rail(capability))
+        (character_bio_rail(character, None, 0.0, personality, false, ""))
+        (party_skills_rail(
+            &format!("{}'s skills", character.name), skills, limbs, None, None, None,
+            false, 0.0, None, combat_profile, CharacterSkillActions::default(),
+        ))
+    }
+}
+
 pub(crate) fn character_visual_preview(character: &Character) -> Markup {
     visual_stage("character", &character.name, "Adventurer profile")
 }

@@ -2,9 +2,21 @@
 
 use maud::{Markup, html};
 
+use super::settlement::{
+    CharacterPortraitView, character_attributes_panel, character_portrait_overlay,
+    character_profile_panels, character_visual_preview,
+};
 use super::{entry_layout, panel, sidebar_section};
-use crate::spacetimedb::Character;
-use adventuresim_core::starting_character::{StartingCharacterSpec, personality_description};
+use crate::medical::MedicalPresentation;
+use crate::spacetimedb::{
+    Character, CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterPersonality,
+    CharacterSkills, Conscience, Conviction, Drive, Hygiene, Nerve, Outlook, SelfRegard,
+    Sociability, Temperance,
+};
+use adventuresim_core::starting_character::{
+    StartingCharacterSpec, StartingPersonalityTrait, StartingSlot,
+};
+use adventuresim_core::strategic_schedule::CombatTrainingProfile;
 
 /// List all characters and select the adventurer who enters the strategic layer.
 pub fn characters_list_page(characters: &[Character], current_character_id: Option<u64>) -> Markup {
@@ -102,7 +114,7 @@ pub fn character_candidates_bootstrap_page(version: u16) -> Markup {
             p class="small-copy text-muted" { "Preparing your first company." }
             noscript { p role="alert" { "JavaScript is required to prepare a private candidate roster." } }
             div data-candidate-bootstrap data-generator-version=(version) {}
-            script src="/static/character-candidates.js?v=1" defer {}
+            script src="/static/character-candidates.js?v=2" defer {}
         }
     };
     entry_layout("Choose Your Adventurer", content)
@@ -114,76 +126,263 @@ pub fn character_candidates_page(
     candidates: &[StartingCharacterSpec],
     selected: Option<u8>,
 ) -> Markup {
-    let candidate = &candidates[selected.unwrap_or(0) as usize];
-    let close_href = format!("/characters/candidates?version={version}&seed={seed}");
+    let presentations = candidates
+        .iter()
+        .map(CandidatePresentation::from)
+        .collect::<Vec<_>>();
+    let selected_slot = selected.unwrap_or(0) as usize;
+    let candidate = &presentations[selected_slot];
+    let portraits = presentations
+        .iter()
+        .enumerate()
+        .map(|(slot, candidate)| CharacterPortraitView {
+            id: candidate.character.id,
+            name: &candidate.character.name,
+            alive: true,
+            active: false,
+            selected: selected == Some(slot as u8),
+            href: format!("/characters/candidates?version={version}&seed={seed}&selected={slot}"),
+            actions: None,
+        })
+        .collect::<Vec<_>>();
     let content = html! {
-        aside class="left-sidebar candidate-rail" {
-            (sidebar_section("Attributes", html! {
-                div class="candidate-stat-list" {
-                    @for (label, value) in [("Endurance", candidate.attributes.endurance), ("Precision", candidate.attributes.precision), ("Intelligence", candidate.attributes.intelligence), ("Instinct", candidate.attributes.instinct), ("Strength", candidate.attributes.strength), ("Agility", candidate.attributes.agility)] {
-                        div class="stat-item" { span class="stat-label" { (label) } span class="stat-value" { (format!("{value:.1}")) } }
-                    }
-                }
-            }))
+        aside class="left-sidebar" {
+            (character_attributes_panel(
+                &candidate.character,
+                Some(&candidate.attributes),
+                Some(&candidate.limbs),
+                &MedicalPresentation::default(),
+            ))
         }
 
-        main class="center-content candidate-stage" data-candidate-roster {
+        main class="center-content settlement-main party-member-stage candidate-stage" data-candidate-roster {
             p class="prototype-disclaimer" role="note" { (PROTOTYPE_NOTICE) }
-            h2 class="page-title" { "Choose your adventurer" }
-            ul class="candidate-portraits" aria-label="Five candidate adventurers" {
-                @for (slot, entry) in candidates.iter().enumerate() {
-                    li {
-                        a class=(if selected == Some(slot as u8) { "party-portrait candidate-portrait active" } else { "party-portrait candidate-portrait" })
-                            aria-current=[(selected == Some(slot as u8)).then_some("true")]
-                            data-candidate-slot=(slot)
-                            href=(format!("/characters/candidates?version={version}&seed={seed}&selected={slot}")) {
-                            span class="party-portrait-initial" aria-hidden="true" { span class="party-portrait-face" { (entry.name.chars().next().unwrap_or('?')) } }
-                            span class="party-portrait-name" { (&entry.name) }
-                        }
-                    }
-                }
-            }
-            (panel(&candidate.name, html! {
-                p class="candidate-byline" { (candidate.age_years) " years old · " (&candidate.background) }
-                p { (personality_description(&candidate.personality)) }
-            }))
+            (character_portrait_overlay("Candidate adventurers", None, &portraits))
+            (character_visual_preview(&candidate.character))
             @if let Some(selected) = selected {
-                section class="candidate-confirm-backdrop" data-candidate-dialog-backdrop {
-                    div class="candidate-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="candidate-dialog-title" tabindex="-1" data-candidate-dialog {
-                        h3 id="candidate-dialog-title" { "Begin as " (&candidate.name) "?" }
-                        p { "This choice creates the adventurer and enters the game." }
-                        form action="/characters/candidates" method="post" data-candidate-confirm-form {
-                            input type="hidden" name="version" value=(version);
-                            input type="hidden" name="seed" value=(seed);
-                            input type="hidden" name="slot" value=(selected);
-                            div class="form-actions" {
-                                a href=(close_href) class="btn btn-secondary" data-candidate-dialog-close { "Keep looking" }
-                                button type="submit" class="btn btn-primary" { "Begin as " (&candidate.name) }
-                            }
-                        }
+                form action="/characters/candidates" method="post" class="candidate-play-action" data-candidate-confirm-form {
+                    input type="hidden" name="version" value=(version);
+                    input type="hidden" name="seed" value=(seed);
+                    input type="hidden" name="slot" value=(selected);
+                    button type="submit" class="btn btn-primary" {
+                        "Play as " (&candidate.character.name)
                     }
                 }
             }
-            script src="/static/character-candidates.js?v=1" defer {}
+            script src="/static/character-candidates.js?v=2" defer {}
         }
-        aside class="right-sidebar candidate-rail" {
-            (sidebar_section("Training", html! {
-                div class="candidate-skill-list" {
-                    @for (label, hours) in [("Polearm", candidate.skills.polearm), ("Sword", candidate.skills.sword), ("Knife", candidate.skills.knife), ("Bow", candidate.skills.bow), ("Crossbow", candidate.skills.crossbow), ("Block", candidate.skills.block), ("Dodge", candidate.skills.dodge), ("Medicine", candidate.skills.medicine)] {
-                        @if hours >= 500.0 { div class="stat-item" { span class="stat-label" { (label) } span class="stat-value" { (format!("{hours:.0} h")) } } }
-                    }
-                }
-            }))
-            (sidebar_section("Equipment & coin", html! {
-                ul class="candidate-equipment" {
-                    @for item in &candidate.inventory { li { (item.item_id.replace('_', " ")) @if item.quantity > 1 { " ×" (item.quantity) } @if item.equipped.is_some() { " (equipped)" } } }
-                }
-                p class="candidate-currency" { strong { (candidate.currency) " coin" } }
-            }))
+        aside class="right-sidebar" {
+            (character_profile_panels(
+                &candidate.character,
+                Some(&candidate.capability),
+                Some(&candidate.skills),
+                Some(&candidate.limbs),
+                Some(&candidate.personality),
+                CombatTrainingProfile::default(),
+            ))
         }
     };
 
     entry_layout("Choose Your Adventurer", content)
+}
+
+struct CandidatePresentation {
+    character: Character,
+    attributes: CharacterAttributes,
+    capability: CharacterCapability,
+    limbs: CharacterLimbs,
+    personality: CharacterPersonality,
+    skills: CharacterSkills,
+}
+
+impl From<&StartingCharacterSpec> for CandidatePresentation {
+    fn from(spec: &StartingCharacterSpec) -> Self {
+        let character = Character {
+            id: spec.id,
+            name: spec.name.clone(),
+            xp: 0,
+            level: 1,
+            gold: 0,
+            current_settlement_id: None,
+            current_quest_location_id: None,
+            party_id: None,
+            age_years: spec.age_years,
+            alive: true,
+            temporary: false,
+        };
+        let attributes = CharacterAttributes {
+            character_id: spec.id,
+            endurance: spec.attributes.endurance,
+            immunity: spec.attributes.immunity,
+            gut: spec.attributes.gut,
+            precision: spec.attributes.precision,
+            intelligence: spec.attributes.intelligence,
+            instinct: spec.attributes.instinct,
+            eyesight: spec.attributes.eyesight,
+            hearing: spec.attributes.hearing,
+            left_arm_strength: spec.attributes.strength,
+            right_arm_strength: spec.attributes.strength,
+            left_leg_strength: spec.attributes.strength,
+            right_leg_strength: spec.attributes.strength,
+            left_arm_agility: spec.attributes.agility,
+            right_arm_agility: spec.attributes.agility,
+            left_leg_agility: spec.attributes.agility,
+            right_leg_agility: spec.attributes.agility,
+        };
+        let skills = CharacterSkills {
+            character_id: spec.id,
+            polearm_hours: spec.skills.polearm,
+            axe_hours: spec.skills.axe,
+            bludgeon_hours: spec.skills.bludgeon,
+            sword_hours: spec.skills.sword,
+            knife_hours: spec.skills.knife,
+            dodge_hours: spec.skills.dodge,
+            block_hours: spec.skills.block,
+            bow_hours: spec.skills.bow,
+            crossbow_hours: spec.skills.crossbow,
+            firearm_hours: 1000.0,
+            throw_hours: spec.skills.throw,
+            will_hours: spec.skills.will,
+            insight_hours: spec.skills.insight,
+            self_awareness_hours: 1000.0,
+            humor_hours: 1000.0,
+            command_hours: spec.skills.command,
+            deception_hours: 1000.0,
+            seduction_hours: 1000.0,
+            medicine_hours: spec.skills.medicine,
+            cooking_hours: spec.skills.cooking,
+            religion_hours: adventuresim_world_schema::ReligionHours {
+                roman_catholic: 1000.0,
+                ..Default::default()
+            },
+            oral_languages: Default::default(),
+            written_languages: Default::default(),
+            stealth_hours: spec.skills.stealth,
+            balance_hours: spec.skills.balance,
+            terrain_plains_hours: 0.0,
+            terrain_forest_hours: 0.0,
+            terrain_hills_hours: 0.0,
+            terrain_urban_hours: 0.0,
+            anatomy_hours: 1000.0,
+            tailoring_hours: 1000.0,
+            smithing_hours: 1000.0,
+        };
+        let armor_slots = spec
+            .inventory
+            .iter()
+            .filter(|item| {
+                matches!(
+                    item.equipped,
+                    Some(
+                        StartingSlot::LeftArm
+                            | StartingSlot::RightArm
+                            | StartingSlot::LeftLeg
+                            | StartingSlot::RightLeg
+                            | StartingSlot::Head
+                            | StartingSlot::Chest
+                            | StartingSlot::Stomach
+                    )
+                )
+            })
+            .count();
+        let item_ids = spec
+            .inventory
+            .iter()
+            .map(|item| item.item_id.as_str())
+            .collect::<Vec<_>>();
+        let ranged = item_ids
+            .iter()
+            .any(|item| item.contains("bow") || item.contains("crossbow"));
+        let melee = item_ids.iter().any(|item| {
+            ["sword", "spear", "axe", "mace", "club", "knife", "dagger"]
+                .iter()
+                .any(|weapon| item.contains(weapon))
+        });
+        let capability = CharacterCapability {
+            character_id: spec.id,
+            melee,
+            ranged,
+            precise: false,
+            heavy: false,
+            quarter_armor: armor_slots >= 2,
+            half_armor: armor_slots >= 4,
+            three_quarter_armor: armor_slots >= 6,
+            full_armor: armor_slots >= 7,
+            blunt: false,
+            slash: melee,
+            pierce: ranged,
+            athletics: 0.0,
+            endurance: spec.attributes.endurance,
+            medicine: 0.0,
+            anatomy: 0.0,
+            knife: 0.0,
+            tailoring: 0.0,
+            surgery: 0.0,
+            command: 0.0,
+            religion: 0.0,
+            weapon_precision: 0.0,
+        };
+        Self {
+            character,
+            attributes,
+            capability,
+            limbs: CharacterLimbs {
+                character_id: spec.id,
+                left_arm_health: 1.0,
+                right_arm_health: 1.0,
+                left_leg_health: 1.0,
+                right_leg_health: 1.0,
+                head_health: 1.0,
+                chest_health: 1.0,
+                stomach_health: 1.0,
+            },
+            personality: candidate_personality(spec),
+            skills,
+        }
+    }
+}
+
+fn candidate_personality(spec: &StartingCharacterSpec) -> CharacterPersonality {
+    let mut personality = CharacterPersonality {
+        character_id: spec.id,
+        nerve: Nerve::Neutral,
+        drive: Drive::Neutral,
+        outlook: Outlook::Neutral,
+        sociability: Sociability::Neutral,
+        conscience: Conscience::Neutral,
+        self_regard: SelfRegard::Neutral,
+        conviction: Conviction::Neutral,
+        hygiene: Hygiene::Neutral,
+        temperance: Temperance::Neutral,
+    };
+    for personality_trait in &spec.personality.traits {
+        match personality_trait {
+            StartingPersonalityTrait::Brave => personality.nerve = Nerve::Brave,
+            StartingPersonalityTrait::Fearful => personality.nerve = Nerve::Fearful,
+            StartingPersonalityTrait::Ambitious => personality.drive = Drive::Ambitious,
+            StartingPersonalityTrait::Content => personality.drive = Drive::Content,
+            StartingPersonalityTrait::Sanguine => personality.outlook = Outlook::Sanguine,
+            StartingPersonalityTrait::Brooding => personality.outlook = Outlook::Brooding,
+            StartingPersonalityTrait::Gregarious => {
+                personality.sociability = Sociability::Gregarious
+            }
+            StartingPersonalityTrait::Solitary => personality.sociability = Sociability::Solitary,
+            StartingPersonalityTrait::Compassionate => {
+                personality.conscience = Conscience::Compassionate
+            }
+            StartingPersonalityTrait::Callous => personality.conscience = Conscience::Callous,
+            StartingPersonalityTrait::Cruel => personality.conscience = Conscience::Cruel,
+            StartingPersonalityTrait::Proud => personality.self_regard = SelfRegard::Proud,
+            StartingPersonalityTrait::Humble => personality.self_regard = SelfRegard::Humble,
+            StartingPersonalityTrait::Zealous => personality.conviction = Conviction::Zealous,
+            StartingPersonalityTrait::Irreverent => personality.conviction = Conviction::Irreverent,
+            StartingPersonalityTrait::Slovenly => personality.hygiene = Hygiene::Slovenly,
+            StartingPersonalityTrait::Cleanly => personality.hygiene = Hygiene::Cleanly,
+            StartingPersonalityTrait::Temperate => personality.temperance = Temperance::Temperate,
+            StartingPersonalityTrait::Drunkard => personality.temperance = Temperance::Drunkard,
+        }
+    }
+    personality
 }
 
 #[cfg(test)]
@@ -197,27 +396,28 @@ mod creation_tests {
         let markup =
             character_candidates_page(1, "00112233445566778899aabbccddeeff", &candidates, None)
                 .into_string();
-        assert_eq!(
-            markup
-                .matches("class=\"party-portrait candidate-portrait")
-                .count(),
-            5
-        );
+        assert_eq!(markup.matches("class=\"party-portrait\"").count(), 5);
         assert!(markup.contains(PROTOTYPE_NOTICE));
         assert!(!markup.contains("role=\"dialog\""));
-        assert!(!markup.contains("role=\"listitem\""));
-        assert!(markup.contains("<ul"));
+        assert!(markup.contains("class=\"party-portrait-overlay\""));
+        assert!(markup.contains("class=\"party-attributes-list\""));
+        assert!(markup.contains("class=\"party-skills-table\""));
+        assert!(!markup.contains("class=\"party-portrait-actions\""));
+        assert!(!markup.contains("data-candidate-confirm-form"));
         assert!(!markup.contains("name=\"name\""));
     }
 
     #[test]
-    fn explicit_selection_opens_accessible_confirmation_dialog() {
+    fn explicit_selection_shows_an_inline_play_action() {
         let candidates = roster(1, "00112233445566778899aabbccddeeff").unwrap();
         let markup =
             character_candidates_page(1, "00112233445566778899aabbccddeeff", &candidates, Some(2))
                 .into_string();
-        assert!(markup.contains("role=\"dialog\""));
-        assert!(markup.contains("aria-modal=\"true\""));
+        assert!(!markup.contains("role=\"dialog\""));
+        assert!(!markup.contains("aria-modal=\"true\""));
+        assert!(!markup.contains("Keep looking"));
+        assert!(markup.contains("class=\"candidate-play-action\""));
+        assert!(markup.contains("Play as "));
         assert!(markup.contains("name=\"slot\" value=\"2\""));
     }
 }

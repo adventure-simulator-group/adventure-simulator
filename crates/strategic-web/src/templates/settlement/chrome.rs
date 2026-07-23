@@ -285,6 +285,53 @@ pub(crate) fn visual_stage(kind: &str, title: &str, description: &str) -> Markup
     }
 }
 
+pub(crate) struct CharacterPortraitView<'a> {
+    pub id: u64,
+    pub name: &'a str,
+    pub alive: bool,
+    pub active: bool,
+    pub selected: bool,
+    pub href: String,
+    pub actions: Option<Markup>,
+}
+
+pub(crate) fn character_portrait_overlay(
+    label: &str,
+    inventory: Option<Markup>,
+    members: &[CharacterPortraitView<'_>],
+) -> Markup {
+    html! {
+        @if !members.is_empty() {
+            div class="party-portrait-overlay" aria-label=(label) {
+                div data-party-portrait-members {
+                    @if let Some(inventory) = inventory {
+                        (inventory)
+                    }
+                    @for member in members {
+                        div class=(format!("party-portrait{}{}", if member.selected { " active" } else { "" }, if !member.alive { " dead" } else { "" }))
+                            data-character-id=(member.id)
+                            data-character-alive=(member.alive)
+                            data-active-character[member.active]
+                            title=(member.name) {
+                            a class="party-portrait-select"
+                                href=(&member.href)
+                                title=(format!("Inspect {}", member.name)) {
+                                span class="party-portrait-initial" {
+                                    span class="party-portrait-face" { (member.name.chars().next().unwrap_or('?')) }
+                                    span class="party-portrait-name" { (member.name) @if !member.alive { " (dead)" } }
+                                }
+                            }
+                            @if let Some(actions) = &member.actions {
+                                (actions)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub(crate) fn party_portrait_overlay(
     party_members: &[Character],
     active_character: Option<&Character>,
@@ -299,39 +346,25 @@ pub(crate) fn party_portrait_overlay(
     };
     let leader_id = members.first().map(|member| member.id);
 
-    html! {
-        @if !members.is_empty() {
-            div class="party-portrait-overlay" aria-label="Active party" {
-                div data-party-portrait-members {
-                @if active_character.is_some() {
-                    div class="party-portrait party-inventory-portrait" title="Party inventory" {
-                        a class="party-portrait-select" href=(format!("{}/party-inventory", location_path)) {
-                            span class="party-portrait-initial party-chest-face" { (game_icon("Party inventory", "knapsack")) }
-                        }
-                    }
+    let inventory = active_character.map(|_| {
+        html! {
+            div class="party-portrait party-inventory-portrait" title="Party inventory" {
+                a class="party-portrait-select" href=(format!("{}/party-inventory", location_path)) {
+                    span class="party-portrait-initial party-chest-face" { (game_icon("Party inventory", "knapsack")) }
                 }
-                @for member in members {
-                    @let is_active = active_character.is_some_and(|character| character.id == member.id);
-                    @let can_remove = Some(member.id) != leader_id;
-                    div class=(format!("party-portrait{}{}", if selected_character_id == Some(member.id) { " active" } else { "" }, if !member.alive { " dead" } else { "" }))
-                        data-character-id=(member.id)
-                        data-character-alive=(member.alive)
-                        data-active-character[is_active]
-                        title=(&member.name) {
-                        a class="party-portrait-select"
-                            href=(if is_active {
-                                format!("{}/party/{}", location_path, member.id)
-                            } else {
-                                format!("{}/party/{}/stats", location_path, member.id)
-                            })
-                            title=(format!("Inspect {}", member.name)) {
-                            span class="party-portrait-initial" {
-                                span class="party-portrait-face" { (member.name.chars().next().unwrap_or('?')) }
-                                span class="party-portrait-name" { (&member.name) @if !member.alive { " (dead)" } }
-                            }
-                        }
-                        @if member.alive && active_character.is_some_and(|character| character.alive) {
-                        span class="party-portrait-actions" aria-label=(format!("Actions for {}", member.name)) {
+            }
+        }
+    });
+    let portraits = members
+        .into_iter()
+        .map(|member| {
+            let is_active = active_character.is_some_and(|character| character.id == member.id);
+            let can_remove = Some(member.id) != leader_id;
+            let actions = (member.alive
+                && active_character.is_some_and(|character| character.alive))
+            .then(|| {
+                html! {
+                    span class="party-portrait-actions" aria-label=(format!("Actions for {}", member.name)) {
                             @if is_active && can_examine && location_path.starts_with("/locations/settlement/") {
                                 a href=(format!("{location_path}/alchemy"))
                                     class="party-portrait-action party-alchemy-action"
@@ -358,14 +391,25 @@ pub(crate) fn party_portrait_overlay(
                                     }
                                 }
                             }
-                        }
-                        }
                     }
                 }
-                }
+            });
+            CharacterPortraitView {
+                id: member.id,
+                name: &member.name,
+                alive: member.alive,
+                active: is_active,
+                selected: selected_character_id == Some(member.id),
+                href: if is_active {
+                    format!("{}/party/{}", location_path, member.id)
+                } else {
+                    format!("{}/party/{}/stats", location_path, member.id)
+                },
+                actions,
             }
-        }
-    }
+        })
+        .collect::<Vec<_>>();
+    character_portrait_overlay("Active party", inventory, &portraits)
 }
 
 #[cfg(test)]

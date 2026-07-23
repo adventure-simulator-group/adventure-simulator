@@ -32,18 +32,6 @@
     return true;
   }
 
-  function restoreCandidateFocus(document, storage) {
-    let slot;
-    try { slot = storage.getItem("adventuresim.candidate-opener"); } catch (_) { return false; }
-    if (!/^\d+$/.test(slot || "")) return false;
-    const opener = document.querySelector(`[data-candidate-slot="${slot}"]`);
-    if (!opener || typeof opener.focus !== "function") return false;
-    opener.focus();
-    try { storage.removeItem("adventuresim.candidate-opener"); } catch (_) {}
-    return true;
-  }
-
-  function focusables(dialog) { return Array.from(dialog.querySelectorAll('a[href], button:not([disabled]), input:not([type="hidden"])')); }
   function initialize(document, windowObject) {
     const bootstrap = document.querySelector("[data-candidate-bootstrap]");
     if (bootstrap) {
@@ -56,23 +44,8 @@
       }
       return;
     }
-    document.querySelectorAll(".candidate-portrait").forEach((portrait) => portrait.addEventListener("click", () => {
-      try { windowObject.sessionStorage.setItem("adventuresim.candidate-opener", portrait.dataset.candidateSlot); } catch (_) {}
-    }));
-    const dialog = document.querySelector("[data-candidate-dialog]");
-    if (!dialog) { restoreCandidateFocus(document, windowObject.sessionStorage); return; }
-    const close = dialog.querySelector("[data-candidate-dialog-close]");
-    const form = dialog.querySelector("[data-candidate-confirm-form]");
-    form.addEventListener("submit", (event) => { if (!lockSubmit(form)) event.preventDefault(); });
-    dialog.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") { event.preventDefault(); close.click(); return; }
-      if (event.key !== "Tab") return;
-      const controls = focusables(dialog); if (!controls.length) return;
-      const first = controls[0], last = controls[controls.length - 1];
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-    });
-    dialog.focus();
+    const form = document.querySelector("[data-candidate-confirm-form]");
+    if (form) form.addEventListener("submit", (event) => { if (!lockSubmit(form)) event.preventDefault(); });
   }
-  return { STORAGE_KEY, isSeed, bytesToHex, createSeed, loadOrCreate, lockSubmit, restoreCandidateFocus, initialize };
+  return { STORAGE_KEY, isSeed, bytesToHex, createSeed, loadOrCreate, lockSubmit, initialize };
 });
