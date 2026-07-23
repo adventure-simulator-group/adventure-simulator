@@ -415,6 +415,15 @@
       root.querySelectorAll('.terrain-detail-row').forEach((row) => { row.hidden = !expanded; });
       return;
     }
+    const languageExpand = event.target.closest?.('[data-language-expand]');
+    if (languageExpand) {
+      const root = languageExpand.closest('[data-skill-schedule]') || languageExpand.closest('table');
+      const expanded = languageExpand.getAttribute('aria-expanded') !== 'true';
+      languageExpand.setAttribute('aria-expanded', String(expanded));
+      const family = languageExpand.dataset.languageExpand;
+      root.querySelectorAll(`[data-language-detail="${family}"]`).forEach((row) => { row.hidden = !expanded; });
+      return;
+    }
     const retry = event.target.closest?.('[data-schedule-retry]');
     if (retry) {
       const root = retry.closest('[data-skill-schedule]');

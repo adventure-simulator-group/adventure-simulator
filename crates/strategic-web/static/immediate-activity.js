@@ -94,6 +94,7 @@
     const close = () => {
       modal.hidden = true;
       document.body.classList.remove('activity-modal-open');
+      state.opener?.setAttribute('aria-expanded', 'false');
       state.opener?.focus();
       document.dispatchEvent(new Event('strategic-editor-idle'));
     };
@@ -119,6 +120,7 @@
         ? schedule?.elements.namedItem(serviceName)?.value || '' : '';
       modal.hidden = false;
       document.body.classList.add('activity-modal-open');
+      button.setAttribute('aria-expanded', 'true');
       render();
       panel.focus();
     };

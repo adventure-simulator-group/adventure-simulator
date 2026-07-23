@@ -6,10 +6,11 @@ const vm = require("node:vm");
 const { parseHTML } = require("linkedom");
 
 const source = fs.readFileSync(path.join(__dirname, "..", "static", "strategic-map.js"), "utf8");
+const mapCss = fs.readFileSync(path.join(__dirname, "..", "static", "css", "strategic.css"), "utf8");
 
-const load = ({ ResizeObserver } = {}) => {
+const load = ({ ResizeObserver, matchMedia } = {}) => {
   const { document } = parseHTML(`<main></main>`);
-  const context = { document, localStorage: null, ResizeObserver };
+  const context = { document, localStorage: null, ResizeObserver, matchMedia };
   context.globalThis = context;
   vm.runInNewContext(source, context);
   return { document, helpers: context.StrategicMap };
@@ -74,6 +75,45 @@ test("keyboard pan and reset change only the SVG viewBox", () => {
   assert.equal(svg.getAttribute("viewBox"), "100.00 100.00 400.00 200.00");
 });
 
+test("visible controls zoom and reset through the shared camera", () => {
+  const { document, helpers } = load();
+  document.body.innerHTML = `<section data-strategic-map>
+    <button data-map-action="zoom-in"></button><button data-map-action="zoom-out"></button><button data-map-action="reset"></button>
+    <svg data-map-svg viewBox="100 100 400 200"></svg>
+  </section>`;
+  const map = document.querySelector("section");
+  helpers.initializeMap(map);
+  const svg = map.querySelector("svg");
+  const zoomIn = map.querySelector('[data-map-action="zoom-in"]');
+  zoomIn.focus();
+  zoomIn.click();
+  assert.equal(svg.getAttribute("viewBox"), "140.00 120.00 320.00 160.00");
+  if (document.activeElement) assert.equal(document.activeElement, zoomIn);
+  map.querySelector('[data-map-action="zoom-out"]').click();
+  assert.equal(svg.getAttribute("viewBox"), "100.00 100.00 400.00 200.00");
+  map.querySelector('[data-map-action="zoom-in"]').click();
+  map.querySelector('[data-map-action="reset"]').click();
+  assert.equal(svg.getAttribute("viewBox"), "100.00 100.00 400.00 200.00");
+  assert.doesNotMatch(source, /svg\.focus/);
+});
+
+test("hit targets stay compact for fine pointers and resolve to 48 screen pixels for coarse pointers", () => {
+  const fine = load();
+  assert.equal(fine.helpers.hitTargetRadius(1200, false), 13);
+  assert.equal(fine.helpers.hitTargetRadius(390, false), 13);
+  assert.equal(fine.helpers.hitTargetRadius(390, true), 24);
+  assert.equal(fine.helpers.hitTargetRadius(780, true), 12);
+
+  const coarse = load({ matchMedia: () => ({ matches: true }) });
+  coarse.document.body.innerHTML = `<svg><circle class="map-settlement-hit-area" r="13"></circle><circle class="map-settlement-hit-area map-settlement-hit-overlay" r="13"></circle><circle class="map-quest-hit-area" r="13"></circle></svg>`;
+  const svg = coarse.document.querySelector("svg");
+  coarse.helpers.scaleHitTargets(svg, 780);
+  assert.deepEqual(
+    [...svg.querySelectorAll("circle")].map((target) => target.getAttribute("r")),
+    ["12.000", "12.000", "12.000"],
+  );
+});
+
 test("pin symbols retain their screen size while zooming and resetting", () => {
   const { document, helpers } = load();
   document.body.innerHTML = `<section data-strategic-map><svg data-map-svg viewBox="100 100 195 130"><g data-map-pin-symbol></g></svg></section>`;
@@ -92,7 +132,7 @@ test("pin symbols retain their screen size while zooming and resetting", () => {
   assert.equal(symbol.getAttribute("transform"), "scale(0.50000)");
 });
 
-test("two-pointer pinch zooms without visible controls", () => {
+test("two-pointer pinch remains available independently of visible controls", () => {
   const { document, helpers } = load();
   document.body.innerHTML = `<section data-strategic-map><svg data-map-svg viewBox="100 100 400 200"></svg></section>`;
   const map = document.querySelector("section");
@@ -123,6 +163,36 @@ test("label priority reveals progressively smaller settlements while zooming", (
   assert.equal(helpers.labelPriorityThreshold(50), 20);
 });
 
+test("settlement pins reveal progressively smaller population levels while zooming", () => {
+  const { document, helpers } = load();
+  document.body.innerHTML = `<svg>
+    <a data-map-settlement data-map-population-level="1" data-map-pin-essential="false"></a>
+    <a data-map-settlement data-map-population-level="3" data-map-pin-essential="false"></a>
+    <a data-map-settlement data-map-population-level="5" data-map-pin-essential="false"></a>
+    <a data-map-settlement data-map-population-level="1" data-map-pin-essential="true"></a>
+    <a data-map-settlement-hit data-map-population-level="1" data-map-pin-essential="false"></a>
+  </svg>`;
+  const svg = document.querySelector("svg");
+
+  assert.equal(helpers.populationLevelThreshold(1200), 5);
+  helpers.layoutSettlementPins(svg, 1200);
+  assert.deepEqual(
+    [...svg.querySelectorAll("a")].map((pin) => pin.getAttribute("display")),
+    ["none", "none", "inline", "inline", "none"],
+  );
+
+  helpers.layoutSettlementPins(svg, 150);
+  assert.deepEqual(
+    [...svg.querySelectorAll("a")].map((pin) => pin.getAttribute("display")),
+    ["inline", "inline", "inline", "inline", "inline"],
+  );
+});
+
+test("environment filtering composites the tile layer instead of exposing per-image rectangles", () => {
+  assert.match(mapCss, /\.map-tile-layer \{[^}]*filter:/);
+  assert.doesNotMatch(mapCss, /\.map-tile-layer image \{[^}]*filter:/);
+});
+
 test("label layout keeps important names and moves collisions to the alternate side", () => {
   const { document, helpers } = load();
   document.body.innerHTML = `<svg viewBox="0 0 100 66.67">
@@ -138,6 +208,20 @@ test("label layout keeps important names and moves collisions to the alternate s
   assert.equal(labels[1].getAttribute("display"), "inline");
   assert.equal(labels[1].querySelector("text").getAttribute("text-anchor"), "end");
   assert.equal(labels[2].getAttribute("display"), "inline");
+});
+
+test("hidden settlement pins do not reserve label collision space", () => {
+  const { document, helpers } = load();
+  document.body.innerHTML = `<svg viewBox="0 0 100 66.67">
+    <a data-map-settlement display="none"><g data-map-label data-map-x="50" data-map-y="30" data-map-label-priority="100" data-map-label-width="70" data-map-label-essential="false"><text>Hidden</text></g></a>
+    <a data-map-settlement display="inline"><g data-map-label data-map-x="50" data-map-y="30" data-map-label-priority="80" data-map-label-width="70" data-map-label-essential="false"><text>Visible</text></g></a>
+  </svg>`;
+  const svg = document.querySelector("svg");
+  svg.getBoundingClientRect = () => ({ width: 600, height: 400 });
+  helpers.layoutLabels(svg, [0, 0, 100, 66.67]);
+  const labels = svg.querySelectorAll("[data-map-label]");
+  assert.equal(labels[0].getAttribute("display"), "none");
+  assert.equal(labels[1].getAttribute("display"), "inline");
 });
 
 test("collision helper treats padded touching labels as overlapping", () => {

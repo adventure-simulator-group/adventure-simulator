@@ -1,6 +1,13 @@
 //! SpacetimeDB response types
 
-use serde::{Deserialize, Serialize};
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BackendLocalProblemTradeEffect {
+    pub character_id: u64,
+    pub settlement_id: String,
+    pub buy_bps: i32,
+    pub sell_penalty_bps: i32,
+}
+use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use serde_json::Value;
 
 /// Response from SpacetimeDB SQL query (array of result sets)
@@ -161,11 +168,75 @@ pub struct Settlement {
     pub population_level: i32,
     pub population_estimate: u32,
     pub category: SettlementCategory,
+    pub languages: adventuresim_world_schema::SettlementLanguageProfile,
     pub industries: adventuresim_world_schema::InferredIndustryProfile,
+    pub economy: adventuresim_world_schema::SettlementEconomyProfile,
+    #[serde(deserialize_with = "deserialize_settlement_religious_status")]
+    pub religious_status: adventuresim_world_schema::SettlementReligiousStatus,
     pub scene_key: String,
     pub religion_id: String,
     pub currency_id: String,
     pub source_node_id: Option<u64>,
+}
+
+fn deserialize_settlement_religious_status<'de, D>(
+    deserializer: D,
+) -> Result<adventuresim_world_schema::SettlementReligiousStatus, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    serde_json::from_value(normalize_religious_status(value)).map_err(D::Error::custom)
+}
+
+fn normalize_religious_status(value: Value) -> Value {
+    let Value::Object(mut status) = value else {
+        return value;
+    };
+    if status.len() != 1 {
+        return Value::Object(status);
+    }
+
+    let (variant, payload) = status.into_iter().next().expect("checked one variant");
+    let payload = match variant.as_str() {
+        "Established" => wrap_single_field(payload, "religion"),
+        "LocallyDetermined" => wrap_single_field(payload, "church"),
+        "Parity" | "MultiConfessional" => {
+            wrap_single_field(normalize_western_arrangement(payload), "arrangement")
+        }
+        _ => payload,
+    };
+    status = [(variant, payload)].into_iter().collect();
+    Value::Object(status)
+}
+
+fn normalize_western_arrangement(value: Value) -> Value {
+    let Value::Object(mut arrangement) = value else {
+        return value;
+    };
+    if arrangement.len() != 1 || arrangement.contains_key("arrangement") {
+        return Value::Object(arrangement);
+    }
+
+    let (variant, payload) = arrangement
+        .into_iter()
+        .next()
+        .expect("checked one arrangement variant");
+    arrangement = [(variant, wrap_single_field(payload, "church"))]
+        .into_iter()
+        .collect();
+    Value::Object(arrangement)
+}
+
+fn wrap_single_field(value: Value, field: &str) -> Value {
+    if value
+        .as_object()
+        .is_some_and(|object| object.contains_key(field))
+    {
+        value
+    } else {
+        Value::Object([(field.to_string(), value)].into_iter().collect())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -296,6 +367,43 @@ pub struct PartyJourney {
     pub travel_at_night: bool,
     pub camp_duration_mode: CampDurationMode,
     pub fixed_camp_minutes: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StrategicEncounterLoss {
+    pub owner_kind: String,
+    pub owner_id: u64,
+    pub inventory_id: u64,
+    pub item_id: String,
+    pub quantity: u32,
+    pub value_each: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StrategicEncounter {
+    pub party_id: String,
+    pub encounter_id: String,
+    pub archetype: String,
+    pub enemy_count: u16,
+    pub roll_index: u64,
+    pub journey_movement_minute: u64,
+    pub journey_elapsed_minute: u64,
+    pub absolute_minute: u64,
+    pub longitude_e7: i32,
+    pub latitude_e7: i32,
+    pub terrain: String,
+    pub party_aware: bool,
+    pub enemy_aware: bool,
+    pub available_choices: Vec<String>,
+    pub status: String,
+    pub selected_choice: Option<String>,
+    pub selection_explanation: String,
+    pub party_speed_m_per_minute: u32,
+    pub enemy_speed_m_per_minute: u32,
+    pub run_ineligibility: Option<String>,
+    pub penalty_minutes: u64,
+    pub loss_preview: Vec<StrategicEncounterLoss>,
+    pub outcome: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -975,6 +1083,8 @@ pub struct CharacterSkills {
     pub medicine_hours: f32,
     pub cooking_hours: f32,
     pub religion_hours: adventuresim_world_schema::ReligionHours,
+    pub oral_languages: adventuresim_world_schema::OralLanguageHours,
+    pub written_languages: adventuresim_world_schema::WrittenLanguageHours,
     pub stealth_hours: f32,
     pub balance_hours: f32,
     pub terrain_plains_hours: f32,
@@ -1356,6 +1466,39 @@ mod tests {
         assert_eq!(
             ItemSlot::AnyHolding.sats_json(),
             serde_json::json!({ "anyHolding": {} })
+        );
+    }
+
+    #[test]
+    fn settlement_religion_normalizes_single_field_sats_variants() {
+        use adventuresim_world_schema::{
+            CatholicLutheranChurch, OfficialReligion, SettlementReligiousStatus,
+            WesternChristianArrangement,
+        };
+
+        let established: SettlementReligiousStatus = serde_json::from_value(
+            normalize_religious_status(serde_json::json!({ "Established": "Lutheran" })),
+        )
+        .unwrap();
+        assert_eq!(
+            established,
+            SettlementReligiousStatus::Established {
+                religion: OfficialReligion::Lutheran,
+            }
+        );
+
+        let parity: SettlementReligiousStatus =
+            serde_json::from_value(normalize_religious_status(serde_json::json!({
+                "Parity": { "CatholicLutheran": "RomanCatholic" }
+            })))
+            .unwrap();
+        assert_eq!(
+            parity,
+            SettlementReligiousStatus::Parity {
+                arrangement: WesternChristianArrangement::CatholicLutheran {
+                    church: CatholicLutheranChurch::RomanCatholic,
+                },
+            }
         );
     }
 }

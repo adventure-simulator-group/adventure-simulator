@@ -335,10 +335,13 @@ struct Palette {
     paper_fleck: [u8; 4],
     water: [u8; 4],
     water_edge: [u8; 4],
+    wetland: [u8; 4],
+    wetland_edge: [u8; 4],
     road: [u8; 4],
     ferry: [u8; 4],
     forest_sparse: [u8; 4],
     forest_deep: [u8; 4],
+    inferred_road: [u8; 4],
     hilly_open: [u8; 4],
 }
 
@@ -348,10 +351,13 @@ const PAPER: Palette = Palette {
     paper_fleck: [151, 125, 86, 7],
     water: [184, 201, 197, 255],
     water_edge: [103, 119, 116, 190],
+    wetland: [112, 139, 102, 105],
+    wetland_edge: [74, 104, 72, 120],
     road: [92, 79, 57, 230],
     ferry: [91, 88, 78, 180],
     forest_sparse: [105, 139, 91, 120],
     forest_deep: [49, 94, 55, 155],
+    inferred_road: [118, 91, 61, 145],
     hilly_open: [191, 159, 115, 180],
 };
 
@@ -551,6 +557,19 @@ fn render_with_forest_field(
         origin,
         palette,
     )?;
+    for polygon in &package.wetlands {
+        stroke_and_fill_source_polygon(
+            &mut pixmap,
+            polygon,
+            package.bounds,
+            scale,
+            origin,
+            logical_bounds,
+            Some(palette.wetland),
+            Some((palette.wetland_edge, 0.65)),
+            true,
+        );
+    }
     for polygon in &package.water {
         stroke_and_fill_source_polygon(
             &mut pixmap,
@@ -561,12 +580,11 @@ fn render_with_forest_field(
             logical_bounds,
             Some(palette.water),
             Some((palette.water_edge, 1.1)),
+            false,
         );
     }
     for road in &package.roads {
-        let Some((shade, width)) =
-            road_style(road.importance, scale, road.kind == "ferry", palette)
-        else {
+        let Some((shade, width)) = road_style(road.importance, scale, &road.kind, palette) else {
             continue;
         };
         stroke_source_path(
@@ -635,7 +653,7 @@ fn draw_parchment_texture(pixmap: &mut Pixmap, scale: f64, origin: (f64, f64), p
     }
 }
 
-fn road_style(importance: u8, scale: f64, ferry: bool, palette: Palette) -> Option<([u8; 4], f32)> {
+fn road_style(importance: u8, scale: f64, kind: &str, palette: Palette) -> Option<([u8; 4], f32)> {
     let maximum_importance = if scale < 2.0 {
         0
     } else if scale < 4.0 {
@@ -650,8 +668,11 @@ fn road_style(importance: u8, scale: f64, ferry: bool, palette: Palette) -> Opti
     if importance > maximum_importance {
         return None;
     }
-    if ferry {
+    if kind == "ferry" {
         return Some((with_alpha(palette.ferry, 165), 0.95));
+    }
+    if kind == "inferred" {
+        return (scale >= 8.0).then_some((palette.inferred_road, 0.82));
     }
     let base_width = if scale >= 16.0 { 1.75 } else { 1.45 };
     let width = (base_width - f32::from(importance) * 0.16).max(0.85);
@@ -916,14 +937,21 @@ fn stroke_and_fill_source_polygon(
     tile_bounds: [f64; 4],
     fill: Option<[u8; 4]>,
     stroke: Option<([u8; 4], f32)>,
+    smooth_boundary: bool,
 ) {
     let projected: Vec<Vec<_>> = polygon
         .rings
         .iter()
         .map(|ring| {
-            ring.iter()
+            let projected = ring
+                .iter()
                 .map(|point| project(point.0[0], point.0[1], map_bounds))
-                .collect()
+                .collect::<Vec<_>>();
+            if smooth_boundary {
+                organic_closed_ring(&projected)
+            } else {
+                projected
+            }
         })
         .collect();
     let bounds = projected
@@ -974,6 +1002,72 @@ fn stroke_and_fill_source_polygon(
         };
         pixmap.stroke_path(&path, &paint(shade), &stroke, Transform::identity(), None);
     }
+}
+
+/// Gently warp source-cell vertices, then repeatedly corner-cut the closed
+/// contour. This makes wetlands read as natural regions instead of rounded
+/// raster cells without changing the exact terrain geometry used by routing.
+fn organic_closed_ring(points: &[(f64, f64)]) -> Vec<(f64, f64)> {
+    let mut vertices = points;
+    if points.len() > 1 && points.first() == points.last() {
+        vertices = &points[..points.len() - 1];
+    }
+    if vertices.len() < 3 {
+        return points.to_vec();
+    }
+
+    let mut contour = Vec::with_capacity(vertices.len());
+    for index in 0..vertices.len() {
+        let previous = vertices[(index + vertices.len() - 1) % vertices.len()];
+        let current = vertices[index];
+        let next = vertices[(index + 1) % vertices.len()];
+        let chord = (next.0 - previous.0, next.1 - previous.1);
+        let chord_length = chord.0.hypot(chord.1);
+        let local_scale = (current.0 - previous.0)
+            .hypot(current.1 - previous.1)
+            .min((next.0 - current.0).hypot(next.1 - current.1));
+        let noise = organic_vertex_noise(current);
+        let displacement = (noise - 0.5) * local_scale * 0.22;
+        if chord_length > f64::EPSILON {
+            contour.push((
+                current.0 - chord.1 / chord_length * displacement,
+                current.1 + chord.0 / chord_length * displacement,
+            ));
+        } else {
+            contour.push(current);
+        }
+    }
+
+    for _ in 0..3 {
+        let mut smoothed = Vec::with_capacity(contour.len() * 2);
+        for index in 0..contour.len() {
+            let current = contour[index];
+            let next = contour[(index + 1) % contour.len()];
+            smoothed.push((
+                current.0 * 0.75 + next.0 * 0.25,
+                current.1 * 0.75 + next.1 * 0.25,
+            ));
+            smoothed.push((
+                current.0 * 0.25 + next.0 * 0.75,
+                current.1 * 0.25 + next.1 * 0.75,
+            ));
+        }
+        contour = smoothed;
+    }
+    contour.push(contour[0]);
+    contour
+}
+
+fn organic_vertex_noise(point: (f64, f64)) -> f64 {
+    let x = (point.0 * 16.0).round() as i64 as u64;
+    let y = (point.1 * 16.0).round() as i64 as u64;
+    let mut value = x.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ y.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value ^= value >> 30;
+    value = value.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value ^= value >> 27;
+    value = value.wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^= value >> 31;
+    (value >> 11) as f64 / ((1_u64 << 53) - 1) as f64
 }
 
 fn tile_path(points: &[(f64, f64)], scale: f64, origin: (f64, f64), close: bool) -> Option<Path> {
@@ -1080,6 +1174,7 @@ mod tests {
             roads: Vec::new(),
             routing_roads: Vec::new(),
             water: Vec::new(),
+            wetlands: Vec::new(),
             elevation: ElevationLayer {
                 source: layer_source(),
                 cells: vec![ElevationCell {
@@ -1269,12 +1364,47 @@ mod tests {
     }
 
     #[test]
+    fn wetland_boundary_smoothing_is_closed_organic_and_deterministic() {
+        let square = vec![(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0), (0.0, 0.0)];
+        let smoothed = organic_closed_ring(&square);
+        assert_eq!(smoothed.first(), smoothed.last());
+        assert_eq!(smoothed.len(), 33);
+        assert!(!smoothed.contains(&(0.0, 0.0)));
+        assert_eq!(smoothed, organic_closed_ring(&square));
+        assert_ne!(
+            organic_vertex_noise((0.0, 0.0)),
+            organic_vertex_noise((4.0, 0.0))
+        );
+    }
+
+    #[test]
     fn road_hierarchy_filters_and_weights_minor_routes() {
-        assert!(road_style(4, 8.0, false, PAPER).is_none());
-        let major = road_style(0, 64.0, false, PAPER).unwrap();
-        let minor = road_style(4, 64.0, false, PAPER).unwrap();
+        assert!(road_style(4, 8.0, "land", PAPER).is_none());
+        let major = road_style(0, 64.0, "land", PAPER).unwrap();
+        let minor = road_style(4, 64.0, "land", PAPER).unwrap();
         assert!(major.1 > minor.1);
         assert!(major.0[3] > minor.0[3]);
+        let inferred = road_style(4, 64.0, "inferred", PAPER).unwrap();
+        assert_ne!(inferred.0, minor.0);
+        assert!(inferred.1 < minor.1);
+    }
+
+    #[test]
+    fn wetland_map_fill_is_distinct_from_plain_and_water() {
+        let mut package = flat_fixture();
+        package.wetlands = vec![super::super::WaterPolygon {
+            rings: vec![vec![
+                Point([10.0, 750.0]),
+                Point([50.0, 750.0]),
+                Point([50.0, 790.0]),
+                Point([10.0, 790.0]),
+                Point([10.0, 750.0]),
+            ]],
+        }];
+        let tile = render(&package, 64, TILE_GUTTER, 1.0, 0, 0, PAPER).unwrap();
+        let wet = pixel(&tile, 24, 24);
+        assert_ne!(wet, PAPER.land);
+        assert_ne!(wet, PAPER.water);
     }
 
     #[test]

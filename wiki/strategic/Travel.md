@@ -1,5 +1,8 @@
 > TODO: rewrite for HTML-based strategic interface
 
+Route problems use canonical unordered settlement endpoint pairs and influence
+only existing deterministic encounter boundaries, preserving roll domains and chunking.
+
 Movement spends calories. On crossing zero, travel consumes useful calories
 from shared food lots first and personal lots second, oldest first, and stops
 exactly at zero. Arrival clears positive stomach fullness so dinner is possible.
@@ -132,6 +135,33 @@ conservatively reconstructed from the party's current synchronized minute minus
 its completed movement, then upgraded before travel continues. This may omit
 unknown historical rest from an old row, but it never silently renders the
 journey against Day 1 celestial chronology.
+
+### Random encounters
+
+Travel checks one deterministic encounter boundary every 180 movement minutes.
+The baseline chance is 180 basis points per check; open ground, sparse woods,
+deep woods, and night travel increase the documented weights. The party's
+accepted active quest contributes an archetype-specific influence that decays
+with remaining travel time and reaches zero at 120 movement minutes; an undead
+quest therefore strongly favors undead encounters near its destination. The
+private journey seed and canonical cursor make reducer retries and travel chunk sizes irrelevant. If
+neither side detects the other, movement continues without an interruption.
+
+An interruption occurs at its exact route coordinate and strategic time. The
+Map/camp panel shows enemy type/count, awareness, the selection explanation,
+and only legal actions. Detours always avoid combat but cost 30/45/60/90
+minutes on road/open/sparse/deep terrain. Running costs 20/30/45/60 minutes and
+is offered only when sustainable speed exceeds enemy speed. Sustainable speed
+includes the members' current fatigue after reaching the boundary, aggregate personal and party encumbrance, party-size
+logistics, and terrain; mounts are neutral until modeled. Unresolved rows block
+departure, redirection, rest continuation, and travel continuation.
+
+Bandit surrender removes every currency stack and every carried or equipped
+item worth at least 20, from the party pool and every living member. The UI
+shows the exact atomic loss set before commitment. If the authoritative set
+changes, surrender refreshes that preview without taking anything; after a
+successful surrender, remaining pooled value is reconciled across member stake
+claims and the party reserve.
 ### Rest Stops
 - A point may be made into a rest stop, at which you will rest for the day once you arrive.
 - Placing a rest stop at an inn allows you to fully rest faster (no watch schedule or tent pitching) increasing the amount of time available each day for traveling. The inn also has a cost, but this is trivially cheap unless you are an impoverished mendicant.
@@ -243,3 +273,9 @@ character ID before remaining net hydration is counted. The planner presents ord
 and emergency alcohol separately, while its overall water-sufficiency verdict
 uses their sum. Provisioning still stages waterskins only; it does not disguise
 alcohol as water or automatically purchase it as a water container.
+World compilation may publish sparse inferred local roads after A* evaluates the
+complete alignment against an immutable documented-road base terrain pack.
+Candidates are spatially bounded, limited to eight evaluations and two accepted
+links per settlement, and capped at 12 km/six walking hours. Existing short graph
+routes suppress clique edges. The exact accepted polyline is shared by the
+runtime graph, final routing mask, quiet map styling, and artifact digest.
