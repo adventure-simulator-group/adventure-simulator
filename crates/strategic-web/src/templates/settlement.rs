@@ -6,7 +6,6 @@
 
 use adventuresim_core::{
     activity::{PRAYER_MORALE_LIMIT, PRAYER_MORALE_SCALE_MINUTES, settlement_population_scale},
-    bestiary::ThreatId,
     equipment::EncumbranceSummary,
     prelude::Skill,
     strategic_schedule::{
@@ -1560,10 +1559,6 @@ pub fn camp_page(
 }
 
 fn strategic_encounter_panel(encounter: &StrategicEncounter) -> Markup {
-    let threat = encounter.archetype.parse::<ThreatId>().ok();
-    let threat_name = threat
-        .map(|id| id.display_name(u32::from(encounter.enemy_count)))
-        .unwrap_or_else(|| "Unknown threats".to_string());
     let awareness = match (encounter.party_aware, encounter.enemy_aware) {
         (true, false) => "Your party spotted them first",
         (false, true) => "The enemy surprised your party",
@@ -1574,13 +1569,8 @@ fn strategic_encounter_panel(encounter: &StrategicEncounter) -> Markup {
         section class="sidebar-section strategic-encounter" aria-label="Random encounter" {
             h3 class="sidebar-header" { "Encounter" }
             p class="encounter-summary" {
-                strong { (encounter.enemy_count) " " (threat_name) }
+                strong { (encounter.enemy_count) " " (encounter.archetype.as_str()) }
                 " on " (encounter.terrain.as_str())
-            }
-            @if let Some(threat) = threat {
-                p class="text-muted small-copy" {
-                    "Preparation: " (threat.profile().investigation.preparation_advice)
-                }
             }
             p { (awareness) }
             p class="text-muted small-copy" { (encounter.selection_explanation.as_str()) }

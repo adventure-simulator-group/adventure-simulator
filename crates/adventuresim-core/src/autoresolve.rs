@@ -208,20 +208,6 @@ pub struct CombatArmor {
     pub coverage: f32,
 }
 
-impl CombatArmor {
-    /// Anatomical material protection covers the full body and does not
-    /// restrict movement, while using the ordinary armor damage calculation.
-    pub fn innate(resistance: f32, padding: f32) -> Self {
-        Self {
-            resistance,
-            padding,
-            flexibility: 0.5,
-            range_of_motion: 1.0,
-            coverage: 1.0,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CombatWeapon {
     pub skills: crate::equipment::WeaponSkillDistribution,
@@ -1225,6 +1211,7 @@ fn apply_attack_result(
         AttackResult::ToDefender { balance_damage, .. } => {
             defender.imbalance += balance_damage.max(0.0);
             let damage = health_damage_from_attack(result, part);
+            let applied = defender.body.apply_damage(part, damage);
             let raw_cut = match result {
                 AttackResult::ToDefender { cut_damage, .. } => cut_damage.max(0.0),
                 _ => 0.0,
@@ -1237,7 +1224,6 @@ fn apply_attack_result(
                 } => (cut_damage + blunt_damage).max(0.0),
                 _ => 0.0,
             };
-            let applied = defender.body.apply_damage(part, damage);
             defender.cut_damage += if raw_total > 0.0 {
                 applied * raw_cut / raw_total
             } else {
@@ -1447,7 +1433,6 @@ impl SplitMix64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bestiary::{ThreatId, profile};
 
     fn fighter(id: u64, skill: f32, ranged: bool) -> Combatant {
         let mut fighter = Combatant::new(id);
@@ -1509,33 +1494,6 @@ mod tests {
             fighter.equipment.melee_weapon = Some(weapon);
         }
         fighter
-    }
-
-    fn resolved_melee_health_damage(mut weapon: CombatWeapon, protection: CombatArmor) -> f32 {
-        let mut attacker = fighter(1, 3.0, false);
-        weapon.skills = crate::equipment::WeaponSkillDistribution {
-            sword: 1.0,
-            ..Default::default()
-        };
-        weapon.melee = true;
-        weapon.accuracy = 1.5;
-        weapon.weight = 1.5;
-        weapon.melee_reach = 1.0;
-        weapon.attack_interval_seconds = 1.0;
-        attacker.equipment.weapon = Some(weapon);
-        attacker.equipment.melee_weapon = Some(weapon);
-
-        let mut defender = fighter(2, 1.0, false);
-        defender.equipment.armor.fill(protection);
-        let result = melee_exchange(
-            &attacker,
-            &defender,
-            1.0,
-            0.0,
-            BodyPart::Chest,
-            DefenderResponse::None,
-        );
-        health_damage_from_attack(result, BodyPart::Chest)
     }
 
     #[test]
@@ -2043,53 +2001,5 @@ mod tests {
             })
             .count();
         assert!(strong_wins > weak_wins, "{strong_wins} versus {weak_wins}");
-    }
-
-    #[test]
-    fn skeleton_matchup_emerges_from_resistance_and_padding_resolution() {
-        let innate = profile(ThreatId::Skeleton).combat.innate_protection;
-        let protection = CombatArmor::innate(innate.resistance_joules, innate.padding_joules);
-        let cutting = resolved_melee_health_damage(
-            CombatWeapon {
-                slash: true,
-                // Hand axe and sword catalog coefficient.
-                penetration: 1.0,
-                ..Default::default()
-            },
-            protection,
-        );
-        let blunt = resolved_melee_health_damage(
-            CombatWeapon {
-                blunt: true,
-                // Flanged mace and war hammer catalog coefficient.
-                penetration: 0.5,
-                ..Default::default()
-            },
-            protection,
-        );
-
-        assert!(blunt > cutting, "blunt {blunt} versus cutting {cutting}");
-    }
-
-    #[test]
-    fn ordinary_unprotected_damage_remains_coherent() {
-        let unprotected_cut = resolved_melee_health_damage(
-            CombatWeapon {
-                slash: true,
-                penetration: 1.0,
-                ..Default::default()
-            },
-            CombatArmor::default(),
-        );
-        let unprotected_blunt = resolved_melee_health_damage(
-            CombatWeapon {
-                blunt: true,
-                penetration: 0.5,
-                ..Default::default()
-            },
-            CombatArmor::default(),
-        );
-        assert!(unprotected_cut > unprotected_blunt);
-        assert!(unprotected_blunt > 0.0);
     }
 }

@@ -1,11 +1,5 @@
 # Architecture MVP - Adventure Simulator
 
-Strategic threat identity and evidence vocabulary live in
-`adventuresim-core::bestiary`; see [BESTIARY.md](BESTIARY.md). Stable IDs cross
-existing strategic persistence boundaries while display names remain
-presentation-only. Tactical servers do not yet consume this identity, and
-positions, HP, damage, and enemy instances remain transient tactical state.
-
 The strategic dialogue subsystem is documented in [DIALOGUE.md](DIALOGUE.md).
 Its compiled catalog and evaluator are shared by the web and SpacetimeDB module;
 authoritative sessions are strategic persistence, while free-form chat remains

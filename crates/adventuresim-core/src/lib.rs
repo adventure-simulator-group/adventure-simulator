@@ -3,7 +3,6 @@ pub mod alcohol;
 pub mod attribute;
 pub mod autoresolve;
 pub mod battle_rewards;
-pub mod bestiary;
 pub mod body;
 pub mod capability;
 pub mod combat;
@@ -35,7 +34,6 @@ pub mod prelude {
     pub use crate::activity::*;
     pub use crate::attribute::*;
     pub use crate::autoresolve::*;
-    pub use crate::bestiary::*;
     pub use crate::body::*;
     pub use crate::capability::*;
     pub use crate::combat::*;
