@@ -9,6 +9,8 @@ remaining batch; custody, cooking, and sales move that complete remainder. See
 
 Inventory management should NOT be a full-time job. When players come home from laboring at the spreadsheet mines all day they should not *have* to toil more in what is ostensibly their reprieve from such work. But this is adventure _simulator_, not adventure _handwaver_, so we need to use the interface to abstract over all of the things that normally make inventory management tedious while still preserving the underlying depth.
 
+The ordinary inventory rows shown by this interface represent items packed in a character's backpack. They are carried and count toward encumbrance, but they are not automatically in hand or otherwise immediately retrievable during tactical play. The party inventory is likewise a shared chest, not equipment distributed across members. Immediate-access equipment, hands, pockets, and other tactical placement are a separate lower-level model; the backpack view deliberately abstracts those choices until that model is available.
+
 ## Automation
 Most aspects of resupplying, looting, selling, and stocking rations for an upcoming adventure can be effectively automated.
 
