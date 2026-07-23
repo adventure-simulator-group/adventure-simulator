@@ -850,4 +850,26 @@ mod tests {
         assert!(source.contains("Conflicting retry for source outcome ID"));
         assert!(source.contains("input.at_minute != official_minute(ctx)"));
     }
+
+    #[test]
+    fn generated_referrals_bind_persistent_npcs_without_revealing_testimony() {
+        let local = include_str!("local_problem.rs");
+        let surface = local.split("pub fn surface_problem").nth(1).unwrap();
+        assert!(surface.contains("generated.witnesses.first()"));
+        assert!(surface.contains("settlement_npc().id().find(&witness.npc_id)"));
+        assert!(surface.contains("presence.location_id == witness.expected_location"));
+        assert!(surface.contains("contact_npc_id: contact.id"));
+        assert!(surface.contains("discovery_session_id: session_id.into()"));
+
+        let strategic = include_str!("strategic.rs");
+        let start = strategic
+            .split("pub fn start_dialogue")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn join_dialogue_session").next())
+            .unwrap();
+        assert!(start.contains("session.id != receipt.discovery_session_id"));
+        assert!(start.contains(".find(|witness| witness.npc_id == npc_actor_id)"));
+        assert!(start.contains("persist_generated_testimony("));
+        assert!(!start.contains("accept_contract("));
+    }
 }

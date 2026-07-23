@@ -28,6 +28,11 @@ to `ReadyToReport`. Reporting at its issuer pays once, records `paid_at`, and
 changes it to `Paid`. Withdrawing a contract leaves the underlying case and
 investigation intact.
 
+Generated contract presentation is deliberately an issuer belief. Opposition
+wording and count may be vague or wrong; canonical threat identity and count
+are absent from the contract schema and gateway DTO. A generated case and its
+linked local problem can resolve without a contract.
+
 Assets and subjects use one versioned custody row per stable object ID. A
 transition must advance exactly one version and carry a stable source ID;
 repeating the same source is idempotent, while stale, skipped, or cross-case
@@ -77,3 +82,8 @@ objectives remain pending until #207 adds an authoritative tactical producer.
 Every shared hostile-result commit rechecks its selected resolution.
 `CaptureTargetKilled` is never a successful result, and only `Defeated` may
 produce battle loot.
+
+Recurring generated cases bind `Defeat` and `DriveOff` alternatives to the same
+hostile-group/site identity. Once an observer knows and enters the exact site,
+the existing #217 mission seam materializes those leaves as weighted
+`MissionOutcomeCandidate` rows; generation adds no parallel combat resolver.

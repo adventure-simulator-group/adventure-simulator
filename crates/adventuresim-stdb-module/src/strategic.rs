@@ -1242,6 +1242,59 @@ mod healing_tests {
                 .all(|candidate| candidate.hostile_group_id == hostile_group_id)
         );
     }
+
+    #[test]
+    fn generated_truth_and_replay_authority_have_no_public_subscription_surface() {
+        let strategic = include_str!("strategic.rs");
+        let authority = strategic
+            .split("pub struct QuestGenerationAuthority")
+            .nth(1)
+            .and_then(|tail| tail.split("pub struct Contract").next())
+            .unwrap();
+        for field in [
+            "seed",
+            "context_snapshot_json",
+            "manifest_json",
+            "factor_trace_json",
+        ] {
+            assert!(authority.contains(field));
+        }
+        assert!(strategic.contains("#[table(accessor = quest_generation_authority)]"));
+        assert!(!strategic.contains("#[table(accessor = quest_generation_authority, public)]"));
+
+        let generated_client = include_str!("../../adventuresim-stdb-client/src/mod.rs");
+        assert!(!generated_client.contains("quest_generation_authority_table"));
+        let web_types = include_str!("../../strategic-web/src/spacetimedb/types.rs");
+        let contract = web_types
+            .split("pub struct ContractPresentation")
+            .nth(1)
+            .and_then(|tail| tail.split("pub enum ContractPresentationStatus").next())
+            .unwrap();
+        assert!(contract.contains("opposition_wording"));
+        for forbidden in [
+            "seed",
+            "manifest",
+            "factor_trace",
+            "enemy_type",
+            "enemy_count",
+        ] {
+            assert!(!contract.contains(forbidden), "{forbidden} leaked");
+        }
+    }
+
+    #[test]
+    fn generated_noncombat_resolution_closes_problem_without_contract_authority() {
+        let source = include_str!("strategic.rs");
+        let finale = source
+            .split("fn execute_case_finale")
+            .nth(1)
+            .and_then(|tail| tail.split("fn hostile_resolution_for_objective").next())
+            .unwrap();
+        assert!(finale.contains("case.local_problem_id"));
+        assert!(finale.contains("crate::local_problem::apply_outcome("));
+        assert!(!finale.contains("contract_authority()"));
+        assert!(!finale.contains("active_contract_id"));
+    }
 }
 
 /// Returns the living members who participate in strategic party activity.

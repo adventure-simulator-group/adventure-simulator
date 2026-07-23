@@ -12,6 +12,11 @@ adjustment. Relations have separate plausibility and curation weights. Zero is
 impossible; rare relations may require a causal bridge, whose key is emitted for
 later evidence authoring.
 
+Generated quests use `adventuresim-core::quest_generation` to select canonical
+truth and atomically link the case to this symptom authority. The local problem
+stores the consequence mechanism, not a parallel monster answer. See
+[QUEST_GENERATION.md](QUEST_GENERATION.md).
+
 Cause, disease identity, encounter archetype, opaque case reference, weights,
 bridges, generation entropy, explanations, and per-problem consequences are
 private. Public rows contain only observable symptoms. The authenticated
@@ -54,3 +59,8 @@ never written to the public dialogue-event table.
 Later conversations with ordinary locals give a short summary and referral
 instead of replaying discovery. Discovery does not accept or mutate a quest,
 reveal a cause or destination, or create a map marker.
+
+The first inn conversation records discovery only. Even if the innkeeper is
+also a generated witness, it does not deliver testimony in that session. The
+character must later address the bound referred NPC; selecting another local
+cannot reveal that witness's account.

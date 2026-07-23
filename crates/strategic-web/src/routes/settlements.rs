@@ -2452,8 +2452,8 @@ mod bestiary_quest_presentation_tests {
     fn shared_service_never_substitutes_its_old_fixed_threat_or_location() {
         let alp = quest("alp", "Sleepers report an unseen visitor.");
         let hound = quest("spectral_hound", "A black hound haunts the road.");
-        let alp_details = service_quest_details("inn", &alp, "A", "B", 2, 3);
-        let hound_details = service_quest_details("inn", &hound, "A", "B", 2, 3);
+        let alp_details = service_quest_details("inn", &alp, "A", "B");
+        let hound_details = service_quest_details("inn", &hound, "A", "B");
         assert!(alp_details.contains("unseen visitor"));
         assert!(hound_details.contains("black hound"));
         assert!(!alp_details.contains("goblin") && !hound_details.contains("goblin"));
