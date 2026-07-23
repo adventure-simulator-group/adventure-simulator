@@ -564,6 +564,14 @@ pub fn settlement_overview_page(
                     }
                 }
             }))
+            (sidebar_section("Places", html! {
+                nav aria-label="Settlement places" {
+                    a href=(format!("/settlements/{}/places/residences", settlement.id)) { "Residences" }
+                    @if matches!(settlement.category, SettlementCategory::Town | SettlementCategory::City | SettlementCategory::Capital) {
+                        a href=(format!("/settlements/{}/places/keep", settlement.id)) { "Keep" }
+                    }
+                }
+            }))
         }
         main class="center-content settlement-main settlement-overview" {
             (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None, false))
@@ -591,6 +599,60 @@ pub fn settlement_overview_page(
         "",
         Some(&settlement.religion_id),
         Some(&settlement.economy),
+        content,
+        logged_in_as,
+    )
+}
+
+/// Shared authoritative shell for non-service public, residential, and keep locations.
+pub fn settlement_npc_location_page(
+    settlement: &Settlement,
+    active_character: &Character,
+    party_members: &[Character],
+    location_id: &str,
+    logged_in_as: Option<&str>,
+) -> Markup {
+    let (title, description) = match location_id {
+        "residences" => (
+            "Residential quarter",
+            "Homes, courtyards, and narrow lanes where local households conduct their daily business.",
+        ),
+        "keep" => (
+            "The keep",
+            "The seat of local authority, occupied by retainers, servants, and petitioners.",
+        ),
+        _ => (
+            "Public square",
+            "A public gathering place for residents and travelers.",
+        ),
+    };
+    let content = html! {
+        aside class="left-sidebar" {
+            (sidebar_section("Places", html! {
+                nav aria-label="Settlement places" {
+                    a href=(format!("/locations/settlement/{}", settlement.id)) { "Public square" }
+                    a href=(format!("/settlements/{}/places/residences", settlement.id)) { "Residences" }
+                    @if matches!(settlement.category, SettlementCategory::Town | SettlementCategory::City | SettlementCategory::Capital) {
+                        a href=(format!("/settlements/{}/places/keep", settlement.id)) { "Keep" }
+                    }
+                }
+            }))
+        }
+        main class="center-content settlement-main settlement-overview" {
+            (party_portrait_overlay(party_members, Some(active_character), &format!("/settlements/{}/places/{location_id}", settlement.id), None, false))
+            (npc_portrait_strip(&settlement.id, location_id))
+            (npc_description_stage(title, description))
+            (settlement_npc_chat_area(title, Some(active_character), &settlement.id, location_id, None))
+        }
+        aside class="right-sidebar" { (sidebar_section("Location", html! { p { (description) } })) }
+    };
+    settlement_layout_with_session(
+        title,
+        &settlement.name,
+        &settlement.id,
+        &settlement.category,
+        location_id,
+        Some(&settlement.religion_id),
         content,
         logged_in_as,
     )
@@ -8246,6 +8308,37 @@ mod tests {
         assert!(chat.contains("data-local-chat-kind=\"npc\""));
         assert!(chat.contains("data-dialogue-catalog-revision"));
         assert!(!chat.contains("lubeck:merchants"));
+    }
+
+    #[test]
+    fn non_service_locations_use_the_same_authoritative_npc_shell() {
+        let character = Character {
+            id: 1,
+            name: "Visitor".into(),
+            xp: 0,
+            level: 1,
+            gold: 0,
+            current_settlement_id: Some("viabundus-1".into()),
+            current_quest_location_id: None,
+            party_id: Some("party".into()),
+            age_years: 20,
+            alive: true,
+            temporary: false,
+        };
+        for location in ["residences", "keep"] {
+            let markup = settlement_npc_location_page(
+                &settlement(),
+                &character,
+                &[],
+                location,
+                Some("Visitor"),
+            )
+            .into_string();
+            assert!(markup.contains(&format!("data-npc-location=\"{location}\"")));
+            assert!(markup.contains("data-npc-strip"));
+            assert!(markup.contains("data-dialogue-catalog-revision"));
+            assert!(markup.contains("aria-label=\"Settlement places\""));
+        }
     }
 
     #[test]

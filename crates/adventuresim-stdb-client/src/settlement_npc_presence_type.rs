@@ -13,7 +13,6 @@ pub struct SettlementNpcPresence {
     pub start_minute: u16,
     pub end_minute: u16,
     pub is_default: bool,
-    pub circumstance: String,
 }
 
 impl __sdk::InModule for SettlementNpcPresence {
@@ -30,7 +29,6 @@ pub struct SettlementNpcPresenceCols {
     pub start_minute: __sdk::__query_builder::Col<SettlementNpcPresence, u16>,
     pub end_minute: __sdk::__query_builder::Col<SettlementNpcPresence, u16>,
     pub is_default: __sdk::__query_builder::Col<SettlementNpcPresence, bool>,
-    pub circumstance: __sdk::__query_builder::Col<SettlementNpcPresence, String>,
 }
 
 impl __sdk::__query_builder::HasCols for SettlementNpcPresence {
@@ -43,7 +41,6 @@ impl __sdk::__query_builder::HasCols for SettlementNpcPresence {
             start_minute: __sdk::__query_builder::Col::new(table_name, "start_minute"),
             end_minute: __sdk::__query_builder::Col::new(table_name, "end_minute"),
             is_default: __sdk::__query_builder::Col::new(table_name, "is_default"),
-            circumstance: __sdk::__query_builder::Col::new(table_name, "circumstance"),
         }
     }
 }

@@ -47,6 +47,8 @@
   const npcStrip = document.querySelector("[data-npc-strip]");
   const npcDescription = document.querySelector("[data-npc-description]");
   let currentView = null;
+  let selectionGeneration = 0;
+  let startInFlight = null;
 
   const actionId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const request = async (path, payload) => {
@@ -158,10 +160,21 @@
   document.addEventListener("submit", (event) => { const form = event.target.closest("[data-dialogue-prompt]"); if (!form) return; event.preventDefault(); const submitter = event.submitter; const choices = submitter?.name === "choice" ? [submitter.value] : Array.from(new FormData(form).getAll("choice"), String); answerPrompt(choices); });
   const begin = () => {
     if (!chat.dataset.localChatSubject) return;
-    return request("/api/dialogue/start", { npc_actor_id: chat.dataset.localChatSubject, location_id: npcStrip?.dataset.npcLocation || "" }).then(render).catch((error) => window.reportStrategicError(error, "start dialogue"));
+    const generation = selectionGeneration;
+    const actor = chat.dataset.localChatSubject;
+    const location = npcStrip?.dataset.npcLocation || "";
+    const key = `${actor}:${location}:${generation}`;
+    if (startInFlight?.key === key) return startInFlight.promise;
+    const promise = request("/api/dialogue/start", { npc_actor_id: actor, location_id: location }).then((view) => {
+      if (generation === selectionGeneration && chat.dataset.localChatSubject === actor) render(view);
+    }).catch((error) => { if (generation === selectionGeneration) window.reportStrategicError(error, "start dialogue"); }).finally(() => { if (startInFlight?.key === key) startInFlight = null; });
+    startInFlight = { key, promise };
+    return promise;
   };
   const selectNpc = (npc, button) => {
+    selectionGeneration += 1;
     chat.dataset.localChatSubject = npc.id;
+    chat.dispatchEvent(new Event("local-chat-subject-changed"));
     currentView = null;
     npcStrip?.querySelectorAll("button").forEach((candidate) => {
       const active = candidate === button;

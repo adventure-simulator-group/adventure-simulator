@@ -2352,6 +2352,7 @@ pub struct DialogueParticipant {
     pub session_id: String,
     pub role: String,
     pub character_id: Option<u64>,
+    #[index(btree)]
     pub actor_id: String,
     pub display_name: String,
 }
@@ -2446,6 +2447,56 @@ fn require_dialogue_revision(revision: &str) -> Result<(), String> {
     }
 }
 
+/// Revalidates the complete physical authority boundary for every dialogue mutation.
+fn require_live_dialogue_presence(
+    ctx: &ReducerContext,
+    session: &DialogueSession,
+    character_id: u64,
+) -> Result<crate::settlement_population::SettlementNpc, String> {
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    if character.current_settlement_id.as_deref() != Some(session.settlement_id.as_str()) {
+        return Err("Dialogue participant has left the settlement".into());
+    }
+    let npc_participant = ctx
+        .db
+        .dialogue_participant()
+        .session_id()
+        .filter(&session.id)
+        .find(|participant| participant.character_id.is_none())
+        .ok_or("Dialogue has no persistent NPC participant")?;
+    let npc = ctx
+        .db
+        .settlement_npc()
+        .id()
+        .find(&npc_participant.actor_id)
+        .ok_or("Dialogue NPC is no longer authoritative")?;
+    let presence = ctx
+        .db
+        .settlement_npc_presence()
+        .npc_id()
+        .find(&npc.id)
+        .ok_or("Dialogue NPC has no authoritative presence")?;
+    let minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(720, |time| time.minutes);
+    if npc.home_settlement_id != session.settlement_id
+        || presence.settlement_id != session.settlement_id
+        || presence.location_id != session.location_id
+        || !crate::settlement_population::npc_is_present(&presence, minute)
+    {
+        return Err("Dialogue NPC is not present at the session location and time".into());
+    }
+    Ok(npc)
+}
+
 #[reducer]
 pub fn start_dialogue(
     ctx: &ReducerContext,
@@ -2527,7 +2578,7 @@ pub fn start_dialogue(
             && existing.location_id == location_id
             && existing.catalog_revision == catalog_revision
         {
-            Ok(())
+            require_live_dialogue_presence(ctx, &existing, character_id).map(|_| ())
         } else {
             Err("Dialogue session ID conflicts with another request".into())
         };
@@ -2585,6 +2636,7 @@ pub fn start_dialogue(
         .find(&id)
         .ok_or("Dialogue session not found")?;
     validate_dialogue_cardinality(ctx, &session, conversation)?;
+    require_live_dialogue_presence(ctx, &session, character_id)?;
     if !conversation.on_start.is_empty() {
         let facts = dialogue_fact_context(ctx, &session, character_id)?;
         let response = adventuresim_dialogue::select_start_response(conversation, &facts)
@@ -2644,9 +2696,6 @@ pub fn join_dialogue_session(
     crate::character::require_living_character(ctx, character_id)?;
     validate_dialogue_action_id(&action_id)?;
     let action_row_id = format!("{session_id}:{action_id}");
-    if ctx.db.dialogue_action().id().find(&action_row_id).is_some() {
-        return Ok(());
-    }
     let mut session = ctx
         .db
         .dialogue_session()
@@ -2655,6 +2704,10 @@ pub fn join_dialogue_session(
         .ok_or("Dialogue session not found")?;
     if session.catalog_revision != catalog_revision || session.state != "active" {
         return Err("Dialogue session is stale or closed".into());
+    }
+    require_live_dialogue_presence(ctx, &session, character_id)?;
+    if ctx.db.dialogue_action().id().find(&action_row_id).is_some() {
+        return Ok(());
     }
     if session.revision != expected_revision {
         return Err("Dialogue join used a stale session revision".into());
@@ -2733,15 +2786,7 @@ fn require_session_member(
     if !member {
         return Err("Character is not a dialogue participant".into());
     }
-    let character = ctx
-        .db
-        .character()
-        .id()
-        .find(character_id)
-        .ok_or("Character not found")?;
-    if character.current_settlement_id.as_deref() != Some(session.settlement_id.as_str()) {
-        return Err("Dialogue participant has left the location".into());
-    }
+    require_live_dialogue_presence(ctx, &session, character_id)?;
     Ok(session)
 }
 
@@ -2848,10 +2893,6 @@ fn dialogue_fact_context(
                     result
                         .facts
                         .insert(FactKey::LocationRole, FactValue::Text(presence.location_id));
-                    result.facts.insert(
-                        FactKey::LocalCircumstance,
-                        FactValue::Text(presence.circumstance),
-                    );
                 }
             }
         }
@@ -2957,12 +2998,17 @@ fn dialogue_fact_context(
         let prior_sessions: HashSet<_> = ctx
             .db
             .dialogue_participant()
-            .iter()
-            .filter(|other| other.actor_id == npc.actor_id && other.session_id != session.id)
+            .actor_id()
+            .filter(&npc.actor_id)
+            .filter(|other| other.session_id != session.id)
             .map(|other| other.session_id)
             .collect();
-        let prior = ctx.db.dialogue_participant().iter().any(|other| {
-            other.character_id == Some(character_id) && prior_sessions.contains(&other.session_id)
+        let prior = prior_sessions.iter().any(|prior_session| {
+            ctx.db
+                .dialogue_participant()
+                .session_id()
+                .filter(prior_session)
+                .any(|other| other.character_id == Some(character_id))
         });
         result.facts.insert(
             FactKey::ParticipantPriorInteraction {
@@ -3089,10 +3135,10 @@ pub fn choose_dialogue_topic(
     require_dialogue_revision(&catalog_revision)?;
     validate_dialogue_action_id(&action_id)?;
     let action_row_id = format!("{session_id}:{action_id}");
+    let mut session = require_session_member(ctx, &session_id, character_id)?;
     if ctx.db.dialogue_action().id().find(&action_row_id).is_some() {
         return Ok(());
     }
-    let mut session = require_session_member(ctx, &session_id, character_id)?;
     if session.catalog_revision != catalog_revision {
         return Err("Dialogue session revision is stale".into());
     }
@@ -3232,13 +3278,13 @@ pub fn answer_dialogue_prompt(
         .find(&prompt_row_id)
         .ok_or("Dialogue prompt not found")?;
     let action_row_id = format!("{}:{action_id}", prompt.session_id);
-    if ctx.db.dialogue_action().id().find(&action_row_id).is_some() {
-        return Ok(());
-    }
     if prompt.state != "open" {
         return Err("Dialogue prompt is closed".into());
     }
     let mut session = require_session_member(ctx, &prompt.session_id, character_id)?;
+    if ctx.db.dialogue_action().id().find(&action_row_id).is_some() {
+        return Ok(());
+    }
     if session.catalog_revision != catalog_revision {
         return Err("Dialogue session revision is stale".into());
     }
@@ -3426,6 +3472,7 @@ fn apply_dialogue_effect(
     session: &DialogueSession,
     effect: &adventuresim_dialogue::Effect,
 ) -> Result<(), String> {
+    require_live_dialogue_presence(ctx, session, character_id)?;
     match effect {
         adventuresim_dialogue::Effect::LearnTopic { topic } => {
             let id = format!("{character_id}:{}:{topic}", session.conversation_id);

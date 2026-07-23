@@ -88,13 +88,10 @@ struct SettlementNpcRow {
 struct NpcPresenceRow {
     npc_id: String,
     settlement_id: String,
-    #[serde(rename = "location_id")]
-    _location_id: String,
+    location_id: String,
     start_minute: u16,
     end_minute: u16,
     is_default: bool,
-    #[serde(rename = "circumstance")]
-    _circumstance: String,
 }
 
 #[derive(Serialize)]
@@ -209,8 +206,8 @@ async fn location_npcs(
     let presences = state
         .db
         .query::<NpcPresenceRow>(&format!(
-            "SELECT * FROM settlement_npc_presence WHERE location_id = {}",
-            sql_string_literal(&location_id)
+            "SELECT * FROM settlement_npc_presence WHERE settlement_id = {}",
+            sql_string_literal(&settlement_id)
         ))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
@@ -224,7 +221,7 @@ async fn location_npcs(
         .flatten()
         .map_or(720, |time| time.minutes)
         % 1_440;
-    let mut views = presences.into_iter().filter(|presence| presence.settlement_id == settlement_id && u64::from(presence.start_minute) <= minute && minute < u64::from(presence.end_minute)).filter_map(|presence| {
+    let mut views = presences.into_iter().filter(|presence| presence.settlement_id == settlement_id && presence.location_id == location_id && u64::from(presence.start_minute) <= minute && minute < u64::from(presence.end_minute)).filter_map(|presence| {
         let npc = npcs.iter().find(|npc| npc.id == presence.npc_id)?;
         let facial = if npc.facial_hair == "none visible" { String::new() } else { format!(", with {}", npc.facial_hair) };
         Some(NpcView { id: npc.id.clone(), name: npc.name.clone(), initials: npc.name.split_whitespace().filter_map(|part| part.chars().next()).take(2).collect(), description: format!("{} is a {} {} {} with a {} build, {}{}, and a {} complexion. Visible details include {}. They wear {}. Occupation: {}. Household: {}. Local role: {}.", npc.name, npc.height, npc.age_band.to_lowercase(), npc.sex.to_lowercase(), npc.build, npc.hair, facial, npc.complexion, npc.visible_features, npc.clothing, npc.profession, npc.household, npc.local_role), is_default: presence.is_default })
@@ -449,24 +446,8 @@ async fn start(
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .ok_or(StatusCode::BAD_REQUEST)?;
     let conversation = npc.conversation_id;
-    let actors = state
-        .db
-        .query::<ParticipantRow>(&format!(
-            "SELECT * FROM dialogue_participant WHERE actor_id = {}",
-            sql_string_literal(&request.npc_actor_id)
-        ))
-        .await
-        .unwrap_or_default();
-    for actor in actors {
-        if build_view(&state, character_id, &actor.session_id)
-            .await
-            .is_ok()
-        {
-            return Ok(Json(
-                build_view(&state, character_id, &actor.session_id).await?,
-            ));
-        }
-    }
+    // Selecting an NPC starts a fresh encounter. Historical sessions remain
+    // available for prior-interaction facts but never become an indefinite live view.
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_micros());
