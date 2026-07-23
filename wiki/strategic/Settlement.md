@@ -1,5 +1,27 @@
 # Services
 
+## People and locations
+
+Every seeded or imported settlement has persistent local NPC identities in addition to
+its service providers. The overview/public area and service locations contain multiple
+people; towns and larger settlements also populate a keep. A horizontal, keyboard-
+navigable portrait strip selects whom the active character addresses. Service pages
+initially select the service provider, while other locations select a deterministic
+local. Selecting someone else keeps the party in place and updates the visible physical
+description, greeting, and eligible topics.
+
+The settlement overview links to residential areas and, for towns and larger settlements,
+the keep. These non-service places use the same authoritative portrait, description, and
+chat surface; villages and hamlets cannot enter a keep that their population does not have.
+
+NPC presences and daily time windows are strategic database state, not tactical
+positions or tick state. The player view exposes physical presentation, occupation,
+household, and public local role, but never personality, motives, beliefs, quest truth,
+generation weights, required causal bridges, or the private explanation for an unusual
+presence. Generation uses one stable typed weighted evaluator for production and tests;
+zero weights are impossible, while any rare choice marked as bridge-dependent is rejected
+unless the settlement context supplies that bridge.
+
 Settlements may have public disease outbreak facts: disease, start and end
 character-minute bounds, and intensity. Acquisition uses deterministic
 continuous overlap plus innate and acquired immunity, so dividing the same stay

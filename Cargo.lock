@@ -95,6 +95,7 @@ dependencies = [
  "enum-assoc",
  "enumflags2",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

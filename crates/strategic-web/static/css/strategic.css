@@ -1900,6 +1900,44 @@ body.character-action-dialog-open { overflow: hidden; }
   display: contents;
 }
 
+.settlement-npc-strip {
+  display: flex;
+  gap: .55rem;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-x: auto;
+  padding: .45rem .8rem;
+  min-height: 4.8rem;
+}
+
+.settlement-npc-portrait {
+  width: 4.4rem;
+  flex: 0 0 4.4rem;
+  border: 1px solid var(--border-color, #665b48);
+  border-radius: .35rem;
+  background: rgba(20, 18, 15, .82);
+  color: inherit;
+  padding: .3rem;
+}
+
+.settlement-npc-portrait.active,
+.settlement-npc-portrait[aria-pressed="true"] {
+  border-color: #d4aa53;
+  box-shadow: 0 0 0 2px rgba(212, 170, 83, .28);
+}
+
+.settlement-npc-initials {
+  display: grid;
+  place-items: center;
+  height: 2.4rem;
+  background: #373026;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.settlement-npc-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .7rem; margin-top: .2rem; }
+.npc-description-stage p { max-width: 42rem; text-align: center; }
+
 .party-portrait {
   position: relative;
   display: grid;
