@@ -6,8 +6,8 @@ use crate::{
     settlement_population::{settlement_npc, settlement_npc_presence},
     strategic::{
         CustodyHolderKind, CustodyObjectKind, case_authority, case_custody,
-        living_party_member_ids, party_authority, party_journey_authority,
-        require_no_unresolved_encounter, require_party_ready,
+        geographic_distance_e7_m, living_party_member_ids, party_authority,
+        party_journey_authority, require_no_unresolved_encounter, require_party_ready,
         require_strategic_character_authority, require_strategic_gateway, settlement,
         strategic_gateway_authority__view,
     },
@@ -22,6 +22,25 @@ use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, ta
 use std::collections::BTreeMap;
 
 const MAX_TEXT: usize = 512;
+const AREA_RADIUS_TOLERANCE_M: u64 = 1;
+
+fn geographic_area_contains_e7(
+    center_longitude_e7: i32,
+    center_latitude_e7: i32,
+    radius_m: u32,
+    longitude_e7: i32,
+    latitude_e7: i32,
+) -> bool {
+    geographic_distance_e7_m(
+        center_longitude_e7,
+        center_latitude_e7,
+        longitude_e7,
+        latitude_e7,
+    )
+    .is_some_and(|distance_m| {
+        distance_m <= u64::from(radius_m).saturating_add(AREA_RADIUS_TOLERANCE_M)
+    })
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, SpacetimeType)]
 pub struct CaseSiteId {
@@ -1362,7 +1381,16 @@ fn validate_action_position(
                 actor.current_settlement_id.as_deref() == Some(&area.origin_settlement_id);
             let at_case_site = character_case_site_id(ctx, actor.id)
                 .and_then(|id| ctx.db.case_site_authority().id_key().find(&id))
-                .is_some_and(|site| site.case_id == area.case_id);
+                .is_some_and(|site| {
+                    site.case_id == area.case_id
+                        && geographic_area_contains_e7(
+                            area.center_longitude_e7,
+                            area.center_latitude_e7,
+                            area.radius_m,
+                            site.longitude_e7,
+                            site.latitude_e7,
+                        )
+                });
             if !in_origin && !at_case_site {
                 return Err("The party is not near the approximate search area".into());
             }
@@ -3358,6 +3386,8 @@ mod tests {
         assert!(position.contains("presence.settlement_id.as_str()"));
         assert!(position.contains("predecessor.target_kind != \"area\""));
         assert!(position.contains("validate_action_position("));
+        assert!(position.contains("geographic_area_contains_e7("));
+        assert!(position.contains("site.case_id == area.case_id"));
         assert!(position.contains("The party must occupy the action's authoritative site"));
         let reducer = production
             .split("pub(crate) fn perform_investigation_action_authorized")
@@ -3374,5 +3404,14 @@ mod tests {
             .expect("lead write");
         assert!(position_check < time_advance);
         assert!(position_check < lead_write);
+    }
+
+    #[test]
+    fn geographic_area_rejects_distant_and_invalid_sites_and_includes_boundary() {
+        assert!(geographic_area_contains_e7(0, 0, 1_000, 45_000, 0));
+        assert!(geographic_area_contains_e7(0, 0, 1_000, 89_932, 0));
+        assert!(!geographic_area_contains_e7(0, 0, 1_000, 100_000, 0));
+        assert!(!geographic_area_contains_e7(0, 0, 1_000, i32::MAX, 0));
+        assert!(!geographic_area_contains_e7(0, 0, 1_000, 0, i32::MAX));
     }
 }

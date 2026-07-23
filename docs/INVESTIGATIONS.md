@@ -125,7 +125,9 @@ risk remain authoritative.
 Location is revalidated at execution, not merely at issuance. Contact actions
 use the referred NPC's current settlement and presence window (or the same
 settlement as a bound ask-around action). Track actions remain bound to the
-materialized predecessor area until they disclose the site, and later
+materialized predecessor area until they disclose the site; occupying another
+site from the same case counts only when its valid geographic coordinates fall
+within that area's meter radius. Later
 site-targeting actions require actual site occupancy. Traveling elsewhere
 invalidates the attempt before time is spent or a lead is written.
 
