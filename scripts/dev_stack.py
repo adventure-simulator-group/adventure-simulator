@@ -551,7 +551,7 @@ def stop_spacetime(metadata_file: Path, expected_config: dict[str, object]) -> N
     metadata_file.unlink()
 
 
-def start_spawner(run_dir: Path, config: dict[str, object]) -> subprocess.Popen[str] | None:
+def start_spawner(run_dir: Path, config: dict[str, object], gateway_token: str) -> subprocess.Popen[str] | None:
     metadata_file = run_dir / "spawner.identity.json"
     status = check_spawner_identity(metadata_file, config)
     if status == 0:
@@ -565,7 +565,15 @@ def start_spawner(run_dir: Path, config: dict[str, object]) -> subprocess.Popen[
         "--spacetimedb-module", str(config["database"]), "--tactical-server-bin", tactical,
         "--base-port", str(config["base_port"]), "--host", str(config["host"]),
     ]
-    process = spawn_recorded(command, metadata_file, run_dir / "spawner.log", config)
+    previous = os.environ.get("SPACETIMEDB_TOKEN")
+    os.environ["SPACETIMEDB_TOKEN"] = gateway_token
+    try:
+        process = spawn_recorded(command, metadata_file, run_dir / "spawner.log", config)
+    finally:
+        if previous is None:
+            os.environ.pop("SPACETIMEDB_TOKEN", None)
+        else:
+            os.environ["SPACETIMEDB_TOKEN"] = previous
     time.sleep(0.5)
     metadata = json.loads(metadata_file.read_text())
     if process.poll() is not None or not identity_matches(metadata["process"]):
@@ -673,7 +681,7 @@ def run_profile(
                     "127.0.0.1",
                     int(values["tactical_port"]),
                 )
-                spawner = start_spawner(run_dir, spawner_config)
+                spawner = start_spawner(run_dir, spawner_config, gateway_token)
             built = subprocess.run(["cargo", "build", "-p", "strategic-web"], cwd=ROOT)
             if built.returncode:
                 return built.returncode
@@ -739,7 +747,7 @@ def canonical_spawner(action: str) -> int:
             "canonical", "http://localhost:3000", "adventuresim-stdb-module", "127.0.0.1", 6001
         )
         if action == "start":
-            start_spawner(run_dir, config)
+            start_spawner(run_dir, config, spacetime_auth_token())
         else:
             status = check_spawner_identity(identity_file, config)
             if status == 1:

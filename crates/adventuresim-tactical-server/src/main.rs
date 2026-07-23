@@ -40,6 +40,10 @@ struct Args {
     #[arg(long)]
     mission_id: String,
 
+    /// One-use dispatcher claim, supplied only through the child environment.
+    #[arg(long, env = "ADVENTURESIM_TACTICAL_CLAIM", hide_env_values = true)]
+    tactical_claim: String,
+
     /// Scene key (e.g., "hills", "desert")
     #[arg(long)]
     scene_key: String,
@@ -543,6 +547,7 @@ fn on_server_started(
 
     conn.reducers().create_tactical_server_for_request(
         args.mission_id.clone(),
+        args.tactical_claim.clone(),
         args.addr.to_string(),
         default(),
     )?;

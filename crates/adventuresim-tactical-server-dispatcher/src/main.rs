@@ -11,9 +11,11 @@ use std::sync::{Arc, Mutex};
 
 use adventuresim_stdb_client::spacetimedb_sdk::{DbContext, Table};
 use adventuresim_stdb_client::{
-    DbConnection, TacticalServerRequestTableAccess, tactical_server_requestQueryTableAccess,
+    DbConnection, TacticalServerRequestTableAccess, authorize_tactical_server_claim,
+    tactical_server_requestQueryTableAccess,
 };
 use clap::Parser;
+use sha2::{Digest, Sha256};
 use tracing::{error, info, warn};
 
 #[derive(Parser, Debug)]
@@ -27,6 +29,10 @@ struct Args {
     /// SpacetimeDB module name
     #[arg(long, default_value = "adventuresim-stdb-module")]
     spacetimedb_module: String,
+
+    /// Auth token for the registered strategic gateway identity.
+    #[arg(long, env = "SPACETIMEDB_TOKEN")]
+    spacetimedb_token: String,
 
     /// Path to tactical-server binary
     #[arg(long, default_value = "adventuresim-tactical-server")]
@@ -65,6 +71,7 @@ fn main() {
     let conn = DbConnection::builder()
         .with_uri(&args.spacetimedb_url)
         .with_database_name(&args.spacetimedb_module)
+        .with_token(Some(args.spacetimedb_token.clone()))
         .on_connect(|_ctx, _identity, _address| {
             info!("Connected to SpacetimeDB");
         })
@@ -99,8 +106,7 @@ fn main() {
     conn.db
         .tactical_server_request()
         .on_insert(move |_ctx, request| {
-            let mut spawned = spawned_clone.lock().unwrap();
-            if spawned.contains(&request.mission_id) {
+            if spawned_clone.lock().unwrap().contains(&request.mission_id) {
                 return;
             }
 
@@ -111,37 +117,61 @@ fn main() {
                 port
             };
 
-            info!(
-                "Spawning tactical-server for mission {} (scene: {}) on port {}",
-                request.mission_id, request.scene_key, port
-            );
-
+            let claim_bytes: [u8; 32] = rand::random();
+            let claim = claim_bytes
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>();
+            let claim_hash = Sha256::digest(claim.as_bytes()).to_vec();
+            let mission_id = request.mission_id.clone();
+            let scene_key = request.scene_key.clone();
             let required_enemy_kills = request.required_enemy_kills.to_string();
-
-            match Command::new(&bin)
-                .args([
-                    "--mission-id",
-                    &request.mission_id,
-                    "--scene-key",
-                    &request.scene_key,
-                    "--required-enemy-kills",
-                    &required_enemy_kills,
-                    "--addr",
-                    &SocketAddr::new(host, port).to_string(),
-                    "--spacetimedb-url",
-                    &stdb_url,
-                    "--spacetimedb-module",
-                    &stdb_module,
-                ])
-                .spawn()
-            {
-                Ok(child) => {
-                    info!("Spawned tactical-server (pid {})", child.id());
-                    spawned.insert(request.mission_id.clone());
-                }
-                Err(e) => {
-                    error!("Failed to spawn tactical-server: {}", e);
-                }
+            let spawned = spawned_clone.clone();
+            let bin = bin.clone();
+            let stdb_url = stdb_url.clone();
+            let stdb_module = stdb_module.clone();
+            if let Err(error) = _ctx.reducers.authorize_tactical_server_claim_then(
+                mission_id.clone(),
+                claim_hash,
+                move |_ctx, result| match result {
+                    Ok(Ok(())) => {
+                        info!(
+                            "Spawning tactical-server for mission {} (scene: {}) on port {}",
+                            mission_id, scene_key, port
+                        );
+                        match Command::new(&bin)
+                            .env_remove("SPACETIMEDB_TOKEN")
+                            .env("ADVENTURESIM_TACTICAL_CLAIM", &claim)
+                            .args([
+                                "--mission-id",
+                                &mission_id,
+                                "--scene-key",
+                                &scene_key,
+                                "--required-enemy-kills",
+                                &required_enemy_kills,
+                                "--addr",
+                                &SocketAddr::new(host, port).to_string(),
+                                "--spacetimedb-url",
+                                &stdb_url,
+                                "--spacetimedb-module",
+                                &stdb_module,
+                            ])
+                            .spawn()
+                        {
+                            Ok(child) => {
+                                info!("Spawned tactical-server (pid {})", child.id());
+                                spawned.lock().unwrap().insert(mission_id);
+                            }
+                            Err(error) => {
+                                error!("Failed to spawn tactical-server: {error}");
+                            }
+                        }
+                    }
+                    Ok(Err(error)) => error!("Tactical claim rejected: {error}"),
+                    Err(error) => error!("Tactical claim reducer failed: {error}"),
+                },
+            ) {
+                error!("Failed to authorize tactical claim: {error}");
             }
         });
 
@@ -157,5 +187,20 @@ fn main() {
             }
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn child_spawn_waits_for_claim_and_drops_gateway_token() {
+        let source = include_str!("main.rs");
+        let callback = source
+            .split("authorize_tactical_server_claim_then")
+            .nth(1)
+            .expect("claim completion callback");
+        assert!(callback.contains("Ok(Ok(()))"));
+        assert!(callback.contains(".env_remove(\"SPACETIMEDB_TOKEN\")"));
+        assert!(callback.contains(".env(\"ADVENTURESIM_TACTICAL_CLAIM\""));
     }
 }

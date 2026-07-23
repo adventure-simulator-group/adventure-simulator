@@ -829,7 +829,7 @@ async fn autoresolve_quest(
         &state,
         character_id,
         PartyAction::AutoresolveMission {
-            mission_id: format!("autoresolve-{}", super::data::new_id()),
+            mission_id: format!("mission:autoresolve-{}", super::data::new_id()),
         },
     )
     .await;

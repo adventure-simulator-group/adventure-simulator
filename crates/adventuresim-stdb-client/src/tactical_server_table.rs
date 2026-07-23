@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::tactical_server_type::TacticalServer;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `tactical_server`.
 ///
@@ -44,12 +49,8 @@ impl<'ctx> __sdk::Table for TacticalServerTableHandle<'ctx> {
     type Row = TacticalServer;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = TacticalServer> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = TacticalServer> + '_ { self.imp.iter() }
 
     type InsertCallbackId = TacticalServerInsertCallbackId;
 
@@ -78,90 +79,10 @@ impl<'ctx> __sdk::Table for TacticalServerTableHandle<'ctx> {
     }
 }
 
-pub struct TacticalServerUpdateCallbackId(__sdk::CallbackId);
-
-impl<'ctx> __sdk::TableWithPrimaryKey for TacticalServerTableHandle<'ctx> {
-    type UpdateCallbackId = TacticalServerUpdateCallbackId;
-
-    fn on_update(
-        &self,
-        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
-    ) -> TacticalServerUpdateCallbackId {
-        TacticalServerUpdateCallbackId(self.imp.on_update(Box::new(callback)))
-    }
-
-    fn remove_on_update(&self, callback: TacticalServerUpdateCallbackId) {
-        self.imp.remove_on_update(callback.0)
-    }
-}
-
-/// Access to the `identity` unique index on the table `tactical_server`,
-/// which allows point queries on the field of the same name
-/// via the [`TacticalServerIdentityUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.tactical_server().identity().find(...)`.
-pub struct TacticalServerIdentityUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<TacticalServer, __sdk::Identity>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> TacticalServerTableHandle<'ctx> {
-    /// Get a handle on the `identity` unique index on the table `tactical_server`.
-    pub fn identity(&self) -> TacticalServerIdentityUnique<'ctx> {
-        TacticalServerIdentityUnique {
-            imp: self
-                .imp
-                .get_unique_constraint::<__sdk::Identity>("identity"),
-            phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<'ctx> TacticalServerIdentityUnique<'ctx> {
-    /// Find the subscribed row whose `identity` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &__sdk::Identity) -> Option<TacticalServer> {
-        self.imp.find(col_val)
-    }
-}
-
-/// Access to the `mission_id` unique index on the table `tactical_server`,
-/// which allows point queries on the field of the same name
-/// via the [`TacticalServerMissionIdUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.tactical_server().mission_id().find(...)`.
-pub struct TacticalServerMissionIdUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<TacticalServer, String>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> TacticalServerTableHandle<'ctx> {
-    /// Get a handle on the `mission_id` unique index on the table `tactical_server`.
-    pub fn mission_id(&self) -> TacticalServerMissionIdUnique<'ctx> {
-        TacticalServerMissionIdUnique {
-            imp: self.imp.get_unique_constraint::<String>("mission_id"),
-            phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<'ctx> TacticalServerMissionIdUnique<'ctx> {
-    /// Find the subscribed row whose `mission_id` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &String) -> Option<TacticalServer> {
-        self.imp.find(col_val)
-    }
-}
-
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<TacticalServer>("tactical_server");
-    _table.add_unique_constraint::<__sdk::Identity>("identity", |row| &row.identity);
-    _table.add_unique_constraint::<String>("mission_id", |row| &row.mission_id);
+
+        let _table = client_cache.get_or_make_table::<TacticalServer>("tactical_server");
 }
 
 #[doc(hidden)]
@@ -169,24 +90,26 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<TacticalServer>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<TacticalServer>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<TacticalServer>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `TacticalServer`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait tactical_serverQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `TacticalServer`.
-    fn tactical_server(&self) -> __sdk::__query_builder::Table<TacticalServer>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `TacticalServer`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait tactical_serverQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `TacticalServer`.
+            fn tactical_server(&self) -> __sdk::__query_builder::Table<TacticalServer>;
+        }
 
-impl tactical_serverQueryTableAccess for __sdk::QueryTableAccessor {
-    fn tactical_server(&self) -> __sdk::__query_builder::Table<TacticalServer> {
-        __sdk::__query_builder::Table::new("tactical_server")
-    }
-}
+        impl tactical_serverQueryTableAccess for __sdk::QueryTableAccessor {
+            fn tactical_server(&self) -> __sdk::__query_builder::Table<TacticalServer> {
+                __sdk::__query_builder::Table::new("tactical_server")
+            }
+        }
+

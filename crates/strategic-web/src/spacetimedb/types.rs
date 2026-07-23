@@ -641,8 +641,6 @@ pub struct BattleResult {
     pub battle_id: String,
     pub outcome_source_id: String,
     pub party_id: String,
-    pub mission_id: Option<String>,
-    pub hostile_group_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1460,8 +1458,6 @@ pub struct TacticalServer {
     pub identity: Option<String>,
     pub mission_id: String,
     pub scene_key: String,
-    pub case_site_id: Option<String>,
-    pub hostile_group_id: Option<String>,
     pub party_id: String,
     #[serde(default)]
     pub status: MissionStatus,
@@ -1474,13 +1470,7 @@ pub struct TacticalServer {
 }
 
 impl TacticalServer {
-    pub fn pending(
-        mission_id: String,
-        scene_key: String,
-        case_site_id: Option<String>,
-        hostile_group_id: Option<String>,
-        party_id: String,
-    ) -> Self {
+    pub fn pending(mission_id: String, scene_key: String, party_id: String) -> Self {
         Self {
             identity: None,
             mission_id,
@@ -1489,8 +1479,6 @@ impl TacticalServer {
             addr: String::new(),
             cert_digest: String::new(),
             character_id: None,
-            case_site_id,
-            hostile_group_id,
             party_id,
         }
     }
@@ -1531,8 +1519,6 @@ impl MissionStatus {
 pub struct TacticalServerRequest {
     pub mission_id: String,
     pub scene_key: String,
-    pub case_site_id: Option<String>,
-    pub hostile_group_id: Option<String>,
     pub party_id: String,
     pub requested_by: u64,
     pub required_enemy_kills: u32,

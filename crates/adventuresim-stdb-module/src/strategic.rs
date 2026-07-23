@@ -38,7 +38,9 @@ use crate::{
     item::{InventoryItem, inventory_item, item},
     repair::item_condition,
     settlement_population::{settlement_npc, settlement_npc_presence},
-    tactical::tactical_server_request,
+    tactical::{
+        tactical_server_authority, tactical_server_claim, tactical_server_request_authority,
+    },
     time::{
         advance_travel_time, character_apprenticeship, character_time, character_training_schedule,
         preview_travel_time, settle_travel_boundary,
@@ -438,6 +440,39 @@ mod healing_tests {
         assert!(body.contains("commit_victorious_battle("));
         assert!(body.contains("autoresolve_report()"));
         assert!(!body.contains("record_battle_result("));
+    }
+
+    #[test]
+    fn mission_gateway_reducers_require_character_authority() {
+        let source = include_str!("strategic.rs");
+        for function in [
+            "store_battle_loot",
+            "autoresolve_mission",
+            "cancel_mission_request",
+        ] {
+            let body = source
+                .split(&format!("pub fn {function}"))
+                .nth(1)
+                .and_then(|tail| tail.split("#[reducer]").next())
+                .expect("reducer body");
+            assert!(
+                body.contains("require_strategic_character_authority(ctx, character_id)?"),
+                "{function} lacks gateway authority"
+            );
+        }
+    }
+
+    #[test]
+    fn loot_transfer_rejects_duplicates_and_has_no_unchecked_subtraction() {
+        let source = include_str!("strategic.rs");
+        let body = source
+            .split("pub fn store_battle_loot")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("loot reducer");
+        assert!(body.contains("Duplicate battle loot IDs"));
+        assert!(body.contains("checked_sub"));
+        assert!(!body.contains(".unwrap()"));
     }
 
     #[test]
@@ -2144,8 +2179,6 @@ pub struct BattleResult {
     pub outcome_source_id: String,
     #[index(btree)]
     pub party_id: String,
-    pub mission_id: Option<String>,
-    pub hostile_group_id: Option<String>,
 }
 
 /// Reproducible strategic-combat diagnostics retained whether the party wins
@@ -2212,7 +2245,34 @@ pub struct HostileGroupAuthority {
     pub enemy_type: String,
     pub enemy_count: u32,
     pub difficulty: i32,
+    pub drop_item_id: Option<String>,
+    pub drop_quantity: u32,
     pub defeated: bool,
+}
+
+fn materialize_hostile_group(
+    ctx: &ReducerContext,
+    site: &CaseSiteAuthority,
+    enemy_type: String,
+    enemy_count: u32,
+    difficulty: i32,
+) -> Result<HostileGroupAuthority, String> {
+    let id = format!("hostile-group:{}", site.id.value);
+    if let Some(existing) = ctx.db.hostile_group_authority().id().find(&id) {
+        return Ok(existing);
+    }
+    let group = HostileGroupAuthority {
+        id,
+        case_site_id: site.id.clone(),
+        drop_item_id: autoresolve_drop(&enemy_type)?.map(str::to_string),
+        drop_quantity: enemy_count,
+        enemy_type,
+        enemy_count,
+        difficulty,
+        defeated: false,
+    };
+    ctx.db.hostile_group_authority().insert(group.clone());
+    Ok(group)
 }
 
 /// Idempotency and attribution receipt for a persistent victorious outcome.
@@ -5558,6 +5618,14 @@ pub(crate) fn commit_victorious_battle(
     dropped_items: Vec<(String, u32)>,
     include_random_gold: bool,
 ) -> Result<bool, String> {
+    adventuresim_core::mission::OutcomeSourceId::new(outcome_source_id).map_err(str::to_string)?;
+    adventuresim_core::mission::BattleId::new(battle_id).map_err(str::to_string)?;
+    if let Some(id) = mission_id {
+        adventuresim_core::mission::MissionId::new(id).map_err(str::to_string)?;
+    }
+    if let Some(id) = hostile_group_id {
+        adventuresim_core::mission::HostileGroupId::new(id).map_err(str::to_string)?;
+    }
     if ctx
         .db
         .outcome_source_authority()
@@ -5600,8 +5668,6 @@ pub(crate) fn commit_victorious_battle(
         battle_id: battle_id.to_string(),
         outcome_source_id: outcome_source_id.to_string(),
         party_id: party_id.to_string(),
-        mission_id: mission_id.map(str::to_string),
-        hostile_group_id: hostile_group_id.map(str::to_string),
     });
     let difficulty = group.as_ref().map_or(1, |group| group.difficulty);
     for member_id in living_party_member_ids(ctx, party_id) {
@@ -5638,12 +5704,11 @@ pub(crate) fn commit_victorious_battle(
                 .case_site_authority()
                 .id_key()
                 .find(&group.case_site_id.value)
-            && let Some(quest) = ctx.db.quest().id().find(&site.case_id)
         {
             *combined
                 .entry(crate::item::currency_id_for_settlement(
                     ctx,
-                    &quest.settlement_id,
+                    &site.origin_settlement_id,
                 )?)
                 .or_default() += gold;
         }
@@ -5671,9 +5736,14 @@ pub fn store_battle_loot(
     loot_item_ids: Vec<u64>,
     quantities: Vec<u32>,
 ) -> Result<(), String> {
+    require_strategic_character_authority(ctx, character_id)?;
+    adventuresim_core::mission::BattleId::new(battle_id.clone()).map_err(str::to_string)?;
     crate::character::require_living_character(ctx, character_id)?;
     if loot_item_ids.len() != quantities.len() {
         return Err("Loot entries must be aligned".into());
+    }
+    if loot_item_ids.iter().copied().collect::<HashSet<_>>().len() != loot_item_ids.len() {
+        return Err("Duplicate battle loot IDs are not allowed".into());
     }
     let character = ctx
         .db
@@ -5719,9 +5789,12 @@ pub fn store_battle_loot(
     };
     let mut total_value = 0_u64;
     for entry in &loot {
-        total_value = total_value.saturating_add(
-            objective_item_value(ctx, &entry.item_id)?.saturating_mul(u64::from(entry.quantity)),
-        );
+        let entry_value = objective_item_value(ctx, &entry.item_id)?
+            .checked_mul(u64::from(entry.quantity))
+            .ok_or("Battle loot value overflow")?;
+        total_value = total_value
+            .checked_add(entry_value)
+            .ok_or("Battle loot value overflow")?;
     }
     let recorded_participants: Vec<_> = ctx
         .db
@@ -5750,12 +5823,20 @@ pub fn store_battle_loot(
     }
     for entry in loot {
         add_to_party_inventory(ctx, &party_id, &entry.item_id, entry.quantity);
-        let original = ctx.db.battle_loot_item().id().find(entry.id).unwrap();
+        let original = ctx
+            .db
+            .battle_loot_item()
+            .id()
+            .find(entry.id)
+            .ok_or("Battle loot changed during transfer")?;
         if original.quantity == entry.quantity {
             ctx.db.battle_loot_item().id().delete(entry.id);
         } else {
             let mut original = original;
-            original.quantity -= entry.quantity;
+            original.quantity = original
+                .quantity
+                .checked_sub(entry.quantity)
+                .ok_or("Battle loot quantity underflow")?;
             ctx.db.battle_loot_item().id().update(original);
         }
     }
@@ -7257,6 +7338,7 @@ fn create_strategic_incident(
         return Ok(None);
     }
     let case_site_id = format!("case-site:{quest_id}");
+    let enemy_count = living_party_member_ids(ctx, party_id).len().max(2) as i32;
     ctx.db.quest().insert(Quest {
         id: quest_id.clone(),
         title: spec.title.into(),
@@ -7268,7 +7350,7 @@ fn create_strategic_incident(
         status: QuestStatus::Accepted,
         accepted_by: Some(party_id.into()),
         enemy_type: spec.enemy_type.into(),
-        enemy_count: living_party_member_ids(ctx, party_id).len().max(2) as i32,
+        enemy_count,
     });
     let site = CaseSiteAuthority {
         id_key: case_site_id.clone(),
@@ -7284,6 +7366,13 @@ fn create_strategic_incident(
         distance_m: 0,
     };
     ctx.db.case_site_authority().insert(site.clone());
+    materialize_hostile_group(
+        ctx,
+        &site,
+        spec.enemy_type.into(),
+        enemy_count as u32,
+        spec.difficulty,
+    )?;
     disclose_exact_case_site(ctx, party.leader_id, &quest_id, &site, "the incident")?;
     ctx.db.strategic_incident().insert(StrategicIncident {
         quest_id: quest_id.clone(),
@@ -10510,32 +10599,13 @@ pub(crate) fn ensure_bound_mission_authority(
             Err("Mission ID is already bound to different authority".into())
         };
     }
-    let quest = ctx
-        .db
-        .quest()
-        .id()
-        .find(&case_site.case_id)
-        .ok_or("Case combat definition not found")?;
-    let hostile_group_id = format!("hostile-group:{}", case_site.id.value);
-    if ctx
+    let group = ctx
         .db
         .hostile_group_authority()
-        .id()
-        .find(&hostile_group_id)
-        .is_none()
-    {
-        ctx.db
-            .hostile_group_authority()
-            .insert(HostileGroupAuthority {
-                id: hostile_group_id.clone(),
-                case_site_id: case_site.id.clone(),
-                enemy_type: quest.enemy_type,
-                enemy_count: u32::try_from(quest.enemy_count.max(0))
-                    .map_err(|_| "Enemy count exceeds mission limits")?,
-                difficulty: quest.difficulty,
-                defeated: false,
-            });
-    }
+        .iter()
+        .find(|group| group.case_site_id == case_site.id)
+        .ok_or("Case site has no materialized hostile group")?;
+    let hostile_group_id = group.id;
     let authority = MissionAuthority {
         id: mission_id.to_string(),
         party_id: party_id.to_string(),
@@ -10621,6 +10691,8 @@ pub fn autoresolve_mission(
     character_id: u64,
     mission_id: String,
 ) -> Result<(), String> {
+    require_strategic_character_authority(ctx, character_id)?;
+    adventuresim_core::mission::MissionId::new(mission_id.clone()).map_err(str::to_string)?;
     crate::character::require_living_character(ctx, character_id)?;
     let Some(character) = ctx.db.character().id().find(character_id) else {
         return Err("Character not found".into());
@@ -10679,6 +10751,34 @@ pub fn autoresolve_mission(
         .id()
         .find(&hostile_group_id.to_string())
         .ok_or("Hostile group not found")?;
+    if hostile_group.defeated {
+        return Err("Hostile group is already defeated".into());
+    }
+    if ctx
+        .db
+        .tactical_server_request_authority()
+        .iter()
+        .any(|request| {
+            ctx.db
+                .mission_authority()
+                .id()
+                .find(&request.mission_id)
+                .is_some_and(|authority| {
+                    authority.hostile_group_id.as_deref() == Some(hostile_group_id)
+                })
+        })
+        || ctx.db.tactical_server_authority().iter().any(|server| {
+            ctx.db
+                .mission_authority()
+                .id()
+                .find(&server.mission_id)
+                .is_some_and(|authority| {
+                    authority.hostile_group_id.as_deref() == Some(hostile_group_id)
+                })
+        })
+    {
+        return Err("Hostile group already has a tactical resolution in progress".into());
+    }
 
     let member_ids = living_party_member_ids(ctx, &party_id);
     let allies = member_ids
@@ -10745,6 +10845,8 @@ pub fn cancel_mission_request(
     character_id: u64,
     mission_id: String,
 ) -> Result<(), String> {
+    require_strategic_character_authority(ctx, character_id)?;
+    adventuresim_core::mission::MissionId::new(mission_id.clone()).map_err(str::to_string)?;
     let character = crate::character::require_living_character(ctx, character_id)?;
     let party_id = character.party_id.ok_or("Character has no party")?;
     let party = ctx
@@ -10758,7 +10860,7 @@ pub fn cancel_mission_request(
     }
     let request = ctx
         .db
-        .tactical_server_request()
+        .tactical_server_request_authority()
         .mission_id()
         .find(&mission_id)
         .ok_or("Mission request not found")?;
@@ -10766,7 +10868,11 @@ pub fn cancel_mission_request(
         return Err("Mission request belongs to another party".into());
     }
     ctx.db
-        .tactical_server_request()
+        .tactical_server_request_authority()
+        .mission_id()
+        .delete(&mission_id);
+    ctx.db
+        .tactical_server_claim()
         .mission_id()
         .delete(&mission_id);
     Ok(())
@@ -11385,7 +11491,7 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         enemy_type: enemy.into(),
         enemy_count,
     });
-    ctx.db.case_site_authority().insert(CaseSiteAuthority {
+    let site = CaseSiteAuthority {
         id_key: format!("case-site:{quest_id}"),
         id: CaseSiteId::from(format!("case-site:{quest_id}")),
         case_id: quest_id.clone(),
@@ -11397,7 +11503,9 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         latitude_e7: ((settlement.coord_y + offset_y) * 10_000_000.0).round() as i32,
         coordinates_are_geographic: geographic,
         distance_m,
-    });
+    };
+    ctx.db.case_site_authority().insert(site.clone());
+    materialize_hostile_group(ctx, &site, enemy.into(), enemy_count as u32, difficulty)?;
     ctx.db.quest_issuer().insert(QuestIssuer {
         quest_id,
         settlement_id: settlement.id,
