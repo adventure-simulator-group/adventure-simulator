@@ -50,7 +50,8 @@ Validation fails unless:
 - disappearance objectives match the canonical cause and both terminal routes
   converge on the same person or asset;
 - recurring combat alternatives name the same hostile group;
-- contract wording contains only the issuer's belief, never canonical truth.
+- every rare bridge names the exact reachable action that emits its exact
+  evidence authority.
 
 Unsupported cause/finale combinations are not selectable. Voluntary
 disappearance is excluded until locate/testimony/report producers exist, and
@@ -67,8 +68,14 @@ observer-owned knowledge; browsers never receive canonical causes, traces,
 undiscovered evidence, true/decoy status, or hidden coordinates.
 
 Canonical case IDs are used by objective authority. Journals use a separate
-public case ID. Dialogue and action adapters privately map both identities so
-observer provenance remains exact without leaking the canonical reference.
+public case ID. The reducer samples a separate 128-bit observer-ID secret and
+persists it only in generation authority. SHA-256 domain-separated IDs for
+actions, witnesses, propositions, capabilities, leads, and outcomes are minted
+from that secret; none embeds or is reproducible from canonical or other
+browser-visible identifiers. Action resolution seeds are independently sampled
+and persisted when capability authority is issued or revised. Exact retries are
+idempotent, while a new version receives fresh entropy and a version-separated
+roll.
 
 ## Discovery and resolution
 
@@ -81,10 +88,19 @@ witness. Corrections reuse the proposition they revise, preserving an earlier
 false believed pin until the correction is learned.
 
 Only an authoritative typed exact destination output can create an exact pin.
-Retrieve and rescue outputs use the versioned custody producer. Return and
+Discovery actions execute at a known contact, settlement, area, or predecessor
+route and may reveal travel-capable knowledge. They never also resolve custody.
+After travel establishes authoritative occupancy, a separate `InspectSite` or
+`LayAmbush` action may resolve custody or prepare the finale. Retrieve and
+rescue outputs use the versioned custody producer. Return and
 expose use compiled generic dialogue responses, pre-issued bindings, the exact
 generated recipient, and one-use consumption. Cases and linked local problems
 may resolve without a contract.
+
+Generated cases create no `Contract` rows. Tavern discovery and NPC referrals
+are their entry points. Settlement activity counts open generated cases
+directly and immediately replenishes resolved generated problems independently
+of contract acceptance, tracking, reporting, or payment.
 
 Recurring finales use the existing strategic mission authority from #217.
 Pending `Defeat` and `DriveOff` leaves for the generated hostile group become
@@ -103,4 +119,6 @@ cargo run -p adventuresim-core --bin questgen-check -- counterfactual 42 43
 
 `validate` exercises both initial template ordinals, `explain` prints the
 private manifest for development, `audit` reports family marginals, and
-`counterfactual` compares stable high-level selections.
+`counterfactual` compares stable high-level selections. Candidate domains,
+persistent-witness input bytes, visited nodes, trace records, and trace bytes
+all have production bounds before ordering, cloning, or serialization.
