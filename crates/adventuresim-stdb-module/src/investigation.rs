@@ -1090,6 +1090,26 @@ fn issue_rumor_action_graph(
                     _ => None,
                 })
                 .unwrap_or(InvestigationActionConsequence::None);
+            let evidence_summary = |evidence_id: &str| {
+                manifest
+                    .evidence
+                    .iter()
+                    .find(|evidence| evidence.id.0 == evidence_id)
+                    .map(|evidence| evidence.safe_description.clone())
+            };
+            let learned_condition = generated.outputs.iter().find_map(|output| match output {
+                adventuresim_core::quest_generation::GeneratedActionOutput::PatternCondition {
+                    evidence_id,
+                    ..
+                } => evidence_summary(&evidence_id.0),
+                _ => None,
+            });
+            let earned_clue = generated.outputs.iter().find_map(|output| match output {
+                adventuresim_core::quest_generation::GeneratedActionOutput::Evidence {
+                    evidence_id,
+                } => evidence_summary(&evidence_id.0),
+                _ => None,
+            });
             issue_investigation_action_capability(
                 ctx,
                 capability_id,
@@ -1102,9 +1122,13 @@ fn issue_rumor_action_graph(
                 ctx.random::<u64>(),
                 7_000,
                 generated.safe_summary.clone(),
-                "Complete the preceding generated lead and remain with your ready, co-located party."
-                    .into(),
-                "The investigation produces a new, source-attributed lead.".into(),
+                learned_condition.map_or_else(
+                    || "Complete the preceding generated lead and remain with your ready, co-located party.".into(),
+                    |clue| format!("First learn and retain this corroborated clue: {clue}"),
+                ),
+                earned_clue.unwrap_or_else(|| {
+                    "The investigation produces a new, source-attributed lead.".into()
+                }),
                 consequence,
                 generated.prerequisite.as_ref().map_or_else(String::new, remap),
                 remap(&generated.alternate),
@@ -1693,6 +1717,69 @@ fn validate_action_position(
     }
 }
 
+fn validate_generated_pattern_condition(
+    ctx: &ReducerContext,
+    capability: &InvestigationActionCapability,
+    kind: action::InvestigationActionKind,
+    started_at: u64,
+) -> Result<(), String> {
+    let Some(outputs) = ctx
+        .db
+        .investigation_generated_action_output()
+        .capability_id()
+        .find(&capability.id)
+        .map(|row| {
+            serde_json::from_str::<Vec<adventuresim_core::quest_generation::GeneratedActionOutput>>(
+                &row.outputs_json,
+            )
+            .map_err(|_| "Generated action output authority is invalid")
+        })
+        .transpose()?
+    else {
+        return Ok(());
+    };
+    let Some((evidence_id, condition)) = outputs.iter().find_map(|output| match output {
+        adventuresim_core::quest_generation::GeneratedActionOutput::PatternCondition {
+            evidence_id,
+            condition,
+        } => Some((&evidence_id.0, condition)),
+        _ => None,
+    }) else {
+        return Ok(());
+    };
+    if !ctx
+        .db
+        .investigation_evidence_knowledge()
+        .owner_character_id()
+        .filter(capability.owner_character_id)
+        .any(|knowledge| {
+            knowledge.case_id == capability.case_id
+                && knowledge.evidence_id.as_str() == evidence_id.as_str()
+        })
+    {
+        return Err("The selected pattern has not been corroborated yet".into());
+    }
+    use adventuresim_core::quest_generation::GeneratedPatternCondition as C;
+    match condition {
+        C::NightWindow if started_at % 1_440 >= 360 && started_at % 1_440 < 1_200 => {
+            Err("The learned pattern requires acting during the nighttime window".into())
+        }
+        C::RoadRoute if capability.target_kind != "route" => {
+            Err("The learned roadside pattern is not bound to route geography".into())
+        }
+        C::VictimProfile { .. } if kind != action::InvestigationActionKind::Patrol => {
+            Err("The learned victim profile requires targeted surveillance".into())
+        }
+        C::BroadSurvey
+            if kind != action::InvestigationActionKind::SearchArea
+                || capability.target_kind != "area" =>
+        {
+            Err("An irregular pattern requires a broad area search".into())
+        }
+        _ => Ok(()),
+    }
+}
+
 fn validate_live_action_prerequisites(
     ctx: &ReducerContext,
     actor: &crate::Character,
@@ -2055,6 +2142,7 @@ pub(crate) fn perform_investigation_action_authorized(
     validate_action_route_graph(ctx, actor_id, &capability.case_id)?;
     let members = validate_live_action_prerequisites(ctx, &actor, &party_id, &capability, kind)?;
     let started_at = synchronize_party_activity_time(ctx, &members, party.leader_id)?;
+    validate_generated_pattern_condition(ctx, &capability, kind, started_at)?;
     let resolution = action::resolve(action::ResolutionInput {
         seed: capability.seed,
         attempt_index: expected_version,
@@ -2074,6 +2162,7 @@ pub(crate) fn perform_investigation_action_authorized(
     // This is the final mutation-boundary validation. Browser previews and
     // party votes are UX; only this transaction authorizes the shared time.
     validate_live_action_prerequisites(ctx, &actor, &party_id, &capability, kind)?;
+    validate_generated_pattern_condition(ctx, &capability, kind, started_at)?;
     for member_id in &members {
         if !advance_investigation_time(ctx, *member_id, u64::from(resolution.cost.minutes))? {
             return Err("Every living party member must survive the investigation interval".into());
@@ -3743,6 +3832,34 @@ mod tests {
         assert!(disappearance.contains("GeneratedDestinationStage::Exact"));
         assert!(disappearance.contains("\"resolve_social\""));
         assert!(disappearance.contains("\"site\""));
+    }
+
+    #[test]
+    fn generated_pattern_actions_require_the_exact_earned_clue() {
+        let source = include_str!("investigation.rs");
+        let validator = source
+            .split("fn validate_generated_pattern_condition")
+            .nth(1)
+            .and_then(|tail| tail.split("fn validate_live_action_prerequisites").next())
+            .expect("pattern-condition validator");
+        assert!(validator.contains("GeneratedActionOutput::PatternCondition"));
+        assert!(validator.contains("investigation_evidence_knowledge()"));
+        assert!(validator.contains("knowledge.evidence_id.as_str() == evidence_id.as_str()"));
+        assert!(validator.contains("started_at % 1_440"));
+        assert!(validator.contains("capability.target_kind != \"route\""));
+        assert!(validator.contains("InvestigationActionKind::SearchArea"));
+        let performer = source
+            .split("pub(crate) fn perform_investigation_action_authorized")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("authorized action performer");
+        assert_eq!(
+            performer
+                .matches("validate_generated_pattern_condition")
+                .count(),
+            2,
+            "pattern authority is checked before resolution and at the mutation boundary"
+        );
     }
 
     #[test]
