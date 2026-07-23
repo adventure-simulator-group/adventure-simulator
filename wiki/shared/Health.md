@@ -132,7 +132,21 @@ During recovery, the existing bounded party Medicine check supplies **1 percenta
 
 Autoresolve calculates every hit through the shared melee and ranged exchanges and commits its body part, cut and blunt shares, and projectile kind. Strategic wounds are split per limb into cuts, bruising, and fracture severity. Fracture severity is a condition within blunt trauma and never adds a second copy of the hit's health damage. Cuts remain open after battle: they deteriorate at 2.5% health per day and drain blood in proportion to wound size until manually bandaged. Bandaging consumes one bandage and permanently stabilizes that wound; its health-bar segment changes from solid red to banded pink. Bruising heals without a procedure. A single blunt hit over 18% limb health creates fracture severity proportional to the excess. Untreated fractures are graphite grey, while splinted fractures use lighter grey bands so treatment state is not communicated by color alone.
 
-Clicking any limb preserves the character sheet and replaces its right rail with surgery. The normal limb bar and surgery view share the same per-limb cut, bruise, fracture, bandage, and projectile state. Procedures show supplies, time, and difficulty but keep infection odds hidden. The treating character and patient must share a location, party, and personal character time; the lagging participant waits to the later clock, then only those participants advance by the procedure duration. Self-treatment applies a 2.5-point penalty to the resulting procedure check. Bandaging and splinting use Anatomy. Stitching averages Anatomy and Tailoring and requires a reusable surgery kit; its quality accelerates healing. A splint's exact inventory row moves into a separate limb-applied slot while retaining its weight and owner, never displaces armor, and returns automatically when the fracture heals; anyone may remove it.
+Each limb heading has an explicit raised surgery icon button beside its
+informational health meter. Activating it preserves both character rails and
+opens that limb's surgery interface as a modal dialog; the button remains
+visibly inset while the dialog is open. The normal limb bar and surgery dialog
+share the same per-limb cut, bruise, fracture, bandage, and projectile state.
+Procedures show supplies, time, and difficulty but keep infection odds hidden.
+The treating character and patient must share a location, party, and personal
+character time; the lagging participant waits to the later clock, then only
+those participants advance by the procedure duration. Self-treatment applies a
+2.5-point penalty to the resulting procedure check. Bandaging and splinting use
+Anatomy. Stitching averages Anatomy and Tailoring and requires a reusable
+surgery kit; its quality accelerates healing. A splint's exact inventory row
+moves into a separate limb-applied slot while retaining its weight and owner,
+never displaces armor, and returns automatically when the fracture heals;
+anyone may remove it.
 
 Bandaging, stitching, and projectile extraction may optionally consume one unit
 of the acting character's soft soap. Soap improves infection control independently

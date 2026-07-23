@@ -169,6 +169,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 script src="/static/developer-mode.js?v=dialogue-sources-1" defer {}
                 script src="/static/tooltips.js?v=styled-tooltips-2" defer {}
                 script src="/static/medical-examination.js?v=strategic-dialogs-1" defer {}
+                script src="/static/character-action-dialog.js?v=character-actions-1" defer {}
                 @if scripts != ScriptProfile::Entry {
                     script src="/static/live-state.js?v=sse-3" defer {}
                     script src="/static/live-regions.js?v=floating-time-editor-1" defer {}
