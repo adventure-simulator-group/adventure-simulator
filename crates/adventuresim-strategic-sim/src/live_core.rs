@@ -24,7 +24,7 @@ use url::Url;
 use adventuresim_stdb_client::{
     abandon_quest_reducer::abandon_quest,
     accept_party_join_request_reducer::accept_party_join_request,
-    accept_quest_reducer::accept_quest, autoresolve_quest_reducer::autoresolve_quest,
+    accept_quest_reducer::accept_quest, autoresolve_mission_reducer::autoresolve_mission,
     autoresolve_report_table::AutoresolveReportTableAccess,
     backend_case_site_pins_table::BackendCaseSitePinsTableAccess,
     backend_herbalist_examinations_table::BackendHerbalistExaminationsTableAccess,
@@ -1614,11 +1614,17 @@ impl LiveRunner {
         }
 
         let mut victory = false;
+        let mut winning_battle_id = None;
         for attempt in 0..=MAX_DEFEAT_RETRIES {
-            let result = reducer_call!(self, "autoresolve_quest", |cb| self
+            let mission_id = format!(
+                "sim-autoresolve:{}:{}:{}",
+                party_id, case_site.case_site_id, attempt
+            );
+            let battle_id = format!("battle:{mission_id}");
+            let result = reducer_call!(self, "autoresolve_mission", |cb| self
                 .connection
                 .reducers
-                .autoresolve_quest_then(leader, quest.id.clone(), cb));
+                .autoresolve_mission_then(leader, mission_id.clone(), cb));
             self.call(result)?;
             self.observe_deaths();
             let Some((current, current_agent)) = self.current_leader(party_id) else {
@@ -1631,16 +1637,17 @@ impl LiveRunner {
                 .db
                 .autoresolve_report()
                 .iter()
-                .find(|r| r.quest_id == quest.id)
+                .find(|r| r.battle_id == battle_id)
                 .ok_or("autoresolve completed without a report")?;
             if self
                 .connection
                 .db
                 .battle_result()
                 .iter()
-                .any(|r| r.quest_id == quest.id)
+                .any(|r| r.battle_id == battle_id)
             {
                 victory = true;
+                winning_battle_id = Some(battle_id.clone());
                 self.event(
                     leader_agent,
                     CoreLoopEventKind::AutoresolveVictory,
@@ -1740,13 +1747,14 @@ impl LiveRunner {
             self.call(result)?;
             return Ok(());
         }
+        let winning_battle_id = winning_battle_id.ok_or("victory had no battle authority")?;
 
         let loot: Vec<_> = self
             .connection
             .db
             .battle_loot_item()
             .iter()
-            .filter(|row| row.quest_id == quest.id)
+            .filter(|row| row.loot_battle_id == winning_battle_id)
             .collect();
         let definitions: HashMap<_, _> = self
             .connection
@@ -1770,7 +1778,7 @@ impl LiveRunner {
         let result = reducer_call!(self, "store_battle_loot", |cb| self
             .connection
             .reducers
-            .store_battle_loot_then(leader, quest.id.clone(), vec![], vec![], cb));
+            .store_battle_loot_then(leader, winning_battle_id, vec![], vec![], cb,));
         self.call(result)?;
         self.event(
             leader_agent,

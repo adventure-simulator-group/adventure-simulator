@@ -819,7 +819,7 @@ async fn party_targets(state: &AppState, party_id: &str) -> Vec<InventoryQuantit
 
 async fn autoresolve_quest(
     State(state): State<AppState>,
-    Path(id): Path<String>,
+    Path(_id): Path<String>,
     session: Session,
 ) -> Redirect {
     let Some(character_id) = session.character_id_u64() else {
@@ -828,8 +828,8 @@ async fn autoresolve_quest(
     let outcome = execute_or_request_party_action(
         &state,
         character_id,
-        PartyAction::AutoresolveQuest {
-            quest_id: id.clone(),
+        PartyAction::AutoresolveMission {
+            mission_id: format!("autoresolve-{}", super::data::new_id()),
         },
     )
     .await;

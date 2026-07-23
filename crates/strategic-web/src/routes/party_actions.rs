@@ -49,8 +49,8 @@ pub(crate) enum PartyAction {
     TurnInQuest {
         quest_id: String,
     },
-    AutoresolveQuest {
-        quest_id: String,
+    AutoresolveMission {
+        mission_id: String,
     },
     UpdatePartyCheckTargets {
         medicine: f32,
@@ -78,7 +78,7 @@ impl PartyAction {
         matches!(
             self,
             Self::TravelToCaseSite { .. }
-                | Self::AutoresolveQuest { .. }
+                | Self::AutoresolveMission { .. }
                 | Self::RequestTacticalServer { .. }
         )
     }
@@ -95,7 +95,7 @@ impl PartyAction {
             Self::AcceptQuest { .. } => "accept_quest".into(),
             Self::AbandonQuest { .. } => "abandon_quest".into(),
             Self::TurnInQuest { .. } => "turn_in_quest".into(),
-            Self::AutoresolveQuest { .. } => "autoresolve".into(),
+            Self::AutoresolveMission { .. } => "autoresolve".into(),
             Self::UpdatePartyCheckTargets { .. } => "party_checks".into(),
             Self::SetInventoryQuantityTarget { .. } => "party_inventory".into(),
             Self::DisbandParty { .. } => "disband_party".into(),
@@ -125,7 +125,9 @@ impl PartyAction {
             Self::AcceptQuest { quest_id } => format!("Accept quest {quest_id}"),
             Self::AbandonQuest { quest_id } => format!("Abandon quest {quest_id}"),
             Self::TurnInQuest { quest_id } => format!("Turn in quest {quest_id}"),
-            Self::AutoresolveQuest { quest_id } => format!("Autoresolve quest {quest_id}"),
+            Self::AutoresolveMission { mission_id } => {
+                format!("Autoresolve mission {mission_id}")
+            }
             Self::UpdatePartyCheckTargets { .. } => "Change party skill targets".into(),
             Self::SetInventoryQuantityTarget { .. } => "Manage party inventory targets".into(),
             Self::DisbandParty { .. } => "Disband the party".into(),
@@ -203,9 +205,10 @@ impl PartyAction {
             Self::TurnInQuest { quest_id } => {
                 ("turn_in_quest", vec![json!(actor_id), json!(quest_id)])
             }
-            Self::AutoresolveQuest { quest_id } => {
-                ("autoresolve_quest", vec![json!(actor_id), json!(quest_id)])
-            }
+            Self::AutoresolveMission { mission_id } => (
+                "autoresolve_mission",
+                vec![json!(actor_id), json!(mission_id)],
+            ),
             Self::UpdatePartyCheckTargets {
                 medicine,
                 command,

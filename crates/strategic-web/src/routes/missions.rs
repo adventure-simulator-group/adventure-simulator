@@ -255,7 +255,8 @@ async fn get_mission_for_viewer(
         TacticalServer::pending(
             request.mission_id.clone(),
             request.scene_key.clone(),
-            request.quest_id.clone(),
+            request.case_site_id.clone(),
+            request.hostile_group_id.clone(),
             request.party_id.clone(),
         )
     }))
@@ -308,7 +309,8 @@ mod tests {
         TacticalServer::pending(
             "mission".into(),
             "hills".into(),
-            "quest".into(),
+            Some("site".into()),
+            Some("group".into()),
             party_id.into(),
         )
     }

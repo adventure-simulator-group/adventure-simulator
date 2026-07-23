@@ -95,30 +95,62 @@ impl<'ctx> __sdk::TableWithPrimaryKey for BattleResultTableHandle<'ctx> {
     }
 }
 
-/// Access to the `quest_id` unique index on the table `battle_result`,
+/// Access to the `battle_id` unique index on the table `battle_result`,
 /// which allows point queries on the field of the same name
-/// via the [`BattleResultQuestIdUnique::find`] method.
+/// via the [`BattleResultBattleIdUnique::find`] method.
 ///
 /// Users are encouraged not to explicitly reference this type,
 /// but to directly chain method calls,
-/// like `ctx.db.battle_result().quest_id().find(...)`.
-pub struct BattleResultQuestIdUnique<'ctx> {
+/// like `ctx.db.battle_result().battle_id().find(...)`.
+pub struct BattleResultBattleIdUnique<'ctx> {
     imp: __sdk::UniqueConstraintHandle<BattleResult, String>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 impl<'ctx> BattleResultTableHandle<'ctx> {
-    /// Get a handle on the `quest_id` unique index on the table `battle_result`.
-    pub fn quest_id(&self) -> BattleResultQuestIdUnique<'ctx> {
-        BattleResultQuestIdUnique {
-            imp: self.imp.get_unique_constraint::<String>("quest_id"),
+    /// Get a handle on the `battle_id` unique index on the table `battle_result`.
+    pub fn battle_id(&self) -> BattleResultBattleIdUnique<'ctx> {
+        BattleResultBattleIdUnique {
+            imp: self.imp.get_unique_constraint::<String>("battle_id"),
             phantom: std::marker::PhantomData,
         }
     }
 }
 
-impl<'ctx> BattleResultQuestIdUnique<'ctx> {
-    /// Find the subscribed row whose `quest_id` column value is equal to `col_val`,
+impl<'ctx> BattleResultBattleIdUnique<'ctx> {
+    /// Find the subscribed row whose `battle_id` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &String) -> Option<BattleResult> {
+        self.imp.find(col_val)
+    }
+}
+
+/// Access to the `outcome_source_id` unique index on the table `battle_result`,
+/// which allows point queries on the field of the same name
+/// via the [`BattleResultOutcomeSourceIdUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.battle_result().outcome_source_id().find(...)`.
+pub struct BattleResultOutcomeSourceIdUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<BattleResult, String>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
+
+impl<'ctx> BattleResultTableHandle<'ctx> {
+    /// Get a handle on the `outcome_source_id` unique index on the table `battle_result`.
+    pub fn outcome_source_id(&self) -> BattleResultOutcomeSourceIdUnique<'ctx> {
+        BattleResultOutcomeSourceIdUnique {
+            imp: self
+                .imp
+                .get_unique_constraint::<String>("outcome_source_id"),
+            phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<'ctx> BattleResultOutcomeSourceIdUnique<'ctx> {
+    /// Find the subscribed row whose `outcome_source_id` column value is equal to `col_val`,
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &String) -> Option<BattleResult> {
         self.imp.find(col_val)
@@ -128,7 +160,8 @@ impl<'ctx> BattleResultQuestIdUnique<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<BattleResult>("battle_result");
-    _table.add_unique_constraint::<String>("quest_id", |row| &row.quest_id);
+    _table.add_unique_constraint::<String>("battle_id", |row| &row.battle_id);
+    _table.add_unique_constraint::<String>("outcome_source_id", |row| &row.outcome_source_id);
 }
 
 #[doc(hidden)]

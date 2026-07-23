@@ -5,10 +5,17 @@ use spacetimedb::{
 use crate::repair::{ItemCondition, item_condition__view};
 use crate::{
     Character, CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, Item,
-    ItemSlot, character::character, character__view, character_attributes__view, character_equip,
-    character_equip__view, character_limbs__view, character_skills__view, character_stats__view,
-    complete_quest, inventory_item, inventory_item__view, investigation::case_site_authority,
-    item__view, party_authority, record_battle_result, strategic::quest,
+    ItemSlot,
+    character::character,
+    character__view, character_attributes__view, character_equip, character_equip__view,
+    character_limbs__view, character_skills__view, character_stats__view, inventory_item,
+    inventory_item__view,
+    investigation::case_site_authority,
+    item__view, party_authority,
+    strategic::{
+        commit_victorious_battle, ensure_bound_mission_authority, hostile_group_authority,
+        mission_authority,
+    },
 };
 use std::collections::{HashMap, HashSet};
 use strum::VariantArray;
@@ -21,8 +28,8 @@ pub struct TacticalServerRequest {
     #[unique]
     pub mission_id: String,
     pub scene_key: String,
-    #[index(btree)]
-    pub quest_id: String,
+    pub case_site_id: Option<String>,
+    pub hostile_group_id: Option<String>,
     pub party_id: String,
     pub requested_by: u64,
     pub required_enemy_kills: u32,
@@ -38,8 +45,8 @@ pub struct TacticalServer {
     #[unique]
     pub mission_id: String,
     pub scene_key: String,
-    #[index(btree)]
-    pub quest_id: String,
+    pub case_site_id: Option<String>,
+    pub hostile_group_id: Option<String>,
     pub party_id: String,
     pub addr: String,
     pub cert_digest: String,
@@ -205,16 +212,18 @@ pub fn enter_mission(
             .id()
             .find(&server.party_id)
             .ok_or("Mission party no longer exists")?;
-        let quest = ctx
+        let mission = ctx
             .db
-            .quest()
+            .mission_authority()
             .id()
-            .find(&server.quest_id)
-            .ok_or("Mission quest no longer exists")?;
-        if party.active_quest_id.as_deref() != Some(server.quest_id.as_str())
-            || quest.accepted_by.as_deref() != Some(server.party_id.as_str())
+            .find(&server.mission_id)
+            .ok_or("Mission authority no longer exists")?;
+        if mission.party_id != party.id
+            || mission.hostile_group_id != server.hostile_group_id
+            || mission.case_site_id.as_ref().map(|id| id.value.as_str())
+                != server.case_site_id.as_deref()
         {
-            return Err("Mission party and quest binding changed before enrollment".into());
+            return Err("Mission authority changed before enrollment".into());
         }
     }
 
@@ -297,27 +306,31 @@ pub fn request_tactical_server(
     if party.leader_id != character_id {
         return Err("Only the party leader can request a tactical server".into());
     }
-    let quest_id = party
-        .active_quest_id
-        .clone()
-        .ok_or("Party has no active quest")?;
     let case_site = party
         .current_case_site_id
         .as_ref()
         .and_then(|site_id| ctx.db.case_site_authority().id_key().find(&site_id.value))
-        .filter(|site| site.case_id == quest_id)
-        .ok_or("Party must be at its active quest site")?;
+        .ok_or("Party must be at a case site")?;
     if party.current_case_site_id.as_deref() != Some(case_site.id.as_str()) {
         return Err("Party must be at its active quest location".into());
     }
-    let quest = ctx
+    if case_site.scene_key != scene_key {
+        return Err("Tactical scene does not match the occupied case site".into());
+    }
+    let mission =
+        ensure_bound_mission_authority(ctx, &mission_id, &party_id, &case_site, &scene_key)?;
+    let hostile_group_id = mission
+        .hostile_group_id
+        .clone()
+        .ok_or("Case-site mission has no hostile group")?;
+    let group = ctx
         .db
-        .quest()
+        .hostile_group_authority()
         .id()
-        .find(&quest_id)
-        .ok_or("Quest not found")?;
-    if quest.accepted_by.as_deref() != Some(&party_id) || case_site.scene_key != scene_key {
-        return Err("Tactical scene does not match the party's active quest".into());
+        .find(&hostile_group_id)
+        .ok_or("Hostile group not found")?;
+    if group.defeated {
+        return Err("Hostile group is already defeated".into());
     }
     if let Some(server) = ctx.db.tactical_server().mission_id().find(&mission_id) {
         return Err(format!(
@@ -329,12 +342,12 @@ pub fn request_tactical_server(
         .db
         .tactical_server_request()
         .iter()
-        .any(|request| request.quest_id == quest_id)
+        .any(|request| request.hostile_group_id.as_deref() == Some(&hostile_group_id))
         || ctx
             .db
             .tactical_server()
             .iter()
-            .any(|server| server.quest_id == quest_id)
+            .any(|server| server.hostile_group_id.as_deref() == Some(&hostile_group_id))
     {
         return Err("Party quest already has a pending or active tactical server".into());
     }
@@ -345,11 +358,11 @@ pub fn request_tactical_server(
         .insert(TacticalServerRequest {
             mission_id,
             scene_key,
-            quest_id,
+            case_site_id: Some(case_site.id.value),
+            hostile_group_id: Some(hostile_group_id),
             party_id,
             requested_by: character_id,
-            required_enemy_kills: u32::try_from(quest.enemy_count.max(0))
-                .map_err(|_| "Quest enemy count exceeds tactical limits")?,
+            required_enemy_kills: group.enemy_count,
         });
 
     Ok(())
@@ -387,7 +400,8 @@ pub fn create_tactical_server_for_request(
         ctx,
         request.mission_id,
         request.scene_key,
-        request.quest_id,
+        request.case_site_id,
+        request.hostile_group_id,
         request.party_id,
         request.required_enemy_kills,
         addr,
@@ -403,7 +417,8 @@ fn insert_tactical_server(
     ctx: &ReducerContext,
     mission_id: String,
     scene_key: String,
-    quest_id: String,
+    case_site_id: Option<String>,
+    hostile_group_id: Option<String>,
     party_id: String,
     required_enemy_kills: u32,
     addr: String,
@@ -430,7 +445,8 @@ fn insert_tactical_server(
         identity: ctx.sender(),
         mission_id,
         scene_key,
-        quest_id,
+        case_site_id,
+        hostile_group_id,
         party_id,
         addr,
         cert_digest,
@@ -485,22 +501,18 @@ fn end_tactical_server_by_instance(
         .filter(server.identity)
         .collect();
     if success {
-        let party = ctx
+        let mission = ctx
             .db
-            .party_authority()
+            .mission_authority()
             .id()
-            .find(&server.party_id)
-            .ok_or("Mission party no longer exists")?;
-        let quest = ctx
-            .db
-            .quest()
-            .id()
-            .find(&server.quest_id)
-            .ok_or("Mission quest no longer exists")?;
-        if party.active_quest_id.as_deref() != Some(server.quest_id.as_str())
-            || quest.accepted_by.as_deref() != Some(server.party_id.as_str())
+            .find(&server.mission_id)
+            .ok_or("Mission authority no longer exists")?;
+        if mission.party_id != server.party_id
+            || mission.hostile_group_id != server.hostile_group_id
+            || mission.case_site_id.as_ref().map(|id| id.value.as_str())
+                != server.case_site_id.as_deref()
         {
-            return Err("Mission party and quest binding changed before completion".into());
+            return Err("Mission authority changed before completion".into());
         }
         if let Some(adventurer) = connected.iter().find(|character| !character.temporary) {
             if adventurer.party_id.as_deref() == Some(server.party_id.as_str()) {
@@ -522,15 +534,36 @@ fn end_tactical_server_by_instance(
                         }
                     }
                 }
-                record_battle_result(
+                let battle_id = format!("battle:{}", server.mission_id);
+                let outcome_source_id = format!("tactical:{}", server.mission_id);
+                let committed = commit_victorious_battle(
                     ctx,
+                    &outcome_source_id,
+                    &battle_id,
                     &server.party_id,
-                    &server.quest_id,
-                    &server.mission_id,
+                    Some(&server.mission_id),
+                    server.hostile_group_id.as_deref(),
                     drops.into_iter().collect(),
                     true,
                 )?;
-                complete_quest(ctx, server.quest_id.clone())?;
+                // Quest completion is currently the contract-side projection
+                // of a defeated bound group. #203 replaces that projection
+                // with generalized case objectives.
+                if committed
+                    && let Some(group_id) = server.hostile_group_id.as_deref()
+                    && let Some(group) = ctx
+                        .db
+                        .hostile_group_authority()
+                        .id()
+                        .find(&group_id.to_string())
+                    && let Some(site) = ctx
+                        .db
+                        .case_site_authority()
+                        .id_key()
+                        .find(&group.case_site_id.value)
+                {
+                    crate::complete_quest(ctx, site.case_id)?;
+                }
             }
         }
     }
@@ -547,4 +580,34 @@ fn end_tactical_server_by_instance(
         server.mission_id
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod authority_tests {
+    #[test]
+    fn tactical_schema_has_no_quest_keyed_mission_authority() {
+        let source = include_str!("tactical.rs");
+        for schema in ["TacticalServerRequest", "TacticalServer"] {
+            let body = source
+                .split(&format!("pub struct {schema}"))
+                .nth(1)
+                .and_then(|tail| tail.split('}').next())
+                .expect("schema body");
+            assert!(!body.contains("quest_id"));
+            assert!(body.contains("hostile_group_id"));
+        }
+    }
+
+    #[test]
+    fn only_success_routes_through_the_shared_victory_commit() {
+        let source = include_str!("tactical.rs");
+        let end = source
+            .split("fn end_tactical_server_by_instance")
+            .nth(1)
+            .expect("tactical end path");
+        let success = end.split("if success").nth(1).expect("success branch");
+        assert!(success.contains("commit_victorious_battle("));
+        assert!(success.contains("mission_authority()"));
+        assert!(!source.contains("record_battle_result("));
+    }
 }

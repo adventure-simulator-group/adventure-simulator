@@ -233,14 +233,14 @@ fn consume_autoresolve_ammunition(ctx: &ReducerContext, character_id: u64, mut q
 
 fn record_autoresolve_report(
     ctx: &ReducerContext,
-    quest_id: &str,
+    battle_id: &str,
     party_id: &str,
     outcome: &BattleOutcome,
 ) {
     ctx.db
         .autoresolve_report()
-        .quest_id()
-        .delete(quest_id.to_string());
+        .battle_id()
+        .delete(battle_id.to_string());
     let summary = format!(
         "{} rounds; {} stealth successes from {} attempts; {} opening shots; {} ranged attacks; {} melee attacks; {} hits; {:.3} health damage; {} ammunition used",
         outcome.rounds,
@@ -271,7 +271,7 @@ fn record_autoresolve_report(
         })
         .collect();
     ctx.db.autoresolve_report().insert(AutoresolveReport {
-        quest_id: quest_id.to_string(),
+        battle_id: battle_id.to_string(),
         party_id: party_id.to_string(),
         seed: outcome.seed,
         victor: match outcome.victor {
@@ -378,7 +378,7 @@ mod healing_tests {
     fn quest_autoresolve_routes_consequences_through_shared_commit() {
         let source = include_str!("strategic.rs");
         let body = source
-            .split("pub fn autoresolve_quest")
+            .split("pub fn autoresolve_mission")
             .nth(1)
             .and_then(|tail| tail.split("#[reducer]").next())
             .expect("quest autoresolve reducer body");
@@ -406,6 +406,38 @@ mod healing_tests {
         ] {
             assert!(!schema.contains(forbidden), "Quest still owns {forbidden}");
         }
+    }
+
+    #[test]
+    fn battle_outcome_and_loot_schema_have_no_quest_keys() {
+        let source = include_str!("strategic.rs");
+        for (schema, next) in [
+            ("BattleResult", "AutoresolveReport"),
+            ("AutoresolveReport", "BattleLootItem"),
+            ("BattleLootItem", "BattleParticipant"),
+            ("BattleParticipant", "MissionAuthority"),
+        ] {
+            let body = source
+                .split(&format!("pub struct {schema}"))
+                .nth(1)
+                .and_then(|tail| tail.split(&format!("pub struct {next}")).next())
+                .expect("schema body");
+            assert!(!body.contains("quest_id"), "{schema} retained a quest key");
+        }
+    }
+
+    #[test]
+    fn autoresolve_uses_explicit_mission_and_exactly_once_source_authority() {
+        let source = include_str!("strategic.rs");
+        let body = source
+            .split("pub fn autoresolve_mission")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("autoresolve reducer");
+        assert!(body.contains("ensure_bound_mission_authority("));
+        assert!(body.contains("commit_victorious_battle("));
+        assert!(body.contains("autoresolve_report()"));
+        assert!(!body.contains("record_battle_result("));
     }
 
     #[test]
@@ -2107,10 +2139,13 @@ pub struct PartyInventoryState {
 #[table(accessor = battle_result, public)]
 pub struct BattleResult {
     #[primary_key]
-    pub quest_id: String,
+    pub battle_id: String,
+    #[unique]
+    pub outcome_source_id: String,
     #[index(btree)]
     pub party_id: String,
-    pub mission_id: String,
+    pub mission_id: Option<String>,
+    pub hostile_group_id: Option<String>,
 }
 
 /// Reproducible strategic-combat diagnostics retained whether the party wins
@@ -2119,7 +2154,7 @@ pub struct BattleResult {
 #[table(accessor = autoresolve_report, public)]
 pub struct AutoresolveReport {
     #[primary_key]
-    pub quest_id: String,
+    pub battle_id: String,
     #[index(btree)]
     pub party_id: String,
     pub seed: u64,
@@ -2136,7 +2171,7 @@ pub struct BattleLootItem {
     #[auto_inc]
     pub id: u64,
     #[index(btree)]
-    pub quest_id: String,
+    pub loot_battle_id: String,
     pub item_id: String,
     pub quantity: u32,
 }
@@ -2148,8 +2183,50 @@ pub struct BattleParticipant {
     #[auto_inc]
     pub id: u64,
     #[index(btree)]
-    pub quest_id: String,
+    pub participant_battle_id: String,
     pub character_id: u64,
+}
+
+/// Persistent strategic identity for a specific combat opportunity. A mission
+/// may be unbound (random encounter) or bound to both a known case site and a
+/// specific hostile group. Enemy similarity never creates a binding.
+#[derive(Clone, Debug)]
+#[table(accessor = mission_authority)]
+pub struct MissionAuthority {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub party_id: String,
+    pub case_site_id: Option<CaseSiteId>,
+    pub hostile_group_id: Option<String>,
+    pub scene_key: String,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = hostile_group_authority)]
+pub struct HostileGroupAuthority {
+    #[primary_key]
+    pub id: String,
+    #[unique]
+    pub case_site_id: CaseSiteId,
+    pub enemy_type: String,
+    pub enemy_count: u32,
+    pub difficulty: i32,
+    pub defeated: bool,
+}
+
+/// Idempotency and attribution receipt for a persistent victorious outcome.
+/// Its primary key is supplied by the trusted battle producer.
+#[derive(Clone, Debug)]
+#[table(accessor = outcome_source_authority)]
+pub struct OutcomeSourceAuthority {
+    #[primary_key]
+    pub id: String,
+    #[unique]
+    pub battle_id: String,
+    pub mission_id: Option<String>,
+    pub hostile_group_id: Option<String>,
+    pub party_id: String,
 }
 
 #[derive(SpacetimeType, serde::Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -2329,8 +2406,8 @@ enum ApprovedPartyAction {
     TurnInQuest {
         quest_id: String,
     },
-    AutoresolveQuest {
-        quest_id: String,
+    AutoresolveMission {
+        mission_id: String,
     },
     UpdatePartyCheckTargets {
         medicine: f32,
@@ -2366,7 +2443,7 @@ impl ApprovedPartyAction {
             Self::AcceptQuest { .. } => "accept_quest",
             Self::AbandonQuest { .. } => "abandon_quest",
             Self::TurnInQuest { .. } => "turn_in_quest",
-            Self::AutoresolveQuest { .. } => "autoresolve",
+            Self::AutoresolveMission { .. } => "autoresolve",
             Self::UpdatePartyCheckTargets { .. } => "party_checks",
             Self::SetInventoryQuantityTarget { .. } => "party_inventory",
             Self::DisbandParty { .. } => "disband_party",
@@ -2428,7 +2505,9 @@ impl ApprovedPartyAction {
             Self::AcceptQuest { quest_id } => accept_quest(ctx, leader_id, quest_id),
             Self::AbandonQuest { quest_id } => abandon_quest(ctx, leader_id, quest_id),
             Self::TurnInQuest { quest_id } => turn_in_quest(ctx, leader_id, quest_id),
-            Self::AutoresolveQuest { quest_id } => autoresolve_quest(ctx, leader_id, quest_id),
+            Self::AutoresolveMission { mission_id } => {
+                autoresolve_mission(ctx, leader_id, mission_id)
+            }
             Self::UpdatePartyCheckTargets {
                 medicine,
                 command,
@@ -5469,46 +5548,74 @@ fn credit_party_reserve(ctx: &ReducerContext, party_id: &str, value: u64) -> Res
     Ok(())
 }
 
-pub(crate) fn record_battle_result(
+pub(crate) fn commit_victorious_battle(
     ctx: &ReducerContext,
+    outcome_source_id: &str,
+    battle_id: &str,
     party_id: &str,
-    quest_id: &str,
-    mission_id: &str,
+    mission_id: Option<&str>,
+    hostile_group_id: Option<&str>,
     dropped_items: Vec<(String, u32)>,
-    include_random_quest_gold: bool,
-) -> Result<(), String> {
+    include_random_gold: bool,
+) -> Result<bool, String> {
     if ctx
         .db
-        .battle_result()
-        .quest_id()
-        .find(&quest_id.to_string())
+        .outcome_source_authority()
+        .id()
+        .find(&outcome_source_id.to_string())
         .is_some()
     {
-        return Ok(());
+        return Ok(false);
     }
-    let quest = ctx
-        .db
-        .quest()
-        .id()
-        .find(&quest_id.to_string())
-        .ok_or("Quest not found")?;
+    let group = hostile_group_id
+        .map(|id| {
+            ctx.db
+                .hostile_group_authority()
+                .id()
+                .find(&id.to_string())
+                .ok_or_else(|| "Hostile group not found".to_string())
+        })
+        .transpose()?;
+    if let Some(mission_id) = mission_id {
+        let mission = ctx
+            .db
+            .mission_authority()
+            .id()
+            .find(&mission_id.to_string())
+            .ok_or("Mission authority not found")?;
+        if mission.party_id != party_id || mission.hostile_group_id.as_deref() != hostile_group_id {
+            return Err("Battle attribution does not match mission authority".into());
+        }
+    }
+    ctx.db
+        .outcome_source_authority()
+        .insert(OutcomeSourceAuthority {
+            id: outcome_source_id.to_string(),
+            battle_id: battle_id.to_string(),
+            mission_id: mission_id.map(str::to_string),
+            hostile_group_id: hostile_group_id.map(str::to_string),
+            party_id: party_id.to_string(),
+        });
     ctx.db.battle_result().insert(BattleResult {
-        quest_id: quest_id.to_string(),
+        battle_id: battle_id.to_string(),
+        outcome_source_id: outcome_source_id.to_string(),
         party_id: party_id.to_string(),
-        mission_id: mission_id.to_string(),
+        mission_id: mission_id.map(str::to_string),
+        hostile_group_id: hostile_group_id.map(str::to_string),
     });
+    let difficulty = group.as_ref().map_or(1, |group| group.difficulty);
     for member_id in living_party_member_ids(ctx, party_id) {
         ctx.db.battle_participant().insert(BattleParticipant {
             id: 0,
-            quest_id: quest_id.to_string(),
+            participant_battle_id: battle_id.to_string(),
             character_id: member_id,
         });
         crate::condition::record_morale_event(
             ctx,
             member_id,
             "victory",
-            5.0 + quest.difficulty.max(0) as f32,
-            Some(quest_id.to_string()),
+            5.0 + difficulty.max(0) as f32,
+            Some(outcome_source_id.to_string()),
         )?;
     }
     let mut combined: HashMap<String, u32> = HashMap::new();
@@ -5521,10 +5628,18 @@ pub(crate) fn record_battle_result(
                 .saturating_add(quantity);
         }
     }
-    if include_random_quest_gold && ctx.random::<u64>().is_multiple_of(2) {
-        let maximum_gold = quest.difficulty.max(1) as u32 * 10;
+    if include_random_gold && ctx.random::<u64>().is_multiple_of(2) {
+        let maximum_gold = difficulty.max(1) as u32 * 10;
         let gold = 1 + (ctx.random::<u64>() % u64::from(maximum_gold)) as u32;
-        if gold > 0 {
+        if gold > 0
+            && let Some(group) = &group
+            && let Some(site) = ctx
+                .db
+                .case_site_authority()
+                .id_key()
+                .find(&group.case_site_id.value)
+            && let Some(quest) = ctx.db.quest().id().find(&site.case_id)
+        {
             *combined
                 .entry(crate::item::currency_id_for_settlement(
                     ctx,
@@ -5536,19 +5651,23 @@ pub(crate) fn record_battle_result(
     for (item_id, quantity) in combined {
         ctx.db.battle_loot_item().insert(BattleLootItem {
             id: 0,
-            quest_id: quest_id.to_string(),
+            loot_battle_id: battle_id.to_string(),
             item_id,
             quantity,
         });
     }
-    Ok(())
+    if let Some(mut group) = group {
+        group.defeated = true;
+        ctx.db.hostile_group_authority().id().update(group);
+    }
+    Ok(true)
 }
 
 #[reducer]
 pub fn store_battle_loot(
     ctx: &ReducerContext,
     character_id: u64,
-    quest_id: String,
+    battle_id: String,
     loot_item_ids: Vec<u64>,
     quantities: Vec<u32>,
 ) -> Result<(), String> {
@@ -5566,8 +5685,8 @@ pub fn store_battle_loot(
     let result = ctx
         .db
         .battle_result()
-        .quest_id()
-        .find(&quest_id)
+        .battle_id()
+        .find(&battle_id)
         .ok_or("Battle result not found")?;
     if result.party_id != party_id {
         return Err("Battle loot belongs to another party".into());
@@ -5575,8 +5694,8 @@ pub fn store_battle_loot(
     let available: Vec<_> = ctx
         .db
         .battle_loot_item()
-        .quest_id()
-        .filter(&quest_id)
+        .loot_battle_id()
+        .filter(&battle_id)
         .collect();
     let loot: Vec<_> = if loot_item_ids.is_empty() {
         available
@@ -5607,8 +5726,8 @@ pub fn store_battle_loot(
     let recorded_participants: Vec<_> = ctx
         .db
         .battle_participant()
-        .quest_id()
-        .filter(&quest_id)
+        .participant_battle_id()
+        .filter(&battle_id)
         .map(|participant| participant.character_id)
         .collect();
     let living_recorded: Vec<_> = recorded_participants
@@ -9359,11 +9478,12 @@ fn reconstruct_legacy_journey_coordinates(
 #[cfg(test)]
 mod departure_invariant_tests {
     use super::{
-        CampDurationMode, JourneyRoutePlan, JourneyRoutePoint, JourneyTerrainKind,
-        JourneyTerrainSpan, JourneyTerrainWeights, Party, PartyJourneyRoute,
-        common_movement_prefix, departure_snapshot_allows_travel, party_can_continue_travel,
-        reconstruct_legacy_journey_coordinates, route_position_at_minute, set_party_journey_state,
-        straight_line_distance_m, terrain_training_exposure, validate_journey_route_payload,
+        CampDurationMode, JourneyEndpoint, JourneyRoutePlan, JourneyRoutePoint,
+        JourneySettlementEndpoint, JourneyTerrainKind, JourneyTerrainSpan, JourneyTerrainWeights,
+        Party, PartyJourneyRoute, common_movement_prefix, departure_snapshot_allows_travel,
+        party_can_continue_travel, reconstruct_legacy_journey_coordinates,
+        route_position_at_minute, set_party_journey_state, straight_line_distance_m,
+        terrain_training_exposure, validate_journey_route_payload,
         zero_boundary_requires_settlement,
     };
 
@@ -10368,6 +10488,65 @@ pub fn complete_quest(ctx: &ReducerContext, quest_id: String) -> Result<(), Stri
     Ok(())
 }
 
+pub(crate) fn ensure_bound_mission_authority(
+    ctx: &ReducerContext,
+    mission_id: &str,
+    party_id: &str,
+    case_site: &CaseSiteAuthority,
+    scene_key: &str,
+) -> Result<MissionAuthority, String> {
+    if let Some(existing) = ctx
+        .db
+        .mission_authority()
+        .id()
+        .find(&mission_id.to_string())
+    {
+        return if existing.party_id == party_id
+            && existing.case_site_id.as_ref() == Some(&case_site.id)
+            && existing.scene_key == scene_key
+        {
+            Ok(existing)
+        } else {
+            Err("Mission ID is already bound to different authority".into())
+        };
+    }
+    let quest = ctx
+        .db
+        .quest()
+        .id()
+        .find(&case_site.case_id)
+        .ok_or("Case combat definition not found")?;
+    let hostile_group_id = format!("hostile-group:{}", case_site.id.value);
+    if ctx
+        .db
+        .hostile_group_authority()
+        .id()
+        .find(&hostile_group_id)
+        .is_none()
+    {
+        ctx.db
+            .hostile_group_authority()
+            .insert(HostileGroupAuthority {
+                id: hostile_group_id.clone(),
+                case_site_id: case_site.id.clone(),
+                enemy_type: quest.enemy_type,
+                enemy_count: u32::try_from(quest.enemy_count.max(0))
+                    .map_err(|_| "Enemy count exceeds mission limits")?,
+                difficulty: quest.difficulty,
+                defeated: false,
+            });
+    }
+    let authority = MissionAuthority {
+        id: mission_id.to_string(),
+        party_id: party_id.to_string(),
+        case_site_id: Some(case_site.id.clone()),
+        hostile_group_id: Some(hostile_group_id),
+        scene_key: scene_key.to_string(),
+    };
+    ctx.db.mission_authority().insert(authority.clone());
+    Ok(authority)
+}
+
 #[reducer]
 pub fn turn_in_quest(
     ctx: &ReducerContext,
@@ -10437,10 +10616,10 @@ pub fn turn_in_quest(
 }
 
 #[reducer]
-pub fn autoresolve_quest(
+pub fn autoresolve_mission(
     ctx: &ReducerContext,
     character_id: u64,
-    quest_id: String,
+    mission_id: String,
 ) -> Result<(), String> {
     crate::character::require_living_character(ctx, character_id)?;
     let Some(character) = ctx.db.character().id().find(character_id) else {
@@ -10455,30 +10634,51 @@ pub fn autoresolve_quest(
     if party.leader_id != character_id {
         return Err("Only the party leader can autoresolve".into());
     }
+    let case_site = party
+        .current_case_site_id
+        .as_ref()
+        .and_then(|id| ctx.db.case_site_authority().id_key().find(&id.value))
+        .ok_or("Party is not at a case site")?;
+    let quest_id = case_site.case_id.clone();
     let quest = ctx
         .db
         .quest()
         .id()
         .find(&quest_id)
-        .ok_or("Quest not found")?;
-    let at_quest_site = party
-        .current_case_site_id
-        .as_deref()
-        .and_then(|site_id| {
-            ctx.db
-                .case_site_authority()
-                .id_key()
-                .find(&site_id.to_string())
-        })
-        .is_some_and(|site| site.case_id == quest_id);
-    if party.active_quest_id.as_deref() != Some(&quest_id) || !at_quest_site {
+        .ok_or("Case combat definition not found")?;
+    if party.active_quest_id.as_deref() != Some(&quest_id) {
         return Err("Party must be at its active quest location".into());
     }
     require_party_ready(ctx, &party_id)?;
 
-    if ctx.db.battle_result().quest_id().find(&quest_id).is_some() {
+    let mission = ensure_bound_mission_authority(
+        ctx,
+        &mission_id,
+        &party_id,
+        &case_site,
+        &case_site.scene_key,
+    )?;
+    let hostile_group_id = mission
+        .hostile_group_id
+        .as_deref()
+        .ok_or("Quest mission must bind a hostile group")?;
+    let battle_id = format!("battle:{mission_id}");
+    let outcome_source_id = format!("outcome:{mission_id}");
+    if ctx
+        .db
+        .autoresolve_report()
+        .battle_id()
+        .find(&battle_id)
+        .is_some()
+    {
         return Ok(());
     }
+    let hostile_group = ctx
+        .db
+        .hostile_group_authority()
+        .id()
+        .find(&hostile_group_id.to_string())
+        .ok_or("Hostile group not found")?;
 
     let member_ids = living_party_member_ids(ctx, &party_id);
     let allies = member_ids
@@ -10495,12 +10695,12 @@ pub fn autoresolve_quest(
             )
         })
         .collect::<Result<Vec<_>, String>>()?;
-    let enemies = (0..quest.enemy_count.max(0) as u64)
+    let enemies = (0..u64::from(hostile_group.enemy_count))
         .map(|index| {
             autoresolve_enemy(
                 u64::MAX.saturating_sub(index),
-                &quest.enemy_type,
-                quest.difficulty,
+                &hostile_group.enemy_type,
+                hostile_group.difficulty,
             )
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -10508,7 +10708,7 @@ pub fn autoresolve_quest(
     let outcome = resolve_battle(allies, enemies, seed, BattleOpening::Normal);
     commit_autoresolve_outcome(
         ctx,
-        &quest_id,
+        &battle_id,
         &party_id,
         &member_ids,
         5.0 + quest.difficulty.max(0) as f32,
@@ -10519,18 +10719,24 @@ pub fn autoresolve_quest(
         return Ok(());
     }
 
-    let dropped_items = autoresolve_drop(&quest.enemy_type)?
-        .map(|item| vec![(item.to_string(), quest.enemy_count.max(0) as u32)])
+    let dropped_items = autoresolve_drop(&hostile_group.enemy_type)?
+        .map(|item| vec![(item.to_string(), hostile_group.enemy_count)])
         .unwrap_or_default();
-    record_battle_result(
+    let committed = commit_victorious_battle(
         ctx,
+        &outcome_source_id,
+        &battle_id,
         &party_id,
-        &quest_id,
-        &format!("autoresolve-{quest_id}"),
+        Some(&mission_id),
+        Some(hostile_group_id),
         dropped_items,
         true,
     )?;
-    complete_quest(ctx, quest_id)
+    if committed {
+        complete_quest(ctx, quest_id)
+    } else {
+        Ok(())
+    }
 }
 
 #[reducer]

@@ -18,6 +18,7 @@ pub mod food;
 pub mod investigation;
 pub mod leadership;
 pub mod local_problem;
+pub mod mission;
 pub mod morale;
 pub mod profession;
 pub mod provisioning;
@@ -48,6 +49,7 @@ pub mod prelude {
     pub use crate::equipment::*;
     pub use crate::essential::*;
     pub use crate::investigation::*;
+    pub use crate::mission::*;
     pub use crate::morale::*;
     pub use crate::profession::*;
     pub use crate::provisioning::*;

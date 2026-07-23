@@ -17,7 +17,7 @@ pub mod alcohol_consumption_type;
 pub mod answer_dialogue_prompt_reducer;
 pub mod approve_party_action_request_planned_reducer;
 pub mod approve_party_action_request_reducer;
-pub mod autoresolve_quest_reducer;
+pub mod autoresolve_mission_reducer;
 pub mod autoresolve_report_table;
 pub mod autoresolve_report_type;
 pub mod available_water_capacity_type;
@@ -62,6 +62,9 @@ pub mod canal_watercourse_type;
 pub mod cancel_mission_request_reducer;
 pub mod canopy_density_type;
 pub mod case_site_authority_type;
+pub mod hostile_group_authority_type;
+pub mod mission_authority_type;
+pub mod outcome_source_authority_type;
 pub mod case_site_id_type;
 pub mod catholic_lutheran_church_type;
 pub mod catholic_reformed_church_type;
@@ -550,7 +553,7 @@ pub use alcohol_consumption_type::AlcoholConsumption;
 pub use answer_dialogue_prompt_reducer::answer_dialogue_prompt;
 pub use approve_party_action_request_planned_reducer::approve_party_action_request_planned;
 pub use approve_party_action_request_reducer::approve_party_action_request;
-pub use autoresolve_quest_reducer::autoresolve_quest;
+pub use autoresolve_mission_reducer::autoresolve_mission;
 pub use autoresolve_report_table::*;
 pub use autoresolve_report_type::AutoresolveReport;
 pub use available_water_capacity_type::AvailableWaterCapacity;
@@ -595,6 +598,9 @@ pub use canal_watercourse_type::CanalWatercourse;
 pub use cancel_mission_request_reducer::cancel_mission_request;
 pub use canopy_density_type::CanopyDensity;
 pub use case_site_authority_type::CaseSiteAuthority;
+pub use hostile_group_authority_type::HostileGroupAuthority;
+pub use mission_authority_type::MissionAuthority;
+pub use outcome_source_authority_type::OutcomeSourceAuthority;
 pub use case_site_id_type::CaseSiteId;
 pub use catholic_lutheran_church_type::CatholicLutheranChurch;
 pub use catholic_reformed_church_type::CatholicReformedChurch;
@@ -1109,9 +1115,9 @@ pub enum Reducer {
         request_id: u64,
         route: JourneyRoutePlan,
     },
-    AutoresolveQuest {
+    AutoresolveMission {
         character_id: u64,
-        quest_id: String,
+        mission_id: String,
     },
     BackfillCharacterDeathsAndLeadership,
     BackfillEquipmentConditionAndSmiths,
@@ -1532,7 +1538,7 @@ pub enum Reducer {
     },
     StoreBattleLoot {
         character_id: u64,
-        quest_id: String,
+        battle_id: String,
         loot_item_ids: Vec<u64>,
         quantities: Vec<u32>,
     },
@@ -1644,7 +1650,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::ApprovePartyActionRequestPlanned { .. } => {
                 "approve_party_action_request_planned"
             }
-            Reducer::AutoresolveQuest { .. } => "autoresolve_quest",
+            Reducer::AutoresolveMission { .. } => "autoresolve_mission",
             Reducer::BackfillCharacterDeathsAndLeadership => {
                 "backfill_character_deaths_and_leadership"
             }
@@ -1817,12 +1823,12 @@ impl __sdk::Reducer for Reducer {
                 request_id: request_id.clone(),
                 route: route.clone(),
 }),
-            Reducer::AutoresolveQuest{
+            Reducer::AutoresolveMission{
                 character_id,
-                quest_id,
-}             => __sats::bsatn::to_vec(&autoresolve_quest_reducer::AutoresolveQuestArgs {
+                mission_id,
+}             => __sats::bsatn::to_vec(&autoresolve_mission_reducer::AutoresolveMissionArgs {
                 character_id: character_id.clone(),
-                quest_id: quest_id.clone(),
+                mission_id: mission_id.clone(),
 }),
             Reducer::BackfillCharacterDeathsAndLeadership => __sats::bsatn::to_vec(&backfill_character_deaths_and_leadership_reducer::BackfillCharacterDeathsAndLeadershipArgs {
                 }),
@@ -2576,12 +2582,12 @@ Reducer::CancelMissionRequest{
 }),
             Reducer::StoreBattleLoot{
                 character_id,
-                quest_id,
+                battle_id,
                 loot_item_ids,
                 quantities,
 }             => __sats::bsatn::to_vec(&store_battle_loot_reducer::StoreBattleLootArgs {
                 character_id: character_id.clone(),
-                quest_id: quest_id.clone(),
+                battle_id: battle_id.clone(),
                 loot_item_ids: loot_item_ids.clone(),
                 quantities: quantities.clone(),
 }),
@@ -3179,7 +3185,7 @@ impl __sdk::DbUpdate for DbUpdate {
                 "autoresolve_report",
                 &self.autoresolve_report,
             )
-            .with_updates_by_pk(|row| &row.quest_id);
+            .with_updates_by_pk(|row| &row.battle_id);
         diff.battle_loot_item = cache
             .apply_diff_to_table::<BattleLootItem>("battle_loot_item", &self.battle_loot_item)
             .with_updates_by_pk(|row| &row.id);
@@ -3191,7 +3197,7 @@ impl __sdk::DbUpdate for DbUpdate {
             .with_updates_by_pk(|row| &row.id);
         diff.battle_result = cache
             .apply_diff_to_table::<BattleResult>("battle_result", &self.battle_result)
-            .with_updates_by_pk(|row| &row.quest_id);
+            .with_updates_by_pk(|row| &row.battle_id);
         diff.character = cache
             .apply_diff_to_table::<Character>("character", &self.character)
             .with_updates_by_pk(|row| &row.id);
