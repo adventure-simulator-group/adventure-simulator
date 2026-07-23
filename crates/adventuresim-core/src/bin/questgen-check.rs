@@ -6,6 +6,8 @@ use adventuresim_core::{
 fn context(seed: u64, ordinal: u16) -> GenerationContext {
     GenerationContext {
         seed,
+        observer_entropy_hi: seed ^ 0x6f62_7365_7276_6572,
+        observer_entropy_lo: seed.rotate_left(23) ^ 0x7175_6573_742d_7631,
         settlement_id: "developer".into(),
         settlement_name: "Developer settlement".into(),
         scope: Scope::Settlement {
