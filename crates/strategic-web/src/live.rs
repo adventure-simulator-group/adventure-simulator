@@ -56,6 +56,7 @@ use adventuresim_stdb_client::{
     party_recruitment_role_table::PartyRecruitmentRoleTableAccess,
     party_stake_table::PartyStakeTableAccess, party_table::PartyTableAccess,
     quest_issuer_table::QuestIssuerTableAccess, quest_table::QuestTableAccess,
+    recruitment_offer_table::RecruitmentOfferTableAccess,
     religious_demand_table::ReligiousDemandTableAccess, repair_order_table::RepairOrderTableAccess,
     retained_projectile_table::RetainedProjectileTableAccess,
     saved_recruitment_role_table::SavedRecruitmentRoleTableAccess,
@@ -64,7 +65,6 @@ use adventuresim_stdb_client::{
     settlement_outbreak_table::SettlementOutbreakTableAccess,
     settlement_smith_table::SettlementSmithTableAccess,
     strategic_encounter_table::StrategicEncounterTableAccess,
-    strategic_incident_table::StrategicIncidentTableAccess,
     tactical_server_request_table::TacticalServerRequestTableAccess,
     tactical_server_table::TacticalServerTableAccess,
 };
@@ -193,7 +193,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.character_notoriety());
         invalidate_on_changes!(state.0._connection.db.morale_event());
         invalidate_on_changes!(state.0._connection.db.religious_demand());
-        invalidate_on_changes!(state.0._connection.db.strategic_incident());
+        invalidate_on_changes!(state.0._connection.db.recruitment_offer());
         invalidate_on_changes!(state.0._connection.db.strategic_encounter());
         invalidate_on_changes!(state.0._connection.db.quest());
         invalidate_on_changes!(state.0._connection.db.quest_issuer());
@@ -266,6 +266,7 @@ impl LiveState {
             .add_query(|query| query.from.party_leader_vote())
             .add_query(|query| query.from.party_member())
             .add_query(|query| query.from.party_recruitment_role())
+            .add_query(|query| query.from.recruitment_offer())
             .add_query(|query| query.from.party_stake())
             .add_query(|query| query.from.quest())
             .add_query(|query| query.from.quest_issuer())
@@ -277,7 +278,6 @@ impl LiveState {
             .add_query(|query| query.from.settlement_description())
             .add_query(|query| query.from.settlement_smith())
             .add_query(|query| query.from.settlement_outbreak())
-            .add_query(|query| query.from.strategic_incident())
             .add_query(|query| query.from.tactical_server())
             .add_query(|query| query.from.tactical_server_request())
             .add_query(|query| query.from.travel_edge())

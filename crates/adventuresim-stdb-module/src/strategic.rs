@@ -429,6 +429,75 @@ mod healing_tests {
     }
 
     #[test]
+    fn npc_recruitment_authority_is_independent_from_quests() {
+        let source = include_str!("strategic.rs");
+        let body = source
+            .split("fn ensure_npc_recruiting_parties")
+            .nth(1)
+            .and_then(|tail| tail.split("fn generate_quest_for_settlement").next())
+            .expect("NPC recruiting population");
+        assert!(body.contains("recruitment_offer()"));
+        assert!(body.contains("RecruitmentOfferStatus::Open"));
+        assert!(!body.contains(".quest()"));
+        assert!(!body.contains("active_quest_id"));
+        assert!(!body.contains("accepted_by"));
+
+        let request = source
+            .split("pub fn request_to_join_party")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("join request reducer");
+        assert!(request.contains("require_open_recruitment_offer"));
+        assert!(request.contains("return Ok(())"));
+        let accept = source
+            .split("pub fn accept_party_join_request")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("join acceptance reducer");
+        assert!(accept.contains("require_open_recruitment_offer"));
+    }
+
+    #[test]
+    fn incidents_own_sources_sites_and_lifecycle_without_quest_side_effects() {
+        let source = include_str!("strategic.rs");
+        let schema = source
+            .split("pub struct StrategicIncident")
+            .nth(1)
+            .and_then(|tail| tail.split("pub struct RecruitmentOfferId").next())
+            .expect("incident schema");
+        for required in [
+            "IncidentSourceId",
+            "IncidentKind",
+            "IncidentStatus",
+            "CaseSiteId",
+            "hostile_group_id",
+        ] {
+            assert!(schema.contains(required), "incident lacks {required}");
+        }
+        for forbidden in ["quest_id", "previous_active_quest_id"] {
+            assert!(!schema.contains(forbidden), "incident retained {forbidden}");
+        }
+
+        let create = source
+            .split("fn create_strategic_incident")
+            .nth(1)
+            .and_then(|tail| tail.split("fn maybe_trigger_religious_incident").next())
+            .expect("incident creation");
+        assert!(create.contains("source_id == source_id"));
+        assert!(create.contains("materialize_hostile_group"));
+        assert!(!create.contains("ctx.db.quest()"));
+        assert!(!create.contains("active_quest_id"));
+
+        let finish = source
+            .split("fn finish_strategic_incident")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(crate) fn finish_incident").next())
+            .expect("incident completion");
+        assert!(!finish.contains("ctx.db.quest()"));
+        assert!(!finish.contains("active_quest_id"));
+    }
+
+    #[test]
     fn autoresolve_uses_explicit_mission_and_exactly_once_source_authority() {
         let source = include_str!("strategic.rs");
         let body = source
@@ -1623,20 +1692,88 @@ pub struct QuestIssuer {
     pub service_id: String,
 }
 
-/// A quest-backed strategic interruption which offers tactical combat,
-/// autoresolve, or retreat through the normal encounter flow.
+#[derive(Clone, Debug, PartialEq, Eq, SpacetimeType)]
+pub struct IncidentId {
+    pub value: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, SpacetimeType)]
+pub struct IncidentSourceId {
+    pub value: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum IncidentKind {
+    Religious,
+    RaidingRetaliation,
+    ThieveryDiscovery,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum IncidentStatus {
+    Pending,
+    Resolved,
+    Avoided,
+}
+
+/// Private strategic authority for an interruption. The source is the durable
+/// dedupe key; its site and hostile group bind directly to mission authority.
 #[derive(Clone, Debug)]
-#[table(accessor = strategic_incident, public)]
+#[table(accessor = strategic_incident)]
 pub struct StrategicIncident {
     #[primary_key]
-    pub quest_id: String,
+    pub id_key: String,
+    pub id: IncidentId,
+    #[unique]
+    pub source_id: IncidentSourceId,
     #[index(btree)]
     pub party_id: String,
     pub settlement_id: String,
     pub instigator_id: u64,
-    pub previous_active_quest_id: Option<String>,
-    pub kind: String,
-    pub status: String,
+    pub kind: IncidentKind,
+    pub status: IncidentStatus,
+    #[unique]
+    pub case_site_id: CaseSiteId,
+    #[unique]
+    pub hostile_group_id: String,
+    pub created_at_minute: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, SpacetimeType)]
+pub struct RecruitmentOfferId {
+    pub value: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, SpacetimeType)]
+pub struct RecruitmentSourceId {
+    pub value: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum RecruitmentOfferStatus {
+    Open,
+    Closed,
+    Expired,
+}
+
+/// Public, social-only projection for a persistent NPC company's recruiting
+/// lifecycle. It intentionally contains no investigation or quest identity.
+#[derive(Clone, Debug)]
+#[table(accessor = recruitment_offer, public)]
+pub struct RecruitmentOffer {
+    #[primary_key]
+    pub id_key: String,
+    pub id: RecruitmentOfferId,
+    #[unique]
+    pub source_id: RecruitmentSourceId,
+    #[unique]
+    pub recruiting_party_id: String,
+    #[index(btree)]
+    pub settlement_id: String,
+    pub leader_id: u64,
+    pub status: RecruitmentOfferStatus,
+    pub created_at_minute: u64,
+    pub expires_at_minute: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -4955,6 +5092,37 @@ fn role_requirements(
     requirements
 }
 
+fn require_open_recruitment_offer(
+    ctx: &ReducerContext,
+    party: &Party,
+) -> Result<Option<RecruitmentOffer>, String> {
+    let Some(leader) = ctx.db.character().id().find(party.leader_id) else {
+        return Err("Recruiting party leader not found".into());
+    };
+    if !leader.temporary {
+        return Ok(None);
+    }
+    let mut offer = ctx
+        .db
+        .recruitment_offer()
+        .recruiting_party_id()
+        .find(&party.id)
+        .ok_or("NPC company has no recruitment authority")?;
+    let now = crate::time::refresh_clock(ctx)?;
+    if offer.status == RecruitmentOfferStatus::Open && now >= offer.expires_at_minute {
+        offer.status = RecruitmentOfferStatus::Expired;
+        ctx.db.recruitment_offer().id_key().update(offer);
+        return Err("This recruitment offer has expired".into());
+    }
+    if offer.status != RecruitmentOfferStatus::Open {
+        return Err("This recruitment offer is no longer open".into());
+    }
+    if party.current_settlement_id.as_deref() != Some(&offer.settlement_id) {
+        return Err("Recruiting company is no longer at its advertised settlement".into());
+    }
+    Ok(Some(offer))
+}
+
 #[reducer]
 pub fn request_to_join_party(
     ctx: &ReducerContext,
@@ -4991,6 +5159,7 @@ pub fn request_to_join_party(
     if current_party_id == party_id {
         return Err("Cannot join your own party".into());
     }
+    require_open_recruitment_offer(ctx, &party)?;
     if !crate::simulation::same_simulation_scope(ctx, character_id, party.leader_id) {
         return Err("Simulation and ordinary parties cannot merge".into());
     }
@@ -5009,7 +5178,7 @@ pub fn request_to_join_party(
         .filter(character_id)
         .any(|request| request.recruitment_role_id == recruitment_role_id)
     {
-        return Err("A join request is already pending".into());
+        return Ok(());
     }
     let capabilities = crate::capability::refresh_character_capability(ctx, character_id)?;
     ctx.db.party_join_request().insert(PartyJoinRequest {
@@ -5062,6 +5231,7 @@ pub fn accept_party_join_request(
     let Some(party) = ctx.db.party_authority().id().find(&request.party_id) else {
         return Err("Party not found".into());
     };
+    let recruitment_offer = require_open_recruitment_offer(ctx, &party)?;
     require_no_unresolved_encounter(ctx, &request.party_id)?;
     if party.leader_id != leader_id {
         return Err("Only the party leader can accept join requests".into());
@@ -5257,6 +5427,20 @@ pub fn accept_party_join_request(
             .collect::<Vec<_>>()
         {
             ctx.db.party_join_request().id().delete(pending.id);
+        }
+    }
+    if let Some(mut offer) = recruitment_offer {
+        let has_open_role = ctx
+            .db
+            .party_recruitment_role()
+            .party_id()
+            .filter(&request.party_id)
+            .any(|candidate| {
+                candidate.quantity == 0 || filled_role_slots(ctx, candidate.id) < candidate.quantity
+            });
+        if !has_open_role {
+            offer.status = RecruitmentOfferStatus::Closed;
+            ctx.db.recruitment_offer().id_key().update(offer);
         }
     }
     normalize_and_elect_party_leader(ctx, &request.party_id)?;
@@ -7303,7 +7487,7 @@ fn straight_line_distance_m(
 }
 
 struct IncidentSpec<'a> {
-    kind: &'a str,
+    kind: IncidentKind,
     title: &'a str,
     description: String,
     enemy_type: &'a str,
@@ -7315,9 +7499,9 @@ fn create_strategic_incident(
     party_id: &str,
     settlement: &Settlement,
     instigator_id: u64,
-    quest_id: String,
+    source_id: IncidentSourceId,
     spec: IncidentSpec<'_>,
-) -> Result<Option<String>, String> {
+) -> Result<Option<IncidentId>, String> {
     parse_threat(spec.enemy_type)?;
     let Some(mut party) = ctx.db.party_authority().id().find(&party_id.to_string()) else {
         return Ok(None);
@@ -7330,29 +7514,28 @@ fn create_strategic_incident(
         .strategic_incident()
         .party_id()
         .filter(party_id)
-        .any(|incident| incident.status == "pending")
+        .any(|incident| incident.status == IncidentStatus::Pending)
     {
         return Ok(None);
     }
-    let case_site_id = format!("case-site:{quest_id}");
+    if let Some(existing) = ctx
+        .db
+        .strategic_incident()
+        .iter()
+        .find(|incident| incident.source_id == source_id)
+    {
+        return Ok(Some(existing.id));
+    }
+    let incident_key = format!("incident:{}", source_id.value);
+    let incident_id = IncidentId {
+        value: incident_key.clone(),
+    };
+    let case_site_id = format!("case-site:{incident_key}");
     let enemy_count = living_party_member_ids(ctx, party_id).len().max(2) as i32;
-    ctx.db.quest().insert(Quest {
-        id: quest_id.clone(),
-        title: spec.title.into(),
-        description: spec.description.clone(),
-        difficulty: spec.difficulty,
-        gold_reward: 0,
-        xp_reward: 0,
-        settlement_id: settlement.id.clone(),
-        status: QuestStatus::Accepted,
-        accepted_by: Some(party_id.into()),
-        enemy_type: spec.enemy_type.into(),
-        enemy_count,
-    });
     let site = CaseSiteAuthority {
         id_key: case_site_id.clone(),
         id: CaseSiteId::from(case_site_id.clone()),
-        case_id: quest_id.clone(),
+        case_id: incident_id.value.clone(),
         origin_settlement_id: settlement.id.clone(),
         name: spec.title.into(),
         description: spec.description,
@@ -7363,22 +7546,25 @@ fn create_strategic_incident(
         distance_m: 0,
     };
     ctx.db.case_site_authority().insert(site.clone());
-    materialize_hostile_group(
+    let hostile_group = materialize_hostile_group(
         ctx,
         &site,
         spec.enemy_type.into(),
         enemy_count as u32,
         spec.difficulty,
     )?;
-    disclose_exact_case_site(ctx, party.leader_id, &quest_id, &site, "the incident")?;
     ctx.db.strategic_incident().insert(StrategicIncident {
-        quest_id: quest_id.clone(),
+        id_key: incident_id.value.clone(),
+        id: incident_id.clone(),
+        source_id,
         party_id: party_id.into(),
         settlement_id: settlement.id.clone(),
         instigator_id,
-        previous_active_quest_id: party.active_quest_id.clone(),
-        kind: spec.kind.into(),
-        status: "pending".into(),
+        kind: spec.kind,
+        status: IncidentStatus::Pending,
+        case_site_id: site.id.clone(),
+        hostile_group_id: hostile_group.id,
+        created_at_minute: crate::time::refresh_clock(ctx)?,
     });
 
     for member_id in living_party_member_ids(ctx, party_id) {
@@ -7394,22 +7580,23 @@ fn create_strategic_incident(
     }
     party.current_settlement_id = None;
     party.current_case_site_id = Some(CaseSiteId::from(case_site_id));
-    party.active_quest_id = Some(quest_id.clone());
     ctx.db.party_authority().id().update(party);
-    Ok(Some(quest_id))
+    Ok(Some(incident_id))
 }
 
 fn maybe_trigger_religious_incident(
     ctx: &ReducerContext,
     party_id: &str,
     settlement: &Settlement,
-) -> Result<Option<String>, String> {
+) -> Result<Option<IncidentId>, String> {
     if ctx
         .db
         .strategic_incident()
         .party_id()
         .filter(party_id)
-        .any(|incident| incident.kind == "religious" && incident.settlement_id == settlement.id)
+        .any(|incident| {
+            incident.kind == IncidentKind::Religious && incident.settlement_id == settlement.id
+        })
     {
         return Ok(None);
     }
@@ -7443,15 +7630,17 @@ fn maybe_trigger_religious_incident(
     if !fervor_event_occurs(instigator_fervor, roll) {
         return Ok(None);
     }
-    let quest_id = format!("religious-incident-{party_id}-{}", settlement.id);
+    let source_id = IncidentSourceId {
+        value: format!("religious:{party_id}:{}", settlement.id),
+    };
     create_strategic_incident(
         ctx,
         party_id,
         settlement,
         instigator_id,
-        quest_id,
+        source_id,
         IncidentSpec {
-            kind: "religious",
+            kind: IncidentKind::Religious,
             title: "A Quarrel at the Gate",
             description: format!(
                 "At the gate of {}, a loud insult against the local faith has drawn an angry crowd. Combat is imminent, but the party can still withdraw and travel away.",
@@ -7467,7 +7656,7 @@ pub(crate) fn maybe_trigger_activity_incident(
     ctx: &ReducerContext,
     character_id: u64,
     risks: crate::time::ActivityRisks,
-) -> Result<Option<String>, String> {
+) -> Result<Option<IncidentId>, String> {
     let character = ctx
         .db
         .character()
@@ -7509,19 +7698,26 @@ pub(crate) fn maybe_trigger_activity_incident(
     let Some((kind, title, description, enemy_type, difficulty)) = outcome else {
         return Ok(None);
     };
-    let quest_id = format!(
-        "{kind}-incident-{party_id}-{}-{}",
-        settlement.id,
-        ctx.random::<u64>()
-    );
+    let (incident_kind, kind_key) = if kind == "raiding" {
+        (IncidentKind::RaidingRetaliation, "raiding")
+    } else {
+        (IncidentKind::ThieveryDiscovery, "thievery")
+    };
+    let source_id = IncidentSourceId {
+        value: format!(
+            "{kind_key}:{party_id}:{}:{}",
+            settlement.id,
+            ctx.random::<u64>()
+        ),
+    };
     create_strategic_incident(
         ctx,
         party_id,
         &settlement,
         character_id,
-        quest_id,
+        source_id,
         IncidentSpec {
-            kind,
+            kind: incident_kind,
             title,
             description: description.into(),
             enemy_type,
@@ -7532,38 +7728,37 @@ pub(crate) fn maybe_trigger_activity_incident(
 
 fn finish_strategic_incident(
     ctx: &ReducerContext,
-    quest_id: &str,
-    status: &str,
+    incident_id: &IncidentId,
+    status: IncidentStatus,
 ) -> Result<(), String> {
     let Some(mut incident) = ctx
         .db
         .strategic_incident()
-        .quest_id()
-        .find(&quest_id.to_string())
+        .id_key()
+        .find(&incident_id.value)
     else {
         return Ok(());
     };
-    if incident.status != "pending" {
+    if incident.status != IncidentStatus::Pending {
         return Ok(());
     }
-    incident.status = status.into();
-    ctx.db
-        .strategic_incident()
-        .quest_id()
-        .update(incident.clone());
-    if let Some(mut party) = ctx.db.party_authority().id().find(&incident.party_id)
-        && party.active_quest_id.as_deref() == Some(quest_id)
-    {
-        party.active_quest_id = incident.previous_active_quest_id;
-        ctx.db.party_authority().id().update(party);
-    }
-    if status == "avoided"
-        && let Some(mut quest) = ctx.db.quest().id().find(&quest_id.to_string())
-    {
-        quest.status = QuestStatus::Completed;
-        ctx.db.quest().id().update(quest);
-    }
+    incident.status = status;
+    ctx.db.strategic_incident().id_key().update(incident);
     Ok(())
+}
+
+pub(crate) fn finish_incident_for_hostile_group(
+    ctx: &ReducerContext,
+    hostile_group_id: &str,
+) -> Result<bool, String> {
+    let incident = ctx.db.strategic_incident().iter().find(|incident| {
+        incident.hostile_group_id == hostile_group_id && incident.status == IncidentStatus::Pending
+    });
+    let Some(incident) = incident else {
+        return Ok(false);
+    };
+    finish_strategic_incident(ctx, &incident.id, IncidentStatus::Resolved)?;
+    Ok(true)
 }
 
 /// Return the next leg's length. The least-rested member sets the party's
@@ -9523,7 +9718,7 @@ fn revalidate_party_after_departure_sync(
         .strategic_incident()
         .party_id()
         .filter(party_id)
-        .any(|incident| incident.status == "pending");
+        .any(|incident| incident.status == IncidentStatus::Pending);
     if !departure_snapshot_allows_travel(party_matches, true, pending_incident) {
         return Err("Travel was interrupted while the party synchronized its clocks".into());
     }
@@ -10295,20 +10490,16 @@ fn travel_to_settlement_impl(
         finish_party_journey(ctx, &party.id);
         let departing_incident = departing_case_site.as_ref().and_then(|site_id| {
             ctx.db
-                .case_site_authority()
-                .id_key()
-                .find(site_id)
-                .filter(|site| {
-                    ctx.db
-                        .strategic_incident()
-                        .quest_id()
-                        .find(&site.case_id)
-                        .is_some()
+                .strategic_incident()
+                .iter()
+                .find(|incident| {
+                    incident.case_site_id.value == *site_id
+                        && incident.status == IncidentStatus::Pending
                 })
-                .map(|site| site.case_id)
+                .map(|incident| incident.id)
         });
-        if let Some(quest_id) = departing_incident.as_deref() {
-            finish_strategic_incident(ctx, quest_id, "avoided")?;
+        if let Some(incident_id) = departing_incident.as_ref() {
+            finish_strategic_incident(ctx, incident_id, IncidentStatus::Avoided)?;
         }
         if departing_incident.is_none() {
             maybe_trigger_religious_incident(ctx, &party.id, &destination)?;
@@ -10570,7 +10761,6 @@ pub fn complete_quest(ctx: &ReducerContext, quest_id: String) -> Result<(), Stri
 
     quest.status = QuestStatus::Completed;
     ctx.db.quest().id().update(quest);
-    finish_strategic_incident(ctx, &quest_id, "resolved")?;
     Ok(())
 }
 
@@ -10708,7 +10898,6 @@ pub fn autoresolve_mission(
         .as_ref()
         .and_then(|id| ctx.db.case_site_authority().id_key().find(&id.value))
         .ok_or("Party is not at a case site")?;
-    let quest_id = case_site.case_id.clone();
     require_party_ready(ctx, &party_id)?;
 
     let mission = ensure_bound_mission_authority(
@@ -10820,8 +11009,11 @@ pub fn autoresolve_mission(
         dropped_items,
         true,
     )?;
-    if committed && party.active_quest_id.as_deref() == Some(&quest_id) {
-        complete_quest(ctx, quest_id)
+    if committed && finish_incident_for_hostile_group(ctx, hostile_group_id)? {
+        return Ok(());
+    }
+    if committed && party.active_quest_id.as_deref() == Some(&case_site.case_id) {
+        complete_quest(ctx, case_site.case_id)
     } else {
         Ok(())
     }
@@ -11137,7 +11329,7 @@ fn ensure_settlement_activity_inner(
         generate_quest_for_settlement(ctx, settlement_id)?;
     }
     ensure_quest_issuers(ctx, settlement_id);
-    ensure_npc_quest_parties(ctx, settlement_id)?;
+    ensure_npc_recruiting_parties(ctx, settlement_id)?;
     Ok(())
 }
 
@@ -11176,66 +11368,27 @@ fn quest_service_for_title(title: &str) -> &'static str {
     }
 }
 
-fn ensure_npc_quest_parties(ctx: &ReducerContext, settlement_id: &str) -> Result<(), String> {
+fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> Result<(), String> {
     let target = 1 + settlement_id.bytes().map(usize::from).sum::<usize>() % 2;
-    for mut party in ctx.db.party_authority().iter().collect::<Vec<_>>() {
-        let Some(quest_id) = party.active_quest_id.as_ref() else {
-            continue;
-        };
-        let Some(quest) = ctx.db.quest().id().find(quest_id) else {
-            continue;
-        };
-        let Some(leader) = ctx.db.character().id().find(party.leader_id) else {
-            continue;
-        };
-        if !leader.temporary || quest.settlement_id != settlement_id {
-            continue;
+    let now = crate::time::refresh_clock(ctx)?;
+    for mut offer in ctx.db.recruitment_offer().iter().collect::<Vec<_>>() {
+        if offer.status == RecruitmentOfferStatus::Open && now >= offer.expires_at_minute {
+            offer.status = RecruitmentOfferStatus::Expired;
+            ctx.db.recruitment_offer().id_key().update(offer);
         }
-        party.current_settlement_id = Some(settlement_id.to_string());
-        if party.name.ends_with("'s party") {
-            party.name = format!("{}'s company", leader.name);
-        }
-        if party.medicine_target == 0.0
-            && party.command_target == 0.0
-            && party.religion_target == 0.0
-        {
-            party.medicine_target = 4.0;
-            party.command_target = 5.0;
-            party.religion_target = 4.0;
-        }
-        party.medicine_target = party.medicine_target.round().clamp(0.0, 5.0);
-        party.command_target = party.command_target.round().clamp(0.0, 5.0);
-        party.religion_target = party.religion_target.round().clamp(0.0, 5.0);
-        ctx.db.party_authority().id().update(party);
     }
     let existing = ctx
         .db
-        .party_authority()
+        .recruitment_offer()
         .iter()
-        .filter(|party| party.current_settlement_id.as_deref() == Some(settlement_id))
-        .filter(|party| party.active_quest_id.is_some())
-        .filter(|party| {
-            ctx.db
-                .character()
-                .id()
-                .find(party.leader_id)
-                .is_some_and(|leader| leader.temporary)
-        })
+        .filter(|offer| offer.settlement_id == settlement_id)
+        .filter(|offer| offer.status == RecruitmentOfferStatus::Open)
         .count();
     for _ in existing..target {
-        let Some(mut quest) = ctx
-            .db
-            .quest()
-            .settlement_id()
-            .filter(&settlement_id.to_string())
-            .find(|quest| quest.status == QuestStatus::Available)
-        else {
-            break;
-        };
         use petname::Generator;
         let leader_name = petname::Petnames::default()
             .generate(&mut ctx.rng(), 2, " ")
-            .unwrap_or_else(|| "quest captain".into());
+            .unwrap_or_else(|| "company captain".into());
         let mut leader_id = ctx.random::<u64>() | (1_u64 << 63);
         while ctx.db.character().id().find(leader_id).is_some() {
             leader_id = ctx.random::<u64>() | (1_u64 << 63);
@@ -11254,7 +11407,6 @@ fn ensure_npc_quest_parties(ctx: &ReducerContext, settlement_id: &str) -> Result
         let mut party = ctx.db.party_authority().id().find(&party_id).unwrap();
         party.name = format!("{}'s company", leader_name);
         party.current_settlement_id = Some(settlement_id.to_string());
-        party.active_quest_id = Some(quest.id.clone());
         party.medicine_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
         party.command_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
         party.religion_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
@@ -11285,9 +11437,19 @@ fn ensure_npc_quest_parties(ctx: &ReducerContext, settlement_id: &str) -> Result
                 quantity: 3,
                 weapon_precision: (ctx.random::<u64>() % 4) as f32 * 0.5,
             });
-        quest.status = QuestStatus::Accepted;
-        quest.accepted_by = Some(party_id);
-        ctx.db.quest().id().update(quest);
+        let source_key = format!("settlement-company:{settlement_id}:{leader_id}");
+        let offer_key = format!("recruitment-offer:{source_key}");
+        ctx.db.recruitment_offer().insert(RecruitmentOffer {
+            id_key: offer_key.clone(),
+            id: RecruitmentOfferId { value: offer_key },
+            source_id: RecruitmentSourceId { value: source_key },
+            recruiting_party_id: party_id,
+            settlement_id: settlement_id.to_string(),
+            leader_id,
+            status: RecruitmentOfferStatus::Open,
+            created_at_minute: now,
+            expires_at_minute: now.saturating_add(7 * 1_440),
+        });
     }
     Ok(())
 }
