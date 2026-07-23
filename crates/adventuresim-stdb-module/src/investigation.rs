@@ -3,7 +3,7 @@
 use crate::{
     character::{character, character__view, character_skills},
     local_problem::local_problem_receipt,
-    settlement_population::settlement_npc,
+    settlement_population::{settlement_npc, settlement_npc_presence},
     strategic::{
         CustodyHolderKind, CustodyObjectKind, case_authority, case_custody,
         living_party_member_ids, party_authority, party_journey_authority,
@@ -1325,30 +1325,102 @@ fn validate_action_position(
     capability: &InvestigationActionCapability,
     kind: action::InvestigationActionKind,
 ) -> Result<(), String> {
-    if matches!(
-        kind,
-        action::InvestigationActionKind::InspectSite | action::InvestigationActionKind::LayAmbush
-    ) && capability.target_kind == "site"
-        && character_case_site_id(ctx, actor.id).as_deref() != Some(capability.target_id.as_str())
-    {
-        return Err("The party must be at the reported site to inspect it".into());
-    }
-    if capability.target_kind == "area" {
-        let area = ctx
-            .db
-            .investigation_area_authority()
-            .id()
-            .find(&capability.target_id)
-            .ok_or("Investigation area no longer exists")?;
-        let in_origin = actor.current_settlement_id.as_deref() == Some(&area.origin_settlement_id);
-        let at_case_site = character_case_site_id(ctx, actor.id)
-            .and_then(|id| ctx.db.case_site_authority().id_key().find(&id))
-            .is_some_and(|site| site.case_id == area.case_id);
-        if !in_origin && !at_case_site {
-            return Err("The party is not near the approximate search area".into());
+    match capability.target_kind.as_str() {
+        "contact" => {
+            let presence = ctx
+                .db
+                .settlement_npc_presence()
+                .npc_id()
+                .find(&capability.target_id)
+                .ok_or("Referred contact no longer has an authoritative presence")?;
+            if actor.current_settlement_id.as_deref() != Some(presence.settlement_id.as_str()) {
+                return Err("The referred contact is in another settlement".into());
+            }
+            if kind == action::InvestigationActionKind::LocateContact {
+                let minute = character_strategic_minute(ctx, actor.id) % 1_440;
+                let present = if presence.start_minute <= presence.end_minute {
+                    minute >= u64::from(presence.start_minute)
+                        && minute < u64::from(presence.end_minute)
+                } else {
+                    minute >= u64::from(presence.start_minute)
+                        || minute < u64::from(presence.end_minute)
+                };
+                if !present {
+                    return Err("The referred contact is not currently present".into());
+                }
+            }
+            Ok(())
         }
+        "area" => {
+            let area = ctx
+                .db
+                .investigation_area_authority()
+                .id()
+                .find(&capability.target_id)
+                .ok_or("Investigation area no longer exists")?;
+            let in_origin =
+                actor.current_settlement_id.as_deref() == Some(&area.origin_settlement_id);
+            let at_case_site = character_case_site_id(ctx, actor.id)
+                .and_then(|id| ctx.db.case_site_authority().id_key().find(&id))
+                .is_some_and(|site| site.case_id == area.case_id);
+            if !in_origin && !at_case_site {
+                return Err("The party is not near the approximate search area".into());
+            }
+            Ok(())
+        }
+        "site" => {
+            if character_case_site_id(ctx, actor.id).as_deref()
+                == Some(capability.target_id.as_str())
+            {
+                return Ok(());
+            }
+            if matches!(
+                kind,
+                action::InvestigationActionKind::FollowTracks
+                    | action::InvestigationActionKind::ReacquireTracks
+            ) {
+                let predecessor = ctx
+                    .db
+                    .investigation_action_capability()
+                    .id()
+                    .find(&capability.required_action_id)
+                    .ok_or("Track predecessor no longer exists")?;
+                if predecessor.owner_character_id != capability.owner_character_id
+                    || predecessor.case_id != capability.case_id
+                    || predecessor.target_kind != "area"
+                {
+                    return Err("Track origin no longer matches this investigation".into());
+                }
+                return validate_action_position(
+                    ctx,
+                    actor,
+                    &predecessor,
+                    parse_action_kind(&predecessor.method)?,
+                );
+            }
+            Err("The party must occupy the action's authoritative site".into())
+        }
+        "tracks" | "route" => {
+            let predecessor = ctx
+                .db
+                .investigation_action_capability()
+                .id()
+                .find(&capability.required_action_id)
+                .ok_or("Route predecessor no longer exists")?;
+            if predecessor.owner_character_id != capability.owner_character_id
+                || predecessor.case_id != capability.case_id
+            {
+                return Err("Route origin no longer matches this investigation".into());
+            }
+            validate_action_position(
+                ctx,
+                actor,
+                &predecessor,
+                parse_action_kind(&predecessor.method)?,
+            )
+        }
+        _ => Err("Investigation action has no authoritative position binding".into()),
     }
-    Ok(())
 }
 
 fn validate_live_action_prerequisites(
@@ -3276,5 +3348,31 @@ mod tests {
         assert!(!production.contains("ensure_bound_mission_authority"));
         assert!(!production.contains("HostileResolutionKind::DrivenOff"));
         assert!(!production.contains("HostileResolutionKind::Captured"));
+        let position = production
+            .split("fn validate_action_position")
+            .nth(1)
+            .and_then(|tail| tail.split("fn validate_live_action_prerequisites").next())
+            .expect("position authority");
+        assert!(position.contains("settlement_npc_presence()"));
+        assert!(position.contains("actor.current_settlement_id.as_deref()"));
+        assert!(position.contains("presence.settlement_id.as_str()"));
+        assert!(position.contains("predecessor.target_kind != \"area\""));
+        assert!(position.contains("validate_action_position("));
+        assert!(position.contains("The party must occupy the action's authoritative site"));
+        let reducer = production
+            .split("pub(crate) fn perform_investigation_action_authorized")
+            .nth(1)
+            .expect("action reducer");
+        let position_check = reducer
+            .find("validate_live_action_prerequisites")
+            .expect("position check");
+        let time_advance = reducer
+            .find("advance_investigation_time")
+            .expect("time advance");
+        let lead_write = reducer
+            .find("persist_action_result_lead")
+            .expect("lead write");
+        assert!(position_check < time_advance);
+        assert!(position_check < lead_write);
     }
 }
