@@ -317,6 +317,15 @@ ordinary characters may enroll only when their current party matches it.
 Persistent quest XP is derived by the strategic quest completion path; tactical
 servers cannot supply an arbitrary XP award.
 
+### Observer-specific investigations
+
+Canonical case events and every testimony stage are private SpacetimeDB state;
+per-character beliefs, revisions, and leads are private too. The registered
+strategic SSR gateway receives only sanitized `backend_investigation_*` views
+and queries them for the active session character. Browser live subscriptions
+never include raw investigation tables. See
+[INVESTIGATIONS.md](INVESTIGATIONS.md).
+
 ### Strategic tables
 
 | Table | Description |

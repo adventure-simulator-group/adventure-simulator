@@ -18,7 +18,7 @@ use super::{
         travel_rest_minutes,
     },
     travel::{
-        QuestMapMarkers, TravelDestination, TravelForm, active_quest_tooltip, apply_terrain_route,
+        QuestMapMarkers, TravelDestination, TravelForm, apply_terrain_route,
         populate_itinerary_forecasts, settlement_destination,
     },
 };
@@ -34,7 +34,6 @@ use crate::templates::quest::{quest_location_enemy_page, quest_location_map_page
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/api/active-quest-marker", get(active_quest_marker))
         .route("/api/quests/{id}/accept", post(accept_quest_api))
         .route("/api/quests/{id}/turn-in", post(turn_in_quest_api))
         .route("/quests/{id}/abandon", post(abandon_quest))
@@ -53,69 +52,6 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/quests/{id}/autoresolve", post(autoresolve_quest))
         .route("/quests/{id}/loot/store", post(store_battle_loot))
-}
-
-#[derive(Serialize)]
-struct ActiveQuestMarker {
-    active: bool,
-    description: Option<String>,
-}
-
-async fn active_quest_marker(
-    State(state): State<AppState>,
-    session: Session,
-) -> Json<ActiveQuestMarker> {
-    let Some(character_id) = session.character_id_u64() else {
-        return Json(ActiveQuestMarker {
-            active: false,
-            description: None,
-        });
-    };
-    let character = state
-        .db
-        .query::<Character>(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
-        ))
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .next();
-    let Some(party_id) = character.and_then(|character| character.party_id) else {
-        return Json(ActiveQuestMarker {
-            active: false,
-            description: None,
-        });
-    };
-    let active_quest_id = state
-        .db
-        .query::<Party>(&format!(
-            "SELECT * FROM party WHERE id = {}",
-            sql_string_literal(&party_id)
-        ))
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .next()
-        .and_then(|party| party.active_quest_id);
-    let description = if let Some(quest_id) = active_quest_id.as_deref() {
-        state
-            .db
-            .query::<Quest>(&format!(
-                "SELECT * FROM quest WHERE id = {}",
-                sql_string_literal(quest_id)
-            ))
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .next()
-            .map(|quest| active_quest_tooltip(&quest))
-    } else {
-        None
-    };
-    Json(ActiveQuestMarker {
-        active: active_quest_id.is_some(),
-        description,
-    })
 }
 
 #[derive(Serialize)]
@@ -555,9 +491,7 @@ async fn render_quest_location(
             settlement_destination(settlement, distance_m, offroad_journey_minutes(distance_m))
         })
         .collect();
-    for destination in &mut nearby {
-        markers.decorate_settlement(destination);
-    }
+    let _ = markers;
     nearby.sort_by_key(|destination| destination.distance_m);
     nearby.truncate(5);
     if let QuestLocationTab::Map(Some(selected_id)) = &tab

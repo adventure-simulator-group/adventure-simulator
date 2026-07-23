@@ -15,6 +15,20 @@ At the destination, the strategic page retains the normal chat placeholder, show
 An incapacitated party may withdraw from a quest location to a settlement to recover, but cannot undertake further combat or ordinary travel until its members are ready.
 
 Completing the objective does not immediately close the quest or pay its promised reward. The party must travel back to the issuing settlement and speak to the same service NPC. Before completion the returning NPC says they are still awaiting results; after completion they ask whether the party has **finished**, and following that linked response turns in the quest. After the server confirms success, an Info row states the exact gold added to the party inventory. The promised gold enters the shared party inventory and its value is divided equally among the current members' stakes, with any indivisible remainder entering the captain's reserve. Only then is the quest removed from the party tracker and replacement settlement activity generated.
+## Diegetic discovery and navigation
+
+Quest problems are discovered through local rumors and NPC testimony, not
+exclamation markers. The journal records only what the active character knows:
+sources, uncertainty, contradictions, corrections, witness descriptions, and
+learned expected locations.
+
+Available-quest, quest-giver/service, route-to-issuer, and turn-in markers have
+been removed. Textual directions, landmarks, approximate areas, and route
+segments remain descriptions. Exact pins require exact believed knowledge, so
+an incorrect account can create an incorrect pin until corrected. The accepted
+legacy quest destination remains because that flow explicitly reveals its
+exact location. Recruitment indicators remain separate from quest markers.
+
 ## Planning
 Since you know what enemies you will face at the destination and can estimate what enemies you'll possibly face on the journey, you should plan a party in advance to account for this. For now this is mainly a question of whether you expect to encounter armored enemies (and therefore need hammers/rondels), hordes of weak enemies (therefore want a cleaving sword/axe/hammer and heavy armor), large enemies (therefore want a polearm), and enemies with projectiles (therefore want armor/full-plate). You will also want to account for difficult terrain or the need for stealth/detection during [travel](Travel.md) in your party composition, the latter is important if you're traveling through an area with enemies that are too dangerous for your party to fight against.
 ### Mixed-Level

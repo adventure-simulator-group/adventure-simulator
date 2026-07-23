@@ -26,6 +26,10 @@ pub mod backend_character_familiarities_table;
 pub mod backend_committed_cuts_table;
 pub mod backend_herbalist_examinations_table;
 pub mod backend_infection_episodes_table;
+pub mod backend_investigation_journal_entry_type;
+pub mod backend_investigation_journal_table;
+pub mod backend_investigation_lead_type;
+pub mod backend_investigation_leads_table;
 pub mod backend_local_problem_rumor_type;
 pub mod backend_local_problem_rumors_table;
 pub mod backend_local_problem_trade_effect_type;
@@ -151,6 +155,7 @@ pub mod direct_historical_vegetation_method_type;
 pub mod direct_historical_vegetation_type;
 pub mod disband_party_reducer;
 pub mod discard_inventory_items_reducer;
+pub mod discover_investigation_lead_reducer;
 pub mod disease_notice_type;
 pub mod dismiss_herbalist_examination_reducer;
 pub mod dismiss_medical_examination_reducer;
@@ -226,6 +231,17 @@ pub mod inventory_item_table;
 pub mod inventory_item_type;
 pub mod inventory_quantity_target_table;
 pub mod inventory_quantity_target_type;
+pub mod investigation_action_receipt_type;
+pub mod investigation_belief_revision_type;
+pub mod investigation_belief_type;
+pub mod investigation_case_authority_type;
+pub mod investigation_claim_type;
+pub mod investigation_event_authority_type;
+pub mod investigation_evidence_authority_type;
+pub mod investigation_lead_type;
+pub mod investigation_observation_type;
+pub mod investigation_recollection_type;
+pub mod investigation_sharing_receipt_type;
 pub mod item_condition_table;
 pub mod item_condition_type;
 pub mod item_kind_type;
@@ -333,6 +349,8 @@ pub mod quest_issuer_type;
 pub mod quest_status_type;
 pub mod quest_table;
 pub mod quest_type;
+pub mod receive_investigation_claim_reducer;
+pub mod receive_local_problem_rumor_reducer;
 pub mod recruitment_requirements_type;
 pub mod refresh_capabilities_reducer;
 pub mod refresh_strategic_condition_reducer;
@@ -423,6 +441,8 @@ pub mod settlement_smith_type;
 pub mod settlement_stock_type;
 pub mod settlement_table;
 pub mod settlement_type;
+pub mod share_investigation_belief_reducer;
+pub mod share_investigation_lead_reducer;
 pub mod simulation_character_table;
 pub mod simulation_character_type;
 pub mod simulation_run_table;
@@ -523,6 +543,10 @@ pub use backend_character_familiarities_table::*;
 pub use backend_committed_cuts_table::*;
 pub use backend_herbalist_examinations_table::*;
 pub use backend_infection_episodes_table::*;
+pub use backend_investigation_journal_entry_type::BackendInvestigationJournalEntry;
+pub use backend_investigation_journal_table::*;
+pub use backend_investigation_lead_type::BackendInvestigationLead;
+pub use backend_investigation_leads_table::*;
 pub use backend_local_problem_rumor_type::BackendLocalProblemRumor;
 pub use backend_local_problem_rumors_table::*;
 pub use backend_local_problem_trade_effect_type::BackendLocalProblemTradeEffect;
@@ -648,6 +672,7 @@ pub use direct_historical_vegetation_method_type::DirectHistoricalVegetationMeth
 pub use direct_historical_vegetation_type::DirectHistoricalVegetation;
 pub use disband_party_reducer::disband_party;
 pub use discard_inventory_items_reducer::discard_inventory_items;
+pub use discover_investigation_lead_reducer::discover_investigation_lead;
 pub use disease_notice_type::DiseaseNotice;
 pub use dismiss_herbalist_examination_reducer::dismiss_herbalist_examination;
 pub use dismiss_medical_examination_reducer::dismiss_medical_examination;
@@ -723,6 +748,17 @@ pub use inventory_item_table::*;
 pub use inventory_item_type::InventoryItem;
 pub use inventory_quantity_target_table::*;
 pub use inventory_quantity_target_type::InventoryQuantityTarget;
+pub use investigation_action_receipt_type::InvestigationActionReceipt;
+pub use investigation_belief_revision_type::InvestigationBeliefRevision;
+pub use investigation_belief_type::InvestigationBelief;
+pub use investigation_case_authority_type::InvestigationCaseAuthority;
+pub use investigation_claim_type::InvestigationClaim;
+pub use investigation_event_authority_type::InvestigationEventAuthority;
+pub use investigation_evidence_authority_type::InvestigationEvidenceAuthority;
+pub use investigation_lead_type::InvestigationLead;
+pub use investigation_observation_type::InvestigationObservation;
+pub use investigation_recollection_type::InvestigationRecollection;
+pub use investigation_sharing_receipt_type::InvestigationSharingReceipt;
 pub use item_condition_table::*;
 pub use item_condition_type::ItemCondition;
 pub use item_kind_type::ItemKind;
@@ -830,6 +866,8 @@ pub use quest_issuer_type::QuestIssuer;
 pub use quest_status_type::QuestStatus;
 pub use quest_table::*;
 pub use quest_type::Quest;
+pub use receive_investigation_claim_reducer::receive_investigation_claim;
+pub use receive_local_problem_rumor_reducer::receive_local_problem_rumor;
 pub use recruitment_requirements_type::RecruitmentRequirements;
 pub use refresh_capabilities_reducer::refresh_capabilities;
 pub use refresh_strategic_condition_reducer::refresh_strategic_condition;
@@ -920,6 +958,8 @@ pub use settlement_smith_type::SettlementSmith;
 pub use settlement_stock_type::SettlementStock;
 pub use settlement_table::*;
 pub use settlement_type::Settlement;
+pub use share_investigation_belief_reducer::share_investigation_belief;
+pub use share_investigation_lead_reducer::share_investigation_lead;
 pub use simulation_character_table::*;
 pub use simulation_character_type::SimulationCharacter;
 pub use simulation_run_table::*;
@@ -1155,6 +1195,20 @@ pub enum Reducer {
         inventory_item_ids: Vec<u64>,
         quantities: Vec<u32>,
     },
+    DiscoverInvestigationLead {
+        character_id: u64,
+        action_id: String,
+        case_id: String,
+        lead_id: String,
+        summary: String,
+        source_label: String,
+        confidence_bps: u16,
+        destination_stage: String,
+        directions: String,
+        exact_location_id: String,
+        latitude_e_7: i32,
+        longitude_e_7: i32,
+    },
     DismissHerbalistExamination {
         patient_id: u64,
         examination_id: u64,
@@ -1274,6 +1328,21 @@ pub enum Reducer {
         settlement_id: String,
         item_ids: Vec<String>,
         quantities: Vec<u32>,
+    },
+    ReceiveInvestigationClaim {
+        character_id: u64,
+        action_id: String,
+        case_id: String,
+        claim_id: String,
+        proposition_id: String,
+        statement: String,
+        source_label: String,
+        confidence_bps: u16,
+    },
+    ReceiveLocalProblemRumor {
+        character_id: u64,
+        receipt_id: String,
+        action_id: String,
     },
     RefreshCapabilities {
         character_id: u64,
@@ -1398,6 +1467,18 @@ pub enum Reducer {
         travel_at_night: bool,
         automatic_camp_duration: bool,
         fixed_camp_minutes: u16,
+    },
+    ShareInvestigationBelief {
+        sender_id: u64,
+        recipient_id: u64,
+        source_belief_id: String,
+        action_id: String,
+    },
+    ShareInvestigationLead {
+        sender_id: u64,
+        recipient_id: u64,
+        source_lead_id: String,
+        action_id: String,
     },
     StartDialogue {
         character_id: u64,
@@ -1550,6 +1631,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::DepositPartyInventoryItem { .. } => "deposit_party_inventory_item",
             Reducer::DisbandParty { .. } => "disband_party",
             Reducer::DiscardInventoryItems { .. } => "discard_inventory_items",
+            Reducer::DiscoverInvestigationLead { .. } => "discover_investigation_lead",
             Reducer::DismissHerbalistExamination { .. } => "dismiss_herbalist_examination",
             Reducer::DismissMedicalExamination { .. } => "dismiss_medical_examination",
             Reducer::DismissPartyActionRequest { .. } => "dismiss_party_action_request",
@@ -1577,6 +1659,8 @@ impl __sdk::Reducer for Reducer {
             Reducer::PerformImmediateActivity { .. } => "perform_immediate_activity",
             Reducer::PerformSocialAction { .. } => "perform_social_action",
             Reducer::PurchaseFromHerbalist { .. } => "purchase_from_herbalist",
+            Reducer::ReceiveInvestigationClaim { .. } => "receive_investigation_claim",
+            Reducer::ReceiveLocalProblemRumor { .. } => "receive_local_problem_rumor",
             Reducer::RefreshCapabilities { .. } => "refresh_capabilities",
             Reducer::RefreshStrategicCondition { .. } => "refresh_strategic_condition",
             Reducer::RegisterStrategicGateway { .. } => "register_strategic_gateway",
@@ -1604,6 +1688,8 @@ impl __sdk::Reducer for Reducer {
             Reducer::SetInventoryQuantityTarget { .. } => "set_inventory_quantity_target",
             Reducer::SetPartyCampFatiguePercent { .. } => "set_party_camp_fatigue_percent",
             Reducer::SetPartyTravelItinerary { .. } => "set_party_travel_itinerary",
+            Reducer::ShareInvestigationBelief { .. } => "share_investigation_belief",
+            Reducer::ShareInvestigationLead { .. } => "share_investigation_lead",
             Reducer::StartDialogue { .. } => "start_dialogue",
             Reducer::StoreBattleLoot { .. } => "store_battle_loot",
             Reducer::SubmitAllRepairableItems { .. } => "submit_all_repairable_items",
@@ -1895,6 +1981,33 @@ Reducer::CancelMissionRequest{
                 inventory_item_ids: inventory_item_ids.clone(),
                 quantities: quantities.clone(),
 }),
+            Reducer::DiscoverInvestigationLead{
+                character_id,
+                action_id,
+                case_id,
+                lead_id,
+                summary,
+                source_label,
+                confidence_bps,
+                destination_stage,
+                directions,
+                exact_location_id,
+                latitude_e_7,
+                longitude_e_7,
+}             => __sats::bsatn::to_vec(&discover_investigation_lead_reducer::DiscoverInvestigationLeadArgs {
+                character_id: character_id.clone(),
+                action_id: action_id.clone(),
+                case_id: case_id.clone(),
+                lead_id: lead_id.clone(),
+                summary: summary.clone(),
+                source_label: source_label.clone(),
+                confidence_bps: confidence_bps.clone(),
+                destination_stage: destination_stage.clone(),
+                directions: directions.clone(),
+                exact_location_id: exact_location_id.clone(),
+                latitude_e_7: latitude_e_7.clone(),
+                longitude_e_7: longitude_e_7.clone(),
+}),
             Reducer::DismissHerbalistExamination{
                 patient_id,
                 examination_id,
@@ -2107,6 +2220,34 @@ Reducer::CancelMissionRequest{
                 settlement_id: settlement_id.clone(),
                 item_ids: item_ids.clone(),
                 quantities: quantities.clone(),
+}),
+            Reducer::ReceiveInvestigationClaim{
+                character_id,
+                action_id,
+                case_id,
+                claim_id,
+                proposition_id,
+                statement,
+                source_label,
+                confidence_bps,
+}             => __sats::bsatn::to_vec(&receive_investigation_claim_reducer::ReceiveInvestigationClaimArgs {
+                character_id: character_id.clone(),
+                action_id: action_id.clone(),
+                case_id: case_id.clone(),
+                claim_id: claim_id.clone(),
+                proposition_id: proposition_id.clone(),
+                statement: statement.clone(),
+                source_label: source_label.clone(),
+                confidence_bps: confidence_bps.clone(),
+}),
+            Reducer::ReceiveLocalProblemRumor{
+                character_id,
+                receipt_id,
+                action_id,
+}             => __sats::bsatn::to_vec(&receive_local_problem_rumor_reducer::ReceiveLocalProblemRumorArgs {
+                character_id: character_id.clone(),
+                receipt_id: receipt_id.clone(),
+                action_id: action_id.clone(),
 }),
             Reducer::RefreshCapabilities{
                 character_id,
@@ -2329,6 +2470,28 @@ Reducer::CancelMissionRequest{
                 automatic_camp_duration: automatic_camp_duration.clone(),
                 fixed_camp_minutes: fixed_camp_minutes.clone(),
 }),
+            Reducer::ShareInvestigationBelief{
+                sender_id,
+                recipient_id,
+                source_belief_id,
+                action_id,
+}             => __sats::bsatn::to_vec(&share_investigation_belief_reducer::ShareInvestigationBeliefArgs {
+                sender_id: sender_id.clone(),
+                recipient_id: recipient_id.clone(),
+                source_belief_id: source_belief_id.clone(),
+                action_id: action_id.clone(),
+}),
+            Reducer::ShareInvestigationLead{
+                sender_id,
+                recipient_id,
+                source_lead_id,
+                action_id,
+}             => __sats::bsatn::to_vec(&share_investigation_lead_reducer::ShareInvestigationLeadArgs {
+                sender_id: sender_id.clone(),
+                recipient_id: recipient_id.clone(),
+                source_lead_id: source_lead_id.clone(),
+                action_id: action_id.clone(),
+}),
             Reducer::StartDialogue{
                 character_id,
                 session_id,
@@ -2528,6 +2691,8 @@ pub struct DbUpdate {
     backend_committed_cuts: __sdk::TableUpdate<CommittedCut>,
     backend_herbalist_examinations: __sdk::TableUpdate<HerbalistExamination>,
     backend_infection_episodes: __sdk::TableUpdate<InfectionEpisodeRow>,
+    backend_investigation_journal: __sdk::TableUpdate<BackendInvestigationJournalEntry>,
+    backend_investigation_leads: __sdk::TableUpdate<BackendInvestigationLead>,
     backend_local_problem_rumors: __sdk::TableUpdate<BackendLocalProblemRumor>,
     backend_local_problem_trade_effects: __sdk::TableUpdate<BackendLocalProblemTradeEffect>,
     backend_medical_examinations: __sdk::TableUpdate<MedicalExamination>,
@@ -2640,6 +2805,12 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 }
                 "backend_infection_episodes" => db_update.backend_infection_episodes.append(
                     backend_infection_episodes_table::parse_table_update(table_update)?,
+                ),
+                "backend_investigation_journal" => db_update.backend_investigation_journal.append(
+                    backend_investigation_journal_table::parse_table_update(table_update)?,
+                ),
+                "backend_investigation_leads" => db_update.backend_investigation_leads.append(
+                    backend_investigation_leads_table::parse_table_update(table_update)?,
                 ),
                 "backend_local_problem_rumors" => db_update.backend_local_problem_rumors.append(
                     backend_local_problem_rumors_table::parse_table_update(table_update)?,
@@ -3267,6 +3438,15 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_infection_episodes",
             &self.backend_infection_episodes,
         );
+        diff.backend_investigation_journal = cache
+            .apply_diff_to_table::<BackendInvestigationJournalEntry>(
+                "backend_investigation_journal",
+                &self.backend_investigation_journal,
+            );
+        diff.backend_investigation_leads = cache.apply_diff_to_table::<BackendInvestigationLead>(
+            "backend_investigation_leads",
+            &self.backend_investigation_leads,
+        );
         diff.backend_local_problem_rumors = cache.apply_diff_to_table::<BackendLocalProblemRumor>(
             "backend_local_problem_rumors",
             &self.backend_local_problem_rumors,
@@ -3313,6 +3493,12 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_infection_episodes" => db_update
                     .backend_infection_episodes
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_investigation_journal" => db_update
+                    .backend_investigation_journal
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_investigation_leads" => db_update
+                    .backend_investigation_leads
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_local_problem_rumors" => db_update
                     .backend_local_problem_rumors
@@ -3588,6 +3774,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_infection_episodes" => db_update
                     .backend_infection_episodes
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_investigation_journal" => db_update
+                    .backend_investigation_journal
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_investigation_leads" => db_update
+                    .backend_investigation_leads
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_local_problem_rumors" => db_update
                     .backend_local_problem_rumors
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -3850,6 +4042,8 @@ pub struct AppliedDiff<'r> {
     backend_committed_cuts: __sdk::TableAppliedDiff<'r, CommittedCut>,
     backend_herbalist_examinations: __sdk::TableAppliedDiff<'r, HerbalistExamination>,
     backend_infection_episodes: __sdk::TableAppliedDiff<'r, InfectionEpisodeRow>,
+    backend_investigation_journal: __sdk::TableAppliedDiff<'r, BackendInvestigationJournalEntry>,
+    backend_investigation_leads: __sdk::TableAppliedDiff<'r, BackendInvestigationLead>,
     backend_local_problem_rumors: __sdk::TableAppliedDiff<'r, BackendLocalProblemRumor>,
     backend_local_problem_trade_effects:
         __sdk::TableAppliedDiff<'r, BackendLocalProblemTradeEffect>,
@@ -3977,6 +4171,16 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<InfectionEpisodeRow>(
             "backend_infection_episodes",
             &self.backend_infection_episodes,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendInvestigationJournalEntry>(
+            "backend_investigation_journal",
+            &self.backend_investigation_journal,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendInvestigationLead>(
+            "backend_investigation_leads",
+            &self.backend_investigation_leads,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendLocalProblemRumor>(
@@ -5002,6 +5206,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_committed_cuts_table::register_table(client_cache);
         backend_herbalist_examinations_table::register_table(client_cache);
         backend_infection_episodes_table::register_table(client_cache);
+        backend_investigation_journal_table::register_table(client_cache);
+        backend_investigation_leads_table::register_table(client_cache);
         backend_local_problem_rumors_table::register_table(client_cache);
         backend_local_problem_trade_effects_table::register_table(client_cache);
         backend_medical_examinations_table::register_table(client_cache);
@@ -5091,6 +5297,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_committed_cuts",
         "backend_herbalist_examinations",
         "backend_infection_episodes",
+        "backend_investigation_journal",
+        "backend_investigation_leads",
         "backend_local_problem_rumors",
         "backend_local_problem_trade_effects",
         "backend_medical_examinations",
