@@ -9,8 +9,6 @@ const baseCss = fs.readFileSync("crates/strategic-web/static/css/base.css", "utf
 const layoutCss = fs.readFileSync("crates/strategic-web/static/css/layout.css", "utf8");
 const componentsCss = fs.readFileSync("crates/strategic-web/static/css/components.css", "utf8");
 const strategicCss = fs.readFileSync("crates/strategic-web/static/css/strategic.css", "utf8");
-const recruitmentTemplate = fs.readFileSync("crates/strategic-web/src/templates/recruitment.rs", "utf8");
-const appliedStyles = new Map();
 
 test("grouped inventory disclosures stay beside their labels in narrow merchant rails", () => {
   assert.match(strategicCss, /:is\(\.currency-parent-row, \.alcohol-parent-row, \.food-parent-row\) \.inventory-item-label \{[\s\S]*display: inline-block;[\s\S]*max-width: calc\(100% - 1\.5rem\);/);
@@ -25,7 +23,7 @@ const window = {
 };
 vm.runInNewContext(source, {
   window,
-  document: { documentElement: { style: { setProperty(name, value) { appliedStyles.set(name, value); } } }, querySelectorAll: () => [] },
+  document: { documentElement: { style: { setProperty() {} } }, querySelectorAll: () => [] },
   Promise,
 });
 
@@ -62,38 +60,6 @@ test("daytime sky is bright while strategic surfaces stay building-derived", () 
   assert.match(baseCss, /--building-interactive:color-mix/);
   assert.match(strategicCss, /\.trade-inventory-row \{[\s\S]*background: var\(--building-interactive\)/);
   assert.match(strategicCss, /\.main-grid \.btn:not\(\.btn-danger\)[\s\S]*background: var\(--building-interactive\)/);
-});
-
-test("continuous environment tokens cover night, dawn, noon, sunset, and twilight", () => {
-  const at = (hour) => window.strategicTimeLighting(hour * 60);
-  const [midnight, dawn, noon, sunset, twilight] = [0, 6, 12, 18, 19].map(at);
-  assert.equal(midnight.light, 0);
-  assert.equal(noon.light, 1);
-  assert.ok(dawn.light > midnight.light && dawn.light < noon.light);
-  assert.ok(sunset.light > twilight.light && sunset.light < noon.light);
-  assert.ok(dawn.warmth > .7 && sunset.warmth > .9 && midnight.warmth === 0);
-  for (const hour of [0, 5, 6, 7, 9, 12, 15, 17, 18, 19, 21]) {
-    const before = window.strategicTimeLighting(((hour * 60 - 1) + 1440) % 1440);
-    const after = window.strategicTimeLighting((hour * 60 + 1) % 1440);
-    assert.ok(Math.abs(before.light - after.light) < .02, `light discontinuity at ${hour}:00`);
-    assert.ok(Math.abs(before.warmth - after.warmth) < .04, `warmth discontinuity at ${hour}:00`);
-  }
-
-  window.strategicTimeApplyLighting(99);
-  for (const token of [
-    "--environment-light", "--environment-warmth", "--environment-tint",
-    "--map-light", "--map-saturation", "--map-atmosphere-opacity", "--scene-atmosphere-opacity",
-    "--map-surface-mix", "--map-land-mix",
-  ]) assert.ok(appliedStyles.has(token), `${token} was not applied`);
-  assert.ok(Number(appliedStyles.get("--map-light")) >= .62);
-});
-
-test("environmental map treatment is scoped away from semantic overlays and controls", () => {
-  assert.match(strategicCss, /\.map-tile-layer image \{ filter: brightness\(var\(--map-light/);
-  assert.match(strategicCss, /\.map-atmosphere-layer \{[^}]*var\(--environment-tint/);
-  assert.doesNotMatch(strategicCss, /\.map-overlay-layer[^}]*filter:/);
-  assert.doesNotMatch(strategicCss, /\.strategic-map-control[^}]*--map-light/);
-  assert.match(strategicCss, /\.map-pin-link:focus-visible[\s\S]*#fff8dc[\s\S]*drop-shadow/);
 });
 
 test("settlement tabs layer tiered tintable buildings and proportional horizons beneath service icons", () => {
@@ -157,7 +123,7 @@ test("settlement smithies and wilderness tabs use independent non-interactive ef
   assert.match(layoutCss, /\.topbar-scene-effect-plane \{[\s\S]*bottom: var\(--topbar-prop-baseline\);[\s\S]*width: 6\.55rem;[\s\S]*height: 6\.55rem;[\s\S]*scale\(var\(--topbar-prop-scale\)\)/);
   assert.match(layoutCss, /@media \(max-width: 1200px\)[\s\S]*--topbar-prop-scale: 0\.8473;[\s\S]*data-environment="wilderness"[\s\S]*--topbar-prop-scale: 0\.8473;/);
   assert.match(layoutCss, /\.campfire-smoke \{[\s\S]*--smoke-rise-distance: -180px;/);
-  assert.match(layoutCss, /@media \(max-width: 768px\)[\s\S]*padding: 0\.75rem 0\.5rem 0\.65rem;[\s\S]*overflow-y: hidden;[\s\S]*--topbar-prop-scale: 0\.8855;[\s\S]*\.campfire-smoke \{[\s\S]*--smoke-rise-distance: -110px;/);
+  assert.match(layoutCss, /@media \(max-width: 768px\)[\s\S]*padding: 0\.75rem 0\.5rem 0\.35rem;[\s\S]*overflow-y: hidden;[\s\S]*--topbar-prop-scale: 0\.8855;[\s\S]*\.campfire-smoke \{[\s\S]*--smoke-rise-distance: -110px;/);
 
   const smokeFrames = layoutCss.match(/@keyframes wilderness-smoke-rise \{[\s\S]*?\n\}/)?.[0] ?? "";
   const flameFrames = layoutCss.match(/@keyframes wilderness-flame-flicker \{[\s\S]*?\n\}/)?.[0] ?? "";
@@ -199,23 +165,6 @@ test("wilderness headers select a tintable physical horizon", () => {
   for (const variant of ["forest", "grassland", "hills"]) {
     assert.match(layoutCss, new RegExp(`data-wilderness-variant="${variant}"[\\s\\S]*background/wilderness/${variant}\\.png`));
   }
-});
-
-test("service silhouettes expose names through the shared tooltip and keep active state non-color", () => {
-  assert.match(layoutTemplate, /data-service-label=\(label\)[\s\S]*data-strategic-tooltip=\(label\)/);
-  assert.match(layoutTemplate, /href="\/camp" class="nav-tab active quest-context-tab"[\s\S]*data-service-label="Camp"/);
-  assert.match(layoutTemplate, /data-location-view="map"[\s\S]*data-service-label="Map"/);
-  assert.match(layoutTemplate, /data-location-view="enemy"[\s\S]*data-service-label="Enemy"/);
-  assert.match(layoutCss, /\.settlement-services \.nav-tab:focus-visible/);
-  assert.match(layoutCss, /@media \(hover: none\), \(pointer: coarse\)[\s\S]*\.service-tab-label \{[\s\S]*display: block/);
-  assert.match(layoutCss, /\.nav-tab\.active::after[\s\S]*height: 3px/);
-  assert.match(layoutCss, /padding: 0\.75rem 0\.5rem 0\.65rem/);
-});
-
-test("party check exact values have keyboard and shared-tooltip paths", () => {
-  assert.match(recruitmentTemplate, /data-party-check-track[\s\S]*tabindex="0"[\s\S]*data-strategic-tooltip=\(&description\)/);
-  assert.match(strategicCss, /\.party-check-track:focus-visible \.party-check-exact/);
-  assert.match(strategicCss, /\.party-check-track:focus-visible \{ outline:/);
 });
 
 test("settlement side panels use tint-derived frames around neutral recesses", () => {

@@ -484,14 +484,6 @@ fn party_check_target_form(
     target_position: f32,
     can_manage: bool,
 ) -> Markup {
-    let description = if contribution.abs() > 0.005 {
-        format!(
-            "{label}: {current:.1} {contribution:+.1} = {:.1}; target {target:.0}",
-            current + contribution
-        )
-    } else {
-        format!("{label}: {current:.1}; target {target:.0}")
-    };
     html! {
         form action="/party-recruitment/check-targets" method="post" class="party-check-target-form"
             data-party-check-target-form data-check-name=(field) {
@@ -501,7 +493,11 @@ fn party_check_target_form(
             div class=(if can_manage { "party-check-track party-check-track-editable" } else { "party-check-track" })
                 data-party-check-track data-check-name=(field) data-check-label=(label)
                 data-check-current=(current) data-check-target=(target)
-                tabindex="0" aria-label=(&description) data-strategic-tooltip=(&description) {
+                title=(if contribution.abs() > 0.005 {
+                    format!("{label}: {current:.1} {contribution:+.1} = {:.1}; target {target:.0}", current + contribution)
+                } else {
+                    format!("{label}: {current:.1}; target {target:.0}")
+                }) {
                 span class="party-check-current" style=(format!("width:{current_width:.1}%")) {}
                 @if contribution.abs() > 0.005 {
                     span class=(if contribution > 0.0 { "party-check-contribution" } else { "party-check-contribution party-check-contribution-negative" })

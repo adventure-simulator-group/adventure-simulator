@@ -156,16 +156,16 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/base.css?v=environment-14";
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=strategic-ux-review-2";
+                link rel="stylesheet" href="/static/css/layout.css?v=subtle-material-lines-1-dialogue-source-icons-2";
                 link rel="stylesheet" href="/static/css/components.css?v=lowercase-display-type-1";
-                link rel="stylesheet" href="/static/css/strategic.css?v=strategic-ux-review-1";
+                link rel="stylesheet" href="/static/css/strategic.css?v=strategic-ui-overhaul-4-paper-map-2-data-license-1-grouped-alcohol-2-grouped-food-1-rest-supplies-1-dialogue-pane-1-cooking-trade-1";
                 link rel="stylesheet" href="/static/css/utilities.css?v=strategic-ui-overhaul-1";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
                 script src="/static/background-fetch.js?v=background-fetch-2" {}
                 script src="/static/developer-mode.js?v=dialogue-sources-1" defer {}
-                script src="/static/tooltips.js?v=styled-tooltips-2" defer {}
+                script src="/static/tooltips.js?v=styled-tooltips-1" defer {}
                 script src="/static/medical-examination.js?v=strategic-dialogs-1" defer {}
                 @if scripts != ScriptProfile::Entry {
                     script src="/static/live-state.js?v=sse-3" defer {}
@@ -186,7 +186,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}
                     script src="/static/building-state.js?v=village-building-tabs-1" defer {}
                     script src="/static/travel-planner.js?v=travel-polish-6" defer {}
-                    script src="/static/strategic-map.js?v=map-controls-environment-2" defer {}
+                    script src="/static/strategic-map.js?v=responsive-map-viewport-1" defer {}
                     script src="/static/rest-duration.js?v=wake-time-3" defer {}
                 }
             }
@@ -277,7 +277,7 @@ fn settlement_top_bar(
                         data-service-id=(path)
                         data-service-label=(label)
                         aria-label=(label)
-                        data-strategic-tooltip=(label)
+                        title=(label)
                         aria-current=(if active_service == path { "page" } else { "false" })
                     {
                         span class="service-tab-building" aria-hidden="true" {}
@@ -290,7 +290,6 @@ fn settlement_top_bar(
                             class=(format!("service-tab-icon service-tab-icon-{}", icon))
                             style=[(path == "religion").then(|| format!("--service-tab-icon: url('{}')", religion_icon_path(religion_id)))]
                             aria-hidden="true" {}
-                        span class="service-tab-label" aria-hidden="true" { (label) }
                         @if path == "map" {
                             span class="service-notification-badge service-map-quest-badge"
                                 data-map-quest-badge title="Active quest" aria-hidden="true" hidden { "!" }
@@ -307,7 +306,7 @@ fn settlement_top_bar(
                 }
             }
         }
-        script src="/static/strategic-time.js?v=continuous-environment-1" {}
+        script src="/static/strategic-time.js?v=wake-time-1" {}
     }
 }
 
@@ -342,11 +341,10 @@ fn quest_location_top_bar(
             }
             nav class="top-bar-center settlement-services" aria-label="Location views" {
                 @if active_tab == "camp" {
-                    a href="/camp" class="nav-tab active quest-context-tab"
+                    span class="nav-tab active quest-context-tab"
                         style=(format!("--building-tint:{enemy_tint}"))
                         data-location-view="camp"
-                        data-service-label="Camp"
-                        aria-current="page" aria-label="Camp" data-strategic-tooltip="Camp" {
+                        aria-current="page" aria-label="Camp" title="Camp" {
                         span class="service-tab-building wilderness-tab-prop" aria-hidden="true" {}
                         span class="topbar-scene-effect-plane" aria-hidden="true" {
                             @if camp_fire_lit {
@@ -354,29 +352,24 @@ fn quest_location_top_bar(
                             }
                             (smoke_effect("wilderness-smoke campfire-smoke"))
                         }
-                        span class="service-tab-label" aria-hidden="true" { "Camp" }
                     }
                 } @else {
                 a href=(format!("/locations/quest/{}", location_id))
                     class=(if active_tab == "map" { "nav-tab active" } else { "nav-tab" })
                     style=(format!("--building-tint:{map_tint}"))
                     data-location-view="map"
-                    data-service-label="Map"
                     aria-current=(if active_tab == "map" { "page" } else { "false" })
-                    aria-label="Map" data-strategic-tooltip="Map" {
+                    aria-label="Map" title="Map" {
                     span class="service-tab-building wilderness-tab-prop" aria-hidden="true" {}
-                    span class="service-tab-label" aria-hidden="true" { "Map" }
                 }
                 a href=(format!("/locations/quest/{}/enemy", location_id))
                     class=(if active_tab == "enemy" { "nav-tab active" } else { "nav-tab" })
                     style=(format!("--building-tint:{enemy_tint}"))
                     data-location-view="enemy"
-                    data-service-label="Enemy"
                     aria-current=(if active_tab == "enemy" { "page" } else { "false" })
-                    aria-label="Enemy" data-strategic-tooltip="Enemy" {
+                    aria-label="Enemy" title="Enemy" {
                     span class="service-tab-building wilderness-tab-prop" aria-hidden="true" {}
                     span class="service-tab-icon service-tab-icon-enemy" aria-hidden="true" {}
-                    span class="service-tab-label" aria-hidden="true" { "Enemy" }
                 }
                 }
             }
@@ -386,7 +379,7 @@ fn quest_location_top_bar(
                 }
             }
         }
-        script src="/static/strategic-time.js?v=continuous-environment-1" {}
+        script src="/static/strategic-time.js?v=client-clock-2" {}
     }
 }
 
@@ -890,9 +883,6 @@ mod tests {
         assert!(rested_camp.contains("data-camp-fire=\"embers\""));
         assert!(!rested_camp.contains("campfire-flame"));
         assert_eq!(rested_camp.matches("campfire-smoke").count(), 1);
-        assert!(rested_camp.contains("href=\"/camp\""));
-        assert!(rested_camp.contains("data-service-label=\"Camp\""));
-        assert!(rested_camp.contains("class=\"service-tab-label\""));
     }
 
     #[test]

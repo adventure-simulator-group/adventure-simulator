@@ -2445,7 +2445,7 @@ enum SurgeryItemRequirement {
 fn surgery_supply(label: &str, icon: &str, quantity: u32) -> Markup {
     let description = format!("{label}: {quantity} available");
     html! {
-        div class="surgery-supply" data-strategic-tooltip=(&description)
+        div class="surgery-supply" data-tooltip=(&description)
             aria-label=(&description) tabindex="0" {
             (decorative_game_icon(icon))
             span class="surgery-item-overlay surgery-item-quantity" aria-hidden="true" { "x" (quantity) }
@@ -2468,7 +2468,7 @@ fn surgery_item_requirement(requirement: SurgeryItemRequirement) -> Markup {
         }
     };
     html! {
-        span class="surgery-item-requirement" data-strategic-tooltip=(label)
+        span class="surgery-item-requirement" data-tooltip=(label)
             aria-label=(accessible_label) tabindex="0" {
             (decorative_game_icon(icon))
             @match requirement {
@@ -2539,7 +2539,7 @@ fn surgery_procedure_row(
     let unavailable_label = unavailable.map(|reason| format!("{label}: {reason}"));
     html! {
         form method="post" action=(action) class=(row_class)
-            data-strategic-tooltip=[unavailable] aria-label=[unavailable_label.as_deref()]
+            data-tooltip=[unavailable] aria-label=[unavailable_label.as_deref()]
             tabindex=[unavailable.map(|_| "0")] {
             input type="hidden" name="procedure" value=(procedure);
             @if let Some(projectile_id) = projectile_id {
@@ -6635,7 +6635,7 @@ mod tests {
     fn surgery_supplies_are_icon_counts_with_hover_labels() {
         let supply = surgery_supply("Bandages", "bandage-roll", 8).into_string();
         assert!(supply.contains("class=\"surgery-supply\""));
-        assert!(supply.contains("data-strategic-tooltip=\"Bandages: 8 available\""));
+        assert!(supply.contains("data-tooltip=\"Bandages: 8 available\""));
         assert!(supply.contains("bandage-roll.svg"));
         assert!(supply.contains(">x8</span>"));
         assert!(!supply.contains(">Bandages</span>"));
@@ -6645,18 +6645,18 @@ mod tests {
     fn surgery_item_icons_explain_consumed_reusable_and_equipped_supplies() {
         let bandage =
             surgery_item_requirement(SurgeryItemRequirement::BandageConsumed).into_string();
-        assert!(bandage.contains("data-strategic-tooltip=\"Expend one bandage\""));
+        assert!(bandage.contains("data-tooltip=\"Expend one bandage\""));
         assert!(bandage.contains(">x1</span>"));
 
         let kit =
             surgery_item_requirement(SurgeryItemRequirement::SurgeryKitReusable).into_string();
-        assert!(kit.contains("data-strategic-tooltip=\"Requires surgery kit\""));
+        assert!(kit.contains("data-tooltip=\"Requires surgery kit\""));
         assert!(kit.contains("aria-label=\"Requires surgery kit; reusable and not consumed\""));
         assert!(kit.contains("medical-pack.svg"));
         assert!(!kit.contains("surgery-item-overlay"));
 
         let splint = surgery_item_requirement(SurgeryItemRequirement::SplintEquipped).into_string();
-        assert!(splint.contains("data-strategic-tooltip=\"Equips 1 splint\""));
+        assert!(splint.contains("data-tooltip=\"Equips 1 splint\""));
         assert!(splint.contains("check-mark.svg"));
     }
 
@@ -6727,7 +6727,7 @@ mod tests {
         )
         .into_string();
         assert!(row.contains("surgery-procedure-unavailable"));
-        assert!(row.contains("data-strategic-tooltip=\"No injury is present\""));
+        assert!(row.contains("data-tooltip=\"No injury is present\""));
         assert!(row.contains("aria-label=\"Stitch: No injury is present\" tabindex=\"0\""));
         assert!(row.contains("disabled title=\"No injury is present\""));
         assert!(row.contains(">Stitch</button>"));
