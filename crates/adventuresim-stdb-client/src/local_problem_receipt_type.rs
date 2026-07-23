@@ -9,6 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub struct LocalProblemReceipt {
     pub id: String,
     pub character_id: u64,
+    pub settlement_id: String,
     pub problem_id: String,
     pub opaque_case_ref: String,
     pub source_npc_id: String,
@@ -28,6 +29,7 @@ impl __sdk::InModule for LocalProblemReceipt {
 pub struct LocalProblemReceiptCols {
     pub id: __sdk::__query_builder::Col<LocalProblemReceipt, String>,
     pub character_id: __sdk::__query_builder::Col<LocalProblemReceipt, u64>,
+    pub settlement_id: __sdk::__query_builder::Col<LocalProblemReceipt, String>,
     pub problem_id: __sdk::__query_builder::Col<LocalProblemReceipt, String>,
     pub opaque_case_ref: __sdk::__query_builder::Col<LocalProblemReceipt, String>,
     pub source_npc_id: __sdk::__query_builder::Col<LocalProblemReceipt, String>,
@@ -43,6 +45,7 @@ impl __sdk::__query_builder::HasCols for LocalProblemReceipt {
         LocalProblemReceiptCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
+            settlement_id: __sdk::__query_builder::Col::new(table_name, "settlement_id"),
             problem_id: __sdk::__query_builder::Col::new(table_name, "problem_id"),
             opaque_case_ref: __sdk::__query_builder::Col::new(table_name, "opaque_case_ref"),
             source_npc_id: __sdk::__query_builder::Col::new(table_name, "source_npc_id"),
@@ -63,6 +66,7 @@ impl __sdk::__query_builder::HasCols for LocalProblemReceipt {
 pub struct LocalProblemReceiptIxCols {
     pub character_id: __sdk::__query_builder::IxCol<LocalProblemReceipt, u64>,
     pub id: __sdk::__query_builder::IxCol<LocalProblemReceipt, String>,
+    pub settlement_id: __sdk::__query_builder::IxCol<LocalProblemReceipt, String>,
 }
 
 impl __sdk::__query_builder::HasIxCols for LocalProblemReceipt {
@@ -71,6 +75,7 @@ impl __sdk::__query_builder::HasIxCols for LocalProblemReceipt {
         LocalProblemReceiptIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            settlement_id: __sdk::__query_builder::IxCol::new(table_name, "settlement_id"),
         }
     }
 }

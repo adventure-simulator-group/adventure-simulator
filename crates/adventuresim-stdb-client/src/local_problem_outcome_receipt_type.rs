@@ -13,6 +13,7 @@ pub struct LocalProblemOutcomeReceipt {
     pub applied_at: u64,
     pub mitigation_bps: u16,
     pub resolved: bool,
+    pub payload_fingerprint: String,
 }
 
 impl __sdk::InModule for LocalProblemOutcomeReceipt {
@@ -29,6 +30,7 @@ pub struct LocalProblemOutcomeReceiptCols {
     pub applied_at: __sdk::__query_builder::Col<LocalProblemOutcomeReceipt, u64>,
     pub mitigation_bps: __sdk::__query_builder::Col<LocalProblemOutcomeReceipt, u16>,
     pub resolved: __sdk::__query_builder::Col<LocalProblemOutcomeReceipt, bool>,
+    pub payload_fingerprint: __sdk::__query_builder::Col<LocalProblemOutcomeReceipt, String>,
 }
 
 impl __sdk::__query_builder::HasCols for LocalProblemOutcomeReceipt {
@@ -41,6 +43,10 @@ impl __sdk::__query_builder::HasCols for LocalProblemOutcomeReceipt {
             applied_at: __sdk::__query_builder::Col::new(table_name, "applied_at"),
             mitigation_bps: __sdk::__query_builder::Col::new(table_name, "mitigation_bps"),
             resolved: __sdk::__query_builder::Col::new(table_name, "resolved"),
+            payload_fingerprint: __sdk::__query_builder::Col::new(
+                table_name,
+                "payload_fingerprint",
+            ),
         }
     }
 }
