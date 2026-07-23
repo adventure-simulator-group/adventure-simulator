@@ -71,7 +71,3 @@ The most odd implication of this is that ostensibly, characters that are further
 >When Jack put his party together, he was joined by Derthert, who was actually an entire year behind official time when he saw the open party. This means that Derthert must have consulted a diviner or seen this opportunity in a dream then decided to spend 7 months training/working in this settlement before the prophecy of this quest comes true. Bizarre, but it somehow works out.
 
 We are not actually simulating an economy (at least for the MVP) nor do quests originate from circumstances of the simulation (at least for the MVP, they're just totally arbitrary fetch/bounty quests), so the implications of this shouldn't be a big deal, but it *is* weird to think about. 
-
-## Language exposure
-
-Actual elapsed settlement time grants conserved ambient Oral exposure in the local distribution. Travel grants each party member at most one elapsed interval of conversation exposure, chosen from a sorted pre-gain snapshot, so companions do not multiply time. Profession work grants Written exposure from centralized literacy profiles: merchants write substantially more than smiths; medical work uses Latin; Catholic work uses Latin; Jewish work uses Hebrew and Yiddish; other current religious work uses German. A distinct physician service remains follow-up work; medical Latin currently uses the existing herbalist/medical profession seam.

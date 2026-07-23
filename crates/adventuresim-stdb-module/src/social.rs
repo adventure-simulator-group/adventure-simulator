@@ -472,13 +472,7 @@ pub fn perform_social_action(
         SocialActionKind::Reframe => Skill::Deception,
         SocialActionKind::Flirt => Skill::Seduction,
     };
-    let mut skill_check = crate::condition::mental_check(ctx, actor_id, skill)?;
-    if !is_self {
-        skill_check = adventuresim_world_schema::language_scaled_effect(
-            skill_check,
-            crate::character::shared_language_coefficient(ctx, actor_id, target_id),
-        );
-    }
+    let skill_check = crate::condition::mental_check(ctx, actor_id, skill)?;
     let target_deception = if is_self {
         0.0
     } else {

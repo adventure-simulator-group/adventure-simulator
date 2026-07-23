@@ -720,12 +720,6 @@ mod tests {
             population_level: 4,
             population_estimate: 1_000,
             category: crate::spacetimedb::SettlementCategory::Town,
-            languages: adventuresim_world_schema::SettlementLanguageProfile {
-                east_central_bp: 10_000,
-                west_central_bp: 0,
-                low_bp: 0,
-                yiddish_incidence_bp: 75,
-            },
             industries: adventuresim_world_schema::InferredIndustryProfile::new(vec![
                 adventuresim_world_schema::IndustryEvidence::Fallback(
                     adventuresim_world_schema::FallbackIndustry::CroplandGrain,

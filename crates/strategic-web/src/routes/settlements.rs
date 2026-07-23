@@ -5049,14 +5049,6 @@ async fn merchant_shop(
     } else {
         (None, SoapRestPreview::default())
     };
-    let speaker = query_single::<CharacterSkills>(&state, "character_skills", character.id)
-        .await
-        .map_or_default(|skills| skills.oral_languages);
-    let mut merchant_languages = adventuresim_world_schema::OralLanguageHours::default();
-    *merchant_languages.direct_mut(settlement.languages.dominant_german()) =
-        adventuresim_world_schema::ORAL_FLUENCY_HOURS;
-    let (_, shared_language) =
-        adventuresim_world_schema::best_common_oral_language(speaker, merchant_languages);
     Html(
         live_merchant_shop_page(
             settlement,
@@ -5070,7 +5062,6 @@ async fn merchant_shop(
             &party_targets,
             &pooled,
             shop,
-            shared_language,
             &conditions.unwrap_or_default(),
             smiths.unwrap_or_default().first(),
             &orders.unwrap_or_default(),

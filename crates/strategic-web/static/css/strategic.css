@@ -3193,11 +3193,6 @@ button.party-portrait-action {
     vertical-align: middle;
 }
 
-.language-monogram { display: inline-grid; place-items: center; width: 1.5rem; height: 1.5rem; border: 1px solid currentColor; border-radius: 50%; font-weight: 800; }
-.language-oral { color: #69aef5; }
-.language-written { color: #bb82e8; }
-.language-blackletter { font-family: "UnifrakturCook", "Old English Text MT", fantasy; font-size: 1.15em; }
-
 .religion-subskill-name {
     padding-left: 0.15rem;
 }

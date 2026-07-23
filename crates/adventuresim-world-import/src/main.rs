@@ -82,8 +82,6 @@ struct Args {
     database: String,
     #[arg(long, default_value_t = 100)]
     batch_size: usize,
-    #[arg(long, num_args = 2, value_names = ["LONGITUDE", "LATITUDE"], help = "print the deterministic settlement language profile and exit")]
-    infer_languages: Option<Vec<f64>>,
 }
 
 fn main() -> ExitCode {
@@ -111,15 +109,6 @@ fn main() -> ExitCode {
 }
 
 fn run(args: Args) -> Result<()> {
-    if let Some(coordinates) = &args.infer_languages {
-        let profile = adventuresim_world_schema::infer_settlement_language_profile(
-            coordinates[0],
-            coordinates[1],
-        )
-        .map_err(|reason| Error::Validation(reason.into()))?;
-        println!("{}", serde_json::to_string_pretty(&profile)?);
-        return Ok(());
-    }
     if args.batch_size == 0 {
         return Err(Error::Validation("batch size must be positive".into()));
     }
@@ -498,7 +487,6 @@ fn encode_settlement(settlement: &SettlementImport) -> Result<Value> {
         "soil": encode_soil(&settlement.soil),
         "geology": encode_geology(&settlement.geology),
         "religious_status": encode_religious_status(settlement.religious_status),
-        "languages": settlement.languages,
         "drought": encode_drought(settlement.drought),
         "hydrology": encode_hydrology(settlement.hydrology),
         "industries": encode_industries(&settlement.industries),
@@ -1543,7 +1531,6 @@ mod tests {
             religious_status: SettlementReligiousStatus::Established {
                 religion: OfficialReligion::RomanCatholic,
             },
-            languages: adventuresim_world_schema::infer_settlement_language_profile(10.0, 51.0).unwrap(),
             drought: DroughtProfile::Inferred(
                 DroughtHistory::new(
                     PalmerDroughtSeverityIndex::new(0).unwrap(),
