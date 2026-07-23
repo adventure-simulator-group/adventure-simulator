@@ -2,12 +2,19 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct DialoguePrompt {
     pub id: String,
+    pub gateway_bucket: u8,
     pub session_id: String,
     pub prompt_id: String,
     pub mode: String,
@@ -21,15 +28,18 @@ pub struct DialoguePrompt {
     pub source_refs_json: String,
 }
 
+
 impl __sdk::InModule for DialoguePrompt {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `DialoguePrompt`.
 ///
 /// Provides typed access to columns for query building.
 pub struct DialoguePromptCols {
     pub id: __sdk::__query_builder::Col<DialoguePrompt, String>,
+    pub gateway_bucket: __sdk::__query_builder::Col<DialoguePrompt, u8>,
     pub session_id: __sdk::__query_builder::Col<DialoguePrompt, String>,
     pub prompt_id: __sdk::__query_builder::Col<DialoguePrompt, String>,
     pub mode: __sdk::__query_builder::Col<DialoguePrompt, String>,
@@ -48,6 +58,7 @@ impl __sdk::__query_builder::HasCols for DialoguePrompt {
     fn cols(table_name: &'static str) -> Self::Cols {
         DialoguePromptCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
+            gateway_bucket: __sdk::__query_builder::Col::new(table_name, "gateway_bucket"),
             session_id: __sdk::__query_builder::Col::new(table_name, "session_id"),
             prompt_id: __sdk::__query_builder::Col::new(table_name, "prompt_id"),
             mode: __sdk::__query_builder::Col::new(table_name, "mode"),
@@ -57,11 +68,9 @@ impl __sdk::__query_builder::HasCols for DialoguePrompt {
             min_choices: __sdk::__query_builder::Col::new(table_name, "min_choices"),
             max_choices: __sdk::__query_builder::Col::new(table_name, "max_choices"),
             state: __sdk::__query_builder::Col::new(table_name, "state"),
-            resolved_choice_ids_json: __sdk::__query_builder::Col::new(
-                table_name,
-                "resolved_choice_ids_json",
-            ),
+            resolved_choice_ids_json: __sdk::__query_builder::Col::new(table_name, "resolved_choice_ids_json"),
             source_refs_json: __sdk::__query_builder::Col::new(table_name, "source_refs_json"),
+
         }
     }
 }
@@ -70,6 +79,7 @@ impl __sdk::__query_builder::HasCols for DialoguePrompt {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct DialoguePromptIxCols {
+    pub gateway_bucket: __sdk::__query_builder::IxCol<DialoguePrompt, u8>,
     pub id: __sdk::__query_builder::IxCol<DialoguePrompt, String>,
     pub session_id: __sdk::__query_builder::IxCol<DialoguePrompt, String>,
 }
@@ -78,10 +88,13 @@ impl __sdk::__query_builder::HasIxCols for DialoguePrompt {
     type IxCols = DialoguePromptIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         DialoguePromptIxCols {
+            gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             session_id: __sdk::__query_builder::IxCol::new(table_name, "session_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for DialoguePrompt {}
+

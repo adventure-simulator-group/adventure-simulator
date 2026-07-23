@@ -82,15 +82,17 @@ as ambiguous instead of depending on file order.
 
 SpacetimeDB stores dialogue sessions, named participants, attributed events,
 open prompts, idempotent action receipts, per-character answers, and
-per-character topic knowledge. Answer and knowledge rows are private; the web
-gateway exposes only a participant-authorized conversation view and never sends
-the authored condition/effect catalog to browsers. Reducers verify gateway
-authority, membership, shared settlement, role cardinality, catalog and session
-revisions, topic eligibility, and stable choice IDs. Every mutation revalidates the
-character's settlement and the persistent NPC's exact session location and current
-schedule. Selecting an NPC creates a fresh encounter so contextual and prior-interaction
-facts are reevaluated; old sessions remain history rather than an indefinitely reusable
-active view. Free-form `local_chat_message` remains an independent stream.
+per-character topic knowledge. All raw dialogue rows are private; fail-closed
+gateway views are the only subscription surface, and the trusted web process
+additionally filters them to the selected character. The authored
+condition/effect catalog is never sent to browsers. Reducers verify gateway
+authority, same-party membership, shared settlement, role cardinality, catalog
+and session revisions, topic eligibility, and stable choice IDs. Every NPC role
+is bound to a real persistent NPC, and every mutation revalidates each NPC's
+exact session location and current schedule. Selecting an NPC creates a fresh
+encounter so contextual and prior-interaction facts are reevaluated; old
+sessions remain history rather than an indefinitely reusable active view.
+Free-form `local_chat_message` remains an independent stream.
 
 The web conversation surface keeps known eligible topics in a pane on the
 right side of the chat itself. The transcript and shared composer occupy the

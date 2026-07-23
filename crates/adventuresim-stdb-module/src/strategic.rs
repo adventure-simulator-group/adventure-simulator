@@ -33,8 +33,8 @@ use crate::{
     investigation::{
         CaseSiteAuthority, CaseSiteId, PartyCaseSiteTracking, case_site_authority,
         disclose_exact_case_site, exact_case_site_for_observer, investigation_belief,
-        investigation_case_authority, investigation_claim, investigation_evidence_knowledge,
-        investigation_lead, mark_case_site_visited, party_case_site_tracking,
+        investigation_case_authority, investigation_evidence_knowledge, investigation_lead,
+        investigation_received_testimony, mark_case_site_visited, party_case_site_tracking,
     },
     item::{InventoryItem, inventory_item, item},
     local_problem::{local_problem_receipt, local_problem_rumor_delivery},
@@ -3215,25 +3215,31 @@ pub struct LocalChatMessage {
 
 /// Scripted dialogue is authoritative and intentionally separate from free-form local chat.
 #[derive(Clone, Debug)]
-#[table(accessor = dialogue_session, public)]
+#[table(accessor = dialogue_session)]
 pub struct DialogueSession {
     #[primary_key]
     pub id: String,
+    #[index(btree)]
+    pub gateway_bucket: u8,
     #[index(btree)]
     pub conversation_id: String,
     pub catalog_revision: String,
     pub settlement_id: String,
     pub location_id: String,
+    pub owner_character_id: u64,
+    pub owner_party_id: String,
     pub state: String,
     pub revision: u64,
     pub created_micros: i64,
 }
 
 #[derive(Clone, Debug)]
-#[table(accessor = dialogue_participant, public)]
+#[table(accessor = dialogue_participant)]
 pub struct DialogueParticipant {
     #[primary_key]
     pub id: String,
+    #[index(btree)]
+    pub gateway_bucket: u8,
     #[index(btree)]
     pub session_id: String,
     pub role: String,
@@ -3244,10 +3250,12 @@ pub struct DialogueParticipant {
 }
 
 #[derive(Clone, Debug)]
-#[table(accessor = dialogue_event, public)]
+#[table(accessor = dialogue_event)]
 pub struct DialogueEvent {
     #[primary_key]
     pub id: String,
+    #[index(btree)]
+    pub gateway_bucket: u8,
     #[index(btree)]
     pub session_id: String,
     pub sequence: u32,
@@ -3259,10 +3267,12 @@ pub struct DialogueEvent {
 }
 
 #[derive(Clone, Debug)]
-#[table(accessor = dialogue_prompt, public)]
+#[table(accessor = dialogue_prompt)]
 pub struct DialoguePrompt {
     #[primary_key]
     pub id: String,
+    #[index(btree)]
+    pub gateway_bucket: u8,
     #[index(btree)]
     pub session_id: String,
     pub prompt_id: String,
@@ -3314,15 +3324,224 @@ pub struct CharacterTopicKnowledge {
 }
 
 #[derive(Clone, Debug)]
-#[table(accessor = dialogue_topic_option, public)]
+#[table(accessor = dialogue_topic_option)]
 pub struct DialogueTopicOption {
     #[primary_key]
     pub id: String,
+    #[index(btree)]
+    pub gateway_bucket: u8,
     #[index(btree)]
     pub session_id: String,
     pub topic_id: String,
     pub label: String,
     pub source_ref_json: String,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = dialogue_investigation_binding)]
+pub struct DialogueInvestigationBinding {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub session_id: String,
+    pub character_id: u64,
+    pub party_id: String,
+    pub intended_recipient_id: String,
+    pub action_family: String,
+    pub case_id: String,
+    pub objective_id: String,
+    pub issued_revision: u64,
+    pub consumed_by: String,
+}
+
+#[derive(Clone, Debug, SpacetimeType)]
+pub struct BackendDialogueSession {
+    pub id: String,
+    pub conversation_id: String,
+    pub catalog_revision: String,
+    pub settlement_id: String,
+    pub location_id: String,
+    pub state: String,
+    pub revision: u64,
+    pub created_micros: i64,
+    pub owner_character_id: u64,
+}
+
+#[derive(Clone, Debug, SpacetimeType)]
+pub struct BackendDialogueParticipant {
+    pub id: String,
+    pub session_id: String,
+    pub role: String,
+    pub character_id: Option<u64>,
+    pub actor_id: String,
+    pub display_name: String,
+    pub owner_character_id: u64,
+}
+
+#[derive(Clone, Debug, SpacetimeType)]
+pub struct BackendDialogueEvent {
+    pub id: String,
+    pub session_id: String,
+    pub sequence: u32,
+    pub response_id: String,
+    pub speaker_role: String,
+    pub fragments_json: String,
+    pub source_refs_json: String,
+    pub created_micros: i64,
+    pub owner_character_id: u64,
+}
+
+#[derive(Clone, Debug, SpacetimeType)]
+pub struct BackendDialoguePrompt {
+    pub id: String,
+    pub session_id: String,
+    pub prompt_id: String,
+    pub mode: String,
+    pub respondent_role: String,
+    pub resolution_policy: String,
+    pub choices_json: String,
+    pub min_choices: u32,
+    pub max_choices: u32,
+    pub state: String,
+    pub resolved_choice_ids_json: String,
+    pub source_refs_json: String,
+    pub owner_character_id: u64,
+}
+
+#[derive(Clone, Debug, SpacetimeType)]
+pub struct BackendDialogueTopicOption {
+    pub id: String,
+    pub session_id: String,
+    pub topic_id: String,
+    pub label: String,
+    pub source_ref_json: String,
+    pub owner_character_id: u64,
+}
+
+#[view(accessor = backend_dialogue_sessions, public)]
+pub fn backend_dialogue_sessions(ctx: &ViewContext) -> Vec<BackendDialogueSession> {
+    if !strategic_view_is_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .dialogue_session()
+        .gateway_bucket()
+        .filter(0u8)
+        .map(|row| BackendDialogueSession {
+            id: row.id,
+            conversation_id: row.conversation_id,
+            catalog_revision: row.catalog_revision,
+            settlement_id: row.settlement_id,
+            location_id: row.location_id,
+            state: row.state,
+            revision: row.revision,
+            created_micros: row.created_micros,
+            owner_character_id: row.owner_character_id,
+        })
+        .collect()
+}
+
+#[view(accessor = backend_dialogue_participants, public)]
+pub fn backend_dialogue_participants(ctx: &ViewContext) -> Vec<BackendDialogueParticipant> {
+    if !strategic_view_is_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .dialogue_participant()
+        .gateway_bucket()
+        .filter(0u8)
+        .filter_map(|row| {
+            let owner = ctx.db.dialogue_session().id().find(&row.session_id)?;
+            Some(BackendDialogueParticipant {
+                id: row.id,
+                session_id: row.session_id,
+                role: row.role,
+                character_id: row.character_id,
+                actor_id: row.actor_id,
+                display_name: row.display_name,
+                owner_character_id: owner.owner_character_id,
+            })
+        })
+        .collect()
+}
+
+#[view(accessor = backend_dialogue_events, public)]
+pub fn backend_dialogue_events(ctx: &ViewContext) -> Vec<BackendDialogueEvent> {
+    if !strategic_view_is_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .dialogue_event()
+        .gateway_bucket()
+        .filter(0u8)
+        .filter_map(|row| {
+            let owner = ctx.db.dialogue_session().id().find(&row.session_id)?;
+            Some(BackendDialogueEvent {
+                id: row.id,
+                session_id: row.session_id,
+                sequence: row.sequence,
+                response_id: row.response_id,
+                speaker_role: row.speaker_role,
+                fragments_json: row.fragments_json,
+                source_refs_json: row.source_refs_json,
+                created_micros: row.created_micros,
+                owner_character_id: owner.owner_character_id,
+            })
+        })
+        .collect()
+}
+
+#[view(accessor = backend_dialogue_prompts, public)]
+pub fn backend_dialogue_prompts(ctx: &ViewContext) -> Vec<BackendDialoguePrompt> {
+    if !strategic_view_is_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .dialogue_prompt()
+        .gateway_bucket()
+        .filter(0u8)
+        .filter_map(|row| {
+            let owner = ctx.db.dialogue_session().id().find(&row.session_id)?;
+            Some(BackendDialoguePrompt {
+                id: row.id,
+                session_id: row.session_id,
+                prompt_id: row.prompt_id,
+                mode: row.mode,
+                respondent_role: row.respondent_role,
+                resolution_policy: row.resolution_policy,
+                choices_json: row.choices_json,
+                min_choices: row.min_choices,
+                max_choices: row.max_choices,
+                state: row.state,
+                resolved_choice_ids_json: row.resolved_choice_ids_json,
+                source_refs_json: row.source_refs_json,
+                owner_character_id: owner.owner_character_id,
+            })
+        })
+        .collect()
+}
+
+#[view(accessor = backend_dialogue_topic_options, public)]
+pub fn backend_dialogue_topic_options(ctx: &ViewContext) -> Vec<BackendDialogueTopicOption> {
+    if !strategic_view_is_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .dialogue_topic_option()
+        .gateway_bucket()
+        .filter(0u8)
+        .filter_map(|row| {
+            let owner = ctx.db.dialogue_session().id().find(&row.session_id)?;
+            Some(BackendDialogueTopicOption {
+                id: row.id,
+                session_id: row.session_id,
+                topic_id: row.topic_id,
+                label: row.label,
+                source_ref_json: row.source_ref_json,
+                owner_character_id: owner.owner_character_id,
+            })
+        })
+        .collect()
 }
 
 fn require_dialogue_revision(revision: &str) -> Result<(), String> {
@@ -3345,42 +3564,52 @@ fn require_live_dialogue_presence(
         .id()
         .find(character_id)
         .ok_or("Character not found")?;
+    if character.party_id.as_deref() != Some(session.owner_party_id.as_str()) {
+        return Err("Dialogue joins are limited to the owning party".into());
+    }
     if character.current_settlement_id.as_deref() != Some(session.settlement_id.as_str()) {
         return Err("Dialogue participant has left the settlement".into());
     }
-    let npc_participant = ctx
+    let npc_participants: Vec<_> = ctx
         .db
         .dialogue_participant()
         .session_id()
         .filter(&session.id)
-        .find(|participant| participant.character_id.is_none())
-        .ok_or("Dialogue has no persistent NPC participant")?;
-    let npc = ctx
-        .db
-        .settlement_npc()
-        .id()
-        .find(&npc_participant.actor_id)
-        .ok_or("Dialogue NPC is no longer authoritative")?;
-    let presence = ctx
-        .db
-        .settlement_npc_presence()
-        .npc_id()
-        .find(&npc.id)
-        .ok_or("Dialogue NPC has no authoritative presence")?;
+        .filter(|participant| participant.character_id.is_none())
+        .collect();
+    if npc_participants.is_empty() {
+        return Err("Dialogue has no persistent NPC participant".into());
+    }
     let minute = ctx
         .db
         .character_time()
         .character_id()
         .find(character_id)
         .map_or(720, |time| time.minutes);
-    if npc.home_settlement_id != session.settlement_id
-        || presence.settlement_id != session.settlement_id
-        || presence.location_id != session.location_id
-        || !crate::settlement_population::npc_is_present(&presence, minute)
-    {
-        return Err("Dialogue NPC is not present at the session location and time".into());
+    let mut primary = None;
+    for participant in npc_participants {
+        let npc = ctx
+            .db
+            .settlement_npc()
+            .id()
+            .find(&participant.actor_id)
+            .ok_or("Dialogue NPC is no longer authoritative")?;
+        let presence = ctx
+            .db
+            .settlement_npc_presence()
+            .npc_id()
+            .find(&npc.id)
+            .ok_or("Dialogue NPC has no authoritative presence")?;
+        if npc.home_settlement_id != session.settlement_id
+            || presence.settlement_id != session.settlement_id
+            || presence.location_id != session.location_id
+            || !crate::settlement_population::npc_is_present(&presence, minute)
+        {
+            return Err("Dialogue NPC is not present at the session location and time".into());
+        }
+        primary.get_or_insert(npc);
     }
-    Ok(npc)
+    Ok(primary.expect("nonempty NPC participants"))
 }
 
 #[reducer]
@@ -3402,6 +3631,10 @@ pub fn start_dialogue(
         .id()
         .find(character_id)
         .ok_or("Character not found")?;
+    let owner_party_id = character
+        .party_id
+        .clone()
+        .ok_or("Dialogue requires a party")?;
     let settlement_id = character
         .current_settlement_id
         .ok_or("Dialogue requires a settlement")?;
@@ -3472,22 +3705,38 @@ pub fn start_dialogue(
     let id = session_id;
     ctx.db.dialogue_session().insert(DialogueSession {
         id: id.clone(),
+        gateway_bucket: 0,
         conversation_id,
         catalog_revision,
-        settlement_id,
-        location_id,
+        settlement_id: settlement_id.clone(),
+        location_id: location_id.clone(),
+        owner_character_id: character_id,
+        owner_party_id,
         state: "active".into(),
         revision: 0,
         created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
     });
     ctx.db.dialogue_participant().insert(DialogueParticipant {
         id: format!("{id}:character:{character_id}"),
+        gateway_bucket: 0,
         session_id: id.clone(),
         role: player_role,
         character_id: Some(character_id),
         actor_id: format!("character:{character_id}"),
         display_name: character.name.clone(),
     });
+    let available_npcs: Vec<_> = ctx
+        .db
+        .settlement_npc_presence()
+        .settlement_id()
+        .filter(&settlement_id)
+        .filter(|candidate| {
+            candidate.location_id == location_id
+                && crate::settlement_population::npc_is_present(candidate, minute)
+        })
+        .filter_map(|presence| ctx.db.settlement_npc().id().find(&presence.npc_id))
+        .collect();
+    let mut used_npcs = HashSet::new();
     for (index, (role_name, role)) in conversation
         .roles
         .iter()
@@ -3495,24 +3744,28 @@ pub fn start_dialogue(
         .enumerate()
     {
         if role.min > 1 {
-            return Err("Synthetic service roles currently support one actor per NPC role".into());
+            return Err("Dialogue currently supports one persistent actor per NPC role".into());
         }
-        let actor_id = if index == 0 {
-            npc_actor_id.clone()
+        let bound = if index == 0 {
+            npc.clone()
         } else {
-            format!("{npc_actor_id}:{role_name}")
+            available_npcs
+                .iter()
+                .find(|candidate| {
+                    candidate.id != npc_actor_id && !used_npcs.contains(&candidate.id)
+                })
+                .cloned()
+                .ok_or("Required NPC role has no persistent actor at this location")?
         };
+        used_npcs.insert(bound.id.clone());
         ctx.db.dialogue_participant().insert(DialogueParticipant {
             id: format!("{id}:npc:{role_name}"),
+            gateway_bucket: 0,
             session_id: id.clone(),
             role: role_name.clone(),
             character_id: None,
-            display_name: if index == 0 {
-                npc.name.clone()
-            } else {
-                role_name.clone()
-            },
-            actor_id,
+            display_name: bound.name,
+            actor_id: bound.id,
         });
     }
     let session = ctx
@@ -3549,6 +3802,7 @@ pub fn start_dialogue(
                 .collect();
             ctx.db.dialogue_event().insert(DialogueEvent {
                 id: format!("{}:event:{turn_index}", session.id),
+                gateway_bucket: 0,
                 session_id: session.id.clone(),
                 sequence: turn_index as u32,
                 response_id: response.id.clone(),
@@ -3557,6 +3811,7 @@ pub fn start_dialogue(
                     ctx,
                     &session,
                     character_id,
+                    &turn.speaker,
                     &turn.fragments,
                 )?)
                 .map_err(|_| "Could not encode dialogue greeting")?,
@@ -3593,11 +3848,45 @@ pub fn start_dialogue(
         .filter(&session.id)
         .find(|row| row.character_id == character_id)
     {
+        let receipt = ctx
+            .db
+            .local_problem_receipt()
+            .id()
+            .find(&delivery.receipt_id)
+            .ok_or("Rumor delivery receipt disappeared")?;
         crate::investigation::receive_local_problem_rumor(
             ctx,
             character_id,
-            delivery.receipt_id,
-            format!("dialogue-rumor-start-{}", session.id),
+            receipt.id.clone(),
+            format!("receive-rumor:{character_id}:{}", receipt.id),
+        )?;
+        let reliability = match receipt
+            .problem_id
+            .bytes()
+            .fold(0u8, |sum, byte| sum.wrapping_add(byte))
+            % 5
+        {
+            0 => adventuresim_dialogue::TestimonyReliability::Truthful,
+            1 => adventuresim_dialogue::TestimonyReliability::Mistaken,
+            2 => adventuresim_dialogue::TestimonyReliability::Evasive,
+            3 => adventuresim_dialogue::TestimonyReliability::Deceptive,
+            _ => adventuresim_dialogue::TestimonyReliability::PartlyTruthful,
+        };
+        let public_case_id = adventuresim_core::investigation::compound_id(&[
+            "case",
+            "problem",
+            &receipt.problem_id,
+        ]);
+        crate::investigation::persist_runtime_testimony(
+            ctx,
+            character_id,
+            &receipt.opaque_case_ref,
+            &public_case_id,
+            &receipt.source_npc_id,
+            "local eyewitness",
+            reliability,
+            &receipt.safe_summary,
+            "The witness was nearby for a private reason.",
         )?;
     }
     refresh_dialogue_topic_options(ctx, &session, character_id)?;
@@ -3667,6 +3956,7 @@ pub fn join_dialogue_session(
     }
     ctx.db.dialogue_participant().insert(DialogueParticipant {
         id,
+        gateway_bucket: 0,
         session_id: session_id.clone(),
         role,
         character_id: Some(character_id),
@@ -3930,25 +4220,31 @@ fn dialogue_fact_context(
         }
     }
     if let Some(npc) = participants.iter().find(|p| p.character_id.is_none()) {
-        let has_rumor = ctx
+        let delivery_receipt = ctx
             .db
             .local_problem_rumor_delivery()
             .session_id()
             .filter(&session.id)
-            .any(|delivery| {
-                delivery.character_id == character_id
-                    && ctx
-                        .db
-                        .local_problem_receipt()
-                        .id()
-                        .find(&delivery.receipt_id)
-                        .is_some_and(|receipt| receipt.source_npc_id == npc.actor_id)
+            .find(|delivery| delivery.character_id == character_id)
+            .and_then(|delivery| {
+                ctx.db
+                    .local_problem_receipt()
+                    .id()
+                    .find(&delivery.receipt_id)
             });
         result.facts.insert(
             FactKey::ParticipantRumorCase {
                 role: npc.role.clone(),
             },
-            FactValue::Bool(has_rumor),
+            FactValue::Bool(delivery_receipt.is_some()),
+        );
+        result.facts.insert(
+            FactKey::ParticipantReferralContact {
+                role: npc.role.clone(),
+            },
+            FactValue::Bool(
+                delivery_receipt.is_some_and(|receipt| receipt.contact_npc_id == npc.actor_id),
+            ),
         );
     }
     if let (Some(player), Some(npc)) = (
@@ -4086,6 +4382,7 @@ fn dialogue_runtime_bindings(
     ctx: &ReducerContext,
     session: &DialogueSession,
     character_id: u64,
+    speaker_role: &str,
 ) -> Result<adventuresim_dialogue::RuntimeBindings, String> {
     use adventuresim_dialogue::RuntimeSlot as S;
     let participant = ctx
@@ -4093,7 +4390,7 @@ fn dialogue_runtime_bindings(
         .dialogue_participant()
         .session_id()
         .filter(&session.id)
-        .find(|participant| participant.character_id.is_none())
+        .find(|participant| participant.character_id.is_none() && participant.role == speaker_role)
         .ok_or("Dialogue has no NPC speaker")?;
     let npc = ctx
         .db
@@ -4112,6 +4409,72 @@ fn dialogue_runtime_bindings(
     );
     bindings.bind(S::Settlement, session.settlement_id.clone());
     bindings.bind(S::Location, session.location_id.clone());
+    let minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(720, |time| time.minutes);
+    bindings.bind(
+        S::TimeWindow,
+        match minute % 1_440 {
+            300..720 => "in the morning",
+            720..1_020 => "in the afternoon",
+            1_020..1_260 => "in the evening",
+            _ => "at night",
+        },
+    );
+    if let Some(lead) = ctx
+        .db
+        .investigation_lead()
+        .owner_character_id()
+        .filter(character_id)
+        .next()
+    {
+        bindings.bind(S::Landmark, lead.directions.clone());
+        bindings.bind(S::DescribedLocation, lead.directions);
+    }
+    let beliefs: Vec<_> = ctx
+        .db
+        .investigation_belief()
+        .owner_character_id()
+        .filter(character_id)
+        .collect();
+    if let Some(belief) = beliefs.last() {
+        bindings.bind(S::Testimony, belief.statement.clone());
+        bindings.bind(S::Claim, belief.statement.clone());
+    }
+    if let Some(circumstance) = beliefs
+        .iter()
+        .find(|belief| belief.proposition_id.contains("circumstance"))
+    {
+        bindings.bind(S::WitnessCircumstance, circumstance.statement.clone());
+    }
+    if let Some(evidence) = ctx
+        .db
+        .investigation_evidence_knowledge()
+        .owner_character_id()
+        .filter(character_id)
+        .next()
+    {
+        bindings.bind(S::Evidence, format!("evidence {}", evidence.evidence_id));
+        bindings.bind(S::Proof, format!("proof {}", evidence.evidence_id));
+    }
+    if let Some(character) = ctx.db.character().id().find(character_id)
+        && let Some(contract) = character
+            .party_id
+            .and_then(|party_id| ctx.db.party_authority().id().find(&party_id))
+            .and_then(|party| party.active_contract_id)
+            .and_then(|contract_id| ctx.db.contract_authority().id().find(&contract_id))
+    {
+        bindings.bind(
+            S::ContractTerms,
+            format!(
+                "{} gold and {} experience",
+                contract.gold_reward, contract.xp_reward
+            ),
+        );
+    }
     if let Some(delivery) = ctx
         .db
         .local_problem_rumor_delivery()
@@ -4157,13 +4520,14 @@ fn resolve_dialogue_fragments(
     ctx: &ReducerContext,
     session: &DialogueSession,
     character_id: u64,
+    speaker_role: &str,
     fragments: &[adventuresim_dialogue::Fragment],
 ) -> Result<Vec<adventuresim_dialogue::Fragment>, String> {
     if fragments
         .iter()
         .any(|fragment| matches!(fragment, adventuresim_dialogue::Fragment::Runtime { .. }))
     {
-        dialogue_runtime_bindings(ctx, session, character_id)?
+        dialogue_runtime_bindings(ctx, session, character_id, speaker_role)?
             .resolve(fragments)
             .map_err(|_| "Dialogue runtime binding is incomplete or unsafe".into())
     } else {
@@ -4202,6 +4566,7 @@ fn refresh_dialogue_topic_options(
         if known && facts.matches(&topic.conditions) {
             ctx.db.dialogue_topic_option().insert(DialogueTopicOption {
                 id: format!("{}:{}", session.id, topic.id),
+                gateway_bucket: 0,
                 session_id: session.id.clone(),
                 topic_id: topic.id.clone(),
                 label: topic.label.clone(),
@@ -4293,6 +4658,7 @@ pub fn choose_dialogue_topic(
             .collect();
         ctx.db.dialogue_event().insert(DialogueEvent {
             id: format!("{session_id}:event:{}", sequence + offset as u32),
+            gateway_bucket: 0,
             session_id: session_id.clone(),
             sequence: sequence + offset as u32,
             response_id: response.id.clone(),
@@ -4301,6 +4667,7 @@ pub fn choose_dialogue_topic(
                 ctx,
                 &session,
                 character_id,
+                &turn.speaker,
                 &turn.fragments,
             )?)
             .map_err(|_| "Could not encode dialogue turn")?,
@@ -4324,6 +4691,7 @@ pub fn choose_dialogue_topic(
         if ctx.db.dialogue_prompt().id().find(&id).is_none() {
             ctx.db.dialogue_prompt().insert(DialoguePrompt {
                 id,
+                gateway_bucket: 0,
                 session_id: session_id.clone(),
                 prompt_id: prompt.id.clone(),
                 mode: format!("{:?}", prompt.mode),
@@ -4551,6 +4919,7 @@ pub fn answer_dialogue_prompt(
                     .collect();
                 ctx.db.dialogue_event().insert(DialogueEvent {
                     id: format!("{}:event:{sequence}", session.id),
+                    gateway_bucket: 0,
                     session_id: session.id.clone(),
                     sequence,
                     response_id: format!("{}:{}", response.id, choice.id),
@@ -4559,6 +4928,7 @@ pub fn answer_dialogue_prompt(
                         ctx,
                         &session,
                         character_id,
+                        &turn.speaker,
                         &turn.fragments,
                     )?)
                     .map_err(|_| "Could not encode dialogue result")?,
@@ -4632,21 +5002,6 @@ fn apply_dialogue_effect(
         }
         adventuresim_dialogue::Effect::ExamineDisease => {
             crate::disease::examine_by_herbalist(ctx, character_id, session.settlement_id.clone())
-        }
-        adventuresim_dialogue::Effect::ReceiveProblemRumor => {
-            let delivery = ctx
-                .db
-                .local_problem_rumor_delivery()
-                .session_id()
-                .filter(&session.id)
-                .find(|row| row.character_id == character_id)
-                .ok_or("This dialogue has no problem rumor")?;
-            crate::investigation::receive_local_problem_rumor(
-                ctx,
-                character_id,
-                delivery.receipt_id,
-                format!("dialogue-rumor-{}-{action_id}", session.id),
-            )
         }
         adventuresim_dialogue::Effect::InvestigationAction { action } => {
             apply_dialogue_investigation_action(
@@ -4838,7 +5193,7 @@ fn apply_dialogue_investigation_action(
         })
         .collect();
     candidates.sort_by(|left, right| left.id.cmp(&right.id));
-    let mut selected = None;
+    let mut selections = Vec::new();
     for case in candidates {
         if case.resolution_status != CaseResolutionStatus::Open {
             continue;
@@ -4905,6 +5260,16 @@ fn apply_dialogue_investigation_action(
                                     || knowledge.case_id == case.investigation_case_id)
                                     && knowledge.evidence_id == evidence_id.as_str()
                             })
+                        && ctx
+                            .db
+                            .case_custody()
+                            .object_id()
+                            .find(&evidence_id.as_str().to_string())
+                            .is_none_or(|custody| {
+                                custody.case_id == case.id
+                                    && custody.holder_kind == CustodyHolderKind::Party
+                                    && custody.holder_id == party_id
+                            })
                 }
                 (
                     R::PresentTestimony {
@@ -4917,21 +5282,13 @@ fn apply_dialogue_investigation_action(
                         && participants.contains(witness_id.as_str())
                         && ctx
                             .db
-                            .investigation_claim()
-                            .case_id()
-                            .filter(&case.investigation_case_id)
-                            .any(|claim| {
-                                claim.hidden_speaker_ref == witness_id.as_str()
-                                    && ctx
-                                        .db
-                                        .investigation_belief()
-                                        .owner_character_id()
-                                        .filter(character_id)
-                                        .any(|belief| {
-                                            (belief.case_id == case.id
-                                                || belief.case_id == case.investigation_case_id)
-                                                && belief.proposition_id == claim.proposition_id
-                                        })
+                            .investigation_received_testimony()
+                            .owner_character_id()
+                            .filter(character_id)
+                            .any(|received| {
+                                (received.public_case_id == case.id
+                                    || received.public_case_id == case.investigation_case_id)
+                                    && received.witness_ref == witness_id.as_str()
                             })
                 }
                 (R::ReportToIssuer { issuer_id }, A::ReportToIssuer) => {
@@ -4944,12 +5301,52 @@ fn apply_dialogue_investigation_action(
                 _ => false,
             })
         {
-            selected = Some((case, objective.clone()));
-            break;
+            selections.push((case, objective.clone()));
         }
     }
-    let (case, objective) =
-        selected.ok_or("Dialogue and observer knowledge do not authorize this objective")?;
+    if selections.len() != 1 {
+        return Err(if selections.is_empty() {
+            "Dialogue and observer knowledge do not authorize this objective"
+        } else {
+            "Dialogue objective authority is ambiguous across known cases"
+        }
+        .into());
+    }
+    let (case, objective) = selections.pop().expect("exactly one selection");
+    let action_family = format!("{action:?}");
+    let binding_id = format!("{}:{}:{}", session.id, action_family, session.revision);
+    if let Some(existing) = ctx
+        .db
+        .dialogue_investigation_binding()
+        .id()
+        .find(&binding_id)
+    {
+        if existing.character_id != character_id
+            || existing.party_id != party_id
+            || existing.intended_recipient_id != recipient_npc_id
+            || existing.case_id != case.id
+            || existing.objective_id != objective.id.as_str()
+            || existing.issued_revision != session.revision
+            || !existing.consumed_by.is_empty()
+        {
+            return Err("Dialogue investigation binding is stale, replayed, or conflicting".into());
+        }
+    } else {
+        ctx.db
+            .dialogue_investigation_binding()
+            .insert(DialogueInvestigationBinding {
+                id: binding_id.clone(),
+                session_id: session.id.clone(),
+                character_id,
+                party_id: party_id.clone(),
+                intended_recipient_id: recipient_npc_id.into(),
+                action_family,
+                case_id: case.id.clone(),
+                objective_id: objective.id.as_str().into(),
+                issued_revision: session.revision,
+                consumed_by: String::new(),
+            });
+    }
     let fact = match &objective.requirement {
         R::Locate { subject_ref } => F::Located {
             subject_ref: subject_ref.clone(),
@@ -4987,7 +5384,16 @@ fn apply_dialogue_investigation_action(
         session.id,
         objective.id.as_str()
     );
-    ingest_case_outcome_fact(ctx, &source_id, &case.id, &party_id, fact)
+    ingest_case_outcome_fact(ctx, &source_id, &case.id, &party_id, fact)?;
+    let mut binding = ctx
+        .db
+        .dialogue_investigation_binding()
+        .id()
+        .find(&binding_id)
+        .ok_or("Dialogue investigation binding disappeared")?;
+    binding.consumed_by = action_id.into();
+    ctx.db.dialogue_investigation_binding().id().update(binding);
+    Ok(())
 }
 
 fn same_location(ctx: &ReducerContext, left: &crate::Character, right: &crate::Character) -> bool {

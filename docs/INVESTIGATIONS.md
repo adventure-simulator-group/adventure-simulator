@@ -26,11 +26,13 @@ and derives an observer-facing case ID from the public problem ID. It never
 projects `opaque_case_ref`, consults the problem cause, or silently grants a
 contact's current location.
 
-Runtime testimony generation persists the full proposition pipeline through a
-gateway-authorized authority staging seam, then issues a private, one-use,
-character-owned safe receipt. The browser never authors or receives the hidden
-pipeline payload. Player actions can only consume an existing matching receipt;
-they cannot submit statement text, confidence, sources, or coordinates.
+Runtime testimony generation is a private production pipeline. Server-authored
+perception, memory, disclosure, and transmission stages are persisted as a
+private bundle, then issue a private, one-use, character-owned safe receipt.
+Receiving that receipt records exact observer-owned provenance for the claim
+and witness. The browser never authors or receives the hidden pipeline payload.
+Player actions can only consume an existing matching receipt; they cannot
+submit statement text, confidence, sources, or coordinates.
 
 Compiled testimony patterns operate per proposition: an account may be
 truthful, mistaken, evasive, deceptive, or partly truthful, including an
@@ -40,9 +42,10 @@ familiarity, language/social checks, prior questioning, and possessed
 evidence. The reliability pattern, motive, and canonical event remain private.
 
 Evidence presentation requires a private, source-attributed
-`investigation_evidence_knowledge` receipt. The mere existence of hidden
-evidence authority—or a belief concerning the same proposition—does not grant
-knowledge or possession of proof.
+`investigation_evidence_knowledge` receipt. When evidence has a custody row,
+the presenting party must also be its current holder. The mere existence of
+hidden evidence authority—or a belief concerning the same proposition—does
+not grant knowledge or physical possession of proof.
 
 ## Sharing and navigation
 

@@ -256,8 +256,8 @@ async fn build_view(
     let session = state
         .db
         .query_one::<SessionRow>(&format!(
-            "SELECT * FROM dialogue_session WHERE id = {}",
-            sql_string_literal(session_id)
+            "SELECT * FROM backend_dialogue_sessions WHERE id = {} AND owner_character_id = {character_id}",
+            sql_string_literal(session_id),
         ))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
@@ -265,8 +265,8 @@ async fn build_view(
     let mut participants = state
         .db
         .query::<ParticipantRow>(&format!(
-            "SELECT * FROM dialogue_participant WHERE session_id = {}",
-            sql_string_literal(session_id)
+            "SELECT * FROM backend_dialogue_participants WHERE session_id = {} AND owner_character_id = {character_id}",
+            sql_string_literal(session_id),
         ))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
@@ -284,8 +284,8 @@ async fn build_view(
     let mut events = state
         .db
         .query::<EventRow>(&format!(
-            "SELECT * FROM dialogue_event WHERE session_id = {}",
-            sql_string_literal(session_id)
+            "SELECT * FROM backend_dialogue_events WHERE session_id = {} AND owner_character_id = {character_id}",
+            sql_string_literal(session_id),
         ))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
@@ -405,8 +405,8 @@ async fn build_view(
     let mut topics = state
         .db
         .query::<TopicRow>(&format!(
-            "SELECT * FROM dialogue_topic_option WHERE session_id = {}",
-            sql_string_literal(session_id)
+            "SELECT * FROM backend_dialogue_topic_options WHERE session_id = {} AND owner_character_id = {character_id}",
+            sql_string_literal(session_id),
         ))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
@@ -427,8 +427,8 @@ async fn build_view(
     let mut prompts = state
         .db
         .query::<PromptRow>(&format!(
-            "SELECT * FROM dialogue_prompt WHERE session_id = {}",
-            sql_string_literal(session_id)
+            "SELECT * FROM backend_dialogue_prompts WHERE session_id = {} AND owner_character_id = {character_id}",
+            sql_string_literal(session_id),
         ))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;

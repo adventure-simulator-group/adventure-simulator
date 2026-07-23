@@ -361,6 +361,32 @@ pub struct InvestigationSafeClaimReceipt {
 }
 
 #[derive(Clone, Debug)]
+#[table(accessor = investigation_received_testimony)]
+pub struct InvestigationReceivedTestimony {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub owner_character_id: u64,
+    #[index(btree)]
+    pub public_case_id: String,
+    pub claim_id: String,
+    pub witness_ref: String,
+    pub source_receipt_id: String,
+    pub received_at: u64,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = investigation_testimony_bundle)]
+pub struct InvestigationTestimonyBundle {
+    #[primary_key]
+    pub id: String,
+    pub case_id: String,
+    pub witness_ref: String,
+    pub reliability_json: String,
+    pub stages_json: String,
+}
+
+#[derive(Clone, Debug)]
 #[table(accessor = investigation_safe_lead_receipt)]
 pub struct InvestigationSafeLeadReceipt {
     #[primary_key]
@@ -950,8 +976,7 @@ pub fn receive_local_problem_rumor(
 /// Trusted authority seam for #184/generation. `pipeline_json` is private
 /// server-authored material and must never originate in or be projected to a
 /// browser; only the registered SSR gateway can invoke this temporary seam.
-#[reducer]
-pub fn stage_investigation_claim(
+pub(crate) fn stage_investigation_claim(
     ctx: &ReducerContext,
     character_id: u64,
     receipt_id: String,
@@ -1094,6 +1119,144 @@ pub fn stage_investigation_claim(
     Ok(())
 }
 
+pub(crate) fn persist_runtime_testimony(
+    ctx: &ReducerContext,
+    character_id: u64,
+    private_case_id: &str,
+    public_case_id: &str,
+    witness_ref: &str,
+    safe_source_label: &str,
+    reliability: adventuresim_dialogue::TestimonyReliability,
+    event_statement: &str,
+    circumstance_statement: &str,
+) -> Result<(), String> {
+    use adventuresim_core::investigation::{
+        AtomicProposition, CaseId, DisclosureMode, EventId, MemoryCondition, PerceptionCondition,
+        PipelineInput, PropositionId, TransmissionCondition,
+    };
+    let event = adventuresim_dialogue::PropositionTestimony {
+        proposition_id: inv::compound_id(&["proposition", private_case_id, "event"]),
+        statement: event_statement.into(),
+        confidence_bps: 7_000,
+        disclosed: true,
+    };
+    let circumstance = adventuresim_dialogue::PropositionTestimony {
+        proposition_id: inv::compound_id(&["proposition", private_case_id, "circumstance"]),
+        statement: circumstance_statement.into(),
+        confidence_bps: 6_000,
+        disclosed: true,
+    };
+    let stages = adventuresim_dialogue::build_testimony_bundle(
+        reliability.clone(),
+        event,
+        circumstance,
+        "I remember a smaller, stooped figure instead.",
+        "I saw nothing unusual there.",
+    );
+    let bundle_id = inv::compound_id(&["testimony", private_case_id, witness_ref]);
+    let stages_json = serde_json::to_string(&stages).map_err(|e| e.to_string())?;
+    let reliability_json = serde_json::to_string(&reliability).map_err(|e| e.to_string())?;
+    if let Some(existing) = ctx
+        .db
+        .investigation_testimony_bundle()
+        .id()
+        .find(&bundle_id)
+    {
+        if existing.stages_json != stages_json || existing.reliability_json != reliability_json {
+            return Err("Testimony bundle identity conflicts with authority".into());
+        }
+    } else {
+        ctx.db
+            .investigation_testimony_bundle()
+            .insert(InvestigationTestimonyBundle {
+                id: bundle_id.clone(),
+                case_id: private_case_id.into(),
+                witness_ref: witness_ref.into(),
+                reliability_json,
+                stages_json,
+            });
+    }
+    for (index, stage) in stages.into_iter().enumerate() {
+        let Some(disclosed) = stage.disclosed_text.clone() else {
+            continue;
+        };
+        let receipt_id = inv::compound_id(&[
+            "safe-testimony",
+            &character_id.to_string(),
+            &bundle_id,
+            &index.to_string(),
+        ]);
+        if ctx
+            .db
+            .investigation_safe_claim_receipt()
+            .id()
+            .find(&receipt_id)
+            .is_some()
+        {
+            continue;
+        }
+        let proposition_id =
+            PropositionId::new(stage.proposition_id.clone()).map_err(|_| "Invalid proposition")?;
+        let proposition = AtomicProposition::new(
+            proposition_id,
+            witness_ref,
+            "reported",
+            &stage.perceived_text,
+        )
+        .map_err(|_| "Invalid testimony proposition")?;
+        let pipeline = PipelineInput {
+            case_id: CaseId::new(private_case_id).map_err(|_| "Invalid case ID")?,
+            event_id: EventId::new(inv::compound_id(&["event", &bundle_id, &index.to_string()]))
+                .map_err(|_| "Invalid event ID")?,
+            proposition,
+            observer_ref: witness_ref.into(),
+            speaker_ref: witness_ref.into(),
+            receipt_identity: receipt_id.clone(),
+            recollection_revision: 1,
+            perceived_text: stage.perceived_text,
+            recalled_text: stage.recalled_text,
+            disclosed_text: Some(disclosed),
+            transmitted_text: stage.transmitted_text,
+            perception: PerceptionCondition::Clear,
+            memory: if matches!(
+                reliability,
+                adventuresim_dialogue::TestimonyReliability::Mistaken
+            ) {
+                MemoryCondition::Confused
+            } else {
+                MemoryCondition::Accurate
+            },
+            disclosure: if matches!(
+                reliability,
+                adventuresim_dialogue::TestimonyReliability::Deceptive
+            ) {
+                DisclosureMode::Distort
+            } else {
+                DisclosureMode::Disclose
+            },
+            transmission: TransmissionCondition::Clear,
+            received_at: official_minute(ctx),
+        };
+        stage_investigation_claim(
+            ctx,
+            character_id,
+            receipt_id.clone(),
+            serde_json::to_string(&pipeline).map_err(|e| e.to_string())?,
+            public_case_id.into(),
+            safe_source_label.into(),
+            inv::compound_id(&["conflict", public_case_id, &stage.proposition_id]),
+            String::new(),
+        )?;
+        receive_investigation_claim(
+            ctx,
+            character_id,
+            inv::compound_id(&["receive-testimony", &receipt_id]),
+            receipt_id,
+        )?;
+    }
+    Ok(())
+}
+
 #[reducer]
 pub fn receive_investigation_claim(
     ctx: &ReducerContext,
@@ -1192,6 +1355,31 @@ pub fn receive_investigation_claim(
         ctx.db.investigation_belief().id().update(belief);
     } else {
         ctx.db.investigation_belief().insert(belief);
+    }
+    let testimony_id = inv::compound_id(&[
+        "received-testimony",
+        &character_id.to_string(),
+        &receipt.claim_id,
+        &authority.hidden_speaker_ref,
+    ]);
+    if ctx
+        .db
+        .investigation_received_testimony()
+        .id()
+        .find(&testimony_id)
+        .is_none()
+    {
+        ctx.db
+            .investigation_received_testimony()
+            .insert(InvestigationReceivedTestimony {
+                id: testimony_id,
+                owner_character_id: character_id,
+                public_case_id: receipt.public_case_id.clone(),
+                claim_id: receipt.claim_id.clone(),
+                witness_ref: authority.hidden_speaker_ref,
+                source_receipt_id: receipt.id.clone(),
+                received_at: now,
+            });
     }
     receipt.consumed_by = action_id.clone();
     ctx.db

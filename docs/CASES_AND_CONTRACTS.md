@@ -44,7 +44,10 @@ revalidate the selected character, party leadership, active session revision,
 persistent NPC presence, intended recipient, and observer knowledge. Locate,
 identify, expose, proof, testimony, and negotiation may advance a known case
 without accepting a contract; report-to-issuer additionally requires the
-session-bound active contract and exact issuer. Each fact source includes the
-dialogue session, stable action ID, and objective ID, so retries are
-idempotent and distinct actions in the same minute cannot alias. There is no
-public generic fact or complete-objective reducer.
+session-bound active contract and exact issuer. The server rejects an action
+when more than one known case could satisfy its objective family, records an
+exact private session/case/objective binding, and consumes that binding only
+after the owning producer succeeds. Each fact source includes the dialogue
+session, stable action ID, and objective ID, so retries are idempotent and
+distinct actions in the same minute cannot alias. There is no public generic
+fact or complete-objective reducer.
