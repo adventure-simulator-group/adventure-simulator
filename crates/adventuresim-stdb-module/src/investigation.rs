@@ -359,6 +359,25 @@ pub struct InvestigationGeneratedActionOutput {
     pub outputs_json: String,
 }
 
+/// Private binding from an opaque learned cohort to one persistent NPC and
+/// the exact demographic/presence facts authored at generation time.
+#[derive(Clone, Debug)]
+#[table(accessor = investigation_pattern_target_authority)]
+pub struct InvestigationPatternTargetAuthority {
+    #[primary_key]
+    pub cohort_id: String,
+    #[index(btree)]
+    pub case_id: String,
+    pub npc_id: String,
+    pub demographic: String,
+    pub age_band: String,
+    pub sex: String,
+    pub profession: String,
+    pub expected_settlement_id: String,
+    pub expected_location: String,
+    pub presence_version: u64,
+}
+
 #[derive(Clone, Debug)]
 #[table(accessor = investigation_action_attempt)]
 pub struct InvestigationActionAttempt {
@@ -858,6 +877,12 @@ pub(crate) fn issue_investigation_action_capability(
             .id()
             .find(&target_id)
             .is_some(),
+        "cohort" => ctx
+            .db
+            .investigation_pattern_target_authority()
+            .cohort_id()
+            .find(&target_id)
+            .is_some_and(|target| target.case_id == case_id),
         "contact" | "route" | "tracks" => true,
         _ => false,
     };
@@ -1031,6 +1056,41 @@ fn issue_rumor_action_graph(
         let generation_context: adventuresim_core::quest_generation::GenerationContext =
             serde_json::from_str(&authority.context_snapshot_json)
                 .map_err(|_| "Generated observer-id authority is invalid")?;
+        for target in &manifest.pattern_targets {
+            let row = InvestigationPatternTargetAuthority {
+                cohort_id: target.cohort_id.clone(),
+                case_id: case_id.to_string(),
+                npc_id: target.npc_id.clone(),
+                demographic: format!("{:?}", target.demographic).to_ascii_lowercase(),
+                age_band: target.age_band.clone(),
+                sex: target.sex.clone(),
+                profession: target.profession.clone(),
+                expected_settlement_id: target.expected_settlement_id.clone(),
+                expected_location: target.expected_location.clone(),
+                presence_version: target.presence_version,
+            };
+            if let Some(existing) = ctx
+                .db
+                .investigation_pattern_target_authority()
+                .cohort_id()
+                .find(&row.cohort_id)
+            {
+                if existing.case_id != row.case_id
+                    || existing.npc_id != row.npc_id
+                    || existing.demographic != row.demographic
+                    || existing.age_band != row.age_band
+                    || existing.sex != row.sex
+                    || existing.profession != row.profession
+                    || existing.expected_settlement_id != row.expected_settlement_id
+                    || existing.expected_location != row.expected_location
+                    || existing.presence_version != row.presence_version
+                {
+                    return Err("Generated pattern target authority conflicts".into());
+                }
+            } else {
+                ctx.db.investigation_pattern_target_authority().insert(row);
+            }
+        }
         for generated in &manifest.actions {
             let capability_id = adventuresim_core::quest_generation::observer_scoped_id(
                 &generation_context,
@@ -1634,6 +1694,31 @@ fn validate_action_position(
             }
             Ok(())
         }
+        "cohort" => {
+            let target = ctx
+                .db
+                .investigation_pattern_target_authority()
+                .cohort_id()
+                .find(&capability.target_id)
+                .ok_or("Victim cohort authority no longer exists")?;
+            if target.case_id != capability.case_id {
+                return Err("Victim cohort belongs to another case".into());
+            }
+            let presence = ctx
+                .db
+                .settlement_npc_presence()
+                .npc_id()
+                .find(&target.npc_id)
+                .ok_or("Victim cohort target is unavailable")?;
+            if actor.current_settlement_id.as_deref() != Some(presence.settlement_id.as_str())
+                || presence.settlement_id != target.expected_settlement_id
+                || presence.location_id != target.expected_location
+                || presence.settlement_id != target.expected_settlement_id
+            {
+                return Err("Victim cohort target moved from the learned location".into());
+            }
+            Ok(())
+        }
         "area" => {
             let area = ctx
                 .db
@@ -1767,8 +1852,79 @@ fn validate_generated_pattern_condition(
         C::RoadRoute if capability.target_kind != "route" => {
             Err("The learned roadside pattern is not bound to route geography".into())
         }
-        C::VictimProfile { .. } if kind != action::InvestigationActionKind::Patrol => {
-            Err("The learned victim profile requires targeted surveillance".into())
+        C::VictimProfile {
+            cohort_id,
+            demographic,
+            age_band,
+            sex,
+            profession,
+        } => {
+            if kind != action::InvestigationActionKind::Patrol
+                || capability.target_kind != "cohort"
+                || capability.target_id != *cohort_id
+            {
+                return Err("The learned victim profile targets another cohort".into());
+            }
+            let target = ctx
+                .db
+                .investigation_pattern_target_authority()
+                .cohort_id()
+                .find(cohort_id)
+                .ok_or("Victim cohort authority no longer exists")?;
+            let expected_demographic = format!("{demographic:?}").to_ascii_lowercase();
+            if target.case_id != capability.case_id
+                || target.demographic != expected_demographic
+                || target.age_band != *age_band
+                || target.sex != *sex
+                || target.profession != *profession
+            {
+                return Err("Victim cohort profile no longer matches its authority".into());
+            }
+            let npc = ctx
+                .db
+                .settlement_npc()
+                .id()
+                .find(&target.npc_id)
+                .ok_or("Victim cohort NPC no longer exists")?;
+            let presence = ctx
+                .db
+                .settlement_npc_presence()
+                .npc_id()
+                .find(&target.npc_id)
+                .ok_or("Victim cohort target is unavailable")?;
+            let current_demographic = crate::strategic::generated_npc_demographic(&npc);
+            let current_version = crate::strategic::generated_npc_presence_version(&npc, &presence);
+            let expected = adventuresim_core::quest_generation::GeneratedPatternTarget {
+                cohort_id: target.cohort_id.clone(),
+                npc_id: target.npc_id.clone(),
+                demographic: *demographic,
+                age_band: target.age_band.clone(),
+                sex: target.sex.clone(),
+                profession: target.profession.clone(),
+                expected_settlement_id: target.expected_settlement_id.clone(),
+                expected_location: target.expected_location.clone(),
+                presence_version: target.presence_version,
+            };
+            let current = adventuresim_core::quest_generation::WitnessCandidate {
+                npc_id: npc.id.clone(),
+                demographic: current_demographic,
+                age_band: format!("{:?}", npc.age_band).to_ascii_lowercase(),
+                sex: format!("{:?}", npc.sex).to_ascii_lowercase(),
+                profession: npc.profession.clone(),
+                visible_description: String::new(),
+                expected_location: presence.location_id.clone(),
+                presence_version: current_version,
+                allowed_circumstances: Default::default(),
+            };
+            if !adventuresim_core::quest_generation::pattern_target_matches(
+                &expected,
+                &current,
+                &presence.settlement_id,
+            ) || !crate::settlement_population::npc_is_present(&presence, started_at)
+            {
+                return Err("Victim cohort target moved, changed, or is unavailable".into());
+            }
+            Ok(())
         }
         C::BroadSurvey
             if kind != action::InvestigationActionKind::SearchArea
@@ -3655,6 +3811,7 @@ mod tests {
             "investigation_sharing_receipt",
             "investigation_area_authority",
             "investigation_action_capability",
+            "investigation_pattern_target_authority",
             "investigation_action_attempt",
             "investigation_action_outcome",
         ] {
@@ -3848,6 +4005,16 @@ mod tests {
         assert!(validator.contains("started_at % 1_440"));
         assert!(validator.contains("capability.target_kind != \"route\""));
         assert!(validator.contains("InvestigationActionKind::SearchArea"));
+        assert!(validator.contains("investigation_pattern_target_authority()"));
+        assert!(validator.contains("pattern_target_matches"));
+        assert!(validator.contains("generated_npc_presence_version"));
+        assert!(validator.contains("npc_is_present"));
+        assert!(validator.contains("capability.target_id != *cohort_id"));
+        assert!(
+            !source.contains("#[table(accessor = investigation_pattern_target_authority, public)]")
+        );
+        let generated_client = include_str!("../../adventuresim-stdb-client/src/mod.rs");
+        assert!(!generated_client.contains("investigation_pattern_target_authority_table"));
         let performer = source
             .split("pub(crate) fn perform_investigation_action_authorized")
             .nth(1)
