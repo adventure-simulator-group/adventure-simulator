@@ -538,7 +538,14 @@
   color: #000;
 }
 
-.cooking-activity { display: contents; }
+.cooking-activity {
+  display: grid;
+  grid-template-columns: minmax(12rem, 0.8fr) minmax(18rem, 1.4fr) minmax(14rem, 1fr);
+  min-height: min(36rem, 75vh);
+}
+
+.cooking-activity > * { min-width: 0; padding: .75rem; overflow: auto; }
+.cooking-stage { position: relative; min-height: 24rem; border-inline: 1px solid var(--border-light); }
 
 .cooking-pot .inventory-browser {
   transition: opacity 120ms ease;
@@ -1524,13 +1531,24 @@ body:has(.settlement-top-bar) .main-grid .settlement-card:hover {
 
 .schedule-activity-button {
   display: grid;
-  width: 100%;
-  padding: 0;
-  border: 0;
+  width: 2rem;
+  min-width: 2rem;
+  height: 2rem;
+  margin-inline: auto;
+  padding: .18rem;
+  border: 2px solid;
+  border-color: #eee #353535 #353535 #eee;
   place-items: center;
-  background: transparent;
+  background: #858585;
   color: inherit;
   cursor: pointer;
+  box-shadow: 1px 1px 0 #050505;
+}
+.schedule-activity-button:active,
+.schedule-activity-button[aria-expanded="true"] {
+  border-color: #353535 #eee #eee #353535;
+  box-shadow: inset 1px 1px 0 #050505;
+  transform: translate(1px, 1px);
 }
 .schedule-activity-button:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }
 .schedule-activity-button:hover .schedule-special-icon { filter: brightness(1.25); }
@@ -1555,6 +1573,78 @@ body.activity-modal-open { overflow: hidden; }
 .activity-duration-summary { display: flex; justify-content: space-between; margin: 0; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .activity-preview-table { width: 100%; margin-bottom: 1rem; }
 .activity-submit { width: 100%; padding: 0.55rem; cursor: pointer; }
+
+body.character-action-dialog-open { overflow: hidden; }
+.character-action-overlay {
+  position: fixed;
+  z-index: 1050;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+.character-action-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 72%);
+}
+.character-action-dialog {
+  position: relative;
+  width: min(44rem, 100%);
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  padding: 1rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  outline: none;
+  background: var(--panel-bg);
+  box-shadow: 0 1rem 3rem rgb(0 0 0 / 70%);
+}
+.character-action-dialog:focus-visible { box-shadow: 0 0 0 2px var(--accent-light), 0 1rem 3rem rgb(0 0 0 / 70%); }
+.character-action-dialog-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .85rem; }
+.character-action-dialog-header h2 { margin: 0; }
+.character-action-dialog-close { color: inherit; font-size: 1.65rem; line-height: 1; text-decoration: none; }
+.cooking-dialog { width: min(76rem, 100%); padding: 0; }
+.cooking-dialog > .character-action-dialog-header { padding: 1rem 1rem 0; }
+.social-dialog { width: min(52rem, 100%); }
+.surgery-dialog { width: min(48rem, 100%); }
+
+.character-menu-button-form { display: inline; margin: 0; }
+.character-menu-button {
+  display: inline-grid;
+  box-sizing: border-box;
+  width: 1.85rem;
+  min-width: 1.85rem;
+  height: 1.85rem;
+  padding: .16rem;
+  border: 2px solid;
+  border-color: #eee #353535 #353535 #eee;
+  place-items: center;
+  background: #858585;
+  box-shadow: 1px 1px 0 #050505;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+.character-menu-button:hover { filter: brightness(1.12); }
+.character-menu-button:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }
+.character-menu-button:active,
+.character-menu-button.is-open,
+.character-menu-button[aria-expanded="true"] {
+  border-color: #353535 #eee #eee #353535;
+  box-shadow: inset 1px 1px 0 #050505;
+  transform: translate(1px, 1px);
+}
+.character-menu-button .stat-icon { width: 1.15rem; height: 1.15rem; }
+
+@media (pointer: coarse) {
+  .character-menu-button { width: 2.5rem; min-width: 2.5rem; height: 2.5rem; }
+  .schedule-activity-button { width: 2.5rem; min-width: 2.5rem; height: 2.5rem; }
+}
+@media (max-width: 760px) {
+  .cooking-activity { grid-template-columns: 1fr; }
+  .cooking-stage { min-height: 22rem; border-inline: 0; border-block: 1px solid var(--border-light); }
+}
 
 .rest-consumable-indicators {
   display: flex;
@@ -2603,9 +2693,7 @@ button.party-portrait-action {
   outline: none;
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
-.morale-meter { color: inherit; text-decoration: none; cursor: pointer; }
-.morale-meter:hover,
-.morale-meter:focus-visible { border-color: var(--accent-hover); outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-hover) 35%, transparent); }
+.morale-meter { color: inherit; }
 
 :root {
   --incap-pain: #d973a2;
@@ -2625,7 +2713,8 @@ button.party-portrait-action {
 }
 
 .morale-meter-heading { margin-bottom: 0.35rem; }
-.morale-meter-heading span { grid-column: 2; font-variant-numeric: tabular-nums; font-weight: 800; }
+.morale-meter-heading .morale-meter-value { grid-column: 2; font-variant-numeric: tabular-nums; font-weight: 800; }
+.morale-meter-heading .character-menu-button { grid-column: 3; justify-self: end; }
 
 .morale-meter-track {
   position: relative;
@@ -3405,6 +3494,11 @@ button.party-portrait-action {
 }
 
 .attribute-group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .35rem;
+  min-height: 1.85rem;
   color: var(--text-primary);
   font-size: var(--font-size-xs);
   font-weight: 700;
