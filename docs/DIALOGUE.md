@@ -1,5 +1,26 @@
 # Dialogue architecture
 
+## Persistent settlement actors
+
+Settlement dialogue is authorized against persistent `settlement_npc` identities and
+their authoritative strategic `settlement_npc_presence`, rather than a client-created
+`<settlement>:<service>` name. A location may contain several NPCs; changing the
+addressed portrait changes the actor while the character remains at that location.
+Service providers retain their service conversation, while ordinary residents use the
+compiled `local-resident` conversation and cannot receive service-only topics.
+
+The public NPC row contains only visible identity and presentation: name, age band, sex,
+height, build, hair/facial hair, complexion, visible features, clothing, profession,
+household, and local role. Population seed explanations and relation weights are a
+private diagnostic table. Dialogue facts include typed age, profession, status,
+clothing presence, prior interaction, language compatibility, location role, local
+circumstance, and time period. Greeting response priority remains deterministic.
+
+Population choices use contextual weighted relations. Zero plausibility is a hard
+exclusion; low positive values remain rare. Curation weight stays separate from world
+plausibility, and unusual demographic/location combinations require a causal bridge.
+One relation owns each conditional weight; inverse tables are not duplicated.
+
 Scripted dialogue is a compiled, server-authoritative strategic system. It is
 separate from free-form local chat. Authors edit the JSON-compatible subset of
 YAML in `content/dialogue/*.yaml`; builds validate and embed a deterministic

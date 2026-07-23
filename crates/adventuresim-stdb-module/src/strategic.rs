@@ -30,6 +30,7 @@ use crate::{
     condition::character_condition,
     item::{InventoryItem, inventory_item, item},
     repair::item_condition,
+    settlement_population::{settlement_npc, settlement_npc_presence},
     tactical::tactical_server_request,
     time::{
         advance_travel_time, character_apprenticeship, character_time, character_training_schedule,
@@ -2336,6 +2337,7 @@ pub struct DialogueSession {
     pub conversation_id: String,
     pub catalog_revision: String,
     pub settlement_id: String,
+    pub location_id: String,
     pub state: String,
     pub revision: u64,
     pub created_micros: i64,
@@ -2444,20 +2446,6 @@ fn require_dialogue_revision(revision: &str) -> Result<(), String> {
     }
 }
 
-fn service_actor_display_name(actor_id: &str, role: &str) -> String {
-    match actor_id.split(':').nth(1).unwrap_or(role) {
-        "merchants" => "Merchant",
-        "weapons" => "Weaponsmith",
-        "armor" => "Armourer",
-        "clothing" => "Tailor",
-        "herbalist" => "Herbalist",
-        "inn" => "Innkeeper",
-        "religion" => "Priest",
-        _ => role,
-    }
-    .to_string()
-}
-
 #[reducer]
 pub fn start_dialogue(
     ctx: &ReducerContext,
@@ -2465,6 +2453,7 @@ pub fn start_dialogue(
     session_id: String,
     conversation_id: String,
     npc_actor_id: String,
+    location_id: String,
     catalog_revision: String,
 ) -> Result<(), String> {
     require_strategic_gateway(ctx)?;
@@ -2479,17 +2468,35 @@ pub fn start_dialogue(
     let settlement_id = character
         .current_settlement_id
         .ok_or("Dialogue requires a settlement")?;
-    let expected_conversation = match npc_actor_id.strip_prefix(&format!("{settlement_id}:")) {
-        Some("herbalist") => "herbalist-examination",
-        Some("religion") => "religion-service",
-        Some("merchants" | "weapons" | "armor" | "clothing" | "inn") => "service-professions",
-        _ => return Err("Dialogue actor is not an authoritative settlement service".into()),
-    };
-    if conversation_id != expected_conversation {
-        return Err("Dialogue conversation is not valid for this service actor".into());
-    }
-    if !npc_actor_id.starts_with(&format!("{settlement_id}:")) {
+    let npc = ctx
+        .db
+        .settlement_npc()
+        .id()
+        .find(&npc_actor_id)
+        .ok_or("Dialogue actor is not a persistent settlement NPC")?;
+    if npc.home_settlement_id != settlement_id {
         return Err("Dialogue actor is not at this settlement".into());
+    }
+    let presence = ctx
+        .db
+        .settlement_npc_presence()
+        .npc_id()
+        .find(&npc_actor_id)
+        .ok_or("Dialogue actor has no authoritative presence")?;
+    let minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(720, |time| time.minutes);
+    if presence.settlement_id != settlement_id
+        || presence.location_id != location_id
+        || !crate::settlement_population::npc_is_present(&presence, minute)
+    {
+        return Err("Dialogue actor is not present at this time".into());
+    }
+    if conversation_id != npc.conversation_id {
+        return Err("Dialogue conversation is not valid for this NPC".into());
     }
     let conversation = adventuresim_dialogue::find_conversation(&conversation_id)
         .ok_or("Unknown dialogue conversation")?;
@@ -2517,6 +2524,7 @@ pub fn start_dialogue(
     if let Some(existing) = ctx.db.dialogue_session().id().find(&session_id) {
         return if existing.conversation_id == conversation_id
             && existing.settlement_id == settlement_id
+            && existing.location_id == location_id
             && existing.catalog_revision == catalog_revision
         {
             Ok(())
@@ -2530,6 +2538,7 @@ pub fn start_dialogue(
         conversation_id,
         catalog_revision,
         settlement_id,
+        location_id,
         state: "active".into(),
         revision: 0,
         created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
@@ -2561,7 +2570,11 @@ pub fn start_dialogue(
             session_id: id.clone(),
             role: role_name.clone(),
             character_id: None,
-            display_name: service_actor_display_name(&actor_id, role_name),
+            display_name: if index == 0 {
+                npc.name.clone()
+            } else {
+                role_name.clone()
+            },
             actor_id,
         });
     }
@@ -2798,21 +2811,65 @@ fn dialogue_fact_context(
             ),
         );
         if participant.character_id.is_none() {
-            result.facts.insert(
-                FactKey::Service {
-                    role: participant.role.clone(),
-                },
-                FactValue::Text(
-                    participant
-                        .actor_id
-                        .split(':')
-                        .nth(1)
-                        .unwrap_or_default()
-                        .to_owned(),
-                ),
-            );
+            if let Some(npc) = ctx.db.settlement_npc().id().find(&participant.actor_id) {
+                if !npc.service_id.is_empty() {
+                    result.facts.insert(
+                        FactKey::Service {
+                            role: participant.role.clone(),
+                        },
+                        FactValue::Text(npc.service_id.clone()),
+                    );
+                }
+                result.facts.insert(
+                    FactKey::ParticipantProfession {
+                        role: participant.role.clone(),
+                    },
+                    FactValue::Text(npc.profession.clone()),
+                );
+                result.facts.insert(
+                    FactKey::ParticipantAgeBand {
+                        role: participant.role.clone(),
+                    },
+                    FactValue::Text(format!("{:?}", npc.age_band).to_lowercase()),
+                );
+                result.facts.insert(
+                    FactKey::ParticipantSex {
+                        role: participant.role.clone(),
+                    },
+                    FactValue::Text(format!("{:?}", npc.sex).to_lowercase()),
+                );
+                result.facts.insert(
+                    FactKey::ParticipantLocalRole {
+                        role: participant.role.clone(),
+                    },
+                    FactValue::Text(npc.local_role.clone()),
+                );
+                if let Some(presence) = ctx.db.settlement_npc_presence().npc_id().find(&npc.id) {
+                    result
+                        .facts
+                        .insert(FactKey::LocationRole, FactValue::Text(presence.location_id));
+                    result.facts.insert(
+                        FactKey::LocalCircumstance,
+                        FactValue::Text(presence.circumstance),
+                    );
+                }
+            }
         }
         if let Some(id) = participant.character_id {
+            if let Some(character) = ctx.db.character().id().find(id) {
+                let age = match character.age_years {
+                    0..=12 => "child",
+                    13..=17 => "adolescent",
+                    60.. => "elder",
+                    _ => "adult",
+                };
+                result.facts.insert(
+                    FactKey::ParticipantAgeBand {
+                        role: participant.role.clone(),
+                    },
+                    FactValue::Text(age.into()),
+                );
+            }
             if let Some(apprenticeship) = ctx
                 .db
                 .character_apprenticeship()
@@ -2841,6 +2898,19 @@ fn dialogue_fact_context(
                         },
                         FactValue::Bool(leader),
                     );
+                    result.facts.insert(
+                        FactKey::ParticipantStatus {
+                            role: participant.role.clone(),
+                        },
+                        FactValue::Text(
+                            if leader {
+                                "party_leader"
+                            } else {
+                                "party_member"
+                            }
+                            .into(),
+                        ),
+                    );
                 }
             }
             if let Some(equipment) = ctx.db.character_equip().character_id().find(id) {
@@ -2868,8 +2938,63 @@ fn dialogue_fact_context(
                         },
                         FactValue::Text(item.id),
                     );
+                    result.facts.insert(
+                        FactKey::ParticipantHasVisibleClothing {
+                            role: participant.role.clone(),
+                        },
+                        FactValue::Bool(true),
+                    );
                 }
             }
+        }
+    }
+    if let (Some(player), Some(npc)) = (
+        participants
+            .iter()
+            .find(|p| p.character_id == Some(character_id)),
+        participants.iter().find(|p| p.character_id.is_none()),
+    ) {
+        let prior_sessions: HashSet<_> = ctx
+            .db
+            .dialogue_participant()
+            .iter()
+            .filter(|other| other.actor_id == npc.actor_id && other.session_id != session.id)
+            .map(|other| other.session_id)
+            .collect();
+        let prior = ctx.db.dialogue_participant().iter().any(|other| {
+            other.character_id == Some(character_id) && prior_sessions.contains(&other.session_id)
+        });
+        result.facts.insert(
+            FactKey::ParticipantPriorInteraction {
+                left: player.role.clone(),
+                right: npc.role.clone(),
+            },
+            FactValue::Bool(prior),
+        );
+        if let (Some(skills), Some(settlement)) = (
+            ctx.db.character_skills().character_id().find(character_id),
+            ctx.db.settlement().id().find(&session.settlement_id),
+        ) {
+            let coefficient = skills
+                .oral_languages
+                .effective(settlement.languages.dominant_german())
+                / adventuresim_world_schema::ORAL_FLUENCY_HOURS;
+            result.facts.insert(
+                FactKey::ParticipantLanguageCompatibility {
+                    left: player.role.clone(),
+                    right: npc.role.clone(),
+                },
+                FactValue::Text(
+                    if coefficient >= 0.75 {
+                        "fluent"
+                    } else if coefficient >= 0.35 {
+                        "limited"
+                    } else {
+                        "poor"
+                    }
+                    .into(),
+                ),
+            );
         }
     }
     if let Some(time) = ctx.db.character_time().character_id().find(character_id) {
@@ -2884,20 +3009,22 @@ fn dialogue_fact_context(
             .insert(FactKey::TimePeriod, FactValue::Text(period.into()));
     }
     let service = dialogue_service_id(ctx, session)?;
-    if let Some(issuer) = ctx
-        .db
-        .quest_issuer()
-        .service_id()
-        .filter(&service)
-        .find(|issuer| issuer.settlement_id == session.settlement_id)
-    {
-        if let Some(quest) = ctx.db.quest().id().find(&issuer.quest_id) {
-            result.facts.insert(
-                FactKey::QuestState {
-                    quest: "selected-service-quest".into(),
-                },
-                FactValue::Text(format!("{:?}", quest.status).to_lowercase()),
-            );
+    if !service.is_empty() {
+        if let Some(issuer) = ctx
+            .db
+            .quest_issuer()
+            .service_id()
+            .filter(&service)
+            .find(|issuer| issuer.settlement_id == session.settlement_id)
+        {
+            if let Some(quest) = ctx.db.quest().id().find(&issuer.quest_id) {
+                result.facts.insert(
+                    FactKey::QuestState {
+                        quest: "selected-service-quest".into(),
+                    },
+                    FactValue::Text(format!("{:?}", quest.status).to_lowercase()),
+                );
+            }
         }
     }
     Ok(result)
@@ -3327,21 +3454,7 @@ fn apply_dialogue_effect(
         }
         adventuresim_dialogue::Effect::BeginApprenticeship { profession } => {
             let service = if profession == "selected-service" {
-                ctx.db
-                    .dialogue_participant()
-                    .session_id()
-                    .filter(&session.id)
-                    .find_map(|participant| {
-                        (participant.character_id.is_none()).then(|| {
-                            participant
-                                .actor_id
-                                .rsplit(':')
-                                .next()
-                                .unwrap_or_default()
-                                .to_owned()
-                        })
-                    })
-                    .ok_or("Dialogue has no service actor")?
+                dialogue_service_id(ctx, session)?
             } else {
                 profession.clone()
             };
@@ -3422,14 +3535,17 @@ fn dialogue_service_id(ctx: &ReducerContext, session: &DialogueSession) -> Resul
         .session_id()
         .filter(&session.id)
         .find_map(|participant| {
-            participant.character_id.is_none().then(|| {
-                participant
-                    .actor_id
-                    .rsplit(':')
-                    .next()
-                    .unwrap_or_default()
-                    .to_owned()
-            })
+            participant
+                .character_id
+                .is_none()
+                .then(|| {
+                    ctx.db
+                        .settlement_npc()
+                        .id()
+                        .find(&participant.actor_id)
+                        .map(|npc| npc.service_id)
+                })
+                .flatten()
         })
         .ok_or("Dialogue has no service actor".into())
 }
@@ -10267,6 +10383,7 @@ fn ensure_settlement_activity_inner(
     ctx: &ReducerContext,
     settlement_id: &str,
 ) -> Result<(), String> {
+    crate::settlement_population::ensure_settlement_population(ctx, settlement_id)?;
     let tracked_quests: HashSet<String> = ctx
         .db
         .party()

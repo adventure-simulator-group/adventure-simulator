@@ -567,8 +567,9 @@ pub fn settlement_overview_page(
         }
         main class="center-content settlement-main settlement-overview" {
             (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None, false))
-            (visual_stage("settlement", &settlement.name, "Streets, landmarks, and the settlement approach"))
-            (settlement_chat_area(&settlement.name, active_character))
+            (npc_portrait_strip(&settlement.id, "overview"))
+            (npc_description_stage(&settlement.name, "Select a local resident to see their visible description."))
+            (settlement_npc_chat_area(&settlement.name, active_character, &settlement.id, "overview", None))
         }
         aside class="right-sidebar" {
             (sidebar_section("Description", html! {
@@ -2920,13 +2921,9 @@ fn service_page(
         }
         main class="center-content settlement-main" {
             (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None, false))
-            (visual_stage("service", npc_name, &format!("{title} host and service counter")))
-            (settlement_service_chat_area(
-                title,
-                active_character,
-                &settlement.id,
-                service_id,
-            ))
+            (npc_portrait_strip(&settlement.id, npc_location_id(service_id)))
+            (npc_description_stage(npc_name, &format!("{title} host and service counter")))
+            (settlement_npc_chat_area(title, active_character, &settlement.id, npc_location_id(service_id), Some(service_id)))
         }
         aside class="right-sidebar" {
             @if trade_offers.is_some() {
@@ -3156,7 +3153,7 @@ pub fn live_merchant_shop_page(
             (repair_custody_panel(settlement, shop, repair_orders, conditions, items, now_minutes, smith_skill))
         }
         }
-        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None, false)) (visual_stage("service", title, "Merchant counter and attending craftsperson")) (settlement_service_chat_area(title, Some(character), &settlement.id, service_id)) form # "merchant-offer" class="party-offer" action=(if matches!(shop, MerchantShop::Herbalist) { format!("/settlements/{}/herbalist/purchase", settlement.id) } else { format!("/settlements/{}/merchants/offer", settlement.id) }) method="post" hidden role="dialog" aria-modal="true" aria-label="Confirm merchant offer" tabindex="-1" { span class="party-offer-summary" { "Review and submit the staged trade." } input type="hidden" name="return_to" value=(format!("/settlements/{}/{}", settlement.id, service_id)); input type="hidden" name="inventory_scope" value="player"; button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
+        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None, false)) (npc_portrait_strip(&settlement.id, npc_location_id(service_id))) (npc_description_stage(title, "Merchant counter and attending craftsperson")) (settlement_npc_chat_area(title, Some(character), &settlement.id, npc_location_id(service_id), Some(service_id))) form # "merchant-offer" class="party-offer" action=(if matches!(shop, MerchantShop::Herbalist) { format!("/settlements/{}/herbalist/purchase", settlement.id) } else { format!("/settlements/{}/merchants/offer", settlement.id) }) method="post" hidden role="dialog" aria-modal="true" aria-label="Confirm merchant offer" tabindex="-1" { span class="party-offer-summary" { "Review and submit the staged trade." } input type="hidden" name="return_to" value=(format!("/settlements/{}/{}", settlement.id, service_id)); input type="hidden" name="inventory_scope" value="player"; button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
         aside class="right-sidebar inventory-owner-panel" data-inventory-tabs {
             nav class="inventory-owner-tabs" aria-label="Trading inventory" {
                 button type="button" class="inventory-owner-tab active" data-inventory-tab="player" { "Player" }
@@ -5864,18 +5861,45 @@ fn player_chat_area(subject: &Character, active_character: &Character) -> Markup
     )
 }
 
-fn settlement_service_chat_area(
+fn npc_location_id(service_id: &str) -> &str {
+    match service_id {
+        "merchants" => "market",
+        "weapons" => "forge",
+        "armor" => "armoury",
+        "clothing" => "tailor",
+        other => other,
+    }
+}
+
+fn npc_portrait_strip(settlement_id: &str, location_id: &str) -> Markup {
+    html! {
+        nav class="settlement-npc-strip" aria-label="People here" data-npc-strip
+            data-npc-settlement=(settlement_id) data-npc-location=(location_id) {
+            span class="text-muted" data-npc-loading { "Finding the people hereâ€¦" }
+        }
+    }
+}
+
+fn npc_description_stage(name: &str, fallback: &str) -> Markup {
+    html! { section class="visual-stage npc-description-stage" data-npc-description aria-live="polite" {
+        div class="visual-stage-placeholder" aria-hidden="true" { "?" }
+        h2 { (name) }
+        p { (fallback) }
+    } }
+}
+
+fn settlement_npc_chat_area(
     location: &str,
     active_character: Option<&Character>,
     settlement_id: &str,
-    service_id: &str,
+    _location_id: &str,
+    service_id: Option<&str>,
 ) -> Markup {
-    let subject_id = format!("{settlement_id}:{service_id}");
     chat_area(
         location,
         active_character,
-        Some((settlement_id, service_id)),
-        Some(("npc", subject_id)),
+        Some((settlement_id, service_id.unwrap_or(""))),
+        Some(("npc", String::new())),
         &[],
     )
 }
@@ -8209,6 +8233,19 @@ mod tests {
             assert!(markup.contains(&format!("aria-label=\"{label}\" title=\"{label}\"")));
             assert!(!markup.contains(&format!(">{label}</")));
         }
+    }
+
+    #[test]
+    fn settlement_npc_strip_exposes_accessible_authoritative_context() {
+        let strip = npc_portrait_strip("lubeck", "market").into_string();
+        assert!(strip.contains("aria-label=\"People here\""));
+        assert!(strip.contains("data-npc-settlement=\"lubeck\""));
+        assert!(strip.contains("data-npc-location=\"market\""));
+        let chat = settlement_npc_chat_area("Market", None, "lubeck", "market", Some("merchants"))
+            .into_string();
+        assert!(chat.contains("data-local-chat-kind=\"npc\""));
+        assert!(chat.contains("data-dialogue-catalog-revision"));
+        assert!(!chat.contains("lubeck:merchants"));
     }
 
     #[test]

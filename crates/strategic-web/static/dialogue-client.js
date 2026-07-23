@@ -44,6 +44,8 @@
   const input = chat.querySelector(".settlement-chat-composer input");
   const send = chat.querySelector(".settlement-chat-composer button");
   const completion = chat.querySelector("[data-dialogue-completion]");
+  const npcStrip = document.querySelector("[data-npc-strip]");
+  const npcDescription = document.querySelector("[data-npc-description]");
   let currentView = null;
 
   const actionId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -154,6 +156,45 @@
   document.addEventListener("click", (event) => { const topic = event.target.closest("[data-dialogue-topic]"); if (!topic || event.target.closest(".dialogue-source-link")) return; event.preventDefault(); chooseTopic(topic.dataset.dialogueTopic); });
   document.addEventListener("click", (event) => { const medication = event.target.closest("[data-dialogue-medication]"); if (!medication) return; const rows = Array.from(document.querySelectorAll("[data-herbalist-medication-name]")); const row = rows.find((candidate) => candidate.dataset.herbalistMedicationName === medication.dataset.dialogueMedication); row?.scrollIntoView({ behavior: "smooth", block: "center" }); row?.querySelector("[data-merchant-buy]")?.focus(); });
   document.addEventListener("submit", (event) => { const form = event.target.closest("[data-dialogue-prompt]"); if (!form) return; event.preventDefault(); const submitter = event.submitter; const choices = submitter?.name === "choice" ? [submitter.value] : Array.from(new FormData(form).getAll("choice"), String); answerPrompt(choices); });
-  const begin = () => request("/api/dialogue/start", { npc_actor_id: chat.dataset.localChatSubject }).then(render).catch((error) => window.reportStrategicError(error, "start dialogue"));
-  if (chat.dataset.localChatReady === "true") begin(); else chat.addEventListener("local-chat-ready", begin, { once: true });
+  const begin = () => {
+    if (!chat.dataset.localChatSubject) return;
+    return request("/api/dialogue/start", { npc_actor_id: chat.dataset.localChatSubject, location_id: npcStrip?.dataset.npcLocation || "" }).then(render).catch((error) => window.reportStrategicError(error, "start dialogue"));
+  };
+  const selectNpc = (npc, button) => {
+    chat.dataset.localChatSubject = npc.id;
+    currentView = null;
+    npcStrip?.querySelectorAll("button").forEach((candidate) => {
+      const active = candidate === button;
+      candidate.classList.toggle("active", active);
+      candidate.setAttribute("aria-pressed", String(active));
+      candidate.tabIndex = active ? 0 : -1;
+    });
+    if (npcDescription) {
+      const placeholder = document.createElement("div"); placeholder.className = "visual-stage-placeholder"; placeholder.setAttribute("aria-hidden", "true"); placeholder.textContent = npc.initials || "?";
+      const heading = document.createElement("h2"); heading.textContent = npc.name;
+      const description = document.createElement("p"); description.textContent = npc.description;
+      npcDescription.replaceChildren(placeholder, heading, description);
+    }
+    begin();
+  };
+  const loadPeople = async () => {
+    if (!npcStrip) { begin(); return; }
+    const path = `/api/settlements/${encodeURIComponent(npcStrip.dataset.npcSettlement)}/locations/${encodeURIComponent(npcStrip.dataset.npcLocation)}/npcs`;
+    const response = await window.strategicFetch(path, { headers: { Accept: "application/json" } });
+    if (!response.ok) throw new Error(`Could not load people here (${response.status})`);
+    const people = await response.json();
+    if (!people.length) { npcStrip.textContent = "Nobody is available here just now."; return; }
+    const buttons = people.map((npc) => {
+      const button = document.createElement("button"); button.type = "button"; button.className = "settlement-npc-portrait"; button.dataset.npcId = npc.id; button.setAttribute("aria-label", `Talk to ${npc.name}`); button.setAttribute("aria-pressed", "false"); button.tabIndex = -1;
+      const face = document.createElement("span"); face.className = "settlement-npc-initials"; face.textContent = npc.initials || "?";
+      const name = document.createElement("span"); name.className = "settlement-npc-name"; name.textContent = npc.name;
+      button.append(face, name); button.addEventListener("click", () => selectNpc(npc, button));
+      button.addEventListener("keydown", (event) => { if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return; event.preventDefault(); const offset = event.key === 'ArrowRight' ? 1 : -1; buttons[(buttons.indexOf(button) + offset + buttons.length) % buttons.length].focus(); });
+      return button;
+    });
+    npcStrip.replaceChildren(...buttons);
+    const defaultIndex = Math.max(0, people.findIndex((npc) => npc.is_default));
+    selectNpc(people[defaultIndex], buttons[defaultIndex]);
+  };
+  loadPeople().catch((error) => window.reportStrategicError(error, "load settlement NPCs"));
 })();

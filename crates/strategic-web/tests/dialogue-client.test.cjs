@@ -35,6 +35,16 @@ test("private herbalist results retain medication focus without entering the cat
   assert.match(source, /data-herbalist-medication-name/);
 });
 
+test("settlement NPC selection is accessible and actor-backed", () => {
+  assert.match(source, /api\/settlements\/\$\{encodeURIComponent\(npcStrip\.dataset\.npcSettlement\)\}/);
+  assert.match(source, /setAttribute\("aria-label", `Talk to/);
+  assert.match(source, /aria-pressed/);
+  assert.match(source, /ArrowLeft/);
+  assert.match(source, /ArrowRight/);
+  assert.match(source, /chat\.dataset\.localChatSubject = npc\.id/);
+  assert.match(source, /npcDescription\.replaceChildren/);
+});
+
 test("unique topic prefixes complete while ambiguous prefixes do not", () => {
   const topics = [
     { id: "profession", label: "Profession" },
