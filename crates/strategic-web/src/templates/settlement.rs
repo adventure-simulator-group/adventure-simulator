@@ -8663,12 +8663,21 @@ mod tests {
     fn persisted_quest_camp_keeps_turnaround_movement_after_elapsed_rest() {
         let mut journey = PartyJourney {
             party_id: "party".into(),
-            origin_kind: "settlement".into(),
-            origin_id: "home".into(),
-            origin_name: "Home".into(),
-            destination_kind: "quest".into(),
-            destination_id: "quest".into(),
-            destination_name: "Quest".into(),
+            gateway_bucket: 0,
+            origin: crate::spacetimedb::JourneyEndpoint::Settlement(
+                crate::spacetimedb::JourneySettlementEndpoint {
+                    id: "home".into(),
+                    name: "Home".into(),
+                },
+            ),
+            destination: crate::spacetimedb::JourneyEndpoint::CaseSite(
+                crate::spacetimedb::JourneyCaseSiteEndpoint {
+                    id: crate::spacetimedb::CaseSiteId {
+                        value: "quest".into(),
+                    },
+                    name: "Quest".into(),
+                },
+            ),
             total_minutes: 720,
             completed_minutes: 480,
             camp_stop_minutes: vec![480],
