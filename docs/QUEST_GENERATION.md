@@ -104,6 +104,12 @@ its nighttime window, roadside route, authored victim profile, or broad
 schedule-free search. Unreliable testimony may contradict that proposition
 until the evidence is learned, and the dependent capability requires knowledge
 of the exact evidence ID rather than inferring from the canonical event.
+Victim-specific patterns bind an opaque cohort reference to one persistent
+settlement NPC in private authority, including their authored demographic and a
+versioned presence fingerprint. The learned clue exposes only legitimate
+demographic, physical, and referral details; patrol and ambush execution
+revalidate the NPC's identity, profile, location, and availability immediately
+before resolving the action.
 
 Generated cases create no `Contract` rows. Tavern discovery and NPC referrals
 are their entry points. Settlement activity counts open generated cases

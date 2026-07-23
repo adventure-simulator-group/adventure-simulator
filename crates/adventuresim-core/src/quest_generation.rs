@@ -203,10 +203,41 @@ pub struct GenerationContext {
 pub struct WitnessCandidate {
     pub npc_id: String,
     pub demographic: WitnessDemographic,
+    pub age_band: String,
+    pub sex: String,
     pub profession: String,
     pub visible_description: String,
     pub expected_location: String,
+    pub presence_version: u64,
     pub allowed_circumstances: BTreeSet<Circumstance>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GeneratedPatternTarget {
+    pub cohort_id: String,
+    pub npc_id: String,
+    pub demographic: WitnessDemographic,
+    pub age_band: String,
+    pub sex: String,
+    pub profession: String,
+    pub expected_settlement_id: String,
+    pub expected_location: String,
+    pub presence_version: u64,
+}
+
+pub fn pattern_target_matches(
+    expected: &GeneratedPatternTarget,
+    current: &WitnessCandidate,
+    current_settlement_id: &str,
+) -> bool {
+    expected.npc_id == current.npc_id
+        && expected.demographic == current.demographic
+        && expected.age_band == current.age_band
+        && expected.sex == current.sex
+        && expected.profession == current.profession
+        && expected.expected_settlement_id == current_settlement_id
+        && expected.expected_location == current.expected_location
+        && expected.presence_version == current.presence_version
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -351,7 +382,13 @@ pub enum GeneratedActionOutput {
 pub enum GeneratedPatternCondition {
     NightWindow,
     RoadRoute,
-    VictimProfile { demographic: WitnessDemographic },
+    VictimProfile {
+        cohort_id: String,
+        demographic: WitnessDemographic,
+        age_band: String,
+        sex: String,
+        profession: String,
+    },
     BroadSurvey,
 }
 
@@ -413,6 +450,7 @@ pub struct GeneratedCase {
     pub sites: Vec<GeneratedSite>,
     pub areas: Vec<GeneratedArea>,
     pub witnesses: Vec<WitnessBinding>,
+    pub pattern_targets: Vec<GeneratedPatternTarget>,
     pub evidence: Vec<GeneratedEvidence>,
     pub actions: Vec<GeneratedAction>,
     pub objectives: ObjectiveExpression,
@@ -730,7 +768,10 @@ fn route_variant_candidates(family: TemplateFamily) -> [Candidate<RouteVariant>;
     ]
 }
 
-fn attack_pattern_candidates(family: TemplateFamily) -> [Candidate<AttackPattern>; 4] {
+fn attack_pattern_candidates(
+    family: TemplateFamily,
+    has_victim_target: bool,
+) -> [Candidate<AttackPattern>; 4] {
     [
         Candidate {
             id: "pattern.nightly",
@@ -752,7 +793,9 @@ fn attack_pattern_candidates(family: TemplateFamily) -> [Candidate<AttackPattern
             id: "pattern.victim_specific",
             value: AttackPattern::VictimSpecific,
             weight: Weight::new(
-                if family == TemplateFamily::DisappearanceOrLoss {
+                if !has_victim_target {
+                    0
+                } else if family == TemplateFamily::DisappearanceOrLoss {
                     70
                 } else {
                     30
@@ -760,8 +803,9 @@ fn attack_pattern_candidates(family: TemplateFamily) -> [Candidate<AttackPattern
                 65,
             ),
             bridge: None,
-            impossible: None,
-            factors: vec!["factor.pattern.victim"],
+            impossible: (!has_victim_target)
+                .then_some("no unused persistent NPC can anchor the victim cohort"),
+            factors: vec!["factor.pattern.victim", "factor.pattern.persistent_cohort"],
         },
         Candidate {
             id: "pattern.irregular",
@@ -1435,7 +1479,7 @@ fn build_actions(
     witness_npc_id: &str,
     route_variant: RouteVariant,
     attack_pattern: AttackPattern,
-    victim_demographic: WitnessDemographic,
+    victim_target: Option<&GeneratedPatternTarget>,
     pattern_evidence_id: &EvidenceId,
 ) -> Vec<GeneratedAction> {
     let trail_summary = match route_variant {
@@ -1449,18 +1493,28 @@ fn build_actions(
     let pattern_condition = match attack_pattern {
         AttackPattern::Nightly => GeneratedPatternCondition::NightWindow,
         AttackPattern::Roadside => GeneratedPatternCondition::RoadRoute,
-        AttackPattern::VictimSpecific => GeneratedPatternCondition::VictimProfile {
-            demographic: victim_demographic,
-        },
+        AttackPattern::VictimSpecific => {
+            let target = victim_target.expect("victim-specific pattern has a bound cohort");
+            GeneratedPatternCondition::VictimProfile {
+                cohort_id: target.cohort_id.clone(),
+                demographic: target.demographic,
+                age_band: target.age_band.clone(),
+                sex: target.sex.clone(),
+                profession: target.profession.clone(),
+            }
+        }
         AttackPattern::Irregular => GeneratedPatternCondition::BroadSurvey,
     };
     let pattern_action_summary = match attack_pattern {
         AttackPattern::Nightly => "Patrol during the learned nighttime window.".into(),
         AttackPattern::Roadside => "Patrol the learned roadside route.".into(),
-        AttackPattern::VictimSpecific => format!(
-            "Watch likely victims matching the learned {:?} profile.",
-            victim_demographic
-        ),
+        AttackPattern::VictimSpecific => {
+            let target = victim_target.expect("victim-specific pattern has a bound cohort");
+            format!(
+                "Watch likely {:?} victims ({}, {}, {}) near the learned location.",
+                target.demographic, target.age_band, target.sex, target.profession
+            )
+        }
         AttackPattern::Irregular => {
             "Search broadly because the accounts reveal no reliable schedule.".into()
         }
@@ -1469,6 +1523,19 @@ fn build_actions(
         InvestigationActionKind::SearchArea
     } else {
         InvestigationActionKind::Patrol
+    };
+    let pattern_target_kind = match attack_pattern {
+        AttackPattern::Roadside => "route",
+        AttackPattern::VictimSpecific => "cohort",
+        _ => "area",
+    };
+    let pattern_target_id = match attack_pattern {
+        AttackPattern::Roadside => finale.0.clone(),
+        AttackPattern::VictimSpecific => victim_target
+            .expect("victim-specific pattern has a bound cohort")
+            .cohort_id
+            .clone(),
+        _ => area_id.into(),
     };
     let make = |name: &str,
                 kind,
@@ -1573,16 +1640,8 @@ fn build_actions(
                 "patrol",
                 pattern_action_kind,
                 RouteClass::PatternSurveillance,
-                if attack_pattern == AttackPattern::Roadside {
-                    "route"
-                } else {
-                    "area"
-                },
-                if attack_pattern == AttackPattern::Roadside {
-                    finale.0.clone()
-                } else {
-                    area_id.into()
-                },
+                pattern_target_kind,
+                pattern_target_id.clone(),
                 Some("watch"),
                 "search",
                 false,
@@ -1692,16 +1751,8 @@ fn build_actions(
                 "approach_social",
                 pattern_action_kind,
                 RouteClass::SocialInquiry,
-                if attack_pattern == AttackPattern::Irregular {
-                    "area"
-                } else {
-                    "route"
-                },
-                if attack_pattern == AttackPattern::Irregular {
-                    area_id.into()
-                } else {
-                    finale.0.clone()
-                },
+                pattern_target_kind,
+                pattern_target_id,
                 Some("locate_contact"),
                 "follow",
                 false,
@@ -1750,6 +1801,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     } = solved;
     let primary = &context.witness_candidates[primary_witness];
     let secondary = &context.witness_candidates[secondary_witness];
+    let prefix = observer_scope(context);
     let (reliability, _) = choose(
         context.seed.rotate_left(5),
         "module.reliability",
@@ -1792,13 +1844,41 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         &route_variant_candidates(family),
         &mut trace,
     )?;
+    let mut victim_target_candidates = (0..context.witness_candidates.len())
+        .filter(|index| *index != primary_witness && *index != secondary_witness)
+        .collect::<Vec<_>>();
+    victim_target_candidates.sort_by_key(|index| {
+        hash(
+            context.seed.rotate_left(41),
+            &format!(
+                "victim-target:{}",
+                context.witness_candidates[*index].npc_id
+            ),
+        )
+    });
     let (attack_pattern, _) = choose(
         context.seed.rotate_left(37),
         "module.attack_pattern",
         "relation.pattern.family",
-        &attack_pattern_candidates(family),
+        &attack_pattern_candidates(family, !victim_target_candidates.is_empty()),
         &mut trace,
     )?;
+    let pattern_target = (attack_pattern == AttackPattern::VictimSpecific).then(|| {
+        let candidate = &context.witness_candidates[*victim_target_candidates
+            .first()
+            .expect("victim pattern hard-zeroed without a target")];
+        GeneratedPatternTarget {
+            cohort_id: scoped_id(&prefix, "cohort", "victim-profile"),
+            npc_id: candidate.npc_id.clone(),
+            demographic: candidate.demographic,
+            age_band: candidate.age_band.clone(),
+            sex: candidate.sex.clone(),
+            profession: candidate.profession.clone(),
+            expected_settlement_id: context.settlement_id.clone(),
+            expected_location: candidate.expected_location.clone(),
+            presence_version: candidate.presence_version,
+        }
+    });
     let canonical_case_id = format!(
         "case:{:016x}",
         hash(
@@ -1806,7 +1886,6 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             &format!("{}:{}", context.settlement_id, context.ordinal)
         )
     );
-    let prefix = observer_scope(context);
     let public_case_id = scoped_id(&prefix, "journal", "case");
     let problem_id = scoped_id(&prefix, "problem", "settlement");
     let finale_site = SiteId::new(scoped_id(&prefix, "site", "finale"));
@@ -1846,10 +1925,19 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         AttackPattern::Roadside => {
             "The incidents cluster along the road used by passing traffic.".to_owned()
         }
-        AttackPattern::VictimSpecific => format!(
-            "The incidents disproportionately affect people matching the {:?} profile.",
-            demographic
-        ),
+        AttackPattern::VictimSpecific => {
+            let target = pattern_target
+                .as_ref()
+                .expect("victim-specific pattern has a bound cohort");
+            format!(
+                "The incidents disproportionately affect {:?} people ({}, {}, {}) near {}.",
+                target.demographic,
+                target.age_band,
+                target.sex,
+                target.profession,
+                target.expected_location
+            )
+        }
         AttackPattern::Irregular => {
             "The incidents have no reliable time, place, or victim schedule.".to_owned()
         }
@@ -2019,7 +2107,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         &primary.npc_id,
         route_variant,
         attack_pattern,
-        demographic,
+        pattern_target.as_ref(),
         &pattern_evidence_id,
     );
     let issuer = context
@@ -2308,6 +2396,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             contains_site_ids: vec![evidence_site.clone(), decoy_site],
         }],
         witnesses,
+        pattern_targets: pattern_target.into_iter().collect(),
         evidence,
         actions,
         objectives,
@@ -2377,6 +2466,10 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 .witnesses
                 .iter()
                 .any(|witness| witness.npc_id == action.target_id),
+            "cohort" => case
+                .pattern_targets
+                .iter()
+                .any(|target| target.cohort_id == action.target_id),
             "route" => case.sites.iter().any(|site| site.id.0 == action.target_id),
             _ => false,
         };
@@ -2386,7 +2479,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 action.id.0, action.target_kind, action.target_id
             ));
         }
-        for (evidence_id, _) in action.outputs.iter().filter_map(|output| match output {
+        for (evidence_id, condition) in action.outputs.iter().filter_map(|output| match output {
             GeneratedActionOutput::PatternCondition {
                 evidence_id,
                 condition,
@@ -2426,6 +2519,30 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                     "{} references missing pattern evidence {}",
                     action.id.0, evidence_id.0
                 ));
+            }
+            if let GeneratedPatternCondition::VictimProfile {
+                cohort_id,
+                demographic,
+                age_band,
+                sex,
+                profession,
+            } = condition
+            {
+                let exact_target = case.pattern_targets.iter().any(|target| {
+                    target.cohort_id == *cohort_id
+                        && action.target_kind == "cohort"
+                        && action.target_id == target.cohort_id
+                        && target.demographic == *demographic
+                        && target.age_band == *age_band
+                        && target.sex == *sex
+                        && target.profession == *profession
+                });
+                if !exact_target {
+                    errors.push(format!(
+                        "{} has a victim profile without exact cohort authority",
+                        action.id.0
+                    ));
+                }
             }
         }
     }
@@ -2688,9 +2805,12 @@ pub fn test_witnesses() -> Vec<WitnessCandidate> {
         WitnessCandidate {
             npc_id: "npc:a".into(),
             demographic: WitnessDemographic::Child,
+            age_band: "child".into(),
+            sex: "female".into(),
             profession: "apprentice".into(),
             visible_description: "a short, fair-haired apprentice".into(),
             expected_location: "residential".into(),
+            presence_version: 11,
             allowed_circumstances: BTreeSet::from([
                 Circumstance::NightWindow,
                 Circumstance::AdultVenue,
@@ -2699,9 +2819,12 @@ pub fn test_witnesses() -> Vec<WitnessCandidate> {
         WitnessCandidate {
             npc_id: "npc:b".into(),
             demographic: WitnessDemographic::Guard,
+            age_band: "adult".into(),
+            sex: "male".into(),
             profession: "guard".into(),
             visible_description: "a tall guard with dark hair".into(),
             expected_location: "keep".into(),
+            presence_version: 12,
             allowed_circumstances: BTreeSet::from([
                 Circumstance::RoadJourney,
                 Circumstance::GraveDuty,
@@ -2710,9 +2833,12 @@ pub fn test_witnesses() -> Vec<WitnessCandidate> {
         WitnessCandidate {
             npc_id: "npc:c".into(),
             demographic: WitnessDemographic::Merchant,
+            age_band: "elder".into(),
+            sex: "female".into(),
             profession: "merchant".into(),
             visible_description: "a broad merchant with grey hair".into(),
             expected_location: "market".into(),
+            presence_version: 13,
             allowed_circumstances: BTreeSet::from([
                 Circumstance::RoadJourney,
                 Circumstance::SecretRiversideMeeting,
@@ -3157,9 +3283,13 @@ mod tests {
             (
                 AttackPattern::VictimSpecific,
                 "VictimSpecific",
-                "profile",
+                "victims",
                 GeneratedPatternCondition::VictimProfile {
+                    cohort_id: String::new(),
                     demographic: WitnessDemographic::Merchant,
+                    age_band: String::new(),
+                    sex: String::new(),
+                    profession: String::new(),
                 },
             ),
             (
@@ -3241,13 +3371,34 @@ mod tests {
                 match (&condition_shape, selected_condition) {
                     (
                         GeneratedPatternCondition::VictimProfile { .. },
-                        GeneratedPatternCondition::VictimProfile { demographic },
-                    ) => assert_eq!(*demographic, case.witnesses[0].demographic),
+                        GeneratedPatternCondition::VictimProfile {
+                            cohort_id,
+                            demographic,
+                            age_band,
+                            sex,
+                            profession,
+                        },
+                    ) => {
+                        let target = case
+                            .pattern_targets
+                            .iter()
+                            .find(|target| target.cohort_id == *cohort_id)
+                            .unwrap();
+                        assert_eq!(*demographic, target.demographic);
+                        assert_eq!(age_band, &target.age_band);
+                        assert_eq!(sex, &target.sex);
+                        assert_eq!(profession, &target.profession);
+                        assert_eq!(consumer.target_kind, "cohort");
+                        assert_eq!(consumer.target_id, target.cohort_id);
+                    }
                     (expected, actual) => assert_eq!(expected, actual),
                 }
                 let learned_projection =
                     serde_json::to_string(&(pattern_evidence, consumer)).unwrap();
                 assert!(learned_projection.contains(summary_fragment));
+                for target in &case.pattern_targets {
+                    assert!(!learned_projection.contains(&target.npc_id));
+                }
                 match pattern {
                     AttackPattern::Roadside => assert_eq!(consumer.target_kind, "route"),
                     AttackPattern::Irregular => {
@@ -3261,6 +3412,85 @@ mod tests {
                 1,
                 "the initially visible action must not reveal the selected pattern"
             );
+        }
+    }
+
+    #[test]
+    fn victim_cohort_binding_accepts_exact_authority_and_rejects_drift() {
+        for family in [
+            TemplateFamily::RecurringDepredation,
+            TemplateFamily::DisappearanceOrLoss,
+        ] {
+            let (source, case) = (0..4_096)
+                .map(|seed| {
+                    let source = context(seed, family);
+                    let case = generate(&source).unwrap();
+                    (source, case)
+                })
+                .find(|(_, case)| {
+                    case.canonical_events[0]
+                        .object
+                        .starts_with("VictimSpecific")
+                })
+                .expect("victim-specific pattern must be reachable");
+            let target = case.pattern_targets.first().unwrap();
+            let current = source
+                .witness_candidates
+                .iter()
+                .find(|candidate| candidate.npc_id == target.npc_id)
+                .unwrap();
+            assert!(pattern_target_matches(
+                target,
+                current,
+                &source.settlement_id
+            ));
+            let mut wrong_demographic = current.clone();
+            wrong_demographic.demographic = if current.demographic == WitnessDemographic::Child {
+                WitnessDemographic::Guard
+            } else {
+                WitnessDemographic::Child
+            };
+            assert!(!pattern_target_matches(
+                target,
+                &wrong_demographic,
+                &source.settlement_id
+            ));
+            let mut moved = current.clone();
+            moved.expected_location.push_str("-moved");
+            assert!(!pattern_target_matches(
+                target,
+                &moved,
+                &source.settlement_id
+            ));
+            let mut stale = current.clone();
+            stale.presence_version ^= 1;
+            assert!(!pattern_target_matches(
+                target,
+                &stale,
+                &source.settlement_id
+            ));
+        }
+    }
+
+    #[test]
+    fn victim_specific_is_hard_zero_without_an_unused_persistent_target() {
+        let candidates = attack_pattern_candidates(TemplateFamily::RecurringDepredation, false);
+        let victim = candidates
+            .iter()
+            .find(|candidate| candidate.value == AttackPattern::VictimSpecific)
+            .unwrap();
+        assert_eq!(victim.weight.plausibility, 0);
+        assert!(victim.impossible.is_some());
+        for seed in 0..256 {
+            let mut source = context(seed, TemplateFamily::RecurringDepredation);
+            source.witness_candidates.truncate(2);
+            let case = generate(&source).unwrap();
+            assert!(
+                !case.canonical_events[0]
+                    .object
+                    .starts_with("VictimSpecific")
+            );
+            assert!(case.pattern_targets.is_empty());
         }
     }
 

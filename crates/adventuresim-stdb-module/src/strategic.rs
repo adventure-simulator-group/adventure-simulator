@@ -16337,26 +16337,7 @@ fn generated_witness_candidates(
         .filter(&settlement_id.to_string())
         .filter_map(|npc| {
             let presence = ctx.db.settlement_npc_presence().npc_id().find(&npc.id)?;
-            let demographic = match npc.age_band {
-                crate::settlement_population::NpcAgeBand::Child
-                | crate::settlement_population::NpcAgeBand::Adolescent => WitnessDemographic::Child,
-                crate::settlement_population::NpcAgeBand::Adult
-                | crate::settlement_population::NpcAgeBand::Elder => {
-                    if npc.profession.contains("merchant") {
-                        WitnessDemographic::Merchant
-                    } else if npc.profession.contains("cleric") {
-                        WitnessDemographic::Cleric
-                    } else if npc.profession.contains("guard")
-                        || npc.local_role.contains("retainer")
-                    {
-                        WitnessDemographic::Guard
-                    } else if npc.local_role.contains("lord") {
-                        WitnessDemographic::Noble
-                    } else {
-                        WitnessDemographic::Laborer
-                    }
-                }
-            };
+            let demographic = generated_npc_demographic(&npc);
             let mut circumstances = BTreeSet::from([
                 Circumstance::NightWindow,
                 Circumstance::RoadJourney,
@@ -16373,21 +16354,69 @@ fn generated_witness_candidates(
             if !matches!(demographic, WitnessDemographic::Child) {
                 circumstances.insert(Circumstance::SecretRiversideMeeting);
             }
+            let age_band = format!("{:?}", npc.age_band).to_ascii_lowercase();
+            let sex = format!("{:?}", npc.sex).to_ascii_lowercase();
+            let presence_version = generated_npc_presence_version(&npc, &presence);
             Some(WitnessCandidate {
                 npc_id: npc.id,
                 demographic,
+                age_band,
+                sex,
                 profession: npc.profession,
                 visible_description: format!(
                     "{}, {}, with {} hair, wearing {}",
                     npc.height, npc.build, npc.hair, npc.clothing
                 ),
                 expected_location: presence.location_id,
+                presence_version,
                 allowed_circumstances: circumstances,
             })
         })
         .collect::<Vec<_>>();
     candidates.sort_by(|left, right| left.npc_id.cmp(&right.npc_id));
     candidates
+}
+
+pub(crate) fn generated_npc_demographic(
+    npc: &crate::settlement_population::SettlementNpc,
+) -> adventuresim_core::quest_generation::WitnessDemographic {
+    use adventuresim_core::quest_generation::WitnessDemographic;
+    match npc.age_band {
+        crate::settlement_population::NpcAgeBand::Child
+        | crate::settlement_population::NpcAgeBand::Adolescent => WitnessDemographic::Child,
+        crate::settlement_population::NpcAgeBand::Adult
+        | crate::settlement_population::NpcAgeBand::Elder => {
+            if npc.profession.contains("merchant") {
+                WitnessDemographic::Merchant
+            } else if npc.profession.contains("cleric") {
+                WitnessDemographic::Cleric
+            } else if npc.profession.contains("guard") || npc.local_role.contains("retainer") {
+                WitnessDemographic::Guard
+            } else if npc.local_role.contains("lord") {
+                WitnessDemographic::Noble
+            } else {
+                WitnessDemographic::Laborer
+            }
+        }
+    }
+}
+
+pub(crate) fn generated_npc_presence_version(
+    npc: &crate::settlement_population::SettlementNpc,
+    presence: &crate::settlement_population::SettlementNpcPresence,
+) -> u64 {
+    adventuresim_core::settlement_population::stable_hash(&format!(
+        "victim-presence-v1:{}:{:?}:{:?}:{}:{}:{}:{}:{}:{}",
+        npc.id,
+        npc.age_band,
+        npc.sex,
+        npc.profession,
+        presence.settlement_id,
+        presence.location_id,
+        presence.start_minute,
+        presence.end_minute,
+        presence.is_default
+    ))
 }
 
 fn generated_scene_key(kind: adventuresim_core::quest_generation::SiteKind) -> &'static str {
