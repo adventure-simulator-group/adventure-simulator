@@ -133,11 +133,11 @@ use crate::spacetimedb::{
     CharacterTrainingSchedule, CharacterVirtue, EquippedMedication, FoodLot,
     HerbalistExaminationRow, InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget,
     ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury, LimbRegion,
-    MedicalExaminationRow, Party, PartyInventoryItem, PartyJourney, PartyJourneyItinerary,
-    PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, Quest, QuestIssuer,
-    QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder, RetainedProjectile,
-    ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription, SettlementSmith,
-    SocialBelief, StrategicEncounter, TravelEdge,
+    LocalProblemConsequence, MedicalExaminationRow, Party, PartyInventoryItem, PartyJourney,
+    PartyJourneyItinerary, PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, Quest,
+    QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
+    RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription,
+    SettlementSmith, SocialBelief, StrategicEncounter, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
@@ -5270,7 +5270,21 @@ async fn merchant_shop(
         "SELECT * FROM character_time WHERE character_id = {}",
         character.id
     );
-    let (party_members, items, food_lots, equip, trade_context, conditions, smiths, orders, times) = tokio::join!(
+    let consequence_sql = format!(
+        "SELECT * FROM local_problem_consequence WHERE settlement_id = {settlement_literal}"
+    );
+    let (
+        party_members,
+        items,
+        food_lots,
+        equip,
+        trade_context,
+        conditions,
+        smiths,
+        orders,
+        times,
+        consequences,
+    ) = tokio::join!(
         get_active_party_members(&state, Some(character)),
         state.db.query::<ItemDefinition>("SELECT * FROM item"),
         state.db.query::<FoodLot>("SELECT * FROM food_lot"),
@@ -5280,6 +5294,7 @@ async fn merchant_shop(
         state.db.query::<SettlementSmith>(&smith_sql),
         state.db.query::<RepairOrder>(&order_sql),
         state.db.query::<CharacterTime>(&time_sql),
+        state.db.query::<LocalProblemConsequence>(&consequence_sql),
     );
     let items = items.unwrap_or_default();
     let equip = equip.unwrap_or_default();
@@ -5329,6 +5344,28 @@ async fn merchant_shop(
         adventuresim_world_schema::ORAL_FLUENCY_HOURS;
     let (_, shared_language) =
         adventuresim_world_schema::best_common_oral_language(speaker, merchant_languages);
+    let now_minutes = times
+        .as_ref()
+        .ok()
+        .and_then(|rows| rows.first())
+        .map_or(0, |time| time.minutes);
+    let consequence_inputs: Vec<_> = consequences
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| adventuresim_core::local_problem::ConsequenceInput {
+            id: row.problem_id,
+            buy_bps: row.buy_bps,
+            sell_penalty_bps: row.sell_penalty_bps,
+            encounter_frequency_bps: row.encounter_frequency_bps,
+            disease_intensity: row.disease_exposure_intensity,
+            starts_at: row.starts_at,
+            ends_at: row.ends_at,
+            mitigation_bps: row.mitigation_bps,
+            resolved_at: row.resolved_at,
+        })
+        .collect();
+    let problem_effects =
+        adventuresim_core::local_problem::aggregate_consequences(&consequence_inputs, now_minutes);
     Html(
         live_merchant_shop_page(
             settlement,
@@ -5343,13 +5380,12 @@ async fn merchant_shop(
             &pooled,
             shop,
             shared_language,
+            problem_effects.buy_bps,
+            problem_effects.sell_penalty_bps,
             &conditions.unwrap_or_default(),
             smiths.unwrap_or_default().first(),
             &orders.unwrap_or_default(),
-            times
-                .unwrap_or_default()
-                .first()
-                .map_or(0, |time| time.minutes),
+            now_minutes,
             encumbrance.personal,
             encumbrance.party,
             inn_rest_default,

@@ -57,6 +57,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/food.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/leadership.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/lib.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/local_problem.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/morale.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/profession.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/provisioning.rs` — Rust source module for this component.
@@ -320,6 +321,14 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/limb_region_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/liquidate_party_inventory_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/local_chat_message_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/local_problem_authority_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/local_problem_consequence_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/local_problem_consequence_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/local_problem_generation_explanation_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/local_problem_outcome_receipt_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/local_problem_receipt_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/local_problem_symptom_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/local_problem_symptom_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/local_chat_message_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/located_route_landform_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/lutheran_reformed_church_type.rs` — Generated SpacetimeDB data type.
@@ -576,6 +585,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/food.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/item.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/lib.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-module/src/local_problem.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/personality.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/repair.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/settlement_population.rs` — Rust source module for this component.
@@ -975,6 +985,7 @@ development, or wiki document before changing a subsystem.
 - `docs/HISTORICAL_LAND_USE.md` — Project documentation.
 - `docs/HYDROLOGY.md` — Project documentation.
 - `docs/INDUSTRIES.md` — Project documentation.
+- `docs/LOCAL_PROBLEMS.md` — Project documentation.
 - `docs/POTENTIAL_VEGETATION.md` — Project documentation.
 - `docs/RELIGION.md` — Project documentation.
 - `docs/ROUTE_TERRAIN.md` — Project documentation.

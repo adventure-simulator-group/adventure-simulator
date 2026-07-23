@@ -6,6 +6,7 @@ use adventuresim_core::disease::{
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
 use crate::character::character as _;
+use crate::local_problem::local_problem_authority;
 use crate::{
     character_attributes, character_capability, character_condition, character_skills,
     character_time,
@@ -417,6 +418,56 @@ fn outbreak_episodes_through(
         {
             episodes.push(InfectionEpisode {
                 id: disease::outbreak_exposure_seed(character_id, &format!("{}:{at}", outbreak.id)),
+                character_id,
+                disease_id,
+                contracted_at: at,
+                treated_at: None,
+            });
+        }
+    }
+    // Local-problem exposure uses the same minute-domain evaluator as normal
+    // outbreaks. Stable problem IDs make split and single time advances agree.
+    let scope_key = format!("settlement:{settlement_id}");
+    let mut problems = ctx
+        .db
+        .local_problem_authority()
+        .scope_key()
+        .filter(&scope_key)
+        .filter(|row| !row.disease_id.is_empty() && row.disease_intensity > 0)
+        .collect::<Vec<_>>();
+    problems.sort_by(|left, right| left.id.cmp(&right.id));
+    problems.truncate(adventuresim_core::local_problem::MAX_ACTIVE_PER_SCOPE);
+    for problem in problems {
+        let overlap_from = from.max(problem.starts_at);
+        let overlap_to = to
+            .min(problem.ends_at)
+            .min(problem.resolved_at.unwrap_or(u64::MAX));
+        if overlap_to <= overlap_from || problem.mitigation_bps >= 10_000 {
+            continue;
+        }
+        let disease_id = parse_id(&problem.disease_id)?;
+        let intensity = f32::from(problem.disease_intensity)
+            * f32::from(10_000_u16.saturating_sub(problem.mitigation_bps))
+            / 10_000_000.0;
+        let Some(at) = disease::first_eligible_presence_exposure_minute(
+            &episodes,
+            disease_id,
+            character_id,
+            &problem.id,
+            overlap_from,
+            overlap_to,
+            intensity,
+            disease::definition(disease_id).base_acquisition,
+            immunity,
+        ) else {
+            continue;
+        };
+        if !episodes
+            .iter()
+            .any(|episode| episode.disease_id == disease_id && episode.contracted_at == at)
+        {
+            episodes.push(InfectionEpisode {
+                id: disease::outbreak_exposure_seed(character_id, &format!("{}:{at}", problem.id)),
                 character_id,
                 disease_id,
                 contracted_at: at,

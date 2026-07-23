@@ -1,5 +1,18 @@
 //! SpacetimeDB response types
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct LocalProblemConsequence {
+    pub problem_id: String,
+    pub settlement_id: String,
+    pub buy_bps: i32,
+    pub sell_penalty_bps: i32,
+    pub encounter_frequency_bps: u16,
+    pub disease_exposure_intensity: u16,
+    pub starts_at: u64,
+    pub ends_at: u64,
+    pub mitigation_bps: u16,
+    pub resolved_at: Option<u64>,
+}
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use serde_json::Value;
 

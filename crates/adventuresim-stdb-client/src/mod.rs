@@ -249,6 +249,14 @@ pub mod limb_region_type;
 pub mod liquidate_party_inventory_reducer;
 pub mod local_chat_message_table;
 pub mod local_chat_message_type;
+pub mod local_problem_authority_type;
+pub mod local_problem_consequence_table;
+pub mod local_problem_consequence_type;
+pub mod local_problem_generation_explanation_type;
+pub mod local_problem_outcome_receipt_type;
+pub mod local_problem_receipt_type;
+pub mod local_problem_symptom_table;
+pub mod local_problem_symptom_type;
 pub mod located_route_landform_type;
 pub mod lutheran_reformed_church_type;
 pub mod mapped_surface_geology_type;
@@ -735,6 +743,14 @@ pub use limb_region_type::LimbRegion;
 pub use liquidate_party_inventory_reducer::liquidate_party_inventory;
 pub use local_chat_message_table::*;
 pub use local_chat_message_type::LocalChatMessage;
+pub use local_problem_authority_type::LocalProblemAuthority;
+pub use local_problem_consequence_table::*;
+pub use local_problem_consequence_type::LocalProblemConsequence;
+pub use local_problem_generation_explanation_type::LocalProblemGenerationExplanation;
+pub use local_problem_outcome_receipt_type::LocalProblemOutcomeReceipt;
+pub use local_problem_receipt_type::LocalProblemReceipt;
+pub use local_problem_symptom_table::*;
+pub use local_problem_symptom_type::LocalProblemSymptom;
 pub use located_route_landform_type::LocatedRouteLandform;
 pub use lutheran_reformed_church_type::LutheranReformedChurch;
 pub use mapped_surface_geology_type::MappedSurfaceGeology;
@@ -2545,6 +2561,8 @@ pub struct DbUpdate {
     item_condition: __sdk::TableUpdate<ItemCondition>,
     limb_injury: __sdk::TableUpdate<LimbInjury>,
     local_chat_message: __sdk::TableUpdate<LocalChatMessage>,
+    local_problem_consequence: __sdk::TableUpdate<LocalProblemConsequence>,
+    local_problem_symptom: __sdk::TableUpdate<LocalProblemSymptom>,
     morale_event: __sdk::TableUpdate<MoraleEvent>,
     party: __sdk::TableUpdate<Party>,
     party_action_request: __sdk::TableUpdate<PartyActionRequest>,
@@ -2733,6 +2751,12 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "local_chat_message" => db_update
                     .local_chat_message
                     .append(local_chat_message_table::parse_table_update(table_update)?),
+                "local_problem_consequence" => db_update.local_problem_consequence.append(
+                    local_problem_consequence_table::parse_table_update(table_update)?,
+                ),
+                "local_problem_symptom" => db_update.local_problem_symptom.append(
+                    local_problem_symptom_table::parse_table_update(table_update)?,
+                ),
                 "morale_event" => db_update
                     .morale_event
                     .append(morale_event_table::parse_table_update(table_update)?),
@@ -3038,6 +3062,18 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.local_chat_message = cache
             .apply_diff_to_table::<LocalChatMessage>("local_chat_message", &self.local_chat_message)
             .with_updates_by_pk(|row| &row.id);
+        diff.local_problem_consequence = cache
+            .apply_diff_to_table::<LocalProblemConsequence>(
+                "local_problem_consequence",
+                &self.local_problem_consequence,
+            )
+            .with_updates_by_pk(|row| &row.problem_id);
+        diff.local_problem_symptom = cache
+            .apply_diff_to_table::<LocalProblemSymptom>(
+                "local_problem_symptom",
+                &self.local_problem_symptom,
+            )
+            .with_updates_by_pk(|row| &row.problem_id);
         diff.morale_event = cache
             .apply_diff_to_table::<MoraleEvent>("morale_event", &self.morale_event)
             .with_updates_by_pk(|row| &row.id);
@@ -3378,6 +3414,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "local_chat_message" => db_update
                     .local_chat_message
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "local_problem_consequence" => db_update
+                    .local_problem_consequence
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "local_problem_symptom" => db_update
+                    .local_problem_symptom
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "morale_event" => db_update
                     .morale_event
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -3643,6 +3685,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "local_chat_message" => db_update
                     .local_chat_message
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "local_problem_consequence" => db_update
+                    .local_problem_consequence
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "local_problem_symptom" => db_update
+                    .local_problem_symptom
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "morale_event" => db_update
                     .morale_event
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -3818,6 +3866,8 @@ pub struct AppliedDiff<'r> {
     item_condition: __sdk::TableAppliedDiff<'r, ItemCondition>,
     limb_injury: __sdk::TableAppliedDiff<'r, LimbInjury>,
     local_chat_message: __sdk::TableAppliedDiff<'r, LocalChatMessage>,
+    local_problem_consequence: __sdk::TableAppliedDiff<'r, LocalProblemConsequence>,
+    local_problem_symptom: __sdk::TableAppliedDiff<'r, LocalProblemSymptom>,
     morale_event: __sdk::TableAppliedDiff<'r, MoraleEvent>,
     party: __sdk::TableAppliedDiff<'r, Party>,
     party_action_request: __sdk::TableAppliedDiff<'r, PartyActionRequest>,
@@ -4081,6 +4131,16 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<LocalChatMessage>(
             "local_chat_message",
             &self.local_chat_message,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<LocalProblemConsequence>(
+            "local_problem_consequence",
+            &self.local_problem_consequence,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<LocalProblemSymptom>(
+            "local_problem_symptom",
+            &self.local_problem_symptom,
             event,
         );
         callbacks.invoke_table_row_callbacks::<MoraleEvent>(
@@ -4951,6 +5011,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         item_condition_table::register_table(client_cache);
         limb_injury_table::register_table(client_cache);
         local_chat_message_table::register_table(client_cache);
+        local_problem_consequence_table::register_table(client_cache);
+        local_problem_symptom_table::register_table(client_cache);
         morale_event_table::register_table(client_cache);
         party_table::register_table(client_cache);
         party_action_request_table::register_table(client_cache);
@@ -5037,6 +5099,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "item_condition",
         "limb_injury",
         "local_chat_message",
+        "local_problem_consequence",
+        "local_problem_symptom",
         "morale_event",
         "party",
         "party_action_request",
