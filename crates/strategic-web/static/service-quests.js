@@ -1,5 +1,7 @@
-const serviceQuestTabState = (serviceQuests) => {
-  if (serviceQuests.some((quest) => quest.state === "recruiting")) return "recruitment available";
+const serviceQuestTabState = (activity) => {
+  if (activity.recruitment?.length) return "recruitment available";
+  if (activity.quests?.some((quest) => quest.state === "ready")) return "quest ready to report";
+  if (activity.quests?.some((quest) => quest.state === "available")) return "quest available";
   return null;
 };
 
@@ -14,10 +16,10 @@ if (typeof module !== "undefined") module.exports = { serviceQuestTabState };
   const refreshServiceQuests = () => window.strategicBackgroundFetch(
     "service-quests", `/api/settlements/${encodeURIComponent(settlementId)}/service-quests`,
     { headers: { Accept: "application/json" } },
-  ).then((response) => (response.ok ? response.json() : []))
-    .then((quests) => {
+  ).then((response) => (response.ok ? response.json() : { quests: [], recruitment: [] }))
+    .then((activity) => {
       document.querySelector("[data-service-recruitment]")?.remove();
-      const recruiting = quests.find((quest) => quest.service_id === chat?.dataset.serviceQuestId && quest.state === "recruiting" && quest.recruitment);
+      const recruiting = activity.recruitment.find((company) => company.service_id === chat?.dataset.serviceQuestId);
       const right = document.querySelector(".right-sidebar");
       if (recruiting && right) {
         const section = document.createElement("section");
@@ -27,14 +29,14 @@ if (typeof module !== "undefined") module.exports = { serviceQuestTabState };
         heading.className = "sidebar-header";
         heading.textContent = "Recruitment";
         const leader = document.createElement("a");
-        leader.href = `/locations/settlement/${encodeURIComponent(settlementId)}/players/${encodeURIComponent(recruiting.recruitment.leader_id)}`;
+        leader.href = `/locations/settlement/${encodeURIComponent(settlementId)}/players/${encodeURIComponent(recruiting.leader_id)}`;
         leader.className = "chat-quest-link";
-        leader.textContent = recruiting.recruitment.leader_name;
-        leader.title = `Leader of ${recruiting.recruitment.party_name}`;
+        leader.textContent = recruiting.leader_name;
+        leader.title = `Leader of ${recruiting.party_name}`;
         const summary = document.createElement("p");
         summary.append(leader, document.createTextNode(" is seeking help."));
         const roles = document.createElement("ul");
-        recruiting.recruitment.roles.forEach((role) => {
+        recruiting.roles.forEach((role) => {
           const item = document.createElement("li");
           const button = document.createElement("button");
           button.type = "button";

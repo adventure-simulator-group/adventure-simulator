@@ -390,6 +390,8 @@ pub struct RecruitmentOffer {
     pub source_id: RecruitmentSourceId,
     pub recruiting_party_id: String,
     pub settlement_id: String,
+    pub settlement_npc_id: String,
+    pub location_id: String,
     pub leader_id: u64,
     pub status: RecruitmentOfferStatus,
     pub created_at_minute: u64,
