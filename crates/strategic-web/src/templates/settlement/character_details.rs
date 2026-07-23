@@ -5,7 +5,7 @@ use super::{
     character_health::{
         medical_examination_popup, medical_rail, party_attributes_rail, strategic_condition_rail,
     },
-    character_skills::{ActivityPreviewRates, CharacterSkillActions, party_skills_rail},
+    character_skills::{ActivityPreviewRates, CharacterSheetActions, party_skills_rail},
     chrome::{party_portrait_overlay, visual_stage},
     context::LocationView,
     social::{player_chat_area, settlement_chat_area},
@@ -49,44 +49,96 @@ pub(crate) fn character_stats_panel(
         (party_attributes_rail(&format!("{}'s attributes", character.name), attributes, limbs, medical, None, &[], &[]))
         (party_skills_rail(
             &format!("{}'s skills", character.name), skills, limbs, None, None, None,
-            false, 0.0, None, CombatTrainingProfile::default(), CharacterSkillActions::default(),
+            false, 0.0, None, CombatTrainingProfile::default(), CharacterSheetActions::default(),
         ))
         (medical_rail(medical, "", 0, character.id, false))
     }
 }
 
-pub(crate) fn character_attributes_panel(
-    character: &Character,
-    attributes: Option<&CharacterAttributes>,
-    limbs: Option<&CharacterLimbs>,
-    medical: &MedicalPresentation,
-) -> Markup {
-    party_attributes_rail(
-        &format!("{}'s attributes", character.name),
-        attributes,
-        limbs,
-        medical,
-        None,
-        &[],
-        &[],
-    )
+pub(crate) struct CharacterSheetView<'a> {
+    pub character: &'a Character,
+    pub capability: Option<&'a CharacterCapability>,
+    pub attributes: Option<&'a CharacterAttributes>,
+    pub skills: Option<&'a CharacterSkills>,
+    pub limbs: Option<&'a CharacterLimbs>,
+    pub personality: Option<&'a crate::spacetimedb::CharacterPersonality>,
+    pub medical: &'a MedicalPresentation,
+    pub combat_profile: CombatTrainingProfile,
+    pub religion_id: Option<&'a str>,
+    pub training_religion_id: Option<&'a str>,
+    pub notoriety: f32,
+    pub attributes_title: &'a str,
+    pub skills_title: &'a str,
+    pub description: &'a str,
+    pub can_renounce: bool,
+    pub surgery: Option<(&'a str, Option<&'a str>)>,
+    pub injuries: &'a [LimbInjury],
+    pub projectiles: &'a [RetainedProjectile],
+    pub schedule: Option<&'a CharacterTrainingSchedule>,
+    pub schedule_action: Option<&'a str>,
+    pub activity_preview: Option<ActivityPreviewRates>,
+    pub professes_religion: bool,
+    pub prayer_religion_check: f32,
+    pub skill_actions: CharacterSheetActions<'a>,
+    pub location_path: &'a str,
+    pub center_before: Markup,
+    pub portraits: Markup,
+    pub center_after: Markup,
+    pub left_after: Markup,
+    pub right_after: Markup,
+    pub after: Markup,
 }
 
-pub(crate) fn character_profile_panels(
-    character: &Character,
-    capability: Option<&CharacterCapability>,
-    skills: Option<&CharacterSkills>,
-    limbs: Option<&CharacterLimbs>,
-    personality: Option<&crate::spacetimedb::CharacterPersonality>,
-    combat_profile: CombatTrainingProfile,
-) -> Markup {
+/// The single selected-character sheet used by live party members and
+/// preview-only starting candidates. Callers supply party-only controls in the
+/// extension slots; the attributes, limbs, bio, skills, and activities markup
+/// remains owned here.
+pub(crate) fn character_sheet_markup(view: CharacterSheetView<'_>) -> Markup {
     html! {
-        (character_summary_rail(capability))
-        (character_bio_rail(character, None, 0.0, personality, false, ""))
-        (party_skills_rail(
-            &format!("{}'s skills", character.name), skills, limbs, None, None, None,
-            false, 0.0, None, combat_profile, CharacterSkillActions::default(),
-        ))
+        aside class="left-sidebar" {
+            (party_attributes_rail(
+                view.attributes_title,
+                view.attributes,
+                view.limbs,
+                view.medical,
+                view.surgery,
+                view.injuries,
+                view.projectiles,
+            ))
+            (view.left_after)
+        }
+        main class="center-content settlement-main party-member-stage" {
+            (view.center_before)
+            (view.portraits)
+            (visual_stage("character", &view.character.name, view.description))
+            (view.center_after)
+        }
+        aside class="right-sidebar" {
+            (character_summary_rail(view.capability))
+            (character_bio_rail(
+                view.character,
+                view.religion_id,
+                view.notoriety,
+                view.personality,
+                view.can_renounce,
+                view.location_path,
+            ))
+            (party_skills_rail(
+                view.skills_title,
+                view.skills,
+                view.limbs,
+                view.schedule,
+                view.schedule_action,
+                view.activity_preview,
+                view.professes_religion,
+                view.prayer_religion_check,
+                view.training_religion_id,
+                view.combat_profile,
+                view.skill_actions,
+            ))
+            (view.right_after)
+        }
+        (view.after)
     }
 }
 
@@ -142,50 +194,75 @@ pub fn party_personal_page(
         location.base_path(),
         active_character.id
     ));
-    let content = html! {
-        aside class="left-sidebar" {
-            (party_attributes_rail("Your attributes", attributes, limbs, medical, Some((&surgery_path_template, surgery_open)), injuries, projectiles))
-            (strategic_condition_rail(condition, morale_sources, filth, &location.preserve_building(format!("{}/party/{}/social", location.base_path(), active_character.id)), social_open))
-            (medical_rail(medical, &location.base_path(), active_character.id, active_character.id, true))
+    let location_path = location.base_path();
+    let social_path = location.preserve_building(format!(
+        "{location_path}/party/{}/social",
+        active_character.id
+    ));
+    let schedule_action = format!("{location_path}/party/{}/schedule", active_character.id);
+    let left_after = html! {
+            (strategic_condition_rail(condition, morale_sources, filth, &social_path, social_open))
+            (medical_rail(medical, &location_path, active_character.id, active_character.id, true))
             @if let Some(demand) = religious_demand {
-                (religious_demand_rail(demand, &location.base_path(), active_character.id))
+                (religious_demand_rail(demand, &location_path, active_character.id))
             }
-        }
-        main class="center-content settlement-main party-member-stage" {
-            (party_portrait_overlay(
-                party_members,
-                Some(active_character),
-                &location.base_path(),
-                Some(active_character.id),
-                can_examine,
-            ))
-            (visual_stage("character", &active_character.name, "Your identity, condition, and capabilities"))
+    };
+    let portraits = party_portrait_overlay(
+        party_members,
+        Some(active_character),
+        &location_path,
+        Some(active_character.id),
+        can_examine,
+    );
+    let center_after = html! {
             (settlement_chat_area(&active_character.name, Some(active_character)))
             (medical_examination_popup(medical, location, active_character.id, limbs, injuries, projectiles))
-        }
-        aside class="right-sidebar" {
-            (character_summary_rail(capability))
-            (character_bio_rail(active_character, religion_id, notoriety, personality, true, &location.base_path()))
-            @let schedule_action = format!("{}/party/{}/schedule", location.base_path(), active_character.id);
-            (party_skills_rail(
-                "Your skills", skills, limbs, schedule, Some(&schedule_action),
-                Some(activity_preview), religion_id.is_some(), prayer_religion_check,
-                religion_id.or(location.religion_id.as_deref()),
-                combat_profile,
-                CharacterSkillActions {
-                    cooking_href: Some(&cooking_href),
-                    cooking_open,
-                    examination_action: can_examine.then_some(examination_action.as_str()),
-                    examination_open: medical.examination_id.is_some(),
-                },
-            ))
-        }
+    };
+    let after = html! {
         @if cooking_open {
             (cooking_activity_dialog(location, active_character, inventory, food_lots, item_definitions))
         } @else if medical.examination_id.is_none() {
             @if let Some(dialog) = character_action_dialog { (dialog) }
         }
     };
+    let content = character_sheet_markup(CharacterSheetView {
+        character: active_character,
+        capability,
+        attributes,
+        skills,
+        limbs,
+        personality,
+        medical,
+        combat_profile,
+        religion_id,
+        training_religion_id: religion_id.or(location.religion_id.as_deref()),
+        notoriety,
+        attributes_title: "Your attributes",
+        skills_title: "Your skills",
+        description: "Your identity, condition, and capabilities",
+        can_renounce: true,
+        surgery: Some((&surgery_path_template, surgery_open)),
+        injuries,
+        projectiles,
+        schedule,
+        schedule_action: Some(&schedule_action),
+        activity_preview: Some(activity_preview),
+        professes_religion: religion_id.is_some(),
+        prayer_religion_check,
+        skill_actions: CharacterSheetActions {
+            cooking_href: Some(&cooking_href),
+            cooking_open,
+            examination_action: can_examine.then_some(examination_action.as_str()),
+            examination_open: medical.examination_id.is_some(),
+        },
+        location_path: &location_path,
+        center_before: html! {},
+        portraits,
+        center_after,
+        left_after,
+        right_after: html! {},
+        after,
+    });
     location.render_layout("Party", content, Some(&active_character.name))
 }
 
@@ -227,58 +304,36 @@ pub fn party_stats_page(
         location.base_path(),
         selected.id
     ));
-    let content = html! {
-        aside class="left-sidebar" {
-            (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs, medical, Some((&surgery_path_template, surgery_open)), injuries, projectiles))
-            (strategic_condition_rail(condition, morale_sources, filth, &location.preserve_building(format!("{}/party/{}/social", location.base_path(), selected.id)), social_open))
-            (medical_rail(medical, &location.base_path(), active_character.id, selected.id, true))
-        }
-        @if medical.examination_id.is_none() {
-            @if let Some(dialog) = character_action_dialog { (dialog) }
-        }
-        main class="center-content settlement-main party-member-stage" {
-            (party_portrait_overlay(
-                party_members,
-                Some(active_character),
-                &location.base_path(),
-                Some(selected.id),
-                can_examine,
-            ))
-            (visual_stage("character", &selected.name, "Party member identity and capabilities"))
+    let location_path = location.base_path();
+    let social_path =
+        location.preserve_building(format!("{location_path}/party/{}/social", selected.id));
+    let left_after = html! {
+            (strategic_condition_rail(condition, morale_sources, filth, &social_path, social_open))
+            (medical_rail(medical, &location_path, active_character.id, selected.id, true))
+    };
+    let portraits = party_portrait_overlay(
+        party_members,
+        Some(active_character),
+        &location_path,
+        Some(selected.id),
+        can_examine,
+    );
+    let center_after = html! {
             (player_chat_area(selected, active_character))
             (medical_examination_popup(medical, location, selected.id, selected_limbs, injuries, projectiles))
-        }
-        aside class="right-sidebar" {
-            (character_summary_rail(capability))
-            (character_bio_rail(
-                selected,
-                religion_id,
-                notoriety,
-                personality,
-                selected.id == active_character.id,
-                &location.base_path(),
-            ))
-            (party_skills_rail(
-                &selected_skills_title, selected_skills, selected_limbs, None, None, None,
-                religion_id.is_some(), 0.0, religion_id.or(location.religion_id.as_deref()),
-                combat_profile,
-                CharacterSkillActions {
-                    examination_action: can_examine.then_some(examination_action.as_str()),
-                    examination_open: medical.examination_id.is_some(),
-                    ..Default::default()
-                },
-            ))
+    };
+    let right_after = html! {
             @if selected.id != active_character.id {
                 @if active_character.party_id == selected.party_id {
                     @if active_party.is_some_and(|party| party.leader_id == selected.id) {
                         (sidebar_section("Party", html! {
-                            form method="post" action=(format!("{}/party/{}/remove", location.base_path(), active_character.id)) {
+                            form method="post" action=(format!("{location_path}/party/{}/remove", active_character.id)) {
                                 button type="submit" class="btn btn-danger btn-block" { "Leave party" }
                             }
                         }))
                     } @else {
                         (sidebar_section("Party", html! {
-                            form method="post" action=(format!("{}/party/{}/remove", location.base_path(), selected.id)) {
+                            form method="post" action=(format!("{location_path}/party/{}/remove", selected.id)) {
                                 button type="submit" class="btn btn-danger btn-block" {
                                     @if active_party.is_some_and(|party| party.leader_id == active_character.id) { "Kick from party" }
                                     @else { "Request kick" }
@@ -295,8 +350,49 @@ pub fn party_stats_page(
                     }))
                 }
             }
+    };
+    let after = html! {
+        @if medical.examination_id.is_none() {
+            @if let Some(dialog) = character_action_dialog { (dialog) }
         }
     };
+    let content = character_sheet_markup(CharacterSheetView {
+        character: selected,
+        capability,
+        attributes: selected_attributes,
+        skills: selected_skills,
+        limbs: selected_limbs,
+        personality,
+        medical,
+        combat_profile,
+        religion_id,
+        training_religion_id: religion_id.or(location.religion_id.as_deref()),
+        notoriety,
+        attributes_title: &selected_attributes_title,
+        skills_title: &selected_skills_title,
+        description: "Party member identity and capabilities",
+        can_renounce: selected.id == active_character.id,
+        surgery: Some((&surgery_path_template, surgery_open)),
+        injuries,
+        projectiles,
+        schedule: None,
+        schedule_action: None,
+        activity_preview: None,
+        professes_religion: religion_id.is_some(),
+        prayer_religion_check: 0.0,
+        skill_actions: CharacterSheetActions {
+            examination_action: can_examine.then_some(examination_action.as_str()),
+            examination_open: medical.examination_id.is_some(),
+            ..Default::default()
+        },
+        location_path: &location_path,
+        center_before: html! {},
+        portraits,
+        center_after,
+        left_after,
+        right_after,
+        after,
+    });
     location.render_layout("Party stats", content, Some(&active_character.name))
 }
 

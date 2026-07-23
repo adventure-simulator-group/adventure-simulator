@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (1220)
+## Files (1226)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -82,6 +82,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/simulation_security.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/skill.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/social.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/starting_character.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/strategic_currency.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/strategic_economy.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/strategic_schedule.rs` — Rust source module for this component.
@@ -262,6 +263,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/create_named_character_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/create_named_character_with_id_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/create_recruitment_role_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/create_starting_character_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/create_tactical_server_for_request_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/create_temporary_character_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/cropland_cover_type.rs` — Generated SpacetimeDB data type.
@@ -649,6 +651,8 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/spawn_developer_quest_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/stage_investigation_lead_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/start_dialogue_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/starting_character_claim_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/starting_character_claim_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/stock_category_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/stone_content_percent_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/store_battle_loot_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -879,6 +883,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/background-fetch.js` — Repository support file.
 - `crates/strategic-web/static/building-state.js` — Repository support file.
 - `crates/strategic-web/static/character-action-dialog.js` — Repository support file.
+- `crates/strategic-web/static/character-candidates.js` — Repository support file.
 - `crates/strategic-web/static/chat-resize.js` — Repository support file.
 - `crates/strategic-web/static/cooking.js` — Repository support file.
 - `crates/strategic-web/static/css/base.css` — Browser UI styling.
@@ -1114,6 +1119,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/tests/building-assets.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/building-state.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/character-action-dialog.test.cjs` — Repository support file.
+- `crates/strategic-web/tests/character-candidates.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/cooking.dom.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/cooking.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/currency-backend-source.test.cjs` — Repository support file.

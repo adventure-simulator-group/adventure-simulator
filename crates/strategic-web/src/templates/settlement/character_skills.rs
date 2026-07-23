@@ -197,7 +197,7 @@ impl ActivityPreviewRates {
     }
 }
 #[derive(Clone, Copy, Default)]
-pub(super) struct CharacterSkillActions<'a> {
+pub(crate) struct CharacterSheetActions<'a> {
     pub(super) cooking_href: Option<&'a str>,
     pub(super) cooking_open: bool,
     pub(super) examination_action: Option<&'a str>,
@@ -275,7 +275,7 @@ pub(super) fn party_skills_rail(
     prayer_religion_check: f32,
     training_religion_id: Option<&str>,
     combat_profile: CombatTrainingProfile,
-    actions: CharacterSkillActions<'_>,
+    actions: CharacterSheetActions<'_>,
 ) -> Markup {
     let head_health = limbs.map_or(1.0, |limbs| limbs.head_health);
     let upper_health = limbs.map_or(1.0, |limbs| {
@@ -338,7 +338,7 @@ fn skills_table(
     training_religion: Option<OfficialReligion>,
     combat_profile: CombatTrainingProfile,
     immediate_actions: bool,
-    actions: CharacterSkillActions<'_>,
+    actions: CharacterSheetActions<'_>,
 ) -> Markup {
     html! {
             table class="party-skills-table" {
@@ -1333,7 +1333,7 @@ mod tests {
             Some(OfficialReligion::Judaism),
             CombatTrainingProfile::default(),
             false,
-            CharacterSkillActions::default(),
+            CharacterSheetActions::default(),
         )
         .into_string();
 
@@ -1401,7 +1401,7 @@ mod tests {
             0.0,
             Some("judaism"),
             CombatTrainingProfile::default(),
-            CharacterSkillActions::default(),
+            CharacterSheetActions::default(),
         )
         .into_string();
         assert!(!rail.contains("class=\"sidebar-header\">Your skills"));
@@ -1422,7 +1422,7 @@ mod tests {
             0.0,
             Some("judaism"),
             CombatTrainingProfile::default(),
-            CharacterSkillActions::default(),
+            CharacterSheetActions::default(),
         )
         .into_string();
         assert!(settlement_rail.contains("data-activity-modal"));

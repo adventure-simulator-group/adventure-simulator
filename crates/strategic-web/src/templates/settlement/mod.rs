@@ -20,12 +20,12 @@ mod trade;
 mod travel;
 
 pub(crate) use character_details::{
-    character_attributes_panel, character_profile_panels, character_stats_panel,
-    character_visual_preview,
+    CharacterSheetView, character_sheet_markup, character_stats_panel, character_visual_preview,
 };
 pub use character_details::{party_personal_page, party_stats_page};
 pub use character_health::surgery_dialog;
 pub use character_skills::ActivityPreviewRates;
+pub(crate) use character_skills::CharacterSheetActions;
 pub(crate) use chrome::{
     CharacterPortraitView, character_portrait_overlay, party_portrait_overlay,
     settlement_description,

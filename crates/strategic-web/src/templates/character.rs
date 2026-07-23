@@ -3,8 +3,8 @@
 use maud::{Markup, html};
 
 use super::settlement::{
-    CharacterPortraitView, character_attributes_panel, character_portrait_overlay,
-    character_profile_panels, character_visual_preview,
+    CharacterPortraitView, CharacterSheetActions, CharacterSheetView, character_portrait_overlay,
+    character_sheet_markup,
 };
 use super::{entry_layout, panel, sidebar_section};
 use crate::medical::MedicalPresentation;
@@ -145,20 +145,14 @@ pub fn character_candidates_page(
             actions: None,
         })
         .collect::<Vec<_>>();
-    let content = html! {
-        aside class="left-sidebar" {
-            (character_attributes_panel(
-                &candidate.character,
-                Some(&candidate.attributes),
-                Some(&candidate.limbs),
-                &MedicalPresentation::default(),
-            ))
-        }
-
-        main class="center-content settlement-main party-member-stage candidate-stage" data-candidate-roster {
+    let medical = MedicalPresentation::default();
+    let attributes_title = format!("{}'s attributes", candidate.character.name);
+    let skills_title = format!("{}'s skills", candidate.character.name);
+    let portraits = character_portrait_overlay("Candidate adventurers", None, &portraits);
+    let center_before = html! {
             p class="prototype-disclaimer" role="note" { (PROTOTYPE_NOTICE) }
-            (character_portrait_overlay("Candidate adventurers", None, &portraits))
-            (character_visual_preview(&candidate.character))
+    };
+    let center_after = html! {
             @if let Some(selected) = selected {
                 form action="/characters/candidates" method="post" class="candidate-play-action" data-candidate-confirm-form {
                     input type="hidden" name="version" value=(version);
@@ -170,18 +164,40 @@ pub fn character_candidates_page(
                 }
             }
             script src="/static/character-candidates.js?v=2" defer {}
-        }
-        aside class="right-sidebar" {
-            (character_profile_panels(
-                &candidate.character,
-                Some(&candidate.capability),
-                Some(&candidate.skills),
-                Some(&candidate.limbs),
-                Some(&candidate.personality),
-                CombatTrainingProfile::default(),
-            ))
-        }
     };
+    let content = character_sheet_markup(CharacterSheetView {
+        character: &candidate.character,
+        capability: Some(&candidate.capability),
+        attributes: Some(&candidate.attributes),
+        skills: Some(&candidate.skills),
+        limbs: Some(&candidate.limbs),
+        personality: Some(&candidate.personality),
+        medical: &medical,
+        combat_profile: CombatTrainingProfile::default(),
+        religion_id: None,
+        training_religion_id: None,
+        notoriety: 0.0,
+        attributes_title: &attributes_title,
+        skills_title: &skills_title,
+        description: "Adventurer profile",
+        can_renounce: false,
+        surgery: None,
+        injuries: &[],
+        projectiles: &[],
+        schedule: None,
+        schedule_action: None,
+        activity_preview: None,
+        professes_religion: false,
+        prayer_religion_check: 0.0,
+        skill_actions: CharacterSheetActions::default(),
+        location_path: "",
+        center_before,
+        portraits,
+        center_after,
+        left_after: html! {},
+        right_after: html! {},
+        after: html! {},
+    });
 
     entry_layout("Choose Your Adventurer", content)
 }
@@ -204,7 +220,7 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
             level: 1,
             gold: 0,
             current_settlement_id: None,
-            current_quest_location_id: None,
+            current_case_site_id: None,
             party_id: None,
             age_years: spec.age_years,
             alive: true,
@@ -403,6 +419,8 @@ mod creation_tests {
         assert!(markup.contains("class=\"party-attributes-list\""));
         assert!(markup.contains("class=\"party-skills-table\""));
         assert!(!markup.contains("class=\"party-portrait-actions\""));
+        assert!(!markup.contains("class=\"schedule-section-heading\""));
+        assert!(!markup.contains("data-skill-schedule"));
         assert!(!markup.contains("data-candidate-confirm-form"));
         assert!(!markup.contains("name=\"name\""));
     }
