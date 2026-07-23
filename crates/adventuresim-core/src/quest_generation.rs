@@ -15,11 +15,14 @@ use crate::{
     local_problem::{Effects, EncounterArchetype, Scope, Symptom},
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub const CATALOG_REVISION: &str = "questgen-2026-07-23.1";
 pub const MAX_SOLVER_CANDIDATES: usize = 4_096;
 pub const MAX_SOLVER_VISITED_NODES: usize = 16_384;
+pub const MAX_FACTOR_TRACE_RECORDS: usize = 32_768;
+pub const MAX_FACTOR_TRACE_BYTES: usize = 1_048_576;
 
 macro_rules! id_type {
     ($name:ident) => {
@@ -184,6 +187,9 @@ impl Weight {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GenerationContext {
     pub seed: u64,
+    /// Independently sampled, private entropy used only to mint observer-facing IDs.
+    pub observer_entropy_hi: u64,
+    pub observer_entropy_lo: u64,
     pub settlement_id: String,
     pub settlement_name: String,
     pub scope: Scope,
@@ -232,6 +238,7 @@ pub struct CausalBridge {
     pub explanation: String,
     pub event_id: String,
     pub evidence_id: EvidenceId,
+    pub action_id: ActionId,
     pub lead_summary: String,
 }
 
@@ -380,16 +387,6 @@ pub struct GeneratedDialogueProducer {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ContractDraft {
-    pub issuer_npc_id: String,
-    pub issuer_belief_title: String,
-    pub issuer_belief_description: String,
-    pub opposition_wording: String,
-    pub opposition_count_wording: String,
-    pub reward: i32,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GeneratedCase {
     pub catalog_revision: String,
     pub generation_seed: u64,
@@ -410,7 +407,6 @@ pub struct GeneratedCase {
     pub hostile_groups: Vec<(String, SiteId, ThreatId, u32)>,
     pub finales: Vec<GeneratedFinale>,
     pub dialogue_producers: Vec<GeneratedDialogueProducer>,
-    pub contract: Option<ContractDraft>,
     pub bridges: Vec<CausalBridge>,
     /// Private diagnostic authority. Never place this in a public table/view.
     pub factor_trace: Vec<FactorTrace>,
@@ -442,7 +438,33 @@ fn hash(seed: u64, domain: &str) -> u64 {
     })
 }
 
-#[cfg(test)]
+fn scoped_id(scope: &str, kind: &str, name: &str) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"adventuresim.quest.observer-id.v1\0");
+    digest.update(scope.as_bytes());
+    digest.update([0]);
+    digest.update(kind.as_bytes());
+    digest.update([0]);
+    digest.update(name.as_bytes());
+    format!("{kind}:{}", &format!("{:x}", digest.finalize())[..24])
+}
+
+fn observer_scope(context: &GenerationContext) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"adventuresim.quest.observer-scope.v1\0");
+    digest.update(context.observer_entropy_hi.to_le_bytes());
+    digest.update(context.observer_entropy_lo.to_le_bytes());
+    digest.update(context.ordinal.to_le_bytes());
+    digest.update(context.settlement_id.as_bytes());
+    format!("{:x}", digest.finalize())
+}
+
+/// Mints an opaque observer-facing identifier from private persisted entropy.
+/// The caller must never expose the generation context itself.
+pub fn observer_scoped_id(context: &GenerationContext, kind: &str, name: &str) -> String {
+    scoped_id(&observer_scope(context), kind, name)
+}
+
 fn choose<T: Copy>(
     seed: u64,
     module: &str,
@@ -493,7 +515,260 @@ fn choose<T: Copy>(
     unreachable!("bounded weighted draw must select")
 }
 
-fn weighted_order<T: Copy>(seed: u64, domain: &str, candidates: &[Candidate<T>]) -> Vec<usize> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AccountStyle {
+    VisualClaim,
+    HeardOnly,
+    TracksAndMovement,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RouteVariant {
+    Direct,
+    Cautious,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AttackPattern {
+    Nightly,
+    Roadside,
+    VictimSpecific,
+    Irregular,
+}
+
+fn reliability_candidates(
+    demographic: WitnessDemographic,
+    circumstance: Circumstance,
+    cause: CanonicalCause,
+) -> Vec<Candidate<Reliability>> {
+    [
+        Reliability::Truthful,
+        Reliability::Mistaken,
+        Reliability::Evasive,
+        Reliability::Deceptive,
+        Reliability::PartlyTruthful,
+    ]
+    .into_iter()
+    .map(|value| {
+        let (p, impossible, factor) = match (demographic, circumstance, cause, value) {
+            (WitnessDemographic::Child, _, _, Reliability::Deceptive) => (
+                0,
+                Some("the initial child account is not authored as deliberate fabrication"),
+                "factor.reliability.child_hard_zero",
+            ),
+            (
+                _,
+                Circumstance::SecretRiversideMeeting | Circumstance::AdultVenue,
+                _,
+                Reliability::Evasive,
+            ) => (75, None, "factor.reliability.embarrassing_context"),
+            (_, _, CanonicalCause::FabricatedClaim, Reliability::Deceptive) => {
+                (80, None, "factor.reliability.fabricated_claim")
+            }
+            (_, Circumstance::NightWindow, _, Reliability::Mistaken) => {
+                (70, None, "factor.reliability.darkness")
+            }
+            (_, _, _, Reliability::Truthful) => (65, None, "factor.reliability.baseline"),
+            (_, _, _, Reliability::PartlyTruthful) => (45, None, "factor.reliability.partial"),
+            _ => (25, None, "factor.reliability.possible"),
+        };
+        Candidate {
+            id: match value {
+                Reliability::Truthful => "reliability.truthful",
+                Reliability::Mistaken => "reliability.mistaken",
+                Reliability::Evasive => "reliability.evasive",
+                Reliability::Deceptive => "reliability.deceptive",
+                Reliability::PartlyTruthful => "reliability.partly_truthful",
+            },
+            value,
+            weight: Weight::new(p, 70),
+            bridge: None,
+            impossible,
+            factors: vec![factor],
+        }
+    })
+    .collect()
+}
+
+fn evidence_candidates(cause: CanonicalCause, site: SiteKind) -> Vec<Candidate<EvidenceKind>> {
+    [
+        EvidenceKind::Footprints,
+        EvidenceKind::ClothScrap,
+        EvidenceKind::BoneDust,
+        EvidenceKind::BloodlessCorpse,
+        EvidenceKind::DroppedToken,
+        EvidenceKind::DragMarks,
+        EvidenceKind::LedgerEntry,
+    ]
+    .into_iter()
+    .map(|value| {
+        let (p, impossible, factor) = match (cause, site, value) {
+            (CanonicalCause::Hostile(ThreatId::Skeleton), _, EvidenceKind::BoneDust) => {
+                (90, None, "factor.evidence.skeleton")
+            }
+            (CanonicalCause::IncidentalLoss, _, EvidenceKind::LedgerEntry) => {
+                (70, None, "factor.evidence.asset_record")
+            }
+            (CanonicalCause::FabricatedClaim, _, EvidenceKind::BloodlessCorpse) => (
+                0,
+                Some("a fabricated loss cannot create a canonical corpse clue"),
+                "factor.evidence.fabrication_hard_zero",
+            ),
+            (_, SiteKind::Roadside | SiteKind::Riverside, EvidenceKind::Footprints) => {
+                (75, None, "factor.evidence.trackable_ground")
+            }
+            (_, _, EvidenceKind::DroppedToken | EvidenceKind::ClothScrap) => {
+                (45, None, "factor.evidence.portable")
+            }
+            _ => (25, None, "factor.evidence.possible"),
+        };
+        Candidate {
+            id: match value {
+                EvidenceKind::Footprints => "evidence.footprints",
+                EvidenceKind::ClothScrap => "evidence.cloth",
+                EvidenceKind::BoneDust => "evidence.bone_dust",
+                EvidenceKind::BloodlessCorpse => "evidence.bloodless_corpse",
+                EvidenceKind::DroppedToken => "evidence.token",
+                EvidenceKind::DragMarks => "evidence.drag_marks",
+                EvidenceKind::LedgerEntry => "evidence.ledger",
+            },
+            value,
+            weight: Weight::new(p, 70),
+            bridge: None,
+            impossible,
+            factors: vec![factor],
+        }
+    })
+    .collect()
+}
+
+fn account_style_candidates(
+    reliability: Reliability,
+    circumstance: Circumstance,
+) -> Vec<Candidate<AccountStyle>> {
+    [
+        AccountStyle::VisualClaim,
+        AccountStyle::HeardOnly,
+        AccountStyle::TracksAndMovement,
+    ]
+    .into_iter()
+    .map(|value| {
+        let (p, impossible, factor) = match (circumstance, reliability, value) {
+            (Circumstance::NightWindow, _, AccountStyle::HeardOnly) => {
+                (80, None, "factor.account.darkness")
+            }
+            (_, Reliability::Mistaken, AccountStyle::TracksAndMovement) => (
+                0,
+                Some("a mistaken eyewitness does not provide the precise track account"),
+                "factor.account.mistaken_hard_zero",
+            ),
+            (_, _, AccountStyle::VisualClaim) => (60, None, "factor.account.visual"),
+            (_, _, AccountStyle::TracksAndMovement) => (45, None, "factor.account.tracks"),
+            _ => (30, None, "factor.account.possible"),
+        };
+        Candidate {
+            id: match value {
+                AccountStyle::VisualClaim => "account.visual",
+                AccountStyle::HeardOnly => "account.heard",
+                AccountStyle::TracksAndMovement => "account.tracks",
+            },
+            value,
+            weight: Weight::new(p, 70),
+            bridge: None,
+            impossible,
+            factors: vec![factor],
+        }
+    })
+    .collect()
+}
+
+fn route_variant_candidates(family: TemplateFamily) -> [Candidate<RouteVariant>; 2] {
+    [
+        Candidate {
+            id: "route.direct",
+            value: RouteVariant::Direct,
+            weight: Weight::new(
+                if family == TemplateFamily::RecurringDepredation {
+                    70
+                } else {
+                    55
+                },
+                70,
+            ),
+            bridge: None,
+            impossible: None,
+            factors: vec!["factor.route.direct"],
+        },
+        Candidate {
+            id: "route.cautious",
+            value: RouteVariant::Cautious,
+            weight: Weight::new(
+                if family == TemplateFamily::RecurringDepredation {
+                    45
+                } else {
+                    75
+                },
+                70,
+            ),
+            bridge: None,
+            impossible: None,
+            factors: vec!["factor.route.cautious"],
+        },
+    ]
+}
+
+fn attack_pattern_candidates(family: TemplateFamily) -> [Candidate<AttackPattern>; 4] {
+    [
+        Candidate {
+            id: "pattern.nightly",
+            value: AttackPattern::Nightly,
+            weight: Weight::new(60, 70),
+            bridge: None,
+            impossible: None,
+            factors: vec!["factor.pattern.nightly"],
+        },
+        Candidate {
+            id: "pattern.roadside",
+            value: AttackPattern::Roadside,
+            weight: Weight::new(55, 70),
+            bridge: None,
+            impossible: None,
+            factors: vec!["factor.pattern.roadside"],
+        },
+        Candidate {
+            id: "pattern.victim_specific",
+            value: AttackPattern::VictimSpecific,
+            weight: Weight::new(
+                if family == TemplateFamily::DisappearanceOrLoss {
+                    70
+                } else {
+                    30
+                },
+                65,
+            ),
+            bridge: None,
+            impossible: None,
+            factors: vec!["factor.pattern.victim"],
+        },
+        Candidate {
+            id: "pattern.irregular",
+            value: AttackPattern::Irregular,
+            weight: Weight::new(35, 55),
+            bridge: None,
+            impossible: None,
+            factors: vec!["factor.pattern.irregular"],
+        },
+    ]
+}
+
+fn weighted_order<T: Copy>(
+    seed: u64,
+    domain: &str,
+    candidates: &[Candidate<T>],
+) -> Result<Vec<usize>, GenerationError> {
+    if candidates.len() > MAX_SOLVER_CANDIDATES {
+        return Err(GenerationError::CandidateLimit);
+    }
     let mut indices = (0..candidates.len())
         .filter(|index| {
             let c = &candidates[*index];
@@ -509,7 +784,7 @@ fn weighted_order<T: Copy>(seed: u64, domain: &str, candidates: &[Candidate<T>])
             c.id,
         )
     });
-    indices
+    Ok(indices)
 }
 
 #[derive(Clone, Copy)]
@@ -535,6 +810,21 @@ fn solve_variables(
             "generation requires two real persistent witness candidates".into(),
         ]));
     }
+    if context.witness_candidates.len() > MAX_SOLVER_CANDIDATES
+        || context
+            .witness_candidates
+            .iter()
+            .map(|witness| {
+                witness.npc_id.len()
+                    + witness.profession.len()
+                    + witness.visible_description.len()
+                    + witness.expected_location.len()
+            })
+            .sum::<usize>()
+            > 64 * 1024
+    {
+        return Err(GenerationError::CandidateLimit);
+    }
     let families = family_candidates();
     let family_indices = if let Some(requested) = context.requested_family {
         families
@@ -543,24 +833,26 @@ fn solve_variables(
             .into_iter()
             .collect()
     } else {
-        weighted_order(context.seed, "family", &families)
+        weighted_order(context.seed, "family", &families)?
     };
     let witnesses = deterministic_witness_order(context);
     let mut visited = 0usize;
     for family_index in family_indices {
         let family = families[family_index].value;
         let causes = cause_candidates(family);
-        for cause_index in weighted_order(context.seed.rotate_left(3), "cause", &causes) {
+        for cause_index in weighted_order(context.seed.rotate_left(3), "cause", &causes)? {
             let cause = causes[cause_index].value;
             let sites = site_candidates(cause);
-            for site_index in weighted_order(context.seed.rotate_left(7), "site", &sites) {
+            for site_index in weighted_order(context.seed.rotate_left(7), "site", &sites)? {
                 let site = sites[site_index].value;
                 for &primary_index in &witnesses {
                     let witness = &context.witness_candidates[primary_index];
                     let circumstances = circumstance_candidates(witness.demographic);
-                    for circumstance_index in
-                        weighted_order(context.seed.rotate_left(19), "circumstance", &circumstances)
-                    {
+                    for circumstance_index in weighted_order(
+                        context.seed.rotate_left(19),
+                        "circumstance",
+                        &circumstances,
+                    )? {
                         visited += 1;
                         if visited > MAX_SOLVER_VISITED_NODES {
                             return Err(GenerationError::CandidateLimit);
@@ -588,7 +880,7 @@ fn solve_variables(
                             context.seed.rotate_left(29),
                             "description",
                             &descriptions,
-                        )
+                        )?
                         .first()
                         .copied() else {
                             trace.push(FactorTrace {
@@ -837,6 +1129,42 @@ fn site_candidates(cause: CanonicalCause) -> Vec<Candidate<SiteKind>> {
     .collect()
 }
 
+fn secondary_site_candidates(cause: CanonicalCause, primary: SiteKind) -> Vec<Candidate<SiteKind>> {
+    site_candidates(cause)
+        .into_iter()
+        .map(|mut candidate| {
+            candidate.factors.push("factor.site.secondary_distinct");
+            if candidate.value == primary {
+                candidate.weight = Weight::new(0, 0);
+                candidate.impossible = Some("secondary site must differ from the finale site");
+            }
+            candidate
+        })
+        .collect()
+}
+
+fn secondary_circumstance_candidates(
+    witness: &WitnessCandidate,
+    primary: Circumstance,
+) -> Vec<Candidate<Circumstance>> {
+    circumstance_candidates(witness.demographic)
+        .into_iter()
+        .map(|mut candidate| {
+            candidate
+                .factors
+                .push("factor.circumstance.secondary_witness");
+            if candidate.value == primary {
+                candidate.weight = Weight::new(0, 0);
+                candidate.impossible = Some("the corroborating account must arise independently");
+            } else if !witness.allowed_circumstances.contains(&candidate.value) {
+                candidate.weight = Weight::new(0, 0);
+                candidate.impossible = Some("persistent NPC facts do not permit this circumstance");
+            }
+            candidate
+        })
+        .collect()
+}
+
 fn circumstance_candidates(demo: WitnessDemographic) -> Vec<Candidate<Circumstance>> {
     use Circumstance as C;
     [
@@ -976,27 +1304,40 @@ fn label(site: SiteKind) -> &'static str {
     }
 }
 
-fn bridge(id: &str, prefix: &str, _now: u64) -> CausalBridge {
+fn bridge(id: &str, prefix: &str, family: TemplateFamily, _now: u64) -> CausalBridge {
+    let action_name = match (id, family) {
+        ("bridge.skeletons_occupied_house", TemplateFamily::RecurringDepredation) => "search",
+        ("bridge.skeletons_occupied_house", TemplateFamily::DisappearanceOrLoss) => {
+            "inspect_last_known"
+        }
+        ("bridge.child_at_adult_venue", TemplateFamily::RecurringDepredation) => "watch",
+        ("bridge.child_at_adult_venue", TemplateFamily::DisappearanceOrLoss) => "locate_contact",
+        (_, _) => "approach",
+    };
+    let action_id = ActionId::new(scoped_id(prefix, "action", action_name));
     match id {
         "bridge.skeletons_occupied_house" => CausalBridge {
             id: BridgeId::new(id),
             explanation: "A graverobber moved animated remains into a shuttered house.".into(),
-            event_id: format!("{prefix}:event:bridge:skeleton_house"),
-            evidence_id: EvidenceId::new(format!("{prefix}:evidence:grave_clay")),
+            event_id: scoped_id(prefix, "event", "bridge:skeleton_house"),
+            evidence_id: EvidenceId::new(scoped_id(prefix, "evidence", "grave_clay")),
+            action_id,
             lead_summary: "Grave clay and cart ruts connect the house to the crypt.".into(),
         },
         "bridge.child_at_adult_venue" => CausalBridge {
             id: BridgeId::new(id),
             explanation: "The child was fetching an adult relative from outside the venue.".into(),
-            event_id: format!("{prefix}:event:bridge:child_venue"),
-            evidence_id: EvidenceId::new(format!("{prefix}:evidence:errand_token")),
+            event_id: scoped_id(prefix, "event", "bridge:child_venue"),
+            evidence_id: EvidenceId::new(scoped_id(prefix, "evidence", "errand_token")),
+            action_id,
             lead_summary: "An errand token corroborates why the child waited outside.".into(),
         },
         _ => CausalBridge {
             id: BridgeId::new(id),
             explanation: "A rare causal link makes the combination possible.".into(),
-            event_id: format!("{prefix}:event:bridge"),
-            evidence_id: EvidenceId::new(format!("{prefix}:evidence:bridge")),
+            event_id: scoped_id(prefix, "event", "bridge"),
+            evidence_id: EvidenceId::new(scoped_id(prefix, "evidence", "bridge")),
+            action_id,
             lead_summary: "A corroborating clue explains the unusual combination.".into(),
         },
     }
@@ -1077,10 +1418,18 @@ fn build_actions(
     prefix: &str,
     family: TemplateFamily,
     finale: &SiteId,
-    evidence_site: &SiteId,
     area_id: &str,
     witness_npc_id: &str,
+    route_variant: RouteVariant,
 ) -> Vec<GeneratedAction> {
+    let trail_summary = match route_variant {
+        RouteVariant::Direct => "Follow the physical trail directly.",
+        RouteVariant::Cautious => "Reacquire and follow the trail cautiously.",
+    };
+    let trail_kind = match route_variant {
+        RouteVariant::Direct => InvestigationActionKind::FollowTracks,
+        RouteVariant::Cautious => InvestigationActionKind::ReacquireTracks,
+    };
     let make = |name: &str,
                 kind,
                 route,
@@ -1091,13 +1440,13 @@ fn build_actions(
                 active,
                 summary: &str,
                 outputs: Vec<GeneratedActionOutput>| GeneratedAction {
-        id: ActionId::new(format!("{prefix}:action:{name}")),
+        id: ActionId::new(scoped_id(prefix, "action", name)),
         kind,
         route,
         target_kind: target_kind.into(),
         target_id: target,
-        prerequisite: prerequisite.map(|p| ActionId::new(format!("{prefix}:action:{p}"))),
-        alternate: ActionId::new(format!("{prefix}:action:{alternate}")),
+        prerequisite: prerequisite.map(|p| ActionId::new(scoped_id(prefix, "action", p))),
+        alternate: ActionId::new(scoped_id(prefix, "action", alternate)),
         active_initially: active,
         safe_summary: summary.into(),
         outputs,
@@ -1130,23 +1479,35 @@ fn build_actions(
                 false,
                 "Search for physical traces.",
                 vec![GeneratedActionOutput::Evidence {
-                    evidence_id: EvidenceId::new(format!("{prefix}:evidence:tracks")),
+                    evidence_id: EvidenceId::new(scoped_id(prefix, "evidence", "tracks")),
                 }],
             ),
             make(
                 "follow",
-                InvestigationActionKind::FollowTracks,
+                trail_kind,
                 RouteClass::PhysicalTrail,
                 "site",
                 finale.0.clone(),
                 Some("search"),
-                "ambush",
+                "reveal_route",
                 false,
-                "Follow the physical trail.",
+                trail_summary,
                 vec![GeneratedActionOutput::Destination {
                     stage: GeneratedDestinationStage::Exact,
                     site_id: Some(finale.clone()),
                 }],
+            ),
+            make(
+                "inspect_finale",
+                InvestigationActionKind::InspectSite,
+                RouteClass::PhysicalTrail,
+                "site",
+                finale.0.clone(),
+                Some("follow"),
+                "ambush",
+                false,
+                "Inspect the located lair from the occupied site.",
+                vec![GeneratedActionOutput::AmbushReady],
             ),
             make(
                 "watch",
@@ -1179,49 +1540,70 @@ fn build_actions(
                 }],
             ),
             make(
+                "reveal_route",
+                trail_kind,
+                RouteClass::PatternSurveillance,
+                "route",
+                finale.0.clone(),
+                Some("patrol"),
+                "follow",
+                false,
+                trail_summary,
+                vec![GeneratedActionOutput::Destination {
+                    stage: GeneratedDestinationStage::Exact,
+                    site_id: Some(finale.clone()),
+                }],
+            ),
+            make(
                 "ambush",
                 InvestigationActionKind::LayAmbush,
                 RouteClass::PatternSurveillance,
                 "site",
                 finale.0.clone(),
-                Some("patrol"),
-                "follow",
+                Some("reveal_route"),
+                "inspect_finale",
                 false,
-                "Lay an ambush along the established route.",
-                vec![
-                    GeneratedActionOutput::AmbushReady,
-                    GeneratedActionOutput::Destination {
-                        stage: GeneratedDestinationStage::Exact,
-                        site_id: Some(finale.clone()),
-                    },
-                ],
+                "Lay an ambush after occupying the located site.",
+                vec![GeneratedActionOutput::AmbushReady],
             ),
         ],
         TemplateFamily::DisappearanceOrLoss => vec![
             make(
                 "inspect_last_known",
-                InvestigationActionKind::InspectSite,
+                InvestigationActionKind::SearchArea,
                 RouteClass::PhysicalTrail,
-                "site",
-                evidence_site.0.clone(),
+                "area",
+                area_id.into(),
                 None,
                 "locate_contact",
                 true,
                 "Inspect the last-known place.",
                 vec![GeneratedActionOutput::Evidence {
-                    evidence_id: EvidenceId::new(format!("{prefix}:evidence:tracks")),
+                    evidence_id: EvidenceId::new(scoped_id(prefix, "evidence", "tracks")),
                 }],
             ),
             make(
+                "resolve_physical",
+                InvestigationActionKind::InspectSite,
+                RouteClass::PhysicalTrail,
+                "site",
+                finale.0.clone(),
+                Some("follow"),
+                "resolve_social",
+                false,
+                "Inspect the located site and recover what is actually there.",
+                vec![],
+            ),
+            make(
                 "follow",
-                InvestigationActionKind::FollowTracks,
+                trail_kind,
                 RouteClass::PhysicalTrail,
                 "site",
                 finale.0.clone(),
                 Some("inspect_last_known"),
                 "approach_social",
                 false,
-                "Follow traces away from the last-known place.",
+                trail_summary,
                 vec![GeneratedActionOutput::Destination {
                     stage: GeneratedDestinationStage::Exact,
                     site_id: Some(finale.clone()),
@@ -1238,7 +1620,7 @@ fn build_actions(
                 true,
                 "Find the referred witness.",
                 vec![GeneratedActionOutput::Destination {
-                    stage: GeneratedDestinationStage::Textual,
+                    stage: GeneratedDestinationStage::ApproximateArea,
                     site_id: None,
                 }],
             ),
@@ -1246,7 +1628,7 @@ fn build_actions(
                 "approach_social",
                 InvestigationActionKind::ApproachLead,
                 RouteClass::SocialInquiry,
-                "site",
+                "route",
                 finale.0.clone(),
                 Some("locate_contact"),
                 "follow",
@@ -1256,6 +1638,18 @@ fn build_actions(
                     stage: GeneratedDestinationStage::Exact,
                     site_id: Some(finale.clone()),
                 }],
+            ),
+            make(
+                "resolve_social",
+                InvestigationActionKind::InspectSite,
+                RouteClass::SocialInquiry,
+                "site",
+                finale.0.clone(),
+                Some("approach_social"),
+                "resolve_physical",
+                false,
+                "Enter the located site and resolve the social lead.",
+                vec![],
             ),
         ],
     }
@@ -1278,38 +1672,95 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     } = solved;
     let primary = &context.witness_candidates[primary_witness];
     let secondary = &context.witness_candidates[secondary_witness];
-    let prefix = format!(
+    let (reliability, _) = choose(
+        context.seed.rotate_left(5),
+        "module.reliability",
+        "relation.reliability.context",
+        &reliability_candidates(demographic, circumstance, cause),
+        &mut trace,
+    )?;
+    let (secondary_site_kind, secondary_site_bridge) = choose(
+        context.seed.rotate_left(11),
+        "module.secondary_site",
+        "relation.site.cause",
+        &secondary_site_candidates(cause, site),
+        &mut trace,
+    )?;
+    let (secondary_circumstance, secondary_circumstance_bridge) = choose(
+        context.seed.rotate_left(13),
+        "module.secondary_circumstance",
+        "relation.circumstance.npc_fact",
+        &secondary_circumstance_candidates(secondary, circumstance),
+        &mut trace,
+    )?;
+    let (evidence_kind, _) = choose(
+        context.seed.rotate_left(17),
+        "module.evidence",
+        "relation.evidence.cause_site",
+        &evidence_candidates(cause, site),
+        &mut trace,
+    )?;
+    let (account_style, _) = choose(
+        context.seed.rotate_left(23),
+        "module.account",
+        "relation.account.reliability_circumstance",
+        &account_style_candidates(reliability, circumstance),
+        &mut trace,
+    )?;
+    let (route_variant, _) = choose(
+        context.seed.rotate_left(31),
+        "module.route",
+        "relation.route.family",
+        &route_variant_candidates(family),
+        &mut trace,
+    )?;
+    let (attack_pattern, _) = choose(
+        context.seed.rotate_left(37),
+        "module.attack_pattern",
+        "relation.pattern.family",
+        &attack_pattern_candidates(family),
+        &mut trace,
+    )?;
+    let canonical_case_id = format!(
         "case:{:016x}",
         hash(
             context.seed,
             &format!("{}:{}", context.settlement_id, context.ordinal)
         )
     );
-    let problem_id = format!(
-        "problem:{:016x}",
-        hash(context.seed, &format!("problem:{}", context.ordinal))
-    );
-    let finale_site = SiteId::new(format!("{prefix}:site:finale"));
-    let evidence_site = SiteId::new(format!("{prefix}:site:evidence"));
-    let decoy_site = SiteId::new(format!("{prefix}:site:decoy"));
-    let witness1 = WitnessId::new(format!("{prefix}:witness:primary"));
-    let witness2 = WitnessId::new(format!("{prefix}:witness:corroborating"));
+    let prefix = observer_scope(context);
+    let public_case_id = scoped_id(&prefix, "journal", "case");
+    let problem_id = scoped_id(&prefix, "problem", "settlement");
+    let finale_site = SiteId::new(scoped_id(&prefix, "site", "finale"));
+    let evidence_site = SiteId::new(scoped_id(&prefix, "site", "evidence"));
+    let decoy_site = SiteId::new(scoped_id(&prefix, "site", "decoy"));
+    let witness1 = WitnessId::new(scoped_id(&prefix, "witness", "primary"));
+    let witness2 = WitnessId::new(scoped_id(&prefix, "witness", "corroborating"));
     let npc1 = primary.npc_id.clone();
     let npc2 = secondary.npc_id.clone();
-    let false_statement = format!("It looked like {:?}, near {}.", description, label(site));
+    let false_statement = match account_style {
+        AccountStyle::VisualClaim => {
+            format!(
+                "It looked like {:?}, near {}.",
+                description,
+                label(secondary_site_kind)
+            )
+        }
+        AccountStyle::HeardOnly => format!(
+            "I only heard it moving near {}; I never saw it clearly.",
+            label(secondary_site_kind)
+        ),
+        AccountStyle::TracksAndMovement => format!(
+            "Its trail and movement seemed to point toward {}.",
+            label(secondary_site_kind)
+        ),
+    };
     let true_statement = format!(
         "I saw signs pointing toward {}, but I could not identify the culprit.",
         label(site)
     );
-    let description_prop = format!("{prefix}:proposition:description");
-    let correction_prop = format!("{prefix}:proposition:location:corrected");
-    let reliability = match hash(context.seed, "reliability") % 5 {
-        0 => Reliability::Truthful,
-        1 => Reliability::Mistaken,
-        2 => Reliability::Evasive,
-        3 => Reliability::Deceptive,
-        _ => Reliability::PartlyTruthful,
-    };
+    let description_prop = scoped_id(&prefix, "proposition", "description");
+    let correction_prop = scoped_id(&prefix, "proposition", "location:corrected");
     let sites = vec![
         GeneratedSite {
             id: finale_site.clone(),
@@ -1343,10 +1794,13 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         },
         GeneratedSite {
             id: decoy_site.clone(),
-            kind: SiteKind::Riverside,
+            kind: secondary_site_kind,
             role: SiteRole::Decoy,
-            terrain: Terrain::Road,
-            safe_label: "a plausible but unconfirmed riverside place".into(),
+            terrain: terrain(secondary_site_kind),
+            safe_label: format!(
+                "a plausible but unconfirmed place near {}",
+                label(secondary_site_kind)
+            ),
             exact_location_initially_known: false,
             is_true_location: false,
         },
@@ -1383,7 +1837,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             id: witness2.clone(),
             npc_id: npc2,
             demographic: secondary.demographic,
-            circumstance: Circumstance::RoadJourney,
+            circumstance: secondary_circumstance,
             description,
             expected_location: secondary.expected_location.clone(),
             visible_description: secondary.visible_description.clone(),
@@ -1403,19 +1857,20 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     ];
     let mut evidence = vec![
         GeneratedEvidence {
-            id: EvidenceId::new(format!("{prefix}:evidence:tracks")),
-            kind: EvidenceKind::Footprints,
+            id: EvidenceId::new(scoped_id(&prefix, "evidence", "tracks")),
+            kind: evidence_kind,
             proposition_id: correction_prop.clone(),
             site_id: evidence_site.clone(),
-            safe_description:
-                "Tracks preserve direction and gait without identifying the creature outright."
-                    .into(),
-            corrects_proposition_id: Some(format!("{prefix}:proposition:description")),
+            safe_description: format!(
+                "The {:?} preserve a useful lead without identifying the culprit outright.",
+                evidence_kind
+            ),
+            corrects_proposition_id: Some(scoped_id(&prefix, "proposition", "description")),
         },
         GeneratedEvidence {
-            id: EvidenceId::new(format!("{prefix}:evidence:token")),
+            id: EvidenceId::new(scoped_id(&prefix, "evidence", "token")),
             kind: EvidenceKind::DroppedToken,
-            proposition_id: format!("{prefix}:proposition:association"),
+            proposition_id: scoped_id(&prefix, "proposition", "association"),
             site_id: decoy_site.clone(),
             safe_description:
                 "A dropped token links the report to another person, not necessarily the culprit."
@@ -1423,18 +1878,19 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             corrects_proposition_id: None,
         },
     ];
-    let area_id = format!("{prefix}:area:incident");
-    let hostile_id = format!("hostile-group:{}", finale_site.0);
-    let id_suffix = prefix.trim_start_matches("case:");
-    let subject = SubjectId::new(format!("subject:{id_suffix}")).expect("generated subject id");
-    let asset = AssetId::new(format!("asset:{id_suffix}")).expect("generated asset id");
+    let area_id = scoped_id(&prefix, "area", "incident");
+    let hostile_id = scoped_id(&prefix, "hostile-group", "finale");
+    let subject =
+        SubjectId::new(scoped_id(&prefix, "subject", "missing-person")).expect("generated subject");
+    let asset =
+        AssetId::new(scoped_id(&prefix, "asset", "missing-property")).expect("generated asset");
     let mut actions = build_actions(
         &prefix,
         family,
         &finale_site,
-        &evidence_site,
         &area_id,
         &primary.npc_id,
+        route_variant,
     );
     let issuer = context
         .witness_candidates
@@ -1447,7 +1903,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             ObjectiveExpression::new(vec![
                 ObjectivePath {
                     objectives: vec![Objective {
-                        id: ObjectiveId::new(format!("objective:{id_suffix}:defeat")).unwrap(),
+                        id: ObjectiveId::new(scoped_id(&prefix, "objective", "defeat")).unwrap(),
                         requirement: ObjectiveRequirement::Defeat {
                             hostile_group_id: hostile_id.clone(),
                             count: 1,
@@ -1456,7 +1912,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 },
                 ObjectivePath {
                     objectives: vec![Objective {
-                        id: ObjectiveId::new(format!("objective:{id_suffix}:driveoff")).unwrap(),
+                        id: ObjectiveId::new(scoped_id(&prefix, "objective", "driveoff")).unwrap(),
                         requirement: ObjectiveRequirement::DriveOff {
                             hostile_group_id: hostile_id.clone(),
                         },
@@ -1466,7 +1922,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             .expect("generated objective"),
             vec![
                 GeneratedFinale {
-                    id: FinaleId::new(format!("{prefix}:finale:defeat")),
+                    id: FinaleId::new(scoped_id(&prefix, "finale", "defeat")),
                     kind: FinaleKind::Defeat,
                     site_id: finale_site.clone(),
                     hostile_group_id: Some(hostile_id.clone()),
@@ -1475,7 +1931,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     strategic_outcome_compatible: true,
                 },
                 GeneratedFinale {
-                    id: FinaleId::new(format!("{prefix}:finale:driveoff")),
+                    id: FinaleId::new(scoped_id(&prefix, "finale", "driveoff")),
                     kind: FinaleKind::DriveOff,
                     site_id: finale_site.clone(),
                     hostile_group_id: Some(hostile_id.clone()),
@@ -1490,10 +1946,13 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         TemplateFamily::DisappearanceOrLoss => match cause {
             CanonicalCause::Hostile(_) | CanonicalCause::ConcealmentByWitness => {
                 let objective_id =
-                    ObjectiveId::new(format!("objective:{id_suffix}:rescue")).unwrap();
+                    ObjectiveId::new(scoped_id(&prefix, "objective", "rescue")).unwrap();
+                let physical_resolution =
+                    ActionId::new(scoped_id(&prefix, "action", "resolve_physical"));
+                let social_resolution =
+                    ActionId::new(scoped_id(&prefix, "action", "resolve_social"));
                 for action in actions.iter_mut().filter(|action| {
-                    action.id.0.ends_with(":action:follow")
-                        || action.id.0.ends_with(":action:approach_social")
+                    action.id == physical_resolution || action.id == social_resolution
                 }) {
                     action.outputs.push(GeneratedActionOutput::Consequence {
                         consequence: GeneratedActionConsequence::RescueSubject {
@@ -1513,7 +1972,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     }])
                     .expect("generated rescue objective"),
                     vec![GeneratedFinale {
-                        id: FinaleId::new(format!("{prefix}:finale:rescue")),
+                        id: FinaleId::new(scoped_id(&prefix, "finale", "rescue")),
                         kind: FinaleKind::Rescue,
                         site_id: finale_site.clone(),
                         hostile_group_id: matches!(cause, CanonicalCause::Hostile(_))
@@ -1527,9 +1986,12 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 )
             }
             CanonicalCause::IncidentalLoss => {
+                let physical_resolution =
+                    ActionId::new(scoped_id(&prefix, "action", "resolve_physical"));
+                let social_resolution =
+                    ActionId::new(scoped_id(&prefix, "action", "resolve_social"));
                 for action in actions.iter_mut().filter(|action| {
-                    action.id.0.ends_with(":action:follow")
-                        || action.id.0.ends_with(":action:approach_social")
+                    action.id == physical_resolution || action.id == social_resolution
                 }) {
                     action.outputs.push(GeneratedActionOutput::Consequence {
                         consequence: GeneratedActionConsequence::RetrieveAsset {
@@ -1539,8 +2001,9 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     });
                 }
                 let retrieve_id =
-                    ObjectiveId::new(format!("objective:{id_suffix}:retrieve")).unwrap();
-                let return_id = ObjectiveId::new(format!("objective:{id_suffix}:return")).unwrap();
+                    ObjectiveId::new(scoped_id(&prefix, "objective", "retrieve")).unwrap();
+                let return_id =
+                    ObjectiveId::new(scoped_id(&prefix, "objective", "return")).unwrap();
                 (
                     ObjectiveExpression::new(vec![ObjectivePath {
                         objectives: vec![
@@ -1561,7 +2024,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     }])
                     .expect("generated recovery objective"),
                     vec![GeneratedFinale {
-                        id: FinaleId::new(format!("{prefix}:finale:return")),
+                        id: FinaleId::new(scoped_id(&prefix, "finale", "return")),
                         kind: FinaleKind::RetrieveReturn,
                         site_id: finale_site.clone(),
                         hostile_group_id: None,
@@ -1581,7 +2044,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             }
             CanonicalCause::FabricatedClaim => {
                 let objective_id =
-                    ObjectiveId::new(format!("objective:{id_suffix}:expose")).unwrap();
+                    ObjectiveId::new(scoped_id(&prefix, "objective", "expose")).unwrap();
                 (
                     ObjectiveExpression::new(vec![ObjectivePath {
                         objectives: vec![Objective {
@@ -1593,7 +2056,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     }])
                     .expect("generated exposure objective"),
                     vec![GeneratedFinale {
-                        id: FinaleId::new(format!("{prefix}:finale:expose")),
+                        id: FinaleId::new(scoped_id(&prefix, "finale", "expose")),
                         kind: FinaleKind::Expose,
                         site_id: finale_site.clone(),
                         hostile_group_id: None,
@@ -1617,12 +2080,22 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         },
     };
     let mut bridges = Vec::new();
-    for key in [site_bridge, circ_bridge].into_iter().flatten() {
+    for key in [
+        site_bridge,
+        circ_bridge,
+        secondary_site_bridge,
+        secondary_circumstance_bridge,
+    ]
+    .into_iter()
+    .flatten()
+    {
         if !bridges.iter().any(|b: &CausalBridge| b.id.0 == key) {
-            bridges.push(bridge(key, &prefix, context.now_minute));
+            bridges.push(bridge(key, &prefix, family, context.now_minute));
         }
     }
     for item in &bridges {
+        let bridge_proposition_id =
+            scoped_id(&prefix, "proposition", &format!("bridge:{}", item.id.0));
         if !evidence
             .iter()
             .any(|candidate| candidate.id == item.evidence_id)
@@ -1630,40 +2103,69 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             evidence.push(GeneratedEvidence {
                 id: item.evidence_id.clone(),
                 kind: EvidenceKind::DroppedToken,
-                proposition_id: format!("{}:proposition", item.event_id),
+                proposition_id: bridge_proposition_id,
                 site_id: evidence_site.clone(),
                 safe_description: item.lead_summary.clone(),
                 corrects_proposition_id: None,
             });
         }
+        if let Some(action) = actions
+            .iter_mut()
+            .find(|action| action.id == item.action_id)
+            && !action.outputs.iter().any(|output| {
+                matches!(
+                    output,
+                    GeneratedActionOutput::Evidence { evidence_id }
+                        if evidence_id == &item.evidence_id
+                )
+            })
+        {
+            action.outputs.push(GeneratedActionOutput::Evidence {
+                evidence_id: item.evidence_id.clone(),
+            });
+        }
     }
     let canonical_events = vec![CanonicalEvent {
-        id: format!("{prefix}:event:incident"),
-        proposition_id: format!("{prefix}:proposition:truth"),
+        id: scoped_id(&prefix, "event", "incident"),
+        proposition_id: scoped_id(&prefix, "proposition", "truth"),
         subject: format!("{cause:?}"),
         predicate: "caused".into(),
-        object: format!("{:?}", consequence(cause, family).symptom),
+        object: format!(
+            "{attack_pattern:?}:{:?}",
+            consequence(cause, family).symptom
+        ),
         occurred_at: context.now_minute.saturating_sub(180),
     }]
     .into_iter()
     .chain(bridges.iter().map(|b| CanonicalEvent {
         id: b.event_id.clone(),
-        proposition_id: format!("{}:proposition", b.event_id),
+        proposition_id: scoped_id(&prefix, "proposition", &format!("bridge:{}", b.id.0)),
         subject: "causal bridge".into(),
         predicate: "explains".into(),
         object: b.explanation.clone(),
         occurred_at: context.now_minute.saturating_sub(120),
     }))
     .collect();
+    if trace.len() > MAX_FACTOR_TRACE_RECORDS
+        || trace
+            .iter()
+            .map(|item| {
+                item.candidate_id.len()
+                    + item.hard_zero_reason.as_deref().map_or(0, str::len)
+                    + item.module_id.0.len()
+                    + item.relation_id.0.len()
+            })
+            .sum::<usize>()
+            > MAX_FACTOR_TRACE_BYTES
+    {
+        return Err(GenerationError::CandidateLimit);
+    }
     let manifest = GeneratedCase {
         catalog_revision: CATALOG_REVISION.into(),
         generation_seed: context.seed,
         family,
-        canonical_case_id: prefix.clone(),
-        public_case_id: format!(
-            "journal:{:016x}",
-            hash(context.seed, &format!("public:{}", context.ordinal))
-        ),
+        canonical_case_id,
+        public_case_id,
         problem_id,
         cause,
         canonical_events,
@@ -1686,15 +2188,6 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         },
         finales,
         dialogue_producers,
-        contract: Some(ContractDraft {
-            issuer_npc_id: issuer,
-            issuer_belief_title: "A troubling local matter".into(),
-            issuer_belief_description:
-                "The issuer describes the symptoms and asks for a verified resolution.".into(),
-            opposition_wording: "unknown opposition".into(),
-            opposition_count_wording: "unknown number".into(),
-            reward: 150,
-        }),
         bridges,
         factor_trace: trace,
     };
@@ -1719,6 +2212,27 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
         errors.push("two routes must be initially playable".into());
     }
     let action_ids: BTreeSet<_> = case.actions.iter().map(|a| a.id.clone()).collect();
+    let mut reachable: BTreeSet<ActionId> = case
+        .actions
+        .iter()
+        .filter(|action| action.active_initially)
+        .map(|action| action.id.clone())
+        .collect();
+    loop {
+        let before = reachable.len();
+        for action in &case.actions {
+            if action
+                .prerequisite
+                .as_ref()
+                .is_some_and(|required| reachable.contains(required))
+            {
+                reachable.insert(action.id.clone());
+            }
+        }
+        if reachable.len() == before {
+            break;
+        }
+    }
     for action in &case.actions {
         if !action_ids.contains(&action.alternate) {
             errors.push(format!("{} has no recovery route", action.id.0));
@@ -1733,6 +2247,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 .witnesses
                 .iter()
                 .any(|witness| witness.npc_id == action.target_id),
+            "route" => case.sites.iter().any(|site| site.id.0 == action.target_id),
             _ => false,
         };
         if !target_exists {
@@ -1775,12 +2290,22 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
         if !case.evidence.iter().any(|e| e.id == bridge.evidence_id) {
             errors.push(format!("bridge {} has no evidence authority", bridge.id.0));
         }
-        if !case.actions.iter().any(|a| {
-            a.outputs
-                .iter()
-                .any(|output| matches!(output, GeneratedActionOutput::Evidence { .. }))
-        }) {
-            errors.push(format!("bridge {} has no playable lead path", bridge.id.0));
+        if !reachable.contains(&bridge.action_id)
+            || !case.actions.iter().any(|action| {
+                action.id == bridge.action_id
+                    && action.outputs.iter().any(|output| {
+                        matches!(
+                            output,
+                            GeneratedActionOutput::Evidence { evidence_id }
+                                if evidence_id == &bridge.evidence_id
+                        )
+                    })
+            })
+        {
+            errors.push(format!(
+                "bridge {} has no exact reachable evidence output",
+                bridge.id.0
+            ));
         }
         if bridge.lead_summary.is_empty() {
             errors.push(format!("bridge {} has no lead", bridge.id.0));
@@ -1955,13 +2480,6 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
     if !expected_finale {
         errors.push("canonical cause is incompatible with generated objective/finale".into());
     }
-    if case.contract.as_ref().is_some_and(|c| {
-        c.opposition_wording
-            .to_lowercase()
-            .contains(&format!("{:?}", case.cause).to_lowercase())
-    }) {
-        errors.push("contract leaks canonical cause".into());
-    }
     if errors.is_empty() {
         Ok(())
     } else {
@@ -1974,6 +2492,8 @@ pub fn audit(seeds: u64) -> BTreeMap<TemplateFamily, u64> {
     for seed in 0..seeds {
         let context = GenerationContext {
             seed,
+            observer_entropy_hi: seed ^ 0x6f62_7365_7276_6572,
+            observer_entropy_lo: seed.rotate_left(23) ^ 0x7175_6573_742d_7631,
             settlement_id: "audit".into(),
             settlement_name: "Audit".into(),
             scope: Scope::Settlement {
@@ -2035,6 +2555,8 @@ mod tests {
     fn context(seed: u64, family: TemplateFamily) -> GenerationContext {
         GenerationContext {
             seed,
+            observer_entropy_hi: seed ^ 0x6f62_7365_7276_6572,
+            observer_entropy_lo: seed.rotate_left(23) ^ 0x7175_6573_742d_7631,
             settlement_id: "lubeck".into(),
             settlement_name: "Lubeck".into(),
             scope: Scope::Settlement {
@@ -2155,10 +2677,6 @@ mod tests {
                     let subjects = generated
                         .actions
                         .iter()
-                        .filter(|action| {
-                            action.id.0.ends_with(":action:follow")
-                                || action.id.0.ends_with(":action:approach_social")
-                        })
                         .flat_map(|action| &action.outputs)
                         .filter_map(|output| match output {
                             GeneratedActionOutput::Consequence {
@@ -2170,6 +2688,20 @@ mod tests {
                         .collect::<Vec<_>>();
                     assert_eq!(subjects.len(), 2);
                     assert_eq!(subjects[0], subjects[1]);
+                    assert!(
+                        generated
+                            .actions
+                            .iter()
+                            .filter(|action| {
+                                action.outputs.iter().any(|output| {
+                                    matches!(output, GeneratedActionOutput::Consequence { .. })
+                                })
+                            })
+                            .all(|action| {
+                                action.kind == InvestigationActionKind::InspectSite
+                                    && action.target_kind == "site"
+                            })
+                    );
                 }
                 CanonicalCause::IncidentalLoss => {
                     assert_eq!(generated.finales[0].kind, FinaleKind::RetrieveReturn);
@@ -2208,12 +2740,256 @@ mod tests {
         assert!(result[&TemplateFamily::DisappearanceOrLoss] > 80);
     }
     #[test]
-    fn public_identity_and_contract_do_not_reveal_truth() {
+    fn public_identity_is_opaque_and_generated_cases_have_no_contract() {
         let case = generate(&context(88, TemplateFamily::RecurringDepredation)).unwrap();
         assert_ne!(case.canonical_case_id, case.public_case_id);
-        let json = serde_json::to_string(case.contract.as_ref().unwrap())
+        let public = serde_json::json!({
+            "case_id": case.public_case_id,
+            "problem_id": case.problem_id,
+            "actions": case.actions,
+            "witnesses": case.witnesses,
+            "evidence": case.evidence,
+            "areas": case.areas,
+        });
+        let json = serde_json::to_string(&public).unwrap();
+        assert!(!json.contains(&case.canonical_case_id));
+        assert!(!json.contains("\"contract\""));
+        assert!(!json.contains("scope:"));
+    }
+
+    #[test]
+    fn public_ids_use_private_entropy_and_do_not_collide_across_cases() {
+        let mut first = context(91, TemplateFamily::RecurringDepredation);
+        first.observer_entropy_hi = 0x4341_4e4f_4e49_4341;
+        first.observer_entropy_lo = 0x4c2d_5345_4e54_494e;
+        let mut second = first.clone();
+        second.observer_entropy_hi ^= 1;
+        second.ordinal = 1;
+        let a = generate(&first).unwrap();
+        let b = generate(&second).unwrap();
+        let ids = |case: &GeneratedCase| {
+            case.actions
+                .iter()
+                .map(|action| action.id.0.clone())
+                .chain(case.witnesses.iter().map(|witness| witness.id.0.clone()))
+                .chain(
+                    case.evidence
+                        .iter()
+                        .map(|evidence| evidence.proposition_id.clone()),
+                )
+                .chain(std::iter::once(case.public_case_id.clone()))
+                .collect::<BTreeSet<_>>()
+        };
+        let a_ids = ids(&a);
+        let b_ids = ids(&b);
+        assert!(a_ids.is_disjoint(&b_ids));
+        let serialized = serde_json::to_string(&(a_ids, b_ids)).unwrap();
+        for sentinel in [
+            &a.canonical_case_id,
+            &b.canonical_case_id,
+            "CANONICAL-SENTINEL",
+            "scope:",
+        ] {
+            assert!(!serialized.contains(sentinel));
+        }
+    }
+
+    #[test]
+    fn every_route_reveals_then_requires_occupied_site_resolution() {
+        for family in [
+            TemplateFamily::RecurringDepredation,
+            TemplateFamily::DisappearanceOrLoss,
+        ] {
+            let case = generate(&context(7, family)).unwrap();
+            for route in case
+                .actions
+                .iter()
+                .map(|action| action.route)
+                .collect::<BTreeSet<_>>()
+            {
+                let mut route_actions = case.actions.iter().filter(|action| action.route == route);
+                let exact = route_actions
+                    .clone()
+                    .find(|action| {
+                        action.outputs.iter().any(|output| {
+                            matches!(
+                                output,
+                                GeneratedActionOutput::Destination {
+                                    stage: GeneratedDestinationStage::Exact,
+                                    site_id: Some(_),
+                                }
+                            )
+                        })
+                    })
+                    .expect("travel-capable exact-location reveal");
+                assert!(matches!(
+                    exact.kind,
+                    InvestigationActionKind::FollowTracks
+                        | InvestigationActionKind::ReacquireTracks
+                        | InvestigationActionKind::ApproachLead
+                ));
+                let occupied = route_actions
+                    .find(|action| {
+                        action.target_kind == "site"
+                            && action.prerequisite.as_ref() == Some(&exact.id)
+                    })
+                    .expect("separate occupied-site resolution");
+                assert!(matches!(
+                    occupied.kind,
+                    InvestigationActionKind::InspectSite | InvestigationActionKind::LayAmbush
+                ));
+                assert!(!exact.outputs.iter().any(|output| matches!(
+                    output,
+                    GeneratedActionOutput::Consequence { .. } | GeneratedActionOutput::AmbushReady
+                )));
+            }
+        }
+    }
+
+    #[test]
+    fn typed_catalogs_condition_and_enforce_hard_zeros() {
+        let child = reliability_candidates(
+            WitnessDemographic::Child,
+            Circumstance::NightWindow,
+            CanonicalCause::Hostile(ThreatId::Goblin),
+        );
+        assert!(
+            child
+                .iter()
+                .find(|c| c.value == Reliability::Deceptive)
+                .unwrap()
+                .impossible
+                .is_some()
+        );
+        let fabricated =
+            evidence_candidates(CanonicalCause::FabricatedClaim, SiteKind::OccupiedHouse);
+        assert!(
+            fabricated
+                .iter()
+                .find(|c| c.value == EvidenceKind::BloodlessCorpse)
+                .unwrap()
+                .impossible
+                .is_some()
+        );
+        let mistaken = account_style_candidates(Reliability::Mistaken, Circumstance::RoadJourney);
+        assert!(
+            mistaken
+                .iter()
+                .find(|c| c.value == AccountStyle::TracksAndMovement)
+                .unwrap()
+                .impossible
+                .is_some()
+        );
+        assert_ne!(
+            reliability_candidates(
+                WitnessDemographic::Guard,
+                Circumstance::AdultVenue,
+                CanonicalCause::Hostile(ThreatId::Bandit),
+            )
+            .iter()
+            .find(|c| c.value == Reliability::Evasive)
             .unwrap()
-            .to_lowercase();
-        assert!(!json.contains(&format!("{:?}", case.cause).to_lowercase()));
+            .weight,
+            reliability_candidates(
+                WitnessDemographic::Guard,
+                Circumstance::RoadJourney,
+                CanonicalCause::Hostile(ThreatId::Bandit),
+            )
+            .iter()
+            .find(|c| c.value == Reliability::Evasive)
+            .unwrap()
+            .weight
+        );
+    }
+
+    #[test]
+    fn modular_marginals_vary_without_cause_site_fingerprints() {
+        let mut reliabilities = BTreeSet::new();
+        let mut secondary_sites = BTreeSet::new();
+        let mut secondary_circumstances = BTreeSet::new();
+        let mut evidence_kinds = BTreeSet::new();
+        let mut account_wordings = BTreeSet::new();
+        let mut route_kinds = BTreeSet::new();
+        let mut patterns = BTreeSet::new();
+        let mut fingerprints: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for seed in 0..512 {
+            let case = generate(&context(seed, TemplateFamily::RecurringDepredation)).unwrap();
+            reliabilities.insert(case.witnesses[0].testimony[0].reliability);
+            secondary_sites.insert(case.sites[2].kind);
+            secondary_circumstances.insert(case.witnesses[1].circumstance);
+            evidence_kinds.insert(case.evidence[0].kind);
+            account_wordings.insert(
+                case.witnesses[0].testimony[0]
+                    .spoken_text
+                    .split_whitespace()
+                    .take(3)
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
+            route_kinds.extend(
+                case.actions
+                    .iter()
+                    .map(|action| format!("{:?}", action.kind)),
+            );
+            let pattern = case.canonical_events[0]
+                .object
+                .split(':')
+                .next()
+                .unwrap()
+                .to_owned();
+            patterns.insert(pattern.clone());
+            fingerprints
+                .entry(format!("{:?}:{:?}", case.cause, case.sites[0].kind))
+                .or_default()
+                .insert(format!(
+                    "{:?}:{:?}:{:?}:{pattern}",
+                    case.witnesses[0].testimony[0].reliability,
+                    case.sites[2].kind,
+                    case.evidence[0].kind
+                ));
+        }
+        for (name, cardinality) in [
+            ("reliability", reliabilities.len()),
+            ("secondary site", secondary_sites.len()),
+            ("secondary circumstance", secondary_circumstances.len()),
+            ("evidence", evidence_kinds.len()),
+            ("account wording", account_wordings.len()),
+            ("route behavior", route_kinds.len()),
+            ("attack pattern", patterns.len()),
+        ] {
+            assert!(cardinality >= 2, "{name} collapsed to a fingerprint");
+        }
+        assert!(
+            fingerprints.values().any(|values| values.len() >= 2),
+            "cause/site pairs must not determine all downstream modules"
+        );
+    }
+
+    #[test]
+    fn oversized_candidate_domains_fail_before_ordering_or_tracing() {
+        let candidates = vec![
+            Candidate {
+                id: "oversized",
+                value: 1_u8,
+                weight: Weight::new(1, 1),
+                bridge: None,
+                impossible: None,
+                factors: vec![],
+            };
+            MAX_SOLVER_CANDIDATES + 1
+        ];
+        assert_eq!(
+            weighted_order(1, "oversized", &candidates),
+            Err(GenerationError::CandidateLimit)
+        );
+        let mut oversized = context(1, TemplateFamily::RecurringDepredation);
+        oversized.witness_candidates = vec![test_witnesses()[0].clone(); MAX_SOLVER_CANDIDATES + 1];
+        assert_eq!(generate(&oversized), Err(GenerationError::CandidateLimit));
+        let mut oversized_bytes = context(1, TemplateFamily::RecurringDepredation);
+        oversized_bytes.witness_candidates[0].visible_description = "x".repeat(65 * 1024);
+        assert_eq!(
+            generate(&oversized_bytes),
+            Err(GenerationError::CandidateLimit)
+        );
     }
 }
