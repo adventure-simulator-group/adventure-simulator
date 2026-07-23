@@ -1438,6 +1438,13 @@ pub fn purchase_from_herbalist(
         .find(settlement_id.clone())
         .ok_or("Settlement not found")?
         .economy;
+    let minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(patient_id)
+        .map_or(0, |row| row.minutes);
+    let problem_effects = crate::local_problem::settlement_effects(ctx, &settlement_id, minute);
 
     let mut cost = 0u64;
     for (item_id, quantity) in item_ids.iter().zip(&quantities) {
@@ -1458,7 +1465,7 @@ pub fn purchase_from_herbalist(
         ) {
             return Err("This herbalist does not stock that item".into());
         }
-        let unit_price = match definition.kind {
+        let base_price = match definition.kind {
             crate::ItemKind::Ingredient => {
                 adventuresim_core::strategic_economy::merchant_buy_price(
                     definition.base_value.unwrap_or(1),
@@ -1471,6 +1478,8 @@ pub fn purchase_from_herbalist(
             }
             _ => return Err("The herbalist sells only ingredients and prepared medication".into()),
         };
+        let unit_price =
+            adventuresim_core::local_problem::adjust_price(base_price, problem_effects.buy_bps);
         cost = cost.saturating_add(u64::from(unit_price) * u64::from(*quantity));
     }
     crate::strategic::consume_personal_gold(ctx, patient_id, cost)?;

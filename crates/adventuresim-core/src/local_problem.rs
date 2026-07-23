@@ -165,6 +165,34 @@ const CANDIDATES: &[Candidate] = &[
         required_bridge: None,
     },
     Candidate {
+        cause: Cause::Bandits,
+        symptom: Symptom::NightScreams,
+        plausibility: 12,
+        curation: 8,
+        required_bridge: None,
+    },
+    Candidate {
+        cause: Cause::Goblins,
+        symptom: Symptom::NightScreams,
+        plausibility: 20,
+        curation: 9,
+        required_bridge: None,
+    },
+    Candidate {
+        cause: Cause::Ghouls,
+        symptom: Symptom::SickLocals,
+        plausibility: 15,
+        curation: 8,
+        required_bridge: None,
+    },
+    Candidate {
+        cause: Cause::Smugglers,
+        symptom: Symptom::MissingCaravans,
+        plausibility: 18,
+        curation: 7,
+        required_bridge: None,
+    },
+    Candidate {
         cause: Cause::Smugglers,
         symptom: Symptom::NightScreams,
         plausibility: 2,
@@ -202,6 +230,8 @@ pub fn generate(
                 && c.curation > 0
                 && c.required_bridge
                     .is_none_or(|b| context.allowed_bridges.contains(b))
+                && (!matches!(context.scope, Scope::Route { .. })
+                    || effects_for(c.cause).encounter_frequency_bps > 0)
         })
         .collect();
     let total: u64 = valid
@@ -394,12 +424,24 @@ pub fn adjust_price(base: u32, basis_points: i32) -> u32 {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DiscoveryAction { NewRumor, KnownRedirect, None }
+pub enum DiscoveryAction {
+    NewRumor,
+    KnownRedirect,
+    None,
+}
 
-pub fn discovery_action(location:&str, inn_available:bool, has_known_unresolved:bool)->DiscoveryAction {
-    if has_known_unresolved { DiscoveryAction::KnownRedirect }
-    else if location=="inn" || (location=="overview" && !inn_available) { DiscoveryAction::NewRumor }
-    else { DiscoveryAction::None }
+pub fn discovery_action(
+    location: &str,
+    inn_available: bool,
+    has_known_unresolved: bool,
+) -> DiscoveryAction {
+    if has_known_unresolved {
+        DiscoveryAction::KnownRedirect
+    } else if location == "inn" || (location == "overview" && !inn_available) {
+        DiscoveryAction::NewRumor
+    } else {
+        DiscoveryAction::None
+    }
 }
 
 #[cfg(test)]
@@ -474,23 +516,6 @@ mod tests {
         assert_eq!(adjust_price(u32::MAX, 2_500), u32::MAX);
     }
     #[test]
-    fn ssr_and_reducer_quotes_match_for_buy_sale_and_food_lot() {
-        let buy = crate::strategic_economy::language_adjusted_buy_price(
-            crate::strategic_economy::merchant_buy_price(100),
-            0.55,
-        );
-        let sale = crate::strategic_economy::language_adjusted_sell_price(
-            crate::strategic_economy::merchant_sell_price(100),
-            0.55,
-        );
-        let food = crate::strategic_economy::merchant_sell_food_lot_value(12.0).unwrap() as u32;
-        for (base, bps) in [(buy, 1_200), (sale, -500), (food, -500)] {
-            let ssr_quote = adjust_price(base, bps);
-            let reducer_unit_price = adjust_price(base, bps);
-            assert_eq!(ssr_quote, reducer_unit_price);
-        }
-    }
-    #[test]
     fn problem_disease_exposure_is_partition_invariant() {
         use crate::disease::{DiseaseId, first_eligible_presence_exposure_minute};
         let exposure = |from, to| {
@@ -513,9 +538,65 @@ mod tests {
     }
     #[test]
     fn inn_funnel_fallback_and_local_redirect_are_explicit() {
-        assert_eq!(discovery_action("inn",true,false),DiscoveryAction::NewRumor);
-        assert_eq!(discovery_action("overview",true,false),DiscoveryAction::None);
-        assert_eq!(discovery_action("overview",false,false),DiscoveryAction::NewRumor);
-        assert_eq!(discovery_action("market",true,true),DiscoveryAction::KnownRedirect);
+        assert_eq!(
+            discovery_action("inn", true, false),
+            DiscoveryAction::NewRumor
+        );
+        assert_eq!(
+            discovery_action("overview", true, false),
+            DiscoveryAction::None
+        );
+        assert_eq!(
+            discovery_action("overview", false, false),
+            DiscoveryAction::NewRumor
+        );
+        assert_eq!(
+            discovery_action("market", true, true),
+            DiscoveryAction::KnownRedirect
+        );
+    }
+    #[test]
+    fn route_generation_never_selects_settlement_only_or_noop_causes() {
+        for n in 0..500 {
+            let c = GenerationContext {
+                seed: format!("route-private-{n}"),
+                scope: Scope::route("a", "b"),
+                allowed_bridges: BTreeSet::new(),
+            };
+            let (p, _) = generate(&c, 0, 50_000).unwrap();
+            assert_ne!(p.cause, Cause::ContaminatedWell);
+            assert!(p.effects.encounter_frequency_bps > 0);
+        }
+    }
+    #[test]
+    fn symptoms_are_ambiguous_and_public_scope_does_not_recover_private_selection() {
+        let mut causes = BTreeSet::new();
+        for n in 0..2_000 {
+            let (p, _) = generate(&ctx(&format!("private-{n}")), 0, 0).unwrap();
+            if p.symptom == Symptom::NightScreams {
+                causes.insert(p.cause);
+            }
+        }
+        assert!(causes.len() >= 3);
+        let public = generate(&ctx("local-problems:lubeck"), 0, 0)
+            .unwrap()
+            .0
+            .cause;
+        assert!((0..100).any(|n| {
+            generate(&ctx(&format!("private-entropy-{n}")), 0, 0)
+                .unwrap()
+                .0
+                .cause
+                != public
+        }));
+    }
+    #[test]
+    fn expired_or_resolved_history_does_not_count_active_at_late_cycle() {
+        let (mut old, _) = generate(&ctx("old"), 0, 0).unwrap();
+        assert_eq!(old.active_fraction_bps(43_201), 0);
+        old.resolve(10);
+        assert_eq!(old.active_fraction_bps(20), 0);
+        let (new, _) = generate(&ctx("new-private"), 0, 43_201).unwrap();
+        assert!(new.active_fraction_bps(43_201) > 0);
     }
 }

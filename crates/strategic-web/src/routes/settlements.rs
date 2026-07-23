@@ -126,14 +126,14 @@ use super::travel::{
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    AlcoholConsumption, Character, CharacterAffinity, CharacterAttributes, CharacterCapability,
-    CharacterCondition, CharacterEquip, CharacterFamiliarity, CharacterFilth, CharacterLimbs,
-    CharacterMoraleSource, CharacterNeeds, CharacterNotoriety, CharacterPersonality,
-    CharacterSkills, CharacterStats, CharacterStrategicCondition, CharacterTime,
-    CharacterTrainingSchedule, CharacterVirtue, EquippedMedication, FoodLot,
-    HerbalistExaminationRow, InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget,
-    ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury, LimbRegion,
-    LocalProblemConsequence, MedicalExaminationRow, Party, PartyInventoryItem, PartyJourney,
+    AlcoholConsumption, BackendLocalProblemTradeEffect, Character, CharacterAffinity,
+    CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
+    CharacterFamiliarity, CharacterFilth, CharacterLimbs, CharacterMoraleSource, CharacterNeeds,
+    CharacterNotoriety, CharacterPersonality, CharacterSkills, CharacterStats,
+    CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, CharacterVirtue,
+    EquippedMedication, FoodLot, HerbalistExaminationRow, InfectionEpisodeRow, InventoryItem,
+    InventoryQuantityTarget, ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury,
+    LimbRegion, MedicalExaminationRow, Party, PartyInventoryItem, PartyJourney,
     PartyJourneyItinerary, PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, Quest,
     QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
     RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription,
@@ -5271,7 +5271,8 @@ async fn merchant_shop(
         character.id
     );
     let consequence_sql = format!(
-        "SELECT * FROM local_problem_consequence WHERE settlement_id = {settlement_literal}"
+        "SELECT * FROM backend_local_problem_trade_effects WHERE character_id = {}",
+        character.id
     );
     let (
         party_members,
@@ -5294,7 +5295,9 @@ async fn merchant_shop(
         state.db.query::<SettlementSmith>(&smith_sql),
         state.db.query::<RepairOrder>(&order_sql),
         state.db.query::<CharacterTime>(&time_sql),
-        state.db.query::<LocalProblemConsequence>(&consequence_sql),
+        state
+            .db
+            .query::<BackendLocalProblemTradeEffect>(&consequence_sql),
     );
     let items = items.unwrap_or_default();
     let equip = equip.unwrap_or_default();
@@ -5349,23 +5352,16 @@ async fn merchant_shop(
         .ok()
         .and_then(|rows| rows.first())
         .map_or(0, |time| time.minutes);
-    let consequence_inputs: Vec<_> = consequences
+    let problem_effects = consequences
         .unwrap_or_default()
         .into_iter()
-        .map(|row| adventuresim_core::local_problem::ConsequenceInput {
-            id: row.problem_id,
-            buy_bps: row.buy_bps,
-            sell_penalty_bps: row.sell_penalty_bps,
-            encounter_frequency_bps: row.encounter_frequency_bps,
-            disease_intensity: row.disease_exposure_intensity,
-            starts_at: row.starts_at,
-            ends_at: row.ends_at,
-            mitigation_bps: row.mitigation_bps,
-            resolved_at: row.resolved_at,
-        })
-        .collect();
-    let problem_effects =
-        adventuresim_core::local_problem::aggregate_consequences(&consequence_inputs, now_minutes);
+        .find(|row| row.character_id == character.id && row.settlement_id == id)
+        .unwrap_or(BackendLocalProblemTradeEffect {
+            character_id: character.id,
+            settlement_id: id.clone(),
+            buy_bps: 0,
+            sell_penalty_bps: 0,
+        });
     Html(
         live_merchant_shop_page(
             settlement,

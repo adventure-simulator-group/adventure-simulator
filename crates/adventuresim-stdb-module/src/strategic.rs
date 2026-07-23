@@ -2678,33 +2678,13 @@ pub fn start_dialogue(
         }
     }
     refresh_dialogue_topic_options(ctx, &session, character_id)?;
-    if let Some(rumor) = crate::local_problem::surface_problem(
+    crate::local_problem::surface_problem(
         ctx,
         character_id,
+        &session.id,
         &npc_actor_id,
         &session.location_id,
-    )? {
-        let sequence = ctx
-            .db
-            .dialogue_event()
-            .session_id()
-            .filter(&session.id)
-            .map(|event| event.sequence)
-            .max()
-            .map_or(0, |value| value.saturating_add(1));
-        let fragments = vec![adventuresim_dialogue::Fragment::Text { value: rumor }];
-        ctx.db.dialogue_event().insert(DialogueEvent {
-            id: format!("{}:problem:{}", session.id, sequence),
-            session_id: session.id.clone(),
-            sequence,
-            response_id: "local-problem-rumor".into(),
-            speaker_role: "npc".into(),
-            fragments_json: serde_json::to_string(&fragments)
-                .map_err(|_| "Could not encode local rumor")?,
-            source_refs_json: "[]".into(),
-            created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
-        });
-    }
+    )?;
     Ok(())
 }
 
@@ -8097,11 +8077,15 @@ fn maybe_interrupt_travel(
     else {
         return Ok((requested_minutes, None, 1));
     };
+    let absolute_start = journey
+        .departure_minute
+        .saturating_add(journey.completed_elapsed_minutes);
     if journey.origin_kind == "settlement" && journey.destination_kind == "settlement" {
         crate::local_problem::ensure_route_problem(
             ctx,
             &journey.origin_id,
             &journey.destination_id,
+            absolute_start,
         )?;
     }
     let authority = ctx
@@ -8139,9 +8123,6 @@ fn maybe_interrupt_travel(
         .count()
         .max(1) as u16;
     let completed = journey.completed_minutes;
-    let absolute_start = journey
-        .departure_minute
-        .saturating_add(journey.completed_elapsed_minutes);
     let selection = adventuresim_core::encounter::first_encounter_with_problem(
         authority.seed,
         completed,
