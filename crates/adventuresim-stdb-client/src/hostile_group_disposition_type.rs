@@ -7,14 +7,16 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 #[derive(Copy, Eq, Hash)]
-pub enum CaseResolutionStatus {
-    Open,
+pub enum HostileGroupDisposition {
+    Active,
 
-    Resolved,
+    Defeated,
 
-    Failed,
+    DrivenOff,
+
+    Captured,
 }
 
-impl __sdk::InModule for CaseResolutionStatus {
+impl __sdk::InModule for HostileGroupDisposition {
     type Module = super::RemoteModule;
 }

@@ -47,6 +47,32 @@ pub struct BackendInvestigationLead {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BackendInvestigationAction {
+    pub owner_character_id: u64,
+    pub action_id: String,
+    pub method: String,
+    pub expected_version: u32,
+    pub summary: String,
+    pub known_prerequisites: String,
+    pub duration_minutes: u32,
+    pub fatigue: u16,
+    pub food_units: u16,
+    pub water_units: u16,
+    pub uncertainty_bps: u16,
+    pub skill_contributions: String,
+    pub weather_available: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BackendInvestigationActionOutcome {
+    pub owner_character_id: u64,
+    pub outcome_id: String,
+    pub action_id: String,
+    pub wording: String,
+    pub recorded_at: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BackendCaseBattle {
     pub case_id: String,
     pub party_id: String,

@@ -61,6 +61,16 @@ pub enum StrategicBattleVictor {
     Stalemate,
 }
 
+/// Typed persistent result a trusted tactical mission may report. The
+/// strategic mission authority pre-binds which non-failure result is valid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StrategicHostileResolution {
+    Defeated,
+    DrivenOff,
+    Captured,
+    CaptureTargetKilled,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

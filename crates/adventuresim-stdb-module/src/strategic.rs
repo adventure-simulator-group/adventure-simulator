@@ -752,37 +752,6 @@ mod healing_tests {
         assert!(accept.contains("ContractInteractionStage::Accept"));
         assert!(report.contains("ContractInteractionStage::Report"));
         assert!(report.contains("xp_reward"));
-
-        let action = source
-            .split("pub(crate) fn apply_authoritative_case_objective")
-            .nth(1)
-            .and_then(|tail| tail.split("/// Sole trusted fact ingestion").next())
-            .unwrap();
-        for family in [
-            "HostilesDrivenOff",
-            "SubjectCaptured",
-            "WindowSurvived",
-            "SubjectEscorted",
-            "Located",
-            "Identified",
-            "Exposed",
-            "ProofPresented",
-            "TestimonyPresented",
-            "SubjectProtected",
-            "Negotiated",
-            "Reported",
-            "ObjectiveImpossible",
-        ] {
-            assert!(
-                action.contains(family),
-                "missing reachable {family} producer"
-            );
-        }
-        assert!(action.contains("record_asset_retrieved"));
-        assert!(action.contains("record_asset_returned_or_exchanged"));
-        assert!(action.contains("record_subject_rescued_or_released"));
-        assert!(action.contains("transition_case_custody"));
-        assert!(action.contains("Defeat facts require trusted tactical outcomes"));
     }
 
     #[test]
@@ -807,7 +776,6 @@ mod healing_tests {
         assert!(!producer.contains(".insert(DialogueInvestigationBinding"));
         assert!(producer.contains("\"dialogue-objective:{}:{action_id}:{}\""));
         assert!(producer.contains("ingest_case_outcome_fact"));
-        assert!(!producer.contains("apply_authoritative_case_objective"));
         assert!(!source.contains("pub fn apply_dialogue_investigation_action"));
     }
 
@@ -2124,6 +2092,33 @@ pub struct CaseCustody {
     pub source_id: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum ObjectiveContinuityKind {
+    SurviveAtSite,
+    ProtectSubject,
+}
+
+/// Private continuous-history guard. A deadline is satisfiable only when this
+/// row has remained unbroken from `started_at_minute` through the deadline.
+#[derive(Clone, Debug)]
+#[table(accessor = objective_continuity_guard)]
+pub struct ObjectiveContinuityGuard {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub party_id: String,
+    pub case_id: String,
+    pub objective_id: String,
+    pub kind: ObjectiveContinuityKind,
+    pub site_id: String,
+    pub subject_id: String,
+    pub custody_version: Option<u32>,
+    pub started_at_minute: u64,
+    pub through_minute: u64,
+    pub broken_at_minute: Option<u64>,
+    pub completed: bool,
+}
+
 #[derive(Clone, Debug)]
 #[table(accessor = case_finale_authority)]
 pub struct CaseFinaleAuthority {
@@ -2876,7 +2871,25 @@ pub struct MissionAuthority {
     pub party_id: String,
     pub case_site_id: Option<CaseSiteId>,
     pub hostile_group_id: Option<String>,
+    pub expected_resolution: HostileResolutionKind,
+    pub capture_subject_id: Option<String>,
     pub scene_key: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum HostileResolutionKind {
+    Defeated,
+    DrivenOff,
+    Captured,
+    CaptureTargetKilled,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum HostileGroupDisposition {
+    Active,
+    Defeated,
+    DrivenOff,
+    Captured,
 }
 
 #[derive(Clone, Debug)]
@@ -2891,7 +2904,7 @@ pub struct HostileGroupAuthority {
     pub difficulty: i32,
     pub drop_item_id: Option<String>,
     pub drop_quantity: u32,
-    pub defeated: bool,
+    pub disposition: HostileGroupDisposition,
 }
 
 fn materialize_hostile_group(
@@ -2913,7 +2926,7 @@ fn materialize_hostile_group(
         enemy_type,
         enemy_count,
         difficulty,
-        defeated: false,
+        disposition: HostileGroupDisposition::Active,
     };
     ctx.db.hostile_group_authority().insert(group.clone());
     Ok(group)
@@ -2930,6 +2943,7 @@ pub struct OutcomeSourceAuthority {
     pub battle_id: String,
     pub mission_id: Option<String>,
     pub hostile_group_id: Option<String>,
+    pub resolution: HostileResolutionKind,
     pub party_id: String,
 }
 
@@ -3132,6 +3146,11 @@ enum ApprovedPartyAction {
     CancelMission {
         mission_id: String,
     },
+    PerformInvestigation {
+        action_id: String,
+        method: String,
+        expected_version: u32,
+    },
 }
 
 impl ApprovedPartyAction {
@@ -3153,10 +3172,16 @@ impl ApprovedPartyAction {
             Self::DisbandParty { .. } => "disband_party",
             Self::RequestTacticalServer { .. } => "initiate_combat",
             Self::CancelMission { .. } => "cancel_mission",
+            Self::PerformInvestigation { .. } => "investigate",
         }
     }
 
-    fn execute(self, ctx: &ReducerContext, leader_id: u64) -> Result<(), String> {
+    fn execute(
+        self,
+        ctx: &ReducerContext,
+        leader_id: u64,
+        requester_id: u64,
+    ) -> Result<(), String> {
         match self {
             Self::TravelToSettlement { settlement_id } => {
                 travel_to_settlement(ctx, leader_id, settlement_id)
@@ -3228,6 +3253,18 @@ impl ApprovedPartyAction {
             Self::CancelMission { mission_id } => {
                 cancel_mission_request(ctx, leader_id, mission_id)
             }
+            Self::PerformInvestigation {
+                action_id,
+                method,
+                expected_version,
+            } => crate::investigation::perform_investigation_action_authorized(
+                ctx,
+                requester_id,
+                action_id,
+                method,
+                expected_version,
+                true,
+            ),
         }
     }
 }
@@ -3396,6 +3433,7 @@ pub struct DialogueInvestigationBinding {
     pub source_scope: String,
     pub case_id: String,
     pub objective_id: String,
+    pub expected_custody_version: Option<u32>,
     pub issued_revision: u64,
     pub consumed_by: String,
 }
@@ -4742,6 +4780,54 @@ fn dialogue_objective_recipient(
                         && received.witness_ref == witness_id.as_str()
                 }))
         .then(|| recipient_id.as_str().into()),
+        (
+            R::Return {
+                asset_id,
+                custodian_id,
+            },
+            A::ReturnAsset,
+        ) => (npc_ids.contains(custodian_id.as_str())
+            && ctx
+                .db
+                .case_custody()
+                .object_id()
+                .find(&asset_id.as_str().to_string())
+                .is_some_and(|custody| {
+                    custody.case_id == case.id
+                        && custody.holder_kind == CustodyHolderKind::Party
+                        && custody.holder_id == party_id
+                }))
+        .then(|| custodian_id.as_str().into()),
+        (R::Release { subject_id }, A::ReleaseSubject) => (npc_ids.contains(subject_id.as_str())
+            && ctx
+                .db
+                .case_custody()
+                .object_id()
+                .find(&subject_id.as_str().to_string())
+                .is_some_and(|custody| {
+                    custody.case_id == case.id
+                        && custody.holder_kind == CustodyHolderKind::Party
+                        && custody.holder_id == party_id
+                }))
+        .then(|| subject_id.as_str().into()),
+        (
+            R::Exchange {
+                asset_id,
+                recipient_id,
+            },
+            A::ExchangeAsset,
+        ) => (npc_ids.contains(recipient_id.as_str())
+            && ctx
+                .db
+                .case_custody()
+                .object_id()
+                .find(&asset_id.as_str().to_string())
+                .is_some_and(|custody| {
+                    custody.case_id == case.id
+                        && custody.holder_kind == CustodyHolderKind::Party
+                        && custody.holder_id == party_id
+                }))
+        .then(|| recipient_id.as_str().into()),
         (R::ReportToIssuer { issuer_id }, A::ReportToIssuer) => (npc_ids
             .contains(issuer_id.as_str())
             && active_contract.is_some_and(|contract| {
@@ -4829,7 +4915,10 @@ fn issue_dialogue_investigation_bindings(
     }
     for action in &actions {
         match action {
-            adventuresim_dialogue::InvestigationAction::PresentProof => {
+            adventuresim_dialogue::InvestigationAction::PresentProof
+            | adventuresim_dialogue::InvestigationAction::ReturnAsset
+            | adventuresim_dialogue::InvestigationAction::ReleaseSubject
+            | adventuresim_dialogue::InvestigationAction::ExchangeAsset => {
                 exact_case_refs.extend(
                     ctx.db
                         .investigation_evidence_knowledge()
@@ -4903,10 +4992,33 @@ fn issue_dialogue_investigation_bindings(
                     fallback_recipient_id,
                     active_contract.as_ref(),
                 ) {
+                    let expected_custody_version = match &objective.requirement {
+                        adventuresim_core::case::ObjectiveRequirement::Return {
+                            asset_id, ..
+                        }
+                        | adventuresim_core::case::ObjectiveRequirement::Exchange {
+                            asset_id,
+                            ..
+                        } => ctx
+                            .db
+                            .case_custody()
+                            .object_id()
+                            .find(&asset_id.as_str().to_string())
+                            .map(|row| row.version),
+                        adventuresim_core::case::ObjectiveRequirement::Release { subject_id } => {
+                            ctx.db
+                                .case_custody()
+                                .object_id()
+                                .find(&subject_id.as_str().to_string())
+                                .map(|row| row.version)
+                        }
+                        _ => None,
+                    };
                     matches.push((
                         case.id.clone(),
                         objective.id.as_str().to_string(),
                         recipient_id,
+                        expected_custody_version,
                     ));
                 }
             }
@@ -4917,12 +5029,19 @@ fn issue_dialogue_investigation_bindings(
         if matches.len() != 1 {
             return Err("Dialogue objective authority is ambiguous for this response".into());
         }
-        let (case_id, objective_id, intended_recipient_id) =
+        let (case_id, objective_id, intended_recipient_id, expected_custody_version) =
             matches.pop().expect("exactly one binding candidate");
-        pending.push((action, case_id, objective_id, intended_recipient_id));
+        pending.push((
+            action,
+            case_id,
+            objective_id,
+            intended_recipient_id,
+            expected_custody_version,
+        ));
     }
 
-    for (action, case_id, objective_id, intended_recipient_id) in pending {
+    for (action, case_id, objective_id, intended_recipient_id, expected_custody_version) in pending
+    {
         let id = dialogue_binding_id(
             &session.id,
             character_id,
@@ -4935,6 +5054,7 @@ fn issue_dialogue_investigation_bindings(
                 || existing.intended_recipient_id != intended_recipient_id
                 || existing.case_id != case_id
                 || existing.objective_id != objective_id
+                || existing.expected_custody_version != expected_custody_version
                 || !existing.consumed_by.is_empty()
             {
                 return Err("Dialogue investigation binding conflicts with prior authority".into());
@@ -4953,6 +5073,7 @@ fn issue_dialogue_investigation_bindings(
                 source_scope: source_scope.into(),
                 case_id,
                 objective_id,
+                expected_custody_version,
                 issued_revision,
                 consumed_by: String::new(),
             });
@@ -5680,6 +5801,106 @@ fn apply_dialogue_investigation_action(
     if recipient != binding.intended_recipient_id {
         return Err("Pre-issued dialogue recipient no longer matches".into());
     }
+    let source_id = format!(
+        "dialogue-objective:{}:{action_id}:{}",
+        session.id,
+        objective.id.as_str()
+    );
+    match &objective.requirement {
+        R::Return {
+            asset_id,
+            custodian_id,
+        } => {
+            let current = ctx
+                .db
+                .case_custody()
+                .object_id()
+                .find(&asset_id.as_str().to_string())
+                .ok_or("Returned asset has no custody authority")?;
+            if Some(current.version) != binding.expected_custody_version
+                || current.case_id != case.id
+                || current.holder_kind != CustodyHolderKind::Party
+                || current.holder_id != party_id
+            {
+                return Err("Returned asset custody is stale or belongs elsewhere".into());
+            }
+            record_asset_returned_or_exchanged(
+                ctx,
+                &source_id,
+                &case.id,
+                &party_id,
+                asset_id.as_str(),
+                custodian_id,
+                current.version.saturating_add(1),
+                false,
+            )?;
+            let mut binding = binding;
+            binding.consumed_by = action_id.into();
+            ctx.db.dialogue_investigation_binding().id().update(binding);
+            return Ok(());
+        }
+        R::Release { subject_id } => {
+            let current = ctx
+                .db
+                .case_custody()
+                .object_id()
+                .find(&subject_id.as_str().to_string())
+                .ok_or("Released subject has no custody authority")?;
+            if Some(current.version) != binding.expected_custody_version
+                || current.case_id != case.id
+                || current.holder_kind != CustodyHolderKind::Party
+                || current.holder_id != party_id
+            {
+                return Err("Released subject custody is stale or belongs elsewhere".into());
+            }
+            record_subject_rescued_or_released(
+                ctx,
+                &source_id,
+                &case.id,
+                &party_id,
+                subject_id.as_str(),
+                current.version.saturating_add(1),
+                true,
+            )?;
+            let mut binding = binding;
+            binding.consumed_by = action_id.into();
+            ctx.db.dialogue_investigation_binding().id().update(binding);
+            return Ok(());
+        }
+        R::Exchange {
+            asset_id,
+            recipient_id,
+        } => {
+            let current = ctx
+                .db
+                .case_custody()
+                .object_id()
+                .find(&asset_id.as_str().to_string())
+                .ok_or("Exchanged asset has no custody authority")?;
+            if Some(current.version) != binding.expected_custody_version
+                || current.case_id != case.id
+                || current.holder_kind != CustodyHolderKind::Party
+                || current.holder_id != party_id
+            {
+                return Err("Exchanged asset custody is stale or belongs elsewhere".into());
+            }
+            record_asset_returned_or_exchanged(
+                ctx,
+                &source_id,
+                &case.id,
+                &party_id,
+                asset_id.as_str(),
+                recipient_id,
+                current.version.saturating_add(1),
+                true,
+            )?;
+            let mut binding = binding;
+            binding.consumed_by = action_id.into();
+            ctx.db.dialogue_investigation_binding().id().update(binding);
+            return Ok(());
+        }
+        _ => {}
+    }
     let fact = match &objective.requirement {
         R::Locate { subject_ref } => F::Located {
             subject_ref: subject_ref.clone(),
@@ -5712,11 +5933,6 @@ fn apply_dialogue_investigation_action(
         },
         _ => return Err("Dialogue action selected the wrong objective family".into()),
     };
-    let source_id = format!(
-        "dialogue-objective:{}:{action_id}:{}",
-        session.id,
-        objective.id.as_str()
-    );
     ingest_case_outcome_fact(ctx, &source_id, &case.id, &party_id, fact)?;
     let mut binding = binding;
     binding.consumed_by = action_id.into();
@@ -5849,6 +6065,7 @@ pub fn request_party_action(
         "disband_party",
         "initiate_combat",
         "cancel_mission",
+        "investigate",
     ];
     if !allowed.contains(&action_kind.as_str()) {
         return Err("Unknown party action request".into());
@@ -5948,7 +6165,7 @@ pub fn approve_party_action_request(
     if action.kind() != request.action_kind {
         return Err("Party action kind does not match its typed payload".into());
     }
-    action.execute(ctx, leader_id)?;
+    action.execute(ctx, leader_id, request.requester_id)?;
     ctx.db.resolved_party_action().insert(ResolvedPartyAction {
         id: request.id,
         party_id: request.party_id,
@@ -7552,6 +7769,33 @@ pub(crate) fn commit_victorious_battle(
     dropped_items: Vec<(String, u32)>,
     include_random_gold: bool,
 ) -> Result<bool, String> {
+    commit_hostile_battle_resolution(
+        ctx,
+        outcome_source_id,
+        battle_id,
+        party_id,
+        mission_id,
+        hostile_group_id,
+        HostileResolutionKind::Defeated,
+        None,
+        dropped_items,
+        include_random_gold,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn commit_hostile_battle_resolution(
+    ctx: &ReducerContext,
+    outcome_source_id: &str,
+    battle_id: &str,
+    party_id: &str,
+    mission_id: Option<&str>,
+    hostile_group_id: Option<&str>,
+    resolution: HostileResolutionKind,
+    capture_subject_id: Option<&str>,
+    dropped_items: Vec<(String, u32)>,
+    include_random_gold: bool,
+) -> Result<bool, String> {
     adventuresim_core::mission::OutcomeSourceId::new(outcome_source_id).map_err(str::to_string)?;
     adventuresim_core::mission::BattleId::new(battle_id).map_err(str::to_string)?;
     if let Some(id) = mission_id {
@@ -7560,14 +7804,22 @@ pub(crate) fn commit_victorious_battle(
     if let Some(id) = hostile_group_id {
         adventuresim_core::mission::HostileGroupId::new(id).map_err(str::to_string)?;
     }
-    if ctx
+    if let Some(existing) = ctx
         .db
         .outcome_source_authority()
         .id()
         .find(&outcome_source_id.to_string())
-        .is_some()
     {
-        return Ok(false);
+        return if existing.battle_id == battle_id
+            && existing.party_id == party_id
+            && existing.mission_id.as_deref() == mission_id
+            && existing.hostile_group_id.as_deref() == hostile_group_id
+            && existing.resolution == resolution
+        {
+            Ok(false)
+        } else {
+            Err("Conflicting retry for strategic battle outcome source".into())
+        };
     }
     let group = hostile_group_id
         .map(|id| {
@@ -7596,6 +7848,7 @@ pub(crate) fn commit_victorious_battle(
             battle_id: battle_id.to_string(),
             mission_id: mission_id.map(str::to_string),
             hostile_group_id: hostile_group_id.map(str::to_string),
+            resolution,
             party_id: party_id.to_string(),
         });
     ctx.db.battle_result().insert(BattleResult {
@@ -7680,15 +7933,108 @@ pub(crate) fn commit_victorious_battle(
         });
     }
     if let Some(mut group) = group {
-        group.defeated = true;
+        group.disposition = match resolution {
+            HostileResolutionKind::Defeated => HostileGroupDisposition::Defeated,
+            HostileResolutionKind::DrivenOff => HostileGroupDisposition::DrivenOff,
+            HostileResolutionKind::Captured => HostileGroupDisposition::Captured,
+            HostileResolutionKind::CaptureTargetKilled => HostileGroupDisposition::Defeated,
+        };
         ctx.db.hostile_group_authority().id().update(group.clone());
-        ingest_hostile_group_defeat_fact(
-            ctx,
-            outcome_source_id,
-            party_id,
-            &group,
-            group.enemy_count,
-        )?;
+        match resolution {
+            HostileResolutionKind::Defeated => ingest_hostile_group_defeat_fact(
+                ctx,
+                outcome_source_id,
+                party_id,
+                &group,
+                group.enemy_count,
+            )?,
+            HostileResolutionKind::DrivenOff => {
+                let site = ctx
+                    .db
+                    .case_site_authority()
+                    .id_key()
+                    .find(&group.case_site_id.value)
+                    .ok_or("Hostile group case site not found")?;
+                ingest_case_outcome_fact(
+                    ctx,
+                    &format!("{outcome_source_id}:drive-off"),
+                    &site.case_id,
+                    party_id,
+                    adventuresim_core::case::OutcomeFactKind::HostilesDrivenOff {
+                        hostile_group_id: group.id.clone(),
+                    },
+                )?;
+            }
+            HostileResolutionKind::Captured => {
+                let subject_id =
+                    capture_subject_id.ok_or("Capture result has no mission-bound subject")?;
+                let current = ctx
+                    .db
+                    .case_custody()
+                    .object_id()
+                    .find(&subject_id.to_string())
+                    .ok_or("Captured subject has no custody authority")?;
+                if current.case_id
+                    != ctx
+                        .db
+                        .case_site_authority()
+                        .id_key()
+                        .find(&group.case_site_id.value)
+                        .ok_or("Hostile group case site not found")?
+                        .case_id
+                    || current.holder_kind != CustodyHolderKind::Site
+                    || current.holder_id != group.case_site_id.value
+                {
+                    return Err("Capture subject is not bound to this mission site and case".into());
+                }
+                transition_case_custody(
+                    ctx,
+                    &format!("{outcome_source_id}:capture"),
+                    &current.case_id,
+                    party_id,
+                    CustodyObjectKind::Subject,
+                    subject_id,
+                    CustodyHolderKind::Party,
+                    party_id,
+                    current.version.saturating_add(1),
+                    Some(adventuresim_core::case::OutcomeFactKind::SubjectCaptured {
+                        subject_id: adventuresim_core::case::SubjectId::new(subject_id)
+                            .map_err(|_| "Capture subject ID is invalid")?,
+                    }),
+                )?;
+            }
+            HostileResolutionKind::CaptureTargetKilled => {
+                let subject_id =
+                    capture_subject_id.ok_or("Capture failure has no mission-bound subject")?;
+                let current = ctx
+                    .db
+                    .case_custody()
+                    .object_id()
+                    .find(&subject_id.to_string())
+                    .ok_or("Killed capture subject has no custody authority")?;
+                let site = ctx
+                    .db
+                    .case_site_authority()
+                    .id_key()
+                    .find(&group.case_site_id.value)
+                    .ok_or("Hostile group case site not found")?;
+                if current.case_id != site.case_id
+                    || current.holder_kind != CustodyHolderKind::Site
+                    || current.holder_id != group.case_site_id.value
+                {
+                    return Err("Killed subject is not bound to this mission site and case".into());
+                }
+                record_case_object_destroyed(
+                    ctx,
+                    &format!("{outcome_source_id}:capture-target-killed"),
+                    &current.case_id,
+                    party_id,
+                    CustodyObjectKind::Subject,
+                    subject_id,
+                    current.version.saturating_add(1),
+                )?;
+            }
+        }
     }
     Ok(true)
 }
@@ -10064,6 +10410,10 @@ fn start_party_journey(
     if itinerary.truncated {
         return Err("Journey requires too many itinerary checkpoints".into());
     }
+    // Actual departure ends any uninterrupted site/protection interval before
+    // movement time is committed. Re-entering can create a new guard, but
+    // never retroactively repairs this one.
+    break_party_objective_continuity(ctx, &party.id)?;
     ctx.db.party_journey_authority().insert(PartyJourney {
         party_id: party.id.clone(),
         gateway_bucket: 0,
@@ -12289,6 +12639,7 @@ fn travel_to_case_site_impl(
         0,
     );
     ctx.db.party_authority().id().update(party);
+    commit_case_site_arrival_objectives(ctx, &party_id, &site)?;
     finish_party_journey(ctx, &party_id);
     Ok(())
 }
@@ -12811,6 +13162,16 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
         0,
     );
     ctx.db.party_authority().id().update(party);
+    if let Some(arrived_site) = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&party_id)
+        .and_then(|party| party.current_case_site_id)
+        .and_then(|site_id| ctx.db.case_site_authority().id_key().find(&site_id.value))
+    {
+        commit_case_site_arrival_objectives(ctx, &party_id, &arrived_site)?;
+    }
     finish_party_journey(ctx, &party_id);
     Ok(())
 }
@@ -12984,6 +13345,24 @@ fn transition_case_custody(
             fact,
         )?;
     }
+    if !party_id.is_empty() {
+        ensure_objective_continuity_guards(ctx, party_id, case_id)?;
+        reconcile_party_objective_continuity(ctx, party_id)?;
+    }
+    if matches!(
+        holder_kind,
+        CustodyHolderKind::Destroyed | CustodyHolderKind::Released
+    ) {
+        emit_terminal_custody_impossibility(
+            ctx,
+            source_id,
+            case_id,
+            party_id,
+            object_kind,
+            object_id,
+            holder_kind,
+        )?;
+    }
     Ok(true)
 }
 
@@ -13033,6 +13412,403 @@ fn seed_case_custody(
         }
     }
     Ok(())
+}
+
+fn party_strategic_minute(ctx: &ReducerContext, party_id: &str) -> Result<u64, String> {
+    let party = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&party_id.to_string())
+        .ok_or("Party not found")?;
+    Ok(ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(party.leader_id)
+        .map_or(0, |time| time.minutes))
+}
+
+fn open_case_expression(
+    ctx: &ReducerContext,
+    case_id: &str,
+) -> Result<Option<adventuresim_core::case::ObjectiveExpression>, String> {
+    let Some(case) = ctx.db.case_authority().id().find(&case_id.to_string()) else {
+        return Ok(None);
+    };
+    if case.resolution_status != CaseResolutionStatus::Open {
+        return Ok(None);
+    }
+    serde_json::from_str(&case.objective_expression_json)
+        .map(Some)
+        .map_err(|_| "Case objective authority is invalid".into())
+}
+
+fn ensure_objective_continuity_guards(
+    ctx: &ReducerContext,
+    party_id: &str,
+    case_id: &str,
+) -> Result<(), String> {
+    let Some(expression) = open_case_expression(ctx, case_id)? else {
+        return Ok(());
+    };
+    let party = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&party_id.to_string())
+        .ok_or("Party not found")?;
+    let now = party_strategic_minute(ctx, party_id)?;
+    use adventuresim_core::case::ObjectiveRequirement as R;
+    for objective in expression
+        .alternatives
+        .iter()
+        .flat_map(|path| &path.objectives)
+    {
+        let (kind, site_id, subject_id, custody_version, through, valid_now) =
+            match &objective.requirement {
+                R::SurviveWindow {
+                    site_id,
+                    through_minute,
+                } => (
+                    ObjectiveContinuityKind::SurviveAtSite,
+                    site_id.clone(),
+                    String::new(),
+                    None,
+                    *through_minute,
+                    party.current_case_site_id.as_deref() == Some(site_id),
+                ),
+                R::Protect {
+                    subject_id,
+                    through_minute,
+                } => {
+                    let custody = ctx
+                        .db
+                        .case_custody()
+                        .object_id()
+                        .find(&subject_id.as_str().to_string());
+                    let valid = custody.as_ref().is_some_and(|row| {
+                        row.case_id == case_id
+                            && row.holder_kind == CustodyHolderKind::Party
+                            && row.holder_id == party_id
+                    });
+                    (
+                        ObjectiveContinuityKind::ProtectSubject,
+                        String::new(),
+                        subject_id.as_str().to_string(),
+                        custody.map(|row| row.version),
+                        *through_minute,
+                        valid,
+                    )
+                }
+                _ => continue,
+            };
+        if !valid_now || now > through {
+            continue;
+        }
+        let has_active = ctx
+            .db
+            .objective_continuity_guard()
+            .party_id()
+            .filter(party_id)
+            .any(|guard| {
+                guard.case_id == case_id
+                    && guard.objective_id == objective.id.as_str()
+                    && guard.broken_at_minute.is_none()
+                    && !guard.completed
+            });
+        if has_active {
+            continue;
+        }
+        let id = format!(
+            "continuity:{case_id}:{}:{party_id}:{now}",
+            objective.id.as_str()
+        );
+        ctx.db
+            .objective_continuity_guard()
+            .insert(ObjectiveContinuityGuard {
+                id,
+                party_id: party_id.to_string(),
+                case_id: case_id.to_string(),
+                objective_id: objective.id.as_str().to_string(),
+                kind,
+                site_id,
+                subject_id,
+                custody_version,
+                started_at_minute: now,
+                through_minute: through,
+                broken_at_minute: None,
+                completed: false,
+            });
+    }
+    Ok(())
+}
+
+pub(crate) fn reconcile_party_objective_continuity(
+    ctx: &ReducerContext,
+    party_id: &str,
+) -> Result<(), String> {
+    let Some(party) = ctx.db.party_authority().id().find(&party_id.to_string()) else {
+        return Ok(());
+    };
+    let now = party_strategic_minute(ctx, party_id)?;
+    let mut touched_cases = HashSet::new();
+    let guards: Vec<_> = ctx
+        .db
+        .objective_continuity_guard()
+        .party_id()
+        .filter(party_id)
+        .filter(|guard| guard.broken_at_minute.is_none() && !guard.completed)
+        .collect();
+    for mut guard in guards {
+        touched_cases.insert(guard.case_id.clone());
+        let valid = match guard.kind {
+            ObjectiveContinuityKind::SurviveAtSite => {
+                party.current_case_site_id.as_deref() == Some(&guard.site_id)
+            }
+            ObjectiveContinuityKind::ProtectSubject => ctx
+                .db
+                .case_custody()
+                .object_id()
+                .find(&guard.subject_id)
+                .is_some_and(|custody| {
+                    custody.case_id == guard.case_id
+                        && custody.holder_kind == CustodyHolderKind::Party
+                        && custody.holder_id == party_id
+                        && Some(custody.version) == guard.custody_version
+                }),
+        };
+        if !valid {
+            guard.broken_at_minute = Some(now);
+            ctx.db.objective_continuity_guard().id().update(guard);
+            continue;
+        }
+        if now < guard.through_minute {
+            continue;
+        }
+        let Some(expression) = open_case_expression(ctx, &guard.case_id)? else {
+            continue;
+        };
+        let objective = expression
+            .alternatives
+            .iter()
+            .flat_map(|path| &path.objectives)
+            .find(|objective| objective.id.as_str() == guard.objective_id)
+            .ok_or("Continuity objective no longer exists")?;
+        use adventuresim_core::case::{ObjectiveRequirement as R, OutcomeFactKind as F};
+        let fact = match (&guard.kind, &objective.requirement) {
+            (
+                ObjectiveContinuityKind::SurviveAtSite,
+                R::SurviveWindow {
+                    site_id,
+                    through_minute,
+                },
+            ) if site_id == &guard.site_id && *through_minute == guard.through_minute => {
+                F::WindowSurvived {
+                    site_id: site_id.clone(),
+                    through_minute: *through_minute,
+                }
+            }
+            (
+                ObjectiveContinuityKind::ProtectSubject,
+                R::Protect {
+                    subject_id,
+                    through_minute,
+                },
+            ) if subject_id.as_str() == guard.subject_id
+                && *through_minute == guard.through_minute =>
+            {
+                F::SubjectProtected {
+                    subject_id: subject_id.clone(),
+                    through_minute: *through_minute,
+                }
+            }
+            _ => return Err("Continuity guard no longer matches objective authority".into()),
+        };
+        ingest_case_outcome_fact(
+            ctx,
+            &format!("timed-objective:{}", guard.id),
+            &guard.case_id,
+            party_id,
+            fact,
+        )?;
+        guard.completed = true;
+        ctx.db.objective_continuity_guard().id().update(guard);
+    }
+    for case_id in touched_cases {
+        ensure_objective_continuity_guards(ctx, party_id, &case_id)?;
+    }
+    Ok(())
+}
+
+fn break_party_objective_continuity(ctx: &ReducerContext, party_id: &str) -> Result<(), String> {
+    let now = party_strategic_minute(ctx, party_id)?;
+    let guards: Vec<_> = ctx
+        .db
+        .objective_continuity_guard()
+        .party_id()
+        .filter(party_id)
+        .filter(|guard| guard.broken_at_minute.is_none() && !guard.completed)
+        .collect();
+    for mut guard in guards {
+        guard.broken_at_minute = Some(now);
+        ctx.db.objective_continuity_guard().id().update(guard);
+    }
+    Ok(())
+}
+
+fn commit_case_site_arrival_objectives(
+    ctx: &ReducerContext,
+    party_id: &str,
+    site: &CaseSiteAuthority,
+) -> Result<(), String> {
+    let Some(expression) = open_case_expression(ctx, &site.case_id)? else {
+        return Ok(());
+    };
+    use adventuresim_core::case::{ObjectiveRequirement as R, OutcomeFactKind as F};
+    for objective in expression
+        .alternatives
+        .iter()
+        .flat_map(|path| &path.objectives)
+    {
+        let R::EscortTo {
+            subject_id,
+            site_id,
+        } = &objective.requirement
+        else {
+            continue;
+        };
+        if site_id != &site.id.value {
+            continue;
+        }
+        let current = ctx
+            .db
+            .case_custody()
+            .object_id()
+            .find(&subject_id.as_str().to_string())
+            .ok_or("Escorted subject has no custody authority")?;
+        if current.case_id != site.case_id
+            || current.holder_kind != CustodyHolderKind::Party
+            || current.holder_id != party_id
+        {
+            continue;
+        }
+        transition_case_custody(
+            ctx,
+            &format!(
+                "arrival:{}:{party_id}:{}:{}",
+                site.case_id,
+                site.id.value,
+                objective.id.as_str()
+            ),
+            &site.case_id,
+            party_id,
+            CustodyObjectKind::Subject,
+            subject_id.as_str(),
+            CustodyHolderKind::Site,
+            &site.id.value,
+            current.version.saturating_add(1),
+            Some(F::SubjectEscorted {
+                subject_id: subject_id.clone(),
+                site_id: site_id.clone(),
+            }),
+        )?;
+    }
+    ensure_objective_continuity_guards(ctx, party_id, &site.case_id)?;
+    reconcile_party_objective_continuity(ctx, party_id)
+}
+
+fn emit_terminal_custody_impossibility(
+    ctx: &ReducerContext,
+    source_id: &str,
+    case_id: &str,
+    party_id: &str,
+    object_kind: CustodyObjectKind,
+    object_id: &str,
+    terminal_holder: CustodyHolderKind,
+) -> Result<(), String> {
+    let Some(expression) = open_case_expression(ctx, case_id)? else {
+        return Ok(());
+    };
+    use adventuresim_core::case::{ObjectiveRequirement as R, OutcomeFactKind as F};
+    for objective in expression
+        .alternatives
+        .iter()
+        .flat_map(|path| &path.objectives)
+    {
+        let affected = match (&objective.requirement, object_kind, terminal_holder) {
+            (R::Retrieve { asset_id }, CustodyObjectKind::Asset, CustodyHolderKind::Destroyed)
+            | (
+                R::Return { asset_id, .. },
+                CustodyObjectKind::Asset,
+                CustodyHolderKind::Destroyed,
+            )
+            | (
+                R::Exchange { asset_id, .. },
+                CustodyObjectKind::Asset,
+                CustodyHolderKind::Destroyed,
+            ) => asset_id.as_str() == object_id,
+            (R::Capture { subject_id }, CustodyObjectKind::Subject, _)
+            | (R::Rescue { subject_id }, CustodyObjectKind::Subject, _)
+            | (R::EscortTo { subject_id, .. }, CustodyObjectKind::Subject, _)
+            | (R::Protect { subject_id, .. }, CustodyObjectKind::Subject, _) => {
+                subject_id.as_str() == object_id
+            }
+            (
+                R::Release { subject_id },
+                CustodyObjectKind::Subject,
+                CustodyHolderKind::Destroyed,
+            ) => subject_id.as_str() == object_id,
+            _ => false,
+        };
+        if !affected {
+            continue;
+        }
+        if ctx
+            .db
+            .case_authority()
+            .id()
+            .find(&case_id.to_string())
+            .is_none_or(|case| case.resolution_status != CaseResolutionStatus::Open)
+        {
+            break;
+        }
+        ingest_case_outcome_fact(
+            ctx,
+            &format!("{source_id}:impossible:{}", objective.id.as_str()),
+            case_id,
+            party_id,
+            F::ObjectiveImpossible {
+                objective_id: objective.id.clone(),
+            },
+        )?;
+    }
+    Ok(())
+}
+
+/// Trusted destruction/death/expiry adapter. Callers must bind `source_id` to
+/// the concrete domain event; there is intentionally no public reducer.
+pub(crate) fn record_case_object_destroyed(
+    ctx: &ReducerContext,
+    source_id: &str,
+    case_id: &str,
+    party_id: &str,
+    object_kind: CustodyObjectKind,
+    object_id: &str,
+    version: u32,
+) -> Result<bool, String> {
+    transition_case_custody(
+        ctx,
+        source_id,
+        case_id,
+        party_id,
+        object_kind,
+        object_id,
+        CustodyHolderKind::Destroyed,
+        "",
+        version,
+        None,
+    )
 }
 
 pub(crate) fn record_asset_retrieved(
@@ -13132,297 +13908,6 @@ pub(crate) fn record_subject_rescued_or_released(
         version,
         Some(fact),
     )
-}
-
-/// Authenticated objective-family action seam. The caller selects only an
-/// objective ID; the authoritative case expression determines the fact type
-/// and identifiers, preventing arbitrary fact forgery.
-#[allow(dead_code)]
-pub(crate) fn apply_authoritative_case_objective(
-    ctx: &ReducerContext,
-    character_id: u64,
-    case_id: String,
-    objective_id: String,
-) -> Result<(), String> {
-    require_strategic_character_authority(ctx, character_id)?;
-    let character = crate::character::require_living_character(ctx, character_id)?;
-    let party_id = character.party_id.ok_or("Must be in a party")?;
-    let party = ctx
-        .db
-        .party_authority()
-        .id()
-        .find(&party_id)
-        .ok_or("Party not found")?;
-    if party.leader_id != character_id {
-        return Err("Only the party leader can perform case objectives".into());
-    }
-    let case = ctx
-        .db
-        .case_authority()
-        .id()
-        .find(&case_id)
-        .ok_or("Case not found")?;
-    if case.resolution_status != CaseResolutionStatus::Open {
-        return Err("Case is no longer open".into());
-    }
-    let authorized = party
-        .active_contract_id
-        .as_ref()
-        .and_then(|id| ctx.db.contract_authority().id().find(id))
-        .is_some_and(|contract| contract.case_id == case_id)
-        || party
-            .current_case_site_id
-            .as_ref()
-            .and_then(|id| ctx.db.case_site_authority().id_key().find(&id.value))
-            .is_some_and(|site| site.case_id == case_id);
-    if !authorized {
-        return Err("Party has no authoritative access to this case".into());
-    }
-    let expression: adventuresim_core::case::ObjectiveExpression =
-        serde_json::from_str(&case.objective_expression_json)
-            .map_err(|_| "Case objective authority is invalid")?;
-    let objective = expression
-        .alternatives
-        .iter()
-        .flat_map(|path| &path.objectives)
-        .find(|objective| objective.id.as_str() == objective_id)
-        .ok_or("Objective is not part of this case")?;
-    use adventuresim_core::case::{ObjectiveRequirement as R, OutcomeFactKind as F};
-    let minute = crate::time::refresh_clock(ctx)?;
-    let source_id = format!("case-action:{case_id}:{objective_id}:{party_id}:{minute}");
-    let current_site = party
-        .current_case_site_id
-        .as_ref()
-        .map(|id| id.value.as_str());
-    let impossible_object = match &objective.requirement {
-        R::Retrieve { asset_id } | R::Return { asset_id, .. } | R::Exchange { asset_id, .. } => {
-            Some(asset_id.as_str())
-        }
-        R::Capture { subject_id } | R::Rescue { subject_id } => Some(subject_id.as_str()),
-        _ => None,
-    };
-    if impossible_object
-        .and_then(|id| ctx.db.case_custody().object_id().find(&id.to_string()))
-        .is_some_and(|row| {
-            row.holder_kind == CustodyHolderKind::Destroyed
-                || row.holder_kind == CustodyHolderKind::Released
-        })
-    {
-        return ingest_case_outcome_fact(
-            ctx,
-            &source_id,
-            &case_id,
-            &party_id,
-            F::ObjectiveImpossible {
-                objective_id: objective.id.clone(),
-            },
-        );
-    }
-    let fact = match &objective.requirement {
-        R::Defeat { .. } => return Err("Defeat facts require trusted tactical outcomes".into()),
-        R::DriveOff { hostile_group_id }
-            if current_site.is_some_and(|site_id| {
-                ctx.db
-                    .hostile_group_authority()
-                    .id()
-                    .find(hostile_group_id)
-                    .is_some_and(|group| group.case_site_id.value == site_id)
-            }) =>
-        {
-            F::HostilesDrivenOff {
-                hostile_group_id: hostile_group_id.clone(),
-            }
-        }
-        R::Capture { subject_id } => {
-            let version = ctx
-                .db
-                .case_custody()
-                .object_id()
-                .find(&subject_id.as_str().to_string())
-                .ok_or("Subject has no authoritative custody")?
-                .version
-                .saturating_add(1);
-            transition_case_custody(
-                ctx,
-                &source_id,
-                &case_id,
-                &party_id,
-                CustodyObjectKind::Subject,
-                subject_id.as_str(),
-                CustodyHolderKind::Party,
-                &party_id,
-                version,
-                Some(F::SubjectCaptured {
-                    subject_id: subject_id.clone(),
-                }),
-            )?;
-            return Ok(());
-        }
-        R::SurviveWindow {
-            site_id,
-            through_minute,
-        } if current_site == Some(site_id) && minute >= *through_minute => F::WindowSurvived {
-            site_id: site_id.clone(),
-            through_minute: minute,
-        },
-        R::Rescue { subject_id } => {
-            let version = ctx
-                .db
-                .case_custody()
-                .object_id()
-                .find(&subject_id.as_str().to_string())
-                .ok_or("Subject has no authoritative custody")?
-                .version
-                .saturating_add(1);
-            record_subject_rescued_or_released(
-                ctx,
-                &source_id,
-                &case_id,
-                &party_id,
-                subject_id.as_str(),
-                version,
-                false,
-            )?;
-            return Ok(());
-        }
-        R::EscortTo {
-            subject_id,
-            site_id,
-        } if current_site == Some(site_id) => F::SubjectEscorted {
-            subject_id: subject_id.clone(),
-            site_id: site_id.clone(),
-        },
-        R::Retrieve { asset_id } => {
-            let current = ctx
-                .db
-                .case_custody()
-                .object_id()
-                .find(&asset_id.as_str().to_string())
-                .ok_or("Asset has no authoritative custody")?;
-            if current.holder_kind != CustodyHolderKind::Site
-                || current_site != Some(current.holder_id.as_str())
-            {
-                return Err("Asset is not at the party's current site".into());
-            }
-            record_asset_retrieved(
-                ctx,
-                &source_id,
-                &case_id,
-                &party_id,
-                asset_id.as_str(),
-                current.version.saturating_add(1),
-            )?;
-            return Ok(());
-        }
-        R::Return {
-            asset_id,
-            custodian_id,
-        } => {
-            let current = ctx
-                .db
-                .case_custody()
-                .object_id()
-                .find(&asset_id.as_str().to_string())
-                .ok_or("Asset has no authoritative custody")?;
-            if current.holder_kind != CustodyHolderKind::Party || current.holder_id != party_id {
-                return Err("Party does not hold the asset".into());
-            }
-            record_asset_returned_or_exchanged(
-                ctx,
-                &source_id,
-                &case_id,
-                &party_id,
-                asset_id.as_str(),
-                custodian_id,
-                current.version.saturating_add(1),
-                false,
-            )?;
-            return Ok(());
-        }
-        R::Locate { subject_ref } => F::Located {
-            subject_ref: subject_ref.clone(),
-        },
-        R::Identify { subject_ref } => F::Identified {
-            subject_ref: subject_ref.clone(),
-        },
-        R::Expose { subject_ref } => F::Exposed {
-            subject_ref: subject_ref.clone(),
-        },
-        R::PresentProof {
-            evidence_id,
-            recipient_id,
-        } => F::ProofPresented {
-            evidence_id: evidence_id.clone(),
-            recipient_id: recipient_id.clone(),
-        },
-        R::PresentTestimony {
-            witness_id,
-            recipient_id,
-        } => F::TestimonyPresented {
-            witness_id: witness_id.clone(),
-            recipient_id: recipient_id.clone(),
-        },
-        R::Protect {
-            subject_id,
-            through_minute,
-        } if minute >= *through_minute => F::SubjectProtected {
-            subject_id: subject_id.clone(),
-            through_minute: minute,
-        },
-        R::Negotiate { subject_ref } => F::Negotiated {
-            subject_ref: subject_ref.clone(),
-        },
-        R::Release { subject_id } => {
-            let version = ctx
-                .db
-                .case_custody()
-                .object_id()
-                .find(&subject_id.as_str().to_string())
-                .ok_or("Subject has no authoritative custody")?
-                .version
-                .saturating_add(1);
-            record_subject_rescued_or_released(
-                ctx,
-                &source_id,
-                &case_id,
-                &party_id,
-                subject_id.as_str(),
-                version,
-                true,
-            )?;
-            return Ok(());
-        }
-        R::Exchange {
-            asset_id,
-            recipient_id,
-        } => {
-            let current = ctx
-                .db
-                .case_custody()
-                .object_id()
-                .find(&asset_id.as_str().to_string())
-                .ok_or("Asset has no authoritative custody")?;
-            if current.holder_kind != CustodyHolderKind::Party || current.holder_id != party_id {
-                return Err("Party does not hold the asset".into());
-            }
-            record_asset_returned_or_exchanged(
-                ctx,
-                &source_id,
-                &case_id,
-                &party_id,
-                asset_id.as_str(),
-                recipient_id,
-                current.version.saturating_add(1),
-                true,
-            )?;
-            return Ok(());
-        }
-        R::ReportToIssuer { issuer_id } => F::Reported {
-            issuer_id: issuer_id.clone(),
-        },
-        _ => return Err("Objective domain conditions are not satisfied".into()),
-    };
-    ingest_case_outcome_fact(ctx, &source_id, &case_id, &party_id, fact)
 }
 
 /// Sole trusted fact ingestion and evaluation seam. Callers must already have
@@ -13696,11 +14181,59 @@ pub(crate) fn ensure_bound_mission_authority(
         .find(|group| group.case_site_id == case_site.id)
         .ok_or("Case site has no materialized hostile group")?;
     let hostile_group_id = group.id;
+    let case = ctx
+        .db
+        .case_authority()
+        .id()
+        .find(&case_site.case_id)
+        .ok_or("Case authority no longer exists")?;
+    let expression: adventuresim_core::case::ObjectiveExpression =
+        serde_json::from_str(&case.objective_expression_json)
+            .map_err(|_| "Case objective authority is invalid")?;
+    use adventuresim_core::case::ObjectiveRequirement as R;
+    let requirements: Vec<_> = expression
+        .alternatives
+        .iter()
+        .flat_map(|path| &path.objectives)
+        .map(|objective| &objective.requirement)
+        .collect();
+    let capture_subject_id = requirements
+        .iter()
+        .find_map(|requirement| match requirement {
+            R::Capture { subject_id } => Some(subject_id.as_str().to_string()),
+            _ => None,
+        });
+    let expected_resolution = if capture_subject_id.is_some() {
+        HostileResolutionKind::Captured
+    } else if requirements.iter().any(|requirement| {
+        matches!(
+            requirement,
+            R::DriveOff {
+                hostile_group_id: id
+            } if id == &hostile_group_id
+        )
+    }) {
+        HostileResolutionKind::DrivenOff
+    } else if requirements.iter().any(|requirement| {
+        matches!(
+            requirement,
+            R::Defeat {
+                hostile_group_id: id,
+                ..
+            } if id == &hostile_group_id
+        )
+    }) {
+        HostileResolutionKind::Defeated
+    } else {
+        return Err("Case has no tactical objective bound to its hostile group".into());
+    };
     let authority = MissionAuthority {
         id: mission_id.to_string(),
         party_id: party_id.to_string(),
         case_site_id: Some(case_site.id.clone()),
         hostile_group_id: Some(hostile_group_id),
+        expected_resolution,
+        capture_subject_id,
         scene_key: scene_key.to_string(),
     };
     ctx.db.mission_authority().insert(authority.clone());
@@ -13857,8 +14390,8 @@ pub fn autoresolve_mission(
         .id()
         .find(&hostile_group_id.to_string())
         .ok_or("Hostile group not found")?;
-    if hostile_group.defeated {
-        return Err("Hostile group is already defeated".into());
+    if hostile_group.disposition != HostileGroupDisposition::Active {
+        return Err("Hostile group is already resolved".into());
     }
     if ctx
         .db
@@ -14106,7 +14639,7 @@ pub fn seed_standalone_tactical_mission(
                 difficulty: 1,
                 drop_item_id: autoresolve_drop("bandit")?.map(str::to_string),
                 drop_quantity: required_enemy_kills,
-                defeated: false,
+                disposition: HostileGroupDisposition::Active,
             });
     }
 
@@ -14124,8 +14657,19 @@ pub fn seed_standalone_tactical_mission(
         character_id,
         Some(case_site.id.value.clone()),
     );
-    let mission =
-        ensure_bound_mission_authority(ctx, &mission_id, &party_id, &case_site, &scene_key)?;
+    let mission = if let Some(existing) = ctx.db.mission_authority().id().find(&mission_id) {
+        existing
+    } else {
+        ctx.db.mission_authority().insert(MissionAuthority {
+            id: mission_id.clone(),
+            party_id: party_id.clone(),
+            case_site_id: Some(case_site.id.clone()),
+            hostile_group_id: Some(hostile_group_id.clone()),
+            expected_resolution: HostileResolutionKind::Defeated,
+            capture_subject_id: None,
+            scene_key: scene_key.clone(),
+        })
+    };
     if mission.hostile_group_id.as_deref() != Some(&hostile_group_id) {
         return Err("Standalone mission resolved to an unexpected hostile group".into());
     }
@@ -14138,6 +14682,7 @@ pub fn seed_standalone_tactical_mission(
             party_id,
             requested_by: character_id,
             required_enemy_kills,
+            expected_resolution: mission.expected_resolution,
         });
     Ok(())
 }

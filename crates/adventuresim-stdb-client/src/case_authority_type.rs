@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::case_resolution_status_type::CaseResolutionStatus;
 
@@ -16,17 +11,15 @@ use super::case_resolution_status_type::CaseResolutionStatus;
 pub struct CaseAuthority {
     pub id: String,
     pub investigation_case_id: String,
-    pub local_problem_id: Option::<String>,
+    pub local_problem_id: Option<String>,
     pub objective_expression_json: String,
     pub resolution_status: CaseResolutionStatus,
-    pub resolved_by_party_id: Option::<String>,
+    pub resolved_by_party_id: Option<String>,
 }
-
 
 impl __sdk::InModule for CaseAuthority {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `CaseAuthority`.
 ///
@@ -34,10 +27,10 @@ impl __sdk::InModule for CaseAuthority {
 pub struct CaseAuthorityCols {
     pub id: __sdk::__query_builder::Col<CaseAuthority, String>,
     pub investigation_case_id: __sdk::__query_builder::Col<CaseAuthority, String>,
-    pub local_problem_id: __sdk::__query_builder::Col<CaseAuthority, Option::<String>>,
+    pub local_problem_id: __sdk::__query_builder::Col<CaseAuthority, Option<String>>,
     pub objective_expression_json: __sdk::__query_builder::Col<CaseAuthority, String>,
     pub resolution_status: __sdk::__query_builder::Col<CaseAuthority, CaseResolutionStatus>,
-    pub resolved_by_party_id: __sdk::__query_builder::Col<CaseAuthority, Option::<String>>,
+    pub resolved_by_party_id: __sdk::__query_builder::Col<CaseAuthority, Option<String>>,
 }
 
 impl __sdk::__query_builder::HasCols for CaseAuthority {
@@ -45,12 +38,20 @@ impl __sdk::__query_builder::HasCols for CaseAuthority {
     fn cols(table_name: &'static str) -> Self::Cols {
         CaseAuthorityCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
-            investigation_case_id: __sdk::__query_builder::Col::new(table_name, "investigation_case_id"),
+            investigation_case_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "investigation_case_id",
+            ),
             local_problem_id: __sdk::__query_builder::Col::new(table_name, "local_problem_id"),
-            objective_expression_json: __sdk::__query_builder::Col::new(table_name, "objective_expression_json"),
+            objective_expression_json: __sdk::__query_builder::Col::new(
+                table_name,
+                "objective_expression_json",
+            ),
             resolution_status: __sdk::__query_builder::Col::new(table_name, "resolution_status"),
-            resolved_by_party_id: __sdk::__query_builder::Col::new(table_name, "resolved_by_party_id"),
-
+            resolved_by_party_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "resolved_by_party_id",
+            ),
         }
     }
 }
@@ -68,11 +69,12 @@ impl __sdk::__query_builder::HasIxCols for CaseAuthority {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         CaseAuthorityIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-            investigation_case_id: __sdk::__query_builder::IxCol::new(table_name, "investigation_case_id"),
-
+            investigation_case_id: __sdk::__query_builder::IxCol::new(
+                table_name,
+                "investigation_case_id",
+            ),
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for CaseAuthority {}
-

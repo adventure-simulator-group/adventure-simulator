@@ -5,6 +5,7 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::case_site_id_type::CaseSiteId;
+use super::hostile_resolution_kind_type::HostileResolutionKind;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -13,6 +14,8 @@ pub struct MissionAuthority {
     pub party_id: String,
     pub case_site_id: Option<CaseSiteId>,
     pub hostile_group_id: Option<String>,
+    pub expected_resolution: HostileResolutionKind,
+    pub capture_subject_id: Option<String>,
     pub scene_key: String,
 }
 
@@ -28,6 +31,8 @@ pub struct MissionAuthorityCols {
     pub party_id: __sdk::__query_builder::Col<MissionAuthority, String>,
     pub case_site_id: __sdk::__query_builder::Col<MissionAuthority, Option<CaseSiteId>>,
     pub hostile_group_id: __sdk::__query_builder::Col<MissionAuthority, Option<String>>,
+    pub expected_resolution: __sdk::__query_builder::Col<MissionAuthority, HostileResolutionKind>,
+    pub capture_subject_id: __sdk::__query_builder::Col<MissionAuthority, Option<String>>,
     pub scene_key: __sdk::__query_builder::Col<MissionAuthority, String>,
 }
 
@@ -39,6 +44,11 @@ impl __sdk::__query_builder::HasCols for MissionAuthority {
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             case_site_id: __sdk::__query_builder::Col::new(table_name, "case_site_id"),
             hostile_group_id: __sdk::__query_builder::Col::new(table_name, "hostile_group_id"),
+            expected_resolution: __sdk::__query_builder::Col::new(
+                table_name,
+                "expected_resolution",
+            ),
+            capture_subject_id: __sdk::__query_builder::Col::new(table_name, "capture_subject_id"),
             scene_key: __sdk::__query_builder::Col::new(table_name, "scene_key"),
         }
     }

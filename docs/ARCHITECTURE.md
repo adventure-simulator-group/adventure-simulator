@@ -339,6 +339,15 @@ authority before a transcript event is stored. Dialogue-driven objective
 producers are private owning-subsystem calls with live-recipient and knowledge
 checks; they do not create a generic browser fact-ingestion path.
 
+Strategic investigation actions follow the same boundary. Private capability,
+area, attempt, and outcome tables own targets, geometry, deterministic inputs,
+and success state. The registered SSR gateway exposes only observer-safe action
+and outcome projections and accepts an opaque action ID, method, and expected
+version. Party members route the same request through party consent. The
+authority revalidates ownership, prerequisites, party state, and location
+before consuming strenuous strategic time. Surveillance and ambush resolution
+remain strategic and never persist tactical positions, damage, HP, or enemies.
+
 ### Strategic tables
 
 | Table | Description |

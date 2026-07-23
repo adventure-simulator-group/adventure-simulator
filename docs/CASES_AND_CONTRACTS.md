@@ -52,3 +52,19 @@ they never search the character's other known cases. Each fact source includes t
 session, stable action ID, and objective ID, so retries are idempotent and
 distinct actions in the same minute cannot alias. There is no public generic
 fact or complete-objective reducer.
+
+## Objective producers
+
+There is no generic reducer for applying arbitrary objective progress.
+Objective facts are emitted only by the subsystem that can validate the
+corresponding world event. Strategic investigation produces retrieve and
+rescue custody transitions; dialogue produces return, release, and exchange;
+case-site arrival produces escort; authenticated tactical completion produces
+defeat, drive-off, capture, or capture-target-killed; and strategic continuity
+guards produce survive and protect only after an uninterrupted deadline.
+
+Each producer binds the expected case, party, target, hostile group, custody
+version, and stable source identity as applicable. Replays are idempotent,
+cross-case or stale-custody attempts fail, and terminal destruction or death
+marks only affected objective leaves impossible. Alternative branches remain
+available until the objective expression itself can no longer be satisfied.
