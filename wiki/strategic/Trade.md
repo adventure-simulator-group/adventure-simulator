@@ -86,3 +86,5 @@ discard view. Discarding follows the same draft-first interaction as trading:
 the player stages quantities into the left-side **Discard** list, may cancel the
 draft, and must press **Discard** before the server removes anything. Equipped
 items are never eligible for deletion.
+
+The best shared Oral-language coefficient is authoritative for merchant quotes. Lower mutual proficiency raises purchase prices and lowers sale proceeds; the web quote and reducer use the same core rounding helpers. Prepared medicines remain on their existing specialized purchase path.

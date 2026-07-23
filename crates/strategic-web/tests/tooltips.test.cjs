@@ -100,6 +100,19 @@ test('existing accessible names and descriptions are not overwritten', () => {
   assert.equal(button.getAttribute('aria-describedby'), 'inventory-help');
 });
 
+test('tooltip text identical to the accessible name is not linked as a duplicate description', () => {
+  const { window, document, system } = fixture(
+    '<button aria-label="Zoom in" aria-describedby="map-help" data-strategic-tooltip="Zoom in"></button>',
+  );
+  const button = document.querySelector('button');
+  dispatch(window, button, 'focusin');
+  assert.equal(system.tooltip.textContent, 'Zoom in');
+  assert.equal(system.tooltip.hidden, false);
+  assert.equal(button.getAttribute('aria-describedby'), 'map-help');
+  system.hide();
+  assert.equal(button.getAttribute('aria-describedby'), 'map-help');
+});
+
 test('nested meter segments show their own multiline value tooltip', () => {
   const { window, document, system } = fixture(
     '<div data-strategic-tooltip="Filth system"><span data-strategic-tooltip="Blood\n24"></span></div>',

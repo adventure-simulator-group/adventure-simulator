@@ -131,14 +131,28 @@ pub fn stat_game_icon_name(icon: &str) -> &'static str {
         "medicine" => "medical-pack",
         "cooking" => "meal",
         "faith" => "holy-symbol",
+        "religion" => "holy-symbol",
         "melee" => "sword-clash",
         "combat" => "crossed-swords",
+        "crossed-swords" => "crossed-swords",
+        "archery-target" => "bullseye",
         "ranged" => "bullseye",
+        "shield" => "shield",
+        "spear-hook" => "spear-hook",
+        "battle-axe" => "wood-axe",
+        "flanged-mace" => "flanged-mace",
+        "sword" => "sword-brandish",
+        "bowie-knife" => "bowie-knife",
+        "bow-arrow" => "bow-arrow",
+        "crossbow" => "crossbow",
+        "musket" => "musket",
+        "throwing-ball" => "plain-arrow",
         "dodge" => "acrobatic",
         "block" => "shield",
         "stealth" => "hood",
         "balance" => "tightrope",
         "surgeon" => "scalpel",
+        "sewing-needle" => "clothes",
         "smithing" => "anvil",
         "intelligence" => "brain",
         "instinct" => "awareness",
@@ -320,6 +334,29 @@ mod icon_tests {
             religion_icon_path(None),
             "/static/icons/religion/fontawesome-cross.svg"
         );
+    }
+
+    #[test]
+    fn all_rendered_skill_and_party_check_icons_avoid_the_help_placeholder() {
+        for (key, expected) in [
+            ("sewing-needle", "clothes"),
+            ("crossed-swords", "crossed-swords"),
+            ("archery-target", "bullseye"),
+            ("shield", "shield"),
+            ("spear-hook", "spear-hook"),
+            ("battle-axe", "wood-axe"),
+            ("flanged-mace", "flanged-mace"),
+            ("sword", "sword-brandish"),
+            ("bowie-knife", "bowie-knife"),
+            ("bow-arrow", "bow-arrow"),
+            ("crossbow", "crossbow"),
+            ("musket", "musket"),
+            ("throwing-ball", "plain-arrow"),
+            ("religion", "holy-symbol"),
+        ] {
+            assert_eq!(stat_game_icon_name(key), expected, "{key}");
+            assert_ne!(stat_game_icon_name(key), "help", "{key}");
+        }
     }
 
     #[test]

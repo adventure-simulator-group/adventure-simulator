@@ -597,6 +597,12 @@ mod tests {
             population_level: 0,
             population_estimate: 0,
             category: crate::spacetimedb::SettlementCategory::Unknown,
+            languages: adventuresim_world_schema::SettlementLanguageProfile {
+                east_central_bp: 10_000,
+                west_central_bp: 0,
+                low_bp: 0,
+                yiddish_incidence_bp: 75,
+            },
             industries: InferredIndustryProfile::new(vec![IndustryEvidence::Fallback(
                 FallbackIndustry::WoodlandFuelwood,
             )])

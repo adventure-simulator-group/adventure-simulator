@@ -11,6 +11,7 @@ use super::land_use_profile_type::LandUseProfile;
 use super::potential_vegetation_type::PotentialVegetation;
 use super::settlement_category_type::SettlementCategory;
 use super::settlement_hydrology_type::SettlementHydrology;
+use super::settlement_language_profile_type::SettlementLanguageProfile;
 use super::settlement_religious_status_type::SettlementReligiousStatus;
 use super::settlement_type::Settlement;
 use super::soil_profile_type::SoilProfile;

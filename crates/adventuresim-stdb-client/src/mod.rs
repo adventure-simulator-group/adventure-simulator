@@ -267,6 +267,7 @@ pub mod morale_event_type;
 pub mod native_range_evidence_type;
 pub mod nerve_type;
 pub mod official_religion_type;
+pub mod oral_language_hours_type;
 pub mod organic_soil_type;
 pub mod other_non_textured_soil_type;
 pub mod outlook_type;
@@ -389,6 +390,7 @@ pub mod settlement_description_type;
 pub mod settlement_herbalist_type;
 pub mod settlement_hydrology_type;
 pub mod settlement_import_type;
+pub mod settlement_language_profile_type;
 pub mod settlement_outbreak_table;
 pub mod settlement_outbreak_type;
 pub mod settlement_religious_status_type;
@@ -469,6 +471,7 @@ pub mod world_node_import_type;
 pub mod world_node_table;
 pub mod world_node_type;
 pub mod wrb_reference_group_type;
+pub mod written_language_hours_type;
 
 pub use abandon_quest_reducer::abandon_quest;
 pub use accept_party_join_request_reducer::accept_party_join_request;
@@ -731,6 +734,7 @@ pub use morale_event_type::MoraleEvent;
 pub use native_range_evidence_type::NativeRangeEvidence;
 pub use nerve_type::Nerve;
 pub use official_religion_type::OfficialReligion;
+pub use oral_language_hours_type::OralLanguageHours;
 pub use organic_soil_type::OrganicSoil;
 pub use other_non_textured_soil_type::OtherNonTexturedSoil;
 pub use outlook_type::Outlook;
@@ -853,6 +857,7 @@ pub use settlement_description_type::SettlementDescription;
 pub use settlement_herbalist_type::SettlementHerbalist;
 pub use settlement_hydrology_type::SettlementHydrology;
 pub use settlement_import_type::SettlementImport;
+pub use settlement_language_profile_type::SettlementLanguageProfile;
 pub use settlement_outbreak_table::*;
 pub use settlement_outbreak_type::SettlementOutbreak;
 pub use settlement_religious_status_type::SettlementReligiousStatus;
@@ -933,6 +938,7 @@ pub use world_node_import_type::WorldNodeImport;
 pub use world_node_table::*;
 pub use world_node_type::WorldNode;
 pub use wrb_reference_group_type::WrbReferenceGroup;
+pub use written_language_hours_type::WrittenLanguageHours;
 
 #[derive(Clone, PartialEq, Debug)]
 

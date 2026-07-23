@@ -528,3 +528,7 @@ Spawn points are defined in GLB/GLTF files using node naming:
 - **Idempotent commit**: Prevents double-counting rewards
 - **Tactical state is ephemeral**: HP/damage/positions disappear when mission ends
 - **Quest locations are strategic places**: their identity and travel coordinates persist, but no enemies, tactical positions, or combat ticks are stored there. Autoresolve writes only final injury and reward results.
+
+## Language persistence
+
+Language is strategic state. Compiled settlements persist a versioned, deterministic vernacular profile inferred inside the exact playable bounds; the three German shares total exactly 10,000 basis points. Characters persist direct Oral and Written hours. Effective proficiency is derived once from symmetric correlation matrices and is never recursively stored. The importer CLI can inspect a coordinate with `--infer-languages LONGITUDE LATITUDE`.

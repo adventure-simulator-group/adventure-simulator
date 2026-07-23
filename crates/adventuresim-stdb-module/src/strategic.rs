@@ -508,6 +508,7 @@ pub struct Settlement {
     pub soil: SoilProfile,
     pub geology: SurfaceGeology,
     pub religious_status: SettlementReligiousStatus,
+    pub languages: adventuresim_world_schema::SettlementLanguageProfile,
     pub drought: DroughtProfile,
     pub hydrology: SettlementHydrology,
     pub industries: InferredIndustryProfile,
@@ -897,6 +898,23 @@ pub fn import_settlements(
                 settlement.id
             )
         })?;
+        if !adventuresim_world_schema::coordinates_in_bounds(
+            settlement.longitude,
+            settlement.latitude,
+            adventuresim_world_schema::PLAYABLE_BOUNDS,
+        ) || !settlement.languages.is_valid()
+            || adventuresim_world_schema::infer_settlement_language_profile(
+                settlement.longitude,
+                settlement.latitude,
+            )
+            .ok()
+                != Some(settlement.languages)
+        {
+            return Err(format!(
+                "Settlement {} has an invalid language profile",
+                settlement.id
+            ));
+        }
         // Route batches are resumable and may arrive before or after settlement
         // batches. Exact industry/profile equality is therefore checked against
         // the final edge table by `finish_world_data_import`.
@@ -957,6 +975,7 @@ pub fn import_settlements(
             religion_id: settlement.religious_status.church().religion_id().into(),
             currency_id,
             religious_status: settlement.religious_status,
+            languages: settlement.languages,
             drought,
             hydrology: settlement.hydrology,
             industries: settlement.industries,
@@ -5695,6 +5714,24 @@ pub fn finalize_merchant_trade(
         return Err("Character must be at this settlement to trade".into());
     }
     let party_id = character.party_id.clone();
+    let settlement = ctx
+        .db
+        .settlement()
+        .id()
+        .find(&settlement_id)
+        .ok_or("Settlement not found")?;
+    let speaker = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character skills not found")?
+        .oral_languages;
+    let mut merchant = adventuresim_world_schema::OralLanguageHours::default();
+    *merchant.direct_mut(settlement.languages.dominant_german()) =
+        adventuresim_world_schema::ORAL_FLUENCY_HOURS;
+    let (_, shared_language) =
+        adventuresim_world_schema::best_common_oral_language(speaker, merchant);
     // Sales are inventory-instance operations. Preserve each submitted stack
     // and quantity rather than netting by item ID, which can assign the whole
     // net sale to every matching stack.
@@ -5718,7 +5755,12 @@ pub fn finalize_merchant_trade(
             return Err("Invalid merchant purchase".into());
         }
         let line = adventuresim_core::strategic_economy::checked_merchant_line_total(
-            adventuresim_core::strategic_economy::merchant_buy_price(item.base_value.unwrap_or(1)),
+            adventuresim_core::strategic_economy::language_adjusted_buy_price(
+                adventuresim_core::strategic_economy::merchant_buy_price(
+                    item.base_value.unwrap_or(1),
+                ),
+                shared_language,
+            ),
             *quantity,
         )
         .ok_or("Merchant purchase total overflow")?;
@@ -5779,12 +5821,21 @@ pub fn finalize_merchant_trade(
             if *quantity != available || !value.is_finite() || value < 0.0 {
                 return Err("Food batches must be sold as complete valid lots".into());
             }
-            adventuresim_core::strategic_economy::merchant_sell_food_lot_value(value)
-                .ok_or("Food lot has invalid value")?
+            let base = adventuresim_core::strategic_economy::merchant_sell_food_lot_value(value)
+                .ok_or("Food lot has invalid value")?;
+            u64::from(
+                adventuresim_core::strategic_economy::language_adjusted_sell_price(
+                    u32::try_from(base).map_err(|_| "Food lot quote overflow")?,
+                    shared_language,
+                ),
+            )
         } else {
             adventuresim_core::strategic_economy::checked_merchant_line_total(
-                adventuresim_core::strategic_economy::merchant_sell_price(
-                    item.base_value.unwrap_or(1),
+                adventuresim_core::strategic_economy::language_adjusted_sell_price(
+                    adventuresim_core::strategic_economy::merchant_sell_price(
+                        item.base_value.unwrap_or(1),
+                    ),
+                    shared_language,
                 ),
                 *quantity,
             )
@@ -7059,6 +7110,34 @@ fn train_party_terrain_movement(
     Ok(())
 }
 
+/// Give each traveler at most one interval of conversational exposure. Choices
+/// are made from one sorted pre-gain snapshot, so party iteration cannot affect
+/// the result and additional companions cannot multiply elapsed time.
+fn train_party_oral_communication(ctx: &ReducerContext, party_id: &str, movement_minutes: u64) {
+    if movement_minutes == 0 {
+        return;
+    }
+    let mut snapshot: Vec<_> = living_party_member_ids(ctx, party_id)
+        .into_iter()
+        .filter_map(|id| {
+            ctx.db
+                .character_skills()
+                .character_id()
+                .find(id)
+                .map(|skills| (id, skills.oral_languages))
+        })
+        .collect();
+    snapshot.sort_by_key(|(id, _)| *id);
+    let interval_hours = movement_minutes as f32 / 60.0;
+    let gains = adventuresim_world_schema::party_oral_training_gains(&snapshot, interval_hours);
+    for (id, language, hours) in gains {
+        if let Some(mut skills) = ctx.db.character_skills().character_id().find(id) {
+            skills.oral_languages.add_direct(language, hours);
+            ctx.db.character_skills().character_id().update(skills);
+        }
+    }
+}
+
 fn terrain_training_exposure(spans: &[JourneyTerrainSpan], start: u64, end: u64) -> [f32; 4] {
     let mut exposure = [0.0_f32; 4];
     for span in spans {
@@ -7104,6 +7183,7 @@ fn advance_party_movement(
     // Training is committed only after every participant's authoritative
     // clock has committed the same safe movement prefix.
     train_party_terrain_movement(ctx, party_id, actual_minutes)?;
+    train_party_oral_communication(ctx, party_id, actual_minutes);
     Ok((actual_minutes, all_survived))
 }
 
@@ -8876,6 +8956,26 @@ pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
 
     for (id, name, x, y, source_node_id, pop, scene, religious_status) in settlements {
         if ctx.db.settlement().id().find(&id.to_string()).is_none() {
+            let languages = match id {
+                "oakenshire" => adventuresim_world_schema::SettlementLanguageProfile {
+                    east_central_bp: 1_500,
+                    west_central_bp: 7_500,
+                    low_bp: 1_000,
+                    yiddish_incidence_bp: 75,
+                },
+                "ravenmoor" => adventuresim_world_schema::SettlementLanguageProfile {
+                    east_central_bp: 7_500,
+                    west_central_bp: 1_500,
+                    low_bp: 1_000,
+                    yiddish_incidence_bp: 75,
+                },
+                _ => adventuresim_world_schema::SettlementLanguageProfile {
+                    east_central_bp: 1_000,
+                    west_central_bp: 1_000,
+                    low_bp: 8_000,
+                    yiddish_incidence_bp: 75,
+                },
+            };
             ctx.db.settlement().insert(Settlement {
                 id: id.into(),
                 name: name.into(),
@@ -8937,6 +9037,7 @@ pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
                     age: GeologicEra::Quaternary,
                 }),
                 religious_status,
+                languages,
                 drought: DroughtProfile::Inferred(
                     DroughtHistory::new(
                         PalmerDroughtSeverityIndex::new(0).unwrap(),
@@ -9120,6 +9221,12 @@ fn ensure_npc_quest_parties(ctx: &ReducerContext, settlement_id: &str) -> Result
         let mut leader = ctx.db.character().id().find(leader_id).unwrap();
         leader.current_settlement_id = Some(settlement_id.to_string());
         ctx.db.character().id().update(leader.clone());
+        crate::character::set_character_languages_for_settlement(
+            ctx,
+            leader_id,
+            settlement_id,
+            true,
+        )?;
         let party_id = leader.party_id.clone().ok_or("NPC leader has no party")?;
         let mut party = ctx.db.party().id().find(&party_id).unwrap();
         party.name = format!("{}'s company", leader_name);
