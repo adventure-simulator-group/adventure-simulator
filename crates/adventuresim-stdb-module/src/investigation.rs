@@ -3685,6 +3685,27 @@ mod tests {
     }
 
     #[test]
+    fn generated_testimony_persists_every_proposition_and_corrections_gate_pins() {
+        let source = include_str!("investigation.rs");
+        let generated = source
+            .split("pub(crate) fn persist_generated_testimony")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("#[reducer]\npub fn receive_investigation_claim")
+                    .next()
+            })
+            .unwrap();
+        assert!(generated.contains("for (index, draft) in witness.testimony.iter().enumerate()"));
+        assert!(generated.contains("draft.proposition_id.clone()"));
+        assert!(generated.contains("draft.corrects_proposition_id"));
+        assert!(generated.contains("belief.proposition_id == *proposition_id"));
+        assert!(generated.contains("let exact = draft.destination_stage == \"exact_believed\""));
+        assert!(generated.contains(".filter(|_| exact)"));
+        assert!(generated.contains("prior.corrected_by = lead_id.clone()"));
+        assert!(generated.contains("prior.proposition_id == *corrected_proposition"));
+    }
+
+    #[test]
     fn coordinate_area_handles_both_modes_boundaries_and_invalid_geography() {
         // Geographic E7: roughly 500 m, 1,000 m, and 1,112 m at the equator.
         assert!(coordinate_area_contains_e7(

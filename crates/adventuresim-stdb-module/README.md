@@ -35,6 +35,12 @@ Tactical state lives in the `tactical-server` game state and is discarded when m
 8. private `contract_authority` - Offered, accepted, reportable, and paid agreements
 9. private `case_custody` - Unique versioned asset and subject custody
 
+Generated cases also use private `quest_generation_authority` for the catalog
+revision, deterministic context snapshot, canonical manifest, and replay
+trace. Materialization atomically creates the linked symptom, investigation
+graph, objectives, custody, hostiles, and finales. See
+[`docs/QUEST_GENERATION.md`](../../docs/QUEST_GENERATION.md).
+
 ## Key Reducers
 
 - `upsert_character(id, name)` - Create/update character

@@ -532,7 +532,7 @@ mod tests {
 
         assert_eq!(
             active_contract_tooltip(&quest),
-            "A necromancer has raised the dead.\nActive quest · 11 Skeletons"
+            "A necromancer has raised the dead.\nActive quest · perhaps eleven walking dead"
         );
     }
 

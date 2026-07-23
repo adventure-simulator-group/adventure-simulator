@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -17,16 +11,14 @@ pub struct DialogueParticipant {
     pub gateway_bucket: u8,
     pub session_id: String,
     pub role: String,
-    pub character_id: Option::<u64>,
+    pub character_id: Option<u64>,
     pub actor_id: String,
     pub display_name: String,
 }
 
-
 impl __sdk::InModule for DialogueParticipant {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `DialogueParticipant`.
 ///
@@ -36,7 +28,7 @@ pub struct DialogueParticipantCols {
     pub gateway_bucket: __sdk::__query_builder::Col<DialogueParticipant, u8>,
     pub session_id: __sdk::__query_builder::Col<DialogueParticipant, String>,
     pub role: __sdk::__query_builder::Col<DialogueParticipant, String>,
-    pub character_id: __sdk::__query_builder::Col<DialogueParticipant, Option::<u64>>,
+    pub character_id: __sdk::__query_builder::Col<DialogueParticipant, Option<u64>>,
     pub actor_id: __sdk::__query_builder::Col<DialogueParticipant, String>,
     pub display_name: __sdk::__query_builder::Col<DialogueParticipant, String>,
 }
@@ -52,7 +44,6 @@ impl __sdk::__query_builder::HasCols for DialogueParticipant {
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
             actor_id: __sdk::__query_builder::Col::new(table_name, "actor_id"),
             display_name: __sdk::__query_builder::Col::new(table_name, "display_name"),
-
         }
     }
 }
@@ -75,10 +66,8 @@ impl __sdk::__query_builder::HasIxCols for DialogueParticipant {
             gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             session_id: __sdk::__query_builder::IxCol::new(table_name, "session_id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for DialogueParticipant {}
-

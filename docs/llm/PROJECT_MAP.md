@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (1146)
+## Files (1154)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -44,6 +44,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/autoresolve.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/battle_rewards.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/bestiary.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/bin/questgen-check.rs` — Rust source module.
 - `crates/adventuresim-core/src/body.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/capability.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/case.rs` — Rust source module for this component.
@@ -65,6 +66,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/morale.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/profession.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/provisioning.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/quest_generation.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/settlement_economy.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/settlement_population.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/simulation_security.rs` — Rust source module for this component.
@@ -364,6 +366,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/investigation_event_authority_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/investigation_evidence_authority_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/investigation_evidence_knowledge_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/investigation_generated_action_output_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/investigation_lead_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/investigation_observation_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/investigation_received_testimony_type.rs` — Generated SpacetimeDB data type.
@@ -420,7 +423,10 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/mineral_soil_texture_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/mineral_soil_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/mining_industry_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/mission_approach_capability_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/mission_attempt_status_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/mission_authority_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/mission_outcome_candidate_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/mixed_lithology_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/mod.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-client/src/modeled_tree_species_profile_type.rs` — Generated SpacetimeDB data type.
@@ -485,6 +491,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/purchase_from_herbalist_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/quarry_commodity_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/quarrying_industry_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/quest_generation_authority_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/receive_investigation_claim_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/receive_local_problem_rumor_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/recruitment_offer_id_type.rs` — Generated SpacetimeDB data type.
@@ -1088,6 +1095,7 @@ development, or wiki document before changing a subsystem.
 - `docs/LOCAL_PROBLEMS.md` — Project documentation.
 - `docs/MISSION_AUTHORITY.md` — Project documentation.
 - `docs/POTENTIAL_VEGETATION.md` — Project documentation.
+- `docs/QUEST_GENERATION.md` — Project documentation.
 - `docs/RECRUITMENT_AND_INCIDENT_AUTHORITY.md` — Project documentation.
 - `docs/RELIGION.md` — Project documentation.
 - `docs/ROUTE_TERRAIN.md` — Project documentation.

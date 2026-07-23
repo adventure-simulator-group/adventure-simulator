@@ -13,6 +13,7 @@ pub struct LocalProblemReceipt {
     pub problem_id: String,
     pub opaque_case_ref: String,
     pub source_npc_id: String,
+    pub discovery_session_id: String,
     pub contact_npc_id: String,
     pub expected_location_id: String,
     pub safe_summary: String,
@@ -33,6 +34,7 @@ pub struct LocalProblemReceiptCols {
     pub problem_id: __sdk::__query_builder::Col<LocalProblemReceipt, String>,
     pub opaque_case_ref: __sdk::__query_builder::Col<LocalProblemReceipt, String>,
     pub source_npc_id: __sdk::__query_builder::Col<LocalProblemReceipt, String>,
+    pub discovery_session_id: __sdk::__query_builder::Col<LocalProblemReceipt, String>,
     pub contact_npc_id: __sdk::__query_builder::Col<LocalProblemReceipt, String>,
     pub expected_location_id: __sdk::__query_builder::Col<LocalProblemReceipt, String>,
     pub safe_summary: __sdk::__query_builder::Col<LocalProblemReceipt, String>,
@@ -49,6 +51,10 @@ impl __sdk::__query_builder::HasCols for LocalProblemReceipt {
             problem_id: __sdk::__query_builder::Col::new(table_name, "problem_id"),
             opaque_case_ref: __sdk::__query_builder::Col::new(table_name, "opaque_case_ref"),
             source_npc_id: __sdk::__query_builder::Col::new(table_name, "source_npc_id"),
+            discovery_session_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "discovery_session_id",
+            ),
             contact_npc_id: __sdk::__query_builder::Col::new(table_name, "contact_npc_id"),
             expected_location_id: __sdk::__query_builder::Col::new(
                 table_name,

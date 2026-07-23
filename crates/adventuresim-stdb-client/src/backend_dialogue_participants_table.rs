@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::backend_dialogue_participant_type::BackendDialogueParticipant;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_dialogue_participants`.
 ///
@@ -36,7 +31,9 @@ pub trait BackendDialogueParticipantsTableAccess {
 impl BackendDialogueParticipantsTableAccess for super::RemoteTables {
     fn backend_dialogue_participants(&self) -> BackendDialogueParticipantsTableHandle<'_> {
         BackendDialogueParticipantsTableHandle {
-            imp: self.imp.get_table::<BackendDialogueParticipant>("backend_dialogue_participants"),
+            imp: self
+                .imp
+                .get_table::<BackendDialogueParticipant>("backend_dialogue_participants"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -49,8 +46,12 @@ impl<'ctx> __sdk::Table for BackendDialogueParticipantsTableHandle<'ctx> {
     type Row = BackendDialogueParticipant;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = BackendDialogueParticipant> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = BackendDialogueParticipant> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = BackendDialogueParticipantsInsertCallbackId;
 
@@ -81,8 +82,8 @@ impl<'ctx> __sdk::Table for BackendDialogueParticipantsTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<BackendDialogueParticipant>("backend_dialogue_participants");
+    let _table = client_cache
+        .get_or_make_table::<BackendDialogueParticipant>("backend_dialogue_participants");
 }
 
 #[doc(hidden)]
@@ -90,26 +91,28 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<BackendDialogueParticipant>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<BackendDialogueParticipant>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<BackendDialogueParticipant>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `BackendDialogueParticipant`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait backend_dialogue_participantsQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `BackendDialogueParticipant`.
-            fn backend_dialogue_participants(&self) -> __sdk::__query_builder::Table<BackendDialogueParticipant>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `BackendDialogueParticipant`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait backend_dialogue_participantsQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `BackendDialogueParticipant`.
+    fn backend_dialogue_participants(
+        &self,
+    ) -> __sdk::__query_builder::Table<BackendDialogueParticipant>;
+}
 
-        impl backend_dialogue_participantsQueryTableAccess for __sdk::QueryTableAccessor {
-            fn backend_dialogue_participants(&self) -> __sdk::__query_builder::Table<BackendDialogueParticipant> {
-                __sdk::__query_builder::Table::new("backend_dialogue_participants")
-            }
-        }
-
+impl backend_dialogue_participantsQueryTableAccess for __sdk::QueryTableAccessor {
+    fn backend_dialogue_participants(
+        &self,
+    ) -> __sdk::__query_builder::Table<BackendDialogueParticipant> {
+        __sdk::__query_builder::Table::new("backend_dialogue_participants")
+    }
+}

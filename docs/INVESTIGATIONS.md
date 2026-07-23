@@ -26,6 +26,11 @@ and derives an observer-facing case ID from the public problem ID. It never
 projects `opaque_case_ref`, consults the problem cause, or silently grants a
 contact's current location.
 
+Generated cases privately map canonical, investigation, and public journal
+identities. Dialogue eligibility accepts only those exact aliases plus
+session-relevant rumor, testimony, belief, evidence, or custody provenance; it
+never searches arbitrary cases the character happens to know.
+
 Runtime testimony generation is a private production pipeline. Server-authored
 perception, memory, disclosure, and transmission stages are persisted as a
 private bundle, then issue a private, one-use, character-owned safe receipt.
@@ -61,6 +66,10 @@ landmark, an approximate area or route segment, exact believed location, and
 observer-specific visited location. Only the last two stages may carry a pin.
 An incorrect exact account remains the observer's destination until a sourced
 correction revises it.
+
+Generated corrections reuse the proposition ID they revise. A later witness or
+evidence receipt creates the revision and marks the earlier lead corrected;
+private materialization alone does not remove the observer's false pin.
 
 Strategic destinations have stable case-site IDs independent of quests and
 contracts. Character and party location, journey endpoints, camp continuation,

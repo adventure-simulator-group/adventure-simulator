@@ -41,6 +41,19 @@ legacy direct bounty explicitly reveals its exact case site, but the resulting
 pin is a knowledge projection rather than a quest marker. Recruitment
 indicators remain separate from quest markers.
 
+The first modular generator supports recurring depredation and
+disappearance/loss cases. Both begin as observable local consequences rather
+than a named monster. Witness descriptions, circumstances, reliability,
+evidence, sites, and habitats are weighted independently, so the template does
+not reveal the answer. Impossible combinations have zero weight; rare ones
+remain possible only when the case generates a discoverable causal bridge.
+
+Each case offers two different routes to the same real target. Physical tracks
+and social inquiry may fail or contradict one another without deleting the
+alternate route. Canonical cause determines the finale: rescue a concealed or
+abducted person, retrieve and return a lost asset, expose a fabricated claim,
+or defeat/drive off recurring attackers. Unsupported endings are not rolled.
+
 ## Planning
 Since you know what enemies you will face at the destination and can estimate what enemies you'll possibly face on the journey, you should plan a party in advance to account for this. For now this is mainly a question of whether you expect to encounter armored enemies (and therefore need hammers/rondels), hordes of weak enemies (therefore want a cleaving sword/axe/hammer and heavy armor), large enemies (therefore want a polearm), and enemies with projectiles (therefore want armor/full-plate). You will also want to account for difficult terrain or the need for stealth/detection during [travel](Travel.md) in your party composition, the latter is important if you're traveling through an area with enemies that are too dangerous for your party to fight against.
 ### Mixed-Level
