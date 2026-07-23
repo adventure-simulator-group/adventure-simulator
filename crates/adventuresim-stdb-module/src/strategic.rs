@@ -9936,6 +9936,30 @@ fn straight_line_distance_m(
     }
 }
 
+/// Great-circle distance between signed E7 geographic coordinates, in meters.
+/// Invalid latitude/longitude values fail closed instead of entering geometry.
+pub(crate) fn geographic_distance_e7_m(
+    from_longitude_e7: i32,
+    from_latitude_e7: i32,
+    to_longitude_e7: i32,
+    to_latitude_e7: i32,
+) -> Option<u64> {
+    if !(-900_000_000..=900_000_000).contains(&from_latitude_e7)
+        || !(-1_800_000_000..=1_800_000_000).contains(&from_longitude_e7)
+        || !(-900_000_000..=900_000_000).contains(&to_latitude_e7)
+        || !(-1_800_000_000..=1_800_000_000).contains(&to_longitude_e7)
+    {
+        return None;
+    }
+    Some(straight_line_distance_m(
+        f64::from(from_longitude_e7) / 10_000_000.0,
+        f64::from(from_latitude_e7) / 10_000_000.0,
+        f64::from(to_longitude_e7) / 10_000_000.0,
+        f64::from(to_latitude_e7) / 10_000_000.0,
+        true,
+    ))
+}
+
 struct IncidentSpec<'a> {
     kind: IncidentKind,
     title: &'a str,
