@@ -9,7 +9,7 @@ target
 .env.*
 !.env.example
 
-# Viabundus source data installed by `just init-world-data`.
+# Downloaded Viabundus source data. Recreate with `just init-viabundus`.
 /viabundus/
 
 # Downloaded LUH1 source archives. Extract the required NetCDF files into the

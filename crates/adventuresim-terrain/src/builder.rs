@@ -1,6 +1,6 @@
 //! Offline GLO-30/CLMS pack compiler. This module is not linked into servers.
 
-use crate::{CHUNK_SIDE, Entry, Manifest, SCHEMA, Surface, TerrainPurpose, hex_sha};
+use crate::{CHUNK_SIDE, Entry, Manifest, SCHEMA, Surface, hex_sha};
 use flate2::{Compression, write::DeflateEncoder};
 use sha2::{Digest, Sha256};
 use std::{
@@ -15,8 +15,6 @@ use tiff::decoder::{Decoder, DecodingResult};
 pub struct Features {
     pub roads: Vec<Vec<[f64; 2]>>,
     pub water: Vec<Vec<Vec<[f64; 2]>>>,
-    pub wetlands: Vec<Vec<Vec<[f64; 2]>>>,
-    pub wetland_source_sha256: String,
 }
 
 pub fn build(
@@ -26,7 +24,6 @@ pub fn build(
     manifest_path: &Path,
     pack_path: &Path,
     features: &Features,
-    purpose: TerrainPurpose,
 ) -> crate::Result<Manifest> {
     let [west, south, east, north] = bounds;
     if !bounds.into_iter().all(f64::is_finite) || west >= east || south >= north {
@@ -85,7 +82,7 @@ pub fn build(
                 )));
             };
             let forest = read_forest(forest_dir, south, west)?;
-            let (roads, water, wetlands) = masks(features, south, west, width, height);
+            let (roads, water) = masks(features, south, west, width, height);
             let chunks_x = width.div_ceil(u32::from(CHUNK_SIDE));
             let chunks_y = height.div_ceil(u32::from(CHUNK_SIDE));
             for chunk_y in 0..chunks_y {
@@ -130,14 +127,17 @@ pub fn build(
                             let pixel_index = y as usize * width as usize + x as usize;
                             let on_road = roads.contains(&(x as u16, y as u16));
                             let on_water = water[pixel_index] != 0;
-                            let on_wetland = wetlands[pixel_index] != 0;
-                            let surface = choose_surface(
-                                on_road,
-                                on_water,
-                                on_wetland,
-                                synthetic_water,
-                                canopy,
-                            );
+                            let surface = if on_road {
+                                Surface::Road
+                            } else if on_water || synthetic_water {
+                                Surface::Water
+                            } else {
+                                match canopy {
+                                    10..=44 => Surface::SparseWoods,
+                                    45..=100 => Surface::DeepWoods,
+                                    _ => Surface::Open,
+                                }
+                            };
                             decoded.extend_from_slice(&metres.to_le_bytes());
                             decoded.push(surface as u8);
                             let crossing = on_road && (on_water || synthetic_water);
@@ -171,17 +171,11 @@ pub fn build(
         }
     }
     let content_sha256 = hex_sha(&pack);
-    let road_geometry_sha256 = feature_digest(&features.roads)?;
-    let wetland_cells = features.wetlands.len() as u64;
     let mut manifest = Manifest {
         schema: SCHEMA,
-        purpose,
         bounds,
         source_resolution_m: 30,
         content_sha256,
-        road_geometry_sha256,
-        wetland_source_sha256: features.wetland_source_sha256.clone(),
-        wetland_cells,
         entries,
         package_sha256: "0".repeat(64),
     };
@@ -197,32 +191,6 @@ pub fn build(
     fs::write(pack_path, pack)?;
     fs::write(manifest_path, json)?;
     Ok(manifest)
-}
-
-fn choose_surface(
-    on_road: bool,
-    on_water: bool,
-    on_wetland: bool,
-    synthetic_water: bool,
-    canopy: u8,
-) -> Surface {
-    if on_road {
-        Surface::Road
-    } else if on_water || synthetic_water {
-        Surface::Water
-    } else if on_wetland {
-        Surface::Wetland
-    } else {
-        match canopy {
-            10..=44 => Surface::SparseWoods,
-            45..=100 => Surface::DeepWoods,
-            _ => Surface::Open,
-        }
-    }
-}
-
-fn feature_digest<T: serde::Serialize>(value: &T) -> crate::Result<String> {
-    Ok(hex_sha(&serde_json::to_vec(value)?))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -267,18 +235,6 @@ mod bounds_tests {
         assert!(!chunk_intersects_bounds(
             52, 11, 3_600, 3_600, 0, 4, 256, 256, bounds
         ));
-    }
-
-    #[test]
-    fn wetland_is_slow_and_has_explicit_road_water_precedence() {
-        assert_eq!(
-            choose_surface(false, false, true, false, 0),
-            Surface::Wetland
-        );
-        assert_eq!(choose_surface(false, false, false, false, 0), Surface::Open);
-        assert_eq!(choose_surface(true, false, true, false, 0), Surface::Road);
-        assert_eq!(choose_surface(false, true, true, false, 0), Surface::Water);
-        assert!(Surface::Wetland.speed_metres_per_hour() < Surface::Open.speed_metres_per_hour());
     }
 }
 
@@ -335,7 +291,7 @@ fn masks(
     west: i16,
     width: u32,
     height: u32,
-) -> (HashSet<(u16, u16)>, Vec<u8>, Vec<u8>) {
+) -> (HashSet<(u16, u16)>, Vec<u8>) {
     let mut roads = HashSet::new();
     let to_pixel = |point: [f64; 2]| -> (i32, i32) {
         (
@@ -374,20 +330,8 @@ fn masks(
             }
         }
     }
-    let water = polygon_mask(&features.water, south, west, width, height);
-    let wetlands = polygon_mask(&features.wetlands, south, west, width, height);
-    (roads, water, wetlands)
-}
-
-fn polygon_mask(
-    polygons: &[Vec<Vec<[f64; 2]>>],
-    south: i16,
-    west: i16,
-    width: u32,
-    height: u32,
-) -> Vec<u8> {
-    let mut mask = vec![0_u8; width as usize * height as usize];
-    for polygon in polygons {
+    let mut water = vec![0_u8; width as usize * height as usize];
+    for polygon in &features.water {
         let Some([min_x, min_y, max_x, max_y]) = polygon_bounds(polygon) else {
             continue;
         };
@@ -425,12 +369,12 @@ fn polygon_mask(
                     .ceil()
                     .min(f64::from(width)) as usize;
                 for x in start.min(width as usize)..end.min(width as usize) {
-                    mask[y as usize * width as usize + x] ^= 1;
+                    water[y as usize * width as usize + x] ^= 1;
                 }
             }
         }
     }
-    mask
+    (roads, water)
 }
 
 fn polygon_bounds(polygon: &[Vec<[f64; 2]>]) -> Option<[f64; 4]> {

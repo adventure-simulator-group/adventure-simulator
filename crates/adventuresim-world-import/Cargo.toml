@@ -7,7 +7,7 @@ license.workspace = true
 
 [features]
 default = []
-strategic-map-renderer = ["dep:image", "dep:rayon", "dep:tiny-skia", "adventuresim-terrain/builder"]
+strategic-map-renderer = ["dep:image", "dep:rayon", "dep:tiny-skia", "dep:adventuresim-terrain", "adventuresim-terrain/builder"]
 
 [[bin]]
 name = "build-strategic-map"
@@ -16,7 +16,7 @@ required-features = ["strategic-map-renderer"]
 
 [dependencies]
 adventuresim-world-schema.workspace = true
-adventuresim-terrain = { path = "../adventuresim-terrain" }
+adventuresim-terrain = { path = "../adventuresim-terrain", optional = true }
 blake3.workspace = true
 clap.workspace = true
 csv.workspace = true

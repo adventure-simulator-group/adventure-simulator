@@ -42,22 +42,6 @@
       target.setAttribute("r", radius);
     });
   };
-  const populationLevelThreshold = (viewWidth) => {
-    if (viewWidth > 900) return 5;
-    if (viewWidth > 600) return 4;
-    if (viewWidth > 350) return 3;
-    if (viewWidth > 180) return 2;
-    return 1;
-  };
-  const layoutSettlementPins = (svg, viewWidth) => {
-    const threshold = populationLevelThreshold(viewWidth);
-    svg.querySelectorAll("[data-map-settlement], [data-map-settlement-hit]").forEach((pin) => {
-      const level = Number(pin.dataset.mapPopulationLevel);
-      const visible = pin.dataset.mapPinEssential === "true"
-        || (Number.isFinite(level) && level >= threshold);
-      pin.setAttribute("display", visible ? "inline" : "none");
-    });
-  };
   const labelPriorityThreshold = (viewWidth) => {
     if (viewWidth > 700) return 80;
     if (viewWidth > 400) return 70;
@@ -87,12 +71,10 @@
       return {
         label, x, y, priority, width,
         essential: label.dataset.mapLabelEssential === "true",
-        pinVisible: label.closest("[data-map-settlement]")?.getAttribute("display") !== "none",
         screenX: (x - viewX) / viewWidth * pixelWidth,
         screenY: (y - viewY) / viewHeight * pixelHeight,
       };
-    }).filter(({ x, y, priority, essential, pinVisible }) => pinVisible
-      && Number.isFinite(x) && Number.isFinite(y)
+    }).filter(({ x, y, priority, essential }) => Number.isFinite(x) && Number.isFinite(y)
       && (essential || priority >= threshold)
       && x >= viewX && x <= viewX + viewWidth && y >= viewY && y <= viewY + viewHeight)
       .sort((a, b) => b.priority - a.priority || a.y - b.y || a.x - b.x);
@@ -129,7 +111,6 @@
     svg.setAttribute("viewBox", view.map((value) => value.toFixed(2)).join(" "));
     scalePins(svg, view[2]);
     scaleHitTargets(svg, svg.getBoundingClientRect().width || PIN_REFERENCE_WIDTH);
-    layoutSettlementPins(svg, view[2]);
     layoutLabels(svg, view);
   };
   const tileZoom = (viewWidth, pixelWidth, pixelRatio, maxZoom) => {
@@ -323,7 +304,7 @@
   };
 
   const initializeStrategicMaps = (root = document) => root.querySelectorAll("[data-strategic-map]").forEach((map) => initializeMap(map));
-  globalThis.StrategicMap = { boxesOverlap, hitTargetRadius, initializeMap, labelPriorityThreshold, layoutLabels, layoutSettlementPins, parentTileFallback, parseViewBox, pannedView, populationLevelThreshold, renderTiles, resizedView, scaleHitTargets, tileZoom, viewForElement, visibleTileRange, zoomedView };
+  globalThis.StrategicMap = { boxesOverlap, hitTargetRadius, initializeMap, labelPriorityThreshold, layoutLabels, parentTileFallback, parseViewBox, pannedView, renderTiles, resizedView, scaleHitTargets, tileZoom, viewForElement, visibleTileRange, zoomedView };
   initializeStrategicMaps();
   document.addEventListener("strategic-live-regions-refreshed", () => initializeStrategicMaps());
 })();

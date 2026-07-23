@@ -1261,11 +1261,6 @@ pub fn examine_by_herbalist(
     if patient.current_settlement_id.as_deref() != Some(&settlement_id) {
         return Err("Patient must be at this herbalist's settlement".into());
     }
-    crate::strategic::require_settlement_service(
-        ctx,
-        &settlement_id,
-        adventuresim_world_schema::SettlementService::Herbalist,
-    )?;
     let herbalist = ensure_settlement_herbalist(ctx, &settlement_id);
     crate::strategic::consume_personal_gold(
         ctx,
@@ -1367,11 +1362,6 @@ pub fn purchase_from_herbalist(
     item_ids: Vec<String>,
     quantities: Vec<u32>,
 ) -> Result<(), String> {
-    crate::strategic::require_settlement_service(
-        ctx,
-        &settlement_id,
-        adventuresim_world_schema::SettlementService::Herbalist,
-    )?;
     let patient = crate::require_living_character(ctx, patient_id)?;
     if patient.current_settlement_id.as_deref() != Some(&settlement_id) {
         return Err("Patient must be at this herbalist's settlement".into());
@@ -1380,13 +1370,6 @@ pub fn purchase_from_herbalist(
         return Err("Herbalist purchase entries must be aligned".into());
     }
     ensure_settlement_herbalist(ctx, &settlement_id);
-    let economy = ctx
-        .db
-        .settlement()
-        .id()
-        .find(settlement_id.clone())
-        .ok_or("Settlement not found")?
-        .economy;
 
     let mut cost = 0u64;
     for (item_id, quantity) in item_ids.iter().zip(&quantities) {
@@ -1399,14 +1382,6 @@ pub fn purchase_from_herbalist(
             .id()
             .find(item_id)
             .ok_or("Herbalist item not found")?;
-        if !adventuresim_core::settlement_economy::storefront_stocks(
-            &economy,
-            adventuresim_core::settlement_economy::Storefront::Herbalist,
-            item_id,
-            crate::item::economy_catalog_kind(definition.kind),
-        ) {
-            return Err("This herbalist does not stock that item".into());
-        }
         let unit_price = match definition.kind {
             crate::ItemKind::Ingredient => {
                 adventuresim_core::strategic_economy::merchant_buy_price(

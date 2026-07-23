@@ -1,7 +1,7 @@
-//! Deterministic strategic route terrain derived from canonical edge geometry.
+//! Deterministic strategic route terrain derived from straight endpoint geometry.
 //!
-//! Documented Viabundus edges use endpoint interpolation; inferred edges use
-//! their terrain-routed schema-v25 polyline. This describes travel and encounter
+//! Viabundus does not provide route polylines, so v5 deliberately interpolates
+//! endpoints in EPSG:3035. This describes strategic travel and static encounter
 //! selection only; tactical positions, combatants, HP, and tick state remain transient.
 
 #[cfg(test)]
@@ -60,27 +60,14 @@ pub(crate) fn enrich(
         let a = projection.project(from.0, from.1)?;
         let b = projection.project(to.0, to.1)?;
         let cell = world.metadata.spatial_grid.cell_size_meters().get();
+        let route_direction = (
+            b.easting_millimeters() - a.easting_millimeters(),
+            b.northing_millimeters() - a.northing_millimeters(),
+        );
         let segments = edge.length_m.div_ceil(cell).clamp(1, 1_000);
-        let path = if edge.geometry.is_empty() {
-            (0..=segments)
-                .map(|index| interpolate(a, b, index, segments))
-                .collect::<Result<Vec<_>>>()?
-        } else {
-            let vertices = edge
-                .geometry
-                .iter()
-                .map(|point| projection.project(point.latitude(), point.longitude()))
-                .collect::<Result<Vec<_>>>()?;
-            densify_polyline(&vertices, cell)?
-        };
-        let mut local = Vec::with_capacity(path.len());
-        for (index, point) in path.iter().copied().enumerate() {
-            let previous = path[index.saturating_sub(1)];
-            let next = path[(index + 1).min(path.len() - 1)];
-            let route_direction = (
-                next.easting_millimeters() - previous.easting_millimeters(),
-                next.northing_millimeters() - previous.northing_millimeters(),
-            );
+        let mut local = Vec::with_capacity(segments as usize + 1);
+        for index in 0..=segments {
+            let point = interpolate(a, b, index, segments)?;
             let sample = local_sample(&projection, &mut sampler, point, cell, route_direction)?;
             dem_samples += 9;
             dem_fallbacks += sample.fallback;
@@ -95,21 +82,12 @@ pub(crate) fn enrich(
         .map_err(Error::Validation)?;
         edge.terrain = terrain;
         let fallback = local.iter().any(|v| v.fallback > 0);
-        let geometry = if edge.geometry.is_empty() {
-            "straight endpoint geometry"
-        } else {
-            "canonical terrain-routed inferred geometry"
-        };
         let note = if fallback {
-            format!(
-                "- **Route terrain rules v6:** {geometry} was sampled from GLO-30 with a 3x3 canonical-grid neighborhood; missing/void pixels used the bounded deterministic sea-level fallback. Nearest EU-Hydro facts within 2 km drive static seasonal/encounter tags. Viabundus slope_multiplier remains only a source cost hint."
-            )
+            "- **Route terrain rules v5:** Straight endpoint geometry was interpolated in EPSG:3035 and sampled from GLO-30 with a 3x3 canonical-grid neighborhood; missing/void pixels used the bounded deterministic sea-level fallback. Nearest EU-Hydro facts within 2 km, including zero-distance crossings/ferries, drive static seasonal/encounter tags. Viabundus slope_multiplier remains only a source cost hint."
         } else {
-            format!(
-                "- **Route terrain rules v6:** {geometry} was sampled from GLO-30 with a 3x3 canonical-grid neighborhood. Nearest EU-Hydro facts within 2 km drive static seasonal/encounter tags. Viabundus slope_multiplier remains only a source cost hint."
-            )
+            "- **Route terrain rules v5:** Straight endpoint geometry was interpolated in EPSG:3035 and sampled from GLO-30 with a 3x3 canonical-grid neighborhood. Nearest EU-Hydro facts within 2 km, including zero-distance crossings/ferries, drive static seasonal/encounter tags. Viabundus slope_multiplier remains only a source cost hint."
         };
-        append_required_note(&mut edge.sources, &note, edge.id)?;
+        append_required_note(&mut edge.sources, note, edge.id)?;
     }
     world.report.route_terrain_edges = world.edges.len();
     world.report.route_terrain_dem_samples = dem_samples;
@@ -132,30 +110,6 @@ pub(crate) fn enrich(
         .map(|e| e.terrain.encounter_tags.len())
         .sum();
     Ok(world)
-}
-
-fn densify_polyline(
-    vertices: &[ProjectedCoordinate],
-    interval_m: u32,
-) -> Result<Vec<ProjectedCoordinate>> {
-    if vertices.len() < 2 || interval_m == 0 {
-        return Err(Error::Validation(
-            "route geometry cannot be densified".into(),
-        ));
-    }
-    let mut output = vec![vertices[0]];
-    for pair in vertices.windows(2) {
-        let dx = pair[1].easting_millimeters() - pair[0].easting_millimeters();
-        let dy = pair[1].northing_millimeters() - pair[0].northing_millimeters();
-        let distance_mm = ((dx as f64).hypot(dy as f64)).ceil() as u64;
-        let count = distance_mm.div_ceil(u64::from(interval_m) * 1_000).max(1);
-        let count = u32::try_from(count)
-            .map_err(|_| Error::Validation("route densification overflowed".into()))?;
-        for index in 1..=count {
-            output.push(interpolate(pair[0], pair[1], index, count)?);
-        }
-    }
-    Ok(output)
 }
 
 fn append_required_note(sources: &mut String, note: &str, edge_id: u64) -> Result<()> {
@@ -751,20 +705,6 @@ mod tests {
         assert_eq!(forward, reverse);
         assert_eq!(forward[2].easting_millimeters(), 1);
         assert_eq!(forward[2].northing_millimeters(), -2);
-    }
-
-    #[test]
-    fn inferred_polyline_densification_preserves_collinear_ridge_vertex_and_midpoints() {
-        let vertices = [
-            ProjectedCoordinate::from_meters(0.0, 0.0).unwrap(),
-            ProjectedCoordinate::from_meters(1_000.0, 0.0).unwrap(),
-            ProjectedCoordinate::from_meters(2_000.0, 0.0).unwrap(),
-        ];
-        let samples = densify_polyline(&vertices, 500).unwrap();
-        assert_eq!(samples.len(), 5);
-        assert_eq!(samples[2], vertices[1]);
-        assert_eq!(samples[1].easting_meters(), 500.0);
-        assert_eq!(samples[3].easting_meters(), 1_500.0);
     }
 
     #[test]

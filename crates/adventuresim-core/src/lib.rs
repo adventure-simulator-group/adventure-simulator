@@ -18,7 +18,6 @@ pub mod leadership;
 pub mod morale;
 pub mod profession;
 pub mod provisioning;
-pub mod settlement_economy;
 pub mod simulation_security;
 pub mod skill;
 pub mod social;

@@ -60,16 +60,6 @@ struct Args {
     derive_owda_profiles: Option<PathBuf>,
     #[arg(long, default_value_os_t = default_hydrology_directory())]
     hydrology_dir: PathBuf,
-    #[arg(
-        long,
-        default_value = "target/strategic-map/terrain-routing-base-v2.json"
-    )]
-    base_terrain: PathBuf,
-    #[arg(
-        long,
-        default_value = "target/strategic-map/terrain-routing-base-v2.pack"
-    )]
-    base_terrain_pack: PathBuf,
     #[arg(long, default_value_t = WORLD_YEAR)]
     year: i32,
     #[arg(long, default_value_t = GridCellSizeMeters::default())]
@@ -154,12 +144,10 @@ fn run(args: Args) -> Result<()> {
         }
         return Ok(());
     }
-    let base_terrain =
-        adventuresim_terrain::TerrainPack::load(&args.base_terrain, &args.base_terrain_pack)?;
     let world = WorldBuilder::new(args.year)
         .with_spatial_grid(SpatialGridSpec::new(args.grid_cell_size_meters))
         .with_playable_bounds()
-        .build_from_sources_with_base_terrain(
+        .build_from_sources(
             &args.viabundus_dir,
             &args.elevation_dir,
             &args.land_use_dir,
@@ -171,7 +159,6 @@ fn run(args: Args) -> Result<()> {
             &args.religion_regions,
             &args.drought_netcdf,
             &args.hydrology_dir,
-            &base_terrain,
         )?;
     let output = args
         .output
@@ -415,9 +402,6 @@ fn encode_travel_edge(edge: &TravelEdgeImport) -> Result<Value> {
         "from_node_id": edge.from_node_id,
         "to_node_id": edge.to_node_id,
         "route": route,
-        "provenance": enum_unit(match edge.provenance { adventuresim_world_schema::TravelEdgeProvenance::DocumentedViabundus => "DocumentedViabundus", adventuresim_world_schema::TravelEdgeProvenance::InferredWalkingLink => "InferredWalkingLink" }),
-        // Canonical geometry is consumed only by offline validation and map
-        // generation; the reducer's TravelEdgeLoad DTO intentionally omits it.
         "toll": encode_endpoint(edge.toll),
         "length_m": edge.length_m,
         "slope_multiplier": edge.slope_multiplier,
@@ -518,56 +502,9 @@ fn encode_settlement(settlement: &SettlementImport) -> Result<Value> {
         "drought": encode_drought(settlement.drought),
         "hydrology": encode_hydrology(settlement.hydrology),
         "industries": encode_industries(&settlement.industries),
-        "economy": encode_economy(&settlement.economy),
         "scene_key": settlement.scene_key,
         "sources": settlement.sources,
     }))
-}
-
-fn encode_economy(profile: &adventuresim_world_schema::SettlementEconomyProfile) -> Value {
-    use adventuresim_world_schema::{
-        ProfileFactProvenance as P, ProsperityTier as T, SettlementService as S, StockCategory as C,
-    };
-    let service = |v| {
-        enum_unit(match v {
-            S::GeneralStore => "GeneralStore",
-            S::Inn => "Inn",
-            S::GeneralBlacksmith => "GeneralBlacksmith",
-            S::Market => "Market",
-            S::Weaponsmith => "Weaponsmith",
-            S::Armorer => "Armorer",
-            S::Tailor => "Tailor",
-            S::Herbalist => "Herbalist",
-            S::Temple => "Temple",
-        })
-    };
-    let stock = |v| {
-        enum_unit(match v {
-            C::Grain => "Grain",
-            C::Dairy => "Dairy",
-            C::Meat => "Meat",
-            C::Fish => "Fish",
-            C::Cloth => "Cloth",
-            C::Hides => "Hides",
-            C::Timber => "Timber",
-            C::Fuel => "Fuel",
-            C::Stone => "Stone",
-            C::Pottery => "Pottery",
-            C::Salt => "Salt",
-            C::Metalwares => "Metalwares",
-            C::Weapons => "Weapons",
-            C::Armor => "Armor",
-            C::Herbs => "Herbs",
-            C::GeneralGoods => "GeneralGoods",
-        })
-    };
-    json!({
-        "rules_version": profile.rules_version, "prosperity_score": profile.prosperity_score,
-        "prosperity_tier": enum_unit(match profile.prosperity_tier { T::Subsistence=>"Subsistence",T::Modest=>"Modest",T::Comfortable=>"Comfortable",T::Prosperous=>"Prosperous",T::Wealthy=>"Wealthy" }),
-        "services": profile.services.iter().copied().map(service).collect::<Vec<_>>(),
-        "specializations": profile.specializations.iter().copied().map(stock).collect::<Vec<_>>(),
-        "stock": profile.stock.iter().map(|v| json!({"category":stock(v.category),"abundance":v.abundance,"provenance":enum_unit(match v.provenance { P::ImportedEvidence=>"ImportedEvidence",P::DerivedFromCanonicalEvidence=>"DerivedFromCanonicalEvidence",P::DeterministicGapFill=>"DeterministicGapFill" })})).collect::<Vec<_>>()
-    })
 }
 
 fn encode_industries(profile: &adventuresim_world_schema::InferredIndustryProfile) -> Value {
@@ -1326,8 +1263,6 @@ mod tests {
                 bridge: Some(EdgeEndpoint::To),
                 water_crossings: Vec::new(),
             }),
-            provenance: adventuresim_world_schema::TravelEdgeProvenance::DocumentedViabundus,
-            geometry: Vec::new(),
             toll: Some(EdgeEndpoint::From),
             length_m: 4,
             slope_multiplier: 1.0,
@@ -1345,7 +1280,6 @@ mod tests {
             batches[0][0]["toll"],
             serde_json::json!({ "some": { "from": [] } })
         );
-        assert!(batches[0][0].get("geometry").is_none());
         assert_eq!(batches[0][0]["sources"], "- Test source.");
         assert_eq!(
             batches[0][0]["terrain"]["class"],
@@ -1625,7 +1559,6 @@ mod tests {
                     adventuresim_world_schema::FallbackIndustry::CommonAggregate,
                 ),
             ]).unwrap(),
-            economy: adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder(),
             scene_key: "village".into(),
             sources: "- Test source.".into(),
         }

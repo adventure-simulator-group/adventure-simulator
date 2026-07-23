@@ -212,7 +212,6 @@ pub(crate) fn compile(
             from_node_id,
             to_node_id,
             route,
-            provenance: adventuresim_world_schema::TravelEdgeProvenance::DocumentedViabundus,
             toll: endpoints(from_node.toll.active_in(year), to_node.toll.active_in(year)),
             length_m: required_number(&edges_path, "length", &raw.length)?,
             slope_multiplier: if raw.slopemultiplier.trim().is_empty() {
@@ -413,9 +412,6 @@ pub(crate) fn compile(
             industry_charcoal_outputs: 0,
             industry_saltmaking_outputs: 0,
             industry_construction_outputs: 0,
-            base_terrain_package_sha256: String::new(),
-            inferred_road_edges: 0,
-            inferred_road_geometry_sha256: String::new(),
             excluded_edges,
         },
         nodes,
@@ -641,8 +637,8 @@ fn population_level(thousands: Option<u32>) -> i32 {
     match thousands.unwrap_or(0) {
         0..=1 => 1,
         2..=3 => 2,
-        4..=7 => 3,
-        8..=12 => 4,
+        4..=10 => 3,
+        11..=50 => 4,
         _ => 5,
     }
 }
@@ -686,12 +682,12 @@ mod tests {
     }
 
     #[test]
-    fn population_bands_cover_all_five_regional_city_sizes() {
+    fn population_bands_match_existing_importer() {
         assert_eq!(population_level(None), 1);
         assert_eq!(population_level(Some(3)), 2);
-        assert_eq!(population_level(Some(7)), 3);
-        assert_eq!(population_level(Some(12)), 4);
-        assert_eq!(population_level(Some(13)), 5);
+        assert_eq!(population_level(Some(10)), 3);
+        assert_eq!(population_level(Some(50)), 4);
+        assert_eq!(population_level(Some(51)), 5);
     }
 
     #[test]

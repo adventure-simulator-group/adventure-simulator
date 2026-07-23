@@ -107,7 +107,6 @@ pub(crate) fn finalize(mut draft: FinalizedSoilWorldDraft) -> Result<CompiledWor
                         adventuresim_world_schema::FallbackIndustry::CommonAggregate,
                     ),
                 ]).expect("stage placeholder is valid"),
-                economy: adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder(),
                 scene_key: settlement.scene_key,
                 sources: settlement.sources,
             }
@@ -685,8 +684,6 @@ mod tests {
                 route: TravelRoute::Ferry(FerryRoute {
                     waterway: FerryWaterway::TidalWater,
                 }),
-                provenance: adventuresim_world_schema::TravelEdgeProvenance::DocumentedViabundus,
-                geometry: Vec::new(),
                 toll: None,
                 length_m: 10,
                 slope_multiplier: 1.0,

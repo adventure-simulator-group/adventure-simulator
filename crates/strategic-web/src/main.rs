@@ -79,34 +79,33 @@ async fn main() -> anyhow::Result<()> {
     )?;
 
     // Create app state
-    let assets = (|| -> anyhow::Result<_> {
-        let map = strategic_map::StrategicMap::load(&config.strategic_map_bundle_dir)?;
-        let pack = adventuresim_terrain::TerrainPack::load(
-            &config
-                .strategic_map_bundle_dir
-                .join("terrain-routing-v2.json"),
-            &config
-                .strategic_map_bundle_dir
-                .join("terrain-routing-v2.pack"),
-        )?;
-        map.validate_terrain_identity(&pack)?;
-        let digest = pack.digest().to_string();
-        Ok((
-            std::sync::Arc::new(map),
-            std::sync::Arc::new(routes::travel::TerrainPlanner::new(std::sync::Arc::new(
-                pack,
-            ))),
-            digest,
-        ))
-    })();
-    let (strategic_map, terrain) = match assets {
-        Ok((map, terrain, digest)) => {
-            tracing::info!(bundle=%config.strategic_map_bundle_dir.display(),%digest,"loaded coherent final strategic map and terrain bundle");
-            (Some(map), Some(terrain))
+    let strategic_map = match strategic_map::StrategicMap::load(&config.strategic_map_bundle_dir) {
+        Ok(map) => {
+            tracing::info!(bundle = %config.strategic_map_bundle_dir.display(), "loaded optional strategic map bundle");
+            Some(std::sync::Arc::new(map))
         }
         Err(error) => {
-            tracing::warn!(bundle=%config.strategic_map_bundle_dir.display(),%error,"strategic map and terrain bundle unavailable or incoherent; disabling both");
-            (None, None)
+            tracing::warn!(bundle = %config.strategic_map_bundle_dir.display(), %error, "strategic map bundle unavailable; continuing without raster map");
+            None
+        }
+    };
+    let terrain = match adventuresim_terrain::TerrainPack::load(
+        &config
+            .strategic_map_bundle_dir
+            .join("terrain-routing-v1.json"),
+        &config
+            .strategic_map_bundle_dir
+            .join("terrain-routing-v1.pack"),
+    ) {
+        Ok(pack) => {
+            tracing::info!(digest=%pack.digest(), "loaded optional terrain routing pack");
+            Some(std::sync::Arc::new(routes::travel::TerrainPlanner::new(
+                std::sync::Arc::new(pack),
+            )))
+        }
+        Err(error) => {
+            tracing::warn!(%error, "terrain routing unavailable; retaining legacy straight-line travel");
+            None
         }
     };
     db.call(

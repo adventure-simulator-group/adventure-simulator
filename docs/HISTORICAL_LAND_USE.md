@@ -10,16 +10,6 @@ evidence, not an exact observation of an individual settlement.
 
 ## Manual preparation contract
 
-Download the three HYDE 3.5 c9 April 2025 NetCDF inputs from Utrecht
-University's public HYDE vault:
-
-<https://geo.public.data.uu.nl/vault-hyde/hyde35_c9_apr2025%5B1749214444%5D/original/gbc2025_7apr_base/NetCDF/>
-
-The directory is protected by an interactive anti-bot page, so the repository
-initializer does not automate this download. Use a normal browser and retain
-the release filenames. The separate `general_files.zip` release input is still
-required for the matching `general_files/garea_cr.asc` cell-area grid.
-
 Place exactly these release files in the Git-ignored
 `target/world-data-sources/raw/hyde35-land-use/` directory, or point
 `--land-use-dir` at another directory:
@@ -29,12 +19,10 @@ Place exactly these release files in the Git-ignored
 - `urban_area.nc` / `urban_area` — urban area in km²
 - `general_files.zip` / `general_files/garea_cr.asc` — HYDE grid-cell area in km²
 
-For normal development, `just init-world-data` installs these exact four files
-into that directory from the pinned reviewed source-separated input bundle. Its
-HYDE component retains a separate notice and exact file inventory; the archive
-is not a combined derived world artifact. Manual browser retrieval is the
-fallback for preparing or independently auditing the HYDE component. See
-`docs/WORLD_DATA_BUNDLES.md`.
+For normal development, a reviewed source-separated input bundle may install
+these four files into that same directory. Its HYDE component retains a separate
+notice and exact file inventory; the archive is not a combined world-data
+release. See `docs/WORLD_DATA_BUNDLES.md`.
 
 The importer requires NetCDF-4 inputs with `time`, `lat`, and `lon` dimensions
 in that order, matching 4,320×2,160 global 5-arcminute coordinate grids. It

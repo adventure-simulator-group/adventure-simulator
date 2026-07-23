@@ -284,7 +284,6 @@ impl LocationView {
                     .unwrap_or(&SettlementCategory::Unknown),
                 self.active_building.as_deref().unwrap_or(""),
                 self.religion_id.as_deref(),
-                None,
                 content,
                 logged_in_as,
             )
@@ -323,45 +322,6 @@ pub struct RestSummary {
 }
 
 impl MerchantShop {
-    pub fn storefront(self) -> adventuresim_core::settlement_economy::Storefront {
-        use adventuresim_core::settlement_economy::Storefront as S;
-        match self {
-            Self::General => S::General,
-            Self::Weapons => S::Weapons,
-            Self::Armor => S::Armor,
-            Self::Clothing => S::Clothing,
-            Self::Herbalist => S::Herbalist,
-            Self::Inn => S::Inn,
-        }
-    }
-
-    pub fn available_at(self, settlement: &Settlement) -> bool {
-        adventuresim_core::settlement_economy::storefront_available(
-            &settlement.economy,
-            self.storefront(),
-        )
-    }
-
-    fn stocks_at(self, settlement: &Settlement, item: &crate::spacetimedb::ItemDefinition) -> bool {
-        use adventuresim_core::settlement_economy::CatalogKind as C;
-        let kind = match item.kind {
-            crate::spacetimedb::ItemKind::Simple => C::Simple,
-            crate::spacetimedb::ItemKind::Weapon => C::Weapon,
-            crate::spacetimedb::ItemKind::Armor => C::Armor,
-            crate::spacetimedb::ItemKind::Shield => C::Shield,
-            crate::spacetimedb::ItemKind::Clothing => C::Clothing,
-            crate::spacetimedb::ItemKind::Currency => C::Currency,
-            crate::spacetimedb::ItemKind::Ingredient => C::Ingredient,
-            crate::spacetimedb::ItemKind::Medication => C::Medication,
-            crate::spacetimedb::ItemKind::Food => C::Food,
-        };
-        adventuresim_core::settlement_economy::storefront_stocks(
-            &settlement.economy,
-            self.storefront(),
-            &item.id,
-            kind,
-        )
-    }
     pub fn service_id(self) -> &'static str {
         match self {
             Self::General => "merchants",
@@ -518,7 +478,6 @@ pub fn alchemy_page(
         &settlement.category,
         "herbalist",
         Some(&settlement.religion_id),
-        Some(&settlement.economy),
         content,
         Some(&character.name),
     )
@@ -543,10 +502,6 @@ pub fn settlement_overview_page(
                     dl class="location-stat-list" {
                         div { dt { "Population" } dd { (format_population(settlement)) } }
                         div { dt { "Size" } dd { (population_description(settlement.population_level)) } }
-                        div { dt { "Prosperity" } dd { (format!("{:?} ({}/1000)", settlement.economy.prosperity_tier, settlement.economy.prosperity_score)) } }
-                        div { dt { "Services" } dd { (settlement.economy.services.iter().map(|v| format!("{:?}", v)).collect::<Vec<_>>().join(", ")) } }
-                        div { dt { "Specialties" } dd { (settlement.economy.specializations.iter().map(|v| format!("{:?}", v)).collect::<Vec<_>>().join(", ")) } }
-                        div { dt { "Faiths" } dd { (settlement.religious_status.represented_religions().iter().map(|r| r.label()).collect::<Vec<_>>().join(", ")) } }
                         div { dt { "Coordinates" } dd { (format!("{}, {}", settlement.coord_x as i32, settlement.coord_y as i32)) } }
                         div { dt { "Languages" } dd { (format!(
                             "East-central {:.1}% · West-central {:.1}% · Low {:.1}%",
@@ -585,7 +540,6 @@ pub fn settlement_overview_page(
         &settlement.category,
         "",
         Some(&settlement.religion_id),
-        Some(&settlement.economy),
         content,
         logged_in_as,
     )
@@ -734,7 +688,6 @@ pub fn settlement_map_page(
         &settlement.category,
         "map",
         Some(&settlement.religion_id),
-        Some(&settlement.economy),
         content,
         logged_in_as,
     )
@@ -1264,7 +1217,6 @@ fn format_terrain_spans(destination: &TravelDestination) -> String {
                         adventuresim_terrain::Surface::Open => "open",
                         adventuresim_terrain::Surface::SparseWoods => "sparse-woods",
                         adventuresim_terrain::Surface::DeepWoods => "deep-woods",
-                        adventuresim_terrain::Surface::Wetland => "wetland",
                         adventuresim_terrain::Surface::Water => return None,
                     };
                     Some(format!(
@@ -2897,7 +2849,6 @@ fn service_page(
         &settlement.category,
         service_id,
         Some(&settlement.religion_id),
-        Some(&settlement.economy),
         content,
         logged_in_as,
     )
@@ -3064,7 +3015,7 @@ pub fn live_merchant_shop_page(
         (sidebar_section(if matches!(shop, MerchantShop::Herbalist) { "Prepared medicines and ingredients" } else if matches!(shop, MerchantShop::Inn) { "Cooking supplies" } else { "Merchant stock" }, html! {
             div class="smith-wares-scroll" {
             (trade_inventory_table("merchant-left", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, false, false, false, html! {
-                @for item in items.iter().filter(|item| shop.stocks_at(settlement, item)) {
+                @for item in items.iter().filter(|item| shop.stocks(item)) {
                     @let is_currency = item.kind == crate::spacetimedb::ItemKind::Currency;
                     @let medication_recipe = adventuresim_core::disease::medication_recipe_for_item(&item.id);
                     @let buy_price = adventuresim_core::strategic_economy::language_adjusted_buy_price(medication_recipe.map_or_else(
@@ -3192,7 +3143,6 @@ pub fn live_merchant_shop_page(
         &settlement.category,
         service_id,
         Some(&settlement.religion_id),
-        Some(&settlement.economy),
         content,
         Some(&character.name),
     )
@@ -6162,46 +6112,6 @@ mod tests {
     }
 
     #[test]
-    fn inferred_general_blacksmith_exposes_limited_weapon_and_armor_stock() {
-        let industries = adventuresim_world_schema::InferredIndustryProfile::new(vec![
-            adventuresim_world_schema::IndustryEvidence::Fallback(
-                adventuresim_world_schema::FallbackIndustry::CommonAggregate,
-            ),
-        ])
-        .unwrap();
-        let economy =
-            adventuresim_world_schema::infer_settlement_economy(2, 500, 1, false, &industries)
-                .unwrap();
-
-        assert!(adventuresim_core::settlement_economy::storefront_stocks(
-            &economy,
-            adventuresim_core::settlement_economy::Storefront::Weapons,
-            "club",
-            adventuresim_core::settlement_economy::CatalogKind::Weapon,
-        ));
-        assert!(adventuresim_core::settlement_economy::storefront_stocks(
-            &economy,
-            adventuresim_core::settlement_economy::Storefront::Armor,
-            "leather vest",
-            adventuresim_core::settlement_economy::CatalogKind::Armor,
-        ));
-        for category in [
-            adventuresim_world_schema::StockCategory::Weapons,
-            adventuresim_world_schema::StockCategory::Armor,
-        ] {
-            assert_eq!(
-                economy
-                    .stock
-                    .iter()
-                    .find(|stock| stock.category == category)
-                    .unwrap()
-                    .abundance,
-                1
-            );
-        }
-    }
-
-    #[test]
     fn merchant_food_quote_and_weight_follow_remaining_lot() {
         let mut lot = FoodLot {
             id: 1,
@@ -6660,10 +6570,6 @@ mod tests {
                 ),
             ])
             .unwrap(),
-            economy: adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder(),
-            religious_status: adventuresim_world_schema::SettlementReligiousStatus::Established {
-                religion: adventuresim_world_schema::OfficialReligion::RomanCatholic,
-            },
             scene_key: "hills".into(),
             religion_id: "western_church".into(),
             currency_id: "lubeck_mark".into(),
