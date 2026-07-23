@@ -346,7 +346,3 @@ Tailoring makes and repairs cloth goods. Settlement tailors and field maintenanc
 
 ### Smithing (trained, 10000 hours)
 Smithing makes and repairs weapons, armor, and shields. It does not repair clothing.
-
-### Languages
-
-Oral and Written are expandable skill families rather than generic leaf `Skill` values. Oral includes East-central, West-central, Low, Yiddish, Latin, Romani, Elven, and Dwarfish; Written includes German chancery, Low, Latin, Hebrew, Yiddish, Elven, and Dwarfish. Direct hours are authoritative. Effective hours are a one-pass symmetric correlation, following the Religion model. A pair uses the language with the highest shared coefficient, with stable enum order breaking ties.

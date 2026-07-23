@@ -336,7 +336,6 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/native_range_evidence_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/nerve_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/official_religion_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/oral_language_hours_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/organic_soil_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/other_non_textured_soil_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/outlook_type.rs` — Generated SpacetimeDB data type.
@@ -459,7 +458,6 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/settlement_herbalist_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/settlement_hydrology_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/settlement_import_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/settlement_language_profile_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/settlement_outbreak_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/settlement_outbreak_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/settlement_religious_status_type.rs` — Generated SpacetimeDB data type.
@@ -540,7 +538,6 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/world_node_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/world_node_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/wrb_reference_group_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/written_language_hours_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-module/.gitignore` — Repository support file.
 - `crates/adventuresim-stdb-module/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-stdb-module/README.md` — Component overview and usage notes.
@@ -642,7 +639,6 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-world-import/tests/fixtures/viabundus/population.csv` — Repository support file.
 - `crates/adventuresim-world-import/tests/viabundus_fixture.rs` — Rust source module.
 - `crates/adventuresim-world-schema/Cargo.toml` — Cargo package/workspace manifest.
-- `crates/adventuresim-world-schema/src/language.rs` — Rust source module for this component.
 - `crates/adventuresim-world-schema/src/lib.rs` — Rust source module for this component.
 - `crates/strategic-web/AGENTS.md` — Project documentation.
 - `crates/strategic-web/Cargo.toml` — Cargo package/workspace manifest.

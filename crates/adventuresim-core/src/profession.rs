@@ -68,55 +68,6 @@ pub enum PracticeReward {
     Virtue,
 }
 
-/// Written exposure per hour of profession work. Religious language depends
-/// on the enrolled denomination and is resolved by the strategic server.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ProfessionLiteracyProfile {
-    pub vernacular: f32,
-    pub latin: f32,
-    pub religious: bool,
-}
-
-pub fn profession_literacy_profile(service_id: &str) -> ProfessionLiteracyProfile {
-    match service_id {
-        "merchants" => ProfessionLiteracyProfile {
-            vernacular: 0.40,
-            latin: 0.0,
-            religious: false,
-        },
-        "herbalist" => ProfessionLiteracyProfile {
-            vernacular: 0.05,
-            latin: 0.25,
-            religious: false,
-        },
-        "weapons" | "armor" => ProfessionLiteracyProfile {
-            vernacular: 0.03,
-            latin: 0.0,
-            religious: false,
-        },
-        "clothing" => ProfessionLiteracyProfile {
-            vernacular: 0.08,
-            latin: 0.0,
-            religious: false,
-        },
-        "inn" => ProfessionLiteracyProfile {
-            vernacular: 0.02,
-            latin: 0.0,
-            religious: false,
-        },
-        "religion" => ProfessionLiteracyProfile {
-            vernacular: 0.0,
-            latin: 0.0,
-            religious: true,
-        },
-        _ => ProfessionLiteracyProfile {
-            vernacular: 0.0,
-            latin: 0.0,
-            religious: false,
-        },
-    }
-}
-
 /// Progression earned within a profession. Enrollment is stored separately.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProfessionTier {

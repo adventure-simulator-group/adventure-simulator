@@ -7,11 +7,8 @@ use std::{fmt, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
-mod language;
-pub use language::*;
-
-pub const WORLD_SCHEMA_VERSION: u32 = 24;
-pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 8;
+pub const WORLD_SCHEMA_VERSION: u32 = 23;
+pub const CURRENT_INFERENCE_RULES_VERSION: u32 = 7;
 pub const MAX_SOURCES_MARKDOWN_CHARS: usize = 32_768;
 
 /// Authoritative MVP playable area in `[west, south, east, north]` order.
@@ -3935,7 +3932,6 @@ pub struct SettlementImport {
     pub soil: SoilProfile,
     pub geology: SurfaceGeology,
     pub religious_status: SettlementReligiousStatus,
-    pub languages: SettlementLanguageProfile,
     pub drought: DroughtProfile,
     pub hydrology: SettlementHydrology,
     pub industries: InferredIndustryProfile,

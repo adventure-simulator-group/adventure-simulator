@@ -30,29 +30,6 @@ pub fn merchant_sell_price(base_value: u32) -> u32 {
     (base_value as f32 / MERCHANT_MARGIN).floor().max(1.0) as u32
 }
 
-pub fn language_adjusted_buy_price(price: u32, shared_language: f32) -> u32 {
-    let coefficient = if shared_language.is_finite() {
-        shared_language.clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-    (price as f32 * (1.0 + (1.0 - coefficient) * 0.25)).ceil() as u32
-}
-
-pub fn language_adjusted_sell_price(price: u32, shared_language: f32) -> u32 {
-    if price == 0 {
-        return 0;
-    }
-    let coefficient = if shared_language.is_finite() {
-        shared_language.clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-    (price as f32 * (1.0 - (1.0 - coefficient) * 0.20))
-        .floor()
-        .max(1.0) as u32
-}
-
 /// Food lots can have fractional remaining value after a meal. Unlike a whole
 /// item quote, a sub-coin remainder may sell for zero and must never be rounded
 /// back up into a fresh unit of value.
@@ -132,14 +109,6 @@ mod tests {
     #[test]
     fn quotes_preserve_a_positive_spread() {
         assert!(merchant_buy_price(100) > merchant_sell_price(100));
-    }
-
-    #[test]
-    fn language_penalty_hurts_both_sides_of_a_trade() {
-        assert!(language_adjusted_buy_price(100, 0.0) > language_adjusted_buy_price(100, 1.0));
-        assert!(language_adjusted_sell_price(100, 0.0) < language_adjusted_sell_price(100, 1.0));
-        assert_eq!(language_adjusted_sell_price(0, 0.0), 0);
-        assert_eq!(language_adjusted_sell_price(1, 0.0), 1);
     }
 
     #[test]

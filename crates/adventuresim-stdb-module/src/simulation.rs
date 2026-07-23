@@ -228,13 +228,7 @@ pub fn configure_simulation_character(
     ]
     .into_iter()
     .all(|value| value.is_finite() && (0.0..=MAX_INITIAL_SKILL_HOURS).contains(&value))
-        && simulation_religion_hours_valid(skills.religion_hours)
-        && skills
-            .oral_languages
-            .direct_fields_valid(MAX_INITIAL_SKILL_HOURS)
-        && skills
-            .written_languages
-            .direct_fields_valid(MAX_INITIAL_SKILL_HOURS);
+        && simulation_religion_hours_valid(skills.religion_hours);
     if !attributes_valid || !skills_valid || downtime.allocated_minutes() > 1_440 {
         return Err("Simulation profile is outside bounded gameplay ranges".into());
     }

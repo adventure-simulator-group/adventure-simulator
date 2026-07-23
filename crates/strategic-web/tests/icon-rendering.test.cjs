@@ -18,14 +18,6 @@ test("travel planner uses accessible local route and rail icons", () => {
   assert.ok(template.indexOf('class="travel-resource-row food"') < template.indexOf('class="travel-resource-row water"'));
   assert.ok(template.indexOf('class="travel-resource-row water"') < template.indexOf('class="travel-resource-row fatigue"'));
   assert.ok(template.indexOf('class="travel-resource-row fatigue"') < template.indexOf('class="travel-resource-row daylight"'));
-  assert.deepEqual(
-    [...template.matchAll(/div class="travel-resource-row ([^"]+)"/g)].map((match) => match[1]),
-    ["food", "water", "fatigue", "terrain", "daylight"],
-  );
-  assert.equal((template.match(/d="M 16 0 V 100"/g) || []).length, 2);
-  assert.match(source, /const TRACK_START = 0;/);
-  assert.match(source, /const TRACK_END = 100;/);
-  assert.doesNotMatch(template, /travel-resource-row alcohol/);
   assert.match(source, /element\.setAttribute\("aria-label", node\.title\)/);
   assert.match(source, /createElementNS\("http:\/\/www\.w3\.org\/2000\/svg", "svg"\)/);
   assert.doesNotMatch(source, /element\.innerHTML/);
@@ -80,7 +72,6 @@ test("travel provisioning keeps target math without forecast prose", () => {
   assert.match(template, /game_icon\("Water", "water-drop"\)/);
   assert.match(template, /game_icon\("Fatigue", "heart-minus"\)/);
   assert.match(template, /game_icon\("Day and night", "sun"\)/);
-  assert.match(template, /class="travel-provisioning-icon alcohol"/);
   assert.match(template, /class="sr-only" data-surplus-summary/);
   assert.match(template, /class="sr-only" data-fatigue-summary/);
   assert.match(template, /"d surplus"/);
