@@ -17,7 +17,7 @@ use adventuresim_stdb_client::spacetimedb_sdk::{DbContext, Table, TableWithPrima
 use adventuresim_stdb_client::*;
 use adventuresim_stdb_client::{
     DbConnection, autoresolve_report_table::AutoresolveReportTableAccess,
-    backend_case_battle_table::BackendCaseBattleTableAccess,
+    backend_case_battles_table::BackendCaseBattlesTableAccess,
     backend_contracts_table::BackendContractsTableAccess,
     battle_loot_item_table::BattleLootItemTableAccess,
     battle_participant_table::BattleParticipantTableAccess,
@@ -204,7 +204,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.dialogue_prompt());
         invalidate_on_changes!(state.0._connection.db.dialogue_topic_option());
         invalidate_on_changes!(state.0._connection.db.battle_result());
-        invalidate_on_changes!(state.0._connection.db.backend_case_battle());
+        invalidate_on_view_changes!(state.0._connection.db.backend_case_battles());
         invalidate_on_changes!(state.0._connection.db.autoresolve_report());
         invalidate_on_changes!(state.0._connection.db.battle_loot_item());
         invalidate_on_changes!(state.0._connection.db.battle_participant());
@@ -227,7 +227,7 @@ impl LiveState {
             .add_query(|query| query.from.battle_loot_item())
             .add_query(|query| query.from.battle_participant())
             .add_query(|query| query.from.battle_result())
-            .add_query(|query| query.from.backend_case_battle())
+            .add_query(|query| query.from.backend_case_battles())
             .add_query(|query| query.from.autoresolve_report())
             .add_query(|query| query.from.strategic_encounter())
             .add_query(|query| query.from.character())

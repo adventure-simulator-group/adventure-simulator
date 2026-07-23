@@ -2,25 +2,35 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct BackendCaseBattle {
+    pub gateway_bucket: u8,
     pub case_id: String,
     pub party_id: String,
     pub battle_id: String,
     pub mission_id: String,
 }
 
+
 impl __sdk::InModule for BackendCaseBattle {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `BackendCaseBattle`.
 ///
 /// Provides typed access to columns for query building.
 pub struct BackendCaseBattleCols {
+    pub gateway_bucket: __sdk::__query_builder::Col<BackendCaseBattle, u8>,
     pub case_id: __sdk::__query_builder::Col<BackendCaseBattle, String>,
     pub party_id: __sdk::__query_builder::Col<BackendCaseBattle, String>,
     pub battle_id: __sdk::__query_builder::Col<BackendCaseBattle, String>,
@@ -31,10 +41,12 @@ impl __sdk::__query_builder::HasCols for BackendCaseBattle {
     type Cols = BackendCaseBattleCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         BackendCaseBattleCols {
+            gateway_bucket: __sdk::__query_builder::Col::new(table_name, "gateway_bucket"),
             case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             battle_id: __sdk::__query_builder::Col::new(table_name, "battle_id"),
             mission_id: __sdk::__query_builder::Col::new(table_name, "mission_id"),
+
         }
     }
 }
@@ -44,6 +56,7 @@ impl __sdk::__query_builder::HasCols for BackendCaseBattle {
 /// Provides typed access to indexed columns for query building.
 pub struct BackendCaseBattleIxCols {
     pub battle_id: __sdk::__query_builder::IxCol<BackendCaseBattle, String>,
+    pub gateway_bucket: __sdk::__query_builder::IxCol<BackendCaseBattle, u8>,
 }
 
 impl __sdk::__query_builder::HasIxCols for BackendCaseBattle {
@@ -51,8 +64,11 @@ impl __sdk::__query_builder::HasIxCols for BackendCaseBattle {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         BackendCaseBattleIxCols {
             battle_id: __sdk::__query_builder::IxCol::new(table_name, "battle_id"),
+            gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for BackendCaseBattle {}
+

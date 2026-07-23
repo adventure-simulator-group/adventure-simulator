@@ -4,150 +4,84 @@
 // This was generated using spacetimedb cli version 2.6.1 (commit 052c83fe984a4c4eb7bb4f9afa5c6b1903891d87).
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
-pub mod abandon_contract_reducer;
-pub mod accept_contract_reducer;
-pub mod accept_party_join_request_reducer;
 pub mod agricultural_commodity_type;
 pub mod agricultural_limitation_type;
 pub mod agriculture_industry_type;
-pub mod alcohol_consumption_table;
 pub mod alcohol_consumption_type;
-pub mod answer_dialogue_prompt_reducer;
-pub mod approve_party_action_request_planned_reducer;
-pub mod approve_party_action_request_reducer;
-pub mod authorize_tactical_server_claim_reducer;
-pub mod autoresolve_mission_reducer;
-pub mod autoresolve_report_table;
 pub mod autoresolve_report_type;
 pub mod available_water_capacity_type;
-pub mod backend_case_battle_table;
 pub mod backend_case_battle_type;
 pub mod backend_case_site_pin_type;
-pub mod backend_case_site_pins_table;
-pub mod backend_character_affinities_table;
 pub mod backend_character_case_site_location_type;
-pub mod backend_character_case_site_locations_table;
-pub mod backend_character_familiarities_table;
-pub mod backend_committed_cuts_table;
 pub mod backend_contract_type;
-pub mod backend_contracts_table;
-pub mod backend_herbalist_examinations_table;
-pub mod backend_infection_episodes_table;
 pub mod backend_investigation_journal_entry_type;
-pub mod backend_investigation_journal_table;
 pub mod backend_investigation_lead_type;
-pub mod backend_investigation_leads_table;
 pub mod backend_local_problem_rumor_type;
-pub mod backend_local_problem_rumors_table;
 pub mod backend_local_problem_trade_effect_type;
-pub mod backend_local_problem_trade_effects_table;
-pub mod backend_medical_examinations_table;
-pub mod backend_social_beliefs_table;
-pub mod backfill_character_deaths_and_leadership_reducer;
-pub mod backfill_equipment_condition_and_smiths_reducer;
-pub mod backfill_item_values_reducer;
-pub mod backfill_settlement_herbalists_reducer;
-pub mod backfill_solo_parties_reducer;
-pub mod battle_loot_item_table;
 pub mod battle_loot_item_type;
-pub mod battle_participant_table;
 pub mod battle_participant_type;
-pub mod battle_result_table;
 pub mod battle_result_type;
-pub mod begin_apprenticeship_reducer;
-pub mod begin_world_data_import_reducer;
 pub mod blood_exposure_checkpoint_type;
-pub mod bootstrap_development_world_reducer;
 pub mod built_settlement_cover_type;
-pub mod calibrate_weapon_precision_reducer;
 pub mod camp_duration_mode_type;
 pub mod canal_watercourse_type;
-pub mod cancel_mission_request_reducer;
 pub mod canopy_density_type;
 pub mod case_authority_type;
 pub mod case_custody_type;
 pub mod case_finale_authority_type;
 pub mod case_finale_execution_type;
-pub mod case_outcome_fact_type;
 pub mod case_outcome_type;
+pub mod case_outcome_fact_type;
 pub mod case_resolution_status_type;
 pub mod case_site_authority_type;
 pub mod case_site_id_type;
 pub mod catholic_lutheran_church_type;
 pub mod catholic_reformed_church_type;
 pub mod cation_exchange_capacity_type;
-pub mod change_inventory_item_reducer;
+pub mod character_type;
 pub mod character_affinity_type;
-pub mod character_apprenticeship_table;
 pub mod character_apprenticeship_type;
-pub mod character_attributes_table;
 pub mod character_attributes_type;
-pub mod character_capability_table;
 pub mod character_capability_type;
 pub mod character_case_site_occupancy_type;
-pub mod character_condition_table;
 pub mod character_condition_type;
-pub mod character_death_table;
 pub mod character_death_type;
-pub mod character_equip_table;
 pub mod character_equip_type;
 pub mod character_familiarity_type;
-pub mod character_filth_table;
 pub mod character_filth_type;
-pub mod character_illness_status_table;
 pub mod character_illness_status_type;
-pub mod character_limbs_table;
 pub mod character_limbs_type;
-pub mod character_morale_source_table;
 pub mod character_morale_source_type;
-pub mod character_needs_table;
 pub mod character_needs_type;
-pub mod character_notoriety_table;
 pub mod character_notoriety_type;
-pub mod character_personality_table;
 pub mod character_personality_type;
-pub mod character_skills_table;
 pub mod character_skills_type;
-pub mod character_stats_table;
 pub mod character_stats_type;
-pub mod character_strategic_condition_table;
 pub mod character_strategic_condition_type;
-pub mod character_table;
-pub mod character_time_table;
 pub mod character_time_type;
 pub mod character_topic_knowledge_type;
-pub mod character_training_schedule_table;
 pub mod character_training_schedule_type;
-pub mod character_type;
-pub mod character_virtue_table;
 pub mod character_virtue_type;
 pub mod charcoal_burning_industry_type;
-pub mod choose_dialogue_topic_reducer;
-pub mod claim_simulation_run_reducer;
 pub mod committed_cut_type;
-pub mod configure_simulation_character_reducer;
-pub mod connected_player_item_type;
 pub mod connected_player_type;
-pub mod connected_players_table;
+pub mod connected_player_item_type;
 pub mod conscience_type;
 pub mod construction_commodity_type;
 pub mod construction_industry_type;
-pub mod continue_camp_travel_reducer;
-pub mod contract_report_receipt_type;
-pub mod contract_status_type;
 pub mod contract_type;
+pub mod contract_interaction_stage_type;
+pub mod contract_issuer_interaction_receipt_type;
+pub mod contract_status_type;
 pub mod conviction_type;
-pub mod cook_food_reducer;
 pub mod cooking_method_type;
-pub mod craft_medication_reducer;
-pub mod create_character_reducer;
-pub mod create_named_character_reducer;
-pub mod create_named_character_with_id_reducer;
-pub mod create_recruitment_role_reducer;
-pub mod create_tactical_server_for_request_reducer;
-pub mod create_temporary_character_reducer;
 pub mod cropland_cover_type;
 pub mod crossing_traversal_type;
 pub mod crossing_watercourse_type;
@@ -155,56 +89,33 @@ pub mod custody_holder_kind_type;
 pub mod custody_object_kind_type;
 pub mod death_cause_type;
 pub mod death_source_type;
-pub mod delete_recruitment_role_reducer;
-pub mod delete_saved_recruitment_role_reducer;
-pub mod deposit_party_inventory_item_reducer;
+pub mod derived_historical_vegetation_type;
 pub mod derived_historical_vegetation_cover_type;
 pub mod derived_historical_vegetation_method_type;
-pub mod derived_historical_vegetation_type;
 pub mod derived_industry_type;
 pub mod dialogue_action_type;
 pub mod dialogue_answer_type;
-pub mod dialogue_event_table;
 pub mod dialogue_event_type;
-pub mod dialogue_participant_table;
 pub mod dialogue_participant_type;
-pub mod dialogue_prompt_table;
 pub mod dialogue_prompt_type;
-pub mod dialogue_session_table;
 pub mod dialogue_session_type;
-pub mod dialogue_topic_option_table;
 pub mod dialogue_topic_option_type;
+pub mod direct_historical_vegetation_type;
 pub mod direct_historical_vegetation_cover_type;
 pub mod direct_historical_vegetation_method_type;
-pub mod direct_historical_vegetation_type;
-pub mod disband_party_reducer;
-pub mod discard_inventory_items_reducer;
-pub mod discover_investigation_lead_reducer;
 pub mod disease_notice_type;
-pub mod dismiss_herbalist_examination_reducer;
-pub mod dismiss_medical_examination_reducer;
-pub mod dismiss_party_action_request_reducer;
 pub mod dominant_aspect_type;
 pub mod dominant_leaf_type_type;
 pub mod drive_type;
 pub mod drought_history_type;
 pub mod drought_profile_type;
-pub mod eat_food_reducer;
 pub mod edge_endpoint_type;
 pub mod edge_progress_permille_type;
 pub mod elevation_meters_type;
-pub mod end_tactical_server_reducer;
-pub mod ensure_settlement_activity_reducer;
-pub mod enter_mission_reducer;
-pub mod equip_item_reducer;
-pub mod equip_medication_reducer;
-pub mod equipped_medication_table;
 pub mod equipped_medication_type;
-pub mod examine_by_herbalist_reducer;
-pub mod examine_patient_reducer;
+pub mod fallback_historical_vegetation_type;
 pub mod fallback_historical_vegetation_cover_type;
 pub mod fallback_historical_vegetation_method_type;
-pub mod fallback_historical_vegetation_type;
 pub mod fallback_industry_type;
 pub mod ferry_route_type;
 pub mod ferry_waterway_type;
@@ -214,15 +125,11 @@ pub mod filth_provenance_type;
 pub mod filth_substance_type;
 pub mod finale_kind_type;
 pub mod finale_status_type;
-pub mod finalize_merchant_trade_reducer;
-pub mod finalize_party_offer_reducer;
-pub mod finish_world_data_import_reducer;
 pub mod fish_commodity_type;
 pub mod fishing_industry_type;
 pub mod flow_persistence_type;
 pub mod flowing_water_access_type;
 pub mod food_contamination_type;
-pub mod food_lot_table;
 pub mod food_lot_type;
 pub mod food_preparation_type;
 pub mod forest_commodity_type;
@@ -242,11 +149,6 @@ pub mod hostile_group_authority_type;
 pub mod hygiene_type;
 pub mod igneous_rock_type;
 pub mod immediate_activity_type;
-pub mod import_settlement_aliases_reducer;
-pub mod import_settlement_descriptions_reducer;
-pub mod import_settlements_reducer;
-pub mod import_travel_edges_reducer;
-pub mod import_world_nodes_reducer;
 pub mod incident_id_type;
 pub mod incident_kind_type;
 pub mod incident_source_id_type;
@@ -258,13 +160,11 @@ pub mod inferred_industry_profile_type;
 pub mod inferred_tree_species_profile_type;
 pub mod inland_water_access_type;
 pub mod inland_water_size_type;
-pub mod inventory_item_table;
 pub mod inventory_item_type;
-pub mod inventory_quantity_target_table;
 pub mod inventory_quantity_target_type;
 pub mod investigation_action_receipt_type;
-pub mod investigation_belief_revision_type;
 pub mod investigation_belief_type;
+pub mod investigation_belief_revision_type;
 pub mod investigation_case_authority_type;
 pub mod investigation_claim_type;
 pub mod investigation_event_authority_type;
@@ -275,13 +175,10 @@ pub mod investigation_recollection_type;
 pub mod investigation_safe_claim_receipt_type;
 pub mod investigation_safe_lead_receipt_type;
 pub mod investigation_sharing_receipt_type;
-pub mod item_condition_table;
+pub mod item_type;
 pub mod item_condition_type;
 pub mod item_kind_type;
 pub mod item_slot_type;
-pub mod item_table;
-pub mod item_type;
-pub mod join_dialogue_session_reducer;
 pub mod journey_camp_interval_type;
 pub mod journey_case_site_endpoint_type;
 pub mod journey_endpoint_type;
@@ -292,25 +189,18 @@ pub mod journey_settlement_endpoint_type;
 pub mod journey_terrain_kind_type;
 pub mod journey_terrain_span_type;
 pub mod journey_terrain_weights_type;
-pub mod kill_simulation_character_reducer;
 pub mod land_route_type;
 pub mod land_use_fraction_type;
 pub mod land_use_profile_type;
 pub mod land_water_crossing_type;
-pub mod leave_mission_reducer;
-pub mod leave_party_reducer;
-pub mod limb_injury_table;
 pub mod limb_injury_type;
 pub mod limb_region_type;
-pub mod liquidate_party_inventory_reducer;
-pub mod local_chat_message_table;
 pub mod local_chat_message_type;
 pub mod local_problem_authority_type;
 pub mod local_problem_generation_explanation_type;
 pub mod local_problem_outcome_receipt_type;
 pub mod local_problem_receipt_type;
 pub mod local_problem_rumor_delivery_type;
-pub mod local_problem_symptom_table;
 pub mod local_problem_symptom_type;
 pub mod located_route_landform_type;
 pub mod lutheran_reformed_church_type;
@@ -319,14 +209,13 @@ pub mod marine_water_access_type;
 pub mod medical_examination_type;
 pub mod metamorphic_rock_type;
 pub mod mined_commodity_type;
-pub mod mineral_soil_texture_type;
 pub mod mineral_soil_type;
+pub mod mineral_soil_texture_type;
 pub mod mining_industry_type;
 pub mod mission_authority_type;
 pub mod mixed_lithology_type;
-pub mod modeled_tree_species_profile_type;
 pub mod modeled_tree_species_type;
-pub mod morale_event_table;
+pub mod modeled_tree_species_profile_type;
 pub mod morale_event_type;
 pub mod native_range_evidence_type;
 pub mod nerve_type;
@@ -339,86 +228,44 @@ pub mod other_non_textured_soil_type;
 pub mod outcome_source_authority_type;
 pub mod outlook_type;
 pub mod palmer_drought_severity_index_type;
-pub mod party_action_request_table;
+pub mod party_type;
 pub mod party_action_request_type;
 pub mod party_case_site_tracking_type;
-pub mod party_inventory_item_table;
 pub mod party_inventory_item_type;
-pub mod party_inventory_state_table;
 pub mod party_inventory_state_type;
-pub mod party_item_condition_table;
 pub mod party_item_condition_type;
-pub mod party_join_request_table;
 pub mod party_join_request_type;
-pub mod party_journey_encounter_authority_type;
-pub mod party_journey_itinerary_table;
-pub mod party_journey_itinerary_type;
-pub mod party_journey_route_table;
-pub mod party_journey_route_type;
-pub mod party_journey_table;
 pub mod party_journey_type;
-pub mod party_leader_vote_table;
+pub mod party_journey_encounter_authority_type;
+pub mod party_journey_itinerary_type;
+pub mod party_journey_route_type;
 pub mod party_leader_vote_type;
-pub mod party_member_table;
 pub mod party_member_type;
-pub mod party_recruitment_role_table;
 pub mod party_recruitment_role_type;
-pub mod party_stake_table;
 pub mod party_stake_type;
-pub mod party_table;
-pub mod party_type;
 pub mod pasture_cover_type;
 pub mod peat_cutting_industry_type;
-pub mod perform_immediate_activity_reducer;
-pub mod perform_social_action_reducer;
+pub mod potential_vegetation_type;
 pub mod potential_vegetation_class_type;
 pub mod potential_vegetation_posterior_type;
-pub mod potential_vegetation_type;
 pub mod pottery_commodity_type;
 pub mod pottery_industry_type;
 pub mod production_scale_type;
 pub mod profile_fact_provenance_type;
 pub mod projectile_kind_type;
 pub mod prosperity_tier_type;
-pub mod purchase_from_herbalist_reducer;
 pub mod quarry_commodity_type;
 pub mod quarrying_industry_type;
-pub mod receive_investigation_claim_reducer;
-pub mod receive_local_problem_rumor_reducer;
+pub mod recruitment_offer_type;
 pub mod recruitment_offer_id_type;
 pub mod recruitment_offer_status_type;
-pub mod recruitment_offer_table;
-pub mod recruitment_offer_type;
 pub mod recruitment_requirements_type;
 pub mod recruitment_source_id_type;
-pub mod refresh_capabilities_reducer;
-pub mod refresh_strategic_condition_reducer;
-pub mod register_strategic_gateway_reducer;
-pub mod reject_party_join_request_reducer;
 pub mod religion_hours_type;
-pub mod religious_demand_table;
 pub mod religious_demand_type;
-pub mod remove_party_member_reducer;
-pub mod rename_saved_recruitment_role_reducer;
-pub mod repair_order_table;
 pub mod repair_order_type;
-pub mod report_contract_reducer;
-pub mod request_general_party_join_reducer;
-pub mod request_party_action_reducer;
-pub mod request_tactical_server_for_scene_reducer;
-pub mod request_tactical_server_reducer;
-pub mod request_to_join_party_reducer;
-pub mod resolve_religious_demand_reducer;
-pub mod resolve_strategic_encounter_reducer;
 pub mod resolved_party_action_type;
-pub mod rest_at_camp_reducer;
-pub mod rest_at_settlement_hours_reducer;
-pub mod rest_at_settlement_reducer;
-pub mod retained_projectile_table;
 pub mod retained_projectile_type;
-pub mod retrieve_repaired_item_reducer;
-pub mod retrieve_repaired_items_reducer;
-pub mod revoke_tactical_server_claim_reducer;
 pub mod river_access_type;
 pub mod river_and_canal_access_type;
 pub mod river_watercourse_type;
@@ -434,59 +281,38 @@ pub mod route_seasonal_hazard_type;
 pub mod route_seasonal_risk_type;
 pub mod route_signed_grade_permille_type;
 pub mod route_slope_permille_type;
-pub mod route_terrain_class_type;
 pub mod route_terrain_type;
+pub mod route_terrain_class_type;
 pub mod route_vertical_meters_type;
 pub mod route_water_adjacency_type;
 pub mod route_water_feature_kind_type;
 pub mod salt_source_type;
 pub mod saltmaking_industry_type;
-pub mod save_recruitment_role_reducer;
-pub mod saved_recruitment_role_table;
 pub mod saved_recruitment_role_type;
 pub mod schedule_allocation_type;
 pub mod sedimentary_rock_type;
-pub mod seed_simulation_disease_reducer;
-pub mod seed_simulation_equipment_damage_reducer;
-pub mod seed_simulation_world_reducer;
 pub mod self_regard_type;
-pub mod send_local_chat_message_reducer;
-pub mod set_character_religion_reducer;
-pub mod set_inventory_quantity_target_reducer;
-pub mod set_party_camp_fatigue_percent_reducer;
-pub mod set_party_travel_itinerary_reducer;
-pub mod settlement_alias_batch_row_type;
-pub mod settlement_alias_table;
+pub mod settlement_type;
 pub mod settlement_alias_type;
+pub mod settlement_alias_batch_row_type;
 pub mod settlement_category_type;
+pub mod settlement_description_type;
 pub mod settlement_description_batch_row_type;
 pub mod settlement_description_kind_type;
-pub mod settlement_description_table;
-pub mod settlement_description_type;
 pub mod settlement_economy_profile_type;
 pub mod settlement_herbalist_type;
 pub mod settlement_hydrology_type;
 pub mod settlement_import_type;
 pub mod settlement_language_profile_type;
-pub mod settlement_npc_presence_table;
+pub mod settlement_npc_type;
 pub mod settlement_npc_presence_type;
 pub mod settlement_npc_seed_explanation_type;
-pub mod settlement_npc_table;
-pub mod settlement_npc_type;
-pub mod settlement_outbreak_table;
 pub mod settlement_outbreak_type;
 pub mod settlement_religious_status_type;
 pub mod settlement_service_type;
-pub mod settlement_smith_table;
 pub mod settlement_smith_type;
 pub mod settlement_stock_type;
-pub mod settlement_table;
-pub mod settlement_type;
-pub mod share_investigation_belief_reducer;
-pub mod share_investigation_lead_reducer;
-pub mod simulation_character_table;
 pub mod simulation_character_type;
-pub mod simulation_run_table;
 pub mod simulation_run_type;
 pub mod sociability_type;
 pub mod social_action_cooldown_type;
@@ -501,48 +327,153 @@ pub mod soil_profile_type;
 pub mod soil_properties_type;
 pub mod soil_substrate_type;
 pub mod soil_water_regime_type;
-pub mod stage_investigation_claim_reducer;
-pub mod stage_investigation_lead_reducer;
-pub mod start_dialogue_reducer;
 pub mod stock_category_type;
 pub mod stone_content_percent_type;
-pub mod store_battle_loot_reducer;
 pub mod strahler_order_type;
-pub mod strategic_encounter_loss_type;
-pub mod strategic_encounter_table;
 pub mod strategic_encounter_type;
-pub mod strategic_gateway_authority_table;
+pub mod strategic_encounter_loss_type;
 pub mod strategic_gateway_authority_type;
 pub mod strategic_incident_type;
-pub mod submit_all_repairable_items_reducer;
-pub mod submit_item_for_repair_reducer;
 pub mod suitability_basis_points_type;
 pub mod surface_geology_type;
 pub mod surface_lithology_type;
-pub mod synchronize_character_time_reducer;
-pub mod tactical_server_claim_type;
-pub mod tactical_server_request_table;
-pub mod tactical_server_request_type;
-pub mod tactical_server_table;
 pub mod tactical_server_type;
+pub mod tactical_server_claim_type;
+pub mod tactical_server_request_type;
 pub mod temperance_type;
 pub mod topsoil_organic_carbon_type;
-pub mod track_case_site_reducer;
-pub mod transfer_party_item_reducer;
+pub mod travel_edge_type;
 pub mod travel_edge_load_type;
 pub mod travel_edge_provenance_type;
-pub mod travel_edge_table;
-pub mod travel_edge_type;
 pub mod travel_filth_progress_type;
 pub mod travel_route_type;
-pub mod travel_to_case_site_planned_reducer;
-pub mod travel_to_case_site_reducer;
-pub mod travel_to_settlement_planned_reducer;
-pub mod travel_to_settlement_reducer;
-pub mod treat_limb_reducer;
 pub mod tree_species_id_type;
 pub mod tree_species_profile_type;
 pub mod unconsolidated_deposit_type;
+pub mod water_distance_meters_type;
+pub mod weapon_skill_distribution_type;
+pub mod western_christian_arrangement_type;
+pub mod woodland_type;
+pub mod world_clock_type;
+pub mod world_clock_schedule_type;
+pub mod world_data_import_type;
+pub mod world_node_type;
+pub mod world_node_import_type;
+pub mod wrb_reference_group_type;
+pub mod written_language_hours_type;
+pub mod abandon_contract_reducer;
+pub mod accept_contract_reducer;
+pub mod accept_party_join_request_reducer;
+pub mod answer_dialogue_prompt_reducer;
+pub mod approve_party_action_request_reducer;
+pub mod approve_party_action_request_planned_reducer;
+pub mod authorize_tactical_server_claim_reducer;
+pub mod autoresolve_mission_reducer;
+pub mod backfill_character_deaths_and_leadership_reducer;
+pub mod backfill_equipment_condition_and_smiths_reducer;
+pub mod backfill_item_values_reducer;
+pub mod backfill_settlement_herbalists_reducer;
+pub mod backfill_solo_parties_reducer;
+pub mod begin_apprenticeship_reducer;
+pub mod begin_world_data_import_reducer;
+pub mod bootstrap_development_world_reducer;
+pub mod calibrate_weapon_precision_reducer;
+pub mod cancel_mission_request_reducer;
+pub mod change_inventory_item_reducer;
+pub mod choose_dialogue_topic_reducer;
+pub mod claim_simulation_run_reducer;
+pub mod configure_simulation_character_reducer;
+pub mod continue_camp_travel_reducer;
+pub mod cook_food_reducer;
+pub mod craft_medication_reducer;
+pub mod create_character_reducer;
+pub mod create_named_character_reducer;
+pub mod create_named_character_with_id_reducer;
+pub mod create_recruitment_role_reducer;
+pub mod create_tactical_server_for_request_reducer;
+pub mod create_temporary_character_reducer;
+pub mod delete_recruitment_role_reducer;
+pub mod delete_saved_recruitment_role_reducer;
+pub mod deposit_party_inventory_item_reducer;
+pub mod disband_party_reducer;
+pub mod discard_inventory_items_reducer;
+pub mod discover_investigation_lead_reducer;
+pub mod dismiss_herbalist_examination_reducer;
+pub mod dismiss_medical_examination_reducer;
+pub mod dismiss_party_action_request_reducer;
+pub mod eat_food_reducer;
+pub mod end_tactical_server_reducer;
+pub mod ensure_settlement_activity_reducer;
+pub mod enter_mission_reducer;
+pub mod equip_item_reducer;
+pub mod equip_medication_reducer;
+pub mod examine_by_herbalist_reducer;
+pub mod examine_patient_reducer;
+pub mod finalize_merchant_trade_reducer;
+pub mod finalize_party_offer_reducer;
+pub mod finish_world_data_import_reducer;
+pub mod import_settlement_aliases_reducer;
+pub mod import_settlement_descriptions_reducer;
+pub mod import_settlements_reducer;
+pub mod import_travel_edges_reducer;
+pub mod import_world_nodes_reducer;
+pub mod interact_with_contract_issuer_reducer;
+pub mod join_dialogue_session_reducer;
+pub mod kill_simulation_character_reducer;
+pub mod leave_mission_reducer;
+pub mod leave_party_reducer;
+pub mod liquidate_party_inventory_reducer;
+pub mod perform_case_objective_reducer;
+pub mod perform_immediate_activity_reducer;
+pub mod perform_social_action_reducer;
+pub mod purchase_from_herbalist_reducer;
+pub mod receive_investigation_claim_reducer;
+pub mod receive_local_problem_rumor_reducer;
+pub mod refresh_capabilities_reducer;
+pub mod refresh_strategic_condition_reducer;
+pub mod register_strategic_gateway_reducer;
+pub mod reject_party_join_request_reducer;
+pub mod remove_party_member_reducer;
+pub mod rename_saved_recruitment_role_reducer;
+pub mod report_contract_reducer;
+pub mod request_general_party_join_reducer;
+pub mod request_party_action_reducer;
+pub mod request_tactical_server_reducer;
+pub mod request_tactical_server_for_scene_reducer;
+pub mod request_to_join_party_reducer;
+pub mod resolve_religious_demand_reducer;
+pub mod resolve_strategic_encounter_reducer;
+pub mod rest_at_camp_reducer;
+pub mod rest_at_settlement_reducer;
+pub mod rest_at_settlement_hours_reducer;
+pub mod retrieve_repaired_item_reducer;
+pub mod retrieve_repaired_items_reducer;
+pub mod revoke_tactical_server_claim_reducer;
+pub mod save_recruitment_role_reducer;
+pub mod seed_simulation_disease_reducer;
+pub mod seed_simulation_equipment_damage_reducer;
+pub mod seed_simulation_world_reducer;
+pub mod send_local_chat_message_reducer;
+pub mod set_character_religion_reducer;
+pub mod set_inventory_quantity_target_reducer;
+pub mod set_party_camp_fatigue_percent_reducer;
+pub mod set_party_travel_itinerary_reducer;
+pub mod share_investigation_belief_reducer;
+pub mod share_investigation_lead_reducer;
+pub mod stage_investigation_claim_reducer;
+pub mod stage_investigation_lead_reducer;
+pub mod start_dialogue_reducer;
+pub mod store_battle_loot_reducer;
+pub mod submit_all_repairable_items_reducer;
+pub mod submit_item_for_repair_reducer;
+pub mod synchronize_character_time_reducer;
+pub mod track_case_site_reducer;
+pub mod transfer_party_item_reducer;
+pub mod travel_to_case_site_reducer;
+pub mod travel_to_case_site_planned_reducer;
+pub mod travel_to_settlement_reducer;
+pub mod travel_to_settlement_planned_reducer;
+pub mod treat_limb_reducer;
 pub mod unequip_medication_reducer;
 pub mod update_character_reducer;
 pub mod update_party_check_targets_reducer;
@@ -550,164 +481,170 @@ pub mod update_recruitment_role_reducer;
 pub mod update_training_schedule_reducer;
 pub mod upgrade_manual_surgery_reducer;
 pub mod vote_for_party_leader_reducer;
-pub mod water_distance_meters_type;
-pub mod weapon_skill_distribution_type;
-pub mod western_christian_arrangement_type;
 pub mod withdraw_party_inventory_item_reducer;
-pub mod woodland_type;
-pub mod world_clock_schedule_type;
+pub mod alcohol_consumption_table;
+pub mod autoresolve_report_table;
+pub mod battle_loot_item_table;
+pub mod battle_participant_table;
+pub mod battle_result_table;
+pub mod character_table;
+pub mod character_apprenticeship_table;
+pub mod character_attributes_table;
+pub mod character_capability_table;
+pub mod character_condition_table;
+pub mod character_death_table;
+pub mod character_equip_table;
+pub mod character_filth_table;
+pub mod character_illness_status_table;
+pub mod character_limbs_table;
+pub mod character_morale_source_table;
+pub mod character_needs_table;
+pub mod character_notoriety_table;
+pub mod character_personality_table;
+pub mod character_skills_table;
+pub mod character_stats_table;
+pub mod character_strategic_condition_table;
+pub mod character_time_table;
+pub mod character_training_schedule_table;
+pub mod character_virtue_table;
+pub mod dialogue_event_table;
+pub mod dialogue_participant_table;
+pub mod dialogue_prompt_table;
+pub mod dialogue_session_table;
+pub mod dialogue_topic_option_table;
+pub mod equipped_medication_table;
+pub mod food_lot_table;
+pub mod inventory_item_table;
+pub mod inventory_quantity_target_table;
+pub mod item_table;
+pub mod item_condition_table;
+pub mod limb_injury_table;
+pub mod local_chat_message_table;
+pub mod local_problem_symptom_table;
+pub mod morale_event_table;
+pub mod party_inventory_item_table;
+pub mod party_inventory_state_table;
+pub mod party_item_condition_table;
+pub mod party_join_request_table;
+pub mod party_journey_itinerary_table;
+pub mod party_leader_vote_table;
+pub mod party_member_table;
+pub mod party_recruitment_role_table;
+pub mod party_stake_table;
+pub mod recruitment_offer_table;
+pub mod religious_demand_table;
+pub mod repair_order_table;
+pub mod retained_projectile_table;
+pub mod saved_recruitment_role_table;
+pub mod settlement_table;
+pub mod settlement_alias_table;
+pub mod settlement_description_table;
+pub mod settlement_npc_table;
+pub mod settlement_npc_presence_table;
+pub mod settlement_outbreak_table;
+pub mod settlement_smith_table;
+pub mod simulation_character_table;
+pub mod simulation_run_table;
+pub mod strategic_encounter_table;
+pub mod strategic_gateway_authority_table;
+pub mod travel_edge_table;
 pub mod world_clock_table;
-pub mod world_clock_type;
 pub mod world_data_import_table;
-pub mod world_data_import_type;
-pub mod world_node_import_type;
 pub mod world_node_table;
-pub mod world_node_type;
-pub mod wrb_reference_group_type;
-pub mod written_language_hours_type;
+pub mod backend_case_battles_table;
+pub mod backend_case_site_pins_table;
+pub mod backend_character_affinities_table;
+pub mod backend_character_case_site_locations_table;
+pub mod backend_character_familiarities_table;
+pub mod backend_committed_cuts_table;
+pub mod backend_contracts_table;
+pub mod backend_herbalist_examinations_table;
+pub mod backend_infection_episodes_table;
+pub mod backend_investigation_journal_table;
+pub mod backend_investigation_leads_table;
+pub mod backend_local_problem_rumors_table;
+pub mod backend_local_problem_trade_effects_table;
+pub mod backend_medical_examinations_table;
+pub mod backend_social_beliefs_table;
+pub mod connected_players_table;
+pub mod party_table;
+pub mod party_action_request_table;
+pub mod party_journey_table;
+pub mod party_journey_route_table;
+pub mod tactical_server_table;
+pub mod tactical_server_request_table;
 
-pub use abandon_contract_reducer::abandon_contract;
-pub use accept_contract_reducer::accept_contract;
-pub use accept_party_join_request_reducer::accept_party_join_request;
 pub use agricultural_commodity_type::AgriculturalCommodity;
 pub use agricultural_limitation_type::AgriculturalLimitation;
 pub use agriculture_industry_type::AgricultureIndustry;
-pub use alcohol_consumption_table::*;
 pub use alcohol_consumption_type::AlcoholConsumption;
-pub use answer_dialogue_prompt_reducer::answer_dialogue_prompt;
-pub use approve_party_action_request_planned_reducer::approve_party_action_request_planned;
-pub use approve_party_action_request_reducer::approve_party_action_request;
-pub use authorize_tactical_server_claim_reducer::authorize_tactical_server_claim;
-pub use autoresolve_mission_reducer::autoresolve_mission;
-pub use autoresolve_report_table::*;
 pub use autoresolve_report_type::AutoresolveReport;
 pub use available_water_capacity_type::AvailableWaterCapacity;
-pub use backend_case_battle_table::*;
 pub use backend_case_battle_type::BackendCaseBattle;
 pub use backend_case_site_pin_type::BackendCaseSitePin;
-pub use backend_case_site_pins_table::*;
-pub use backend_character_affinities_table::*;
 pub use backend_character_case_site_location_type::BackendCharacterCaseSiteLocation;
-pub use backend_character_case_site_locations_table::*;
-pub use backend_character_familiarities_table::*;
-pub use backend_committed_cuts_table::*;
 pub use backend_contract_type::BackendContract;
-pub use backend_contracts_table::*;
-pub use backend_herbalist_examinations_table::*;
-pub use backend_infection_episodes_table::*;
 pub use backend_investigation_journal_entry_type::BackendInvestigationJournalEntry;
-pub use backend_investigation_journal_table::*;
 pub use backend_investigation_lead_type::BackendInvestigationLead;
-pub use backend_investigation_leads_table::*;
 pub use backend_local_problem_rumor_type::BackendLocalProblemRumor;
-pub use backend_local_problem_rumors_table::*;
 pub use backend_local_problem_trade_effect_type::BackendLocalProblemTradeEffect;
-pub use backend_local_problem_trade_effects_table::*;
-pub use backend_medical_examinations_table::*;
-pub use backend_social_beliefs_table::*;
-pub use backfill_character_deaths_and_leadership_reducer::backfill_character_deaths_and_leadership;
-pub use backfill_equipment_condition_and_smiths_reducer::backfill_equipment_condition_and_smiths;
-pub use backfill_item_values_reducer::backfill_item_values;
-pub use backfill_settlement_herbalists_reducer::backfill_settlement_herbalists;
-pub use backfill_solo_parties_reducer::backfill_solo_parties;
-pub use battle_loot_item_table::*;
 pub use battle_loot_item_type::BattleLootItem;
-pub use battle_participant_table::*;
 pub use battle_participant_type::BattleParticipant;
-pub use battle_result_table::*;
 pub use battle_result_type::BattleResult;
-pub use begin_apprenticeship_reducer::begin_apprenticeship;
-pub use begin_world_data_import_reducer::begin_world_data_import;
 pub use blood_exposure_checkpoint_type::BloodExposureCheckpoint;
-pub use bootstrap_development_world_reducer::bootstrap_development_world;
 pub use built_settlement_cover_type::BuiltSettlementCover;
-pub use calibrate_weapon_precision_reducer::calibrate_weapon_precision;
 pub use camp_duration_mode_type::CampDurationMode;
 pub use canal_watercourse_type::CanalWatercourse;
-pub use cancel_mission_request_reducer::cancel_mission_request;
 pub use canopy_density_type::CanopyDensity;
 pub use case_authority_type::CaseAuthority;
 pub use case_custody_type::CaseCustody;
 pub use case_finale_authority_type::CaseFinaleAuthority;
 pub use case_finale_execution_type::CaseFinaleExecution;
-pub use case_outcome_fact_type::CaseOutcomeFact;
 pub use case_outcome_type::CaseOutcome;
+pub use case_outcome_fact_type::CaseOutcomeFact;
 pub use case_resolution_status_type::CaseResolutionStatus;
 pub use case_site_authority_type::CaseSiteAuthority;
 pub use case_site_id_type::CaseSiteId;
 pub use catholic_lutheran_church_type::CatholicLutheranChurch;
 pub use catholic_reformed_church_type::CatholicReformedChurch;
 pub use cation_exchange_capacity_type::CationExchangeCapacity;
-pub use change_inventory_item_reducer::change_inventory_item;
+pub use character_type::Character;
 pub use character_affinity_type::CharacterAffinity;
-pub use character_apprenticeship_table::*;
 pub use character_apprenticeship_type::CharacterApprenticeship;
-pub use character_attributes_table::*;
 pub use character_attributes_type::CharacterAttributes;
-pub use character_capability_table::*;
 pub use character_capability_type::CharacterCapability;
 pub use character_case_site_occupancy_type::CharacterCaseSiteOccupancy;
-pub use character_condition_table::*;
 pub use character_condition_type::CharacterCondition;
-pub use character_death_table::*;
 pub use character_death_type::CharacterDeath;
-pub use character_equip_table::*;
 pub use character_equip_type::CharacterEquip;
 pub use character_familiarity_type::CharacterFamiliarity;
-pub use character_filth_table::*;
 pub use character_filth_type::CharacterFilth;
-pub use character_illness_status_table::*;
 pub use character_illness_status_type::CharacterIllnessStatus;
-pub use character_limbs_table::*;
 pub use character_limbs_type::CharacterLimbs;
-pub use character_morale_source_table::*;
 pub use character_morale_source_type::CharacterMoraleSource;
-pub use character_needs_table::*;
 pub use character_needs_type::CharacterNeeds;
-pub use character_notoriety_table::*;
 pub use character_notoriety_type::CharacterNotoriety;
-pub use character_personality_table::*;
 pub use character_personality_type::CharacterPersonality;
-pub use character_skills_table::*;
 pub use character_skills_type::CharacterSkills;
-pub use character_stats_table::*;
 pub use character_stats_type::CharacterStats;
-pub use character_strategic_condition_table::*;
 pub use character_strategic_condition_type::CharacterStrategicCondition;
-pub use character_table::*;
-pub use character_time_table::*;
 pub use character_time_type::CharacterTime;
 pub use character_topic_knowledge_type::CharacterTopicKnowledge;
-pub use character_training_schedule_table::*;
 pub use character_training_schedule_type::CharacterTrainingSchedule;
-pub use character_type::Character;
-pub use character_virtue_table::*;
 pub use character_virtue_type::CharacterVirtue;
 pub use charcoal_burning_industry_type::CharcoalBurningIndustry;
-pub use choose_dialogue_topic_reducer::choose_dialogue_topic;
-pub use claim_simulation_run_reducer::claim_simulation_run;
 pub use committed_cut_type::CommittedCut;
-pub use configure_simulation_character_reducer::configure_simulation_character;
-pub use connected_player_item_type::ConnectedPlayerItem;
 pub use connected_player_type::ConnectedPlayer;
-pub use connected_players_table::*;
+pub use connected_player_item_type::ConnectedPlayerItem;
 pub use conscience_type::Conscience;
 pub use construction_commodity_type::ConstructionCommodity;
 pub use construction_industry_type::ConstructionIndustry;
-pub use continue_camp_travel_reducer::continue_camp_travel;
-pub use contract_report_receipt_type::ContractReportReceipt;
-pub use contract_status_type::ContractStatus;
 pub use contract_type::Contract;
+pub use contract_interaction_stage_type::ContractInteractionStage;
+pub use contract_issuer_interaction_receipt_type::ContractIssuerInteractionReceipt;
+pub use contract_status_type::ContractStatus;
 pub use conviction_type::Conviction;
-pub use cook_food_reducer::cook_food;
 pub use cooking_method_type::CookingMethod;
-pub use craft_medication_reducer::craft_medication;
-pub use create_character_reducer::create_character;
-pub use create_named_character_reducer::create_named_character;
-pub use create_named_character_with_id_reducer::create_named_character_with_id;
-pub use create_recruitment_role_reducer::create_recruitment_role;
-pub use create_tactical_server_for_request_reducer::create_tactical_server_for_request;
-pub use create_temporary_character_reducer::create_temporary_character;
 pub use cropland_cover_type::CroplandCover;
 pub use crossing_traversal_type::CrossingTraversal;
 pub use crossing_watercourse_type::CrossingWatercourse;
@@ -715,56 +652,33 @@ pub use custody_holder_kind_type::CustodyHolderKind;
 pub use custody_object_kind_type::CustodyObjectKind;
 pub use death_cause_type::DeathCause;
 pub use death_source_type::DeathSource;
-pub use delete_recruitment_role_reducer::delete_recruitment_role;
-pub use delete_saved_recruitment_role_reducer::delete_saved_recruitment_role;
-pub use deposit_party_inventory_item_reducer::deposit_party_inventory_item;
+pub use derived_historical_vegetation_type::DerivedHistoricalVegetation;
 pub use derived_historical_vegetation_cover_type::DerivedHistoricalVegetationCover;
 pub use derived_historical_vegetation_method_type::DerivedHistoricalVegetationMethod;
-pub use derived_historical_vegetation_type::DerivedHistoricalVegetation;
 pub use derived_industry_type::DerivedIndustry;
 pub use dialogue_action_type::DialogueAction;
 pub use dialogue_answer_type::DialogueAnswer;
-pub use dialogue_event_table::*;
 pub use dialogue_event_type::DialogueEvent;
-pub use dialogue_participant_table::*;
 pub use dialogue_participant_type::DialogueParticipant;
-pub use dialogue_prompt_table::*;
 pub use dialogue_prompt_type::DialoguePrompt;
-pub use dialogue_session_table::*;
 pub use dialogue_session_type::DialogueSession;
-pub use dialogue_topic_option_table::*;
 pub use dialogue_topic_option_type::DialogueTopicOption;
+pub use direct_historical_vegetation_type::DirectHistoricalVegetation;
 pub use direct_historical_vegetation_cover_type::DirectHistoricalVegetationCover;
 pub use direct_historical_vegetation_method_type::DirectHistoricalVegetationMethod;
-pub use direct_historical_vegetation_type::DirectHistoricalVegetation;
-pub use disband_party_reducer::disband_party;
-pub use discard_inventory_items_reducer::discard_inventory_items;
-pub use discover_investigation_lead_reducer::discover_investigation_lead;
 pub use disease_notice_type::DiseaseNotice;
-pub use dismiss_herbalist_examination_reducer::dismiss_herbalist_examination;
-pub use dismiss_medical_examination_reducer::dismiss_medical_examination;
-pub use dismiss_party_action_request_reducer::dismiss_party_action_request;
 pub use dominant_aspect_type::DominantAspect;
 pub use dominant_leaf_type_type::DominantLeafType;
 pub use drive_type::Drive;
 pub use drought_history_type::DroughtHistory;
 pub use drought_profile_type::DroughtProfile;
-pub use eat_food_reducer::eat_food;
 pub use edge_endpoint_type::EdgeEndpoint;
 pub use edge_progress_permille_type::EdgeProgressPermille;
 pub use elevation_meters_type::ElevationMeters;
-pub use end_tactical_server_reducer::end_tactical_server;
-pub use ensure_settlement_activity_reducer::ensure_settlement_activity;
-pub use enter_mission_reducer::enter_mission;
-pub use equip_item_reducer::equip_item;
-pub use equip_medication_reducer::equip_medication;
-pub use equipped_medication_table::*;
 pub use equipped_medication_type::EquippedMedication;
-pub use examine_by_herbalist_reducer::examine_by_herbalist;
-pub use examine_patient_reducer::examine_patient;
+pub use fallback_historical_vegetation_type::FallbackHistoricalVegetation;
 pub use fallback_historical_vegetation_cover_type::FallbackHistoricalVegetationCover;
 pub use fallback_historical_vegetation_method_type::FallbackHistoricalVegetationMethod;
-pub use fallback_historical_vegetation_type::FallbackHistoricalVegetation;
 pub use fallback_industry_type::FallbackIndustry;
 pub use ferry_route_type::FerryRoute;
 pub use ferry_waterway_type::FerryWaterway;
@@ -774,15 +688,11 @@ pub use filth_provenance_type::FilthProvenance;
 pub use filth_substance_type::FilthSubstance;
 pub use finale_kind_type::FinaleKind;
 pub use finale_status_type::FinaleStatus;
-pub use finalize_merchant_trade_reducer::finalize_merchant_trade;
-pub use finalize_party_offer_reducer::finalize_party_offer;
-pub use finish_world_data_import_reducer::finish_world_data_import;
 pub use fish_commodity_type::FishCommodity;
 pub use fishing_industry_type::FishingIndustry;
 pub use flow_persistence_type::FlowPersistence;
 pub use flowing_water_access_type::FlowingWaterAccess;
 pub use food_contamination_type::FoodContamination;
-pub use food_lot_table::*;
 pub use food_lot_type::FoodLot;
 pub use food_preparation_type::FoodPreparation;
 pub use forest_commodity_type::ForestCommodity;
@@ -802,11 +712,6 @@ pub use hostile_group_authority_type::HostileGroupAuthority;
 pub use hygiene_type::Hygiene;
 pub use igneous_rock_type::IgneousRock;
 pub use immediate_activity_type::ImmediateActivity;
-pub use import_settlement_aliases_reducer::import_settlement_aliases;
-pub use import_settlement_descriptions_reducer::import_settlement_descriptions;
-pub use import_settlements_reducer::import_settlements;
-pub use import_travel_edges_reducer::import_travel_edges;
-pub use import_world_nodes_reducer::import_world_nodes;
 pub use incident_id_type::IncidentId;
 pub use incident_kind_type::IncidentKind;
 pub use incident_source_id_type::IncidentSourceId;
@@ -818,13 +723,11 @@ pub use inferred_industry_profile_type::InferredIndustryProfile;
 pub use inferred_tree_species_profile_type::InferredTreeSpeciesProfile;
 pub use inland_water_access_type::InlandWaterAccess;
 pub use inland_water_size_type::InlandWaterSize;
-pub use inventory_item_table::*;
 pub use inventory_item_type::InventoryItem;
-pub use inventory_quantity_target_table::*;
 pub use inventory_quantity_target_type::InventoryQuantityTarget;
 pub use investigation_action_receipt_type::InvestigationActionReceipt;
-pub use investigation_belief_revision_type::InvestigationBeliefRevision;
 pub use investigation_belief_type::InvestigationBelief;
+pub use investigation_belief_revision_type::InvestigationBeliefRevision;
 pub use investigation_case_authority_type::InvestigationCaseAuthority;
 pub use investigation_claim_type::InvestigationClaim;
 pub use investigation_event_authority_type::InvestigationEventAuthority;
@@ -835,13 +738,10 @@ pub use investigation_recollection_type::InvestigationRecollection;
 pub use investigation_safe_claim_receipt_type::InvestigationSafeClaimReceipt;
 pub use investigation_safe_lead_receipt_type::InvestigationSafeLeadReceipt;
 pub use investigation_sharing_receipt_type::InvestigationSharingReceipt;
-pub use item_condition_table::*;
+pub use item_type::Item;
 pub use item_condition_type::ItemCondition;
 pub use item_kind_type::ItemKind;
 pub use item_slot_type::ItemSlot;
-pub use item_table::*;
-pub use item_type::Item;
-pub use join_dialogue_session_reducer::join_dialogue_session;
 pub use journey_camp_interval_type::JourneyCampInterval;
 pub use journey_case_site_endpoint_type::JourneyCaseSiteEndpoint;
 pub use journey_endpoint_type::JourneyEndpoint;
@@ -852,25 +752,18 @@ pub use journey_settlement_endpoint_type::JourneySettlementEndpoint;
 pub use journey_terrain_kind_type::JourneyTerrainKind;
 pub use journey_terrain_span_type::JourneyTerrainSpan;
 pub use journey_terrain_weights_type::JourneyTerrainWeights;
-pub use kill_simulation_character_reducer::kill_simulation_character;
 pub use land_route_type::LandRoute;
 pub use land_use_fraction_type::LandUseFraction;
 pub use land_use_profile_type::LandUseProfile;
 pub use land_water_crossing_type::LandWaterCrossing;
-pub use leave_mission_reducer::leave_mission;
-pub use leave_party_reducer::leave_party;
-pub use limb_injury_table::*;
 pub use limb_injury_type::LimbInjury;
 pub use limb_region_type::LimbRegion;
-pub use liquidate_party_inventory_reducer::liquidate_party_inventory;
-pub use local_chat_message_table::*;
 pub use local_chat_message_type::LocalChatMessage;
 pub use local_problem_authority_type::LocalProblemAuthority;
 pub use local_problem_generation_explanation_type::LocalProblemGenerationExplanation;
 pub use local_problem_outcome_receipt_type::LocalProblemOutcomeReceipt;
 pub use local_problem_receipt_type::LocalProblemReceipt;
 pub use local_problem_rumor_delivery_type::LocalProblemRumorDelivery;
-pub use local_problem_symptom_table::*;
 pub use local_problem_symptom_type::LocalProblemSymptom;
 pub use located_route_landform_type::LocatedRouteLandform;
 pub use lutheran_reformed_church_type::LutheranReformedChurch;
@@ -879,14 +772,13 @@ pub use marine_water_access_type::MarineWaterAccess;
 pub use medical_examination_type::MedicalExamination;
 pub use metamorphic_rock_type::MetamorphicRock;
 pub use mined_commodity_type::MinedCommodity;
-pub use mineral_soil_texture_type::MineralSoilTexture;
 pub use mineral_soil_type::MineralSoil;
+pub use mineral_soil_texture_type::MineralSoilTexture;
 pub use mining_industry_type::MiningIndustry;
 pub use mission_authority_type::MissionAuthority;
 pub use mixed_lithology_type::MixedLithology;
-pub use modeled_tree_species_profile_type::ModeledTreeSpeciesProfile;
 pub use modeled_tree_species_type::ModeledTreeSpecies;
-pub use morale_event_table::*;
+pub use modeled_tree_species_profile_type::ModeledTreeSpeciesProfile;
 pub use morale_event_type::MoraleEvent;
 pub use native_range_evidence_type::NativeRangeEvidence;
 pub use nerve_type::Nerve;
@@ -899,86 +791,44 @@ pub use other_non_textured_soil_type::OtherNonTexturedSoil;
 pub use outcome_source_authority_type::OutcomeSourceAuthority;
 pub use outlook_type::Outlook;
 pub use palmer_drought_severity_index_type::PalmerDroughtSeverityIndex;
-pub use party_action_request_table::*;
+pub use party_type::Party;
 pub use party_action_request_type::PartyActionRequest;
 pub use party_case_site_tracking_type::PartyCaseSiteTracking;
-pub use party_inventory_item_table::*;
 pub use party_inventory_item_type::PartyInventoryItem;
-pub use party_inventory_state_table::*;
 pub use party_inventory_state_type::PartyInventoryState;
-pub use party_item_condition_table::*;
 pub use party_item_condition_type::PartyItemCondition;
-pub use party_join_request_table::*;
 pub use party_join_request_type::PartyJoinRequest;
-pub use party_journey_encounter_authority_type::PartyJourneyEncounterAuthority;
-pub use party_journey_itinerary_table::*;
-pub use party_journey_itinerary_type::PartyJourneyItinerary;
-pub use party_journey_route_table::*;
-pub use party_journey_route_type::PartyJourneyRoute;
-pub use party_journey_table::*;
 pub use party_journey_type::PartyJourney;
-pub use party_leader_vote_table::*;
+pub use party_journey_encounter_authority_type::PartyJourneyEncounterAuthority;
+pub use party_journey_itinerary_type::PartyJourneyItinerary;
+pub use party_journey_route_type::PartyJourneyRoute;
 pub use party_leader_vote_type::PartyLeaderVote;
-pub use party_member_table::*;
 pub use party_member_type::PartyMember;
-pub use party_recruitment_role_table::*;
 pub use party_recruitment_role_type::PartyRecruitmentRole;
-pub use party_stake_table::*;
 pub use party_stake_type::PartyStake;
-pub use party_table::*;
-pub use party_type::Party;
 pub use pasture_cover_type::PastureCover;
 pub use peat_cutting_industry_type::PeatCuttingIndustry;
-pub use perform_immediate_activity_reducer::perform_immediate_activity;
-pub use perform_social_action_reducer::perform_social_action;
+pub use potential_vegetation_type::PotentialVegetation;
 pub use potential_vegetation_class_type::PotentialVegetationClass;
 pub use potential_vegetation_posterior_type::PotentialVegetationPosterior;
-pub use potential_vegetation_type::PotentialVegetation;
 pub use pottery_commodity_type::PotteryCommodity;
 pub use pottery_industry_type::PotteryIndustry;
 pub use production_scale_type::ProductionScale;
 pub use profile_fact_provenance_type::ProfileFactProvenance;
 pub use projectile_kind_type::ProjectileKind;
 pub use prosperity_tier_type::ProsperityTier;
-pub use purchase_from_herbalist_reducer::purchase_from_herbalist;
 pub use quarry_commodity_type::QuarryCommodity;
 pub use quarrying_industry_type::QuarryingIndustry;
-pub use receive_investigation_claim_reducer::receive_investigation_claim;
-pub use receive_local_problem_rumor_reducer::receive_local_problem_rumor;
+pub use recruitment_offer_type::RecruitmentOffer;
 pub use recruitment_offer_id_type::RecruitmentOfferId;
 pub use recruitment_offer_status_type::RecruitmentOfferStatus;
-pub use recruitment_offer_table::*;
-pub use recruitment_offer_type::RecruitmentOffer;
 pub use recruitment_requirements_type::RecruitmentRequirements;
 pub use recruitment_source_id_type::RecruitmentSourceId;
-pub use refresh_capabilities_reducer::refresh_capabilities;
-pub use refresh_strategic_condition_reducer::refresh_strategic_condition;
-pub use register_strategic_gateway_reducer::register_strategic_gateway;
-pub use reject_party_join_request_reducer::reject_party_join_request;
 pub use religion_hours_type::ReligionHours;
-pub use religious_demand_table::*;
 pub use religious_demand_type::ReligiousDemand;
-pub use remove_party_member_reducer::remove_party_member;
-pub use rename_saved_recruitment_role_reducer::rename_saved_recruitment_role;
-pub use repair_order_table::*;
 pub use repair_order_type::RepairOrder;
-pub use report_contract_reducer::report_contract;
-pub use request_general_party_join_reducer::request_general_party_join;
-pub use request_party_action_reducer::request_party_action;
-pub use request_tactical_server_for_scene_reducer::request_tactical_server_for_scene;
-pub use request_tactical_server_reducer::request_tactical_server;
-pub use request_to_join_party_reducer::request_to_join_party;
-pub use resolve_religious_demand_reducer::resolve_religious_demand;
-pub use resolve_strategic_encounter_reducer::resolve_strategic_encounter;
 pub use resolved_party_action_type::ResolvedPartyAction;
-pub use rest_at_camp_reducer::rest_at_camp;
-pub use rest_at_settlement_hours_reducer::rest_at_settlement_hours;
-pub use rest_at_settlement_reducer::rest_at_settlement;
-pub use retained_projectile_table::*;
 pub use retained_projectile_type::RetainedProjectile;
-pub use retrieve_repaired_item_reducer::retrieve_repaired_item;
-pub use retrieve_repaired_items_reducer::retrieve_repaired_items;
-pub use revoke_tactical_server_claim_reducer::revoke_tactical_server_claim;
 pub use river_access_type::RiverAccess;
 pub use river_and_canal_access_type::RiverAndCanalAccess;
 pub use river_watercourse_type::RiverWatercourse;
@@ -994,59 +844,38 @@ pub use route_seasonal_hazard_type::RouteSeasonalHazard;
 pub use route_seasonal_risk_type::RouteSeasonalRisk;
 pub use route_signed_grade_permille_type::RouteSignedGradePermille;
 pub use route_slope_permille_type::RouteSlopePermille;
-pub use route_terrain_class_type::RouteTerrainClass;
 pub use route_terrain_type::RouteTerrain;
+pub use route_terrain_class_type::RouteTerrainClass;
 pub use route_vertical_meters_type::RouteVerticalMeters;
 pub use route_water_adjacency_type::RouteWaterAdjacency;
 pub use route_water_feature_kind_type::RouteWaterFeatureKind;
 pub use salt_source_type::SaltSource;
 pub use saltmaking_industry_type::SaltmakingIndustry;
-pub use save_recruitment_role_reducer::save_recruitment_role;
-pub use saved_recruitment_role_table::*;
 pub use saved_recruitment_role_type::SavedRecruitmentRole;
 pub use schedule_allocation_type::ScheduleAllocation;
 pub use sedimentary_rock_type::SedimentaryRock;
-pub use seed_simulation_disease_reducer::seed_simulation_disease;
-pub use seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage;
-pub use seed_simulation_world_reducer::seed_simulation_world;
 pub use self_regard_type::SelfRegard;
-pub use send_local_chat_message_reducer::send_local_chat_message;
-pub use set_character_religion_reducer::set_character_religion;
-pub use set_inventory_quantity_target_reducer::set_inventory_quantity_target;
-pub use set_party_camp_fatigue_percent_reducer::set_party_camp_fatigue_percent;
-pub use set_party_travel_itinerary_reducer::set_party_travel_itinerary;
-pub use settlement_alias_batch_row_type::SettlementAliasBatchRow;
-pub use settlement_alias_table::*;
+pub use settlement_type::Settlement;
 pub use settlement_alias_type::SettlementAlias;
+pub use settlement_alias_batch_row_type::SettlementAliasBatchRow;
 pub use settlement_category_type::SettlementCategory;
+pub use settlement_description_type::SettlementDescription;
 pub use settlement_description_batch_row_type::SettlementDescriptionBatchRow;
 pub use settlement_description_kind_type::SettlementDescriptionKind;
-pub use settlement_description_table::*;
-pub use settlement_description_type::SettlementDescription;
 pub use settlement_economy_profile_type::SettlementEconomyProfile;
 pub use settlement_herbalist_type::SettlementHerbalist;
 pub use settlement_hydrology_type::SettlementHydrology;
 pub use settlement_import_type::SettlementImport;
 pub use settlement_language_profile_type::SettlementLanguageProfile;
-pub use settlement_npc_presence_table::*;
+pub use settlement_npc_type::SettlementNpc;
 pub use settlement_npc_presence_type::SettlementNpcPresence;
 pub use settlement_npc_seed_explanation_type::SettlementNpcSeedExplanation;
-pub use settlement_npc_table::*;
-pub use settlement_npc_type::SettlementNpc;
-pub use settlement_outbreak_table::*;
 pub use settlement_outbreak_type::SettlementOutbreak;
 pub use settlement_religious_status_type::SettlementReligiousStatus;
 pub use settlement_service_type::SettlementService;
-pub use settlement_smith_table::*;
 pub use settlement_smith_type::SettlementSmith;
 pub use settlement_stock_type::SettlementStock;
-pub use settlement_table::*;
-pub use settlement_type::Settlement;
-pub use share_investigation_belief_reducer::share_investigation_belief;
-pub use share_investigation_lead_reducer::share_investigation_lead;
-pub use simulation_character_table::*;
 pub use simulation_character_type::SimulationCharacter;
-pub use simulation_run_table::*;
 pub use simulation_run_type::SimulationRun;
 pub use sociability_type::Sociability;
 pub use social_action_cooldown_type::SocialActionCooldown;
@@ -1061,48 +890,244 @@ pub use soil_profile_type::SoilProfile;
 pub use soil_properties_type::SoilProperties;
 pub use soil_substrate_type::SoilSubstrate;
 pub use soil_water_regime_type::SoilWaterRegime;
-pub use stage_investigation_claim_reducer::stage_investigation_claim;
-pub use stage_investigation_lead_reducer::stage_investigation_lead;
-pub use start_dialogue_reducer::start_dialogue;
 pub use stock_category_type::StockCategory;
 pub use stone_content_percent_type::StoneContentPercent;
-pub use store_battle_loot_reducer::store_battle_loot;
 pub use strahler_order_type::StrahlerOrder;
-pub use strategic_encounter_loss_type::StrategicEncounterLoss;
-pub use strategic_encounter_table::*;
 pub use strategic_encounter_type::StrategicEncounter;
-pub use strategic_gateway_authority_table::*;
+pub use strategic_encounter_loss_type::StrategicEncounterLoss;
 pub use strategic_gateway_authority_type::StrategicGatewayAuthority;
 pub use strategic_incident_type::StrategicIncident;
-pub use submit_all_repairable_items_reducer::submit_all_repairable_items;
-pub use submit_item_for_repair_reducer::submit_item_for_repair;
 pub use suitability_basis_points_type::SuitabilityBasisPoints;
 pub use surface_geology_type::SurfaceGeology;
 pub use surface_lithology_type::SurfaceLithology;
-pub use synchronize_character_time_reducer::synchronize_character_time;
-pub use tactical_server_claim_type::TacticalServerClaim;
-pub use tactical_server_request_table::*;
-pub use tactical_server_request_type::TacticalServerRequest;
-pub use tactical_server_table::*;
 pub use tactical_server_type::TacticalServer;
+pub use tactical_server_claim_type::TacticalServerClaim;
+pub use tactical_server_request_type::TacticalServerRequest;
 pub use temperance_type::Temperance;
 pub use topsoil_organic_carbon_type::TopsoilOrganicCarbon;
-pub use track_case_site_reducer::track_case_site;
-pub use transfer_party_item_reducer::transfer_party_item;
+pub use travel_edge_type::TravelEdge;
 pub use travel_edge_load_type::TravelEdgeLoad;
 pub use travel_edge_provenance_type::TravelEdgeProvenance;
-pub use travel_edge_table::*;
-pub use travel_edge_type::TravelEdge;
 pub use travel_filth_progress_type::TravelFilthProgress;
 pub use travel_route_type::TravelRoute;
-pub use travel_to_case_site_planned_reducer::travel_to_case_site_planned;
-pub use travel_to_case_site_reducer::travel_to_case_site;
-pub use travel_to_settlement_planned_reducer::travel_to_settlement_planned;
-pub use travel_to_settlement_reducer::travel_to_settlement;
-pub use treat_limb_reducer::treat_limb;
 pub use tree_species_id_type::TreeSpeciesId;
 pub use tree_species_profile_type::TreeSpeciesProfile;
 pub use unconsolidated_deposit_type::UnconsolidatedDeposit;
+pub use water_distance_meters_type::WaterDistanceMeters;
+pub use weapon_skill_distribution_type::WeaponSkillDistribution;
+pub use western_christian_arrangement_type::WesternChristianArrangement;
+pub use woodland_type::Woodland;
+pub use world_clock_type::WorldClock;
+pub use world_clock_schedule_type::WorldClockSchedule;
+pub use world_data_import_type::WorldDataImport;
+pub use world_node_type::WorldNode;
+pub use world_node_import_type::WorldNodeImport;
+pub use wrb_reference_group_type::WrbReferenceGroup;
+pub use written_language_hours_type::WrittenLanguageHours;
+pub use alcohol_consumption_table::*;
+pub use autoresolve_report_table::*;
+pub use backend_case_battles_table::*;
+pub use backend_case_site_pins_table::*;
+pub use backend_character_affinities_table::*;
+pub use backend_character_case_site_locations_table::*;
+pub use backend_character_familiarities_table::*;
+pub use backend_committed_cuts_table::*;
+pub use backend_contracts_table::*;
+pub use backend_herbalist_examinations_table::*;
+pub use backend_infection_episodes_table::*;
+pub use backend_investigation_journal_table::*;
+pub use backend_investigation_leads_table::*;
+pub use backend_local_problem_rumors_table::*;
+pub use backend_local_problem_trade_effects_table::*;
+pub use backend_medical_examinations_table::*;
+pub use backend_social_beliefs_table::*;
+pub use battle_loot_item_table::*;
+pub use battle_participant_table::*;
+pub use battle_result_table::*;
+pub use character_table::*;
+pub use character_apprenticeship_table::*;
+pub use character_attributes_table::*;
+pub use character_capability_table::*;
+pub use character_condition_table::*;
+pub use character_death_table::*;
+pub use character_equip_table::*;
+pub use character_filth_table::*;
+pub use character_illness_status_table::*;
+pub use character_limbs_table::*;
+pub use character_morale_source_table::*;
+pub use character_needs_table::*;
+pub use character_notoriety_table::*;
+pub use character_personality_table::*;
+pub use character_skills_table::*;
+pub use character_stats_table::*;
+pub use character_strategic_condition_table::*;
+pub use character_time_table::*;
+pub use character_training_schedule_table::*;
+pub use character_virtue_table::*;
+pub use connected_players_table::*;
+pub use dialogue_event_table::*;
+pub use dialogue_participant_table::*;
+pub use dialogue_prompt_table::*;
+pub use dialogue_session_table::*;
+pub use dialogue_topic_option_table::*;
+pub use equipped_medication_table::*;
+pub use food_lot_table::*;
+pub use inventory_item_table::*;
+pub use inventory_quantity_target_table::*;
+pub use item_table::*;
+pub use item_condition_table::*;
+pub use limb_injury_table::*;
+pub use local_chat_message_table::*;
+pub use local_problem_symptom_table::*;
+pub use morale_event_table::*;
+pub use party_table::*;
+pub use party_action_request_table::*;
+pub use party_inventory_item_table::*;
+pub use party_inventory_state_table::*;
+pub use party_item_condition_table::*;
+pub use party_join_request_table::*;
+pub use party_journey_table::*;
+pub use party_journey_itinerary_table::*;
+pub use party_journey_route_table::*;
+pub use party_leader_vote_table::*;
+pub use party_member_table::*;
+pub use party_recruitment_role_table::*;
+pub use party_stake_table::*;
+pub use recruitment_offer_table::*;
+pub use religious_demand_table::*;
+pub use repair_order_table::*;
+pub use retained_projectile_table::*;
+pub use saved_recruitment_role_table::*;
+pub use settlement_table::*;
+pub use settlement_alias_table::*;
+pub use settlement_description_table::*;
+pub use settlement_npc_table::*;
+pub use settlement_npc_presence_table::*;
+pub use settlement_outbreak_table::*;
+pub use settlement_smith_table::*;
+pub use simulation_character_table::*;
+pub use simulation_run_table::*;
+pub use strategic_encounter_table::*;
+pub use strategic_gateway_authority_table::*;
+pub use tactical_server_table::*;
+pub use tactical_server_request_table::*;
+pub use travel_edge_table::*;
+pub use world_clock_table::*;
+pub use world_data_import_table::*;
+pub use world_node_table::*;
+pub use abandon_contract_reducer::abandon_contract;
+pub use accept_contract_reducer::accept_contract;
+pub use accept_party_join_request_reducer::accept_party_join_request;
+pub use answer_dialogue_prompt_reducer::answer_dialogue_prompt;
+pub use approve_party_action_request_reducer::approve_party_action_request;
+pub use approve_party_action_request_planned_reducer::approve_party_action_request_planned;
+pub use authorize_tactical_server_claim_reducer::authorize_tactical_server_claim;
+pub use autoresolve_mission_reducer::autoresolve_mission;
+pub use backfill_character_deaths_and_leadership_reducer::backfill_character_deaths_and_leadership;
+pub use backfill_equipment_condition_and_smiths_reducer::backfill_equipment_condition_and_smiths;
+pub use backfill_item_values_reducer::backfill_item_values;
+pub use backfill_settlement_herbalists_reducer::backfill_settlement_herbalists;
+pub use backfill_solo_parties_reducer::backfill_solo_parties;
+pub use begin_apprenticeship_reducer::begin_apprenticeship;
+pub use begin_world_data_import_reducer::begin_world_data_import;
+pub use bootstrap_development_world_reducer::bootstrap_development_world;
+pub use calibrate_weapon_precision_reducer::calibrate_weapon_precision;
+pub use cancel_mission_request_reducer::cancel_mission_request;
+pub use change_inventory_item_reducer::change_inventory_item;
+pub use choose_dialogue_topic_reducer::choose_dialogue_topic;
+pub use claim_simulation_run_reducer::claim_simulation_run;
+pub use configure_simulation_character_reducer::configure_simulation_character;
+pub use continue_camp_travel_reducer::continue_camp_travel;
+pub use cook_food_reducer::cook_food;
+pub use craft_medication_reducer::craft_medication;
+pub use create_character_reducer::create_character;
+pub use create_named_character_reducer::create_named_character;
+pub use create_named_character_with_id_reducer::create_named_character_with_id;
+pub use create_recruitment_role_reducer::create_recruitment_role;
+pub use create_tactical_server_for_request_reducer::create_tactical_server_for_request;
+pub use create_temporary_character_reducer::create_temporary_character;
+pub use delete_recruitment_role_reducer::delete_recruitment_role;
+pub use delete_saved_recruitment_role_reducer::delete_saved_recruitment_role;
+pub use deposit_party_inventory_item_reducer::deposit_party_inventory_item;
+pub use disband_party_reducer::disband_party;
+pub use discard_inventory_items_reducer::discard_inventory_items;
+pub use discover_investigation_lead_reducer::discover_investigation_lead;
+pub use dismiss_herbalist_examination_reducer::dismiss_herbalist_examination;
+pub use dismiss_medical_examination_reducer::dismiss_medical_examination;
+pub use dismiss_party_action_request_reducer::dismiss_party_action_request;
+pub use eat_food_reducer::eat_food;
+pub use end_tactical_server_reducer::end_tactical_server;
+pub use ensure_settlement_activity_reducer::ensure_settlement_activity;
+pub use enter_mission_reducer::enter_mission;
+pub use equip_item_reducer::equip_item;
+pub use equip_medication_reducer::equip_medication;
+pub use examine_by_herbalist_reducer::examine_by_herbalist;
+pub use examine_patient_reducer::examine_patient;
+pub use finalize_merchant_trade_reducer::finalize_merchant_trade;
+pub use finalize_party_offer_reducer::finalize_party_offer;
+pub use finish_world_data_import_reducer::finish_world_data_import;
+pub use import_settlement_aliases_reducer::import_settlement_aliases;
+pub use import_settlement_descriptions_reducer::import_settlement_descriptions;
+pub use import_settlements_reducer::import_settlements;
+pub use import_travel_edges_reducer::import_travel_edges;
+pub use import_world_nodes_reducer::import_world_nodes;
+pub use interact_with_contract_issuer_reducer::interact_with_contract_issuer;
+pub use join_dialogue_session_reducer::join_dialogue_session;
+pub use kill_simulation_character_reducer::kill_simulation_character;
+pub use leave_mission_reducer::leave_mission;
+pub use leave_party_reducer::leave_party;
+pub use liquidate_party_inventory_reducer::liquidate_party_inventory;
+pub use perform_case_objective_reducer::perform_case_objective;
+pub use perform_immediate_activity_reducer::perform_immediate_activity;
+pub use perform_social_action_reducer::perform_social_action;
+pub use purchase_from_herbalist_reducer::purchase_from_herbalist;
+pub use receive_investigation_claim_reducer::receive_investigation_claim;
+pub use receive_local_problem_rumor_reducer::receive_local_problem_rumor;
+pub use refresh_capabilities_reducer::refresh_capabilities;
+pub use refresh_strategic_condition_reducer::refresh_strategic_condition;
+pub use register_strategic_gateway_reducer::register_strategic_gateway;
+pub use reject_party_join_request_reducer::reject_party_join_request;
+pub use remove_party_member_reducer::remove_party_member;
+pub use rename_saved_recruitment_role_reducer::rename_saved_recruitment_role;
+pub use report_contract_reducer::report_contract;
+pub use request_general_party_join_reducer::request_general_party_join;
+pub use request_party_action_reducer::request_party_action;
+pub use request_tactical_server_reducer::request_tactical_server;
+pub use request_tactical_server_for_scene_reducer::request_tactical_server_for_scene;
+pub use request_to_join_party_reducer::request_to_join_party;
+pub use resolve_religious_demand_reducer::resolve_religious_demand;
+pub use resolve_strategic_encounter_reducer::resolve_strategic_encounter;
+pub use rest_at_camp_reducer::rest_at_camp;
+pub use rest_at_settlement_reducer::rest_at_settlement;
+pub use rest_at_settlement_hours_reducer::rest_at_settlement_hours;
+pub use retrieve_repaired_item_reducer::retrieve_repaired_item;
+pub use retrieve_repaired_items_reducer::retrieve_repaired_items;
+pub use revoke_tactical_server_claim_reducer::revoke_tactical_server_claim;
+pub use save_recruitment_role_reducer::save_recruitment_role;
+pub use seed_simulation_disease_reducer::seed_simulation_disease;
+pub use seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage;
+pub use seed_simulation_world_reducer::seed_simulation_world;
+pub use send_local_chat_message_reducer::send_local_chat_message;
+pub use set_character_religion_reducer::set_character_religion;
+pub use set_inventory_quantity_target_reducer::set_inventory_quantity_target;
+pub use set_party_camp_fatigue_percent_reducer::set_party_camp_fatigue_percent;
+pub use set_party_travel_itinerary_reducer::set_party_travel_itinerary;
+pub use share_investigation_belief_reducer::share_investigation_belief;
+pub use share_investigation_lead_reducer::share_investigation_lead;
+pub use stage_investigation_claim_reducer::stage_investigation_claim;
+pub use stage_investigation_lead_reducer::stage_investigation_lead;
+pub use start_dialogue_reducer::start_dialogue;
+pub use store_battle_loot_reducer::store_battle_loot;
+pub use submit_all_repairable_items_reducer::submit_all_repairable_items;
+pub use submit_item_for_repair_reducer::submit_item_for_repair;
+pub use synchronize_character_time_reducer::synchronize_character_time;
+pub use track_case_site_reducer::track_case_site;
+pub use transfer_party_item_reducer::transfer_party_item;
+pub use travel_to_case_site_reducer::travel_to_case_site;
+pub use travel_to_case_site_planned_reducer::travel_to_case_site_planned;
+pub use travel_to_settlement_reducer::travel_to_settlement;
+pub use travel_to_settlement_planned_reducer::travel_to_settlement_planned;
+pub use treat_limb_reducer::treat_limb;
 pub use unequip_medication_reducer::unequip_medication;
 pub use update_character_reducer::update_character;
 pub use update_party_check_targets_reducer::update_party_check_targets;
@@ -1110,21 +1135,7 @@ pub use update_recruitment_role_reducer::update_recruitment_role;
 pub use update_training_schedule_reducer::update_training_schedule;
 pub use upgrade_manual_surgery_reducer::upgrade_manual_surgery;
 pub use vote_for_party_leader_reducer::vote_for_party_leader;
-pub use water_distance_meters_type::WaterDistanceMeters;
-pub use weapon_skill_distribution_type::WeaponSkillDistribution;
-pub use western_christian_arrangement_type::WesternChristianArrangement;
 pub use withdraw_party_inventory_item_reducer::withdraw_party_inventory_item;
-pub use woodland_type::Woodland;
-pub use world_clock_schedule_type::WorldClockSchedule;
-pub use world_clock_table::*;
-pub use world_clock_type::WorldClock;
-pub use world_data_import_table::*;
-pub use world_data_import_type::WorldDataImport;
-pub use world_node_import_type::WorldNodeImport;
-pub use world_node_table::*;
-pub use world_node_type::WorldNode;
-pub use wrb_reference_group_type::WrbReferenceGroup;
-pub use written_language_hours_type::WrittenLanguageHours;
 
 #[derive(Clone, PartialEq, Debug)]
 
@@ -1134,18 +1145,18 @@ pub use written_language_hours_type::WrittenLanguageHours;
 /// to indicate which reducer caused the event.
 
 pub enum Reducer {
-    AbandonContract {
+        AbandonContract {
         character_id: u64,
         contract_id: String,
-    },
+}    ,
     AcceptContract {
         character_id: u64,
         contract_id: String,
-    },
+}    ,
     AcceptPartyJoinRequest {
         leader_id: u64,
         request_id: u64,
-    },
+}    ,
     AnswerDialoguePrompt {
         character_id: u64,
         prompt_row_id: String,
@@ -1153,53 +1164,53 @@ pub enum Reducer {
         action_id: String,
         expected_revision: u64,
         catalog_revision: String,
-    },
+}    ,
     ApprovePartyActionRequest {
         leader_id: u64,
         request_id: u64,
-    },
+}    ,
     ApprovePartyActionRequestPlanned {
         leader_id: u64,
         request_id: u64,
         route: JourneyRoutePlan,
-    },
+}    ,
     AuthorizeTacticalServerClaim {
         mission_id: String,
-        claim_hash: Vec<u8>,
-    },
+        claim_hash: Vec::<u8>,
+}    ,
     AutoresolveMission {
         character_id: u64,
         mission_id: String,
-    },
-    BackfillCharacterDeathsAndLeadership,
-    BackfillEquipmentConditionAndSmiths,
-    BackfillItemValues,
-    BackfillSettlementHerbalists,
-    BackfillSoloParties,
+}    ,
+    BackfillCharacterDeathsAndLeadership ,
+    BackfillEquipmentConditionAndSmiths ,
+    BackfillItemValues ,
+    BackfillSettlementHerbalists ,
+    BackfillSoloParties ,
     BeginApprenticeship {
         character_id: u64,
         service_id: String,
-    },
+}    ,
     BeginWorldDataImport {
         schema_version: u32,
         artifact_id: String,
         manifest_digest: String,
         sources: String,
-    },
+}    ,
     BootstrapDevelopmentWorld {
         bootstrap_token: String,
         include_visual_demos: bool,
-    },
-    CalibrateWeaponPrecision,
+}    ,
+    CalibrateWeaponPrecision ,
     CancelMissionRequest {
         character_id: u64,
         mission_id: String,
-    },
+}    ,
     ChangeInventoryItem {
         character_id: u64,
         item_id: String,
         by_quantity: i32,
-    },
+}    ,
     ChooseDialogueTopic {
         character_id: u64,
         session_id: String,
@@ -1207,12 +1218,12 @@ pub enum Reducer {
         action_id: String,
         expected_revision: u64,
         catalog_revision: String,
-    },
+}    ,
     ClaimSimulationRun {
         bootstrap_token: String,
         nonce: String,
         policy_seed: u64,
-    },
+}    ,
     ConfigureSimulationCharacter {
         nonce: String,
         character_id: u64,
@@ -1222,31 +1233,31 @@ pub enum Reducer {
         skills: CharacterSkills,
         downtime: ScheduleAllocation,
         personality: CharacterPersonality,
-    },
+}    ,
     ContinueCampTravel {
         character_id: u64,
-    },
+}    ,
     CookFood {
         character_id: u64,
         method: CookingMethod,
-        inventory_item_ids: Vec<u64>,
-        quantities: Vec<u32>,
-    },
+        inventory_item_ids: Vec::<u64>,
+        quantities: Vec::<u32>,
+}    ,
     CraftMedication {
         character_id: u64,
         disease_id: String,
         party_scope: bool,
-    },
+}    ,
     CreateCharacter {
         id: u64,
-    },
+}    ,
     CreateNamedCharacter {
         name: String,
-    },
+}    ,
     CreateNamedCharacterWithId {
         id: u64,
         name: String,
-    },
+}    ,
     CreateRecruitmentRole {
         leader_id: u64,
         name: String,
@@ -1254,121 +1265,126 @@ pub enum Reducer {
         requirements: RecruitmentRequirements,
         weapon_precision: f32,
         save_role: bool,
-    },
+}    ,
     CreateTacticalServerForRequest {
         mission_id: String,
         claim: String,
         addr: String,
         cert_digest: String,
-    },
+}    ,
     CreateTemporaryCharacter {
         server: __sdk::Identity,
-    },
+}    ,
     DeleteRecruitmentRole {
         leader_id: u64,
         role_id: u64,
-    },
+}    ,
     DeleteSavedRecruitmentRole {
         owner_id: u64,
         role_id: u64,
-    },
+}    ,
     DepositPartyInventoryItem {
         character_id: u64,
         inventory_item_id: u64,
         quantity: u32,
-    },
+}    ,
     DisbandParty {
         leader_id: u64,
         party_id: String,
-    },
+}    ,
     DiscardInventoryItems {
         character_id: u64,
-        inventory_item_ids: Vec<u64>,
-        quantities: Vec<u32>,
-    },
+        inventory_item_ids: Vec::<u64>,
+        quantities: Vec::<u32>,
+}    ,
     DiscoverInvestigationLead {
         character_id: u64,
         action_id: String,
         receipt_id: String,
-    },
+}    ,
     DismissHerbalistExamination {
         patient_id: u64,
         examination_id: u64,
-    },
+}    ,
     DismissMedicalExamination {
         doctor_id: u64,
         target_id: u64,
         examination_id: u64,
-    },
+}    ,
     DismissPartyActionRequest {
         leader_id: u64,
         request_id: u64,
-    },
+}    ,
     EatFood {
         character_id: u64,
         inventory_item_id: u64,
-    },
+}    ,
     EndTacticalServer {
         success: bool,
         reported_xp_gained: i32,
-    },
+}    ,
     EnsureSettlementActivity {
         settlement_id: String,
-    },
+}    ,
     EnterMission {
         character_id: u64,
         server: __sdk::Identity,
-    },
+}    ,
     EquipItem {
         character_id: u64,
         inventory_item_id: u64,
         destination: ItemSlot,
-    },
+}    ,
     EquipMedication {
         character_id: u64,
         inventory_item_id: u64,
-    },
+}    ,
     ExamineByHerbalist {
         patient_id: u64,
         settlement_id: String,
-    },
+}    ,
     ExaminePatient {
         doctor_id: u64,
         target_id: u64,
-    },
+}    ,
     FinalizeMerchantTrade {
         character_id: u64,
         settlement_id: String,
-        buy_item_ids: Vec<String>,
-        buy_quantities: Vec<u32>,
-        sell_inventory_ids: Vec<u64>,
-        sell_quantities: Vec<u32>,
+        buy_item_ids: Vec::<String>,
+        buy_quantities: Vec::<u32>,
+        sell_inventory_ids: Vec::<u64>,
+        sell_quantities: Vec::<u32>,
         party_scope: bool,
-    },
+}    ,
     FinalizePartyOffer {
-        from_character_ids: Vec<u64>,
-        to_character_ids: Vec<u64>,
-        inventory_item_ids: Vec<u64>,
-        quantities: Vec<u32>,
-    },
+        from_character_ids: Vec::<u64>,
+        to_character_ids: Vec::<u64>,
+        inventory_item_ids: Vec::<u64>,
+        quantities: Vec::<u32>,
+}    ,
     FinishWorldDataImport {
         artifact_id: String,
-    },
+}    ,
     ImportSettlementAliases {
-        aliases: Vec<SettlementAliasBatchRow>,
-    },
+        aliases: Vec::<SettlementAliasBatchRow>,
+}    ,
     ImportSettlementDescriptions {
-        descriptions: Vec<SettlementDescriptionBatchRow>,
-    },
+        descriptions: Vec::<SettlementDescriptionBatchRow>,
+}    ,
     ImportSettlements {
-        settlements: Vec<SettlementImport>,
-    },
+        settlements: Vec::<SettlementImport>,
+}    ,
     ImportTravelEdges {
-        edges: Vec<TravelEdgeLoad>,
-    },
+        edges: Vec::<TravelEdgeLoad>,
+}    ,
     ImportWorldNodes {
-        nodes: Vec<WorldNodeImport>,
-    },
+        nodes: Vec::<WorldNodeImport>,
+}    ,
+    InteractWithContractIssuer {
+        character_id: u64,
+        contract_id: String,
+        stage: ContractInteractionStage,
+}    ,
     JoinDialogueSession {
         character_id: u64,
         session_id: String,
@@ -1376,194 +1392,199 @@ pub enum Reducer {
         action_id: String,
         expected_revision: u64,
         catalog_revision: String,
-    },
+}    ,
     KillSimulationCharacter {
         nonce: String,
         character_id: u64,
-    },
+}    ,
     LeaveMission {
         character_id: u64,
-    },
+}    ,
     LeaveParty {
         character_id: u64,
-    },
+}    ,
     LiquidatePartyInventory {
         character_id: u64,
         settlement_id: String,
-        party_inventory_item_ids: Vec<u64>,
-        quantities: Vec<u32>,
-    },
+        party_inventory_item_ids: Vec::<u64>,
+        quantities: Vec::<u32>,
+}    ,
+    PerformCaseObjective {
+        character_id: u64,
+        case_id: String,
+        objective_id: String,
+}    ,
     PerformImmediateActivity {
         character_id: u64,
         activity: ImmediateActivity,
         requested_minutes: u64,
-        service_id: Option<String>,
-    },
+        service_id: Option::<String>,
+}    ,
     PerformSocialAction {
         actor_id: u64,
         target_id: u64,
         source_id: String,
         action_kind: String,
-    },
+}    ,
     PurchaseFromHerbalist {
         patient_id: u64,
         settlement_id: String,
-        item_ids: Vec<String>,
-        quantities: Vec<u32>,
-    },
+        item_ids: Vec::<String>,
+        quantities: Vec::<u32>,
+}    ,
     ReceiveInvestigationClaim {
         character_id: u64,
         action_id: String,
         receipt_id: String,
-    },
+}    ,
     ReceiveLocalProblemRumor {
         character_id: u64,
         receipt_id: String,
         action_id: String,
-    },
+}    ,
     RefreshCapabilities {
         character_id: u64,
-    },
+}    ,
     RefreshStrategicCondition {
         character_id: u64,
-    },
+}    ,
     RegisterStrategicGateway {
-        terrain_package_digest: Option<String>,
+        terrain_package_digest: Option::<String>,
         terrain_schema: u32,
-    },
+}    ,
     RejectPartyJoinRequest {
         leader_id: u64,
         request_id: u64,
-    },
+}    ,
     RemovePartyMember {
         actor_character_id: u64,
         member_character_id: u64,
-    },
+}    ,
     RenameSavedRecruitmentRole {
         owner_id: u64,
         role_id: u64,
         name: String,
-    },
+}    ,
     ReportContract {
         character_id: u64,
         contract_id: String,
-    },
+}    ,
     RequestGeneralPartyJoin {
         character_id: u64,
         target_party_id: String,
-    },
+}    ,
     RequestPartyAction {
         requester_id: u64,
         action_kind: String,
         summary: String,
         payload: String,
-    },
+}    ,
     RequestTacticalServer {
         character_id: u64,
         mission_id: String,
         scene_key: String,
-    },
+}    ,
     RequestTacticalServerForScene {
         character_id: u64,
         scene_key: String,
-    },
+}    ,
     RequestToJoinParty {
         character_id: u64,
         recruitment_role_id: u64,
-    },
+}    ,
     ResolveReligiousDemand {
         demand_id: u64,
         choice: String,
-    },
+}    ,
     ResolveStrategicEncounter {
         character_id: u64,
         choice: String,
-    },
+}    ,
     RestAtCamp {
         character_id: u64,
         requested_minutes: u64,
-    },
+}    ,
     RestAtSettlement {
         character_id: u64,
         requested_days: u16,
         at_inn: bool,
-    },
+}    ,
     RestAtSettlementHours {
         character_id: u64,
         requested_minutes: u64,
         at_inn: bool,
-    },
+}    ,
     RetrieveRepairedItem {
         character_id: u64,
         order_id: u64,
-    },
+}    ,
     RetrieveRepairedItems {
         character_id: u64,
         settlement_id: String,
         service: String,
-        item_id: Option<String>,
+        item_id: Option::<String>,
         limit: u32,
-    },
+}    ,
     RevokeTacticalServerClaim {
         mission_id: String,
-    },
+}    ,
     SaveRecruitmentRole {
         owner_id: u64,
         name: String,
         requirements: RecruitmentRequirements,
         weapon_precision: f32,
-    },
+}    ,
     SeedSimulationDisease {
         nonce: String,
         character_id: u64,
-    },
+}    ,
     SeedSimulationEquipmentDamage {
         nonce: String,
         character_id: u64,
         inventory_item_id: u64,
-    },
+}    ,
     SeedSimulationWorld {
         nonce: String,
-    },
+}    ,
     SendLocalChatMessage {
         sender_id: u64,
         subject_kind: String,
         subject_id: String,
         body: String,
-    },
+}    ,
     SetCharacterReligion {
         character_id: u64,
         religion_id: String,
-    },
+}    ,
     SetInventoryQuantityTarget {
         character_id: u64,
         party_scope: bool,
         item_id: String,
         quantity: u32,
-    },
+}    ,
     SetPartyCampFatiguePercent {
         character_id: u64,
         fatigue_percent: u8,
-    },
+}    ,
     SetPartyTravelItinerary {
         character_id: u64,
         walking_minutes_per_day: u16,
         travel_at_night: bool,
         automatic_camp_duration: bool,
         fixed_camp_minutes: u16,
-    },
+}    ,
     ShareInvestigationBelief {
         sender_id: u64,
         recipient_id: u64,
         source_belief_id: String,
         action_id: String,
-    },
+}    ,
     ShareInvestigationLead {
         sender_id: u64,
         recipient_id: u64,
         source_lead_id: String,
         action_id: String,
-    },
+}    ,
     StageInvestigationClaim {
         character_id: u64,
         receipt_id: String,
@@ -1572,7 +1593,7 @@ pub enum Reducer {
         safe_source_label: String,
         conflict_group: String,
         correction_of_belief_id: String,
-    },
+}    ,
     StageInvestigationLead {
         character_id: u64,
         receipt_id: String,
@@ -1587,7 +1608,7 @@ pub enum Reducer {
         longitude_e_7: i32,
         conflict_group: String,
         correction_of_lead_id: String,
-    },
+}    ,
     StartDialogue {
         character_id: u64,
         session_id: String,
@@ -1595,77 +1616,77 @@ pub enum Reducer {
         npc_actor_id: String,
         location_id: String,
         catalog_revision: String,
-    },
+}    ,
     StoreBattleLoot {
         character_id: u64,
         battle_id: String,
-        loot_item_ids: Vec<u64>,
-        quantities: Vec<u32>,
-    },
+        loot_item_ids: Vec::<u64>,
+        quantities: Vec::<u32>,
+}    ,
     SubmitAllRepairableItems {
         character_id: u64,
         settlement_id: String,
         service: String,
-    },
+}    ,
     SubmitItemForRepair {
         character_id: u64,
         settlement_id: String,
         service: String,
         inventory_item_id: u64,
-    },
+}    ,
     SynchronizeCharacterTime {
         character_id: u64,
-    },
+}    ,
     TrackCaseSite {
         character_id: u64,
         case_site_id: CaseSiteId,
-    },
+}    ,
     TransferPartyItem {
         from_character_id: u64,
         to_character_id: u64,
         inventory_item_id: u64,
         quantity: u32,
-    },
+}    ,
     TravelToCaseSite {
         character_id: u64,
         case_site_id: CaseSiteId,
-    },
+}    ,
     TravelToCaseSitePlanned {
         character_id: u64,
         case_site_id: CaseSiteId,
         route: JourneyRoutePlan,
-    },
+}    ,
     TravelToSettlement {
         character_id: u64,
         settlement_id: String,
-    },
+}    ,
     TravelToSettlementPlanned {
         character_id: u64,
         settlement_id: String,
         route: JourneyRoutePlan,
-    },
+}    ,
     TreatLimb {
         actor_id: u64,
         patient_id: u64,
         limb_slug: String,
         procedure: String,
-        projectile_id: Option<u64>,
+        projectile_id: Option::<u64>,
         use_soap: bool,
-    },
+}    ,
     UnequipMedication {
         character_id: u64,
         inventory_item_id: u64,
-    },
+}    ,
     UpdateCharacter {
         id: u64,
         name: String,
-    },
+}    ,
     UpdatePartyCheckTargets {
         leader_id: u64,
         medicine: f32,
         command: f32,
         religion: f32,
-    },
+}    ,
     UpdateRecruitmentRole {
         leader_id: u64,
         role_id: u64,
@@ -1673,23 +1694,24 @@ pub enum Reducer {
         quantity: u32,
         requirements: RecruitmentRequirements,
         weapon_precision: f32,
-    },
+}    ,
     UpdateTrainingSchedule {
         character_id: u64,
         downtime: ScheduleAllocation,
         travel: ScheduleAllocation,
-    },
-    UpgradeManualSurgery,
+}    ,
+    UpgradeManualSurgery ,
     VoteForPartyLeader {
         voter_id: u64,
         candidate_id: u64,
-    },
+}    ,
     WithdrawPartyInventoryItem {
         character_id: u64,
         party_inventory_item_id: u64,
         quantity: u32,
-    },
+}    ,
 }
+
 
 impl __sdk::InModule for Reducer {
     type Module = RemoteModule;
@@ -1698,22 +1720,16 @@ impl __sdk::InModule for Reducer {
 impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
-            Reducer::AbandonContract { .. } => "abandon_contract",
+                        Reducer::AbandonContract { .. } => "abandon_contract",
             Reducer::AcceptContract { .. } => "accept_contract",
             Reducer::AcceptPartyJoinRequest { .. } => "accept_party_join_request",
             Reducer::AnswerDialoguePrompt { .. } => "answer_dialogue_prompt",
             Reducer::ApprovePartyActionRequest { .. } => "approve_party_action_request",
-            Reducer::ApprovePartyActionRequestPlanned { .. } => {
-                "approve_party_action_request_planned"
-            }
+            Reducer::ApprovePartyActionRequestPlanned { .. } => "approve_party_action_request_planned",
             Reducer::AuthorizeTacticalServerClaim { .. } => "authorize_tactical_server_claim",
             Reducer::AutoresolveMission { .. } => "autoresolve_mission",
-            Reducer::BackfillCharacterDeathsAndLeadership => {
-                "backfill_character_deaths_and_leadership"
-            }
-            Reducer::BackfillEquipmentConditionAndSmiths => {
-                "backfill_equipment_condition_and_smiths"
-            }
+            Reducer::BackfillCharacterDeathsAndLeadership => "backfill_character_deaths_and_leadership",
+            Reducer::BackfillEquipmentConditionAndSmiths => "backfill_equipment_condition_and_smiths",
             Reducer::BackfillItemValues => "backfill_item_values",
             Reducer::BackfillSettlementHerbalists => "backfill_settlement_herbalists",
             Reducer::BackfillSoloParties => "backfill_solo_parties",
@@ -1760,11 +1776,13 @@ impl __sdk::Reducer for Reducer {
             Reducer::ImportSettlements { .. } => "import_settlements",
             Reducer::ImportTravelEdges { .. } => "import_travel_edges",
             Reducer::ImportWorldNodes { .. } => "import_world_nodes",
+            Reducer::InteractWithContractIssuer { .. } => "interact_with_contract_issuer",
             Reducer::JoinDialogueSession { .. } => "join_dialogue_session",
             Reducer::KillSimulationCharacter { .. } => "kill_simulation_character",
             Reducer::LeaveMission { .. } => "leave_mission",
             Reducer::LeaveParty { .. } => "leave_party",
             Reducer::LiquidatePartyInventory { .. } => "liquidate_party_inventory",
+            Reducer::PerformCaseObjective { .. } => "perform_case_objective",
             Reducer::PerformImmediateActivity { .. } => "perform_immediate_activity",
             Reducer::PerformSocialAction { .. } => "perform_social_action",
             Reducer::PurchaseFromHerbalist { .. } => "purchase_from_herbalist",
@@ -1824,10 +1842,10 @@ impl __sdk::Reducer for Reducer {
             Reducer::VoteForPartyLeader { .. } => "vote_for_party_leader",
             Reducer::WithdrawPartyInventoryItem { .. } => "withdraw_party_inventory_item",
             _ => unreachable!(),
-        }
-    }
+}
+}
     #[allow(clippy::clone_on_copy)]
-    fn args_bsatn(&self) -> Result<Vec<u8>, __sats::bsatn::EncodeError> {
+fn args_bsatn(&self) -> Result<Vec<u8>, __sats::bsatn::EncodeError> {
         match self {
                         Reducer::AbandonContract{
                 character_id,
@@ -2249,6 +2267,15 @@ Reducer::CancelMissionRequest{
 }             => __sats::bsatn::to_vec(&import_world_nodes_reducer::ImportWorldNodesArgs {
                 nodes: nodes.clone(),
 }),
+            Reducer::InteractWithContractIssuer{
+                character_id,
+                contract_id,
+                stage,
+}             => __sats::bsatn::to_vec(&interact_with_contract_issuer_reducer::InteractWithContractIssuerArgs {
+                character_id: character_id.clone(),
+                contract_id: contract_id.clone(),
+                stage: stage.clone(),
+}),
             Reducer::JoinDialogueSession{
                 character_id,
                 session_id,
@@ -2291,6 +2318,15 @@ Reducer::CancelMissionRequest{
                 settlement_id: settlement_id.clone(),
                 party_inventory_item_ids: party_inventory_item_ids.clone(),
                 quantities: quantities.clone(),
+}),
+            Reducer::PerformCaseObjective{
+                character_id,
+                case_id,
+                objective_id,
+}             => __sats::bsatn::to_vec(&perform_case_objective_reducer::PerformCaseObjectiveArgs {
+                character_id: character_id.clone(),
+                case_id: case_id.clone(),
+                objective_id: objective_id.clone(),
 }),
             Reducer::PerformImmediateActivity{
                 character_id,
@@ -2829,16 +2865,16 @@ Reducer::VoteForPartyLeader{
 }),
             _ => unreachable!(),
 }
-    }
+}
 }
 
 #[derive(Default, Debug)]
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct DbUpdate {
-    alcohol_consumption: __sdk::TableUpdate<AlcoholConsumption>,
+        alcohol_consumption: __sdk::TableUpdate<AlcoholConsumption>,
     autoresolve_report: __sdk::TableUpdate<AutoresolveReport>,
-    backend_case_battle: __sdk::TableUpdate<BackendCaseBattle>,
+    backend_case_battles: __sdk::TableUpdate<BackendCaseBattle>,
     backend_case_site_pins: __sdk::TableUpdate<BackendCaseSitePin>,
     backend_character_affinities: __sdk::TableUpdate<CharacterAffinity>,
     backend_character_case_site_locations: __sdk::TableUpdate<BackendCharacterCaseSiteLocation>,
@@ -2929,305 +2965,112 @@ pub struct DbUpdate {
     world_node: __sdk::TableUpdate<WorldNode>,
 }
 
+
 impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
     type Error = __sdk::Error;
     fn try_from(raw: __ws::v2::TransactionUpdate) -> Result<Self, Self::Error> {
         let mut db_update = DbUpdate::default();
         for table_update in __sdk::transaction_update_iter_table_updates(raw) {
             match &table_update.table_name[..] {
-                "alcohol_consumption" => db_update
-                    .alcohol_consumption
-                    .append(alcohol_consumption_table::parse_table_update(table_update)?),
-                "autoresolve_report" => db_update
-                    .autoresolve_report
-                    .append(autoresolve_report_table::parse_table_update(table_update)?),
-                "backend_case_battle" => db_update
-                    .backend_case_battle
-                    .append(backend_case_battle_table::parse_table_update(table_update)?),
-                "backend_case_site_pins" => db_update.backend_case_site_pins.append(
-                    backend_case_site_pins_table::parse_table_update(table_update)?,
-                ),
-                "backend_character_affinities" => db_update.backend_character_affinities.append(
-                    backend_character_affinities_table::parse_table_update(table_update)?,
-                ),
-                "backend_character_case_site_locations" => {
-                    db_update.backend_character_case_site_locations.append(
-                        backend_character_case_site_locations_table::parse_table_update(
-                            table_update,
-                        )?,
-                    )
-                }
-                "backend_character_familiarities" => {
-                    db_update.backend_character_familiarities.append(
-                        backend_character_familiarities_table::parse_table_update(table_update)?,
-                    )
-                }
-                "backend_committed_cuts" => db_update.backend_committed_cuts.append(
-                    backend_committed_cuts_table::parse_table_update(table_update)?,
-                ),
-                "backend_contracts" => db_update
-                    .backend_contracts
-                    .append(backend_contracts_table::parse_table_update(table_update)?),
-                "backend_herbalist_examinations" => {
-                    db_update.backend_herbalist_examinations.append(
-                        backend_herbalist_examinations_table::parse_table_update(table_update)?,
-                    )
-                }
-                "backend_infection_episodes" => db_update.backend_infection_episodes.append(
-                    backend_infection_episodes_table::parse_table_update(table_update)?,
-                ),
-                "backend_investigation_journal" => db_update.backend_investigation_journal.append(
-                    backend_investigation_journal_table::parse_table_update(table_update)?,
-                ),
-                "backend_investigation_leads" => db_update.backend_investigation_leads.append(
-                    backend_investigation_leads_table::parse_table_update(table_update)?,
-                ),
-                "backend_local_problem_rumors" => db_update.backend_local_problem_rumors.append(
-                    backend_local_problem_rumors_table::parse_table_update(table_update)?,
-                ),
-                "backend_local_problem_trade_effects" => {
-                    db_update.backend_local_problem_trade_effects.append(
-                        backend_local_problem_trade_effects_table::parse_table_update(
-                            table_update,
-                        )?,
-                    )
-                }
-                "backend_medical_examinations" => db_update.backend_medical_examinations.append(
-                    backend_medical_examinations_table::parse_table_update(table_update)?,
-                ),
-                "backend_social_beliefs" => db_update.backend_social_beliefs.append(
-                    backend_social_beliefs_table::parse_table_update(table_update)?,
-                ),
-                "battle_loot_item" => db_update
-                    .battle_loot_item
-                    .append(battle_loot_item_table::parse_table_update(table_update)?),
-                "battle_participant" => db_update
-                    .battle_participant
-                    .append(battle_participant_table::parse_table_update(table_update)?),
-                "battle_result" => db_update
-                    .battle_result
-                    .append(battle_result_table::parse_table_update(table_update)?),
-                "character" => db_update
-                    .character
-                    .append(character_table::parse_table_update(table_update)?),
-                "character_apprenticeship" => db_update.character_apprenticeship.append(
-                    character_apprenticeship_table::parse_table_update(table_update)?,
-                ),
-                "character_attributes" => db_update.character_attributes.append(
-                    character_attributes_table::parse_table_update(table_update)?,
-                ),
-                "character_capability" => db_update.character_capability.append(
-                    character_capability_table::parse_table_update(table_update)?,
-                ),
-                "character_condition" => db_update
-                    .character_condition
-                    .append(character_condition_table::parse_table_update(table_update)?),
-                "character_death" => db_update
-                    .character_death
-                    .append(character_death_table::parse_table_update(table_update)?),
-                "character_equip" => db_update
-                    .character_equip
-                    .append(character_equip_table::parse_table_update(table_update)?),
-                "character_filth" => db_update
-                    .character_filth
-                    .append(character_filth_table::parse_table_update(table_update)?),
-                "character_illness_status" => db_update.character_illness_status.append(
-                    character_illness_status_table::parse_table_update(table_update)?,
-                ),
-                "character_limbs" => db_update
-                    .character_limbs
-                    .append(character_limbs_table::parse_table_update(table_update)?),
-                "character_morale_source" => db_update.character_morale_source.append(
-                    character_morale_source_table::parse_table_update(table_update)?,
-                ),
-                "character_needs" => db_update
-                    .character_needs
-                    .append(character_needs_table::parse_table_update(table_update)?),
-                "character_notoriety" => db_update
-                    .character_notoriety
-                    .append(character_notoriety_table::parse_table_update(table_update)?),
-                "character_personality" => db_update.character_personality.append(
-                    character_personality_table::parse_table_update(table_update)?,
-                ),
-                "character_skills" => db_update
-                    .character_skills
-                    .append(character_skills_table::parse_table_update(table_update)?),
-                "character_stats" => db_update
-                    .character_stats
-                    .append(character_stats_table::parse_table_update(table_update)?),
-                "character_strategic_condition" => db_update.character_strategic_condition.append(
-                    character_strategic_condition_table::parse_table_update(table_update)?,
-                ),
-                "character_time" => db_update
-                    .character_time
-                    .append(character_time_table::parse_table_update(table_update)?),
-                "character_training_schedule" => db_update.character_training_schedule.append(
-                    character_training_schedule_table::parse_table_update(table_update)?,
-                ),
-                "character_virtue" => db_update
-                    .character_virtue
-                    .append(character_virtue_table::parse_table_update(table_update)?),
-                "connected_players" => db_update
-                    .connected_players
-                    .append(connected_players_table::parse_table_update(table_update)?),
-                "dialogue_event" => db_update
-                    .dialogue_event
-                    .append(dialogue_event_table::parse_table_update(table_update)?),
-                "dialogue_participant" => db_update.dialogue_participant.append(
-                    dialogue_participant_table::parse_table_update(table_update)?,
-                ),
-                "dialogue_prompt" => db_update
-                    .dialogue_prompt
-                    .append(dialogue_prompt_table::parse_table_update(table_update)?),
-                "dialogue_session" => db_update
-                    .dialogue_session
-                    .append(dialogue_session_table::parse_table_update(table_update)?),
-                "dialogue_topic_option" => db_update.dialogue_topic_option.append(
-                    dialogue_topic_option_table::parse_table_update(table_update)?,
-                ),
-                "equipped_medication" => db_update
-                    .equipped_medication
-                    .append(equipped_medication_table::parse_table_update(table_update)?),
-                "food_lot" => db_update
-                    .food_lot
-                    .append(food_lot_table::parse_table_update(table_update)?),
-                "inventory_item" => db_update
-                    .inventory_item
-                    .append(inventory_item_table::parse_table_update(table_update)?),
-                "inventory_quantity_target" => db_update.inventory_quantity_target.append(
-                    inventory_quantity_target_table::parse_table_update(table_update)?,
-                ),
-                "item" => db_update
-                    .item
-                    .append(item_table::parse_table_update(table_update)?),
-                "item_condition" => db_update
-                    .item_condition
-                    .append(item_condition_table::parse_table_update(table_update)?),
-                "limb_injury" => db_update
-                    .limb_injury
-                    .append(limb_injury_table::parse_table_update(table_update)?),
-                "local_chat_message" => db_update
-                    .local_chat_message
-                    .append(local_chat_message_table::parse_table_update(table_update)?),
-                "local_problem_symptom" => db_update.local_problem_symptom.append(
-                    local_problem_symptom_table::parse_table_update(table_update)?,
-                ),
-                "morale_event" => db_update
-                    .morale_event
-                    .append(morale_event_table::parse_table_update(table_update)?),
-                "party" => db_update
-                    .party
-                    .append(party_table::parse_table_update(table_update)?),
-                "party_action_request" => db_update.party_action_request.append(
-                    party_action_request_table::parse_table_update(table_update)?,
-                ),
-                "party_inventory_item" => db_update.party_inventory_item.append(
-                    party_inventory_item_table::parse_table_update(table_update)?,
-                ),
-                "party_inventory_state" => db_update.party_inventory_state.append(
-                    party_inventory_state_table::parse_table_update(table_update)?,
-                ),
-                "party_item_condition" => db_update.party_item_condition.append(
-                    party_item_condition_table::parse_table_update(table_update)?,
-                ),
-                "party_join_request" => db_update
-                    .party_join_request
-                    .append(party_join_request_table::parse_table_update(table_update)?),
-                "party_journey" => db_update
-                    .party_journey
-                    .append(party_journey_table::parse_table_update(table_update)?),
-                "party_journey_itinerary" => db_update.party_journey_itinerary.append(
-                    party_journey_itinerary_table::parse_table_update(table_update)?,
-                ),
-                "party_journey_route" => db_update
-                    .party_journey_route
-                    .append(party_journey_route_table::parse_table_update(table_update)?),
-                "party_leader_vote" => db_update
-                    .party_leader_vote
-                    .append(party_leader_vote_table::parse_table_update(table_update)?),
-                "party_member" => db_update
-                    .party_member
-                    .append(party_member_table::parse_table_update(table_update)?),
-                "party_recruitment_role" => db_update.party_recruitment_role.append(
-                    party_recruitment_role_table::parse_table_update(table_update)?,
-                ),
-                "party_stake" => db_update
-                    .party_stake
-                    .append(party_stake_table::parse_table_update(table_update)?),
-                "recruitment_offer" => db_update
-                    .recruitment_offer
-                    .append(recruitment_offer_table::parse_table_update(table_update)?),
-                "religious_demand" => db_update
-                    .religious_demand
-                    .append(religious_demand_table::parse_table_update(table_update)?),
-                "repair_order" => db_update
-                    .repair_order
-                    .append(repair_order_table::parse_table_update(table_update)?),
-                "retained_projectile" => db_update
-                    .retained_projectile
-                    .append(retained_projectile_table::parse_table_update(table_update)?),
-                "saved_recruitment_role" => db_update.saved_recruitment_role.append(
-                    saved_recruitment_role_table::parse_table_update(table_update)?,
-                ),
-                "settlement" => db_update
-                    .settlement
-                    .append(settlement_table::parse_table_update(table_update)?),
-                "settlement_alias" => db_update
-                    .settlement_alias
-                    .append(settlement_alias_table::parse_table_update(table_update)?),
-                "settlement_description" => db_update.settlement_description.append(
-                    settlement_description_table::parse_table_update(table_update)?,
-                ),
-                "settlement_npc" => db_update
-                    .settlement_npc
-                    .append(settlement_npc_table::parse_table_update(table_update)?),
-                "settlement_npc_presence" => db_update.settlement_npc_presence.append(
-                    settlement_npc_presence_table::parse_table_update(table_update)?,
-                ),
-                "settlement_outbreak" => db_update
-                    .settlement_outbreak
-                    .append(settlement_outbreak_table::parse_table_update(table_update)?),
-                "settlement_smith" => db_update
-                    .settlement_smith
-                    .append(settlement_smith_table::parse_table_update(table_update)?),
-                "simulation_character" => db_update.simulation_character.append(
-                    simulation_character_table::parse_table_update(table_update)?,
-                ),
-                "simulation_run" => db_update
-                    .simulation_run
-                    .append(simulation_run_table::parse_table_update(table_update)?),
-                "strategic_encounter" => db_update
-                    .strategic_encounter
-                    .append(strategic_encounter_table::parse_table_update(table_update)?),
-                "strategic_gateway_authority" => db_update.strategic_gateway_authority.append(
-                    strategic_gateway_authority_table::parse_table_update(table_update)?,
-                ),
-                "tactical_server" => db_update
-                    .tactical_server
-                    .append(tactical_server_table::parse_table_update(table_update)?),
-                "tactical_server_request" => db_update.tactical_server_request.append(
-                    tactical_server_request_table::parse_table_update(table_update)?,
-                ),
-                "travel_edge" => db_update
-                    .travel_edge
-                    .append(travel_edge_table::parse_table_update(table_update)?),
-                "world_clock" => db_update
-                    .world_clock
-                    .append(world_clock_table::parse_table_update(table_update)?),
-                "world_data_import" => db_update
-                    .world_data_import
-                    .append(world_data_import_table::parse_table_update(table_update)?),
-                "world_node" => db_update
-                    .world_node
-                    .append(world_node_table::parse_table_update(table_update)?),
+
+        "alcohol_consumption" => db_update.alcohol_consumption.append(alcohol_consumption_table::parse_table_update(table_update)?),
+    "autoresolve_report" => db_update.autoresolve_report.append(autoresolve_report_table::parse_table_update(table_update)?),
+    "backend_case_battles" => db_update.backend_case_battles.append(backend_case_battles_table::parse_table_update(table_update)?),
+    "backend_case_site_pins" => db_update.backend_case_site_pins.append(backend_case_site_pins_table::parse_table_update(table_update)?),
+    "backend_character_affinities" => db_update.backend_character_affinities.append(backend_character_affinities_table::parse_table_update(table_update)?),
+    "backend_character_case_site_locations" => db_update.backend_character_case_site_locations.append(backend_character_case_site_locations_table::parse_table_update(table_update)?),
+    "backend_character_familiarities" => db_update.backend_character_familiarities.append(backend_character_familiarities_table::parse_table_update(table_update)?),
+    "backend_committed_cuts" => db_update.backend_committed_cuts.append(backend_committed_cuts_table::parse_table_update(table_update)?),
+    "backend_contracts" => db_update.backend_contracts.append(backend_contracts_table::parse_table_update(table_update)?),
+    "backend_herbalist_examinations" => db_update.backend_herbalist_examinations.append(backend_herbalist_examinations_table::parse_table_update(table_update)?),
+    "backend_infection_episodes" => db_update.backend_infection_episodes.append(backend_infection_episodes_table::parse_table_update(table_update)?),
+    "backend_investigation_journal" => db_update.backend_investigation_journal.append(backend_investigation_journal_table::parse_table_update(table_update)?),
+    "backend_investigation_leads" => db_update.backend_investigation_leads.append(backend_investigation_leads_table::parse_table_update(table_update)?),
+    "backend_local_problem_rumors" => db_update.backend_local_problem_rumors.append(backend_local_problem_rumors_table::parse_table_update(table_update)?),
+    "backend_local_problem_trade_effects" => db_update.backend_local_problem_trade_effects.append(backend_local_problem_trade_effects_table::parse_table_update(table_update)?),
+    "backend_medical_examinations" => db_update.backend_medical_examinations.append(backend_medical_examinations_table::parse_table_update(table_update)?),
+    "backend_social_beliefs" => db_update.backend_social_beliefs.append(backend_social_beliefs_table::parse_table_update(table_update)?),
+    "battle_loot_item" => db_update.battle_loot_item.append(battle_loot_item_table::parse_table_update(table_update)?),
+    "battle_participant" => db_update.battle_participant.append(battle_participant_table::parse_table_update(table_update)?),
+    "battle_result" => db_update.battle_result.append(battle_result_table::parse_table_update(table_update)?),
+    "character" => db_update.character.append(character_table::parse_table_update(table_update)?),
+    "character_apprenticeship" => db_update.character_apprenticeship.append(character_apprenticeship_table::parse_table_update(table_update)?),
+    "character_attributes" => db_update.character_attributes.append(character_attributes_table::parse_table_update(table_update)?),
+    "character_capability" => db_update.character_capability.append(character_capability_table::parse_table_update(table_update)?),
+    "character_condition" => db_update.character_condition.append(character_condition_table::parse_table_update(table_update)?),
+    "character_death" => db_update.character_death.append(character_death_table::parse_table_update(table_update)?),
+    "character_equip" => db_update.character_equip.append(character_equip_table::parse_table_update(table_update)?),
+    "character_filth" => db_update.character_filth.append(character_filth_table::parse_table_update(table_update)?),
+    "character_illness_status" => db_update.character_illness_status.append(character_illness_status_table::parse_table_update(table_update)?),
+    "character_limbs" => db_update.character_limbs.append(character_limbs_table::parse_table_update(table_update)?),
+    "character_morale_source" => db_update.character_morale_source.append(character_morale_source_table::parse_table_update(table_update)?),
+    "character_needs" => db_update.character_needs.append(character_needs_table::parse_table_update(table_update)?),
+    "character_notoriety" => db_update.character_notoriety.append(character_notoriety_table::parse_table_update(table_update)?),
+    "character_personality" => db_update.character_personality.append(character_personality_table::parse_table_update(table_update)?),
+    "character_skills" => db_update.character_skills.append(character_skills_table::parse_table_update(table_update)?),
+    "character_stats" => db_update.character_stats.append(character_stats_table::parse_table_update(table_update)?),
+    "character_strategic_condition" => db_update.character_strategic_condition.append(character_strategic_condition_table::parse_table_update(table_update)?),
+    "character_time" => db_update.character_time.append(character_time_table::parse_table_update(table_update)?),
+    "character_training_schedule" => db_update.character_training_schedule.append(character_training_schedule_table::parse_table_update(table_update)?),
+    "character_virtue" => db_update.character_virtue.append(character_virtue_table::parse_table_update(table_update)?),
+    "connected_players" => db_update.connected_players.append(connected_players_table::parse_table_update(table_update)?),
+    "dialogue_event" => db_update.dialogue_event.append(dialogue_event_table::parse_table_update(table_update)?),
+    "dialogue_participant" => db_update.dialogue_participant.append(dialogue_participant_table::parse_table_update(table_update)?),
+    "dialogue_prompt" => db_update.dialogue_prompt.append(dialogue_prompt_table::parse_table_update(table_update)?),
+    "dialogue_session" => db_update.dialogue_session.append(dialogue_session_table::parse_table_update(table_update)?),
+    "dialogue_topic_option" => db_update.dialogue_topic_option.append(dialogue_topic_option_table::parse_table_update(table_update)?),
+    "equipped_medication" => db_update.equipped_medication.append(equipped_medication_table::parse_table_update(table_update)?),
+    "food_lot" => db_update.food_lot.append(food_lot_table::parse_table_update(table_update)?),
+    "inventory_item" => db_update.inventory_item.append(inventory_item_table::parse_table_update(table_update)?),
+    "inventory_quantity_target" => db_update.inventory_quantity_target.append(inventory_quantity_target_table::parse_table_update(table_update)?),
+    "item" => db_update.item.append(item_table::parse_table_update(table_update)?),
+    "item_condition" => db_update.item_condition.append(item_condition_table::parse_table_update(table_update)?),
+    "limb_injury" => db_update.limb_injury.append(limb_injury_table::parse_table_update(table_update)?),
+    "local_chat_message" => db_update.local_chat_message.append(local_chat_message_table::parse_table_update(table_update)?),
+    "local_problem_symptom" => db_update.local_problem_symptom.append(local_problem_symptom_table::parse_table_update(table_update)?),
+    "morale_event" => db_update.morale_event.append(morale_event_table::parse_table_update(table_update)?),
+    "party" => db_update.party.append(party_table::parse_table_update(table_update)?),
+    "party_action_request" => db_update.party_action_request.append(party_action_request_table::parse_table_update(table_update)?),
+    "party_inventory_item" => db_update.party_inventory_item.append(party_inventory_item_table::parse_table_update(table_update)?),
+    "party_inventory_state" => db_update.party_inventory_state.append(party_inventory_state_table::parse_table_update(table_update)?),
+    "party_item_condition" => db_update.party_item_condition.append(party_item_condition_table::parse_table_update(table_update)?),
+    "party_join_request" => db_update.party_join_request.append(party_join_request_table::parse_table_update(table_update)?),
+    "party_journey" => db_update.party_journey.append(party_journey_table::parse_table_update(table_update)?),
+    "party_journey_itinerary" => db_update.party_journey_itinerary.append(party_journey_itinerary_table::parse_table_update(table_update)?),
+    "party_journey_route" => db_update.party_journey_route.append(party_journey_route_table::parse_table_update(table_update)?),
+    "party_leader_vote" => db_update.party_leader_vote.append(party_leader_vote_table::parse_table_update(table_update)?),
+    "party_member" => db_update.party_member.append(party_member_table::parse_table_update(table_update)?),
+    "party_recruitment_role" => db_update.party_recruitment_role.append(party_recruitment_role_table::parse_table_update(table_update)?),
+    "party_stake" => db_update.party_stake.append(party_stake_table::parse_table_update(table_update)?),
+    "recruitment_offer" => db_update.recruitment_offer.append(recruitment_offer_table::parse_table_update(table_update)?),
+    "religious_demand" => db_update.religious_demand.append(religious_demand_table::parse_table_update(table_update)?),
+    "repair_order" => db_update.repair_order.append(repair_order_table::parse_table_update(table_update)?),
+    "retained_projectile" => db_update.retained_projectile.append(retained_projectile_table::parse_table_update(table_update)?),
+    "saved_recruitment_role" => db_update.saved_recruitment_role.append(saved_recruitment_role_table::parse_table_update(table_update)?),
+    "settlement" => db_update.settlement.append(settlement_table::parse_table_update(table_update)?),
+    "settlement_alias" => db_update.settlement_alias.append(settlement_alias_table::parse_table_update(table_update)?),
+    "settlement_description" => db_update.settlement_description.append(settlement_description_table::parse_table_update(table_update)?),
+    "settlement_npc" => db_update.settlement_npc.append(settlement_npc_table::parse_table_update(table_update)?),
+    "settlement_npc_presence" => db_update.settlement_npc_presence.append(settlement_npc_presence_table::parse_table_update(table_update)?),
+    "settlement_outbreak" => db_update.settlement_outbreak.append(settlement_outbreak_table::parse_table_update(table_update)?),
+    "settlement_smith" => db_update.settlement_smith.append(settlement_smith_table::parse_table_update(table_update)?),
+    "simulation_character" => db_update.simulation_character.append(simulation_character_table::parse_table_update(table_update)?),
+    "simulation_run" => db_update.simulation_run.append(simulation_run_table::parse_table_update(table_update)?),
+    "strategic_encounter" => db_update.strategic_encounter.append(strategic_encounter_table::parse_table_update(table_update)?),
+    "strategic_gateway_authority" => db_update.strategic_gateway_authority.append(strategic_gateway_authority_table::parse_table_update(table_update)?),
+    "tactical_server" => db_update.tactical_server.append(tactical_server_table::parse_table_update(table_update)?),
+    "tactical_server_request" => db_update.tactical_server_request.append(tactical_server_request_table::parse_table_update(table_update)?),
+    "travel_edge" => db_update.travel_edge.append(travel_edge_table::parse_table_update(table_update)?),
+    "world_clock" => db_update.world_clock.append(world_clock_table::parse_table_update(table_update)?),
+    "world_data_import" => db_update.world_data_import.append(world_data_import_table::parse_table_update(table_update)?),
+    "world_node" => db_update.world_node.append(world_node_table::parse_table_update(table_update)?),
 
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name(
                         "table",
                         unknown,
                         "DatabaseUpdate",
-                    )
-                    .into());
+                    ).into());
                 }
             }
         }
@@ -3240,982 +3083,311 @@ impl __sdk::InModule for DbUpdate {
 }
 
 impl __sdk::DbUpdate for DbUpdate {
-    fn apply_to_client_cache(
-        &self,
-        cache: &mut __sdk::ClientCache<RemoteModule>,
-    ) -> AppliedDiff<'_> {
-        let mut diff = AppliedDiff::default();
-
-        diff.alcohol_consumption = cache
-            .apply_diff_to_table::<AlcoholConsumption>(
-                "alcohol_consumption",
-                &self.alcohol_consumption,
-            )
-            .with_updates_by_pk(|row| &row.id);
-        diff.autoresolve_report = cache
-            .apply_diff_to_table::<AutoresolveReport>(
-                "autoresolve_report",
-                &self.autoresolve_report,
-            )
-            .with_updates_by_pk(|row| &row.battle_id);
-        diff.backend_case_battle = cache
-            .apply_diff_to_table::<BackendCaseBattle>(
-                "backend_case_battle",
-                &self.backend_case_battle,
-            )
-            .with_updates_by_pk(|row| &row.battle_id);
-        diff.battle_loot_item = cache
-            .apply_diff_to_table::<BattleLootItem>("battle_loot_item", &self.battle_loot_item)
-            .with_updates_by_pk(|row| &row.id);
-        diff.battle_participant = cache
-            .apply_diff_to_table::<BattleParticipant>(
-                "battle_participant",
-                &self.battle_participant,
-            )
-            .with_updates_by_pk(|row| &row.id);
-        diff.battle_result = cache
-            .apply_diff_to_table::<BattleResult>("battle_result", &self.battle_result)
-            .with_updates_by_pk(|row| &row.battle_id);
-        diff.character = cache
-            .apply_diff_to_table::<Character>("character", &self.character)
-            .with_updates_by_pk(|row| &row.id);
-        diff.character_apprenticeship = cache
-            .apply_diff_to_table::<CharacterApprenticeship>(
-                "character_apprenticeship",
-                &self.character_apprenticeship,
-            )
-            .with_updates_by_pk(|row| &row.id);
-        diff.character_attributes = cache
-            .apply_diff_to_table::<CharacterAttributes>(
-                "character_attributes",
-                &self.character_attributes,
-            )
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_capability = cache
-            .apply_diff_to_table::<CharacterCapability>(
-                "character_capability",
-                &self.character_capability,
-            )
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_condition = cache
-            .apply_diff_to_table::<CharacterCondition>(
-                "character_condition",
-                &self.character_condition,
-            )
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_death = cache
-            .apply_diff_to_table::<CharacterDeath>("character_death", &self.character_death)
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_equip = cache
-            .apply_diff_to_table::<CharacterEquip>("character_equip", &self.character_equip)
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_filth = cache
-            .apply_diff_to_table::<CharacterFilth>("character_filth", &self.character_filth)
-            .with_updates_by_pk(|row| &row.id);
-        diff.character_illness_status = cache
-            .apply_diff_to_table::<CharacterIllnessStatus>(
-                "character_illness_status",
-                &self.character_illness_status,
-            )
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_limbs = cache
-            .apply_diff_to_table::<CharacterLimbs>("character_limbs", &self.character_limbs)
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_morale_source = cache
-            .apply_diff_to_table::<CharacterMoraleSource>(
-                "character_morale_source",
-                &self.character_morale_source,
-            )
-            .with_updates_by_pk(|row| &row.id);
-        diff.character_needs = cache
-            .apply_diff_to_table::<CharacterNeeds>("character_needs", &self.character_needs)
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_notoriety = cache
-            .apply_diff_to_table::<CharacterNotoriety>(
-                "character_notoriety",
-                &self.character_notoriety,
-            )
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_personality = cache
-            .apply_diff_to_table::<CharacterPersonality>(
-                "character_personality",
-                &self.character_personality,
-            )
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_skills = cache
-            .apply_diff_to_table::<CharacterSkills>("character_skills", &self.character_skills)
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_stats = cache
-            .apply_diff_to_table::<CharacterStats>("character_stats", &self.character_stats)
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_strategic_condition = cache
-            .apply_diff_to_table::<CharacterStrategicCondition>(
-                "character_strategic_condition",
-                &self.character_strategic_condition,
-            )
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_time = cache
-            .apply_diff_to_table::<CharacterTime>("character_time", &self.character_time)
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_training_schedule = cache
-            .apply_diff_to_table::<CharacterTrainingSchedule>(
-                "character_training_schedule",
-                &self.character_training_schedule,
-            )
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_virtue = cache
-            .apply_diff_to_table::<CharacterVirtue>("character_virtue", &self.character_virtue)
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.dialogue_event = cache
-            .apply_diff_to_table::<DialogueEvent>("dialogue_event", &self.dialogue_event)
-            .with_updates_by_pk(|row| &row.id);
-        diff.dialogue_participant = cache
-            .apply_diff_to_table::<DialogueParticipant>(
-                "dialogue_participant",
-                &self.dialogue_participant,
-            )
-            .with_updates_by_pk(|row| &row.id);
-        diff.dialogue_prompt = cache
-            .apply_diff_to_table::<DialoguePrompt>("dialogue_prompt", &self.dialogue_prompt)
-            .with_updates_by_pk(|row| &row.id);
-        diff.dialogue_session = cache
-            .apply_diff_to_table::<DialogueSession>("dialogue_session", &self.dialogue_session)
-            .with_updates_by_pk(|row| &row.id);
-        diff.dialogue_topic_option = cache
-            .apply_diff_to_table::<DialogueTopicOption>(
-                "dialogue_topic_option",
-                &self.dialogue_topic_option,
-            )
-            .with_updates_by_pk(|row| &row.id);
-        diff.equipped_medication = cache
-            .apply_diff_to_table::<EquippedMedication>(
-                "equipped_medication",
-                &self.equipped_medication,
-            )
-            .with_updates_by_pk(|row| &row.inventory_item_id);
-        diff.food_lot = cache
-            .apply_diff_to_table::<FoodLot>("food_lot", &self.food_lot)
-            .with_updates_by_pk(|row| &row.id);
-        diff.inventory_item = cache
-            .apply_diff_to_table::<InventoryItem>("inventory_item", &self.inventory_item)
-            .with_updates_by_pk(|row| &row.id);
-        diff.inventory_quantity_target = cache
-            .apply_diff_to_table::<InventoryQuantityTarget>(
-                "inventory_quantity_target",
-                &self.inventory_quantity_target,
-            )
-            .with_updates_by_pk(|row| &row.id);
-        diff.item = cache
-            .apply_diff_to_table::<Item>("item", &self.item)
-            .with_updates_by_pk(|row| &row.id);
-        diff.item_condition = cache
-            .apply_diff_to_table::<ItemCondition>("item_condition", &self.item_condition)
-            .with_updates_by_pk(|row| &row.inventory_item_id);
-        diff.limb_injury = cache
-            .apply_diff_to_table::<LimbInjury>("limb_injury", &self.limb_injury)
-            .with_updates_by_pk(|row| &row.id);
-        diff.local_chat_message = cache
-            .apply_diff_to_table::<LocalChatMessage>("local_chat_message", &self.local_chat_message)
-            .with_updates_by_pk(|row| &row.id);
-        diff.local_problem_symptom = cache
-            .apply_diff_to_table::<LocalProblemSymptom>(
-                "local_problem_symptom",
-                &self.local_problem_symptom,
-            )
-            .with_updates_by_pk(|row| &row.problem_id);
-        diff.morale_event = cache
-            .apply_diff_to_table::<MoraleEvent>("morale_event", &self.morale_event)
-            .with_updates_by_pk(|row| &row.id);
-        diff.party_inventory_item = cache
-            .apply_diff_to_table::<PartyInventoryItem>(
-                "party_inventory_item",
-                &self.party_inventory_item,
-            )
-            .with_updates_by_pk(|row| &row.id);
-        diff.party_inventory_state = cache
-            .apply_diff_to_table::<PartyInventoryState>(
-                "party_inventory_state",
-                &self.party_inventory_state,
-            )
-            .with_updates_by_pk(|row| &row.party_id);
-        diff.party_item_condition = cache
-            .apply_diff_to_table::<PartyItemCondition>(
-                "party_item_condition",
-                &self.party_item_condition,
-            )
-            .with_updates_by_pk(|row| &row.party_inventory_item_id);
-        diff.party_join_request = cache
-            .apply_diff_to_table::<PartyJoinRequest>("party_join_request", &self.party_join_request)
-            .with_updates_by_pk(|row| &row.id);
-        diff.party_journey_itinerary = cache
-            .apply_diff_to_table::<PartyJourneyItinerary>(
-                "party_journey_itinerary",
-                &self.party_journey_itinerary,
-            )
-            .with_updates_by_pk(|row| &row.party_id);
-        diff.party_leader_vote = cache
-            .apply_diff_to_table::<PartyLeaderVote>("party_leader_vote", &self.party_leader_vote)
-            .with_updates_by_pk(|row| &row.id);
-        diff.party_member = cache
-            .apply_diff_to_table::<PartyMember>("party_member", &self.party_member)
-            .with_updates_by_pk(|row| &row.id);
-        diff.party_recruitment_role = cache
-            .apply_diff_to_table::<PartyRecruitmentRole>(
-                "party_recruitment_role",
-                &self.party_recruitment_role,
-            )
-            .with_updates_by_pk(|row| &row.id);
-        diff.party_stake = cache
-            .apply_diff_to_table::<PartyStake>("party_stake", &self.party_stake)
-            .with_updates_by_pk(|row| &row.id);
-        diff.recruitment_offer = cache
-            .apply_diff_to_table::<RecruitmentOffer>("recruitment_offer", &self.recruitment_offer)
-            .with_updates_by_pk(|row| &row.id_key);
-        diff.religious_demand = cache
-            .apply_diff_to_table::<ReligiousDemand>("religious_demand", &self.religious_demand)
-            .with_updates_by_pk(|row| &row.id);
-        diff.repair_order = cache
-            .apply_diff_to_table::<RepairOrder>("repair_order", &self.repair_order)
-            .with_updates_by_pk(|row| &row.id);
-        diff.retained_projectile = cache
-            .apply_diff_to_table::<RetainedProjectile>(
-                "retained_projectile",
-                &self.retained_projectile,
-            )
-            .with_updates_by_pk(|row| &row.id);
-        diff.saved_recruitment_role = cache
-            .apply_diff_to_table::<SavedRecruitmentRole>(
-                "saved_recruitment_role",
-                &self.saved_recruitment_role,
-            )
-            .with_updates_by_pk(|row| &row.id);
-        diff.settlement = cache
-            .apply_diff_to_table::<Settlement>("settlement", &self.settlement)
-            .with_updates_by_pk(|row| &row.id);
-        diff.settlement_alias = cache
-            .apply_diff_to_table::<SettlementAlias>("settlement_alias", &self.settlement_alias)
-            .with_updates_by_pk(|row| &row.id);
-        diff.settlement_description = cache
-            .apply_diff_to_table::<SettlementDescription>(
-                "settlement_description",
-                &self.settlement_description,
-            )
-            .with_updates_by_pk(|row| &row.id);
-        diff.settlement_npc = cache
-            .apply_diff_to_table::<SettlementNpc>("settlement_npc", &self.settlement_npc)
-            .with_updates_by_pk(|row| &row.id);
-        diff.settlement_npc_presence = cache
-            .apply_diff_to_table::<SettlementNpcPresence>(
-                "settlement_npc_presence",
-                &self.settlement_npc_presence,
-            )
-            .with_updates_by_pk(|row| &row.npc_id);
-        diff.settlement_outbreak = cache
-            .apply_diff_to_table::<SettlementOutbreak>(
-                "settlement_outbreak",
-                &self.settlement_outbreak,
-            )
-            .with_updates_by_pk(|row| &row.id);
-        diff.settlement_smith = cache
-            .apply_diff_to_table::<SettlementSmith>("settlement_smith", &self.settlement_smith)
-            .with_updates_by_pk(|row| &row.settlement_id);
-        diff.simulation_character = cache
-            .apply_diff_to_table::<SimulationCharacter>(
-                "simulation_character",
-                &self.simulation_character,
-            )
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.simulation_run = cache
-            .apply_diff_to_table::<SimulationRun>("simulation_run", &self.simulation_run)
-            .with_updates_by_pk(|row| &row.id);
-        diff.strategic_encounter = cache
-            .apply_diff_to_table::<StrategicEncounter>(
-                "strategic_encounter",
-                &self.strategic_encounter,
-            )
-            .with_updates_by_pk(|row| &row.party_id);
-        diff.strategic_gateway_authority = cache
-            .apply_diff_to_table::<StrategicGatewayAuthority>(
-                "strategic_gateway_authority",
-                &self.strategic_gateway_authority,
-            )
-            .with_updates_by_pk(|row| &row.id);
-        diff.travel_edge = cache
-            .apply_diff_to_table::<TravelEdge>("travel_edge", &self.travel_edge)
-            .with_updates_by_pk(|row| &row.id);
-        diff.world_clock = cache
-            .apply_diff_to_table::<WorldClock>("world_clock", &self.world_clock)
-            .with_updates_by_pk(|row| &row.id);
-        diff.world_data_import = cache
-            .apply_diff_to_table::<WorldDataImport>("world_data_import", &self.world_data_import)
-            .with_updates_by_pk(|row| &row.id);
-        diff.world_node = cache
-            .apply_diff_to_table::<WorldNode>("world_node", &self.world_node)
-            .with_updates_by_pk(|row| &row.id);
-        diff.backend_case_site_pins = cache.apply_diff_to_table::<BackendCaseSitePin>(
-            "backend_case_site_pins",
-            &self.backend_case_site_pins,
-        );
-        diff.backend_character_affinities = cache.apply_diff_to_table::<CharacterAffinity>(
-            "backend_character_affinities",
-            &self.backend_character_affinities,
-        );
-        diff.backend_character_case_site_locations = cache
-            .apply_diff_to_table::<BackendCharacterCaseSiteLocation>(
-                "backend_character_case_site_locations",
-                &self.backend_character_case_site_locations,
-            );
-        diff.backend_character_familiarities = cache.apply_diff_to_table::<CharacterFamiliarity>(
-            "backend_character_familiarities",
-            &self.backend_character_familiarities,
-        );
-        diff.backend_committed_cuts = cache.apply_diff_to_table::<CommittedCut>(
-            "backend_committed_cuts",
-            &self.backend_committed_cuts,
-        );
-        diff.backend_contracts = cache
-            .apply_diff_to_table::<BackendContract>("backend_contracts", &self.backend_contracts);
-        diff.backend_herbalist_examinations = cache.apply_diff_to_table::<HerbalistExamination>(
-            "backend_herbalist_examinations",
-            &self.backend_herbalist_examinations,
-        );
-        diff.backend_infection_episodes = cache.apply_diff_to_table::<InfectionEpisodeRow>(
-            "backend_infection_episodes",
-            &self.backend_infection_episodes,
-        );
-        diff.backend_investigation_journal = cache
-            .apply_diff_to_table::<BackendInvestigationJournalEntry>(
-                "backend_investigation_journal",
-                &self.backend_investigation_journal,
-            );
-        diff.backend_investigation_leads = cache.apply_diff_to_table::<BackendInvestigationLead>(
-            "backend_investigation_leads",
-            &self.backend_investigation_leads,
-        );
-        diff.backend_local_problem_rumors = cache.apply_diff_to_table::<BackendLocalProblemRumor>(
-            "backend_local_problem_rumors",
-            &self.backend_local_problem_rumors,
-        );
-        diff.backend_local_problem_trade_effects = cache
-            .apply_diff_to_table::<BackendLocalProblemTradeEffect>(
-                "backend_local_problem_trade_effects",
-                &self.backend_local_problem_trade_effects,
-            );
-        diff.backend_medical_examinations = cache.apply_diff_to_table::<MedicalExamination>(
-            "backend_medical_examinations",
-            &self.backend_medical_examinations,
-        );
-        diff.backend_social_beliefs = cache.apply_diff_to_table::<SocialBelief>(
-            "backend_social_beliefs",
-            &self.backend_social_beliefs,
-        );
-        diff.connected_players = cache
-            .apply_diff_to_table::<ConnectedPlayer>("connected_players", &self.connected_players);
+    fn apply_to_client_cache(&self, cache: &mut __sdk::ClientCache<RemoteModule>) -> AppliedDiff<'_> {
+                    let mut diff = AppliedDiff::default();
+                
+                diff.alcohol_consumption = cache.apply_diff_to_table::<AlcoholConsumption>("alcohol_consumption", &self.alcohol_consumption).with_updates_by_pk(|row| &row.id);
+        diff.autoresolve_report = cache.apply_diff_to_table::<AutoresolveReport>("autoresolve_report", &self.autoresolve_report).with_updates_by_pk(|row| &row.battle_id);
+        diff.battle_loot_item = cache.apply_diff_to_table::<BattleLootItem>("battle_loot_item", &self.battle_loot_item).with_updates_by_pk(|row| &row.id);
+        diff.battle_participant = cache.apply_diff_to_table::<BattleParticipant>("battle_participant", &self.battle_participant).with_updates_by_pk(|row| &row.id);
+        diff.battle_result = cache.apply_diff_to_table::<BattleResult>("battle_result", &self.battle_result).with_updates_by_pk(|row| &row.battle_id);
+        diff.character = cache.apply_diff_to_table::<Character>("character", &self.character).with_updates_by_pk(|row| &row.id);
+        diff.character_apprenticeship = cache.apply_diff_to_table::<CharacterApprenticeship>("character_apprenticeship", &self.character_apprenticeship).with_updates_by_pk(|row| &row.id);
+        diff.character_attributes = cache.apply_diff_to_table::<CharacterAttributes>("character_attributes", &self.character_attributes).with_updates_by_pk(|row| &row.character_id);
+        diff.character_capability = cache.apply_diff_to_table::<CharacterCapability>("character_capability", &self.character_capability).with_updates_by_pk(|row| &row.character_id);
+        diff.character_condition = cache.apply_diff_to_table::<CharacterCondition>("character_condition", &self.character_condition).with_updates_by_pk(|row| &row.character_id);
+        diff.character_death = cache.apply_diff_to_table::<CharacterDeath>("character_death", &self.character_death).with_updates_by_pk(|row| &row.character_id);
+        diff.character_equip = cache.apply_diff_to_table::<CharacterEquip>("character_equip", &self.character_equip).with_updates_by_pk(|row| &row.character_id);
+        diff.character_filth = cache.apply_diff_to_table::<CharacterFilth>("character_filth", &self.character_filth).with_updates_by_pk(|row| &row.id);
+        diff.character_illness_status = cache.apply_diff_to_table::<CharacterIllnessStatus>("character_illness_status", &self.character_illness_status).with_updates_by_pk(|row| &row.character_id);
+        diff.character_limbs = cache.apply_diff_to_table::<CharacterLimbs>("character_limbs", &self.character_limbs).with_updates_by_pk(|row| &row.character_id);
+        diff.character_morale_source = cache.apply_diff_to_table::<CharacterMoraleSource>("character_morale_source", &self.character_morale_source).with_updates_by_pk(|row| &row.id);
+        diff.character_needs = cache.apply_diff_to_table::<CharacterNeeds>("character_needs", &self.character_needs).with_updates_by_pk(|row| &row.character_id);
+        diff.character_notoriety = cache.apply_diff_to_table::<CharacterNotoriety>("character_notoriety", &self.character_notoriety).with_updates_by_pk(|row| &row.character_id);
+        diff.character_personality = cache.apply_diff_to_table::<CharacterPersonality>("character_personality", &self.character_personality).with_updates_by_pk(|row| &row.character_id);
+        diff.character_skills = cache.apply_diff_to_table::<CharacterSkills>("character_skills", &self.character_skills).with_updates_by_pk(|row| &row.character_id);
+        diff.character_stats = cache.apply_diff_to_table::<CharacterStats>("character_stats", &self.character_stats).with_updates_by_pk(|row| &row.character_id);
+        diff.character_strategic_condition = cache.apply_diff_to_table::<CharacterStrategicCondition>("character_strategic_condition", &self.character_strategic_condition).with_updates_by_pk(|row| &row.character_id);
+        diff.character_time = cache.apply_diff_to_table::<CharacterTime>("character_time", &self.character_time).with_updates_by_pk(|row| &row.character_id);
+        diff.character_training_schedule = cache.apply_diff_to_table::<CharacterTrainingSchedule>("character_training_schedule", &self.character_training_schedule).with_updates_by_pk(|row| &row.character_id);
+        diff.character_virtue = cache.apply_diff_to_table::<CharacterVirtue>("character_virtue", &self.character_virtue).with_updates_by_pk(|row| &row.character_id);
+        diff.dialogue_event = cache.apply_diff_to_table::<DialogueEvent>("dialogue_event", &self.dialogue_event).with_updates_by_pk(|row| &row.id);
+        diff.dialogue_participant = cache.apply_diff_to_table::<DialogueParticipant>("dialogue_participant", &self.dialogue_participant).with_updates_by_pk(|row| &row.id);
+        diff.dialogue_prompt = cache.apply_diff_to_table::<DialoguePrompt>("dialogue_prompt", &self.dialogue_prompt).with_updates_by_pk(|row| &row.id);
+        diff.dialogue_session = cache.apply_diff_to_table::<DialogueSession>("dialogue_session", &self.dialogue_session).with_updates_by_pk(|row| &row.id);
+        diff.dialogue_topic_option = cache.apply_diff_to_table::<DialogueTopicOption>("dialogue_topic_option", &self.dialogue_topic_option).with_updates_by_pk(|row| &row.id);
+        diff.equipped_medication = cache.apply_diff_to_table::<EquippedMedication>("equipped_medication", &self.equipped_medication).with_updates_by_pk(|row| &row.inventory_item_id);
+        diff.food_lot = cache.apply_diff_to_table::<FoodLot>("food_lot", &self.food_lot).with_updates_by_pk(|row| &row.id);
+        diff.inventory_item = cache.apply_diff_to_table::<InventoryItem>("inventory_item", &self.inventory_item).with_updates_by_pk(|row| &row.id);
+        diff.inventory_quantity_target = cache.apply_diff_to_table::<InventoryQuantityTarget>("inventory_quantity_target", &self.inventory_quantity_target).with_updates_by_pk(|row| &row.id);
+        diff.item = cache.apply_diff_to_table::<Item>("item", &self.item).with_updates_by_pk(|row| &row.id);
+        diff.item_condition = cache.apply_diff_to_table::<ItemCondition>("item_condition", &self.item_condition).with_updates_by_pk(|row| &row.inventory_item_id);
+        diff.limb_injury = cache.apply_diff_to_table::<LimbInjury>("limb_injury", &self.limb_injury).with_updates_by_pk(|row| &row.id);
+        diff.local_chat_message = cache.apply_diff_to_table::<LocalChatMessage>("local_chat_message", &self.local_chat_message).with_updates_by_pk(|row| &row.id);
+        diff.local_problem_symptom = cache.apply_diff_to_table::<LocalProblemSymptom>("local_problem_symptom", &self.local_problem_symptom).with_updates_by_pk(|row| &row.problem_id);
+        diff.morale_event = cache.apply_diff_to_table::<MoraleEvent>("morale_event", &self.morale_event).with_updates_by_pk(|row| &row.id);
+        diff.party_inventory_item = cache.apply_diff_to_table::<PartyInventoryItem>("party_inventory_item", &self.party_inventory_item).with_updates_by_pk(|row| &row.id);
+        diff.party_inventory_state = cache.apply_diff_to_table::<PartyInventoryState>("party_inventory_state", &self.party_inventory_state).with_updates_by_pk(|row| &row.party_id);
+        diff.party_item_condition = cache.apply_diff_to_table::<PartyItemCondition>("party_item_condition", &self.party_item_condition).with_updates_by_pk(|row| &row.party_inventory_item_id);
+        diff.party_join_request = cache.apply_diff_to_table::<PartyJoinRequest>("party_join_request", &self.party_join_request).with_updates_by_pk(|row| &row.id);
+        diff.party_journey_itinerary = cache.apply_diff_to_table::<PartyJourneyItinerary>("party_journey_itinerary", &self.party_journey_itinerary).with_updates_by_pk(|row| &row.party_id);
+        diff.party_leader_vote = cache.apply_diff_to_table::<PartyLeaderVote>("party_leader_vote", &self.party_leader_vote).with_updates_by_pk(|row| &row.id);
+        diff.party_member = cache.apply_diff_to_table::<PartyMember>("party_member", &self.party_member).with_updates_by_pk(|row| &row.id);
+        diff.party_recruitment_role = cache.apply_diff_to_table::<PartyRecruitmentRole>("party_recruitment_role", &self.party_recruitment_role).with_updates_by_pk(|row| &row.id);
+        diff.party_stake = cache.apply_diff_to_table::<PartyStake>("party_stake", &self.party_stake).with_updates_by_pk(|row| &row.id);
+        diff.recruitment_offer = cache.apply_diff_to_table::<RecruitmentOffer>("recruitment_offer", &self.recruitment_offer).with_updates_by_pk(|row| &row.id_key);
+        diff.religious_demand = cache.apply_diff_to_table::<ReligiousDemand>("religious_demand", &self.religious_demand).with_updates_by_pk(|row| &row.id);
+        diff.repair_order = cache.apply_diff_to_table::<RepairOrder>("repair_order", &self.repair_order).with_updates_by_pk(|row| &row.id);
+        diff.retained_projectile = cache.apply_diff_to_table::<RetainedProjectile>("retained_projectile", &self.retained_projectile).with_updates_by_pk(|row| &row.id);
+        diff.saved_recruitment_role = cache.apply_diff_to_table::<SavedRecruitmentRole>("saved_recruitment_role", &self.saved_recruitment_role).with_updates_by_pk(|row| &row.id);
+        diff.settlement = cache.apply_diff_to_table::<Settlement>("settlement", &self.settlement).with_updates_by_pk(|row| &row.id);
+        diff.settlement_alias = cache.apply_diff_to_table::<SettlementAlias>("settlement_alias", &self.settlement_alias).with_updates_by_pk(|row| &row.id);
+        diff.settlement_description = cache.apply_diff_to_table::<SettlementDescription>("settlement_description", &self.settlement_description).with_updates_by_pk(|row| &row.id);
+        diff.settlement_npc = cache.apply_diff_to_table::<SettlementNpc>("settlement_npc", &self.settlement_npc).with_updates_by_pk(|row| &row.id);
+        diff.settlement_npc_presence = cache.apply_diff_to_table::<SettlementNpcPresence>("settlement_npc_presence", &self.settlement_npc_presence).with_updates_by_pk(|row| &row.npc_id);
+        diff.settlement_outbreak = cache.apply_diff_to_table::<SettlementOutbreak>("settlement_outbreak", &self.settlement_outbreak).with_updates_by_pk(|row| &row.id);
+        diff.settlement_smith = cache.apply_diff_to_table::<SettlementSmith>("settlement_smith", &self.settlement_smith).with_updates_by_pk(|row| &row.settlement_id);
+        diff.simulation_character = cache.apply_diff_to_table::<SimulationCharacter>("simulation_character", &self.simulation_character).with_updates_by_pk(|row| &row.character_id);
+        diff.simulation_run = cache.apply_diff_to_table::<SimulationRun>("simulation_run", &self.simulation_run).with_updates_by_pk(|row| &row.id);
+        diff.strategic_encounter = cache.apply_diff_to_table::<StrategicEncounter>("strategic_encounter", &self.strategic_encounter).with_updates_by_pk(|row| &row.party_id);
+        diff.strategic_gateway_authority = cache.apply_diff_to_table::<StrategicGatewayAuthority>("strategic_gateway_authority", &self.strategic_gateway_authority).with_updates_by_pk(|row| &row.id);
+        diff.travel_edge = cache.apply_diff_to_table::<TravelEdge>("travel_edge", &self.travel_edge).with_updates_by_pk(|row| &row.id);
+        diff.world_clock = cache.apply_diff_to_table::<WorldClock>("world_clock", &self.world_clock).with_updates_by_pk(|row| &row.id);
+        diff.world_data_import = cache.apply_diff_to_table::<WorldDataImport>("world_data_import", &self.world_data_import).with_updates_by_pk(|row| &row.id);
+        diff.world_node = cache.apply_diff_to_table::<WorldNode>("world_node", &self.world_node).with_updates_by_pk(|row| &row.id);
+        diff.backend_case_battles = cache.apply_diff_to_table::<BackendCaseBattle>("backend_case_battles", &self.backend_case_battles);
+        diff.backend_case_site_pins = cache.apply_diff_to_table::<BackendCaseSitePin>("backend_case_site_pins", &self.backend_case_site_pins);
+        diff.backend_character_affinities = cache.apply_diff_to_table::<CharacterAffinity>("backend_character_affinities", &self.backend_character_affinities);
+        diff.backend_character_case_site_locations = cache.apply_diff_to_table::<BackendCharacterCaseSiteLocation>("backend_character_case_site_locations", &self.backend_character_case_site_locations);
+        diff.backend_character_familiarities = cache.apply_diff_to_table::<CharacterFamiliarity>("backend_character_familiarities", &self.backend_character_familiarities);
+        diff.backend_committed_cuts = cache.apply_diff_to_table::<CommittedCut>("backend_committed_cuts", &self.backend_committed_cuts);
+        diff.backend_contracts = cache.apply_diff_to_table::<BackendContract>("backend_contracts", &self.backend_contracts);
+        diff.backend_herbalist_examinations = cache.apply_diff_to_table::<HerbalistExamination>("backend_herbalist_examinations", &self.backend_herbalist_examinations);
+        diff.backend_infection_episodes = cache.apply_diff_to_table::<InfectionEpisodeRow>("backend_infection_episodes", &self.backend_infection_episodes);
+        diff.backend_investigation_journal = cache.apply_diff_to_table::<BackendInvestigationJournalEntry>("backend_investigation_journal", &self.backend_investigation_journal);
+        diff.backend_investigation_leads = cache.apply_diff_to_table::<BackendInvestigationLead>("backend_investigation_leads", &self.backend_investigation_leads);
+        diff.backend_local_problem_rumors = cache.apply_diff_to_table::<BackendLocalProblemRumor>("backend_local_problem_rumors", &self.backend_local_problem_rumors);
+        diff.backend_local_problem_trade_effects = cache.apply_diff_to_table::<BackendLocalProblemTradeEffect>("backend_local_problem_trade_effects", &self.backend_local_problem_trade_effects);
+        diff.backend_medical_examinations = cache.apply_diff_to_table::<MedicalExamination>("backend_medical_examinations", &self.backend_medical_examinations);
+        diff.backend_social_beliefs = cache.apply_diff_to_table::<SocialBelief>("backend_social_beliefs", &self.backend_social_beliefs);
+        diff.connected_players = cache.apply_diff_to_table::<ConnectedPlayer>("connected_players", &self.connected_players);
         diff.party = cache.apply_diff_to_table::<Party>("party", &self.party);
-        diff.party_action_request = cache.apply_diff_to_table::<PartyActionRequest>(
-            "party_action_request",
-            &self.party_action_request,
-        );
-        diff.party_journey =
-            cache.apply_diff_to_table::<PartyJourney>("party_journey", &self.party_journey);
-        diff.party_journey_route = cache.apply_diff_to_table::<PartyJourneyRoute>(
-            "party_journey_route",
-            &self.party_journey_route,
-        );
-        diff.tactical_server =
-            cache.apply_diff_to_table::<TacticalServer>("tactical_server", &self.tactical_server);
-        diff.tactical_server_request = cache.apply_diff_to_table::<TacticalServerRequest>(
-            "tactical_server_request",
-            &self.tactical_server_request,
-        );
+        diff.party_action_request = cache.apply_diff_to_table::<PartyActionRequest>("party_action_request", &self.party_action_request);
+        diff.party_journey = cache.apply_diff_to_table::<PartyJourney>("party_journey", &self.party_journey);
+        diff.party_journey_route = cache.apply_diff_to_table::<PartyJourneyRoute>("party_journey_route", &self.party_journey_route);
+        diff.tactical_server = cache.apply_diff_to_table::<TacticalServer>("tactical_server", &self.tactical_server);
+        diff.tactical_server_request = cache.apply_diff_to_table::<TacticalServerRequest>("tactical_server_request", &self.tactical_server_request);
 
-        diff
-    }
-    fn parse_initial_rows(raw: __ws::v2::QueryRows) -> __sdk::Result<Self> {
-        let mut db_update = DbUpdate::default();
-        for table_rows in raw.tables {
-            match &table_rows.table[..] {
-                "alcohol_consumption" => db_update
-                    .alcohol_consumption
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "autoresolve_report" => db_update
-                    .autoresolve_report
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "backend_case_battle" => db_update
-                    .backend_case_battle
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "backend_case_site_pins" => db_update
-                    .backend_case_site_pins
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "backend_character_affinities" => db_update
-                    .backend_character_affinities
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "backend_character_case_site_locations" => db_update
-                    .backend_character_case_site_locations
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "backend_character_familiarities" => db_update
-                    .backend_character_familiarities
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "backend_committed_cuts" => db_update
-                    .backend_committed_cuts
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "backend_contracts" => db_update
-                    .backend_contracts
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "backend_herbalist_examinations" => db_update
-                    .backend_herbalist_examinations
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "backend_infection_episodes" => db_update
-                    .backend_infection_episodes
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "backend_investigation_journal" => db_update
-                    .backend_investigation_journal
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "backend_investigation_leads" => db_update
-                    .backend_investigation_leads
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "backend_local_problem_rumors" => db_update
-                    .backend_local_problem_rumors
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "backend_local_problem_trade_effects" => db_update
-                    .backend_local_problem_trade_effects
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "backend_medical_examinations" => db_update
-                    .backend_medical_examinations
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "backend_social_beliefs" => db_update
-                    .backend_social_beliefs
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "battle_loot_item" => db_update
-                    .battle_loot_item
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "battle_participant" => db_update
-                    .battle_participant
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "battle_result" => db_update
-                    .battle_result
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character" => db_update
-                    .character
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_apprenticeship" => db_update
-                    .character_apprenticeship
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_attributes" => db_update
-                    .character_attributes
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_capability" => db_update
-                    .character_capability
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_condition" => db_update
-                    .character_condition
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_death" => db_update
-                    .character_death
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_equip" => db_update
-                    .character_equip
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_filth" => db_update
-                    .character_filth
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_illness_status" => db_update
-                    .character_illness_status
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_limbs" => db_update
-                    .character_limbs
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_morale_source" => db_update
-                    .character_morale_source
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_needs" => db_update
-                    .character_needs
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_notoriety" => db_update
-                    .character_notoriety
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_personality" => db_update
-                    .character_personality
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_skills" => db_update
-                    .character_skills
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_stats" => db_update
-                    .character_stats
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_strategic_condition" => db_update
-                    .character_strategic_condition
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_time" => db_update
-                    .character_time
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_training_schedule" => db_update
-                    .character_training_schedule
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_virtue" => db_update
-                    .character_virtue
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "connected_players" => db_update
-                    .connected_players
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "dialogue_event" => db_update
-                    .dialogue_event
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "dialogue_participant" => db_update
-                    .dialogue_participant
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "dialogue_prompt" => db_update
-                    .dialogue_prompt
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "dialogue_session" => db_update
-                    .dialogue_session
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "dialogue_topic_option" => db_update
-                    .dialogue_topic_option
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "equipped_medication" => db_update
-                    .equipped_medication
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "food_lot" => db_update
-                    .food_lot
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "inventory_item" => db_update
-                    .inventory_item
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "inventory_quantity_target" => db_update
-                    .inventory_quantity_target
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "item" => db_update
-                    .item
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "item_condition" => db_update
-                    .item_condition
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "limb_injury" => db_update
-                    .limb_injury
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "local_chat_message" => db_update
-                    .local_chat_message
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "local_problem_symptom" => db_update
-                    .local_problem_symptom
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "morale_event" => db_update
-                    .morale_event
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "party" => db_update
-                    .party
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "party_action_request" => db_update
-                    .party_action_request
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "party_inventory_item" => db_update
-                    .party_inventory_item
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "party_inventory_state" => db_update
-                    .party_inventory_state
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "party_item_condition" => db_update
-                    .party_item_condition
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "party_join_request" => db_update
-                    .party_join_request
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "party_journey" => db_update
-                    .party_journey
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "party_journey_itinerary" => db_update
-                    .party_journey_itinerary
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "party_journey_route" => db_update
-                    .party_journey_route
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "party_leader_vote" => db_update
-                    .party_leader_vote
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "party_member" => db_update
-                    .party_member
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "party_recruitment_role" => db_update
-                    .party_recruitment_role
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "party_stake" => db_update
-                    .party_stake
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "recruitment_offer" => db_update
-                    .recruitment_offer
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "religious_demand" => db_update
-                    .religious_demand
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "repair_order" => db_update
-                    .repair_order
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "retained_projectile" => db_update
-                    .retained_projectile
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "saved_recruitment_role" => db_update
-                    .saved_recruitment_role
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "settlement" => db_update
-                    .settlement
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "settlement_alias" => db_update
-                    .settlement_alias
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "settlement_description" => db_update
-                    .settlement_description
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "settlement_npc" => db_update
-                    .settlement_npc
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "settlement_npc_presence" => db_update
-                    .settlement_npc_presence
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "settlement_outbreak" => db_update
-                    .settlement_outbreak
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "settlement_smith" => db_update
-                    .settlement_smith
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "simulation_character" => db_update
-                    .simulation_character
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "simulation_run" => db_update
-                    .simulation_run
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "strategic_encounter" => db_update
-                    .strategic_encounter
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "strategic_gateway_authority" => db_update
-                    .strategic_gateway_authority
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "tactical_server" => db_update
-                    .tactical_server
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "tactical_server_request" => db_update
-                    .tactical_server_request
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "travel_edge" => db_update
-                    .travel_edge
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "world_clock" => db_update
-                    .world_clock
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "world_data_import" => db_update
-                    .world_data_import
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "world_node" => db_update
-                    .world_node
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                unknown => {
-                    return Err(
-                        __sdk::InternalError::unknown_name("table", unknown, "QueryRows").into(),
-                    );
+                    diff
                 }
-            }
-        }
-        Ok(db_update)
-    }
-    fn parse_unsubscribe_rows(raw: __ws::v2::QueryRows) -> __sdk::Result<Self> {
-        let mut db_update = DbUpdate::default();
-        for table_rows in raw.tables {
+fn parse_initial_rows(raw: __ws::v2::QueryRows) -> __sdk::Result<Self> {
+                let mut db_update = DbUpdate::default();
+for table_rows in raw.tables {
             match &table_rows.table[..] {
-                "alcohol_consumption" => db_update
-                    .alcohol_consumption
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "autoresolve_report" => db_update
-                    .autoresolve_report
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "backend_case_battle" => db_update
-                    .backend_case_battle
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "backend_case_site_pins" => db_update
-                    .backend_case_site_pins
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "backend_character_affinities" => db_update
-                    .backend_character_affinities
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "backend_character_case_site_locations" => db_update
-                    .backend_character_case_site_locations
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "backend_character_familiarities" => db_update
-                    .backend_character_familiarities
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "backend_committed_cuts" => db_update
-                    .backend_committed_cuts
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "backend_contracts" => db_update
-                    .backend_contracts
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "backend_herbalist_examinations" => db_update
-                    .backend_herbalist_examinations
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "backend_infection_episodes" => db_update
-                    .backend_infection_episodes
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "backend_investigation_journal" => db_update
-                    .backend_investigation_journal
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "backend_investigation_leads" => db_update
-                    .backend_investigation_leads
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "backend_local_problem_rumors" => db_update
-                    .backend_local_problem_rumors
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "backend_local_problem_trade_effects" => db_update
-                    .backend_local_problem_trade_effects
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "backend_medical_examinations" => db_update
-                    .backend_medical_examinations
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "backend_social_beliefs" => db_update
-                    .backend_social_beliefs
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "battle_loot_item" => db_update
-                    .battle_loot_item
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "battle_participant" => db_update
-                    .battle_participant
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "battle_result" => db_update
-                    .battle_result
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character" => db_update
-                    .character
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_apprenticeship" => db_update
-                    .character_apprenticeship
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_attributes" => db_update
-                    .character_attributes
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_capability" => db_update
-                    .character_capability
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_condition" => db_update
-                    .character_condition
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_death" => db_update
-                    .character_death
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_equip" => db_update
-                    .character_equip
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_filth" => db_update
-                    .character_filth
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_illness_status" => db_update
-                    .character_illness_status
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_limbs" => db_update
-                    .character_limbs
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_morale_source" => db_update
-                    .character_morale_source
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_needs" => db_update
-                    .character_needs
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_notoriety" => db_update
-                    .character_notoriety
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_personality" => db_update
-                    .character_personality
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_skills" => db_update
-                    .character_skills
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_stats" => db_update
-                    .character_stats
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_strategic_condition" => db_update
-                    .character_strategic_condition
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_time" => db_update
-                    .character_time
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_training_schedule" => db_update
-                    .character_training_schedule
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_virtue" => db_update
-                    .character_virtue
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "connected_players" => db_update
-                    .connected_players
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "dialogue_event" => db_update
-                    .dialogue_event
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "dialogue_participant" => db_update
-                    .dialogue_participant
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "dialogue_prompt" => db_update
-                    .dialogue_prompt
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "dialogue_session" => db_update
-                    .dialogue_session
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "dialogue_topic_option" => db_update
-                    .dialogue_topic_option
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "equipped_medication" => db_update
-                    .equipped_medication
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "food_lot" => db_update
-                    .food_lot
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "inventory_item" => db_update
-                    .inventory_item
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "inventory_quantity_target" => db_update
-                    .inventory_quantity_target
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "item" => db_update
-                    .item
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "item_condition" => db_update
-                    .item_condition
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "limb_injury" => db_update
-                    .limb_injury
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "local_chat_message" => db_update
-                    .local_chat_message
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "local_problem_symptom" => db_update
-                    .local_problem_symptom
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "morale_event" => db_update
-                    .morale_event
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "party" => db_update
-                    .party
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "party_action_request" => db_update
-                    .party_action_request
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "party_inventory_item" => db_update
-                    .party_inventory_item
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "party_inventory_state" => db_update
-                    .party_inventory_state
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "party_item_condition" => db_update
-                    .party_item_condition
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "party_join_request" => db_update
-                    .party_join_request
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "party_journey" => db_update
-                    .party_journey
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "party_journey_itinerary" => db_update
-                    .party_journey_itinerary
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "party_journey_route" => db_update
-                    .party_journey_route
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "party_leader_vote" => db_update
-                    .party_leader_vote
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "party_member" => db_update
-                    .party_member
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "party_recruitment_role" => db_update
-                    .party_recruitment_role
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "party_stake" => db_update
-                    .party_stake
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "recruitment_offer" => db_update
-                    .recruitment_offer
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "religious_demand" => db_update
-                    .religious_demand
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "repair_order" => db_update
-                    .repair_order
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "retained_projectile" => db_update
-                    .retained_projectile
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "saved_recruitment_role" => db_update
-                    .saved_recruitment_role
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "settlement" => db_update
-                    .settlement
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "settlement_alias" => db_update
-                    .settlement_alias
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "settlement_description" => db_update
-                    .settlement_description
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "settlement_npc" => db_update
-                    .settlement_npc
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "settlement_npc_presence" => db_update
-                    .settlement_npc_presence
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "settlement_outbreak" => db_update
-                    .settlement_outbreak
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "settlement_smith" => db_update
-                    .settlement_smith
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "simulation_character" => db_update
-                    .simulation_character
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "simulation_run" => db_update
-                    .simulation_run
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "strategic_encounter" => db_update
-                    .strategic_encounter
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "strategic_gateway_authority" => db_update
-                    .strategic_gateway_authority
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "tactical_server" => db_update
-                    .tactical_server
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "tactical_server_request" => db_update
-                    .tactical_server_request
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "travel_edge" => db_update
-                    .travel_edge
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "world_clock" => db_update
-                    .world_clock
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "world_data_import" => db_update
-                    .world_data_import
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "world_node" => db_update
-                    .world_node
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                unknown => {
-                    return Err(
-                        __sdk::InternalError::unknown_name("table", unknown, "QueryRows").into(),
-                    );
-                }
-            }
-        }
-        Ok(db_update)
-    }
+                                "alcohol_consumption" => db_update.alcohol_consumption.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "autoresolve_report" => db_update.autoresolve_report.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_case_battles" => db_update.backend_case_battles.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_case_site_pins" => db_update.backend_case_site_pins.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_affinities" => db_update.backend_character_affinities.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_case_site_locations" => db_update.backend_character_case_site_locations.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_familiarities" => db_update.backend_character_familiarities.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_committed_cuts" => db_update.backend_committed_cuts.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_contracts" => db_update.backend_contracts.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_herbalist_examinations" => db_update.backend_herbalist_examinations.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_infection_episodes" => db_update.backend_infection_episodes.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_investigation_journal" => db_update.backend_investigation_journal.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_investigation_leads" => db_update.backend_investigation_leads.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_local_problem_rumors" => db_update.backend_local_problem_rumors.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_local_problem_trade_effects" => db_update.backend_local_problem_trade_effects.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_medical_examinations" => db_update.backend_medical_examinations.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_social_beliefs" => db_update.backend_social_beliefs.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "battle_loot_item" => db_update.battle_loot_item.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "battle_participant" => db_update.battle_participant.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "battle_result" => db_update.battle_result.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character" => db_update.character.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_apprenticeship" => db_update.character_apprenticeship.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_attributes" => db_update.character_attributes.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_capability" => db_update.character_capability.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_condition" => db_update.character_condition.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_death" => db_update.character_death.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_equip" => db_update.character_equip.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_filth" => db_update.character_filth.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_illness_status" => db_update.character_illness_status.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_limbs" => db_update.character_limbs.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_morale_source" => db_update.character_morale_source.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_needs" => db_update.character_needs.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_notoriety" => db_update.character_notoriety.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_personality" => db_update.character_personality.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_skills" => db_update.character_skills.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_stats" => db_update.character_stats.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_strategic_condition" => db_update.character_strategic_condition.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_time" => db_update.character_time.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_training_schedule" => db_update.character_training_schedule.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_virtue" => db_update.character_virtue.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "connected_players" => db_update.connected_players.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "dialogue_event" => db_update.dialogue_event.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "dialogue_participant" => db_update.dialogue_participant.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "dialogue_prompt" => db_update.dialogue_prompt.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "dialogue_session" => db_update.dialogue_session.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "dialogue_topic_option" => db_update.dialogue_topic_option.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "equipped_medication" => db_update.equipped_medication.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "food_lot" => db_update.food_lot.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "inventory_item" => db_update.inventory_item.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "inventory_quantity_target" => db_update.inventory_quantity_target.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "item" => db_update.item.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "item_condition" => db_update.item_condition.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "limb_injury" => db_update.limb_injury.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "local_chat_message" => db_update.local_chat_message.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "local_problem_symptom" => db_update.local_problem_symptom.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "morale_event" => db_update.morale_event.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "party" => db_update.party.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "party_action_request" => db_update.party_action_request.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "party_inventory_item" => db_update.party_inventory_item.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "party_inventory_state" => db_update.party_inventory_state.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "party_item_condition" => db_update.party_item_condition.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "party_join_request" => db_update.party_join_request.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "party_journey" => db_update.party_journey.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "party_journey_itinerary" => db_update.party_journey_itinerary.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "party_journey_route" => db_update.party_journey_route.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "party_leader_vote" => db_update.party_leader_vote.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "party_member" => db_update.party_member.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "party_recruitment_role" => db_update.party_recruitment_role.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "party_stake" => db_update.party_stake.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "recruitment_offer" => db_update.recruitment_offer.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "religious_demand" => db_update.religious_demand.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "repair_order" => db_update.repair_order.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "retained_projectile" => db_update.retained_projectile.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "saved_recruitment_role" => db_update.saved_recruitment_role.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "settlement" => db_update.settlement.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "settlement_alias" => db_update.settlement_alias.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "settlement_description" => db_update.settlement_description.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "settlement_npc" => db_update.settlement_npc.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "settlement_npc_presence" => db_update.settlement_npc_presence.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "settlement_outbreak" => db_update.settlement_outbreak.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "settlement_smith" => db_update.settlement_smith.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "simulation_character" => db_update.simulation_character.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "simulation_run" => db_update.simulation_run.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "strategic_encounter" => db_update.strategic_encounter.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "strategic_gateway_authority" => db_update.strategic_gateway_authority.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "tactical_server" => db_update.tactical_server.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "tactical_server_request" => db_update.tactical_server_request.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "travel_edge" => db_update.travel_edge.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "world_clock" => db_update.world_clock.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "world_data_import" => db_update.world_data_import.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "world_node" => db_update.world_node.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                unknown => { return Err(__sdk::InternalError::unknown_name("table", unknown, "QueryRows").into()); }
+}}        Ok(db_update)
+}
+fn parse_unsubscribe_rows(raw: __ws::v2::QueryRows) -> __sdk::Result<Self> {
+                let mut db_update = DbUpdate::default();
+for table_rows in raw.tables {
+            match &table_rows.table[..] {
+                                "alcohol_consumption" => db_update.alcohol_consumption.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "autoresolve_report" => db_update.autoresolve_report.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_case_battles" => db_update.backend_case_battles.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_case_site_pins" => db_update.backend_case_site_pins.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_affinities" => db_update.backend_character_affinities.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_case_site_locations" => db_update.backend_character_case_site_locations.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_familiarities" => db_update.backend_character_familiarities.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_committed_cuts" => db_update.backend_committed_cuts.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_contracts" => db_update.backend_contracts.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_herbalist_examinations" => db_update.backend_herbalist_examinations.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_infection_episodes" => db_update.backend_infection_episodes.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_investigation_journal" => db_update.backend_investigation_journal.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_investigation_leads" => db_update.backend_investigation_leads.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_local_problem_rumors" => db_update.backend_local_problem_rumors.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_local_problem_trade_effects" => db_update.backend_local_problem_trade_effects.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_medical_examinations" => db_update.backend_medical_examinations.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_social_beliefs" => db_update.backend_social_beliefs.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "battle_loot_item" => db_update.battle_loot_item.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "battle_participant" => db_update.battle_participant.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "battle_result" => db_update.battle_result.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character" => db_update.character.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_apprenticeship" => db_update.character_apprenticeship.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_attributes" => db_update.character_attributes.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_capability" => db_update.character_capability.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_condition" => db_update.character_condition.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_death" => db_update.character_death.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_equip" => db_update.character_equip.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_filth" => db_update.character_filth.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_illness_status" => db_update.character_illness_status.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_limbs" => db_update.character_limbs.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_morale_source" => db_update.character_morale_source.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_needs" => db_update.character_needs.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_notoriety" => db_update.character_notoriety.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_personality" => db_update.character_personality.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_skills" => db_update.character_skills.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_stats" => db_update.character_stats.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_strategic_condition" => db_update.character_strategic_condition.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_time" => db_update.character_time.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_training_schedule" => db_update.character_training_schedule.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_virtue" => db_update.character_virtue.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "connected_players" => db_update.connected_players.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "dialogue_event" => db_update.dialogue_event.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "dialogue_participant" => db_update.dialogue_participant.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "dialogue_prompt" => db_update.dialogue_prompt.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "dialogue_session" => db_update.dialogue_session.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "dialogue_topic_option" => db_update.dialogue_topic_option.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "equipped_medication" => db_update.equipped_medication.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "food_lot" => db_update.food_lot.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "inventory_item" => db_update.inventory_item.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "inventory_quantity_target" => db_update.inventory_quantity_target.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "item" => db_update.item.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "item_condition" => db_update.item_condition.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "limb_injury" => db_update.limb_injury.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "local_chat_message" => db_update.local_chat_message.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "local_problem_symptom" => db_update.local_problem_symptom.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "morale_event" => db_update.morale_event.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "party" => db_update.party.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "party_action_request" => db_update.party_action_request.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "party_inventory_item" => db_update.party_inventory_item.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "party_inventory_state" => db_update.party_inventory_state.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "party_item_condition" => db_update.party_item_condition.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "party_join_request" => db_update.party_join_request.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "party_journey" => db_update.party_journey.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "party_journey_itinerary" => db_update.party_journey_itinerary.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "party_journey_route" => db_update.party_journey_route.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "party_leader_vote" => db_update.party_leader_vote.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "party_member" => db_update.party_member.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "party_recruitment_role" => db_update.party_recruitment_role.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "party_stake" => db_update.party_stake.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "recruitment_offer" => db_update.recruitment_offer.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "religious_demand" => db_update.religious_demand.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "repair_order" => db_update.repair_order.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "retained_projectile" => db_update.retained_projectile.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "saved_recruitment_role" => db_update.saved_recruitment_role.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "settlement" => db_update.settlement.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "settlement_alias" => db_update.settlement_alias.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "settlement_description" => db_update.settlement_description.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "settlement_npc" => db_update.settlement_npc.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "settlement_npc_presence" => db_update.settlement_npc_presence.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "settlement_outbreak" => db_update.settlement_outbreak.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "settlement_smith" => db_update.settlement_smith.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "simulation_character" => db_update.simulation_character.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "simulation_run" => db_update.simulation_run.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "strategic_encounter" => db_update.strategic_encounter.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "strategic_gateway_authority" => db_update.strategic_gateway_authority.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "tactical_server" => db_update.tactical_server.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "tactical_server_request" => db_update.tactical_server_request.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "travel_edge" => db_update.travel_edge.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "world_clock" => db_update.world_clock.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "world_data_import" => db_update.world_data_import.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "world_node" => db_update.world_node.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                unknown => { return Err(__sdk::InternalError::unknown_name("table", unknown, "QueryRows").into()); }
+}}        Ok(db_update)
+}
 }
 
 #[derive(Default)]
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
-    alcohol_consumption: __sdk::TableAppliedDiff<'r, AlcoholConsumption>,
+        alcohol_consumption: __sdk::TableAppliedDiff<'r, AlcoholConsumption>,
     autoresolve_report: __sdk::TableAppliedDiff<'r, AutoresolveReport>,
-    backend_case_battle: __sdk::TableAppliedDiff<'r, BackendCaseBattle>,
+    backend_case_battles: __sdk::TableAppliedDiff<'r, BackendCaseBattle>,
     backend_case_site_pins: __sdk::TableAppliedDiff<'r, BackendCaseSitePin>,
     backend_character_affinities: __sdk::TableAppliedDiff<'r, CharacterAffinity>,
-    backend_character_case_site_locations:
-        __sdk::TableAppliedDiff<'r, BackendCharacterCaseSiteLocation>,
+    backend_character_case_site_locations: __sdk::TableAppliedDiff<'r, BackendCharacterCaseSiteLocation>,
     backend_character_familiarities: __sdk::TableAppliedDiff<'r, CharacterFamiliarity>,
     backend_committed_cuts: __sdk::TableAppliedDiff<'r, CommittedCut>,
     backend_contracts: __sdk::TableAppliedDiff<'r, BackendContract>,
@@ -4224,8 +3396,7 @@ pub struct AppliedDiff<'r> {
     backend_investigation_journal: __sdk::TableAppliedDiff<'r, BackendInvestigationJournalEntry>,
     backend_investigation_leads: __sdk::TableAppliedDiff<'r, BackendInvestigationLead>,
     backend_local_problem_rumors: __sdk::TableAppliedDiff<'r, BackendLocalProblemRumor>,
-    backend_local_problem_trade_effects:
-        __sdk::TableAppliedDiff<'r, BackendLocalProblemTradeEffect>,
+    backend_local_problem_trade_effects: __sdk::TableAppliedDiff<'r, BackendLocalProblemTradeEffect>,
     backend_medical_examinations: __sdk::TableAppliedDiff<'r, MedicalExamination>,
     backend_social_beliefs: __sdk::TableAppliedDiff<'r, SocialBelief>,
     battle_loot_item: __sdk::TableAppliedDiff<'r, BattleLootItem>,
@@ -4305,433 +3476,107 @@ pub struct AppliedDiff<'r> {
     __unused: std::marker::PhantomData<&'r ()>,
 }
 
+
 impl __sdk::InModule for AppliedDiff<'_> {
     type Module = RemoteModule;
 }
 
 impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
-    fn invoke_row_callbacks(
-        &self,
-        event: &EventContext,
-        callbacks: &mut __sdk::DbCallbacks<RemoteModule>,
-    ) {
-        callbacks.invoke_table_row_callbacks::<AlcoholConsumption>(
-            "alcohol_consumption",
-            &self.alcohol_consumption,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<AutoresolveReport>(
-            "autoresolve_report",
-            &self.autoresolve_report,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<BackendCaseBattle>(
-            "backend_case_battle",
-            &self.backend_case_battle,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<BackendCaseSitePin>(
-            "backend_case_site_pins",
-            &self.backend_case_site_pins,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterAffinity>(
-            "backend_character_affinities",
-            &self.backend_character_affinities,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<BackendCharacterCaseSiteLocation>(
-            "backend_character_case_site_locations",
-            &self.backend_character_case_site_locations,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterFamiliarity>(
-            "backend_character_familiarities",
-            &self.backend_character_familiarities,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CommittedCut>(
-            "backend_committed_cuts",
-            &self.backend_committed_cuts,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<BackendContract>(
-            "backend_contracts",
-            &self.backend_contracts,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<HerbalistExamination>(
-            "backend_herbalist_examinations",
-            &self.backend_herbalist_examinations,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<InfectionEpisodeRow>(
-            "backend_infection_episodes",
-            &self.backend_infection_episodes,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<BackendInvestigationJournalEntry>(
-            "backend_investigation_journal",
-            &self.backend_investigation_journal,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<BackendInvestigationLead>(
-            "backend_investigation_leads",
-            &self.backend_investigation_leads,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<BackendLocalProblemRumor>(
-            "backend_local_problem_rumors",
-            &self.backend_local_problem_rumors,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<BackendLocalProblemTradeEffect>(
-            "backend_local_problem_trade_effects",
-            &self.backend_local_problem_trade_effects,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<MedicalExamination>(
-            "backend_medical_examinations",
-            &self.backend_medical_examinations,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<SocialBelief>(
-            "backend_social_beliefs",
-            &self.backend_social_beliefs,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<BattleLootItem>(
-            "battle_loot_item",
-            &self.battle_loot_item,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<BattleParticipant>(
-            "battle_participant",
-            &self.battle_participant,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<BattleResult>(
-            "battle_result",
-            &self.battle_result,
-            event,
-        );
+    fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {
+                callbacks.invoke_table_row_callbacks::<AlcoholConsumption>("alcohol_consumption", &self.alcohol_consumption, event);
+        callbacks.invoke_table_row_callbacks::<AutoresolveReport>("autoresolve_report", &self.autoresolve_report, event);
+        callbacks.invoke_table_row_callbacks::<BackendCaseBattle>("backend_case_battles", &self.backend_case_battles, event);
+        callbacks.invoke_table_row_callbacks::<BackendCaseSitePin>("backend_case_site_pins", &self.backend_case_site_pins, event);
+        callbacks.invoke_table_row_callbacks::<CharacterAffinity>("backend_character_affinities", &self.backend_character_affinities, event);
+        callbacks.invoke_table_row_callbacks::<BackendCharacterCaseSiteLocation>("backend_character_case_site_locations", &self.backend_character_case_site_locations, event);
+        callbacks.invoke_table_row_callbacks::<CharacterFamiliarity>("backend_character_familiarities", &self.backend_character_familiarities, event);
+        callbacks.invoke_table_row_callbacks::<CommittedCut>("backend_committed_cuts", &self.backend_committed_cuts, event);
+        callbacks.invoke_table_row_callbacks::<BackendContract>("backend_contracts", &self.backend_contracts, event);
+        callbacks.invoke_table_row_callbacks::<HerbalistExamination>("backend_herbalist_examinations", &self.backend_herbalist_examinations, event);
+        callbacks.invoke_table_row_callbacks::<InfectionEpisodeRow>("backend_infection_episodes", &self.backend_infection_episodes, event);
+        callbacks.invoke_table_row_callbacks::<BackendInvestigationJournalEntry>("backend_investigation_journal", &self.backend_investigation_journal, event);
+        callbacks.invoke_table_row_callbacks::<BackendInvestigationLead>("backend_investigation_leads", &self.backend_investigation_leads, event);
+        callbacks.invoke_table_row_callbacks::<BackendLocalProblemRumor>("backend_local_problem_rumors", &self.backend_local_problem_rumors, event);
+        callbacks.invoke_table_row_callbacks::<BackendLocalProblemTradeEffect>("backend_local_problem_trade_effects", &self.backend_local_problem_trade_effects, event);
+        callbacks.invoke_table_row_callbacks::<MedicalExamination>("backend_medical_examinations", &self.backend_medical_examinations, event);
+        callbacks.invoke_table_row_callbacks::<SocialBelief>("backend_social_beliefs", &self.backend_social_beliefs, event);
+        callbacks.invoke_table_row_callbacks::<BattleLootItem>("battle_loot_item", &self.battle_loot_item, event);
+        callbacks.invoke_table_row_callbacks::<BattleParticipant>("battle_participant", &self.battle_participant, event);
+        callbacks.invoke_table_row_callbacks::<BattleResult>("battle_result", &self.battle_result, event);
         callbacks.invoke_table_row_callbacks::<Character>("character", &self.character, event);
-        callbacks.invoke_table_row_callbacks::<CharacterApprenticeship>(
-            "character_apprenticeship",
-            &self.character_apprenticeship,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterAttributes>(
-            "character_attributes",
-            &self.character_attributes,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterCapability>(
-            "character_capability",
-            &self.character_capability,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterCondition>(
-            "character_condition",
-            &self.character_condition,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterDeath>(
-            "character_death",
-            &self.character_death,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterEquip>(
-            "character_equip",
-            &self.character_equip,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterFilth>(
-            "character_filth",
-            &self.character_filth,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterIllnessStatus>(
-            "character_illness_status",
-            &self.character_illness_status,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterLimbs>(
-            "character_limbs",
-            &self.character_limbs,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterMoraleSource>(
-            "character_morale_source",
-            &self.character_morale_source,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterNeeds>(
-            "character_needs",
-            &self.character_needs,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterNotoriety>(
-            "character_notoriety",
-            &self.character_notoriety,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterPersonality>(
-            "character_personality",
-            &self.character_personality,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterSkills>(
-            "character_skills",
-            &self.character_skills,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterStats>(
-            "character_stats",
-            &self.character_stats,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterStrategicCondition>(
-            "character_strategic_condition",
-            &self.character_strategic_condition,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterTime>(
-            "character_time",
-            &self.character_time,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterTrainingSchedule>(
-            "character_training_schedule",
-            &self.character_training_schedule,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterVirtue>(
-            "character_virtue",
-            &self.character_virtue,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<ConnectedPlayer>(
-            "connected_players",
-            &self.connected_players,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<DialogueEvent>(
-            "dialogue_event",
-            &self.dialogue_event,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<DialogueParticipant>(
-            "dialogue_participant",
-            &self.dialogue_participant,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<DialoguePrompt>(
-            "dialogue_prompt",
-            &self.dialogue_prompt,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<DialogueSession>(
-            "dialogue_session",
-            &self.dialogue_session,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<DialogueTopicOption>(
-            "dialogue_topic_option",
-            &self.dialogue_topic_option,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<EquippedMedication>(
-            "equipped_medication",
-            &self.equipped_medication,
-            event,
-        );
+        callbacks.invoke_table_row_callbacks::<CharacterApprenticeship>("character_apprenticeship", &self.character_apprenticeship, event);
+        callbacks.invoke_table_row_callbacks::<CharacterAttributes>("character_attributes", &self.character_attributes, event);
+        callbacks.invoke_table_row_callbacks::<CharacterCapability>("character_capability", &self.character_capability, event);
+        callbacks.invoke_table_row_callbacks::<CharacterCondition>("character_condition", &self.character_condition, event);
+        callbacks.invoke_table_row_callbacks::<CharacterDeath>("character_death", &self.character_death, event);
+        callbacks.invoke_table_row_callbacks::<CharacterEquip>("character_equip", &self.character_equip, event);
+        callbacks.invoke_table_row_callbacks::<CharacterFilth>("character_filth", &self.character_filth, event);
+        callbacks.invoke_table_row_callbacks::<CharacterIllnessStatus>("character_illness_status", &self.character_illness_status, event);
+        callbacks.invoke_table_row_callbacks::<CharacterLimbs>("character_limbs", &self.character_limbs, event);
+        callbacks.invoke_table_row_callbacks::<CharacterMoraleSource>("character_morale_source", &self.character_morale_source, event);
+        callbacks.invoke_table_row_callbacks::<CharacterNeeds>("character_needs", &self.character_needs, event);
+        callbacks.invoke_table_row_callbacks::<CharacterNotoriety>("character_notoriety", &self.character_notoriety, event);
+        callbacks.invoke_table_row_callbacks::<CharacterPersonality>("character_personality", &self.character_personality, event);
+        callbacks.invoke_table_row_callbacks::<CharacterSkills>("character_skills", &self.character_skills, event);
+        callbacks.invoke_table_row_callbacks::<CharacterStats>("character_stats", &self.character_stats, event);
+        callbacks.invoke_table_row_callbacks::<CharacterStrategicCondition>("character_strategic_condition", &self.character_strategic_condition, event);
+        callbacks.invoke_table_row_callbacks::<CharacterTime>("character_time", &self.character_time, event);
+        callbacks.invoke_table_row_callbacks::<CharacterTrainingSchedule>("character_training_schedule", &self.character_training_schedule, event);
+        callbacks.invoke_table_row_callbacks::<CharacterVirtue>("character_virtue", &self.character_virtue, event);
+        callbacks.invoke_table_row_callbacks::<ConnectedPlayer>("connected_players", &self.connected_players, event);
+        callbacks.invoke_table_row_callbacks::<DialogueEvent>("dialogue_event", &self.dialogue_event, event);
+        callbacks.invoke_table_row_callbacks::<DialogueParticipant>("dialogue_participant", &self.dialogue_participant, event);
+        callbacks.invoke_table_row_callbacks::<DialoguePrompt>("dialogue_prompt", &self.dialogue_prompt, event);
+        callbacks.invoke_table_row_callbacks::<DialogueSession>("dialogue_session", &self.dialogue_session, event);
+        callbacks.invoke_table_row_callbacks::<DialogueTopicOption>("dialogue_topic_option", &self.dialogue_topic_option, event);
+        callbacks.invoke_table_row_callbacks::<EquippedMedication>("equipped_medication", &self.equipped_medication, event);
         callbacks.invoke_table_row_callbacks::<FoodLot>("food_lot", &self.food_lot, event);
-        callbacks.invoke_table_row_callbacks::<InventoryItem>(
-            "inventory_item",
-            &self.inventory_item,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<InventoryQuantityTarget>(
-            "inventory_quantity_target",
-            &self.inventory_quantity_target,
-            event,
-        );
+        callbacks.invoke_table_row_callbacks::<InventoryItem>("inventory_item", &self.inventory_item, event);
+        callbacks.invoke_table_row_callbacks::<InventoryQuantityTarget>("inventory_quantity_target", &self.inventory_quantity_target, event);
         callbacks.invoke_table_row_callbacks::<Item>("item", &self.item, event);
-        callbacks.invoke_table_row_callbacks::<ItemCondition>(
-            "item_condition",
-            &self.item_condition,
-            event,
-        );
+        callbacks.invoke_table_row_callbacks::<ItemCondition>("item_condition", &self.item_condition, event);
         callbacks.invoke_table_row_callbacks::<LimbInjury>("limb_injury", &self.limb_injury, event);
-        callbacks.invoke_table_row_callbacks::<LocalChatMessage>(
-            "local_chat_message",
-            &self.local_chat_message,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<LocalProblemSymptom>(
-            "local_problem_symptom",
-            &self.local_problem_symptom,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<MoraleEvent>(
-            "morale_event",
-            &self.morale_event,
-            event,
-        );
+        callbacks.invoke_table_row_callbacks::<LocalChatMessage>("local_chat_message", &self.local_chat_message, event);
+        callbacks.invoke_table_row_callbacks::<LocalProblemSymptom>("local_problem_symptom", &self.local_problem_symptom, event);
+        callbacks.invoke_table_row_callbacks::<MoraleEvent>("morale_event", &self.morale_event, event);
         callbacks.invoke_table_row_callbacks::<Party>("party", &self.party, event);
-        callbacks.invoke_table_row_callbacks::<PartyActionRequest>(
-            "party_action_request",
-            &self.party_action_request,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<PartyInventoryItem>(
-            "party_inventory_item",
-            &self.party_inventory_item,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<PartyInventoryState>(
-            "party_inventory_state",
-            &self.party_inventory_state,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<PartyItemCondition>(
-            "party_item_condition",
-            &self.party_item_condition,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<PartyJoinRequest>(
-            "party_join_request",
-            &self.party_join_request,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<PartyJourney>(
-            "party_journey",
-            &self.party_journey,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<PartyJourneyItinerary>(
-            "party_journey_itinerary",
-            &self.party_journey_itinerary,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<PartyJourneyRoute>(
-            "party_journey_route",
-            &self.party_journey_route,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<PartyLeaderVote>(
-            "party_leader_vote",
-            &self.party_leader_vote,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<PartyMember>(
-            "party_member",
-            &self.party_member,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<PartyRecruitmentRole>(
-            "party_recruitment_role",
-            &self.party_recruitment_role,
-            event,
-        );
+        callbacks.invoke_table_row_callbacks::<PartyActionRequest>("party_action_request", &self.party_action_request, event);
+        callbacks.invoke_table_row_callbacks::<PartyInventoryItem>("party_inventory_item", &self.party_inventory_item, event);
+        callbacks.invoke_table_row_callbacks::<PartyInventoryState>("party_inventory_state", &self.party_inventory_state, event);
+        callbacks.invoke_table_row_callbacks::<PartyItemCondition>("party_item_condition", &self.party_item_condition, event);
+        callbacks.invoke_table_row_callbacks::<PartyJoinRequest>("party_join_request", &self.party_join_request, event);
+        callbacks.invoke_table_row_callbacks::<PartyJourney>("party_journey", &self.party_journey, event);
+        callbacks.invoke_table_row_callbacks::<PartyJourneyItinerary>("party_journey_itinerary", &self.party_journey_itinerary, event);
+        callbacks.invoke_table_row_callbacks::<PartyJourneyRoute>("party_journey_route", &self.party_journey_route, event);
+        callbacks.invoke_table_row_callbacks::<PartyLeaderVote>("party_leader_vote", &self.party_leader_vote, event);
+        callbacks.invoke_table_row_callbacks::<PartyMember>("party_member", &self.party_member, event);
+        callbacks.invoke_table_row_callbacks::<PartyRecruitmentRole>("party_recruitment_role", &self.party_recruitment_role, event);
         callbacks.invoke_table_row_callbacks::<PartyStake>("party_stake", &self.party_stake, event);
-        callbacks.invoke_table_row_callbacks::<RecruitmentOffer>(
-            "recruitment_offer",
-            &self.recruitment_offer,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<ReligiousDemand>(
-            "religious_demand",
-            &self.religious_demand,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<RepairOrder>(
-            "repair_order",
-            &self.repair_order,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<RetainedProjectile>(
-            "retained_projectile",
-            &self.retained_projectile,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<SavedRecruitmentRole>(
-            "saved_recruitment_role",
-            &self.saved_recruitment_role,
-            event,
-        );
+        callbacks.invoke_table_row_callbacks::<RecruitmentOffer>("recruitment_offer", &self.recruitment_offer, event);
+        callbacks.invoke_table_row_callbacks::<ReligiousDemand>("religious_demand", &self.religious_demand, event);
+        callbacks.invoke_table_row_callbacks::<RepairOrder>("repair_order", &self.repair_order, event);
+        callbacks.invoke_table_row_callbacks::<RetainedProjectile>("retained_projectile", &self.retained_projectile, event);
+        callbacks.invoke_table_row_callbacks::<SavedRecruitmentRole>("saved_recruitment_role", &self.saved_recruitment_role, event);
         callbacks.invoke_table_row_callbacks::<Settlement>("settlement", &self.settlement, event);
-        callbacks.invoke_table_row_callbacks::<SettlementAlias>(
-            "settlement_alias",
-            &self.settlement_alias,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<SettlementDescription>(
-            "settlement_description",
-            &self.settlement_description,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<SettlementNpc>(
-            "settlement_npc",
-            &self.settlement_npc,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<SettlementNpcPresence>(
-            "settlement_npc_presence",
-            &self.settlement_npc_presence,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<SettlementOutbreak>(
-            "settlement_outbreak",
-            &self.settlement_outbreak,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<SettlementSmith>(
-            "settlement_smith",
-            &self.settlement_smith,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<SimulationCharacter>(
-            "simulation_character",
-            &self.simulation_character,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<SimulationRun>(
-            "simulation_run",
-            &self.simulation_run,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<StrategicEncounter>(
-            "strategic_encounter",
-            &self.strategic_encounter,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<StrategicGatewayAuthority>(
-            "strategic_gateway_authority",
-            &self.strategic_gateway_authority,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<TacticalServer>(
-            "tactical_server",
-            &self.tactical_server,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<TacticalServerRequest>(
-            "tactical_server_request",
-            &self.tactical_server_request,
-            event,
-        );
+        callbacks.invoke_table_row_callbacks::<SettlementAlias>("settlement_alias", &self.settlement_alias, event);
+        callbacks.invoke_table_row_callbacks::<SettlementDescription>("settlement_description", &self.settlement_description, event);
+        callbacks.invoke_table_row_callbacks::<SettlementNpc>("settlement_npc", &self.settlement_npc, event);
+        callbacks.invoke_table_row_callbacks::<SettlementNpcPresence>("settlement_npc_presence", &self.settlement_npc_presence, event);
+        callbacks.invoke_table_row_callbacks::<SettlementOutbreak>("settlement_outbreak", &self.settlement_outbreak, event);
+        callbacks.invoke_table_row_callbacks::<SettlementSmith>("settlement_smith", &self.settlement_smith, event);
+        callbacks.invoke_table_row_callbacks::<SimulationCharacter>("simulation_character", &self.simulation_character, event);
+        callbacks.invoke_table_row_callbacks::<SimulationRun>("simulation_run", &self.simulation_run, event);
+        callbacks.invoke_table_row_callbacks::<StrategicEncounter>("strategic_encounter", &self.strategic_encounter, event);
+        callbacks.invoke_table_row_callbacks::<StrategicGatewayAuthority>("strategic_gateway_authority", &self.strategic_gateway_authority, event);
+        callbacks.invoke_table_row_callbacks::<TacticalServer>("tactical_server", &self.tactical_server, event);
+        callbacks.invoke_table_row_callbacks::<TacticalServerRequest>("tactical_server_request", &self.tactical_server_request, event);
         callbacks.invoke_table_row_callbacks::<TravelEdge>("travel_edge", &self.travel_edge, event);
         callbacks.invoke_table_row_callbacks::<WorldClock>("world_clock", &self.world_clock, event);
-        callbacks.invoke_table_row_callbacks::<WorldDataImport>(
-            "world_data_import",
-            &self.world_data_import,
-            event,
-        );
+        callbacks.invoke_table_row_callbacks::<WorldDataImport>("world_data_import", &self.world_data_import, event);
         callbacks.invoke_table_row_callbacks::<WorldNode>("world_node", &self.world_node, event);
-    }
 }
+}
+
 
 #[doc(hidden)]
 #[derive(Debug)]
@@ -4780,16 +3625,10 @@ impl __sdk::InModule for RemoteTables {
 ///
 /// - [`DbConnection::frame_tick`].
 #[cfg_attr(not(target_arch = "wasm32"), doc = "- [`DbConnection::run_threaded`].")]
-#[cfg_attr(
-    target_arch = "wasm32",
-    doc = "- [`DbConnection::run_background_task`]."
-)]
+#[cfg_attr(target_arch = "wasm32", doc = "- [`DbConnection::run_background_task`].")]
 /// - [`DbConnection::run_async`].
 /// - [`DbConnection::advance_one_message`].
-#[cfg_attr(
-    not(target_arch = "wasm32"),
-    doc = "- [`DbConnection::advance_one_message_blocking`]."
-)]
+#[cfg_attr(not(target_arch =  "wasm32"), doc = "- [`DbConnection::advance_one_message_blocking`].")]
 /// - [`DbConnection::advance_one_message_async`].
 ///
 /// Which of these methods you should call depends on the specific needs of your application,
@@ -4976,6 +3815,7 @@ impl __sdk::SubscriptionHandle for SubscriptionHandle {
     fn unsubscribe(self) -> __sdk::Result<()> {
         self.imp.unsubscribe_then(None)
     }
+
 }
 
 /// Alias trait for a [`__sdk::DbContext`] connected to this module,
@@ -4983,23 +3823,17 @@ impl __sdk::SubscriptionHandle for SubscriptionHandle {
 ///
 /// Users can use this trait as a boundary on definitions which should accept
 /// either a [`DbConnection`] or an [`EventContext`] and operate on either.
-pub trait RemoteDbContext:
-    __sdk::DbContext<
-        DbView = RemoteTables,
-        Reducers = RemoteReducers,
-        SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
-    >
-{
-}
-impl<
-    Ctx: __sdk::DbContext<
-            DbView = RemoteTables,
-            Reducers = RemoteReducers,
-            SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
-        >,
-> RemoteDbContext for Ctx
-{
-}
+pub trait RemoteDbContext: __sdk::DbContext<
+    DbView = RemoteTables,
+    Reducers = RemoteReducers,
+    SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
+> {}
+impl<Ctx: __sdk::DbContext<
+    DbView = RemoteTables,
+    Reducers = RemoteReducers,
+    SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
+>> RemoteDbContext for Ctx {}
+
 
 /// An [`__sdk::DbContext`] augmented with a [`__sdk::Event`],
 /// passed to [`__sdk::Table::on_insert`], [`__sdk::Table::on_delete`] and [`__sdk::TableWithPrimaryKey::on_update`] callbacks.
@@ -5374,6 +4208,7 @@ impl __sdk::DbContext for ErrorContext {
 impl __sdk::ErrorContext for ErrorContext {}
 
 impl __sdk::SpacetimeModule for RemoteModule {
+    
     type DbConnection = DbConnection;
     type EventContext = EventContext;
     type ReducerEventContext = ReducerEventContext;
@@ -5389,10 +4224,10 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type SubscriptionHandle = SubscriptionHandle;
     type QueryBuilder = __sdk::QueryBuilder;
 
-    fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
-        alcohol_consumption_table::register_table(client_cache);
+fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
+                alcohol_consumption_table::register_table(client_cache);
         autoresolve_report_table::register_table(client_cache);
-        backend_case_battle_table::register_table(client_cache);
+        backend_case_battles_table::register_table(client_cache);
         backend_case_site_pins_table::register_table(client_cache);
         backend_character_affinities_table::register_table(client_cache);
         backend_character_case_site_locations_table::register_table(client_cache);
@@ -5481,11 +4316,11 @@ impl __sdk::SpacetimeModule for RemoteModule {
         world_clock_table::register_table(client_cache);
         world_data_import_table::register_table(client_cache);
         world_node_table::register_table(client_cache);
-    }
-    const ALL_TABLE_NAMES: &'static [&'static str] = &[
-        "alcohol_consumption",
+}
+const ALL_TABLE_NAMES: &'static [&'static str] = &[
+                "alcohol_consumption",
         "autoresolve_report",
-        "backend_case_battle",
+        "backend_case_battles",
         "backend_case_site_pins",
         "backend_character_affinities",
         "backend_character_case_site_locations",
@@ -5574,5 +4409,5 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "world_clock",
         "world_data_import",
         "world_node",
-    ];
+];
 }
