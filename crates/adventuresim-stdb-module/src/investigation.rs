@@ -898,6 +898,27 @@ fn character_strategic_minute(ctx: &ReducerContext, character_id: u64) -> u64 {
         .map_or_else(|| official_minute(ctx), |time| time.minutes)
 }
 
+fn generated_observer_id(
+    ctx: &ReducerContext,
+    case_id: &str,
+    kind: &str,
+    name: &str,
+) -> Option<String> {
+    ctx.db
+        .quest_generation_authority()
+        .case_id()
+        .find(&case_id.to_string())
+        .and_then(|authority| {
+            serde_json::from_str::<adventuresim_core::quest_generation::GenerationContext>(
+                &authority.context_snapshot_json,
+            )
+            .ok()
+        })
+        .map(|context| {
+            adventuresim_core::quest_generation::observer_scoped_id(&context, kind, name)
+        })
+}
+
 fn set_action_active(ctx: &ReducerContext, action_id: &str, active: bool) -> Result<(), String> {
     let mut capability = ctx
         .db
@@ -1007,12 +1028,15 @@ fn issue_rumor_action_graph(
         let manifest: adventuresim_core::quest_generation::GeneratedCase =
             serde_json::from_str(&authority.manifest_json)
                 .map_err(|_| "Generated action blueprint is invalid")?;
+        let generation_context: adventuresim_core::quest_generation::GenerationContext =
+            serde_json::from_str(&authority.context_snapshot_json)
+                .map_err(|_| "Generated observer-id authority is invalid")?;
         for generated in &manifest.actions {
-            let capability_id = inv::compound_id(&[
-                "generated-action",
-                &owner_character_id.to_string(),
-                &generated.id.0,
-            ]);
+            let capability_id = adventuresim_core::quest_generation::observer_scoped_id(
+                &generation_context,
+                "capability",
+                &format!("{owner_character_id}:{}", generated.id.0),
+            );
             if ctx
                 .db
                 .investigation_action_capability()
@@ -1023,7 +1047,11 @@ fn issue_rumor_action_graph(
                 continue;
             }
             let remap = |id: &adventuresim_core::quest_generation::ActionId| {
-                inv::compound_id(&["generated-action", &owner_character_id.to_string(), &id.0])
+                adventuresim_core::quest_generation::observer_scoped_id(
+                    &generation_context,
+                    "capability",
+                    &format!("{owner_character_id}:{}", id.0),
+                )
             };
             let site_terrain = manifest
                 .sites
@@ -1071,7 +1099,7 @@ fn issue_rumor_action_graph(
                 generated.target_kind.clone(),
                 generated.target_id.clone(),
                 site_terrain.or(area_terrain).unwrap_or(action::Terrain::Settlement),
-                stable_action_seed(&generated.id.0, action_method(generated.kind)),
+                ctx.random::<u64>(),
                 7_000,
                 generated.safe_summary.clone(),
                 "Complete the preceding generated lead and remain with your ready, co-located party."
@@ -1083,11 +1111,11 @@ fn issue_rumor_action_graph(
             )?;
             ctx.db.investigation_generated_action_output().insert(
                 InvestigationGeneratedActionOutput {
-                    capability_id: inv::compound_id(&[
-                        "generated-action",
-                        &owner_character_id.to_string(),
-                        &generated.id.0,
-                    ]),
+                    capability_id: adventuresim_core::quest_generation::observer_scoped_id(
+                        &generation_context,
+                        "capability",
+                        &format!("{owner_character_id}:{}", generated.id.0),
+                    ),
                     outputs_json: serde_json::to_string(&generated.outputs)
                         .map_err(|_| "Could not encode generated action outputs")?,
                 },
@@ -1100,11 +1128,11 @@ fn issue_rumor_action_graph(
         {
             set_action_active(
                 ctx,
-                &inv::compound_id(&[
-                    "generated-action",
-                    &owner_character_id.to_string(),
-                    &generated.id.0,
-                ]),
+                &adventuresim_core::quest_generation::observer_scoped_id(
+                    &generation_context,
+                    "capability",
+                    &format!("{owner_character_id}:{}", generated.id.0),
+                ),
                 true,
             )?;
         }
@@ -1310,7 +1338,7 @@ fn issue_rumor_action_graph(
             kind_name.into(),
             target,
             terrain,
-            stable_action_seed(lead_id, action_method(kind)),
+            ctx.random::<u64>(),
             if matches!(
                 kind,
                 action::InvestigationActionKind::FollowTracks
@@ -1464,7 +1492,8 @@ fn persist_action_result_lead(
     } else {
         None
     };
-    let lead_id = inv::compound_id(&["lead", "action", attempt_id]);
+    let lead_id = generated_observer_id(ctx, &capability.case_id, "lead", attempt_id)
+        .unwrap_or_else(|| inv::compound_id(&["lead", "action", attempt_id]));
     if ctx.db.investigation_lead().id().find(&lead_id).is_some() {
         return Ok(());
     }
@@ -1879,6 +1908,7 @@ fn reissue_stale_custody_capability(
     capability.consequence_json = serde_json::to_string(&refreshed)
         .map_err(|_| "Refreshed investigation consequence is invalid")?;
     capability.version = capability.version.saturating_add(1);
+    capability.seed = ctx.random::<u64>();
     ctx.db
         .investigation_action_capability()
         .id()
@@ -1886,12 +1916,20 @@ fn reissue_stale_custody_capability(
     ctx.db
         .investigation_action_outcome()
         .insert(InvestigationActionOutcome {
-        id: inv::compound_id(&[
+        id: generated_observer_id(
+            ctx,
+            &capability.case_id,
             "outcome",
-            "reissue",
-            &capability.id,
-            &capability.version.to_string(),
-        ]),
+            &format!("reissue:{}:{}", capability.id, capability.version),
+        )
+        .unwrap_or_else(|| {
+            inv::compound_id(&[
+                "outcome",
+                "reissue",
+                &capability.id,
+                &capability.version.to_string(),
+            ])
+        }),
         owner_character_id: capability.owner_character_id,
         case_id: capability.case_id.clone(),
         capability_id: capability.id.clone(),
@@ -2072,7 +2110,8 @@ pub(crate) fn perform_investigation_action_authorized(
     ctx.db
         .investigation_action_outcome()
         .insert(InvestigationActionOutcome {
-            id: inv::compound_id(&["outcome", &attempt_id]),
+            id: generated_observer_id(ctx, &capability.case_id, "outcome", &attempt_id)
+                .unwrap_or_else(|| inv::compound_id(&["outcome", &attempt_id])),
             owner_character_id: actor_id,
             case_id: capability.case_id.clone(),
             capability_id: action_id.clone(),
@@ -2092,6 +2131,7 @@ pub(crate) fn perform_investigation_action_authorized(
             recorded_at: completed_at,
         });
     capability.version = capability.version.saturating_add(1);
+    capability.seed = ctx.random::<u64>();
     capability.uncertainty_bps = resolution.resulting_uncertainty_bps;
     capability.active = !resolution.success;
     ctx.db
@@ -2453,14 +2493,6 @@ fn canonical_payload(parts: &[&str]) -> Result<String, String> {
     } else {
         Ok(payload)
     }
-}
-fn stable_action_seed(authority_id: &str, domain: &str) -> u64 {
-    let mut hash = 0xcbf2_9ce4_8422_2325u64;
-    for byte in authority_id.bytes().chain([0xff]).chain(domain.bytes()) {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x100_0000_01b3);
-    }
-    hash
 }
 fn idempotent(
     ctx: &ReducerContext,
@@ -3682,6 +3714,63 @@ mod tests {
             .expect("lead write");
         assert!(position_check < time_advance);
         assert!(position_check < lead_write);
+    }
+
+    #[test]
+    fn generated_physical_and_social_reveals_execute_from_known_origins() {
+        let source = include_str!("investigation.rs");
+        let position = source
+            .split("fn validate_action_position")
+            .nth(1)
+            .and_then(|tail| tail.split("fn validate_live_action_prerequisites").next())
+            .expect("real position validator");
+        assert!(position.contains("\"site\" =>"));
+        assert!(position.contains("InvestigationActionKind::FollowTracks"));
+        assert!(position.contains("InvestigationActionKind::ReacquireTracks"));
+        assert!(position.contains("predecessor.target_kind != \"area\""));
+        assert!(position.contains("\"tracks\" | \"route\" =>"));
+        assert!(position.contains("validate_action_position("));
+        let generated = include_str!("../../adventuresim-core/src/quest_generation.rs");
+        let disappearance = generated
+            .split("TemplateFamily::DisappearanceOrLoss => vec![")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn generate").next())
+            .expect("generated disappearance graph");
+        assert!(disappearance.contains("\"locate_contact\""));
+        assert!(disappearance.contains("GeneratedDestinationStage::ApproximateArea"));
+        assert!(disappearance.contains("\"approach_social\""));
+        assert!(disappearance.contains("\"route\""));
+        assert!(disappearance.contains("GeneratedDestinationStage::Exact"));
+        assert!(disappearance.contains("\"resolve_social\""));
+        assert!(disappearance.contains("\"site\""));
+    }
+
+    #[test]
+    fn capability_randomness_is_private_persisted_and_attempt_domain_separated() {
+        let source = include_str!("investigation.rs");
+        let issuer = source
+            .split("pub(crate) fn issue_investigation_action_capability")
+            .nth(1)
+            .and_then(|tail| tail.split("fn character_strategic_minute").next())
+            .expect("capability issuer");
+        assert!(issuer.contains("seed,"));
+        assert!(issuer.contains("InvestigationActionCapability"));
+        let generated_issuer = source
+            .split("fn issue_rumor_action_graph")
+            .nth(1)
+            .and_then(|tail| tail.split("let area_id =").next())
+            .expect("generated capability issuer");
+        assert!(generated_issuer.contains("ctx.random::<u64>()"));
+        let performer = source
+            .split("pub(crate) fn perform_investigation_action_authorized")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("authorized performer");
+        assert!(performer.contains("&expected_version.to_string()"));
+        assert!(performer.contains("if let Some(attempt)"));
+        assert!(performer.contains("seed: capability.seed"));
+        assert!(performer.contains("attempt_index: expected_version"));
+        assert!(!source.contains("stable_action_seed"));
     }
 
     #[test]

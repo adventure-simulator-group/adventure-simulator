@@ -1086,6 +1086,8 @@ mod healing_tests {
         adventuresim_core::quest_generation::generate(
             &adventuresim_core::quest_generation::GenerationContext {
                 seed,
+                observer_entropy_hi: seed ^ 0x6f62_7365_7276_6572,
+                observer_entropy_lo: seed.rotate_left(23) ^ 0x7175_6573_742d_7631,
                 settlement_id: "test-settlement".into(),
                 settlement_name: "Test Settlement".into(),
                 scope: adventuresim_core::local_problem::Scope::Settlement {
@@ -1192,10 +1194,10 @@ mod healing_tests {
 
         let generated = generated_case(7, TemplateFamily::RecurringDepredation);
         let (hostile_group_id, site_id, _, _) = generated.hostile_groups[0].clone();
-        assert_eq!(
+        assert_ne!(
             hostile_group_id,
             format!("hostile-group:{}", site_id.0),
-            "generated hostile identity must match materialized strategic authority"
+            "observer-facing authority IDs must not embed one another"
         );
         assert!(generated.finales.iter().all(|finale| {
             finale.hostile_group_id.as_deref() == Some(&hostile_group_id)
@@ -1280,6 +1282,32 @@ mod healing_tests {
         ] {
             assert!(!contract.contains(forbidden), "{forbidden} leaked");
         }
+    }
+
+    #[test]
+    fn generated_activity_is_contract_free_and_counted_by_open_case_authority() {
+        let source = include_str!("strategic.rs");
+        let generation = source
+            .split("fn generate_quest_for_settlement")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("generated quest materialization");
+        assert!(!generation.contains("contract_authority().insert"));
+        assert!(!generation.contains("Contract {"));
+        let activity = source
+            .split("fn ensure_settlement_activity_inner")
+            .nth(1)
+            .and_then(|tail| tail.split("fn ensure_npc_recruiting_parties").next())
+            .expect("settlement activity");
+        assert!(activity.contains("active_generated_cases"));
+        assert!(activity.contains("quest_generation_authority()"));
+        assert!(activity.contains("CaseResolutionStatus::Open"));
+        let resolution = source
+            .split("pub(crate) fn ingest_case_outcome_fact")
+            .nth(1)
+            .and_then(|tail| tail.split("fn select_case_finale").next())
+            .expect("case resolution");
+        assert!(resolution.contains("ensure_settlement_activity_inner"));
     }
 
     #[test]
@@ -15023,6 +15051,13 @@ pub(crate) fn ingest_case_outcome_fact(
             party_id,
         )?;
     }
+    if let Some(authority) = ctx.db.quest_generation_authority().case_id().find(&case.id)
+        && let Ok(context) = serde_json::from_str::<
+            adventuresim_core::quest_generation::GenerationContext,
+        >(&authority.context_snapshot_json)
+    {
+        ensure_settlement_activity_inner(ctx, &context.settlement_id)?;
+    }
     Ok(())
 }
 
@@ -16141,7 +16176,7 @@ fn ensure_settlement_activity_inner(
         .iter()
         .filter_map(|party| party.active_contract_id)
         .collect();
-    let active = ctx
+    let active_contracts = ctx
         .db
         .contract_authority()
         .settlement_id()
@@ -16154,6 +16189,24 @@ fn ensure_settlement_activity_inner(
                 && tracked_quests.contains(&quest.id))
         })
         .count();
+    let active_generated_cases = ctx
+        .db
+        .quest_generation_authority()
+        .iter()
+        .filter(|authority| {
+            serde_json::from_str::<adventuresim_core::quest_generation::GenerationContext>(
+                &authority.context_snapshot_json,
+            )
+            .is_ok_and(|context| context.settlement_id == settlement_id)
+                && ctx
+                    .db
+                    .case_authority()
+                    .id()
+                    .find(&authority.case_id)
+                    .is_some_and(|case| case.resolution_status == CaseResolutionStatus::Open)
+        })
+        .count();
+    let active = active_contracts.saturating_add(active_generated_cases);
     for _ in active..settlement_activity_target(settlement_id) {
         generate_quest_for_settlement(ctx, settlement_id)?;
     }
@@ -16365,8 +16418,12 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         })
         .count() as u16;
     let seed = ctx.random::<u64>();
+    let observer_entropy_hi = ctx.random::<u64>();
+    let observer_entropy_lo = ctx.random::<u64>();
     let context = qg::GenerationContext {
         seed,
+        observer_entropy_hi,
+        observer_entropy_lo,
         settlement_id: settlement_id.into(),
         settlement_name: settlement.name.clone(),
         scope: adventuresim_core::local_problem::Scope::Settlement {
@@ -16547,42 +16604,6 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         eligible_path_index: None,
         priority: 1,
         status: FinaleStatus::Available,
-    });
-    let contract = generated
-        .contract
-        .as_ref()
-        .ok_or("Generated case lacks its optional development contract")?;
-    let issuer = ctx
-        .db
-        .settlement_npc()
-        .id()
-        .find(&contract.issuer_npc_id)
-        .ok_or("Generated contract issuer no longer exists")?;
-    ctx.db.contract_authority().insert(Contract {
-        id: format!(
-            "contract:{}",
-            generated.canonical_case_id.trim_start_matches("case:")
-        ),
-        gateway_bucket: 0,
-        case_id: generated.canonical_case_id.clone(),
-        title: contract.issuer_belief_title.clone(),
-        description: contract.issuer_belief_description.clone(),
-        difficulty: 2,
-        gold_reward: contract.reward,
-        xp_reward: 40,
-        settlement_id: settlement_id.into(),
-        service_id: if issuer.service_id.is_empty() {
-            "inn".into()
-        } else {
-            issuer.service_id
-        },
-        issuer_npc_id: contract.issuer_npc_id.clone(),
-        status: ContractStatus::Offered,
-        accepted_by: None,
-        opposition_wording: contract.opposition_wording.clone(),
-        opposition_count_wording: contract.opposition_count_wording.clone(),
-        accepted_at_minute: None,
-        paid_at_minute: None,
     });
     crate::local_problem::materialize_generated_problem(ctx, &generated, settlement_id)?;
     ctx.db

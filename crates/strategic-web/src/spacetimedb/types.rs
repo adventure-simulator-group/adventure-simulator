@@ -1585,6 +1585,13 @@ pub struct TacticalServerRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use adventuresim_core::{
+        local_problem::Scope,
+        quest_generation::{
+            GenerationContext, TemplateFamily, generate, observer_scoped_id, test_witnesses,
+        },
+    };
+    use std::collections::BTreeSet;
 
     #[test]
     fn strategic_statuses_reject_unknown_values() {
@@ -1597,6 +1604,118 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<MissionStatus>("\"Starting\"").unwrap(),
             MissionStatus::Pending
+        );
+    }
+
+    #[test]
+    fn serialized_investigation_dtos_use_independent_opaque_ids() {
+        let context = |entropy: u64, ordinal: u16| GenerationContext {
+            seed: 0x4341_4e4f_4e49_4341,
+            observer_entropy_hi: entropy,
+            observer_entropy_lo: entropy.rotate_left(29) ^ 0x4c2d_5345_4e54_494e,
+            settlement_id: "sentinel-settlement".into(),
+            settlement_name: "Sentinel".into(),
+            scope: Scope::Settlement {
+                settlement_id: "sentinel-settlement".into(),
+            },
+            ordinal,
+            now_minute: 50_000,
+            requested_family: Some(TemplateFamily::RecurringDepredation),
+            witness_candidates: test_witnesses(),
+        };
+        let first_context = context(11, 0);
+        let second_context = context(12, 1);
+        let first = generate(&first_context).unwrap();
+        let second = generate(&second_context).unwrap();
+        let capability_id = observer_scoped_id(
+            &first_context,
+            "capability",
+            &format!("7:{}", first.actions[0].id.0),
+        );
+        let lead_id = observer_scoped_id(&first_context, "lead", "attempt-private-sentinel");
+        let action = BackendInvestigationAction {
+            owner_character_id: 7,
+            action_id: capability_id.clone(),
+            method: "search_area".into(),
+            expected_version: 0,
+            summary: "Search the reported area.".into(),
+            known_prerequisites: "A local account.".into(),
+            duration_min_minutes: 30,
+            duration_max_minutes: 180,
+            uncertainty_bps: 7_000,
+            skill_contributions: "terrain".into(),
+            weather_available: false,
+        };
+        let lead = BackendInvestigationLead {
+            owner_character_id: 7,
+            case_id: first.public_case_id.clone(),
+            lead_id: lead_id.clone(),
+            summary: "A bounded lead.".into(),
+            source_label: "witness".into(),
+            confidence_bps: 5_000,
+            destination_stage: "textual".into(),
+            directions: String::new(),
+            exact_location_id: String::new(),
+            latitude_e7: 0,
+            longitude_e7: 0,
+            witness_name: String::new(),
+            witness_description: String::new(),
+            witness_occupation_or_relationship: String::new(),
+            expected_location: String::new(),
+            current_learned_location: String::new(),
+            contradiction_group: String::new(),
+            corrected_by: String::new(),
+            recorded_at: 50_000,
+        };
+        let proposition_ids = first
+            .evidence
+            .iter()
+            .map(|evidence| evidence.proposition_id.clone())
+            .collect::<Vec<_>>();
+        let witness_ids = first
+            .witnesses
+            .iter()
+            .map(|witness| witness.id.0.clone())
+            .collect::<Vec<_>>();
+        let json = serde_json::to_string(&(
+            &action,
+            &lead,
+            &first.actions,
+            &witness_ids,
+            &proposition_ids,
+        ))
+        .unwrap();
+        assert!(!json.contains(&first.canonical_case_id));
+        assert!(!json.contains("CANONICAL-SENTINEL"));
+        assert!(!json.contains("attempt-private-sentinel"));
+        let first_ids = first
+            .actions
+            .iter()
+            .map(|item| item.id.0.clone())
+            .chain(witness_ids.iter().cloned())
+            .chain(proposition_ids.iter().cloned())
+            .chain([capability_id, lead_id])
+            .collect::<BTreeSet<_>>();
+        let second_ids = second
+            .actions
+            .iter()
+            .map(|item| item.id.0.clone())
+            .chain(second.witnesses.iter().map(|item| item.id.0.clone()))
+            .chain(
+                second
+                    .evidence
+                    .iter()
+                    .map(|item| item.proposition_id.clone()),
+            )
+            .chain([
+                observer_scoped_id(&second_context, "capability", "same-logical-action"),
+                observer_scoped_id(&second_context, "lead", "same-logical-attempt"),
+            ])
+            .collect::<BTreeSet<_>>();
+        assert!(first_ids.is_disjoint(&second_ids));
+        assert_eq!(
+            first_ids.len(),
+            first.actions.len() + witness_ids.len() + proposition_ids.len() + 2
         );
     }
 
