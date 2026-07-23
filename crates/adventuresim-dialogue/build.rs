@@ -78,8 +78,8 @@ enum BuildFragment {
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum BuildEffect {
     LearnTopic { topic: String },
-    AcceptQuest { quest: String },
-    TurnInQuest { quest: String },
+    AcceptContract { contract: String },
+    ReportContract { contract: String },
     BeginApprenticeship { profession: String },
     ExamineDisease,
     SetFlag { flag: String, value: bool },
@@ -133,7 +133,7 @@ fn validate_condition(value: &serde_json::Value, relative: &str) {
                             | "service"
                             | "location"
                             | "time_period"
-                            | "quest_state"
+                            | "contract_state"
                             | "flag"
                     )
                 ) && object.contains_key("equals"),

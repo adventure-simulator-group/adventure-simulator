@@ -25,10 +25,10 @@ use super::{
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    AutoresolveReport, BackendCaseSitePin, BattleLootItem, BattleResult, Character,
-    CharacterAttributes, CharacterLimbs, CharacterStats, CharacterTime, CharacterTrainingSchedule,
-    InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem, PartyStake, Quest,
-    QuestStatus, Settlement,
+    AutoresolveReport, BackendCaseBattle, BackendCaseSitePin, BattleLootItem, BattleResult,
+    Character, CharacterAttributes, CharacterLimbs, CharacterStats, CharacterTime,
+    CharacterTrainingSchedule, ContractPresentation, ContractPresentationStatus,
+    InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem, PartyStake, Settlement,
 };
 use crate::templates::quest::{quest_location_enemy_page, quest_location_map_page};
 
@@ -73,7 +73,7 @@ async fn accept_quest_api(
 ) -> Json<AcceptQuestResponse> {
     let title = state
         .db
-        .query::<Quest>(&format!(
+        .query::<ContractPresentation>(&format!(
             "SELECT * FROM backend_contracts WHERE id = {}",
             sql_string_literal(&id)
         ))
@@ -137,7 +137,7 @@ async fn turn_in_quest_api(
 ) -> Json<TurnInQuestResponse> {
     let reward = state
         .db
-        .query::<Quest>(&format!(
+        .query::<ContractPresentation>(&format!(
             "SELECT * FROM backend_contracts WHERE id = {}",
             sql_string_literal(&id)
         ))
@@ -177,7 +177,7 @@ async fn abandon_quest(
         return Redirect::to("/characters");
     };
 
-    let quests: Vec<Quest> = state
+    let quests: Vec<ContractPresentation> = state
         .db
         .query(&format!(
             "SELECT * FROM backend_contracts WHERE id = {}",
@@ -465,7 +465,7 @@ async fn render_quest_location(
         )
             .into_response();
     };
-    let matching_quests: Vec<Quest> = state
+    let matching_quests: Vec<ContractPresentation> = state
         .db
         .query(&format!(
             "SELECT * FROM backend_contracts WHERE case_id = {}",
@@ -574,23 +574,12 @@ async fn render_quest_location(
         .as_ref()
         .zip(party.as_ref())
         .is_some_and(|(character, party)| party.leader_id == character.id);
-    let results: Vec<BattleResult> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM battle_result WHERE quest_id = {}",
-            sql_string_literal(&quest.id)
-        ))
-        .await
-        .unwrap_or_default();
-    let resolved = party
-        .as_ref()
-        .is_some_and(|party| results.iter().any(|result| result.party_id == party.id));
-    let autoresolve_report = if let Some(party) = party.as_ref() {
+    let case_battle = if let Some(party) = party.as_ref() {
         state
             .db
-            .query::<AutoresolveReport>(&format!(
-                "SELECT * FROM autoresolve_report WHERE quest_id = {} AND party_id = {}",
-                sql_string_literal(&quest.id),
+            .query::<BackendCaseBattle>(&format!(
+                "SELECT * FROM backend_case_battle WHERE case_id = {} AND party_id = {}",
+                sql_string_literal(&quest.case_id),
                 sql_string_literal(&party.id)
             ))
             .await
@@ -600,14 +589,45 @@ async fn render_quest_location(
     } else {
         None
     };
-    let loot: Vec<BattleLootItem> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM battle_loot_item WHERE quest_id = {}",
-            sql_string_literal(&quest.id)
-        ))
-        .await
-        .unwrap_or_default();
+    let results: Vec<BattleResult> = if let Some(case_battle) = case_battle.as_ref() {
+        state
+            .db
+            .query(&format!(
+                "SELECT * FROM battle_result WHERE battle_id = {}",
+                sql_string_literal(&case_battle.battle_id)
+            ))
+            .await
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let resolved = !results.is_empty();
+    let autoresolve_report = if let Some(case_battle) = case_battle.as_ref() {
+        state
+            .db
+            .query::<AutoresolveReport>(&format!(
+                "SELECT * FROM autoresolve_report WHERE battle_id = {}",
+                sql_string_literal(&case_battle.battle_id)
+            ))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+    } else {
+        None
+    };
+    let loot: Vec<BattleLootItem> = if let Some(case_battle) = case_battle.as_ref() {
+        state
+            .db
+            .query(&format!(
+                "SELECT * FROM battle_loot_item WHERE loot_battle_id = {}",
+                sql_string_literal(&case_battle.battle_id)
+            ))
+            .await
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
     let pooled: Vec<PartyInventoryItem> = if let Some(party) = party.as_ref() {
         state
             .db
@@ -718,7 +738,7 @@ async fn render_quest_location(
     let party_ready = party_is_ready(&state, &party_members).await;
     let can_fight = can_control
         && party_ready
-        && quest.status == QuestStatus::Accepted
+        && quest.status == ContractPresentationStatus::Accepted
         && party
             .as_ref()
             .is_some_and(|party| party.active_contract_id.as_deref() == Some(&quest.id));

@@ -33,11 +33,12 @@ use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
 use crate::spacetimedb::{
     Character, CharacterApprenticeship, CharacterAttributes, CharacterCapability,
     CharacterCondition, CharacterEquip, CharacterLimbs, CharacterSkills, CharacterStats,
-    CharacterStrategicCondition, CharacterTrainingSchedule, FoodLot, InventoryItem,
-    InventoryQuantityTarget, ItemDefinition, ItemSlot, JourneyTerrainKind, LimbInjury, LimbRegion,
-    Party, PartyInventoryItem, PartyJourney, PartyJourneyItinerary, PartyJourneyRoute,
-    ProjectileKind, Quest, RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias,
-    SettlementCategory, SettlementDescription, SettlementDescriptionKind, StrategicEncounter,
+    CharacterStrategicCondition, CharacterTrainingSchedule, ContractPresentation, FoodLot,
+    InventoryItem, InventoryQuantityTarget, ItemDefinition, ItemSlot, JourneyTerrainKind,
+    LimbInjury, LimbRegion, Party, PartyInventoryItem, PartyJourney, PartyJourneyItinerary,
+    PartyJourneyRoute, ProjectileKind, RetainedProjectile, ScheduleAllocation, Settlement,
+    SettlementAlias, SettlementCategory, SettlementDescription, SettlementDescriptionKind,
+    StrategicEncounter,
 };
 
 #[derive(Clone, Debug)]
@@ -717,7 +718,7 @@ pub fn settlement_map_page(
     can_travel: bool,
     provision_forecast: Option<&TravelProvisionForecast>,
     is_current_settlement: bool,
-    abandonable_quest: Option<&Quest>,
+    abandonable_quest: Option<&ContractPresentation>,
     logged_in_as: Option<&str>,
 ) -> Markup {
     let selected = selected_id.and_then(|id| destinations.iter().find(|entry| entry.id == id));

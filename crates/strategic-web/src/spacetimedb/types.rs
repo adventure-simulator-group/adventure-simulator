@@ -47,6 +47,14 @@ pub struct BackendInvestigationLead {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BackendCaseBattle {
+    pub case_id: String,
+    pub party_id: String,
+    pub battle_id: String,
+    pub mission_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BackendCaseSitePin {
     pub owner_character_id: u64,
     pub case_id: String,
@@ -335,7 +343,7 @@ pub struct TravelEdge {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Quest {
+pub struct ContractPresentation {
     pub id: String,
     pub case_id: String,
     pub title: String,
@@ -346,25 +354,17 @@ pub struct Quest {
     pub settlement_id: String,
     pub service_id: String,
     pub issuer_npc_id: String,
-    pub status: QuestStatus,
+    pub status: ContractPresentationStatus,
     pub accepted_by: Option<String>,
     pub enemy_type: String,
     pub enemy_count: i32,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum QuestStatus {
-    #[serde(alias = "available", alias = "offered", alias = "Offered")]
-    Available,
-    #[serde(alias = "accepted", alias = "Accepted")]
+pub enum ContractPresentationStatus {
+    Offered,
     Accepted,
-    #[serde(
-        alias = "completed",
-        alias = "readyToReport",
-        alias = "ready_to_report",
-        alias = "ReadyToReport"
-    )]
-    Completed,
+    ReadyToReport,
     Paid,
     Withdrawn,
 }
@@ -1565,10 +1565,11 @@ mod tests {
     #[test]
     fn strategic_statuses_reject_unknown_values() {
         assert_eq!(
-            serde_json::from_str::<QuestStatus>("\"accepted\"").unwrap(),
-            QuestStatus::Accepted
+            serde_json::from_str::<ContractPresentationStatus>("\"Accepted\"").unwrap(),
+            ContractPresentationStatus::Accepted
         );
-        assert!(serde_json::from_str::<QuestStatus>("\"mystery\"").is_err());
+        assert!(serde_json::from_str::<ContractPresentationStatus>("\"accepted\"").is_err());
+        assert!(serde_json::from_str::<ContractPresentationStatus>("\"mystery\"").is_err());
         assert_eq!(
             serde_json::from_str::<MissionStatus>("\"Starting\"").unwrap(),
             MissionStatus::Pending

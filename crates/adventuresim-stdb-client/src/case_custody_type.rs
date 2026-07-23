@@ -2,31 +2,26 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::custody_holder_kind_type::CustodyHolderKind;
+use super::custody_object_kind_type::CustodyObjectKind;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct CaseCustody {
     pub object_id: String,
     pub case_id: String,
-    pub object_kind: String,
-    pub holder_kind: String,
+    pub object_kind: CustodyObjectKind,
+    pub holder_kind: CustodyHolderKind,
     pub holder_id: String,
     pub version: u32,
     pub source_id: String,
 }
 
-
 impl __sdk::InModule for CaseCustody {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `CaseCustody`.
 ///
@@ -34,8 +29,8 @@ impl __sdk::InModule for CaseCustody {
 pub struct CaseCustodyCols {
     pub object_id: __sdk::__query_builder::Col<CaseCustody, String>,
     pub case_id: __sdk::__query_builder::Col<CaseCustody, String>,
-    pub object_kind: __sdk::__query_builder::Col<CaseCustody, String>,
-    pub holder_kind: __sdk::__query_builder::Col<CaseCustody, String>,
+    pub object_kind: __sdk::__query_builder::Col<CaseCustody, CustodyObjectKind>,
+    pub holder_kind: __sdk::__query_builder::Col<CaseCustody, CustodyHolderKind>,
     pub holder_id: __sdk::__query_builder::Col<CaseCustody, String>,
     pub version: __sdk::__query_builder::Col<CaseCustody, u32>,
     pub source_id: __sdk::__query_builder::Col<CaseCustody, String>,
@@ -52,7 +47,6 @@ impl __sdk::__query_builder::HasCols for CaseCustody {
             holder_id: __sdk::__query_builder::Col::new(table_name, "holder_id"),
             version: __sdk::__query_builder::Col::new(table_name, "version"),
             source_id: __sdk::__query_builder::Col::new(table_name, "source_id"),
-
         }
     }
 }
@@ -73,10 +67,8 @@ impl __sdk::__query_builder::HasIxCols for CaseCustody {
             case_id: __sdk::__query_builder::IxCol::new(table_name, "case_id"),
             object_id: __sdk::__query_builder::IxCol::new(table_name, "object_id"),
             source_id: __sdk::__query_builder::IxCol::new(table_name, "source_id"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for CaseCustody {}
-

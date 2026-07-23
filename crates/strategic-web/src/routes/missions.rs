@@ -12,7 +12,7 @@ use serde::Deserialize;
 use super::{AppState, PartyAction, PartyActionOutcome, execute_or_request_party_action};
 use crate::session::Session;
 use crate::spacetimedb::{
-    BackendCaseSitePin, BattleResult, Character, Party, Quest, TacticalServer,
+    BackendCaseSitePin, BattleResult, Character, ContractPresentation, Party, TacticalServer,
     TacticalServerRequest, sql_string_literal,
 };
 use crate::templates::mission::{mission_status_fragment, mission_status_page};
@@ -66,7 +66,7 @@ async fn enter_mission(State(state): State<AppState>, session: Session) -> Redir
     };
     let contract = state
         .db
-        .query_one::<Quest>(&format!(
+        .query_one::<ContractPresentation>(&format!(
             "SELECT * FROM backend_contracts WHERE id = {}",
             sql_string_literal(quest_id)
         ))
