@@ -22,7 +22,7 @@ macro_rules! stable_id {
             pub fn new(value: impl Into<String>) -> Result<Self, ValidationError> {
                 let value = value.into();
                 if value.is_empty()
-                    || value.len() > 96
+                    || value.len() > 256
                     || !value.bytes().all(|b| {
                         b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b':' | b'.')
                     })
@@ -326,13 +326,16 @@ pub struct SharingReceipt {
     pub shared_at: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PipelineInput {
     pub case_id: CaseId,
     pub event_id: EventId,
     pub proposition: AtomicProposition,
     pub observer_ref: String,
     pub speaker_ref: String,
+    /// Stable authority-issued identity for this act of testimony.
+    pub receipt_identity: String,
+    pub recollection_revision: u16,
     pub perceived_text: String,
     pub recalled_text: String,
     pub disclosed_text: Option<String>,
@@ -363,7 +366,12 @@ pub fn process_report(
         TransmissionCondition::Hearsay => 5_000,
     };
     let observation = Observation {
-        id: ObservationId::new(format!("obs:{}", input.proposition.id.as_str()))?,
+        id: ObservationId::new(compound_id(&[
+            "obs",
+            input.event_id.as_str(),
+            &input.observer_ref,
+            input.proposition.id.as_str(),
+        ]))?,
         event_id: input.event_id,
         observer_ref: bounded_text(input.observer_ref)?,
         proposition_id: input.proposition.id.clone(),
@@ -372,7 +380,11 @@ pub fn process_report(
         condition: input.perception,
     };
     let recollection = Recollection {
-        id: RecollectionId::new(format!("memory:{}", input.proposition.id.as_str()))?,
+        id: RecollectionId::new(compound_id(&[
+            "memory",
+            observation.id.as_str(),
+            &input.recollection_revision.to_string(),
+        ]))?,
         observation_id: observation.id.clone(),
         recalled_text: bounded_text(input.recalled_text)?,
         confidence: observation.confidence.scaled(memory_factor),
@@ -385,11 +397,12 @@ pub fn process_report(
         .disclosed_text
         .unwrap_or(input.transmitted_text.clone());
     let claim = Claim {
-        id: ClaimId::new(format!(
-            "claim:{}:{}",
-            input.proposition.id.as_str(),
-            input.received_at
-        ))?,
+        id: ClaimId::new(compound_id(&[
+            "claim",
+            recollection.id.as_str(),
+            &input.speaker_ref,
+            &input.receipt_identity,
+        ]))?,
         case_id: input.case_id,
         proposition_id: input.proposition.id,
         speaker_ref: bounded_text(input.speaker_ref)?,
@@ -405,6 +418,15 @@ pub fn process_report(
         received_at: input.received_at,
     };
     Ok((observation, recollection, Some(claim)))
+}
+
+/// Collision-free printable encoding for caller-influenced compound IDs.
+pub fn compound_id(parts: &[&str]) -> String {
+    parts
+        .iter()
+        .map(|part| format!("{}.{part}", part.len()))
+        .collect::<Vec<_>>()
+        .join(":")
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -493,6 +515,8 @@ mod tests {
             .unwrap(),
             observer_ref: "witness:anna".into(),
             speaker_ref: "witness:anna".into(),
+            receipt_identity: "receipt:anna:1".into(),
+            recollection_revision: 1,
             perceived_text: "a dark upright shape".into(),
             recalled_text: if memory == MemoryCondition::Confused {
                 "a man-shaped animal"
@@ -514,6 +538,60 @@ mod tests {
             received_at: 12,
         })
         .unwrap()
+    }
+
+    #[test]
+    fn two_witnesses_same_proposition_and_minute_have_distinct_stage_ids() {
+        let mut first = pipeline(
+            DisclosureMode::Disclose,
+            PerceptionCondition::Clear,
+            MemoryCondition::Accurate,
+            TransmissionCondition::Clear,
+        );
+        let mut input = PipelineInput {
+            case_id: id(CaseId::new, "case:1"),
+            event_id: id(EventId::new, "event:1"),
+            proposition: AtomicProposition::new(
+                id(PropositionId::new, "prop:shape"),
+                "creature",
+                "shape",
+                "upright",
+            )
+            .unwrap(),
+            observer_ref: "witness:bert".into(),
+            speaker_ref: "witness:bert".into(),
+            receipt_identity: "receipt:bert:1".into(),
+            recollection_revision: 1,
+            perceived_text: "upright".into(),
+            recalled_text: "upright".into(),
+            disclosed_text: None,
+            transmitted_text: "upright".into(),
+            perception: PerceptionCondition::Clear,
+            memory: MemoryCondition::Accurate,
+            disclosure: DisclosureMode::Disclose,
+            transmission: TransmissionCondition::Clear,
+            received_at: 12,
+        };
+        let second = process_report(input.clone()).unwrap();
+        assert_ne!(first.0.id, second.0.id);
+        assert_ne!(first.1.id, second.1.id);
+        assert_ne!(first.2.take().unwrap().id, second.2.unwrap().id);
+        input.observer_ref = "witness:anna".into();
+        input.speaker_ref = "witness:anna".into();
+        input.receipt_identity = "receipt:anna:2".into();
+        assert_ne!(
+            pipeline(
+                DisclosureMode::Disclose,
+                PerceptionCondition::Clear,
+                MemoryCondition::Accurate,
+                TransmissionCondition::Clear
+            )
+            .2
+            .unwrap()
+            .id,
+            process_report(input).unwrap().2.unwrap().id
+        );
+        assert_ne!(compound_id(&["a:b", "c"]), compound_id(&["a", "b:c"]));
     }
 
     #[test]

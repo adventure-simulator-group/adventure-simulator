@@ -23,6 +23,12 @@ and derives an observer-facing case ID from the public problem ID. It never
 projects `opaque_case_ref`, consults the problem cause, or silently grants a
 contact's current location.
 
+Runtime testimony generation persists the full proposition pipeline through a
+gateway-authorized authority staging seam, then issues a private, one-use,
+character-owned safe receipt. The browser never authors or receives the hidden
+pipeline payload. Player actions can only consume an existing matching receipt;
+they cannot submit statement text, confidence, sources, or coordinates.
+
 ## Sharing and navigation
 
 Knowledge belongs to a character. Sharing a selected lead or belief is an

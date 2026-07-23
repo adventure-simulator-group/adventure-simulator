@@ -9,16 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub(super) struct DiscoverInvestigationLeadArgs {
     pub character_id: u64,
     pub action_id: String,
-    pub case_id: String,
-    pub lead_id: String,
-    pub summary: String,
-    pub source_label: String,
-    pub confidence_bps: u16,
-    pub destination_stage: String,
-    pub directions: String,
-    pub exact_location_id: String,
-    pub latitude_e_7: i32,
-    pub longitude_e_7: i32,
+    pub receipt_id: String,
 }
 
 impl From<DiscoverInvestigationLeadArgs> for super::Reducer {
@@ -26,16 +17,7 @@ impl From<DiscoverInvestigationLeadArgs> for super::Reducer {
         Self::DiscoverInvestigationLead {
             character_id: args.character_id,
             action_id: args.action_id,
-            case_id: args.case_id,
-            lead_id: args.lead_id,
-            summary: args.summary,
-            source_label: args.source_label,
-            confidence_bps: args.confidence_bps,
-            destination_stage: args.destination_stage,
-            directions: args.directions,
-            exact_location_id: args.exact_location_id,
-            latitude_e_7: args.latitude_e_7,
-            longitude_e_7: args.longitude_e_7,
+            receipt_id: args.receipt_id,
         }
     }
 }
@@ -59,32 +41,9 @@ pub trait discover_investigation_lead {
         &self,
         character_id: u64,
         action_id: String,
-        case_id: String,
-        lead_id: String,
-        summary: String,
-        source_label: String,
-        confidence_bps: u16,
-        destination_stage: String,
-        directions: String,
-        exact_location_id: String,
-        latitude_e_7: i32,
-        longitude_e_7: i32,
+        receipt_id: String,
     ) -> __sdk::Result<()> {
-        self.discover_investigation_lead_then(
-            character_id,
-            action_id,
-            case_id,
-            lead_id,
-            summary,
-            source_label,
-            confidence_bps,
-            destination_stage,
-            directions,
-            exact_location_id,
-            latitude_e_7,
-            longitude_e_7,
-            |_, _| {},
-        )
+        self.discover_investigation_lead_then(character_id, action_id, receipt_id, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `discover_investigation_lead` to run as soon as possible,
@@ -97,16 +56,7 @@ pub trait discover_investigation_lead {
         &self,
         character_id: u64,
         action_id: String,
-        case_id: String,
-        lead_id: String,
-        summary: String,
-        source_label: String,
-        confidence_bps: u16,
-        destination_stage: String,
-        directions: String,
-        exact_location_id: String,
-        latitude_e_7: i32,
-        longitude_e_7: i32,
+        receipt_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -121,16 +71,7 @@ impl discover_investigation_lead for super::RemoteReducers {
         &self,
         character_id: u64,
         action_id: String,
-        case_id: String,
-        lead_id: String,
-        summary: String,
-        source_label: String,
-        confidence_bps: u16,
-        destination_stage: String,
-        directions: String,
-        exact_location_id: String,
-        latitude_e_7: i32,
-        longitude_e_7: i32,
+        receipt_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -142,16 +83,7 @@ impl discover_investigation_lead for super::RemoteReducers {
             DiscoverInvestigationLeadArgs {
                 character_id,
                 action_id,
-                case_id,
-                lead_id,
-                summary,
-                source_label,
-                confidence_bps,
-                destination_stage,
-                directions,
-                exact_location_id,
-                latitude_e_7,
-                longitude_e_7,
+                receipt_id,
             },
             callback,
         )

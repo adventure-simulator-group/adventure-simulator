@@ -10,7 +10,7 @@ pub struct InvestigationActionReceipt {
     pub id: String,
     pub actor_id: u64,
     pub action_kind: String,
-    pub payload_fingerprint: String,
+    pub canonical_payload: String,
     pub applied_at: u64,
 }
 
@@ -25,7 +25,7 @@ pub struct InvestigationActionReceiptCols {
     pub id: __sdk::__query_builder::Col<InvestigationActionReceipt, String>,
     pub actor_id: __sdk::__query_builder::Col<InvestigationActionReceipt, u64>,
     pub action_kind: __sdk::__query_builder::Col<InvestigationActionReceipt, String>,
-    pub payload_fingerprint: __sdk::__query_builder::Col<InvestigationActionReceipt, String>,
+    pub canonical_payload: __sdk::__query_builder::Col<InvestigationActionReceipt, String>,
     pub applied_at: __sdk::__query_builder::Col<InvestigationActionReceipt, u64>,
 }
 
@@ -36,10 +36,7 @@ impl __sdk::__query_builder::HasCols for InvestigationActionReceipt {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             actor_id: __sdk::__query_builder::Col::new(table_name, "actor_id"),
             action_kind: __sdk::__query_builder::Col::new(table_name, "action_kind"),
-            payload_fingerprint: __sdk::__query_builder::Col::new(
-                table_name,
-                "payload_fingerprint",
-            ),
+            canonical_payload: __sdk::__query_builder::Col::new(table_name, "canonical_payload"),
             applied_at: __sdk::__query_builder::Col::new(table_name, "applied_at"),
         }
     }

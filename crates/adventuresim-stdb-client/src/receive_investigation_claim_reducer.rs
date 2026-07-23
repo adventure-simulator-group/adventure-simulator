@@ -9,12 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub(super) struct ReceiveInvestigationClaimArgs {
     pub character_id: u64,
     pub action_id: String,
-    pub case_id: String,
-    pub claim_id: String,
-    pub proposition_id: String,
-    pub statement: String,
-    pub source_label: String,
-    pub confidence_bps: u16,
+    pub receipt_id: String,
 }
 
 impl From<ReceiveInvestigationClaimArgs> for super::Reducer {
@@ -22,12 +17,7 @@ impl From<ReceiveInvestigationClaimArgs> for super::Reducer {
         Self::ReceiveInvestigationClaim {
             character_id: args.character_id,
             action_id: args.action_id,
-            case_id: args.case_id,
-            claim_id: args.claim_id,
-            proposition_id: args.proposition_id,
-            statement: args.statement,
-            source_label: args.source_label,
-            confidence_bps: args.confidence_bps,
+            receipt_id: args.receipt_id,
         }
     }
 }
@@ -51,24 +41,9 @@ pub trait receive_investigation_claim {
         &self,
         character_id: u64,
         action_id: String,
-        case_id: String,
-        claim_id: String,
-        proposition_id: String,
-        statement: String,
-        source_label: String,
-        confidence_bps: u16,
+        receipt_id: String,
     ) -> __sdk::Result<()> {
-        self.receive_investigation_claim_then(
-            character_id,
-            action_id,
-            case_id,
-            claim_id,
-            proposition_id,
-            statement,
-            source_label,
-            confidence_bps,
-            |_, _| {},
-        )
+        self.receive_investigation_claim_then(character_id, action_id, receipt_id, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `receive_investigation_claim` to run as soon as possible,
@@ -81,12 +56,7 @@ pub trait receive_investigation_claim {
         &self,
         character_id: u64,
         action_id: String,
-        case_id: String,
-        claim_id: String,
-        proposition_id: String,
-        statement: String,
-        source_label: String,
-        confidence_bps: u16,
+        receipt_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -101,12 +71,7 @@ impl receive_investigation_claim for super::RemoteReducers {
         &self,
         character_id: u64,
         action_id: String,
-        case_id: String,
-        claim_id: String,
-        proposition_id: String,
-        statement: String,
-        source_label: String,
-        confidence_bps: u16,
+        receipt_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -118,12 +83,7 @@ impl receive_investigation_claim for super::RemoteReducers {
             ReceiveInvestigationClaimArgs {
                 character_id,
                 action_id,
-                case_id,
-                claim_id,
-                proposition_id,
-                statement,
-                source_label,
-                confidence_bps,
+                receipt_id,
             },
             callback,
         )
