@@ -84,7 +84,8 @@ SpacetimeDB stores dialogue sessions, named participants, attributed events,
 open prompts, idempotent action receipts, per-character answers, and
 per-character topic knowledge. All raw dialogue rows are private; fail-closed
 gateway views are the only subscription surface, and the trusted web process
-additionally filters them to the selected character. The authored
+additionally filters them to the selected character. Each player participant
+receives a projection row; nonparticipants receive none. The authored
 condition/effect catalog is never sent to browsers. Reducers verify gateway
 authority, same-party membership, shared settlement, role cardinality, catalog
 and session revisions, topic eligibility, and stable choice IDs. Every NPC role
