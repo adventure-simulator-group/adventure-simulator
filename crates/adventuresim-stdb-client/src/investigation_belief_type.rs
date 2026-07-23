@@ -14,6 +14,7 @@ pub struct InvestigationBelief {
     pub current_revision_id: String,
     pub statement: String,
     pub confidence_bps: u16,
+    pub conflict_group: String,
 }
 
 impl __sdk::InModule for InvestigationBelief {
@@ -31,6 +32,7 @@ pub struct InvestigationBeliefCols {
     pub current_revision_id: __sdk::__query_builder::Col<InvestigationBelief, String>,
     pub statement: __sdk::__query_builder::Col<InvestigationBelief, String>,
     pub confidence_bps: __sdk::__query_builder::Col<InvestigationBelief, u16>,
+    pub conflict_group: __sdk::__query_builder::Col<InvestigationBelief, String>,
 }
 
 impl __sdk::__query_builder::HasCols for InvestigationBelief {
@@ -47,6 +49,7 @@ impl __sdk::__query_builder::HasCols for InvestigationBelief {
             ),
             statement: __sdk::__query_builder::Col::new(table_name, "statement"),
             confidence_bps: __sdk::__query_builder::Col::new(table_name, "confidence_bps"),
+            conflict_group: __sdk::__query_builder::Col::new(table_name, "conflict_group"),
         }
     }
 }

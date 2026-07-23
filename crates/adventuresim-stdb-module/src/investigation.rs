@@ -7,6 +7,7 @@ use crate::{
     strategic::{require_strategic_gateway, strategic_gateway_authority__view},
     time::world_clock,
 };
+use adventuresim_core::investigation as inv;
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
 const MAX_TEXT: usize = 512;
@@ -68,6 +69,9 @@ pub struct InvestigationClaim {
     pub disclosure_stage: String,
     pub transmission_stage: String,
     pub received_at: u64,
+    pub public_case_id: String,
+    pub safe_source_label: String,
+    pub conflict_group: String,
 }
 
 #[derive(Clone, Debug)]
@@ -95,6 +99,7 @@ pub struct InvestigationBelief {
     pub current_revision_id: String,
     pub statement: String,
     pub confidence_bps: u16,
+    pub conflict_group: String,
 }
 
 #[derive(Clone, Debug)]
@@ -160,8 +165,47 @@ pub struct InvestigationActionReceipt {
     pub id: String,
     pub actor_id: u64,
     pub action_kind: String,
-    pub payload_fingerprint: String,
+    pub canonical_payload: String,
     pub applied_at: u64,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = investigation_safe_claim_receipt)]
+pub struct InvestigationSafeClaimReceipt {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub owner_character_id: u64,
+    pub claim_id: String,
+    pub public_case_id: String,
+    pub proposition_id: String,
+    pub statement: String,
+    pub safe_source_label: String,
+    pub confidence_bps: u16,
+    pub conflict_group: String,
+    pub correction_of_belief_id: String,
+    pub consumed_by: String,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = investigation_safe_lead_receipt)]
+pub struct InvestigationSafeLeadReceipt {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub owner_character_id: u64,
+    pub public_case_id: String,
+    pub summary: String,
+    pub safe_source_label: String,
+    pub confidence_bps: u16,
+    pub destination_stage: String,
+    pub directions: String,
+    pub exact_location_id: String,
+    pub latitude_e7: i32,
+    pub longitude_e7: i32,
+    pub conflict_group: String,
+    pub correction_of_lead_id: String,
+    pub consumed_by: String,
 }
 
 /// Sanitized journal row. It contains no hidden threat, sincerity, coordinates
@@ -223,23 +267,24 @@ pub fn backend_investigation_journal(ctx: &ViewContext) -> Vec<BackendInvestigat
             .investigation_belief_revision()
             .owner_character_id()
             .filter(0u64..)
-            .map(|r| BackendInvestigationJournalEntry {
-                owner_character_id: r.owner_character_id,
-                case_id: ctx
-                    .db
-                    .investigation_belief()
-                    .id()
-                    .find(&r.belief_id)
-                    .map_or_else(String::new, |b| b.case_id),
-                record_id: r.id,
-                kind: "belief_revision".into(),
-                summary: r.statement,
-                source_label: r.provenance_label,
-                confidence_bps: r.confidence_bps,
-                contradiction_group: String::new(),
-                corrected_by: String::new(),
-                supersedes: r.supersedes,
-                recorded_at: r.recorded_at,
+            .filter_map(|r| {
+                let belief = ctx.db.investigation_belief().id().find(&r.belief_id)?;
+                if belief.owner_character_id != r.owner_character_id {
+                    return None;
+                }
+                Some(BackendInvestigationJournalEntry {
+                    owner_character_id: r.owner_character_id,
+                    case_id: belief.case_id,
+                    record_id: r.id,
+                    kind: "belief_revision".into(),
+                    summary: r.statement,
+                    source_label: r.provenance_label,
+                    confidence_bps: r.confidence_bps,
+                    contradiction_group: belief.conflict_group,
+                    corrected_by: String::new(),
+                    supersedes: r.supersedes,
+                    recorded_at: r.recorded_at,
+                })
             }),
     );
     rows.sort_by_key(|row| {
@@ -313,6 +358,20 @@ fn bps(value: u16) -> Result<(), String> {
         .then_some(())
         .ok_or_else(|| "Confidence must be at most 10000 basis points".into())
 }
+fn validate_destination(stage: &str, id: &str, lat: i32, lon: i32) -> Result<(), String> {
+    let exact = matches!(stage, "exact_believed" | "visited");
+    if exact
+        && (id.is_empty()
+            || !(-900_000_000..=900_000_000).contains(&lat)
+            || !(-1_800_000_000..=1_800_000_000).contains(&lon))
+    {
+        return Err("Exact destination requires an id and valid E7 coordinates".into());
+    }
+    if !exact && (!id.is_empty() || lat != 0 || lon != 0) {
+        return Err("Non-exact destination knowledge may not carry a pin".into());
+    }
+    Ok(())
+}
 fn official_minute(ctx: &ReducerContext) -> u64 {
     ctx.db
         .world_clock()
@@ -333,13 +392,13 @@ fn require_actor(ctx: &ReducerContext, actor_id: u64) -> Result<crate::Character
     }
     Ok(actor)
 }
-fn fingerprint(parts: &[&str]) -> String {
-    let mut state = 0xcbf29ce484222325_u64;
-    for byte in parts.iter().flat_map(|part| part.bytes().chain([0])) {
-        state ^= u64::from(byte);
-        state = state.wrapping_mul(0x100000001b3);
+fn canonical_payload(parts: &[&str]) -> Result<String, String> {
+    let payload = inv::compound_id(parts);
+    if payload.len() > 4_096 {
+        Err("Canonical investigation payload is too large".into())
+    } else {
+        Ok(payload)
     }
-    format!("{state:016x}")
 }
 fn idempotent(
     ctx: &ReducerContext,
@@ -357,7 +416,7 @@ fn idempotent(
     {
         if existing.actor_id != actor_id
             || existing.action_kind != kind
-            || existing.payload_fingerprint != payload
+            || existing.canonical_payload != payload
         {
             return Err("Investigation action id was reused with a different payload".into());
         }
@@ -378,7 +437,7 @@ fn record_action(
             id: action_id,
             actor_id,
             action_kind: kind.into(),
-            payload_fingerprint: payload,
+            canonical_payload: payload,
             applied_at: official_minute(ctx),
         });
 }
@@ -394,7 +453,7 @@ pub fn receive_local_problem_rumor(
 ) -> Result<(), String> {
     require_actor(ctx, character_id)?;
     bounded(&receipt_id)?;
-    let payload = fingerprint(&[&receipt_id]);
+    let payload = canonical_payload(&[&receipt_id])?;
     if idempotent(ctx, &action_id, character_id, "receive_rumor", &payload)? {
         return Ok(());
     }
@@ -416,8 +475,8 @@ pub fn receive_local_problem_rumor(
     });
     // Never expose the private opaque case seam. This observer-facing stable ID
     // derives only from the already-public problem identifier.
-    let case_id = format!("case:problem:{}", receipt.problem_id);
-    let lead_id = format!("lead:rumor:{}", receipt.id);
+    let case_id = inv::compound_id(&["case", "problem", &receipt.problem_id]);
+    let lead_id = inv::compound_id(&["lead", "rumor", &receipt.id]);
     if ctx.db.investigation_lead().id().find(&lead_id).is_none() {
         ctx.db.investigation_lead().insert(InvestigationLead {
             id: lead_id,
@@ -453,43 +512,211 @@ pub fn receive_local_problem_rumor(
     Ok(())
 }
 
+/// Trusted authority seam for #184/generation. `pipeline_json` is private
+/// server-authored material and must never originate in or be projected to a
+/// browser; only the registered SSR gateway can invoke this temporary seam.
+#[reducer]
+pub fn stage_investigation_claim(
+    ctx: &ReducerContext,
+    character_id: u64,
+    receipt_id: String,
+    pipeline_json: String,
+    public_case_id: String,
+    safe_source_label: String,
+    conflict_group: String,
+    correction_of_belief_id: String,
+) -> Result<(), String> {
+    require_actor(ctx, character_id)?;
+    for value in [&receipt_id, &public_case_id, &safe_source_label] {
+        bounded(value)?;
+    }
+    bounded_optional(&conflict_group)?;
+    bounded_optional(&correction_of_belief_id)?;
+    if pipeline_json.len() > 8_192 {
+        return Err("Pipeline payload is too large".into());
+    }
+    let pipeline: inv::PipelineInput =
+        serde_json::from_str(&pipeline_json).map_err(|_| "Invalid investigation pipeline")?;
+    let proposition = pipeline.proposition.clone();
+    let public_claim_id = pipeline.receipt_identity.clone();
+    let (observation, recollection, claim) =
+        inv::process_report(pipeline).map_err(|_| "Invalid investigation pipeline")?;
+    let claim = claim.ok_or("An omitted proposition cannot create a receivable claim")?;
+    if ctx
+        .db
+        .investigation_safe_claim_receipt()
+        .id()
+        .find(&receipt_id)
+        .is_some()
+    {
+        return Err("Safe claim receipt already exists".into());
+    }
+    let event_id = observation.event_id.as_str().to_string();
+    let event_payload = serde_json::to_string(&proposition).map_err(|e| e.to_string())?;
+    if let Some(existing) = ctx.db.investigation_event_authority().id().find(&event_id) {
+        if existing.case_id != claim.case_id.as_str()
+            || existing.canonical_propositions_json != event_payload
+        {
+            return Err("Event id does not match its existing authority payload".into());
+        }
+    } else {
+        ctx.db
+            .investigation_event_authority()
+            .insert(InvestigationEventAuthority {
+                id: event_id,
+                case_id: claim.case_id.as_str().into(),
+                canonical_propositions_json: event_payload,
+                occurred_at: claim.received_at,
+            });
+    }
+    let observation_row = InvestigationObservation {
+        id: observation.id.as_str().into(),
+        event_id: observation.event_id.as_str().into(),
+        observer_ref: observation.observer_ref.clone(),
+        proposition_id: observation.proposition_id.as_str().into(),
+        stage_json: serde_json::to_string(&observation).map_err(|e| e.to_string())?,
+    };
+    if let Some(existing) = ctx
+        .db
+        .investigation_observation()
+        .id()
+        .find(&observation_row.id)
+    {
+        if existing.event_id != observation_row.event_id
+            || existing.observer_ref != observation_row.observer_ref
+            || existing.proposition_id != observation_row.proposition_id
+            || existing.stage_json != observation_row.stage_json
+        {
+            return Err("Observation id does not match existing authority".into());
+        }
+    } else {
+        ctx.db.investigation_observation().insert(observation_row);
+    }
+    let recollection_row = InvestigationRecollection {
+        id: recollection.id.as_str().into(),
+        observation_id: recollection.observation_id.as_str().into(),
+        witness_ref: claim.speaker_ref.clone(),
+        proposition_id: claim.proposition_id.as_str().into(),
+        stage_json: serde_json::to_string(&recollection).map_err(|e| e.to_string())?,
+    };
+    if let Some(existing) = ctx
+        .db
+        .investigation_recollection()
+        .id()
+        .find(&recollection_row.id)
+    {
+        if existing.observation_id != recollection_row.observation_id
+            || existing.witness_ref != recollection_row.witness_ref
+            || existing.proposition_id != recollection_row.proposition_id
+            || existing.stage_json != recollection_row.stage_json
+        {
+            return Err("Recollection id does not match existing authority".into());
+        }
+    } else {
+        ctx.db.investigation_recollection().insert(recollection_row);
+    }
+    let claim_row = InvestigationClaim {
+        id: claim.id.as_str().into(),
+        case_id: claim.case_id.as_str().into(),
+        proposition_id: claim.proposition_id.as_str().into(),
+        hidden_speaker_ref: claim.speaker_ref,
+        statement: claim.statement.clone(),
+        confidence_bps: claim.confidence.get(),
+        disclosure_stage: format!("{:?}", claim.disclosure),
+        transmission_stage: format!("{:?}", claim.transmission),
+        received_at: claim.received_at,
+        public_case_id: public_case_id.clone(),
+        safe_source_label: safe_source_label.clone(),
+        conflict_group: conflict_group.clone(),
+    };
+    if let Some(existing) = ctx.db.investigation_claim().id().find(&claim_row.id) {
+        if existing.case_id != claim_row.case_id
+            || existing.proposition_id != claim_row.proposition_id
+            || existing.statement != claim_row.statement
+            || existing.public_case_id != claim_row.public_case_id
+        {
+            return Err("Claim id does not match existing authority".into());
+        }
+    } else {
+        ctx.db.investigation_claim().insert(claim_row);
+    }
+    ctx.db
+        .investigation_safe_claim_receipt()
+        .insert(InvestigationSafeClaimReceipt {
+            id: receipt_id,
+            owner_character_id: character_id,
+            claim_id: claim.id.as_str().into(),
+            public_case_id,
+            proposition_id: claim.proposition_id.as_str().into(),
+            statement: claim.statement,
+            safe_source_label,
+            confidence_bps: claim.confidence.get(),
+            conflict_group,
+            correction_of_belief_id,
+            consumed_by: String::new(),
+        });
+    let _ = public_claim_id;
+    Ok(())
+}
+
 #[reducer]
 pub fn receive_investigation_claim(
     ctx: &ReducerContext,
     character_id: u64,
     action_id: String,
-    case_id: String,
-    claim_id: String,
-    proposition_id: String,
-    statement: String,
-    source_label: String,
-    confidence_bps: u16,
+    receipt_id: String,
 ) -> Result<(), String> {
     require_actor(ctx, character_id)?;
-    for value in [
-        &case_id,
-        &claim_id,
-        &proposition_id,
-        &statement,
-        &source_label,
-    ] {
-        bounded(value)?;
-    }
-    bps(confidence_bps)?;
-    let payload = fingerprint(&[
-        &case_id,
-        &claim_id,
-        &proposition_id,
-        &statement,
-        &source_label,
-        &confidence_bps.to_string(),
-    ]);
+    bounded(&receipt_id)?;
+    let payload = canonical_payload(&[&receipt_id])?;
     if idempotent(ctx, &action_id, character_id, "receive_claim", &payload)? {
         return Ok(());
     }
-    let belief_id = format!("belief:{character_id}:{case_id}:{proposition_id}");
+    let mut receipt = ctx
+        .db
+        .investigation_safe_claim_receipt()
+        .id()
+        .find(&receipt_id)
+        .ok_or("Safe claim receipt not found")?;
+    if receipt.owner_character_id != character_id || !receipt.consumed_by.is_empty() {
+        return Err("Safe claim receipt is stale or belongs to another observer".into());
+    }
+    let authority = ctx
+        .db
+        .investigation_claim()
+        .id()
+        .find(&receipt.claim_id)
+        .ok_or("Claim authority missing")?;
+    if authority.public_case_id != receipt.public_case_id
+        || authority.proposition_id != receipt.proposition_id
+        || authority.statement != receipt.statement
+        || authority.safe_source_label != receipt.safe_source_label
+        || authority.confidence_bps != receipt.confidence_bps
+    {
+        return Err("Safe claim receipt no longer matches authority".into());
+    }
+    let previous = if receipt.correction_of_belief_id.is_empty() {
+        None
+    } else {
+        let belief = ctx
+            .db
+            .investigation_belief()
+            .id()
+            .find(&receipt.correction_of_belief_id)
+            .ok_or("Correction target belief not found")?;
+        if belief.owner_character_id != character_id
+            || belief.case_id != receipt.public_case_id
+            || belief.proposition_id != receipt.proposition_id
+        {
+            return Err("Correction target does not match observer and proposition".into());
+        }
+        Some(belief)
+    };
+    let belief_id = previous.as_ref().map_or_else(
+        || inv::compound_id(&["belief", &character_id.to_string(), &receipt.claim_id]),
+        |belief| belief.id.clone(),
+    );
     let now = official_minute(ctx);
-    let previous = ctx.db.investigation_belief().id().find(&belief_id);
     let revision = previous.as_ref().map_or(1, |_| {
         ctx.db
             .investigation_belief_revision()
@@ -499,7 +726,7 @@ pub fn receive_investigation_claim(
             .count()
             .saturating_add(1) as u16
     });
-    let revision_id = format!("revision:{belief_id}:{revision}");
+    let revision_id = inv::compound_id(&["revision", &belief_id, &revision.to_string()]);
     ctx.db
         .investigation_belief_revision()
         .insert(InvestigationBeliefRevision {
@@ -507,10 +734,10 @@ pub fn receive_investigation_claim(
             owner_character_id: character_id,
             belief_id: belief_id.clone(),
             revision,
-            statement: statement.clone(),
-            confidence_bps,
+            statement: receipt.statement.clone(),
+            confidence_bps: receipt.confidence_bps,
             provenance_kind: "received_claim".into(),
-            provenance_label: source_label,
+            provenance_label: receipt.safe_source_label.clone(),
             supersedes: previous
                 .as_ref()
                 .map_or_else(String::new, |b| b.current_revision_id.clone()),
@@ -519,43 +746,50 @@ pub fn receive_investigation_claim(
     let belief = InvestigationBelief {
         id: belief_id.clone(),
         owner_character_id: character_id,
-        case_id,
-        proposition_id,
+        case_id: receipt.public_case_id.clone(),
+        proposition_id: receipt.proposition_id.clone(),
         current_revision_id: revision_id,
-        statement,
-        confidence_bps,
+        statement: receipt.statement.clone(),
+        confidence_bps: receipt.confidence_bps,
+        conflict_group: receipt.conflict_group.clone(),
     };
     if previous.is_some() {
         ctx.db.investigation_belief().id().update(belief);
     } else {
         ctx.db.investigation_belief().insert(belief);
     }
+    receipt.consumed_by = action_id.clone();
+    ctx.db
+        .investigation_safe_claim_receipt()
+        .id()
+        .update(receipt);
     record_action(ctx, action_id, character_id, "receive_claim", payload);
     Ok(())
 }
 
 #[reducer]
-pub fn discover_investigation_lead(
+pub fn stage_investigation_lead(
     ctx: &ReducerContext,
     character_id: u64,
-    action_id: String,
-    case_id: String,
-    lead_id: String,
+    receipt_id: String,
+    public_case_id: String,
     summary: String,
-    source_label: String,
+    safe_source_label: String,
     confidence_bps: u16,
     destination_stage: String,
     directions: String,
     exact_location_id: String,
     latitude_e7: i32,
     longitude_e7: i32,
+    conflict_group: String,
+    correction_of_lead_id: String,
 ) -> Result<(), String> {
     require_actor(ctx, character_id)?;
     for value in [
-        &case_id,
-        &lead_id,
+        &receipt_id,
+        &public_case_id,
         &summary,
-        &source_label,
+        &safe_source_label,
         &destination_stage,
     ] {
         bounded(value)?;
@@ -563,6 +797,8 @@ pub fn discover_investigation_lead(
     bps(confidence_bps)?;
     bounded_optional(&directions)?;
     bounded_optional(&exact_location_id)?;
+    bounded_optional(&conflict_group)?;
+    bounded_optional(&correction_of_lead_id)?;
     if !matches!(
         destination_stage.as_str(),
         "unknown"
@@ -575,48 +811,104 @@ pub fn discover_investigation_lead(
     ) {
         return Err("Unknown destination knowledge stage".into());
     }
-    let exact = matches!(destination_stage.as_str(), "exact_believed" | "visited");
-    if !exact && (!exact_location_id.is_empty() || latitude_e7 != 0 || longitude_e7 != 0) {
-        return Err("Non-exact destination knowledge may not carry a pin".into());
-    }
-    let payload = fingerprint(&[
-        &case_id,
-        &lead_id,
-        &summary,
-        &source_label,
+    validate_destination(
         &destination_stage,
-        &directions,
         &exact_location_id,
-        &latitude_e7.to_string(),
-        &longitude_e7.to_string(),
-    ]);
+        latitude_e7,
+        longitude_e7,
+    )?;
+    if ctx
+        .db
+        .investigation_safe_lead_receipt()
+        .id()
+        .find(&receipt_id)
+        .is_some()
+    {
+        return Err("Safe lead receipt already exists".into());
+    }
+    ctx.db
+        .investigation_safe_lead_receipt()
+        .insert(InvestigationSafeLeadReceipt {
+            id: receipt_id,
+            owner_character_id: character_id,
+            public_case_id,
+            summary,
+            safe_source_label,
+            confidence_bps,
+            destination_stage,
+            directions,
+            exact_location_id,
+            latitude_e7,
+            longitude_e7,
+            conflict_group,
+            correction_of_lead_id,
+            consumed_by: String::new(),
+        });
+    Ok(())
+}
+
+#[reducer]
+pub fn discover_investigation_lead(
+    ctx: &ReducerContext,
+    character_id: u64,
+    action_id: String,
+    receipt_id: String,
+) -> Result<(), String> {
+    require_actor(ctx, character_id)?;
+    bounded(&receipt_id)?;
+    let payload = canonical_payload(&[&receipt_id])?;
     if idempotent(ctx, &action_id, character_id, "discover_lead", &payload)? {
         return Ok(());
     }
-    if ctx.db.investigation_lead().id().find(&lead_id).is_some() {
-        return Err("Lead id already exists".into());
+    let mut receipt = ctx
+        .db
+        .investigation_safe_lead_receipt()
+        .id()
+        .find(&receipt_id)
+        .ok_or("Safe lead receipt not found")?;
+    if receipt.owner_character_id != character_id || !receipt.consumed_by.is_empty() {
+        return Err("Safe lead receipt is stale or belongs to another observer".into());
+    }
+    let lead_id = inv::compound_id(&["lead", &character_id.to_string(), &receipt_id]);
+    if !receipt.correction_of_lead_id.is_empty() {
+        let mut prior = ctx
+            .db
+            .investigation_lead()
+            .id()
+            .find(&receipt.correction_of_lead_id)
+            .ok_or("Correction target lead not found")?;
+        if prior.owner_character_id != character_id || prior.case_id != receipt.public_case_id {
+            return Err("Correction target does not match observer and case".into());
+        }
+        prior.corrected_by = lead_id.clone();
+        ctx.db.investigation_lead().id().update(prior);
     }
     ctx.db.investigation_lead().insert(InvestigationLead {
         id: lead_id,
         owner_character_id: character_id,
-        case_id,
-        summary,
-        source_label,
-        confidence_bps,
-        destination_stage,
-        directions,
-        exact_location_id,
-        latitude_e7,
-        longitude_e7,
+        case_id: receipt.public_case_id.clone(),
+        summary: receipt.summary.clone(),
+        source_label: receipt.safe_source_label.clone(),
+        confidence_bps: receipt.confidence_bps,
+        destination_stage: receipt.destination_stage.clone(),
+        directions: receipt.directions.clone(),
+        exact_location_id: receipt.exact_location_id.clone(),
+        latitude_e7: receipt.latitude_e7,
+        longitude_e7: receipt.longitude_e7,
         witness_name: String::new(),
         witness_description: String::new(),
         witness_occupation_or_relationship: String::new(),
         expected_location: String::new(),
         current_learned_location: String::new(),
-        contradiction_group: String::new(),
+        contradiction_group: receipt.conflict_group.clone(),
         corrected_by: String::new(),
         recorded_at: official_minute(ctx),
     });
+    receipt.consumed_by = action_id.clone();
+    ctx.db
+        .investigation_safe_lead_receipt()
+        .id()
+        .update(receipt);
     record_action(ctx, action_id, character_id, "discover_lead", payload);
     Ok(())
 }
@@ -637,6 +929,7 @@ pub fn share_investigation_lead(
     action_id: String,
 ) -> Result<(), String> {
     let sender = require_actor(ctx, sender_id)?;
+    bounded(&source_lead_id)?;
     let recipient = ctx
         .db
         .character()
@@ -659,17 +952,48 @@ pub fn share_investigation_lead(
     if source.owner_character_id != sender_id {
         return Err("Cannot share another observer's lead".into());
     }
-    let payload = fingerprint(&[
+    let payload = canonical_payload(&[
         &recipient_id.to_string(),
         &source_lead_id,
         &source.summary,
+        &source.source_label,
+        &source.confidence_bps.to_string(),
         &source.destination_stage,
-    ]);
+        &source.directions,
+        &source.exact_location_id,
+        &source.latitude_e7.to_string(),
+        &source.longitude_e7.to_string(),
+        &source.witness_name,
+        &source.witness_description,
+        &source.witness_occupation_or_relationship,
+        &source.expected_location,
+        &source.current_learned_location,
+        &source.contradiction_group,
+        &source.corrected_by,
+    ])?;
     if idempotent(ctx, &action_id, sender_id, "share_lead", &payload)? {
         return Ok(());
     }
-    let receipt_id = format!("share:{sender_id}:{recipient_id}:{action_id}");
-    let copy_id = format!("shared:{recipient_id}:{source_lead_id}:{action_id}");
+    let receipt_id = inv::compound_id(&[
+        "share-lead",
+        &sender_id.to_string(),
+        &recipient_id.to_string(),
+        &source_lead_id,
+        &payload,
+    ]);
+    if let Some(existing) = ctx
+        .db
+        .investigation_sharing_receipt()
+        .id()
+        .find(&receipt_id)
+    {
+        if existing.payload_fingerprint != payload {
+            return Err("Semantic share receipt payload mismatch".into());
+        }
+        record_action(ctx, action_id, sender_id, "share_lead", payload);
+        return Ok(());
+    }
+    let copy_id = inv::compound_id(&["shared-lead", &recipient_id.to_string(), &receipt_id]);
     ctx.db.investigation_lead().insert(InvestigationLead {
         id: copy_id,
         owner_character_id: recipient_id,
@@ -699,6 +1023,7 @@ pub fn share_investigation_belief(
     action_id: String,
 ) -> Result<(), String> {
     let sender = require_actor(ctx, sender_id)?;
+    bounded(&source_belief_id)?;
     let recipient = ctx
         .db
         .character()
@@ -721,19 +1046,24 @@ pub fn share_investigation_belief(
     if source.owner_character_id != sender_id {
         return Err("Cannot share another observer's belief".into());
     }
-    let payload = fingerprint(&[
+    let payload = canonical_payload(&[
         &recipient_id.to_string(),
         &source_belief_id,
+        &source.current_revision_id,
+        &source.case_id,
+        &source.proposition_id,
         &source.statement,
         &source.confidence_bps.to_string(),
-    ]);
+    ])?;
     if idempotent(ctx, &action_id, sender_id, "share_belief", &payload)? {
         return Ok(());
     }
-    let recipient_belief_id = format!(
-        "belief:{recipient_id}:{}:{}",
-        source.case_id, source.proposition_id
-    );
+    let recipient_belief_id = inv::compound_id(&[
+        "belief",
+        &recipient_id.to_string(),
+        &source_belief_id,
+        &source.current_revision_id,
+    ]);
     let existing = ctx
         .db
         .investigation_belief()
@@ -748,7 +1078,27 @@ pub fn share_investigation_belief(
             .count()
             .saturating_add(1) as u16
     });
-    let revision_id = format!("revision:{recipient_belief_id}:{revision}");
+    let revision_id = inv::compound_id(&["revision", &recipient_belief_id, &revision.to_string()]);
+    let receipt_id = inv::compound_id(&[
+        "share-belief",
+        &sender_id.to_string(),
+        &recipient_id.to_string(),
+        &source_belief_id,
+        &source.current_revision_id,
+        &payload,
+    ]);
+    if let Some(existing_share) = ctx
+        .db
+        .investigation_sharing_receipt()
+        .id()
+        .find(&receipt_id)
+    {
+        if existing_share.payload_fingerprint != payload {
+            return Err("Semantic share receipt payload mismatch".into());
+        }
+        record_action(ctx, action_id, sender_id, "share_belief", payload);
+        return Ok(());
+    }
     ctx.db
         .investigation_belief_revision()
         .insert(InvestigationBeliefRevision {
@@ -773,6 +1123,7 @@ pub fn share_investigation_belief(
         current_revision_id: revision_id,
         statement: source.statement,
         confidence_bps: source.confidence_bps,
+        conflict_group: source.conflict_group,
     };
     if existing.is_some() {
         ctx.db.investigation_belief().id().update(copy);
@@ -782,7 +1133,7 @@ pub fn share_investigation_belief(
     ctx.db
         .investigation_sharing_receipt()
         .insert(InvestigationSharingReceipt {
-            id: format!("share:{sender_id}:{recipient_id}:{action_id}"),
+            id: receipt_id,
             sender_id,
             recipient_id,
             source_record_id: source_belief_id,
@@ -826,6 +1177,18 @@ mod tests {
     }
 
     #[test]
+    fn destination_validation_is_bidirectional_and_bounded() {
+        assert!(
+            validate_destination("exact_believed", "cave", 900_000_000, -1_800_000_000).is_ok()
+        );
+        assert!(validate_destination("visited", "", 1, 2).is_err());
+        assert!(validate_destination("exact_believed", "cave", 900_000_001, 0).is_err());
+        assert!(validate_destination("exact_believed", "cave", 0, -1_800_000_001).is_err());
+        assert!(validate_destination("approximate_area", "hidden", 0, 0).is_err());
+        assert!(validate_destination("textual", "", 0, 0).is_ok());
+    }
+
+    #[test]
     fn raw_tables_are_private_and_views_fail_closed() {
         let source = include_str!("investigation.rs");
         for table in [
@@ -856,7 +1219,7 @@ mod tests {
         assert!(source.contains("co-located member"));
         assert!(source.contains("share_investigation_belief"));
         assert!(!source.contains("on_party_join"));
-        assert!(source.contains("case:problem:"));
+        assert!(source.contains("compound_id(&[\"case\", \"problem\""));
         assert!(!source.contains("case_id = receipt.opaque_case_ref"));
     }
 }

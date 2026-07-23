@@ -241,6 +241,8 @@ pub mod investigation_evidence_authority_type;
 pub mod investigation_lead_type;
 pub mod investigation_observation_type;
 pub mod investigation_recollection_type;
+pub mod investigation_safe_claim_receipt_type;
+pub mod investigation_safe_lead_receipt_type;
 pub mod investigation_sharing_receipt_type;
 pub mod item_condition_table;
 pub mod item_condition_type;
@@ -460,6 +462,8 @@ pub mod soil_profile_type;
 pub mod soil_properties_type;
 pub mod soil_substrate_type;
 pub mod soil_water_regime_type;
+pub mod stage_investigation_claim_reducer;
+pub mod stage_investigation_lead_reducer;
 pub mod start_dialogue_reducer;
 pub mod stock_category_type;
 pub mod stone_content_percent_type;
@@ -758,6 +762,8 @@ pub use investigation_evidence_authority_type::InvestigationEvidenceAuthority;
 pub use investigation_lead_type::InvestigationLead;
 pub use investigation_observation_type::InvestigationObservation;
 pub use investigation_recollection_type::InvestigationRecollection;
+pub use investigation_safe_claim_receipt_type::InvestigationSafeClaimReceipt;
+pub use investigation_safe_lead_receipt_type::InvestigationSafeLeadReceipt;
 pub use investigation_sharing_receipt_type::InvestigationSharingReceipt;
 pub use item_condition_table::*;
 pub use item_condition_type::ItemCondition;
@@ -977,6 +983,8 @@ pub use soil_profile_type::SoilProfile;
 pub use soil_properties_type::SoilProperties;
 pub use soil_substrate_type::SoilSubstrate;
 pub use soil_water_regime_type::SoilWaterRegime;
+pub use stage_investigation_claim_reducer::stage_investigation_claim;
+pub use stage_investigation_lead_reducer::stage_investigation_lead;
 pub use start_dialogue_reducer::start_dialogue;
 pub use stock_category_type::StockCategory;
 pub use stone_content_percent_type::StoneContentPercent;
@@ -1198,16 +1206,7 @@ pub enum Reducer {
     DiscoverInvestigationLead {
         character_id: u64,
         action_id: String,
-        case_id: String,
-        lead_id: String,
-        summary: String,
-        source_label: String,
-        confidence_bps: u16,
-        destination_stage: String,
-        directions: String,
-        exact_location_id: String,
-        latitude_e_7: i32,
-        longitude_e_7: i32,
+        receipt_id: String,
     },
     DismissHerbalistExamination {
         patient_id: u64,
@@ -1332,12 +1331,7 @@ pub enum Reducer {
     ReceiveInvestigationClaim {
         character_id: u64,
         action_id: String,
-        case_id: String,
-        claim_id: String,
-        proposition_id: String,
-        statement: String,
-        source_label: String,
-        confidence_bps: u16,
+        receipt_id: String,
     },
     ReceiveLocalProblemRumor {
         character_id: u64,
@@ -1479,6 +1473,30 @@ pub enum Reducer {
         recipient_id: u64,
         source_lead_id: String,
         action_id: String,
+    },
+    StageInvestigationClaim {
+        character_id: u64,
+        receipt_id: String,
+        pipeline_json: String,
+        public_case_id: String,
+        safe_source_label: String,
+        conflict_group: String,
+        correction_of_belief_id: String,
+    },
+    StageInvestigationLead {
+        character_id: u64,
+        receipt_id: String,
+        public_case_id: String,
+        summary: String,
+        safe_source_label: String,
+        confidence_bps: u16,
+        destination_stage: String,
+        directions: String,
+        exact_location_id: String,
+        latitude_e_7: i32,
+        longitude_e_7: i32,
+        conflict_group: String,
+        correction_of_lead_id: String,
     },
     StartDialogue {
         character_id: u64,
@@ -1690,6 +1708,8 @@ impl __sdk::Reducer for Reducer {
             Reducer::SetPartyTravelItinerary { .. } => "set_party_travel_itinerary",
             Reducer::ShareInvestigationBelief { .. } => "share_investigation_belief",
             Reducer::ShareInvestigationLead { .. } => "share_investigation_lead",
+            Reducer::StageInvestigationClaim { .. } => "stage_investigation_claim",
+            Reducer::StageInvestigationLead { .. } => "stage_investigation_lead",
             Reducer::StartDialogue { .. } => "start_dialogue",
             Reducer::StoreBattleLoot { .. } => "store_battle_loot",
             Reducer::SubmitAllRepairableItems { .. } => "submit_all_repairable_items",
@@ -1984,29 +2004,11 @@ Reducer::CancelMissionRequest{
             Reducer::DiscoverInvestigationLead{
                 character_id,
                 action_id,
-                case_id,
-                lead_id,
-                summary,
-                source_label,
-                confidence_bps,
-                destination_stage,
-                directions,
-                exact_location_id,
-                latitude_e_7,
-                longitude_e_7,
+                receipt_id,
 }             => __sats::bsatn::to_vec(&discover_investigation_lead_reducer::DiscoverInvestigationLeadArgs {
                 character_id: character_id.clone(),
                 action_id: action_id.clone(),
-                case_id: case_id.clone(),
-                lead_id: lead_id.clone(),
-                summary: summary.clone(),
-                source_label: source_label.clone(),
-                confidence_bps: confidence_bps.clone(),
-                destination_stage: destination_stage.clone(),
-                directions: directions.clone(),
-                exact_location_id: exact_location_id.clone(),
-                latitude_e_7: latitude_e_7.clone(),
-                longitude_e_7: longitude_e_7.clone(),
+                receipt_id: receipt_id.clone(),
 }),
             Reducer::DismissHerbalistExamination{
                 patient_id,
@@ -2224,21 +2226,11 @@ Reducer::CancelMissionRequest{
             Reducer::ReceiveInvestigationClaim{
                 character_id,
                 action_id,
-                case_id,
-                claim_id,
-                proposition_id,
-                statement,
-                source_label,
-                confidence_bps,
+                receipt_id,
 }             => __sats::bsatn::to_vec(&receive_investigation_claim_reducer::ReceiveInvestigationClaimArgs {
                 character_id: character_id.clone(),
                 action_id: action_id.clone(),
-                case_id: case_id.clone(),
-                claim_id: claim_id.clone(),
-                proposition_id: proposition_id.clone(),
-                statement: statement.clone(),
-                source_label: source_label.clone(),
-                confidence_bps: confidence_bps.clone(),
+                receipt_id: receipt_id.clone(),
 }),
             Reducer::ReceiveLocalProblemRumor{
                 character_id,
@@ -2491,6 +2483,52 @@ Reducer::CancelMissionRequest{
                 recipient_id: recipient_id.clone(),
                 source_lead_id: source_lead_id.clone(),
                 action_id: action_id.clone(),
+}),
+            Reducer::StageInvestigationClaim{
+                character_id,
+                receipt_id,
+                pipeline_json,
+                public_case_id,
+                safe_source_label,
+                conflict_group,
+                correction_of_belief_id,
+}             => __sats::bsatn::to_vec(&stage_investigation_claim_reducer::StageInvestigationClaimArgs {
+                character_id: character_id.clone(),
+                receipt_id: receipt_id.clone(),
+                pipeline_json: pipeline_json.clone(),
+                public_case_id: public_case_id.clone(),
+                safe_source_label: safe_source_label.clone(),
+                conflict_group: conflict_group.clone(),
+                correction_of_belief_id: correction_of_belief_id.clone(),
+}),
+            Reducer::StageInvestigationLead{
+                character_id,
+                receipt_id,
+                public_case_id,
+                summary,
+                safe_source_label,
+                confidence_bps,
+                destination_stage,
+                directions,
+                exact_location_id,
+                latitude_e_7,
+                longitude_e_7,
+                conflict_group,
+                correction_of_lead_id,
+}             => __sats::bsatn::to_vec(&stage_investigation_lead_reducer::StageInvestigationLeadArgs {
+                character_id: character_id.clone(),
+                receipt_id: receipt_id.clone(),
+                public_case_id: public_case_id.clone(),
+                summary: summary.clone(),
+                safe_source_label: safe_source_label.clone(),
+                confidence_bps: confidence_bps.clone(),
+                destination_stage: destination_stage.clone(),
+                directions: directions.clone(),
+                exact_location_id: exact_location_id.clone(),
+                latitude_e_7: latitude_e_7.clone(),
+                longitude_e_7: longitude_e_7.clone(),
+                conflict_group: conflict_group.clone(),
+                correction_of_lead_id: correction_of_lead_id.clone(),
 }),
             Reducer::StartDialogue{
                 character_id,

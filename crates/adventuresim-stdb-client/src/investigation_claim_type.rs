@@ -16,6 +16,9 @@ pub struct InvestigationClaim {
     pub disclosure_stage: String,
     pub transmission_stage: String,
     pub received_at: u64,
+    pub public_case_id: String,
+    pub safe_source_label: String,
+    pub conflict_group: String,
 }
 
 impl __sdk::InModule for InvestigationClaim {
@@ -35,6 +38,9 @@ pub struct InvestigationClaimCols {
     pub disclosure_stage: __sdk::__query_builder::Col<InvestigationClaim, String>,
     pub transmission_stage: __sdk::__query_builder::Col<InvestigationClaim, String>,
     pub received_at: __sdk::__query_builder::Col<InvestigationClaim, u64>,
+    pub public_case_id: __sdk::__query_builder::Col<InvestigationClaim, String>,
+    pub safe_source_label: __sdk::__query_builder::Col<InvestigationClaim, String>,
+    pub conflict_group: __sdk::__query_builder::Col<InvestigationClaim, String>,
 }
 
 impl __sdk::__query_builder::HasCols for InvestigationClaim {
@@ -50,6 +56,9 @@ impl __sdk::__query_builder::HasCols for InvestigationClaim {
             disclosure_stage: __sdk::__query_builder::Col::new(table_name, "disclosure_stage"),
             transmission_stage: __sdk::__query_builder::Col::new(table_name, "transmission_stage"),
             received_at: __sdk::__query_builder::Col::new(table_name, "received_at"),
+            public_case_id: __sdk::__query_builder::Col::new(table_name, "public_case_id"),
+            safe_source_label: __sdk::__query_builder::Col::new(table_name, "safe_source_label"),
+            conflict_group: __sdk::__query_builder::Col::new(table_name, "conflict_group"),
         }
     }
 }
