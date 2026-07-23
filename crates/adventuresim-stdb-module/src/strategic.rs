@@ -296,13 +296,13 @@ fn record_autoresolve_report(
 #[cfg(test)]
 mod healing_tests {
     use super::{
-        HostileResolutionKind, IncidentStatus, MissionApproachCapability, MissionAttemptStatus,
-        MissionAuthority, MissionOutcomeCandidate, RecruitmentOfferStatus,
+        CaseSiteAuthority, HostileResolutionKind, IncidentStatus, MissionApproachCapability,
+        MissionAttemptStatus, MissionAuthority, MissionOutcomeCandidate, RecruitmentOfferStatus,
         activity_incident_source_id, autoresolve_drop, case_refs_have_exact_dialogue_provenance,
         generated_dialogue_action_matches, generated_dialogue_producer_recipient,
-        hostile_resolution_for_objective, incident_group_matches,
-        mission_candidate_from_capability, player_participant_ids, quest_encounter_archetype,
-        refreshed_recruitment_offer_status, sample_mission_candidate,
+        generated_scene_key, hostile_group_authority_row, hostile_resolution_for_objective,
+        incident_group_matches, mission_candidate_from_capability, player_participant_ids,
+        quest_encounter_archetype, refreshed_recruitment_offer_status, sample_mission_candidate,
     };
     use adventuresim_core::encounter::EncounterArchetype;
     use std::collections::HashSet;
@@ -1189,60 +1189,132 @@ mod healing_tests {
     }
 
     #[test]
-    fn recurring_generated_objectives_materialize_217_outcome_candidates() {
-        use adventuresim_core::quest_generation::TemplateFamily;
+    fn generated_hostile_materialization_preserves_manifest_identity_across_links() {
+        use adventuresim_core::{
+            case::ObjectiveRequirement,
+            quest_generation::{CanonicalCause, TemplateFamily},
+        };
 
-        let generated = generated_case(7, TemplateFamily::RecurringDepredation);
-        let (hostile_group_id, site_id, _, _) = generated.hostile_groups[0].clone();
-        assert_ne!(
-            hostile_group_id,
-            format!("hostile-group:{}", site_id.0),
-            "observer-facing authority IDs must not embed one another"
-        );
-        assert!(generated.finales.iter().all(|finale| {
-            finale.hostile_group_id.as_deref() == Some(&hostile_group_id)
-                && finale.site_id == site_id
-        }));
+        let recurring = generated_case(7, TemplateFamily::RecurringDepredation);
+        let disappearance = (0..1024)
+            .map(|seed| generated_case(seed, TemplateFamily::DisappearanceOrLoss))
+            .find(|generated| matches!(generated.cause, CanonicalCause::Hostile(_)))
+            .expect("disappearance family has a hostile seed");
 
-        let mut candidates = Vec::new();
-        for (path_index, path) in generated.objectives.alternatives.iter().enumerate() {
-            for objective in &path.objectives {
-                let (resolution, weight) =
-                    hostile_resolution_for_objective(&objective.requirement, &hostile_group_id)
-                        .expect("generated combat objective qualifies through #217 seam");
-                let capability = MissionApproachCapability {
-                    id: format!("capability:{}", objective.id.as_str()),
-                    observer_character_id: 7,
-                    hostile_group_id: hostile_group_id.clone(),
-                    case_id: generated.canonical_case_id.clone(),
-                    case_site_id: crate::investigation::CaseSiteId::from(site_id.0.clone()),
-                    path_index: path_index as u16,
-                    objective_id: objective.id.as_str().into(),
-                    resolution,
-                    weight,
-                    capture_subject_id: None,
-                    capture_custody_version: None,
-                    active: true,
-                };
-                candidates.push(mission_candidate_from_capability(
-                    "mission:generated",
-                    candidates.len(),
-                    capability,
-                ));
+        for generated in [recurring, disappearance] {
+            let [(hostile_group_id, site_id, threat, count)] = generated.hostile_groups.as_slice()
+            else {
+                panic!("hostile generated case has one canonical hostile-group authority");
+            };
+            assert_ne!(
+                hostile_group_id,
+                &format!("hostile-group:{}", site_id.0),
+                "observer-facing authority IDs must not embed one another"
+            );
+            let generated_site = generated
+                .sites
+                .iter()
+                .find(|site| site.id == *site_id)
+                .expect("hostile-group site exists");
+            let site = CaseSiteAuthority {
+                id_key: generated_site.id.0.clone(),
+                id: crate::investigation::CaseSiteId::from(generated_site.id.0.clone()),
+                case_id: generated.canonical_case_id.clone(),
+                origin_settlement_id: "test-settlement".into(),
+                name: generated_site.safe_label.clone(),
+                description: "materialization regression".into(),
+                scene_key: generated_scene_key(generated_site.kind).into(),
+                longitude_e7: 0,
+                latitude_e7: 0,
+                coordinates_are_geographic: false,
+                distance_m: 1,
+            };
+            let group = hostile_group_authority_row(
+                hostile_group_id,
+                &site,
+                threat.as_str().into(),
+                *count,
+                2,
+            )
+            .expect("canonical hostile-group row materializes");
+            assert_eq!(group.id, *hostile_group_id);
+            assert_eq!(group.case_site_id, site.id);
+
+            let linked_finales: Vec<_> = generated
+                .finales
+                .iter()
+                .filter_map(|finale| finale.hostile_group_id.as_deref())
+                .collect();
+            assert!(!linked_finales.is_empty());
+            assert!(
+                linked_finales
+                    .iter()
+                    .all(|linked| *linked == hostile_group_id)
+            );
+
+            let mut candidates = Vec::new();
+            for (path_index, path) in generated.objectives.alternatives.iter().enumerate() {
+                for objective in &path.objectives {
+                    match &objective.requirement {
+                        ObjectiveRequirement::Defeat {
+                            hostile_group_id: linked,
+                            ..
+                        }
+                        | ObjectiveRequirement::DriveOff {
+                            hostile_group_id: linked,
+                        } => assert_eq!(linked, hostile_group_id),
+                        _ => {}
+                    }
+                    let Some((resolution, weight)) =
+                        hostile_resolution_for_objective(&objective.requirement, hostile_group_id)
+                    else {
+                        continue;
+                    };
+                    let capability = MissionApproachCapability {
+                        id: format!("capability:{}", objective.id.as_str()),
+                        observer_character_id: 7,
+                        hostile_group_id: group.id.clone(),
+                        case_id: generated.canonical_case_id.clone(),
+                        case_site_id: site.id.clone(),
+                        path_index: path_index as u16,
+                        objective_id: objective.id.as_str().into(),
+                        resolution,
+                        weight,
+                        capture_subject_id: None,
+                        capture_custody_version: None,
+                        active: true,
+                    };
+                    candidates.push(mission_candidate_from_capability(
+                        "mission:generated",
+                        candidates.len(),
+                        capability,
+                    ));
+                }
+            }
+            assert!(
+                candidates
+                    .iter()
+                    .all(|candidate| candidate.hostile_group_id == *hostile_group_id)
+            );
+            if generated.family == TemplateFamily::RecurringDepredation {
+                assert_eq!(candidates.len(), 2);
+                assert!(candidates.iter().any(|candidate| {
+                    candidate.resolution == HostileResolutionKind::Defeated
+                        && candidate.weight == 50
+                }));
+                assert!(candidates.iter().any(|candidate| {
+                    candidate.resolution == HostileResolutionKind::DrivenOff
+                        && candidate.weight == 30
+                }));
             }
         }
-        assert_eq!(candidates.len(), 2);
-        assert!(candidates.iter().any(|candidate| {
-            candidate.resolution == HostileResolutionKind::Defeated && candidate.weight == 50
-        }));
-        assert!(candidates.iter().any(|candidate| {
-            candidate.resolution == HostileResolutionKind::DrivenOff && candidate.weight == 30
-        }));
-        assert!(
-            candidates
-                .iter()
-                .all(|candidate| candidate.hostile_group_id == hostile_group_id)
-        );
+
+        let materializer = include_str!("strategic.rs")
+            .split("fn materialize_hostile_group")
+            .nth(1)
+            .and_then(|tail| tail.split("fn hostile_group_authority_row").next())
+            .expect("hostile-group materializer");
+        assert!(!materializer.contains("site.id.value"));
     }
 
     #[test]
@@ -3514,17 +3586,43 @@ pub struct HostileGroupAuthority {
 
 fn materialize_hostile_group(
     ctx: &ReducerContext,
+    hostile_group_id: &str,
     site: &CaseSiteAuthority,
     enemy_type: String,
     enemy_count: u32,
     difficulty: i32,
 ) -> Result<HostileGroupAuthority, String> {
-    let id = format!("hostile-group:{}", site.id.value);
-    if let Some(existing) = ctx.db.hostile_group_authority().id().find(&id) {
-        return Ok(existing);
+    let group =
+        hostile_group_authority_row(hostile_group_id, site, enemy_type, enemy_count, difficulty)?;
+    if let Some(existing) = ctx.db.hostile_group_authority().id().find(&group.id) {
+        return if existing.case_site_id == group.case_site_id
+            && existing.enemy_type == group.enemy_type
+            && existing.enemy_count == group.enemy_count
+            && existing.difficulty == group.difficulty
+            && existing.drop_item_id == group.drop_item_id
+            && existing.drop_quantity == group.drop_quantity
+        {
+            Ok(existing)
+        } else {
+            Err("Hostile-group ID is already bound to different authority".into())
+        };
     }
-    let group = HostileGroupAuthority {
-        id,
+    ctx.db.hostile_group_authority().insert(group.clone());
+    Ok(group)
+}
+
+fn hostile_group_authority_row(
+    hostile_group_id: &str,
+    site: &CaseSiteAuthority,
+    enemy_type: String,
+    enemy_count: u32,
+    difficulty: i32,
+) -> Result<HostileGroupAuthority, String> {
+    if hostile_group_id.is_empty() {
+        return Err("Hostile-group authority requires a canonical ID".into());
+    }
+    Ok(HostileGroupAuthority {
+        id: hostile_group_id.to_string(),
         case_site_id: site.id.clone(),
         drop_item_id: autoresolve_drop(&enemy_type)?.map(str::to_string),
         drop_quantity: enemy_count,
@@ -3532,9 +3630,7 @@ fn materialize_hostile_group(
         enemy_count,
         difficulty,
         disposition: HostileGroupDisposition::Active,
-    };
-    ctx.db.hostile_group_authority().insert(group.clone());
-    Ok(group)
+    })
 }
 
 /// Idempotency and attribution receipt for a persistent victorious outcome.
@@ -10894,8 +10990,10 @@ fn create_strategic_incident(
         distance_m: 0,
     };
     ctx.db.case_site_authority().insert(site.clone());
+    let hostile_group_id = format!("hostile-group:{}", incident_id.value);
     let hostile_group = materialize_hostile_group(
         ctx,
+        &hostile_group_id,
         &site,
         spec.enemy_type.into(),
         enemy_count as u32,
@@ -16370,10 +16468,7 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         let site = site_rows
             .get(site_id)
             .ok_or("Generated hostile group references a missing site")?;
-        let group = materialize_hostile_group(ctx, site, threat.as_str().into(), *count, 2)?;
-        if group.id != *group_id {
-            return Err("Generated hostile-group identity does not match mission authority".into());
-        }
+        materialize_hostile_group(ctx, group_id, site, threat.as_str().into(), *count, 2)?;
     }
     seed_case_custody(
         ctx,
