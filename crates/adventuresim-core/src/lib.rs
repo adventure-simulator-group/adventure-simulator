@@ -24,6 +24,7 @@ pub mod mission;
 pub mod morale;
 pub mod profession;
 pub mod provisioning;
+pub mod quest_generation;
 pub mod settlement_economy;
 pub mod settlement_population;
 pub mod simulation_security;
