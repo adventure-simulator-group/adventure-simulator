@@ -345,8 +345,10 @@ and success state. The registered SSR gateway exposes only observer-safe action
 and outcome projections and accepts an opaque action ID, method, and expected
 version. Party members route the same request through party consent. The
 authority revalidates ownership, prerequisites, party state, and location
-before consuming strenuous strategic time. Surveillance and ambush resolution
-remain strategic and never persist tactical positions, damage, HP, or enemies.
+before consuming strenuous strategic time. Surveillance and ambush preparation
+remain strategic and never persist tactical positions, damage, HP, enemies, or
+fabricated hostile dispositions. Drive-off and capture require the
+authoritative tactical producer tracked in #207.
 Action graphs retain private predecessor and alternate-route edges. The
 authority validates those edges within one observer and case, synchronizes the
 co-located party's strategic clocks, then uses the leader/party minute for

@@ -5,12 +5,11 @@ use crate::{
     local_problem::local_problem_receipt,
     settlement_population::settlement_npc,
     strategic::{
-        CustodyHolderKind, CustodyObjectKind, HostileGroupDisposition, HostileResolutionKind,
-        case_authority, case_custody, commit_hostile_battle_resolution,
-        ensure_bound_mission_authority, hostile_group_authority, living_party_member_ids,
-        party_authority, party_journey_authority, require_no_unresolved_encounter,
-        require_party_ready, require_strategic_character_authority, require_strategic_gateway,
-        settlement, strategic_gateway_authority__view,
+        CustodyHolderKind, CustodyObjectKind, case_authority, case_custody,
+        living_party_member_ids, party_authority, party_journey_authority,
+        require_no_unresolved_encounter, require_party_ready,
+        require_strategic_character_authority, require_strategic_gateway, settlement,
+        strategic_gateway_authority__view,
     },
     time::{
         advance_investigation_time, character_time, synchronize_party_activity_time, world_clock,
@@ -712,19 +711,8 @@ pub fn backend_investigation_action_outcomes(
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum InvestigationActionConsequence {
     None,
-    RetrieveAsset {
-        asset_id: String,
-        version: u32,
-    },
-    RescueSubject {
-        subject_id: String,
-        version: u32,
-    },
-    ResolveHostileGroup {
-        hostile_group_id: String,
-        resolution: HostileResolutionKind,
-        capture_subject_id: String,
-    },
+    RetrieveAsset { asset_id: String, version: u32 },
+    RescueSubject { subject_id: String, version: u32 },
 }
 
 fn parse_action_kind(value: &str) -> Result<action::InvestigationActionKind, String> {
@@ -1012,41 +1000,6 @@ fn issue_rumor_action_graph(
             .filter(&case.id)
             .next()
     });
-    let group = site.as_ref().and_then(|site| {
-        ctx.db
-            .hostile_group_authority()
-            .iter()
-            .find(|group| group.case_site_id == site.id)
-    });
-    let mut capture_subject_id = String::new();
-    let mut can_capture = false;
-    let mut can_drive_off = false;
-    if let Some(case) = &canonical_case {
-        let expression: adventuresim_core::case::ObjectiveExpression =
-            serde_json::from_str(&case.objective_expression_json)
-                .map_err(|_| "Case objective authority is invalid")?;
-        for requirement in expression
-            .alternatives
-            .iter()
-            .flat_map(|path| &path.objectives)
-            .map(|objective| &objective.requirement)
-        {
-            match requirement {
-                adventuresim_core::case::ObjectiveRequirement::Capture { subject_id } => {
-                    can_capture = true;
-                    capture_subject_id = subject_id.as_str().to_string();
-                }
-                adventuresim_core::case::ObjectiveRequirement::DriveOff { hostile_group_id }
-                    if group
-                        .as_ref()
-                        .is_some_and(|group| group.id == *hostile_group_id) =>
-                {
-                    can_drive_off = true;
-                }
-                _ => {}
-            }
-        }
-    }
     let target_id = site
         .as_ref()
         .map_or_else(|| area_id.clone(), |site| site.id.value.clone());
@@ -1075,22 +1028,6 @@ fn issue_rumor_action_graph(
         return validate_action_route_graph(ctx, owner_character_id, case_id);
     }
     let none = InvestigationActionConsequence::None;
-    let drive_off = group.as_ref().filter(|_| can_drive_off).map_or_else(
-        || none.clone(),
-        |group| InvestigationActionConsequence::ResolveHostileGroup {
-            hostile_group_id: group.id.clone(),
-            resolution: HostileResolutionKind::DrivenOff,
-            capture_subject_id: String::new(),
-        },
-    );
-    let capture = group.as_ref().filter(|_| can_capture).map_or_else(
-        || none.clone(),
-        |group| InvestigationActionConsequence::ResolveHostileGroup {
-            hostile_group_id: group.id.clone(),
-            resolution: HostileResolutionKind::Captured,
-            capture_subject_id: capture_subject_id.clone(),
-        },
-    );
     let specs = [
         (
             locate.clone(),
@@ -1185,8 +1122,8 @@ fn issue_rumor_action_graph(
             reacquire.as_str(),
             follow.clone(),
             "Lay an ambush along the threat's established route.".into(),
-            "The ambush forces the threat from the area.".into(),
-            drive_off,
+            "The ambush is prepared at the threat's likely approach.".into(),
+            none.clone(),
         ),
         (
             inspect.clone(),
@@ -1198,7 +1135,7 @@ fn issue_rumor_action_graph(
             ambush.clone(),
             "Inspect the identified site directly.".into(),
             "The site yields decisive evidence.".into(),
-            capture,
+            none,
         ),
     ];
     for (
@@ -1702,77 +1639,6 @@ fn commit_action_consequence(
                 party_id,
                 &subject_id,
                 version,
-                false,
-            )
-            .map(|_| ())
-        }
-        InvestigationActionConsequence::ResolveHostileGroup {
-            hostile_group_id,
-            resolution,
-            capture_subject_id,
-        } => {
-            if !matches!(
-                resolution,
-                HostileResolutionKind::DrivenOff | HostileResolutionKind::Captured
-            ) {
-                return Err("Investigation cannot author this hostile resolution".into());
-            }
-            let group = ctx
-                .db
-                .hostile_group_authority()
-                .id()
-                .find(&hostile_group_id)
-                .ok_or("Investigation hostile group no longer exists")?;
-            if group.disposition != HostileGroupDisposition::Active
-                || capability.target_kind != "site"
-                || group.case_site_id.as_str() != capability.target_id
-            {
-                return Err("Investigation hostile group is not active at this site".into());
-            }
-            let site = ctx
-                .db
-                .case_site_authority()
-                .id_key()
-                .find(&capability.target_id)
-                .ok_or("Investigation site no longer exists")?;
-            if site.case_id != capability.case_id {
-                return Err("Investigation hostile group belongs to another case".into());
-            }
-            let mission_id = inv::compound_id(&["mission", "investigation", attempt_id]);
-            let mission = ensure_bound_mission_authority(
-                ctx,
-                &mission_id,
-                party_id,
-                &site,
-                &site.scene_key,
-                resolution,
-            )?;
-            if resolution == HostileResolutionKind::Captured {
-                let current = ctx
-                    .db
-                    .case_custody()
-                    .object_id()
-                    .find(&capture_subject_id)
-                    .ok_or("Capture subject has no custody authority")?;
-                if current.case_id != capability.case_id
-                    || current.object_kind != CustodyObjectKind::Subject
-                    || current.holder_kind != CustodyHolderKind::Site
-                    || current.holder_id != site.id.value
-                {
-                    return Err("Capture subject is not alive and controlled at this site".into());
-                }
-            }
-            commit_hostile_battle_resolution(
-                ctx,
-                &format!("outcome:{mission_id}"),
-                &format!("investigation:{attempt_id}"),
-                party_id,
-                Some(&mission.id),
-                Some(&group.id),
-                resolution,
-                (resolution == HostileResolutionKind::Captured)
-                    .then_some(capture_subject_id.as_str()),
-                Vec::new(),
                 false,
             )
             .map(|_| ())
@@ -3401,5 +3267,14 @@ mod tests {
         assert!(source.contains("validate_pickup_custody"));
         assert!(source.contains("current.holder_kind != CustodyHolderKind::Site"));
         assert!(source.contains("resolution.risk_triggered"));
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production source");
+        assert!(!production.contains("ResolveHostileGroup"));
+        assert!(!production.contains("commit_hostile_battle_resolution"));
+        assert!(!production.contains("ensure_bound_mission_authority"));
+        assert!(!production.contains("HostileResolutionKind::DrivenOff"));
+        assert!(!production.contains("HostileResolutionKind::Captured"));
     }
 }

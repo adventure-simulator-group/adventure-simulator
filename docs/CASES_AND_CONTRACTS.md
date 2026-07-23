@@ -71,8 +71,9 @@ available until the objective expression itself can no longer be satisfied.
 
 Mission creation selects one eligible unresolved hostile approach rather than
 choosing by objective precedence. The current kill-based tactical server and
-autoresolver select `Defeated`; capture and drive-off are produced by
-site-bound strategic investigation actions that can prove their distinct
-conditions. Every shared hostile-result commit rechecks that selection.
+autoresolver select `Defeated`. Investigation actions may prepare an ambush or
+establish awareness, but they cannot emit `DrivenOff` or `Captured`; those
+objectives remain pending until #207 adds an authoritative tactical producer.
+Every shared hostile-result commit rechecks its selected resolution.
 `CaptureTargetKilled` is never a successful result, and only `Defeated` may
 produce battle loot.
