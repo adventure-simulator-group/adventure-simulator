@@ -74,8 +74,74 @@ pub struct Turn {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Fragment {
-    Text { value: String },
-    Topic { topic: String, label: String },
+    Text {
+        value: String,
+    },
+    Topic {
+        topic: String,
+        label: String,
+    },
+    /// A typed placeholder authored in the catalog and resolved by the
+    /// strategic server. Runtime data is never interpreted as dialogue code.
+    Runtime {
+        slot: RuntimeSlot,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeSlot {
+    SpeakerName,
+    SpeakerDescription,
+    Settlement,
+    Location,
+    Landmark,
+    Symptom,
+    WitnessCircumstance,
+    Claim,
+    Uncertainty,
+    ReferralName,
+    ReferralDescription,
+    ReferralRole,
+    ReferralLocation,
+    TimeWindow,
+    DescribedLocation,
+    Evidence,
+    Proof,
+    Testimony,
+    ContractTerms,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RuntimeBindings {
+    values: BTreeMap<RuntimeSlot, String>,
+}
+
+impl RuntimeBindings {
+    pub fn bind(&mut self, slot: RuntimeSlot, value: impl Into<String>) {
+        self.values.insert(slot, value.into());
+    }
+
+    pub fn resolve(&self, fragments: &[Fragment]) -> Result<Vec<Fragment>, DialogueError> {
+        fragments
+            .iter()
+            .map(|fragment| match fragment {
+                Fragment::Runtime { slot } => {
+                    let value = self
+                        .values
+                        .get(slot)
+                        .ok_or_else(|| DialogueError::MissingRuntimeSlot(slot.clone()))?;
+                    if value.chars().count() > 512 || value.chars().any(char::is_control) {
+                        return Err(DialogueError::InvalidRuntimeValue(slot.clone()));
+                    }
+                    Ok(Fragment::Text {
+                        value: value.clone(),
+                    })
+                }
+                authored => Ok(authored.clone()),
+            })
+            .collect()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -136,6 +202,70 @@ pub enum Effect {
     BeginApprenticeship { profession: String },
     ExamineDisease,
     SetFlag { flag: String, value: bool },
+    ReceiveProblemRumor,
+    InvestigationAction { action: InvestigationAction },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum InvestigationAction {
+    Locate,
+    Identify,
+    Expose,
+    PresentProof,
+    PresentTestimony,
+    Negotiate,
+    ReportToIssuer,
+}
+
+/// Authoring pattern for how a witness transmits individual propositions.
+/// This is private generation input; topic eligibility must use only the
+/// resulting observer-safe claims, never this classification.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TestimonyReliability {
+    Truthful,
+    Mistaken,
+    Evasive,
+    Deceptive,
+    PartlyTruthful,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct PropositionTestimony {
+    pub proposition_id: String,
+    pub statement: String,
+    pub confidence_bps: u16,
+    pub disclosed: bool,
+}
+
+pub fn testimony_pattern(
+    reliability: TestimonyReliability,
+    event: PropositionTestimony,
+    circumstance: PropositionTestimony,
+) -> Vec<PropositionTestimony> {
+    match reliability {
+        TestimonyReliability::Truthful => vec![event, circumstance],
+        TestimonyReliability::Mistaken => vec![PropositionTestimony {
+            confidence_bps: event.confidence_bps.min(4_000),
+            ..event
+        }],
+        TestimonyReliability::Evasive => vec![PropositionTestimony {
+            disclosed: false,
+            ..circumstance
+        }],
+        TestimonyReliability::Deceptive => vec![PropositionTestimony {
+            confidence_bps: event.confidence_bps.min(6_000),
+            ..event
+        }],
+        TestimonyReliability::PartlyTruthful => vec![
+            event,
+            PropositionTestimony {
+                disclosed: false,
+                ..circumstance
+            },
+        ],
+    }
 }
 
 /// Typed fact predicates. New game systems extend this enum and the server-side fact resolver.
@@ -173,6 +303,14 @@ pub enum FactKey {
     ParticipantHasVisibleClothing { role: String },
     ParticipantPriorInteraction { left: String, right: String },
     ParticipantCount { role: String },
+    ParticipantPresent { role: String },
+    ParticipantRumorCase { role: String },
+    KnownClaim,
+    KnownLead,
+    PriorQuestioning { role: String },
+    Confidence,
+    LanguageCheck { left: String, right: String },
+    SocialCheck,
     PartyLeader { role: String },
     Service { role: String },
     Location,
@@ -225,6 +363,8 @@ pub enum DialogueError {
     AmbiguousPriority { topic: String, priority: i32 },
     NoEligibleResponse(String),
     InvalidPrompt(String),
+    MissingRuntimeSlot(RuntimeSlot),
+    InvalidRuntimeValue(RuntimeSlot),
 }
 
 pub fn catalog() -> &'static [CatalogDocument] {
@@ -699,5 +839,70 @@ mod tests {
                 .iter()
                 .any(|error| matches!(error, DialogueError::AmbiguousPriority { .. }))
         );
+    }
+
+    #[test]
+    fn runtime_slots_are_typed_and_resolve_to_inert_text() {
+        let authored = vec![
+            Fragment::Text {
+                value: "Ask ".into(),
+            },
+            Fragment::Runtime {
+                slot: RuntimeSlot::ReferralDescription,
+            },
+        ];
+        let mut bindings = RuntimeBindings::default();
+        bindings.bind(
+            RuntimeSlot::ReferralDescription,
+            "<img src=x onerror=alert(1)>",
+        );
+        assert_eq!(
+            bindings.resolve(&authored).unwrap()[1],
+            Fragment::Text {
+                value: "<img src=x onerror=alert(1)>".into()
+            }
+        );
+        assert!(RuntimeBindings::default().resolve(&authored).is_err());
+    }
+
+    #[test]
+    fn testimony_reliability_is_per_proposition() {
+        let event = PropositionTestimony {
+            proposition_id: "event".into(),
+            statement: "I saw an upright shape.".into(),
+            confidence_bps: 8_000,
+            disclosed: true,
+        };
+        let motive = PropositionTestimony {
+            proposition_id: "circumstance".into(),
+            statement: "I was meeting someone there.".into(),
+            confidence_bps: 9_000,
+            disclosed: true,
+        };
+        let partial =
+            testimony_pattern(TestimonyReliability::PartlyTruthful, event.clone(), motive);
+        assert_eq!(partial[0], event);
+        assert!(!partial[1].disclosed);
+        for reliability in [
+            TestimonyReliability::Truthful,
+            TestimonyReliability::Mistaken,
+            TestimonyReliability::Evasive,
+            TestimonyReliability::Deceptive,
+            TestimonyReliability::PartlyTruthful,
+        ] {
+            assert!(
+                !testimony_pattern(
+                    reliability,
+                    event.clone(),
+                    PropositionTestimony {
+                        proposition_id: "why".into(),
+                        statement: "I was fishing.".into(),
+                        confidence_bps: 7_000,
+                        disclosed: true,
+                    },
+                )
+                .is_empty()
+            );
+        }
     }
 }

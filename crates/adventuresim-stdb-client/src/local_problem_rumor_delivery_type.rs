@@ -11,6 +11,7 @@ pub struct LocalProblemRumorDelivery {
     pub character_id: u64,
     pub settlement_id: String,
     pub session_id: String,
+    pub receipt_id: String,
     pub delivery_text: String,
 }
 
@@ -26,6 +27,7 @@ pub struct LocalProblemRumorDeliveryCols {
     pub character_id: __sdk::__query_builder::Col<LocalProblemRumorDelivery, u64>,
     pub settlement_id: __sdk::__query_builder::Col<LocalProblemRumorDelivery, String>,
     pub session_id: __sdk::__query_builder::Col<LocalProblemRumorDelivery, String>,
+    pub receipt_id: __sdk::__query_builder::Col<LocalProblemRumorDelivery, String>,
     pub delivery_text: __sdk::__query_builder::Col<LocalProblemRumorDelivery, String>,
 }
 
@@ -37,6 +39,7 @@ impl __sdk::__query_builder::HasCols for LocalProblemRumorDelivery {
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
             settlement_id: __sdk::__query_builder::Col::new(table_name, "settlement_id"),
             session_id: __sdk::__query_builder::Col::new(table_name, "session_id"),
+            receipt_id: __sdk::__query_builder::Col::new(table_name, "receipt_id"),
             delivery_text: __sdk::__query_builder::Col::new(table_name, "delivery_text"),
         }
     }

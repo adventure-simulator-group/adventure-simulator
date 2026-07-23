@@ -46,7 +46,13 @@ one start response exactly once when it creates a session; use it for greetings
 instead of making the browser select a topic implicitly. Topics have
 stable IDs, labels, knowledge/eligibility conditions, and explicitly prioritized
 responses. A response contains attributed turns composed of text and inline
-topic fragments. Prompts support `yes_no`, `single`, and `multi` choices and
+topic fragments. It may also contain an allowlisted typed runtime slot for a
+speaker's visible identity, place, symptom, claim, uncertainty, referral,
+evidence, testimony, or contract terms. Authored literals and runtime slots
+remain distinct in the compiled catalog and source map. The server resolves
+slots from authoritative strategic rows and persists only bounded inert text;
+generated values are never scripts, conditions, effects, or canonical truth.
+Prompts support `yes_no`, `single`, and `multi` choices and
 `first_response`, `unanimous`, `majority`, or `all_respondents` resolution.
 Choices may contain `result_turns`; these are appended to the durable transcript
 only after the prompt resolves and its effects succeed.
@@ -58,6 +64,14 @@ world facts require a Rust resolver change. Never put executable code, SQL, or
 client-trusted effects in content. Effects are likewise a closed enum. A client
 sends catalog revision and stable topic/choice IDs; the authoritative reducer
 resolves turns and effects from the embedded catalog.
+
+Investigation dialogue uses generic facts and effects rather than per-case
+content IDs. A local-problem referral records the character-owned safe rumor
+receipt immediately when the tavern/overview conversation starts, without
+accepting a contract. Referral turns name a known contact or describe them,
+give their occupation/relationship and expected location, and retain explicit
+uncertainty. Truthfulness, private motives, hidden causes, and undiscovered
+evidence never participate in topic eligibility.
 
 Run `just dialogue-check` before review. Use
 `cargo run -p adventuresim-dialogue --bin dialogue-check -- explain <id>` to

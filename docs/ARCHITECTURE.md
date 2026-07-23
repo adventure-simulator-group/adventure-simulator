@@ -333,6 +333,12 @@ and queries them for the active session character. Browser live subscriptions
 never include raw investigation tables. See
 [INVESTIGATIONS.md](INVESTIGATIONS.md).
 
+Compiled dialogue may contain typed runtime slots, but the strategic reducer
+resolves them from persistent NPC, presence, and observer-safe investigation
+authority before a transcript event is stored. Dialogue-driven objective
+producers are private owning-subsystem calls with live-recipient and knowledge
+checks; they do not create a generic browser fact-ingestion path.
+
 ### Strategic tables
 
 | Table | Description |

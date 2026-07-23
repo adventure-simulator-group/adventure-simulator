@@ -118,6 +118,65 @@ pub struct InvestigationEvidenceAuthority {
     pub hidden_coordinates_json: String,
 }
 
+/// Private, source-attributed proof custody/knowledge. Merely having a hidden
+/// evidence-authority row is never enough to present that proof.
+#[derive(Clone, Debug)]
+#[table(accessor = investigation_evidence_knowledge)]
+pub struct InvestigationEvidenceKnowledge {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub owner_character_id: u64,
+    #[index(btree)]
+    pub case_id: String,
+    pub evidence_id: String,
+    pub source_id: String,
+    pub learned_at: u64,
+}
+
+#[allow(dead_code)] // Owning investigation actions call this as evidence types are added.
+pub(crate) fn record_evidence_knowledge(
+    ctx: &ReducerContext,
+    owner_character_id: u64,
+    case_id: &str,
+    evidence_id: &str,
+    source_id: &str,
+) -> Result<(), String> {
+    let evidence = ctx
+        .db
+        .investigation_evidence_authority()
+        .id()
+        .find(&evidence_id.to_string())
+        .ok_or("Evidence does not exist")?;
+    if evidence.case_id != case_id {
+        return Err("Evidence belongs to another case".into());
+    }
+    let id = inv::compound_id(&[
+        "evidence-knowledge",
+        &owner_character_id.to_string(),
+        case_id,
+        evidence_id,
+    ]);
+    if let Some(existing) = ctx.db.investigation_evidence_knowledge().id().find(&id) {
+        return if existing.source_id == source_id {
+            Ok(())
+        } else {
+            Err("Evidence knowledge has conflicting provenance".into())
+        };
+    }
+    ctx.db
+        .investigation_evidence_knowledge()
+        .insert(InvestigationEvidenceKnowledge {
+            id,
+            owner_character_id,
+            case_id: case_id.into(),
+            evidence_id: evidence_id.into(),
+            source_id: source_id.into(),
+            learned_at: official_minute(ctx),
+        });
+    Ok(())
+}
+
 #[derive(Clone, Debug)]
 #[table(accessor = investigation_belief)]
 pub struct InvestigationBelief {
@@ -1608,6 +1667,7 @@ mod tests {
             "investigation_recollection",
             "investigation_claim",
             "investigation_evidence_authority",
+            "investigation_evidence_knowledge",
             "investigation_belief",
             "investigation_belief_revision",
             "investigation_lead",
@@ -1650,5 +1710,8 @@ mod tests {
         assert!(!source.contains("on_party_join"));
         assert!(source.contains("compound_id(&[\"case\", \"problem\""));
         assert!(!source.contains("case_id = receipt.opaque_case_ref"));
+        assert!(source.contains("local_problem_receipt().id().find(&receipt_id)"));
+        assert!(source.contains("Evidence knowledge has conflicting provenance"));
+        assert!(!source.contains("#[table(accessor = investigation_evidence_knowledge, public)]"));
     }
 }
