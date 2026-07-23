@@ -10,7 +10,8 @@ pub struct TacticalServer {
     pub identity: __sdk::Identity,
     pub mission_id: String,
     pub scene_key: String,
-    pub quest_id: String,
+    pub case_site_id: Option<String>,
+    pub hostile_group_id: Option<String>,
     pub party_id: String,
     pub addr: String,
     pub cert_digest: String,
@@ -28,7 +29,8 @@ pub struct TacticalServerCols {
     pub identity: __sdk::__query_builder::Col<TacticalServer, __sdk::Identity>,
     pub mission_id: __sdk::__query_builder::Col<TacticalServer, String>,
     pub scene_key: __sdk::__query_builder::Col<TacticalServer, String>,
-    pub quest_id: __sdk::__query_builder::Col<TacticalServer, String>,
+    pub case_site_id: __sdk::__query_builder::Col<TacticalServer, Option<String>>,
+    pub hostile_group_id: __sdk::__query_builder::Col<TacticalServer, Option<String>>,
     pub party_id: __sdk::__query_builder::Col<TacticalServer, String>,
     pub addr: __sdk::__query_builder::Col<TacticalServer, String>,
     pub cert_digest: __sdk::__query_builder::Col<TacticalServer, String>,
@@ -42,7 +44,8 @@ impl __sdk::__query_builder::HasCols for TacticalServer {
             identity: __sdk::__query_builder::Col::new(table_name, "identity"),
             mission_id: __sdk::__query_builder::Col::new(table_name, "mission_id"),
             scene_key: __sdk::__query_builder::Col::new(table_name, "scene_key"),
-            quest_id: __sdk::__query_builder::Col::new(table_name, "quest_id"),
+            case_site_id: __sdk::__query_builder::Col::new(table_name, "case_site_id"),
+            hostile_group_id: __sdk::__query_builder::Col::new(table_name, "hostile_group_id"),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             addr: __sdk::__query_builder::Col::new(table_name, "addr"),
             cert_digest: __sdk::__query_builder::Col::new(table_name, "cert_digest"),
@@ -60,7 +63,6 @@ impl __sdk::__query_builder::HasCols for TacticalServer {
 pub struct TacticalServerIxCols {
     pub identity: __sdk::__query_builder::IxCol<TacticalServer, __sdk::Identity>,
     pub mission_id: __sdk::__query_builder::IxCol<TacticalServer, String>,
-    pub quest_id: __sdk::__query_builder::IxCol<TacticalServer, String>,
 }
 
 impl __sdk::__query_builder::HasIxCols for TacticalServer {
@@ -69,7 +71,6 @@ impl __sdk::__query_builder::HasIxCols for TacticalServer {
         TacticalServerIxCols {
             identity: __sdk::__query_builder::IxCol::new(table_name, "identity"),
             mission_id: __sdk::__query_builder::IxCol::new(table_name, "mission_id"),
-            quest_id: __sdk::__query_builder::IxCol::new(table_name, "quest_id"),
         }
     }
 }

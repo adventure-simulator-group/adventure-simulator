@@ -97,30 +97,30 @@ impl<'ctx> __sdk::TableWithPrimaryKey for AutoresolveReportTableHandle<'ctx> {
     }
 }
 
-/// Access to the `quest_id` unique index on the table `autoresolve_report`,
+/// Access to the `battle_id` unique index on the table `autoresolve_report`,
 /// which allows point queries on the field of the same name
-/// via the [`AutoresolveReportQuestIdUnique::find`] method.
+/// via the [`AutoresolveReportBattleIdUnique::find`] method.
 ///
 /// Users are encouraged not to explicitly reference this type,
 /// but to directly chain method calls,
-/// like `ctx.db.autoresolve_report().quest_id().find(...)`.
-pub struct AutoresolveReportQuestIdUnique<'ctx> {
+/// like `ctx.db.autoresolve_report().battle_id().find(...)`.
+pub struct AutoresolveReportBattleIdUnique<'ctx> {
     imp: __sdk::UniqueConstraintHandle<AutoresolveReport, String>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 impl<'ctx> AutoresolveReportTableHandle<'ctx> {
-    /// Get a handle on the `quest_id` unique index on the table `autoresolve_report`.
-    pub fn quest_id(&self) -> AutoresolveReportQuestIdUnique<'ctx> {
-        AutoresolveReportQuestIdUnique {
-            imp: self.imp.get_unique_constraint::<String>("quest_id"),
+    /// Get a handle on the `battle_id` unique index on the table `autoresolve_report`.
+    pub fn battle_id(&self) -> AutoresolveReportBattleIdUnique<'ctx> {
+        AutoresolveReportBattleIdUnique {
+            imp: self.imp.get_unique_constraint::<String>("battle_id"),
             phantom: std::marker::PhantomData,
         }
     }
 }
 
-impl<'ctx> AutoresolveReportQuestIdUnique<'ctx> {
-    /// Find the subscribed row whose `quest_id` column value is equal to `col_val`,
+impl<'ctx> AutoresolveReportBattleIdUnique<'ctx> {
+    /// Find the subscribed row whose `battle_id` column value is equal to `col_val`,
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &String) -> Option<AutoresolveReport> {
         self.imp.find(col_val)
@@ -130,7 +130,7 @@ impl<'ctx> AutoresolveReportQuestIdUnique<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<AutoresolveReport>("autoresolve_report");
-    _table.add_unique_constraint::<String>("quest_id", |row| &row.quest_id);
+    _table.add_unique_constraint::<String>("battle_id", |row| &row.battle_id);
 }
 
 #[doc(hidden)]

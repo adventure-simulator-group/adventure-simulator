@@ -6,49 +6,49 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct AutoresolveQuestArgs {
+pub(super) struct AutoresolveMissionArgs {
     pub character_id: u64,
-    pub quest_id: String,
+    pub mission_id: String,
 }
 
-impl From<AutoresolveQuestArgs> for super::Reducer {
-    fn from(args: AutoresolveQuestArgs) -> Self {
-        Self::AutoresolveQuest {
+impl From<AutoresolveMissionArgs> for super::Reducer {
+    fn from(args: AutoresolveMissionArgs) -> Self {
+        Self::AutoresolveMission {
             character_id: args.character_id,
-            quest_id: args.quest_id,
+            mission_id: args.mission_id,
         }
     }
 }
 
-impl __sdk::InModule for AutoresolveQuestArgs {
+impl __sdk::InModule for AutoresolveMissionArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `autoresolve_quest`.
+/// Extension trait for access to the reducer `autoresolve_mission`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait autoresolve_quest {
-    /// Request that the remote module invoke the reducer `autoresolve_quest` to run as soon as possible.
+pub trait autoresolve_mission {
+    /// Request that the remote module invoke the reducer `autoresolve_mission` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`autoresolve_quest:autoresolve_quest_then`] to run a callback after the reducer completes.
-    fn autoresolve_quest(&self, character_id: u64, quest_id: String) -> __sdk::Result<()> {
-        self.autoresolve_quest_then(character_id, quest_id, |_, _| {})
+    /// /// Use [`autoresolve_mission:autoresolve_mission_then`] to run a callback after the reducer completes.
+    fn autoresolve_mission(&self, character_id: u64, mission_id: String) -> __sdk::Result<()> {
+        self.autoresolve_mission_then(character_id, mission_id, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `autoresolve_quest` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `autoresolve_mission` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn autoresolve_quest_then(
+    fn autoresolve_mission_then(
         &self,
         character_id: u64,
-        quest_id: String,
+        mission_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -58,11 +58,11 @@ pub trait autoresolve_quest {
     ) -> __sdk::Result<()>;
 }
 
-impl autoresolve_quest for super::RemoteReducers {
-    fn autoresolve_quest_then(
+impl autoresolve_mission for super::RemoteReducers {
+    fn autoresolve_mission_then(
         &self,
         character_id: u64,
-        quest_id: String,
+        mission_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -71,9 +71,9 @@ impl autoresolve_quest for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
-            AutoresolveQuestArgs {
+            AutoresolveMissionArgs {
                 character_id,
-                quest_id,
+                mission_id,
             },
             callback,
         )

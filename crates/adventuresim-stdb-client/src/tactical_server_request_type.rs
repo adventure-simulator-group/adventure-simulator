@@ -9,7 +9,8 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub struct TacticalServerRequest {
     pub mission_id: String,
     pub scene_key: String,
-    pub quest_id: String,
+    pub case_site_id: Option<String>,
+    pub hostile_group_id: Option<String>,
     pub party_id: String,
     pub requested_by: u64,
     pub required_enemy_kills: u32,
@@ -25,7 +26,8 @@ impl __sdk::InModule for TacticalServerRequest {
 pub struct TacticalServerRequestCols {
     pub mission_id: __sdk::__query_builder::Col<TacticalServerRequest, String>,
     pub scene_key: __sdk::__query_builder::Col<TacticalServerRequest, String>,
-    pub quest_id: __sdk::__query_builder::Col<TacticalServerRequest, String>,
+    pub case_site_id: __sdk::__query_builder::Col<TacticalServerRequest, Option<String>>,
+    pub hostile_group_id: __sdk::__query_builder::Col<TacticalServerRequest, Option<String>>,
     pub party_id: __sdk::__query_builder::Col<TacticalServerRequest, String>,
     pub requested_by: __sdk::__query_builder::Col<TacticalServerRequest, u64>,
     pub required_enemy_kills: __sdk::__query_builder::Col<TacticalServerRequest, u32>,
@@ -37,7 +39,8 @@ impl __sdk::__query_builder::HasCols for TacticalServerRequest {
         TacticalServerRequestCols {
             mission_id: __sdk::__query_builder::Col::new(table_name, "mission_id"),
             scene_key: __sdk::__query_builder::Col::new(table_name, "scene_key"),
-            quest_id: __sdk::__query_builder::Col::new(table_name, "quest_id"),
+            case_site_id: __sdk::__query_builder::Col::new(table_name, "case_site_id"),
+            hostile_group_id: __sdk::__query_builder::Col::new(table_name, "hostile_group_id"),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             requested_by: __sdk::__query_builder::Col::new(table_name, "requested_by"),
             required_enemy_kills: __sdk::__query_builder::Col::new(
@@ -53,7 +56,6 @@ impl __sdk::__query_builder::HasCols for TacticalServerRequest {
 /// Provides typed access to indexed columns for query building.
 pub struct TacticalServerRequestIxCols {
     pub mission_id: __sdk::__query_builder::IxCol<TacticalServerRequest, String>,
-    pub quest_id: __sdk::__query_builder::IxCol<TacticalServerRequest, String>,
 }
 
 impl __sdk::__query_builder::HasIxCols for TacticalServerRequest {
@@ -61,7 +63,6 @@ impl __sdk::__query_builder::HasIxCols for TacticalServerRequest {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         TacticalServerRequestIxCols {
             mission_id: __sdk::__query_builder::IxCol::new(table_name, "mission_id"),
-            quest_id: __sdk::__query_builder::IxCol::new(table_name, "quest_id"),
         }
     }
 }
