@@ -140,6 +140,12 @@ package `gcc-mingw-w64-x86-64` must already be installed.
 - wasm-bindgen (`cargo install wasm-bindgen-cli`) - for WASM builds
 - Caddy (for the HTTPS HTTP/2 development entry point)
 
+The `justfile` and repository automation do not require Bash. Stateful or
+compound recipes are implemented in Python, and simple recipes are compatible
+with the host shell. On Windows the default interpreter is `python`; on other
+platforms it is `python3`. Set `PYTHON_BIN` when the interpreter has a different
+name or lives outside `PATH`.
+
 ## Services and Ports
 
 | Service | Port | Description |
@@ -569,7 +575,9 @@ just tactical mission_id="test-123" scene_key="town_a"
 ## Troubleshooting
 
 - **SpacetimeDB not running:** `just status`, then `just spacetime-start`
-- **SpacetimeDB failed to start:** check `/tmp/adventure-simulator-1/spacetime.log`
+- **SpacetimeDB failed to start:** check
+  `adventure-simulator-1/spacetime.log` below the platform temporary directory
+  (`%TEMP%` on Windows and usually `$TMPDIR` or `/tmp` elsewhere).
 - **Tactical spawner can't find binary:** run `just build-tactical` first
 - **Mission stuck on "pending":** spawner not running or binary not found
 - **Cargo cannot create a temporary `target` directory:** ensure the parent of
