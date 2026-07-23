@@ -131,8 +131,8 @@ pub struct Choice {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Effect {
     LearnTopic { topic: String },
-    AcceptQuest { quest: String },
-    TurnInQuest { quest: String },
+    AcceptContract { contract: String },
+    ReportContract { contract: String },
     BeginApprenticeship { profession: String },
     ExamineDisease,
     SetFlag { flag: String, value: bool },
@@ -179,7 +179,7 @@ pub enum FactKey {
     LocationRole,
     LocalCircumstance,
     TimePeriod,
-    QuestState { quest: String },
+    ContractState { contract: String },
     Flag { flag: String },
 }
 

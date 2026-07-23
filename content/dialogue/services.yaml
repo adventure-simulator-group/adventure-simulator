@@ -45,18 +45,18 @@
           }]
         },
         { "id": "quest", "label": "Work", "initially_known": true,
-          "responses": [{ "id": "quest-turn-in", "priority": 20, "conditions": { "op": "fact", "key": { "kind": "quest_state", "quest": "selected-service-quest" }, "equals": "completed" },
+          "responses": [{ "id": "quest-turn-in", "priority": 20, "conditions": { "op": "fact", "key": { "kind": "contract_state", "contract": "selected-service-contract" }, "equals": "readytoreport" },
             "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "You have completed the work. Shall we settle the contract?" }] }],
             "effects": [], "prompt": { "id": "turn-in-work", "respondent": "player", "mode": "yes_no", "choices": [
-              { "id": "turn-in", "label": "Collect the reward.", "effects": [{ "kind": "turn_in_quest", "quest": "selected-service-quest" }], "result_turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "The contract is settled. Here is the agreed reward." }] }] },
+              { "id": "turn-in", "label": "Collect the reward.", "effects": [{ "kind": "report_contract", "contract": "selected-service-contract" }], "result_turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "The contract is settled. Here is the agreed reward." }] }] },
               { "id": "wait", "label": "Not yet.", "result_turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Return when you are ready to settle it." }] }] }
             ] }
-          }, { "id": "quest-offer", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "quest_state", "quest": "selected-service-quest" }, "equals": "available" },
+          }, { "id": "quest-offer", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "contract_state", "contract": "selected-service-contract" }, "equals": "offered" },
             "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "There is work for an adventuring company, if you are interested." }] }],
             "effects": [],
             "prompt": { "id": "accept-work", "respondent": "player", "mode": "yes_no",
               "choices": [
-                { "id": "interested", "label": "I'm interested.", "effects": [{ "kind": "accept_quest", "quest": "selected-service-quest" }], "result_turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Then the contract is yours. Return here when the work is complete." }] }] },
+                { "id": "interested", "label": "I'm interested.", "effects": [{ "kind": "accept_contract", "contract": "selected-service-contract" }], "result_turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Then the contract is yours. Return here when the work is complete." }] }] },
                 { "id": "decline", "label": "Not now.", "result_turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Another company may claim it, but ask again if it remains available." }] }] }
               ] }
           }, { "id": "quest-in-progress", "priority": 0,
