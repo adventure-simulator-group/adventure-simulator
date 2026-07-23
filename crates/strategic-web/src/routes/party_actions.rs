@@ -257,7 +257,10 @@ mod tests {
         };
         assert_eq!(
             action.reducer_call(42),
-            ("travel_to_case_site", vec![json!(42), json!("case-site-7")])
+            (
+                "travel_to_case_site",
+                vec![json!(42), json!({ "value": "case-site-7" })]
+            )
         );
     }
 
