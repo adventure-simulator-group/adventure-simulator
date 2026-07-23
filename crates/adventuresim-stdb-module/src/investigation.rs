@@ -114,8 +114,15 @@ pub struct InvestigationEvidenceAuthority {
     #[index(btree)]
     pub case_id: String,
     pub proposition_id: String,
+    pub presentation_kind: EvidencePresentationKind,
     pub authority_json: String,
     pub hidden_coordinates_json: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum EvidencePresentationKind {
+    Physical,
+    Informational,
 }
 
 /// Private, source-attributed proof custody/knowledge. Merely having a hidden

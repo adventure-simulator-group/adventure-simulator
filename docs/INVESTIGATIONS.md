@@ -41,11 +41,13 @@ Follow-up eligibility uses only observer-visible claims, contradictions,
 familiarity, language/social checks, prior questioning, and possessed
 evidence. The reliability pattern, motive, and canonical event remain private.
 
-Evidence presentation requires a private, source-attributed
-`investigation_evidence_knowledge` receipt. When evidence has a custody row,
-the presenting party must also be its current holder. The mere existence of
-hidden evidence authority—or a belief concerning the same proposition—does
-not grant knowledge or physical possession of proof.
+Evidence authority explicitly classifies presentation as physical or
+informational. Physical evidence requires a custody row currently held by the
+presenting party or character; a missing row fails closed. Informational
+evidence requires a private, source-attributed
+`investigation_evidence_knowledge` receipt. The mere existence of hidden
+evidence authority—or a belief concerning the same proposition—does not grant
+knowledge or physical possession of proof.
 
 ## Sharing and navigation
 

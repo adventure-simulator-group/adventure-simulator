@@ -2,7 +2,14 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
+use super::evidence_presentation_kind_type::EvidencePresentationKind;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -10,13 +17,16 @@ pub struct InvestigationEvidenceAuthority {
     pub id: String,
     pub case_id: String,
     pub proposition_id: String,
+    pub presentation_kind: EvidencePresentationKind,
     pub authority_json: String,
     pub hidden_coordinates_json: String,
 }
 
+
 impl __sdk::InModule for InvestigationEvidenceAuthority {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `InvestigationEvidenceAuthority`.
 ///
@@ -25,9 +35,9 @@ pub struct InvestigationEvidenceAuthorityCols {
     pub id: __sdk::__query_builder::Col<InvestigationEvidenceAuthority, String>,
     pub case_id: __sdk::__query_builder::Col<InvestigationEvidenceAuthority, String>,
     pub proposition_id: __sdk::__query_builder::Col<InvestigationEvidenceAuthority, String>,
+    pub presentation_kind: __sdk::__query_builder::Col<InvestigationEvidenceAuthority, EvidencePresentationKind>,
     pub authority_json: __sdk::__query_builder::Col<InvestigationEvidenceAuthority, String>,
-    pub hidden_coordinates_json:
-        __sdk::__query_builder::Col<InvestigationEvidenceAuthority, String>,
+    pub hidden_coordinates_json: __sdk::__query_builder::Col<InvestigationEvidenceAuthority, String>,
 }
 
 impl __sdk::__query_builder::HasCols for InvestigationEvidenceAuthority {
@@ -37,11 +47,10 @@ impl __sdk::__query_builder::HasCols for InvestigationEvidenceAuthority {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
             proposition_id: __sdk::__query_builder::Col::new(table_name, "proposition_id"),
+            presentation_kind: __sdk::__query_builder::Col::new(table_name, "presentation_kind"),
             authority_json: __sdk::__query_builder::Col::new(table_name, "authority_json"),
-            hidden_coordinates_json: __sdk::__query_builder::Col::new(
-                table_name,
-                "hidden_coordinates_json",
-            ),
+            hidden_coordinates_json: __sdk::__query_builder::Col::new(table_name, "hidden_coordinates_json"),
+
         }
     }
 }
@@ -60,8 +69,10 @@ impl __sdk::__query_builder::HasIxCols for InvestigationEvidenceAuthority {
         InvestigationEvidenceAuthorityIxCols {
             case_id: __sdk::__query_builder::IxCol::new(table_name, "case_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for InvestigationEvidenceAuthority {}
+
