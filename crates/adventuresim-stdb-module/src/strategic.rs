@@ -9929,25 +9929,38 @@ fn straight_line_distance_m(
         let delta_lon = (to_x - from_x).to_radians();
         let a = (delta_lat / 2.0).sin().powi(2)
             + lat1.cos() * lat2.cos() * (delta_lon / 2.0).sin().powi(2);
-        (earth_radius_m * 2.0 * a.sqrt().atan2((1.0 - a).sqrt())).round() as u64
+        if !a.is_finite() {
+            return u64::MAX;
+        }
+        let a = a.clamp(0.0, 1.0);
+        let distance_m = earth_radius_m * 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
+        if distance_m.is_finite() {
+            distance_m.round() as u64
+        } else {
+            u64::MAX
+        }
     } else {
         (((from_x - to_x).powi(2) + (from_y - to_y).powi(2)).sqrt() * METERS_PER_KILOMETER as f64)
             .round() as u64
     }
 }
 
-/// Great-circle distance between signed E7 geographic coordinates, in meters.
-/// Invalid latitude/longitude values fail closed instead of entering geometry.
-pub(crate) fn geographic_distance_e7_m(
+/// Canonical travel distance between signed E7 coordinates, in meters.
+/// Geographic mode uses great-circle distance. Abstract mode uses the same
+/// Euclidean coordinate-units-as-kilometers convention as strategic travel.
+/// Invalid geographic latitude/longitude values fail closed.
+pub(crate) fn coordinate_distance_e7_m(
     from_longitude_e7: i32,
     from_latitude_e7: i32,
     to_longitude_e7: i32,
     to_latitude_e7: i32,
+    coordinates_are_geographic: bool,
 ) -> Option<u64> {
-    if !(-900_000_000..=900_000_000).contains(&from_latitude_e7)
-        || !(-1_800_000_000..=1_800_000_000).contains(&from_longitude_e7)
-        || !(-900_000_000..=900_000_000).contains(&to_latitude_e7)
-        || !(-1_800_000_000..=1_800_000_000).contains(&to_longitude_e7)
+    if coordinates_are_geographic
+        && (!(-900_000_000..=900_000_000).contains(&from_latitude_e7)
+            || !(-1_800_000_000..=1_800_000_000).contains(&from_longitude_e7)
+            || !(-900_000_000..=900_000_000).contains(&to_latitude_e7)
+            || !(-1_800_000_000..=1_800_000_000).contains(&to_longitude_e7))
     {
         return None;
     }
@@ -9956,7 +9969,7 @@ pub(crate) fn geographic_distance_e7_m(
         f64::from(from_latitude_e7) / 10_000_000.0,
         f64::from(to_longitude_e7) / 10_000_000.0,
         f64::from(to_latitude_e7) / 10_000_000.0,
-        true,
+        coordinates_are_geographic,
     ))
 }
 

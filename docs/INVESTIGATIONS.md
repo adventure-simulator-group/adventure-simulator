@@ -126,8 +126,11 @@ Location is revalidated at execution, not merely at issuance. Contact actions
 use the referred NPC's current settlement and presence window (or the same
 settlement as a bound ask-around action). Track actions remain bound to the
 materialized predecessor area until they disclose the site; occupying another
-site from the same case counts only when its valid geographic coordinates fall
-within that area's meter radius. Later
+site from the same case counts only when its valid coordinates fall
+within that area's meter radius. Areas bind the origin settlement's coordinate
+mode: imported geographic worlds use great-circle meters, while abstract maps
+use the strategic-travel convention of Euclidean coordinate units as
+kilometers. Site and area modes must agree. Later
 site-targeting actions require actual site occupancy. Traveling elsewhere
 invalidates the attempt before time is spent or a lead is written.
 
