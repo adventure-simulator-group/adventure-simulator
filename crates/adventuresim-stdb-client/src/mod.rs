@@ -266,8 +266,6 @@ pub mod morale_event_table;
 pub mod morale_event_type;
 pub mod native_range_evidence_type;
 pub mod nerve_type;
-pub mod npc_age_band_type;
-pub mod npc_sex_type;
 pub mod official_religion_type;
 pub mod oral_language_hours_type;
 pub mod organic_soil_type;
@@ -398,11 +396,6 @@ pub mod settlement_herbalist_type;
 pub mod settlement_hydrology_type;
 pub mod settlement_import_type;
 pub mod settlement_language_profile_type;
-pub mod settlement_npc_presence_table;
-pub mod settlement_npc_presence_type;
-pub mod settlement_npc_seed_explanation_type;
-pub mod settlement_npc_table;
-pub mod settlement_npc_type;
 pub mod settlement_outbreak_table;
 pub mod settlement_outbreak_type;
 pub mod settlement_religious_status_type;
@@ -752,8 +745,6 @@ pub use morale_event_table::*;
 pub use morale_event_type::MoraleEvent;
 pub use native_range_evidence_type::NativeRangeEvidence;
 pub use nerve_type::Nerve;
-pub use npc_age_band_type::NpcAgeBand;
-pub use npc_sex_type::NpcSex;
 pub use official_religion_type::OfficialReligion;
 pub use oral_language_hours_type::OralLanguageHours;
 pub use organic_soil_type::OrganicSoil;
@@ -884,11 +875,6 @@ pub use settlement_herbalist_type::SettlementHerbalist;
 pub use settlement_hydrology_type::SettlementHydrology;
 pub use settlement_import_type::SettlementImport;
 pub use settlement_language_profile_type::SettlementLanguageProfile;
-pub use settlement_npc_presence_table::*;
-pub use settlement_npc_presence_type::SettlementNpcPresence;
-pub use settlement_npc_seed_explanation_type::SettlementNpcSeedExplanation;
-pub use settlement_npc_table::*;
-pub use settlement_npc_type::SettlementNpc;
 pub use settlement_outbreak_table::*;
 pub use settlement_outbreak_type::SettlementOutbreak;
 pub use settlement_religious_status_type::SettlementReligiousStatus;
@@ -1382,7 +1368,6 @@ pub enum Reducer {
         session_id: String,
         conversation_id: String,
         npc_actor_id: String,
-        location_id: String,
         catalog_revision: String,
     },
     StoreBattleLoot {
@@ -2312,14 +2297,12 @@ Reducer::CancelMissionRequest{
                 session_id,
                 conversation_id,
                 npc_actor_id,
-                location_id,
                 catalog_revision,
 }             => __sats::bsatn::to_vec(&start_dialogue_reducer::StartDialogueArgs {
                 character_id: character_id.clone(),
                 session_id: session_id.clone(),
                 conversation_id: conversation_id.clone(),
                 npc_actor_id: npc_actor_id.clone(),
-                location_id: location_id.clone(),
                 catalog_revision: catalog_revision.clone(),
 }),
             Reducer::StoreBattleLoot{
@@ -2568,8 +2551,6 @@ pub struct DbUpdate {
     settlement: __sdk::TableUpdate<Settlement>,
     settlement_alias: __sdk::TableUpdate<SettlementAlias>,
     settlement_description: __sdk::TableUpdate<SettlementDescription>,
-    settlement_npc: __sdk::TableUpdate<SettlementNpc>,
-    settlement_npc_presence: __sdk::TableUpdate<SettlementNpcPresence>,
     settlement_outbreak: __sdk::TableUpdate<SettlementOutbreak>,
     settlement_smith: __sdk::TableUpdate<SettlementSmith>,
     simulation_character: __sdk::TableUpdate<SimulationCharacter>,
@@ -2801,12 +2782,6 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                     .append(settlement_alias_table::parse_table_update(table_update)?),
                 "settlement_description" => db_update.settlement_description.append(
                     settlement_description_table::parse_table_update(table_update)?,
-                ),
-                "settlement_npc" => db_update
-                    .settlement_npc
-                    .append(settlement_npc_table::parse_table_update(table_update)?),
-                "settlement_npc_presence" => db_update.settlement_npc_presence.append(
-                    settlement_npc_presence_table::parse_table_update(table_update)?,
                 ),
                 "settlement_outbreak" => db_update
                     .settlement_outbreak
@@ -3137,15 +3112,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.settlement_description,
             )
             .with_updates_by_pk(|row| &row.id);
-        diff.settlement_npc = cache
-            .apply_diff_to_table::<SettlementNpc>("settlement_npc", &self.settlement_npc)
-            .with_updates_by_pk(|row| &row.id);
-        diff.settlement_npc_presence = cache
-            .apply_diff_to_table::<SettlementNpcPresence>(
-                "settlement_npc_presence",
-                &self.settlement_npc_presence,
-            )
-            .with_updates_by_pk(|row| &row.npc_id);
         diff.settlement_outbreak = cache
             .apply_diff_to_table::<SettlementOutbreak>(
                 "settlement_outbreak",
@@ -3447,12 +3413,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 "settlement_description" => db_update
                     .settlement_description
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "settlement_npc" => db_update
-                    .settlement_npc
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "settlement_npc_presence" => db_update
-                    .settlement_npc_presence
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "settlement_outbreak" => db_update
                     .settlement_outbreak
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -3712,12 +3672,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 "settlement_description" => db_update
                     .settlement_description
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "settlement_npc" => db_update
-                    .settlement_npc
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "settlement_npc_presence" => db_update
-                    .settlement_npc_presence
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "settlement_outbreak" => db_update
                     .settlement_outbreak
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -3841,8 +3795,6 @@ pub struct AppliedDiff<'r> {
     settlement: __sdk::TableAppliedDiff<'r, Settlement>,
     settlement_alias: __sdk::TableAppliedDiff<'r, SettlementAlias>,
     settlement_description: __sdk::TableAppliedDiff<'r, SettlementDescription>,
-    settlement_npc: __sdk::TableAppliedDiff<'r, SettlementNpc>,
-    settlement_npc_presence: __sdk::TableAppliedDiff<'r, SettlementNpcPresence>,
     settlement_outbreak: __sdk::TableAppliedDiff<'r, SettlementOutbreak>,
     settlement_smith: __sdk::TableAppliedDiff<'r, SettlementSmith>,
     simulation_character: __sdk::TableAppliedDiff<'r, SimulationCharacter>,
@@ -4180,16 +4132,6 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<SettlementDescription>(
             "settlement_description",
             &self.settlement_description,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<SettlementNpc>(
-            "settlement_npc",
-            &self.settlement_npc,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<SettlementNpcPresence>(
-            "settlement_npc_presence",
-            &self.settlement_npc_presence,
             event,
         );
         callbacks.invoke_table_row_callbacks::<SettlementOutbreak>(
@@ -4974,8 +4916,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         settlement_table::register_table(client_cache);
         settlement_alias_table::register_table(client_cache);
         settlement_description_table::register_table(client_cache);
-        settlement_npc_table::register_table(client_cache);
-        settlement_npc_presence_table::register_table(client_cache);
         settlement_outbreak_table::register_table(client_cache);
         settlement_smith_table::register_table(client_cache);
         simulation_character_table::register_table(client_cache);
@@ -5060,8 +5000,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "settlement",
         "settlement_alias",
         "settlement_description",
-        "settlement_npc",
-        "settlement_npc_presence",
         "settlement_outbreak",
         "settlement_smith",
         "simulation_character",

@@ -49,7 +49,6 @@ impl __sdk::__query_builder::HasCols for DialogueParticipant {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct DialogueParticipantIxCols {
-    pub actor_id: __sdk::__query_builder::IxCol<DialogueParticipant, String>,
     pub id: __sdk::__query_builder::IxCol<DialogueParticipant, String>,
     pub session_id: __sdk::__query_builder::IxCol<DialogueParticipant, String>,
 }
@@ -58,7 +57,6 @@ impl __sdk::__query_builder::HasIxCols for DialogueParticipant {
     type IxCols = DialogueParticipantIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         DialogueParticipantIxCols {
-            actor_id: __sdk::__query_builder::IxCol::new(table_name, "actor_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             session_id: __sdk::__query_builder::IxCol::new(table_name, "session_id"),
         }

@@ -144,17 +144,13 @@ use crate::templates::settlement::{
     RestSummary, SoapRestPreview, SocialPresentation, alchemy_page, camp_page,
     live_merchant_shop_page, merchants_page, party_discard_page, party_inventory_page,
     party_personal_page, party_pool_page, party_social_dialog, party_stats_page, religion_page,
-    rest_default_minutes, rest_result_page, settlement_map_page, settlement_npc_location_page,
-    settlement_overview_page, surgery_dialog,
+    rest_default_minutes, rest_result_page, settlement_map_page, settlement_overview_page,
+    surgery_dialog,
 };
 
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/settlements/{id}", get(show_settlement))
-        .route(
-            "/settlements/{id}/places/{place}",
-            get(settlement_npc_place),
-        )
         .route("/locations/settlement/{id}", get(show_settlement_location))
         .route("/locations/settlement/{id}/map", get(settlement_map))
         .route("/locations/settlement/{id}/alchemy", get(alchemy))
@@ -899,56 +895,6 @@ async fn retrieve_repairs(
 
 async fn show_settlement(Path(id): Path<String>) -> Redirect {
     Redirect::to(&format!("/locations/settlement/{id}"))
-}
-
-async fn settlement_npc_place(
-    State(state): State<AppState>,
-    Path((id, place)): Path<(String, String)>,
-    session: Session,
-) -> Html<String> {
-    if !matches!(place.as_str(), "overview" | "residences" | "keep") {
-        return Html("<h1>Settlement place not found</h1>".into());
-    }
-    let settlement = state
-        .db
-        .query_one::<Settlement>(&format!(
-            "SELECT * FROM settlement WHERE id = {}",
-            sql_string_literal(&id)
-        ))
-        .await
-        .ok()
-        .flatten();
-    let Some(settlement) = settlement else {
-        return Html("<h1>Settlement not found</h1>".into());
-    };
-    let active = get_active_character(&state, session.character_id_u64()).await;
-    let Some((character, _)) = active.as_ref() else {
-        return Html("<h1>Choose a character first</h1>".into());
-    };
-    if character.current_settlement_id.as_deref() != Some(id.as_str()) {
-        return Html("<h1>You are not in this settlement</h1>".into());
-    }
-    if place == "keep"
-        && !matches!(
-            settlement.category,
-            crate::spacetimedb::SettlementCategory::Town
-                | crate::spacetimedb::SettlementCategory::City
-                | crate::spacetimedb::SettlementCategory::Capital
-        )
-    {
-        return Html("<h1>This settlement has no keep</h1>".into());
-    }
-    let party_members = get_active_party_members(&state, Some(character)).await;
-    Html(
-        settlement_npc_location_page(
-            &settlement,
-            character,
-            &party_members,
-            &place,
-            Some(&character.name),
-        )
-        .into_string(),
-    )
 }
 
 async fn show_settlement_location(

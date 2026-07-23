@@ -35,29 +35,6 @@ test("private herbalist results retain medication focus without entering the cat
   assert.match(source, /data-herbalist-medication-name/);
 });
 
-test("settlement NPC selection is accessible and actor-backed", () => {
-  assert.match(source, /api\/settlements\/\$\{encodeURIComponent\(npcStrip\.dataset\.npcSettlement\)\}/);
-  assert.match(source, /setAttribute\("aria-label", `Talk to/);
-  assert.match(source, /aria-pressed/);
-  assert.match(source, /ArrowLeft/);
-  assert.match(source, /ArrowRight/);
-  assert.match(source, /chat\.dataset\.localChatSubject = npc\.id/);
-  assert.match(source, /npcDescription\.replaceChildren/);
-  assert.match(source, /selectionGeneration/);
-  assert.match(source, /local-chat-subject-changed/);
-  assert.match(source, /generation === selectionGeneration/);
-});
-
-test("late dialogue responses cannot replace the newly selected NPC", () => {
-  assert.match(source, /const actor = chat\.dataset\.localChatSubject/);
-  assert.match(source, /chat\.dataset\.localChatSubject === actor/);
-});
-
-test("only the same in-flight encounter start is deduplicated", () => {
-  assert.match(source, /startInFlight\?\.key === key/);
-  assert.match(source, /finally\(\(\) => \{ if \(startInFlight\?\.key === key\) startInFlight = null/);
-});
-
 test("unique topic prefixes complete while ambiguous prefixes do not", () => {
   const topics = [
     { id: "profession", label: "Profession" },
