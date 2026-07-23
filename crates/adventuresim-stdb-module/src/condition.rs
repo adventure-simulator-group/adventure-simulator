@@ -767,7 +767,7 @@ fn base_morale(
     }
 
     if let Some(case_site_id) = crate::investigation::character_case_site_id(ctx, character.id)
-        && let Some(site) = ctx.db.case_site_authority().id().find(&case_site_id)
+        && let Some(site) = ctx.db.case_site_authority().id_key().find(&case_site_id)
         && let Some(quest) = ctx.db.quest().id().find(&site.case_id)
     {
         let enemy_power = quest.enemy_count.max(1) as f32 * (quest.difficulty.max(1) as f32 + 4.0);

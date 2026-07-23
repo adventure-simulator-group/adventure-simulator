@@ -5,6 +5,7 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::camp_duration_mode_type::CampDurationMode;
+use super::case_site_id_type::CaseSiteId;
 use super::journey_endpoint_type::JourneyEndpoint;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -15,7 +16,7 @@ pub struct Party {
     pub name: String,
     pub leader_id: u64,
     pub current_settlement_id: Option<String>,
-    pub current_case_site_id: Option<String>,
+    pub current_case_site_id: Option<CaseSiteId>,
     pub active_quest_id: Option<String>,
     pub is_solo: bool,
     pub camp_fatigue_percent: u8,
@@ -44,7 +45,7 @@ pub struct PartyCols {
     pub name: __sdk::__query_builder::Col<Party, String>,
     pub leader_id: __sdk::__query_builder::Col<Party, u64>,
     pub current_settlement_id: __sdk::__query_builder::Col<Party, Option<String>>,
-    pub current_case_site_id: __sdk::__query_builder::Col<Party, Option<String>>,
+    pub current_case_site_id: __sdk::__query_builder::Col<Party, Option<CaseSiteId>>,
     pub active_quest_id: __sdk::__query_builder::Col<Party, Option<String>>,
     pub is_solo: __sdk::__query_builder::Col<Party, bool>,
     pub camp_fatigue_percent: __sdk::__query_builder::Col<Party, u8>,

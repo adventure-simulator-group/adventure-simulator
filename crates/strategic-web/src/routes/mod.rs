@@ -515,13 +515,15 @@ async fn planned_travel_call(
     };
     let route_json = terrain_route_json(terrain.digest(), &plan, return_plan.as_ref());
     let destination_id = match action {
-        PartyAction::TravelToSettlement { settlement_id } => settlement_id,
-        PartyAction::TravelToCaseSite { case_site_id } => case_site_id,
+        PartyAction::TravelToSettlement { settlement_id } => json!(settlement_id),
+        PartyAction::TravelToCaseSite { case_site_id } => {
+            json!({ "value": case_site_id })
+        }
         _ => unreachable!(),
     };
     Ok(Some((
         reducer,
-        vec![json!(actor_id), json!(destination_id), route_json],
+        vec![json!(actor_id), destination_id, route_json],
     )))
 }
 

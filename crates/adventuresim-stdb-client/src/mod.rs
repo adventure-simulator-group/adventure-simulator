@@ -1552,7 +1552,7 @@ pub enum Reducer {
     },
     TrackCaseSite {
         character_id: u64,
-        case_site_id: String,
+        case_site_id: CaseSiteId,
     },
     TransferPartyItem {
         from_character_id: u64,
@@ -1562,11 +1562,11 @@ pub enum Reducer {
     },
     TravelToCaseSite {
         character_id: u64,
-        case_site_id: String,
+        case_site_id: CaseSiteId,
     },
     TravelToCaseSitePlanned {
         character_id: u64,
-        case_site_id: String,
+        case_site_id: CaseSiteId,
         route: JourneyRoutePlan,
     },
     TravelToSettlement {
@@ -3342,12 +3342,6 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.morale_event = cache
             .apply_diff_to_table::<MoraleEvent>("morale_event", &self.morale_event)
             .with_updates_by_pk(|row| &row.id);
-        diff.party_action_request = cache
-            .apply_diff_to_table::<PartyActionRequest>(
-                "party_action_request",
-                &self.party_action_request,
-            )
-            .with_updates_by_pk(|row| &row.id);
         diff.party_inventory_item = cache
             .apply_diff_to_table::<PartyInventoryItem>(
                 "party_inventory_item",
@@ -3550,6 +3544,10 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.connected_players = cache
             .apply_diff_to_table::<ConnectedPlayer>("connected_players", &self.connected_players);
         diff.party = cache.apply_diff_to_table::<Party>("party", &self.party);
+        diff.party_action_request = cache.apply_diff_to_table::<PartyActionRequest>(
+            "party_action_request",
+            &self.party_action_request,
+        );
         diff.party_journey =
             cache.apply_diff_to_table::<PartyJourney>("party_journey", &self.party_journey);
         diff.party_journey_route = cache.apply_diff_to_table::<PartyJourneyRoute>(

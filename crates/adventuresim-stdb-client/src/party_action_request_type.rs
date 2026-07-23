@@ -8,6 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct PartyActionRequest {
     pub id: u64,
+    pub gateway_bucket: u8,
     pub party_id: String,
     pub requester_id: u64,
     pub action_kind: String,
@@ -24,6 +25,7 @@ impl __sdk::InModule for PartyActionRequest {
 /// Provides typed access to columns for query building.
 pub struct PartyActionRequestCols {
     pub id: __sdk::__query_builder::Col<PartyActionRequest, u64>,
+    pub gateway_bucket: __sdk::__query_builder::Col<PartyActionRequest, u8>,
     pub party_id: __sdk::__query_builder::Col<PartyActionRequest, String>,
     pub requester_id: __sdk::__query_builder::Col<PartyActionRequest, u64>,
     pub action_kind: __sdk::__query_builder::Col<PartyActionRequest, String>,
@@ -36,6 +38,7 @@ impl __sdk::__query_builder::HasCols for PartyActionRequest {
     fn cols(table_name: &'static str) -> Self::Cols {
         PartyActionRequestCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
+            gateway_bucket: __sdk::__query_builder::Col::new(table_name, "gateway_bucket"),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             requester_id: __sdk::__query_builder::Col::new(table_name, "requester_id"),
             action_kind: __sdk::__query_builder::Col::new(table_name, "action_kind"),
@@ -49,6 +52,7 @@ impl __sdk::__query_builder::HasCols for PartyActionRequest {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct PartyActionRequestIxCols {
+    pub gateway_bucket: __sdk::__query_builder::IxCol<PartyActionRequest, u8>,
     pub id: __sdk::__query_builder::IxCol<PartyActionRequest, u64>,
     pub party_id: __sdk::__query_builder::IxCol<PartyActionRequest, String>,
     pub requester_id: __sdk::__query_builder::IxCol<PartyActionRequest, u64>,
@@ -58,6 +62,7 @@ impl __sdk::__query_builder::HasIxCols for PartyActionRequest {
     type IxCols = PartyActionRequestIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         PartyActionRequestIxCols {
+            gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
             requester_id: __sdk::__query_builder::IxCol::new(table_name, "requester_id"),

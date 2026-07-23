@@ -4,11 +4,13 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::case_site_id_type::CaseSiteId;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct TravelToCaseSiteArgs {
     pub character_id: u64,
-    pub case_site_id: String,
+    pub case_site_id: CaseSiteId,
 }
 
 impl From<TravelToCaseSiteArgs> for super::Reducer {
@@ -35,7 +37,11 @@ pub trait travel_to_case_site {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`travel_to_case_site:travel_to_case_site_then`] to run a callback after the reducer completes.
-    fn travel_to_case_site(&self, character_id: u64, case_site_id: String) -> __sdk::Result<()> {
+    fn travel_to_case_site(
+        &self,
+        character_id: u64,
+        case_site_id: CaseSiteId,
+    ) -> __sdk::Result<()> {
         self.travel_to_case_site_then(character_id, case_site_id, |_, _| {})
     }
 
@@ -48,7 +54,7 @@ pub trait travel_to_case_site {
     fn travel_to_case_site_then(
         &self,
         character_id: u64,
-        case_site_id: String,
+        case_site_id: CaseSiteId,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -62,7 +68,7 @@ impl travel_to_case_site for super::RemoteReducers {
     fn travel_to_case_site_then(
         &self,
         character_id: u64,
-        case_site_id: String,
+        case_site_id: CaseSiteId,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,

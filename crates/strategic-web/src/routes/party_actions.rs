@@ -142,7 +142,7 @@ impl PartyAction {
             ),
             Self::TravelToCaseSite { case_site_id } => (
                 "travel_to_case_site",
-                vec![json!(actor_id), json!(case_site_id)],
+                vec![json!(actor_id), json!({ "value": case_site_id })],
             ),
             Self::RemovePartyMember { character_id } => (
                 "remove_party_member",

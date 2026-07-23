@@ -165,7 +165,7 @@ impl LiveState {
         invalidate_on_view_changes!(state.0._connection.db.party_journey());
         invalidate_on_changes!(state.0._connection.db.party_journey_itinerary());
         invalidate_on_changes!(state.0._connection.db.party_member());
-        invalidate_on_changes!(state.0._connection.db.party_action_request());
+        invalidate_on_view_changes!(state.0._connection.db.party_action_request());
         invalidate_on_changes!(state.0._connection.db.party_join_request());
         invalidate_on_changes!(state.0._connection.db.party_leader_vote());
         invalidate_on_changes!(state.0._connection.db.party_recruitment_role());
