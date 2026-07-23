@@ -2,8 +2,14 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
+use super::case_resolution_status_type::CaseResolutionStatus;
 use super::finale_kind_type::FinaleKind;
 use super::finale_status_type::FinaleStatus;
 
@@ -13,14 +19,17 @@ pub struct CaseFinaleAuthority {
     pub id: String,
     pub case_id: String,
     pub kind: FinaleKind,
-    pub eligible_path_index: Option<u16>,
+    pub resolution_status: CaseResolutionStatus,
+    pub eligible_path_index: Option::<u16>,
     pub priority: u16,
     pub status: FinaleStatus,
 }
 
+
 impl __sdk::InModule for CaseFinaleAuthority {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `CaseFinaleAuthority`.
 ///
@@ -29,7 +38,8 @@ pub struct CaseFinaleAuthorityCols {
     pub id: __sdk::__query_builder::Col<CaseFinaleAuthority, String>,
     pub case_id: __sdk::__query_builder::Col<CaseFinaleAuthority, String>,
     pub kind: __sdk::__query_builder::Col<CaseFinaleAuthority, FinaleKind>,
-    pub eligible_path_index: __sdk::__query_builder::Col<CaseFinaleAuthority, Option<u16>>,
+    pub resolution_status: __sdk::__query_builder::Col<CaseFinaleAuthority, CaseResolutionStatus>,
+    pub eligible_path_index: __sdk::__query_builder::Col<CaseFinaleAuthority, Option::<u16>>,
     pub priority: __sdk::__query_builder::Col<CaseFinaleAuthority, u16>,
     pub status: __sdk::__query_builder::Col<CaseFinaleAuthority, FinaleStatus>,
 }
@@ -41,12 +51,11 @@ impl __sdk::__query_builder::HasCols for CaseFinaleAuthority {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
             kind: __sdk::__query_builder::Col::new(table_name, "kind"),
-            eligible_path_index: __sdk::__query_builder::Col::new(
-                table_name,
-                "eligible_path_index",
-            ),
+            resolution_status: __sdk::__query_builder::Col::new(table_name, "resolution_status"),
+            eligible_path_index: __sdk::__query_builder::Col::new(table_name, "eligible_path_index"),
             priority: __sdk::__query_builder::Col::new(table_name, "priority"),
             status: __sdk::__query_builder::Col::new(table_name, "status"),
+
         }
     }
 }
@@ -65,8 +74,10 @@ impl __sdk::__query_builder::HasIxCols for CaseFinaleAuthority {
         CaseFinaleAuthorityIxCols {
             case_id: __sdk::__query_builder::IxCol::new(table_name, "case_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for CaseFinaleAuthority {}
+

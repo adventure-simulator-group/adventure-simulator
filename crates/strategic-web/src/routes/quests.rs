@@ -147,11 +147,24 @@ async fn turn_in_quest_api(
         .next()
         .map_or(0, |quest| quest.gold_reward);
     let result = match session.character_id_u64() {
-        Some(character_id) => state
-            .db
-            .call("report_contract", &[json!(character_id), json!(id)])
+        Some(character_id) => {
+            async {
+                state
+                    .db
+                    .call(
+                        "interact_with_contract_issuer",
+                        &[json!(character_id), json!(id), json!("Report")],
+                    )
+                    .await
+                    .map_err(|error| error.to_string())?;
+                state
+                    .db
+                    .call("report_contract", &[json!(character_id), json!(id)])
+                    .await
+                    .map_err(|error| error.to_string())
+            }
             .await
-            .map_err(|error| error.to_string()),
+        }
         None => Err("Choose a character first".to_string()),
     };
     match result {
@@ -578,7 +591,7 @@ async fn render_quest_location(
         state
             .db
             .query::<BackendCaseBattle>(&format!(
-                "SELECT * FROM backend_case_battle WHERE case_id = {} AND party_id = {}",
+                "SELECT * FROM backend_case_battles WHERE case_id = {} AND party_id = {}",
                 sql_string_literal(&quest.case_id),
                 sql_string_literal(&party.id)
             ))

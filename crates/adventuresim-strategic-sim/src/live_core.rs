@@ -40,8 +40,9 @@ use adventuresim_stdb_client::{
     character_training_schedule_table::CharacterTrainingScheduleTableAccess,
     claim_simulation_run_reducer::claim_simulation_run,
     configure_simulation_character_reducer::configure_simulation_character,
-    continue_camp_travel_reducer::continue_camp_travel, contract_status_type::ContractStatus,
-    craft_medication_reducer::craft_medication,
+    continue_camp_travel_reducer::continue_camp_travel,
+    contract_interaction_stage_type::ContractInteractionStage,
+    contract_status_type::ContractStatus, craft_medication_reducer::craft_medication,
     create_named_character_with_id_reducer::create_named_character_with_id,
     dismiss_herbalist_examination_reducer::dismiss_herbalist_examination,
     ensure_settlement_activity_reducer::ensure_settlement_activity, equip_item_reducer::equip_item,
@@ -49,6 +50,7 @@ use adventuresim_stdb_client::{
     equipped_medication_table::EquippedMedicationTableAccess,
     examine_by_herbalist_reducer::examine_by_herbalist,
     finalize_merchant_trade_reducer::finalize_merchant_trade,
+    interact_with_contract_issuer_reducer::interact_with_contract_issuer,
     inventory_item_table::InventoryItemTableAccess, item_condition_table::ItemConditionTableAccess,
     item_table::ItemTableAccess, liquidate_party_inventory_reducer::liquidate_party_inventory,
     party_inventory_item_table::PartyInventoryItemTableAccess,
@@ -223,7 +225,7 @@ pub enum CoreLoopEventKind {
     FormParty,
     RequestJoin,
     AcceptJoin,
-    AcceptQuest,
+    AcceptContract,
     Travel,
     Camp,
     AutoresolveVictory,
@@ -1535,6 +1537,16 @@ impl LiveRunner {
             .choose_quest(&party, &self.profiles[leader_agent as usize])
             .ok_or("no suitable available quest")?;
         self.metrics.quests_attempted += 1;
+        let result = reducer_call!(self, "interact_accept_contract", |cb| self
+            .connection
+            .reducers
+            .interact_with_contract_issuer_then(
+                leader,
+                quest.id.clone(),
+                ContractInteractionStage::Accept,
+                cb,
+            ));
+        self.call(result)?;
         let result = reducer_call!(self, "accept_quest", |cb| self
             .connection
             .reducers
@@ -1549,7 +1561,7 @@ impl LiveRunner {
             .ok_or("accepted quest did not disclose an exact case site")?;
         self.event(
             leader_agent,
-            CoreLoopEventKind::AcceptQuest,
+            CoreLoopEventKind::AcceptContract,
             format!(
                 "cycle={cycle};quest={};title={};difficulty={};enemy={}x{};distance_m={}",
                 quest.id,
@@ -1804,6 +1816,16 @@ impl LiveRunner {
         };
         leader = current;
         leader_agent = current_agent;
+        let result = reducer_call!(self, "interact_report_contract", |cb| self
+            .connection
+            .reducers
+            .interact_with_contract_issuer_then(
+                leader,
+                quest.id.clone(),
+                ContractInteractionStage::Report,
+                cb,
+            ));
+        self.call(result)?;
         let result = reducer_call!(self, "turn_in_quest", |cb| self
             .connection
             .reducers

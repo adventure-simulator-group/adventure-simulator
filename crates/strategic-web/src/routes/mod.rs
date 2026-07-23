@@ -200,6 +200,25 @@ pub(crate) async fn execute_or_request_party_action(
         }
     }
     if party.leader_id == actor_id {
+        if let PartyAction::AcceptContract { contract_id } = &action {
+            state
+                .db
+                .call(
+                    "interact_with_contract_issuer",
+                    &[json!(actor_id), json!(contract_id), json!("Accept")],
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+        } else if let PartyAction::ReportContract { contract_id } = &action {
+            state
+                .db
+                .call(
+                    "interact_with_contract_issuer",
+                    &[json!(actor_id), json!(contract_id), json!("Report")],
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+        }
         let planned = planned_travel_call(state, actor_id, &action).await?;
         let (reducer, args) = planned.unwrap_or_else(|| action.reducer_call(actor_id));
         state

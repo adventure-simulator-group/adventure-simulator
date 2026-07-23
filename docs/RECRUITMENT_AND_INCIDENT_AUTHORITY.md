@@ -35,7 +35,7 @@ group binding, creation time, and lifecycle.
 
 An incident uses the normal case-site location authority and mission/hostile
 group authority, but it does not create a quest or contract. Starting one moves
-the party to its incident site without changing `Party.active_quest_id`.
+the party to its incident site without changing `Party.active_contract_id`.
 Leaving that site marks the incident avoided. A victorious tactical or
 autoresolved mission matches the exact hostile-group ID and marks it resolved
 before any legacy quest projection is considered.
