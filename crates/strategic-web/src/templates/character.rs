@@ -197,7 +197,12 @@ mod creation_tests {
         let markup =
             character_candidates_page(1, "00112233445566778899aabbccddeeff", &candidates, None)
                 .into_string();
-        assert_eq!(markup.matches("candidate-portrait").count(), 5);
+        assert_eq!(
+            markup
+                .matches("class=\"party-portrait candidate-portrait")
+                .count(),
+            5
+        );
         assert!(markup.contains(PROTOTYPE_NOTICE));
         assert!(!markup.contains("role=\"dialog\""));
         assert!(!markup.contains("role=\"listitem\""));
