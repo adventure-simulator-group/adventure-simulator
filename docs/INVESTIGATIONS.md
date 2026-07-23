@@ -32,6 +32,18 @@ character-owned safe receipt. The browser never authors or receives the hidden
 pipeline payload. Player actions can only consume an existing matching receipt;
 they cannot submit statement text, confidence, sources, or coordinates.
 
+Compiled testimony patterns operate per proposition: an account may be
+truthful, mistaken, evasive, deceptive, or partly truthful, including an
+accurate event description paired with an omitted reason for being present.
+Follow-up eligibility uses only observer-visible claims, contradictions,
+familiarity, language/social checks, prior questioning, and possessed
+evidence. The reliability pattern, motive, and canonical event remain private.
+
+Evidence presentation requires a private, source-attributed
+`investigation_evidence_knowledge` receipt. The mere existence of hidden
+evidence authority—or a belief concerning the same proposition—does not grant
+knowledge or possession of proof.
+
 ## Sharing and navigation
 
 Knowledge belongs to a character. Sharing a selected lead or belief is an

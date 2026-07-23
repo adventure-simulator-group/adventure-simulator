@@ -57,6 +57,8 @@ struct EventRow {
 }
 #[derive(Deserialize)]
 struct BackendProblemRumorRow {
+    #[serde(rename = "receipt_id")]
+    _receipt_id: String,
     character_id: u64,
     session_id: String,
     delivery_text: String,

@@ -73,6 +73,7 @@ struct BuildChoice {
 enum BuildFragment {
     Text { value: String },
     Topic { topic: String, label: String },
+    Runtime { slot: String },
 }
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -83,6 +84,56 @@ enum BuildEffect {
     BeginApprenticeship { profession: String },
     ExamineDisease,
     SetFlag { flag: String, value: bool },
+    ReceiveProblemRumor,
+    InvestigationAction { action: String },
+}
+
+fn validate_fragment(fragment: &BuildFragment, relative: &str) {
+    if let BuildFragment::Runtime { slot } = fragment {
+        assert!(
+            matches!(
+                slot.as_str(),
+                "speaker_name"
+                    | "speaker_description"
+                    | "settlement"
+                    | "location"
+                    | "landmark"
+                    | "symptom"
+                    | "witness_circumstance"
+                    | "claim"
+                    | "uncertainty"
+                    | "referral_name"
+                    | "referral_description"
+                    | "referral_role"
+                    | "referral_location"
+                    | "time_window"
+                    | "described_location"
+                    | "evidence"
+                    | "proof"
+                    | "testimony"
+                    | "contract_terms"
+            ),
+            "unknown runtime slot {slot} in {relative}"
+        );
+    }
+}
+
+fn validate_effect(effect: &BuildEffect, relative: &str) {
+    if let BuildEffect::InvestigationAction { action } = effect {
+        assert!(
+            matches!(
+                action.as_str(),
+                "locate"
+                    | "identify"
+                    | "expose"
+                    | "present_proof"
+                    | "present_testimony"
+                    | "negotiate"
+                    | "report_to_issuer"
+            ),
+            "unknown investigation action {action} in {relative}"
+        );
+    }
 }
 fn build_one() -> u8 {
     1
@@ -129,6 +180,14 @@ fn validate_condition(value: &serde_json::Value, relative: &str) {
                             | "participant_familiarity"
                             | "participant_clothing_category"
                             | "participant_count"
+                            | "participant_present"
+                            | "participant_rumor_case"
+                            | "known_claim"
+                            | "known_lead"
+                            | "prior_questioning"
+                            | "confidence"
+                            | "language_check"
+                            | "social_check"
                             | "party_leader"
                             | "service"
                             | "location"
@@ -209,6 +268,12 @@ fn validate_document(document: &BuildDocument, relative: &str, global_ids: &mut 
                         "dialogue turn has no fragments {relative}:{}",
                         response.id
                     );
+                    for fragment in &turn.fragments {
+                        validate_fragment(fragment, relative);
+                    }
+                }
+                for effect in &response.effects {
+                    validate_effect(effect, relative);
                 }
                 if let Some(prompt) = &response.prompt {
                     assert!(
@@ -258,6 +323,12 @@ fn validate_document(document: &BuildDocument, relative: &str, global_ids: &mut 
                                 "dialogue result turn has no fragments {relative}:{}",
                                 choice.id
                             );
+                            for fragment in &turn.fragments {
+                                validate_fragment(fragment, relative);
+                            }
+                        }
+                        for effect in &choice.effects {
+                            validate_effect(effect, relative);
                         }
                     }
                 }
