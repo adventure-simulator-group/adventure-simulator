@@ -313,6 +313,7 @@ mod healing_tests {
             hostile_group_id: Some("hostile-group:test".into()),
             observer_character_id: 7,
             case_id: "case:test".into(),
+            outcome_entropy: 0x1234_5678_9abc_def0,
             status: MissionAttemptStatus::Bound,
             committed_resolution: None,
             committed_capture_subject_id: None,
@@ -362,6 +363,92 @@ mod healing_tests {
             candidate.weight = 0;
         }
         assert!(sample_mission_candidate(&mission, candidates).is_none());
+    }
+
+    #[test]
+    fn private_entropy_changes_draw_basis_and_candidate_order_does_not() {
+        let (mission, candidates) = sampler_fixture();
+        let mut other = mission.clone();
+        other.outcome_entropy ^= u64::MAX;
+        assert_ne!(
+            super::mission_outcome_draw(&mission, &candidates),
+            super::mission_outcome_draw(&other, &candidates)
+        );
+        let reversed = candidates.iter().cloned().rev().collect::<Vec<_>>();
+        assert_eq!(
+            super::mission_outcome_draw(&mission, &candidates),
+            super::mission_outcome_draw(&mission, &reversed)
+        );
+        let mut caller_renamed = mission.clone();
+        caller_renamed.id = "mission:another-caller-choice".into();
+        assert_eq!(
+            sample_mission_candidate(&mission, candidates.clone())
+                .unwrap()
+                .id,
+            sample_mission_candidate(&caller_renamed, candidates)
+                .unwrap()
+                .id,
+            "caller-controlled mission IDs cannot grind the private draw"
+        );
+    }
+
+    #[test]
+    fn approach_identity_versions_exact_capture_custody_and_authority() {
+        let id = |site: &str, group: &str, resolution, version| {
+            super::mission_approach_capability_id(
+                7,
+                "case:test",
+                site,
+                group,
+                0,
+                "objective:capture",
+                resolution,
+                Some("subject:test"),
+                Some(version),
+            )
+        };
+        let original = id(
+            "case-site:a",
+            "hostile-group:a",
+            HostileResolutionKind::Captured,
+            3,
+        );
+        assert_ne!(
+            original,
+            id(
+                "case-site:a",
+                "hostile-group:a",
+                HostileResolutionKind::Captured,
+                4
+            )
+        );
+        assert_ne!(
+            original,
+            id(
+                "case-site:b",
+                "hostile-group:a",
+                HostileResolutionKind::Captured,
+                3
+            )
+        );
+        assert_ne!(
+            original,
+            id(
+                "case-site:a",
+                "hostile-group:b",
+                HostileResolutionKind::Captured,
+                3
+            )
+        );
+        assert_ne!(
+            original,
+            id(
+                "case-site:a",
+                "hostile-group:a",
+                HostileResolutionKind::Defeated,
+                3
+            )
+        );
     }
 
     #[test]
@@ -657,6 +744,35 @@ mod healing_tests {
     }
 
     #[test]
+    fn mission_binding_entropy_and_terminal_replays_fail_closed() {
+        let source = include_str!("strategic.rs");
+        let binding = source
+            .split("pub(crate) fn ensure_bound_mission_authority")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("mission binding");
+        assert!(binding.contains("existing.status == MissionAttemptStatus::Bound"));
+        assert!(binding.contains("already terminal and cannot be reused"));
+        assert!(binding.contains("outcome_entropy: ctx.random()"));
+        assert!(binding.contains("mission_approach_capability_id("));
+
+        let cancel = source
+            .split("pub fn cancel_mission_request")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("cancel reducer");
+        let inspect = cancel
+            .find("mission_authority()")
+            .expect("mission inspected first");
+        let request = cancel
+            .find("tactical_server_request_authority()")
+            .expect("request inspected");
+        assert!(inspect < request);
+        assert!(cancel.contains("MissionAttemptStatus::Cancelled => return Ok(())"));
+        assert!(cancel.contains("mission.status = MissionAttemptStatus::Cancelled"));
+    }
+
+    #[test]
     fn mission_gateway_reducers_require_character_authority() {
         let source = include_str!("strategic.rs");
         for function in [
@@ -834,6 +950,7 @@ mod healing_tests {
             "case_outcome_fact",
             "case_custody",
             "contract_authority",
+            "mission_authority",
             "mission_approach_capability",
             "mission_outcome_candidate",
         ] {
@@ -3015,6 +3132,7 @@ pub struct MissionAuthority {
     pub hostile_group_id: Option<String>,
     pub observer_character_id: u64,
     pub case_id: String,
+    pub outcome_entropy: u64,
     pub status: MissionAttemptStatus,
     pub committed_resolution: Option<HostileResolutionKind>,
     pub committed_capture_subject_id: Option<String>,
@@ -8084,22 +8202,13 @@ fn mission_candidate_is_current(
         }))
 }
 
-fn sample_mission_candidate(
-    mission: &MissionAuthority,
-    mut candidates: Vec<MissionOutcomeCandidate>,
-) -> Option<MissionOutcomeCandidate> {
+fn mission_outcome_draw(mission: &MissionAuthority, candidates: &[MissionOutcomeCandidate]) -> u64 {
+    let mut candidates = candidates.to_vec();
     candidates.sort_by(|left, right| left.id.cmp(&right.id));
-    let total_weight = candidates.iter().fold(0u64, |total, candidate| {
-        total.saturating_add(u64::from(candidate.weight))
-    });
-    if total_weight == 0 {
-        return None;
-    }
     let mut hasher = Sha256::new();
     hasher.update(b"adventuresim:strategic-mission-outcome:v1\0");
-    hasher.update(mission.id.as_bytes());
-    hasher.update([0]);
     hasher.update(mission.party_id.as_bytes());
+    hasher.update(mission.outcome_entropy.to_le_bytes());
     for candidate in &candidates {
         hasher.update([0]);
         hasher.update(candidate.id.as_bytes());
@@ -8111,7 +8220,41 @@ fn sample_mission_candidate(
     let digest = hasher.finalize();
     let mut bytes = [0u8; 8];
     bytes.copy_from_slice(&digest[..8]);
-    let mut draw = u64::from_le_bytes(bytes) % total_weight;
+    u64::from_le_bytes(bytes)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn mission_approach_capability_id(
+    observer_character_id: u64,
+    case_id: &str,
+    site_id: &str,
+    hostile_group_id: &str,
+    path_index: u16,
+    objective_id: &str,
+    resolution: HostileResolutionKind,
+    capture_subject_id: Option<&str>,
+    capture_custody_version: Option<u32>,
+) -> String {
+    format!(
+        "mission-approach:{observer_character_id}:{case_id}:{site_id}:{hostile_group_id}:{path_index}:{objective_id}:{}:{}:{}",
+        resolution as u8,
+        capture_subject_id.unwrap_or("-"),
+        capture_custody_version.map_or_else(|| "-".into(), |version| version.to_string()),
+    )
+}
+
+fn sample_mission_candidate(
+    mission: &MissionAuthority,
+    mut candidates: Vec<MissionOutcomeCandidate>,
+) -> Option<MissionOutcomeCandidate> {
+    candidates.sort_by(|left, right| left.id.cmp(&right.id));
+    let total_weight = candidates.iter().fold(0u64, |total, candidate| {
+        total.saturating_add(u64::from(candidate.weight))
+    });
+    if total_weight == 0 {
+        return None;
+    }
+    let mut draw = mission_outcome_draw(mission, &candidates) % total_weight;
     for candidate in candidates {
         let weight = u64::from(candidate.weight);
         if draw < weight {
@@ -14657,8 +14800,11 @@ pub(crate) fn ensure_bound_mission_authority(
             && existing.observer_character_id == observer_character_id
             && existing.case_site_id.as_ref() == Some(&case_site.id)
             && existing.scene_key == scene_key
+            && existing.status == MissionAttemptStatus::Bound
         {
             Ok(existing)
+        } else if existing.status != MissionAttemptStatus::Bound {
+            Err("Mission ID is already terminal and cannot be reused".into())
         } else {
             Err("Mission ID is already bound to different authority".into())
         };
@@ -14749,11 +14895,16 @@ pub(crate) fn ensure_bound_mission_authority(
                 };
             let path_index =
                 u16::try_from(path_index).map_err(|_| "Case has too many objective paths")?;
-            let id = format!(
-                "mission-approach:{observer_character_id}:{}:{}:{}",
-                case.id,
+            let id = mission_approach_capability_id(
+                observer_character_id,
+                &case.id,
+                &case_site.id.value,
+                &hostile_group_id,
                 path_index,
-                objective.id.as_str()
+                objective.id.as_str(),
+                resolution,
+                capture_subject_id.as_deref(),
+                capture_custody_version,
             );
             let capability = MissionApproachCapability {
                 id: id.clone(),
@@ -14808,6 +14959,7 @@ pub(crate) fn ensure_bound_mission_authority(
         hostile_group_id: Some(hostile_group_id.clone()),
         observer_character_id,
         case_id: case.id.clone(),
+        outcome_entropy: ctx.random(),
         status: MissionAttemptStatus::Bound,
         committed_resolution: None,
         committed_capture_subject_id: None,
@@ -14965,6 +15117,9 @@ pub fn autoresolve_mission(
         &case_site,
         &case_site.scene_key,
     )?;
+    if mission.status != MissionAttemptStatus::Bound {
+        return Err("Autoresolve requires a newly bound mission attempt".into());
+    }
     let hostile_group_id = mission
         .hostile_group_id
         .as_deref()
@@ -15077,6 +15232,22 @@ pub fn cancel_mission_request(
     if party.leader_id != character_id {
         return Err("Only the party leader can cancel a mission request".into());
     }
+    let mut mission = ctx
+        .db
+        .mission_authority()
+        .id()
+        .find(&mission_id)
+        .ok_or("Mission authority not found")?;
+    if mission.party_id != party_id {
+        return Err("Mission request belongs to another party".into());
+    }
+    match mission.status {
+        MissionAttemptStatus::Cancelled => return Ok(()),
+        MissionAttemptStatus::Bound => {}
+        MissionAttemptStatus::Committed | MissionAttemptStatus::Failed => {
+            return Err("Mission request is already terminal".into());
+        }
+    }
     let request = ctx
         .db
         .tactical_server_request_authority()
@@ -15094,13 +15265,8 @@ pub fn cancel_mission_request(
         .tactical_server_claim()
         .mission_id()
         .delete(&mission_id);
-    if let Some(mut mission) = ctx.db.mission_authority().id().find(&mission_id) {
-        if mission.status != MissionAttemptStatus::Bound {
-            return Err("Mission request is already terminal".into());
-        }
-        mission.status = MissionAttemptStatus::Cancelled;
-        ctx.db.mission_authority().id().update(mission);
-    }
+    mission.status = MissionAttemptStatus::Cancelled;
+    ctx.db.mission_authority().id().update(mission);
     Ok(())
 }
 

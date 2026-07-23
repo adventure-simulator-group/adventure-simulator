@@ -29,7 +29,12 @@ pub enum TacticalMissionResolution {
 }
 
 fn tactical_session_succeeded(reported: TacticalMissionResolution) -> bool {
-    reported != TacticalMissionResolution::Failed
+    match reported {
+        TacticalMissionResolution::Failed | TacticalMissionResolution::CaptureTargetKilled => false,
+        TacticalMissionResolution::Defeated
+        | TacticalMissionResolution::DrivenOff
+        | TacticalMissionResolution::Captured => true,
+    }
 }
 
 /// Request to start a new [`TacticalServer`]
@@ -449,6 +454,9 @@ pub fn request_tactical_server(
         &case_site,
         &scene_key,
     )?;
+    if mission.status != crate::strategic::MissionAttemptStatus::Bound {
+        return Err("Tactical request requires a newly bound mission attempt".into());
+    }
     let hostile_group_id = mission
         .hostile_group_id
         .clone()
@@ -746,6 +754,7 @@ mod authority_tests {
             assert!(!body.contains("case_site_id"));
             assert!(!body.contains("expected_resolution"));
             assert!(!body.contains("capture_subject"));
+            assert!(!body.contains("outcome_entropy"));
         }
     }
 
@@ -753,12 +762,11 @@ mod authority_tests {
     fn tactical_result_variants_cannot_choose_the_strategic_outcome() {
         use super::TacticalMissionResolution as T;
         assert!(!super::tactical_session_succeeded(T::Failed));
-        for report in [
-            T::Defeated,
-            T::DrivenOff,
-            T::Captured,
-            T::CaptureTargetKilled,
-        ] {
+        assert!(
+            !super::tactical_session_succeeded(T::CaptureTargetKilled),
+            "typed contradictory terminal evidence must fail without sampling"
+        );
+        for report in [T::Defeated, T::DrivenOff, T::Captured] {
             assert!(super::tactical_session_succeeded(report));
         }
     }
