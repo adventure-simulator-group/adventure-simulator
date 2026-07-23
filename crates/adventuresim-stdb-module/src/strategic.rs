@@ -45,165 +45,41 @@ const MINUTES_PER_HOUR: u64 = 60;
 const MIN_QUESTS_PER_SETTLEMENT: usize = 3;
 const MAX_QUESTS_PER_SETTLEMENT: usize = 5;
 const COMPILED_DEV_BOOTSTRAP_TOKEN: Option<&str> = option_env!("ADVENTURESIM_DEV_BOOTSTRAP_TOKEN");
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum EnemyArchetype {
-    Bandit,
-    Goblin,
-    Spider,
-    Wolf,
-    Other,
-}
-
-#[derive(Clone, Copy)]
-struct EnemyProfile {
-    ranged: bool,
-    precise: bool,
-    weight_kg: f32,
-    block_training_multiplier: f32,
-    blunt: bool,
-    slash: bool,
-    pierce: bool,
-    accuracy: f32,
-    weapon_weight_kg: f32,
-    penetration: f32,
-    reach: f32,
-    ranged_force_joules: f32,
-    armored: bool,
-    drop: Option<&'static str>,
-}
-
-impl EnemyArchetype {
-    fn from_label(enemy_type: &str) -> Self {
-        let label = enemy_type.to_ascii_lowercase();
-        if label.contains("bandit") || label.contains("thieve") {
-            Self::Bandit
-        } else if label.contains("goblin") {
-            Self::Goblin
-        } else if label.contains("spider") {
-            Self::Spider
-        } else if label.contains("wolf") {
-            Self::Wolf
-        } else {
-            Self::Other
-        }
-    }
-
-    fn profile(self) -> EnemyProfile {
-        match self {
-            Self::Bandit => EnemyProfile {
-                ranged: false,
-                precise: false,
-                weight_kg: 70.0,
-                block_training_multiplier: 1.0,
-                blunt: false,
-                slash: true,
-                pierce: false,
-                accuracy: 0.8,
-                weapon_weight_kg: 1.5,
-                penetration: 0.8,
-                reach: 0.8,
-                ranged_force_joules: 0.0,
-                armored: true,
-                drop: Some("katzbalger"),
-            },
-            Self::Goblin => EnemyProfile {
-                ranged: true,
-                precise: true,
-                weight_kg: 70.0,
-                block_training_multiplier: 0.4,
-                blunt: false,
-                slash: false,
-                pierce: true,
-                accuracy: 1.4,
-                weapon_weight_kg: 1.0,
-                penetration: 0.8,
-                reach: 20.0,
-                ranged_force_joules: 40.0,
-                armored: false,
-                drop: Some("self_bow"),
-            },
-            Self::Spider => EnemyProfile {
-                ranged: false,
-                precise: true,
-                weight_kg: 35.0,
-                block_training_multiplier: 0.4,
-                blunt: false,
-                slash: false,
-                pierce: true,
-                accuracy: 1.4,
-                weapon_weight_kg: 1.5,
-                penetration: 2.0,
-                reach: 0.8,
-                ranged_force_joules: 0.0,
-                armored: false,
-                drop: None,
-            },
-            Self::Wolf => EnemyProfile {
-                ranged: false,
-                precise: false,
-                weight_kg: 45.0,
-                block_training_multiplier: 0.4,
-                blunt: false,
-                slash: false,
-                pierce: true,
-                accuracy: 0.8,
-                weapon_weight_kg: 1.5,
-                penetration: 0.8,
-                reach: 0.8,
-                ranged_force_joules: 0.0,
-                armored: false,
-                drop: None,
-            },
-            Self::Other => EnemyProfile {
-                ranged: false,
-                precise: false,
-                weight_kg: 70.0,
-                block_training_multiplier: 0.4,
-                blunt: true,
-                slash: false,
-                pierce: false,
-                accuracy: 0.8,
-                weapon_weight_kg: 1.5,
-                penetration: 0.8,
-                reach: 0.8,
-                ranged_force_joules: 0.0,
-                armored: false,
-                drop: Some("club"),
-            },
-        }
-    }
+fn parse_threat(enemy_type: &str) -> Result<adventuresim_core::bestiary::ThreatId, String> {
+    enemy_type
+        .parse()
+        .map_err(|_| format!("Unknown threat ID: {enemy_type}"))
 }
 
 fn quest_encounter_archetype(
     enemy_type: &str,
 ) -> Option<adventuresim_core::encounter::EncounterArchetype> {
-    use adventuresim_core::encounter::EncounterArchetype;
-
-    let label = enemy_type.to_ascii_lowercase();
-    if label.contains("undead") || label.contains("skeleton") || label.contains("zombie") {
-        Some(EncounterArchetype::Undead)
-    } else if label.contains("goblin") {
-        Some(EncounterArchetype::Goblins)
-    } else if label.contains("bandit") || label.contains("thieve") {
-        Some(EncounterArchetype::Bandits)
-    } else {
-        None
+    use adventuresim_core::{bestiary::ThreatId, encounter::EncounterArchetype};
+    match parse_threat(enemy_type).ok()? {
+        ThreatId::Goblin | ThreatId::Kobold => Some(EncounterArchetype::Goblins),
+        ThreatId::Skeleton | ThreatId::Ghoul | ThreatId::Revenant | ThreatId::Nachzehrer => {
+            Some(EncounterArchetype::Undead)
+        }
+        ThreatId::Bandit
+        | ThreatId::Deserter
+        | ThreatId::Poacher
+        | ThreatId::Smuggler
+        | ThreatId::Cultist
+        | ThreatId::GraveRobber => Some(EncounterArchetype::Bandits),
+        _ => None,
     }
 }
 
-fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Combatant {
+fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Result<Combatant, String> {
+    use adventuresim_core::bestiary::{AttackStyle, Protection};
     let rating = (1.2 + difficulty.max(1) as f32 * 0.35).min(4.0);
-    let profile = EnemyArchetype::from_label(enemy_type).profile();
+    let profile = parse_threat(enemy_type)?.profile().combat;
     let mut combatant = Combatant::new(id);
     combatant.attributes = CombatAttributes {
         endurance: rating,
         immunity: rating,
         gut: rating,
-        precision: if profile.precise {
-            rating + 0.5
-        } else {
-            rating
-        },
+        precision: rating + profile.precision_bonus,
         intelligence: rating * 0.7,
         instinct: rating,
         eyesight: rating,
@@ -217,17 +93,33 @@ fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Combatant {
         left_leg_agility: rating,
         right_leg_agility: rating,
     };
-    let training = rating * 1_500.0;
+    let training = rating * 1_500.0 * profile.training_multiplier;
     combatant.skills = CombatSkills {
         sword_hours: training,
         bow_hours: if profile.ranged { training * 2.0 } else { 0.0 },
         dodge_hours: training,
-        block_hours: training * profile.block_training_multiplier,
-        will_hours: training,
+        block_hours: if matches!(
+            profile.protection,
+            Protection::Shielded | Protection::Armored
+        ) {
+            training
+        } else {
+            training * 0.4
+        },
+        will_hours: training * (0.5 + f32::from(profile.morale) / 50.0),
         balance_hours: training,
         ..CombatSkills::default()
     };
     combatant.body.weight_kg = profile.weight_kg;
+    let (blunt, slash, pierce) = match profile.attack {
+        AttackStyle::Blunt => (true, false, false),
+        AttackStyle::Blade => (false, true, false),
+        AttackStyle::Knife
+        | AttackStyle::Spear
+        | AttackStyle::Bow
+        | AttackStyle::Bite
+        | AttackStyle::Claw => (false, false, true),
+    };
     let weapon = CombatWeapon {
         skills: if profile.ranged {
             adventuresim_core::equipment::WeaponSkillDistribution {
@@ -242,28 +134,32 @@ fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Combatant {
         },
         melee: !profile.ranged,
         ranged: profile.ranged,
-        blunt: profile.blunt,
-        slash: profile.slash,
-        pierce: profile.pierce,
-        accuracy: profile.accuracy,
-        weight: profile.weapon_weight_kg,
-        penetration: profile.penetration,
-        melee_reach: if profile.ranged { 0.0 } else { profile.reach },
-        ranged_range: if profile.ranged { profile.reach } else { 0.0 },
+        blunt,
+        slash,
+        pierce,
+        accuracy: 0.8 + profile.precision_bonus,
+        weight: if profile.rig == adventuresim_core::bestiary::RigTopology::Quadruped {
+            1.0
+        } else {
+            1.5
+        },
+        penetration: if matches!(profile.attack, AttackStyle::Spear | AttackStyle::Claw) {
+            1.5
+        } else {
+            0.8
+        },
+        melee_reach: if profile.ranged { 0.0 } else { 0.8 },
+        ranged_range: if profile.ranged { 20.0 } else { 0.0 },
         attack_interval_seconds: if profile.ranged { 1.0 } else { 0.75 },
-        precise: profile.precise,
+        precise: profile.precision_bonus > 0.0,
         balance: 0.3,
-        ranged_force_joules: profile.ranged_force_joules,
+        ranged_force_joules: if profile.ranged { 40.0 } else { 0.0 },
     };
     combatant.equipment.weapon = Some(weapon);
     if profile.ranged {
         combatant.equipment.ranged_weapon = Some(weapon);
         combatant.equipment.ranged_projectile_kind =
-            Some(if enemy_type.to_ascii_lowercase().contains("arquebus") {
-                adventuresim_core::autoresolve::CombatProjectileKind::Ball
-            } else {
-                adventuresim_core::autoresolve::CombatProjectileKind::Arrowhead
-            });
+            Some(adventuresim_core::autoresolve::CombatProjectileKind::Arrowhead);
         combatant.equipment.melee_weapon = Some(CombatWeapon {
             melee: true,
             slash: true,
@@ -281,7 +177,14 @@ fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Combatant {
     } else {
         combatant.equipment.melee_weapon = Some(weapon);
     }
-    if profile.armored {
+    let innate = profile.innate_protection;
+    if innate.resistance_joules > 0.0 || innate.padding_joules > 0.0 {
+        combatant.equipment.armor.fill(CombatArmor::innate(
+            innate.resistance_joules,
+            innate.padding_joules,
+        ));
+    }
+    if matches!(profile.protection, Protection::Armored) {
         combatant.equipment.shield_block_bonus = 1.0;
         combatant.equipment.armor.fill(CombatArmor {
             resistance: 25.0,
@@ -291,11 +194,11 @@ fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Combatant {
             coverage: 0.5,
         });
     }
-    combatant
+    Ok(combatant)
 }
 
-fn autoresolve_drop(enemy_type: &str) -> Option<&'static str> {
-    EnemyArchetype::from_label(enemy_type).profile().drop
+fn autoresolve_drop(enemy_type: &str) -> Result<Option<&'static str>, String> {
+    Ok(parse_threat(enemy_type)?.profile().combat.loot_item_id)
 }
 
 fn consume_autoresolve_ammunition(ctx: &ReducerContext, character_id: u64, mut quantity: u32) {
@@ -377,38 +280,31 @@ fn record_autoresolve_report(
 
 #[cfg(test)]
 mod healing_tests {
-    use super::{EnemyArchetype, autoresolve_drop, quest_encounter_archetype};
+    use super::{autoresolve_drop, quest_encounter_archetype};
     use adventuresim_core::encounter::EncounterArchetype;
 
     #[test]
     fn enemy_archetypes_keep_combat_and_loot_classification_together() {
-        let goblin = EnemyArchetype::from_label("forest goblins").profile();
-        assert!(goblin.ranged);
-        assert_eq!(goblin.drop, Some("self_bow"));
-
-        let bandit = EnemyArchetype::from_label("guild thieves").profile();
-        assert!(bandit.armored);
-        assert_eq!(autoresolve_drop("guild thieves"), Some("katzbalger"));
-
-        assert_eq!(autoresolve_drop("giant spiders"), None);
-        assert_eq!(autoresolve_drop("unknown menace"), Some("club"));
+        assert_eq!(autoresolve_drop("goblin"), Ok(Some("self_bow")));
+        assert_eq!(autoresolve_drop("bandit"), Ok(Some("katzbalger")));
+        assert!(autoresolve_drop("unknown menace").is_err());
     }
 
     #[test]
     fn only_supported_active_quest_enemies_influence_random_encounters() {
         assert_eq!(
-            quest_encounter_archetype("restless skeletons"),
+            quest_encounter_archetype("skeleton"),
             Some(EncounterArchetype::Undead)
         );
         assert_eq!(
-            quest_encounter_archetype("forest goblins"),
+            quest_encounter_archetype("goblin"),
             Some(EncounterArchetype::Goblins)
         );
         assert_eq!(
-            quest_encounter_archetype("road bandits"),
+            quest_encounter_archetype("bandit"),
             Some(EncounterArchetype::Bandits)
         );
-        assert_eq!(quest_encounter_archetype("giant spiders"), None);
+        assert_eq!(quest_encounter_archetype("giant_spider"), None);
     }
 
     #[test]
@@ -6808,6 +6704,7 @@ fn create_strategic_incident(
     quest_id: String,
     spec: IncidentSpec<'_>,
 ) -> Result<Option<String>, String> {
+    parse_threat(spec.enemy_type)?;
     let Some(mut party) = ctx.db.party().id().find(&party_id.to_string()) else {
         return Ok(None);
     };
@@ -6924,7 +6821,7 @@ fn maybe_trigger_religious_incident(
                 "At the gate of {}, a loud insult against the local faith has drawn an angry crowd. Combat is imminent, but the party can still withdraw and travel away.",
                 settlement.name
             ),
-            enemy_type: "angry townsfolk",
+            enemy_type: "angry_mob",
             difficulty: 1,
         },
     )
@@ -6959,7 +6856,7 @@ pub(crate) fn maybe_trigger_activity_incident(
             "raiding",
             "Retaliation at Dawn",
             "The people raided from the surrounding countryside have tracked the party back to town. An armed band closes in; fight them or flee by road.",
-            "armed retainers",
+            "armed_retainer",
             2,
         ))
     } else if fervor_event_occurs(risks.thievery_discovery, roll(ctx)) {
@@ -6967,7 +6864,7 @@ pub(crate) fn maybe_trigger_activity_incident(
             "thievery",
             "Caught Red-Handed",
             "A theft has been discovered and the watch has cornered the party near the market. Fight through them or abandon the settlement.",
-            "town watch",
+            "town_watch",
             1,
         ))
     } else {
@@ -8081,9 +7978,9 @@ fn maybe_interrupt_travel(
         Awareness::Neither => return Ok((requested_minutes, None, next_roll)),
     };
     let archetype = match selection.archetype {
-        EncounterArchetype::Bandits => "bandits",
-        EncounterArchetype::Goblins => "goblins",
-        EncounterArchetype::Undead => "undead",
+        EncounterArchetype::Bandits => "bandit",
+        EncounterArchetype::Goblins => "goblin",
+        EncounterArchetype::Undead => "skeleton",
     };
     let encounter_terrain = core_encounter_terrain(encounter_terrain_at(
         route.as_ref(),
@@ -8227,9 +8124,9 @@ fn commit_encounter_scan(
         .count()
         .max(1) as u16;
     let archetype = match encounter.archetype.as_str() {
-        "bandits" => adventuresim_core::encounter::EncounterArchetype::Bandits,
-        "goblins" => adventuresim_core::encounter::EncounterArchetype::Goblins,
-        "undead" => adventuresim_core::encounter::EncounterArchetype::Undead,
+        "bandit" => adventuresim_core::encounter::EncounterArchetype::Bandits,
+        "goblin" => adventuresim_core::encounter::EncounterArchetype::Goblins,
+        "skeleton" => adventuresim_core::encounter::EncounterArchetype::Undead,
         _ => return Err("Encounter has an unknown archetype".into()),
     };
     let awareness = match (encounter.party_aware, encounter.enemy_aware) {
@@ -8245,8 +8142,10 @@ fn commit_encounter_scan(
         "deepwoods" | "deep_woods" => JourneyTerrainKind::DeepWoods,
         _ => JourneyTerrainKind::Open,
     });
-    encounter.enemy_count =
-        adventuresim_core::encounter::enemy_count(seed, encounter.roll_index, capable);
+    encounter.enemy_count = adventuresim_core::encounter::scale_enemy_count(
+        adventuresim_core::encounter::enemy_count(seed, encounter.roll_index, capable),
+        archetype,
+    );
     encounter.party_speed_m_per_minute =
         adventuresim_core::encounter::sustainable_speed_m_per_minute(
             current_party_fatigue_percent(ctx, &member_ids),
@@ -8662,7 +8561,7 @@ fn resolve_random_encounter_battle(
                 difficulty,
             )
         })
-        .collect();
+        .collect::<Result<Vec<_>, String>>()?;
     let outcome = resolve_battle(allies, enemies, seed ^ encounter.roll_index, opening);
     commit_autoresolve_outcome(
         ctx,
@@ -8673,7 +8572,7 @@ fn resolve_random_encounter_battle(
         &outcome,
     )?;
     if outcome.victor == BattleVictor::Allies {
-        if let Some(item_id) = autoresolve_drop(&encounter.archetype) {
+        if let Some(item_id) = autoresolve_drop(&encounter.archetype)? {
             add_to_party_inventory(
                 ctx,
                 &encounter.party_id,
@@ -8742,11 +8641,13 @@ pub fn resolve_strategic_encounter(
     encounter.selected_choice = Some(parsed.label().into());
     match parsed {
         ParsedEncounterChoice::Sneak => {
+            let enemy_stealth =
+                u16::from(parse_threat(&encounter.archetype)?.profile().combat.stealth);
             if adventuresim_core::encounter::sneak_succeeds(
                 seed,
                 encounter.roll_index,
                 whole_party_sneak_score(ctx, &living_party_member_ids(ctx, &party_id)),
-                250,
+                200_u16.saturating_add(enemy_stealth),
             ) {
                 encounter.outcome = Some("avoided".into());
             } else {
@@ -10053,7 +9954,7 @@ pub fn autoresolve_quest(
                 quest.difficulty,
             )
         })
-        .collect();
+        .collect::<Result<Vec<_>, String>>()?;
     let seed = ctx.random();
     let outcome = resolve_battle(allies, enemies, seed, BattleOpening::Normal);
     commit_autoresolve_outcome(
@@ -10069,7 +9970,7 @@ pub fn autoresolve_quest(
         return Ok(());
     }
 
-    let dropped_items = autoresolve_drop(&quest.enemy_type)
+    let dropped_items = autoresolve_drop(&quest.enemy_type)?
         .map(|item| vec![(item.to_string(), quest.enemy_count.max(0) as u32)])
         .unwrap_or_default();
     record_battle_result(
@@ -10641,7 +10542,7 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         (
             "Clear the Goblin Cave",
             "Goblins have been attacking travelers on the road after dark.",
-            "goblins",
+            "goblin",
             "cave",
             "You arrive at a cave.",
             2,
@@ -10650,7 +10551,7 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         (
             "Break Up the Bandit Camp",
             "Bandits have been raiding merchant caravans.",
-            "bandits",
+            "bandit",
             "camp",
             "You arrive at a rough camp.",
             3,
@@ -10659,7 +10560,7 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         (
             "Hunt the Wolf Pack",
             "Wolves have been attacking the flocks that supply wool and hides.",
-            "wolves",
+            "wolf",
             "woods",
             "You arrive at a wooded hollow.",
             1,
@@ -10667,8 +10568,8 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         ),
         (
             "Purge the Old Mine",
-            "Giant spiders have cut off the armourer's supply of ore.",
-            "spiders",
+            "Kobolds have cut off the armourer's supply of ore.",
+            "kobold",
             "mine",
             "You arrive at an old mine.",
             3,
@@ -10677,7 +10578,7 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         (
             "Recover the Stolen Arms",
             "Thieves are hiding with a stolen shipment of weapons.",
-            "thieves",
+            "smuggler",
             "camp",
             "You arrive at a hidden camp.",
             2,
@@ -10686,10 +10587,82 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         (
             "Quiet the Restless Dead",
             "A necromancer has raised skeletons in a nearby crypt.",
-            "skeletons",
+            "skeleton",
             "ruins",
             "You arrive at ruined chapel.",
             4,
+            "religion",
+        ),
+        (
+            "Drive Orcs from the Ruins",
+            "Armored orcs have occupied a ruined watch post.",
+            "orc",
+            "ruins",
+            "You arrive at a ruined watch post.",
+            4,
+            "armor",
+        ),
+        (
+            "Hunt the Great Bear",
+            "A large bear has made the nearby woods unsafe.",
+            "bear",
+            "woods",
+            "You arrive at a trampled woodland clearing.",
+            3,
+            "clothing",
+        ),
+        (
+            "Cleanse the Grave Eaters",
+            "Ghouls have been feeding in the old graveyard.",
+            "ghoul",
+            "ruins",
+            "You arrive at a desecrated graveyard.",
+            4,
+            "religion",
+        ),
+        (
+            "Break the Deserter Camp",
+            "Armed deserters are extorting travelers at a road camp.",
+            "deserter",
+            "camp",
+            "You arrive above a disciplined roadside camp.",
+            4,
+            "weapons",
+        ),
+        (
+            "Stop the Poachers",
+            "Poachers have wounded foresters and stripped the local woods.",
+            "poacher",
+            "woods",
+            "You arrive at a concealed hunting camp.",
+            2,
+            "merchants",
+        ),
+        (
+            "Investigate the Black Hound",
+            "Travelers report a black hound haunting the graveyard road at night.",
+            "spectral_hound",
+            "ruins",
+            "You arrive at the graveyard road near dusk.",
+            3,
+            "inn",
+        ),
+        (
+            "End the Night Visitations",
+            "Several households report an unseen visitor pressing on sleepers.",
+            "alp",
+            "ruins",
+            "You arrive at an abandoned house implicated by the reports.",
+            2,
+            "inn",
+        ),
+        (
+            "Find the Shroud Eater",
+            "Recent burials are disturbed and sickness follows each funeral.",
+            "nachzehrer",
+            "ruins",
+            "You arrive at the settlement's outlying burial ground.",
+            3,
             "religion",
         ),
     ];

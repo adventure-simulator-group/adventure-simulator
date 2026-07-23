@@ -7,6 +7,7 @@ use std::{
 };
 
 use adventuresim_core::{
+    bestiary::ThreatId,
     strategic_schedule::DailySchedule,
     strategic_time::{CampDurationPolicy, ItineraryMember, ItinerarySegment, forecast_itinerary},
 };
@@ -125,7 +126,12 @@ impl TerrainPlanner {
 }
 
 pub(crate) fn active_quest_summary(quest: &Quest) -> String {
-    format!("Active quest · {} {}", quest.enemy_count, quest.enemy_type)
+    let name = quest
+        .enemy_type
+        .parse::<ThreatId>()
+        .map(|id| id.display_name(quest.enemy_count.max(0) as u32))
+        .unwrap_or_else(|_| "Unknown threat".to_string());
+    format!("Active quest · {} {name}", quest.enemy_count)
 }
 
 pub(crate) fn active_quest_tooltip(quest: &Quest) -> String {
@@ -668,11 +674,11 @@ mod tests {
         let mut quest = quest("crypt", "riverdale", QuestStatus::Accepted);
         quest.description = "A necromancer has raised the dead.".into();
         quest.enemy_count = 11;
-        quest.enemy_type = "skeletons".into();
+        quest.enemy_type = "skeleton".into();
 
         assert_eq!(
             active_quest_tooltip(&quest),
-            "A necromancer has raised the dead.\nActive quest · 11 skeletons"
+            "A necromancer has raised the dead.\nActive quest · 11 Skeletons"
         );
     }
 
