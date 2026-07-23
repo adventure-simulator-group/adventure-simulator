@@ -309,6 +309,43 @@ pub fn advance_travel_time(
     Ok(true)
 }
 
+/// Stationary but strenuous strategic time used by investigation actions.
+/// Unlike neutral waiting this applies ordinary needs and the same fatigue
+/// reservoir as travel, but it never records movement filth or terrain
+/// exposure.
+pub fn advance_investigation_time(
+    ctx: &ReducerContext,
+    character_id: u64,
+    minutes: u64,
+) -> Result<bool, String> {
+    let mut remaining = minutes;
+    while remaining > 0 {
+        let safe = preview_travel_time(ctx, character_id, remaining)?;
+        if safe == 0 {
+            return settle_travel_boundary(ctx, character_id);
+        }
+        let before = ctx
+            .db
+            .character_time()
+            .character_id()
+            .find(character_id)
+            .map_or(0, |row| row.minutes);
+        let alive = advance_character_time(ctx, character_id, safe)?;
+        let after = ctx
+            .db
+            .character_time()
+            .character_id()
+            .find(character_id)
+            .map_or(before, |row| row.minutes);
+        let elapsed = after.saturating_sub(before);
+        if !alive || elapsed < safe {
+            return Ok(false);
+        }
+        remaining -= elapsed;
+    }
+    Ok(true)
+}
+
 /// Neutral/location-appropriate personal time for waiting and procedures. It
 /// advances disease, wounds, blood, and ordinary recovery without applying
 /// travel fatigue or travel needs.
@@ -1780,6 +1817,7 @@ pub fn rest_at_camp(
     // Reforecast the untravelled part from the fatigue that this particular
     // rest actually removed. The journey record retains all reached camps.
     crate::strategic::refresh_party_journey_forecast(ctx, &party_id)?;
+    crate::strategic::reconcile_party_objective_continuity(ctx, &party_id)?;
     Ok(())
 }
 

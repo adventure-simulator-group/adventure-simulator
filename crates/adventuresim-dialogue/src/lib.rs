@@ -214,6 +214,9 @@ pub enum InvestigationAction {
     PresentProof,
     PresentTestimony,
     Negotiate,
+    ReturnAsset,
+    ReleaseSubject,
+    ExchangeAsset,
     ReportToIssuer,
 }
 

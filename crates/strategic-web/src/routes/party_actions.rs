@@ -71,6 +71,11 @@ pub(crate) enum PartyAction {
     CancelMission {
         mission_id: String,
     },
+    PerformInvestigation {
+        action_id: String,
+        method: String,
+        expected_version: u32,
+    },
 }
 
 impl PartyAction {
@@ -80,6 +85,7 @@ impl PartyAction {
             Self::TravelToCaseSite { .. }
                 | Self::AutoresolveMission { .. }
                 | Self::RequestTacticalServer { .. }
+                | Self::PerformInvestigation { .. }
         )
     }
 
@@ -101,6 +107,7 @@ impl PartyAction {
             Self::DisbandParty { .. } => "disband_party".into(),
             Self::RequestTacticalServer { .. } => "initiate_combat".into(),
             Self::CancelMission { .. } => "cancel_mission".into(),
+            Self::PerformInvestigation { .. } => "investigate".into(),
         }
     }
 
@@ -133,6 +140,9 @@ impl PartyAction {
             Self::DisbandParty { .. } => "Disband the party".into(),
             Self::RequestTacticalServer { .. } => "Initiate tactical combat".into(),
             Self::CancelMission { .. } => "Cancel tactical combat".into(),
+            Self::PerformInvestigation { method, .. } => {
+                format!("Perform investigation action: {}", method.replace('_', " "))
+            }
         }
     }
 
@@ -245,6 +255,19 @@ impl PartyAction {
             Self::CancelMission { mission_id } => (
                 "cancel_mission_request",
                 vec![json!(actor_id), json!(mission_id)],
+            ),
+            Self::PerformInvestigation {
+                action_id,
+                method,
+                expected_version,
+            } => (
+                "perform_investigation_action",
+                vec![
+                    json!(actor_id),
+                    json!(action_id),
+                    json!(method),
+                    json!(expected_version),
+                ],
             ),
         }
     }

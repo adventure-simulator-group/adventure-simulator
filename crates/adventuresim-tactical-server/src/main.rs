@@ -479,7 +479,12 @@ fn check_mission_timeout(
     let success = mission_objective_satisfied(state.required_enemy_kills, state.enemies_killed);
     let xp_gained = (state.enemies_killed * 25) as i32;
 
-    conn.reducers().end_tactical_server(success, xp_gained)?;
+    let resolution = if success {
+        TacticalMissionResolution::Defeated
+    } else {
+        TacticalMissionResolution::Failed
+    };
+    conn.reducers().end_tactical_server(resolution, xp_gained)?;
 
     info!("Mission ended successfully");
     info!("Shutting down");

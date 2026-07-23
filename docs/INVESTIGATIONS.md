@@ -87,3 +87,25 @@ and visible regional priors. It delegates forward likelihoods and zero/rare
 semantics to `bestiary::rank_candidates_in_region`; it has no inverse table and
 cannot accept hidden `ThreatId` or case truth. Provenance names only inputs
 already known to the observer.
+
+## Strategic investigation actions
+
+Investigation opportunities are private, versioned capabilities issued by the
+strategic authority. The browser receives only an opaque action ID, method,
+version, safe description, prerequisites, costs, uncertainty, and contribution
+labels. Hidden case truth, target IDs, exact coordinates, deterministic seeds,
+success thresholds, and weights never enter browser state.
+
+The initial action vocabulary is inspect site, search area, follow or reacquire
+tracks, locate a contact, watch, patrol, lay an ambush, and approach a lead.
+Resolution uses authoritative terrain, time of day, evidence age, relevant
+skills, bounded party assistance, and observer familiarity. Weather is
+explicitly unavailable until the strategic layer owns authoritative weather;
+clients must not infer or invent it.
+
+Every attempt is idempotent and consumes strenuous strategic time, including a
+failed attempt. Failure may increase risk or uncertainty, but it does not
+silently invalidate alternate investigation routes. Approximate discoveries
+remain directions or areas. An exact map pin is disclosed only when an
+authoritative result supports exact observer knowledge. Watches, patrols, and
+ambushes remain strategic actions; they do not persist tactical tick state.

@@ -17,6 +17,7 @@ pub mod essential;
 pub mod filth;
 pub mod food;
 pub mod investigation;
+pub mod investigation_action;
 pub mod leadership;
 pub mod local_problem;
 pub mod mission;
@@ -50,6 +51,7 @@ pub mod prelude {
     pub use crate::equipment::*;
     pub use crate::essential::*;
     pub use crate::investigation::*;
+    pub use crate::investigation_action::*;
     pub use crate::mission::*;
     pub use crate::morale::*;
     pub use crate::profession::*;
