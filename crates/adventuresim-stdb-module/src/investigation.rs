@@ -9,8 +9,14 @@ use crate::{
 };
 use adventuresim_core::investigation as inv;
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
+use std::collections::BTreeMap;
 
 const MAX_TEXT: usize = 512;
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, SpacetimeType)]
+pub struct CaseSiteId {
+    pub value: String,
+}
 
 #[derive(Clone, Debug)]
 #[table(accessor = investigation_case_authority)]
@@ -179,6 +185,54 @@ pub struct PartyCaseSiteTracking {
     pub tracked_at: u64,
 }
 
+/// Private physical occupancy. Public character rows deliberately contain no
+/// case-site identifier.
+#[derive(Clone, Debug)]
+#[table(accessor = character_case_site_occupancy)]
+pub struct CharacterCaseSiteOccupancy {
+    #[primary_key]
+    pub character_id: u64,
+    #[index(btree)]
+    pub gateway_bucket: u8,
+    pub case_site_id: CaseSiteId,
+}
+
+pub(crate) fn character_case_site_id(ctx: &ReducerContext, character_id: u64) -> Option<String> {
+    ctx.db
+        .character_case_site_occupancy()
+        .character_id()
+        .find(character_id)
+        .map(|row| row.case_site_id.value)
+}
+
+pub(crate) fn set_character_case_site(
+    ctx: &ReducerContext,
+    character_id: u64,
+    case_site_id: Option<String>,
+) {
+    if ctx
+        .db
+        .character_case_site_occupancy()
+        .character_id()
+        .find(character_id)
+        .is_some()
+    {
+        ctx.db
+            .character_case_site_occupancy()
+            .character_id()
+            .delete(character_id);
+    }
+    if let Some(value) = case_site_id {
+        ctx.db
+            .character_case_site_occupancy()
+            .insert(CharacterCaseSiteOccupancy {
+                character_id,
+                gateway_bucket: 0,
+                case_site_id: CaseSiteId { value },
+            });
+    }
+}
+
 #[derive(Clone, Debug)]
 #[table(accessor = investigation_sharing_receipt)]
 pub struct InvestigationSharingReceipt {
@@ -302,6 +356,12 @@ pub struct BackendCaseSitePin {
     pub tracked: bool,
 }
 
+#[derive(Clone, Debug, SpacetimeType)]
+pub struct BackendCharacterCaseSiteLocation {
+    pub character_id: u64,
+    pub case_site_id: CaseSiteId,
+}
+
 fn is_gateway(ctx: &ViewContext) -> bool {
     ctx.db
         .strategic_gateway_authority()
@@ -369,7 +429,9 @@ pub fn backend_case_site_pins(ctx: &ViewContext) -> Vec<BackendCaseSitePin> {
     if !is_gateway(ctx) {
         return Vec::new();
     }
-    ctx.db
+    let mut pins: BTreeMap<(u64, String), BackendCaseSitePin> = BTreeMap::new();
+    for lead in ctx
+        .db
         .investigation_lead()
         .owner_character_id()
         .filter(0u64..)
@@ -386,6 +448,12 @@ pub fn backend_case_site_pins(ctx: &ViewContext) -> Vec<BackendCaseSitePin> {
                 .case_site_authority()
                 .id()
                 .find(&lead.exact_location_id)?;
+            if site.case_id != lead.case_id
+                || site.latitude_e7 != lead.latitude_e7
+                || site.longitude_e7 != lead.longitude_e7
+            {
+                return None;
+            }
             let tracked = ctx
                 .db
                 .character()
@@ -413,6 +481,34 @@ pub fn backend_case_site_pins(ctx: &ViewContext) -> Vec<BackendCaseSitePin> {
                 tracked,
             })
         })
+    {
+        let key = (lead.owner_character_id, lead.case_site_id.clone());
+        match pins.get(&key) {
+            Some(existing)
+                if existing.knowledge_stage == "visited" || lead.knowledge_stage != "visited" => {}
+            _ => {
+                pins.insert(key, lead);
+            }
+        }
+    }
+    pins.into_values().collect()
+}
+
+#[view(accessor = backend_character_case_site_locations, public)]
+pub fn backend_character_case_site_locations(
+    ctx: &ViewContext,
+) -> Vec<BackendCharacterCaseSiteLocation> {
+    if !is_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .character_case_site_occupancy()
+        .gateway_bucket()
+        .filter(0u8)
+        .map(|row| BackendCharacterCaseSiteLocation {
+            character_id: row.character_id,
+            case_site_id: row.case_site_id,
+        })
         .collect()
 }
 
@@ -432,6 +528,9 @@ pub(crate) fn exact_case_site_for_observer(
         .filter(observer_character_id)
         .find(|lead| {
             lead.exact_location_id == case_site_id
+                && lead.case_id == site.case_id
+                && lead.latitude_e7 == site.latitude_e7
+                && lead.longitude_e7 == site.longitude_e7
                 && lead.corrected_by.is_empty()
                 && matches!(
                     lead.destination_stage.as_str(),
@@ -447,10 +546,30 @@ pub(crate) fn disclose_exact_case_site(
     case_id: &str,
     site: &CaseSiteAuthority,
     source_label: &str,
-) {
-    let id = format!("case-site-disclosure:{observer_character_id}:{}", site.id);
-    if ctx.db.investigation_lead().id().find(&id).is_some() {
-        return;
+) -> Result<(), String> {
+    if site.case_id != case_id {
+        return Err("Case-site disclosure does not belong to the disclosed case".into());
+    }
+    let base_id = format!("case-site-disclosure:{observer_character_id}:{}", site.id);
+    let recorded_at = crate::time::refresh_clock(ctx).unwrap_or(0);
+    let mut id = base_id.clone();
+    if let Some(mut existing) = ctx.db.investigation_lead().id().find(&base_id) {
+        let equivalent = existing.owner_character_id == observer_character_id
+            && existing.case_id == case_id
+            && existing.exact_location_id == site.id
+            && existing.latitude_e7 == site.latitude_e7
+            && existing.longitude_e7 == site.longitude_e7
+            && existing.corrected_by.is_empty()
+            && matches!(
+                existing.destination_stage.as_str(),
+                "exact_believed" | "visited"
+            );
+        if equivalent {
+            return Ok(());
+        }
+        id = format!("{base_id}:revision:{recorded_at}");
+        existing.corrected_by = id.clone();
+        ctx.db.investigation_lead().id().update(existing);
     }
     ctx.db.investigation_lead().insert(InvestigationLead {
         id,
@@ -471,8 +590,49 @@ pub(crate) fn disclose_exact_case_site(
         current_learned_location: String::new(),
         contradiction_group: format!("case-site:{}", site.case_id),
         corrected_by: String::new(),
-        recorded_at: crate::time::refresh_clock(ctx).unwrap_or(0),
+        recorded_at,
     });
+    Ok(())
+}
+
+/// Arrival is durable shared experience: every living traveler can navigate
+/// back even if party leadership later changes.
+pub(crate) fn mark_case_site_visited(
+    ctx: &ReducerContext,
+    observer_character_id: u64,
+    site: &CaseSiteAuthority,
+) -> Result<(), String> {
+    disclose_exact_case_site(
+        ctx,
+        observer_character_id,
+        &site.case_id,
+        site,
+        "visited with the party",
+    )?;
+    let active: Vec<_> = ctx
+        .db
+        .investigation_lead()
+        .owner_character_id()
+        .filter(observer_character_id)
+        .filter(|lead| {
+            lead.case_id == site.case_id
+                && lead.exact_location_id == site.id
+                && lead.latitude_e7 == site.latitude_e7
+                && lead.longitude_e7 == site.longitude_e7
+                && lead.corrected_by.is_empty()
+                && matches!(
+                    lead.destination_stage.as_str(),
+                    "exact_believed" | "visited"
+                )
+        })
+        .collect();
+    for mut lead in active {
+        if lead.destination_stage != "visited" {
+            lead.destination_stage = "visited".into();
+            ctx.db.investigation_lead().id().update(lead);
+        }
+    }
+    Ok(())
 }
 
 fn sanitize_lead(row: InvestigationLead) -> BackendInvestigationLead {
@@ -982,6 +1142,20 @@ pub fn stage_investigation_lead(
         latitude_e7,
         longitude_e7,
     )?;
+    if matches!(destination_stage.as_str(), "exact_believed" | "visited") {
+        let site = ctx
+            .db
+            .case_site_authority()
+            .id()
+            .find(&exact_location_id)
+            .ok_or("Exact lead must name a server-issued case site")?;
+        if site.case_id != public_case_id
+            || site.latitude_e7 != latitude_e7
+            || site.longitude_e7 != longitude_e7
+        {
+            return Err("Exact lead does not match the case-site authority".into());
+        }
+    }
     if ctx
         .db
         .investigation_safe_lead_receipt()
@@ -1034,6 +1208,23 @@ pub fn discover_investigation_lead(
     if receipt.owner_character_id != character_id || !receipt.consumed_by.is_empty() {
         return Err("Safe lead receipt is stale or belongs to another observer".into());
     }
+    if matches!(
+        receipt.destination_stage.as_str(),
+        "exact_believed" | "visited"
+    ) {
+        let site = ctx
+            .db
+            .case_site_authority()
+            .id()
+            .find(&receipt.exact_location_id)
+            .ok_or("Exact lead must name a server-issued case site")?;
+        if site.case_id != receipt.public_case_id
+            || site.latitude_e7 != receipt.latitude_e7
+            || site.longitude_e7 != receipt.longitude_e7
+        {
+            return Err("Exact lead no longer matches the case-site authority".into());
+        }
+    }
     let lead_id = inv::compound_id(&["lead", &character_id.to_string(), &receipt_id]);
     if !receipt.correction_of_lead_id.is_empty() {
         let mut prior = ctx
@@ -1078,11 +1269,12 @@ pub fn discover_investigation_lead(
     Ok(())
 }
 
-fn same_place(left: &crate::Character, right: &crate::Character) -> bool {
+fn same_place(ctx: &ReducerContext, left: &crate::Character, right: &crate::Character) -> bool {
+    let left_site = character_case_site_id(ctx, left.id);
+    let right_site = character_case_site_id(ctx, right.id);
     (left.current_settlement_id.is_some()
         && left.current_settlement_id == right.current_settlement_id)
-        || (left.current_case_site_id.is_some()
-            && left.current_case_site_id == right.current_case_site_id)
+        || (left_site.is_some() && left_site == right_site)
 }
 
 #[reducer]
@@ -1104,7 +1296,7 @@ pub fn share_investigation_lead(
     if !recipient.alive
         || sender.party_id.is_none()
         || sender.party_id != recipient.party_id
-        || !same_place(&sender, &recipient)
+        || !same_place(ctx, &sender, &recipient)
     {
         return Err("Recipient must be a living, co-located member of the sender's party".into());
     }
@@ -1198,7 +1390,7 @@ pub fn share_investigation_belief(
     if !recipient.alive
         || sender.party_id.is_none()
         || sender.party_id != recipient.party_id
-        || !same_place(&sender, &recipient)
+        || !same_place(ctx, &sender, &recipient)
     {
         return Err("Recipient must be a living, co-located member of the sender's party".into());
     }

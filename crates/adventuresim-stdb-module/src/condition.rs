@@ -7,7 +7,7 @@ use crate::character::character;
 use crate::filth::character_filth;
 use crate::investigation::case_site_authority;
 use crate::item::item;
-use crate::strategic::{party, party_inventory_item, quest, settlement};
+use crate::strategic::{party_authority, party_inventory_item, quest, settlement};
 use crate::{
     CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, character_attributes,
     character_equip, character_limbs, character_skills, character_stats, character_time,
@@ -221,7 +221,7 @@ pub fn prepare_party_waterskins(
         .sum();
     let mut party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id.to_string())
         .ok_or("Party not found")?;
@@ -230,7 +230,7 @@ pub fn prepare_party_waterskins(
         skins.saturating_mul(capacity),
         from_settlement,
     );
-    ctx.db.party().id().update(party);
+    ctx.db.party_authority().id().update(party);
     Ok(())
 }
 
@@ -310,7 +310,7 @@ pub fn apply_elapsed_needs(
             .id()
             .find(character_id)
             .and_then(|row| row.party_id)
-            && let Some(mut party) = ctx.db.party().id().find(&party_id)
+            && let Some(mut party) = ctx.db.party_authority().id().find(&party_id)
         {
             let (pooled_drunk, _) = shared_then_personal_volume(
                 -needs.water_balance_ml,
@@ -318,7 +318,7 @@ pub fn apply_elapsed_needs(
                 needs.carried_water_ml,
             );
             party.pooled_water_ml -= pooled_drunk;
-            ctx.db.party().id().update(party);
+            ctx.db.party_authority().id().update(party);
             needs.water_balance_ml += pooled_drunk;
         }
         let drunk = (-needs.water_balance_ml)
@@ -766,7 +766,7 @@ fn base_morale(
             };
     }
 
-    if let Some(case_site_id) = character.current_case_site_id
+    if let Some(case_site_id) = crate::investigation::character_case_site_id(ctx, character.id)
         && let Some(site) = ctx.db.case_site_authority().id().find(&case_site_id)
         && let Some(quest) = ctx.db.quest().id().find(&site.case_id)
     {

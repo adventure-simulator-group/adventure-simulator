@@ -83,57 +83,9 @@ impl<'ctx> __sdk::Table for PartyJourneyRouteTableHandle<'ctx> {
     }
 }
 
-pub struct PartyJourneyRouteUpdateCallbackId(__sdk::CallbackId);
-
-impl<'ctx> __sdk::TableWithPrimaryKey for PartyJourneyRouteTableHandle<'ctx> {
-    type UpdateCallbackId = PartyJourneyRouteUpdateCallbackId;
-
-    fn on_update(
-        &self,
-        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
-    ) -> PartyJourneyRouteUpdateCallbackId {
-        PartyJourneyRouteUpdateCallbackId(self.imp.on_update(Box::new(callback)))
-    }
-
-    fn remove_on_update(&self, callback: PartyJourneyRouteUpdateCallbackId) {
-        self.imp.remove_on_update(callback.0)
-    }
-}
-
-/// Access to the `party_id` unique index on the table `party_journey_route`,
-/// which allows point queries on the field of the same name
-/// via the [`PartyJourneyRoutePartyIdUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.party_journey_route().party_id().find(...)`.
-pub struct PartyJourneyRoutePartyIdUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<PartyJourneyRoute, String>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> PartyJourneyRouteTableHandle<'ctx> {
-    /// Get a handle on the `party_id` unique index on the table `party_journey_route`.
-    pub fn party_id(&self) -> PartyJourneyRoutePartyIdUnique<'ctx> {
-        PartyJourneyRoutePartyIdUnique {
-            imp: self.imp.get_unique_constraint::<String>("party_id"),
-            phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<'ctx> PartyJourneyRoutePartyIdUnique<'ctx> {
-    /// Find the subscribed row whose `party_id` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &String) -> Option<PartyJourneyRoute> {
-        self.imp.find(col_val)
-    }
-}
-
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<PartyJourneyRoute>("party_journey_route");
-    _table.add_unique_constraint::<String>("party_id", |row| &row.party_id);
 }
 
 #[doc(hidden)]

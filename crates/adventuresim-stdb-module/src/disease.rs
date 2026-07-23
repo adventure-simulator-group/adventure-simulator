@@ -11,7 +11,7 @@ use crate::{
     character_attributes, character_capability, character_condition, character_skills,
     character_time,
     item::{inventory_item, item},
-    strategic::{party, party_inventory_item, settlement},
+    strategic::{party_authority, party_inventory_item, settlement},
 };
 
 /// The complete per-character disease state. This table is deliberately
@@ -956,7 +956,7 @@ pub fn craft_medication(
     if let Some(party_id) = party_id.as_deref() {
         let party = ctx
             .db
-            .party()
+            .party_authority()
             .id()
             .find(&party_id.to_owned())
             .ok_or("Party not found")?;
@@ -1521,10 +1521,11 @@ pub fn examine_patient(ctx: &ReducerContext, doctor_id: u64, target_id: u64) -> 
     // boundary, matching the rest of the strategic reducer surface.
     let doctor = crate::require_living_character(ctx, doctor_id)?;
     let target = crate::require_living_character(ctx, target_id)?;
+    let doctor_site = crate::investigation::character_case_site_id(ctx, doctor.id);
+    let target_site = crate::investigation::character_case_site_id(ctx, target.id);
     let same_place = doctor.current_settlement_id.is_some()
         && doctor.current_settlement_id == target.current_settlement_id
-        || doctor.current_case_site_id.is_some()
-            && doctor.current_case_site_id == target.current_case_site_id;
+        || doctor_site.is_some() && doctor_site == target_site;
     if !same_place {
         return Err("Doctor and patient must be together".into());
     }

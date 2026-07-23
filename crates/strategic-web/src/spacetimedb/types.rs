@@ -107,6 +107,7 @@ pub struct Character {
     pub level: u32,
     pub gold: u32,
     pub current_settlement_id: Option<String>,
+    #[serde(default)]
     pub current_case_site_id: Option<String>,
     pub party_id: Option<String>,
     pub age_years: u16,
@@ -379,8 +380,7 @@ pub struct Party {
     pub travel_at_night: bool,
     pub camp_duration_mode: CampDurationMode,
     pub fixed_camp_minutes: u16,
-    pub camp_destination_id: Option<String>,
-    pub camp_destination_kind: Option<String>,
+    pub camp_destination: Option<JourneyEndpoint>,
     pub camp_remaining_minutes: u64,
     pub pooled_water_ml: f32,
     pub medicine_target: f32,
@@ -397,12 +397,9 @@ pub enum CampDurationMode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PartyJourney {
     pub party_id: String,
-    pub origin_kind: String,
-    pub origin_id: String,
-    pub origin_name: String,
-    pub destination_kind: String,
-    pub destination_id: String,
-    pub destination_name: String,
+    pub gateway_bucket: u8,
+    pub origin: JourneyEndpoint,
+    pub destination: JourneyEndpoint,
     pub total_minutes: u64,
     pub completed_minutes: u64,
     pub camp_stop_minutes: Vec<u64>,
@@ -416,6 +413,60 @@ pub struct PartyJourney {
     pub travel_at_night: bool,
     pub camp_duration_mode: CampDurationMode,
     pub fixed_camp_minutes: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CaseSiteId {
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct JourneySettlementEndpoint {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct JourneyCaseSiteEndpoint {
+    pub id: CaseSiteId,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum JourneyEndpoint {
+    Settlement(JourneySettlementEndpoint),
+    CaseSite(JourneyCaseSiteEndpoint),
+    Camp(String),
+}
+
+impl JourneyEndpoint {
+    pub fn settlement_id(&self) -> Option<&str> {
+        match self {
+            Self::Settlement(endpoint) => Some(&endpoint.id),
+            _ => None,
+        }
+    }
+
+    pub fn case_site_id(&self) -> Option<&str> {
+        match self {
+            Self::CaseSite(endpoint) => Some(&endpoint.id.value),
+            _ => None,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Settlement(endpoint) => &endpoint.name,
+            Self::CaseSite(endpoint) => &endpoint.name,
+            Self::Camp(_) => "Camp",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendCharacterCaseSiteLocation {
+    pub character_id: u64,
+    pub case_site_id: CaseSiteId,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

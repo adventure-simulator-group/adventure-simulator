@@ -39,7 +39,7 @@ async fn home(State(state): State<AppState>, session: Session) -> Response {
                 sql_string_literal(party_id)
             ))
             .await
-        && party.camp_destination_id.is_some()
+        && party.camp_destination.is_some()
     {
         return Redirect::to("/camp").into_response();
     }

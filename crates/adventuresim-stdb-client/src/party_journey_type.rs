@@ -5,17 +5,15 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::camp_duration_mode_type::CampDurationMode;
+use super::journey_endpoint_type::JourneyEndpoint;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct PartyJourney {
     pub party_id: String,
-    pub origin_kind: String,
-    pub origin_id: String,
-    pub origin_name: String,
-    pub destination_kind: String,
-    pub destination_id: String,
-    pub destination_name: String,
+    pub gateway_bucket: u8,
+    pub origin: JourneyEndpoint,
+    pub destination: JourneyEndpoint,
     pub total_minutes: u64,
     pub completed_minutes: u64,
     pub camp_stop_minutes: Vec<u64>,
@@ -40,12 +38,9 @@ impl __sdk::InModule for PartyJourney {
 /// Provides typed access to columns for query building.
 pub struct PartyJourneyCols {
     pub party_id: __sdk::__query_builder::Col<PartyJourney, String>,
-    pub origin_kind: __sdk::__query_builder::Col<PartyJourney, String>,
-    pub origin_id: __sdk::__query_builder::Col<PartyJourney, String>,
-    pub origin_name: __sdk::__query_builder::Col<PartyJourney, String>,
-    pub destination_kind: __sdk::__query_builder::Col<PartyJourney, String>,
-    pub destination_id: __sdk::__query_builder::Col<PartyJourney, String>,
-    pub destination_name: __sdk::__query_builder::Col<PartyJourney, String>,
+    pub gateway_bucket: __sdk::__query_builder::Col<PartyJourney, u8>,
+    pub origin: __sdk::__query_builder::Col<PartyJourney, JourneyEndpoint>,
+    pub destination: __sdk::__query_builder::Col<PartyJourney, JourneyEndpoint>,
     pub total_minutes: __sdk::__query_builder::Col<PartyJourney, u64>,
     pub completed_minutes: __sdk::__query_builder::Col<PartyJourney, u64>,
     pub camp_stop_minutes: __sdk::__query_builder::Col<PartyJourney, Vec<u64>>,
@@ -66,12 +61,9 @@ impl __sdk::__query_builder::HasCols for PartyJourney {
     fn cols(table_name: &'static str) -> Self::Cols {
         PartyJourneyCols {
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
-            origin_kind: __sdk::__query_builder::Col::new(table_name, "origin_kind"),
-            origin_id: __sdk::__query_builder::Col::new(table_name, "origin_id"),
-            origin_name: __sdk::__query_builder::Col::new(table_name, "origin_name"),
-            destination_kind: __sdk::__query_builder::Col::new(table_name, "destination_kind"),
-            destination_id: __sdk::__query_builder::Col::new(table_name, "destination_id"),
-            destination_name: __sdk::__query_builder::Col::new(table_name, "destination_name"),
+            gateway_bucket: __sdk::__query_builder::Col::new(table_name, "gateway_bucket"),
+            origin: __sdk::__query_builder::Col::new(table_name, "origin"),
+            destination: __sdk::__query_builder::Col::new(table_name, "destination"),
             total_minutes: __sdk::__query_builder::Col::new(table_name, "total_minutes"),
             completed_minutes: __sdk::__query_builder::Col::new(table_name, "completed_minutes"),
             camp_stop_minutes: __sdk::__query_builder::Col::new(table_name, "camp_stop_minutes"),
@@ -105,6 +97,7 @@ impl __sdk::__query_builder::HasCols for PartyJourney {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct PartyJourneyIxCols {
+    pub gateway_bucket: __sdk::__query_builder::IxCol<PartyJourney, u8>,
     pub party_id: __sdk::__query_builder::IxCol<PartyJourney, String>,
 }
 
@@ -112,6 +105,7 @@ impl __sdk::__query_builder::HasIxCols for PartyJourney {
     type IxCols = PartyJourneyIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         PartyJourneyIxCols {
+            gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
             party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
         }
     }

@@ -24,6 +24,8 @@ pub mod available_water_capacity_type;
 pub mod backend_case_site_pin_type;
 pub mod backend_case_site_pins_table;
 pub mod backend_character_affinities_table;
+pub mod backend_character_case_site_location_type;
+pub mod backend_character_case_site_locations_table;
 pub mod backend_character_familiarities_table;
 pub mod backend_committed_cuts_table;
 pub mod backend_herbalist_examinations_table;
@@ -60,6 +62,7 @@ pub mod canal_watercourse_type;
 pub mod cancel_mission_request_reducer;
 pub mod canopy_density_type;
 pub mod case_site_authority_type;
+pub mod case_site_id_type;
 pub mod catholic_lutheran_church_type;
 pub mod catholic_reformed_church_type;
 pub mod cation_exchange_capacity_type;
@@ -71,6 +74,7 @@ pub mod character_attributes_table;
 pub mod character_attributes_type;
 pub mod character_capability_table;
 pub mod character_capability_type;
+pub mod character_case_site_occupancy_type;
 pub mod character_condition_table;
 pub mod character_condition_type;
 pub mod character_death_table;
@@ -255,9 +259,12 @@ pub mod item_table;
 pub mod item_type;
 pub mod join_dialogue_session_reducer;
 pub mod journey_camp_interval_type;
+pub mod journey_case_site_endpoint_type;
+pub mod journey_endpoint_type;
 pub mod journey_route_leg_type;
 pub mod journey_route_plan_type;
 pub mod journey_route_point_type;
+pub mod journey_settlement_endpoint_type;
 pub mod journey_terrain_kind_type;
 pub mod journey_terrain_span_type;
 pub mod journey_terrain_weights_type;
@@ -550,6 +557,8 @@ pub use available_water_capacity_type::AvailableWaterCapacity;
 pub use backend_case_site_pin_type::BackendCaseSitePin;
 pub use backend_case_site_pins_table::*;
 pub use backend_character_affinities_table::*;
+pub use backend_character_case_site_location_type::BackendCharacterCaseSiteLocation;
+pub use backend_character_case_site_locations_table::*;
 pub use backend_character_familiarities_table::*;
 pub use backend_committed_cuts_table::*;
 pub use backend_herbalist_examinations_table::*;
@@ -586,6 +595,7 @@ pub use canal_watercourse_type::CanalWatercourse;
 pub use cancel_mission_request_reducer::cancel_mission_request;
 pub use canopy_density_type::CanopyDensity;
 pub use case_site_authority_type::CaseSiteAuthority;
+pub use case_site_id_type::CaseSiteId;
 pub use catholic_lutheran_church_type::CatholicLutheranChurch;
 pub use catholic_reformed_church_type::CatholicReformedChurch;
 pub use cation_exchange_capacity_type::CationExchangeCapacity;
@@ -597,6 +607,7 @@ pub use character_attributes_table::*;
 pub use character_attributes_type::CharacterAttributes;
 pub use character_capability_table::*;
 pub use character_capability_type::CharacterCapability;
+pub use character_case_site_occupancy_type::CharacterCaseSiteOccupancy;
 pub use character_condition_table::*;
 pub use character_condition_type::CharacterCondition;
 pub use character_death_table::*;
@@ -781,9 +792,12 @@ pub use item_table::*;
 pub use item_type::Item;
 pub use join_dialogue_session_reducer::join_dialogue_session;
 pub use journey_camp_interval_type::JourneyCampInterval;
+pub use journey_case_site_endpoint_type::JourneyCaseSiteEndpoint;
+pub use journey_endpoint_type::JourneyEndpoint;
 pub use journey_route_leg_type::JourneyRouteLeg;
 pub use journey_route_plan_type::JourneyRoutePlan;
 pub use journey_route_point_type::JourneyRoutePoint;
+pub use journey_settlement_endpoint_type::JourneySettlementEndpoint;
 pub use journey_terrain_kind_type::JourneyTerrainKind;
 pub use journey_terrain_span_type::JourneyTerrainSpan;
 pub use journey_terrain_weights_type::JourneyTerrainWeights;
@@ -2748,6 +2762,7 @@ pub struct DbUpdate {
     autoresolve_report: __sdk::TableUpdate<AutoresolveReport>,
     backend_case_site_pins: __sdk::TableUpdate<BackendCaseSitePin>,
     backend_character_affinities: __sdk::TableUpdate<CharacterAffinity>,
+    backend_character_case_site_locations: __sdk::TableUpdate<BackendCharacterCaseSiteLocation>,
     backend_character_familiarities: __sdk::TableUpdate<CharacterFamiliarity>,
     backend_committed_cuts: __sdk::TableUpdate<CommittedCut>,
     backend_herbalist_examinations: __sdk::TableUpdate<HerbalistExamination>,
@@ -2854,6 +2869,13 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "backend_character_affinities" => db_update.backend_character_affinities.append(
                     backend_character_affinities_table::parse_table_update(table_update)?,
                 ),
+                "backend_character_case_site_locations" => {
+                    db_update.backend_character_case_site_locations.append(
+                        backend_character_case_site_locations_table::parse_table_update(
+                            table_update,
+                        )?,
+                    )
+                }
                 "backend_character_familiarities" => {
                     db_update.backend_character_familiarities.append(
                         backend_character_familiarities_table::parse_table_update(table_update)?,
@@ -3320,9 +3342,6 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.morale_event = cache
             .apply_diff_to_table::<MoraleEvent>("morale_event", &self.morale_event)
             .with_updates_by_pk(|row| &row.id);
-        diff.party = cache
-            .apply_diff_to_table::<Party>("party", &self.party)
-            .with_updates_by_pk(|row| &row.id);
         diff.party_action_request = cache
             .apply_diff_to_table::<PartyActionRequest>(
                 "party_action_request",
@@ -3350,19 +3369,10 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.party_join_request = cache
             .apply_diff_to_table::<PartyJoinRequest>("party_join_request", &self.party_join_request)
             .with_updates_by_pk(|row| &row.id);
-        diff.party_journey = cache
-            .apply_diff_to_table::<PartyJourney>("party_journey", &self.party_journey)
-            .with_updates_by_pk(|row| &row.party_id);
         diff.party_journey_itinerary = cache
             .apply_diff_to_table::<PartyJourneyItinerary>(
                 "party_journey_itinerary",
                 &self.party_journey_itinerary,
-            )
-            .with_updates_by_pk(|row| &row.party_id);
-        diff.party_journey_route = cache
-            .apply_diff_to_table::<PartyJourneyRoute>(
-                "party_journey_route",
-                &self.party_journey_route,
             )
             .with_updates_by_pk(|row| &row.party_id);
         diff.party_leader_vote = cache
@@ -3490,6 +3500,11 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_character_affinities",
             &self.backend_character_affinities,
         );
+        diff.backend_character_case_site_locations = cache
+            .apply_diff_to_table::<BackendCharacterCaseSiteLocation>(
+                "backend_character_case_site_locations",
+                &self.backend_character_case_site_locations,
+            );
         diff.backend_character_familiarities = cache.apply_diff_to_table::<CharacterFamiliarity>(
             "backend_character_familiarities",
             &self.backend_character_familiarities,
@@ -3534,6 +3549,13 @@ impl __sdk::DbUpdate for DbUpdate {
         );
         diff.connected_players = cache
             .apply_diff_to_table::<ConnectedPlayer>("connected_players", &self.connected_players);
+        diff.party = cache.apply_diff_to_table::<Party>("party", &self.party);
+        diff.party_journey =
+            cache.apply_diff_to_table::<PartyJourney>("party_journey", &self.party_journey);
+        diff.party_journey_route = cache.apply_diff_to_table::<PartyJourneyRoute>(
+            "party_journey_route",
+            &self.party_journey_route,
+        );
 
         diff
     }
@@ -3552,6 +3574,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_character_affinities" => db_update
                     .backend_character_affinities
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_case_site_locations" => db_update
+                    .backend_character_case_site_locations
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_character_familiarities" => db_update
                     .backend_character_familiarities
@@ -3836,6 +3861,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_character_affinities" => db_update
                     .backend_character_affinities
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_case_site_locations" => db_update
+                    .backend_character_case_site_locations
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_character_familiarities" => db_update
                     .backend_character_familiarities
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -4113,6 +4141,8 @@ pub struct AppliedDiff<'r> {
     autoresolve_report: __sdk::TableAppliedDiff<'r, AutoresolveReport>,
     backend_case_site_pins: __sdk::TableAppliedDiff<'r, BackendCaseSitePin>,
     backend_character_affinities: __sdk::TableAppliedDiff<'r, CharacterAffinity>,
+    backend_character_case_site_locations:
+        __sdk::TableAppliedDiff<'r, BackendCharacterCaseSiteLocation>,
     backend_character_familiarities: __sdk::TableAppliedDiff<'r, CharacterFamiliarity>,
     backend_committed_cuts: __sdk::TableAppliedDiff<'r, CommittedCut>,
     backend_herbalist_examinations: __sdk::TableAppliedDiff<'r, HerbalistExamination>,
@@ -4231,6 +4261,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<CharacterAffinity>(
             "backend_character_affinities",
             &self.backend_character_affinities,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendCharacterCaseSiteLocation>(
+            "backend_character_case_site_locations",
+            &self.backend_character_case_site_locations,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CharacterFamiliarity>(
@@ -5283,6 +5318,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         autoresolve_report_table::register_table(client_cache);
         backend_case_site_pins_table::register_table(client_cache);
         backend_character_affinities_table::register_table(client_cache);
+        backend_character_case_site_locations_table::register_table(client_cache);
         backend_character_familiarities_table::register_table(client_cache);
         backend_committed_cuts_table::register_table(client_cache);
         backend_herbalist_examinations_table::register_table(client_cache);
@@ -5375,6 +5411,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "autoresolve_report",
         "backend_case_site_pins",
         "backend_character_affinities",
+        "backend_character_case_site_locations",
         "backend_character_familiarities",
         "backend_committed_cuts",
         "backend_herbalist_examinations",

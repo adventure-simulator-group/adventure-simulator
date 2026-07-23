@@ -8,7 +8,7 @@ use crate::{
     ItemSlot, character::character, character__view, character_attributes__view, character_equip,
     character_equip__view, character_limbs__view, character_skills__view, character_stats__view,
     complete_quest, inventory_item, inventory_item__view, investigation::case_site_authority,
-    item__view, party, record_battle_result, strategic::quest,
+    item__view, party_authority, record_battle_result, strategic::quest,
 };
 use std::collections::{HashMap, HashSet};
 use strum::VariantArray;
@@ -201,7 +201,7 @@ pub fn enter_mission(
         }
         let party = ctx
             .db
-            .party()
+            .party_authority()
             .id()
             .find(&server.party_id)
             .ok_or("Mission party no longer exists")?;
@@ -290,7 +290,7 @@ pub fn request_tactical_server(
     let party_id = character.party_id.ok_or("Character has no party")?;
     let party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
@@ -487,7 +487,7 @@ fn end_tactical_server_by_instance(
     if success {
         let party = ctx
             .db
-            .party()
+            .party_authority()
             .id()
             .find(&server.party_id)
             .ok_or("Mission party no longer exists")?;
