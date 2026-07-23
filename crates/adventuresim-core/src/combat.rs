@@ -414,7 +414,9 @@ fn calculate_damage_from_force(
 ) -> AttackResult {
     let attack = attack.clamp(0.0, 1.0);
 
-    let defender_resistance = if armor_applies {
+    let has_edge = attacker_equip.weapon_does_slash() || attacker_equip.weapon_does_pierce();
+    let has_blunt = attacker_equip.weapon_does_blunt();
+    let defender_resistance = if armor_applies && has_edge {
         let resistance = defender_equip.armor_resistance(defender_body_part);
         let flexibility = defender_equip.armor_flexibility(defender_body_part);
         let penetration = attacker_equip.weapon_penetration();
@@ -434,24 +436,33 @@ fn calculate_damage_from_force(
     let penetrated_force = (attack_force - defender_resistance).max(0.0);
     let absorbed_force = (attack_force - penetrated_force).max(0.0);
 
-    // Wider cutting surfaces make poor penetrators but damage more tissue once
-    // through. A zero coefficient is treated as a purely blunt weapon.
+    // Resistance opposes an edge or point. Pure blunt contact transmits its
+    // force directly to padding instead of pretending it must penetrate the
+    // material's cut resistance. A mixed head divides penetrated force between
+    // its edge and impact modes so the same energy is not counted twice.
     let penetration = attacker_equip.weapon_penetration().max(0.0);
-    let cut_damage = if penetration > 0.0
-        && (attacker_equip.weapon_does_slash() || attacker_equip.weapon_does_pierce())
-    {
-        penetrated_force / penetration
+    let (cut_force, transmitted_blunt_force) = match (has_edge, has_blunt) {
+        (true, true) => (penetrated_force * 0.5, penetrated_force * 0.5),
+        (true, false) => (penetrated_force, 0.0),
+        (false, true) => (0.0, penetrated_force),
+        (false, false) => (0.0, 0.0),
+    };
+    let cut_damage = if penetration > 0.0 && has_edge {
+        cut_force / penetration
     } else {
         0.0
     };
-    let blunt_force = absorbed_force * 0.5
-        + if attacker_equip.weapon_does_blunt() {
-            penetrated_force
-        } else {
-            0.0
-        };
+    let blunt_force = absorbed_force * 0.5 + transmitted_blunt_force;
     let blunt_damage = (blunt_force - defender_padding).max(0.0);
-    let balance_damage = (absorbed_force * 0.5) / defender_stagger_resistance;
+    // A pure blunt impact still transfers momentum when there is no edge for
+    // resistance to absorb. Edge and mixed contacts retain the absorbed-force
+    // impulse used by the existing model.
+    let stagger_impulse = if has_blunt && !has_edge {
+        attack_force * 0.5
+    } else {
+        absorbed_force * 0.5
+    };
+    let balance_damage = stagger_impulse / defender_stagger_resistance;
     AttackResult::ToDefender {
         cut_damage,
         blunt_damage,
@@ -486,6 +497,7 @@ pub fn health_damage_from_attack(result: AttackResult, part: BodyPart) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::autoresolve::{CombatArmor, CombatEquipment, CombatWeapon};
     use crate::stub::{StubAttributes, StubBody, StubEquipment, StubEssentials, StubSkills};
 
     #[test]
@@ -508,5 +520,125 @@ mod tests {
         );
         assert_eq!(none, 0.0);
         assert!(parry > 0.0);
+    }
+
+    #[test]
+    fn blunt_force_bypasses_edge_resistance_but_not_padding() {
+        let attacker = CombatEquipment {
+            weapon: Some(CombatWeapon {
+                blunt: true,
+                penetration: 0.5,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let mut defender = CombatEquipment::default();
+        defender.armor.fill(CombatArmor {
+            resistance: 1_000.0,
+            padding: 20.0,
+            flexibility: 0.5,
+            range_of_motion: 1.0,
+            coverage: 1.0,
+        });
+
+        let result = calculate_damage_from_force(
+            1.0,
+            100.0,
+            &attacker,
+            BodyPart::Chest,
+            &StubBody,
+            &defender,
+            true,
+        );
+        let AttackResult::ToDefender {
+            cut_damage,
+            blunt_damage,
+            balance_damage,
+            ..
+        } = result
+        else {
+            panic!("an undefended hit must damage the defender");
+        };
+        assert_eq!(cut_damage, 0.0);
+        assert_eq!(blunt_damage, 80.0);
+        assert_eq!(balance_damage, 50.0 / (70.0 * 10.0));
+    }
+
+    #[test]
+    fn penetration_can_cross_resistance_at_armor_limited_force() {
+        let cutting = |penetration| CombatEquipment {
+            weapon: Some(CombatWeapon {
+                slash: true,
+                penetration,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let mut defender = CombatEquipment::default();
+        defender.armor.fill(CombatArmor::innate(150.0, 0.0));
+
+        let lower = calculate_damage_from_force(
+            1.0,
+            100.0,
+            &cutting(0.5),
+            BodyPart::Chest,
+            &StubBody,
+            &defender,
+            true,
+        );
+        let stronger = calculate_damage_from_force(
+            1.0,
+            100.0,
+            &cutting(1.0),
+            BodyPart::Chest,
+            &StubBody,
+            &defender,
+            true,
+        );
+
+        assert!(matches!(
+            lower,
+            AttackResult::ToDefender {
+                cut_damage: 0.0,
+                ..
+            }
+        ));
+        assert!(matches!(
+            stronger,
+            AttackResult::ToDefender {
+                cut_damage: 25.0,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn mixed_contact_partitions_penetrated_force_without_double_counting() {
+        let attacker = CombatEquipment {
+            weapon: Some(CombatWeapon {
+                blunt: true,
+                slash: true,
+                penetration: 1.0,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let result = calculate_damage_from_force(
+            1.0,
+            100.0,
+            &attacker,
+            BodyPart::Chest,
+            &StubBody,
+            &CombatEquipment::default(),
+            true,
+        );
+        assert!(matches!(
+            result,
+            AttackResult::ToDefender {
+                cut_damage: 50.0,
+                blunt_damage: 50.0,
+                ..
+            }
+        ));
     }
 }
