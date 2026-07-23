@@ -19,6 +19,7 @@ use adventuresim_world_schema::{
     historical_vegetation_matches_context, industry_profile_is_canonical,
     valid_bounded_source_text, valid_sources_markdown,
 };
+use sha2::{Digest, Sha256};
 use spacetimedb::{
     Identity, ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view,
 };
@@ -294,12 +295,74 @@ fn record_autoresolve_report(
 #[cfg(test)]
 mod healing_tests {
     use super::{
-        IncidentStatus, RecruitmentOfferStatus, activity_incident_source_id, autoresolve_drop,
-        case_has_exact_dialogue_provenance, incident_group_matches, player_participant_ids,
-        quest_encounter_archetype, refreshed_recruitment_offer_status,
+        HostileResolutionKind, IncidentStatus, MissionAttemptStatus, MissionAuthority,
+        MissionOutcomeCandidate, RecruitmentOfferStatus, activity_incident_source_id,
+        autoresolve_drop, case_has_exact_dialogue_provenance, incident_group_matches,
+        player_participant_ids, quest_encounter_archetype, refreshed_recruitment_offer_status,
+        sample_mission_candidate,
     };
     use adventuresim_core::encounter::EncounterArchetype;
     use std::collections::HashSet;
+
+    fn sampler_fixture() -> (MissionAuthority, Vec<MissionOutcomeCandidate>) {
+        let site = crate::investigation::CaseSiteId::from("case-site:test".to_string());
+        let mission = MissionAuthority {
+            id: "mission:test".into(),
+            party_id: "party:test".into(),
+            case_site_id: Some(site.clone()),
+            hostile_group_id: Some("hostile-group:test".into()),
+            observer_character_id: 7,
+            case_id: "case:test".into(),
+            status: MissionAttemptStatus::Bound,
+            committed_resolution: None,
+            committed_capture_subject_id: None,
+            scene_key: "crypt".into(),
+        };
+        let mission_id = mission.id.clone();
+        let case_id = mission.case_id.clone();
+        let candidate = |id: &str, resolution, weight| MissionOutcomeCandidate {
+            id: id.into(),
+            mission_id: mission_id.clone(),
+            capability_id: format!("capability:{id}"),
+            case_id: case_id.clone(),
+            case_site_id: site.clone(),
+            hostile_group_id: "hostile-group:test".into(),
+            path_index: 0,
+            objective_id: format!("objective:{id}"),
+            resolution,
+            weight,
+            capture_subject_id: None,
+            capture_custody_version: None,
+        };
+        (
+            mission,
+            vec![
+                candidate("candidate:b", HostileResolutionKind::DrivenOff, 30),
+                candidate("candidate:a", HostileResolutionKind::Defeated, 50),
+                candidate("candidate:c", HostileResolutionKind::Captured, 20),
+            ],
+        )
+    }
+
+    #[test]
+    fn strategic_outcome_sampling_is_canonical_and_retry_stable() {
+        let (mission, candidates) = sampler_fixture();
+        let first = sample_mission_candidate(&mission, candidates.clone()).unwrap();
+        let retry = sample_mission_candidate(&mission, candidates.clone()).unwrap();
+        let reversed =
+            sample_mission_candidate(&mission, candidates.into_iter().rev().collect()).unwrap();
+        assert_eq!(first.id, retry.id);
+        assert_eq!(first.id, reversed.id);
+    }
+
+    #[test]
+    fn zero_weight_candidates_are_never_selected() {
+        let (mission, mut candidates) = sampler_fixture();
+        for candidate in &mut candidates {
+            candidate.weight = 0;
+        }
+        assert!(sample_mission_candidate(&mission, candidates).is_none());
+    }
 
     #[test]
     fn enemy_archetypes_keep_combat_and_loot_classification_together() {
@@ -588,7 +651,7 @@ mod healing_tests {
             .and_then(|tail| tail.split("#[reducer]").next())
             .expect("autoresolve reducer");
         assert!(body.contains("ensure_bound_mission_authority("));
-        assert!(body.contains("commit_victorious_battle("));
+        assert!(body.contains("complete_bound_mission_success("));
         assert!(body.contains("autoresolve_report()"));
         assert!(!body.contains("record_battle_result("));
     }
@@ -664,7 +727,7 @@ mod healing_tests {
         assert!(!accept.contains("gold_reward.max"));
 
         let battle = source
-            .split("pub(crate) fn commit_victorious_battle")
+            .split("pub(crate) fn commit_hostile_battle_resolution")
             .nth(1)
             .and_then(|tail| tail.split("#[reducer]").next())
             .expect("battle commit");
@@ -771,6 +834,8 @@ mod healing_tests {
             "case_outcome_fact",
             "case_custody",
             "contract_authority",
+            "mission_approach_capability",
+            "mission_outcome_candidate",
         ] {
             assert!(
                 source.contains(&format!("#[table(accessor = {schema})]")),
@@ -2948,9 +3013,20 @@ pub struct MissionAuthority {
     pub party_id: String,
     pub case_site_id: Option<CaseSiteId>,
     pub hostile_group_id: Option<String>,
-    pub expected_resolution: HostileResolutionKind,
-    pub capture_subject_id: Option<String>,
+    pub observer_character_id: u64,
+    pub case_id: String,
+    pub status: MissionAttemptStatus,
+    pub committed_resolution: Option<HostileResolutionKind>,
+    pub committed_capture_subject_id: Option<String>,
     pub scene_key: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum MissionAttemptStatus {
+    Bound,
+    Committed,
+    Failed,
+    Cancelled,
 }
 
 #[derive(
@@ -2961,6 +3037,49 @@ pub enum HostileResolutionKind {
     DrivenOff,
     Captured,
     CaptureTargetKilled,
+}
+
+/// Private observer-authorized approach authority. These rows are exact,
+/// objective-scoped capabilities, never a broad public "can capture" flag.
+#[derive(Clone, Debug)]
+#[table(accessor = mission_approach_capability)]
+pub struct MissionApproachCapability {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub observer_character_id: u64,
+    #[index(btree)]
+    pub hostile_group_id: String,
+    pub case_id: String,
+    pub case_site_id: CaseSiteId,
+    pub path_index: u16,
+    pub objective_id: String,
+    pub resolution: HostileResolutionKind,
+    pub weight: u32,
+    pub capture_subject_id: Option<String>,
+    pub capture_custody_version: Option<u32>,
+    pub active: bool,
+}
+
+/// Immutable private snapshot of the exact candidates a mission may sample.
+/// The tactical child cannot read, select, or amend this manifest.
+#[derive(Clone, Debug)]
+#[table(accessor = mission_outcome_candidate)]
+pub struct MissionOutcomeCandidate {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub mission_id: String,
+    pub capability_id: String,
+    pub case_id: String,
+    pub case_site_id: CaseSiteId,
+    pub hostile_group_id: String,
+    pub path_index: u16,
+    pub objective_id: String,
+    pub resolution: HostileResolutionKind,
+    pub weight: u32,
+    pub capture_subject_id: Option<String>,
+    pub capture_custody_version: Option<u32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
@@ -7864,28 +7983,255 @@ fn credit_party_reserve(ctx: &ReducerContext, party_id: &str, value: u64) -> Res
     Ok(())
 }
 
-pub(crate) fn commit_victorious_battle(
+fn mission_candidate_is_current(
     ctx: &ReducerContext,
-    outcome_source_id: &str,
-    battle_id: &str,
-    party_id: &str,
-    mission_id: Option<&str>,
-    hostile_group_id: Option<&str>,
-    dropped_items: Vec<(String, u32)>,
-    include_random_gold: bool,
+    mission: &MissionAuthority,
+    candidate: &MissionOutcomeCandidate,
 ) -> Result<bool, String> {
-    commit_hostile_battle_resolution(
+    if mission.status != MissionAttemptStatus::Bound
+        || candidate.mission_id != mission.id
+        || candidate.case_id != mission.case_id
+        || mission.case_site_id.as_ref() != Some(&candidate.case_site_id)
+        || mission.hostile_group_id.as_deref() != Some(&candidate.hostile_group_id)
+    {
+        return Ok(false);
+    }
+    let Some(capability) = ctx
+        .db
+        .mission_approach_capability()
+        .id()
+        .find(&candidate.capability_id)
+    else {
+        return Ok(false);
+    };
+    if !capability.active
+        || capability.observer_character_id != mission.observer_character_id
+        || capability.case_id != candidate.case_id
+        || capability.case_site_id != candidate.case_site_id
+        || capability.hostile_group_id != candidate.hostile_group_id
+        || capability.path_index != candidate.path_index
+        || capability.objective_id != candidate.objective_id
+        || capability.resolution != candidate.resolution
+        || capability.weight != candidate.weight
+        || capability.capture_subject_id != candidate.capture_subject_id
+        || capability.capture_custody_version != candidate.capture_custody_version
+    {
+        return Ok(false);
+    }
+    let Some(case) = ctx.db.case_authority().id().find(&candidate.case_id) else {
+        return Ok(false);
+    };
+    if case.resolution_status != CaseResolutionStatus::Open {
+        return Ok(false);
+    }
+    let expression: adventuresim_core::case::ObjectiveExpression =
+        serde_json::from_str(&case.objective_expression_json)
+            .map_err(|_| "Case objective authority is invalid")?;
+    let facts = ctx
+        .db
+        .case_outcome_fact()
+        .case_id()
+        .filter(&case.id)
+        .map(|row| {
+            serde_json::from_str::<adventuresim_core::case::OutcomeFact>(&row.fact_json)
+                .map_err(|_| "Stored outcome fact is invalid".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let core_case_id =
+        adventuresim_core::case::CaseId::new(case.id.clone()).map_err(|_| "Case ID is invalid")?;
+    let evaluation = expression.evaluate(&core_case_id, &mission.party_id, &facts);
+    let Some(path) = expression
+        .alternatives
+        .get(usize::from(candidate.path_index))
+    else {
+        return Ok(false);
+    };
+    let Some(objective_index) = path
+        .objectives
+        .iter()
+        .position(|objective| objective.id.as_str() == candidate.objective_id)
+    else {
+        return Ok(false);
+    };
+    if evaluation
+        .alternatives
+        .get(usize::from(candidate.path_index))
+        .and_then(|path| path.get(objective_index))
+        .is_none_or(|progress| progress.state != adventuresim_core::case::EvaluationState::Pending)
+    {
+        return Ok(false);
+    }
+    if candidate.resolution != HostileResolutionKind::Captured {
+        return Ok(true);
+    }
+    let (Some(subject_id), Some(version)) = (
+        candidate.capture_subject_id.as_ref(),
+        candidate.capture_custody_version,
+    ) else {
+        return Ok(false);
+    };
+    Ok(ctx
+        .db
+        .case_custody()
+        .object_id()
+        .find(subject_id)
+        .is_some_and(|custody| {
+            custody.case_id == candidate.case_id
+                && custody.object_kind == CustodyObjectKind::Subject
+                && custody.holder_kind == CustodyHolderKind::Site
+                && custody.holder_id == candidate.case_site_id.value
+                && custody.version == version
+        }))
+}
+
+fn sample_mission_candidate(
+    mission: &MissionAuthority,
+    mut candidates: Vec<MissionOutcomeCandidate>,
+) -> Option<MissionOutcomeCandidate> {
+    candidates.sort_by(|left, right| left.id.cmp(&right.id));
+    let total_weight = candidates.iter().fold(0u64, |total, candidate| {
+        total.saturating_add(u64::from(candidate.weight))
+    });
+    if total_weight == 0 {
+        return None;
+    }
+    let mut hasher = Sha256::new();
+    hasher.update(b"adventuresim:strategic-mission-outcome:v1\0");
+    hasher.update(mission.id.as_bytes());
+    hasher.update([0]);
+    hasher.update(mission.party_id.as_bytes());
+    for candidate in &candidates {
+        hasher.update([0]);
+        hasher.update(candidate.id.as_bytes());
+        hasher.update([0]);
+        hasher.update(candidate.capability_id.as_bytes());
+        hasher.update(candidate.weight.to_le_bytes());
+        hasher.update([candidate.resolution as u8]);
+    }
+    let digest = hasher.finalize();
+    let mut bytes = [0u8; 8];
+    bytes.copy_from_slice(&digest[..8]);
+    let mut draw = u64::from_le_bytes(bytes) % total_weight;
+    for candidate in candidates {
+        let weight = u64::from(candidate.weight);
+        if draw < weight {
+            return Some(candidate);
+        }
+        draw -= weight;
+    }
+    None
+}
+
+/// Commit the strategic meaning of an authenticated successful combat
+/// session. The child reports only success; the exact result is sampled here.
+pub(crate) fn complete_bound_mission_success(
+    ctx: &ReducerContext,
+    mission_id: &str,
+) -> Result<bool, String> {
+    let mut mission = ctx
+        .db
+        .mission_authority()
+        .id()
+        .find(&mission_id.to_string())
+        .ok_or("Mission authority not found")?;
+    if mission.status == MissionAttemptStatus::Committed {
+        return Ok(false);
+    }
+    if mission.status != MissionAttemptStatus::Bound {
+        return Err("Mission attempt is no longer eligible for completion".into());
+    }
+    let mut candidates = Vec::new();
+    for candidate in ctx
+        .db
+        .mission_outcome_candidate()
+        .mission_id()
+        .filter(&mission.id)
+    {
+        if mission_candidate_is_current(ctx, &mission, &candidate)? {
+            candidates.push(candidate);
+        }
+    }
+    let Some(selected) = sample_mission_candidate(&mission, candidates) else {
+        mission.status = MissionAttemptStatus::Failed;
+        ctx.db.mission_authority().id().update(mission);
+        return Ok(false);
+    };
+    let group = ctx
+        .db
+        .hostile_group_authority()
+        .id()
+        .find(&selected.hostile_group_id)
+        .ok_or("Bound mission hostile group no longer exists")?;
+    if group.disposition != HostileGroupDisposition::Active {
+        return Err("Bound hostile group is already resolved".into());
+    }
+    let dropped_items = if selected.resolution == HostileResolutionKind::Defeated {
+        group
+            .drop_item_id
+            .clone()
+            .map(|item| vec![(item, group.drop_quantity)])
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let battle_id = format!("battle:{mission_id}");
+    let outcome_source_id = format!("outcome:{mission_id}");
+    let committed = commit_hostile_battle_resolution(
         ctx,
-        outcome_source_id,
-        battle_id,
-        party_id,
-        mission_id,
-        hostile_group_id,
-        HostileResolutionKind::Defeated,
-        None,
+        &outcome_source_id,
+        &battle_id,
+        &mission.party_id,
+        Some(mission_id),
+        Some(&selected.hostile_group_id),
+        selected.resolution,
+        selected.capture_subject_id.as_deref(),
         dropped_items,
-        include_random_gold,
-    )
+        selected.resolution == HostileResolutionKind::Defeated,
+    )?;
+    mission.status = MissionAttemptStatus::Committed;
+    mission.committed_resolution = Some(selected.resolution);
+    mission.committed_capture_subject_id = selected.capture_subject_id;
+    ctx.db.mission_authority().id().update(mission);
+    for mut capability in ctx
+        .db
+        .mission_approach_capability()
+        .hostile_group_id()
+        .filter(&selected.hostile_group_id)
+        .filter(|capability| capability.case_site_id == selected.case_site_id)
+        .collect::<Vec<_>>()
+    {
+        capability.active = false;
+        ctx.db.mission_approach_capability().id().update(capability);
+    }
+    if committed {
+        finish_incident_for_hostile_group(ctx, &selected.hostile_group_id)?;
+    }
+    Ok(committed)
+}
+
+pub(crate) fn fail_bound_mission_attempt(
+    ctx: &ReducerContext,
+    mission_id: &str,
+) -> Result<(), String> {
+    let Some(mut mission) = ctx
+        .db
+        .mission_authority()
+        .id()
+        .find(&mission_id.to_string())
+    else {
+        return Ok(());
+    };
+    match mission.status {
+        MissionAttemptStatus::Bound => {
+            mission.status = MissionAttemptStatus::Failed;
+            ctx.db.mission_authority().id().update(mission);
+            Ok(())
+        }
+        MissionAttemptStatus::Failed => Ok(()),
+        MissionAttemptStatus::Committed | MissionAttemptStatus::Cancelled => {
+            Err("Conflicting terminal mission retry".into())
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -7953,14 +8299,27 @@ pub(crate) fn commit_hostile_battle_resolution(
         if mission.party_id != party_id || mission.hostile_group_id.as_deref() != hostile_group_id {
             return Err("Battle attribution does not match mission authority".into());
         }
-        validate_hostile_resolution_contract(
-            Some(mission.expected_resolution),
-            mission.capture_subject_id.as_deref(),
-            resolution,
-            capture_subject_id,
-            false,
-        )
-        .map_err(str::to_string)?;
+        if mission.status != MissionAttemptStatus::Bound {
+            return Err("Mission attempt is not bound for strategic completion".into());
+        }
+        let mut candidates = Vec::new();
+        for candidate in ctx
+            .db
+            .mission_outcome_candidate()
+            .mission_id()
+            .filter(&mission.id)
+        {
+            if mission_candidate_is_current(ctx, &mission, &candidate)? {
+                candidates.push(candidate);
+            }
+        }
+        let selected = sample_mission_candidate(&mission, candidates)
+            .ok_or("Mission has no current strategic outcome candidate")?;
+        if selected.resolution != resolution
+            || selected.capture_subject_id.as_deref() != capture_subject_id
+        {
+            return Err("Strategic result is not an exact current mission candidate".into());
+        }
     }
     ctx.db
         .outcome_source_authority()
@@ -14284,9 +14643,9 @@ pub(crate) fn ensure_bound_mission_authority(
     ctx: &ReducerContext,
     mission_id: &str,
     party_id: &str,
+    observer_character_id: u64,
     case_site: &CaseSiteAuthority,
     scene_key: &str,
-    selected_resolution: HostileResolutionKind,
 ) -> Result<MissionAuthority, String> {
     if let Some(existing) = ctx
         .db
@@ -14295,14 +14654,17 @@ pub(crate) fn ensure_bound_mission_authority(
         .find(&mission_id.to_string())
     {
         return if existing.party_id == party_id
+            && existing.observer_character_id == observer_character_id
             && existing.case_site_id.as_ref() == Some(&case_site.id)
             && existing.scene_key == scene_key
-            && existing.expected_resolution == selected_resolution
         {
             Ok(existing)
         } else {
             Err("Mission ID is already bound to different authority".into())
         };
+    }
+    if exact_case_site_for_observer(ctx, observer_character_id, &case_site.id.value).is_none() {
+        return Err("Mission observer does not know or have a visited exact case site".into());
     }
     let group = ctx
         .db
@@ -14310,6 +14672,9 @@ pub(crate) fn ensure_bound_mission_authority(
         .iter()
         .find(|group| group.case_site_id == case_site.id)
         .ok_or("Case site has no materialized hostile group")?;
+    if group.disposition != HostileGroupDisposition::Active {
+        return Err("Hostile group is already resolved".into());
+    }
     let hostile_group_id = group.id;
     let case = ctx
         .db
@@ -14320,61 +14685,153 @@ pub(crate) fn ensure_bound_mission_authority(
     let expression: adventuresim_core::case::ObjectiveExpression =
         serde_json::from_str(&case.objective_expression_json)
             .map_err(|_| "Case objective authority is invalid")?;
-    use adventuresim_core::case::ObjectiveRequirement as R;
-    let requirements: Vec<_> = expression
-        .alternatives
-        .iter()
-        .flat_map(|path| &path.objectives)
-        .map(|objective| &objective.requirement)
-        .collect();
-    let eligible_capture_subject_id =
-        requirements
-            .iter()
-            .find_map(|requirement| match requirement {
-                R::Capture { subject_id } => Some(subject_id.as_str().to_string()),
-                _ => None,
-            });
-    let can_drive_off = requirements.iter().any(|requirement| {
-        matches!(
-            requirement,
-            R::DriveOff {
-                hostile_group_id: id
-            } if id == &hostile_group_id
-        )
-    });
-    let can_defeat = requirements.iter().any(|requirement| {
-        matches!(
-            requirement,
-            R::Defeat {
-                hostile_group_id: id,
-                ..
-            } if id == &hostile_group_id
-        )
-    });
-    let eligible = match selected_resolution {
-        HostileResolutionKind::Defeated => can_defeat,
-        HostileResolutionKind::DrivenOff => can_drive_off,
-        HostileResolutionKind::Captured => eligible_capture_subject_id.is_some(),
-        HostileResolutionKind::CaptureTargetKilled => false,
-    };
-    if !eligible {
-        return Err(
-            "Selected tactical approach is not an eligible unresolved case objective".into(),
-        );
+    if case.resolution_status != CaseResolutionStatus::Open {
+        return Err("Case is no longer open".into());
     }
-    let capture_subject_id = (selected_resolution == HostileResolutionKind::Captured)
-        .then_some(eligible_capture_subject_id)
-        .flatten();
+    let facts = ctx
+        .db
+        .case_outcome_fact()
+        .case_id()
+        .filter(&case.id)
+        .map(|row| {
+            serde_json::from_str::<adventuresim_core::case::OutcomeFact>(&row.fact_json)
+                .map_err(|_| "Stored outcome fact is invalid".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let core_case_id =
+        adventuresim_core::case::CaseId::new(case.id.clone()).map_err(|_| "Case ID is invalid")?;
+    let evaluation = expression.evaluate(&core_case_id, party_id, &facts);
+    use adventuresim_core::case::ObjectiveRequirement as R;
+    let mut capabilities = Vec::new();
+    for (path_index, path) in expression.alternatives.iter().enumerate() {
+        let Some(progress) = evaluation.alternatives.get(path_index) else {
+            return Err("Case objective evaluation shape is invalid".into());
+        };
+        for (objective_index, objective) in path.objectives.iter().enumerate() {
+            if progress.get(objective_index).is_none_or(|progress| {
+                progress.state != adventuresim_core::case::EvaluationState::Pending
+            }) {
+                continue;
+            }
+            let (resolution, weight, capture_subject_id, capture_custody_version) =
+                match &objective.requirement {
+                    R::Defeat {
+                        hostile_group_id: id,
+                        ..
+                    } if id == &hostile_group_id => {
+                        (HostileResolutionKind::Defeated, 50u32, None, None)
+                    }
+                    R::DriveOff {
+                        hostile_group_id: id,
+                    } if id == &hostile_group_id => {
+                        (HostileResolutionKind::DrivenOff, 30u32, None, None)
+                    }
+                    R::Capture { subject_id } => {
+                        let subject = subject_id.as_str().to_string();
+                        let Some(custody) = ctx.db.case_custody().object_id().find(&subject) else {
+                            continue;
+                        };
+                        if custody.case_id != case.id
+                            || custody.object_kind != CustodyObjectKind::Subject
+                            || custody.holder_kind != CustodyHolderKind::Site
+                            || custody.holder_id != case_site.id.value
+                        {
+                            continue;
+                        }
+                        (
+                            HostileResolutionKind::Captured,
+                            20u32,
+                            Some(subject),
+                            Some(custody.version),
+                        )
+                    }
+                    _ => continue,
+                };
+            let path_index =
+                u16::try_from(path_index).map_err(|_| "Case has too many objective paths")?;
+            let id = format!(
+                "mission-approach:{observer_character_id}:{}:{}:{}",
+                case.id,
+                path_index,
+                objective.id.as_str()
+            );
+            let capability = MissionApproachCapability {
+                id: id.clone(),
+                observer_character_id,
+                hostile_group_id: hostile_group_id.clone(),
+                case_id: case.id.clone(),
+                case_site_id: case_site.id.clone(),
+                path_index,
+                objective_id: objective.id.as_str().to_string(),
+                resolution,
+                weight,
+                capture_subject_id,
+                capture_custody_version,
+                active: true,
+            };
+            if let Some(existing) = ctx.db.mission_approach_capability().id().find(&id) {
+                if existing.observer_character_id != capability.observer_character_id
+                    || existing.hostile_group_id != capability.hostile_group_id
+                    || existing.case_id != capability.case_id
+                    || existing.case_site_id != capability.case_site_id
+                    || existing.path_index != capability.path_index
+                    || existing.objective_id != capability.objective_id
+                    || existing.resolution != capability.resolution
+                    || existing.weight != capability.weight
+                    || existing.capture_subject_id != capability.capture_subject_id
+                    || existing.capture_custody_version != capability.capture_custody_version
+                {
+                    return Err(
+                        "Mission approach capability conflicts with existing authority".into(),
+                    );
+                }
+                if !existing.active {
+                    continue;
+                }
+                capabilities.push(existing);
+            } else {
+                ctx.db
+                    .mission_approach_capability()
+                    .insert(capability.clone());
+                capabilities.push(capability);
+            }
+        }
+    }
+    capabilities.sort_by(|left, right| left.id.cmp(&right.id));
+    if capabilities.is_empty() {
+        return Err("Case site has no unresolved observer-authorized combat approach".into());
+    }
     let authority = MissionAuthority {
         id: mission_id.to_string(),
         party_id: party_id.to_string(),
         case_site_id: Some(case_site.id.clone()),
-        hostile_group_id: Some(hostile_group_id),
-        expected_resolution: selected_resolution,
-        capture_subject_id,
+        hostile_group_id: Some(hostile_group_id.clone()),
+        observer_character_id,
+        case_id: case.id.clone(),
+        status: MissionAttemptStatus::Bound,
+        committed_resolution: None,
+        committed_capture_subject_id: None,
         scene_key: scene_key.to_string(),
     };
     ctx.db.mission_authority().insert(authority.clone());
+    for (index, capability) in capabilities.into_iter().enumerate() {
+        ctx.db
+            .mission_outcome_candidate()
+            .insert(MissionOutcomeCandidate {
+                id: format!("{mission_id}:candidate:{index:03}"),
+                mission_id: mission_id.to_string(),
+                capability_id: capability.id,
+                case_id: capability.case_id,
+                case_site_id: capability.case_site_id,
+                hostile_group_id: capability.hostile_group_id,
+                path_index: capability.path_index,
+                objective_id: capability.objective_id,
+                resolution: capability.resolution,
+                weight: capability.weight,
+                capture_subject_id: capability.capture_subject_id,
+                capture_custody_version: capability.capture_custody_version,
+            });
+    }
     Ok(authority)
 }
 
@@ -14504,16 +14961,15 @@ pub fn autoresolve_mission(
         ctx,
         &mission_id,
         &party_id,
+        character_id,
         &case_site,
         &case_site.scene_key,
-        HostileResolutionKind::Defeated,
     )?;
     let hostile_group_id = mission
         .hostile_group_id
         .as_deref()
         .ok_or("Quest mission must bind a hostile group")?;
     let battle_id = format!("battle:{mission_id}");
-    let outcome_source_id = format!("outcome:{mission_id}");
     if ctx
         .db
         .autoresolve_report()
@@ -14594,25 +15050,11 @@ pub fn autoresolve_mission(
     )?;
 
     if outcome.victor != BattleVictor::Allies {
+        fail_bound_mission_attempt(ctx, &mission_id)?;
         return Ok(());
     }
 
-    let dropped_items = autoresolve_drop(&hostile_group.enemy_type)?
-        .map(|item| vec![(item.to_string(), hostile_group.enemy_count)])
-        .unwrap_or_default();
-    let committed = commit_victorious_battle(
-        ctx,
-        &outcome_source_id,
-        &battle_id,
-        &party_id,
-        Some(&mission_id),
-        Some(hostile_group_id),
-        dropped_items,
-        true,
-    )?;
-    if committed && finish_incident_for_hostile_group(ctx, hostile_group_id)? {
-        return Ok(());
-    }
+    complete_bound_mission_success(ctx, &mission_id)?;
     Ok(())
 }
 
@@ -14652,6 +15094,13 @@ pub fn cancel_mission_request(
         .tactical_server_claim()
         .mission_id()
         .delete(&mission_id);
+    if let Some(mut mission) = ctx.db.mission_authority().id().find(&mission_id) {
+        if mission.status != MissionAttemptStatus::Bound {
+            return Err("Mission request is already terminal".into());
+        }
+        mission.status = MissionAttemptStatus::Cancelled;
+        ctx.db.mission_authority().id().update(mission);
+    }
     Ok(())
 }
 

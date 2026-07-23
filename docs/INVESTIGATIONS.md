@@ -140,4 +140,8 @@ stale version reissues the capability without spending time; a holder, site,
 or case mismatch fails closed. Investigation can discover, track, position, and
 prepare an ambush, but it never creates a mission, battle receipt, hostile
 disposition, drive-off fact, or capture fact. Authoritative non-kill tactical
-resolution is tracked separately in #207.
+resolution begins only after authenticated combat succeeds. Strategic mission
+authority privately snapshots exact observer-authorized pending objective
+approaches and deterministically selects among compatible defeat, drive-off,
+and capture consequences at commit time. Investigation actions cannot select
+or invoke that result.
