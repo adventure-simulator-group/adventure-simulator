@@ -360,6 +360,7 @@ never include raw investigation tables. See
 | private `mission_authority` | Party, scene, optional case-site, and optional hostile-group binding for one combat opportunity |
 | private `hostile_group_authority` | Persistent case-site occupant and its defeated state |
 | private `outcome_source_authority` | Authenticated, idempotent source receipt for one victorious strategic outcome |
+| private `tactical_server_claim` | One-use SHA-256 dispatcher claim bound to one mission request |
 | `battle_result` | Battle/source attribution, never keyed by quest |
 | `battle_loot_item` / `battle_participant` | Battle-keyed loot and eligible participants |
 | `quest` | Settlement-owned generated postings, opposition, reward, and acceptance state; it is not destination authority |

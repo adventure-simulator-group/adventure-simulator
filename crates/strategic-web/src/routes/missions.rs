@@ -80,7 +80,7 @@ async fn enter_mission(State(state): State<AppState>, session: Session) -> Redir
         return Redirect::to("/");
     };
     let scene_key = site.scene_key;
-    let mission_id = format!("party-{}-{}", party_id, super::data::new_id());
+    let mission_id = format!("mission:party-{}-{}", party_id, super::data::new_id());
 
     let outcome = execute_or_request_party_action(
         &state,
@@ -140,8 +140,8 @@ async fn mission_status(
         let results: crate::spacetimedb::Result<Vec<BattleResult>> = state
             .db
             .query(&format!(
-                "SELECT * FROM battle_result WHERE mission_id = {}",
-                sql_string_literal(&mission_id)
+                "SELECT * FROM battle_result WHERE battle_id = {}",
+                sql_string_literal(&format!("battle:{mission_id}"))
             ))
             .await
             .map_err(|error| {
@@ -255,8 +255,6 @@ async fn get_mission_for_viewer(
         TacticalServer::pending(
             request.mission_id.clone(),
             request.scene_key.clone(),
-            request.case_site_id.clone(),
-            request.hostile_group_id.clone(),
             request.party_id.clone(),
         )
     }))
@@ -306,13 +304,7 @@ mod tests {
     }
 
     fn mission(party_id: &str) -> TacticalServer {
-        TacticalServer::pending(
-            "mission".into(),
-            "hills".into(),
-            Some("site".into()),
-            Some("group".into()),
-            party_id.into(),
-        )
+        TacticalServer::pending("mission".into(), "hills".into(), party_id.into())
     }
 
     #[test]

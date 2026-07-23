@@ -125,6 +125,7 @@ dependencies = [
  "petname",
  "serde",
  "serde_json",
+ "sha2",
  "spacetimedb",
  "strum 0.28.0",
 ]
@@ -208,6 +209,8 @@ version = "0.1.0"
 dependencies = [
  "adventuresim-stdb-client",
  "clap",
+ "rand 0.9.4",
+ "sha2",
  "tracing",
  "tracing-subscriber",
 ]

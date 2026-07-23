@@ -1617,7 +1617,7 @@ impl LiveRunner {
         let mut winning_battle_id = None;
         for attempt in 0..=MAX_DEFEAT_RETRIES {
             let mission_id = format!(
-                "sim-autoresolve:{}:{}:{}",
+                "mission:sim-autoresolve:{}:{}:{}",
                 party_id, case_site.case_site_id, attempt
             );
             let battle_id = format!("battle:{mission_id}");

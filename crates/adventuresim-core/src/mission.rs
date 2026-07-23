@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 macro_rules! authority_id {
-    ($name:ident) => {
+    ($name:ident, $prefix:literal) => {
         #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
         #[serde(transparent)]
         pub struct $name(String);
@@ -10,8 +10,16 @@ macro_rules! authority_id {
         impl $name {
             pub fn new(value: impl Into<String>) -> Result<Self, &'static str> {
                 let value = value.into();
-                if value.trim().is_empty() {
-                    return Err("authority IDs must not be empty");
+                if value.len() > 128
+                    || !value.starts_with($prefix)
+                    || value.len() == $prefix.len()
+                    || !value.bytes().all(|byte| {
+                        byte.is_ascii_lowercase()
+                            || byte.is_ascii_digit()
+                            || matches!(byte, b':' | b'-' | b'_')
+                    })
+                {
+                    return Err("authority ID is not bounded canonical ASCII for its kind");
                 }
                 Ok(Self(value))
             }
@@ -33,10 +41,10 @@ macro_rules! authority_id {
     };
 }
 
-authority_id!(MissionId);
-authority_id!(BattleId);
-authority_id!(HostileGroupId);
-authority_id!(OutcomeSourceId);
+authority_id!(MissionId, "mission:");
+authority_id!(BattleId, "battle:");
+authority_id!(HostileGroupId, "hostile-group:");
+authority_id!(OutcomeSourceId, "outcome:");
 
 /// A mission may be deliberately unbound (for example, a random encounter).
 /// Only the bound form is eligible to defeat a persistent hostile group.
@@ -61,12 +69,15 @@ mod tests {
     fn authority_ids_reject_empty_values() {
         assert!(MissionId::new("").is_err());
         assert_eq!(BattleId::new("battle:1").unwrap().as_str(), "battle:1");
+        assert!(MissionId::new("battle:1").is_err());
+        assert!(MissionId::new("mission:UPPER").is_err());
+        assert!(MissionId::new(format!("mission:{}", "x".repeat(129))).is_err());
     }
 
     #[test]
     fn unbound_encounters_cannot_alias_a_hostile_group() {
         let random = HostileGroupBinding::Unbound;
-        let bound = HostileGroupBinding::Bound(HostileGroupId::new("group:1").unwrap());
+        let bound = HostileGroupBinding::Bound(HostileGroupId::new("hostile-group:1").unwrap());
         assert_ne!(random, bound);
     }
 }

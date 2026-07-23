@@ -2,35 +2,41 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct TacticalServer {
     pub identity: __sdk::Identity,
+    pub gateway_bucket: u8,
     pub mission_id: String,
     pub scene_key: String,
-    pub case_site_id: Option<String>,
-    pub hostile_group_id: Option<String>,
     pub party_id: String,
     pub addr: String,
     pub cert_digest: String,
     pub required_enemy_kills: u32,
 }
 
+
 impl __sdk::InModule for TacticalServer {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `TacticalServer`.
 ///
 /// Provides typed access to columns for query building.
 pub struct TacticalServerCols {
     pub identity: __sdk::__query_builder::Col<TacticalServer, __sdk::Identity>,
+    pub gateway_bucket: __sdk::__query_builder::Col<TacticalServer, u8>,
     pub mission_id: __sdk::__query_builder::Col<TacticalServer, String>,
     pub scene_key: __sdk::__query_builder::Col<TacticalServer, String>,
-    pub case_site_id: __sdk::__query_builder::Col<TacticalServer, Option<String>>,
-    pub hostile_group_id: __sdk::__query_builder::Col<TacticalServer, Option<String>>,
     pub party_id: __sdk::__query_builder::Col<TacticalServer, String>,
     pub addr: __sdk::__query_builder::Col<TacticalServer, String>,
     pub cert_digest: __sdk::__query_builder::Col<TacticalServer, String>,
@@ -42,17 +48,14 @@ impl __sdk::__query_builder::HasCols for TacticalServer {
     fn cols(table_name: &'static str) -> Self::Cols {
         TacticalServerCols {
             identity: __sdk::__query_builder::Col::new(table_name, "identity"),
+            gateway_bucket: __sdk::__query_builder::Col::new(table_name, "gateway_bucket"),
             mission_id: __sdk::__query_builder::Col::new(table_name, "mission_id"),
             scene_key: __sdk::__query_builder::Col::new(table_name, "scene_key"),
-            case_site_id: __sdk::__query_builder::Col::new(table_name, "case_site_id"),
-            hostile_group_id: __sdk::__query_builder::Col::new(table_name, "hostile_group_id"),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             addr: __sdk::__query_builder::Col::new(table_name, "addr"),
             cert_digest: __sdk::__query_builder::Col::new(table_name, "cert_digest"),
-            required_enemy_kills: __sdk::__query_builder::Col::new(
-                table_name,
-                "required_enemy_kills",
-            ),
+            required_enemy_kills: __sdk::__query_builder::Col::new(table_name, "required_enemy_kills"),
+
         }
     }
 }
@@ -61,6 +64,7 @@ impl __sdk::__query_builder::HasCols for TacticalServer {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct TacticalServerIxCols {
+    pub gateway_bucket: __sdk::__query_builder::IxCol<TacticalServer, u8>,
     pub identity: __sdk::__query_builder::IxCol<TacticalServer, __sdk::Identity>,
     pub mission_id: __sdk::__query_builder::IxCol<TacticalServer, String>,
 }
@@ -69,10 +73,13 @@ impl __sdk::__query_builder::HasIxCols for TacticalServer {
     type IxCols = TacticalServerIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         TacticalServerIxCols {
+            gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
             identity: __sdk::__query_builder::IxCol::new(table_name, "identity"),
             mission_id: __sdk::__query_builder::IxCol::new(table_name, "mission_id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for TacticalServer {}
+

@@ -13,16 +13,27 @@ Combat authority is independent from contracts and legacy quest identity.
 
 Private `mission_authority` rows bind a mission to its party, optional exact
 case site, optional hostile group, and scene. Private
-`hostile_group_authority` rows own enemy composition and defeated state.
-Tactical server requests copy only these explicit bindings and never carry a
-quest ID.
+`hostile_group_authority` rows are materialized when a case site is created
+and own enemy composition, immutable drop manifest, and defeated state.
+Mission creation reads only these authorities, never a quest. Public tactical
+views contain party-safe presentation data and never expose the case-site or
+hostile-group binding.
+
+The authenticated dispatcher uses the registered strategic-gateway identity.
+For each request it generates a 256-bit claim, stores only its SHA-256 digest
+through a gateway-only reducer, and waits for reducer success before spawning.
+The raw claim is passed only in the tactical child's environment; the full
+gateway token is explicitly removed. The child consumes the matching private
+claim exactly once when registering its server identity. Claims are never
+stored in public rows or command-line arguments.
 
 Tactical servers keep positions, health, enemies, and per-tick simulation
 transient. On victory, the owning server submits its bound mission through the
 same strategic commit used by autoresolve. The commit validates party,
 mission, and hostile-group attribution and inserts one private
 `outcome_source_authority` receipt before writing the public battle result,
-participants, and loot. Replaying the same source is a no-op, so it cannot
+participants, and loot. Tactical drops come from the immutable hostile-group
+manifest, not temporary enemy equipment. Replaying the same source is a no-op, so it cannot
 duplicate facts, morale, loot, or reward shares.
 
 Defeat and stalemate retain only the bounded autoresolve diagnostic report and

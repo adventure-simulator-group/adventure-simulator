@@ -17,6 +17,7 @@ pub mod alcohol_consumption_type;
 pub mod answer_dialogue_prompt_reducer;
 pub mod approve_party_action_request_planned_reducer;
 pub mod approve_party_action_request_reducer;
+pub mod authorize_tactical_server_claim_reducer;
 pub mod autoresolve_mission_reducer;
 pub mod autoresolve_report_table;
 pub mod autoresolve_report_type;
@@ -501,6 +502,7 @@ pub mod tactical_server_request_table;
 pub mod tactical_server_request_type;
 pub mod tactical_server_table;
 pub mod tactical_server_type;
+pub mod tactical_server_claim_type;
 pub mod temperance_type;
 pub mod topsoil_organic_carbon_type;
 pub mod track_case_site_reducer;
@@ -554,6 +556,7 @@ pub use alcohol_consumption_type::AlcoholConsumption;
 pub use answer_dialogue_prompt_reducer::answer_dialogue_prompt;
 pub use approve_party_action_request_planned_reducer::approve_party_action_request_planned;
 pub use approve_party_action_request_reducer::approve_party_action_request;
+pub use authorize_tactical_server_claim_reducer::authorize_tactical_server_claim;
 pub use autoresolve_mission_reducer::autoresolve_mission;
 pub use autoresolve_report_table::*;
 pub use autoresolve_report_type::AutoresolveReport;
@@ -1038,6 +1041,7 @@ pub use tactical_server_request_table::*;
 pub use tactical_server_request_type::TacticalServerRequest;
 pub use tactical_server_table::*;
 pub use tactical_server_type::TacticalServer;
+pub use tactical_server_claim_type::TacticalServerClaim;
 pub use temperance_type::Temperance;
 pub use topsoil_organic_carbon_type::TopsoilOrganicCarbon;
 pub use track_case_site_reducer::track_case_site;
@@ -1116,6 +1120,10 @@ pub enum Reducer {
         leader_id: u64,
         request_id: u64,
         route: JourneyRoutePlan,
+    },
+    AuthorizeTacticalServerClaim {
+        mission_id: String,
+        claim_hash: Vec<u8>,
     },
     AutoresolveMission {
         character_id: u64,
@@ -1207,6 +1215,7 @@ pub enum Reducer {
     },
     CreateTacticalServerForRequest {
         mission_id: String,
+        claim: String,
         addr: String,
         cert_digest: String,
     },
@@ -1659,6 +1668,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::ApprovePartyActionRequestPlanned { .. } => {
                 "approve_party_action_request_planned"
             }
+            Reducer::AuthorizeTacticalServerClaim { .. } => "authorize_tactical_server_claim",
             Reducer::AutoresolveMission { .. } => "autoresolve_mission",
             Reducer::BackfillCharacterDeathsAndLeadership => {
                 "backfill_character_deaths_and_leadership"
@@ -1833,6 +1843,13 @@ impl __sdk::Reducer for Reducer {
                 request_id: request_id.clone(),
                 route: route.clone(),
 }),
+            Reducer::AuthorizeTacticalServerClaim{
+                mission_id,
+                claim_hash,
+}             => __sats::bsatn::to_vec(&authorize_tactical_server_claim_reducer::AuthorizeTacticalServerClaimArgs {
+                mission_id: mission_id.clone(),
+                claim_hash: claim_hash.clone(),
+}),
             Reducer::AutoresolveMission{
                 character_id,
                 mission_id,
@@ -1995,10 +2012,12 @@ Reducer::CancelMissionRequest{
 }),
             Reducer::CreateTacticalServerForRequest{
                 mission_id,
+                claim,
                 addr,
                 cert_digest,
 }             => __sats::bsatn::to_vec(&create_tactical_server_for_request_reducer::CreateTacticalServerForRequestArgs {
                 mission_id: mission_id.clone(),
+                claim: claim.clone(),
                 addr: addr.clone(),
                 cert_digest: cert_digest.clone(),
 }),
