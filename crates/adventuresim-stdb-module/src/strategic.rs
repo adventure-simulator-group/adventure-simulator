@@ -296,11 +296,13 @@ fn record_autoresolve_report(
 #[cfg(test)]
 mod healing_tests {
     use super::{
-        HostileResolutionKind, IncidentStatus, MissionAttemptStatus, MissionAuthority,
-        MissionOutcomeCandidate, RecruitmentOfferStatus, activity_incident_source_id,
-        autoresolve_drop, case_has_exact_dialogue_provenance, incident_group_matches,
-        player_participant_ids, quest_encounter_archetype, refreshed_recruitment_offer_status,
-        sample_mission_candidate,
+        HostileResolutionKind, IncidentStatus, MissionApproachCapability, MissionAttemptStatus,
+        MissionAuthority, MissionOutcomeCandidate, RecruitmentOfferStatus,
+        activity_incident_source_id, autoresolve_drop, case_refs_have_exact_dialogue_provenance,
+        generated_dialogue_action_matches, generated_dialogue_producer_recipient,
+        hostile_resolution_for_objective, incident_group_matches,
+        mission_candidate_from_capability, player_participant_ids, quest_encounter_archetype,
+        refreshed_recruitment_offer_status, sample_mission_candidate,
     };
     use adventuresim_core::encounter::EncounterArchetype;
     use std::collections::HashSet;
@@ -1042,16 +1044,16 @@ mod healing_tests {
     #[test]
     fn unrelated_known_case_is_not_dialogue_provenance() {
         let refs = HashSet::from(["session-case".to_string()]);
-        assert!(case_has_exact_dialogue_provenance(
-            "session-case",
-            "private-session-case",
-            &refs
-        ));
-        assert!(!case_has_exact_dialogue_provenance(
-            "known-but-unrelated",
-            "private-known-but-unrelated",
-            &refs
-        ));
+        let matching = HashSet::from([
+            "canonical-session-case".to_string(),
+            "session-case".to_string(),
+        ]);
+        let unrelated = HashSet::from([
+            "known-but-unrelated".to_string(),
+            "private-known-but-unrelated".to_string(),
+        ]);
+        assert!(case_refs_have_exact_dialogue_provenance(&matching, &refs));
+        assert!(!case_refs_have_exact_dialogue_provenance(&unrelated, &refs));
     }
 
     #[test]
@@ -1075,6 +1077,170 @@ mod healing_tests {
             "joined player must receive view rows"
         );
         assert!(!viewers.contains(&33), "outsider must receive no view rows");
+    }
+
+    fn generated_case(
+        seed: u64,
+        family: adventuresim_core::quest_generation::TemplateFamily,
+    ) -> adventuresim_core::quest_generation::GeneratedCase {
+        adventuresim_core::quest_generation::generate(
+            &adventuresim_core::quest_generation::GenerationContext {
+                seed,
+                settlement_id: "test-settlement".into(),
+                settlement_name: "Test Settlement".into(),
+                scope: adventuresim_core::local_problem::Scope::Settlement {
+                    settlement_id: "test-settlement".into(),
+                },
+                ordinal: 0,
+                now_minute: 10_000,
+                requested_family: Some(family),
+                witness_candidates: adventuresim_core::quest_generation::test_witnesses(),
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn generated_return_and_expose_bind_only_the_authored_case_and_recipient() {
+        use adventuresim_core::quest_generation::{
+            CanonicalCause, GeneratedDialogueAction, TemplateFamily,
+        };
+        use adventuresim_dialogue::InvestigationAction;
+
+        let incidental = (0..1024)
+            .map(|seed| generated_case(seed, TemplateFamily::DisappearanceOrLoss))
+            .find(|generated| generated.cause == CanonicalCause::IncidentalLoss)
+            .unwrap();
+        let fabricated = (0..1024)
+            .map(|seed| generated_case(seed, TemplateFamily::DisappearanceOrLoss))
+            .find(|generated| generated.cause == CanonicalCause::FabricatedClaim)
+            .unwrap();
+        let cases = vec![incidental, fabricated];
+        assert!(cases.iter().any(|case| {
+            matches!(case.cause, CanonicalCause::IncidentalLoss)
+                && case
+                    .dialogue_producers
+                    .iter()
+                    .any(|producer| producer.action == GeneratedDialogueAction::ReturnAsset)
+        }));
+        assert!(cases.iter().any(|case| {
+            matches!(case.cause, CanonicalCause::FabricatedClaim)
+                && case
+                    .dialogue_producers
+                    .iter()
+                    .any(|producer| producer.action == GeneratedDialogueAction::Expose)
+        }));
+        for generated in cases {
+            let producer = &generated.dialogue_producers[0];
+            let action = match producer.action {
+                GeneratedDialogueAction::ReturnAsset => InvestigationAction::ReturnAsset,
+                GeneratedDialogueAction::Expose => InvestigationAction::Expose,
+            };
+            let present = HashSet::from([producer.recipient_npc_id.clone()]);
+            assert_eq!(
+                generated_dialogue_producer_recipient(
+                    &generated,
+                    producer.objective_id.as_str(),
+                    &action,
+                    &present,
+                ),
+                Some(producer.recipient_npc_id.clone())
+            );
+            assert!(
+                generated_dialogue_producer_recipient(
+                    &generated,
+                    producer.objective_id.as_str(),
+                    &action,
+                    &HashSet::from(["wrong-npc".into()]),
+                )
+                .is_none()
+            );
+            assert!(
+                generated_dialogue_producer_recipient(
+                    &generated,
+                    "objective:unrelated",
+                    &action,
+                    &present,
+                )
+                .is_none()
+            );
+            let wrong_action = match action {
+                InvestigationAction::ReturnAsset => InvestigationAction::Expose,
+                InvestigationAction::Expose => InvestigationAction::ReturnAsset,
+                _ => unreachable!(),
+            };
+            assert!(!generated_dialogue_action_matches(
+                producer.action,
+                &wrong_action
+            ));
+        }
+
+        let source = include_str!("strategic.rs");
+        let consumer = source
+            .split("fn apply_dialogue_investigation_action")
+            .nth(1)
+            .and_then(|tail| tail.split("fn same_location").next())
+            .unwrap();
+        assert!(consumer.contains("generated_dialogue_recipient("));
+        assert!(consumer.contains("binding.consumed_by = action_id.into()"));
+        assert!(consumer.contains("recipient != binding.intended_recipient_id"));
+    }
+
+    #[test]
+    fn recurring_generated_objectives_materialize_217_outcome_candidates() {
+        use adventuresim_core::quest_generation::TemplateFamily;
+
+        let generated = generated_case(7, TemplateFamily::RecurringDepredation);
+        let (hostile_group_id, site_id, _, _) = generated.hostile_groups[0].clone();
+        assert_eq!(
+            hostile_group_id,
+            format!("hostile-group:{}", site_id.0),
+            "generated hostile identity must match materialized strategic authority"
+        );
+        assert!(generated.finales.iter().all(|finale| {
+            finale.hostile_group_id.as_deref() == Some(&hostile_group_id)
+                && finale.site_id == site_id
+        }));
+
+        let mut candidates = Vec::new();
+        for (path_index, path) in generated.objectives.alternatives.iter().enumerate() {
+            for objective in &path.objectives {
+                let (resolution, weight) =
+                    hostile_resolution_for_objective(&objective.requirement, &hostile_group_id)
+                        .expect("generated combat objective qualifies through #217 seam");
+                let capability = MissionApproachCapability {
+                    id: format!("capability:{}", objective.id.as_str()),
+                    observer_character_id: 7,
+                    hostile_group_id: hostile_group_id.clone(),
+                    case_id: generated.canonical_case_id.clone(),
+                    case_site_id: crate::investigation::CaseSiteId::from(site_id.0.clone()),
+                    path_index: path_index as u16,
+                    objective_id: objective.id.as_str().into(),
+                    resolution,
+                    weight,
+                    capture_subject_id: None,
+                    capture_custody_version: None,
+                    active: true,
+                };
+                candidates.push(mission_candidate_from_capability(
+                    "mission:generated",
+                    candidates.len(),
+                    capability,
+                ));
+            }
+        }
+        assert_eq!(candidates.len(), 2);
+        assert!(candidates.iter().any(|candidate| {
+            candidate.resolution == HostileResolutionKind::Defeated && candidate.weight == 50
+        }));
+        assert!(candidates.iter().any(|candidate| {
+            candidate.resolution == HostileResolutionKind::DrivenOff && candidate.weight == 30
+        }));
+        assert!(
+            candidates
+                .iter()
+                .all(|candidate| candidate.hostile_group_id == hostile_group_id)
+        );
     }
 }
 
@@ -5005,6 +5171,73 @@ fn dialogue_binding_id(
     format!("{session_id}:{character_id}:{source_scope}:{action:?}:{revision}")
 }
 
+fn observer_case_refs(ctx: &ReducerContext, case: &CaseAuthority) -> HashSet<String> {
+    let mut refs = HashSet::from([case.id.clone(), case.investigation_case_id.clone()]);
+    if let Some(authority) = ctx.db.quest_generation_authority().case_id().find(&case.id)
+        && let Ok(manifest) = serde_json::from_str::<
+            adventuresim_core::quest_generation::GeneratedCase,
+        >(&authority.manifest_json)
+    {
+        refs.insert(manifest.public_case_id);
+    }
+    refs
+}
+
+fn generated_dialogue_recipient(
+    ctx: &ReducerContext,
+    case: &CaseAuthority,
+    objective_id: &str,
+    action: &adventuresim_dialogue::InvestigationAction,
+    npc_ids: &HashSet<String>,
+    fallback: String,
+) -> Result<Option<String>, String> {
+    let Some(authority) = ctx.db.quest_generation_authority().case_id().find(&case.id) else {
+        return Ok(Some(fallback));
+    };
+    let manifest: adventuresim_core::quest_generation::GeneratedCase =
+        serde_json::from_str(&authority.manifest_json)
+            .map_err(|_| "Generated quest manifest is invalid")?;
+    Ok(generated_dialogue_producer_recipient(
+        &manifest,
+        objective_id,
+        action,
+        npc_ids,
+    ))
+}
+
+fn generated_dialogue_producer_recipient(
+    manifest: &adventuresim_core::quest_generation::GeneratedCase,
+    objective_id: &str,
+    action: &adventuresim_dialogue::InvestigationAction,
+    npc_ids: &HashSet<String>,
+) -> Option<String> {
+    manifest
+        .dialogue_producers
+        .iter()
+        .find(|producer| {
+            producer.objective_id.as_str() == objective_id
+                && generated_dialogue_action_matches(producer.action, action)
+        })
+        .filter(|producer| npc_ids.contains(&producer.recipient_npc_id))
+        .map(|producer| producer.recipient_npc_id.clone())
+}
+
+fn generated_dialogue_action_matches(
+    generated: adventuresim_core::quest_generation::GeneratedDialogueAction,
+    action: &adventuresim_dialogue::InvestigationAction,
+) -> bool {
+    matches!(
+        (generated, action),
+        (
+            adventuresim_core::quest_generation::GeneratedDialogueAction::Expose,
+            adventuresim_dialogue::InvestigationAction::Expose
+        ) | (
+            adventuresim_core::quest_generation::GeneratedDialogueAction::ReturnAsset,
+            adventuresim_dialogue::InvestigationAction::ReturnAsset
+        )
+    )
+}
+
 fn evidence_can_be_presented(
     ctx: &ReducerContext,
     character_id: u64,
@@ -5012,6 +5245,7 @@ fn evidence_can_be_presented(
     case: &CaseAuthority,
     evidence_id: &str,
 ) -> bool {
+    let observer_case_refs = observer_case_refs(ctx, case);
     let Some(evidence) = ctx
         .db
         .investigation_evidence_authority()
@@ -5020,7 +5254,7 @@ fn evidence_can_be_presented(
     else {
         return false;
     };
-    if evidence.case_id != case.id && evidence.case_id != case.investigation_case_id {
+    if !observer_case_refs.contains(&evidence.case_id) {
         return false;
     }
     match evidence.presentation_kind {
@@ -5042,7 +5276,7 @@ fn evidence_can_be_presented(
             .owner_character_id()
             .filter(character_id)
             .any(|knowledge| {
-                (knowledge.case_id == case.id || knowledge.case_id == case.investigation_case_id)
+                observer_case_refs.contains(&knowledge.case_id)
                     && knowledge.evidence_id == evidence_id
             }),
     }
@@ -5061,6 +5295,7 @@ fn dialogue_objective_recipient(
 ) -> Option<String> {
     use adventuresim_core::case::ObjectiveRequirement as R;
     use adventuresim_dialogue::InvestigationAction as A;
+    let observer_case_refs = observer_case_refs(ctx, case);
 
     match (requirement, action) {
         (R::Locate { subject_ref }, A::Locate) => ctx
@@ -5069,7 +5304,7 @@ fn dialogue_objective_recipient(
             .owner_character_id()
             .filter(character_id)
             .any(|lead| {
-                (lead.case_id == case.id || lead.case_id == case.investigation_case_id)
+                observer_case_refs.contains(&lead.case_id)
                     && matches!(
                         lead.destination_stage.as_str(),
                         "exact_believed" | "visited"
@@ -5089,7 +5324,7 @@ fn dialogue_objective_recipient(
             .owner_character_id()
             .filter(character_id)
             .any(|belief| {
-                (belief.case_id == case.id || belief.case_id == case.investigation_case_id)
+                observer_case_refs.contains(&belief.case_id)
                     && belief.proposition_id == subject_ref.as_str()
             })
             .then(|| fallback_recipient_id.into()),
@@ -5100,7 +5335,7 @@ fn dialogue_objective_recipient(
                 .owner_character_id()
                 .filter(character_id)
                 .any(|belief| {
-                    (belief.case_id == case.id || belief.case_id == case.investigation_case_id)
+                    observer_case_refs.contains(&belief.case_id)
                         && belief.proposition_id == subject_ref.as_str()
                 }))
         .then(|| subject_ref.as_str().into()),
@@ -5127,8 +5362,7 @@ fn dialogue_objective_recipient(
                 .owner_character_id()
                 .filter(character_id)
                 .any(|received| {
-                    (received.public_case_id == case.id
-                        || received.public_case_id == case.investigation_case_id)
+                    observer_case_refs.contains(&received.public_case_id)
                         && received.witness_ref == witness_id.as_str()
                 }))
         .then(|| recipient_id.as_str().into()),
@@ -5301,6 +5535,16 @@ fn issue_dialogue_investigation_bindings(
                         .map(|belief| belief.case_id),
                 );
             }
+            adventuresim_dialogue::InvestigationAction::Identify
+            | adventuresim_dialogue::InvestigationAction::Expose => {
+                exact_case_refs.extend(
+                    ctx.db
+                        .investigation_belief()
+                        .owner_character_id()
+                        .filter(character_id)
+                        .map(|belief| belief.case_id),
+                );
+            }
             adventuresim_dialogue::InvestigationAction::ReportToIssuer => {
                 if let Some(contract) = &active_contract
                     && npc_ids.contains(&contract.issuer_npc_id)
@@ -5315,13 +5559,12 @@ fn issue_dialogue_investigation_bindings(
     let mut pending = Vec::new();
     for action in actions {
         let mut matches = Vec::new();
-        for case in ctx.db.case_authority().iter().filter(|case| {
-            case_has_exact_dialogue_provenance(
-                &case.id,
-                &case.investigation_case_id,
-                &exact_case_refs,
-            )
-        }) {
+        for case in ctx
+            .db
+            .case_authority()
+            .iter()
+            .filter(|case| case_has_exact_dialogue_provenance(ctx, case, &exact_case_refs))
+        {
             if case.resolution_status != CaseResolutionStatus::Open {
                 continue;
             }
@@ -5343,7 +5586,14 @@ fn issue_dialogue_investigation_bindings(
                     &npc_ids,
                     fallback_recipient_id,
                     active_contract.as_ref(),
-                ) {
+                ) && let Some(recipient_id) = generated_dialogue_recipient(
+                    ctx,
+                    &case,
+                    objective.id.as_str(),
+                    action,
+                    &npc_ids,
+                    recipient_id,
+                )? {
                     let expected_custody_version = match &objective.requirement {
                         adventuresim_core::case::ObjectiveRequirement::Return {
                             asset_id, ..
@@ -5434,11 +5684,20 @@ fn issue_dialogue_investigation_bindings(
 }
 
 fn case_has_exact_dialogue_provenance(
-    case_id: &str,
-    investigation_case_id: &str,
+    ctx: &ReducerContext,
+    case: &CaseAuthority,
     exact_case_refs: &HashSet<String>,
 ) -> bool {
-    exact_case_refs.contains(case_id) || exact_case_refs.contains(investigation_case_id)
+    case_refs_have_exact_dialogue_provenance(&observer_case_refs(ctx, case), exact_case_refs)
+}
+
+fn case_refs_have_exact_dialogue_provenance(
+    observer_case_refs: &HashSet<String>,
+    exact_case_refs: &HashSet<String>,
+) -> bool {
+    observer_case_refs
+        .iter()
+        .any(|case_ref| exact_case_refs.contains(case_ref))
 }
 
 fn refresh_dialogue_topic_options(
@@ -6150,6 +6409,15 @@ fn apply_dialogue_investigation_action(
         active_contract.as_ref(),
     )
     .ok_or("Pre-issued dialogue objective is no longer authorized")?;
+    let recipient = generated_dialogue_recipient(
+        ctx,
+        &case,
+        objective.id.as_str(),
+        action,
+        &npc_ids,
+        recipient,
+    )?
+    .ok_or("Generated dialogue producer is no longer authorized")?;
     if recipient != binding.intended_recipient_id {
         return Err("Pre-issued dialogue recipient no longer matches".into());
     }
@@ -14804,6 +15072,44 @@ fn execute_case_finale(
     Ok(())
 }
 
+fn hostile_resolution_for_objective(
+    requirement: &adventuresim_core::case::ObjectiveRequirement,
+    hostile_group_id: &str,
+) -> Option<(HostileResolutionKind, u32)> {
+    use adventuresim_core::case::ObjectiveRequirement as R;
+    match requirement {
+        R::Defeat {
+            hostile_group_id: id,
+            ..
+        } if id == hostile_group_id => Some((HostileResolutionKind::Defeated, 50)),
+        R::DriveOff {
+            hostile_group_id: id,
+        } if id == hostile_group_id => Some((HostileResolutionKind::DrivenOff, 30)),
+        _ => None,
+    }
+}
+
+fn mission_candidate_from_capability(
+    mission_id: &str,
+    index: usize,
+    capability: MissionApproachCapability,
+) -> MissionOutcomeCandidate {
+    MissionOutcomeCandidate {
+        id: format!("{mission_id}:candidate:{index:03}"),
+        mission_id: mission_id.to_string(),
+        capability_id: capability.id,
+        case_id: capability.case_id,
+        case_site_id: capability.case_site_id,
+        hostile_group_id: capability.hostile_group_id,
+        path_index: capability.path_index,
+        objective_id: capability.objective_id,
+        resolution: capability.resolution,
+        weight: capability.weight,
+        capture_subject_id: capability.capture_subject_id,
+        capture_custody_version: capability.capture_custody_version,
+    }
+}
+
 pub(crate) fn ensure_bound_mission_authority(
     ctx: &ReducerContext,
     mission_id: &str,
@@ -14882,38 +15188,34 @@ pub(crate) fn ensure_bound_mission_authority(
                 continue;
             }
             let (resolution, weight, capture_subject_id, capture_custody_version) =
-                match &objective.requirement {
-                    R::Defeat {
-                        hostile_group_id: id,
-                        ..
-                    } if id == &hostile_group_id => {
-                        (HostileResolutionKind::Defeated, 50u32, None, None)
-                    }
-                    R::DriveOff {
-                        hostile_group_id: id,
-                    } if id == &hostile_group_id => {
-                        (HostileResolutionKind::DrivenOff, 30u32, None, None)
-                    }
-                    R::Capture { subject_id } => {
-                        let subject = subject_id.as_str().to_string();
-                        let Some(custody) = ctx.db.case_custody().object_id().find(&subject) else {
-                            continue;
-                        };
-                        if custody.case_id != case.id
-                            || custody.object_kind != CustodyObjectKind::Subject
-                            || custody.holder_kind != CustodyHolderKind::Site
-                            || custody.holder_id != case_site.id.value
-                        {
-                            continue;
+                if let Some((resolution, weight)) =
+                    hostile_resolution_for_objective(&objective.requirement, &hostile_group_id)
+                {
+                    (resolution, weight, None, None)
+                } else {
+                    match &objective.requirement {
+                        R::Capture { subject_id } => {
+                            let subject = subject_id.as_str().to_string();
+                            let Some(custody) = ctx.db.case_custody().object_id().find(&subject)
+                            else {
+                                continue;
+                            };
+                            if custody.case_id != case.id
+                                || custody.object_kind != CustodyObjectKind::Subject
+                                || custody.holder_kind != CustodyHolderKind::Site
+                                || custody.holder_id != case_site.id.value
+                            {
+                                continue;
+                            }
+                            (
+                                HostileResolutionKind::Captured,
+                                20u32,
+                                Some(subject),
+                                Some(custody.version),
+                            )
                         }
-                        (
-                            HostileResolutionKind::Captured,
-                            20u32,
-                            Some(subject),
-                            Some(custody.version),
-                        )
+                        _ => continue,
                     }
-                    _ => continue,
                 };
             let path_index =
                 u16::try_from(path_index).map_err(|_| "Case has too many objective paths")?;
@@ -14991,20 +15293,9 @@ pub(crate) fn ensure_bound_mission_authority(
     for (index, capability) in capabilities.into_iter().enumerate() {
         ctx.db
             .mission_outcome_candidate()
-            .insert(MissionOutcomeCandidate {
-                id: format!("{mission_id}:candidate:{index:03}"),
-                mission_id: mission_id.to_string(),
-                capability_id: capability.id,
-                case_id: capability.case_id,
-                case_site_id: capability.case_site_id,
-                hostile_group_id: capability.hostile_group_id,
-                path_index: capability.path_index,
-                objective_id: capability.objective_id,
-                resolution: capability.resolution,
-                weight: capability.weight,
-                capture_subject_id: capability.capture_subject_id,
-                capture_custody_version: capability.capture_custody_version,
-            });
+            .insert(mission_candidate_from_capability(
+                mission_id, index, capability,
+            ));
     }
     Ok(authority)
 }

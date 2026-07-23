@@ -158,6 +158,13 @@ pub enum FinaleKind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GeneratedDialogueAction {
+    Expose,
+    ReturnAsset,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Weight {
     pub plausibility: u32,
     pub curation: u32,
@@ -364,6 +371,15 @@ pub struct GeneratedFinale {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GeneratedDialogueProducer {
+    pub action: GeneratedDialogueAction,
+    pub objective_id: ObjectiveId,
+    pub recipient_npc_id: String,
+    pub subject_ref: Option<String>,
+    pub asset_id: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContractDraft {
     pub issuer_npc_id: String,
     pub issuer_belief_title: String,
@@ -393,6 +409,7 @@ pub struct GeneratedCase {
     pub custody: Vec<(String, SiteId)>,
     pub hostile_groups: Vec<(String, SiteId, ThreatId, u32)>,
     pub finales: Vec<GeneratedFinale>,
+    pub dialogue_producers: Vec<GeneratedDialogueProducer>,
     pub contract: Option<ContractDraft>,
     pub bridges: Vec<CausalBridge>,
     /// Private diagnostic authority. Never place this in a public table/view.
@@ -725,14 +742,6 @@ fn cause_candidates(family: TemplateFamily) -> Vec<Candidate<CanonicalCause>> {
     .collect::<Vec<_>>();
     if loss {
         values.extend([
-            Candidate {
-                id: "cause.voluntary",
-                value: CanonicalCause::VoluntaryDisappearance,
-                weight: Weight::new(45, 70),
-                bridge: None,
-                impossible: None,
-                factors: vec!["factor.cause.nonhostile"],
-            },
             Candidate {
                 id: "cause.concealment",
                 value: CanonicalCause::ConcealmentByWitness,
@@ -1388,7 +1397,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                         .into(),
                 destination_stage: "route_segment".into(),
                 site_id: Some(finale_site.clone()),
-                corrects_proposition_id: Some(description_prop),
+                corrects_proposition_id: Some(description_prop.clone()),
             }],
         },
     ];
@@ -1427,37 +1436,13 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         &area_id,
         &primary.npc_id,
     );
-    if family == TemplateFamily::DisappearanceOrLoss {
-        if let Some(follow) = actions
-            .iter_mut()
-            .find(|action| action.id.0.ends_with(":action:follow"))
-        {
-            follow.outputs.push(GeneratedActionOutput::Consequence {
-                consequence: GeneratedActionConsequence::RetrieveAsset {
-                    asset_id: asset.as_str().into(),
-                    next_version: 1,
-                },
-            });
-        }
-        if let Some(social) = actions
-            .iter_mut()
-            .find(|action| action.id.0.ends_with(":action:approach_social"))
-        {
-            social.outputs.push(GeneratedActionOutput::Consequence {
-                consequence: GeneratedActionConsequence::RescueSubject {
-                    subject_id: subject.as_str().into(),
-                    next_version: 1,
-                },
-            });
-        }
-    }
     let issuer = context
         .witness_candidates
         .get(2)
         .unwrap_or(secondary)
         .npc_id
         .clone();
-    let (objectives, finales, custody) = match family {
+    let (objectives, finales, custody, dialogue_producers) = match family {
         TemplateFamily::RecurringDepredation => (
             ObjectiveExpression::new(vec![
                 ObjectivePath {
@@ -1500,79 +1485,136 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 },
             ],
             vec![],
+            vec![],
         ),
-        TemplateFamily::DisappearanceOrLoss => (
-            ObjectiveExpression::new(vec![
-                ObjectivePath {
-                    objectives: vec![Objective {
-                        id: ObjectiveId::new(format!("objective:{id_suffix}:rescue")).unwrap(),
-                        requirement: ObjectiveRequirement::Rescue {
-                            subject_id: subject.clone(),
+        TemplateFamily::DisappearanceOrLoss => match cause {
+            CanonicalCause::Hostile(_) | CanonicalCause::ConcealmentByWitness => {
+                let objective_id =
+                    ObjectiveId::new(format!("objective:{id_suffix}:rescue")).unwrap();
+                for action in actions.iter_mut().filter(|action| {
+                    action.id.0.ends_with(":action:follow")
+                        || action.id.0.ends_with(":action:approach_social")
+                }) {
+                    action.outputs.push(GeneratedActionOutput::Consequence {
+                        consequence: GeneratedActionConsequence::RescueSubject {
+                            subject_id: subject.as_str().into(),
+                            next_version: 1,
                         },
-                    }],
-                },
-                ObjectivePath {
-                    objectives: vec![
-                        Objective {
-                            id: ObjectiveId::new(format!("objective:{id_suffix}:retrieve"))
-                                .unwrap(),
-                            requirement: ObjectiveRequirement::Retrieve {
-                                asset_id: asset.clone(),
+                    });
+                }
+                (
+                    ObjectiveExpression::new(vec![ObjectivePath {
+                        objectives: vec![Objective {
+                            id: objective_id,
+                            requirement: ObjectiveRequirement::Rescue {
+                                subject_id: subject.clone(),
                             },
-                        },
-                        Objective {
-                            id: ObjectiveId::new(format!("objective:{id_suffix}:return")).unwrap(),
-                            requirement: ObjectiveRequirement::Return {
-                                asset_id: asset.clone(),
-                                custodian_id: issuer.clone(),
-                            },
-                        },
-                    ],
-                },
-                ObjectivePath {
-                    objectives: vec![Objective {
-                        id: ObjectiveId::new(format!("objective:{id_suffix}:expose")).unwrap(),
-                        requirement: ObjectiveRequirement::Expose {
-                            subject_ref: format!("{prefix}:culprit"),
-                        },
+                        }],
+                    }])
+                    .expect("generated rescue objective"),
+                    vec![GeneratedFinale {
+                        id: FinaleId::new(format!("{prefix}:finale:rescue")),
+                        kind: FinaleKind::Rescue,
+                        site_id: finale_site.clone(),
+                        hostile_group_id: matches!(cause, CanonicalCause::Hostile(_))
+                            .then_some(hostile_id.clone()),
+                        subject_id: Some(subject.as_str().into()),
+                        asset_id: None,
+                        strategic_outcome_compatible: true,
                     }],
-                },
-            ])
-            .expect("generated objective"),
-            vec![
-                GeneratedFinale {
-                    id: FinaleId::new(format!("{prefix}:finale:rescue")),
-                    kind: FinaleKind::Rescue,
-                    site_id: finale_site.clone(),
-                    hostile_group_id: Some(hostile_id.clone()),
-                    subject_id: Some(subject.as_str().into()),
-                    asset_id: None,
-                    strategic_outcome_compatible: true,
-                },
-                GeneratedFinale {
-                    id: FinaleId::new(format!("{prefix}:finale:return")),
-                    kind: FinaleKind::RetrieveReturn,
-                    site_id: finale_site.clone(),
-                    hostile_group_id: None,
-                    subject_id: None,
-                    asset_id: Some(asset.as_str().into()),
-                    strategic_outcome_compatible: false,
-                },
-                GeneratedFinale {
-                    id: FinaleId::new(format!("{prefix}:finale:expose")),
-                    kind: FinaleKind::Expose,
-                    site_id: finale_site.clone(),
-                    hostile_group_id: None,
-                    subject_id: None,
-                    asset_id: None,
-                    strategic_outcome_compatible: false,
-                },
-            ],
-            vec![
-                (subject.as_str().into(), finale_site.clone()),
-                (asset.as_str().into(), finale_site.clone()),
-            ],
-        ),
+                    vec![(subject.as_str().into(), finale_site.clone())],
+                    vec![],
+                )
+            }
+            CanonicalCause::IncidentalLoss => {
+                for action in actions.iter_mut().filter(|action| {
+                    action.id.0.ends_with(":action:follow")
+                        || action.id.0.ends_with(":action:approach_social")
+                }) {
+                    action.outputs.push(GeneratedActionOutput::Consequence {
+                        consequence: GeneratedActionConsequence::RetrieveAsset {
+                            asset_id: asset.as_str().into(),
+                            next_version: 1,
+                        },
+                    });
+                }
+                let retrieve_id =
+                    ObjectiveId::new(format!("objective:{id_suffix}:retrieve")).unwrap();
+                let return_id = ObjectiveId::new(format!("objective:{id_suffix}:return")).unwrap();
+                (
+                    ObjectiveExpression::new(vec![ObjectivePath {
+                        objectives: vec![
+                            Objective {
+                                id: retrieve_id,
+                                requirement: ObjectiveRequirement::Retrieve {
+                                    asset_id: asset.clone(),
+                                },
+                            },
+                            Objective {
+                                id: return_id.clone(),
+                                requirement: ObjectiveRequirement::Return {
+                                    asset_id: asset.clone(),
+                                    custodian_id: issuer.clone(),
+                                },
+                            },
+                        ],
+                    }])
+                    .expect("generated recovery objective"),
+                    vec![GeneratedFinale {
+                        id: FinaleId::new(format!("{prefix}:finale:return")),
+                        kind: FinaleKind::RetrieveReturn,
+                        site_id: finale_site.clone(),
+                        hostile_group_id: None,
+                        subject_id: None,
+                        asset_id: Some(asset.as_str().into()),
+                        strategic_outcome_compatible: false,
+                    }],
+                    vec![(asset.as_str().into(), finale_site.clone())],
+                    vec![GeneratedDialogueProducer {
+                        action: GeneratedDialogueAction::ReturnAsset,
+                        objective_id: return_id,
+                        recipient_npc_id: issuer.clone(),
+                        subject_ref: None,
+                        asset_id: Some(asset.as_str().into()),
+                    }],
+                )
+            }
+            CanonicalCause::FabricatedClaim => {
+                let objective_id =
+                    ObjectiveId::new(format!("objective:{id_suffix}:expose")).unwrap();
+                (
+                    ObjectiveExpression::new(vec![ObjectivePath {
+                        objectives: vec![Objective {
+                            id: objective_id.clone(),
+                            requirement: ObjectiveRequirement::Expose {
+                                subject_ref: description_prop.clone(),
+                            },
+                        }],
+                    }])
+                    .expect("generated exposure objective"),
+                    vec![GeneratedFinale {
+                        id: FinaleId::new(format!("{prefix}:finale:expose")),
+                        kind: FinaleKind::Expose,
+                        site_id: finale_site.clone(),
+                        hostile_group_id: None,
+                        subject_id: Some(description_prop.clone()),
+                        asset_id: None,
+                        strategic_outcome_compatible: false,
+                    }],
+                    vec![],
+                    vec![GeneratedDialogueProducer {
+                        action: GeneratedDialogueAction::Expose,
+                        objective_id,
+                        recipient_npc_id: issuer.clone(),
+                        subject_ref: Some(description_prop.clone()),
+                        asset_id: None,
+                    }],
+                )
+            }
+            CanonicalCause::VoluntaryDisappearance => unreachable!(
+                "voluntary disappearance is excluded until locate/report producers exist"
+            ),
+        },
     };
     let mut bridges = Vec::new();
     for key in [site_bridge, circ_bridge].into_iter().flatten() {
@@ -1643,6 +1685,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             _ => vec![],
         },
         finales,
+        dialogue_producers,
         contract: Some(ContractDraft {
             issuer_npc_id: issuer,
             issuer_belief_title: "A troubling local matter".into(),
@@ -1790,20 +1833,127 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 })
             }),
             FinaleKind::RetrieveReturn => case.actions.iter().any(|action| {
-                action.outputs.iter().any(|output| {
-                    matches!(
-                        output,
-                        GeneratedActionOutput::Consequence {
-                            consequence: GeneratedActionConsequence::RetrieveAsset { asset_id, .. }
-                        } if finale.asset_id.as_deref() == Some(asset_id)
-                    )
-                })
+                action.outputs.iter().any(|output| matches!(
+                    output,
+                    GeneratedActionOutput::Consequence {
+                        consequence: GeneratedActionConsequence::RetrieveAsset { asset_id, .. }
+                    } if finale.asset_id.as_deref() == Some(asset_id)
+                ))
+                    && case.dialogue_producers.iter().any(|producer| {
+                        producer.action == GeneratedDialogueAction::ReturnAsset
+                            && producer.asset_id.as_deref() == finale.asset_id.as_deref()
+                    })
             }),
-            FinaleKind::Expose | FinaleKind::Negotiate | FinaleKind::Capture => true,
+            FinaleKind::Expose => case.dialogue_producers.iter().any(|producer| {
+                producer.action == GeneratedDialogueAction::Expose
+                    && producer.subject_ref.as_deref() == finale.subject_id.as_deref()
+            }),
+            FinaleKind::Negotiate | FinaleKind::Capture => false,
         };
         if !produced {
             errors.push(format!("{:?} has no concrete owning producer", finale.kind));
         }
+    }
+    let objective_ids: BTreeSet<_> = case
+        .objectives
+        .alternatives
+        .iter()
+        .flat_map(|path| &path.objectives)
+        .map(|objective| objective.id.clone())
+        .collect();
+    for producer in &case.dialogue_producers {
+        if !objective_ids.contains(&producer.objective_id) {
+            errors.push(format!(
+                "dialogue producer references missing objective {}",
+                producer.objective_id.as_str()
+            ));
+        }
+        if producer.recipient_npc_id.is_empty() {
+            errors.push("dialogue producer has no recipient".into());
+        }
+    }
+    for objective in case
+        .objectives
+        .alternatives
+        .iter()
+        .flat_map(|path| &path.objectives)
+    {
+        let produced = match &objective.requirement {
+            ObjectiveRequirement::Defeat {
+                hostile_group_id, ..
+            }
+            | ObjectiveRequirement::DriveOff { hostile_group_id } => case
+                .hostile_groups
+                .iter()
+                .any(|(id, _, _, _)| id == hostile_group_id),
+            ObjectiveRequirement::Rescue { subject_id } => case.actions.iter().any(|action| {
+                action.outputs.iter().any(|output| matches!(
+                    output,
+                    GeneratedActionOutput::Consequence {
+                        consequence: GeneratedActionConsequence::RescueSubject { subject_id: produced, .. }
+                    } if produced == subject_id.as_str()
+                ))
+            }),
+            ObjectiveRequirement::Retrieve { asset_id } => case.actions.iter().any(|action| {
+                action.outputs.iter().any(|output| matches!(
+                    output,
+                    GeneratedActionOutput::Consequence {
+                        consequence: GeneratedActionConsequence::RetrieveAsset { asset_id: produced, .. }
+                    } if produced == asset_id.as_str()
+                ))
+            }),
+            ObjectiveRequirement::Return {
+                asset_id,
+                custodian_id,
+            } => case.dialogue_producers.iter().any(|producer| {
+                producer.objective_id == objective.id
+                    && producer.action == GeneratedDialogueAction::ReturnAsset
+                    && producer.asset_id.as_deref() == Some(asset_id.as_str())
+                    && producer.recipient_npc_id == *custodian_id
+            }),
+            ObjectiveRequirement::Expose { subject_ref } => {
+                case.dialogue_producers.iter().any(|producer| {
+                    producer.objective_id == objective.id
+                        && producer.action == GeneratedDialogueAction::Expose
+                        && producer.subject_ref.as_deref() == Some(subject_ref)
+                })
+            }
+            _ => false,
+        };
+        if !produced {
+            errors.push(format!(
+                "objective {} has no concrete owning producer",
+                objective.id.as_str()
+            ));
+        }
+    }
+    let expected_finale = match (case.family, case.cause) {
+        (TemplateFamily::RecurringDepredation, CanonicalCause::Hostile(_)) => {
+            case.finales.iter().all(|finale| {
+                matches!(finale.kind, FinaleKind::Defeat | FinaleKind::DriveOff)
+                    && finale.hostile_group_id.is_some()
+            })
+        }
+        (
+            TemplateFamily::DisappearanceOrLoss,
+            CanonicalCause::Hostile(_) | CanonicalCause::ConcealmentByWitness,
+        ) => {
+            case.finales.len() == 1
+                && case.finales[0].kind == FinaleKind::Rescue
+                && case.finales[0].subject_id.is_some()
+        }
+        (TemplateFamily::DisappearanceOrLoss, CanonicalCause::IncidentalLoss) => {
+            case.finales.len() == 1
+                && case.finales[0].kind == FinaleKind::RetrieveReturn
+                && case.finales[0].asset_id.is_some()
+        }
+        (TemplateFamily::DisappearanceOrLoss, CanonicalCause::FabricatedClaim) => {
+            case.finales.len() == 1 && case.finales[0].kind == FinaleKind::Expose
+        }
+        _ => false,
+    };
+    if !expected_finale {
+        errors.push("canonical cause is incompatible with generated objective/finale".into());
     }
     if case.contract.as_ref().is_some_and(|c| {
         c.opposition_wording
@@ -1991,6 +2141,65 @@ mod tests {
                 );
             }
         }
+    }
+    #[test]
+    fn disappearance_truth_selects_only_compatible_targets_and_producers() {
+        for seed in 0..256 {
+            let generated = generate(&context(seed, TemplateFamily::DisappearanceOrLoss)).unwrap();
+            assert_ne!(generated.cause, CanonicalCause::VoluntaryDisappearance);
+            validate(&generated).unwrap();
+            match generated.cause {
+                CanonicalCause::Hostile(_) | CanonicalCause::ConcealmentByWitness => {
+                    assert_eq!(generated.finales.len(), 1);
+                    assert_eq!(generated.finales[0].kind, FinaleKind::Rescue);
+                    let subjects = generated
+                        .actions
+                        .iter()
+                        .filter(|action| {
+                            action.id.0.ends_with(":action:follow")
+                                || action.id.0.ends_with(":action:approach_social")
+                        })
+                        .flat_map(|action| &action.outputs)
+                        .filter_map(|output| match output {
+                            GeneratedActionOutput::Consequence {
+                                consequence:
+                                    GeneratedActionConsequence::RescueSubject { subject_id, .. },
+                            } => Some(subject_id),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>();
+                    assert_eq!(subjects.len(), 2);
+                    assert_eq!(subjects[0], subjects[1]);
+                }
+                CanonicalCause::IncidentalLoss => {
+                    assert_eq!(generated.finales[0].kind, FinaleKind::RetrieveReturn);
+                    assert!(generated.dialogue_producers.iter().any(|producer| {
+                        producer.action == GeneratedDialogueAction::ReturnAsset
+                    }));
+                }
+                CanonicalCause::FabricatedClaim => {
+                    assert_eq!(generated.finales[0].kind, FinaleKind::Expose);
+                    assert!(
+                        generated
+                            .dialogue_producers
+                            .iter()
+                            .any(|producer| { producer.action == GeneratedDialogueAction::Expose })
+                    );
+                }
+                CanonicalCause::VoluntaryDisappearance => unreachable!(),
+            }
+        }
+    }
+    #[test]
+    fn correction_reuses_the_proposition_it_corrects() {
+        let generated = generate(&context(19, TemplateFamily::DisappearanceOrLoss)).unwrap();
+        let initial = &generated.witnesses[0].testimony[0];
+        let correction = &generated.witnesses[1].testimony[0];
+        assert_eq!(initial.proposition_id, correction.proposition_id);
+        assert_eq!(
+            correction.corrects_proposition_id.as_deref(),
+            Some(initial.proposition_id.as_str())
+        );
     }
     #[test]
     fn marginal_sweep_is_bounded_and_has_both_templates() {
