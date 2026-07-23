@@ -336,10 +336,23 @@ pub enum GeneratedActionOutput {
     Evidence {
         evidence_id: EvidenceId,
     },
+    PatternCondition {
+        evidence_id: EvidenceId,
+        condition: GeneratedPatternCondition,
+    },
     AmbushReady,
     Consequence {
         consequence: GeneratedActionConsequence,
     },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum GeneratedPatternCondition {
+    NightWindow,
+    RoadRoute,
+    VictimProfile { demographic: WitnessDemographic },
+    BroadSurvey,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1421,6 +1434,9 @@ fn build_actions(
     area_id: &str,
     witness_npc_id: &str,
     route_variant: RouteVariant,
+    attack_pattern: AttackPattern,
+    victim_demographic: WitnessDemographic,
+    pattern_evidence_id: &EvidenceId,
 ) -> Vec<GeneratedAction> {
     let trail_summary = match route_variant {
         RouteVariant::Direct => "Follow the physical trail directly.",
@@ -1429,6 +1445,30 @@ fn build_actions(
     let trail_kind = match route_variant {
         RouteVariant::Direct => InvestigationActionKind::FollowTracks,
         RouteVariant::Cautious => InvestigationActionKind::ReacquireTracks,
+    };
+    let pattern_condition = match attack_pattern {
+        AttackPattern::Nightly => GeneratedPatternCondition::NightWindow,
+        AttackPattern::Roadside => GeneratedPatternCondition::RoadRoute,
+        AttackPattern::VictimSpecific => GeneratedPatternCondition::VictimProfile {
+            demographic: victim_demographic,
+        },
+        AttackPattern::Irregular => GeneratedPatternCondition::BroadSurvey,
+    };
+    let pattern_action_summary = match attack_pattern {
+        AttackPattern::Nightly => "Patrol during the learned nighttime window.".into(),
+        AttackPattern::Roadside => "Patrol the learned roadside route.".into(),
+        AttackPattern::VictimSpecific => format!(
+            "Watch likely victims matching the learned {:?} profile.",
+            victim_demographic
+        ),
+        AttackPattern::Irregular => {
+            "Search broadly because the accounts reveal no reliable schedule.".into()
+        }
+    };
+    let pattern_action_kind = if attack_pattern == AttackPattern::Irregular {
+        InvestigationActionKind::SearchArea
+    } else {
+        InvestigationActionKind::Patrol
     };
     let make = |name: &str,
                 kind,
@@ -1519,25 +1559,44 @@ fn build_actions(
                 "approach",
                 true,
                 "Watch where incidents recur.",
-                vec![GeneratedActionOutput::Destination {
-                    stage: GeneratedDestinationStage::Textual,
-                    site_id: None,
-                }],
+                vec![
+                    GeneratedActionOutput::Destination {
+                        stage: GeneratedDestinationStage::Textual,
+                        site_id: None,
+                    },
+                    GeneratedActionOutput::Evidence {
+                        evidence_id: pattern_evidence_id.clone(),
+                    },
+                ],
             ),
             make(
                 "patrol",
-                InvestigationActionKind::Patrol,
+                pattern_action_kind,
                 RouteClass::PatternSurveillance,
-                "area",
-                area_id.into(),
+                if attack_pattern == AttackPattern::Roadside {
+                    "route"
+                } else {
+                    "area"
+                },
+                if attack_pattern == AttackPattern::Roadside {
+                    finale.0.clone()
+                } else {
+                    area_id.into()
+                },
                 Some("watch"),
                 "search",
                 false,
-                "Patrol at the reported time.",
-                vec![GeneratedActionOutput::Destination {
-                    stage: GeneratedDestinationStage::RouteSegment,
-                    site_id: Some(finale.clone()),
-                }],
+                &pattern_action_summary,
+                vec![
+                    GeneratedActionOutput::PatternCondition {
+                        evidence_id: pattern_evidence_id.clone(),
+                        condition: pattern_condition.clone(),
+                    },
+                    GeneratedActionOutput::Destination {
+                        stage: GeneratedDestinationStage::RouteSegment,
+                        site_id: Some(finale.clone()),
+                    },
+                ],
             ),
             make(
                 "reveal_route",
@@ -1619,25 +1678,44 @@ fn build_actions(
                 "inspect_last_known",
                 true,
                 "Find the referred witness.",
-                vec![GeneratedActionOutput::Destination {
-                    stage: GeneratedDestinationStage::ApproximateArea,
-                    site_id: None,
-                }],
+                vec![
+                    GeneratedActionOutput::Destination {
+                        stage: GeneratedDestinationStage::ApproximateArea,
+                        site_id: None,
+                    },
+                    GeneratedActionOutput::Evidence {
+                        evidence_id: pattern_evidence_id.clone(),
+                    },
+                ],
             ),
             make(
                 "approach_social",
-                InvestigationActionKind::ApproachLead,
+                pattern_action_kind,
                 RouteClass::SocialInquiry,
-                "route",
-                finale.0.clone(),
+                if attack_pattern == AttackPattern::Irregular {
+                    "area"
+                } else {
+                    "route"
+                },
+                if attack_pattern == AttackPattern::Irregular {
+                    area_id.into()
+                } else {
+                    finale.0.clone()
+                },
                 Some("locate_contact"),
                 "follow",
                 false,
-                "Approach the social lead or fence.",
-                vec![GeneratedActionOutput::Destination {
-                    stage: GeneratedDestinationStage::Exact,
-                    site_id: Some(finale.clone()),
-                }],
+                &pattern_action_summary,
+                vec![
+                    GeneratedActionOutput::PatternCondition {
+                        evidence_id: pattern_evidence_id.clone(),
+                        condition: pattern_condition,
+                    },
+                    GeneratedActionOutput::Destination {
+                        stage: GeneratedDestinationStage::Exact,
+                        site_id: Some(finale.clone()),
+                    },
+                ],
             ),
             make(
                 "resolve_social",
@@ -1761,6 +1839,31 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     );
     let description_prop = scoped_id(&prefix, "proposition", "description");
     let correction_prop = scoped_id(&prefix, "proposition", "location:corrected");
+    let pattern_prop = scoped_id(&prefix, "proposition", "attack-pattern");
+    let pattern_evidence_id = EvidenceId::new(scoped_id(&prefix, "evidence", "attack-pattern"));
+    let pattern_truth = match attack_pattern {
+        AttackPattern::Nightly => "The incidents cluster after nightfall.".to_owned(),
+        AttackPattern::Roadside => {
+            "The incidents cluster along the road used by passing traffic.".to_owned()
+        }
+        AttackPattern::VictimSpecific => format!(
+            "The incidents disproportionately affect people matching the {:?} profile.",
+            demographic
+        ),
+        AttackPattern::Irregular => {
+            "The incidents have no reliable time, place, or victim schedule.".to_owned()
+        }
+    };
+    let uncorroborated_pattern_claim = if reliability == Reliability::Truthful {
+        pattern_truth.clone()
+    } else {
+        match attack_pattern {
+            AttackPattern::Nightly => "I think it happens at all hours.".to_owned(),
+            AttackPattern::Roadside => "I doubt the road has anything to do with it.".to_owned(),
+            AttackPattern::VictimSpecific => "The victims seem entirely random to me.".to_owned(),
+            AttackPattern::Irregular => "I am sure it always happens just after dusk.".to_owned(),
+        }
+    };
     let sites = vec![
         GeneratedSite {
             id: finale_site.clone(),
@@ -1814,28 +1917,39 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             description,
             expected_location: primary.expected_location.clone(),
             visible_description: primary.visible_description.clone(),
-            testimony: vec![TestimonyDraft {
-                proposition_id: description_prop.clone(),
-                reliability,
-                truthful_text: true_statement.clone(),
-                spoken_text: if reliability == Reliability::Truthful {
-                    true_statement
-                } else {
-                    unreliable_statement
+            testimony: vec![
+                TestimonyDraft {
+                    proposition_id: description_prop.clone(),
+                    reliability,
+                    truthful_text: true_statement.clone(),
+                    spoken_text: if reliability == Reliability::Truthful {
+                        true_statement
+                    } else {
+                        unreliable_statement
+                    },
+                    destination_stage: if reliability == Reliability::Truthful {
+                        "approximate_area"
+                    } else {
+                        "exact_believed"
+                    }
+                    .into(),
+                    site_id: Some(if reliability == Reliability::Truthful {
+                        finale_site.clone()
+                    } else {
+                        decoy_site.clone()
+                    }),
+                    corrects_proposition_id: None,
                 },
-                destination_stage: if reliability == Reliability::Truthful {
-                    "approximate_area"
-                } else {
-                    "exact_believed"
-                }
-                .into(),
-                site_id: Some(if reliability == Reliability::Truthful {
-                    finale_site.clone()
-                } else {
-                    decoy_site.clone()
-                }),
-                corrects_proposition_id: None,
-            }],
+                TestimonyDraft {
+                    proposition_id: pattern_prop.clone(),
+                    reliability,
+                    truthful_text: pattern_truth.clone(),
+                    spoken_text: uncorroborated_pattern_claim,
+                    destination_stage: "textual".into(),
+                    site_id: None,
+                    corrects_proposition_id: None,
+                },
+            ],
         },
         WitnessBinding {
             id: witness2.clone(),
@@ -1882,6 +1996,14 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     .into(),
             corrects_proposition_id: None,
         },
+        GeneratedEvidence {
+            id: pattern_evidence_id.clone(),
+            kind: EvidenceKind::LedgerEntry,
+            proposition_id: pattern_prop,
+            site_id: evidence_site.clone(),
+            safe_description: format!("Corroborated accounts show: {pattern_truth}"),
+            corrects_proposition_id: None,
+        },
     ];
     let area_id = scoped_id(&prefix, "area", "incident");
     let hostile_id = scoped_id(&prefix, "hostile-group", "finale");
@@ -1896,6 +2018,9 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         &area_id,
         &primary.npc_id,
         route_variant,
+        attack_pattern,
+        demographic,
+        &pattern_evidence_id,
     );
     let issuer = context
         .witness_candidates
@@ -2260,6 +2385,48 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 "{} references missing {} authority {}",
                 action.id.0, action.target_kind, action.target_id
             ));
+        }
+        for (evidence_id, _) in action.outputs.iter().filter_map(|output| match output {
+            GeneratedActionOutput::PatternCondition {
+                evidence_id,
+                condition,
+            } => Some((evidence_id, condition)),
+            _ => None,
+        }) {
+            if action.active_initially {
+                errors.push(format!(
+                    "{} exposes a pattern condition before its clue is learned",
+                    action.id.0
+                ));
+            }
+            let prerequisite_produces_clue = action.prerequisite.as_ref().is_some_and(|required| {
+                case.actions.iter().any(|candidate| {
+                    candidate.id == *required
+                        && candidate.outputs.iter().any(|output| {
+                            matches!(
+                                output,
+                                GeneratedActionOutput::Evidence { evidence_id: produced }
+                                    if produced == evidence_id
+                            )
+                        })
+                })
+            });
+            if !prerequisite_produces_clue {
+                errors.push(format!(
+                    "{} does not consume its exact learned pattern clue",
+                    action.id.0
+                ));
+            }
+            if !case
+                .evidence
+                .iter()
+                .any(|evidence| evidence.id == *evidence_id)
+            {
+                errors.push(format!(
+                    "{} references missing pattern evidence {}",
+                    action.id.0, evidence_id.0
+                ));
+            }
         }
     }
     for witness in &case.witnesses {
@@ -2832,6 +2999,8 @@ mod tests {
                     InvestigationActionKind::FollowTracks
                         | InvestigationActionKind::ReacquireTracks
                         | InvestigationActionKind::ApproachLead
+                        | InvestigationActionKind::Patrol
+                        | InvestigationActionKind::SearchArea
                 ));
                 let occupied = route_actions
                     .find(|action| {
@@ -2968,6 +3137,131 @@ mod tests {
             fingerprints.values().any(|values| values.len() >= 2),
             "cause/site pairs must not determine all downstream modules"
         );
+    }
+
+    #[test]
+    fn every_pattern_becomes_an_earned_observer_clue_and_executable_condition() {
+        let expected = [
+            (
+                AttackPattern::Nightly,
+                "Nightly",
+                "nighttime",
+                GeneratedPatternCondition::NightWindow,
+            ),
+            (
+                AttackPattern::Roadside,
+                "Roadside",
+                "roadside",
+                GeneratedPatternCondition::RoadRoute,
+            ),
+            (
+                AttackPattern::VictimSpecific,
+                "VictimSpecific",
+                "profile",
+                GeneratedPatternCondition::VictimProfile {
+                    demographic: WitnessDemographic::Merchant,
+                },
+            ),
+            (
+                AttackPattern::Irregular,
+                "Irregular",
+                "no reliable schedule",
+                GeneratedPatternCondition::BroadSurvey,
+            ),
+        ];
+        for family in [
+            TemplateFamily::RecurringDepredation,
+            TemplateFamily::DisappearanceOrLoss,
+        ] {
+            let mut prelearning_blueprints = BTreeSet::new();
+            for (pattern, event_prefix, summary_fragment, condition_shape) in expected.clone() {
+                let case = (0..4_096)
+                    .map(|seed| generate(&context(seed, family)).unwrap())
+                    .find(|case| case.canonical_events[0].object.starts_with(event_prefix))
+                    .expect("pattern must be reachable");
+                let pattern_evidence = case
+                    .evidence
+                    .iter()
+                    .find(|evidence| {
+                        evidence
+                            .safe_description
+                            .starts_with("Corroborated accounts")
+                    })
+                    .expect("observer-safe pattern evidence");
+                assert!(
+                    case.witnesses[0]
+                        .testimony
+                        .iter()
+                        .any(|draft| draft.proposition_id == pattern_evidence.proposition_id)
+                );
+                let producer = case
+                    .actions
+                    .iter()
+                    .find(|action| {
+                        action.active_initially
+                            && action.outputs.iter().any(|output| {
+                                matches!(
+                                    output,
+                                    GeneratedActionOutput::Evidence { evidence_id }
+                                        if evidence_id == &pattern_evidence.id
+                                )
+                            })
+                    })
+                    .expect("generic action earns the clue");
+                prelearning_blueprints.insert(format!(
+                    "{:?}:{}:{}",
+                    producer.kind, producer.target_kind, producer.safe_summary
+                ));
+                let consumer = case
+                    .actions
+                    .iter()
+                    .find(|action| {
+                        action.outputs.iter().any(|output| {
+                            matches!(
+                                output,
+                                GeneratedActionOutput::PatternCondition { evidence_id, .. }
+                                    if evidence_id == &pattern_evidence.id
+                            )
+                        })
+                    })
+                    .expect("successor consumes the clue");
+                assert_eq!(consumer.prerequisite.as_ref(), Some(&producer.id));
+                assert!(!consumer.active_initially);
+                assert!(consumer.safe_summary.contains(summary_fragment));
+                let selected_condition = consumer
+                    .outputs
+                    .iter()
+                    .find_map(|output| match output {
+                        GeneratedActionOutput::PatternCondition { condition, .. } => {
+                            Some(condition)
+                        }
+                        _ => None,
+                    })
+                    .unwrap();
+                match (&condition_shape, selected_condition) {
+                    (
+                        GeneratedPatternCondition::VictimProfile { .. },
+                        GeneratedPatternCondition::VictimProfile { demographic },
+                    ) => assert_eq!(*demographic, case.witnesses[0].demographic),
+                    (expected, actual) => assert_eq!(expected, actual),
+                }
+                let learned_projection =
+                    serde_json::to_string(&(pattern_evidence, consumer)).unwrap();
+                assert!(learned_projection.contains(summary_fragment));
+                match pattern {
+                    AttackPattern::Roadside => assert_eq!(consumer.target_kind, "route"),
+                    AttackPattern::Irregular => {
+                        assert_eq!(consumer.kind, InvestigationActionKind::SearchArea)
+                    }
+                    _ => assert_eq!(consumer.kind, InvestigationActionKind::Patrol),
+                }
+            }
+            assert_eq!(
+                prelearning_blueprints.len(),
+                1,
+                "the initially visible action must not reveal the selected pattern"
+            );
+        }
     }
 
     #[test]

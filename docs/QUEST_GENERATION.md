@@ -97,6 +97,14 @@ expose use compiled generic dialogue responses, pre-issued bindings, the exact
 generated recipient, and one-use consumption. Cases and linked local problems
 may resolve without a contract.
 
+Attack patterns are playable modules rather than private flavor. Initial
+surveillance remains pattern-neutral. Success earns one exact corroborated
+pattern proposition; only then does the dependent action disclose and enforce
+its nighttime window, roadside route, authored victim profile, or broad
+schedule-free search. Unreliable testimony may contradict that proposition
+until the evidence is learned, and the dependent capability requires knowledge
+of the exact evidence ID rather than inferring from the canonical event.
+
 Generated cases create no `Contract` rows. Tavern discovery and NPC referrals
 are their entry points. Settlement activity counts open generated cases
 directly and immediately replenishes resolved generated problems independently
