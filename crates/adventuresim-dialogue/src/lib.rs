@@ -900,6 +900,32 @@ mod tests {
         assert!(eligible.iter().any(|t| t.id == "profession"));
     }
     #[test]
+    fn generated_case_resolution_actions_are_compiled_for_services_and_residents() {
+        for conversation_id in ["service-professions", "local-resident"] {
+            let conversation = find_conversation(conversation_id).unwrap();
+            for (topic_id, expected) in [
+                (
+                    "return-recovered-property",
+                    InvestigationAction::ReturnAsset,
+                ),
+                ("expose-false-account", InvestigationAction::Expose),
+            ] {
+                let topic = conversation
+                    .topics
+                    .iter()
+                    .find(|topic| topic.id == topic_id)
+                    .unwrap();
+                assert!(topic.initially_known);
+                assert!(topic.responses[0].effects.iter().any(|effect| {
+                    matches!(
+                        effect,
+                        Effect::InvestigationAction { action } if action == &expected
+                    )
+                }));
+            }
+        }
+    }
+    #[test]
     fn multi_party_and_prompt_are_first_class() {
         let c = find_conversation("shop-with-assistant").unwrap();
         assert_eq!(c.roles["customers"].max, 4);

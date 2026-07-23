@@ -62,6 +62,16 @@
           }, { "id": "quest-in-progress", "priority": 0,
             "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "The contract is still in your hands. Return when the work is complete." }] }],
             "effects": [], "prompt": null }]
+        },
+        { "id": "return-recovered-property", "label": "Return recovered property", "initially_known": true,
+          "responses": [{ "id": "return-recovered-property", "priority": 0,
+            "turns": [{ "speaker": "player", "fragments": [{ "kind": "text", "value": "I found the missing property and brought it back." }] }, { "speaker": "professional", "fragments": [{ "kind": "text", "value": "Then the matter is finally put right. I will see that it returns to its proper place." }] }],
+            "effects": [{ "kind": "investigation_action", "action": "return_asset" }], "prompt": null }]
+        },
+        { "id": "expose-false-account", "label": "Challenge the account", "initially_known": true,
+          "responses": [{ "id": "expose-false-account", "priority": 0,
+            "turns": [{ "speaker": "player", "fragments": [{ "kind": "text", "value": "The evidence contradicts the story that was told." }] }, { "speaker": "professional", "fragments": [{ "kind": "text", "value": "Then say plainly what you have proved. This claim will not stand unchallenged." }] }],
+            "effects": [{ "kind": "investigation_action", "action": "expose" }], "prompt": null }]
         }
       ]
     },
@@ -120,6 +130,16 @@
               { "kind": "text", "value": ". That is only what people are saying; judge the account for yourself." }
             ] }],
             "effects": [], "prompt": null }]
+        },
+        { "id": "return-recovered-property", "label": "Return recovered property", "initially_known": true,
+          "responses": [{ "id": "return-recovered-property", "priority": 0,
+            "turns": [{ "speaker": "player", "fragments": [{ "kind": "text", "value": "I found the missing property and brought it back." }] }, { "speaker": "local", "fragments": [{ "kind": "text", "value": "Then the matter is finally put right. I will see that it returns to its proper place." }] }],
+            "effects": [{ "kind": "investigation_action", "action": "return_asset" }], "prompt": null }]
+        },
+        { "id": "expose-false-account", "label": "Challenge the account", "initially_known": true,
+          "responses": [{ "id": "expose-false-account", "priority": 0,
+            "turns": [{ "speaker": "player", "fragments": [{ "kind": "text", "value": "The evidence contradicts the story that was told." }] }, { "speaker": "local", "fragments": [{ "kind": "text", "value": "Then say plainly what you have proved. This claim will not stand unchallenged." }] }],
+            "effects": [{ "kind": "investigation_action", "action": "expose" }], "prompt": null }]
         }
       ]
     },
