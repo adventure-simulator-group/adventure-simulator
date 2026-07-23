@@ -16,6 +16,7 @@ pub mod essential;
 pub mod filth;
 pub mod food;
 pub mod leadership;
+pub mod local_problem;
 pub mod morale;
 pub mod profession;
 pub mod provisioning;

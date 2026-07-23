@@ -1,5 +1,8 @@
 # Trade
 
+Local-problem pressure uses the same checked basis-point adjustment after base
+and language pricing for displayed quotes and reducer transfers, including food.
+
 The compiler supplies each imported settlement with canonical local production
 outputs and a marginal, local, or regional scale. Future trade simulation may
 consume these signals, but rules v6 does not create prices, inventory, or

@@ -44,6 +44,12 @@ pub struct AcceptedQuestInfluence {
     pub distance_minutes: u64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LocalProblemInfluence {
+    pub frequency_bonus_basis_points: u16,
+    pub archetype: Option<EncounterArchetype>,
+}
+
 impl EncounterArchetype {
     pub const fn threat_id(self) -> ThreatId {
         match self {
@@ -182,14 +188,27 @@ pub fn first_encounter(
     seed: u64,
     completed: u64,
     requested: u64,
+    context_at: impl FnMut(u64) -> EncounterContext,
+) -> Option<EncounterSelection> {
+    first_encounter_with_problem(seed, completed, requested, context_at, |_| None)
+}
+
+/// As [`first_encounter`], with a private influence sampled at the same
+/// canonical boundary. Existing entropy domains and boundary traversal remain
+/// unchanged, preserving retry and chunk invariance.
+pub fn first_encounter_with_problem(
+    seed: u64,
+    completed: u64,
+    requested: u64,
     mut context_at: impl FnMut(u64) -> EncounterContext,
+    mut problem_at: impl FnMut(u64) -> Option<LocalProblemInfluence>,
 ) -> Option<EncounterSelection> {
     let end = completed.saturating_add(requested);
     let first_index = completed / ENCOUNTER_ROLL_INTERVAL_MINUTES + 1;
     let last_index = end / ENCOUNTER_ROLL_INTERVAL_MINUTES;
     (first_index..=last_index).find_map(|index| {
         let minute = index * ENCOUNTER_ROLL_INTERVAL_MINUTES;
-        select_at(seed, index, minute, context_at(minute))
+        select_at_with_problem(seed, index, minute, context_at(minute), problem_at(minute))
     })
 }
 
@@ -198,6 +217,16 @@ pub fn select_at(
     index: u64,
     minute: u64,
     context: EncounterContext,
+) -> Option<EncounterSelection> {
+    select_at_with_problem(seed, index, minute, context, None)
+}
+
+fn select_at_with_problem(
+    seed: u64,
+    index: u64,
+    minute: u64,
+    context: EncounterContext,
+    problem: Option<LocalProblemInfluence>,
 ) -> Option<EncounterSelection> {
     let quest_strength = context.accepted_active_quest.map_or(0, |quest| {
         QUEST_PROXIMITY_MINUTES.saturating_sub(quest.distance_minutes.min(QUEST_PROXIMITY_MINUTES))
@@ -212,7 +241,8 @@ pub fn select_at(
             EncounterTerrain::DeepWoods => 130,
         }
         + if context.night { 90 } else { 0 }
-        + quest_frequency_bonus as u32;
+        + quest_frequency_bonus as u32
+        + problem.map_or(0, |value| u32::from(value.frequency_bonus_basis_points));
     if domain_roll(seed, index, 0) % 10_000 >= u64::from(frequency) {
         return None;
     }
@@ -240,6 +270,19 @@ pub fn select_at(
         };
         if weights[slot] > 0 {
             weights[slot] = weights[slot].saturating_add(bonus);
+        }
+    }
+    if let Some(problem) = problem
+        && let Some(archetype) = problem.archetype
+    {
+        let slot = match archetype {
+            EncounterArchetype::Bandits => 0,
+            EncounterArchetype::Goblins => 1,
+            EncounterArchetype::Undead => 2,
+        };
+        if weights[slot] > 0 {
+            weights[slot] =
+                weights[slot].saturating_add(u32::from(problem.frequency_bonus_basis_points));
         }
     }
     let archetype = select_archetype_from_weights(domain_roll(seed, index, 1), weights)?;
@@ -587,6 +630,40 @@ mod tests {
         assert!(
             (0..50_000)
                 .filter_map(|seed| select_at(seed, 1, 180, road_with_undead_quest))
+                .all(|selection| selection.archetype != EncounterArchetype::Undead)
+        );
+    }
+
+    #[test]
+    fn absent_problem_preserves_roll_domains_and_problem_scan_is_chunk_invariant() {
+        for seed in 0..2_000 {
+            assert_eq!(
+                select_at(seed, 1, 180, context()),
+                select_at_with_problem(seed, 1, 180, context(), None)
+            );
+        }
+        let influence = |_| {
+            Some(LocalProblemInfluence {
+                frequency_bonus_basis_points: 2_000,
+                archetype: Some(EncounterArchetype::Bandits),
+            })
+        };
+        let whole = first_encounter_with_problem(42, 0, 720, |_| context(), influence);
+        let first = first_encounter_with_problem(42, 0, 360, |_| context(), influence);
+        let split =
+            first.or_else(|| first_encounter_with_problem(42, 360, 360, |_| context(), influence));
+        assert_eq!(whole, split);
+    }
+
+    #[test]
+    fn problem_influence_cannot_revive_an_impossible_archetype() {
+        let influence = Some(LocalProblemInfluence {
+            frequency_bonus_basis_points: 2_000,
+            archetype: Some(EncounterArchetype::Undead),
+        });
+        assert!(
+            (0..20_000)
+                .filter_map(|seed| select_at_with_problem(seed, 1, 180, context(), influence))
                 .all(|selection| selection.archetype != EncounterArchetype::Undead)
         );
     }

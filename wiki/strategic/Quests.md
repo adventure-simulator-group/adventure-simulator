@@ -46,3 +46,4 @@ display text. Current direct bounties reveal that identity and preparation
 advice; future investigations will use evidence-limited ranking so hidden truth
 is not leaked. Combat, loot, fear, movement speed, habitat, and activity data
 come from `docs/BESTIARY.md`.
+Local problems are learned from NPCs rather than new quest-giver markers. A rumor is not contract acceptance and cannot change active quest state. Exact destination markers require later knowledge of an exact location.
