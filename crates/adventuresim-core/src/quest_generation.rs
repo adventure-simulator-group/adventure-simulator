@@ -1738,7 +1738,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     let witness2 = WitnessId::new(scoped_id(&prefix, "witness", "corroborating"));
     let npc1 = primary.npc_id.clone();
     let npc2 = secondary.npc_id.clone();
-    let false_statement = match account_style {
+    let unreliable_statement = match account_style {
         AccountStyle::VisualClaim => {
             format!(
                 "It looked like {:?}, near {}.",
@@ -1817,8 +1817,12 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             testimony: vec![TestimonyDraft {
                 proposition_id: description_prop.clone(),
                 reliability,
-                truthful_text: true_statement,
-                spoken_text: false_statement,
+                truthful_text: true_statement.clone(),
+                spoken_text: if reliability == Reliability::Truthful {
+                    true_statement
+                } else {
+                    unreliable_statement
+                },
                 destination_stage: if reliability == Reliability::Truthful {
                     "approximate_area"
                 } else {
@@ -1846,9 +1850,10 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 reliability: Reliability::Truthful,
                 truthful_text: "The earlier location does not fit the tracks; they lead elsewhere."
                     .into(),
-                spoken_text:
-                    "Those tracks turn away from the river and continue toward the true site."
-                        .into(),
+                spoken_text: format!(
+                    "Those tracks turn away from {} and continue toward the true site.",
+                    label(secondary_site_kind)
+                ),
                 destination_stage: "route_segment".into(),
                 site_id: Some(finale_site.clone()),
                 corrects_proposition_id: Some(description_prop.clone()),
@@ -1862,8 +1867,8 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             proposition_id: correction_prop.clone(),
             site_id: evidence_site.clone(),
             safe_description: format!(
-                "The {:?} preserve a useful lead without identifying the culprit outright.",
-                evidence_kind
+                "This {:?} clue preserves a useful lead without identifying the culprit outright.",
+                evidence_kind,
             ),
             corrects_proposition_id: Some(scoped_id(&prefix, "proposition", "description")),
         },

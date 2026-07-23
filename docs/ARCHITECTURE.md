@@ -361,7 +361,10 @@ and success state. The registered SSR gateway exposes only observer-safe action
 and outcome projections and accepts an opaque action ID, method, and expected
 version. Party members route the same request through party consent. The
 authority revalidates ownership, prerequisites, party state, and location
-before consuming strenuous strategic time. Surveillance and ambush preparation
+before consuming strenuous strategic time. Generated public IDs use
+domain-separated SHA-256 tokens derived from separately sampled private
+observer entropy; resolution seeds are independently sampled and refreshed for
+new capability versions. Surveillance and ambush preparation
 remain strategic and never persist tactical positions, damage, HP, enemies, or
 fabricated hostile dispositions. Drive-off and capture require the
 authoritative tactical producer tracked in #207.

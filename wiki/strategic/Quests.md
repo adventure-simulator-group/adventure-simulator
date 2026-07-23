@@ -57,6 +57,11 @@ and social inquiry may fail or contradict one another without deleting the
 alternate route. Canonical cause determines the finale: rescue a concealed or
 abducted person, retrieve and return a lost asset, expose a fabricated claim,
 or defeat/drive off recurring attackers. Unsupported endings are not rolled.
+The modular cases create no contracts: entering the tavern guarantees a rumor
+entry point, and referrals identify witnesses by appearance and expected
+location. A route first reveals travel-capable exact knowledge; only after the
+party travels to and occupies that site can a separate inspection, ambush,
+retrieval, or rescue action resolve it.
 
 ## Planning
 Since you know what enemies you will face at the destination and can estimate what enemies you'll possibly face on the journey, you should plan a party in advance to account for this. For now this is mainly a question of whether you expect to encounter armored enemies (and therefore need hammers/rondels), hordes of weak enemies (therefore want a cleaving sword/axe/hammer and heavy armor), large enemies (therefore want a polearm), and enemies with projectiles (therefore want armor/full-plate). You will also want to account for difficult terrain or the need for stealth/detection during [travel](Travel.md) in your party composition, the latter is important if you're traveling through an area with enemies that are too dangerous for your party to fight against.

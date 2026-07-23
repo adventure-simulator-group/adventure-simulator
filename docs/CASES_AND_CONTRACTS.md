@@ -28,10 +28,12 @@ to `ReadyToReport`. Reporting at its issuer pays once, records `paid_at`, and
 changes it to `Paid`. Withdrawing a contract leaves the underlying case and
 investigation intact.
 
-Generated contract presentation is deliberately an issuer belief. Opposition
-wording and count may be vague or wrong; canonical threat identity and count
-are absent from the contract schema and gateway DTO. A generated case and its
-linked local problem can resolve without a contract.
+The modular investigation generator creates no contract. Its cases enter play
+through tavern rumors and NPC referrals, and their linked local problems
+resolve and replenish without acceptance, tracking, reporting, or payment.
+Legacy direct bounties may still create contracts; their presentation is
+deliberately an issuer belief, and canonical threat identity and count remain
+absent from the contract schema and gateway DTO.
 
 Assets and subjects use one versioned custody row per stable object ID. A
 transition must advance exactly one version and carry a stable source ID;
