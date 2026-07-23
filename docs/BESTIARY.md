@@ -10,17 +10,20 @@ at strategic combat and loot boundaries instead of becoming a generic enemy.
 
 Every catalog entry has typed combat and investigation profiles. Combat covers
 reusable humanoid/quadruped rig, sustainable speed, perception-facing traits,
-attack/loadout, protection, vulnerability, fear/disease, temperament, encounter
-scaling, and loot. Investigation covers habitat/activity/victims, tracks,
+attack/loadout, protection, innate material resistance/padding, fear/disease,
+temperament, encounter scaling, and loot. Investigation covers
+habitat/activity/victims, tracks,
 wounds, disturbances, sounds, silhouettes, odors, mistaken identities,
 distinguishing evidence, visibility, and preparation advice.
 
 The strategic autoresolver consumes identity, loadout, protection, speed,
-loot, perception/stealth, morale, encounter scaling, and cut/blunt response.
-Cutting attacks are inefficient against skeletons while blunt contact is
-amplified; armor and penetration, ranged loadouts, speed, and party size also
-produce mechanically testable preparation choices. Fire, silver, daylight,
-and ritual courage are stored separately as **unimplemented investigation
+loot, perception/stealth, morale, encounter scaling, and innate protection.
+Skeleton bone contributes full-coverage resistance but no padding through the
+ordinary armor calculation, so cutting attacks are inefficient while blunt
+contact remains damaging. No species-level damage multiplier is applied;
+weapon force and penetration, worn armor, ranged loadouts, speed, and party
+size also produce mechanically testable preparation choices. Fire, silver,
+daylight, and ritual courage are stored separately as **unimplemented investigation
 hypotheses**. UI copy must not claim they modify autoresolve. Other fields are typed for the
 investigative generator and future tactical combat; they are not all simulated
 yet. Tactical servers do not yet receive bestiary identity, and tactical enemy

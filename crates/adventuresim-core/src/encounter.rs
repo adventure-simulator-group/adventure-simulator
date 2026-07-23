@@ -272,7 +272,9 @@ pub fn select_at(
 
 fn select_archetype_from_weights(roll: u64, weights: [u32; 3]) -> Option<EncounterArchetype> {
     let total = weights.iter().copied().fold(0_u32, u32::saturating_add);
-    if total == 0 { return None; }
+    if total == 0 {
+        return None;
+    }
     let pick = roll % u64::from(total);
     Some(if pick < u64::from(weights[0]) {
         EncounterArchetype::Bandits
@@ -582,6 +584,10 @@ mod tests {
             }),
             ..context()
         };
-        assert!((0..50_000).filter_map(|seed| select_at(seed, 1, 180, road_with_undead_quest)).all(|selection| selection.archetype != EncounterArchetype::Undead));
+        assert!(
+            (0..50_000)
+                .filter_map(|seed| select_at(seed, 1, 180, road_with_undead_quest))
+                .all(|selection| selection.archetype != EncounterArchetype::Undead)
+        );
     }
 }

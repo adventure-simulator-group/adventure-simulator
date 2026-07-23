@@ -1,8 +1,10 @@
 # Combat
 
-Strategic autoresolve uses shared bestiary combat profiles. Skeleton anatomy
-makes blunt attacks substantially more effective than cutting attacks, while
-armor continues to reward penetration and anti-armor preparation. The tactical
+Strategic autoresolve uses shared bestiary combat profiles. Skeleton bone is a
+full-coverage innate protection layer with substantial resistance and no
+padding, making blunt attacks substantially more effective than cutting attacks
+through the normal force, resistance, padding, coverage, and penetration model.
+There is no species-level post-hoc damage multiplier. The tactical
 server does not yet receive canonical bestiary identity, so not every profile
 field changes real-time behavior; tactical enemy state remains transient.
 **Combat** is the solemn duty of any good knight or mercenary, and until we have a working [fashion](../client/Models.md#fifth-version-clothing-and-armor) module, it'll be what players spend most of their time doing. So let's get it right!

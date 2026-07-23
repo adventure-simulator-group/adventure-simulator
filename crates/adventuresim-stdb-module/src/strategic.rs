@@ -176,6 +176,13 @@ fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Result<Comba
     } else {
         combatant.equipment.melee_weapon = Some(weapon);
     }
+    let innate = profile.innate_protection;
+    if innate.resistance_joules > 0.0 || innate.padding_joules > 0.0 {
+        combatant.equipment.armor.fill(CombatArmor::innate(
+            innate.resistance_joules,
+            innate.padding_joules,
+        ));
+    }
     if matches!(profile.protection, Protection::Armored) {
         combatant.equipment.shield_block_bonus = 1.0;
         combatant.equipment.armor.fill(CombatArmor {
@@ -186,8 +193,6 @@ fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Result<Comba
             coverage: 0.5,
         });
     }
-    combatant.incoming_cut_multiplier = profile.cut_damage_multiplier;
-    combatant.incoming_blunt_multiplier = profile.blunt_damage_multiplier;
     Ok(combatant)
 }
 

@@ -236,10 +236,6 @@ enum CatalogCountermeasure {
     NoSpecial,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MechanicalVulnerability {
-    ShatteringBlow,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CountermeasureHypothesis {
     Fire,
     Silver,
@@ -259,6 +255,15 @@ pub enum CausalBridge {
     AbandonedMine,
 }
 
+/// Full-body material protection contributed by a threat's anatomy rather than
+/// worn equipment. These values use the same joule-based resistance and
+/// padding model as [`crate::autoresolve::CombatArmor`].
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct InnateProtection {
+    pub resistance_joules: f32,
+    pub padding_joules: f32,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct CombatProfile {
     pub rig: RigTopology,
@@ -272,9 +277,7 @@ pub struct CombatProfile {
     pub stealth: u8,
     pub morale: u8,
     pub protection: Protection,
-    pub mechanical_vulnerability: Option<MechanicalVulnerability>,
-    pub cut_damage_multiplier: f32,
-    pub blunt_damage_multiplier: f32,
+    pub innate_protection: InnateProtection,
     pub disease_risk: u8,
     pub fear: u8,
     pub temperament: Temperament,
@@ -370,22 +373,19 @@ const fn combat(
         stealth: 50,
         morale: 50,
         protection,
-        mechanical_vulnerability: if matches!(countermeasure, CatalogCountermeasure::ShatteringBlow)
-        {
-            Some(MechanicalVulnerability::ShatteringBlow)
+        innate_protection: if matches!(countermeasure, CatalogCountermeasure::ShatteringBlow) {
+            // Bone resists an edge but provides no soft layer to dissipate a
+            // crushing impact. Penetration still acts through the ordinary
+            // resistance calculation rather than a species damage modifier.
+            InnateProtection {
+                resistance_joules: 150.0,
+                padding_joules: 0.0,
+            }
         } else {
-            None
-        },
-        cut_damage_multiplier: if matches!(countermeasure, CatalogCountermeasure::ShatteringBlow) {
-            0.35
-        } else {
-            1.0
-        },
-        blunt_damage_multiplier: if matches!(countermeasure, CatalogCountermeasure::ShatteringBlow)
-        {
-            1.8
-        } else {
-            1.0
+            InnateProtection {
+                resistance_joules: 0.0,
+                padding_joules: 0.0,
+            }
         },
         disease_risk: 0,
         fear: 0,
@@ -1508,9 +1508,15 @@ pub fn ambiguous_description_cardinality(report: ReportDescription) -> usize {
 
 pub fn distinguishing_clue_set_count(report: ReportDescription) -> usize {
     let mut sets: Vec<&'static [EvidenceKind]> = Vec::new();
-    for id in ALL_THREATS.iter().copied().filter(|id| description_likelihood(*id, report) > 0) {
+    for id in ALL_THREATS
+        .iter()
+        .copied()
+        .filter(|id| description_likelihood(*id, report) > 0)
+    {
         let clues = profile(id).investigation.distinguishing_clues;
-        if !sets.contains(&clues) { sets.push(clues); }
+        if !sets.contains(&clues) {
+            sets.push(clues);
+        }
     }
     sets.len()
 }
@@ -1592,10 +1598,10 @@ pub fn validate_catalog() -> Vec<CatalogDiagnostic> {
         if combat.speed_m_per_minute == 0
             || combat.weight_kg <= 0.0
             || !combat.weight_kg.is_finite()
-            || combat.cut_damage_multiplier <= 0.0
-            || !combat.cut_damage_multiplier.is_finite()
-            || combat.blunt_damage_multiplier <= 0.0
-            || !combat.blunt_damage_multiplier.is_finite()
+            || combat.innate_protection.resistance_joules < 0.0
+            || !combat.innate_protection.resistance_joules.is_finite()
+            || combat.innate_protection.padding_joules < 0.0
+            || !combat.innate_protection.padding_joules.is_finite()
             || combat.perception > 100
             || combat.stealth > 100
             || combat.morale > 100
@@ -1948,11 +1954,8 @@ mod tests {
     #[test]
     fn representative_profiles_expose_multiple_supported_preparation_choices() {
         let skeleton = profile(ThreatId::Skeleton).combat;
-        assert_eq!(
-            skeleton.mechanical_vulnerability,
-            Some(MechanicalVulnerability::ShatteringBlow)
-        );
-        assert!(skeleton.blunt_damage_multiplier > skeleton.cut_damage_multiplier);
+        assert!(skeleton.innate_protection.resistance_joules > 0.0);
+        assert_eq!(skeleton.innate_protection.padding_joules, 0.0);
         assert_eq!(
             profile(ThreatId::Orc).combat.protection,
             Protection::Armored
