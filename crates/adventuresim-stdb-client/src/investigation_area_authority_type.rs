@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -14,12 +20,15 @@ pub struct InvestigationAreaAuthority {
     pub center_longitude_e_7: i32,
     pub center_latitude_e_7: i32,
     pub radius_m: u32,
+    pub coordinates_are_geographic: bool,
     pub terrain: String,
 }
+
 
 impl __sdk::InModule for InvestigationAreaAuthority {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `InvestigationAreaAuthority`.
 ///
@@ -32,6 +41,7 @@ pub struct InvestigationAreaAuthorityCols {
     pub center_longitude_e_7: __sdk::__query_builder::Col<InvestigationAreaAuthority, i32>,
     pub center_latitude_e_7: __sdk::__query_builder::Col<InvestigationAreaAuthority, i32>,
     pub radius_m: __sdk::__query_builder::Col<InvestigationAreaAuthority, u32>,
+    pub coordinates_are_geographic: __sdk::__query_builder::Col<InvestigationAreaAuthority, bool>,
     pub terrain: __sdk::__query_builder::Col<InvestigationAreaAuthority, String>,
 }
 
@@ -41,21 +51,14 @@ impl __sdk::__query_builder::HasCols for InvestigationAreaAuthority {
         InvestigationAreaAuthorityCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
-            origin_settlement_id: __sdk::__query_builder::Col::new(
-                table_name,
-                "origin_settlement_id",
-            ),
+            origin_settlement_id: __sdk::__query_builder::Col::new(table_name, "origin_settlement_id"),
             safe_label: __sdk::__query_builder::Col::new(table_name, "safe_label"),
-            center_longitude_e_7: __sdk::__query_builder::Col::new(
-                table_name,
-                "center_longitude_e_7",
-            ),
-            center_latitude_e_7: __sdk::__query_builder::Col::new(
-                table_name,
-                "center_latitude_e_7",
-            ),
+            center_longitude_e_7: __sdk::__query_builder::Col::new(table_name, "center_longitude_e_7"),
+            center_latitude_e_7: __sdk::__query_builder::Col::new(table_name, "center_latitude_e_7"),
             radius_m: __sdk::__query_builder::Col::new(table_name, "radius_m"),
+            coordinates_are_geographic: __sdk::__query_builder::Col::new(table_name, "coordinates_are_geographic"),
             terrain: __sdk::__query_builder::Col::new(table_name, "terrain"),
+
         }
     }
 }
@@ -74,8 +77,10 @@ impl __sdk::__query_builder::HasIxCols for InvestigationAreaAuthority {
         InvestigationAreaAuthorityIxCols {
             case_id: __sdk::__query_builder::IxCol::new(table_name, "case_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for InvestigationAreaAuthority {}
+

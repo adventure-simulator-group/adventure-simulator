@@ -6,7 +6,7 @@ use crate::{
     settlement_population::{settlement_npc, settlement_npc_presence},
     strategic::{
         CustodyHolderKind, CustodyObjectKind, case_authority, case_custody,
-        geographic_distance_e7_m, living_party_member_ids, party_authority,
+        coordinate_distance_e7_m, living_party_member_ids, party_authority,
         party_journey_authority, require_no_unresolved_encounter, require_party_ready,
         require_strategic_character_authority, require_strategic_gateway, settlement,
         strategic_gateway_authority__view,
@@ -24,18 +24,24 @@ use std::collections::BTreeMap;
 const MAX_TEXT: usize = 512;
 const AREA_RADIUS_TOLERANCE_M: u64 = 1;
 
-fn geographic_area_contains_e7(
+fn coordinate_area_contains_e7(
     center_longitude_e7: i32,
     center_latitude_e7: i32,
     radius_m: u32,
+    area_coordinates_are_geographic: bool,
     longitude_e7: i32,
     latitude_e7: i32,
+    point_coordinates_are_geographic: bool,
 ) -> bool {
-    geographic_distance_e7_m(
+    if area_coordinates_are_geographic != point_coordinates_are_geographic {
+        return false;
+    }
+    coordinate_distance_e7_m(
         center_longitude_e7,
         center_latitude_e7,
         longitude_e7,
         latitude_e7,
+        area_coordinates_are_geographic,
     )
     .is_some_and(|distance_m| {
         distance_m <= u64::from(radius_m).saturating_add(AREA_RADIUS_TOLERANCE_M)
@@ -309,6 +315,7 @@ pub struct InvestigationAreaAuthority {
     pub center_longitude_e7: i32,
     pub center_latitude_e7: i32,
     pub radius_m: u32,
+    pub coordinates_are_geographic: bool,
     pub terrain: String,
 }
 
@@ -1004,6 +1011,7 @@ fn issue_rumor_action_graph(
                 center_longitude_e7: (settlement.coord_x * 10_000_000.0) as i32,
                 center_latitude_e7: (settlement.coord_y * 10_000_000.0) as i32,
                 radius_m: 5_000,
+                coordinates_are_geographic: settlement.source_node_id.is_some(),
                 terrain: "settlement".into(),
             });
     }
@@ -1383,12 +1391,14 @@ fn validate_action_position(
                 .and_then(|id| ctx.db.case_site_authority().id_key().find(&id))
                 .is_some_and(|site| {
                     site.case_id == area.case_id
-                        && geographic_area_contains_e7(
+                        && coordinate_area_contains_e7(
                             area.center_longitude_e7,
                             area.center_latitude_e7,
                             area.radius_m,
+                            area.coordinates_are_geographic,
                             site.longitude_e7,
                             site.latitude_e7,
+                            site.coordinates_are_geographic,
                         )
                 });
             if !in_origin && !at_case_site {
@@ -3386,7 +3396,9 @@ mod tests {
         assert!(position.contains("presence.settlement_id.as_str()"));
         assert!(position.contains("predecessor.target_kind != \"area\""));
         assert!(position.contains("validate_action_position("));
-        assert!(position.contains("geographic_area_contains_e7("));
+        assert!(position.contains("coordinate_area_contains_e7("));
+        assert!(position.contains("area.coordinates_are_geographic"));
+        assert!(position.contains("site.coordinates_are_geographic"));
         assert!(position.contains("site.case_id == area.case_id"));
         assert!(position.contains("The party must occupy the action's authoritative site"));
         let reducer = production
@@ -3407,11 +3419,58 @@ mod tests {
     }
 
     #[test]
-    fn geographic_area_rejects_distant_and_invalid_sites_and_includes_boundary() {
-        assert!(geographic_area_contains_e7(0, 0, 1_000, 45_000, 0));
-        assert!(geographic_area_contains_e7(0, 0, 1_000, 89_932, 0));
-        assert!(!geographic_area_contains_e7(0, 0, 1_000, 100_000, 0));
-        assert!(!geographic_area_contains_e7(0, 0, 1_000, i32::MAX, 0));
-        assert!(!geographic_area_contains_e7(0, 0, 1_000, 0, i32::MAX));
+    fn coordinate_area_handles_both_modes_boundaries_and_invalid_geography() {
+        // Geographic E7: roughly 500 m, 1,000 m, and 1,112 m at the equator.
+        assert!(coordinate_area_contains_e7(
+            0, 0, 1_000, true, 45_000, 0, true
+        ));
+        assert!(coordinate_area_contains_e7(
+            0, 0, 1_000, true, 89_932, 0, true
+        ));
+        assert!(!coordinate_area_contains_e7(
+            0, 0, 1_000, true, 100_000, 0, true
+        ));
+        // Abstract E7: one coordinate unit is one kilometer.
+        assert!(coordinate_area_contains_e7(
+            0, 0, 1_000, false, 5_000_000, 0, false
+        ));
+        assert!(coordinate_area_contains_e7(
+            0, 0, 1_000, false, 10_000_000, 0, false
+        ));
+        assert!(!coordinate_area_contains_e7(
+            0, 0, 1_000, false, 10_020_000, 0, false
+        ));
+        assert!(!coordinate_area_contains_e7(
+            0, 0, 1_000, true, 45_000, 0, false
+        ));
+        assert!(!coordinate_area_contains_e7(
+            0,
+            0,
+            1_000,
+            true,
+            i32::MAX,
+            0,
+            true
+        ));
+        assert!(!coordinate_area_contains_e7(
+            0,
+            0,
+            1_000,
+            true,
+            0,
+            i32::MAX,
+            true
+        ));
+        // Valid near-antipodal geography must remain about 20,000 km away,
+        // never wrap through NaN-to-integer conversion and appear as zero.
+        assert!(!coordinate_area_contains_e7(
+            0,
+            0,
+            5_000,
+            true,
+            1_799_999_999,
+            0,
+            true
+        ));
     }
 }
