@@ -346,6 +346,48 @@ pub fn advance_investigation_time(
     Ok(true)
 }
 
+/// Bring a co-located party to one strategic minute before an atomic shared
+/// activity. The furthest-advanced member is authoritative; lagging members
+/// settle ordinary stationary time before the strenuous interval begins.
+pub(crate) fn synchronize_party_activity_time(
+    ctx: &ReducerContext,
+    member_ids: &[u64],
+    leader_id: u64,
+) -> Result<u64, String> {
+    if !member_ids.contains(&leader_id) {
+        return Err("Party leader is not a living activity participant".into());
+    }
+    for member_id in member_ids {
+        synchronize_character_time(ctx, *member_id)?;
+    }
+    let start = member_ids
+        .iter()
+        .filter_map(|member_id| {
+            ctx.db
+                .character_time()
+                .character_id()
+                .find(*member_id)
+                .map(|time| time.minutes)
+        })
+        .max()
+        .ok_or("Party has no strategic clock")?;
+    for member_id in member_ids {
+        let minute = ctx
+            .db
+            .character_time()
+            .character_id()
+            .find(*member_id)
+            .ok_or("Party member has no strategic clock")?
+            .minutes;
+        if minute < start
+            && !advance_character_wait_time(ctx, *member_id, start.saturating_sub(minute))?
+        {
+            return Err("Every party member must survive clock synchronization".into());
+        }
+    }
+    Ok(start)
+}
+
 /// Neutral/location-appropriate personal time for waiting and procedures. It
 /// advances disease, wounds, blood, and ordinary recovery without applying
 /// travel fatigue or travel needs.

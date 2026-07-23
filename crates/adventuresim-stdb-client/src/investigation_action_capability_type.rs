@@ -22,6 +22,7 @@ pub struct InvestigationActionCapability {
     pub known_prerequisites: String,
     pub safe_result_on_success: String,
     pub consequence_json: String,
+    pub required_action_id: String,
     pub alternate_route_action_id: String,
     pub active: bool,
 }
@@ -49,6 +50,7 @@ pub struct InvestigationActionCapabilityCols {
     pub known_prerequisites: __sdk::__query_builder::Col<InvestigationActionCapability, String>,
     pub safe_result_on_success: __sdk::__query_builder::Col<InvestigationActionCapability, String>,
     pub consequence_json: __sdk::__query_builder::Col<InvestigationActionCapability, String>,
+    pub required_action_id: __sdk::__query_builder::Col<InvestigationActionCapability, String>,
     pub alternate_route_action_id:
         __sdk::__query_builder::Col<InvestigationActionCapability, String>,
     pub active: __sdk::__query_builder::Col<InvestigationActionCapability, bool>,
@@ -82,6 +84,7 @@ impl __sdk::__query_builder::HasCols for InvestigationActionCapability {
                 "safe_result_on_success",
             ),
             consequence_json: __sdk::__query_builder::Col::new(table_name, "consequence_json"),
+            required_action_id: __sdk::__query_builder::Col::new(table_name, "required_action_id"),
             alternate_route_action_id: __sdk::__query_builder::Col::new(
                 table_name,
                 "alternate_route_action_id",

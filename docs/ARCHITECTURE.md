@@ -347,6 +347,11 @@ version. Party members route the same request through party consent. The
 authority revalidates ownership, prerequisites, party state, and location
 before consuming strenuous strategic time. Surveillance and ambush resolution
 remain strategic and never persist tactical positions, damage, HP, or enemies.
+Action graphs retain private predecessor and alternate-route edges. The
+authority validates those edges within one observer and case, synchronizes the
+co-located party's strategic clocks, then uses the leader/party minute for
+light, evidence age, and recorded outcomes. Custody and hostile-resolution
+effects are committed only by their owning strategic adapters.
 
 ### Strategic tables
 

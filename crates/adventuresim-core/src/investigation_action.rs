@@ -112,6 +112,7 @@ pub struct Resolution {
     pub cost: StrategicCost,
     pub resulting_uncertainty_bps: u16,
     pub risk_bps: u16,
+    pub risk_triggered: bool,
     pub effective_skill_bps: u16,
 }
 
@@ -238,12 +239,18 @@ pub fn resolve(input: ResolutionInput) -> Resolution {
             .saturating_add(change)
             .min(10_000)
     };
+    let risk_bps = if success { 500 } else { 1_500 };
     Resolution {
         result: result_kind(input.kind, success),
         success,
         cost,
         resulting_uncertainty_bps,
-        risk_bps: if success { 500 } else { 1_500 },
+        risk_bps,
+        risk_triggered: domain_roll(
+            input.seed ^ 0x5249_534b_5f52_4f4c,
+            input.attempt_index,
+            input.kind,
+        ) < risk_bps,
         effective_skill_bps: effective,
     }
 }
@@ -342,5 +349,14 @@ mod tests {
         assert_eq!(result.result, ActionResultKind::NoNewInformation);
         assert!(result.resulting_uncertainty_bps <= 10_000);
         assert!(result.cost.minutes > 0);
+    }
+
+    #[test]
+    fn risk_is_deterministic_and_distinct_from_action_success() {
+        let input = input(InvestigationActionKind::Watch);
+        let first = resolve(input);
+        let second = resolve(input);
+        assert_eq!(first.risk_triggered, second.risk_triggered);
+        assert!(first.risk_bps <= 10_000);
     }
 }

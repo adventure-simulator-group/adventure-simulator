@@ -5,10 +5,16 @@ use crate::{
     local_problem::local_problem_receipt,
     settlement_population::settlement_npc,
     strategic::{
-        living_party_member_ids, party_authority, require_strategic_character_authority,
-        require_strategic_gateway, strategic_gateway_authority__view,
+        CustodyHolderKind, CustodyObjectKind, HostileGroupDisposition, HostileResolutionKind,
+        case_authority, case_custody, commit_hostile_battle_resolution,
+        ensure_bound_mission_authority, hostile_group_authority, living_party_member_ids,
+        party_authority, party_journey_authority, require_no_unresolved_encounter,
+        require_party_ready, require_strategic_character_authority, require_strategic_gateway,
+        settlement, strategic_gateway_authority__view,
     },
-    time::{advance_investigation_time, world_clock},
+    time::{
+        advance_investigation_time, character_time, synchronize_party_activity_time, world_clock,
+    },
 };
 use adventuresim_core::investigation as inv;
 use adventuresim_core::investigation_action as action;
@@ -312,6 +318,7 @@ pub struct InvestigationActionCapability {
     pub known_prerequisites: String,
     pub safe_result_on_success: String,
     pub consequence_json: String,
+    pub required_action_id: String,
     pub alternate_route_action_id: String,
     pub active: bool,
 }
@@ -543,10 +550,8 @@ pub struct BackendInvestigationAction {
     pub expected_version: u32,
     pub summary: String,
     pub known_prerequisites: String,
-    pub duration_minutes: u32,
-    pub fatigue: u16,
-    pub food_units: u16,
-    pub water_units: u16,
+    pub duration_min_minutes: u32,
+    pub duration_max_minutes: u32,
     pub uncertainty_bps: u16,
     pub skill_contributions: String,
     pub weather_available: bool,
@@ -670,10 +675,8 @@ pub fn backend_investigation_actions(ctx: &ViewContext) -> Vec<BackendInvestigat
                 expected_version: capability.version,
                 summary: capability.safe_summary,
                 known_prerequisites: capability.known_prerequisites,
-                duration_minutes: cost.minutes,
-                fatigue: cost.fatigue,
-                food_units: cost.food_units,
-                water_units: cost.water_units,
+                duration_min_minutes: (cost.minutes / 2).max(15),
+                duration_max_minutes: cost.minutes.saturating_mul(3) / 2,
                 uncertainty_bps: capability.uncertainty_bps,
                 skill_contributions:
                     "terrain, awareness, stealth, local familiarity, and bounded party assistance"
@@ -709,8 +712,19 @@ pub fn backend_investigation_action_outcomes(
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum InvestigationActionConsequence {
     None,
-    RetrieveAsset { asset_id: String, version: u32 },
-    RescueSubject { subject_id: String, version: u32 },
+    RetrieveAsset {
+        asset_id: String,
+        version: u32,
+    },
+    RescueSubject {
+        subject_id: String,
+        version: u32,
+    },
+    ResolveHostileGroup {
+        hostile_group_id: String,
+        resolution: HostileResolutionKind,
+        capture_subject_id: String,
+    },
 }
 
 fn parse_action_kind(value: &str) -> Result<action::InvestigationActionKind, String> {
@@ -777,6 +791,7 @@ pub(crate) fn issue_investigation_action_capability(
     known_prerequisites: String,
     safe_result_on_success: String,
     consequence: InvestigationActionConsequence,
+    required_action_id: String,
     alternate_route_action_id: String,
 ) -> Result<(), String> {
     for text in [
@@ -787,6 +802,7 @@ pub(crate) fn issue_investigation_action_capability(
         &safe_summary,
         &known_prerequisites,
         &safe_result_on_success,
+        &required_action_id,
         &alternate_route_action_id,
     ] {
         bounded(text)?;
@@ -835,17 +851,400 @@ pub(crate) fn issue_investigation_action_capability(
             target_id,
             target_terrain: format!("{target_terrain:?}").to_ascii_lowercase(),
             seed,
-            evidence_age_origin_minute: official_minute(ctx),
+            evidence_age_origin_minute: character_strategic_minute(ctx, owner_character_id),
             uncertainty_bps,
             safe_summary,
             known_prerequisites,
             safe_result_on_success,
             consequence_json: serde_json::to_string(&consequence)
                 .map_err(|_| "Investigation action consequence is invalid")?,
+            required_action_id,
             alternate_route_action_id,
-            active: true,
+            active: false,
         });
     Ok(())
+}
+
+fn character_strategic_minute(ctx: &ReducerContext, character_id: u64) -> u64 {
+    ctx.db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or_else(|| official_minute(ctx), |time| time.minutes)
+}
+
+fn set_action_active(ctx: &ReducerContext, action_id: &str, active: bool) -> Result<(), String> {
+    let mut capability = ctx
+        .db
+        .investigation_action_capability()
+        .id()
+        .find(&action_id.to_string())
+        .ok_or("Investigation route capability is missing")?;
+    capability.active = active;
+    ctx.db
+        .investigation_action_capability()
+        .id()
+        .update(capability);
+    Ok(())
+}
+
+fn validate_action_route_graph(
+    ctx: &ReducerContext,
+    owner_character_id: u64,
+    case_id: &str,
+) -> Result<(), String> {
+    let capabilities: Vec<_> = ctx
+        .db
+        .investigation_action_capability()
+        .owner_character_id()
+        .filter(owner_character_id)
+        .filter(|capability| capability.case_id == case_id)
+        .collect();
+    if capabilities.len() < 2 {
+        return Err("Investigation needs at least two playable routes".into());
+    }
+    for capability in &capabilities {
+        let alternate = capabilities
+            .iter()
+            .find(|candidate| candidate.id == capability.alternate_route_action_id)
+            .ok_or("Investigation alternate route is missing")?;
+        if alternate.id == capability.id
+            || alternate.owner_character_id != capability.owner_character_id
+            || alternate.case_id != capability.case_id
+        {
+            return Err("Investigation alternate route crosses authority boundaries".into());
+        }
+    }
+    if capabilities
+        .iter()
+        .filter(|capability| capability.active)
+        .count()
+        < 2
+    {
+        return Err("Investigation needs two immediately playable routes".into());
+    }
+    Ok(())
+}
+
+fn activate_action_successors(
+    ctx: &ReducerContext,
+    capability: &InvestigationActionCapability,
+    succeeded: bool,
+) -> Result<(), String> {
+    let mut activate = Vec::new();
+    if succeeded {
+        activate.extend(
+            ctx.db
+                .investigation_action_capability()
+                .owner_character_id()
+                .filter(capability.owner_character_id)
+                .filter(|candidate| {
+                    candidate.case_id == capability.case_id
+                        && candidate.required_action_id == capability.id
+                })
+                .map(|candidate| candidate.id),
+        );
+    } else {
+        let alternate = ctx
+            .db
+            .investigation_action_capability()
+            .id()
+            .find(&capability.alternate_route_action_id)
+            .ok_or("Investigation recovery route no longer exists")?;
+        if alternate.owner_character_id != capability.owner_character_id
+            || alternate.case_id != capability.case_id
+        {
+            return Err("Investigation recovery route no longer matches its case".into());
+        }
+        activate.push(alternate.id);
+    }
+    for id in activate {
+        set_action_active(ctx, &id, true)?;
+    }
+    Ok(())
+}
+
+fn issue_rumor_action_graph(
+    ctx: &ReducerContext,
+    owner_character_id: u64,
+    case_id: &str,
+    lead_id: &str,
+    settlement_id: &str,
+    contact_id: &str,
+    safe_summary: &str,
+) -> Result<(), String> {
+    let area_id = inv::compound_id(&["area", lead_id]);
+    if ctx
+        .db
+        .investigation_area_authority()
+        .id()
+        .find(&area_id)
+        .is_none()
+    {
+        let settlement = ctx
+            .db
+            .settlement()
+            .id()
+            .find(&settlement_id.to_string())
+            .ok_or("Rumor settlement no longer exists")?;
+        ctx.db
+            .investigation_area_authority()
+            .insert(InvestigationAreaAuthority {
+                id: area_id.clone(),
+                case_id: case_id.to_string(),
+                origin_settlement_id: settlement_id.to_string(),
+                safe_label: "the area described by local accounts".into(),
+                center_longitude_e7: (settlement.coord_x * 10_000_000.0) as i32,
+                center_latitude_e7: (settlement.coord_y * 10_000_000.0) as i32,
+                radius_m: 5_000,
+                terrain: "settlement".into(),
+            });
+    }
+    let canonical_case = ctx
+        .db
+        .case_authority()
+        .iter()
+        .find(|case| case.id == case_id || case.investigation_case_id == case_id);
+    let site = canonical_case.as_ref().and_then(|case| {
+        ctx.db
+            .case_site_authority()
+            .case_id()
+            .filter(&case.id)
+            .next()
+    });
+    let group = site.as_ref().and_then(|site| {
+        ctx.db
+            .hostile_group_authority()
+            .iter()
+            .find(|group| group.case_site_id == site.id)
+    });
+    let mut capture_subject_id = String::new();
+    let mut can_capture = false;
+    let mut can_drive_off = false;
+    if let Some(case) = &canonical_case {
+        let expression: adventuresim_core::case::ObjectiveExpression =
+            serde_json::from_str(&case.objective_expression_json)
+                .map_err(|_| "Case objective authority is invalid")?;
+        for requirement in expression
+            .alternatives
+            .iter()
+            .flat_map(|path| &path.objectives)
+            .map(|objective| &objective.requirement)
+        {
+            match requirement {
+                adventuresim_core::case::ObjectiveRequirement::Capture { subject_id } => {
+                    can_capture = true;
+                    capture_subject_id = subject_id.as_str().to_string();
+                }
+                adventuresim_core::case::ObjectiveRequirement::DriveOff { hostile_group_id }
+                    if group
+                        .as_ref()
+                        .is_some_and(|group| group.id == *hostile_group_id) =>
+                {
+                    can_drive_off = true;
+                }
+                _ => {}
+            }
+        }
+    }
+    let target_id = site
+        .as_ref()
+        .map_or_else(|| area_id.clone(), |site| site.id.value.clone());
+    let target_kind = if site.is_some() { "site" } else { "area" };
+    let terrain = site
+        .as_ref()
+        .and_then(|site| parse_action_terrain(&site.scene_key).ok())
+        .unwrap_or(action::Terrain::Settlement);
+    let ids = |method: &str| inv::compound_id(&["investigate", lead_id, method]);
+    let locate = ids("locate_contact");
+    let watch = ids("watch");
+    let approach = ids("approach_lead");
+    let patrol = ids("patrol");
+    let search = ids("search_area");
+    let reacquire = ids("reacquire_tracks");
+    let follow = ids("follow_tracks");
+    let ambush = ids("lay_ambush");
+    let inspect = ids("inspect_site");
+    if ctx
+        .db
+        .investigation_action_capability()
+        .id()
+        .find(&locate)
+        .is_some()
+    {
+        return validate_action_route_graph(ctx, owner_character_id, case_id);
+    }
+    let none = InvestigationActionConsequence::None;
+    let drive_off = group.as_ref().filter(|_| can_drive_off).map_or_else(
+        || none.clone(),
+        |group| InvestigationActionConsequence::ResolveHostileGroup {
+            hostile_group_id: group.id.clone(),
+            resolution: HostileResolutionKind::DrivenOff,
+            capture_subject_id: String::new(),
+        },
+    );
+    let capture = group.as_ref().filter(|_| can_capture).map_or_else(
+        || none.clone(),
+        |group| InvestigationActionConsequence::ResolveHostileGroup {
+            hostile_group_id: group.id.clone(),
+            resolution: HostileResolutionKind::Captured,
+            capture_subject_id: capture_subject_id.clone(),
+        },
+    );
+    let specs = [
+        (
+            locate.clone(),
+            action::InvestigationActionKind::LocateContact,
+            "contact",
+            contact_id.to_string(),
+            action::Terrain::Settlement,
+            "",
+            watch.clone(),
+            format!("Look for {safe_summary}"),
+            "You locate someone who can clarify the report.".to_string(),
+            none.clone(),
+        ),
+        (
+            watch.clone(),
+            action::InvestigationActionKind::Watch,
+            "contact",
+            contact_id.to_string(),
+            action::Terrain::Settlement,
+            "",
+            locate.clone(),
+            "Watch the public area for a corroborating account.".into(),
+            "A local observation reveals another route.".into(),
+            none.clone(),
+        ),
+        (
+            approach.clone(),
+            action::InvestigationActionKind::ApproachLead,
+            "area",
+            area_id.clone(),
+            terrain,
+            locate.as_str(),
+            patrol.clone(),
+            "Approach the lead described by the witness.".into(),
+            "The witness's directions narrow the search.".into(),
+            none.clone(),
+        ),
+        (
+            patrol.clone(),
+            action::InvestigationActionKind::Patrol,
+            "area",
+            area_id.clone(),
+            terrain,
+            watch.as_str(),
+            approach.clone(),
+            "Patrol the area implicated by the reports.".into(),
+            "The patrol reveals a repeatable pattern.".into(),
+            none.clone(),
+        ),
+        (
+            search.clone(),
+            action::InvestigationActionKind::SearchArea,
+            "area",
+            area_id.clone(),
+            terrain,
+            approach.as_str(),
+            reacquire.clone(),
+            "Search the narrowed area for physical evidence.".into(),
+            "The search reveals a trail worth following.".into(),
+            none.clone(),
+        ),
+        (
+            reacquire.clone(),
+            action::InvestigationActionKind::ReacquireTracks,
+            target_kind,
+            target_id.clone(),
+            terrain,
+            patrol.as_str(),
+            search.clone(),
+            "Reacquire a trail from the observed pattern.".into(),
+            "The party picks up the trail again.".into(),
+            none.clone(),
+        ),
+        (
+            follow.clone(),
+            action::InvestigationActionKind::FollowTracks,
+            target_kind,
+            target_id.clone(),
+            terrain,
+            search.as_str(),
+            ambush.clone(),
+            "Follow the physical trail toward its source.".into(),
+            "The trail identifies where the threat is based.".into(),
+            none.clone(),
+        ),
+        (
+            ambush.clone(),
+            action::InvestigationActionKind::LayAmbush,
+            target_kind,
+            target_id.clone(),
+            terrain,
+            reacquire.as_str(),
+            follow.clone(),
+            "Lay an ambush along the threat's established route.".into(),
+            "The ambush forces the threat from the area.".into(),
+            drive_off,
+        ),
+        (
+            inspect.clone(),
+            action::InvestigationActionKind::InspectSite,
+            target_kind,
+            target_id,
+            terrain,
+            follow.as_str(),
+            ambush.clone(),
+            "Inspect the identified site directly.".into(),
+            "The site yields decisive evidence.".into(),
+            capture,
+        ),
+    ];
+    for (
+        id,
+        kind,
+        kind_name,
+        target,
+        terrain,
+        required,
+        alternate,
+        summary,
+        success,
+        consequence,
+    ) in specs
+    {
+        issue_investigation_action_capability(
+            ctx,
+            id,
+            owner_character_id,
+            case_id.to_string(),
+            kind,
+            kind_name.into(),
+            target,
+            terrain,
+            stable_action_seed(lead_id, action_method(kind)),
+            if matches!(
+                kind,
+                action::InvestigationActionKind::FollowTracks
+                    | action::InvestigationActionKind::ReacquireTracks
+                    | action::InvestigationActionKind::InspectSite
+            ) {
+                2_500
+            } else {
+                7_000
+            },
+            summary,
+            "Complete the preceding lead and remain with your ready, co-located party.".into(),
+            success,
+            consequence,
+            required.into(),
+            alternate,
+        )?;
+    }
+    set_action_active(ctx, &locate, true)?;
+    set_action_active(ctx, &watch, true)?;
+    validate_action_route_graph(ctx, owner_character_id, case_id)
 }
 
 fn skill_bps(skill: Skill, hours: f32) -> u16 {
@@ -989,7 +1388,10 @@ fn validate_action_position(
     capability: &InvestigationActionCapability,
     kind: action::InvestigationActionKind,
 ) -> Result<(), String> {
-    if kind == action::InvestigationActionKind::InspectSite
+    if matches!(
+        kind,
+        action::InvestigationActionKind::InspectSite | action::InvestigationActionKind::LayAmbush
+    ) && capability.target_kind == "site"
         && character_case_site_id(ctx, actor.id).as_deref() != Some(capability.target_id.as_str())
     {
         return Err("The party must be at the reported site to inspect it".into());
@@ -1012,6 +1414,245 @@ fn validate_action_position(
     Ok(())
 }
 
+fn validate_live_action_prerequisites(
+    ctx: &ReducerContext,
+    actor: &crate::Character,
+    party_id: &str,
+    capability: &InvestigationActionCapability,
+    kind: action::InvestigationActionKind,
+) -> Result<Vec<u64>, String> {
+    require_party_ready(ctx, party_id)?;
+    require_no_unresolved_encounter(ctx, party_id)?;
+    let party = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&party_id.to_string())
+        .ok_or("Party not found")?;
+    if party.camp_destination.is_some()
+        || party.camp_remaining_minutes > 0
+        || ctx
+            .db
+            .party_journey_authority()
+            .party_id()
+            .find(&party_id.to_string())
+            .is_some()
+    {
+        return Err("Investigation cannot begin during a journey or camp".into());
+    }
+    let members = living_party_member_ids(ctx, party_id);
+    if members.len() < usize::from(action::prerequisites(kind).minimum_party_members) {
+        return Err("Not enough living party members for this action".into());
+    }
+    let actor_site = character_case_site_id(ctx, actor.id);
+    for member_id in &members {
+        let member = ctx
+            .db
+            .character()
+            .id()
+            .find(*member_id)
+            .ok_or("Party member no longer exists")?;
+        if member.current_settlement_id != actor.current_settlement_id
+            || character_case_site_id(ctx, *member_id) != actor_site
+        {
+            return Err("Every living party member must be co-located".into());
+        }
+    }
+    if !capability.required_action_id.is_empty() {
+        let predecessor = ctx
+            .db
+            .investigation_action_capability()
+            .id()
+            .find(&capability.required_action_id)
+            .ok_or("Required investigation lead no longer exists")?;
+        if predecessor.owner_character_id != capability.owner_character_id
+            || predecessor.case_id != capability.case_id
+            || !ctx
+                .db
+                .investigation_action_attempt()
+                .capability_id()
+                .filter(&predecessor.id)
+                .any(|attempt| attempt.success)
+        {
+            return Err("The preceding investigation lead is not complete".into());
+        }
+    }
+    let prereqs = action::prerequisites(kind);
+    if prereqs.requires_contact_referral
+        && !ctx
+            .db
+            .investigation_lead()
+            .owner_character_id()
+            .filter(actor.id)
+            .any(|lead| lead.case_id == capability.case_id && !lead.witness_name.is_empty())
+    {
+        return Err("No live witness referral supports this action".into());
+    }
+    if prereqs.requires_approximate_destination
+        && capability.target_kind != "area"
+        && !ctx
+            .db
+            .investigation_lead()
+            .owner_character_id()
+            .filter(actor.id)
+            .any(|lead| {
+                lead.case_id == capability.case_id
+                    && lead.destination_stage == "approximate_area"
+                    && lead.corrected_by.is_empty()
+            })
+    {
+        return Err("No current approximate destination supports this action".into());
+    }
+    if prereqs.requires_tracks && capability.required_action_id.is_empty() {
+        return Err("No authoritative track source supports this action".into());
+    }
+    validate_action_position(ctx, actor, capability, kind)?;
+    Ok(members)
+}
+
+fn case_objective_contains_custody_target(
+    ctx: &ReducerContext,
+    case_id: &str,
+    object_kind: CustodyObjectKind,
+    object_id: &str,
+) -> Result<bool, String> {
+    let case = ctx
+        .db
+        .case_authority()
+        .id()
+        .find(&case_id.to_string())
+        .ok_or("Investigation case no longer exists")?;
+    let expression: adventuresim_core::case::ObjectiveExpression =
+        serde_json::from_str(&case.objective_expression_json)
+            .map_err(|_| "Case objective authority is invalid")?;
+    use adventuresim_core::case::ObjectiveRequirement as R;
+    Ok(expression
+        .alternatives
+        .iter()
+        .flat_map(|path| &path.objectives)
+        .any(|objective| match (&objective.requirement, object_kind) {
+            (R::Retrieve { asset_id }, CustodyObjectKind::Asset) => asset_id.as_str() == object_id,
+            (R::Rescue { subject_id }, CustodyObjectKind::Subject) => {
+                subject_id.as_str() == object_id
+            }
+            _ => false,
+        }))
+}
+
+fn validate_pickup_custody(
+    ctx: &ReducerContext,
+    capability: &InvestigationActionCapability,
+    party_id: &str,
+    object_kind: CustodyObjectKind,
+    object_id: &str,
+    expected_next_version: u32,
+) -> Result<u32, String> {
+    if !case_objective_contains_custody_target(ctx, &capability.case_id, object_kind, object_id)? {
+        return Err("Capability target is not an unresolved objective of this case".into());
+    }
+    let current = ctx
+        .db
+        .case_custody()
+        .object_id()
+        .find(&object_id.to_string())
+        .ok_or("Capability target has no custody authority")?;
+    if current.case_id != capability.case_id
+        || current.object_kind != object_kind
+        || current.holder_kind != CustodyHolderKind::Site
+        || capability.target_kind != "site"
+        || current.holder_id != capability.target_id
+    {
+        return Err("Capability target is not legally present at this investigation site".into());
+    }
+    let party = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&party_id.to_string())
+        .ok_or("Party not found")?;
+    if party.current_case_site_id.as_deref() != Some(current.holder_id.as_str()) {
+        return Err("Party is not at the custody site".into());
+    }
+    let next = current.version.saturating_add(1);
+    if expected_next_version != next {
+        return Err("Capability custody version is stale and must be reissued".into());
+    }
+    Ok(next)
+}
+
+fn reissue_stale_custody_capability(
+    ctx: &ReducerContext,
+    capability: &mut InvestigationActionCapability,
+    party_id: &str,
+) -> Result<bool, String> {
+    let consequence: InvestigationActionConsequence =
+        serde_json::from_str(&capability.consequence_json)
+            .map_err(|_| "Investigation action consequence authority is invalid")?;
+    let (object_kind, object_id, expected) = match &consequence {
+        InvestigationActionConsequence::RetrieveAsset { asset_id, version } => {
+            (CustodyObjectKind::Asset, asset_id.as_str(), *version)
+        }
+        InvestigationActionConsequence::RescueSubject {
+            subject_id,
+            version,
+        } => (CustodyObjectKind::Subject, subject_id.as_str(), *version),
+        _ => return Ok(false),
+    };
+    let current = ctx
+        .db
+        .case_custody()
+        .object_id()
+        .find(&object_id.to_string())
+        .ok_or("Capability target has no custody authority")?;
+    let next = current.version.saturating_add(1);
+    if expected == next {
+        return Ok(false);
+    }
+    // A changed version is recoverable only while every semantic binding is
+    // still identical. Holder/site/case changes are authority failures.
+    validate_pickup_custody(ctx, capability, party_id, object_kind, object_id, next)?;
+    let refreshed = match consequence {
+        InvestigationActionConsequence::RetrieveAsset { asset_id, .. } => {
+            InvestigationActionConsequence::RetrieveAsset {
+                asset_id,
+                version: next,
+            }
+        }
+        InvestigationActionConsequence::RescueSubject { subject_id, .. } => {
+            InvestigationActionConsequence::RescueSubject {
+                subject_id,
+                version: next,
+            }
+        }
+        _ => unreachable!(),
+    };
+    capability.consequence_json = serde_json::to_string(&refreshed)
+        .map_err(|_| "Refreshed investigation consequence is invalid")?;
+    capability.version = capability.version.saturating_add(1);
+    ctx.db
+        .investigation_action_capability()
+        .id()
+        .update(capability.clone());
+    ctx.db
+        .investigation_action_outcome()
+        .insert(InvestigationActionOutcome {
+        id: inv::compound_id(&[
+            "outcome",
+            "reissue",
+            &capability.id,
+            &capability.version.to_string(),
+        ]),
+        owner_character_id: capability.owner_character_id,
+        case_id: capability.case_id.clone(),
+        capability_id: capability.id.clone(),
+        safe_wording:
+            "The situation changed before you acted; the lead was refreshed without spending time."
+                .into(),
+        recorded_at: character_strategic_minute(ctx, capability.owner_character_id),
+    });
+    Ok(true)
+}
+
 fn commit_action_consequence(
     ctx: &ReducerContext,
     capability: &InvestigationActionCapability,
@@ -1024,6 +1665,14 @@ fn commit_action_consequence(
     match consequence {
         InvestigationActionConsequence::None => Ok(()),
         InvestigationActionConsequence::RetrieveAsset { asset_id, version } => {
+            let version = validate_pickup_custody(
+                ctx,
+                capability,
+                party_id,
+                CustodyObjectKind::Asset,
+                &asset_id,
+                version,
+            )?;
             crate::strategic::record_asset_retrieved(
                 ctx,
                 attempt_id,
@@ -1037,16 +1686,97 @@ fn commit_action_consequence(
         InvestigationActionConsequence::RescueSubject {
             subject_id,
             version,
-        } => crate::strategic::record_subject_rescued_or_released(
-            ctx,
-            attempt_id,
-            &capability.case_id,
-            party_id,
-            &subject_id,
-            version,
-            false,
-        )
-        .map(|_| ()),
+        } => {
+            let version = validate_pickup_custody(
+                ctx,
+                capability,
+                party_id,
+                CustodyObjectKind::Subject,
+                &subject_id,
+                version,
+            )?;
+            crate::strategic::record_subject_rescued_or_released(
+                ctx,
+                attempt_id,
+                &capability.case_id,
+                party_id,
+                &subject_id,
+                version,
+                false,
+            )
+            .map(|_| ())
+        }
+        InvestigationActionConsequence::ResolveHostileGroup {
+            hostile_group_id,
+            resolution,
+            capture_subject_id,
+        } => {
+            if !matches!(
+                resolution,
+                HostileResolutionKind::DrivenOff | HostileResolutionKind::Captured
+            ) {
+                return Err("Investigation cannot author this hostile resolution".into());
+            }
+            let group = ctx
+                .db
+                .hostile_group_authority()
+                .id()
+                .find(&hostile_group_id)
+                .ok_or("Investigation hostile group no longer exists")?;
+            if group.disposition != HostileGroupDisposition::Active
+                || capability.target_kind != "site"
+                || group.case_site_id.as_str() != capability.target_id
+            {
+                return Err("Investigation hostile group is not active at this site".into());
+            }
+            let site = ctx
+                .db
+                .case_site_authority()
+                .id_key()
+                .find(&capability.target_id)
+                .ok_or("Investigation site no longer exists")?;
+            if site.case_id != capability.case_id {
+                return Err("Investigation hostile group belongs to another case".into());
+            }
+            let mission_id = inv::compound_id(&["mission", "investigation", attempt_id]);
+            let mission = ensure_bound_mission_authority(
+                ctx,
+                &mission_id,
+                party_id,
+                &site,
+                &site.scene_key,
+                resolution,
+            )?;
+            if resolution == HostileResolutionKind::Captured {
+                let current = ctx
+                    .db
+                    .case_custody()
+                    .object_id()
+                    .find(&capture_subject_id)
+                    .ok_or("Capture subject has no custody authority")?;
+                if current.case_id != capability.case_id
+                    || current.object_kind != CustodyObjectKind::Subject
+                    || current.holder_kind != CustodyHolderKind::Site
+                    || current.holder_id != site.id.value
+                {
+                    return Err("Capture subject is not alive and controlled at this site".into());
+                }
+            }
+            commit_hostile_battle_resolution(
+                ctx,
+                &format!("outcome:{mission_id}"),
+                &format!("investigation:{attempt_id}"),
+                party_id,
+                Some(&mission.id),
+                Some(&group.id),
+                resolution,
+                (resolution == HostileResolutionKind::Captured)
+                    .then_some(capture_subject_id.as_str()),
+                Vec::new(),
+                false,
+            )
+            .map(|_| ())
+        }
     }
 }
 
@@ -1100,30 +1830,33 @@ pub(crate) fn perform_investigation_action_authorized(
     {
         return Err("Investigation action is stale or belongs to another observer".into());
     }
+    if reissue_stale_custody_capability(ctx, &mut capability, &party_id)? {
+        return Ok(());
+    }
     let kind = parse_action_kind(&method)?;
     let target_terrain = parse_action_terrain(&capability.target_terrain)?;
-    validate_action_position(ctx, &actor, &capability, kind)?;
-    let members = living_party_member_ids(ctx, &party_id);
-    if members.len() < usize::from(action::prerequisites(kind).minimum_party_members) {
-        return Err("Not enough living party members for this action".into());
-    }
-    let started_at = official_minute(ctx);
+    validate_action_route_graph(ctx, actor_id, &capability.case_id)?;
+    let members = validate_live_action_prerequisites(ctx, &actor, &party_id, &capability, kind)?;
+    let started_at = synchronize_party_activity_time(ctx, &members, party.leader_id)?;
     let resolution = action::resolve(action::ResolutionInput {
         seed: capability.seed,
         attempt_index: expected_version,
         kind,
         terrain: actor_action_terrain(ctx, &actor),
         target_terrain,
-        time_of_day: if started_at % 1_440 < 720 {
-            action::TimeOfDay::Day
-        } else {
+        time_of_day: if started_at % 1_440 < 360 || started_at % 1_440 >= 1_200 {
             action::TimeOfDay::Night
+        } else {
+            action::TimeOfDay::Day
         },
         evidence_age_minutes: started_at.saturating_sub(capability.evidence_age_origin_minute),
         current_uncertainty_bps: capability.uncertainty_bps,
         skills: party_action_skills(ctx, &party_id, actor_id, target_terrain)?,
         weather: action::WeatherAuthority::Unavailable,
     });
+    // This is the final mutation-boundary validation. Browser previews and
+    // party votes are UX; only this transaction authorizes the shared time.
+    validate_live_action_prerequisites(ctx, &actor, &party_id, &capability, kind)?;
     for member_id in &members {
         if !advance_investigation_time(ctx, *member_id, u64::from(resolution.cost.minutes))? {
             return Err("Every living party member must survive the investigation interval".into());
@@ -1134,7 +1867,13 @@ pub(crate) fn perform_investigation_action_authorized(
         commit_action_consequence(ctx, &capability, &party_id, &attempt_id)?;
     }
     persist_action_result_lead(ctx, &capability, &attempt_id, &resolution)?;
-    let completed_at = started_at.saturating_add(u64::from(resolution.cost.minutes));
+    let completed_at = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(party.leader_id)
+        .ok_or("Party leader strategic clock disappeared")?
+        .minutes;
     ctx.db
         .investigation_action_attempt()
         .insert(InvestigationActionAttempt {
@@ -1159,22 +1898,36 @@ pub(crate) fn perform_investigation_action_authorized(
             case_id: capability.case_id.clone(),
             capability_id: action_id.clone(),
             safe_wording: if resolution.success {
-                capability.safe_result_on_success.clone()
+                if resolution.risk_triggered {
+                    format!(
+                        "{} The party was exposed to danger during the attempt.",
+                        capability.safe_result_on_success
+                    )
+                } else {
+                    capability.safe_result_on_success.clone()
+                }
             } else {
-                format!(
-                    "No conclusive result. {} minutes passed; uncertainty is now {}%. Another route remains available.",
-                    resolution.cost.minutes,
-                    resolution.resulting_uncertainty_bps / 100
-                )
+                "No conclusive result. Time passed and the validated alternate route remains available."
+                    .into()
             },
             recorded_at: completed_at,
         });
     capability.version = capability.version.saturating_add(1);
     capability.uncertainty_bps = resolution.resulting_uncertainty_bps;
+    capability.active = !resolution.success;
     ctx.db
         .investigation_action_capability()
         .id()
         .update(capability);
+    activate_action_successors(
+        ctx,
+        &ctx.db
+            .investigation_action_capability()
+            .id()
+            .find(&action_id)
+            .ok_or("Investigation action disappeared")?,
+        resolution.success,
+    )?;
     Ok(())
 }
 
@@ -1637,50 +2390,15 @@ pub fn receive_local_problem_rumor(
             recorded_at: receipt.learned_at,
         });
     }
-    let locate_action_id = inv::compound_id(&["investigate", &lead_id, "locate_contact"]);
-    let ask_around_action_id = inv::compound_id(&["investigate", &lead_id, "watch"]);
-    if ctx
-        .db
-        .investigation_action_capability()
-        .id()
-        .find(&locate_action_id)
-        .is_none()
-    {
-        issue_investigation_action_capability(
-            ctx,
-            locate_action_id.clone(),
-            character_id,
-            case_id.clone(),
-            action::InvestigationActionKind::LocateContact,
-            "contact".into(),
-            receipt.contact_npc_id.clone(),
-            action::Terrain::Settlement,
-            stable_action_seed(&receipt.id, "locate_contact"),
-            6_000,
-            format!("Look for {}", receipt.safe_summary),
-            "Be in the settlement where the contact was reported.".into(),
-            "You locate someone who can clarify the report.".into(),
-            InvestigationActionConsequence::None,
-            ask_around_action_id.clone(),
-        )?;
-        issue_investigation_action_capability(
-            ctx,
-            ask_around_action_id,
-            character_id,
-            case_id,
-            action::InvestigationActionKind::Watch,
-            "contact".into(),
-            receipt.contact_npc_id,
-            action::Terrain::Settlement,
-            stable_action_seed(&receipt.id, "watch"),
-            7_000,
-            "Watch the public area and ask passers-by about the referral.".into(),
-            "Remain in the settlement; nighttime can help reveal some patterns.".into(),
-            "A local observation gives you another way to pursue the report.".into(),
-            InvestigationActionConsequence::None,
-            locate_action_id,
-        )?;
-    }
+    issue_rumor_action_graph(
+        ctx,
+        character_id,
+        &case_id,
+        &lead_id,
+        &receipt.settlement_id,
+        &receipt.contact_npc_id,
+        &receipt.safe_summary,
+    )?;
     record_action(ctx, action_id, character_id, "receive_rumor", payload);
     Ok(())
 }
@@ -2651,5 +3369,37 @@ mod tests {
         assert!(reducer.contains("expected_version"));
         assert!(reducer.contains("perform_investigation_action_authorized"));
         assert!(!reducer.contains("stage_investigation_lead"));
+    }
+
+    #[test]
+    fn action_graph_covers_all_methods_and_enforces_authoritative_boundaries() {
+        let source = include_str!("investigation.rs");
+        let graph = source
+            .split("fn issue_rumor_action_graph")
+            .nth(1)
+            .and_then(|tail| tail.split("fn skill_bps").next())
+            .expect("action graph");
+        for method in [
+            "InspectSite",
+            "SearchArea",
+            "FollowTracks",
+            "ReacquireTracks",
+            "LocateContact",
+            "Watch",
+            "Patrol",
+            "LayAmbush",
+            "ApproachLead",
+        ] {
+            assert!(graph.contains(method), "missing action method {method}");
+        }
+        assert!(graph.contains("validate_action_route_graph"));
+        assert!(source.contains("require_party_ready(ctx, party_id)?"));
+        assert!(source.contains("require_no_unresolved_encounter(ctx, party_id)?"));
+        assert!(source.contains("synchronize_party_activity_time"));
+        assert!(source.contains("started_at % 1_440 < 360"));
+        assert!(source.contains("started_at % 1_440 >= 1_200"));
+        assert!(source.contains("validate_pickup_custody"));
+        assert!(source.contains("current.holder_kind != CustodyHolderKind::Site"));
+        assert!(source.contains("resolution.risk_triggered"));
     }
 }

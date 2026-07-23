@@ -68,3 +68,11 @@ version, and stable source identity as applicable. Replays are idempotent,
 cross-case or stale-custody attempts fail, and terminal destruction or death
 marks only affected objective leaves impossible. Alternative branches remain
 available until the objective expression itself can no longer be satisfied.
+
+Mission creation selects one eligible unresolved hostile approach rather than
+choosing by objective precedence. The current kill-based tactical server and
+autoresolver select `Defeated`; capture and drive-off are produced by
+site-bound strategic investigation actions that can prove their distinct
+conditions. Every shared hostile-result commit rechecks that selection.
+`CaptureTargetKilled` is never a successful result, and only `Defeated` may
+produce battle loot.

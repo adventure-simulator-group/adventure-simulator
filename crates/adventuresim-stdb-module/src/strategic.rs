@@ -672,6 +672,81 @@ mod healing_tests {
     }
 
     #[test]
+    fn hostile_resolution_contract_distinguishes_results_subjects_and_loot() {
+        use super::HostileResolutionKind as H;
+        assert!(
+            super::validate_hostile_resolution_contract(
+                Some(H::Defeated),
+                None,
+                H::Defeated,
+                None,
+                true,
+            )
+            .is_ok()
+        );
+        assert!(
+            super::validate_hostile_resolution_contract(
+                Some(H::DrivenOff),
+                None,
+                H::DrivenOff,
+                None,
+                false,
+            )
+            .is_ok()
+        );
+        assert!(
+            super::validate_hostile_resolution_contract(
+                Some(H::Captured),
+                Some("subject"),
+                H::Captured,
+                Some("subject"),
+                false,
+            )
+            .is_ok()
+        );
+        assert!(
+            super::validate_hostile_resolution_contract(
+                Some(H::Captured),
+                Some("subject"),
+                H::Defeated,
+                None,
+                false,
+            )
+            .is_err()
+        );
+        assert!(
+            super::validate_hostile_resolution_contract(
+                Some(H::Captured),
+                Some("subject"),
+                H::Captured,
+                Some("other"),
+                false,
+            )
+            .is_err()
+        );
+        assert!(
+            super::validate_hostile_resolution_contract(
+                Some(H::DrivenOff),
+                None,
+                H::DrivenOff,
+                None,
+                true,
+            )
+            .is_err()
+        );
+        assert!(
+            super::validate_hostile_resolution_contract(
+                Some(H::Captured),
+                Some("subject"),
+                H::CaptureTargetKilled,
+                Some("subject"),
+                false,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
     fn reporting_is_ready_only_and_paid_once() {
         let source = include_str!("strategic.rs");
         let report = source
@@ -840,7 +915,7 @@ pub(crate) fn living_party_member_ids(ctx: &ReducerContext, party_id: &str) -> V
     character_ids
 }
 
-fn require_party_ready(ctx: &ReducerContext, party_id: &str) -> Result<(), String> {
+pub(crate) fn require_party_ready(ctx: &ReducerContext, party_id: &str) -> Result<(), String> {
     let character_ids = living_party_member_ids(ctx, party_id);
     if character_ids.is_empty() {
         return Err("Party has no living members".into());
@@ -2876,7 +2951,9 @@ pub struct MissionAuthority {
     pub scene_key: String,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, SpacetimeType, serde::Serialize, serde::Deserialize,
+)]
 pub enum HostileResolutionKind {
     Defeated,
     DrivenOff,
@@ -2890,6 +2967,32 @@ pub enum HostileGroupDisposition {
     Defeated,
     DrivenOff,
     Captured,
+}
+
+fn validate_hostile_resolution_contract(
+    expected: Option<HostileResolutionKind>,
+    expected_capture_subject: Option<&str>,
+    resolution: HostileResolutionKind,
+    capture_subject: Option<&str>,
+    has_loot: bool,
+) -> Result<(), &'static str> {
+    if resolution == HostileResolutionKind::CaptureTargetKilled {
+        return Err("A killed capture target is not a successful tactical resolution");
+    }
+    if resolution != HostileResolutionKind::Defeated && has_loot {
+        return Err("Only defeated hostiles can produce battle loot");
+    }
+    if let Some(expected) = expected {
+        if expected != resolution {
+            return Err("Battle result does not match the mission-selected objective");
+        }
+        if resolution == HostileResolutionKind::Captured
+            && expected_capture_subject != capture_subject
+        {
+            return Err("Captured subject does not match mission authority");
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug)]
@@ -7796,6 +7899,14 @@ pub(crate) fn commit_hostile_battle_resolution(
     dropped_items: Vec<(String, u32)>,
     include_random_gold: bool,
 ) -> Result<bool, String> {
+    validate_hostile_resolution_contract(
+        None,
+        None,
+        resolution,
+        capture_subject_id,
+        !dropped_items.is_empty() || include_random_gold,
+    )
+    .map_err(str::to_string)?;
     adventuresim_core::mission::OutcomeSourceId::new(outcome_source_id).map_err(str::to_string)?;
     adventuresim_core::mission::BattleId::new(battle_id).map_err(str::to_string)?;
     if let Some(id) = mission_id {
@@ -7840,6 +7951,14 @@ pub(crate) fn commit_hostile_battle_resolution(
         if mission.party_id != party_id || mission.hostile_group_id.as_deref() != hostile_group_id {
             return Err("Battle attribution does not match mission authority".into());
         }
+        validate_hostile_resolution_contract(
+            Some(mission.expected_resolution),
+            mission.capture_subject_id.as_deref(),
+            resolution,
+            capture_subject_id,
+            false,
+        )
+        .map_err(str::to_string)?;
     }
     ctx.db
         .outcome_source_authority()
@@ -7937,7 +8056,7 @@ pub(crate) fn commit_hostile_battle_resolution(
             HostileResolutionKind::Defeated => HostileGroupDisposition::Defeated,
             HostileResolutionKind::DrivenOff => HostileGroupDisposition::DrivenOff,
             HostileResolutionKind::Captured => HostileGroupDisposition::Captured,
-            HostileResolutionKind::CaptureTargetKilled => HostileGroupDisposition::Defeated,
+            HostileResolutionKind::CaptureTargetKilled => unreachable!(),
         };
         ctx.db.hostile_group_authority().id().update(group.clone());
         match resolution {
@@ -8003,37 +8122,7 @@ pub(crate) fn commit_hostile_battle_resolution(
                     }),
                 )?;
             }
-            HostileResolutionKind::CaptureTargetKilled => {
-                let subject_id =
-                    capture_subject_id.ok_or("Capture failure has no mission-bound subject")?;
-                let current = ctx
-                    .db
-                    .case_custody()
-                    .object_id()
-                    .find(&subject_id.to_string())
-                    .ok_or("Killed capture subject has no custody authority")?;
-                let site = ctx
-                    .db
-                    .case_site_authority()
-                    .id_key()
-                    .find(&group.case_site_id.value)
-                    .ok_or("Hostile group case site not found")?;
-                if current.case_id != site.case_id
-                    || current.holder_kind != CustodyHolderKind::Site
-                    || current.holder_id != group.case_site_id.value
-                {
-                    return Err("Killed subject is not bound to this mission site and case".into());
-                }
-                record_case_object_destroyed(
-                    ctx,
-                    &format!("{outcome_source_id}:capture-target-killed"),
-                    &current.case_id,
-                    party_id,
-                    CustodyObjectKind::Subject,
-                    subject_id,
-                    current.version.saturating_add(1),
-                )?;
-            }
+            HostileResolutionKind::CaptureTargetKilled => unreachable!(),
         }
     }
     Ok(true)
@@ -14158,6 +14247,7 @@ pub(crate) fn ensure_bound_mission_authority(
     party_id: &str,
     case_site: &CaseSiteAuthority,
     scene_key: &str,
+    selected_resolution: HostileResolutionKind,
 ) -> Result<MissionAuthority, String> {
     if let Some(existing) = ctx
         .db
@@ -14168,6 +14258,7 @@ pub(crate) fn ensure_bound_mission_authority(
         return if existing.party_id == party_id
             && existing.case_site_id.as_ref() == Some(&case_site.id)
             && existing.scene_key == scene_key
+            && existing.expected_resolution == selected_resolution
         {
             Ok(existing)
         } else {
@@ -14197,24 +14288,22 @@ pub(crate) fn ensure_bound_mission_authority(
         .flat_map(|path| &path.objectives)
         .map(|objective| &objective.requirement)
         .collect();
-    let capture_subject_id = requirements
-        .iter()
-        .find_map(|requirement| match requirement {
-            R::Capture { subject_id } => Some(subject_id.as_str().to_string()),
-            _ => None,
-        });
-    let expected_resolution = if capture_subject_id.is_some() {
-        HostileResolutionKind::Captured
-    } else if requirements.iter().any(|requirement| {
+    let eligible_capture_subject_id =
+        requirements
+            .iter()
+            .find_map(|requirement| match requirement {
+                R::Capture { subject_id } => Some(subject_id.as_str().to_string()),
+                _ => None,
+            });
+    let can_drive_off = requirements.iter().any(|requirement| {
         matches!(
             requirement,
             R::DriveOff {
                 hostile_group_id: id
             } if id == &hostile_group_id
         )
-    }) {
-        HostileResolutionKind::DrivenOff
-    } else if requirements.iter().any(|requirement| {
+    });
+    let can_defeat = requirements.iter().any(|requirement| {
         matches!(
             requirement,
             R::Defeat {
@@ -14222,17 +14311,27 @@ pub(crate) fn ensure_bound_mission_authority(
                 ..
             } if id == &hostile_group_id
         )
-    }) {
-        HostileResolutionKind::Defeated
-    } else {
-        return Err("Case has no tactical objective bound to its hostile group".into());
+    });
+    let eligible = match selected_resolution {
+        HostileResolutionKind::Defeated => can_defeat,
+        HostileResolutionKind::DrivenOff => can_drive_off,
+        HostileResolutionKind::Captured => eligible_capture_subject_id.is_some(),
+        HostileResolutionKind::CaptureTargetKilled => false,
     };
+    if !eligible {
+        return Err(
+            "Selected tactical approach is not an eligible unresolved case objective".into(),
+        );
+    }
+    let capture_subject_id = (selected_resolution == HostileResolutionKind::Captured)
+        .then_some(eligible_capture_subject_id)
+        .flatten();
     let authority = MissionAuthority {
         id: mission_id.to_string(),
         party_id: party_id.to_string(),
         case_site_id: Some(case_site.id.clone()),
         hostile_group_id: Some(hostile_group_id),
-        expected_resolution,
+        expected_resolution: selected_resolution,
         capture_subject_id,
         scene_key: scene_key.to_string(),
     };
@@ -14368,6 +14467,7 @@ pub fn autoresolve_mission(
         &party_id,
         &case_site,
         &case_site.scene_key,
+        HostileResolutionKind::Defeated,
     )?;
     let hostile_group_id = mission
         .hostile_group_id
