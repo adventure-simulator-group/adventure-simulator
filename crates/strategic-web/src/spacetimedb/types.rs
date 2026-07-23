@@ -299,43 +299,6 @@ pub struct PartyJourney {
     pub fixed_camp_minutes: u16,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct StrategicEncounterLoss {
-    pub owner_kind: String,
-    pub owner_id: u64,
-    pub inventory_id: u64,
-    pub item_id: String,
-    pub quantity: u32,
-    pub value_each: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StrategicEncounter {
-    pub party_id: String,
-    pub encounter_id: String,
-    pub archetype: String,
-    pub enemy_count: u16,
-    pub roll_index: u64,
-    pub journey_movement_minute: u64,
-    pub journey_elapsed_minute: u64,
-    pub absolute_minute: u64,
-    pub longitude_e7: i32,
-    pub latitude_e7: i32,
-    pub terrain: String,
-    pub party_aware: bool,
-    pub enemy_aware: bool,
-    pub available_choices: Vec<String>,
-    pub status: String,
-    pub selected_choice: Option<String>,
-    pub selection_explanation: String,
-    pub party_speed_m_per_minute: u32,
-    pub enemy_speed_m_per_minute: u32,
-    pub run_ineligibility: Option<String>,
-    pub penalty_minutes: u64,
-    pub loss_preview: Vec<StrategicEncounterLoss>,
-    pub outcome: Option<String>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JourneyCampInterval {
     pub movement_minute: u64,

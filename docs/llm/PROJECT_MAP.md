@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (1007)
+## Files (999)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -49,7 +49,6 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/composite.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/disease.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/durability.rs` — Rust source module for this component.
-- `crates/adventuresim-core/src/encounter.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/equipment.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/essential.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/filth.rs` — Rust source module for this component.
@@ -352,7 +351,6 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/party_item_condition_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/party_join_request_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/party_join_request_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/party_journey_encounter_authority_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/party_journey_itinerary_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/party_journey_itinerary_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/party_journey_route_table.rs` — Generated SpacetimeDB table interface.
@@ -406,7 +404,6 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/request_tactical_server_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/request_to_join_party_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/resolve_religious_demand_reducer.rs` — Generated SpacetimeDB reducer interface.
-- `crates/adventuresim-stdb-client/src/resolve_strategic_encounter_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/resolved_party_action_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/rest_at_camp_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/rest_at_settlement_hours_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -491,9 +488,6 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/stone_content_percent_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/store_battle_loot_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/strahler_order_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/strategic_encounter_loss_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/strategic_encounter_table.rs` — Generated SpacetimeDB table interface.
-- `crates/adventuresim-stdb-client/src/strategic_encounter_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/strategic_gateway_authority_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/strategic_gateway_authority_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/strategic_incident_table.rs` — Generated SpacetimeDB table interface.
@@ -940,8 +934,6 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/tests/tooltips.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/training-schedule.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/travel-planner-behavior.test.cjs` — Repository support file.
-- `docs/ARCHITECTURE.md` — Project documentation.
-- `docs/ARCHITECTURE.md` — Project documentation.
 - `docs/ARCHITECTURE.md` — Project documentation.
 - `docs/DEVELOPING.md` — Project documentation.
 - `docs/DIALOGUE.md` — Project documentation.

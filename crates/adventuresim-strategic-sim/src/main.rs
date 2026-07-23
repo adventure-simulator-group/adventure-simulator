@@ -100,13 +100,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("{}", String::from_utf8(json)?);
         }
         eprintln!(
-            "authoritative core loop: {} completed / {} attempted, {} quest defeats, {} encounters ({} encounter defeats, {} wipes), {} camps, {} upgrades",
+            "authoritative core loop: {} completed / {} attempted, {} defeats, {} camps, {} upgrades",
             report.metrics.quests_completed,
             report.metrics.quests_attempted,
             report.metrics.defeats,
-            report.metrics.encounters,
-            report.metrics.encounter_defeats,
-            report.metrics.encounter_wipes,
             report.metrics.camp_stops,
             report.metrics.equipment_upgrades,
         );

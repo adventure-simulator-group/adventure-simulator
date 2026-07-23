@@ -529,22 +529,6 @@ Spawn points are defined in GLB/GLTF files using node naming:
 - **Tactical state is ephemeral**: HP/damage/positions disappear when mission ends
 - **Quest locations are strategic places**: their identity and travel coordinates persist, but no enemies, tactical positions, or combat ticks are stored there. Autoresolve writes only final injury and reward results.
 
-## Strategic random encounters
-
-Random encounters are canonical journey events, not tactical state. A private
-authority row persists one journey entropy seed and its next three-hour roll
-cursor; neither value is exposed through subscriptions. Terrain, day/night,
-and distance plus matching enemy archetype for that party's accepted active
-quest affect bounded selection rolls. An interruption row persists the exact route position,
-movement/elapsed/absolute minute, awareness result, available typed choices,
-and surrender preview. It never persists enemy HP, positions, or combat ticks.
-
-Unresolved encounters guard travel, rest, party membership, quest abandonment,
-equipment, and inventory mutations that could bypass or invalidate them. Combat
-uses the shared final autoresolve commit path for wounds, blood, ammunition,
-equipment contact wear, filth, morale, loot, and diagnostics. Random victories
-remain separate from `BattleResult` and quest completion.
-
 ## Language persistence
 
 Language is strategic state. Compiled settlements persist a versioned, deterministic vernacular profile inferred inside the exact playable bounds; the three German shares total exactly 10,000 basis points. Characters persist direct Oral and Written hours. Effective proficiency is derived once from symmetric correlation matrices and is never recursively stored. The importer CLI can inspect a coordinate with `--infer-languages LONGITUDE LATITUDE`.

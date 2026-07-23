@@ -6,6 +6,7 @@ const MAX_COMBAT_ROUNDS: usize = 256;
 const MAX_RANGED_ATTACKS_PER_PHASE: usize = 64;
 const BLOOD_LOSS_PER_HEALTH_DAMAGE: f32 = 0.5;
 const FORMATION_SPACING_METERS: f32 = 2.0;
+const CONTESTED_CHECK_RANDOM_RANGE: f32 = 5.0;
 const COMBAT_ROUND_SECONDS: f32 = 1.0;
 const REFERENCE_MELEE_ATTACK_SECONDS: f32 = 1.0;
 const MIN_MOVEMENT_SPEED_METERS_PER_SECOND: f32 = 0.25;
@@ -670,36 +671,17 @@ fn defender_contact_item_id(result: AttackResult, equipment: &CombatEquipment) -
 /// Resolve an abstract battle using the same attack calculations as direct
 /// combat. The supplied seed makes the result reproducible and the hard round
 /// cap keeps reducer execution bounded.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum BattleOpening {
-    #[default]
-    Normal,
-    AlliesSurprise,
-    EnemiesSurprise,
-}
-
 pub fn resolve_battle(
     mut allies: Vec<Combatant>,
     mut enemies: Vec<Combatant>,
     seed: u64,
-    opening: BattleOpening,
 ) -> BattleOutcome {
     let mut random = SplitMix64::new(seed);
     let mut recorder = BattleRecorder::default();
     let mut victor = BattleVictor::Stalemate;
     let mut rounds = 0;
 
-    // Awareness was already resolved by the strategic encounter. Do not roll
-    // stealth again here: exactly one authoritative side receives the opener.
-    match opening {
-        BattleOpening::Normal => {}
-        BattleOpening::AlliesSurprise => {
-            take_side_turns(&mut allies, &mut enemies, 0, &mut random, &mut recorder)
-        }
-        BattleOpening::EnemiesSurprise => {
-            take_side_turns(&mut enemies, &mut allies, 0, &mut random, &mut recorder)
-        }
-    }
+    resolve_stealth_openers(&mut allies, &mut enemies, &mut random, &mut recorder);
     resolve_opening_volleys(&mut allies, &mut enemies, &mut random, &mut recorder);
 
     for round in 0..MAX_COMBAT_ROUNDS {
@@ -791,6 +773,87 @@ pub fn resolve_battle(
     }
 }
 
+fn resolve_stealth_openers(
+    allies: &mut [Combatant],
+    enemies: &mut [Combatant],
+    random: &mut SplitMix64,
+    recorder: &mut BattleRecorder,
+) {
+    let allies_first = random.next_u64().is_multiple_of(2);
+    let (ally_attacks, enemy_attacks) = if allies_first {
+        (
+            plan_stealth_openers(allies, enemies, random, recorder),
+            plan_stealth_openers(enemies, allies, random, recorder),
+        )
+    } else {
+        let enemy_attacks = plan_stealth_openers(enemies, allies, random, recorder);
+        let ally_attacks = plan_stealth_openers(allies, enemies, random, recorder);
+        (ally_attacks, enemy_attacks)
+    };
+    if allies_first {
+        apply_pending_attacks(allies, enemies, &ally_attacks, recorder);
+        apply_pending_attacks(enemies, allies, &enemy_attacks, recorder);
+    } else {
+        apply_pending_attacks(enemies, allies, &enemy_attacks, recorder);
+        apply_pending_attacks(allies, enemies, &ally_attacks, recorder);
+    }
+}
+
+fn plan_stealth_openers(
+    attackers: &[Combatant],
+    defenders: &[Combatant],
+    random: &mut SplitMix64,
+    recorder: &mut BattleRecorder,
+) -> Vec<PendingAttack> {
+    let mut attacks = Vec::new();
+    for (attacker_index, attacker) in attackers.iter().enumerate() {
+        if attacker.is_incapacitated() || preferred_attack_mode(attacker) != AttackMode::Melee {
+            continue;
+        }
+        recorder.summary.stealth_attempts += 1;
+        let targets = active_indices(defenders);
+        if targets.is_empty() {
+            break;
+        }
+        let target_index = targets[random.index(targets.len())];
+        let stealth = attacker.skills.skill_check_by_parts(
+            Skill::Stealth,
+            &attacker.attributes,
+            &attacker.body,
+            &attacker.essentials,
+            &attacker.equipment,
+            LimbWeights::all_equal(),
+        );
+        let awareness = defender_awareness(&defenders[target_index]);
+        let stealth_roll = stealth + random.unit_f32() * CONTESTED_CHECK_RANDOM_RANGE;
+        let awareness_roll = awareness + random.unit_f32() * CONTESTED_CHECK_RANDOM_RANGE;
+        if stealth_roll <= awareness_roll {
+            continue;
+        }
+        recorder.summary.stealth_successes += 1;
+
+        let part = random_body_part(random);
+        let result = melee_exchange(
+            attacker,
+            &defenders[target_index],
+            1.0,
+            1.0,
+            part,
+            DefenderResponse::None,
+        );
+        attacks.push(PendingAttack {
+            attacker_index,
+            target_index,
+            result,
+            part,
+            mode: AttackMode::Melee,
+            phase: "stealth",
+            round: 0,
+        });
+    }
+    attacks
+}
+
 fn apply_pending_attacks(
     attackers: &mut [Combatant],
     defenders: &mut [Combatant],
@@ -827,6 +890,16 @@ fn apply_pending_attacks(
             effect,
         );
     }
+}
+
+fn defender_awareness(defender: &Combatant) -> f32 {
+    let eyesight = defender
+        .attributes
+        .attr_by_parts(SimpleAttribute::Eyesight, &defender.body);
+    let hearing = defender
+        .attributes
+        .attr_by_parts(SimpleAttribute::Hearing, &defender.body);
+    (eyesight + hearing) * 0.5
 }
 
 fn resolve_opening_volleys(
@@ -1502,41 +1575,16 @@ mod tests {
             vec![fighter(1, 3.0, false)],
             vec![fighter(2, 2.0, false)],
             42,
-            BattleOpening::Normal,
         );
         let second = resolve_battle(
             vec![fighter(1, 3.0, false)],
             vec![fighter(2, 2.0, false)],
             42,
-            BattleOpening::Normal,
         );
         assert_eq!(first.victor, second.victor);
         assert_eq!(first.rounds, second.rounds);
         assert_eq!(first.allies[0].body.health, second.allies[0].body.health);
         assert_eq!(first.enemies[0].body.health, second.enemies[0].body.health);
-    }
-
-    #[test]
-    fn explicit_surprise_grants_exactly_one_authoritative_side_the_opener() {
-        let allies_first = resolve_battle(
-            vec![fighter(1, 5.0, false)],
-            vec![fighter(2, 5.0, false)],
-            77,
-            BattleOpening::AlliesSurprise,
-        );
-        let enemies_first = resolve_battle(
-            vec![fighter(1, 5.0, false)],
-            vec![fighter(2, 5.0, false)],
-            77,
-            BattleOpening::EnemiesSurprise,
-        );
-        assert_eq!(allies_first.log.first().map(|hit| hit.attacker_id), Some(1));
-        assert_eq!(
-            enemies_first.log.first().map(|hit| hit.attacker_id),
-            Some(2)
-        );
-        assert_eq!(allies_first.summary.stealth_attempts, 0);
-        assert_eq!(enemies_first.summary.stealth_attempts, 0);
     }
 
     #[test]
@@ -1900,13 +1948,72 @@ mod tests {
     }
 
     #[test]
-    fn empty_opposition_is_an_immediate_victory() {
-        let outcome = resolve_battle(
-            vec![fighter(1, 3.0, false)],
-            Vec::new(),
-            1,
-            BattleOpening::Normal,
+    fn successful_stealth_grants_a_flat_footed_melee_attack() {
+        let mut ambusher = fighter(1, 5.0, false);
+        ambusher.skills.stealth_hours = 100_000.0;
+        ambusher.equipment.melee_weapon.as_mut().unwrap().accuracy = 2.0;
+        let mut attackers = vec![ambusher];
+        let mut defenders = vec![fighter(2, 1.0, false)];
+
+        let mut recorder = BattleRecorder::default();
+        let attacks = plan_stealth_openers(
+            &attackers,
+            &defenders,
+            &mut SplitMix64::new(11),
+            &mut recorder,
         );
+        apply_pending_attacks(&mut attackers, &mut defenders, &attacks, &mut recorder);
+
+        assert!(defenders[0].body.total_damage() > 0.0);
+    }
+
+    #[test]
+    fn failed_stealth_does_not_grant_an_attack() {
+        let mut ambusher = fighter(1, 0.0, false);
+        ambusher.skills.stealth_hours = 0.0;
+        let mut observer = fighter(2, 1.0, false);
+        observer.attributes.eyesight = 100.0;
+        observer.attributes.hearing = 100.0;
+        let mut attackers = vec![ambusher];
+        let mut defenders = vec![observer];
+
+        let mut recorder = BattleRecorder::default();
+        let attacks = plan_stealth_openers(
+            &attackers,
+            &defenders,
+            &mut SplitMix64::new(11),
+            &mut recorder,
+        );
+        apply_pending_attacks(&mut attackers, &mut defenders, &attacks, &mut recorder);
+
+        assert_eq!(defenders[0].body.total_damage(), 0.0);
+    }
+
+    #[test]
+    fn opposing_stealth_openers_are_simultaneous() {
+        let mut ally = fighter(1, 5.0, false);
+        ally.skills.stealth_hours = 100_000.0;
+        ally.equipment.melee_weapon.as_mut().unwrap().accuracy = 2.0;
+        let mut enemy = fighter(2, 5.0, false);
+        enemy.skills.stealth_hours = 100_000.0;
+        enemy.equipment.melee_weapon.as_mut().unwrap().accuracy = 2.0;
+        let mut allies = vec![ally];
+        let mut enemies = vec![enemy];
+
+        resolve_stealth_openers(
+            &mut allies,
+            &mut enemies,
+            &mut SplitMix64::new(23),
+            &mut BattleRecorder::default(),
+        );
+
+        assert!(allies[0].body.total_damage() > 0.0);
+        assert!(enemies[0].body.total_damage() > 0.0);
+    }
+
+    #[test]
+    fn empty_opposition_is_an_immediate_victory() {
+        let outcome = resolve_battle(vec![fighter(1, 3.0, false)], Vec::new(), 1);
         assert_eq!(outcome.victor, BattleVictor::Allies);
         assert_eq!(outcome.rounds, 0);
         assert_eq!(outcome.seed, 1);
@@ -1967,7 +2074,6 @@ mod tests {
             vec![fighter(1, 4.0, false)],
             vec![fighter(2, 1.0, false)],
             27,
-            BattleOpening::Normal,
         );
         assert_eq!(outcome.seed, 27);
         assert_eq!(outcome.summary.melee_attacks as usize, outcome.log.len());
@@ -1982,7 +2088,6 @@ mod tests {
                     vec![fighter(1, 4.0, false), fighter(2, 4.0, false)],
                     vec![fighter(3, 1.5, false)],
                     *seed,
-                    BattleOpening::Normal,
                 )
                 .victor
                     == BattleVictor::Allies
@@ -1994,7 +2099,6 @@ mod tests {
                     vec![fighter(1, 1.5, false)],
                     vec![fighter(2, 4.0, false), fighter(3, 4.0, false)],
                     *seed,
-                    BattleOpening::Normal,
                 )
                 .victor
                     == BattleVictor::Allies

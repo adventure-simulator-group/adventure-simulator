@@ -169,10 +169,3 @@ Direct `core-loop` invocation is intentionally an expert-only path: its process
 must inherit the same `ADVENTURESIM_SIM_BOOTSTRAP_TOKEN` used to compile and
 publish that disposable module. There is no token CLI option. Prefer the recipe,
 which keeps the capability confined to one shell process and always cleans up.
-
-The reducer-backed core loop subscribes to strategic encounters and resolves
-each through the same public reducer used by the Map/camp UI. Its report records
-encounter frequency; sneak, detour, attack, run, and surrender choices; escape
-eligibility; exact surrendered item/value losses; encounter defeats; and full
-party wipes. Encounter events in the trace retain the canonical encounter ID,
-chosen action, and authoritative outcome for replay diagnostics.

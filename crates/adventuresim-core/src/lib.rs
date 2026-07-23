@@ -9,7 +9,6 @@ pub mod combat;
 pub mod composite;
 pub mod disease;
 pub mod durability;
-pub mod encounter;
 pub mod equipment;
 pub mod essential;
 pub mod filth;

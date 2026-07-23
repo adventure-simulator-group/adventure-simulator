@@ -1609,7 +1609,6 @@ pub fn rest_at_camp(
     requested_minutes: u64,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
-    crate::strategic::require_character_no_unresolved_encounter(ctx, character_id)?;
     crate::character::require_living_character(ctx, character_id)?;
     if requested_minutes == 0 {
         return Ok(());
