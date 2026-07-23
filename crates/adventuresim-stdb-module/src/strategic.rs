@@ -290,7 +290,10 @@ fn record_autoresolve_report(
 
 #[cfg(test)]
 mod healing_tests {
-    use super::{autoresolve_drop, quest_encounter_archetype};
+    use super::{
+        IncidentStatus, RecruitmentOfferStatus, activity_incident_source_id, autoresolve_drop,
+        incident_group_matches, quest_encounter_archetype, refreshed_recruitment_offer_status,
+    };
     use adventuresim_core::encounter::EncounterArchetype;
 
     #[test]
@@ -495,6 +498,74 @@ mod healing_tests {
             .expect("incident completion");
         assert!(!finish.contains("ctx.db.quest()"));
         assert!(!finish.contains("active_quest_id"));
+    }
+
+    #[test]
+    fn recruitment_offer_lifecycle_expires_and_closes_stale_bindings() {
+        assert_eq!(
+            refreshed_recruitment_offer_status(RecruitmentOfferStatus::Open, 10, 20, true),
+            RecruitmentOfferStatus::Open
+        );
+        assert_eq!(
+            refreshed_recruitment_offer_status(RecruitmentOfferStatus::Open, 20, 20, true),
+            RecruitmentOfferStatus::Expired
+        );
+        assert_eq!(
+            refreshed_recruitment_offer_status(RecruitmentOfferStatus::Open, 10, 20, false),
+            RecruitmentOfferStatus::Closed
+        );
+    }
+
+    #[test]
+    fn forged_recruitment_mutations_must_cross_character_authority() {
+        let source = include_str!("strategic.rs");
+        for function in [
+            "create_recruitment_role",
+            "update_recruitment_role",
+            "delete_recruitment_role",
+            "save_recruitment_role",
+            "rename_saved_recruitment_role",
+            "delete_saved_recruitment_role",
+            "request_to_join_party",
+            "request_general_party_join",
+            "accept_party_join_request",
+            "reject_party_join_request",
+            "update_party_check_targets",
+        ] {
+            let body = source
+                .split(&format!("pub fn {function}"))
+                .nth(1)
+                .and_then(|tail| tail.split("#[reducer]").next())
+                .unwrap_or_else(|| panic!("{function} reducer body"));
+            assert!(
+                body.contains("require_strategic_character_authority"),
+                "{function} trusts a caller-provided character ID"
+            );
+        }
+    }
+
+    #[test]
+    fn incident_sources_are_retry_stable_and_group_resolution_is_exact() {
+        let first = activity_incident_source_id("raiding", "party", "town", 7, 1440);
+        let retry = activity_incident_source_id("raiding", "party", "town", 7, 1440);
+        let next = activity_incident_source_id("raiding", "party", "town", 7, 1441);
+        assert_eq!(first, retry);
+        assert_ne!(first, next);
+        assert!(incident_group_matches(
+            IncidentStatus::Pending,
+            "group:a",
+            "group:a"
+        ));
+        assert!(!incident_group_matches(
+            IncidentStatus::Pending,
+            "group:a",
+            "group:b"
+        ));
+        assert!(!incident_group_matches(
+            IncidentStatus::Resolved,
+            "group:a",
+            "group:a"
+        ));
     }
 
     #[test]
@@ -1770,6 +1841,9 @@ pub struct RecruitmentOffer {
     pub recruiting_party_id: String,
     #[index(btree)]
     pub settlement_id: String,
+    #[unique]
+    pub settlement_npc_id: String,
+    pub location_id: String,
     pub leader_id: u64,
     pub status: RecruitmentOfferStatus,
     pub created_at_minute: u64,
@@ -4748,6 +4822,7 @@ pub fn create_recruitment_role(
     weapon_precision: f32,
     save_role: bool,
 ) -> Result<(), String> {
+    require_strategic_character_authority(ctx, leader_id)?;
     crate::character::require_living_character(ctx, leader_id)?;
     if quantity == 0 || quantity > 8 {
         return Err("Role quantity must be between 1 and 8".into());
@@ -4828,6 +4903,7 @@ pub fn update_recruitment_role(
     requirements: RecruitmentRequirements,
     weapon_precision: f32,
 ) -> Result<(), String> {
+    require_strategic_character_authority(ctx, leader_id)?;
     crate::character::require_living_character(ctx, leader_id)?;
     if quantity > 8 {
         return Err("Role quantity must be between 0 and 8".into());
@@ -4891,6 +4967,7 @@ pub fn delete_recruitment_role(
     leader_id: u64,
     role_id: u64,
 ) -> Result<(), String> {
+    require_strategic_character_authority(ctx, leader_id)?;
     crate::character::require_living_character(ctx, leader_id)?;
     let leader = ctx
         .db
@@ -4949,6 +5026,7 @@ pub fn save_recruitment_role(
     requirements: RecruitmentRequirements,
     weapon_precision: f32,
 ) -> Result<(), String> {
+    require_strategic_character_authority(ctx, owner_id)?;
     crate::character::require_living_character(ctx, owner_id)?;
     if ctx.db.character().id().find(owner_id).is_none() {
         return Err("Character not found".into());
@@ -4977,6 +5055,7 @@ pub fn rename_saved_recruitment_role(
     role_id: u64,
     name: String,
 ) -> Result<(), String> {
+    require_strategic_character_authority(ctx, owner_id)?;
     crate::character::require_living_character(ctx, owner_id)?;
     let mut role = ctx
         .db
@@ -5022,6 +5101,7 @@ pub fn update_party_check_targets(
     command: f32,
     religion: f32,
 ) -> Result<(), String> {
+    require_strategic_character_authority(ctx, leader_id)?;
     crate::character::require_living_character(ctx, leader_id)?;
     if [medicine, command, religion]
         .into_iter()
@@ -5058,6 +5138,7 @@ pub fn delete_saved_recruitment_role(
     owner_id: u64,
     role_id: u64,
 ) -> Result<(), String> {
+    require_strategic_character_authority(ctx, owner_id)?;
     crate::character::require_living_character(ctx, owner_id)?;
     let role = ctx
         .db
@@ -5099,28 +5180,71 @@ fn require_open_recruitment_offer(
     let Some(leader) = ctx.db.character().id().find(party.leader_id) else {
         return Err("Recruiting party leader not found".into());
     };
-    if !leader.temporary {
-        return Ok(None);
-    }
-    let mut offer = ctx
+    let offer = ctx
         .db
         .recruitment_offer()
         .recruiting_party_id()
-        .find(&party.id)
-        .ok_or("NPC company has no recruitment authority")?;
+        .find(&party.id);
+    let Some(mut offer) = offer else {
+        return if leader.temporary {
+            Err("NPC company has no recruitment authority".into())
+        } else {
+            Ok(None)
+        };
+    };
     let now = crate::time::refresh_clock(ctx)?;
-    if offer.status == RecruitmentOfferStatus::Open && now >= offer.expires_at_minute {
-        offer.status = RecruitmentOfferStatus::Expired;
-        ctx.db.recruitment_offer().id_key().update(offer);
-        return Err("This recruitment offer has expired".into());
-    }
     if offer.status != RecruitmentOfferStatus::Open {
         return Err("This recruitment offer is no longer open".into());
     }
-    if party.current_settlement_id.as_deref() != Some(&offer.settlement_id) {
-        return Err("Recruiting company is no longer at its advertised settlement".into());
+    let npc = ctx.db.settlement_npc().id().find(&offer.settlement_npc_id);
+    let presence = ctx
+        .db
+        .settlement_npc_presence()
+        .npc_id()
+        .find(&offer.settlement_npc_id);
+    let bindings_are_live = offer.leader_id == party.leader_id
+        && leader.party_id.as_deref() == Some(party.id.as_str())
+        && party.current_settlement_id.as_deref() == Some(offer.settlement_id.as_str())
+        && leader.current_settlement_id.as_deref() == Some(offer.settlement_id.as_str())
+        && npc.is_some_and(|npc| npc.home_settlement_id == offer.settlement_id)
+        && presence.is_some_and(|presence| {
+            presence.settlement_id == offer.settlement_id
+                && presence.location_id == offer.location_id
+                && crate::settlement_population::npc_is_present(&presence, now)
+        });
+    let refreshed = refreshed_recruitment_offer_status(
+        offer.status,
+        now,
+        offer.expires_at_minute,
+        bindings_are_live,
+    );
+    if refreshed != RecruitmentOfferStatus::Open {
+        offer.status = refreshed;
+        ctx.db.recruitment_offer().id_key().update(offer);
+        return Err(if refreshed == RecruitmentOfferStatus::Expired {
+            "This recruitment offer has expired".into()
+        } else {
+            "Recruiting company's advertised identity or presence is stale".into()
+        });
     }
     Ok(Some(offer))
+}
+
+fn refreshed_recruitment_offer_status(
+    current: RecruitmentOfferStatus,
+    now: u64,
+    expires_at: u64,
+    bindings_are_live: bool,
+) -> RecruitmentOfferStatus {
+    if current != RecruitmentOfferStatus::Open {
+        current
+    } else if now >= expires_at {
+        RecruitmentOfferStatus::Expired
+    } else if !bindings_are_live {
+        RecruitmentOfferStatus::Closed
+    } else {
+        RecruitmentOfferStatus::Open
+    }
 }
 
 #[reducer]
@@ -5129,6 +5253,7 @@ pub fn request_to_join_party(
     character_id: u64,
     recruitment_role_id: u64,
 ) -> Result<(), String> {
+    require_strategic_character_authority(ctx, character_id)?;
     crate::character::require_living_character(ctx, character_id)?;
     let Some(character) = ctx.db.character().id().find(character_id) else {
         return Err("Character not found".into());
@@ -5197,6 +5322,7 @@ pub fn request_general_party_join(
     character_id: u64,
     target_party_id: String,
 ) -> Result<(), String> {
+    require_strategic_character_authority(ctx, character_id)?;
     let role = ctx
         .db
         .party_recruitment_role()
@@ -5224,6 +5350,7 @@ pub fn accept_party_join_request(
     leader_id: u64,
     request_id: u64,
 ) -> Result<(), String> {
+    require_strategic_character_authority(ctx, leader_id)?;
     crate::character::require_living_character(ctx, leader_id)?;
     let Some(request) = ctx.db.party_join_request().id().find(request_id) else {
         return Err("Join request not found".into());
@@ -5453,6 +5580,7 @@ pub fn reject_party_join_request(
     leader_id: u64,
     request_id: u64,
 ) -> Result<(), String> {
+    require_strategic_character_authority(ctx, leader_id)?;
     crate::character::require_living_character(ctx, leader_id)?;
     let Some(request) = ctx.db.party_join_request().id().find(request_id) else {
         return Err("Join request not found".into());
@@ -7703,13 +7831,19 @@ pub(crate) fn maybe_trigger_activity_incident(
     } else {
         (IncidentKind::ThieveryDiscovery, "thievery")
     };
-    let source_id = IncidentSourceId {
-        value: format!(
-            "{kind_key}:{party_id}:{}:{}",
-            settlement.id,
-            ctx.random::<u64>()
-        ),
-    };
+    let occurrence_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(0, |time| time.minutes);
+    let source_id = activity_incident_source_id(
+        kind_key,
+        party_id,
+        &settlement.id,
+        character_id,
+        occurrence_minute,
+    );
     create_strategic_incident(
         ctx,
         party_id,
@@ -7752,13 +7886,39 @@ pub(crate) fn finish_incident_for_hostile_group(
     hostile_group_id: &str,
 ) -> Result<bool, String> {
     let incident = ctx.db.strategic_incident().iter().find(|incident| {
-        incident.hostile_group_id == hostile_group_id && incident.status == IncidentStatus::Pending
+        incident_group_matches(
+            incident.status,
+            &incident.hostile_group_id,
+            hostile_group_id,
+        )
     });
     let Some(incident) = incident else {
         return Ok(false);
     };
     finish_strategic_incident(ctx, &incident.id, IncidentStatus::Resolved)?;
     Ok(true)
+}
+
+fn incident_group_matches(
+    status: IncidentStatus,
+    incident_hostile_group_id: &str,
+    completed_hostile_group_id: &str,
+) -> bool {
+    status == IncidentStatus::Pending && incident_hostile_group_id == completed_hostile_group_id
+}
+
+fn activity_incident_source_id(
+    kind: &str,
+    party_id: &str,
+    settlement_id: &str,
+    character_id: u64,
+    occurrence_minute: u64,
+) -> IncidentSourceId {
+    IncidentSourceId {
+        value: format!(
+            "activity:{kind}:{party_id}:{settlement_id}:{character_id}:{occurrence_minute}"
+        ),
+    }
 }
 
 /// Return the next leg's length. The least-rested member sets the party's
@@ -9713,13 +9873,22 @@ fn revalidate_party_after_departure_sync(
         && party.current_settlement_id.as_deref() == expected_settlement_id
         && party.current_case_site_id.as_deref() == expected_quest_location_id
         && !expected_active_quest_id.is_some_and(|id| party.active_quest_id.as_deref() != Some(id));
-    let pending_incident = ctx
+    let pending_incident_sites: Vec<_> = ctx
         .db
         .strategic_incident()
         .party_id()
         .filter(party_id)
-        .any(|incident| incident.status == IncidentStatus::Pending);
-    if !departure_snapshot_allows_travel(party_matches, true, pending_incident) {
+        .filter(|incident| incident.status == IncidentStatus::Pending)
+        .map(|incident| incident.case_site_id.value)
+        .collect();
+    if !departure_snapshot_allows_travel(
+        party_matches,
+        true,
+        pending_incident_allows_departure(
+            expected_quest_location_id,
+            pending_incident_sites.iter().map(String::as_str),
+        ),
+    ) {
         return Err("Travel was interrupted while the party synchronized its clocks".into());
     }
     let members = living_party_member_ids(ctx, party_id);
@@ -9731,7 +9900,7 @@ fn revalidate_party_after_departure_sync(
                         != expected_quest_location_id
             })
         });
-    if !departure_snapshot_allows_travel(true, members_match, false) {
+    if !departure_snapshot_allows_travel(true, members_match, true) {
         return Err("A party member changed location during departure synchronization".into());
     }
     require_party_ready(ctx, party_id)?;
@@ -9741,9 +9910,21 @@ fn revalidate_party_after_departure_sync(
 fn departure_snapshot_allows_travel(
     party_matches: bool,
     members_match: bool,
-    pending_incident: bool,
+    incident_snapshot_allows_departure: bool,
 ) -> bool {
-    party_matches && members_match && !pending_incident
+    party_matches && members_match && incident_snapshot_allows_departure
+}
+
+fn pending_incident_allows_departure<'a>(
+    expected_case_site_id: Option<&str>,
+    pending_case_site_ids: impl Iterator<Item = &'a str>,
+) -> bool {
+    let mut pending = pending_case_site_ids;
+    match (pending.next(), pending.next()) {
+        (None, _) => true,
+        (Some(site), None) => expected_case_site_id == Some(site),
+        (Some(_), Some(_)) => false,
+    }
 }
 
 fn reconstruct_legacy_journey_coordinates(
@@ -9762,18 +9943,39 @@ mod departure_invariant_tests {
         CampDurationMode, JourneyEndpoint, JourneyRoutePlan, JourneyRoutePoint,
         JourneySettlementEndpoint, JourneyTerrainKind, JourneyTerrainSpan, JourneyTerrainWeights,
         Party, PartyJourneyRoute, common_movement_prefix, departure_snapshot_allows_travel,
-        party_can_continue_travel, reconstruct_legacy_journey_coordinates,
-        route_position_at_minute, set_party_journey_state, straight_line_distance_m,
-        terrain_training_exposure, validate_journey_route_payload,
+        party_can_continue_travel, pending_incident_allows_departure,
+        reconstruct_legacy_journey_coordinates, route_position_at_minute, set_party_journey_state,
+        straight_line_distance_m, terrain_training_exposure, validate_journey_route_payload,
         zero_boundary_requires_settlement,
     };
 
     #[test]
-    fn scheduled_activity_incident_prevents_stale_requested_journey() {
-        assert!(!departure_snapshot_allows_travel(true, true, true));
-        assert!(!departure_snapshot_allows_travel(false, true, false));
-        assert!(!departure_snapshot_allows_travel(true, false, false));
-        assert!(departure_snapshot_allows_travel(true, true, false));
+    fn departure_requires_unchanged_party_members_and_incident_snapshot() {
+        assert!(!departure_snapshot_allows_travel(true, true, false));
+        assert!(!departure_snapshot_allows_travel(false, true, true));
+        assert!(!departure_snapshot_allows_travel(true, false, true));
+        assert!(departure_snapshot_allows_travel(true, true, true));
+    }
+
+    #[test]
+    fn only_the_exact_departing_incident_site_may_be_avoided() {
+        assert!(pending_incident_allows_departure(None, std::iter::empty()));
+        assert!(pending_incident_allows_departure(
+            Some("site:a"),
+            ["site:a"].into_iter()
+        ));
+        assert!(!pending_incident_allows_departure(
+            Some("site:a"),
+            ["site:b"].into_iter()
+        ));
+        assert!(!pending_incident_allows_departure(
+            None,
+            ["site:a"].into_iter()
+        ));
+        assert!(!pending_incident_allows_departure(
+            Some("site:a"),
+            ["site:a", "site:b"].into_iter()
+        ));
     }
 
     #[test]
@@ -11385,13 +11587,36 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
         .filter(|offer| offer.status == RecruitmentOfferStatus::Open)
         .count();
     for _ in existing..target {
-        use petname::Generator;
-        let leader_name = petname::Petnames::default()
-            .generate(&mut ctx.rng(), 2, " ")
-            .unwrap_or_else(|| "company captain".into());
-        let mut leader_id = ctx.random::<u64>() | (1_u64 << 63);
+        let used_npcs: HashSet<_> = ctx
+            .db
+            .recruitment_offer()
+            .settlement_id()
+            .filter(&settlement_id.to_string())
+            .map(|offer| offer.settlement_npc_id)
+            .collect();
+        let Some((npc, presence)) = ctx
+            .db
+            .settlement_npc()
+            .home_settlement_id()
+            .filter(&settlement_id.to_string())
+            .filter(|npc| !used_npcs.contains(&npc.id))
+            .filter_map(|npc| {
+                ctx.db
+                    .settlement_npc_presence()
+                    .npc_id()
+                    .find(&npc.id)
+                    .filter(|presence| crate::settlement_population::npc_is_present(presence, now))
+                    .map(|presence| (npc, presence))
+            })
+            .min_by_key(|(npc, _)| (!npc.service_id.is_empty(), npc.id.clone()))
+        else {
+            break;
+        };
+        let leader_name = npc.name.clone();
+        let mut leader_id =
+            adventuresim_core::settlement_population::stable_hash(&npc.id) | (1_u64 << 63);
         while ctx.db.character().id().find(leader_id).is_some() {
-            leader_id = ctx.random::<u64>() | (1_u64 << 63);
+            leader_id = leader_id.wrapping_add(1) | (1_u64 << 63);
         }
         crate::character::insert_new_npc_character(ctx, leader_name.clone(), leader_id, true)?;
         let mut leader = ctx.db.character().id().find(leader_id).unwrap();
@@ -11437,7 +11662,7 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
                 quantity: 3,
                 weapon_precision: (ctx.random::<u64>() % 4) as f32 * 0.5,
             });
-        let source_key = format!("settlement-company:{settlement_id}:{leader_id}");
+        let source_key = format!("settlement-recruiter:{}", npc.id);
         let offer_key = format!("recruitment-offer:{source_key}");
         ctx.db.recruitment_offer().insert(RecruitmentOffer {
             id_key: offer_key.clone(),
@@ -11445,6 +11670,8 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
             source_id: RecruitmentSourceId { value: source_key },
             recruiting_party_id: party_id,
             settlement_id: settlement_id.to_string(),
+            settlement_npc_id: npc.id,
+            location_id: presence.location_id,
             leader_id,
             status: RecruitmentOfferStatus::Open,
             created_at_minute: now,
