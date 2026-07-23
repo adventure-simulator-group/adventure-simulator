@@ -41,7 +41,10 @@ if (typeof module !== "undefined") module.exports = { wrappedDialogFocusIndex };
 
   const examination = document.querySelector("[data-medical-examination]");
   const restSummary = document.querySelector(".rest-summary-overlay[role='dialog']");
-  if (examination) focusDialog(examination);
+  if (examination) {
+    document.body.classList.add("character-action-dialog-open");
+    focusDialog(examination);
+  }
   else if (restSummary) focusDialog(restSummary);
 
   document.addEventListener("keydown", (event) => {
