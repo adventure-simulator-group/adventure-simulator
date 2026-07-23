@@ -17,6 +17,7 @@ use adventuresim_stdb_client::spacetimedb_sdk::{DbContext, Table, TableWithPrima
 use adventuresim_stdb_client::*;
 use adventuresim_stdb_client::{
     DbConnection, autoresolve_report_table::AutoresolveReportTableAccess,
+    backend_contracts_table::BackendContractsTableAccess,
     battle_loot_item_table::BattleLootItemTableAccess,
     battle_participant_table::BattleParticipantTableAccess,
     battle_result_table::BattleResultTableAccess,
@@ -55,7 +56,6 @@ use adventuresim_stdb_client::{
     party_member_table::PartyMemberTableAccess,
     party_recruitment_role_table::PartyRecruitmentRoleTableAccess,
     party_stake_table::PartyStakeTableAccess, party_table::PartyTableAccess,
-    quest_issuer_table::QuestIssuerTableAccess, quest_table::QuestTableAccess,
     recruitment_offer_table::RecruitmentOfferTableAccess,
     religious_demand_table::ReligiousDemandTableAccess, repair_order_table::RepairOrderTableAccess,
     retained_projectile_table::RetainedProjectileTableAccess,
@@ -195,8 +195,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.religious_demand());
         invalidate_on_changes!(state.0._connection.db.recruitment_offer());
         invalidate_on_changes!(state.0._connection.db.strategic_encounter());
-        invalidate_on_changes!(state.0._connection.db.quest());
-        invalidate_on_changes!(state.0._connection.db.quest_issuer());
+        invalidate_on_view_changes!(state.0._connection.db.backend_contracts());
         invalidate_on_changes!(state.0._connection.db.local_chat_message());
         invalidate_on_changes!(state.0._connection.db.dialogue_session());
         invalidate_on_changes!(state.0._connection.db.dialogue_participant());
@@ -268,8 +267,7 @@ impl LiveState {
             .add_query(|query| query.from.party_recruitment_role())
             .add_query(|query| query.from.recruitment_offer())
             .add_query(|query| query.from.party_stake())
-            .add_query(|query| query.from.quest())
-            .add_query(|query| query.from.quest_issuer())
+            .add_query(|query| query.from.backend_contracts())
             .add_query(|query| query.from.religious_demand())
             .add_query(|query| query.from.repair_order())
             .add_query(|query| query.from.saved_recruitment_role())

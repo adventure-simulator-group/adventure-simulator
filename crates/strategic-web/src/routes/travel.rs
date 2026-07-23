@@ -495,12 +495,15 @@ mod tests {
     fn quest(id: &str, settlement_id: &str, status: QuestStatus) -> Quest {
         Quest {
             id: id.to_string(),
+            case_id: format!("case:{id}"),
             title: id.to_string(),
             description: String::new(),
             difficulty: 1,
             gold_reward: 1,
             xp_reward: 1,
             settlement_id: settlement_id.to_string(),
+            service_id: "inn".into(),
+            issuer_npc_id: String::new(),
             status,
             accepted_by: None,
             enemy_type: String::new(),

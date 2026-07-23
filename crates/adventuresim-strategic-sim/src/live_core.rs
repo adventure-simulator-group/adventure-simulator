@@ -22,11 +22,12 @@ use adventuresim_core::strategic_currency::is_currency_id;
 use url::Url;
 
 use adventuresim_stdb_client::{
-    abandon_quest_reducer::abandon_quest,
+    abandon_contract_reducer::abandon_contract, accept_contract_reducer::accept_contract,
     accept_party_join_request_reducer::accept_party_join_request,
-    accept_quest_reducer::accept_quest, autoresolve_mission_reducer::autoresolve_mission,
+    autoresolve_mission_reducer::autoresolve_mission,
     autoresolve_report_table::AutoresolveReportTableAccess,
     backend_case_site_pins_table::BackendCaseSitePinsTableAccess,
+    backend_contract_type::BackendContract, backend_contracts_table::BackendContractsTableAccess,
     backend_herbalist_examinations_table::BackendHerbalistExaminationsTableAccess,
     battle_loot_item_table::BattleLootItemTableAccess,
     battle_result_table::BattleResultTableAccess,
@@ -39,7 +40,8 @@ use adventuresim_stdb_client::{
     character_training_schedule_table::CharacterTrainingScheduleTableAccess,
     claim_simulation_run_reducer::claim_simulation_run,
     configure_simulation_character_reducer::configure_simulation_character,
-    continue_camp_travel_reducer::continue_camp_travel, craft_medication_reducer::craft_medication,
+    continue_camp_travel_reducer::continue_camp_travel, contract_status_type::ContractStatus,
+    craft_medication_reducer::craft_medication,
     create_named_character_with_id_reducer::create_named_character_with_id,
     dismiss_herbalist_examination_reducer::dismiss_herbalist_examination,
     ensure_settlement_activity_reducer::ensure_settlement_activity, equip_item_reducer::equip_item,
@@ -53,9 +55,8 @@ use adventuresim_stdb_client::{
     party_join_request_table::PartyJoinRequestTableAccess,
     party_member_table::PartyMemberTableAccess, party_stake_table::PartyStakeTableAccess,
     party_table::PartyTableAccess, purchase_from_herbalist_reducer::purchase_from_herbalist,
-    quest_status_type::QuestStatus, quest_table::QuestTableAccess,
     register_strategic_gateway_reducer::register_strategic_gateway,
-    repair_order_table::RepairOrderTableAccess,
+    repair_order_table::RepairOrderTableAccess, report_contract_reducer::report_contract,
     request_general_party_join_reducer::request_general_party_join,
     resolve_strategic_encounter_reducer::resolve_strategic_encounter,
     rest_at_camp_reducer::rest_at_camp, rest_at_settlement_hours_reducer::rest_at_settlement_hours,
@@ -68,7 +69,7 @@ use adventuresim_stdb_client::{
     strategic_encounter_table::StrategicEncounterTableAccess,
     submit_item_for_repair_reducer::submit_item_for_repair,
     travel_to_case_site_reducer::travel_to_case_site,
-    travel_to_settlement_reducer::travel_to_settlement, turn_in_quest_reducer::turn_in_quest,
+    travel_to_settlement_reducer::travel_to_settlement,
     update_training_schedule_reducer::update_training_schedule,
     withdraw_party_inventory_item_reducer::withdraw_party_inventory_item,
 };
@@ -739,14 +740,14 @@ impl LiveRunner {
         Err("camp bound exhausted".into())
     }
 
-    fn choose_quest(&self, party: &Party, profile: &AgentProfile) -> Option<Quest> {
+    fn choose_quest(&self, party: &Party, profile: &AgentProfile) -> Option<BackendContract> {
         let settlement = party.current_settlement_id.as_ref()?;
         let mut quests: Vec<_> = self
             .connection
             .db
-            .quest()
+            .backend_contracts()
             .iter()
-            .filter(|q| q.settlement_id == *settlement && q.status == QuestStatus::Available)
+            .filter(|q| q.settlement_id == *settlement && q.status == ContractStatus::Offered)
             .collect();
         quests.sort_by_key(|q| {
             let risk_target = (profile.risk_tolerance * 10.0).round() as i32;
@@ -1537,14 +1538,14 @@ impl LiveRunner {
         let result = reducer_call!(self, "accept_quest", |cb| self
             .connection
             .reducers
-            .accept_quest_then(leader, quest.id.clone(), cb));
+            .accept_contract_then(leader, quest.id.clone(), cb));
         self.call(result)?;
         let case_site = self
             .connection
             .db
             .backend_case_site_pins()
             .iter()
-            .find(|site| site.owner_character_id == leader && site.case_id == quest.id)
+            .find(|site| site.owner_character_id == leader && site.case_id == quest.case_id)
             .ok_or("accepted quest did not disclose an exact case site")?;
         self.event(
             leader_agent,
@@ -1607,7 +1608,7 @@ impl LiveRunner {
             let result = reducer_call!(self, "abandon_unsafe_quest", |cb| self
                 .connection
                 .reducers
-                .abandon_quest_then(leader, quest.id.clone(), cb));
+                .abandon_contract_then(leader, quest.id.clone(), cb));
             self.call(result)?;
             self.event(leader_agent, CoreLoopEventKind::AbandonQuest, quest.id);
             return Ok(());
@@ -1737,7 +1738,7 @@ impl LiveRunner {
             let result = reducer_call!(self, "abandon_defeated_quest", |cb| self
                 .connection
                 .reducers
-                .abandon_quest_then(leader, quest.id.clone(), cb));
+                .abandon_contract_then(leader, quest.id.clone(), cb));
             self.call(result)?;
             self.event(leader_agent, CoreLoopEventKind::AbandonQuest, quest.id);
             let result = reducer_call!(self, "replenish_quests_after_abandon", |cb| self
@@ -1806,7 +1807,7 @@ impl LiveRunner {
         let result = reducer_call!(self, "turn_in_quest", |cb| self
             .connection
             .reducers
-            .turn_in_quest_then(leader, quest.id.clone(), cb));
+            .report_contract_then(leader, quest.id.clone(), cb));
         self.call(result)?;
         self.metrics.quests_completed += 1;
         self.event(leader_agent, CoreLoopEventKind::TurnIn, quest.id.clone());
@@ -2172,7 +2173,7 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
         .add_query(|query| query.from.party_join_request())
         .add_query(|query| query.from.party_member())
         .add_query(|query| query.from.party_stake())
-        .add_query(|query| query.from.quest())
+        .add_query(|query| query.from.backend_contracts())
         .add_query(|query| query.from.strategic_encounter())
         .add_query(|query| query.from.repair_order())
         .add_query(|query| query.from.settlement())

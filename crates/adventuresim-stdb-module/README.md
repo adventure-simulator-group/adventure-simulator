@@ -30,19 +30,21 @@ Tactical state lives in the `tactical-server` game state and is discarded when m
 3. `inventory_item` - Persistent items
 4. `party` - Party groups
 5. `party_member` - Party membership
-6. `mission` - Mission records
-7. `mission_commit` - Idempotent commit tracking
-8. `quest_def` - Quest definitions
-9. `character_quest` - Per-character quest progress
+6. private `mission_authority` - Tactical-to-strategic mission binding
+7. private `case_authority` / `case_outcome_fact` - Objective authority and idempotent facts
+8. private `contract_authority` - Offered, accepted, reportable, and paid agreements
+9. private `case_custody` - Unique versioned asset and subject custody
 
 ## Key Reducers
 
 - `upsert_character(id, name)` - Create/update character
 - `create_party(id, name, leader_id)` - Create party
 - `join_party(party_id, character_id)` - Join party
-- `start_mission(id, party_id, scene, token)` - Start mission
-- **`commit_mission(id, success, xp, items_json)`** - **Commit mission results (idempotent)**
-- `complete_quest(character_id, quest_id)` - Complete quest
+- `request_tactical_server(character_id, mission_id)` - Request a bound mission
+- `autoresolve_mission(character_id, mission_id)` - Commit a trusted strategic battle result
+- `accept_contract(character_id, contract_id)` - Accept an existing case's contract
+- `abandon_contract(character_id, contract_id)` - Withdraw without deleting the case
+- `report_contract(character_id, contract_id)` - Report a resolved case and pay exactly once
 
 ## Publishing
 

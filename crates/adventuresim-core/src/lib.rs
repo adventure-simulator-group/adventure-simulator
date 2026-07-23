@@ -6,6 +6,7 @@ pub mod battle_rewards;
 pub mod bestiary;
 pub mod body;
 pub mod capability;
+pub mod case;
 pub mod combat;
 pub mod composite;
 pub mod disease;

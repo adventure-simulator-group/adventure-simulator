@@ -74,7 +74,7 @@ async fn accept_quest_api(
     let title = state
         .db
         .query::<Quest>(&format!(
-            "SELECT * FROM quest WHERE id = {}",
+            "SELECT * FROM backend_contracts WHERE id = {}",
             sql_string_literal(&id)
         ))
         .await
@@ -116,8 +116,8 @@ async fn accept_quest_for_character(
     execute_or_request_party_action(
         state,
         character_id,
-        PartyAction::AcceptQuest {
-            quest_id: quest_id.into(),
+        PartyAction::AcceptContract {
+            contract_id: quest_id.into(),
         },
     )
     .await
@@ -138,7 +138,7 @@ async fn turn_in_quest_api(
     let reward = state
         .db
         .query::<Quest>(&format!(
-            "SELECT * FROM quest WHERE id = {}",
+            "SELECT * FROM backend_contracts WHERE id = {}",
             sql_string_literal(&id)
         ))
         .await
@@ -149,7 +149,7 @@ async fn turn_in_quest_api(
     let result = match session.character_id_u64() {
         Some(character_id) => state
             .db
-            .call("turn_in_quest", &[json!(character_id), json!(id)])
+            .call("report_contract", &[json!(character_id), json!(id)])
             .await
             .map_err(|error| error.to_string()),
         None => Err("Choose a character first".to_string()),
@@ -180,7 +180,7 @@ async fn abandon_quest(
     let quests: Vec<Quest> = state
         .db
         .query(&format!(
-            "SELECT * FROM quest WHERE id = {}",
+            "SELECT * FROM backend_contracts WHERE id = {}",
             sql_string_literal(&id)
         ))
         .await
@@ -189,8 +189,8 @@ async fn abandon_quest(
     let _ = execute_or_request_party_action(
         &state,
         character_id,
-        PartyAction::AbandonQuest {
-            quest_id: id.clone(),
+        PartyAction::AbandonContract {
+            contract_id: id.clone(),
         },
     )
     .await;
@@ -468,7 +468,7 @@ async fn render_quest_location(
     let matching_quests: Vec<Quest> = state
         .db
         .query(&format!(
-            "SELECT * FROM quest WHERE id = {}",
+            "SELECT * FROM backend_contracts WHERE case_id = {}",
             sql_string_literal(&site.case_id)
         ))
         .await
@@ -721,7 +721,7 @@ async fn render_quest_location(
         && quest.status == QuestStatus::Accepted
         && party
             .as_ref()
-            .is_some_and(|party| party.active_quest_id.as_deref() == Some(&quest.id));
+            .is_some_and(|party| party.active_contract_id.as_deref() == Some(&quest.id));
     let logged_in_as = character.as_ref().map(|c| c.name.as_str());
     let soap_preview = soap_rest_preview(
         &state,
