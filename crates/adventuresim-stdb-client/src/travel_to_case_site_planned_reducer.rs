@@ -4,13 +4,14 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::case_site_id_type::CaseSiteId;
 use super::journey_route_plan_type::JourneyRoutePlan;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct TravelToCaseSitePlannedArgs {
     pub character_id: u64,
-    pub case_site_id: String,
+    pub case_site_id: CaseSiteId,
     pub route: JourneyRoutePlan,
 }
 
@@ -42,7 +43,7 @@ pub trait travel_to_case_site_planned {
     fn travel_to_case_site_planned(
         &self,
         character_id: u64,
-        case_site_id: String,
+        case_site_id: CaseSiteId,
         route: JourneyRoutePlan,
     ) -> __sdk::Result<()> {
         self.travel_to_case_site_planned_then(character_id, case_site_id, route, |_, _| {})
@@ -57,7 +58,7 @@ pub trait travel_to_case_site_planned {
     fn travel_to_case_site_planned_then(
         &self,
         character_id: u64,
-        case_site_id: String,
+        case_site_id: CaseSiteId,
         route: JourneyRoutePlan,
 
         callback: impl FnOnce(
@@ -72,7 +73,7 @@ impl travel_to_case_site_planned for super::RemoteReducers {
     fn travel_to_case_site_planned_then(
         &self,
         character_id: u64,
-        case_site_id: String,
+        case_site_id: CaseSiteId,
         route: JourneyRoutePlan,
 
         callback: impl FnOnce(

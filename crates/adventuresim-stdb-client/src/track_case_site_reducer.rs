@@ -4,11 +4,13 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::case_site_id_type::CaseSiteId;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct TrackCaseSiteArgs {
     pub character_id: u64,
-    pub case_site_id: String,
+    pub case_site_id: CaseSiteId,
 }
 
 impl From<TrackCaseSiteArgs> for super::Reducer {
@@ -35,7 +37,7 @@ pub trait track_case_site {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`track_case_site:track_case_site_then`] to run a callback after the reducer completes.
-    fn track_case_site(&self, character_id: u64, case_site_id: String) -> __sdk::Result<()> {
+    fn track_case_site(&self, character_id: u64, case_site_id: CaseSiteId) -> __sdk::Result<()> {
         self.track_case_site_then(character_id, case_site_id, |_, _| {})
     }
 
@@ -48,7 +50,7 @@ pub trait track_case_site {
     fn track_case_site_then(
         &self,
         character_id: u64,
-        case_site_id: String,
+        case_site_id: CaseSiteId,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -62,7 +64,7 @@ impl track_case_site for super::RemoteReducers {
     fn track_case_site_then(
         &self,
         character_id: u64,
-        case_site_id: String,
+        case_site_id: CaseSiteId,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,

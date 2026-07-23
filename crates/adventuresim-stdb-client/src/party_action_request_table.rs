@@ -80,57 +80,9 @@ impl<'ctx> __sdk::Table for PartyActionRequestTableHandle<'ctx> {
     }
 }
 
-pub struct PartyActionRequestUpdateCallbackId(__sdk::CallbackId);
-
-impl<'ctx> __sdk::TableWithPrimaryKey for PartyActionRequestTableHandle<'ctx> {
-    type UpdateCallbackId = PartyActionRequestUpdateCallbackId;
-
-    fn on_update(
-        &self,
-        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
-    ) -> PartyActionRequestUpdateCallbackId {
-        PartyActionRequestUpdateCallbackId(self.imp.on_update(Box::new(callback)))
-    }
-
-    fn remove_on_update(&self, callback: PartyActionRequestUpdateCallbackId) {
-        self.imp.remove_on_update(callback.0)
-    }
-}
-
-/// Access to the `id` unique index on the table `party_action_request`,
-/// which allows point queries on the field of the same name
-/// via the [`PartyActionRequestIdUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.party_action_request().id().find(...)`.
-pub struct PartyActionRequestIdUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<PartyActionRequest, u64>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> PartyActionRequestTableHandle<'ctx> {
-    /// Get a handle on the `id` unique index on the table `party_action_request`.
-    pub fn id(&self) -> PartyActionRequestIdUnique<'ctx> {
-        PartyActionRequestIdUnique {
-            imp: self.imp.get_unique_constraint::<u64>("id"),
-            phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<'ctx> PartyActionRequestIdUnique<'ctx> {
-    /// Find the subscribed row whose `id` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &u64) -> Option<PartyActionRequest> {
-        self.imp.find(col_val)
-    }
-}
-
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<PartyActionRequest>("party_action_request");
-    _table.add_unique_constraint::<u64>("id", |row| &row.id);
 }
 
 #[doc(hidden)]

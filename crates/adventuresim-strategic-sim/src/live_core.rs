@@ -54,6 +54,7 @@ use adventuresim_stdb_client::{
     party_member_table::PartyMemberTableAccess, party_stake_table::PartyStakeTableAccess,
     party_table::PartyTableAccess, purchase_from_herbalist_reducer::purchase_from_herbalist,
     quest_status_type::QuestStatus, quest_table::QuestTableAccess,
+    register_strategic_gateway_reducer::register_strategic_gateway,
     repair_order_table::RepairOrderTableAccess,
     request_general_party_join_reducer::request_general_party_join,
     resolve_strategic_encounter_reducer::resolve_strategic_encounter,
@@ -1562,7 +1563,13 @@ impl LiveRunner {
         let result = reducer_call!(self, "travel_to_case_site", |cb| self
             .connection
             .reducers
-            .travel_to_case_site_then(leader, case_site.case_site_id.clone(), cb));
+            .travel_to_case_site_then(
+                leader,
+                CaseSiteId {
+                    value: case_site.case_site_id.clone(),
+                },
+                cb,
+            ));
         self.call(result)?;
         self.event(
             leader_agent,
@@ -1678,7 +1685,13 @@ impl LiveRunner {
             let result = reducer_call!(self, "retry_travel_to_case_site", |cb| self
                 .connection
                 .reducers
-                .travel_to_case_site_then(leader, case_site.case_site_id.clone(), cb));
+                .travel_to_case_site_then(
+                    leader,
+                    CaseSiteId {
+                        value: case_site.case_site_id.clone(),
+                    },
+                    cb,
+                ));
             self.call(result)?;
             self.travel_camps(party_id)?;
             self.observe_deaths();
@@ -2206,6 +2219,34 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
             cb,
         ));
     runner.call(result)?;
+    // The disposable simulation owns this otherwise-empty database, so its
+    // authenticated connection is also the trusted strategic gateway.
+    let result = reducer_call!(runner, "register_strategic_gateway", |cb| runner
+        .connection
+        .reducers
+        .register_strategic_gateway_then(None, 0, cb));
+    runner.call(result)?;
+    // Re-subscribe the gateway-only observation surface after registration.
+    // This does not rely on an already-applied subscription recomputing views
+    // when gateway authority changes.
+    let (gateway_subscription_tx, gateway_subscription_rx) = mpsc::sync_channel(1);
+    let gateway_subscription_error_tx = gateway_subscription_tx.clone();
+    runner
+        .connection
+        .subscription_builder()
+        .on_applied(move |_| {
+            let _ = gateway_subscription_tx.send(Ok(()));
+        })
+        .on_error(move |_, error| {
+            let _ = gateway_subscription_error_tx.send(Err(error.to_string()));
+        })
+        .add_query(|query| query.from.backend_case_site_pins())
+        .add_query(|query| query.from.backend_herbalist_examinations())
+        .add_query(|query| query.from.party())
+        .subscribe();
+    gateway_subscription_rx
+        .recv_timeout(ACTION_TIMEOUT)
+        .map_err(|_| "gateway subscription timed out".to_string())??;
     let result = reducer_call!(runner, "seed_simulation_world", |cb| runner
         .connection
         .reducers
@@ -2576,6 +2617,18 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn startup_registers_and_resubscribes_gateway_before_seeding() {
+        let source = include_str!("live_core.rs");
+        let claim = source.find("\"claim_simulation_run\"").unwrap();
+        let register = source.find("\"register_strategic_gateway\"").unwrap();
+        let resubscribe = source
+            .find("gateway_subscription_rx")
+            .expect("post-registration gateway subscription");
+        let seed = source.find("\"seed_simulation_world\"").unwrap();
+        assert!(claim < register && register < resubscribe && resubscribe < seed);
+    }
 
     #[test]
     fn refuses_non_loopback_and_shared_database() {

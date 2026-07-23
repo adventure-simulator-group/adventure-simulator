@@ -4,10 +4,13 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::case_site_id_type::CaseSiteId;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct CaseSiteAuthority {
-    pub id: String,
+    pub id_key: String,
+    pub id: CaseSiteId,
     pub case_id: String,
     pub origin_settlement_id: String,
     pub name: String,
@@ -27,7 +30,8 @@ impl __sdk::InModule for CaseSiteAuthority {
 ///
 /// Provides typed access to columns for query building.
 pub struct CaseSiteAuthorityCols {
-    pub id: __sdk::__query_builder::Col<CaseSiteAuthority, String>,
+    pub id_key: __sdk::__query_builder::Col<CaseSiteAuthority, String>,
+    pub id: __sdk::__query_builder::Col<CaseSiteAuthority, CaseSiteId>,
     pub case_id: __sdk::__query_builder::Col<CaseSiteAuthority, String>,
     pub origin_settlement_id: __sdk::__query_builder::Col<CaseSiteAuthority, String>,
     pub name: __sdk::__query_builder::Col<CaseSiteAuthority, String>,
@@ -43,6 +47,7 @@ impl __sdk::__query_builder::HasCols for CaseSiteAuthority {
     type Cols = CaseSiteAuthorityCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         CaseSiteAuthorityCols {
+            id_key: __sdk::__query_builder::Col::new(table_name, "id_key"),
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
             origin_settlement_id: __sdk::__query_builder::Col::new(
@@ -68,7 +73,7 @@ impl __sdk::__query_builder::HasCols for CaseSiteAuthority {
 /// Provides typed access to indexed columns for query building.
 pub struct CaseSiteAuthorityIxCols {
     pub case_id: __sdk::__query_builder::IxCol<CaseSiteAuthority, String>,
-    pub id: __sdk::__query_builder::IxCol<CaseSiteAuthority, String>,
+    pub id_key: __sdk::__query_builder::IxCol<CaseSiteAuthority, String>,
     pub origin_settlement_id: __sdk::__query_builder::IxCol<CaseSiteAuthority, String>,
 }
 
@@ -77,7 +82,7 @@ impl __sdk::__query_builder::HasIxCols for CaseSiteAuthority {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         CaseSiteAuthorityIxCols {
             case_id: __sdk::__query_builder::IxCol::new(table_name, "case_id"),
-            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            id_key: __sdk::__query_builder::IxCol::new(table_name, "id_key"),
             origin_settlement_id: __sdk::__query_builder::IxCol::new(
                 table_name,
                 "origin_settlement_id",

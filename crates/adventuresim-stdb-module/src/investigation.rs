@@ -18,6 +18,32 @@ pub struct CaseSiteId {
     pub value: String,
 }
 
+impl CaseSiteId {
+    pub fn as_str(&self) -> &str {
+        &self.value
+    }
+}
+
+impl From<String> for CaseSiteId {
+    fn from(value: String) -> Self {
+        Self { value }
+    }
+}
+
+impl std::ops::Deref for CaseSiteId {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl std::fmt::Display for CaseSiteId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.value.fmt(formatter)
+    }
+}
+
 #[derive(Clone, Debug)]
 #[table(accessor = investigation_case_authority)]
 pub struct InvestigationCaseAuthority {
@@ -159,7 +185,8 @@ pub struct InvestigationLead {
 #[table(accessor = case_site_authority)]
 pub struct CaseSiteAuthority {
     #[primary_key]
-    pub id: String,
+    pub id_key: String,
+    pub id: CaseSiteId,
     #[index(btree)]
     pub case_id: String,
     #[index(btree)]
@@ -181,7 +208,7 @@ pub struct PartyCaseSiteTracking {
     #[primary_key]
     pub party_id: String,
     pub observer_character_id: u64,
-    pub case_site_id: String,
+    pub case_site_id: CaseSiteId,
     pub tracked_at: u64,
 }
 
@@ -446,7 +473,7 @@ pub fn backend_case_site_pins(ctx: &ViewContext) -> Vec<BackendCaseSitePin> {
             let site = ctx
                 .db
                 .case_site_authority()
-                .id()
+                .id_key()
                 .find(&lead.exact_location_id)?;
             if site.case_id != lead.case_id
                 || site.latitude_e7 != lead.latitude_e7
@@ -468,7 +495,7 @@ pub fn backend_case_site_pins(ctx: &ViewContext) -> Vec<BackendCaseSitePin> {
             Some(BackendCaseSitePin {
                 owner_character_id: lead.owner_character_id,
                 case_id: lead.case_id,
-                case_site_id: site.id,
+                case_site_id: site.id.value,
                 origin_settlement_id: site.origin_settlement_id,
                 name: site.name,
                 description: site.description,
@@ -520,7 +547,7 @@ pub(crate) fn exact_case_site_for_observer(
     let site = ctx
         .db
         .case_site_authority()
-        .id()
+        .id_key()
         .find(&case_site_id.to_string())?;
     ctx.db
         .investigation_lead()
@@ -552,24 +579,48 @@ pub(crate) fn disclose_exact_case_site(
     }
     let base_id = format!("case-site-disclosure:{observer_character_id}:{}", site.id);
     let recorded_at = crate::time::refresh_clock(ctx).unwrap_or(0);
-    let mut id = base_id.clone();
-    if let Some(mut existing) = ctx.db.investigation_lead().id().find(&base_id) {
-        let equivalent = existing.owner_character_id == observer_character_id
-            && existing.case_id == case_id
-            && existing.exact_location_id == site.id
-            && existing.latitude_e7 == site.latitude_e7
-            && existing.longitude_e7 == site.longitude_e7
-            && existing.corrected_by.is_empty()
-            && matches!(
-                existing.destination_stage.as_str(),
-                "exact_believed" | "visited"
-            );
-        if equivalent {
-            return Ok(());
+    let mut disclosures: Vec<_> = ctx
+        .db
+        .investigation_lead()
+        .owner_character_id()
+        .filter(observer_character_id)
+        .filter(|lead| lead.exact_location_id == site.id.value && lead.id.starts_with(&base_id))
+        .collect();
+    disclosures.sort_by(|left, right| left.id.cmp(&right.id));
+    let active: Vec<_> = disclosures
+        .iter()
+        .filter(|lead| lead.corrected_by.is_empty())
+        .cloned()
+        .collect();
+    if let Some(canonical_id) = active
+        .iter()
+        .find(|existing| {
+            existing.case_id == case_id
+                && existing.latitude_e7 == site.latitude_e7
+                && existing.longitude_e7 == site.longitude_e7
+                && matches!(
+                    existing.destination_stage.as_str(),
+                    "exact_believed" | "visited"
+                )
+        })
+        .map(|lead| lead.id.clone())
+    {
+        for mut duplicate in active {
+            if duplicate.id != canonical_id {
+                duplicate.corrected_by = canonical_id.clone();
+                ctx.db.investigation_lead().id().update(duplicate);
+            }
         }
-        id = format!("{base_id}:revision:{recorded_at}");
-        existing.corrected_by = id.clone();
-        ctx.db.investigation_lead().id().update(existing);
+        return Ok(());
+    }
+    let id = if disclosures.is_empty() {
+        base_id
+    } else {
+        format!("{base_id}:revision:{:08}", disclosures.len())
+    };
+    for mut stale in active {
+        stale.corrected_by = id.clone();
+        ctx.db.investigation_lead().id().update(stale);
     }
     ctx.db.investigation_lead().insert(InvestigationLead {
         id,
@@ -580,7 +631,7 @@ pub(crate) fn disclose_exact_case_site(
         confidence_bps: 10_000,
         destination_stage: "exact_believed".into(),
         directions: site.description.clone(),
-        exact_location_id: site.id.clone(),
+        exact_location_id: site.id.value.clone(),
         latitude_e7: site.latitude_e7,
         longitude_e7: site.longitude_e7,
         witness_name: String::new(),
@@ -616,7 +667,7 @@ pub(crate) fn mark_case_site_visited(
         .filter(observer_character_id)
         .filter(|lead| {
             lead.case_id == site.case_id
-                && lead.exact_location_id == site.id
+                && lead.exact_location_id == site.id.value
                 && lead.latitude_e7 == site.latitude_e7
                 && lead.longitude_e7 == site.longitude_e7
                 && lead.corrected_by.is_empty()
@@ -1146,7 +1197,7 @@ pub fn stage_investigation_lead(
         let site = ctx
             .db
             .case_site_authority()
-            .id()
+            .id_key()
             .find(&exact_location_id)
             .ok_or("Exact lead must name a server-issued case site")?;
         if site.case_id != public_case_id
@@ -1215,7 +1266,7 @@ pub fn discover_investigation_lead(
         let site = ctx
             .db
             .case_site_authority()
-            .id()
+            .id_key()
             .find(&receipt.exact_location_id)
             .ok_or("Exact lead must name a server-issued case site")?;
         if site.case_id != receipt.public_case_id

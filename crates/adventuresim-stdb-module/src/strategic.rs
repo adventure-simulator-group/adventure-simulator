@@ -1582,7 +1582,7 @@ pub struct Party {
     pub name: String,
     pub leader_id: u64,
     pub current_settlement_id: Option<String>,
-    pub current_case_site_id: Option<String>,
+    pub current_case_site_id: Option<CaseSiteId>,
     pub active_quest_id: Option<String>,
     pub is_solo: bool,
     /// The fatigue level at which the first tiring party member makes camp.
@@ -2246,11 +2246,13 @@ pub struct PartyJoinRequest {
 /// A party member's proposed use of authority normally reserved for the leader.
 /// `payload` is JSON so approval can replay the original typed reducer call.
 #[derive(Clone, Debug)]
-#[table(accessor = party_action_request, public)]
+#[table(accessor = party_action_request_authority)]
 pub struct PartyActionRequest {
     #[primary_key]
     #[auto_inc]
     pub id: u64,
+    #[index(btree)]
+    pub gateway_bucket: u8,
     #[index(btree)]
     pub party_id: String,
     #[index(btree)]
@@ -2258,6 +2260,20 @@ pub struct PartyActionRequest {
     pub action_kind: String,
     pub summary: String,
     pub payload: String,
+}
+
+/// Gateway-only projection: proposed case-site travel contains observer-secret
+/// identifiers and must never be visible to ordinary subscribers.
+#[view(accessor = party_action_request, public)]
+pub fn party_action_request(ctx: &ViewContext) -> Vec<PartyActionRequest> {
+    if !strategic_view_is_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .party_action_request_authority()
+        .gateway_bucket()
+        .filter(0u8)
+        .collect()
 }
 
 #[derive(Clone, Debug)]
@@ -2365,7 +2381,7 @@ impl ApprovedPartyAction {
                 travel_to_settlement(ctx, leader_id, settlement_id)
             }
             Self::TravelToCaseSite { case_site_id } => {
-                travel_to_case_site(ctx, leader_id, case_site_id)
+                travel_to_case_site(ctx, leader_id, CaseSiteId::from(case_site_id))
             }
             Self::RemovePartyMember { character_id } => {
                 remove_party_member(ctx, leader_id, character_id)
@@ -3870,24 +3886,27 @@ pub fn request_party_action(
     if action_kind == "travel" || action_kind == "party_inventory" {
         let old: Vec<_> = ctx
             .db
-            .party_action_request()
+            .party_action_request_authority()
             .requester_id()
             .filter(requester_id)
             .filter(|request| request.party_id == party_id && request.action_kind == action_kind)
             .map(|request| request.id)
             .collect();
         for id in old {
-            ctx.db.party_action_request().id().delete(id);
+            ctx.db.party_action_request_authority().id().delete(id);
         }
     }
-    ctx.db.party_action_request().insert(PartyActionRequest {
-        id: 0,
-        party_id,
-        requester_id,
-        action_kind,
-        summary: summary.trim().to_string(),
-        payload,
-    });
+    ctx.db
+        .party_action_request_authority()
+        .insert(PartyActionRequest {
+            id: 0,
+            gateway_bucket: 0,
+            party_id,
+            requester_id,
+            action_kind,
+            summary: summary.trim().to_string(),
+            payload,
+        });
     Ok(())
 }
 
@@ -3900,7 +3919,7 @@ pub fn dismiss_party_action_request(
     crate::character::require_living_character(ctx, leader_id)?;
     let request = ctx
         .db
-        .party_action_request()
+        .party_action_request_authority()
         .id()
         .find(request_id)
         .ok_or("Request not found")?;
@@ -3913,7 +3932,10 @@ pub fn dismiss_party_action_request(
     if party.leader_id != leader_id {
         return Err("Only the party leader can resolve requests".into());
     }
-    ctx.db.party_action_request().id().delete(request_id);
+    ctx.db
+        .party_action_request_authority()
+        .id()
+        .delete(request_id);
     Ok(())
 }
 
@@ -3936,7 +3958,7 @@ pub fn approve_party_action_request(
     }
     let request = ctx
         .db
-        .party_action_request()
+        .party_action_request_authority()
         .id()
         .find(request_id)
         .ok_or("Request not found")?;
@@ -3960,7 +3982,10 @@ pub fn approve_party_action_request(
         party_id: request.party_id,
         approved_by: leader_id,
     });
-    ctx.db.party_action_request().id().delete(request_id);
+    ctx.db
+        .party_action_request_authority()
+        .id()
+        .delete(request_id);
     Ok(())
 }
 
@@ -3981,7 +4006,7 @@ pub fn approve_party_action_request_planned(
     }
     let request = ctx
         .db
-        .party_action_request()
+        .party_action_request_authority()
         .id()
         .find(request_id)
         .ok_or("Request not found")?;
@@ -4013,7 +4038,10 @@ pub fn approve_party_action_request_planned(
         party_id: request.party_id,
         approved_by: leader_id,
     });
-    ctx.db.party_action_request().id().delete(request_id);
+    ctx.db
+        .party_action_request_authority()
+        .id()
+        .delete(request_id);
     Ok(())
 }
 
@@ -4165,7 +4193,8 @@ pub(crate) fn create_solo_party_for_character(
             name: format!("{}'s party", character.name),
             leader_id: character_id,
             current_settlement_id: character.current_settlement_id.clone(),
-            current_case_site_id: crate::investigation::character_case_site_id(ctx, character_id),
+            current_case_site_id: crate::investigation::character_case_site_id(ctx, character_id)
+                .map(CaseSiteId::from),
             active_quest_id: None,
             is_solo: true,
             camp_fatigue_percent: 50,
@@ -4299,12 +4328,12 @@ pub(crate) fn delete_temporary_character_party(
     }
     for row in ctx
         .db
-        .party_action_request()
+        .party_action_request_authority()
         .party_id()
         .filter(party_id)
         .collect::<Vec<_>>()
     {
-        ctx.db.party_action_request().id().delete(row.id);
+        ctx.db.party_action_request_authority().id().delete(row.id);
     }
     for row in ctx
         .db
@@ -5018,7 +5047,7 @@ pub fn accept_party_join_request(
             crate::investigation::set_character_case_site(
                 ctx,
                 member.character_id,
-                party.current_case_site_id.clone(),
+                party.current_case_site_id.clone().map(|id| id.value),
             );
             crate::social::reset_familiarity_after_join(ctx, member.character_id);
         }
@@ -6778,7 +6807,7 @@ pub fn accept_quest(
 pub fn track_case_site(
     ctx: &ReducerContext,
     character_id: u64,
-    case_site_id: String,
+    case_site_id: CaseSiteId,
 ) -> Result<(), String> {
     require_strategic_gateway(ctx)?;
     let character = crate::character::require_living_character(ctx, character_id)?;
@@ -6794,7 +6823,7 @@ pub fn track_case_site(
     if party.leader_id != character_id {
         return Err("Only the party leader can change the tracked site".into());
     }
-    exact_case_site_for_observer(ctx, character_id, &case_site_id)
+    exact_case_site_for_observer(ctx, character_id, case_site_id.as_str())
         .ok_or("That exact site has not been disclosed to this observer")?;
     let row = PartyCaseSiteTracking {
         party_id: party_id.clone(),
@@ -7123,7 +7152,8 @@ fn create_strategic_incident(
         enemy_count: living_party_member_ids(ctx, party_id).len().max(2) as i32,
     });
     let site = CaseSiteAuthority {
-        id: case_site_id.clone(),
+        id_key: case_site_id.clone(),
+        id: CaseSiteId::from(case_site_id.clone()),
         case_id: quest_id.clone(),
         origin_settlement_id: settlement.id.clone(),
         name: spec.title.into(),
@@ -7158,7 +7188,7 @@ fn create_strategic_incident(
         }
     }
     party.current_settlement_id = None;
-    party.current_case_site_id = Some(case_site_id);
+    party.current_case_site_id = Some(CaseSiteId::from(case_site_id));
     party.active_quest_id = Some(quest_id.clone());
     ctx.db.party_authority().id().update(party);
     Ok(Some(quest_id))
@@ -7815,7 +7845,7 @@ fn zero_boundary_requires_settlement(actual_minutes: u64, safe_prefix: u64) -> b
 fn set_party_journey_state(
     party: &mut Party,
     current_settlement_id: Option<String>,
-    current_case_site_id: Option<String>,
+    current_case_site_id: Option<CaseSiteId>,
     camp_destination_id: Option<String>,
     camp_destination_kind: Option<String>,
     camp_remaining_minutes: u64,
@@ -8200,7 +8230,7 @@ fn journey_fallback_position(
             JourneyEndpoint::CaseSite(endpoint) => ctx
                 .db
                 .case_site_authority()
-                .id()
+                .id_key()
                 .find(&endpoint.id.value)
                 .map(|v| {
                     (
@@ -8364,7 +8394,7 @@ fn maybe_interrupt_travel(
         .filter(|quest_id| {
             ctx.db
                 .case_site_authority()
-                .id()
+                .id_key()
                 .find(&journey.destination.case_site_id().unwrap().to_string())
                 .is_some_and(|site| site.case_id == *quest_id)
         })
@@ -9589,21 +9619,21 @@ mod departure_invariant_tests {
 pub fn travel_to_case_site(
     ctx: &ReducerContext,
     character_id: u64,
-    case_site_id: String,
+    case_site_id: CaseSiteId,
 ) -> Result<(), String> {
     require_strategic_gateway(ctx)?;
-    travel_to_case_site_impl(ctx, character_id, case_site_id, None)
+    travel_to_case_site_impl(ctx, character_id, case_site_id.value, None)
 }
 
 #[reducer]
 pub fn travel_to_case_site_planned(
     ctx: &ReducerContext,
     character_id: u64,
-    case_site_id: String,
+    case_site_id: CaseSiteId,
     route: JourneyRoutePlan,
 ) -> Result<(), String> {
     require_strategic_gateway(ctx)?;
-    travel_to_case_site_impl(ctx, character_id, case_site_id, Some(route))
+    travel_to_case_site_impl(ctx, character_id, case_site_id.value, Some(route))
 }
 
 fn travel_to_case_site_impl(
@@ -9682,7 +9712,7 @@ fn travel_to_case_site_impl(
         }),
         JourneyEndpoint::CaseSite(JourneyCaseSiteEndpoint {
             id: CaseSiteId {
-                value: site.id.clone(),
+                value: site.id.value.clone(),
             },
             name: site.name.clone(),
         }),
@@ -9762,7 +9792,14 @@ fn travel_to_case_site_impl(
             mark_case_site_visited(ctx, member_id, &site)?;
         }
     }
-    set_party_journey_state(&mut party, None, Some(case_site_id), None, None, 0);
+    set_party_journey_state(
+        &mut party,
+        None,
+        Some(CaseSiteId::from(case_site_id)),
+        None,
+        None,
+        0,
+    );
     ctx.db.party_authority().id().update(party);
     finish_party_journey(ctx, &party_id);
     Ok(())
@@ -9877,7 +9914,7 @@ fn travel_to_settlement_impl(
         } else if let Some(case_site_id) =
             crate::investigation::character_case_site_id(ctx, character_id)
         {
-            let Some(site) = ctx.db.case_site_authority().id().find(case_site_id) else {
+            let Some(site) = ctx.db.case_site_authority().id_key().find(case_site_id) else {
                 return Err("Character's current case site does not exist".into());
             };
             let site_x = f64::from(site.longitude_e7) / 10_000_000.0;
@@ -9902,7 +9939,7 @@ fn travel_to_settlement_impl(
                     .as_ref()
                     .map_or_else(|| quest_journey_minutes(distance_m), |route| route.minutes),
                 "case_site",
-                site.id,
+                site.id.value,
                 site.name,
             )
         } else {
@@ -10053,7 +10090,7 @@ fn travel_to_settlement_impl(
         let departing_incident = departing_case_site.as_ref().and_then(|site_id| {
             ctx.db
                 .case_site_authority()
-                .id()
+                .id_key()
                 .find(site_id)
                 .filter(|site| {
                     ctx.db
@@ -10254,7 +10291,7 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
             let site = ctx
                 .db
                 .case_site_authority()
-                .id()
+                .id_key()
                 .find(&destination_id)
                 .ok_or("Camp destination case site not found")?;
             for member_id in traveler_ids.iter().copied() {
@@ -10275,7 +10312,7 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
                 crate::condition::refresh_character_strategic_condition(ctx, member_id)?;
             }
             party.current_settlement_id = None;
-            party.current_case_site_id = Some(destination_id);
+            party.current_case_site_id = Some(CaseSiteId::from(destination_id));
         }
         JourneyEndpoint::Camp(_) => return Err("A camp cannot be a journey destination".into()),
     }
@@ -10383,14 +10420,17 @@ pub fn turn_in_quest(
     ctx.db.party_authority().id().update(party);
     let obsolete_requests: Vec<u64> = ctx
         .db
-        .party_action_request()
+        .party_action_request_authority()
         .party_id()
         .filter(&party_id)
         .filter(|request| request.action_kind == "turn_in_quest")
         .map(|request| request.id)
         .collect();
     for request_id in obsolete_requests {
-        ctx.db.party_action_request().id().delete(request_id);
+        ctx.db
+            .party_action_request_authority()
+            .id()
+            .delete(request_id);
     }
     ensure_settlement_activity_inner(ctx, &quest.settlement_id)?;
     Ok(())
@@ -10424,7 +10464,12 @@ pub fn autoresolve_quest(
     let at_quest_site = party
         .current_case_site_id
         .as_deref()
-        .and_then(|site_id| ctx.db.case_site_authority().id().find(&site_id.to_string()))
+        .and_then(|site_id| {
+            ctx.db
+                .case_site_authority()
+                .id_key()
+                .find(&site_id.to_string())
+        })
         .is_some_and(|site| site.case_id == quest_id);
     if party.active_quest_id.as_deref() != Some(&quest_id) || !at_quest_site {
         return Err("Party must be at its active quest location".into());
@@ -11228,7 +11273,8 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         enemy_count,
     });
     ctx.db.case_site_authority().insert(CaseSiteAuthority {
-        id: format!("case-site:{quest_id}"),
+        id_key: format!("case-site:{quest_id}"),
+        id: CaseSiteId::from(format!("case-site:{quest_id}")),
         case_id: quest_id.clone(),
         origin_settlement_id: settlement.id.clone(),
         name: format!("{title} near {}", settlement.name),

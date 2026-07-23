@@ -7,7 +7,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use super::AppState;
+use super::{AppState, character_case_site_id};
 use crate::{
     session::Session,
     spacetimedb::{Character, LocalChatMessage, sql_string_literal},
@@ -74,9 +74,11 @@ async fn actor_and_key(
                 .into_iter()
                 .next()
                 .ok_or("Player not found")?;
+            let actor_site = character_case_site_id(state, actor.id).await?;
+            let subject_site = character_case_site_id(state, subject.id).await?;
             if actor.current_settlement_id != subject.current_settlement_id
-                || actor.current_case_site_id != subject.current_case_site_id
-                || (actor.current_settlement_id.is_none() && actor.current_case_site_id.is_none())
+                || actor_site != subject_site
+                || (actor.current_settlement_id.is_none() && actor_site.is_none())
             {
                 return Err("Player is not at this location".into());
             }
@@ -200,13 +202,21 @@ async fn incoming(State(state): State<AppState>, session: Session) -> Json<Vec<I
             ids.insert(message.sender_id);
         }
     }
+    let actor_site = character_case_site_id(&state, actor.id)
+        .await
+        .ok()
+        .flatten();
+    let mut candidate_sites = std::collections::HashMap::new();
+    for id in ids.iter().copied().take(MAX_INCOMING_PLAYERS) {
+        candidate_sites.insert(id, character_case_site_id(&state, id).await.ok().flatten());
+    }
     Json(
         characters
             .into_iter()
             .filter(|c| {
                 ids.contains(&c.id)
                     && c.current_settlement_id == actor.current_settlement_id
-                    && c.current_case_site_id == actor.current_case_site_id
+                    && candidate_sites.get(&c.id) == Some(&actor_site)
             })
             .take(MAX_INCOMING_PLAYERS)
             .map(|c| IncomingPlayer {

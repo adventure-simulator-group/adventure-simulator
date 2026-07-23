@@ -304,7 +304,7 @@ pub fn request_tactical_server(
     let case_site = party
         .current_case_site_id
         .as_ref()
-        .and_then(|site_id| ctx.db.case_site_authority().id().find(site_id))
+        .and_then(|site_id| ctx.db.case_site_authority().id_key().find(&site_id.value))
         .filter(|site| site.case_id == quest_id)
         .ok_or("Party must be at its active quest site")?;
     if party.current_case_site_id.as_deref() != Some(case_site.id.as_str()) {

@@ -238,7 +238,10 @@ async fn track_case_site(
     };
     match state
         .db
-        .call("track_case_site", &[json!(character_id), json!(id)])
+        .call(
+            "track_case_site",
+            &[json!(character_id), json!({ "value": id })],
+        )
         .await
     {
         Ok(()) => Redirect::to("/").into_response(),
