@@ -417,13 +417,11 @@ pub mod import_settlement_descriptions_reducer;
 pub mod import_settlements_reducer;
 pub mod import_travel_edges_reducer;
 pub mod import_world_nodes_reducer;
-pub mod interact_with_contract_issuer_reducer;
 pub mod join_dialogue_session_reducer;
 pub mod kill_simulation_character_reducer;
 pub mod leave_mission_reducer;
 pub mod leave_party_reducer;
 pub mod liquidate_party_inventory_reducer;
-pub mod perform_case_objective_reducer;
 pub mod perform_immediate_activity_reducer;
 pub mod perform_social_action_reducer;
 pub mod purchase_from_herbalist_reducer;
@@ -460,6 +458,7 @@ pub mod set_party_camp_fatigue_percent_reducer;
 pub mod set_party_travel_itinerary_reducer;
 pub mod share_investigation_belief_reducer;
 pub mod share_investigation_lead_reducer;
+pub mod simulate_contract_issuer_interaction_reducer;
 pub mod stage_investigation_claim_reducer;
 pub mod stage_investigation_lead_reducer;
 pub mod start_dialogue_reducer;
@@ -1071,13 +1070,11 @@ pub use import_settlement_descriptions_reducer::import_settlement_descriptions;
 pub use import_settlements_reducer::import_settlements;
 pub use import_travel_edges_reducer::import_travel_edges;
 pub use import_world_nodes_reducer::import_world_nodes;
-pub use interact_with_contract_issuer_reducer::interact_with_contract_issuer;
 pub use join_dialogue_session_reducer::join_dialogue_session;
 pub use kill_simulation_character_reducer::kill_simulation_character;
 pub use leave_mission_reducer::leave_mission;
 pub use leave_party_reducer::leave_party;
 pub use liquidate_party_inventory_reducer::liquidate_party_inventory;
-pub use perform_case_objective_reducer::perform_case_objective;
 pub use perform_immediate_activity_reducer::perform_immediate_activity;
 pub use perform_social_action_reducer::perform_social_action;
 pub use purchase_from_herbalist_reducer::purchase_from_herbalist;
@@ -1114,6 +1111,7 @@ pub use set_party_camp_fatigue_percent_reducer::set_party_camp_fatigue_percent;
 pub use set_party_travel_itinerary_reducer::set_party_travel_itinerary;
 pub use share_investigation_belief_reducer::share_investigation_belief;
 pub use share_investigation_lead_reducer::share_investigation_lead;
+pub use simulate_contract_issuer_interaction_reducer::simulate_contract_issuer_interaction;
 pub use stage_investigation_claim_reducer::stage_investigation_claim;
 pub use stage_investigation_lead_reducer::stage_investigation_lead;
 pub use start_dialogue_reducer::start_dialogue;
@@ -1380,11 +1378,6 @@ pub enum Reducer {
     ImportWorldNodes {
         nodes: Vec::<WorldNodeImport>,
 }    ,
-    InteractWithContractIssuer {
-        character_id: u64,
-        contract_id: String,
-        stage: ContractInteractionStage,
-}    ,
     JoinDialogueSession {
         character_id: u64,
         session_id: String,
@@ -1408,11 +1401,6 @@ pub enum Reducer {
         settlement_id: String,
         party_inventory_item_ids: Vec::<u64>,
         quantities: Vec::<u32>,
-}    ,
-    PerformCaseObjective {
-        character_id: u64,
-        case_id: String,
-        objective_id: String,
 }    ,
     PerformImmediateActivity {
         character_id: u64,
@@ -1584,6 +1572,11 @@ pub enum Reducer {
         recipient_id: u64,
         source_lead_id: String,
         action_id: String,
+}    ,
+    SimulateContractIssuerInteraction {
+        character_id: u64,
+        contract_id: String,
+        stage: ContractInteractionStage,
 }    ,
     StageInvestigationClaim {
         character_id: u64,
@@ -1776,13 +1769,11 @@ impl __sdk::Reducer for Reducer {
             Reducer::ImportSettlements { .. } => "import_settlements",
             Reducer::ImportTravelEdges { .. } => "import_travel_edges",
             Reducer::ImportWorldNodes { .. } => "import_world_nodes",
-            Reducer::InteractWithContractIssuer { .. } => "interact_with_contract_issuer",
             Reducer::JoinDialogueSession { .. } => "join_dialogue_session",
             Reducer::KillSimulationCharacter { .. } => "kill_simulation_character",
             Reducer::LeaveMission { .. } => "leave_mission",
             Reducer::LeaveParty { .. } => "leave_party",
             Reducer::LiquidatePartyInventory { .. } => "liquidate_party_inventory",
-            Reducer::PerformCaseObjective { .. } => "perform_case_objective",
             Reducer::PerformImmediateActivity { .. } => "perform_immediate_activity",
             Reducer::PerformSocialAction { .. } => "perform_social_action",
             Reducer::PurchaseFromHerbalist { .. } => "purchase_from_herbalist",
@@ -1819,6 +1810,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::SetPartyTravelItinerary { .. } => "set_party_travel_itinerary",
             Reducer::ShareInvestigationBelief { .. } => "share_investigation_belief",
             Reducer::ShareInvestigationLead { .. } => "share_investigation_lead",
+            Reducer::SimulateContractIssuerInteraction { .. } => "simulate_contract_issuer_interaction",
             Reducer::StageInvestigationClaim { .. } => "stage_investigation_claim",
             Reducer::StageInvestigationLead { .. } => "stage_investigation_lead",
             Reducer::StartDialogue { .. } => "start_dialogue",
@@ -2267,15 +2259,6 @@ Reducer::CancelMissionRequest{
 }             => __sats::bsatn::to_vec(&import_world_nodes_reducer::ImportWorldNodesArgs {
                 nodes: nodes.clone(),
 }),
-            Reducer::InteractWithContractIssuer{
-                character_id,
-                contract_id,
-                stage,
-}             => __sats::bsatn::to_vec(&interact_with_contract_issuer_reducer::InteractWithContractIssuerArgs {
-                character_id: character_id.clone(),
-                contract_id: contract_id.clone(),
-                stage: stage.clone(),
-}),
             Reducer::JoinDialogueSession{
                 character_id,
                 session_id,
@@ -2318,15 +2301,6 @@ Reducer::CancelMissionRequest{
                 settlement_id: settlement_id.clone(),
                 party_inventory_item_ids: party_inventory_item_ids.clone(),
                 quantities: quantities.clone(),
-}),
-            Reducer::PerformCaseObjective{
-                character_id,
-                case_id,
-                objective_id,
-}             => __sats::bsatn::to_vec(&perform_case_objective_reducer::PerformCaseObjectiveArgs {
-                character_id: character_id.clone(),
-                case_id: case_id.clone(),
-                objective_id: objective_id.clone(),
 }),
             Reducer::PerformImmediateActivity{
                 character_id,
@@ -2633,6 +2607,15 @@ Reducer::CancelMissionRequest{
                 recipient_id: recipient_id.clone(),
                 source_lead_id: source_lead_id.clone(),
                 action_id: action_id.clone(),
+}),
+            Reducer::SimulateContractIssuerInteraction{
+                character_id,
+                contract_id,
+                stage,
+}             => __sats::bsatn::to_vec(&simulate_contract_issuer_interaction_reducer::SimulateContractIssuerInteractionArgs {
+                character_id: character_id.clone(),
+                contract_id: contract_id.clone(),
+                stage: stage.clone(),
 }),
             Reducer::StageInvestigationClaim{
                 character_id,

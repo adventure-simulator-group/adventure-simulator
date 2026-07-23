@@ -711,6 +711,30 @@ mod healing_tests {
         assert!(source.contains("#[table(accessor = backend_case_battle_authority)]"));
         assert!(source.contains("#[view(accessor = backend_case_battles, public)]"));
         assert!(!source.contains("#[table(accessor = backend_case_battle, public)]"));
+        assert!(!source.contains("pub fn interact_with_contract_issuer("));
+        let simulated_interaction = source
+            .split("pub fn simulate_contract_issuer_interaction")
+            .nth(1)
+            .and_then(|tail| tail.split("fn consume_contract_interaction").next())
+            .unwrap();
+        assert!(
+            simulated_interaction.contains("sender_owns_simulation_character(ctx, character_id)")
+        );
+        let dialogue_effect = source
+            .split("fn apply_dialogue_effect")
+            .nth(1)
+            .and_then(|tail| tail.split("fn dialogue_service_id").next())
+            .unwrap();
+        assert!(dialogue_effect.contains("record_dialogue_contract_issuer_interaction"));
+        let receipt = source
+            .split("pub struct ContractIssuerInteractionReceipt")
+            .nth(1)
+            .and_then(|tail| tail.split("pub enum IncidentKind").next())
+            .unwrap();
+        assert!(receipt.contains("pub dialogue_session_id: String"));
+        assert!(receipt.contains("pub dialogue_action_id: String"));
+        assert!(receipt.contains("pub dialogue_revision: u64"));
+        assert!(receipt.contains("pub location_id: String"));
 
         let accept = source
             .split("pub fn accept_contract")
@@ -727,7 +751,7 @@ mod healing_tests {
         assert!(report.contains("xp_reward"));
 
         let action = source
-            .split("pub fn perform_case_objective")
+            .split("pub(crate) fn apply_authoritative_case_objective")
             .nth(1)
             .and_then(|tail| tail.split("/// Sole trusted fact ingestion").next())
             .unwrap();
@@ -735,10 +759,7 @@ mod healing_tests {
             "HostilesDrivenOff",
             "SubjectCaptured",
             "WindowSurvived",
-            "SubjectRescued",
             "SubjectEscorted",
-            "AssetRetrieved",
-            "AssetReturned",
             "Located",
             "Identified",
             "Exposed",
@@ -746,16 +767,17 @@ mod healing_tests {
             "TestimonyPresented",
             "SubjectProtected",
             "Negotiated",
-            "SubjectReleased",
-            "AssetExchanged",
             "Reported",
             "ObjectiveImpossible",
         ] {
             assert!(
-                source.contains(family),
+                action.contains(family),
                 "missing reachable {family} producer"
             );
         }
+        assert!(action.contains("record_asset_retrieved"));
+        assert!(action.contains("record_asset_returned_or_exchanged"));
+        assert!(action.contains("record_subject_rescued_or_released"));
         assert!(action.contains("transition_case_custody"));
         assert!(action.contains("Defeat facts require trusted tactical outcomes"));
     }
@@ -2078,6 +2100,10 @@ pub struct ContractIssuerInteractionReceipt {
     pub issuer_npc_id: String,
     pub interacting_character_id: u64,
     pub interacted_at_minute: u64,
+    pub dialogue_session_id: String,
+    pub dialogue_action_id: String,
+    pub dialogue_revision: u64,
+    pub location_id: String,
     pub consumed: bool,
 }
 
@@ -3512,7 +3538,14 @@ pub fn start_dialogue(
             });
         }
         for effect in &response.effects {
-            apply_dialogue_effect(ctx, character_id, &session, effect)?;
+            apply_dialogue_effect(
+                ctx,
+                character_id,
+                &session,
+                "start",
+                session.revision,
+                effect,
+            )?;
         }
     }
     refresh_dialogue_topic_options(ctx, &session, character_id)?;
@@ -4052,7 +4085,14 @@ pub fn choose_dialogue_topic(
         });
     }
     for effect in &response.effects {
-        apply_dialogue_effect(ctx, character_id, &session, effect)?;
+        apply_dialogue_effect(
+            ctx,
+            character_id,
+            &session,
+            &action_id,
+            session.revision.saturating_add(1),
+            effect,
+        )?;
     }
     if let Some(prompt) = &response.prompt {
         let id = format!("{session_id}:prompt:{}:{action_id}", prompt.id);
@@ -4225,7 +4265,14 @@ pub fn answer_dialogue_prompt(
     if let Some(winning) = winning {
         for choice in allowed.iter().filter(|choice| winning.contains(&choice.id)) {
             for effect in &choice.effects {
-                apply_dialogue_effect(ctx, character_id, &session, effect)?;
+                apply_dialogue_effect(
+                    ctx,
+                    character_id,
+                    &session,
+                    &action_id,
+                    session.revision.saturating_add(1),
+                    effect,
+                )?;
             }
             let topic = adventuresim_dialogue::find_conversation(&session.conversation_id)
                 .and_then(|conversation| {
@@ -4313,6 +4360,8 @@ fn apply_dialogue_effect(
     ctx: &ReducerContext,
     character_id: u64,
     session: &DialogueSession,
+    action_id: &str,
+    resulting_revision: u64,
     effect: &adventuresim_dialogue::Effect,
 ) -> Result<(), String> {
     let live_npc = require_live_dialogue_presence(ctx, session, character_id)?;
@@ -4335,22 +4384,28 @@ fn apply_dialogue_effect(
         adventuresim_dialogue::Effect::AcceptContract { contract }
             if contract != "selected-service-contract" =>
         {
-            interact_with_contract_issuer(
+            record_dialogue_contract_issuer_interaction(
                 ctx,
                 character_id,
                 contract.clone(),
                 ContractInteractionStage::Accept,
+                session,
+                action_id,
+                resulting_revision,
             )?;
             accept_contract(ctx, character_id, contract.clone())
         }
         adventuresim_dialogue::Effect::ReportContract { contract }
             if contract != "selected-service-contract" =>
         {
-            interact_with_contract_issuer(
+            record_dialogue_contract_issuer_interaction(
                 ctx,
                 character_id,
                 contract.clone(),
                 ContractInteractionStage::Report,
+                session,
+                action_id,
+                resulting_revision,
             )?;
             report_contract(ctx, character_id, contract.clone())
         }
@@ -4379,11 +4434,14 @@ fn apply_dialogue_effect(
                 })
                 .map(|contract| contract.id)
                 .ok_or("This issuer has no available contract")?;
-            interact_with_contract_issuer(
+            record_dialogue_contract_issuer_interaction(
                 ctx,
                 character_id,
                 contract_id.clone(),
                 ContractInteractionStage::Accept,
+                session,
+                action_id,
+                resulting_revision,
             )?;
             accept_contract(ctx, character_id, contract_id)
         }
@@ -4416,11 +4474,14 @@ fn apply_dialogue_effect(
             if !local_issuer {
                 return Err("This NPC did not issue the active contract".into());
             }
-            interact_with_contract_issuer(
+            record_dialogue_contract_issuer_interaction(
                 ctx,
                 character_id,
                 contract_id.clone(),
                 ContractInteractionStage::Report,
+                session,
+                action_id,
+                resulting_revision,
             )?;
             report_contract(ctx, character_id, contract_id)
         }
@@ -7658,14 +7719,16 @@ fn contract_interaction_receipt_id(
     format!("interaction:{contract_id}:{party_id}:{stage:?}").to_lowercase()
 }
 
-#[reducer]
-pub fn interact_with_contract_issuer(
+fn record_contract_issuer_interaction(
     ctx: &ReducerContext,
     character_id: u64,
     contract_id: String,
     stage: ContractInteractionStage,
+    dialogue_session_id: String,
+    dialogue_action_id: String,
+    dialogue_revision: u64,
+    location_id: String,
 ) -> Result<(), String> {
-    require_strategic_character_authority(ctx, character_id)?;
     let character = crate::character::require_living_character(ctx, character_id)?;
     let party_id = character.party_id.ok_or("Must be in a party")?;
     let party = ctx
@@ -7717,6 +7780,7 @@ pub fn interact_with_contract_issuer(
     if issuer.home_settlement_id != contract.settlement_id
         || issuer.service_id != contract.service_id
         || presence.settlement_id != contract.settlement_id
+        || presence.location_id != location_id
         || !crate::settlement_population::npc_is_present(&presence, minute)
     {
         return Err("Contract issuer is not available for interaction".into());
@@ -7730,6 +7794,10 @@ pub fn interact_with_contract_issuer(
         issuer_npc_id: issuer.id,
         interacting_character_id: character_id,
         interacted_at_minute: crate::time::refresh_clock(ctx)?,
+        dialogue_session_id,
+        dialogue_action_id,
+        dialogue_revision,
+        location_id,
         consumed: false,
     };
     if ctx
@@ -7747,6 +7815,81 @@ pub fn interact_with_contract_issuer(
         ctx.db.contract_issuer_interaction_receipt().insert(row);
     }
     Ok(())
+}
+
+fn record_dialogue_contract_issuer_interaction(
+    ctx: &ReducerContext,
+    character_id: u64,
+    contract_id: String,
+    stage: ContractInteractionStage,
+    session: &DialogueSession,
+    action_id: &str,
+    resulting_revision: u64,
+) -> Result<(), String> {
+    if action_id == "start" {
+        return Err("Contract interaction requires an explicit dialogue action".into());
+    }
+    let issuer = require_live_dialogue_presence(ctx, session, character_id)?;
+    let contract = ctx
+        .db
+        .contract_authority()
+        .id()
+        .find(&contract_id)
+        .ok_or("Contract not found")?;
+    if issuer.id != contract.issuer_npc_id
+        || issuer.service_id != contract.service_id
+        || session.settlement_id != contract.settlement_id
+    {
+        return Err("This dialogue is not with the contract issuer".into());
+    }
+    record_contract_issuer_interaction(
+        ctx,
+        character_id,
+        contract_id,
+        stage,
+        session.id.clone(),
+        action_id.to_string(),
+        resulting_revision,
+        session.location_id.clone(),
+    )
+}
+
+/// Disposable simulations cannot use the gateway-owned dialogue reducers.
+/// This is the sole alternate producer and is restricted to the identity that
+/// owns the simulation character; ordinary players and the web gateway cannot
+/// mint an interaction receipt through it.
+#[reducer]
+pub fn simulate_contract_issuer_interaction(
+    ctx: &ReducerContext,
+    character_id: u64,
+    contract_id: String,
+    stage: ContractInteractionStage,
+) -> Result<(), String> {
+    if !crate::simulation::sender_owns_simulation_character(ctx, character_id) {
+        return Err("Only an owned disposable simulation may simulate NPC interaction".into());
+    }
+    let contract = ctx
+        .db
+        .contract_authority()
+        .id()
+        .find(&contract_id)
+        .ok_or("Contract not found")?;
+    let presence = ctx
+        .db
+        .settlement_npc_presence()
+        .npc_id()
+        .find(&contract.issuer_npc_id)
+        .ok_or("Contract issuer has no presence")?;
+    record_contract_issuer_interaction(
+        ctx,
+        character_id,
+        contract_id,
+        stage,
+        format!("simulation:{character_id}"),
+        format!("simulation:{stage:?}").to_lowercase(),
+        0,
+        presence.location_id,
+    )
 }
 
 fn consume_contract_interaction(
@@ -11643,6 +11786,54 @@ fn transition_case_custody(
     Ok(true)
 }
 
+fn seed_case_custody(
+    ctx: &ReducerContext,
+    case_id: &str,
+    site_id: &str,
+    expression: &adventuresim_core::case::ObjectiveExpression,
+) -> Result<(), String> {
+    use adventuresim_core::case::ObjectiveRequirement as R;
+    for requirement in expression
+        .alternatives
+        .iter()
+        .flat_map(|path| &path.objectives)
+        .map(|objective| &objective.requirement)
+    {
+        let (kind, object_id) = match requirement {
+            R::Retrieve { asset_id }
+            | R::Return { asset_id, .. }
+            | R::Exchange { asset_id, .. } => (CustodyObjectKind::Asset, asset_id.as_str()),
+            R::Capture { subject_id }
+            | R::Rescue { subject_id }
+            | R::EscortTo { subject_id, .. }
+            | R::Protect { subject_id, .. }
+            | R::Release { subject_id } => (CustodyObjectKind::Subject, subject_id.as_str()),
+            _ => continue,
+        };
+        if ctx
+            .db
+            .case_custody()
+            .object_id()
+            .find(&object_id.to_string())
+            .is_none()
+        {
+            transition_case_custody(
+                ctx,
+                &format!("spawn:{case_id}:{object_id}"),
+                case_id,
+                "",
+                kind,
+                object_id,
+                CustodyHolderKind::Site,
+                site_id,
+                0,
+                None,
+            )?;
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn record_asset_retrieved(
     ctx: &ReducerContext,
     source_id: &str,
@@ -11745,8 +11936,8 @@ pub(crate) fn record_subject_rescued_or_released(
 /// Authenticated objective-family action seam. The caller selects only an
 /// objective ID; the authoritative case expression determines the fact type
 /// and identifiers, preventing arbitrary fact forgery.
-#[reducer]
-pub fn perform_case_objective(
+#[allow(dead_code)]
+pub(crate) fn apply_authoritative_case_objective(
     ctx: &ReducerContext,
     character_id: u64,
     case_id: String,
@@ -11847,7 +12038,9 @@ pub fn perform_case_objective(
                 .case_custody()
                 .object_id()
                 .find(&subject_id.as_str().to_string())
-                .map_or(0, |row| row.version.saturating_add(1));
+                .ok_or("Subject has no authoritative custody")?
+                .version
+                .saturating_add(1);
             transition_case_custody(
                 ctx,
                 &source_id,
@@ -11877,7 +12070,9 @@ pub fn perform_case_objective(
                 .case_custody()
                 .object_id()
                 .find(&subject_id.as_str().to_string())
-                .map_or(0, |row| row.version.saturating_add(1));
+                .ok_or("Subject has no authoritative custody")?
+                .version
+                .saturating_add(1);
             record_subject_rescued_or_released(
                 ctx,
                 &source_id,
@@ -11982,7 +12177,9 @@ pub fn perform_case_objective(
                 .case_custody()
                 .object_id()
                 .find(&subject_id.as_str().to_string())
-                .map_or(0, |row| row.version.saturating_add(1));
+                .ok_or("Subject has no authoritative custody")?
+                .version
+                .saturating_add(1);
             record_subject_rescued_or_released(
                 ctx,
                 &source_id,
@@ -13274,6 +13471,7 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         distance_m,
     };
     ctx.db.case_site_authority().insert(site.clone());
+    seed_case_custody(ctx, &case_id, &site.id.value, &objective)?;
     materialize_hostile_group(ctx, &site, enemy.into(), enemy_count as u32, difficulty)?;
     Ok(())
 }

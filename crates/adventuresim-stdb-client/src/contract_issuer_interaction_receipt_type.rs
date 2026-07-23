@@ -21,6 +21,10 @@ pub struct ContractIssuerInteractionReceipt {
     pub issuer_npc_id: String,
     pub interacting_character_id: u64,
     pub interacted_at_minute: u64,
+    pub dialogue_session_id: String,
+    pub dialogue_action_id: String,
+    pub dialogue_revision: u64,
+    pub location_id: String,
     pub consumed: bool,
 }
 
@@ -41,6 +45,10 @@ pub struct ContractIssuerInteractionReceiptCols {
     pub issuer_npc_id: __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, String>,
     pub interacting_character_id: __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, u64>,
     pub interacted_at_minute: __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, u64>,
+    pub dialogue_session_id: __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, String>,
+    pub dialogue_action_id: __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, String>,
+    pub dialogue_revision: __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, u64>,
+    pub location_id: __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, String>,
     pub consumed: __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, bool>,
 }
 
@@ -55,6 +63,10 @@ impl __sdk::__query_builder::HasCols for ContractIssuerInteractionReceipt {
             issuer_npc_id: __sdk::__query_builder::Col::new(table_name, "issuer_npc_id"),
             interacting_character_id: __sdk::__query_builder::Col::new(table_name, "interacting_character_id"),
             interacted_at_minute: __sdk::__query_builder::Col::new(table_name, "interacted_at_minute"),
+            dialogue_session_id: __sdk::__query_builder::Col::new(table_name, "dialogue_session_id"),
+            dialogue_action_id: __sdk::__query_builder::Col::new(table_name, "dialogue_action_id"),
+            dialogue_revision: __sdk::__query_builder::Col::new(table_name, "dialogue_revision"),
+            location_id: __sdk::__query_builder::Col::new(table_name, "location_id"),
             consumed: __sdk::__query_builder::Col::new(table_name, "consumed"),
 
         }

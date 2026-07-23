@@ -13,15 +13,15 @@ use super::contract_interaction_stage_type::ContractInteractionStage;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct InteractWithContractIssuerArgs {
+pub(super) struct SimulateContractIssuerInteractionArgs {
     pub character_id: u64,
     pub contract_id: String,
     pub stage: ContractInteractionStage,
 }
 
-impl From<InteractWithContractIssuerArgs> for super::Reducer {
-    fn from(args: InteractWithContractIssuerArgs) -> Self {
-        Self::InteractWithContractIssuer {
+impl From<SimulateContractIssuerInteractionArgs> for super::Reducer {
+    fn from(args: SimulateContractIssuerInteractionArgs) -> Self {
+        Self::SimulateContractIssuerInteraction {
             character_id: args.character_id,
             contract_id: args.contract_id,
             stage: args.stage,
@@ -29,35 +29,35 @@ impl From<InteractWithContractIssuerArgs> for super::Reducer {
 }
 }
 
-impl __sdk::InModule for InteractWithContractIssuerArgs {
+impl __sdk::InModule for SimulateContractIssuerInteractionArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `interact_with_contract_issuer`.
+/// Extension trait for access to the reducer `simulate_contract_issuer_interaction`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait interact_with_contract_issuer {
-    /// Request that the remote module invoke the reducer `interact_with_contract_issuer` to run as soon as possible.
+pub trait simulate_contract_issuer_interaction {
+    /// Request that the remote module invoke the reducer `simulate_contract_issuer_interaction` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`interact_with_contract_issuer:interact_with_contract_issuer_then`] to run a callback after the reducer completes.
-    fn interact_with_contract_issuer(&self, character_id: u64,
+    /// /// Use [`simulate_contract_issuer_interaction:simulate_contract_issuer_interaction_then`] to run a callback after the reducer completes.
+    fn simulate_contract_issuer_interaction(&self, character_id: u64,
 contract_id: String,
 stage: ContractInteractionStage,
 ) -> __sdk::Result<()> {
-        self.interact_with_contract_issuer_then(character_id, contract_id, stage,  |_, _| {})
+        self.simulate_contract_issuer_interaction_then(character_id, contract_id, stage,  |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `interact_with_contract_issuer` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `simulate_contract_issuer_interaction` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn interact_with_contract_issuer_then(
+    fn simulate_contract_issuer_interaction_then(
         &self,
         character_id: u64,
 contract_id: String,
@@ -69,8 +69,8 @@ stage: ContractInteractionStage,
     ) -> __sdk::Result<()>;
 }
 
-impl interact_with_contract_issuer for super::RemoteReducers {
-    fn interact_with_contract_issuer_then(
+impl simulate_contract_issuer_interaction for super::RemoteReducers {
+    fn simulate_contract_issuer_interaction_then(
         &self,
         character_id: u64,
 contract_id: String,
@@ -80,7 +80,7 @@ stage: ContractInteractionStage,
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InteractWithContractIssuerArgs { character_id, contract_id, stage,  }, callback)
+        self.imp.invoke_reducer_with_callback(SimulateContractIssuerInteractionArgs { character_id, contract_id, stage,  }, callback)
     }
 }
 
