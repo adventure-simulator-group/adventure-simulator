@@ -367,6 +367,36 @@ pub struct QuestIssuer {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecruitmentOfferId {
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecruitmentSourceId {
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum RecruitmentOfferStatus {
+    Open,
+    Closed,
+    Expired,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecruitmentOffer {
+    pub id_key: String,
+    pub id: RecruitmentOfferId,
+    pub source_id: RecruitmentSourceId,
+    pub recruiting_party_id: String,
+    pub settlement_id: String,
+    pub leader_id: u64,
+    pub status: RecruitmentOfferStatus,
+    pub created_at_minute: u64,
+    pub expires_at_minute: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Party {
     pub id: String,
     pub name: String,

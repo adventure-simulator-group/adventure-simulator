@@ -4,16 +4,26 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::case_site_id_type::CaseSiteId;
+use super::incident_id_type::IncidentId;
+use super::incident_kind_type::IncidentKind;
+use super::incident_source_id_type::IncidentSourceId;
+use super::incident_status_type::IncidentStatus;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct StrategicIncident {
-    pub quest_id: String,
+    pub id_key: String,
+    pub id: IncidentId,
+    pub source_id: IncidentSourceId,
     pub party_id: String,
     pub settlement_id: String,
     pub instigator_id: u64,
-    pub previous_active_quest_id: Option<String>,
-    pub kind: String,
-    pub status: String,
+    pub kind: IncidentKind,
+    pub status: IncidentStatus,
+    pub case_site_id: CaseSiteId,
+    pub hostile_group_id: String,
+    pub created_at_minute: u64,
 }
 
 impl __sdk::InModule for StrategicIncident {
@@ -24,29 +34,34 @@ impl __sdk::InModule for StrategicIncident {
 ///
 /// Provides typed access to columns for query building.
 pub struct StrategicIncidentCols {
-    pub quest_id: __sdk::__query_builder::Col<StrategicIncident, String>,
+    pub id_key: __sdk::__query_builder::Col<StrategicIncident, String>,
+    pub id: __sdk::__query_builder::Col<StrategicIncident, IncidentId>,
+    pub source_id: __sdk::__query_builder::Col<StrategicIncident, IncidentSourceId>,
     pub party_id: __sdk::__query_builder::Col<StrategicIncident, String>,
     pub settlement_id: __sdk::__query_builder::Col<StrategicIncident, String>,
     pub instigator_id: __sdk::__query_builder::Col<StrategicIncident, u64>,
-    pub previous_active_quest_id: __sdk::__query_builder::Col<StrategicIncident, Option<String>>,
-    pub kind: __sdk::__query_builder::Col<StrategicIncident, String>,
-    pub status: __sdk::__query_builder::Col<StrategicIncident, String>,
+    pub kind: __sdk::__query_builder::Col<StrategicIncident, IncidentKind>,
+    pub status: __sdk::__query_builder::Col<StrategicIncident, IncidentStatus>,
+    pub case_site_id: __sdk::__query_builder::Col<StrategicIncident, CaseSiteId>,
+    pub hostile_group_id: __sdk::__query_builder::Col<StrategicIncident, String>,
+    pub created_at_minute: __sdk::__query_builder::Col<StrategicIncident, u64>,
 }
 
 impl __sdk::__query_builder::HasCols for StrategicIncident {
     type Cols = StrategicIncidentCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         StrategicIncidentCols {
-            quest_id: __sdk::__query_builder::Col::new(table_name, "quest_id"),
+            id_key: __sdk::__query_builder::Col::new(table_name, "id_key"),
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            source_id: __sdk::__query_builder::Col::new(table_name, "source_id"),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             settlement_id: __sdk::__query_builder::Col::new(table_name, "settlement_id"),
             instigator_id: __sdk::__query_builder::Col::new(table_name, "instigator_id"),
-            previous_active_quest_id: __sdk::__query_builder::Col::new(
-                table_name,
-                "previous_active_quest_id",
-            ),
             kind: __sdk::__query_builder::Col::new(table_name, "kind"),
             status: __sdk::__query_builder::Col::new(table_name, "status"),
+            case_site_id: __sdk::__query_builder::Col::new(table_name, "case_site_id"),
+            hostile_group_id: __sdk::__query_builder::Col::new(table_name, "hostile_group_id"),
+            created_at_minute: __sdk::__query_builder::Col::new(table_name, "created_at_minute"),
         }
     }
 }
@@ -55,16 +70,22 @@ impl __sdk::__query_builder::HasCols for StrategicIncident {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct StrategicIncidentIxCols {
+    pub case_site_id: __sdk::__query_builder::IxCol<StrategicIncident, CaseSiteId>,
+    pub hostile_group_id: __sdk::__query_builder::IxCol<StrategicIncident, String>,
+    pub id_key: __sdk::__query_builder::IxCol<StrategicIncident, String>,
     pub party_id: __sdk::__query_builder::IxCol<StrategicIncident, String>,
-    pub quest_id: __sdk::__query_builder::IxCol<StrategicIncident, String>,
+    pub source_id: __sdk::__query_builder::IxCol<StrategicIncident, IncidentSourceId>,
 }
 
 impl __sdk::__query_builder::HasIxCols for StrategicIncident {
     type IxCols = StrategicIncidentIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         StrategicIncidentIxCols {
+            case_site_id: __sdk::__query_builder::IxCol::new(table_name, "case_site_id"),
+            hostile_group_id: __sdk::__query_builder::IxCol::new(table_name, "hostile_group_id"),
+            id_key: __sdk::__query_builder::IxCol::new(table_name, "id_key"),
             party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
-            quest_id: __sdk::__query_builder::IxCol::new(table_name, "quest_id"),
+            source_id: __sdk::__query_builder::IxCol::new(table_name, "source_id"),
         }
     }
 }

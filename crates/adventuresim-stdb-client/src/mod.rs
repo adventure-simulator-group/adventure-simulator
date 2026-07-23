@@ -229,6 +229,10 @@ pub mod import_settlement_descriptions_reducer;
 pub mod import_settlements_reducer;
 pub mod import_travel_edges_reducer;
 pub mod import_world_nodes_reducer;
+pub mod incident_id_type;
+pub mod incident_kind_type;
+pub mod incident_source_id_type;
+pub mod incident_status_type;
 pub mod industry_evidence_type;
 pub mod infection_episode_row_type;
 pub mod inferred_geologic_setting_type;
@@ -368,7 +372,12 @@ pub mod quest_table;
 pub mod quest_type;
 pub mod receive_investigation_claim_reducer;
 pub mod receive_local_problem_rumor_reducer;
+pub mod recruitment_offer_id_type;
+pub mod recruitment_offer_status_type;
+pub mod recruitment_offer_table;
+pub mod recruitment_offer_type;
 pub mod recruitment_requirements_type;
+pub mod recruitment_source_id_type;
 pub mod refresh_capabilities_reducer;
 pub mod refresh_strategic_condition_reducer;
 pub mod register_strategic_gateway_reducer;
@@ -491,7 +500,6 @@ pub mod strategic_encounter_table;
 pub mod strategic_encounter_type;
 pub mod strategic_gateway_authority_table;
 pub mod strategic_gateway_authority_type;
-pub mod strategic_incident_table;
 pub mod strategic_incident_type;
 pub mod submit_all_repairable_items_reducer;
 pub mod submit_item_for_repair_reducer;
@@ -769,6 +777,10 @@ pub use import_settlement_descriptions_reducer::import_settlement_descriptions;
 pub use import_settlements_reducer::import_settlements;
 pub use import_travel_edges_reducer::import_travel_edges;
 pub use import_world_nodes_reducer::import_world_nodes;
+pub use incident_id_type::IncidentId;
+pub use incident_kind_type::IncidentKind;
+pub use incident_source_id_type::IncidentSourceId;
+pub use incident_status_type::IncidentStatus;
 pub use industry_evidence_type::IndustryEvidence;
 pub use infection_episode_row_type::InfectionEpisodeRow;
 pub use inferred_geologic_setting_type::InferredGeologicSetting;
@@ -908,7 +920,12 @@ pub use quest_table::*;
 pub use quest_type::Quest;
 pub use receive_investigation_claim_reducer::receive_investigation_claim;
 pub use receive_local_problem_rumor_reducer::receive_local_problem_rumor;
+pub use recruitment_offer_id_type::RecruitmentOfferId;
+pub use recruitment_offer_status_type::RecruitmentOfferStatus;
+pub use recruitment_offer_table::*;
+pub use recruitment_offer_type::RecruitmentOffer;
 pub use recruitment_requirements_type::RecruitmentRequirements;
+pub use recruitment_source_id_type::RecruitmentSourceId;
 pub use refresh_capabilities_reducer::refresh_capabilities;
 pub use refresh_strategic_condition_reducer::refresh_strategic_condition;
 pub use register_strategic_gateway_reducer::register_strategic_gateway;
@@ -1031,7 +1048,6 @@ pub use strategic_encounter_table::*;
 pub use strategic_encounter_type::StrategicEncounter;
 pub use strategic_gateway_authority_table::*;
 pub use strategic_gateway_authority_type::StrategicGatewayAuthority;
-pub use strategic_incident_table::*;
 pub use strategic_incident_type::StrategicIncident;
 pub use submit_all_repairable_items_reducer::submit_all_repairable_items;
 pub use submit_item_for_repair_reducer::submit_item_for_repair;
@@ -2886,6 +2902,7 @@ pub struct DbUpdate {
     party_stake: __sdk::TableUpdate<PartyStake>,
     quest: __sdk::TableUpdate<Quest>,
     quest_issuer: __sdk::TableUpdate<QuestIssuer>,
+    recruitment_offer: __sdk::TableUpdate<RecruitmentOffer>,
     religious_demand: __sdk::TableUpdate<ReligiousDemand>,
     repair_order: __sdk::TableUpdate<RepairOrder>,
     retained_projectile: __sdk::TableUpdate<RetainedProjectile>,
@@ -2901,7 +2918,6 @@ pub struct DbUpdate {
     simulation_run: __sdk::TableUpdate<SimulationRun>,
     strategic_encounter: __sdk::TableUpdate<StrategicEncounter>,
     strategic_gateway_authority: __sdk::TableUpdate<StrategicGatewayAuthority>,
-    strategic_incident: __sdk::TableUpdate<StrategicIncident>,
     tactical_server: __sdk::TableUpdate<TacticalServer>,
     tactical_server_request: __sdk::TableUpdate<TacticalServerRequest>,
     travel_edge: __sdk::TableUpdate<TravelEdge>,
@@ -3135,6 +3151,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "quest_issuer" => db_update
                     .quest_issuer
                     .append(quest_issuer_table::parse_table_update(table_update)?),
+                "recruitment_offer" => db_update
+                    .recruitment_offer
+                    .append(recruitment_offer_table::parse_table_update(table_update)?),
                 "religious_demand" => db_update
                     .religious_demand
                     .append(religious_demand_table::parse_table_update(table_update)?),
@@ -3180,9 +3199,6 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "strategic_gateway_authority" => db_update.strategic_gateway_authority.append(
                     strategic_gateway_authority_table::parse_table_update(table_update)?,
                 ),
-                "strategic_incident" => db_update
-                    .strategic_incident
-                    .append(strategic_incident_table::parse_table_update(table_update)?),
                 "tactical_server" => db_update
                     .tactical_server
                     .append(tactical_server_table::parse_table_update(table_update)?),
@@ -3449,6 +3465,9 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.quest_issuer = cache
             .apply_diff_to_table::<QuestIssuer>("quest_issuer", &self.quest_issuer)
             .with_updates_by_pk(|row| &row.quest_id);
+        diff.recruitment_offer = cache
+            .apply_diff_to_table::<RecruitmentOffer>("recruitment_offer", &self.recruitment_offer)
+            .with_updates_by_pk(|row| &row.id_key);
         diff.religious_demand = cache
             .apply_diff_to_table::<ReligiousDemand>("religious_demand", &self.religious_demand)
             .with_updates_by_pk(|row| &row.id);
@@ -3518,12 +3537,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.strategic_gateway_authority,
             )
             .with_updates_by_pk(|row| &row.id);
-        diff.strategic_incident = cache
-            .apply_diff_to_table::<StrategicIncident>(
-                "strategic_incident",
-                &self.strategic_incident,
-            )
-            .with_updates_by_pk(|row| &row.quest_id);
         diff.travel_edge = cache
             .apply_diff_to_table::<TravelEdge>("travel_edge", &self.travel_edge)
             .with_updates_by_pk(|row| &row.id);
@@ -3824,6 +3837,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "quest_issuer" => db_update
                     .quest_issuer
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "recruitment_offer" => db_update
+                    .recruitment_offer
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "religious_demand" => db_update
                     .religious_demand
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -3868,9 +3884,6 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "strategic_gateway_authority" => db_update
                     .strategic_gateway_authority
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "strategic_incident" => db_update
-                    .strategic_incident
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "tactical_server" => db_update
                     .tactical_server
@@ -4110,6 +4123,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "quest_issuer" => db_update
                     .quest_issuer
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "recruitment_offer" => db_update
+                    .recruitment_offer
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "religious_demand" => db_update
                     .religious_demand
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -4154,9 +4170,6 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "strategic_gateway_authority" => db_update
                     .strategic_gateway_authority
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "strategic_incident" => db_update
-                    .strategic_incident
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "tactical_server" => db_update
                     .tactical_server
@@ -4262,6 +4275,7 @@ pub struct AppliedDiff<'r> {
     party_stake: __sdk::TableAppliedDiff<'r, PartyStake>,
     quest: __sdk::TableAppliedDiff<'r, Quest>,
     quest_issuer: __sdk::TableAppliedDiff<'r, QuestIssuer>,
+    recruitment_offer: __sdk::TableAppliedDiff<'r, RecruitmentOffer>,
     religious_demand: __sdk::TableAppliedDiff<'r, ReligiousDemand>,
     repair_order: __sdk::TableAppliedDiff<'r, RepairOrder>,
     retained_projectile: __sdk::TableAppliedDiff<'r, RetainedProjectile>,
@@ -4277,7 +4291,6 @@ pub struct AppliedDiff<'r> {
     simulation_run: __sdk::TableAppliedDiff<'r, SimulationRun>,
     strategic_encounter: __sdk::TableAppliedDiff<'r, StrategicEncounter>,
     strategic_gateway_authority: __sdk::TableAppliedDiff<'r, StrategicGatewayAuthority>,
-    strategic_incident: __sdk::TableAppliedDiff<'r, StrategicIncident>,
     tactical_server: __sdk::TableAppliedDiff<'r, TacticalServer>,
     tactical_server_request: __sdk::TableAppliedDiff<'r, TacticalServerRequest>,
     travel_edge: __sdk::TableAppliedDiff<'r, TravelEdge>,
@@ -4614,6 +4627,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.quest_issuer,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<RecruitmentOffer>(
+            "recruitment_offer",
+            &self.recruitment_offer,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<ReligiousDemand>(
             "religious_demand",
             &self.religious_demand,
@@ -4683,11 +4701,6 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<StrategicGatewayAuthority>(
             "strategic_gateway_authority",
             &self.strategic_gateway_authority,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<StrategicIncident>(
-            "strategic_incident",
-            &self.strategic_incident,
             event,
         );
         callbacks.invoke_table_row_callbacks::<TacticalServer>(
@@ -5437,6 +5450,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         party_stake_table::register_table(client_cache);
         quest_table::register_table(client_cache);
         quest_issuer_table::register_table(client_cache);
+        recruitment_offer_table::register_table(client_cache);
         religious_demand_table::register_table(client_cache);
         repair_order_table::register_table(client_cache);
         retained_projectile_table::register_table(client_cache);
@@ -5452,7 +5466,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         simulation_run_table::register_table(client_cache);
         strategic_encounter_table::register_table(client_cache);
         strategic_gateway_authority_table::register_table(client_cache);
-        strategic_incident_table::register_table(client_cache);
         tactical_server_table::register_table(client_cache);
         tactical_server_request_table::register_table(client_cache);
         travel_edge_table::register_table(client_cache);
@@ -5530,6 +5543,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "party_stake",
         "quest",
         "quest_issuer",
+        "recruitment_offer",
         "religious_demand",
         "repair_order",
         "retained_projectile",
@@ -5545,7 +5559,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "simulation_run",
         "strategic_encounter",
         "strategic_gateway_authority",
-        "strategic_incident",
         "tactical_server",
         "tactical_server_request",
         "travel_edge",

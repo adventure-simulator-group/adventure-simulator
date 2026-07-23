@@ -134,9 +134,10 @@ use crate::spacetimedb::{
     InventoryQuantityTarget, ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury,
     LimbRegion, MedicalExaminationRow, Party, PartyInventoryItem, PartyJourney,
     PartyJourneyItinerary, PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, Quest,
-    QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
-    RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription,
-    SettlementSmith, SocialBelief, StrategicEncounter, TravelEdge,
+    QuestIssuer, QuestStatus, RecruitmentOffer, RecruitmentOfferStatus, RecruitmentRequirements,
+    ReligiousDemand, RepairOrder, RetainedProjectile, ScheduleAllocation, Settlement,
+    SettlementAlias, SettlementDescription, SettlementSmith, SocialBelief, StrategicEncounter,
+    TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
@@ -2206,6 +2207,19 @@ async fn service_quest_offers(
         .query("SELECT * FROM party_recruitment_role")
         .await
         .unwrap_or_default();
+    let recruitment_offers: Vec<RecruitmentOffer> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM recruitment_offer WHERE settlement_id = {}",
+            sql_string_literal(&id)
+        ))
+        .await
+        .unwrap_or_default();
+    let recruitment_host_quest_id = issuers
+        .iter()
+        .find(|issuer| issuer.service_id == "inn")
+        .or_else(|| issuers.first())
+        .map(|issuer| issuer.quest_id.as_str());
     let characters: Vec<Character> = state
         .db
         .query("SELECT * FROM character")
@@ -2250,7 +2264,15 @@ async fn service_quest_offers(
                     party.active_quest_id.as_deref() == Some(quest.id.as_str())
                         && quest.accepted_by.as_deref() == Some(party.id.as_str())
                 });
-                let recruitment = quest.accepted_by.as_deref().and_then(|party_id| {
+                let recruitment = recruitment_offers
+                    .iter()
+                    .find(|offer| {
+                        recruitment_host_quest_id == Some(quest.id.as_str())
+                            && offer.status == RecruitmentOfferStatus::Open
+                            && viewer_party_id != Some(offer.recruiting_party_id.as_str())
+                    })
+                    .and_then(|offer| {
+                    let party_id = offer.recruiting_party_id.as_str();
                     if viewer_party_id == Some(party_id) {
                         return None;
                     }

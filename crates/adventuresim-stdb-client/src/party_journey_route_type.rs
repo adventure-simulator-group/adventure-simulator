@@ -12,6 +12,7 @@ use super::journey_terrain_span_type::JourneyTerrainSpan;
 #[sats(crate = __lib)]
 pub struct PartyJourneyRoute {
     pub party_id: String,
+    pub gateway_bucket: u8,
     pub package_digest: String,
     pub distance_m: u64,
     pub minutes: u64,
@@ -29,6 +30,7 @@ impl __sdk::InModule for PartyJourneyRoute {
 /// Provides typed access to columns for query building.
 pub struct PartyJourneyRouteCols {
     pub party_id: __sdk::__query_builder::Col<PartyJourneyRoute, String>,
+    pub gateway_bucket: __sdk::__query_builder::Col<PartyJourneyRoute, u8>,
     pub package_digest: __sdk::__query_builder::Col<PartyJourneyRoute, String>,
     pub distance_m: __sdk::__query_builder::Col<PartyJourneyRoute, u64>,
     pub minutes: __sdk::__query_builder::Col<PartyJourneyRoute, u64>,
@@ -42,6 +44,7 @@ impl __sdk::__query_builder::HasCols for PartyJourneyRoute {
     fn cols(table_name: &'static str) -> Self::Cols {
         PartyJourneyRouteCols {
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
+            gateway_bucket: __sdk::__query_builder::Col::new(table_name, "gateway_bucket"),
             package_digest: __sdk::__query_builder::Col::new(table_name, "package_digest"),
             distance_m: __sdk::__query_builder::Col::new(table_name, "distance_m"),
             minutes: __sdk::__query_builder::Col::new(table_name, "minutes"),
@@ -56,6 +59,7 @@ impl __sdk::__query_builder::HasCols for PartyJourneyRoute {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct PartyJourneyRouteIxCols {
+    pub gateway_bucket: __sdk::__query_builder::IxCol<PartyJourneyRoute, u8>,
     pub party_id: __sdk::__query_builder::IxCol<PartyJourneyRoute, String>,
 }
 
@@ -63,6 +67,7 @@ impl __sdk::__query_builder::HasIxCols for PartyJourneyRoute {
     type IxCols = PartyJourneyRouteIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         PartyJourneyRouteIxCols {
+            gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
             party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
         }
     }

@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -26,8 +20,8 @@ impl From<CreateTacticalServerForRequestArgs> for super::Reducer {
             claim: args.claim,
             addr: args.addr,
             cert_digest: args.cert_digest,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for CreateTacticalServerForRequestArgs {
@@ -45,12 +39,20 @@ pub trait create_tactical_server_for_request {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`create_tactical_server_for_request:create_tactical_server_for_request_then`] to run a callback after the reducer completes.
-    fn create_tactical_server_for_request(&self, mission_id: String,
-claim: String,
-addr: String,
-cert_digest: String,
-) -> __sdk::Result<()> {
-        self.create_tactical_server_for_request_then(mission_id, claim, addr, cert_digest,  |_, _| {})
+    fn create_tactical_server_for_request(
+        &self,
+        mission_id: String,
+        claim: String,
+        addr: String,
+        cert_digest: String,
+    ) -> __sdk::Result<()> {
+        self.create_tactical_server_for_request_then(
+            mission_id,
+            claim,
+            addr,
+            cert_digest,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `create_tactical_server_for_request` to run as soon as possible,
@@ -62,13 +64,15 @@ cert_digest: String,
     fn create_tactical_server_for_request_then(
         &self,
         mission_id: String,
-claim: String,
-addr: String,
-cert_digest: String,
+        claim: String,
+        addr: String,
+        cert_digest: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()>;
 }
 
@@ -76,15 +80,24 @@ impl create_tactical_server_for_request for super::RemoteReducers {
     fn create_tactical_server_for_request_then(
         &self,
         mission_id: String,
-claim: String,
-addr: String,
-cert_digest: String,
+        claim: String,
+        addr: String,
+        cert_digest: String,
 
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
+        callback: impl FnOnce(
+            &super::ReducerEventContext,
+            Result<Result<(), String>, __sdk::InternalError>,
+        ) + Send
+        + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(CreateTacticalServerForRequestArgs { mission_id, claim, addr, cert_digest,  }, callback)
+        self.imp.invoke_reducer_with_callback(
+            CreateTacticalServerForRequestArgs {
+                mission_id,
+                claim,
+                addr,
+                cert_digest,
+            },
+            callback,
+        )
     }
 }
-
