@@ -84,7 +84,6 @@ enum BuildEffect {
     BeginApprenticeship { profession: String },
     ExamineDisease,
     SetFlag { flag: String, value: bool },
-    ReceiveProblemRumor,
     InvestigationAction { action: String },
 }
 
@@ -182,6 +181,7 @@ fn validate_condition(value: &serde_json::Value, relative: &str) {
                             | "participant_count"
                             | "participant_present"
                             | "participant_rumor_case"
+                            | "participant_referral_contact"
                             | "known_claim"
                             | "known_lead"
                             | "prior_questioning"

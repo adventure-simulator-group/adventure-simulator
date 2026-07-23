@@ -2,34 +2,48 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct DialogueSession {
     pub id: String,
+    pub gateway_bucket: u8,
     pub conversation_id: String,
     pub catalog_revision: String,
     pub settlement_id: String,
     pub location_id: String,
+    pub owner_character_id: u64,
+    pub owner_party_id: String,
     pub state: String,
     pub revision: u64,
     pub created_micros: i64,
 }
 
+
 impl __sdk::InModule for DialogueSession {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `DialogueSession`.
 ///
 /// Provides typed access to columns for query building.
 pub struct DialogueSessionCols {
     pub id: __sdk::__query_builder::Col<DialogueSession, String>,
+    pub gateway_bucket: __sdk::__query_builder::Col<DialogueSession, u8>,
     pub conversation_id: __sdk::__query_builder::Col<DialogueSession, String>,
     pub catalog_revision: __sdk::__query_builder::Col<DialogueSession, String>,
     pub settlement_id: __sdk::__query_builder::Col<DialogueSession, String>,
     pub location_id: __sdk::__query_builder::Col<DialogueSession, String>,
+    pub owner_character_id: __sdk::__query_builder::Col<DialogueSession, u64>,
+    pub owner_party_id: __sdk::__query_builder::Col<DialogueSession, String>,
     pub state: __sdk::__query_builder::Col<DialogueSession, String>,
     pub revision: __sdk::__query_builder::Col<DialogueSession, u64>,
     pub created_micros: __sdk::__query_builder::Col<DialogueSession, i64>,
@@ -40,13 +54,17 @@ impl __sdk::__query_builder::HasCols for DialogueSession {
     fn cols(table_name: &'static str) -> Self::Cols {
         DialogueSessionCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
+            gateway_bucket: __sdk::__query_builder::Col::new(table_name, "gateway_bucket"),
             conversation_id: __sdk::__query_builder::Col::new(table_name, "conversation_id"),
             catalog_revision: __sdk::__query_builder::Col::new(table_name, "catalog_revision"),
             settlement_id: __sdk::__query_builder::Col::new(table_name, "settlement_id"),
             location_id: __sdk::__query_builder::Col::new(table_name, "location_id"),
+            owner_character_id: __sdk::__query_builder::Col::new(table_name, "owner_character_id"),
+            owner_party_id: __sdk::__query_builder::Col::new(table_name, "owner_party_id"),
             state: __sdk::__query_builder::Col::new(table_name, "state"),
             revision: __sdk::__query_builder::Col::new(table_name, "revision"),
             created_micros: __sdk::__query_builder::Col::new(table_name, "created_micros"),
+
         }
     }
 }
@@ -56,6 +74,7 @@ impl __sdk::__query_builder::HasCols for DialogueSession {
 /// Provides typed access to indexed columns for query building.
 pub struct DialogueSessionIxCols {
     pub conversation_id: __sdk::__query_builder::IxCol<DialogueSession, String>,
+    pub gateway_bucket: __sdk::__query_builder::IxCol<DialogueSession, u8>,
     pub id: __sdk::__query_builder::IxCol<DialogueSession, String>,
 }
 
@@ -64,9 +83,12 @@ impl __sdk::__query_builder::HasIxCols for DialogueSession {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         DialogueSessionIxCols {
             conversation_id: __sdk::__query_builder::IxCol::new(table_name, "conversation_id"),
+            gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for DialogueSession {}
+

@@ -119,7 +119,7 @@
               { "kind": "runtime", "slot": "referral_location" },
               { "kind": "text", "value": ". That is only what people are saying; judge the account for yourself." }
             ] }],
-            "effects": [{ "kind": "receive_problem_rumor" }], "prompt": null }]
+            "effects": [], "prompt": null }]
         }
       ]
     },

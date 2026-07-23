@@ -19,6 +19,11 @@ use adventuresim_stdb_client::{
     DbConnection, autoresolve_report_table::AutoresolveReportTableAccess,
     backend_case_battles_table::BackendCaseBattlesTableAccess,
     backend_contracts_table::BackendContractsTableAccess,
+    backend_dialogue_events_table::BackendDialogueEventsTableAccess,
+    backend_dialogue_participants_table::BackendDialogueParticipantsTableAccess,
+    backend_dialogue_prompts_table::BackendDialoguePromptsTableAccess,
+    backend_dialogue_sessions_table::BackendDialogueSessionsTableAccess,
+    backend_dialogue_topic_options_table::BackendDialogueTopicOptionsTableAccess,
     battle_loot_item_table::BattleLootItemTableAccess,
     battle_participant_table::BattleParticipantTableAccess,
     battle_result_table::BattleResultTableAccess,
@@ -36,11 +41,6 @@ use adventuresim_stdb_client::{
     character_strategic_condition_table::CharacterStrategicConditionTableAccess,
     character_table::CharacterTableAccess,
     character_training_schedule_table::CharacterTrainingScheduleTableAccess,
-    dialogue_event_table::DialogueEventTableAccess,
-    dialogue_participant_table::DialogueParticipantTableAccess,
-    dialogue_prompt_table::DialoguePromptTableAccess,
-    dialogue_session_table::DialogueSessionTableAccess,
-    dialogue_topic_option_table::DialogueTopicOptionTableAccess,
     equipped_medication_table::EquippedMedicationTableAccess, food_lot_table::FoodLotTableAccess,
     inventory_item_table::InventoryItemTableAccess,
     inventory_quantity_target_table::InventoryQuantityTargetTableAccess,
@@ -198,11 +198,11 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.strategic_encounter());
         invalidate_on_view_changes!(state.0._connection.db.backend_contracts());
         invalidate_on_changes!(state.0._connection.db.local_chat_message());
-        invalidate_on_changes!(state.0._connection.db.dialogue_session());
-        invalidate_on_changes!(state.0._connection.db.dialogue_participant());
-        invalidate_on_changes!(state.0._connection.db.dialogue_event());
-        invalidate_on_changes!(state.0._connection.db.dialogue_prompt());
-        invalidate_on_changes!(state.0._connection.db.dialogue_topic_option());
+        invalidate_on_view_changes!(state.0._connection.db.backend_dialogue_sessions());
+        invalidate_on_view_changes!(state.0._connection.db.backend_dialogue_participants());
+        invalidate_on_view_changes!(state.0._connection.db.backend_dialogue_events());
+        invalidate_on_view_changes!(state.0._connection.db.backend_dialogue_prompts());
+        invalidate_on_view_changes!(state.0._connection.db.backend_dialogue_topic_options());
         invalidate_on_changes!(state.0._connection.db.battle_result());
         invalidate_on_view_changes!(state.0._connection.db.backend_case_battles());
         invalidate_on_changes!(state.0._connection.db.autoresolve_report());
@@ -254,11 +254,11 @@ impl LiveState {
             .add_query(|query| query.from.item())
             .add_query(|query| query.from.item_condition())
             .add_query(|query| query.from.local_chat_message())
-            .add_query(|query| query.from.dialogue_session())
-            .add_query(|query| query.from.dialogue_participant())
-            .add_query(|query| query.from.dialogue_event())
-            .add_query(|query| query.from.dialogue_prompt())
-            .add_query(|query| query.from.dialogue_topic_option())
+            .add_query(|query| query.from.backend_dialogue_sessions())
+            .add_query(|query| query.from.backend_dialogue_participants())
+            .add_query(|query| query.from.backend_dialogue_events())
+            .add_query(|query| query.from.backend_dialogue_prompts())
+            .add_query(|query| query.from.backend_dialogue_topic_options())
             .add_query(|query| query.from.morale_event())
             .add_query(|query| query.from.party())
             .add_query(|query| query.from.party_action_request())

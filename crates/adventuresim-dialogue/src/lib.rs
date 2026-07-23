@@ -202,7 +202,6 @@ pub enum Effect {
     BeginApprenticeship { profession: String },
     ExamineDisease,
     SetFlag { flag: String, value: bool },
-    ReceiveProblemRumor,
     InvestigationAction { action: InvestigationAction },
 }
 
@@ -237,6 +236,103 @@ pub struct PropositionTestimony {
     pub statement: String,
     pub confidence_bps: u16,
     pub disclosed: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct TestimonyStageDraft {
+    pub proposition_id: String,
+    pub perceived_text: String,
+    pub recalled_text: String,
+    pub disclosed_text: Option<String>,
+    pub transmitted_text: String,
+    pub confidence_bps: u16,
+}
+
+/// Production authoring path for proposition-level testimony. The alternate
+/// account is server-authored; no model or client invents canonical facts.
+pub fn build_testimony_bundle(
+    reliability: TestimonyReliability,
+    event: PropositionTestimony,
+    circumstance: PropositionTestimony,
+    mistaken_account: &str,
+    deceptive_account: &str,
+) -> Vec<TestimonyStageDraft> {
+    let stage = |source: &PropositionTestimony,
+                 recalled: String,
+                 disclosed: Option<String>,
+                 transmitted: String,
+                 confidence_bps| TestimonyStageDraft {
+        proposition_id: source.proposition_id.clone(),
+        perceived_text: source.statement.clone(),
+        recalled_text: recalled,
+        disclosed_text: disclosed,
+        transmitted_text: transmitted,
+        confidence_bps,
+    };
+    match reliability {
+        TestimonyReliability::Truthful => vec![
+            stage(
+                &event,
+                event.statement.clone(),
+                Some(event.statement.clone()),
+                event.statement.clone(),
+                event.confidence_bps,
+            ),
+            stage(
+                &circumstance,
+                circumstance.statement.clone(),
+                Some(circumstance.statement.clone()),
+                circumstance.statement.clone(),
+                circumstance.confidence_bps,
+            ),
+        ],
+        TestimonyReliability::Mistaken => vec![stage(
+            &event,
+            mistaken_account.into(),
+            Some(mistaken_account.into()),
+            mistaken_account.into(),
+            event.confidence_bps.min(4_000),
+        )],
+        TestimonyReliability::Evasive => vec![
+            stage(
+                &event,
+                event.statement.clone(),
+                Some(event.statement.clone()),
+                event.statement.clone(),
+                event.confidence_bps,
+            ),
+            stage(
+                &circumstance,
+                circumstance.statement.clone(),
+                None,
+                String::new(),
+                circumstance.confidence_bps,
+            ),
+        ],
+        TestimonyReliability::Deceptive => vec![stage(
+            &event,
+            event.statement.clone(),
+            Some(deceptive_account.into()),
+            deceptive_account.into(),
+            event.confidence_bps.min(6_000),
+        )],
+        TestimonyReliability::PartlyTruthful => vec![
+            stage(
+                &event,
+                event.statement.clone(),
+                Some(event.statement.clone()),
+                event.statement.clone(),
+                event.confidence_bps,
+            ),
+            stage(
+                &circumstance,
+                circumstance.statement.clone(),
+                None,
+                String::new(),
+                circumstance.confidence_bps,
+            ),
+        ],
+    }
 }
 
 pub fn testimony_pattern(
@@ -305,6 +401,7 @@ pub enum FactKey {
     ParticipantCount { role: String },
     ParticipantPresent { role: String },
     ParticipantRumorCase { role: String },
+    ParticipantReferralContact { role: String },
     KnownClaim,
     KnownLead,
     PriorQuestioning { role: String },
@@ -904,5 +1001,39 @@ mod tests {
                 .is_empty()
             );
         }
+        let mistaken = build_testimony_bundle(
+            TestimonyReliability::Mistaken,
+            event.clone(),
+            PropositionTestimony {
+                proposition_id: "why".into(),
+                statement: "I was fishing.".into(),
+                confidence_bps: 7_000,
+                disclosed: true,
+            },
+            "I saw a stooped child.",
+            "I saw nothing.",
+        );
+        assert_eq!(mistaken[0].recalled_text, "I saw a stooped child.");
+        assert_ne!(mistaken[0].recalled_text, mistaken[0].perceived_text);
+        let deceptive = build_testimony_bundle(
+            TestimonyReliability::Deceptive,
+            event,
+            PropositionTestimony {
+                proposition_id: "why".into(),
+                statement: "I was fishing.".into(),
+                confidence_bps: 7_000,
+                disclosed: true,
+            },
+            "I saw a stooped child.",
+            "I saw nothing.",
+        );
+        assert_eq!(
+            deceptive[0].disclosed_text.as_deref(),
+            Some("I saw nothing.")
+        );
+        assert_ne!(
+            deceptive[0].disclosed_text.as_deref(),
+            Some(deceptive[0].perceived_text.as_str())
+        );
     }
 }
