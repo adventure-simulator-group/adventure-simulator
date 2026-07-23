@@ -38,12 +38,15 @@ follow-up operational improvement.
 
 Tactical servers keep positions, health, enemies, and per-tick simulation
 transient. Their completion enum is only a compatibility transport: `Failed`
-means failure and every other value is the same opaque authenticated success
-signal. Tactical requests and servers contain no strategic approach,
+means failure, `CaptureTargetKilled` is explicit contradictory terminal
+evidence that also fails without sampling, and the other values are the same
+opaque authenticated success signal. Tactical requests and servers contain no strategic approach,
 objective, subject, weight, or expected-result field. On success, strategic
 authority revalidates the prebound candidates, canonically sorts them, and
-performs a deterministic SHA-256-derived weighted draw from stable mission
-identity. Retries select the same result. Stale capture custody removes that
+performs a deterministic SHA-256-derived weighted draw from private
+server-generated mission entropy. Caller-selected mission IDs therefore cannot
+grind outcomes, while retries reuse the persisted entropy and select the same
+result. Stale capture custody removes that
 candidate; if none remains, the attempt fails without fabrication. Allied
 autoresolve victory uses the same sampler.
 
