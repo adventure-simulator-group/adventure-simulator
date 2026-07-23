@@ -6,6 +6,16 @@ existing strategic persistence boundaries while display names remain
 presentation-only. Tactical servers do not yet consume this identity, and
 positions, HP, damage, and enemy instances remain transient tactical state.
 
+Persistent settlement NPC identity, visible profile, and scheduled location presence
+belong to the strategic SpacetimeDB layer. Presence is a coarse strategic time/location
+fact used for dialogue authorization; it must not contain or mirror tactical positions,
+HP, damage, enemies, or tick state. Population-generation explanations are private
+diagnostic state and are not subscribed into player-facing web views.
+The public presence row contains only settlement, location, schedule, and default-selection
+state. Causal bridges and investigative circumstances are private generation facts. The
+canonical stable weighted evaluator lives in `adventuresim-core`; production seeding and
+tests use the same typed input, hard-zero, bridge-validation, and explanation path.
+
 The strategic dialogue subsystem is documented in [DIALOGUE.md](DIALOGUE.md).
 Its compiled catalog and evaluator are shared by the web and SpacetimeDB module;
 authoritative sessions are strategic persistence, while free-form chat remains
