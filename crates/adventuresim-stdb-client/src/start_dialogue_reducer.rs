@@ -11,7 +11,6 @@ pub(super) struct StartDialogueArgs {
     pub session_id: String,
     pub conversation_id: String,
     pub npc_actor_id: String,
-    pub location_id: String,
     pub catalog_revision: String,
 }
 
@@ -22,7 +21,6 @@ impl From<StartDialogueArgs> for super::Reducer {
             session_id: args.session_id,
             conversation_id: args.conversation_id,
             npc_actor_id: args.npc_actor_id,
-            location_id: args.location_id,
             catalog_revision: args.catalog_revision,
         }
     }
@@ -49,7 +47,6 @@ pub trait start_dialogue {
         session_id: String,
         conversation_id: String,
         npc_actor_id: String,
-        location_id: String,
         catalog_revision: String,
     ) -> __sdk::Result<()> {
         self.start_dialogue_then(
@@ -57,7 +54,6 @@ pub trait start_dialogue {
             session_id,
             conversation_id,
             npc_actor_id,
-            location_id,
             catalog_revision,
             |_, _| {},
         )
@@ -75,7 +71,6 @@ pub trait start_dialogue {
         session_id: String,
         conversation_id: String,
         npc_actor_id: String,
-        location_id: String,
         catalog_revision: String,
 
         callback: impl FnOnce(
@@ -93,7 +88,6 @@ impl start_dialogue for super::RemoteReducers {
         session_id: String,
         conversation_id: String,
         npc_actor_id: String,
-        location_id: String,
         catalog_revision: String,
 
         callback: impl FnOnce(
@@ -108,7 +102,6 @@ impl start_dialogue for super::RemoteReducers {
                 session_id,
                 conversation_id,
                 npc_actor_id,
-                location_id,
                 catalog_revision,
             },
             callback,

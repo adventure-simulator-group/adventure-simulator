@@ -1,8 +1,5 @@
 # Trade
 
-Local-problem pressure uses the same checked basis-point adjustment after base
-and language pricing for displayed quotes and reducer transfers, including food.
-
 The compiler supplies each imported settlement with canonical local production
 outputs and a marginal, local, or regional scale. Future trade simulation may
 consume these signals, but rules v6 does not create prices, inventory, or
@@ -89,5 +86,3 @@ discard view. Discarding follows the same draft-first interaction as trading:
 the player stages quantities into the left-side **Discard** list, may cancel the
 draft, and must press **Discard** before the server removes anything. Equipped
 items are never eligible for deletion.
-
-The best shared Oral-language coefficient is authoritative for merchant quotes. Lower mutual proficiency raises purchase prices and lowers sale proceeds; the web quote and reducer use the same core rounding helpers. Prepared medicines remain on their existing specialized purchase path.

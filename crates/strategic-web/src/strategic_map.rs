@@ -29,8 +29,8 @@ const ROUTE_MIN_VIEW_HEIGHT: f64 = ROUTE_MIN_VIEW_WIDTH / VIEW_ASPECT_RATIO;
 pub(crate) const TILE_PATH_PREFIX: &str = "/map/tiles/";
 pub(crate) const DATA_LICENSE_PATH: &str = "/map/data-license";
 const DATA_LICENSE: &str = include_str!("../../../MAP_DATA_LICENSE.md");
-const PACKAGE_SCHEMA: u32 = 4;
-const RENDERER_REVISION: u32 = 9;
+const PACKAGE_SCHEMA: u32 = 3;
+const RENDERER_REVISION: u32 = 8;
 const MIN_TILE_SIZE: u32 = 64;
 const MAX_TILE_SIZE: u32 = 2_048;
 const MAX_TILE_ENTRIES: usize = 100_000;
@@ -47,9 +47,6 @@ struct Package {
     elevation: ElevationLayer,
     forest: ForestLayer,
     tiles: TilePyramid,
-    terrain_package_sha256: String,
-    inferred_road_geometry_sha256: String,
-    wetland_source_sha256: String,
     package_sha256: String,
 }
 
@@ -149,19 +146,6 @@ impl StrategicMap {
             package.schema == PACKAGE_SCHEMA,
             "unsupported strategic map package schema"
         );
-        for digest in [
-            &package.terrain_package_sha256,
-            &package.inferred_road_geometry_sha256,
-            &package.wetland_source_sha256,
-        ] {
-            anyhow::ensure!(
-                digest.len() == 64
-                    && digest
-                        .bytes()
-                        .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()),
-                "invalid strategic map dependency digest"
-            );
-        }
         anyhow::ensure!(
             package.renderer_revision == RENDERER_REVISION,
             "unsupported strategic map renderer revision"
@@ -238,36 +222,6 @@ impl StrategicMap {
             tile_index,
         })
     }
-
-    pub fn validate_terrain_identity(
-        &self,
-        terrain: &adventuresim_terrain::TerrainPack,
-    ) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            terrain_identity_matches(
-                &self.package,
-                terrain.purpose(),
-                terrain.package_sha256(),
-                terrain.wetland_source_sha256(),
-                terrain.bounds()
-            ),
-            "map/terrain purpose, package, wetland, or bounds identity mismatch"
-        );
-        Ok(())
-    }
-}
-
-fn terrain_identity_matches(
-    package: &Package,
-    purpose: adventuresim_terrain::TerrainPurpose,
-    terrain_sha: &str,
-    wetland_sha: &str,
-    bounds: [f64; 4],
-) -> bool {
-    purpose == adventuresim_terrain::TerrainPurpose::Final
-        && terrain_sha == package.terrain_package_sha256
-        && wetland_sha == package.wetland_source_sha256
-        && bounds == package.bounds
 }
 
 fn tile_grid_size(tile_size: u32, zoom: u8) -> Option<(u32, u32)> {
@@ -446,20 +400,6 @@ fn settlement_label_priority(
     category_priority + u16::from(is_connected) * 25
 }
 
-fn population_level_threshold(view_width: f64) -> i32 {
-    if view_width > 900.0 {
-        5
-    } else if view_width > 600.0 {
-        4
-    } else if view_width > 350.0 {
-        3
-    } else if view_width > 180.0 {
-        2
-    } else {
-        1
-    }
-}
-
 pub fn strategic_map(
     map: &StrategicMap,
     settlements: &[Settlement],
@@ -517,14 +457,6 @@ pub fn strategic_map(
             data-map-tile-gutter=(package.tiles.gutter)
             data-map-tile-version=(&package.tiles.content_sha256) data-map-tile-root=(TILE_PATH_PREFIX)
             aria-label=(format!("Map around {}", current.map_or("the current settlement", |item| item.name.as_str()))) {
-            div class="strategic-map-controls" role="group" aria-label="Map controls" {
-                button type="button" class="strategic-map-control" data-map-action="zoom-in"
-                    aria-label="Zoom in" data-strategic-tooltip="Zoom in" { span aria-hidden="true" { "+" } }
-                button type="button" class="strategic-map-control" data-map-action="zoom-out"
-                    aria-label="Zoom out" data-strategic-tooltip="Zoom out" { span aria-hidden="true" { "−" } }
-                button type="button" class="strategic-map-control" data-map-action="reset"
-                    aria-label="Reset map view" data-strategic-tooltip="Reset map view" { span aria-hidden="true" { "↺" } }
-            }
             svg class="strategic-map-svg" data-map-svg viewBox=(view_box)
                 aria-labelledby="strategic-map-title strategic-map-description" tabindex="0" {
                 title id="strategic-map-title" { "Settlement road map" }
@@ -555,7 +487,6 @@ pub fn strategic_map(
                                 href=(tile_url("paper", initial_tile_zoom, x, y, &package.tiles.content_sha256)) {}
                         }
                     }
-                    rect class="map-atmosphere-layer" x="0" y="0" width="1200" height="800" aria-hidden="true" {}
                     g class="map-overlay-layer" {
                         @if let Some(route) = terrain_route {
                             @let points = route.points.iter().map(|point| { let (x,y)=project(point.longitude, point.latitude, package.bounds); format!("{x:.3},{y:.3}") }).collect::<Vec<_>>().join(" ");
@@ -572,17 +503,13 @@ pub fn strategic_map(
                             @let is_current = settlement.id == current_id;
                             @let is_connected = connected_ids.contains(settlement.id.as_str());
                             @let is_selected = selected_id == Some(settlement.id.as_str());
-                            @let is_essential = is_current || is_selected;
-                            @let initially_visible = is_essential || settlement.population_level >= population_level_threshold(initial_view.width);
                             @let symbol_kind = settlement_symbol_kind(&settlement.category);
                             @let label_priority = settlement_label_priority(settlement, is_current, is_connected, is_selected);
                             @let label_width = (settlement.name.chars().count() as u16 * 7 + 8).clamp(44, 180);
-                            @let label = if is_current { format!("{}, {:?} prosperity, current settlement", settlement.name, settlement.economy.prosperity_tier) } else if is_connected { format!("{}, {:?} prosperity, direct route available", settlement.name, settlement.economy.prosperity_tier) } else { format!("{}, {:?} prosperity, no direct route", settlement.name, settlement.economy.prosperity_tier) };
+                            @let label = if is_current { format!("{}, current settlement", settlement.name) } else if is_connected { format!("{}, direct route available", settlement.name) } else { format!("{}, no direct route", settlement.name) };
                             a href=(format!("{map_path}?destination={}", settlement.id))
-                                class="map-pin-link" aria-label=(&label) data-strategic-tooltip=(&label) aria-current=[is_selected.then_some("true")]
-                                data-map-pin data-map-settlement data-settlement-id=(&settlement.id) data-connected=(is_connected)
-                                data-map-population-level=(settlement.population_level) data-map-pin-essential=(is_essential)
-                                display=[(!initially_visible).then_some("none")] {
+                                class="map-pin-link" aria-label=(label) aria-current=[is_selected.then_some("true")]
+                                data-map-pin data-settlement-id=(&settlement.id) data-connected=(is_connected) {
                                 g class=(format!("map-pin map-settlement map-settlement-{symbol_kind}{}{}{}", if is_current { " current" } else { "" }, if is_connected { " connected" } else { "" }, if is_selected { " selected" } else { "" }))
                                     transform=(format!("translate({x:.3} {y:.3})")) {
                                     g data-map-pin-symbol transform=(format!("scale({initial_pin_scale:.5})")) {
@@ -614,7 +541,7 @@ pub fn strategic_map(
                             };
                             @let label = format!("Quest: {}, {status_label}", quest.title);
                             a href=(format!("{map_path}?destination={}", quest.id))
-                                class="map-pin-link map-quest-link" aria-label=(&label) data-strategic-tooltip=(&label)
+                                class="map-pin-link map-quest-link" aria-label=(label)
                                 aria-current=[is_selected.then_some("true")]
                                 data-map-pin data-quest-id=(&quest.id) {
                                 g class=(format!("map-pin map-quest{}{}", if is_active { " active" } else { "" }, if is_selected { " selected" } else { "" }))
@@ -635,12 +562,8 @@ pub fn strategic_map(
                         // transparent duplicate is mouse-only and is rendered last in SVG order.
                         @for settlement in settlements.iter().filter(|settlement| has_geographic_source_in_bounds(settlement, package.bounds)) {
                             @let (x, y) = project(settlement.coord_x, settlement.coord_y, package.bounds);
-                            @let is_essential = settlement.id == current_id || selected_id == Some(settlement.id.as_str());
-                            @let initially_visible = is_essential || settlement.population_level >= population_level_threshold(initial_view.width);
                             a href=(format!("{map_path}?destination={}", settlement.id))
-                                class="map-settlement-hit-link" aria-hidden="true" tabindex="-1"
-                                data-map-settlement-hit data-map-population-level=(settlement.population_level)
-                                data-map-pin-essential=(is_essential) display=[(!initially_visible).then_some("none")] {
+                                class="map-settlement-hit-link" aria-hidden="true" tabindex="-1" {
                                 g transform=(format!("translate({x:.3} {y:.3})")) {
                                     g data-map-pin-symbol transform=(format!("scale({initial_pin_scale:.5})")) {
                                         circle class="map-settlement-hit-area map-settlement-hit-overlay" r="13" {}
@@ -715,9 +638,9 @@ mod tests {
         let placeholder = "0".repeat(64);
         let unsigned = format!(
             concat!(
-                r#"{{"schema":4,"renderer_revision":3,"year":1544,"bounds":[-10.0,40.0,30.0,70.0],"source":{{"name":"Test roads","url":"https://doi.org/10.5281/zenodo.16611998","license":"CC0","verification_status":"verified"}},"elevation":{{"source":{{"name":"Test elevation","url":"https://doi.org/10.5270/ESA-c5d3d65","file_count":1}}}},"forest":{{"source":{{"name":"Test forest","url":"https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a","file_count":1}},"coverage_tiles":1}},"tiles":{{"format":"avif","tile_size":2048,"gutter":4,"max_zoom":0,"content_sha256":"{}","entries":[{{"theme":"paper","zoom":0,"x":0,"y":0,"offset":0,"length":12}}]}},"terrain_package_sha256":"{}","inferred_road_geometry_sha256":"{}","wetland_source_sha256":"{}","package_sha256":"{}"}}"#
+                r#"{{"schema":3,"renderer_revision":3,"year":1544,"bounds":[-10.0,40.0,30.0,70.0],"source":{{"name":"Test roads","url":"https://doi.org/10.5281/zenodo.16611998","license":"CC0","verification_status":"verified"}},"elevation":{{"source":{{"name":"Test elevation","url":"https://doi.org/10.5270/ESA-c5d3d65","file_count":1}}}},"forest":{{"source":{{"name":"Test forest","url":"https://doi.org/10.2909/82f93572-9888-47ef-97a1-5cac5985a26a","file_count":1}},"coverage_tiles":1}},"tiles":{{"format":"avif","tile_size":2048,"gutter":4,"max_zoom":0,"content_sha256":"{}","entries":[{{"theme":"paper","zoom":0,"x":0,"y":0,"offset":0,"length":12}}]}},"package_sha256":"{}"}}"#
             ),
-            tile_digest, placeholder, placeholder, placeholder, placeholder
+            tile_digest, placeholder
         )
         .replace(
             "\"renderer_revision\":3",
@@ -779,42 +702,6 @@ mod tests {
         loaded.expect("load test map bundle")
     }
 
-    #[test]
-    fn terrain_identity_requires_final_matching_package_wetland_and_bounds() {
-        let map = map_bundle();
-        let terrain = map.package.terrain_package_sha256.clone();
-        let wet = map.package.wetland_source_sha256.clone();
-        let bounds = map.package.bounds;
-        assert!(terrain_identity_matches(
-            &map.package,
-            adventuresim_terrain::TerrainPurpose::Final,
-            &terrain,
-            &wet,
-            bounds
-        ));
-        assert!(!terrain_identity_matches(
-            &map.package,
-            adventuresim_terrain::TerrainPurpose::DocumentedBase,
-            &terrain,
-            &wet,
-            bounds
-        ));
-        assert!(!terrain_identity_matches(
-            &map.package,
-            adventuresim_terrain::TerrainPurpose::Final,
-            &"f".repeat(64),
-            &wet,
-            bounds
-        ));
-        assert!(!terrain_identity_matches(
-            &map.package,
-            adventuresim_terrain::TerrainPurpose::Final,
-            &terrain,
-            &"e".repeat(64),
-            bounds
-        ));
-    }
-
     fn settlement(id: &str, name: &str, longitude: f64, latitude: f64) -> Settlement {
         Settlement {
             id: id.into(),
@@ -824,22 +711,12 @@ mod tests {
             population_level: 4,
             population_estimate: 1_000,
             category: crate::spacetimedb::SettlementCategory::Town,
-            languages: adventuresim_world_schema::SettlementLanguageProfile {
-                east_central_bp: 10_000,
-                west_central_bp: 0,
-                low_bp: 0,
-                yiddish_incidence_bp: 75,
-            },
             industries: adventuresim_world_schema::InferredIndustryProfile::new(vec![
                 adventuresim_world_schema::IndustryEvidence::Fallback(
                     adventuresim_world_schema::FallbackIndustry::CroplandGrain,
                 ),
             ])
             .unwrap(),
-            economy: adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder(),
-            religious_status: adventuresim_world_schema::SettlementReligiousStatus::Established {
-                religion: adventuresim_world_schema::OfficialReligion::RomanCatholic,
-            },
             scene_key: "hills".into(),
             religion_id: "western_church".into(),
             currency_id: "coin".into(),
@@ -910,16 +787,7 @@ mod tests {
     }
 
     #[test]
-    fn population_pin_threshold_reveals_smaller_places_as_the_camera_closes() {
-        assert_eq!(population_level_threshold(1_200.0), 5);
-        assert_eq!(population_level_threshold(900.0), 4);
-        assert_eq!(population_level_threshold(600.0), 3);
-        assert_eq!(population_level_threshold(350.0), 2);
-        assert_eq!(population_level_threshold(180.0), 1);
-    }
-
-    #[test]
-    fn tiled_map_has_canonical_pin_links_and_accessible_controls() {
+    fn tiled_map_has_canonical_pin_links_without_extra_chrome() {
         let map = map_bundle();
         let mut source_less = settlement("demo", "Demo", 0.0, 0.0);
         source_less.source_node_id = None;
@@ -947,15 +815,9 @@ mod tests {
         assert!(!markup.contains("data-map-theme-choice"));
         assert!(!markup.contains("strategic-map-toolbar"));
         assert!(!markup.contains("data-map-zoom"));
-        assert_eq!(markup.matches("class=\"strategic-map-control\"").count(), 3);
-        assert!(markup.contains("data-map-action=\"zoom-in\""));
-        assert!(markup.contains("data-map-action=\"zoom-out\""));
-        assert!(markup.contains("data-map-action=\"reset\""));
-        assert!(markup.contains("data-strategic-tooltip=\"Zoom in\""));
         assert!(markup.contains("tabindex=\"0\""));
         assert!(markup.contains("?destination=near"));
         assert!(markup.contains("Nearby, direct route available"));
-        assert!(markup.contains("data-strategic-tooltip=\"Nearby, direct route available\""));
         assert!(markup.contains("Far away, no direct route"));
         assert!(!markup.contains("Outside package"));
         assert!(!markup.contains("?destination=demo"));
@@ -967,13 +829,11 @@ mod tests {
         assert!(markup.contains("data-map-label-priority"));
         assert!(markup.contains("map-settlement-label-text"));
         assert!(markup.contains("map-tile-layer"));
-        assert!(markup.contains("map-atmosphere-layer"));
         assert!(markup.contains("map-overlay-layer"));
         assert!(markup.contains("data-map-selection-line"));
         assert!(markup.contains(TILE_PATH_PREFIX));
         assert!(markup.contains(&map.package.tiles.content_sha256));
         assert!(markup.contains("image"));
-        assert!(markup.contains("class=\"map-settlement-hit-area\" r=\"13\""));
         assert!(!markup.contains("class=\"map-elevation"));
         assert!(
             markup.len() < 50_000,

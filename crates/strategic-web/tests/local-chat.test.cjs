@@ -8,10 +8,7 @@ const {
   createChannelRow,
   mergeChannelRows,
   pendingLocalRows,
-  localChatEndpoint,
 } = require("../static/local-chat.js");
-
-const localChatSource = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "static", "local-chat.js"), "utf8");
 
 const row = (channel, id, createdMicros) => ({
   dataset: {
@@ -117,14 +114,4 @@ test("Info notices append without changing filter state", () => {
   assert.deepEqual(filters.map((filter) => filter.checked), [false, true]);
   assert.equal(messages.scrollTop, 120);
   assert.equal(inserted.children.some((child) => child.className === "chat-channel-badge"), false);
-});
-
-test("local chat derives GET and POST endpoints from the current selected NPC", () => {
-  assert.match(localChatSource, /const endpoint = localChatEndpoint\(chat\);/g);
-  assert.match(localChatSource, /local-chat-subject-changed/);
-  assert.doesNotMatch(localChatSource, /const subject = chat\.dataset\.localChatSubject/);
-  const chat = { dataset: { localChatKind: "npc", localChatSubject: "npc:first" } };
-  assert.equal(localChatEndpoint(chat), "/api/local-chat/npc/npc%3Afirst");
-  chat.dataset.localChatSubject = "npc:second";
-  assert.equal(localChatEndpoint(chat), "/api/local-chat/npc/npc%3Asecond");
 });

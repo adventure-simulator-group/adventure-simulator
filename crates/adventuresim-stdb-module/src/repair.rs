@@ -281,16 +281,6 @@ pub fn backfill_equipment_condition_and_smiths(ctx: &ReducerContext) {
 }
 
 fn service_skill(ctx: &ReducerContext, settlement_id: &str, kind: ItemKind) -> Result<u8, String> {
-    use adventuresim_world_schema::SettlementService as S;
-    let specialist = match kind {
-        ItemKind::Weapon | ItemKind::Shield => S::Weaponsmith,
-        ItemKind::Armor => S::Armorer,
-        ItemKind::Clothing => S::Tailor,
-        _ => return Err("This service does not repair that item kind".into()),
-    };
-    if crate::strategic::require_settlement_service(ctx, settlement_id, specialist).is_err() {
-        crate::strategic::require_settlement_service(ctx, settlement_id, S::GeneralBlacksmith)?;
-    }
     let service = ensure_settlement_smith(ctx, settlement_id);
     match kind {
         ItemKind::Weapon | ItemKind::Shield => Ok(service.weaponsmith_skill),

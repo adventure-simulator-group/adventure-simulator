@@ -6,7 +6,6 @@ use adventuresim_core::disease::{
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
 use crate::character::character as _;
-use crate::local_problem::local_problem_authority;
 use crate::{
     character_attributes, character_capability, character_condition, character_skills,
     character_time,
@@ -418,56 +417,6 @@ fn outbreak_episodes_through(
         {
             episodes.push(InfectionEpisode {
                 id: disease::outbreak_exposure_seed(character_id, &format!("{}:{at}", outbreak.id)),
-                character_id,
-                disease_id,
-                contracted_at: at,
-                treated_at: None,
-            });
-        }
-    }
-    // Local-problem exposure uses the same minute-domain evaluator as normal
-    // outbreaks. Stable problem IDs make split and single time advances agree.
-    let scope_key = format!("settlement:{settlement_id}");
-    let mut problems = ctx
-        .db
-        .local_problem_authority()
-        .scope_key()
-        .filter(&scope_key)
-        .filter(|row| !row.disease_id.is_empty() && row.disease_intensity > 0)
-        .collect::<Vec<_>>();
-    problems.sort_by(|left, right| left.id.cmp(&right.id));
-    problems.truncate(adventuresim_core::local_problem::MAX_ACTIVE_PER_SCOPE);
-    for problem in problems {
-        let overlap_from = from.max(problem.starts_at);
-        let overlap_to = to
-            .min(problem.ends_at)
-            .min(problem.resolved_at.unwrap_or(u64::MAX));
-        if overlap_to <= overlap_from || problem.mitigation_bps >= 10_000 {
-            continue;
-        }
-        let disease_id = parse_id(&problem.disease_id)?;
-        let intensity = f32::from(problem.disease_intensity)
-            * f32::from(10_000_u16.saturating_sub(problem.mitigation_bps))
-            / 10_000_000.0;
-        let Some(at) = disease::first_eligible_presence_exposure_minute(
-            &episodes,
-            disease_id,
-            character_id,
-            &problem.id,
-            overlap_from,
-            overlap_to,
-            intensity,
-            disease::definition(disease_id).base_acquisition,
-            immunity,
-        ) else {
-            continue;
-        };
-        if !episodes
-            .iter()
-            .any(|episode| episode.disease_id == disease_id && episode.contracted_at == at)
-        {
-            episodes.push(InfectionEpisode {
-                id: disease::outbreak_exposure_seed(character_id, &format!("{}:{at}", problem.id)),
                 character_id,
                 disease_id,
                 contracted_at: at,
@@ -1312,11 +1261,6 @@ pub fn examine_by_herbalist(
     if patient.current_settlement_id.as_deref() != Some(&settlement_id) {
         return Err("Patient must be at this herbalist's settlement".into());
     }
-    crate::strategic::require_settlement_service(
-        ctx,
-        &settlement_id,
-        adventuresim_world_schema::SettlementService::Herbalist,
-    )?;
     let herbalist = ensure_settlement_herbalist(ctx, &settlement_id);
     crate::strategic::consume_personal_gold(
         ctx,
@@ -1418,11 +1362,6 @@ pub fn purchase_from_herbalist(
     item_ids: Vec<String>,
     quantities: Vec<u32>,
 ) -> Result<(), String> {
-    crate::strategic::require_settlement_service(
-        ctx,
-        &settlement_id,
-        adventuresim_world_schema::SettlementService::Herbalist,
-    )?;
     let patient = crate::require_living_character(ctx, patient_id)?;
     if patient.current_settlement_id.as_deref() != Some(&settlement_id) {
         return Err("Patient must be at this herbalist's settlement".into());
@@ -1431,20 +1370,6 @@ pub fn purchase_from_herbalist(
         return Err("Herbalist purchase entries must be aligned".into());
     }
     ensure_settlement_herbalist(ctx, &settlement_id);
-    let economy = ctx
-        .db
-        .settlement()
-        .id()
-        .find(settlement_id.clone())
-        .ok_or("Settlement not found")?
-        .economy;
-    let minute = ctx
-        .db
-        .character_time()
-        .character_id()
-        .find(patient_id)
-        .map_or(0, |row| row.minutes);
-    let problem_effects = crate::local_problem::settlement_effects(ctx, &settlement_id, minute);
 
     let mut cost = 0u64;
     for (item_id, quantity) in item_ids.iter().zip(&quantities) {
@@ -1457,15 +1382,7 @@ pub fn purchase_from_herbalist(
             .id()
             .find(item_id)
             .ok_or("Herbalist item not found")?;
-        if !adventuresim_core::settlement_economy::storefront_stocks(
-            &economy,
-            adventuresim_core::settlement_economy::Storefront::Herbalist,
-            item_id,
-            crate::item::economy_catalog_kind(definition.kind),
-        ) {
-            return Err("This herbalist does not stock that item".into());
-        }
-        let base_price = match definition.kind {
+        let unit_price = match definition.kind {
             crate::ItemKind::Ingredient => {
                 adventuresim_core::strategic_economy::merchant_buy_price(
                     definition.base_value.unwrap_or(1),
@@ -1478,8 +1395,6 @@ pub fn purchase_from_herbalist(
             }
             _ => return Err("The herbalist sells only ingredients and prepared medication".into()),
         };
-        let unit_price =
-            adventuresim_core::local_problem::adjust_price(base_price, problem_effects.buy_bps);
         cost = cost.saturating_add(u64::from(unit_price) * u64::from(*quantity));
     }
     crate::strategic::consume_personal_gold(ctx, patient_id, cost)?;

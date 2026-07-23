@@ -55,7 +55,6 @@ use adventuresim_stdb_client::{
     quest_status_type::QuestStatus, quest_table::QuestTableAccess,
     repair_order_table::RepairOrderTableAccess,
     request_general_party_join_reducer::request_general_party_join,
-    resolve_strategic_encounter_reducer::resolve_strategic_encounter,
     rest_at_camp_reducer::rest_at_camp, rest_at_settlement_hours_reducer::rest_at_settlement_hours,
     retrieve_repaired_item_reducer::retrieve_repaired_item,
     seed_simulation_disease_reducer::seed_simulation_disease,
@@ -63,7 +62,6 @@ use adventuresim_stdb_client::{
     seed_simulation_world_reducer::seed_simulation_world,
     settlement_smith_table::SettlementSmithTableAccess,
     simulation_run_table::SimulationRunTableAccess, store_battle_loot_reducer::store_battle_loot,
-    strategic_encounter_table::StrategicEncounterTableAccess,
     submit_item_for_repair_reducer::submit_item_for_repair,
     travel_to_quest_reducer::travel_to_quest, travel_to_settlement_reducer::travel_to_settlement,
     turn_in_quest_reducer::turn_in_quest,
@@ -200,18 +198,6 @@ pub struct CoreLoopMetrics {
     pub retries: u32,
     pub duplicate_semantic_events: u32,
     pub stuck_detections: u32,
-    pub encounters: u32,
-    pub encounter_sneaks: u32,
-    pub encounter_detours: u32,
-    pub encounter_attacks: u32,
-    pub encounter_runs: u32,
-    pub encounter_surrenders: u32,
-    pub encounter_escape_eligible: u32,
-    pub encounter_escape_ineligible: u32,
-    pub encounter_surrender_items_lost: u32,
-    pub encounter_surrender_value_lost: u64,
-    pub encounter_defeats: u32,
-    pub encounter_wipes: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -243,7 +229,6 @@ pub enum CoreLoopEventKind {
     QuestSuppressed,
     Death,
     Activity,
-    Encounter,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -366,25 +351,6 @@ fn live_skills(character_id: u64, profile: &AgentProfile) -> CharacterSkills {
             eastern_orthodox: s.religion.eastern_orthodox,
             islamic: s.religion.islamic,
             judaism: s.religion.judaism,
-        },
-        oral_languages: adventuresim_stdb_client::OralLanguageHours {
-            east_central: 5_000.0,
-            west_central: 0.0,
-            low: 0.0,
-            yiddish: 0.0,
-            latin: 0.0,
-            romani: 0.0,
-            elven: 0.0,
-            dwarfish: 0.0,
-        },
-        written_languages: adventuresim_stdb_client::WrittenLanguageHours {
-            german: 1_000.0,
-            low: 0.0,
-            latin: 0.0,
-            hebrew: 0.0,
-            yiddish: 0.0,
-            elven: 0.0,
-            dwarfish: 0.0,
         },
         stealth_hours: s.stealth,
         balance_hours: s.balance,
@@ -630,81 +596,6 @@ impl LiveRunner {
                 self.observe_deaths();
                 return Ok(());
             };
-            let pending_encounter = {
-                let table = self.connection.db.strategic_encounter();
-                table
-                    .iter()
-                    .find(|row| row.party_id == party_id && row.status == "awaiting_choice")
-            };
-            if let Some(encounter) = pending_encounter {
-                self.metrics.encounters += 1;
-                if encounter.run_ineligibility.is_none() {
-                    self.metrics.encounter_escape_eligible += 1;
-                } else {
-                    self.metrics.encounter_escape_ineligible += 1;
-                }
-                let choice = encounter.available_choices
-                    [(encounter.roll_index as usize) % encounter.available_choices.len()]
-                .clone();
-                match choice.as_str() {
-                    "sneak" => self.metrics.encounter_sneaks += 1,
-                    "detour" => self.metrics.encounter_detours += 1,
-                    "attack" => self.metrics.encounter_attacks += 1,
-                    "run" => self.metrics.encounter_runs += 1,
-                    "surrender" => {
-                        self.metrics.encounter_surrenders += 1;
-                        self.metrics.encounter_surrender_items_lost =
-                            self.metrics.encounter_surrender_items_lost.saturating_add(
-                                encounter
-                                    .loss_preview
-                                    .iter()
-                                    .map(|loss| loss.quantity)
-                                    .sum(),
-                            );
-                        self.metrics.encounter_surrender_value_lost =
-                            self.metrics.encounter_surrender_value_lost.saturating_add(
-                                encounter
-                                    .loss_preview
-                                    .iter()
-                                    .map(|loss| {
-                                        u64::from(loss.quantity) * u64::from(loss.value_each)
-                                    })
-                                    .sum::<u64>(),
-                            );
-                    }
-                    _ => return Err("encounter exposed an unknown choice".into()),
-                }
-                let encounter_id = encounter.encounter_id.clone();
-                let result = reducer_call!(self, "resolve_strategic_encounter", |cb| self
-                    .connection
-                    .reducers
-                    .resolve_strategic_encounter_then(leader, choice.clone(), cb));
-                self.call(result)?;
-                self.observe_deaths();
-                let resolved_outcome = {
-                    let table = self.connection.db.strategic_encounter();
-                    table
-                        .iter()
-                        .find(|row| row.encounter_id == encounter_id)
-                        .ok_or("resolved encounter row disappeared")?
-                        .outcome
-                };
-                if resolved_outcome.as_deref() == Some("defeat") {
-                    self.metrics.encounter_defeats += 1;
-                    if self.current_leader(party_id).is_none() {
-                        self.metrics.encounter_wipes += 1;
-                    }
-                }
-                self.event(
-                    self.current_leader(party_id).map_or(0, |(_, agent)| agent),
-                    CoreLoopEventKind::Encounter,
-                    format!("id={encounter_id};choice={choice};outcome={resolved_outcome:?}"),
-                );
-                if self.current_leader(party_id).is_none() {
-                    return Ok(());
-                }
-                continue;
-            }
             let result = reducer_call!(self, "rest_at_camp", |cb| self
                 .connection
                 .reducers
@@ -2144,7 +2035,6 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
         .add_query(|query| query.from.party_member())
         .add_query(|query| query.from.party_stake())
         .add_query(|query| query.from.quest())
-        .add_query(|query| query.from.strategic_encounter())
         .add_query(|query| query.from.repair_order())
         .add_query(|query| query.from.settlement())
         .add_query(|query| query.from.settlement_smith())
@@ -2665,41 +2555,5 @@ mod tests {
         assert_eq!(quantize_smithing_condition(0.019_999_9), 20);
         assert_eq!(quantize_smithing_condition(f32::NAN), 0);
         assert_eq!(quantize_smithing_condition(f32::INFINITY), 1_000);
-    }
-
-    #[test]
-    fn report_metrics_expose_encounter_frequency_choices_losses_and_wipes() {
-        let metrics = CoreLoopMetrics {
-            encounters: 5,
-            encounter_sneaks: 1,
-            encounter_detours: 1,
-            encounter_attacks: 1,
-            encounter_runs: 1,
-            encounter_surrenders: 1,
-            encounter_escape_eligible: 3,
-            encounter_escape_ineligible: 2,
-            encounter_surrender_items_lost: 4,
-            encounter_surrender_value_lost: 90,
-            encounter_defeats: 2,
-            encounter_wipes: 1,
-            ..CoreLoopMetrics::default()
-        };
-        let value = serde_json::to_value(metrics).unwrap();
-        for field in [
-            "encounters",
-            "encounter_sneaks",
-            "encounter_detours",
-            "encounter_attacks",
-            "encounter_runs",
-            "encounter_surrenders",
-            "encounter_escape_eligible",
-            "encounter_escape_ineligible",
-            "encounter_surrender_items_lost",
-            "encounter_surrender_value_lost",
-            "encounter_defeats",
-            "encounter_wipes",
-        ] {
-            assert!(value.get(field).is_some(), "missing {field}");
-        }
     }
 }

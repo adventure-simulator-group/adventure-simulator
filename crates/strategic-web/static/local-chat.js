@@ -67,7 +67,6 @@
   };
 
   const appendInfo = (panel, content, options = {}) => appendChannelRow(panel, "info", content, options);
-  const localChatEndpoint = (node) => `/api/local-chat/${encodeURIComponent(node.dataset.localChatKind || "")}/${encodeURIComponent(node.dataset.localChatSubject || "")}`;
 
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
@@ -78,7 +77,6 @@
       createChannelRow,
       mergeChannelRows,
       pendingLocalRows,
-      localChatEndpoint,
     };
   }
   if (typeof document === "undefined") return;
@@ -126,13 +124,15 @@
 
   const chat = document.querySelector(".settlement-chat[data-local-chat-kind][data-local-chat-subject]");
   if (!chat) return;
+  const kind = chat.dataset.localChatKind;
+  const subject = chat.dataset.localChatSubject;
   const messages = chat.querySelector(".settlement-chat-messages");
   const input = chat.querySelector(".settlement-chat-composer input");
   const send = chat.querySelector(".settlement-chat-composer button");
+  const endpoint = `/api/local-chat/${encodeURIComponent(kind)}/${encodeURIComponent(subject)}`;
   let lastSignature = "";
 
   const refresh = async () => {
-    const endpoint = localChatEndpoint(chat);
     const response = await window.strategicBackgroundFetch(`local-chat:${endpoint}`, endpoint, {
       headers: { Accept: "application/json" },
     });
@@ -208,7 +208,6 @@
     const body = input.value.trim();
     if (!body) return;
     const form = new URLSearchParams({ body });
-    const endpoint = localChatEndpoint(chat);
     const response = await window.strategicFetch(endpoint, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form });
     if (response.ok) { input.value = ""; await refresh(); }
   };
@@ -219,6 +218,5 @@
     chat.dispatchEvent(new Event("local-chat-ready"));
   });
   document.addEventListener("strategic-live-update", refresh);
-  chat.addEventListener("local-chat-subject-changed", () => { lastSignature = ""; refresh(); });
 
 })();

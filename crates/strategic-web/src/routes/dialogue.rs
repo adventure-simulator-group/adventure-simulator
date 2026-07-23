@@ -17,27 +17,13 @@ pub fn routes() -> Router<AppState> {
         .route("/api/dialogue/topic", post(topic))
         .route("/api/dialogue/answer", post(answer))
         .route("/api/dialogue/join", post(join))
-        .route(
-            "/api/settlements/{settlement_id}/locations/{location_id}/npcs",
-            get(location_npcs),
-        )
 }
 
 #[derive(Clone, Deserialize)]
 struct SessionRow {
     id: String,
-    settlement_id: String,
-    location_id: String,
     catalog_revision: String,
     revision: u64,
-}
-#[derive(Deserialize)]
-struct DialogueCharacterPlace {
-    current_settlement_id: Option<String>,
-}
-#[derive(Deserialize)]
-struct DialogueCharacterTime {
-    minutes: u64,
 }
 #[derive(Clone, Deserialize, Serialize)]
 struct ParticipantRow {
@@ -56,12 +42,6 @@ struct EventRow {
     source_refs_json: String,
 }
 #[derive(Deserialize)]
-struct BackendProblemRumorRow {
-    character_id: u64,
-    session_id: String,
-    delivery_text: String,
-}
-#[derive(Deserialize)]
 struct PromptRow {
     id: String,
     mode: String,
@@ -77,46 +57,6 @@ struct TopicRow {
     topic_id: String,
     label: String,
     source_ref_json: String,
-}
-
-#[derive(Clone, Deserialize, Serialize)]
-struct SettlementNpcRow {
-    id: String,
-    home_settlement_id: String,
-    name: String,
-    age_band: String,
-    sex: String,
-    height: String,
-    build: String,
-    hair: String,
-    facial_hair: String,
-    complexion: String,
-    visible_features: String,
-    clothing: String,
-    profession: String,
-    household: String,
-    local_role: String,
-    service_id: String,
-    conversation_id: String,
-}
-
-#[derive(Deserialize)]
-struct NpcPresenceRow {
-    npc_id: String,
-    settlement_id: String,
-    location_id: String,
-    start_minute: u16,
-    end_minute: u16,
-    is_default: bool,
-}
-
-#[derive(Serialize)]
-struct NpcView {
-    id: String,
-    name: String,
-    initials: String,
-    description: String,
-    is_default: bool,
 }
 
 #[derive(Serialize)]
@@ -194,56 +134,13 @@ fn edit_source(source: adventuresim_dialogue::SourceRef) -> Option<EditSource> {
         edit_url,
     })
 }
-async fn location_npcs(
-    State(state): State<AppState>,
-    Path((settlement_id, location_id)): Path<(String, String)>,
-    session: Session,
-) -> Result<Json<Vec<NpcView>>, StatusCode> {
-    let character_id = session.character_id_u64().ok_or(StatusCode::UNAUTHORIZED)?;
-    let character = state
-        .db
-        .query_one::<crate::spacetimedb::Character>(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
-        ))
-        .await
-        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-    if character.current_settlement_id.as_deref() != Some(settlement_id.as_str()) {
-        return Err(StatusCode::FORBIDDEN);
+fn conversation_for_actor(actor: &str) -> Option<&'static str> {
+    match actor.rsplit(':').next()? {
+        "herbalist" => Some("herbalist-examination"),
+        "religion" => Some("religion-service"),
+        "merchants" | "weapons" | "armor" | "clothing" | "inn" => Some("service-professions"),
+        _ => None,
     }
-    let npcs = state
-        .db
-        .query::<SettlementNpcRow>(&format!(
-            "SELECT * FROM settlement_npc WHERE home_settlement_id = {}",
-            sql_string_literal(&settlement_id)
-        ))
-        .await
-        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
-    let presences = state
-        .db
-        .query::<NpcPresenceRow>(&format!(
-            "SELECT * FROM settlement_npc_presence WHERE settlement_id = {}",
-            sql_string_literal(&settlement_id)
-        ))
-        .await
-        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
-    let minute = state
-        .db
-        .query_one::<crate::spacetimedb::CharacterTime>(&format!(
-            "SELECT * FROM character_time WHERE character_id = {character_id}"
-        ))
-        .await
-        .ok()
-        .flatten()
-        .map_or(720, |time| time.minutes)
-        % 1_440;
-    let mut views = presences.into_iter().filter(|presence| presence.settlement_id == settlement_id && presence.location_id == location_id && u64::from(presence.start_minute) <= minute && minute < u64::from(presence.end_minute)).filter_map(|presence| {
-        let npc = npcs.iter().find(|npc| npc.id == presence.npc_id)?;
-        let facial = if npc.facial_hair == "none visible" { String::new() } else { format!(", with {}", npc.facial_hair) };
-        Some(NpcView { id: npc.id.clone(), name: npc.name.clone(), initials: npc.name.split_whitespace().filter_map(|part| part.chars().next()).take(2).collect(), description: format!("{} is a {} {} {} with a {} build, {}{}, and a {} complexion. Visible details include {}. They wear {}. Occupation: {}. Household: {}. Local role: {}.", npc.name, npc.height, npc.age_band.to_lowercase(), npc.sex.to_lowercase(), npc.build, npc.hair, facial, npc.complexion, npc.visible_features, npc.clothing, npc.profession, npc.household, npc.local_role), is_default: presence.is_default })
-    }).collect::<Vec<_>>();
-    views.sort_by_key(|view| (!view.is_default, view.name.clone()));
-    Ok(Json(views))
 }
 
 async fn build_view(
@@ -288,7 +185,7 @@ async fn build_view(
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
     events.sort_by_key(|event| event.sequence);
-    let mut events: Vec<_> = events
+    let events = events
         .into_iter()
         .map(|event| {
             let fragments: Vec<adventuresim_dialogue::Fragment> =
@@ -318,88 +215,6 @@ async fn build_view(
             }
         })
         .collect();
-    let rumor_sql = format!(
-        "SELECT * FROM backend_local_problem_rumors WHERE character_id = {character_id} AND session_id = {}",
-        sql_string_literal(session_id)
-    );
-    let rumors = state
-        .db
-        .query::<BackendProblemRumorRow>(&rumor_sql)
-        .await
-        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
-    let npc_actor = participants
-        .iter()
-        .find(|p| p.character_id.is_none())
-        .map(|p| p.actor_id.clone());
-    let place = state
-        .db
-        .query_one::<DialogueCharacterPlace>(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
-        ))
-        .await
-        .ok()
-        .flatten();
-    let time = state
-        .db
-        .query_one::<DialogueCharacterTime>(&format!(
-            "SELECT * FROM character_time WHERE character_id = {character_id}"
-        ))
-        .await
-        .ok()
-        .flatten()
-        .map_or(0, |r| r.minutes);
-    let presence = if let Some(actor) = npc_actor.as_ref() {
-        state
-            .db
-            .query_one::<NpcPresenceRow>(&format!(
-                "SELECT * FROM settlement_npc_presence WHERE npc_id = {}",
-                sql_string_literal(actor)
-            ))
-            .await
-            .ok()
-            .flatten()
-    } else {
-        None
-    };
-    let minute_of_day = (time % 1440) as u16;
-    let live = place.is_some_and(|p| {
-        p.current_settlement_id.as_deref() == Some(session.settlement_id.as_str())
-    }) && presence.is_some_and(|p| {
-        p.settlement_id == session.settlement_id
-            && p.location_id == session.location_id
-            && p.start_minute <= minute_of_day
-            && minute_of_day < p.end_minute
-    });
-    if live
-        && let Some(rumor) = rumors
-            .into_iter()
-            .find(|r| r.character_id == character_id && r.session_id == session_id)
-    {
-        let speaker_role = participants
-            .iter()
-            .find(|p| p.character_id.is_none())
-            .map_or("npc", |p| p.role.as_str())
-            .to_owned();
-        events.push(EventView {
-            sequence: events
-                .iter()
-                .map(|e| e.sequence)
-                .max()
-                .map_or(0, |n| n.saturating_add(1)),
-            speaker_name: names
-                .get(&speaker_role)
-                .cloned()
-                .unwrap_or_else(|| "Local resident".into()),
-            speaker_is_player: false,
-            speaker_role,
-            fragments: vec![FragmentView {
-                fragment: adventuresim_dialogue::Fragment::Text {
-                    value: rumor.delivery_text,
-                },
-                source: None,
-            }],
-        });
-    }
     let mut topics = state
         .db
         .query::<TopicRow>(&format!(
@@ -473,17 +288,8 @@ async fn consume_herbalist_examination(
     let actor = view
         .participants
         .iter()
-        .find(|participant| participant.actor_id.contains(":herbalist:"))?;
-    let npc = state
-        .db
-        .query_one::<SettlementNpcRow>(&format!(
-            "SELECT * FROM settlement_npc WHERE id = {}",
-            sql_string_literal(&actor.actor_id)
-        ))
-        .await
-        .ok()
-        .flatten()?;
-    let settlement_id = npc.home_settlement_id;
+        .find(|participant| participant.actor_id.ends_with(":herbalist"))?;
+    let settlement_id = actor.actor_id.strip_suffix(":herbalist")?;
     let result = state
         .db
         .query::<HerbalistExaminationRow>(&format!(
@@ -526,7 +332,6 @@ async fn consume_herbalist_examination(
 #[derive(Deserialize)]
 struct StartRequest {
     npc_actor_id: String,
-    location_id: String,
 }
 async fn start(
     State(state): State<AppState>,
@@ -534,18 +339,26 @@ async fn start(
     Json(request): Json<StartRequest>,
 ) -> Result<Json<ConversationView>, StatusCode> {
     let character_id = session.character_id_u64().ok_or(StatusCode::UNAUTHORIZED)?;
-    let npc = state
+    let conversation =
+        conversation_for_actor(&request.npc_actor_id).ok_or(StatusCode::BAD_REQUEST)?;
+    let actors = state
         .db
-        .query_one::<SettlementNpcRow>(&format!(
-            "SELECT * FROM settlement_npc WHERE id = {}",
+        .query::<ParticipantRow>(&format!(
+            "SELECT * FROM dialogue_participant WHERE actor_id = {}",
             sql_string_literal(&request.npc_actor_id)
         ))
         .await
-        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
-        .ok_or(StatusCode::BAD_REQUEST)?;
-    let conversation = npc.conversation_id;
-    // Selecting an NPC starts a fresh encounter. Historical sessions remain
-    // available for prior-interaction facts but never become an indefinite live view.
+        .unwrap_or_default();
+    for actor in actors {
+        if build_view(&state, character_id, &actor.session_id)
+            .await
+            .is_ok()
+        {
+            return Ok(Json(
+                build_view(&state, character_id, &actor.session_id).await?,
+            ));
+        }
+    }
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_micros());
@@ -559,7 +372,6 @@ async fn start(
                 json!(&session_id),
                 json!(conversation),
                 json!(request.npc_actor_id),
-                json!(request.location_id),
                 json!(adventuresim_dialogue::CATALOG_DIGEST),
             ],
         )

@@ -18,11 +18,6 @@ full release pinned in the checked-in `world-data-release.lock.json` from the
 project's public R2 development URL, resumes an interrupted byte-range download,
 verifies the separately pinned descriptor, and atomically installs the
 source-separated inputs. It does not download a combined `world-1544.json`.
-Every full release is required to contain both the reviewed Viabundus v2
-component and the four HYDE 3.5 c9 inputs (`cropland.nc`, `grazing_land.nc`,
-`urban_area.nc`, and `general_files.zip`), as well as the other required source
-components. Their payloads, inventories, notices, and licences remain separate
-inside the collection.
 The installer retains the downloaded ZIP below `target/world-data-bundle-cache/`
 for later verification and requires roughly 50 GiB of free disk space while it
 installs. If a different release is already installed, rerun the script with
@@ -142,55 +137,12 @@ python scripts/world_data_bundle.py publish adventuresim-world-inputs.zip `
 
 The command validates the ZIP and descriptor before uploading, writes the ZIP
 and descriptor below `releases/world-data/`, and verifies each resulting R2
-object's content length. It never uploads a partial profile. The resulting
-object locations are:
+object's content length. It never uploads a partial profile.
 
-```text
-s3://adventuresim-world-data/releases/world-data/<archive-name>.zip
-s3://adventuresim-world-data/releases/world-data/<archive-name>.release.json
-```
+## Future combined release
 
-Uploading does not make clients select the new release automatically. After
-both immutable objects are publicly readable through the project's
-`pub-46168a4accb04d08ad0a558b0a2abfaa.r2.dev` custom R2 development domain,
-update the checked-in `world-data-release.lock.json` with their public HTTPS
-URLs, the exact ZIP byte size, and the SHA-256 of the external descriptor.
-`just init-world-data` downloads exactly that pinned pair; it never discovers a
-"latest" object by listing the bucket.
-
-## Compiled runtime release
-
-The source-input workflow is separate from the small compiled runtime release
-pinned in `world-runtime-release.lock.json`. That release contains
-`world-1544.json`, the AVIF strategic-map manifest/pack, the final coherent
-terrain-routing manifest/pack, the strategic-map licence, and a generated world
-data notice. Its exact derived bytes are independently hashed; upstream
-reproducibility warnings remain embedded in the world source manifests and are
-repeated in the generated notice.
-
-`just load-world` runs `just init-world-runtime` automatically. If every pinned
-runtime file already matches, initialization performs no network request. On a
-fresh checkout it downloads the single archive from
-`s3://adventuresim-world-data/releases/world-runtime/`, verifies the checked-in
-archive and member hashes, installs the files under `target/`, and loads the
-compiled world without invoking the source compiler. A conflicting local build
-is never overwritten implicitly; `just replace-world-runtime` retains replaced
-files below `target/world-runtime-backups/`. A previously pinned runtime that is
-still byte-for-byte intact is recognized as downloaded output and upgraded
-automatically, with the prior files retained by the same backup mechanism.
-
-Release maintainers build and publish it after `just build-strategic-map`:
-
-```powershell
-python scripts/world_runtime_release.py build --repository . `
-  --output target/adventuresim-world-runtime-1544-YYYYMMDD.zip `
-  --lock-output world-runtime-release.lock.json `
-  --release 1544-YYYYMMDD
-python scripts/world_runtime_release.py publish `
-  target/adventuresim-world-runtime-1544-YYYYMMDD.zip `
-  --lock world-runtime-release.lock.json
-```
-
-The publisher validates the complete archive before writing the immutable
-object below `releases/world-runtime/` in the same R2 bucket used by the source
-bundle. Commit the generated lock only after the public object is verified.
+This workflow is separate from a future download of a fully compiled
+`world-1544.json`. A combined output can be an adapted database and requires a
+separate licence/provenance review, particularly for Viabundus’s CC BY-SA terms
+and non-CC source-specific conditions. Do not infer permission for that future
+release from the ability to distribute this source-separated collection.

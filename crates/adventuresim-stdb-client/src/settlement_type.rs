@@ -12,9 +12,7 @@ use super::inferred_industry_profile_type::InferredIndustryProfile;
 use super::land_use_profile_type::LandUseProfile;
 use super::potential_vegetation_type::PotentialVegetation;
 use super::settlement_category_type::SettlementCategory;
-use super::settlement_economy_profile_type::SettlementEconomyProfile;
 use super::settlement_hydrology_type::SettlementHydrology;
-use super::settlement_language_profile_type::SettlementLanguageProfile;
 use super::settlement_religious_status_type::SettlementReligiousStatus;
 use super::soil_profile_type::SoilProfile;
 use super::surface_geology_type::SurfaceGeology;
@@ -39,11 +37,9 @@ pub struct Settlement {
     pub soil: SoilProfile,
     pub geology: SurfaceGeology,
     pub religious_status: SettlementReligiousStatus,
-    pub languages: SettlementLanguageProfile,
     pub drought: DroughtProfile,
     pub hydrology: SettlementHydrology,
     pub industries: InferredIndustryProfile,
-    pub economy: SettlementEconomyProfile,
     pub scene_key: String,
     pub religion_id: String,
     pub currency_id: String,
@@ -75,11 +71,9 @@ pub struct SettlementCols {
     pub soil: __sdk::__query_builder::Col<Settlement, SoilProfile>,
     pub geology: __sdk::__query_builder::Col<Settlement, SurfaceGeology>,
     pub religious_status: __sdk::__query_builder::Col<Settlement, SettlementReligiousStatus>,
-    pub languages: __sdk::__query_builder::Col<Settlement, SettlementLanguageProfile>,
     pub drought: __sdk::__query_builder::Col<Settlement, DroughtProfile>,
     pub hydrology: __sdk::__query_builder::Col<Settlement, SettlementHydrology>,
     pub industries: __sdk::__query_builder::Col<Settlement, InferredIndustryProfile>,
-    pub economy: __sdk::__query_builder::Col<Settlement, SettlementEconomyProfile>,
     pub scene_key: __sdk::__query_builder::Col<Settlement, String>,
     pub religion_id: __sdk::__query_builder::Col<Settlement, String>,
     pub currency_id: __sdk::__query_builder::Col<Settlement, String>,
@@ -116,11 +110,9 @@ impl __sdk::__query_builder::HasCols for Settlement {
             soil: __sdk::__query_builder::Col::new(table_name, "soil"),
             geology: __sdk::__query_builder::Col::new(table_name, "geology"),
             religious_status: __sdk::__query_builder::Col::new(table_name, "religious_status"),
-            languages: __sdk::__query_builder::Col::new(table_name, "languages"),
             drought: __sdk::__query_builder::Col::new(table_name, "drought"),
             hydrology: __sdk::__query_builder::Col::new(table_name, "hydrology"),
             industries: __sdk::__query_builder::Col::new(table_name, "industries"),
-            economy: __sdk::__query_builder::Col::new(table_name, "economy"),
             scene_key: __sdk::__query_builder::Col::new(table_name, "scene_key"),
             religion_id: __sdk::__query_builder::Col::new(table_name, "religion_id"),
             currency_id: __sdk::__query_builder::Col::new(table_name, "currency_id"),

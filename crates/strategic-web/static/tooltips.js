@@ -100,10 +100,8 @@
         activeTarget = target;
         target.addEventListener('pointerleave', hide);
         target.addEventListener('blur', hide);
-        const tooltipText = target.getAttribute(TOOLTIP_ATTRIBUTE).trim();
         const describedBy = (target.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
-        const repeatsAccessibleName = target.getAttribute('aria-label')?.trim() === tooltipText;
-        descriptionWasLinked = describedBy.includes(TOOLTIP_ID) || repeatsAccessibleName;
+        descriptionWasLinked = describedBy.includes(TOOLTIP_ID);
         if (!descriptionWasLinked) target.setAttribute('aria-describedby', [...describedBy, TOOLTIP_ID].join(' '));
       }
       tooltip.textContent = target.getAttribute(TOOLTIP_ATTRIBUTE);

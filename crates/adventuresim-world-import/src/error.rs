@@ -30,8 +30,6 @@ pub enum Error {
     },
     #[error("coordinate projection failed: {0}")]
     Projection(#[from] proj4rs::errors::Error),
-    #[error("terrain package failed: {0}")]
-    Terrain(#[from] adventuresim_terrain::Error),
     #[error("failed to parse JSON source {path}: {source}")]
     JsonSource {
         path: PathBuf,

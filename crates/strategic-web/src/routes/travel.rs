@@ -7,7 +7,6 @@ use std::{
 };
 
 use adventuresim_core::{
-    bestiary::ThreatId,
     strategic_schedule::DailySchedule,
     strategic_time::{CampDurationPolicy, ItineraryMember, ItinerarySegment, forecast_itinerary},
 };
@@ -126,12 +125,7 @@ impl TerrainPlanner {
 }
 
 pub(crate) fn active_quest_summary(quest: &Quest) -> String {
-    let name = quest
-        .enemy_type
-        .parse::<ThreatId>()
-        .map(|id| id.display_name(quest.enemy_count.max(0) as u32))
-        .unwrap_or_else(|_| "Unknown threat".to_string());
-    format!("Active quest · {} {name}", quest.enemy_count)
+    format!("Active quest · {} {}", quest.enemy_count, quest.enemy_type)
 }
 
 pub(crate) fn active_quest_tooltip(quest: &Quest) -> String {
@@ -603,20 +597,10 @@ mod tests {
             population_level: 0,
             population_estimate: 0,
             category: crate::spacetimedb::SettlementCategory::Unknown,
-            languages: adventuresim_world_schema::SettlementLanguageProfile {
-                east_central_bp: 10_000,
-                west_central_bp: 0,
-                low_bp: 0,
-                yiddish_incidence_bp: 75,
-            },
             industries: InferredIndustryProfile::new(vec![IndustryEvidence::Fallback(
                 FallbackIndustry::WoodlandFuelwood,
             )])
             .unwrap(),
-            economy: adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder(),
-            religious_status: adventuresim_world_schema::SettlementReligiousStatus::Established {
-                religion: adventuresim_world_schema::OfficialReligion::RomanCatholic,
-            },
             scene_key: String::new(),
             religion_id: String::new(),
             currency_id: "rhenish_gulden".into(),
@@ -674,11 +658,11 @@ mod tests {
         let mut quest = quest("crypt", "riverdale", QuestStatus::Accepted);
         quest.description = "A necromancer has raised the dead.".into();
         quest.enemy_count = 11;
-        quest.enemy_type = "skeleton".into();
+        quest.enemy_type = "skeletons".into();
 
         assert_eq!(
             active_quest_tooltip(&quest),
-            "A necromancer has raised the dead.\nActive quest · 11 Skeletons"
+            "A necromancer has raised the dead.\nActive quest · 11 skeletons"
         );
     }
 
