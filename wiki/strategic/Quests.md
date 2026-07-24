@@ -97,10 +97,14 @@ parties to resolve long-neglected cases and replace this safety cap.
 
 The strategic simulator includes an offline player-agent harness for modular
 cases. Its observation boundary mirrors what a player may learn: tavern rumors,
-NPC physical descriptions, expected building/tab locations, spoken claims,
+NPC names, physical descriptions, expected building/tab locations, spoken claims,
 evidence provenance, corrected beliefs, learned location precision, party
 preparation, and currently legal actions. Actions return as opaque capability
 IDs and are executed only if still legal.
+
+An absent referred witness is a normal schedule outcome. The evaluator exposes
+a bounded wait/rest choice with an explicit time/resource cost instead of
+misclassifying absence as a failed dialogue or API pipeline.
 
 Scripted and deterministic mock-LLM policies cover markerless tavern discovery
 and both template families without credentials. A separately enabled

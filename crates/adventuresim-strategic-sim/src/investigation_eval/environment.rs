@@ -2,7 +2,7 @@ use super::{
     ArgumentValue, Capability, ChoiceArguments, ChoiceKind, DeveloperCaseAnalysis, DiscoveryView,
     EVAL_FORMAT_VERSION, JournalView, LegalChoice, LocationResolution, PartyView, PlayerFrame,
     PublicClaim, PublicEvidence, PublicLocation, PublicQuestTrace, PublicTraceEvent, Termination,
-    WitnessReferral,
+    WitnessAvailability, WitnessReferral,
 };
 use adventuresim_core::quest_generation::{
     self as qg, Circumstance, GeneratedActionOutput, GeneratedCase, GeneratedDestinationStage,
@@ -47,6 +47,8 @@ pub struct InvestigationEnvironment {
     exact_sites: BTreeSet<String>,
     visited_sites: BTreeSet<String>,
     prepared: BTreeSet<String>,
+    /// Ordinary schedules are player-visible state, not a pipeline error.
+    witness_returns_at: BTreeMap<usize, u64>,
     trace: Vec<PublicTraceEvent>,
     route: Option<RouteClass>,
     solved: bool,
@@ -77,6 +79,10 @@ impl InvestigationEnvironment {
             party,
             legal_choices: Vec::new(),
         };
+        let mut witness_returns_at = BTreeMap::new();
+        if generated.generation_seed.is_multiple_of(2) {
+            witness_returns_at.insert(1, 90);
+        }
         let mut value = Self {
             generated,
             analysis,
@@ -88,6 +94,7 @@ impl InvestigationEnvironment {
             exact_sites: BTreeSet::new(),
             visited_sites: BTreeSet::new(),
             prepared: BTreeSet::new(),
+            witness_returns_at,
             trace: Vec::new(),
             route: None,
             solved: false,
@@ -121,6 +128,7 @@ impl InvestigationEnvironment {
             .ok_or("choice capability lacks public presentation")?;
         validate_arguments(&legal.typed_arguments, &decision.arguments)?;
         let kind = legal.kind;
+        let waiting_for_witness = matches!(&capability, Capability::WaitForWitness(_));
         let mut learned = Vec::new();
         let (result, minutes, cost) = match capability {
             Capability::EnterTavern => {
@@ -136,11 +144,14 @@ impl InvestigationEnvironment {
                     .iter()
                     .map(|witness| WitnessReferral {
                         witness_id: witness.id.0.clone(),
+                        display_name: witness_name(&witness.npc_id),
                         physical_description: witness.visible_description.clone(),
                         expected_location: witness.expected_location.clone(),
                         interviewed: false,
+                        availability: WitnessAvailability::Available,
                     })
                     .collect();
+                self.refresh_witness_availability();
                 learned.push(self.generated.consequence.public_summary.clone());
                 (
                     "The tavern's talk reveals a local problem and witness referrals.".into(),
@@ -169,6 +180,22 @@ impl InvestigationEnvironment {
                     "The witness's account is recorded with its source.".into(),
                     20,
                     0,
+                )
+            }
+            Capability::WaitForWitness(index) => {
+                let return_at = *self
+                    .witness_returns_at
+                    .get(&index)
+                    .ok_or("witness has no scheduled return")?;
+                let wait = return_at.saturating_sub(self.frame.game_minute).max(15);
+                self.frame.game_minute = return_at;
+                self.refresh_witness_availability();
+                learned.push("The referred witness returns to their expected location.".into());
+                (
+                    "The party waits rather than treating an ordinary absence as a failure."
+                        .into(),
+                    wait as u32,
+                    1,
                 )
             }
             Capability::Action(index, _action_kind, route) => {
@@ -287,7 +314,9 @@ impl InvestigationEnvironment {
             resource_cost: cost,
         });
         self.frame.step += 1;
-        self.frame.game_minute += u64::from(minutes);
+        if !waiting_for_witness {
+            self.frame.game_minute += u64::from(minutes);
+        }
         self.refresh_choices();
         Ok(())
     }
@@ -343,12 +372,20 @@ impl InvestigationEnvironment {
                 })
                 .collect::<Vec<_>>();
             for (index, label) in witness_choices {
-                if !self.interviewed.contains(&index) {
+                if !self.interviewed.contains(&index) && self.witness_available(index) {
                     self.push_choice(
                         &mut choices,
                         ChoiceKind::InterviewWitness,
                         &label,
                         Capability::Interview(index),
+                    );
+                }
+                if !self.interviewed.contains(&index) && !self.witness_available(index) {
+                    self.push_choice(
+                        &mut choices,
+                        ChoiceKind::Wait,
+                        &format!("Wait for {label} to return."),
+                        Capability::WaitForWitness(index),
                     );
                 }
             }
@@ -448,6 +485,29 @@ impl InvestigationEnvironment {
         action.target_kind != "site" || self.visited_sites.contains(&action.target_id)
     }
 
+    fn witness_available(&self, index: usize) -> bool {
+        self.witness_returns_at
+            .get(&index)
+            .is_none_or(|return_at| self.frame.game_minute >= *return_at)
+    }
+
+    fn refresh_witness_availability(&mut self) {
+        let game_minute = self.frame.game_minute;
+        let returns = &self.witness_returns_at;
+        let interviewed = &self.interviewed;
+        for (index, referral) in self.frame.discovery.referrals.iter_mut().enumerate() {
+            referral.availability = if interviewed.contains(&index)
+                || returns.get(&index).is_none_or(|return_at| game_minute >= *return_at)
+            {
+                WitnessAvailability::Available
+            } else if game_minute == 0 {
+                WitnessAvailability::ScheduledElsewhere
+            } else {
+                WitnessAvailability::AwaitingReturn
+            };
+        }
+    }
+
     fn push_choice(
         &mut self,
         choices: &mut Vec<LegalChoice>,
@@ -470,6 +530,18 @@ impl InvestigationEnvironment {
                 allowed: Vec::<ArgumentValue>::new(),
             },
         });
+    }
+}
+
+fn witness_name(npc_id: &str) -> String {
+    // Generated population names are not yet part of the core generator's
+    // portable fixture input. Keep the evaluator presentation realistic without
+    // leaking raw NPC IDs to the policy.
+    match npc_id.rsplit(':').next().unwrap_or("local") {
+        "watchman" => "Konrad, the watchman".into(),
+        "cooper" => "Marta, the cooper".into(),
+        "merchant" => "Elsbeth, the merchant".into(),
+        role => format!("a local {role}"),
     }
 }
 

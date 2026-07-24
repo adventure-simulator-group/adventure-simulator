@@ -24,6 +24,7 @@ impl QuestPolicy for ScriptedPolicy {
         let priorities = [
             ChoiceKind::EnterTavern,
             ChoiceKind::InterviewWitness,
+            ChoiceKind::Wait,
             ChoiceKind::Investigate,
             ChoiceKind::Prepare,
             ChoiceKind::Travel,
