@@ -325,19 +325,19 @@ fn service_tab_available(
     profile: &adventuresim_world_schema::SettlementEconomyProfile,
     path: &str,
 ) -> bool {
-    use adventuresim_core::settlement_economy::{Storefront, storefront_available};
-    use adventuresim_world_schema::SettlementService as S;
-    match path {
-        "map" => true,
-        "merchants" => storefront_available(profile, Storefront::General),
-        "weapons" => storefront_available(profile, Storefront::Weapons),
-        "armor" => storefront_available(profile, Storefront::Armor),
-        "clothing" => storefront_available(profile, Storefront::Clothing),
-        "herbalist" => storefront_available(profile, Storefront::Herbalist),
-        "inn" => storefront_available(profile, Storefront::Inn),
-        "religion" => profile.has_service(S::Temple),
-        _ => false,
-    }
+    use adventuresim_core::settlement_economy::{player_visible_npc_tabs, visible_npc_tab};
+    let location_id = match path {
+        "map" => return true,
+        "merchants" => "market",
+        "weapons" => "forge",
+        "armor" => "armoury",
+        "clothing" => "tailor",
+        "herbalist" => "herbalist",
+        "inn" => "inn",
+        "religion" => "church",
+        _ => return false,
+    };
+    visible_npc_tab(&player_visible_npc_tabs(profile, false), location_id).is_some()
 }
 
 fn quest_location_top_bar(

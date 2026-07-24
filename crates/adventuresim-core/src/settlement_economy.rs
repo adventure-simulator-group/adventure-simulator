@@ -15,6 +15,75 @@ pub enum Storefront {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SettlementNpcTab {
+    pub location_id: &'static str,
+    pub label: &'static str,
+}
+
+pub fn player_visible_npc_tabs(
+    profile: &SettlementEconomyProfile,
+    has_keep: bool,
+) -> Vec<SettlementNpcTab> {
+    let mut tabs = vec![
+        SettlementNpcTab {
+            location_id: "overview",
+            label: "Public square",
+        },
+        SettlementNpcTab {
+            location_id: "residences",
+            label: "Residences",
+        },
+    ];
+    if has_keep {
+        tabs.push(SettlementNpcTab {
+            location_id: "keep",
+            label: "Keep",
+        });
+    }
+    for (available, location_id, label) in [
+        (
+            storefront_available(profile, Storefront::General),
+            "market",
+            "General Market",
+        ),
+        (
+            storefront_available(profile, Storefront::Weapons),
+            "forge",
+            "Weapons",
+        ),
+        (
+            storefront_available(profile, Storefront::Armor),
+            "armoury",
+            "Armour",
+        ),
+        (
+            storefront_available(profile, Storefront::Clothing),
+            "tailor",
+            "Clothing",
+        ),
+        (
+            storefront_available(profile, Storefront::Herbalist),
+            "herbalist",
+            "Herbalist",
+        ),
+        (storefront_available(profile, Storefront::Inn), "inn", "Inn"),
+        (profile.has_service(Service::Temple), "church", "Church"),
+    ] {
+        if available {
+            tabs.push(SettlementNpcTab { location_id, label });
+        }
+    }
+    tabs
+}
+
+pub fn visible_npc_tab<'a>(
+    tabs: &'a [SettlementNpcTab],
+    location_id: &str,
+) -> Option<&'a SettlementNpcTab> {
+    tabs.iter().find(|tab| tab.location_id == location_id)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CatalogKind {
     Simple,
     Weapon,
