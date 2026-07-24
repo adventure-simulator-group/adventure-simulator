@@ -8,7 +8,8 @@ use crate::templates::decorative_game_icon;
 
 pub struct RestSummary {
     pub minutes: u64,
-    pub gold_spent: u32,
+    pub full_board_gold_spent: u32,
+    pub additional_gold_spent: u32,
     pub gold_earned: u32,
     pub notoriety_gained: f32,
     pub healed: Vec<(String, f32)>,
@@ -141,7 +142,7 @@ pub(super) fn rest_service_menu(
         title=(if kind == "inn" { "A bed costs 1 coin per day. Injuries are tended before downtime." } else { "Sanctuary is free. Injuries are tended before downtime." }) {
         div class="rest-service-heading" { strong { "Rest" } }
         @if kind == "inn" {
-            p class="rest-service-copy" { "1 coin / day · treatment included" }
+            p class="rest-service-copy" { "2 coin / day · meals + water + treatment included" }
         } @else {
             p class="rest-service-copy" { "Free · treatment included" }
         }
@@ -178,7 +179,16 @@ pub(super) fn rest_service_menu(
                         a href=(format!("/settlements/{settlement_id}/{}", if kind == "inn" { "inn" } else { "religion" })) class="rest-summary-close" aria-label="Close rest summary" { "×" }
                     }
                     p { (format_rest_duration(summary.minutes)) " passed." }
-                    @if summary.gold_spent > 0 { p { (summary.gold_spent) " coin paid." } }
+                    @if summary.full_board_gold_spent > 0 {
+                        p { (summary.full_board_gold_spent) " coin paid for full board." }
+                    }
+                    @if summary.additional_gold_spent > 0 {
+                        @if summary.full_board_gold_spent > 0 {
+                            p { (summary.additional_gold_spent) " additional coin spent during rest." }
+                        } @else {
+                            p { (summary.additional_gold_spent) " coin paid." }
+                        }
+                    }
                     @if summary.gold_earned > 0 { p { (summary.gold_earned) " coin earned from activities." } }
                     @if summary.notoriety_gained > 0.0 { p class="schedule-effect-negative" { (format!("-{:.1}", summary.notoriety_gained)) " Virtue from activities." } }
                     @if summary.healed.is_empty() { p { "No injuries needed tending." } } @else {
@@ -332,7 +342,8 @@ mod tests {
     fn rest_pages_keep_a_gettable_refresh_marker_across_repeated_refreshes() {
         let summary = RestSummary {
             minutes: 480,
-            gold_spent: 1,
+            full_board_gold_spent: 1,
+            additional_gold_spent: 0,
             gold_earned: 0,
             notoriety_gained: 0.0,
             healed: Vec::new(),

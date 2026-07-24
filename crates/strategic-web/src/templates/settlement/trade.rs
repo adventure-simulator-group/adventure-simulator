@@ -1853,6 +1853,64 @@ mod tests {
     }
 
     #[test]
+    fn inn_catalog_renders_an_authoritatively_quoted_travel_ration_purchase() {
+        let mut town = settlement();
+        town.economy.services = vec![adventuresim_world_schema::SettlementService::Inn];
+        let character = Character {
+            id: 1,
+            name: "Traveller".into(),
+            xp: 0,
+            level: 1,
+            gold: 20,
+            current_settlement_id: Some(town.id.clone()),
+            current_case_site_id: None,
+            party_id: Some("party".into()),
+            age_years: 20,
+            alive: true,
+            temporary: false,
+        };
+        let ration = ItemDefinition {
+            id: "travel_ration".into(),
+            weight: 0.65,
+            base_value: Some(3),
+            nutrition_kcal: 2_500.0,
+            kind: ItemKind::Food,
+            ..Default::default()
+        };
+
+        let markup = live_merchant_shop_page(
+            &town,
+            &character,
+            &[],
+            std::slice::from_ref(&ration),
+            &[],
+            &[],
+            None,
+            &[],
+            &[],
+            &[],
+            MerchantShop::Inn,
+            1.0,
+            0,
+            0,
+            &[],
+            None,
+            &[],
+            0,
+            EncumbranceSummary::default(),
+            EncumbranceSummary::default(),
+            None,
+            SoapRestPreview::default(),
+        )
+        .into_string();
+
+        assert!(markup.contains("data-merchant-item=\"travel_ration\""));
+        assert!(markup.contains("data-merchant-buy=\"travel_ration\""));
+        assert!(markup.contains("data-merchant-buy-price=\"5\""));
+        assert!(markup.contains(">0.65<"));
+    }
+
+    #[test]
     fn disabled_repair_explanation_is_hoverable_and_focusable() {
         let condition = crate::spacetimedb::ItemCondition {
             inventory_item_id: 4,

@@ -38,6 +38,7 @@ pub fn settlement_map_page(
     soap_preview: SoapRestPreview,
     can_travel: bool,
     provision_forecast: Option<&TravelProvisionForecast>,
+    provisioning_path: Option<&str>,
     is_current_settlement: bool,
     abandonable_quest: Option<&ContractPresentation>,
     logged_in_as: Option<&str>,
@@ -48,7 +49,7 @@ pub fn settlement_map_page(
     let base_path = format!("/locations/settlement/{}/map", settlement.id);
     let connected_ids = destinations
         .iter()
-        .filter(|destination| !destination.quest_in_progress)
+        .filter(|destination| !destination.round_trip_destination)
         .map(|destination| destination.id.as_str())
         .collect::<BTreeSet<_>>();
     let content = html! {
@@ -102,7 +103,7 @@ pub fn settlement_map_page(
             selected_settlement,
             selected_settlement.is_some_and(|destination| destination.id == settlement.id),
             can_travel,
-            true,
+            provisioning_path,
             provision_forecast,
             active_party,
             active_party.is_some_and(|party| party.leader_id == active_character.map_or(0, |character| character.id)),
@@ -190,7 +191,7 @@ fn map_destination_list_with_context(
                                 data-travel-name=(&destination.name)
                                 data-travel-description=[destination_tooltip.as_deref()]
                                 data-travel-minutes=(destination.journey_minutes)
-                                data-travel-round-trip=(destination.quest_in_progress)
+                                data-travel-round-trip=(destination.round_trip_destination)
                                 data-travel-camp-stops=(format_camp_stops(&destination.camp_stop_minutes))
                                 data-travel-camp-forecasts=(format_camp_forecasts(destination))
                                 data-travel-distance=(format_distance(destination.distance_m)) {
@@ -206,7 +207,7 @@ fn map_destination_list_with_context(
                                         data-waterskin-ml=(forecast.waterskin_capacity_ml) {}
                                 }
                                 strong { (&destination.name) }
-                                @if destination.quest_in_progress {
+                                @if destination.active_contract_destination {
                                     span class="destination-quest-badge" title=(destination_tooltip.as_deref().unwrap_or("Active quest destination"))
                                         aria-label="Active quest destination" { "!" }
                                 }
@@ -273,7 +274,7 @@ pub(crate) fn map_destination_detail(
     selected_settlement: Option<&Settlement>,
     selected_is_current: bool,
     can_travel: bool,
-    provisioning_available: bool,
+    provisioning_path: Option<&str>,
     provision_forecast: Option<&TravelProvisionForecast>,
     party: Option<&Party>,
     can_configure_travel: bool,
@@ -283,14 +284,6 @@ pub(crate) fn map_destination_detail(
     let camp_fatigue_percent = party.map_or(50, |party| party.camp_fatigue_percent);
     let travel_disabled = party.is_some_and(|party| party.walking_minutes_per_day == 0);
     let inspecting_nonroute = selected.is_none() && selected_settlement.is_some();
-    let market_path = format!(
-        "/settlements/{}/merchants",
-        map_path
-            .trim_end_matches("/map")
-            .rsplit('/')
-            .next()
-            .unwrap_or("")
-    );
     html! {
         aside class=(if party.is_some() && can_configure_travel && !inspecting_nonroute { "right-sidebar travel-configuration-sidebar" } else { "right-sidebar" }) {
             @if party.is_some() && can_configure_travel {
@@ -299,7 +292,7 @@ pub(crate) fn map_destination_detail(
                     (travel_planner_bar(selected, camp_fatigue_percent))
                 }
                 (travel_preferences_form(party.expect("party checked above"), &format!("{map_path}/travel-configuration")))
-                @if provisioning_available {
+                @if let Some(provisioning_path) = provisioning_path {
                     div class="travel-provisioning-control" data-provisioning-control {
                         div class="travel-provisioning-input" {
                             input type="hidden" value="0" data-target-surplus;
@@ -322,10 +315,10 @@ pub(crate) fn map_destination_detail(
                             }
                             @if let Some(forecast) = provision_forecast {
                                 a class="btn btn-secondary" data-provision-buy
-                                    data-market-path=(&market_path)
+                                    data-market-path=(provisioning_path)
                                     data-initial-rations=(forecast.rations_to_buy)
                                     data-initial-waterskins=(forecast.waterskins_to_buy)
-                                    href=(&market_path) { "Buy" }
+                                    href=(provisioning_path) { "Buy" }
                             } @else {
                                 button type="button" class="btn btn-secondary" disabled title="Provision estimates are unavailable" { "Buy" }
                             }
@@ -365,9 +358,7 @@ pub(crate) fn map_destination_detail(
                         }
                     }
                     p class="text-muted small-copy" {
-                        @if !destination.quest_in_progress {
-                            @if let Some(summary) = &destination.summary { (summary) " · " }
-                        }
+                        @if let Some(summary) = &destination.summary { (summary) " · " }
                         (format_distance(destination.distance_m))
                         " · " (format_journey_time(destination.journey_minutes))
                         @if destination.route_fallback {
@@ -422,7 +413,7 @@ pub(crate) fn travel_planner_bar(
         selected_name,
         &selected_description,
         selected.is_some_and(|destination| {
-            destination.quest_in_progress && destination.return_terrain_route.is_none()
+            destination.round_trip_destination && destination.return_terrain_route.is_none()
         }),
         selected_minutes,
         &selected_camp_stops,
@@ -445,7 +436,7 @@ pub(crate) fn travel_planner_bar(
 }
 
 fn quest_destination_tooltip(destination: &TravelDestination) -> Option<String> {
-    destination.quest_in_progress.then(|| {
+    destination.case_site_knowledge.map(|_| {
         destination.summary.as_ref().map_or_else(
             || destination.description.clone(),
             |summary| format!("{}\n{summary}", destination.description),
@@ -821,7 +812,7 @@ pub fn camp_page(
     default_rest_minutes: u64,
     soap_preview: SoapRestPreview,
     planned_wake_minute: u16,
-    can_continue_travel: bool,
+    continue_block_reason: Option<&str>,
     encounter: Option<&StrategicEncounter>,
     logged_in_as: Option<&str>,
 ) -> Markup {
@@ -881,13 +872,7 @@ pub fn camp_page(
                 div class="travel-planner-vertical" {
                     (travel_planner_bar_for(destination_name, "", false, party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, terrain_route, provision_forecast, journey.map_or(0, |item| item.departure_minute), journey.map_or(party.camp_remaining_minutes, |item| item.total_elapsed_minutes), &match (journey, itinerary) { (Some(journey), Some(itinerary)) => format_persisted_itinerary(journey, itinerary), (Some(journey), None) => format_legacy_persisted_itinerary(journey), _ => String::new() }, &format_persisted_terrain_spans(terrain_route)))
                 }
-                form action="/camp/continue" method="post" {
-                    button type="submit" class="btn btn-primary btn-small btn-block"
-                        disabled[!can_continue_travel]
-                        title=(if can_continue_travel { "Continue travel" } else { "Rest until the planned walking window begins" }) {
-                        "Continue travel"
-                    }
-                }
+                (camp_continue_control(continue_block_reason))
                 p class="travel-action-status" data-travel-action-status role="alert" hidden {}
             }
             (sidebar_section("Travel preferences", travel_preferences_form(party, "/camp/travel-configuration")))
@@ -901,6 +886,21 @@ pub fn camp_page(
         content,
         logged_in_as,
     )
+}
+
+fn camp_continue_control(block_reason: Option<&str>) -> Markup {
+    html! {
+        form action="/camp/continue" method="post" {
+            button type="submit" class="btn btn-primary btn-small btn-block"
+                disabled[block_reason.is_some()]
+                title=(block_reason.unwrap_or("Continue travel")) {
+                "Continue travel"
+            }
+        }
+        @if let Some(reason) = block_reason {
+            p class="travel-action-status" data-travel-action-status role="alert" { (reason) }
+        }
+    }
 }
 
 fn strategic_encounter_panel(encounter: &StrategicEncounter) -> Markup {
@@ -1048,15 +1048,17 @@ mod tests {
     }
 
     #[test]
-    fn active_quest_destination_has_red_status_badge() {
+    fn reported_exact_destination_is_neutral_and_keeps_round_trip_planning() {
         let destination = quest_destination();
 
         let markup = map_destination_list(&[destination], None, "/locations/settlement/test/map")
             .into_string();
 
-        assert!(markup.contains("destination-quest-badge"));
-        assert!(markup.contains("aria-label=\"Active quest destination\""));
-        assert!(markup.contains("title=\"A camp beside the road.\nActive quest\""));
+        assert!(markup.contains("data-travel-round-trip=\"true\""));
+        assert!(markup.contains("Reported exact location"));
+        assert!(!markup.contains("destination-quest-badge"));
+        assert!(!markup.contains("aria-label=\"Active quest destination\""));
+        assert!(markup.contains("title=\"A camp beside the road.\nReported exact location\""));
         assert!(!markup.contains("destination-turn-in-badge"));
     }
 
@@ -1124,7 +1126,7 @@ mod tests {
             None,
             false,
             true,
-            false,
+            None,
             None,
             None,
             false,
@@ -1137,7 +1139,7 @@ mod tests {
         assert!(markup.contains("action=\"/case-sites/quest-location/track\""));
         assert!(markup.contains("Track site"));
         assert!(!markup.contains("<p>A camp beside the road.</p>"));
-        assert!(!markup.contains("Active quest"));
+        assert!(markup.contains("Reported exact location"));
         assert!(!markup.contains("name=\"provisioning\""));
         assert!(!markup.contains("data-provision-buy"));
     }
@@ -1152,7 +1154,7 @@ mod tests {
             Some(&destination),
             false,
             true,
-            true,
+            Some("/settlements/viabundus-1/merchants"),
             None,
             None,
             false,
@@ -1172,14 +1174,14 @@ mod tests {
         let mut destination = quest_destination();
         destination.id = "viabundus-2".into();
         destination.name = "Connected town".into();
-        destination.quest_in_progress = false;
+        destination.round_trip_destination = false;
         destination.travel_action = "/settlements/viabundus-2/travel".into();
         let markup = map_destination_detail(
             Some(&destination),
             None,
             false,
             true,
-            true,
+            Some("/settlements/viabundus-1/merchants"),
             None,
             None,
             false,
