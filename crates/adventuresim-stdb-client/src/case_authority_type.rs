@@ -11,6 +11,8 @@ use super::case_resolution_status_type::CaseResolutionStatus;
 pub struct CaseAuthority {
     pub id: String,
     pub investigation_case_id: String,
+    pub provenance_kind: String,
+    pub generated_case_id: String,
     pub local_problem_id: Option<String>,
     pub objective_expression_json: String,
     pub resolution_status: CaseResolutionStatus,
@@ -27,6 +29,8 @@ impl __sdk::InModule for CaseAuthority {
 pub struct CaseAuthorityCols {
     pub id: __sdk::__query_builder::Col<CaseAuthority, String>,
     pub investigation_case_id: __sdk::__query_builder::Col<CaseAuthority, String>,
+    pub provenance_kind: __sdk::__query_builder::Col<CaseAuthority, String>,
+    pub generated_case_id: __sdk::__query_builder::Col<CaseAuthority, String>,
     pub local_problem_id: __sdk::__query_builder::Col<CaseAuthority, Option<String>>,
     pub objective_expression_json: __sdk::__query_builder::Col<CaseAuthority, String>,
     pub resolution_status: __sdk::__query_builder::Col<CaseAuthority, CaseResolutionStatus>,
@@ -42,6 +46,8 @@ impl __sdk::__query_builder::HasCols for CaseAuthority {
                 table_name,
                 "investigation_case_id",
             ),
+            provenance_kind: __sdk::__query_builder::Col::new(table_name, "provenance_kind"),
+            generated_case_id: __sdk::__query_builder::Col::new(table_name, "generated_case_id"),
             local_problem_id: __sdk::__query_builder::Col::new(table_name, "local_problem_id"),
             objective_expression_json: __sdk::__query_builder::Col::new(
                 table_name,
