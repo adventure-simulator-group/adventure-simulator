@@ -2982,6 +2982,16 @@ pub fn receive_local_problem_rumor(
     let generated: adventuresim_core::quest_generation::GeneratedCase =
         serde_json::from_str(&generation.manifest_json)
             .map_err(|_| "Generated rumor manifest is invalid")?;
+    let referral_location_label = generated
+        .witnesses
+        .iter()
+        .find(|witness| {
+            witness.npc_id == receipt.contact_npc_id
+                && witness.expected_location == receipt.expected_location_id
+        })
+        .map(|witness| witness.expected_location_label.clone())
+        .filter(|label| !label.is_empty())
+        .ok_or("Generated rumor referral has no player-visible tab label")?;
     let case_id = generated.public_case_id;
     let lead_id = inv::compound_id(&["lead", "rumor", &receipt.id]);
     if ctx.db.investigation_lead().id().find(&lead_id).is_none() {
@@ -2999,7 +3009,7 @@ pub fn receive_local_problem_rumor(
                 "textual"
             }
             .into(),
-            directions: receipt.expected_location_id.clone(),
+            directions: referral_location_label.clone(),
             exact_location_id: String::new(),
             latitude_e7: 0,
             longitude_e7: 0,
@@ -3009,7 +3019,7 @@ pub fn receive_local_problem_rumor(
             witness_description: visible_description,
             witness_occupation_or_relationship: contact
                 .map_or_else(String::new, |npc| npc.profession),
-            expected_location: receipt.expected_location_id.clone(),
+            expected_location: referral_location_label,
             current_learned_location: String::new(),
             contradiction_group: String::new(),
             corrected_by: String::new(),

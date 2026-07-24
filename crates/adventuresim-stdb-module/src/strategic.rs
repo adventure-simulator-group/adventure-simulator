@@ -5514,6 +5514,23 @@ fn dialogue_runtime_bindings(
             .id()
             .find(&receipt.contact_npc_id)
             .ok_or("Rumor referral contact is unavailable")?;
+        let authority = ctx
+            .db
+            .quest_generation_authority()
+            .case_id()
+            .find(&receipt.opaque_case_ref)
+            .ok_or("Rumor is not backed by a generated case")?;
+        let generated: adventuresim_core::quest_generation::GeneratedCase =
+            serde_json::from_str(&authority.manifest_json)
+                .map_err(|_| "Generated testimony manifest is invalid")?;
+        let witness = generated
+            .witnesses
+            .iter()
+            .find(|witness| {
+                witness.npc_id == receipt.contact_npc_id
+                    && witness.expected_location == receipt.expected_location_id
+            })
+            .ok_or("Referral contact is not the generated witness")?;
         bindings.bind(S::Symptom, receipt.safe_summary.clone());
         bindings.bind(S::Claim, receipt.safe_summary);
         bindings.bind(S::Uncertainty, "an unconfirmed local account");
@@ -5530,23 +5547,12 @@ fn dialogue_runtime_bindings(
             ),
         );
         bindings.bind(S::ReferralRole, contact.profession);
-        bindings.bind(S::ReferralLocation, receipt.expected_location_id.clone());
-        bindings.bind(S::DescribedLocation, receipt.expected_location_id);
+        bindings.bind(S::ReferralLocation, witness.expected_location_label.clone());
+        bindings.bind(
+            S::DescribedLocation,
+            witness.expected_location_label.clone(),
+        );
         if adventuresim_core::quest_generation::exact_referral_contact(&contact.id, &npc.id) {
-            let authority = ctx
-                .db
-                .quest_generation_authority()
-                .case_id()
-                .find(&receipt.opaque_case_ref)
-                .ok_or("Rumor is not backed by a generated case")?;
-            let generated: adventuresim_core::quest_generation::GeneratedCase =
-                serde_json::from_str(&authority.manifest_json)
-                    .map_err(|_| "Generated testimony manifest is invalid")?;
-            let witness = generated
-                .witnesses
-                .iter()
-                .find(|witness| witness.npc_id == npc.id)
-                .ok_or("Referral contact is not the generated witness")?;
             let testimony = witness
                 .testimony
                 .iter()
@@ -16579,7 +16585,20 @@ fn generated_witness_candidates(
     ctx: &ReducerContext,
     settlement_id: &str,
 ) -> Vec<adventuresim_core::quest_generation::WitnessCandidate> {
-    use adventuresim_core::quest_generation::{Circumstance, WitnessCandidate, WitnessDemographic};
+    use adventuresim_core::{
+        quest_generation::{
+            Circumstance, WitnessCandidate, WitnessDemographic, retain_navigable_witnesses,
+        },
+        settlement_economy::player_visible_npc_tabs,
+    };
+    let Some(settlement) = ctx.db.settlement().id().find(settlement_id.to_owned()) else {
+        return Vec::new();
+    };
+    let has_keep = matches!(
+        settlement.category,
+        SettlementCategory::Town | SettlementCategory::City | SettlementCategory::Capital
+    );
+    let visible_tabs = player_visible_npc_tabs(&settlement.economy, has_keep);
     let mut candidates = ctx
         .db
         .settlement_npc()
@@ -16620,11 +16639,13 @@ fn generated_witness_candidates(
                     &npc.clothing,
                 ),
                 expected_location: presence.location_id,
+                expected_location_label: String::new(),
                 presence_version,
                 allowed_circumstances: circumstances,
             })
         })
         .collect::<Vec<_>>();
+    candidates = retain_navigable_witnesses(candidates, &visible_tabs);
     candidates.sort_by(|left, right| left.npc_id.cmp(&right.npc_id));
     candidates
 }

@@ -208,8 +208,29 @@ pub struct WitnessCandidate {
     pub profession: String,
     pub visible_description: String,
     pub expected_location: String,
+    pub expected_location_label: String,
     pub presence_version: u64,
     pub allowed_circumstances: BTreeSet<Circumstance>,
+}
+
+/// Removes witness/location combinations that the player cannot reach through
+/// the settlement UI. Absence from `visible_tabs` is an authoritative hard
+/// zero, not a low-probability candidate.
+pub fn retain_navigable_witnesses(
+    candidates: Vec<WitnessCandidate>,
+    visible_tabs: &[crate::settlement_economy::SettlementNpcTab],
+) -> Vec<WitnessCandidate> {
+    candidates
+        .into_iter()
+        .filter_map(|mut candidate| {
+            let tab = crate::settlement_economy::visible_npc_tab(
+                visible_tabs,
+                &candidate.expected_location,
+            )?;
+            candidate.expected_location_label = tab.label.to_owned();
+            Some(candidate)
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -329,6 +350,7 @@ pub struct WitnessBinding {
     pub circumstance: Circumstance,
     pub description: ReportDescription,
     pub expected_location: String,
+    pub expected_location_label: String,
     pub visible_description: String,
     pub testimony: Vec<TestimonyDraft>,
 }
@@ -1043,6 +1065,7 @@ fn solve_variables(
                     + witness.profession.len()
                     + witness.visible_description.len()
                     + witness.expected_location.len()
+                    + witness.expected_location_label.len()
             })
             .sum::<usize>()
             > 64 * 1024
@@ -2171,6 +2194,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             circumstance,
             description,
             expected_location: primary.expected_location.clone(),
+            expected_location_label: primary.expected_location_label.clone(),
             visible_description: primary.visible_description.clone(),
             testimony: vec![
                 TestimonyDraft {
@@ -2213,6 +2237,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             circumstance: secondary_circumstance,
             description,
             expected_location: secondary.expected_location.clone(),
+            expected_location_label: secondary.expected_location_label.clone(),
             visible_description: secondary.visible_description.clone(),
             testimony: vec![TestimonyDraft {
                 proposition_id: description_prop.clone(),
@@ -2716,6 +2741,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
     for witness in &case.witnesses {
         if witness.npc_id.is_empty()
             || witness.expected_location.is_empty()
+            || witness.expected_location_label.is_empty()
             || witness.visible_description.is_empty()
         {
             errors.push(format!("{} lacks persistent referral data", witness.id.0));
@@ -2976,7 +3002,8 @@ pub fn test_witnesses() -> Vec<WitnessCandidate> {
             sex: "female".into(),
             profession: "apprentice".into(),
             visible_description: "a short, fair-haired apprentice".into(),
-            expected_location: "residential".into(),
+            expected_location: "residences".into(),
+            expected_location_label: "Residences".into(),
             presence_version: 11,
             allowed_circumstances: BTreeSet::from([
                 Circumstance::NightWindow,
@@ -2991,6 +3018,7 @@ pub fn test_witnesses() -> Vec<WitnessCandidate> {
             profession: "guard".into(),
             visible_description: "a tall guard with dark hair".into(),
             expected_location: "keep".into(),
+            expected_location_label: "Keep".into(),
             presence_version: 12,
             allowed_circumstances: BTreeSet::from([
                 Circumstance::RoadJourney,
@@ -3005,6 +3033,7 @@ pub fn test_witnesses() -> Vec<WitnessCandidate> {
             profession: "merchant".into(),
             visible_description: "a broad merchant with grey hair".into(),
             expected_location: "market".into(),
+            expected_location_label: "General Market".into(),
             presence_version: 13,
             allowed_circumstances: BTreeSet::from([
                 Circumstance::RoadJourney,
@@ -3017,6 +3046,27 @@ pub fn test_witnesses() -> Vec<WitnessCandidate> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn inn_only_settlement_witnesses() -> (
+        Vec<crate::settlement_economy::SettlementNpcTab>,
+        Vec<WitnessCandidate>,
+    ) {
+        let profile = adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder();
+        let tabs = crate::settlement_economy::player_visible_npc_tabs(&profile, false);
+        let mut candidates = test_witnesses();
+        for (candidate, location) in candidates.iter_mut().zip(["residences", "overview", "inn"]) {
+            candidate.expected_location = location.into();
+            candidate.expected_location_label.clear();
+        }
+        let mut unavailable_armourer = candidates[2].clone();
+        unavailable_armourer.npc_id = "npc:hidden-armourer".into();
+        unavailable_armourer.profession = "armourer".into();
+        unavailable_armourer.expected_location = "armoury".into();
+        unavailable_armourer.expected_location_label.clear();
+        candidates.push(unavailable_armourer);
+        (tabs, candidates)
+    }
+
     fn context(seed: u64, family: TemplateFamily) -> GenerationContext {
         GenerationContext {
             seed,
@@ -3031,6 +3081,53 @@ mod tests {
             now_minute: 50_000,
             requested_family: Some(family),
             witness_candidates: test_witnesses(),
+        }
+    }
+
+    #[test]
+    fn referrals_only_use_advertised_tabs_across_families_and_many_seeds() {
+        let (tabs, candidates) = inn_only_settlement_witnesses();
+        let candidates = retain_navigable_witnesses(candidates, &tabs);
+
+        assert_eq!(candidates.len(), 3);
+        assert!(
+            candidates
+                .iter()
+                .all(|candidate| candidate.expected_location != "armoury"),
+            "an unavailable Armour service must be a hard-zero witness location"
+        );
+        assert!(
+            crate::settlement_economy::visible_npc_tab(&tabs, "armoury").is_none(),
+            "the generated settlement fixture must not advertise Armour"
+        );
+
+        for family in [
+            TemplateFamily::RecurringDepredation,
+            TemplateFamily::DisappearanceOrLoss,
+        ] {
+            for seed in 0..128 {
+                let mut generation_context = context(seed, family);
+                generation_context.witness_candidates = candidates.clone();
+                let generated = generate(&generation_context).unwrap_or_else(|error| {
+                    panic!("{family:?} seed {seed} failed generation: {error:?}")
+                });
+                for witness in &generated.witnesses {
+                    let tab = crate::settlement_economy::visible_npc_tab(
+                        &tabs,
+                        &witness.expected_location,
+                    )
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "{family:?} seed {seed} referred {} to hidden location {}",
+                            witness.npc_id, witness.expected_location
+                        )
+                    });
+                    assert_eq!(
+                        witness.expected_location_label, tab.label,
+                        "{family:?} seed {seed} did not use the exact advertised tab label"
+                    );
+                }
+            }
         }
     }
     #[test]

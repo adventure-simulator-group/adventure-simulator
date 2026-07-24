@@ -621,6 +621,31 @@ fn referral_text(
     )
 }
 
+fn referral_location_label(
+    ctx: &ReducerContext,
+    receipt: &LocalProblemReceipt,
+) -> Result<String, String> {
+    let authority = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&receipt.opaque_case_ref)
+        .ok_or("Rumor is not backed by a generated case")?;
+    let generated: adventuresim_core::quest_generation::GeneratedCase =
+        serde_json::from_str(&authority.manifest_json)
+            .map_err(|_| "Generated referral manifest is invalid")?;
+    generated
+        .witnesses
+        .iter()
+        .find(|witness| {
+            witness.npc_id == receipt.contact_npc_id
+                && witness.expected_location == receipt.expected_location_id
+        })
+        .map(|witness| witness.expected_location_label.clone())
+        .filter(|label| !label.is_empty())
+        .ok_or_else(|| "Generated referral has no player-visible tab label".into())
+}
+
 pub fn surface_problem(
     ctx: &ReducerContext,
     character_id: u64,
@@ -661,6 +686,7 @@ pub fn surface_problem(
     });
     if let Some(receipt) = known {
         if let Some(contact) = ctx.db.settlement_npc().id().find(&receipt.contact_npc_id) {
+            let location_label = referral_location_label(ctx, &receipt)?;
             ctx.db
                 .local_problem_rumor_delivery()
                 .insert(LocalProblemRumorDelivery {
@@ -669,11 +695,7 @@ pub fn surface_problem(
                     settlement_id,
                     session_id: session_id.into(),
                     receipt_id: receipt.id,
-                    delivery_text: referral_text(
-                        &receipt.safe_summary,
-                        &contact,
-                        &receipt.expected_location_id,
-                    ),
+                    delivery_text: referral_text(&receipt.safe_summary, &contact, &location_label),
                 });
             return Ok(());
         }
@@ -743,7 +765,11 @@ pub fn surface_problem(
         .problem_id()
         .find(&problem.id)
         .ok_or("Problem symptom projection missing")?;
-    let text = referral_text(&symptom.public_summary, &contact, &presence.location_id);
+    let text = referral_text(
+        &symptom.public_summary,
+        &contact,
+        &witness.expected_location_label,
+    );
     let receipt_id = format!("{character_id}:{}", problem.id);
     ctx.db.local_problem_receipt().insert(LocalProblemReceipt {
         id: receipt_id.clone(),
