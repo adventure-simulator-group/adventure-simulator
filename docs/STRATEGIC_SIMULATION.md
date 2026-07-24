@@ -171,11 +171,17 @@ just quest-eval-mock 41 4
 
 `quest-eval` tests both modular investigation templates without a database or
 API credential. It enters the tavern, learns the problem and witness referrals,
-interviews visible NPCs by physical description and expected location, follows
+interviews visible NPCs by generated name, physical description, and expected
+building/tab location, follows
 advertised evidence/actions, travels only after an exact destination is learned,
 prepares, and attempts an earned finale. The scripted and mock-LLM policies are
 deterministic and fully offline. The mock policy still round-trips through the
 same strict JSON decision schema used by a provider.
+
+Witness availability is deliberately normal scheduling state: a referral can
+say that an NPC is elsewhere and offer a bounded wait/rest action that costs
+game time and supplies. This is distinct from policy, provider, or reducer
+errors, and is recorded in the public trace.
 
 This is a deterministic case-evaluation environment over the real quest
 generator and its evidence/action graph. It does not claim to be a live

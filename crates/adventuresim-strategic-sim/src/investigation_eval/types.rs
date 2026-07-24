@@ -33,9 +33,19 @@ pub struct DiscoveryView {
 #[serde(deny_unknown_fields)]
 pub struct WitnessReferral {
     pub witness_id: String,
+    pub display_name: String,
     pub physical_description: String,
     pub expected_location: String,
     pub interviewed: bool,
+    pub availability: WitnessAvailability,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WitnessAvailability {
+    Available,
+    ScheduledElsewhere,
+    AwaitingReturn,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -108,6 +118,7 @@ pub enum ChoiceKind {
     Investigate,
     Travel,
     Prepare,
+    Wait,
     Conclude,
 }
 
@@ -201,5 +212,6 @@ pub(crate) enum Capability {
     Action(usize, InvestigationActionKind, RouteClass),
     Travel(String),
     Prepare(String),
+    WaitForWitness(usize),
     Conclude(RouteClass),
 }
