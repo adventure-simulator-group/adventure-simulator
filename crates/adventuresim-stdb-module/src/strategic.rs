@@ -26,7 +26,7 @@ use crate::{
     condition::character_condition,
     item::{InventoryItem, inventory_item, item},
     repair::item_condition,
-    tactical::tactical_server_request,
+    tactical::{tactical_server, tactical_server_request},
     time::{advance_character_time, character_time, character_training_schedule},
 };
 use std::collections::{BinaryHeap, HashMap, HashSet};
@@ -6537,6 +6537,99 @@ pub fn bootstrap_development_world(
         crate::character::seed_religion_scholar_character(ctx)?;
     }
     Ok(())
+}
+
+/// Seed a standalone tactical mission: a solo party with an accepted quest
+/// bound to `scene_key`, then a [`crate::tactical::TacticalServerRequest`]
+/// for `mission_id` through the normal `request_tactical_server` reducer.
+///
+/// Lets an isolated, strategic-layer-free SpacetimeDB instance host a
+/// standalone tactical server/client test without hand-authoring party and
+/// quest state. Gated by the same development capability as
+/// [`bootstrap_development_world`].
+#[reducer]
+pub fn seed_standalone_tactical_mission(
+    ctx: &ReducerContext,
+    bootstrap_token: String,
+    character_id: u64,
+    mission_id: String,
+    scene_key: String,
+    required_enemy_kills: u32,
+) -> Result<(), String> {
+    if !adventuresim_core::simulation_security::simulation_bootstrap_authorized(
+        COMPILED_DEV_BOOTSTRAP_TOKEN,
+        &bootstrap_token,
+    ) {
+        return Err("Development bootstrap is disabled or unauthorized".into());
+    }
+    if ctx
+        .db
+        .tactical_server_request()
+        .mission_id()
+        .find(&mission_id)
+        .is_some()
+        || ctx.db.tactical_server().mission_id().find(&mission_id).is_some()
+    {
+        return Ok(());
+    }
+
+    if ctx.db.character().id().find(character_id).is_none() {
+        crate::character::insert_new_character(
+            ctx,
+            format!("Tactical Test {character_id}"),
+            character_id,
+            false,
+        )?;
+    }
+    let party_id = create_solo_party_for_character(ctx, character_id)?;
+
+    let settlement = ctx
+        .db
+        .settlement()
+        .iter()
+        .find(|settlement| settlement.scene_key == scene_key)
+        .ok_or_else(|| format!("No settlement with scene_key '{scene_key}' to host a debug quest"))?;
+
+    ctx.db.quest().insert(Quest {
+        id: mission_id.clone(),
+        title: "Standalone Tactical Test".into(),
+        description: "Seeded for isolated tactical testing".into(),
+        difficulty: 1,
+        gold_reward: 0,
+        xp_reward: 0,
+        settlement_id: settlement.id.clone(),
+        status: QuestStatus::Accepted,
+        accepted_by: Some(party_id.clone()),
+        enemy_type: "bandit".into(),
+        enemy_count: required_enemy_kills as i32,
+        location_description: "Standalone tactical test location".into(),
+        location_scene_key: scene_key.clone(),
+        location_coord_x: settlement.coord_x,
+        location_coord_y: settlement.coord_y,
+        coordinates_are_geographic: settlement.source_node_id.is_some(),
+        distance_m: 0,
+    });
+
+    let mut party = ctx
+        .db
+        .party()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    party.current_quest_location_id = Some(mission_id.clone());
+    party.active_quest_id = Some(mission_id.clone());
+    ctx.db.party().id().update(party);
+
+    let mut character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    character.current_quest_location_id = Some(mission_id.clone());
+    ctx.db.character().id().update(character);
+
+    crate::tactical::request_tactical_server(ctx, character_id, mission_id, scene_key)
 }
 
 pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {

@@ -322,6 +322,7 @@ pub mod sedimentary_rock_type;
 pub mod seed_simulation_disease_reducer;
 pub mod seed_simulation_equipment_damage_reducer;
 pub mod seed_simulation_world_reducer;
+pub mod seed_standalone_tactical_mission_reducer;
 pub mod self_regard_type;
 pub mod send_local_chat_message_reducer;
 pub mod set_character_religion_reducer;
@@ -725,6 +726,7 @@ pub use sedimentary_rock_type::SedimentaryRock;
 pub use seed_simulation_disease_reducer::seed_simulation_disease;
 pub use seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage;
 pub use seed_simulation_world_reducer::seed_simulation_world;
+pub use seed_standalone_tactical_mission_reducer::seed_standalone_tactical_mission;
 pub use self_regard_type::SelfRegard;
 pub use send_local_chat_message_reducer::send_local_chat_message;
 pub use set_character_religion_reducer::set_character_religion;
@@ -1125,6 +1127,13 @@ pub enum Reducer {
     SeedSimulationWorld {
         nonce: String,
     },
+    SeedStandaloneTacticalMission {
+        bootstrap_token: String,
+        character_id: u64,
+        mission_id: String,
+        scene_key: String,
+        required_enemy_kills: u32,
+    },
     SendLocalChatMessage {
         sender_id: u64,
         subject_kind: String,
@@ -1320,6 +1329,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::SeedSimulationDisease { .. } => "seed_simulation_disease",
             Reducer::SeedSimulationEquipmentDamage { .. } => "seed_simulation_equipment_damage",
             Reducer::SeedSimulationWorld { .. } => "seed_simulation_world",
+            Reducer::SeedStandaloneTacticalMission { .. } => "seed_standalone_tactical_mission",
             Reducer::SendLocalChatMessage { .. } => "send_local_chat_message",
             Reducer::SetCharacterReligion { .. } => "set_character_religion",
             Reducer::SetInventoryQuantityTarget { .. } => "set_inventory_quantity_target",
@@ -1889,6 +1899,19 @@ Reducer::CancelMissionRequest{
                 nonce,
 }             => __sats::bsatn::to_vec(&seed_simulation_world_reducer::SeedSimulationWorldArgs {
                 nonce: nonce.clone(),
+}),
+            Reducer::SeedStandaloneTacticalMission{
+                bootstrap_token,
+                character_id,
+                mission_id,
+                scene_key,
+                required_enemy_kills,
+}             => __sats::bsatn::to_vec(&seed_standalone_tactical_mission_reducer::SeedStandaloneTacticalMissionArgs {
+                bootstrap_token: bootstrap_token.clone(),
+                character_id: character_id.clone(),
+                mission_id: mission_id.clone(),
+                scene_key: scene_key.clone(),
+                required_enemy_kills: required_enemy_kills.clone(),
 }),
             Reducer::SendLocalChatMessage{
                 sender_id,
