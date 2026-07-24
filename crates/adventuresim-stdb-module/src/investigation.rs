@@ -8,9 +8,10 @@ use crate::{
     strategic::{
         CustodyHolderKind, CustodyObjectKind, case_authority, case_authority__view, case_custody,
         case_finale_authority__view, case_outcome_fact__view, coordinate_distance_e7_m,
-        generated_case_site_combat_eligible, hostile_group_authority__view,
-        living_party_member_ids, party_authority, party_authority__view, party_journey_authority,
-        party_member__view, quest_generation_authority, quest_generation_authority__view,
+        generated_case_site_combat_eligible, generated_case_site_combat_group_id,
+        hostile_group_authority__view, living_party_member_ids, party_authority,
+        party_authority__view, party_journey_authority, party_member__view,
+        quest_generation_authority, quest_generation_authority__view,
         require_no_unresolved_encounter, require_party_ready,
         require_strategic_character_authority, require_strategic_gateway, settlement,
         strategic_gateway_authority__view, validate_quest_generation_authority,
@@ -3918,28 +3919,15 @@ fn case_site_presentation_view(
         .id()
         .find(owner_character_id)
         .and_then(|character| character.party_id);
-    let combat_group_ids: BTreeSet<_> = validated
-        .manifest
-        .finales
-        .iter()
-        .filter(|finale| finale.site_id.0 == site.id.value && finale.strategic_outcome_compatible)
-        .filter_map(|finale| finale.hostile_group_id.as_deref())
+    let hostile_groups: Vec<_> = generated_case_site_combat_group_id(&validated.manifest, site)
+        .and_then(|group_id| {
+            ctx.db
+                .hostile_group_authority()
+                .id()
+                .find(&group_id.to_string())
+        })
+        .into_iter()
         .collect();
-    let hostile_groups: Vec<_> = if combat_group_ids.len() == 1 {
-        combat_group_ids
-            .iter()
-            .next()
-            .and_then(|group_id| {
-                ctx.db
-                    .hostile_group_authority()
-                    .id()
-                    .find(&(*group_id).to_string())
-            })
-            .into_iter()
-            .collect()
-    } else {
-        Vec::new()
-    };
     let finales: Vec<_> = ctx
         .db
         .case_finale_authority()

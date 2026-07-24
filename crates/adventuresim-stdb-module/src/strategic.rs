@@ -1864,6 +1864,18 @@ mod healing_tests {
     }
 
     #[test]
+    fn hostile_group_authority_enforces_one_group_per_case_site() {
+        let source = include_str!("strategic.rs");
+        let authority = source
+            .split("#[table(accessor = hostile_group_authority)]")
+            .nth(1)
+            .and_then(|tail| tail.split("fn materialize_hostile_group").next())
+            .expect("hostile-group authority declaration");
+        assert!(authority.contains("#[unique]"));
+        assert!(authority.contains("pub case_site_id: CaseSiteId"));
+    }
+
+    #[test]
     fn generated_truth_and_replay_authority_have_no_public_subscription_surface() {
         let strategic = include_str!("strategic.rs");
         let authority = strategic
@@ -16311,6 +16323,29 @@ fn mission_candidate_from_capability(
     }
 }
 
+pub(crate) fn generated_case_site_combat_group_id<'a>(
+    generated: &'a adventuresim_core::quest_generation::GeneratedCase,
+    case_site: &CaseSiteAuthority,
+) -> Option<&'a str> {
+    let mut finale_group_ids: BTreeSet<&str> = generated
+        .finales
+        .iter()
+        .filter(|finale| {
+            finale.site_id.0 == case_site.id.value && finale.strategic_outcome_compatible
+        })
+        .filter_map(|finale| finale.hostile_group_id.as_deref())
+        .collect();
+    let hostile_group_id = finale_group_ids.pop_first()?;
+    (finale_group_ids.is_empty()
+        && generated
+            .hostile_groups
+            .iter()
+            .any(|(group_id, site_id, _, _)| {
+                group_id == hostile_group_id && site_id.0 == case_site.id.value
+            }))
+    .then_some(hostile_group_id)
+}
+
 pub(crate) fn generated_case_site_combat_eligible<'a>(
     generated: &adventuresim_core::quest_generation::GeneratedCase,
     case: &CaseAuthority,
@@ -16338,27 +16373,7 @@ pub(crate) fn generated_case_site_combat_eligible<'a>(
     if generated_site.safe_label != case_site.name {
         return None;
     }
-    let mut finale_group_ids: BTreeSet<&str> = generated
-        .finales
-        .iter()
-        .filter(|finale| {
-            finale.site_id.0 == case_site.id.value && finale.strategic_outcome_compatible
-        })
-        .filter_map(|finale| finale.hostile_group_id.as_deref())
-        .collect();
-    let Some(hostile_group_id) = finale_group_ids.pop_first() else {
-        return None;
-    };
-    if !finale_group_ids.is_empty()
-        || !generated
-            .hostile_groups
-            .iter()
-            .any(|(group_id, site_id, _, _)| {
-                group_id == hostile_group_id && site_id.0 == case_site.id.value
-            })
-    {
-        return None;
-    }
+    let hostile_group_id = generated_case_site_combat_group_id(generated, case_site)?;
     let site_groups: Vec<_> = hostile_groups
         .iter()
         .filter(|group| group.case_site_id == case_site.id)
@@ -16480,7 +16495,16 @@ pub(crate) fn ensure_bound_mission_authority(
                 .ok_or("Generated combat authority is unavailable")?;
             let validated = validate_quest_generation_authority(&authority)
                 .map_err(|_| "Generated combat authority is invalid")?;
-            let hostile_groups: Vec<_> = ctx.db.hostile_group_authority().iter().collect();
+            let hostile_group_id =
+                generated_case_site_combat_group_id(&validated.manifest, case_site)
+                    .ok_or("Generated combat authority has no exact hostile group")?;
+            let hostile_groups: Vec<_> = ctx
+                .db
+                .hostile_group_authority()
+                .id()
+                .find(&hostile_group_id.to_string())
+                .into_iter()
+                .collect();
             let finales: Vec<_> = ctx
                 .db
                 .case_finale_authority()
