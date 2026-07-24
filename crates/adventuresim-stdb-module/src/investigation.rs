@@ -6,7 +6,7 @@ use crate::{
     local_problem::local_problem_receipt,
     settlement_population::{settlement_npc, settlement_npc_presence},
     strategic::{
-        CustodyHolderKind, CustodyObjectKind, case_authority, case_custody,
+        CustodyHolderKind, CustodyObjectKind, case_authority, case_authority__view, case_custody,
         coordinate_distance_e7_m, living_party_member_ids, party_authority, party_authority__view,
         party_journey_authority, party_member__view, quest_generation_authority,
         quest_generation_authority__view, require_no_unresolved_encounter, require_party_ready,
@@ -3649,7 +3649,28 @@ fn case_site_provenance_view(
     site: &CaseSiteAuthority,
 ) -> Option<Option<(String, String)>> {
     let case = ctx.db.case_authority().id().find(&site.case_id)?;
-    validated_case_site_aliases(&case, ctx.db.quest_generation_authority().iter())
+    let mut authorities = Vec::new();
+    for alias in [&case.id, &case.generated_case_id] {
+        if alias.is_empty()
+            || authorities
+                .iter()
+                .any(|authority: &crate::strategic::QuestGenerationAuthority| {
+                    authority.case_id == alias.as_str()
+                })
+        {
+            continue;
+        }
+        if let Some(authority) = ctx.db.quest_generation_authority().case_id().find(alias) {
+            authorities.push(authority);
+        }
+        authorities.extend(
+            ctx.db
+                .quest_generation_authority()
+                .public_case_id()
+                .filter(alias),
+        );
+    }
+    validated_case_site_aliases(&case, authorities)
 }
 
 fn case_site_provenance_reducer(
@@ -3657,7 +3678,28 @@ fn case_site_provenance_reducer(
     site: &CaseSiteAuthority,
 ) -> Option<Option<(String, String)>> {
     let case = ctx.db.case_authority().id().find(&site.case_id)?;
-    validated_case_site_aliases(&case, ctx.db.quest_generation_authority().iter())
+    let mut authorities = Vec::new();
+    for alias in [&case.id, &case.generated_case_id] {
+        if alias.is_empty()
+            || authorities
+                .iter()
+                .any(|authority: &crate::strategic::QuestGenerationAuthority| {
+                    authority.case_id == alias.as_str()
+                })
+        {
+            continue;
+        }
+        if let Some(authority) = ctx.db.quest_generation_authority().case_id().find(alias) {
+            authorities.push(authority);
+        }
+        authorities.extend(
+            ctx.db
+                .quest_generation_authority()
+                .public_case_id()
+                .filter(alias),
+        );
+    }
+    validated_case_site_aliases(&case, authorities)
 }
 
 #[view(accessor = backend_character_case_site_locations, public)]
@@ -5020,6 +5062,12 @@ mod tests {
     #[test]
     fn exact_site_projection_and_travel_require_explicit_case_provenance() {
         let source = include_str!("investigation.rs");
+        let compact_source: String = source
+            .chars()
+            .filter(|character| !character.is_whitespace())
+            .collect();
+        let forbidden_view_scan = ["quest_generation_authority()", ".iter()"].concat();
+        assert!(!compact_source.contains(&forbidden_view_scan));
         let provenance = source
             .split("fn validated_case_site_aliases")
             .nth(1)
