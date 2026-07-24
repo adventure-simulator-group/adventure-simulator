@@ -481,6 +481,57 @@ mod tests {
     }
 
     #[test]
+    fn places_navigation_exposes_the_generated_public_square_referral_tab() {
+        use adventuresim_core::settlement_economy::{player_visible_npc_tabs, visible_npc_tab};
+
+        let settlement = settlement();
+        let tabs = player_visible_npc_tabs(&settlement.economy, true);
+        let public_square = visible_npc_tab(&tabs, "overview").unwrap();
+        assert_eq!(public_square.label, "Public square");
+
+        let overview = settlement_overview_page(&settlement, &[], &[], None, &[], Some("Visitor"))
+            .into_string();
+        let overview_places = overview
+            .split("aria-label=\"Settlement places\"")
+            .nth(1)
+            .and_then(|tail| tail.split("</nav>").next())
+            .expect("overview Places navigation");
+        assert!(overview_places.contains("href=\"/locations/settlement/viabundus-1\""));
+        assert!(overview_places.contains(&format!(">{}</a>", public_square.label)));
+        assert!(overview_places.contains("aria-current=\"page\""));
+
+        let character = Character {
+            id: 1,
+            name: "Visitor".into(),
+            xp: 0,
+            level: 1,
+            gold: 0,
+            current_settlement_id: Some(settlement.id.clone()),
+            current_case_site_id: None,
+            party_id: Some("party".into()),
+            age_years: 20,
+            alive: true,
+            temporary: false,
+        };
+        let residences = settlement_npc_location_page(
+            &settlement,
+            &character,
+            &[],
+            "residences",
+            Some("Visitor"),
+        )
+        .into_string();
+        let residence_places = residences
+            .split("aria-label=\"Settlement places\"")
+            .nth(1)
+            .and_then(|tail| tail.split("</nav>").next())
+            .expect("residence Places navigation");
+        assert!(residence_places.contains("href=\"/locations/settlement/viabundus-1\""));
+        assert!(residence_places.contains(&format!(">{}</a>", public_square.label)));
+        assert!(residence_places.contains("aria-current=\"false\""));
+    }
+
+    #[test]
     fn responsive_and_hidden_control_rules_keep_content_available() {
         let layout = include_str!("../../../static/css/layout.css");
         let strategic = include_str!("../../../static/css/strategic.css");
