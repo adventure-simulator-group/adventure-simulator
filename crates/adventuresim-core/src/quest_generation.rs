@@ -2717,6 +2717,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                     .collect::<Vec<_>>();
                 initial_actions.len() == 1
                     && entry.kind == InvestigationActionKind::LocateContact
+                    && entry.route == RouteClass::PatternSurveillance
                     && entry.target_kind == "contact"
                     && entry.prerequisite.is_none()
                     && case
@@ -3717,7 +3718,10 @@ mod tests {
                 2 => root.target_kind = "area".into(),
                 _ => root.prerequisite = Some(ActionId::new("substituted")),
             }
-            assert!(validate(&generated).is_err());
+            assert!(
+                validate(&generated).is_err(),
+                "recurring root mutation {mutate} unexpectedly remained valid"
+            );
         }
         for mutate in 0..4 {
             let mut generated =
@@ -3743,7 +3747,10 @@ mod tests {
                 2 => successor.target_kind = "contact".into(),
                 _ => successor.prerequisite = Some(ActionId::new("substituted")),
             }
-            assert!(validate(&generated).is_err());
+            assert!(
+                validate(&generated).is_err(),
+                "recurring successor mutation {mutate} unexpectedly remained valid"
+            );
         }
         for mutate in 0..4 {
             let mut generated =
@@ -3759,7 +3766,10 @@ mod tests {
                 2 => physical.target_kind = "contact".into(),
                 _ => physical.prerequisite = Some(ActionId::new("substituted")),
             }
-            assert!(validate(&generated).is_err());
+            assert!(
+                validate(&generated).is_err(),
+                "disappearance root mutation {mutate} unexpectedly remained valid"
+            );
         }
     }
 
