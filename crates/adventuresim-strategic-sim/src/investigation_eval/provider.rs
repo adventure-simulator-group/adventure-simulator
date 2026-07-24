@@ -236,7 +236,8 @@ impl OpenAiCompatiblePolicy {
 
     fn throttle(&self, deadline: Option<Instant>) -> Result<(), String> {
         if let Some(previous) = self.last_request {
-            let minimum = Duration::from_secs_f64(60.0 / f64::from(self.config.requests_per_minute));
+            let minimum =
+                Duration::from_secs_f64(60.0 / f64::from(self.config.requests_per_minute));
             if let Some(wait) = minimum.checked_sub(previous.elapsed()) {
                 sleep_before_retry(wait, deadline)?;
             }
@@ -297,7 +298,7 @@ fn sleep_before_retry(wait: Duration, deadline: Option<Instant>) -> Result<(), S
     check_deadline(deadline)
 }
 
-fn read_bounded_response(mut response: impl Read) -> Result<Vec<u8>, String> {
+fn read_bounded_response(response: impl Read) -> Result<Vec<u8>, String> {
     let mut bytes = Vec::with_capacity(MAX_PROVIDER_RESPONSE_BYTES.saturating_add(1));
     response
         .take((MAX_PROVIDER_RESPONSE_BYTES + 1) as u64)
