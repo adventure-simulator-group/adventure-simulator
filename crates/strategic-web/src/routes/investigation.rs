@@ -19,8 +19,8 @@ use crate::{
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/investigations", get(journal))
-        .route("/investigations/actions", post(perform_action))
+        .route("/quests", get(journal))
+        .route("/quests/actions", post(perform_action))
 }
 
 async fn journal(State(state): State<AppState>, session: Session) -> Response {
@@ -110,7 +110,7 @@ async fn perform_action(
     )
     .await
     {
-        Ok(_) => Redirect::to("/investigations").into_response(),
+        Ok(_) => Redirect::to("/quests").into_response(),
         Err(error) => {
             tracing::warn!(%error, character_id, "investigation action rejected");
             (StatusCode::CONFLICT, error).into_response()
@@ -145,10 +145,12 @@ mod tests {
         assert!(!production.contains("seed"));
         assert!(!production.contains("investigation_case_authority"));
         assert!(!production.contains("investigation_evidence_authority"));
-        assert!(production.contains(".route(\"/investigations\", get(journal))"));
-        assert!(production.contains(".route(\"/investigations/actions\", post(perform_action))"));
-        assert!(production.contains("Redirect::to(\"/investigations\")"));
+        assert!(production.contains(".route(\"/quests\", get(journal))"));
+        assert!(production.contains(".route(\"/quests/actions\", post(perform_action))"));
+        assert!(production.contains("Redirect::to(\"/quests\")"));
         assert!(!production.contains(".route(\"/journal"));
         assert!(!production.contains("Redirect::to(\"/journal\")"));
+        assert!(!production.contains(".route(\"/investigations"));
+        assert!(!production.contains("Redirect::to(\"/investigations\")"));
     }
 }

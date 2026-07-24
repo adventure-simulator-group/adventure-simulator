@@ -530,6 +530,31 @@ pub fn alchemy_page(
 
 /// Settlement information and the next destinations on the imported road and
 /// ferry network.
+fn settlement_has_keep(category: &SettlementCategory) -> bool {
+    matches!(
+        category,
+        SettlementCategory::Town | SettlementCategory::City | SettlementCategory::Capital
+    )
+}
+
+fn public_square_place_link(settlement: &Settlement, current: bool) -> Markup {
+    use adventuresim_core::settlement_economy::{player_visible_npc_tabs, visible_npc_tab};
+
+    let tabs = player_visible_npc_tabs(
+        &settlement.economy,
+        settlement_has_keep(&settlement.category),
+    );
+    let tab = visible_npc_tab(&tabs, "overview")
+        .expect("every settlement exposes its overview as a navigable NPC tab");
+    html! {
+        a href=(format!("/locations/settlement/{}", settlement.id))
+            class=(if current { "active" } else { "" })
+            aria-current=(if current { "page" } else { "false" }) {
+            (tab.label)
+        }
+    }
+}
+
 pub fn settlement_overview_page(
     settlement: &Settlement,
     aliases: &[SettlementAlias],
@@ -566,8 +591,9 @@ pub fn settlement_overview_page(
             }))
             (sidebar_section("Places", html! {
                 nav aria-label="Settlement places" {
+                    (public_square_place_link(settlement, true))
                     a href=(format!("/settlements/{}/places/residences", settlement.id)) { "Residences" }
-                    @if matches!(settlement.category, SettlementCategory::Town | SettlementCategory::City | SettlementCategory::Capital) {
+                    @if settlement_has_keep(&settlement.category) {
                         a href=(format!("/settlements/{}/places/keep", settlement.id)) { "Keep" }
                     }
                 }
@@ -630,9 +656,9 @@ pub fn settlement_npc_location_page(
         aside class="left-sidebar" {
             (sidebar_section("Places", html! {
                 nav aria-label="Settlement places" {
-                    a href=(format!("/locations/settlement/{}", settlement.id)) { "Public square" }
+                    (public_square_place_link(settlement, false))
                     a href=(format!("/settlements/{}/places/residences", settlement.id)) { "Residences" }
-                    @if matches!(settlement.category, SettlementCategory::Town | SettlementCategory::City | SettlementCategory::Capital) {
+                    @if settlement_has_keep(&settlement.category) {
                         a href=(format!("/settlements/{}/places/keep", settlement.id)) { "Keep" }
                     }
                 }
@@ -8183,6 +8209,57 @@ mod tests {
             assert!(markup.contains("href=\"/locations/settlement/viabundus-1/party-inventory\""));
             assert!(!markup.contains(&format!("/places/{location}/party/")));
         }
+    }
+
+    #[test]
+    fn places_navigation_exposes_the_generated_public_square_referral_tab() {
+        use adventuresim_core::settlement_economy::{player_visible_npc_tabs, visible_npc_tab};
+
+        let settlement = settlement();
+        let tabs = player_visible_npc_tabs(&settlement.economy, true);
+        let public_square = visible_npc_tab(&tabs, "overview").unwrap();
+        assert_eq!(public_square.label, "Public square");
+
+        let overview = settlement_overview_page(&settlement, &[], &[], None, &[], Some("Visitor"))
+            .into_string();
+        let overview_places = overview
+            .split("aria-label=\"Settlement places\"")
+            .nth(1)
+            .and_then(|tail| tail.split("</nav>").next())
+            .expect("overview Places navigation");
+        assert!(overview_places.contains("href=\"/locations/settlement/viabundus-1\""));
+        assert!(overview_places.contains(&format!(">{}</a>", public_square.label)));
+        assert!(overview_places.contains("aria-current=\"page\""));
+
+        let character = Character {
+            id: 1,
+            name: "Visitor".into(),
+            xp: 0,
+            level: 1,
+            gold: 0,
+            current_settlement_id: Some(settlement.id.clone()),
+            current_case_site_id: None,
+            party_id: Some("party".into()),
+            age_years: 20,
+            alive: true,
+            temporary: false,
+        };
+        let residences = settlement_npc_location_page(
+            &settlement,
+            &character,
+            &[],
+            "residences",
+            Some("Visitor"),
+        )
+        .into_string();
+        let residence_places = residences
+            .split("aria-label=\"Settlement places\"")
+            .nth(1)
+            .and_then(|tail| tail.split("</nav>").next())
+            .expect("residence Places navigation");
+        assert!(residence_places.contains("href=\"/locations/settlement/viabundus-1\""));
+        assert!(residence_places.contains(&format!(">{}</a>", public_square.label)));
+        assert!(residence_places.contains("aria-current=\"false\""));
     }
 
     #[test]
