@@ -2,13 +2,13 @@
 
 use crate::{
     character::{character, character__view, character_skills},
-    condition::character_strategic_condition,
+    condition::{character_strategic_condition, character_strategic_condition__view},
     local_problem::local_problem_receipt,
     settlement_population::{settlement_npc, settlement_npc_presence},
     strategic::{
         CustodyHolderKind, CustodyObjectKind, case_authority, case_custody,
-        coordinate_distance_e7_m, living_party_member_ids, party_authority,
-        party_journey_authority, party_member, quest_generation_authority,
+        coordinate_distance_e7_m, living_party_member_ids, party_authority, party_authority__view,
+        party_journey_authority, party_member, party_member__view, quest_generation_authority,
         require_no_unresolved_encounter, require_party_ready,
         require_strategic_character_authority, require_strategic_gateway, settlement,
         strategic_gateway_authority__view,
@@ -2727,6 +2727,8 @@ pub(crate) fn perform_investigation_action_authorized(
             private_resolution_json: serde_json::to_string(&resolution)
                 .map_err(|_| "Investigation resolution could not be recorded")?,
         });
+    let outcome_case_id = capability.case_id.clone();
+    let safe_result_on_success = capability.safe_result_on_success.clone();
     capability.version = capability.version.saturating_add(1);
     capability.seed = ctx.random::<u64>();
     capability.uncertainty_bps = resolution.resulting_uncertainty_bps;
@@ -2747,19 +2749,19 @@ pub(crate) fn perform_investigation_action_authorized(
     ctx.db
         .investigation_action_outcome()
         .insert(InvestigationActionOutcome {
-            id: generated_observer_id(ctx, &capability.case_id, "outcome", &attempt_id)
+            id: generated_observer_id(ctx, &outcome_case_id, "outcome", &attempt_id)
                 .unwrap_or_else(|| inv::compound_id(&["outcome", &attempt_id])),
             owner_character_id: actor_id,
-            case_id: capability.case_id.clone(),
+            case_id: outcome_case_id,
             capability_id: action_id.clone(),
             safe_wording: if resolution.success {
                 if resolution.risk_triggered {
                     format!(
                         "{} The party was exposed to danger during the attempt.",
-                        capability.safe_result_on_success
+                        safe_result_on_success
                     )
                 } else {
-                    capability.safe_result_on_success.clone()
+                    safe_result_on_success
                 }
             } else {
                 adventuresim_core::quest_generation::failed_action_outcome_wording(
