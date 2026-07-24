@@ -874,42 +874,64 @@ fn generated_pattern_authority(
         .unwrap_or(GeneratedPatternAuthority::GeneratedWithoutPattern)
 }
 
+fn exactly_one_generated_authority(
+    mut matches: impl Iterator<Item = (String, String)>,
+) -> Result<Option<(String, String)>, ()> {
+    let Some(authority) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(());
+    }
+    Ok(Some(authority))
+}
+
 fn generated_authority_view(
     ctx: &ViewContext,
     capability: &InvestigationActionCapability,
-) -> Option<(String, String)> {
+) -> Result<Option<(String, String)>, ()> {
     if let Some(authority) = ctx
         .db
         .quest_generation_authority()
         .case_id()
         .find(&capability.case_id)
     {
-        return Some((authority.manifest_json, authority.context_snapshot_json));
+        return Ok(Some((
+            authority.manifest_json,
+            authority.context_snapshot_json,
+        )));
     }
-    ctx.db
-        .quest_generation_authority()
-        .public_case_id()
-        .find(&capability.case_id)
-        .map(|authority| (authority.manifest_json, authority.context_snapshot_json))
+    exactly_one_generated_authority(
+        ctx.db
+            .quest_generation_authority()
+            .public_case_id()
+            .filter(&capability.case_id)
+            .map(|authority| (authority.manifest_json, authority.context_snapshot_json)),
+    )
 }
 
 fn generated_authority_reducer(
     ctx: &ReducerContext,
     capability: &InvestigationActionCapability,
-) -> Option<(String, String)> {
+) -> Result<Option<(String, String)>, ()> {
     if let Some(authority) = ctx
         .db
         .quest_generation_authority()
         .case_id()
         .find(&capability.case_id)
     {
-        return Some((authority.manifest_json, authority.context_snapshot_json));
+        return Ok(Some((
+            authority.manifest_json,
+            authority.context_snapshot_json,
+        )));
     }
-    ctx.db
-        .quest_generation_authority()
-        .public_case_id()
-        .find(&capability.case_id)
-        .map(|authority| (authority.manifest_json, authority.context_snapshot_json))
+    exactly_one_generated_authority(
+        ctx.db
+            .quest_generation_authority()
+            .public_case_id()
+            .filter(&capability.case_id)
+            .map(|authority| (authority.manifest_json, authority.context_snapshot_json)),
+    )
 }
 
 fn observer_pattern_route_has_live_corroborated_clue(
@@ -934,7 +956,9 @@ fn capability_has_live_pattern_support_view(
         .investigation_generated_action_output()
         .capability_id()
         .find(&capability.id);
-    let authority = generated_authority_view(ctx, capability);
+    let Ok(authority) = generated_authority_view(ctx, capability) else {
+        return false;
+    };
     let evidence_id = match generated_pattern_authority(
         capability,
         authority
@@ -1639,7 +1663,9 @@ fn capability_has_live_pattern_support_reducer(
         .investigation_generated_action_output()
         .capability_id()
         .find(&capability.id);
-    let authority = generated_authority_reducer(ctx, capability);
+    let Ok(authority) = generated_authority_reducer(ctx, capability) else {
+        return false;
+    };
     let evidence_id = match generated_pattern_authority(
         capability,
         authority
@@ -2577,7 +2603,8 @@ fn validate_generated_pattern_condition(
         .investigation_generated_action_output()
         .capability_id()
         .find(&capability.id);
-    let authority = generated_authority_reducer(ctx, capability);
+    let authority = generated_authority_reducer(ctx, capability)
+        .map_err(|()| "Generated action authority is ambiguous")?;
     let (evidence_id, condition) = match generated_pattern_authority(
         capability,
         authority
@@ -5405,6 +5432,24 @@ mod tests {
             generated_pattern_authority(&manual, None, None),
             GeneratedPatternAuthority::Manual
         );
+        assert_eq!(
+            exactly_one_generated_authority(Vec::<(String, String)>::new().into_iter()),
+            Ok(None)
+        );
+        assert_eq!(
+            exactly_one_generated_authority([("manifest".into(), "context".into())].into_iter()),
+            Ok(Some(("manifest".into(), "context".into())))
+        );
+        assert_eq!(
+            exactly_one_generated_authority(
+                [
+                    ("manifest-a".into(), "context-a".into()),
+                    ("manifest-b".into(), "context-b".into()),
+                ]
+                .into_iter(),
+            ),
+            Err(())
+        );
 
         let source = include_str!("investigation.rs");
         for boundary in [
@@ -5426,6 +5471,8 @@ mod tests {
                 .unwrap();
             assert!(body.contains(".case_id()"));
             assert!(body.contains(".public_case_id()"));
+            assert!(body.contains(".filter("));
+            assert!(body.contains("exactly_one_generated_authority"));
             assert!(!body.contains(".iter()"));
         }
     }
