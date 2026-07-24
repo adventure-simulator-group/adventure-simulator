@@ -1778,7 +1778,8 @@ fn capability_has_live_support_reducer(
         return false;
     }
     if kind == action::InvestigationActionKind::InspectSite && capability.target_kind == "site" {
-        let Some((site, lead, generated_aliases)) = exact_case_site_for_observer(ctx, capability)
+        let Some((site, lead, generated_aliases)) =
+            exact_action_case_site_for_observer(ctx, capability)
         else {
             return false;
         };
@@ -3651,7 +3652,7 @@ pub fn backend_character_case_site_locations(
         .collect()
 }
 
-pub(crate) fn exact_case_site_for_observer(
+fn exact_action_case_site_for_observer(
     ctx: &ReducerContext,
     capability: &InvestigationActionCapability,
 ) -> Option<(
@@ -3689,6 +3690,49 @@ pub(crate) fn exact_case_site_for_observer(
                 )
         })
         .map(|lead| (site, lead, generated_aliases))
+}
+
+pub(crate) fn exact_case_site_for_observer(
+    ctx: &ReducerContext,
+    observer_character_id: u64,
+    case_site_id: &str,
+) -> Option<(CaseSiteAuthority, InvestigationLead)> {
+    let site = ctx
+        .db
+        .case_site_authority()
+        .id_key()
+        .find(&case_site_id.to_string())?;
+    let generated_public_case_id = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&site.case_id)
+        .and_then(|authority| {
+            serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(
+                &authority.manifest_json,
+            )
+            .ok()
+        })
+        .map(|generated| generated.public_case_id);
+    ctx.db
+        .investigation_lead()
+        .owner_character_id()
+        .filter(observer_character_id)
+        .find(|lead| {
+            lead.exact_location_id == case_site_id
+                && (lead.case_id == site.case_id
+                    || generated_public_case_id
+                        .as_deref()
+                        .is_some_and(|public| lead.case_id == public))
+                && lead.latitude_e7 == site.latitude_e7
+                && lead.longitude_e7 == site.longitude_e7
+                && lead.corrected_by.is_empty()
+                && matches!(
+                    lead.destination_stage.as_str(),
+                    "exact_believed" | "visited"
+                )
+        })
+        .map(|lead| (site, lead))
 }
 
 pub(crate) fn disclose_exact_case_site(
@@ -5378,6 +5422,16 @@ mod tests {
             .expect("failed-alternate live-support predicate");
         assert!(recovery.contains("capability_has_live_support_reducer"));
         assert!(recovery.contains("exact_site_knowledge_is_live"));
+        assert!(recovery.contains("exact_action_case_site_for_observer(ctx, capability)"));
+        let legacy_site_lookup = source
+            .split("pub(crate) fn exact_case_site_for_observer")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(crate) fn disclose_exact_case_site").next())
+            .expect("stable travel and pin exact-site helper");
+        assert!(legacy_site_lookup.contains("observer_character_id: u64"));
+        assert!(legacy_site_lookup.contains("case_site_id: &str"));
+        assert!(legacy_site_lookup.contains("Option<(CaseSiteAuthority, InvestigationLead)>"));
+        assert!(!legacy_site_lookup.contains("InvestigationActionCapability"));
     }
 
     #[test]
