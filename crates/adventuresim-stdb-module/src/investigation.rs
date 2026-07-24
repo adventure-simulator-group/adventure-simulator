@@ -334,6 +334,10 @@ pub struct InvestigationActionCapability {
     pub owner_character_id: u64,
     #[index(btree)]
     pub case_id: String,
+    /// Immutable private provenance. Generated capabilities never fall back to
+    /// manual semantics when their generation authority is damaged or absent.
+    pub provenance_kind: String,
+    pub generated_case_id: String,
     pub method: String,
     pub version: u32,
     pub target_kind: String,
@@ -811,12 +815,19 @@ fn generated_pattern_authority(
     authority: Option<(&str, &str)>,
     persisted_outputs_json: Option<&str>,
 ) -> GeneratedPatternAuthority {
+    match capability.provenance_kind.as_str() {
+        "manual" if capability.generated_case_id.is_empty() => {
+            return if authority.is_none() && persisted_outputs_json.is_none() {
+                GeneratedPatternAuthority::Manual
+            } else {
+                GeneratedPatternAuthority::Invalid
+            };
+        }
+        "generated" if !capability.generated_case_id.is_empty() => {}
+        _ => return GeneratedPatternAuthority::Invalid,
+    }
     let Some((manifest_json, context_json)) = authority else {
-        return if persisted_outputs_json.is_some() {
-            GeneratedPatternAuthority::Invalid
-        } else {
-            GeneratedPatternAuthority::Manual
-        };
+        return GeneratedPatternAuthority::Invalid;
     };
     let Ok(manifest) =
         serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(manifest_json)
@@ -830,6 +841,7 @@ fn generated_pattern_authority(
     };
     if capability.case_id != manifest.canonical_case_id
         && capability.case_id != manifest.public_case_id
+        || capability.generated_case_id != manifest.canonical_case_id
     {
         return GeneratedPatternAuthority::Invalid;
     }
@@ -841,12 +853,75 @@ fn generated_pattern_authority(
         ) == capability.id
     });
     let Some(generated) = generated else {
-        return if persisted_outputs_json.is_some() {
-            GeneratedPatternAuthority::Invalid
-        } else {
-            GeneratedPatternAuthority::Manual
-        };
+        return GeneratedPatternAuthority::Invalid;
     };
+    let remap = |id: &adventuresim_core::quest_generation::ActionId| {
+        adventuresim_core::quest_generation::observer_scoped_id(
+            &context,
+            "capability",
+            &format!("{}:{}", capability.owner_character_id, id.0),
+        )
+    };
+    let expected_required = generated
+        .prerequisite
+        .as_ref()
+        .map_or_else(String::new, remap);
+    let expected_alternate = remap(&generated.alternate);
+    let expected_terrain = manifest
+        .sites
+        .iter()
+        .find(|site| site.id.0 == generated.target_id)
+        .map(|site| site.terrain)
+        .or_else(|| {
+            manifest
+                .areas
+                .iter()
+                .find(|area| area.id == generated.target_id)
+                .map(|area| area.terrain)
+        })
+        .unwrap_or(action::Terrain::Settlement);
+    if capability.method != action_method(generated.kind)
+        || capability.target_kind != generated.target_kind
+        || capability.target_id != generated.target_id
+        || capability.target_terrain != format!("{expected_terrain:?}").to_ascii_lowercase()
+        || capability.required_action_id != expected_required
+        || capability.alternate_route_action_id != expected_alternate
+        || capability.safe_summary != generated.safe_summary
+    {
+        return GeneratedPatternAuthority::Invalid;
+    }
+    let expected_consequence = generated
+        .outputs
+        .iter()
+        .find_map(|output| match output {
+            adventuresim_core::quest_generation::GeneratedActionOutput::Consequence {
+                consequence:
+                    adventuresim_core::quest_generation::GeneratedActionConsequence::RetrieveAsset {
+                        asset_id,
+                        next_version,
+                    },
+            } => Some(InvestigationActionConsequence::RetrieveAsset {
+                asset_id: asset_id.clone(),
+                version: *next_version,
+            }),
+            adventuresim_core::quest_generation::GeneratedActionOutput::Consequence {
+                consequence:
+                    adventuresim_core::quest_generation::GeneratedActionConsequence::RescueSubject {
+                        subject_id,
+                        next_version,
+                    },
+            } => Some(InvestigationActionConsequence::RescueSubject {
+                subject_id: subject_id.clone(),
+                version: *next_version,
+            }),
+            _ => None,
+        })
+        .unwrap_or(InvestigationActionConsequence::None);
+    if serde_json::to_string(&expected_consequence).ok().as_deref()
+        != Some(capability.consequence_json.as_str())
+    {
+        return GeneratedPatternAuthority::Invalid;
+    }
     let Some(persisted_outputs_json) = persisted_outputs_json else {
         return GeneratedPatternAuthority::Invalid;
     };
@@ -875,12 +950,22 @@ fn generated_pattern_authority(
 }
 
 fn exactly_one_generated_authority(
-    mut matches: impl Iterator<Item = (String, String)>,
+    matches: impl IntoIterator<Item = (String, String, String)>,
 ) -> Result<Option<(String, String)>, ()> {
-    let Some(authority) = matches.next() else {
+    let mut unique = BTreeMap::new();
+    for (case_id, manifest, context) in matches {
+        if unique
+            .insert(case_id, (manifest.clone(), context.clone()))
+            .is_some_and(|existing| existing != (manifest, context))
+        {
+            return Err(());
+        }
+    }
+    let mut unique = unique.into_values();
+    let Some(authority) = unique.next() else {
         return Ok(None);
     };
-    if matches.next().is_some() {
+    if unique.next().is_some() {
         return Err(());
     }
     Ok(Some(authority))
@@ -890,23 +975,46 @@ fn generated_authority_view(
     ctx: &ViewContext,
     capability: &InvestigationActionCapability,
 ) -> Result<Option<(String, String)>, ()> {
-    if let Some(authority) = ctx
-        .db
-        .quest_generation_authority()
-        .case_id()
-        .find(&capability.case_id)
-    {
-        return Ok(Some((
-            authority.manifest_json,
-            authority.context_snapshot_json,
-        )));
+    match capability.provenance_kind.as_str() {
+        "manual" if capability.generated_case_id.is_empty() => return Ok(None),
+        "generated" if !capability.generated_case_id.is_empty() => {}
+        _ => return Err(()),
+    }
+    let mut candidates = Vec::new();
+    for alias in [&capability.generated_case_id, &capability.case_id] {
+        if candidates
+            .iter()
+            .any(|(queried, _, _, _): &(String, String, String, String)| queried == alias)
+        {
+            continue;
+        }
+        if let Some(authority) = ctx.db.quest_generation_authority().case_id().find(alias) {
+            candidates.push((
+                alias.clone(),
+                authority.case_id,
+                authority.manifest_json,
+                authority.context_snapshot_json,
+            ));
+        }
+        candidates.extend(
+            ctx.db
+                .quest_generation_authority()
+                .public_case_id()
+                .filter(alias)
+                .map(|authority| {
+                    (
+                        alias.clone(),
+                        authority.case_id,
+                        authority.manifest_json,
+                        authority.context_snapshot_json,
+                    )
+                }),
+        );
     }
     exactly_one_generated_authority(
-        ctx.db
-            .quest_generation_authority()
-            .public_case_id()
-            .filter(&capability.case_id)
-            .map(|authority| (authority.manifest_json, authority.context_snapshot_json)),
+        candidates
+            .into_iter()
+            .map(|(_, case_id, manifest, context)| (case_id, manifest, context)),
     )
 }
 
@@ -914,23 +1022,46 @@ fn generated_authority_reducer(
     ctx: &ReducerContext,
     capability: &InvestigationActionCapability,
 ) -> Result<Option<(String, String)>, ()> {
-    if let Some(authority) = ctx
-        .db
-        .quest_generation_authority()
-        .case_id()
-        .find(&capability.case_id)
-    {
-        return Ok(Some((
-            authority.manifest_json,
-            authority.context_snapshot_json,
-        )));
+    match capability.provenance_kind.as_str() {
+        "manual" if capability.generated_case_id.is_empty() => return Ok(None),
+        "generated" if !capability.generated_case_id.is_empty() => {}
+        _ => return Err(()),
+    }
+    let mut candidates = Vec::new();
+    for alias in [&capability.generated_case_id, &capability.case_id] {
+        if candidates
+            .iter()
+            .any(|(queried, _, _, _): &(String, String, String, String)| queried == alias)
+        {
+            continue;
+        }
+        if let Some(authority) = ctx.db.quest_generation_authority().case_id().find(alias) {
+            candidates.push((
+                alias.clone(),
+                authority.case_id,
+                authority.manifest_json,
+                authority.context_snapshot_json,
+            ));
+        }
+        candidates.extend(
+            ctx.db
+                .quest_generation_authority()
+                .public_case_id()
+                .filter(alias)
+                .map(|authority| {
+                    (
+                        alias.clone(),
+                        authority.case_id,
+                        authority.manifest_json,
+                        authority.context_snapshot_json,
+                    )
+                }),
+        );
     }
     exactly_one_generated_authority(
-        ctx.db
-            .quest_generation_authority()
-            .public_case_id()
-            .filter(&capability.case_id)
-            .map(|authority| (authority.manifest_json, authority.context_snapshot_json)),
+        candidates
+            .into_iter()
+            .map(|(_, case_id, manifest, context)| (case_id, manifest, context)),
     )
 }
 
@@ -1289,6 +1420,8 @@ pub(crate) fn issue_investigation_action_capability(
     id: String,
     owner_character_id: u64,
     case_id: String,
+    provenance_kind: String,
+    generated_case_id: String,
     kind: action::InvestigationActionKind,
     target_kind: String,
     target_id: String,
@@ -1302,6 +1435,11 @@ pub(crate) fn issue_investigation_action_capability(
     required_action_id: String,
     alternate_route_action_id: String,
 ) -> Result<(), String> {
+    match provenance_kind.as_str() {
+        "manual" if generated_case_id.is_empty() => {}
+        "generated" if !generated_case_id.is_empty() => {}
+        _ => return Err("Investigation capability provenance is invalid".into()),
+    }
     validate_investigation_action_text(
         &id,
         &case_id,
@@ -1357,6 +1495,8 @@ pub(crate) fn issue_investigation_action_capability(
             id,
             owner_character_id,
             case_id,
+            provenance_kind,
+            generated_case_id,
             method: action_method(kind).into(),
             version: 0,
             target_kind,
@@ -1961,6 +2101,8 @@ fn issue_rumor_action_graph(
                 capability_id,
                 owner_character_id,
                 case_id.to_string(),
+                "generated".into(),
+                manifest.canonical_case_id.clone(),
                 generated.kind,
                 generated.target_kind.clone(),
                 generated.target_id.clone(),
@@ -2204,6 +2346,8 @@ fn issue_rumor_action_graph(
             id,
             owner_character_id,
             case_id.to_string(),
+            "manual".into(),
+            String::new(),
             kind,
             kind_name.into(),
             target,
@@ -5359,20 +5503,47 @@ mod tests {
             id: observer_scoped_id(&context, "capability", &format!("7:{}", generated.id.0)),
             owner_character_id: 7,
             case_id: manifest.public_case_id.clone(),
-            method: format!("{:?}", generated.kind),
+            provenance_kind: "generated".into(),
+            generated_case_id: manifest.canonical_case_id.clone(),
+            method: action_method(generated.kind).into(),
             version: 0,
             target_kind: generated.target_kind.clone(),
             target_id: generated.target_id.clone(),
-            target_terrain: String::new(),
+            target_terrain: format!(
+                "{:?}",
+                manifest
+                    .sites
+                    .iter()
+                    .find(|site| site.id.0 == generated.target_id)
+                    .map(|site| site.terrain)
+                    .or_else(|| {
+                        manifest
+                            .areas
+                            .iter()
+                            .find(|area| area.id == generated.target_id)
+                            .map(|area| area.terrain)
+                    })
+                    .unwrap_or(action::Terrain::Settlement)
+            )
+            .to_ascii_lowercase(),
             seed: 1,
             evidence_age_origin_minute: 0,
             uncertainty_bps: 0,
             safe_summary: generated.safe_summary.clone(),
             known_prerequisites: String::new(),
             safe_result_on_success: String::new(),
-            consequence_json: String::new(),
-            required_action_id: String::new(),
-            alternate_route_action_id: String::new(),
+            consequence_json: serde_json::to_string(&InvestigationActionConsequence::None).unwrap(),
+            required_action_id: generated
+                .prerequisite
+                .as_ref()
+                .map_or_else(String::new, |id| {
+                    observer_scoped_id(&context, "capability", &format!("7:{}", id.0))
+                }),
+            alternate_route_action_id: observer_scoped_id(
+                &context,
+                "capability",
+                &format!("7:{}", generated.alternate.0),
+            ),
             active: true,
         };
         let manifest_json = serde_json::to_string(&manifest).unwrap();
@@ -5385,6 +5556,24 @@ mod tests {
         ));
         assert_eq!(
             generated_pattern_authority(&capability, authority, None),
+            GeneratedPatternAuthority::Invalid
+        );
+        assert_eq!(
+            generated_pattern_authority(&capability, None, None),
+            GeneratedPatternAuthority::Invalid
+        );
+        let mut absent_action_manifest = manifest.clone();
+        absent_action_manifest
+            .actions
+            .retain(|action| action.id != generated.id);
+        let absent_action_json = serde_json::to_string(&absent_action_manifest).unwrap();
+        let absent_action_authority = Some((absent_action_json.as_str(), context_json.as_str()));
+        assert_eq!(
+            generated_pattern_authority(&capability, absent_action_authority, None),
+            GeneratedPatternAuthority::Invalid
+        );
+        assert_eq!(
+            generated_pattern_authority(&capability, absent_action_authority, Some(&exact_outputs)),
             GeneratedPatternAuthority::Invalid
         );
         let mismatched = serde_json::to_string(&vec![GeneratedActionOutput::AmbushReady]).unwrap();
@@ -5423,9 +5612,53 @@ mod tests {
             generated_pattern_authority(&wrong_case, authority, Some(&exact_outputs)),
             GeneratedPatternAuthority::Invalid
         );
+        for mutate in 0..8 {
+            let mut changed = capability.clone();
+            match mutate {
+                0 => changed.method = "watch".into(),
+                1 => changed.target_kind = "site".into(),
+                2 => changed.target_id = "wrong-target".into(),
+                3 => changed.target_terrain = "water".into(),
+                4 => changed.required_action_id = "wrong-required".into(),
+                5 => changed.alternate_route_action_id = "wrong-alternate".into(),
+                6 => changed.safe_summary = "wrong summary".into(),
+                _ => changed.consequence_json = r#"{"kind":"rescue_subject"}"#.into(),
+            }
+            assert_eq!(
+                generated_pattern_authority(&changed, authority, Some(&exact_outputs)),
+                GeneratedPatternAuthority::Invalid,
+                "blueprint mutation {mutate} unexpectedly remained valid"
+            );
+        }
+        let mut night_manifest = manifest.clone();
+        let night_action = night_manifest
+            .actions
+            .iter_mut()
+            .find(|action| action.id == generated.id)
+            .unwrap();
+        for output in &mut night_action.outputs {
+            if let GeneratedActionOutput::PatternCondition { condition, .. } = output {
+                *condition =
+                    adventuresim_core::quest_generation::GeneratedPatternCondition::NightWindow;
+            }
+        }
+        let night_outputs = serde_json::to_string(&night_action.outputs).unwrap();
+        let night_manifest_json = serde_json::to_string(&night_manifest).unwrap();
+        let mut wrong_night_geography = capability.clone();
+        wrong_night_geography.target_terrain = "water".into();
+        assert_eq!(
+            generated_pattern_authority(
+                &wrong_night_geography,
+                Some((night_manifest_json.as_str(), context_json.as_str())),
+                Some(&night_outputs),
+            ),
+            GeneratedPatternAuthority::Invalid
+        );
         let manual = InvestigationActionCapability {
             id: "manual".into(),
             case_id: "manual-case".into(),
+            provenance_kind: "manual".into(),
+            generated_case_id: String::new(),
             ..capability
         };
         assert_eq!(
@@ -5433,21 +5666,36 @@ mod tests {
             GeneratedPatternAuthority::Manual
         );
         assert_eq!(
-            exactly_one_generated_authority(Vec::<(String, String)>::new().into_iter()),
+            exactly_one_generated_authority(Vec::<(String, String, String)>::new()),
             Ok(None)
         );
         assert_eq!(
-            exactly_one_generated_authority([("manifest".into(), "context".into())].into_iter()),
+            exactly_one_generated_authority([("case".into(), "manifest".into(), "context".into())]),
             Ok(Some(("manifest".into(), "context".into())))
         );
+        // Canonical and public lookup paths can return the same row; row
+        // identity deduplicates it rather than manufacturing ambiguity.
         assert_eq!(
-            exactly_one_generated_authority(
-                [
-                    ("manifest-a".into(), "context-a".into()),
-                    ("manifest-b".into(), "context-b".into()),
-                ]
-                .into_iter(),
-            ),
+            exactly_one_generated_authority([
+                ("same-case".into(), "manifest".into(), "context".into()),
+                ("same-case".into(), "manifest".into(), "context".into()),
+            ]),
+            Ok(Some(("manifest".into(), "context".into())))
+        );
+        // Canonical/public and public/public collisions both contain distinct
+        // private authority rows and therefore fail closed.
+        assert_eq!(
+            exactly_one_generated_authority([
+                ("case-a".into(), "manifest-a".into(), "context-a".into()),
+                ("case-b".into(), "manifest-b".into(), "context-b".into()),
+            ]),
+            Err(())
+        );
+        assert_eq!(
+            exactly_one_generated_authority([
+                ("public-a".into(), "manifest-a".into(), "context-a".into()),
+                ("public-b".into(), "manifest-b".into(), "context-b".into()),
+            ]),
             Err(())
         );
 
