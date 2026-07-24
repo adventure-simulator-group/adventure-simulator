@@ -1213,12 +1213,6 @@ fn exact_action_site_for_observer(
     if kind != action::InvestigationActionKind::InspectSite || capability.target_kind != "site" {
         return None;
     }
-    let authority = generated_authority_view(ctx, capability).ok()?;
-    let generated_aliases = authority.as_ref().and_then(|(manifest, _)| {
-        serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(manifest)
-            .ok()
-            .map(|manifest| (manifest.canonical_case_id, manifest.public_case_id))
-    });
     let lead = ctx
         .db
         .investigation_lead()
@@ -1237,6 +1231,15 @@ fn exact_action_site_for_observer(
         .case_site_authority()
         .id_key()
         .find(&lead.exact_location_id)?;
+    let generated_aliases = case_site_provenance_view(ctx, &site)?;
+    match (&generated_aliases, capability.provenance_kind.as_str()) {
+        (None, "manual") if capability.generated_case_id.is_empty() => {}
+        (Some((canonical, public)), "generated")
+            if capability.generated_case_id == canonical.as_str()
+                && (capability.case_id == canonical.as_str()
+                    || capability.case_id == public.as_str()) => {}
+        _ => return None,
+    }
     exact_site_knowledge_is_live(
         &capability.case_id,
         &capability.target_id,
@@ -3547,15 +3550,12 @@ pub fn backend_case_site_pins(ctx: &ViewContext) -> Vec<BackendCaseSitePin> {
                 .case_site_authority()
                 .id_key()
                 .find(&lead.exact_location_id)?;
-            let generated_public_case_id = ctx
-                .db
-                .quest_generation_authority()
-                .case_id()
-                .find(&site.case_id)
-                .and_then(|authority| validate_quest_generation_authority(&authority).ok())
-                .map(|validated| validated.manifest.public_case_id);
-            if !lead_projects_exact_case_site_pin(&lead, &site, generated_public_case_id.as_deref())
-            {
+            let aliases = case_site_provenance_view(ctx, &site)?;
+            if !lead_projects_exact_case_site_pin(
+                &lead,
+                &site,
+                aliases.as_ref().map(|aliases| aliases.1.as_str()),
+            ) {
                 return None;
             }
             let tracked = ctx
@@ -3615,6 +3615,51 @@ fn lead_projects_exact_case_site_pin(
         && lead.longitude_e7 == site.longitude_e7
 }
 
+fn validated_case_site_aliases(
+    case: &crate::strategic::CaseAuthority,
+    authorities: impl IntoIterator<Item = crate::strategic::QuestGenerationAuthority>,
+) -> Option<Option<(String, String)>> {
+    let mut authorities: Vec<_> = authorities
+        .into_iter()
+        .filter(|authority| {
+            authority.case_id == case.id
+                || authority.public_case_id == case.id
+                || (!case.generated_case_id.is_empty()
+                    && (authority.case_id == case.generated_case_id
+                        || authority.public_case_id == case.generated_case_id))
+        })
+        .collect();
+    authorities.sort_by(|left, right| left.case_id.cmp(&right.case_id));
+    authorities.dedup_by(|left, right| left.case_id == right.case_id);
+    match case.provenance_kind.as_str() {
+        "manual" if case.generated_case_id.is_empty() && authorities.is_empty() => Some(None),
+        "generated" if case.generated_case_id == case.id && authorities.len() == 1 => {
+            let validated = validate_quest_generation_authority(&authorities[0]).ok()?;
+            (validated.manifest.canonical_case_id == case.id).then_some(Some((
+                validated.manifest.canonical_case_id,
+                validated.manifest.public_case_id,
+            )))
+        }
+        _ => None,
+    }
+}
+
+fn case_site_provenance_view(
+    ctx: &ViewContext,
+    site: &CaseSiteAuthority,
+) -> Option<Option<(String, String)>> {
+    let case = ctx.db.case_authority().id().find(&site.case_id)?;
+    validated_case_site_aliases(&case, ctx.db.quest_generation_authority().iter())
+}
+
+fn case_site_provenance_reducer(
+    ctx: &ReducerContext,
+    site: &CaseSiteAuthority,
+) -> Option<Option<(String, String)>> {
+    let case = ctx.db.case_authority().id().find(&site.case_id)?;
+    validated_case_site_aliases(&case, ctx.db.quest_generation_authority().iter())
+}
+
 #[view(accessor = backend_character_case_site_locations, public)]
 pub fn backend_character_case_site_locations(
     ctx: &ViewContext,
@@ -3641,17 +3686,20 @@ fn exact_action_case_site_for_observer(
     InvestigationLead,
     Option<(String, String)>,
 )> {
-    let authority = generated_authority_reducer(ctx, capability).ok()?;
-    let generated_aliases = authority.as_ref().and_then(|(manifest, _)| {
-        serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(manifest)
-            .ok()
-            .map(|manifest| (manifest.canonical_case_id, manifest.public_case_id))
-    });
     let site = ctx
         .db
         .case_site_authority()
         .id_key()
         .find(&capability.target_id)?;
+    let generated_aliases = case_site_provenance_reducer(ctx, &site)?;
+    match (&generated_aliases, capability.provenance_kind.as_str()) {
+        (None, "manual") if capability.generated_case_id.is_empty() => {}
+        (Some((canonical, public)), "generated")
+            if capability.generated_case_id == canonical.as_str()
+                && (capability.case_id == canonical.as_str()
+                    || capability.case_id == public.as_str()) => {}
+        _ => return None,
+    }
     ctx.db
         .investigation_lead()
         .owner_character_id()
@@ -3683,13 +3731,7 @@ pub(crate) fn exact_case_site_for_observer(
         .case_site_authority()
         .id_key()
         .find(&case_site_id.to_string())?;
-    let generated_public_case_id = ctx
-        .db
-        .quest_generation_authority()
-        .case_id()
-        .find(&site.case_id)
-        .and_then(|authority| validate_quest_generation_authority(&authority).ok())
-        .map(|validated| validated.manifest.public_case_id);
+    let generated_aliases = case_site_provenance_reducer(ctx, &site)?;
     ctx.db
         .investigation_lead()
         .owner_character_id()
@@ -3697,9 +3739,9 @@ pub(crate) fn exact_case_site_for_observer(
         .find(|lead| {
             lead.exact_location_id == case_site_id
                 && (lead.case_id == site.case_id
-                    || generated_public_case_id
-                        .as_deref()
-                        .is_some_and(|public| lead.case_id == public))
+                    || generated_aliases
+                        .as_ref()
+                        .is_some_and(|aliases| lead.case_id == aliases.1.as_str()))
                 && lead.latitude_e7 == site.latitude_e7
                 && lead.longitude_e7 == site.longitude_e7
                 && lead.corrected_by.is_empty()
@@ -4975,6 +5017,125 @@ pub fn share_investigation_belief(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn exact_site_projection_and_travel_require_explicit_case_provenance() {
+        let source = include_str!("investigation.rs");
+        let provenance = source
+            .split("fn validated_case_site_aliases")
+            .nth(1)
+            .and_then(|tail| tail.split("fn case_site_provenance_view").next())
+            .unwrap();
+        for required in [
+            "\"manual\" if case.generated_case_id.is_empty() && authorities.is_empty()",
+            "\"generated\" if case.generated_case_id == case.id && authorities.len() == 1",
+            "validate_quest_generation_authority",
+            "canonical_case_id == case.id",
+        ] {
+            assert!(provenance.contains(required), "{required}");
+        }
+        let pins = source
+            .split("pub fn backend_case_site_pins")
+            .nth(1)
+            .and_then(|tail| tail.split("fn lead_projects_exact_case_site_pin").next())
+            .unwrap();
+        let travel = source
+            .split("pub(crate) fn exact_case_site_for_observer")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(crate) fn disclose_exact_case_site").next())
+            .unwrap();
+        assert!(pins.contains("case_site_provenance_view"));
+        assert!(travel.contains("case_site_provenance_reducer"));
+        for consumer in [
+            "fn exact_action_site_for_observer",
+            "fn exact_action_case_site_for_observer",
+        ] {
+            let body = source.split(consumer).nth(1).unwrap();
+            assert!(body.contains("case_site_provenance_"));
+        }
+    }
+
+    #[test]
+    fn exact_site_provenance_accepts_only_valid_manual_or_generated_tuples() {
+        use adventuresim_core::{
+            local_problem::Scope,
+            quest_generation::{GenerationContext, TemplateFamily, generate, test_witnesses},
+        };
+        let context = GenerationContext {
+            seed: 19,
+            observer_entropy_hi: 23,
+            observer_entropy_lo: 29,
+            settlement_id: "lubeck".into(),
+            settlement_name: "Lubeck".into(),
+            scope: Scope::Settlement {
+                settlement_id: "lubeck".into(),
+            },
+            ordinal: 0,
+            now_minute: 50_000,
+            requested_family: Some(TemplateFamily::RecurringDepredation),
+            witness_candidates: test_witnesses(),
+        };
+        let manifest = generate(&context).unwrap();
+        let context_snapshot_json = serde_json::to_string(&context).unwrap();
+        let authority = crate::strategic::QuestGenerationAuthority {
+            case_id: manifest.canonical_case_id.clone(),
+            public_case_id: manifest.public_case_id.clone(),
+            settlement_id: context.settlement_id.clone(),
+            settlement_name: context.settlement_name.clone(),
+            seed: context.seed,
+            catalog_revision: manifest.catalog_revision.clone(),
+            context_commitment: crate::strategic::quest_generation_context_commitment(
+                &context_snapshot_json,
+            ),
+            context_snapshot_json,
+            manifest_json: serde_json::to_string(&manifest).unwrap(),
+            factor_trace_json: serde_json::to_string(&manifest.factor_trace).unwrap(),
+        };
+        let generated_case = crate::strategic::CaseAuthority {
+            id: manifest.canonical_case_id.clone(),
+            investigation_case_id: manifest.canonical_case_id.clone(),
+            provenance_kind: "generated".into(),
+            generated_case_id: manifest.canonical_case_id.clone(),
+            local_problem_id: Some(manifest.problem_id.clone()),
+            objective_expression_json: serde_json::to_string(&manifest.objectives).unwrap(),
+            resolution_status: crate::strategic::CaseResolutionStatus::Open,
+            resolved_by_party_id: None,
+        };
+        assert_eq!(
+            validated_case_site_aliases(&generated_case, [authority.clone()]),
+            Some(Some((
+                manifest.canonical_case_id.clone(),
+                manifest.public_case_id.clone()
+            )))
+        );
+        assert_eq!(
+            validated_case_site_aliases(&generated_case, std::iter::empty()),
+            None
+        );
+        let mut corrupt = authority.clone();
+        corrupt.context_commitment = "corrupt".into();
+        assert_eq!(
+            validated_case_site_aliases(&generated_case, [corrupt]),
+            None
+        );
+        let manual = crate::strategic::CaseAuthority {
+            id: "manual-case".into(),
+            investigation_case_id: "manual-case".into(),
+            provenance_kind: "manual".into(),
+            generated_case_id: String::new(),
+            local_problem_id: None,
+            objective_expression_json: "{}".into(),
+            resolution_status: crate::strategic::CaseResolutionStatus::Open,
+            resolved_by_party_id: None,
+        };
+        assert_eq!(
+            validated_case_site_aliases(&manual, std::iter::empty()),
+            Some(None)
+        );
+        let mut collision = authority;
+        collision.public_case_id = manual.id.clone();
+        assert_eq!(validated_case_site_aliases(&manual, [collision]), None);
+    }
+
     use super::*;
 
     #[test]

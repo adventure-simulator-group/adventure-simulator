@@ -2,7 +2,10 @@
 use crate::{
     character::{character, character__view},
     settlement_population::{settlement_npc, settlement_npc_presence},
-    strategic::{quest_generation_authority, settlement, strategic_gateway_authority__view},
+    strategic::{
+        quest_generation_authority, settlement, strategic_gateway_authority__view,
+        validate_quest_generation_authority,
+    },
     time::{character_time, character_time__view, world_clock},
 };
 use adventuresim_core::local_problem as lp;
@@ -625,16 +628,29 @@ fn referral_location_label(
     ctx: &ReducerContext,
     receipt: &LocalProblemReceipt,
 ) -> Result<String, String> {
+    let problem = ctx
+        .db
+        .local_problem_authority()
+        .id()
+        .find(&receipt.problem_id)
+        .ok_or("Rumor problem authority is missing")?;
     let authority = ctx
         .db
         .quest_generation_authority()
         .case_id()
         .find(&receipt.opaque_case_ref)
         .ok_or("Rumor is not backed by a generated case")?;
-    let generated: adventuresim_core::quest_generation::GeneratedCase =
-        serde_json::from_str(&authority.manifest_json)
-            .map_err(|_| "Generated referral manifest is invalid")?;
-    generated
+    let validated = validate_quest_generation_authority(&authority)?;
+    if validated.manifest.canonical_case_id != receipt.opaque_case_ref
+        || validated.manifest.problem_id != problem.id
+        || problem.opaque_case_ref != receipt.opaque_case_ref
+        || validated.context.settlement_id != receipt.settlement_id
+        || validated.context.settlement_name != authority.settlement_name
+    {
+        return Err("Generated referral provenance does not match its receipt".into());
+    }
+    validated
+        .manifest
         .witnesses
         .iter()
         .find(|witness| {
@@ -684,10 +700,31 @@ pub fn surface_problem(
             .local_problem_receipt()
             .id()
             .find(&format!("{character_id}:{}", problem.id))
+            .map(|receipt| (problem.clone(), receipt))
     });
-    if let Some(receipt) = known {
+    if let Some((problem, receipt)) = known {
         if let Some(contact) = ctx.db.settlement_npc().id().find(&receipt.contact_npc_id) {
-            let location_label = referral_location_label(ctx, &receipt)?;
+            let location_label = if ctx
+                .db
+                .quest_generation_authority()
+                .case_id()
+                .find(&receipt.opaque_case_ref)
+                .is_some()
+            {
+                referral_location_label(ctx, &receipt)?
+            } else if receipt.opaque_case_ref.starts_with("case:opaque:")
+                && problem.opaque_case_ref == receipt.opaque_case_ref
+                && problem.id == receipt.problem_id
+                && contact.home_settlement_id == receipt.settlement_id
+                && !ctx.db.quest_generation_authority().iter().any(|authority| {
+                    authority.case_id == receipt.opaque_case_ref
+                        || authority.public_case_id == receipt.opaque_case_ref
+                })
+            {
+                receipt.expected_location_id.clone()
+            } else {
+                return Err("Rumor provenance is invalid".into());
+            };
             ctx.db
                 .local_problem_rumor_delivery()
                 .insert(LocalProblemRumorDelivery {
@@ -735,12 +772,81 @@ pub fn surface_problem(
         .db
         .quest_generation_authority()
         .case_id()
-        .find(&problem.opaque_case_ref)
-        .ok_or("Local problem has no generated case authority")?;
-    let generated: adventuresim_core::quest_generation::GeneratedCase =
-        serde_json::from_str(&generation.manifest_json)
-            .map_err(|_| "Generated referral manifest is invalid")?;
-    let witness = generated
+        .find(&problem.opaque_case_ref);
+    if generation.is_none()
+        && problem.opaque_case_ref.starts_with("case:opaque:")
+        && !ctx.db.quest_generation_authority().iter().any(|authority| {
+            authority.case_id == problem.opaque_case_ref
+                || authority.public_case_id == problem.opaque_case_ref
+        })
+    {
+        let contact = ctx
+            .db
+            .settlement_npc()
+            .id()
+            .find(&source_npc_id.to_string())
+            .ok_or("Manual problem source NPC is missing")?;
+        let presence = ctx
+            .db
+            .settlement_npc_presence()
+            .npc_id()
+            .find(&contact.id)
+            .filter(|presence| {
+                presence.settlement_id == settlement_id && presence.location_id == location_id
+            })
+            .ok_or("Manual problem source NPC is not at the discovery location")?;
+        let symptom = ctx
+            .db
+            .local_problem_symptom()
+            .problem_id()
+            .find(&problem.id)
+            .ok_or("Problem symptom projection missing")?;
+        let receipt_id = format!("{character_id}:{}", problem.id);
+        let text = referral_text(&symptom.public_summary, &contact, location_id);
+        ctx.db.local_problem_receipt().insert(LocalProblemReceipt {
+            id: receipt_id.clone(),
+            character_id,
+            settlement_id: settlement_id.clone(),
+            problem_id: problem.id,
+            opaque_case_ref: problem.opaque_case_ref,
+            source_npc_id: source_npc_id.into(),
+            discovery_session_id: session_id.into(),
+            contact_npc_id: contact.id,
+            expected_location_id: presence.location_id,
+            safe_summary: symptom.public_summary,
+            learned_at: minute,
+        });
+        ctx.db
+            .local_problem_rumor_delivery()
+            .insert(LocalProblemRumorDelivery {
+                id: format!("{session_id}:rumor"),
+                character_id,
+                settlement_id,
+                session_id: session_id.into(),
+                receipt_id,
+                delivery_text: text,
+            });
+        return Ok(());
+    }
+    let validated = validate_quest_generation_authority(
+        &generation.ok_or("Local problem has no generated case authority")?,
+    )?;
+    if validated.manifest.canonical_case_id != problem.opaque_case_ref
+        || validated.manifest.problem_id != problem.id
+        || validated.context.settlement_id != settlement_id
+        || validated.context.settlement_name
+            != ctx
+                .db
+                .settlement()
+                .id()
+                .find(&settlement_id)
+                .ok_or("Settlement not found")?
+                .name
+    {
+        return Err("Generated local problem provenance is inconsistent".into());
+    }
+    let witness = validated
+        .manifest
         .witnesses
         .first()
         .ok_or("Generated case has no primary witness")?;
@@ -800,6 +906,44 @@ pub fn surface_problem(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn rumor_consumers_use_validated_generation_provenance_before_disclosure() {
+        let source = include_str!("local_problem.rs");
+        let referral = source
+            .split("fn referral_location_label")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn surface_problem").next())
+            .unwrap();
+        let surface = source
+            .split("pub fn surface_problem")
+            .nth(1)
+            .and_then(|tail| tail.split("#[cfg(test)]").next())
+            .unwrap();
+        assert!(referral.contains("validate_quest_generation_authority"));
+        assert!(surface.contains("validate_quest_generation_authority"));
+        assert!(!referral.contains("serde_json::from_str"));
+        assert!(!surface.contains("serde_json::from_str"));
+        for binding in [
+            "canonical_case_id != receipt.opaque_case_ref",
+            "manifest.problem_id != problem.id",
+            "context.settlement_id != receipt.settlement_id",
+            "witness.npc_id == receipt.contact_npc_id",
+            "witness.expected_location == receipt.expected_location_id",
+        ] {
+            assert!(referral.contains(binding), "{binding}");
+        }
+        for binding in [
+            "manifest.canonical_case_id != problem.opaque_case_ref",
+            "manifest.problem_id != problem.id",
+            "context.settlement_id != settlement_id",
+            "presence.location_id == witness.expected_location",
+        ] {
+            assert!(surface.contains(binding), "{binding}");
+        }
+        assert!(surface.contains("case:opaque:"));
+        assert!(surface.contains("public_case_id == problem.opaque_case_ref"));
+    }
+
     #[test]
     fn public_schema_has_no_hidden_fields() {
         let source = include_str!("local_problem.rs");
