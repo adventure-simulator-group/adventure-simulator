@@ -192,7 +192,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}
                     script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
                     script src="/static/service-quests.js?v=apprentice-system-1" defer {}
-                    script src="/static/dialogue-client.js?v=authoritative-dialogue-3" defer {}
+                    script src="/static/dialogue-client.js?v=authoritative-dialogue-4" defer {}
                     script src="/static/chat-resize.js?v=floating-chat-3" defer {}
                     script src="/static/local-chat.js?v=local-chat-location-authority-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}
