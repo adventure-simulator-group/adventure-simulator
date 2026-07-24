@@ -25,12 +25,14 @@ use super::{
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    AutoresolveReport, BackendCaseBattle, BackendCaseSitePin, BattleLootItem, BattleResult,
-    Character, CharacterAttributes, CharacterLimbs, CharacterStats, CharacterTime,
-    CharacterTrainingSchedule, ContractPresentation, ContractPresentationStatus,
+    AutoresolveReport, BackendCaseBattle, BackendCaseSitePin, BackendInvestigationAction,
+    BattleLootItem, BattleResult, Character, CharacterAttributes, CharacterLimbs, CharacterStats,
+    CharacterTime, CharacterTrainingSchedule, ContractPresentation, ContractPresentationStatus,
     InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem, PartyStake, Settlement,
 };
-use crate::templates::quest::{quest_location_enemy_page, quest_location_map_page};
+use crate::templates::quest::{
+    CaseSitePagePresentation, quest_location_enemy_page, quest_location_map_page,
+};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -356,6 +358,59 @@ enum QuestLocationTab {
     Enemy,
 }
 
+fn case_site_page_presentation(
+    site: &BackendCaseSitePin,
+    legacy_quest: Option<&ContractPresentation>,
+) -> Option<CaseSitePagePresentation> {
+    if site.generated_case {
+        if site.display_title.is_empty() {
+            return None;
+        }
+        Some(CaseSitePagePresentation {
+            title: site.display_title.clone(),
+            action_id: site.case_site_id.clone(),
+            allow_tactical_combat: false,
+        })
+    } else {
+        let quest = legacy_quest?;
+        Some(CaseSitePagePresentation {
+            title: quest.title.clone(),
+            action_id: quest.id.clone(),
+            allow_tactical_combat: true,
+        })
+    }
+}
+
+fn case_site_combat_permitted(
+    site: &BackendCaseSitePin,
+    legacy_quest: Option<&ContractPresentation>,
+    active_contract_id: Option<&str>,
+    can_control: bool,
+    party_ready: bool,
+) -> bool {
+    if !can_control || !party_ready {
+        return false;
+    }
+    if site.generated_case {
+        site.combat_available
+    } else {
+        legacy_quest.is_some_and(|quest| {
+            quest.status == ContractPresentationStatus::Accepted
+                && active_contract_id == Some(quest.id.as_str())
+        })
+    }
+}
+
+fn onsite_investigation_actions(
+    actions: Vec<BackendInvestigationAction>,
+    case_site_id: &str,
+) -> Vec<BackendInvestigationAction> {
+    actions
+        .into_iter()
+        .filter(|action| action.available && action.required_case_site_id == case_site_id)
+        .collect()
+}
+
 async fn quest_location_base(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -505,15 +560,21 @@ async fn render_quest_location(
         )
             .into_response();
     };
-    let matching_quests: Vec<ContractPresentation> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM backend_contracts WHERE case_id = {}",
-            sql_string_literal(&site.case_id)
-        ))
-        .await
-        .unwrap_or_default();
-    let Some(quest) = matching_quests.first() else {
+    let legacy_quest = if site.generated_case {
+        None
+    } else {
+        state
+            .db
+            .query::<ContractPresentation>(&format!(
+                "SELECT * FROM backend_contracts WHERE case_id = {}",
+                sql_string_literal(&site.case_id)
+            ))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+    };
+    let Some(mut presentation) = case_site_page_presentation(site, legacy_quest.as_ref()) else {
         return (
             StatusCode::NOT_FOUND,
             Html(
@@ -545,7 +606,10 @@ async fn render_quest_location(
     };
     let is_at_location = character
         .as_ref()
-        .is_some_and(|c| c.current_case_site_id.as_deref() == Some(&site.case_site_id));
+        .is_some_and(|c| c.current_case_site_id.as_deref() == Some(&site.case_site_id))
+        && party
+            .as_ref()
+            .is_some_and(|party| party.current_case_site_id.as_deref() == Some(&site.case_site_id));
     if !is_at_location {
         let return_href = character
             .as_ref()
@@ -618,17 +682,21 @@ async fn render_quest_location(
         state
             .db
             .query::<BackendCaseBattle>(&format!(
-                "SELECT * FROM backend_case_battles WHERE case_id = {} AND party_id = {}",
-                sql_string_literal(&quest.case_id),
+                "SELECT * FROM backend_case_battles WHERE party_id = {}",
                 sql_string_literal(&party.id)
             ))
             .await
             .unwrap_or_default()
             .into_iter()
-            .next()
+            .find(|battle| battle.case_site_id.value == site.case_site_id)
     } else {
         None
     };
+    if site.generated_case
+        && let Some(case_battle) = case_battle.as_ref()
+    {
+        presentation.action_id = case_battle.battle_id.clone();
+    }
     let results: Vec<BattleResult> = if let Some(case_battle) = case_battle.as_ref() {
         state
             .db
@@ -776,12 +844,25 @@ async fn render_quest_location(
         }
     }
     let party_ready = party_is_ready(&state, &party_members).await;
-    let can_fight = can_control
-        && party_ready
-        && quest.status == ContractPresentationStatus::Accepted
-        && party
+    let can_fight = case_site_combat_permitted(
+        site,
+        legacy_quest.as_ref(),
+        party
             .as_ref()
-            .is_some_and(|party| party.active_contract_id.as_deref() == Some(&quest.id));
+            .and_then(|party| party.active_contract_id.as_deref()),
+        can_control,
+        party_ready,
+    );
+    let onsite_actions = onsite_investigation_actions(
+        state
+            .db
+            .query::<BackendInvestigationAction>(&format!(
+                "SELECT * FROM backend_investigation_actions WHERE owner_character_id = {character_id}"
+            ))
+            .await
+            .unwrap_or_default(),
+        &site.case_site_id,
+    );
     let logged_in_as = character.as_ref().map(|c| c.name.as_str());
     let soap_preview = soap_rest_preview(
         &state,
@@ -791,8 +872,9 @@ async fn render_quest_location(
     .await;
     let page = match tab {
         QuestLocationTab::Map(selected) => quest_location_map_page(
-            quest,
+            &presentation,
             site,
+            &onsite_actions,
             &nearby,
             selected.as_deref(),
             character.as_ref(),
@@ -808,8 +890,9 @@ async fn render_quest_location(
             logged_in_as,
         ),
         QuestLocationTab::Enemy => quest_location_enemy_page(
-            quest,
+            &presentation,
             site,
+            &onsite_actions,
             character.as_ref(),
             &party_members,
             can_fight,
@@ -961,6 +1044,66 @@ mod quest_route_tests {
             .to_owned()
     }
 
+    fn case_site(generated_case: bool, combat_available: bool) -> BackendCaseSitePin {
+        BackendCaseSitePin {
+            owner_character_id: 7,
+            case_id: "journal:case".into(),
+            case_site_id: "site:known".into(),
+            origin_settlement_id: "settlement".into(),
+            name: "a camp in the woods".into(),
+            description: "A known place.".into(),
+            scene_key: "forest".into(),
+            longitude_e7: 0,
+            latitude_e7: 0,
+            coordinates_are_geographic: false,
+            distance_m: 4_000,
+            knowledge_stage: "visited".into(),
+            tracked: false,
+            display_title: "Travellers have gone missing".into(),
+            generated_case,
+            combat_available,
+        }
+    }
+
+    fn accepted_contract() -> ContractPresentation {
+        ContractPresentation {
+            id: "contract:one".into(),
+            case_id: "case:one".into(),
+            title: "Legacy bounty".into(),
+            description: String::new(),
+            difficulty: 1,
+            gold_reward: 10,
+            xp_reward: 10,
+            settlement_id: "settlement".into(),
+            service_id: "tavern".into(),
+            issuer_npc_id: "npc:issuer".into(),
+            status: ContractPresentationStatus::Accepted,
+            accepted_by: Some("party".into()),
+            opposition_wording: "unknown opposition".into(),
+            opposition_count_wording: "unknown number".into(),
+        }
+    }
+
+    fn onsite_action(site: &str, available: bool) -> BackendInvestigationAction {
+        BackendInvestigationAction {
+            owner_character_id: 7,
+            action_id: "action:inspect".into(),
+            method: "inspect_site".into(),
+            expected_version: 1,
+            summary: "Inspect this place".into(),
+            known_prerequisites: String::new(),
+            duration_min_minutes: 15,
+            duration_max_minutes: 45,
+            uncertainty_bps: 2500,
+            skill_contributions: "awareness".into(),
+            weather_available: false,
+            required_case_site_id: site.into(),
+            available,
+            can_travel_to_required_site: false,
+            unavailable_reason: String::new(),
+        }
+    }
+
     #[test]
     fn autoresolve_stays_on_the_enemy_lifecycle_except_while_requesting_approval() {
         let enemy = "/locations/case-site/case-site-1/enemy";
@@ -995,5 +1138,82 @@ mod quest_route_tests {
             "The exact destination or the party's travel readiness changed. Review the journal before trying again."
         );
         assert!(!safe_case_site_travel_error("site:secret").contains("site:secret"));
+    }
+
+    #[test]
+    fn generated_location_is_contract_free_but_manual_location_is_not() {
+        let generated = case_site(true, true);
+        let generated_presentation =
+            case_site_page_presentation(&generated, None).expect("generated presentation");
+        assert_eq!(generated_presentation.title, "Travellers have gone missing");
+        assert!(!generated_presentation.allow_tactical_combat);
+        assert!(case_site_combat_permitted(
+            &generated, None, None, true, true
+        ));
+        assert!(!case_site_combat_permitted(
+            &generated, None, None, true, false
+        ));
+
+        let evidence_site = case_site(true, false);
+        assert!(!case_site_combat_permitted(
+            &evidence_site,
+            None,
+            None,
+            true,
+            true
+        ));
+
+        let manual = case_site(false, false);
+        assert!(case_site_page_presentation(&manual, None).is_none());
+        let contract = accepted_contract();
+        let manual_presentation =
+            case_site_page_presentation(&manual, Some(&contract)).expect("legacy presentation");
+        assert_eq!(manual_presentation.title, "Legacy bounty");
+        assert!(manual_presentation.allow_tactical_combat);
+        assert!(case_site_combat_permitted(
+            &manual,
+            Some(&contract),
+            Some("contract:one"),
+            true,
+            true,
+        ));
+        assert!(!case_site_combat_permitted(
+            &manual,
+            Some(&contract),
+            Some("contract:other"),
+            true,
+            true,
+        ));
+    }
+
+    #[test]
+    fn onsite_investigation_requires_exact_available_site_action() {
+        let actions = onsite_investigation_actions(
+            vec![
+                onsite_action("site:known", true),
+                onsite_action("site:other", true),
+                onsite_action("site:known", false),
+            ],
+            "site:known",
+        );
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].action_id, "action:inspect");
+    }
+
+    #[test]
+    fn generated_location_loader_keeps_owner_pin_and_occupancy_boundaries() {
+        let source = include_str!("quests.rs");
+        let loader = source
+            .split("async fn render_quest_location")
+            .nth(1)
+            .and_then(|tail| tail.split("async fn party_is_ready").next())
+            .expect("case-site loader");
+        assert!(loader.contains("owner_character_id = {character_id}"));
+        assert!(loader.contains("case_site_id = {}"));
+        assert!(loader.contains("current_case_site_id.as_deref() == Some(&site.case_site_id)"));
+        assert!(loader.contains("if site.generated_case"));
+        assert!(loader.contains("case_site_combat_permitted"));
+        assert!(loader.contains("battle.case_site_id.value == site.case_site_id"));
+        assert!(!loader.contains("active_contract_id.as_deref() == Some(&presentation"));
     }
 }

@@ -857,6 +857,9 @@ mod tests {
             distance_m: 8_000,
             knowledge_stage: "exact_believed".into(),
             tracked: true,
+            display_title: title.into(),
+            generated_case: false,
+            combat_available: false,
         }
     }
 

@@ -3908,6 +3908,7 @@ pub struct BackendCaseBattle {
     #[primary_key]
     pub battle_id: String,
     pub mission_id: String,
+    pub case_site_id: CaseSiteId,
 }
 
 #[view(accessor = backend_case_battles, public)]
@@ -9721,6 +9722,7 @@ pub(crate) fn commit_hostile_battle_resolution(
                     party_id: party_id.to_string(),
                     battle_id: battle_id.to_string(),
                     mission_id: mission_id.to_string(),
+                    case_site_id: site.id,
                 });
         }
     }

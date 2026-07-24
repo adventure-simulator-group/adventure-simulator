@@ -183,6 +183,17 @@ weighted `MissionOutcomeCandidate` rows after exact observer-authorized site
 entry. Investigation never fabricates a battle result and no tactical tick
 state is persisted.
 
+An observer can open a generated case site without a contract only after the
+observer-owned exact pin and authoritative party occupancy agree on that site.
+The location page uses the validated public problem summary and site label; it
+does not synthesize a contract or expose the private manifest. Available
+site-bound investigation actions continue through the normal authorized
+investigation reducer. Strategic autoresolve is offered only when the
+validated generated finale, a pending objective path, and an active hostile
+group all bind the exact occupied site. Battle results are joined back to the
+page by typed case-site authority rather than canonical/public case aliases.
+Manual bounty pages retain their accepted-contract and active-contract gates.
+
 ## Developer tools
 
 ```text
