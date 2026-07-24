@@ -7,7 +7,7 @@ pub(crate) async fn character(state: &AppState, character_id: u64) -> Result<Opt
     let (character, case_site) = tokio::join!(
         state
             .db
-            .query_one(&format!("SELECT * FROM character WHERE id = {character_id}")),
+            .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {character_id}")),
         state
             .db
             .query_one::<BackendCharacterCaseSiteLocation>(&format!(
