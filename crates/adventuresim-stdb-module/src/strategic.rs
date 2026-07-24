@@ -38,6 +38,7 @@ use crate::{
         investigation_event_authority, investigation_evidence_authority,
         investigation_evidence_knowledge, investigation_lead, investigation_received_testimony,
         investigation_testimony_bundle, mark_case_site_visited, party_case_site_tracking,
+        referred_generated_witness,
     },
     item::{InventoryItem, inventory_item, item},
     local_problem::{local_problem_receipt, local_problem_rumor_delivery},
@@ -5613,16 +5614,24 @@ fn dialogue_fact_context(
             },
             FactValue::Bool(delivery_receipt.is_some()),
         );
+        let exact_referral = if let Some(receipt) = delivery_receipt.as_ref() {
+            referred_generated_witness(
+                ctx,
+                character_id,
+                &receipt.opaque_case_ref,
+                &npc.actor_id,
+                &session.settlement_id,
+                &session.location_id,
+            )?
+            .is_some()
+        } else {
+            false
+        };
         result.facts.insert(
             FactKey::ParticipantReferralContact {
                 role: npc.role.clone(),
             },
-            FactValue::Bool(delivery_receipt.is_some_and(|receipt| {
-                adventuresim_core::quest_generation::exact_referral_contact(
-                    &receipt.contact_npc_id,
-                    &npc.actor_id,
-                )
-            })),
+            FactValue::Bool(exact_referral),
         );
     }
     if let (Some(player), Some(npc)) = (
@@ -5907,8 +5916,15 @@ fn dialogue_runtime_bindings(
             adventuresim_core::quest_generation::referral_display_location(witness);
         bindings.bind(S::ReferralLocation, referral_location.to_owned());
         bindings.bind(S::DescribedLocation, referral_location.to_owned());
-        if adventuresim_core::quest_generation::exact_referral_contact(&contact.id, &npc.id) {
-            let testimony = witness
+        if let Some((_, selected_witness)) = referred_generated_witness(
+            ctx,
+            character_id,
+            &receipt.opaque_case_ref,
+            &npc.id,
+            &session.settlement_id,
+            &session.location_id,
+        )? {
+            let testimony = selected_witness
                 .testimony
                 .iter()
                 .map(|draft| draft.spoken_text.trim())
@@ -5922,84 +5938,6 @@ fn dialogue_runtime_bindings(
         }
     }
     Ok(bindings)
-}
-
-fn referred_testimony_context_matches(
-    receipt_character_id: u64,
-    character_id: u64,
-    expected_npc_id: &str,
-    addressed_npc_id: &str,
-    receipt_settlement_id: &str,
-    session_settlement_id: &str,
-    expected_location_id: &str,
-    session_location_id: &str,
-) -> bool {
-    receipt_character_id == character_id
-        && adventuresim_core::quest_generation::exact_referral_contact(
-            expected_npc_id,
-            addressed_npc_id,
-        )
-        && receipt_settlement_id == session_settlement_id
-        && expected_location_id == session_location_id
-}
-
-#[cfg(test)]
-mod referred_testimony_context_tests {
-    use super::referred_testimony_context_matches;
-
-    #[test]
-    fn selected_witness_is_bound_to_the_exact_receipt_session_and_location() {
-        assert!(referred_testimony_context_matches(
-            7,
-            7,
-            "npc:town:inn:1",
-            "npc:town:inn:1",
-            "town",
-            "town",
-            "inn",
-            "inn",
-        ));
-        assert!(!referred_testimony_context_matches(
-            7,
-            7,
-            "npc:town:inn:1",
-            "npc:town:inn:0",
-            "town",
-            "town",
-            "inn",
-            "inn",
-        ));
-        assert!(!referred_testimony_context_matches(
-            7,
-            7,
-            "npc:town:inn:1",
-            "npc:town:inn:1",
-            "town",
-            "other-town",
-            "inn",
-            "inn",
-        ));
-        assert!(!referred_testimony_context_matches(
-            7,
-            7,
-            "npc:town:inn:1",
-            "npc:town:inn:1",
-            "town",
-            "town",
-            "inn",
-            "residences",
-        ));
-        assert!(!referred_testimony_context_matches(
-            8,
-            7,
-            "npc:town:inn:1",
-            "npc:town:inn:1",
-            "town",
-            "town",
-            "inn",
-            "inn",
-        ));
-    }
 }
 
 fn receive_referred_testimony(
@@ -6022,35 +5960,23 @@ fn receive_referred_testimony(
         .id()
         .find(&delivery.receipt_id)
         .ok_or("Rumor delivery receipt disappeared")?;
-    if !referred_testimony_context_matches(
-        receipt.character_id,
-        character_id,
-        &receipt.contact_npc_id,
-        &live_npc.id,
-        &receipt.settlement_id,
-        &session.settlement_id,
-        &receipt.expected_location_id,
-        &session.location_id,
-    ) {
+    if receipt.character_id != character_id || receipt.settlement_id != session.settlement_id {
         return Err("Addressed NPC is not the exact referred witness here".into());
     }
-    let authority = ctx
-        .db
-        .quest_generation_authority()
-        .case_id()
-        .find(&receipt.opaque_case_ref)
-        .ok_or("Rumor is not backed by a generated case")?;
-    let generated = validate_quest_generation_authority(&authority)?.manifest;
-    let witness = generated
-        .witnesses
-        .iter()
-        .find(|witness| witness.npc_id == live_npc.id)
-        .ok_or("Referral contact is not the generated witness")?;
+    let (generated, witness) = referred_generated_witness(
+        ctx,
+        character_id,
+        &receipt.opaque_case_ref,
+        &live_npc.id,
+        &session.settlement_id,
+        &session.location_id,
+    )?
+    .ok_or("Addressed NPC is not the exact referred witness here")?;
     crate::investigation::persist_generated_testimony(
         ctx,
         character_id,
         &generated,
-        witness,
+        &witness,
         action_id,
     )
 }

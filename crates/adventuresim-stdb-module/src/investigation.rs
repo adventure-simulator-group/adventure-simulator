@@ -531,6 +531,26 @@ pub struct InvestigationReceivedTestimony {
     pub received_at: u64,
 }
 
+/// Private observer knowledge that one exact generated witness has been
+/// explicitly referred. Manifest membership alone never grants dialogue access.
+#[derive(Clone, Debug)]
+#[table(accessor = investigation_witness_referral)]
+pub struct InvestigationWitnessReferral {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub owner_character_id: u64,
+    #[index(btree)]
+    pub canonical_case_id: String,
+    pub public_case_id: String,
+    pub witness_npc_id: String,
+    pub expected_settlement_id: String,
+    pub expected_location_id: String,
+    pub source_witness_npc_id: String,
+    pub catalog_revision: String,
+    pub granted_at: u64,
+}
+
 #[derive(Clone, Debug)]
 #[table(accessor = investigation_testimony_bundle)]
 pub struct InvestigationTestimonyBundle {
@@ -3444,11 +3464,21 @@ fn private_action_resolution_json(
 fn capability_progress_depends_on_exact_lead(
     capability: &InvestigationActionCapability,
     lead: &InvestigationLead,
+    generated_case_aliases: Option<(&str, &str)>,
 ) -> bool {
+    let case_matches = match (capability.provenance_kind.as_str(), generated_case_aliases) {
+        ("manual", None) => capability.case_id == lead.case_id,
+        ("generated", Some((canonical, public))) => {
+            capability.generated_case_id == canonical
+                && (capability.case_id == canonical || capability.case_id == public)
+                && (lead.case_id == canonical || lead.case_id == public)
+        }
+        _ => false,
+    };
     capability.provenance_kind == "generated"
         && capability.active
         && capability.owner_character_id == lead.owner_character_id
-        && (capability.case_id == lead.case_id || capability.generated_case_id == lead.case_id)
+        && case_matches
         && capability.target_kind == "site"
         && capability.target_id == lead.exact_location_id
         && matches!(
@@ -3469,7 +3499,25 @@ fn dependent_capability_ids_for_exact_lead(
         .investigation_action_capability()
         .owner_character_id()
         .filter(lead.owner_character_id)
-        .filter(|capability| capability_progress_depends_on_exact_lead(capability, lead))
+        .filter(|capability| {
+            let aliases = generated_authority_reducer(ctx, capability)
+                .ok()
+                .flatten()
+                .and_then(|(manifest, _)| {
+                    serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(
+                        &manifest,
+                    )
+                    .ok()
+                    .map(|generated| (generated.canonical_case_id, generated.public_case_id))
+                });
+            capability_progress_depends_on_exact_lead(
+                capability,
+                lead,
+                aliases
+                    .as_ref()
+                    .map(|(canonical, public)| (canonical.as_str(), public.as_str())),
+            )
+        })
         .map(|capability| capability.id)
         .collect()
 }
@@ -4241,6 +4289,192 @@ fn record_action(
         });
 }
 
+fn witness_referral_id(character_id: u64, canonical_case_id: &str, witness_npc_id: &str) -> String {
+    inv::compound_id(&[
+        "generated-witness-referral",
+        &character_id.to_string(),
+        canonical_case_id,
+        witness_npc_id,
+    ])
+}
+
+fn witness_referral_context_matches(
+    referral: &InvestigationWitnessReferral,
+    character_id: u64,
+    canonical_case_id: &str,
+    witness_npc_id: &str,
+    settlement_id: &str,
+    location_id: &str,
+) -> bool {
+    referral.owner_character_id == character_id
+        && referral.canonical_case_id == canonical_case_id
+        && referral.witness_npc_id == witness_npc_id
+        && referral.expected_settlement_id == settlement_id
+        && referral.expected_location_id == location_id
+}
+
+fn authored_witness_referrals<'a>(
+    generated: &'a adventuresim_core::quest_generation::GeneratedCase,
+    witness: &adventuresim_core::quest_generation::WitnessBinding,
+    draft: &adventuresim_core::quest_generation::TestimonyDraft,
+) -> Result<Vec<&'a adventuresim_core::quest_generation::WitnessBinding>, String> {
+    if !generated
+        .witnesses
+        .iter()
+        .any(|authoritative| authoritative == witness)
+    {
+        return Err("Generated testimony witness is absent from the authoritative manifest".into());
+    }
+    draft
+        .referred_witness_ids
+        .iter()
+        .map(|referred_id| {
+            generated
+                .witnesses
+                .iter()
+                .find(|candidate| candidate.id == *referred_id)
+                .ok_or_else(|| "Authored testimony referral witness disappeared".into())
+        })
+        .collect()
+}
+
+fn grant_generated_witness_referral(
+    ctx: &ReducerContext,
+    character_id: u64,
+    generated: &adventuresim_core::quest_generation::GeneratedCase,
+    witness: &adventuresim_core::quest_generation::WitnessBinding,
+    expected_settlement_id: &str,
+    source_witness_npc_id: &str,
+) -> Result<(), String> {
+    if !generated
+        .witnesses
+        .iter()
+        .any(|authoritative| authoritative == witness)
+    {
+        return Err("Generated witness referral is absent from its manifest".into());
+    }
+    let id = witness_referral_id(character_id, &generated.canonical_case_id, &witness.npc_id);
+    let row = InvestigationWitnessReferral {
+        id: id.clone(),
+        owner_character_id: character_id,
+        canonical_case_id: generated.canonical_case_id.clone(),
+        public_case_id: generated.public_case_id.clone(),
+        witness_npc_id: witness.npc_id.clone(),
+        expected_settlement_id: expected_settlement_id.into(),
+        expected_location_id: witness.expected_location.clone(),
+        source_witness_npc_id: source_witness_npc_id.into(),
+        catalog_revision: generated.catalog_revision.clone(),
+        granted_at: official_minute(ctx),
+    };
+    if let Some(existing) = ctx.db.investigation_witness_referral().id().find(&id) {
+        return if existing.owner_character_id == row.owner_character_id
+            && existing.canonical_case_id == row.canonical_case_id
+            && existing.public_case_id == row.public_case_id
+            && existing.witness_npc_id == row.witness_npc_id
+            && existing.expected_settlement_id == row.expected_settlement_id
+            && existing.expected_location_id == row.expected_location_id
+            && existing.source_witness_npc_id == row.source_witness_npc_id
+            && existing.catalog_revision == row.catalog_revision
+        {
+            Ok(())
+        } else {
+            Err("Generated witness referral conflicts with existing authority".into())
+        };
+    }
+    ctx.db.investigation_witness_referral().insert(row);
+    let npc = ctx
+        .db
+        .settlement_npc()
+        .id()
+        .find(&witness.npc_id)
+        .ok_or("Referred generated witness is no longer persistent")?;
+    let lead_id = inv::compound_id(&["lead", "generated-witness-referral", &id]);
+    if ctx.db.investigation_lead().id().find(&lead_id).is_none() {
+        let location =
+            adventuresim_core::quest_generation::referral_display_location(witness).to_owned();
+        ctx.db.investigation_lead().insert(InvestigationLead {
+            id: lead_id,
+            owner_character_id: character_id,
+            case_id: generated.public_case_id.clone(),
+            proposition_id: String::new(),
+            summary: format!(
+                "Ask {}—{}, usually found at the {}.",
+                npc.name, witness.visible_description, location
+            ),
+            source_label: "witness referral".into(),
+            confidence_bps: 10_000,
+            destination_stage: "textual".into(),
+            directions: location.clone(),
+            exact_location_id: String::new(),
+            latitude_e7: 0,
+            longitude_e7: 0,
+            witness_name: npc.name,
+            witness_description: witness.visible_description.clone(),
+            witness_occupation_or_relationship: npc.profession,
+            expected_location: location,
+            current_learned_location: String::new(),
+            contradiction_group: String::new(),
+            corrected_by: String::new(),
+            recorded_at: official_minute(ctx),
+        });
+    }
+    Ok(())
+}
+
+pub(crate) fn referred_generated_witness(
+    ctx: &ReducerContext,
+    character_id: u64,
+    canonical_case_id: &str,
+    witness_npc_id: &str,
+    settlement_id: &str,
+    location_id: &str,
+) -> Result<
+    Option<(
+        adventuresim_core::quest_generation::GeneratedCase,
+        adventuresim_core::quest_generation::WitnessBinding,
+    )>,
+    String,
+> {
+    let id = witness_referral_id(character_id, canonical_case_id, witness_npc_id);
+    let Some(referral) = ctx.db.investigation_witness_referral().id().find(&id) else {
+        return Ok(None);
+    };
+    if !witness_referral_context_matches(
+        &referral,
+        character_id,
+        canonical_case_id,
+        witness_npc_id,
+        settlement_id,
+        location_id,
+    ) {
+        return Ok(None);
+    }
+    let authority = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&referral.canonical_case_id)
+        .ok_or("Witness referral generation authority disappeared")?;
+    let validated = validate_quest_generation_authority(&authority)?;
+    if validated.manifest.public_case_id != referral.public_case_id
+        || validated.manifest.catalog_revision != referral.catalog_revision
+        || validated.context.settlement_id != referral.expected_settlement_id
+    {
+        return Err("Witness referral no longer matches generated authority".into());
+    }
+    let witness = validated
+        .manifest
+        .witnesses
+        .iter()
+        .find(|witness| {
+            witness.npc_id == referral.witness_npc_id
+                && witness.expected_location == referral.expected_location_id
+        })
+        .cloned()
+        .ok_or("Witness referral is absent from generated authority")?;
+    Ok(Some((validated.manifest, witness)))
+}
+
 /// Converts #182's private safe receipt to owner knowledge without consulting
 /// or exposing the local problem's hidden cause.
 #[reducer]
@@ -4282,17 +4516,27 @@ pub fn receive_local_problem_rumor(
         .find(&canonical_case_id)
         .ok_or("Rumor is not linked to a real generated case")?;
     let generated = validate_quest_generation_authority(&generation)?.manifest;
-    let referral_location_label = generated
+    let referred_witness = generated
         .witnesses
         .iter()
         .find(|witness| {
             witness.npc_id == receipt.contact_npc_id
                 && witness.expected_location == receipt.expected_location_id
         })
+        .ok_or("Generated rumor referral has no authoritative witness")?;
+    let referral_location_label = Some(referred_witness)
         .map(adventuresim_core::quest_generation::referral_display_location)
         .map(str::to_owned)
         .filter(|label| !label.is_empty())
         .ok_or("Generated rumor referral has no player-visible tab label")?;
+    grant_generated_witness_referral(
+        ctx,
+        character_id,
+        &generated,
+        referred_witness,
+        &receipt.settlement_id,
+        &receipt.source_npc_id,
+    )?;
     let case_id = generated.public_case_id;
     let lead_id = inv::compound_id(&["lead", "rumor", &receipt.id]);
     if ctx.db.investigation_lead().id().find(&lead_id).is_none() {
@@ -4701,6 +4945,16 @@ pub(crate) fn persist_generated_testimony(
                     ctx.db.investigation_lead().id().update(prior);
                 }
             }
+        }
+        for referred in authored_witness_referrals(generated, witness, draft)? {
+            grant_generated_witness_referral(
+                ctx,
+                character_id,
+                generated,
+                referred,
+                &generation_context.settlement_id,
+                &witness.npc_id,
+            )?;
         }
     }
     reset_unsupported_capability_progress(ctx, corrected_capability_ids)?;
@@ -5340,10 +5594,11 @@ mod tests {
     #[test]
     fn testimony_correction_resets_only_exact_dependent_progress_chain() {
         let lead = exact_lead(7, "public-case", "site-a");
-        let capability = exact_capability(7, "public-case", "site-a");
+        let capability = exact_capability(7, "canonical-case", "site-a");
         assert!(capability_progress_depends_on_exact_lead(
             &capability,
-            &lead
+            &lead,
+            Some(("canonical-case", "public-case")),
         ));
         for unrelated in [
             InvestigationActionCapability {
@@ -5370,7 +5625,9 @@ mod tests {
             },
         ] {
             assert!(!capability_progress_depends_on_exact_lead(
-                &unrelated, &lead
+                &unrelated,
+                &lead,
+                Some(("canonical-case", "public-case")),
             ));
         }
         let failure = failed_attempt("attempt-0", "capability", 7, "inspect_site", 0, false);
@@ -5570,7 +5827,7 @@ mod tests {
         first_lead.id = "lead-a".into();
         let mut second_lead = first_lead.clone();
         second_lead.id = "lead-b".into();
-        let first_capability = exact_capability(7, "public-case", "site-a");
+        let first_capability = exact_capability(7, "canonical-case", "site-a");
         let mut second_capability = first_capability.clone();
         second_capability.id = "cap-b".into();
         let corrected_leads = [first_lead, second_lead];
@@ -5578,8 +5835,12 @@ mod tests {
             [&first_capability, &second_capability]
                 .into_iter()
                 .filter_map(|capability| {
-                    capability_progress_depends_on_exact_lead(capability, lead)
-                        .then(|| capability.id.clone())
+                    capability_progress_depends_on_exact_lead(
+                        capability,
+                        lead,
+                        Some(("canonical-case", "public-case")),
+                    )
+                    .then(|| capability.id.clone())
                 })
         });
         assert_eq!(
@@ -5856,6 +6117,90 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn explicit_secondary_referral_and_context_are_exact() {
+        use adventuresim_core::{
+            local_problem::Scope,
+            quest_generation::{GenerationContext, TemplateFamily, generate, test_witnesses},
+        };
+        let generated = generate(&GenerationContext {
+            seed: 7,
+            observer_entropy_hi: 11,
+            observer_entropy_lo: 13,
+            settlement_id: "riverdale".into(),
+            settlement_name: "Riverdale".into(),
+            scope: Scope::Settlement {
+                settlement_id: "riverdale".into(),
+            },
+            ordinal: 0,
+            now_minute: 50_000,
+            requested_family: Some(TemplateFamily::RecurringDepredation),
+            witness_candidates: test_witnesses(),
+        })
+        .unwrap();
+        let primary = &generated.witnesses[0];
+        let secondary = &generated.witnesses[1];
+        let referred = authored_witness_referrals(&generated, primary, &primary.testimony[0])
+            .expect("primary account has an authored referral");
+        assert_eq!(referred, vec![secondary]);
+        assert!(
+            authored_witness_referrals(&generated, secondary, &secondary.testimony[0])
+                .unwrap()
+                .is_empty()
+        );
+
+        let referral = InvestigationWitnessReferral {
+            id: "referral".into(),
+            owner_character_id: 7,
+            canonical_case_id: generated.canonical_case_id.clone(),
+            public_case_id: generated.public_case_id.clone(),
+            witness_npc_id: secondary.npc_id.clone(),
+            expected_settlement_id: "riverdale".into(),
+            expected_location_id: secondary.expected_location.clone(),
+            source_witness_npc_id: primary.npc_id.clone(),
+            catalog_revision: generated.catalog_revision.clone(),
+            granted_at: 50_000,
+        };
+        assert!(witness_referral_context_matches(
+            &referral,
+            7,
+            &referral.canonical_case_id,
+            &secondary.npc_id,
+            "riverdale",
+            &secondary.expected_location,
+        ));
+        for mismatch in [
+            (
+                8,
+                secondary.npc_id.as_str(),
+                "riverdale",
+                secondary.expected_location.as_str(),
+            ),
+            (
+                7,
+                primary.npc_id.as_str(),
+                "riverdale",
+                secondary.expected_location.as_str(),
+            ),
+            (
+                7,
+                secondary.npc_id.as_str(),
+                "elsewhere",
+                secondary.expected_location.as_str(),
+            ),
+            (7, secondary.npc_id.as_str(), "riverdale", "wrong-tab"),
+        ] {
+            assert!(!witness_referral_context_matches(
+                &referral,
+                mismatch.0,
+                &referral.canonical_case_id,
+                mismatch.1,
+                mismatch.2,
+                mismatch.3,
+            ));
+        }
+    }
 
     #[test]
     fn both_generated_families_issue_root_and_successor_action_text() {

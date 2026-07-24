@@ -5,6 +5,7 @@ const test = require("node:test");
 const source = fs.readFileSync(path.join(__dirname, "..", "static", "dialogue-client.js"), "utf8");
 const {
   dialogueCompletion,
+  dialogueResponseIsCurrent,
   dialogueSubmission,
   dialogueTopicPayload,
 } = require("../static/dialogue-client.js");
@@ -90,6 +91,43 @@ test("rapid provider-to-witness selection rejects stale topics and binds the wit
   );
   assert.match(source, /topicList\?\.replaceChildren\(\)/);
   assert.match(source, /if \(topicPane\) topicPane\.hidden = true/);
+});
+
+test("a delayed prompt answer cannot supersede a newly selected witness", () => {
+  const providerAnswer = {
+    sessionId: "dialogue:7:provider",
+    revision: 3,
+    selectionGeneration: 1,
+    npcId: "npc:town:inn:0",
+  };
+  assert.equal(
+    dialogueResponseIsCurrent(
+      providerAnswer,
+      1,
+      "npc:town:inn:0",
+      { session_id: "dialogue:7:provider", revision: 3 },
+    ),
+    true,
+  );
+  assert.equal(
+    dialogueResponseIsCurrent(
+      providerAnswer,
+      2,
+      "npc:town:inn:1",
+      { session_id: "dialogue:7:witness", revision: 0 },
+    ),
+    false,
+  );
+  assert.equal(
+    dialogueResponseIsCurrent(
+      providerAnswer,
+      1,
+      "npc:town:inn:0",
+      { session_id: "dialogue:7:provider", revision: 4 },
+    ),
+    false,
+  );
+  assert.match(source, /dialogueResponseIsCurrent\([\s\S]*answer dialogue prompt/);
 });
 
 test("only the same in-flight encounter start is deduplicated", () => {
