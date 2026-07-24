@@ -451,6 +451,33 @@ pub fn discovery_action(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+/// Formats a safe referral and explicitly distinguishes a same-named contact
+/// from the NPC who is currently speaking.
+pub fn referral_text(
+    summary: &str,
+    source: Option<(&str, &str)>,
+    contact_id: &str,
+    contact_name: &str,
+    contact_profession: &str,
+    contact_height: &str,
+    contact_build: &str,
+    contact_hair: &str,
+    tab: &str,
+) -> String {
+    let description = format!("{contact_height}, {contact_build}, with {contact_hair}");
+    if source.is_some_and(|(source_id, source_name)| {
+        source_id != contact_id && source_name.eq_ignore_ascii_case(contact_name)
+    }) {
+        return format!(
+            "{summary} Ask the other {contact_name}—not me. The one you want is the {contact_profession}: {description}, usually found at the {tab}."
+        );
+    }
+    format!(
+        "{summary} Ask {contact_name}—the {contact_profession}, {description}, usually found at the {tab}."
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -462,6 +489,40 @@ mod tests {
             },
             allowed_bridges: BTreeSet::new(),
         }
+    }
+
+    #[test]
+    fn referral_explicitly_disambiguates_a_same_named_other_person() {
+        let text = referral_text(
+            "Livestock have been disappearing.",
+            Some(("npc:riverdale:inn:0", "Hans Wagner")),
+            "npc:riverdale:residences:0",
+            "Hans Wagner",
+            "householder",
+            "average height",
+            "slender",
+            "brown hair",
+            "Residences",
+        );
+
+        assert_eq!(
+            text,
+            "Livestock have been disappearing. Ask the other Hans Wagner—not me. The one you want is the householder: average height, slender, with brown hair, usually found at the Residences."
+        );
+
+        let self_referral = referral_text(
+            "I saw it myself.",
+            Some(("npc:riverdale:inn:0", "Hans Wagner")),
+            "npc:riverdale:inn:0",
+            "Hans Wagner",
+            "innkeeper",
+            "average height",
+            "sturdy",
+            "black hair",
+            "Inn",
+        );
+        assert!(!self_referral.contains("the other"));
+        assert!(!self_referral.contains("not me"));
     }
     #[test]
     fn generator_is_deterministic_and_explains_separate_weights() {

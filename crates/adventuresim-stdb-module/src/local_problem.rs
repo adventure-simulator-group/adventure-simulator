@@ -607,23 +607,6 @@ pub(crate) fn apply_outcome(
     Ok(())
 }
 
-/// Surface at most one unknown active problem. Inns are preferred by callers;
-/// overview dialogue is the fallback. The return is safe authored text only.
-fn referral_text(
-    summary: &str,
-    contact: &crate::settlement_population::SettlementNpc,
-    tab: &str,
-) -> String {
-    let description = format!(
-        "{}, {}, with {}",
-        contact.height, contact.build, contact.hair
-    );
-    format!(
-        "{summary} Ask {}—the {}, {}, usually found at the {tab}.",
-        contact.name, contact.profession, description
-    )
-}
-
 fn validated_problem_generation(
     ctx: &ReducerContext,
     problem: &LocalProblemAuthority,
@@ -699,6 +682,8 @@ fn stable_eligible_candidates<T, K: Ord>(
     eligible_candidates
 }
 
+/// Surface at most one unknown active problem. Inns are preferred by callers;
+/// overview dialogue is the fallback. The return is safe authored text only.
 pub fn surface_problem(
     ctx: &ReducerContext,
     character_id: u64,
@@ -715,6 +700,12 @@ pub fn surface_problem(
     let settlement_id = character
         .current_settlement_id
         .ok_or("Problem discovery requires a settlement")?;
+    let source_npc = ctx
+        .db
+        .settlement_npc()
+        .id()
+        .find(&source_npc_id.to_owned())
+        .filter(|npc| npc.home_settlement_id == settlement_id);
     let minute = ctx
         .db
         .character_time()
@@ -770,7 +761,19 @@ pub fn surface_problem(
                 settlement_id,
                 session_id: session_id.into(),
                 receipt_id: receipt.id,
-                delivery_text: referral_text(&receipt.safe_summary, &contact, &location_label),
+                delivery_text: lp::referral_text(
+                    &receipt.safe_summary,
+                    source_npc
+                        .as_ref()
+                        .map(|npc| (npc.id.as_str(), npc.name.as_str())),
+                    &contact.id,
+                    &contact.name,
+                    &contact.profession,
+                    &contact.height,
+                    &contact.build,
+                    &contact.hair,
+                    &location_label,
+                ),
             });
         return Ok(());
     }
@@ -839,7 +842,19 @@ pub fn surface_problem(
         if location_label.is_empty() {
             continue;
         }
-        let text = referral_text(&symptom.public_summary, &contact, location_label);
+        let text = lp::referral_text(
+            &symptom.public_summary,
+            source_npc
+                .as_ref()
+                .map(|npc| (npc.id.as_str(), npc.name.as_str())),
+            &contact.id,
+            &contact.name,
+            &contact.profession,
+            &contact.height,
+            &contact.build,
+            &contact.hair,
+            location_label,
+        );
         let receipt_id = format!("{character_id}:{}", problem.id);
         ctx.db.local_problem_receipt().insert(LocalProblemReceipt {
             id: receipt_id.clone(),
