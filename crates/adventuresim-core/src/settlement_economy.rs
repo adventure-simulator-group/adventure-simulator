@@ -232,6 +232,15 @@ pub fn storefront_stocks(
     if !storefront_available(profile, storefront) {
         return false;
     }
+    // A market or inn is always a viable place to outfit a basic journey.
+    // These two staples deliberately do not depend on a settlement's broader
+    // commodity profile: the travel planner must never direct a player to an
+    // exposed storefront that cannot sell the provisions it just recommended.
+    if matches!(storefront, Storefront::General | Storefront::Inn)
+        && matches!(id, "travel_ration" | "waterskin")
+    {
+        return true;
+    }
     let Some(category) = item_stock_category(id, kind) else {
         return false;
     };
@@ -291,6 +300,33 @@ mod tests {
             CatalogKind::Weapon
         ));
     }
+
+    #[test]
+    fn markets_and_inns_always_stock_basic_travel_provisions() {
+        let market = profile(vec![Service::Market], Vec::new());
+        let inn = profile(vec![Service::Inn], Vec::new());
+
+        for profile in [&market, &inn] {
+            let storefront = if profile.has_service(Service::Inn) {
+                Storefront::Inn
+            } else {
+                Storefront::General
+            };
+            assert!(storefront_stocks(
+                profile,
+                storefront,
+                "travel_ration",
+                CatalogKind::Food,
+            ));
+            assert!(storefront_stocks(
+                profile,
+                storefront,
+                "waterskin",
+                CatalogKind::Simple,
+            ));
+        }
+    }
+
     #[test]
     fn generalist_blacksmith_can_stock_bounded_weapons() {
         let p = profile(vec![Service::GeneralBlacksmith], vec![Stock::Weapons]);

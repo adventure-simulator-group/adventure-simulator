@@ -263,8 +263,6 @@ fn safe_case_site_travel_error(error: &str) -> &'static str {
         "An incapacitated party member must recover before the party can travel."
     } else if error.contains("current journey") || error.contains("camped") {
         "Finish or change the party's current journey before starting another."
-    } else if error.contains("origin settlement") {
-        "This journey must begin at the settlement named by the exact directions."
     } else if error.contains("party leader") {
         "Only the party leader can begin this journey immediately."
     } else {

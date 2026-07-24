@@ -90,7 +90,7 @@ pub fn quest_location_map_page(
             None,
             false,
             can_travel,
-            false,
+            None,
             None,
             party,
             can_configure_travel,

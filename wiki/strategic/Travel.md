@@ -238,11 +238,14 @@ location cannot resupply the party.
 The leader can set a transient target surplus, including a negative target, in
 Travel configuration. Its value uses the shared floating numeric editor also
 used by daily skill allocations: click or focus it to type, use the arrow
-buttons, keyboard arrows, or mouse wheel, then save or cancel. **Buy** opens the current settlement's General Market,
-selects Party inventory, and stages the exact whole rations and waterskins
-needed to reach that target. The transparent target rails are removed after
-departure, when the settlement merchant is no longer available. It does not
-submit the offer. Party gold pays when
+buttons, keyboard arrows, or mouse wheel, then save or cancel. **Buy** opens an
+actually available, NPC-bound provisioning storefront in the current
+settlement: the General Market is preferred and the Inn is the fallback.
+Travel rations and waterskins are basic stock at either venue. If neither
+venue has a valid provider, no active Buy link is shown. The storefront selects
+Party inventory and stages the exact whole rations and waterskins needed to
+reach that target. The transparent target rails are removed after departure,
+when settlement trade is no longer available. It does not submit the offer. Party gold pays when
 the leader accepts the normal merchant offer; the former fixed 30% buffer and
 automatic provisioning purchase no longer apply.
 
