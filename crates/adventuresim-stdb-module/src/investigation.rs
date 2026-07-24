@@ -971,6 +971,23 @@ fn exactly_one_generated_authority(
     Ok(Some(authority))
 }
 
+fn validated_generated_authority_candidate(
+    case_id: String,
+    public_case_id: String,
+    manifest_json: String,
+    context_json: String,
+) -> Result<(String, String, String), ()> {
+    let manifest =
+        serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(&manifest_json)
+            .map_err(|_| ())?;
+    if manifest.canonical_case_id != case_id || manifest.public_case_id != public_case_id {
+        return Err(());
+    }
+    serde_json::from_str::<adventuresim_core::quest_generation::GenerationContext>(&context_json)
+        .map_err(|_| ())?;
+    Ok((case_id, manifest_json, context_json))
+}
+
 fn generated_authority_view(
     ctx: &ViewContext,
     capability: &InvestigationActionCapability,
@@ -989,27 +1006,28 @@ fn generated_authority_view(
             continue;
         }
         if let Some(authority) = ctx.db.quest_generation_authority().case_id().find(alias) {
-            candidates.push((
-                alias.clone(),
+            let candidate = validated_generated_authority_candidate(
                 authority.case_id,
+                authority.public_case_id,
                 authority.manifest_json,
                 authority.context_snapshot_json,
-            ));
+            )?;
+            candidates.push((alias.clone(), candidate.0, candidate.1, candidate.2));
         }
-        candidates.extend(
-            ctx.db
-                .quest_generation_authority()
-                .public_case_id()
-                .filter(alias)
-                .map(|authority| {
-                    (
-                        alias.clone(),
-                        authority.case_id,
-                        authority.manifest_json,
-                        authority.context_snapshot_json,
-                    )
-                }),
-        );
+        for authority in ctx
+            .db
+            .quest_generation_authority()
+            .public_case_id()
+            .filter(alias)
+        {
+            let candidate = validated_generated_authority_candidate(
+                authority.case_id,
+                authority.public_case_id,
+                authority.manifest_json,
+                authority.context_snapshot_json,
+            )?;
+            candidates.push((alias.clone(), candidate.0, candidate.1, candidate.2));
+        }
     }
     exactly_one_generated_authority(
         candidates
@@ -1036,27 +1054,28 @@ fn generated_authority_reducer(
             continue;
         }
         if let Some(authority) = ctx.db.quest_generation_authority().case_id().find(alias) {
-            candidates.push((
-                alias.clone(),
+            let candidate = validated_generated_authority_candidate(
                 authority.case_id,
+                authority.public_case_id,
                 authority.manifest_json,
                 authority.context_snapshot_json,
-            ));
+            )?;
+            candidates.push((alias.clone(), candidate.0, candidate.1, candidate.2));
         }
-        candidates.extend(
-            ctx.db
-                .quest_generation_authority()
-                .public_case_id()
-                .filter(alias)
-                .map(|authority| {
-                    (
-                        alias.clone(),
-                        authority.case_id,
-                        authority.manifest_json,
-                        authority.context_snapshot_json,
-                    )
-                }),
-        );
+        for authority in ctx
+            .db
+            .quest_generation_authority()
+            .public_case_id()
+            .filter(alias)
+        {
+            let candidate = validated_generated_authority_candidate(
+                authority.case_id,
+                authority.public_case_id,
+                authority.manifest_json,
+                authority.context_snapshot_json,
+            )?;
+            candidates.push((alias.clone(), candidate.0, candidate.1, candidate.2));
+        }
     }
     exactly_one_generated_authority(
         candidates
@@ -1176,14 +1195,19 @@ fn exact_action_site_for_observer(
     if kind != action::InvestigationActionKind::InspectSite || capability.target_kind != "site" {
         return None;
     }
+    let authority = generated_authority_view(ctx, capability).ok()?;
+    let generated_aliases = authority.as_ref().and_then(|(manifest, _)| {
+        serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(manifest)
+            .ok()
+            .map(|manifest| (manifest.canonical_case_id, manifest.public_case_id))
+    });
     let lead = ctx
         .db
         .investigation_lead()
         .owner_character_id()
         .filter(capability.owner_character_id)
         .find(|lead| {
-            lead.case_id == capability.case_id
-                && lead.exact_location_id == capability.target_id
+            lead.exact_location_id == capability.target_id
                 && lead.corrected_by.is_empty()
                 && matches!(
                     lead.destination_stage.as_str(),
@@ -1205,6 +1229,8 @@ fn exact_action_site_for_observer(
         &site.case_id,
         &site.id.value,
         lead.latitude_e7 == site.latitude_e7 && lead.longitude_e7 == site.longitude_e7,
+        generated_aliases.as_ref().map(|aliases| aliases.0.as_str()),
+        generated_aliases.as_ref().map(|aliases| aliases.1.as_str()),
     )
     .then_some(lead.exact_location_id)
 }
@@ -1219,9 +1245,21 @@ fn exact_site_knowledge_is_live(
     authority_case_id: &str,
     authority_site_id: &str,
     coordinates_match: bool,
+    generated_canonical_case_id: Option<&str>,
+    generated_public_case_id: Option<&str>,
 ) -> bool {
-    capability_case_id == lead_case_id
-        && capability_case_id == authority_case_id
+    let cases_match = if let Some(canonical) = generated_canonical_case_id {
+        let is_generated_alias = |candidate: &str| {
+            candidate == canonical
+                || generated_public_case_id.is_some_and(|public| candidate == public)
+        };
+        is_generated_alias(capability_case_id)
+            && is_generated_alias(lead_case_id)
+            && authority_case_id == canonical
+    } else {
+        capability_case_id == lead_case_id && capability_case_id == authority_case_id
+    };
+    cases_match
         && capability_target_id == lead_exact_location_id
         && capability_target_id == authority_site_id
         && matches!(lead_destination_stage, "exact_believed" | "visited")
@@ -1740,8 +1778,7 @@ fn capability_has_live_support_reducer(
         return false;
     }
     if kind == action::InvestigationActionKind::InspectSite && capability.target_kind == "site" {
-        let Some((site, lead)) =
-            exact_case_site_for_observer(ctx, capability.owner_character_id, &capability.target_id)
+        let Some((site, lead, generated_aliases)) = exact_case_site_for_observer(ctx, capability)
         else {
             return false;
         };
@@ -1755,6 +1792,8 @@ fn capability_has_live_support_reducer(
             &site.case_id,
             &site.id.value,
             lead.latitude_e7 == site.latitude_e7 && lead.longitude_e7 == site.longitude_e7,
+            generated_aliases.as_ref().map(|aliases| aliases.0.as_str()),
+            generated_aliases.as_ref().map(|aliases| aliases.1.as_str()),
         ) {
             return false;
         }
@@ -1830,6 +1869,137 @@ fn capability_has_live_pattern_support_reducer(
     )
 }
 
+fn validate_capability_blueprint_reducer(
+    ctx: &ReducerContext,
+    capability: &InvestigationActionCapability,
+) -> Result<(), String> {
+    let output = ctx
+        .db
+        .investigation_generated_action_output()
+        .capability_id()
+        .find(&capability.id);
+    let authority = generated_authority_reducer(ctx, capability)
+        .map_err(|()| "Generated action authority is ambiguous or invalid")?;
+    match generated_pattern_authority(
+        capability,
+        authority
+            .as_ref()
+            .map(|(manifest, context)| (manifest.as_str(), context.as_str())),
+        output.as_ref().map(|output| output.outputs_json.as_str()),
+    ) {
+        GeneratedPatternAuthority::Invalid => {
+            Err("Investigation capability no longer matches its authored blueprint".into())
+        }
+        GeneratedPatternAuthority::Manual
+        | GeneratedPatternAuthority::GeneratedWithoutPattern
+        | GeneratedPatternAuthority::Pattern { .. } => Ok(()),
+    }
+}
+
+fn validate_referred_contact_authority(
+    ctx: &ReducerContext,
+    owner_character_id: u64,
+    canonical_case_id: &str,
+    witness_npc_id: &str,
+) -> Result<(), String> {
+    let roots = ctx
+        .db
+        .investigation_action_capability()
+        .owner_character_id()
+        .filter(owner_character_id)
+        .filter(|capability| {
+            capability.case_id == canonical_case_id
+                && capability.method == "locate_contact"
+                && capability.target_kind == "contact"
+                && capability.target_id == witness_npc_id
+                && capability.required_action_id.is_empty()
+        })
+        .collect::<Vec<_>>();
+    if roots.len() != 1 {
+        return Err("Referred contact capability authority is missing or ambiguous".into());
+    }
+    let root = &roots[0];
+    validate_capability_blueprint_reducer(ctx, root)?;
+    if root.provenance_kind == "manual" {
+        for successor in ctx
+            .db
+            .investigation_action_capability()
+            .owner_character_id()
+            .filter(owner_character_id)
+            .filter(|capability| capability.required_action_id == root.id)
+        {
+            validate_capability_blueprint_reducer(ctx, &successor)?;
+        }
+        return Ok(());
+    }
+    let authority = generated_authority_reducer(ctx, root)
+        .map_err(|()| "Generated contact authority is ambiguous or invalid")?
+        .ok_or("Generated contact authority is missing")?;
+    let manifest =
+        serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(&authority.0)
+            .map_err(|_| "Generated contact manifest is invalid")?;
+    let context = serde_json::from_str::<adventuresim_core::quest_generation::GenerationContext>(
+        &authority.1,
+    )
+    .map_err(|_| "Generated contact context is invalid")?;
+    let generated_root = manifest
+        .actions
+        .iter()
+        .find(|action| {
+            adventuresim_core::quest_generation::observer_scoped_id(
+                &context,
+                "capability",
+                &format!("{owner_character_id}:{}", action.id.0),
+            ) == root.id
+        })
+        .ok_or("Generated contact root is absent from its manifest")?;
+    let expected_successors = manifest
+        .actions
+        .iter()
+        .filter(|action| action.prerequisite.as_ref() == Some(&generated_root.id))
+        .collect::<Vec<_>>();
+    if expected_successors.is_empty() {
+        return Err("Generated contact root has no authored successors".into());
+    }
+    let expected_successor_ids = expected_successors
+        .into_iter()
+        .map(|generated| {
+            adventuresim_core::quest_generation::observer_scoped_id(
+                &context,
+                "capability",
+                &format!("{owner_character_id}:{}", generated.id.0),
+            )
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let actual_successors = ctx
+        .db
+        .investigation_action_capability()
+        .owner_character_id()
+        .filter(owner_character_id)
+        .filter(|capability| {
+            capability.case_id == canonical_case_id && capability.required_action_id == root.id
+        })
+        .collect::<Vec<_>>();
+    if actual_successors
+        .iter()
+        .map(|successor| successor.id.clone())
+        .collect::<std::collections::BTreeSet<_>>()
+        != expected_successor_ids
+    {
+        return Err("Generated contact successor set differs from its manifest".into());
+    }
+    for successor_id in expected_successor_ids {
+        let successor = ctx
+            .db
+            .investigation_action_capability()
+            .id()
+            .find(&successor_id)
+            .ok_or("Generated contact successor is missing")?;
+        validate_capability_blueprint_reducer(ctx, &successor)?;
+    }
+    Ok(())
+}
+
 fn complete_referred_contact_action(
     ctx: &ReducerContext,
     owner_character_id: u64,
@@ -1840,6 +2010,12 @@ fn complete_referred_contact_action(
     use adventuresim_core::quest_generation::{
         ReferredContactActionState, ReferredContactTransition, transition_referred_contact_action,
     };
+    validate_referred_contact_authority(
+        ctx,
+        owner_character_id,
+        canonical_case_id,
+        witness_npc_id,
+    )?;
     let capabilities: Vec<_> = ctx
         .db
         .investigation_action_capability()
@@ -1892,13 +2068,13 @@ fn complete_referred_contact_action(
         return Err("Referred contact action changed during transition planning".into());
     }
     let completed_at = character_strategic_minute(ctx, owner_character_id);
-    let attempt_id = generated_observer_id(
-        ctx,
-        canonical_case_id,
-        "attempt",
-        &format!("dialogue:{dialogue_action_id}:{}", capability.id),
-    )
-    .ok_or("Generated contact action lacks observer-id authority")?;
+    let attempt_name = format!("dialogue:{dialogue_action_id}:{}", capability.id);
+    let attempt_id = if capability.provenance_kind == "generated" {
+        generated_observer_id(ctx, canonical_case_id, "attempt", &attempt_name)
+            .ok_or("Generated contact action lacks observer-id authority")?
+    } else {
+        inv::compound_id(&["attempt", "manual-contact", &attempt_name])
+    };
     ctx.db
         .investigation_action_attempt()
         .insert(InvestigationActionAttempt {
@@ -1923,8 +2099,12 @@ fn complete_referred_contact_action(
         .investigation_action_capability()
         .id()
         .update(capability.clone());
-    let outcome_id = generated_observer_id(ctx, canonical_case_id, "outcome", &attempt_id)
-        .ok_or("Generated contact action lacks observer-id authority")?;
+    let outcome_id = if capability.provenance_kind == "generated" {
+        generated_observer_id(ctx, canonical_case_id, "outcome", &attempt_id)
+            .ok_or("Generated contact action lacks observer-id authority")?
+    } else {
+        inv::compound_id(&["outcome", "manual-contact", &attempt_id])
+    };
     if ctx
         .db
         .investigation_action_outcome()
@@ -3473,36 +3653,33 @@ pub fn backend_character_case_site_locations(
 
 pub(crate) fn exact_case_site_for_observer(
     ctx: &ReducerContext,
-    observer_character_id: u64,
-    case_site_id: &str,
-) -> Option<(CaseSiteAuthority, InvestigationLead)> {
+    capability: &InvestigationActionCapability,
+) -> Option<(
+    CaseSiteAuthority,
+    InvestigationLead,
+    Option<(String, String)>,
+)> {
+    let authority = generated_authority_reducer(ctx, capability).ok()?;
+    let generated_aliases = authority.as_ref().and_then(|(manifest, _)| {
+        serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(manifest)
+            .ok()
+            .map(|manifest| (manifest.canonical_case_id, manifest.public_case_id))
+    });
     let site = ctx
         .db
         .case_site_authority()
         .id_key()
-        .find(&case_site_id.to_string())?;
-    let generated_public_case_id = ctx
-        .db
-        .quest_generation_authority()
-        .case_id()
-        .find(&site.case_id)
-        .and_then(|authority| {
-            serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(
-                &authority.manifest_json,
-            )
-            .ok()
-        })
-        .map(|generated| generated.public_case_id);
+        .find(&capability.target_id)?;
     ctx.db
         .investigation_lead()
         .owner_character_id()
-        .filter(observer_character_id)
+        .filter(capability.owner_character_id)
         .find(|lead| {
-            lead.exact_location_id == case_site_id
-                && (lead.case_id == site.case_id
-                    || generated_public_case_id
-                        .as_deref()
-                        .is_some_and(|public| lead.case_id == public))
+            lead.exact_location_id == capability.target_id
+                && (lead.case_id == capability.case_id
+                    || generated_aliases.as_ref().is_some_and(|aliases| {
+                        lead.case_id == aliases.0 || lead.case_id == aliases.1
+                    }))
                 && lead.latitude_e7 == site.latitude_e7
                 && lead.longitude_e7 == site.longitude_e7
                 && lead.corrected_by.is_empty()
@@ -3511,7 +3688,7 @@ pub(crate) fn exact_case_site_for_observer(
                     "exact_believed" | "visited"
                 )
         })
-        .map(|lead| (site, lead))
+        .map(|lead| (site, lead, generated_aliases))
 }
 
 pub(crate) fn disclose_exact_case_site(
@@ -4025,6 +4202,12 @@ pub(crate) fn persist_generated_testimony(
     dialogue_action_id: &str,
 ) -> Result<(), String> {
     use adventuresim_core::quest_generation::Reliability;
+    validate_referred_contact_authority(
+        ctx,
+        character_id,
+        &generated.canonical_case_id,
+        &witness.npc_id,
+    )?;
     let projection_plan =
         adventuresim_core::quest_generation::generated_testimony_projection_plan(witness)
             .map_err(str::to_string)?;
@@ -4034,6 +4217,13 @@ pub(crate) fn persist_generated_testimony(
         .case_id()
         .find(&generated.canonical_case_id)
         .ok_or("Generated testimony case authority is missing")?;
+    let authoritative_manifest = serde_json::from_str::<
+        adventuresim_core::quest_generation::GeneratedCase,
+    >(&authority.manifest_json)
+    .map_err(|_| "Generated testimony manifest authority is invalid")?;
+    if authoritative_manifest != *generated {
+        return Err("Generated testimony manifest does not match private authority".into());
+    }
     let generation_context = serde_json::from_str::<
         adventuresim_core::quest_generation::GenerationContext,
     >(&authority.context_snapshot_json)
@@ -5119,6 +5309,8 @@ mod tests {
             "case",
             "site",
             true,
+            None,
+            None,
         ));
         assert!(!exact_site_knowledge_is_live(
             "case",
@@ -5130,6 +5322,47 @@ mod tests {
             "case",
             "site",
             true,
+            None,
+            None,
+        ));
+        assert!(exact_site_knowledge_is_live(
+            "canonical",
+            "site",
+            "public",
+            "site",
+            "visited",
+            "",
+            "canonical",
+            "site",
+            true,
+            Some("canonical"),
+            Some("public"),
+        ));
+        assert!(!exact_site_knowledge_is_live(
+            "canonical",
+            "site",
+            "collision",
+            "site",
+            "visited",
+            "",
+            "canonical",
+            "site",
+            true,
+            Some("canonical"),
+            Some("public"),
+        ));
+        assert!(!exact_site_knowledge_is_live(
+            "canonical",
+            "site",
+            "public",
+            "other-site",
+            "visited",
+            "",
+            "canonical",
+            "site",
+            true,
+            Some("canonical"),
+            Some("public"),
         ));
         let source = include_str!("investigation.rs");
         let projection = source
@@ -5691,6 +5924,24 @@ mod tests {
             ]),
             Err(())
         );
+        assert!(
+            validated_generated_authority_candidate(
+                "wrong-canonical".into(),
+                manifest.public_case_id.clone(),
+                manifest_json.clone(),
+                context_json.clone(),
+            )
+            .is_err()
+        );
+        assert!(
+            validated_generated_authority_candidate(
+                manifest.canonical_case_id.clone(),
+                "wrong-public".into(),
+                manifest_json.clone(),
+                context_json.clone(),
+            )
+            .is_err()
+        );
         assert_eq!(
             exactly_one_generated_authority([
                 ("public-a".into(), "manifest-a".into(), "context-a".into()),
@@ -5788,7 +6039,13 @@ mod tests {
                     .next()
             })
             .unwrap();
-        assert!(generated.contains("for (index, draft) in witness.testimony.iter().enumerate()"));
+        assert!(
+            generated
+                .find("validate_referred_contact_authority")
+                .unwrap()
+                < generated.find("for (index, draft)").unwrap()
+        );
+        assert!(generated.contains("for (index, draft) in projection_plan.iter().enumerate()"));
         assert!(generated.contains("draft.proposition_id.clone()"));
         assert!(generated.contains("draft.corrects_proposition_id"));
         assert!(generated.contains("belief.proposition_id == *proposition_id"));
@@ -5796,6 +6053,28 @@ mod tests {
         assert!(generated.contains(".filter(|_| exact)"));
         assert!(generated.contains("prior.corrected_by = lead_id.clone()"));
         assert!(generated.contains("prior.proposition_id == *corrected_proposition"));
+        let preflight = source
+            .split("fn validate_referred_contact_authority")
+            .nth(1)
+            .and_then(|tail| tail.split("fn complete_referred_contact_action").next())
+            .unwrap();
+        assert!(preflight.contains("validate_capability_blueprint_reducer(ctx, root)"));
+        assert!(preflight.contains("expected_successors"));
+        assert!(preflight.contains("Generated contact successor is missing"));
+        assert!(preflight.contains("validate_capability_blueprint_reducer(ctx, &successor)"));
+        let completion = source
+            .split("fn complete_referred_contact_action")
+            .nth(1)
+            .and_then(|tail| tail.split("fn issue_rumor_action_graph").next())
+            .unwrap();
+        assert!(
+            completion
+                .find("validate_referred_contact_authority")
+                .unwrap()
+                < completion
+                    .find("investigation_action_attempt()\n        .insert")
+                    .unwrap()
+        );
     }
 
     #[test]
