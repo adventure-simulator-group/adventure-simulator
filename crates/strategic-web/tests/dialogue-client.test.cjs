@@ -25,6 +25,9 @@ test("known topics share the inline topic action contract", () => {
   assert.match(source, /data-dialogue-topic-pane/);
   assert.match(source, /topicList\.replaceChildren/);
   assert.match(source, /row\.append\(topicAnchor/);
+  assert.match(source, /document\.createDocumentFragment\(\)/);
+  assert.match(source, /fragment\.append\(anchor, edit\)/);
+  assert.doesNotMatch(source, /anchor\.append\(edit\)/);
   assert.doesNotMatch(source, /querySelector\("\.right-sidebar"\)/);
 });
 
