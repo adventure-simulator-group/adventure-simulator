@@ -2692,6 +2692,8 @@ pub struct CaseAuthority {
 pub struct QuestGenerationAuthority {
     #[primary_key]
     pub case_id: String,
+    #[index(btree)]
+    pub public_case_id: String,
     pub seed: u64,
     pub catalog_revision: String,
     pub context_snapshot_json: String,
@@ -17164,6 +17166,7 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         .quest_generation_authority()
         .insert(QuestGenerationAuthority {
             case_id: generated.canonical_case_id.clone(),
+            public_case_id: generated.public_case_id.clone(),
             seed,
             catalog_revision: generated.catalog_revision.clone(),
             context_snapshot_json: serde_json::to_string(&context)

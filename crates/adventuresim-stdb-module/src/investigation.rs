@@ -888,17 +888,9 @@ fn generated_authority_view(
     }
     ctx.db
         .quest_generation_authority()
-        .iter()
-        .find_map(|authority| {
-            let manifest =
-                serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(
-                    &authority.manifest_json,
-                )
-                .ok()?;
-            (capability.case_id == manifest.canonical_case_id
-                || capability.case_id == manifest.public_case_id)
-                .then(|| (authority.manifest_json, authority.context_snapshot_json))
-        })
+        .public_case_id()
+        .find(&capability.case_id)
+        .map(|authority| (authority.manifest_json, authority.context_snapshot_json))
 }
 
 fn generated_authority_reducer(
@@ -915,17 +907,9 @@ fn generated_authority_reducer(
     }
     ctx.db
         .quest_generation_authority()
-        .iter()
-        .find_map(|authority| {
-            let manifest =
-                serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(
-                    &authority.manifest_json,
-                )
-                .ok()?;
-            (capability.case_id == manifest.canonical_case_id
-                || capability.case_id == manifest.public_case_id)
-                .then(|| (authority.manifest_json, authority.context_snapshot_json))
-        })
+        .public_case_id()
+        .find(&capability.case_id)
+        .map(|authority| (authority.manifest_json, authority.context_snapshot_json))
 }
 
 fn observer_pattern_route_has_live_corroborated_clue(
@@ -5430,6 +5414,19 @@ mod tests {
         ] {
             let body = source.split(boundary).nth(1).unwrap();
             assert!(body.contains("generated_pattern_authority"));
+        }
+        for lookup in [
+            "fn generated_authority_view",
+            "fn generated_authority_reducer",
+        ] {
+            let body = source
+                .split(lookup)
+                .nth(1)
+                .and_then(|tail| tail.split("\nfn ").next())
+                .unwrap();
+            assert!(body.contains(".case_id()"));
+            assert!(body.contains(".public_case_id()"));
+            assert!(!body.contains(".iter()"));
         }
     }
 
