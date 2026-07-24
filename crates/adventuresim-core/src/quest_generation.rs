@@ -2725,18 +2725,43 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                         .any(|witness| witness.npc_id == entry.target_id)
                     && successors.len() == 2
                     && successors.iter().all(|action| !action.active_initially)
-                    && successors
-                        .iter()
-                        .any(|action| action.kind == InvestigationActionKind::ApproachLead)
-                    && successors
-                        .iter()
-                        .any(|action| action.kind == InvestigationActionKind::Watch)
-                    && successors
-                        .iter()
-                        .map(|action| action.route)
-                        .collect::<BTreeSet<_>>()
-                        .len()
-                        == 2
+                    && successors.iter().any(|action| {
+                        action.kind == InvestigationActionKind::ApproachLead
+                            && action.route == RouteClass::PhysicalTrail
+                            && action.target_kind == "area"
+                            && case.areas.iter().any(|area| area.id == action.target_id)
+                            && action.alternate
+                                == successors
+                                    .iter()
+                                    .find(|other| {
+                                        other.kind == InvestigationActionKind::Watch
+                                            && other.route == RouteClass::PatternSurveillance
+                                    })
+                                    .map_or_else(
+                                        || action.alternate.clone(),
+                                        |other| other.id.clone(),
+                                    )
+                    })
+                    && successors.iter().any(|action| {
+                        action.kind == InvestigationActionKind::Watch
+                            && action.route == RouteClass::PatternSurveillance
+                            && action.target_kind == "contact"
+                            && case
+                                .witnesses
+                                .iter()
+                                .any(|witness| witness.npc_id == action.target_id)
+                            && action.alternate
+                                == successors
+                                    .iter()
+                                    .find(|other| {
+                                        other.kind == InvestigationActionKind::ApproachLead
+                                            && other.route == RouteClass::PhysicalTrail
+                                    })
+                                    .map_or_else(
+                                        || action.alternate.clone(),
+                                        |other| other.id.clone(),
+                                    )
+                    })
             });
             if !valid_contact_entry {
                 errors.push(
@@ -2746,16 +2771,28 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
             }
         }
         TemplateFamily::DisappearanceOrLoss => {
-            if initial_actions.len() < 2
-                || !initial_actions
-                    .iter()
-                    .any(|action| action.route == RouteClass::PhysicalTrail)
-                || initial_actions
-                    .iter()
-                    .map(|action| action.route)
-                    .collect::<BTreeSet<_>>()
-                    .len()
-                    < 2
+            let physical = initial_actions.iter().find(|action| {
+                action.kind == InvestigationActionKind::SearchArea
+                    && action.route == RouteClass::PhysicalTrail
+                    && action.target_kind == "area"
+                    && action.prerequisite.is_none()
+                    && case.areas.iter().any(|area| area.id == action.target_id)
+            });
+            let social = initial_actions.iter().find(|action| {
+                action.kind == InvestigationActionKind::LocateContact
+                    && action.route == RouteClass::SocialInquiry
+                    && action.target_kind == "contact"
+                    && action.prerequisite.is_none()
+                    && case
+                        .witnesses
+                        .iter()
+                        .any(|witness| witness.npc_id == action.target_id)
+            });
+            if initial_actions.len() != 2
+                || physical.is_none()
+                || social.is_none()
+                || physical.is_some_and(|action| action.alternate != social.unwrap().id)
+                || social.is_some_and(|action| action.alternate != physical.unwrap().id)
             {
                 errors.push(
                     "disappearance cases require independent physical and witness entry routes"
@@ -3655,6 +3692,75 @@ mod tests {
             .unwrap();
         watch.prerequisite = None;
         assert!(validate(&generated).is_err());
+    }
+
+    #[test]
+    fn family_entry_validation_rejects_kind_route_target_and_prerequisite_substitutions() {
+        for mutate in 0..4 {
+            let mut generated =
+                generate(&context(7, TemplateFamily::RecurringDepredation)).unwrap();
+            let root_id = generated
+                .actions
+                .iter()
+                .find(|action| action.active_initially)
+                .unwrap()
+                .id
+                .clone();
+            let root = generated
+                .actions
+                .iter_mut()
+                .find(|action| action.id == root_id)
+                .unwrap();
+            match mutate {
+                0 => root.kind = InvestigationActionKind::Watch,
+                1 => root.route = RouteClass::PhysicalTrail,
+                2 => root.target_kind = "area".into(),
+                _ => root.prerequisite = Some(ActionId::new("substituted")),
+            }
+            assert!(validate(&generated).is_err());
+        }
+        for mutate in 0..4 {
+            let mut generated =
+                generate(&context(7, TemplateFamily::RecurringDepredation)).unwrap();
+            let root_id = generated
+                .actions
+                .iter()
+                .find(|action| action.active_initially)
+                .unwrap()
+                .id
+                .clone();
+            let successor = generated
+                .actions
+                .iter_mut()
+                .find(|action| {
+                    action.kind == InvestigationActionKind::ApproachLead
+                        && action.prerequisite.as_ref() == Some(&root_id)
+                })
+                .unwrap();
+            match mutate {
+                0 => successor.kind = InvestigationActionKind::SearchArea,
+                1 => successor.route = RouteClass::PatternSurveillance,
+                2 => successor.target_kind = "contact".into(),
+                _ => successor.prerequisite = Some(ActionId::new("substituted")),
+            }
+            assert!(validate(&generated).is_err());
+        }
+        for mutate in 0..4 {
+            let mut generated =
+                generate(&context(11, TemplateFamily::DisappearanceOrLoss)).unwrap();
+            let physical = generated
+                .actions
+                .iter_mut()
+                .find(|action| action.active_initially && action.route == RouteClass::PhysicalTrail)
+                .unwrap();
+            match mutate {
+                0 => physical.kind = InvestigationActionKind::LocateContact,
+                1 => physical.route = RouteClass::SocialInquiry,
+                2 => physical.target_kind = "contact".into(),
+                _ => physical.prerequisite = Some(ActionId::new("substituted")),
+            }
+            assert!(validate(&generated).is_err());
+        }
     }
 
     #[test]
