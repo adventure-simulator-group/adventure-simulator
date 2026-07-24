@@ -79,6 +79,15 @@ and persisted when capability authority is issued or revised. Exact retries are
 idempotent, while a new version receives fresh entropy and a version-separated
 roll.
 
+Every private investigation capability also persists immutable provenance:
+manual, or generated with its canonical generated-case identity. Generated
+capabilities never fall back to manual behavior when authority or output rows
+are missing. Projection, recovery, and execution reconstruct the opaque
+capability ID from the private generation context and require its method,
+target, terrain, prerequisite, alternate, summary, consequence, and typed
+outputs to match the immutable manifest. Canonical and public case aliases are
+resolved only through private indexed authority, with collisions rejected.
+
 ## Discovery and resolution
 
 Entering an inn guarantees symptom discovery when an unknown local problem is

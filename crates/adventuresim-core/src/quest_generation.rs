@@ -2828,8 +2828,21 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
         if !action_ids.contains(&action.alternate) {
             errors.push(format!("{} has no recovery route", action.id.0));
         }
+        if action
+            .prerequisite
+            .as_ref()
+            .is_some_and(|required| !action_ids.contains(required))
+        {
+            errors.push(format!("{} has a missing prerequisite", action.id.0));
+        }
         if action.prerequisite.as_ref() == Some(&action.id) {
             errors.push(format!("{} dominates itself", action.id.0));
+        }
+        if !reachable.contains(&action.id) {
+            errors.push(format!(
+                "{} is unreachable from a family entry",
+                action.id.0
+            ));
         }
         let target_exists = match action.target_kind.as_str() {
             "site" => case.sites.iter().any(|site| site.id.0 == action.target_id),
@@ -2993,7 +3006,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
         if !case
             .actions
             .iter()
-            .filter(|action| &action.route == route)
+            .filter(|action| &action.route == route && reachable.contains(&action.id))
             .any(|action| {
                 action.outputs.iter().any(|output| {
                     matches!(
@@ -3771,6 +3784,106 @@ mod tests {
                 "disappearance root mutation {mutate} unexpectedly remained valid"
             );
         }
+    }
+
+    #[test]
+    fn action_graph_validation_rejects_missing_stranded_and_unreachable_exact_routes() {
+        let mut missing = generate(&context(7, TemplateFamily::RecurringDepredation)).unwrap();
+        missing
+            .actions
+            .iter_mut()
+            .find(|action| {
+                action.route == RouteClass::PhysicalTrail
+                    && action.outputs.iter().any(|output| {
+                        matches!(
+                            output,
+                            GeneratedActionOutput::Destination {
+                                stage: GeneratedDestinationStage::Exact,
+                                ..
+                            }
+                        )
+                    })
+            })
+            .unwrap()
+            .prerequisite = Some(ActionId::new("missing-prerequisite"));
+        assert!(validate(&missing).is_err());
+
+        let mut missing_alternate =
+            generate(&context(7, TemplateFamily::RecurringDepredation)).unwrap();
+        missing_alternate.actions[0].alternate = ActionId::new("missing-alternate");
+        assert!(validate(&missing_alternate).is_err());
+
+        let mut stranded = generate(&context(7, TemplateFamily::RecurringDepredation)).unwrap();
+        let search_id = stranded
+            .actions
+            .iter()
+            .find(|action| action.kind == InvestigationActionKind::SearchArea)
+            .unwrap()
+            .id
+            .clone();
+        let follow_id = stranded
+            .actions
+            .iter()
+            .find(|action| {
+                action.route == RouteClass::PhysicalTrail
+                    && action.outputs.iter().any(|output| {
+                        matches!(
+                            output,
+                            GeneratedActionOutput::Destination {
+                                stage: GeneratedDestinationStage::Exact,
+                                ..
+                            }
+                        )
+                    })
+            })
+            .unwrap()
+            .id
+            .clone();
+        stranded
+            .actions
+            .iter_mut()
+            .find(|action| action.id == search_id)
+            .unwrap()
+            .prerequisite = Some(follow_id);
+        assert!(validate(&stranded).is_err());
+
+        let mut exact = generate(&context(7, TemplateFamily::RecurringDepredation)).unwrap();
+        let reveal_id = exact
+            .actions
+            .iter()
+            .find(|action| {
+                action.route == RouteClass::PatternSurveillance
+                    && action.outputs.iter().any(|output| {
+                        matches!(
+                            output,
+                            GeneratedActionOutput::Destination {
+                                stage: GeneratedDestinationStage::Exact,
+                                ..
+                            }
+                        )
+                    })
+            })
+            .unwrap()
+            .id
+            .clone();
+        exact
+            .actions
+            .iter_mut()
+            .find(|action| {
+                action.route == RouteClass::PhysicalTrail
+                    && action.outputs.iter().any(|output| {
+                        matches!(
+                            output,
+                            GeneratedActionOutput::Destination {
+                                stage: GeneratedDestinationStage::Exact,
+                                ..
+                            }
+                        )
+                    })
+            })
+            .unwrap()
+            .prerequisite = Some(reveal_id);
+        assert!(validate(&exact).is_err());
     }
 
     #[test]
