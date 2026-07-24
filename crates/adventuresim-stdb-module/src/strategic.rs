@@ -971,6 +971,20 @@ mod healing_tests {
         assert_eq!(travel.matches("exact_case_site_for_observer").count(), 2);
         assert!(travel.contains("\"case_site\""));
         assert!(!travel.contains("ctx.db.quest().id().find(&case_site_id)"));
+
+        let continuation = source
+            .split("pub fn continue_camp_travel")
+            .nth(1)
+            .and_then(|tail| tail.split("fn ingest_hostile_group_defeat_fact").next())
+            .expect("camp travel continuation");
+        let case_site_arrival = continuation
+            .split("JourneyEndpoint::CaseSite(endpoint)")
+            .nth(1)
+            .expect("case-site arrival branch");
+        assert!(case_site_arrival.contains("set_character_case_site("));
+        assert!(case_site_arrival.contains("Some(destination_id.clone())"));
+        assert!(case_site_arrival.contains("party.current_case_site_id = Some"));
+        assert!(continuation.contains("finish_party_journey(ctx, &party_id)"));
     }
 
     #[test]

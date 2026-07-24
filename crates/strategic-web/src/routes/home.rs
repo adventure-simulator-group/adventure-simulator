@@ -15,6 +15,15 @@ pub fn routes() -> Router<AppState> {
     Router::new().route("/", get(home))
 }
 
+fn character_location_path(
+    settlement_id: Option<&str>,
+    case_site_id: Option<&str>,
+) -> Option<String> {
+    settlement_id
+        .map(|id| format!("/locations/settlement/{id}"))
+        .or_else(|| case_site_id.map(|id| format!("/locations/case-site/{id}")))
+}
+
 async fn home(State(state): State<AppState>, session: Session) -> Response {
     let Some(character_id) = session.character_id_u64() else {
         return Redirect::to("/characters").into_response();
@@ -43,16 +52,30 @@ async fn home(State(state): State<AppState>, session: Session) -> Response {
     {
         return Redirect::to("/camp").into_response();
     }
-    match (
-        &character.current_settlement_id,
-        &character.current_case_site_id,
+    if let Some(path) = character_location_path(
+        character.current_settlement_id.as_deref(),
+        character.current_case_site_id.as_deref(),
     ) {
-        (Some(settlement_id), _) => {
-            Redirect::to(&format!("/locations/settlement/{settlement_id}")).into_response()
-        }
-        (_, Some(case_site_id)) => {
-            Redirect::to(&format!("/locations/case-site/{case_site_id}")).into_response()
-        }
-        _ => Redirect::to("/characters").into_response(),
+        Redirect::to(&path).into_response()
+    } else {
+        Redirect::to("/characters").into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::character_location_path;
+
+    #[test]
+    fn selected_character_at_generated_case_site_routes_after_camp_arrival() {
+        assert_eq!(
+            character_location_path(None, Some("case-site:generated:old-graveyard")),
+            Some("/locations/case-site/case-site:generated:old-graveyard".into())
+        );
+        assert_eq!(
+            character_location_path(Some("lubeck"), Some("case-site:generated:site")),
+            Some("/locations/settlement/lubeck".into())
+        );
+        assert_eq!(character_location_path(None, None), None);
     }
 }
