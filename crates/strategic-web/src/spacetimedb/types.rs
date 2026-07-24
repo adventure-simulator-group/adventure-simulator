@@ -443,7 +443,7 @@ pub struct Party {
     pub name: String,
     pub leader_id: u64,
     pub current_settlement_id: Option<String>,
-    pub current_case_site_id: Option<String>,
+    pub current_case_site_id: Option<CaseSiteId>,
     pub active_contract_id: Option<String>,
     pub is_solo: bool,
     pub camp_fatigue_percent: u8,
@@ -1619,6 +1619,38 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<MissionStatus>("\"Starting\"").unwrap(),
             MissionStatus::Pending
+        );
+    }
+
+    #[test]
+    fn party_case_site_decodes_the_typed_spacetimedb_sql_shape() {
+        let row = serde_json::json!({
+            "id": "party-7",
+            "gateway_bucket": 0,
+            "name": "Ada's party",
+            "leader_id": 7,
+            "current_settlement_id": null,
+            "current_case_site_id": { "value": "site:known" },
+            "active_contract_id": null,
+            "is_solo": true,
+            "camp_fatigue_percent": 50,
+            "walking_minutes_per_day": 480,
+            "travel_at_night": false,
+            "camp_duration_mode": "Auto",
+            "fixed_camp_minutes": 0,
+            "camp_destination": null,
+            "camp_remaining_minutes": 0,
+            "pooled_water_ml": 0.0,
+            "medicine_target": 0.0,
+            "command_target": 0.0,
+            "religion_target": 0.0
+        });
+        let decoded: Party = serde_json::from_value(row).unwrap();
+        assert_eq!(
+            decoded.current_case_site_id,
+            Some(CaseSiteId {
+                value: "site:known".into()
+            })
         );
     }
 
