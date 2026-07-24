@@ -14,10 +14,13 @@ members = [
     "crates/adventuresim-tactical-client",
     "crates/adventuresim-tactical-server",
     "crates/adventuresim-tactical-server-dispatcher", 
-    "crates/adventuresim-character-creator",
     "crates/strategic-web",
 ]
-exclude = ["/wiki", "/utils"]
+exclude = [
+    "wiki",
+    "utils",
+    "crates/adventuresim-character-creator",
+]
 
 [workspace.package]
 version = "0.1.0"
