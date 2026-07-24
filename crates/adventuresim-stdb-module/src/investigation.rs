@@ -3485,6 +3485,19 @@ fn correction_requires_progress_reset(has_live_replacement_support: bool) -> boo
     !has_live_replacement_support
 }
 
+fn reset_capability_progress_if_unsupported(
+    capability: &mut InvestigationActionCapability,
+    has_live_replacement_support: bool,
+    replacement_seed: impl FnOnce() -> u64,
+) -> bool {
+    if !correction_requires_progress_reset(has_live_replacement_support) {
+        return false;
+    }
+    capability.version = capability.version.saturating_add(1);
+    capability.seed = replacement_seed();
+    true
+}
+
 fn reset_unsupported_capability_progress(
     ctx: &ReducerContext,
     capability_ids: impl IntoIterator<Item = String>,
@@ -3498,13 +3511,15 @@ fn reset_unsupported_capability_progress(
         else {
             continue;
         };
-        if !correction_requires_progress_reset(
-            exact_action_case_site_for_observer(ctx, &capability).is_some(),
+        let has_live_replacement_support =
+            exact_action_case_site_for_observer(ctx, &capability).is_some();
+        if !reset_capability_progress_if_unsupported(
+            &mut capability,
+            has_live_replacement_support,
+            || ctx.random::<u64>(),
         ) {
             continue;
         }
-        capability.version = capability.version.saturating_add(1);
-        capability.seed = ctx.random::<u64>();
         ctx.db
             .investigation_action_capability()
             .id()
@@ -4967,6 +4982,7 @@ pub fn discover_investigation_lead(
         }
     }
     let lead_id = inv::compound_id(&["lead", &character_id.to_string(), &receipt_id]);
+    let mut corrected_capability_ids = BTreeSet::new();
     if !receipt.correction_of_lead_id.is_empty() {
         let mut prior = ctx
             .db
@@ -4978,14 +4994,11 @@ pub fn discover_investigation_lead(
             return Err("Correction target does not match observer and case".into());
         }
         let invalidated_live_support = prior.corrected_by.is_empty();
-        let dependent_capability_ids = invalidated_live_support
-            .then(|| dependent_capability_ids_for_exact_lead(ctx, &prior))
-            .unwrap_or_default();
+        if invalidated_live_support {
+            corrected_capability_ids.extend(dependent_capability_ids_for_exact_lead(ctx, &prior));
+        }
         prior.corrected_by = lead_id.clone();
         ctx.db.investigation_lead().id().update(prior);
-        if invalidated_live_support {
-            reset_unsupported_capability_progress(ctx, dependent_capability_ids)?;
-        }
     }
     ctx.db.investigation_lead().insert(InvestigationLead {
         id: lead_id,
@@ -5009,6 +5022,7 @@ pub fn discover_investigation_lead(
         corrected_by: String::new(),
         recorded_at: official_minute(ctx),
     });
+    reset_unsupported_capability_progress(ctx, corrected_capability_ids)?;
     receipt.consumed_by = action_id.clone();
     ctx.db
         .investigation_safe_lead_receipt()
@@ -5437,6 +5451,28 @@ mod tests {
                     .unwrap()
         );
         assert!(generic.contains("invalidated_live_support"));
+        assert!(
+            generic.find("investigation_lead().insert").unwrap()
+                < generic
+                    .find("reset_unsupported_capability_progress")
+                    .unwrap()
+        );
+        assert!(
+            generic
+                .find("reset_unsupported_capability_progress")
+                .unwrap()
+                < generic.find("receipt.consumed_by").unwrap()
+        );
+        let reset_revision = source
+            .split("fn reset_capability_progress_if_unsupported")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("fn reset_unsupported_capability_progress")
+                    .next()
+            })
+            .unwrap();
+        assert!(reset_revision.contains("capability.version.saturating_add(1)"));
+        assert!(reset_revision.contains("capability.seed = replacement_seed()"));
         let reset = source
             .split("fn reset_unsupported_capability_progress")
             .nth(1)
@@ -5446,10 +5482,69 @@ mod tests {
             })
             .unwrap();
         assert!(reset.contains("unique_capability_ids"));
-        assert!(reset.contains("correction_requires_progress_reset"));
+        assert!(reset.contains("reset_capability_progress_if_unsupported"));
         assert!(reset.contains("exact_action_case_site_for_observer"));
-        assert!(reset.contains("capability.version.saturating_add(1)"));
-        assert!(reset.contains("capability.seed = ctx.random"));
+        assert!(reset.contains("ctx.random"));
+    }
+
+    #[test]
+    fn correction_reset_waits_for_final_replacement_support() {
+        let failure = failed_attempt("attempt-0", "capability", 7, "inspect_site", 0, false);
+        let mut same_site_replacement = exact_capability(7, "public-case", "site-a");
+        assert_eq!(same_site_replacement.version, 1);
+        assert_eq!(
+            contiguous_failed_attempts(
+                "capability",
+                7,
+                "inspect_site",
+                same_site_replacement.version,
+                [failure.clone()]
+            ),
+            1
+        );
+        assert!(!reset_capability_progress_if_unsupported(
+            &mut same_site_replacement,
+            true,
+            || panic!("a supported correction must not consume a replacement seed")
+        ));
+        assert_eq!(same_site_replacement.version, 1);
+        assert_eq!(same_site_replacement.seed, 1);
+        assert_eq!(
+            contiguous_failed_attempts(
+                "capability",
+                7,
+                "inspect_site",
+                same_site_replacement.version,
+                [failure.clone()]
+            ),
+            1
+        );
+
+        let mut unsupported_replacement = exact_capability(7, "public-case", "site-a");
+        assert!(reset_capability_progress_if_unsupported(
+            &mut unsupported_replacement,
+            false,
+            || 77
+        ));
+        assert_eq!(unsupported_replacement.version, 2);
+        assert_eq!(unsupported_replacement.seed, 77);
+        assert_eq!(
+            contiguous_failed_attempts(
+                "capability",
+                7,
+                "inspect_site",
+                unsupported_replacement.version,
+                [failure]
+            ),
+            0
+        );
+        assert!(!reset_capability_progress_if_unsupported(
+            &mut unsupported_replacement,
+            true,
+            || panic!("replay must not consume a replacement seed")
+        ));
+        assert_eq!(unsupported_replacement.version, 2);
+        assert_eq!(unsupported_replacement.seed, 77);
     }
 
     #[test]
