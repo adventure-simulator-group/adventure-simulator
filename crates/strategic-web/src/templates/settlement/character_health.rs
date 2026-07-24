@@ -883,6 +883,11 @@ pub(super) fn stat_icon(label: &str, category: &str, icon: &str, decorative: boo
 mod tests {
     use super::*;
     use crate::spacetimedb::*;
+    use crate::templates::settlement::{
+        character_skills::{SkillAction, skill_action_icon},
+        chrome::party_portrait_overlay,
+        context::LocationKind,
+    };
 
     #[test]
     fn public_filth_serialization_and_template_expose_only_aggregate_origin() {
