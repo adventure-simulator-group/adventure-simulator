@@ -4,15 +4,15 @@ use super::AppState;
 use crate::spacetimedb::{BackendCharacterCaseSiteLocation, Character, Result};
 
 pub(crate) async fn character(state: &AppState, character_id: u64) -> Result<Option<Character>> {
+    let character_sql = format!("SELECT * FROM character WHERE id = {character_id}");
+    let case_site_sql = format!(
+        "SELECT * FROM backend_character_case_site_locations WHERE character_id = {character_id}"
+    );
     let (character, case_site) = tokio::join!(
+        state.db.query_one::<Character>(&character_sql),
         state
             .db
-            .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {character_id}")),
-        state
-            .db
-            .query_one::<BackendCharacterCaseSiteLocation>(&format!(
-                "SELECT * FROM backend_character_case_site_locations WHERE character_id = {character_id}"
-            ))
+            .query_one::<BackendCharacterCaseSiteLocation>(&case_site_sql)
     );
     let mut character = character?;
     let case_site = case_site?;
