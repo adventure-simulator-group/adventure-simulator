@@ -684,6 +684,21 @@ fn referral_location_label(
         .filter(|label| !label.is_empty())
 }
 
+fn stable_eligible_candidates<T, K: Ord>(
+    candidates: impl IntoIterator<Item = T>,
+    limit: usize,
+    mut eligible: impl FnMut(&T) -> bool,
+    mut stable_key: impl FnMut(&T) -> K,
+) -> Vec<T> {
+    let mut eligible_candidates: Vec<_> = candidates
+        .into_iter()
+        .filter(|candidate| eligible(candidate))
+        .collect();
+    eligible_candidates.sort_by_key(|candidate| stable_key(candidate));
+    eligible_candidates.truncate(limit);
+    eligible_candidates
+}
+
 pub fn surface_problem(
     ctx: &ReducerContext,
     character_id: u64,
@@ -707,16 +722,16 @@ pub fn surface_problem(
         .find(character_id)
         .map_or(0, |t| t.minutes);
     let scope = format!("settlement:{settlement_id}");
-    let mut active_problems: Vec<_> = ctx
-        .db
-        .local_problem_authority()
-        .scope_key()
-        .filter(&scope)
-        .filter(|problem| is_active(problem, minute))
-        .filter(|problem| validated_problem_generation(ctx, problem, &settlement_id).is_some())
-        .take(lp::MAX_ACTIVE_PER_SCOPE)
-        .collect();
-    active_problems.sort_by(|left, right| left.id.cmp(&right.id));
+    let active_problems = stable_eligible_candidates(
+        ctx.db
+            .local_problem_authority()
+            .scope_key()
+            .filter(&scope)
+            .filter(|problem| is_active(problem, minute)),
+        lp::MAX_ACTIVE_PER_SCOPE,
+        |problem| validated_problem_generation(ctx, problem, &settlement_id).is_some(),
+        |problem| (problem.id.clone(), problem.opaque_case_ref.clone()),
+    );
     for problem in &active_problems {
         let Some(receipt) = ctx
             .db
@@ -858,25 +873,30 @@ pub fn surface_problem(
 mod tests {
     #[test]
     fn deterministic_rumor_selection_skips_unbacked_or_invalid_candidates() {
-        fn select<'a>(
-            candidates: &'a [&'a str],
-            eligible: impl Fn(&str) -> bool,
-        ) -> Option<&'a str> {
-            candidates
-                .iter()
-                .copied()
-                .find(|candidate| eligible(candidate))
-        }
-        let candidates = ["unbacked", "invalid", "valid-generated"];
+        let candidates = [
+            ("valid-d", true),
+            ("unbacked-a", false),
+            ("valid-b", true),
+            ("invalid-c", false),
+            ("valid-a", true),
+        ];
         assert_eq!(
-            select(&candidates, |candidate| candidate == "valid-generated"),
-            Some("valid-generated")
+            stable_eligible_candidates(
+                candidates,
+                2,
+                |(_, eligible)| *eligible,
+                |(id, _)| id.to_string(),
+            ),
+            vec![("valid-a", true), ("valid-b", true)]
         );
-        assert_eq!(select(&["unbacked"], |_| false), None);
-        assert_eq!(select(&["invalid", "ambiguous"], |_| false), None);
-        assert_eq!(
-            select(&["valid-generated"], |_| true),
-            Some("valid-generated")
+        assert!(
+            stable_eligible_candidates(
+                [("unbacked", false), ("ambiguous", false)],
+                2,
+                |(_, eligible)| *eligible,
+                |(id, _)| id.to_string(),
+            )
+            .is_empty()
         );
     }
 
@@ -923,9 +943,15 @@ mod tests {
             assert!(authority.contains(binding), "{binding}");
         }
         assert!(surface.contains("presence.location_id == witness.expected_location"));
+        assert!(surface.contains("stable_eligible_candidates"));
+        let selector = source
+            .split("fn stable_eligible_candidates")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn surface_problem").next())
+            .unwrap();
         assert!(
-            surface.find("validated_problem_generation").unwrap()
-                < surface.find(".take(lp::MAX_ACTIVE_PER_SCOPE)").unwrap()
+            selector.find(".filter(").unwrap() < selector.find(".sort_by_key(").unwrap()
+                && selector.find(".sort_by_key(").unwrap() < selector.find(".truncate(").unwrap()
         );
         assert!(surface.matches("continue;").count() >= 8);
         assert!(!surface.contains("case:opaque:"));
@@ -1007,7 +1033,8 @@ mod tests {
     fn discovery_and_outcome_boundaries_are_bounded() {
         let source = include_str!("local_problem.rs");
         assert!(source.contains("has_service(adventuresim_world_schema::SettlementService::Inn)"));
-        assert!(source.contains("take(lp::MAX_ACTIVE_PER_SCOPE)"));
+        assert!(source.contains("stable_eligible_candidates"));
+        assert!(source.contains("eligible_candidates.truncate(limit)"));
         let discovery = source.split("pub fn surface_problem").nth(1).unwrap();
         assert!(!discovery.contains("local_problem_receipt()\n        .character_id()"));
         assert!(source.contains("Conflicting retry for source outcome ID"));
@@ -1018,7 +1045,7 @@ mod tests {
     fn generated_referrals_bind_persistent_npcs_without_revealing_testimony() {
         let local = include_str!("local_problem.rs");
         let surface = local.split("pub fn surface_problem").nth(1).unwrap();
-        assert!(surface.contains("generated.witnesses.first()"));
+        assert!(surface.contains("validated.manifest.witnesses.first()"));
         assert!(surface.contains("settlement_npc().id().find(&witness.npc_id)"));
         assert!(surface.contains("presence.location_id == witness.expected_location"));
         assert!(surface.contains("contact_npc_id: contact.id"));
