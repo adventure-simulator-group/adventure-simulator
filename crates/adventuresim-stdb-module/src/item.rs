@@ -972,11 +972,6 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
             ..Item::default()
         });
     }
-    ctx.db.item().insert(Item {
-        id: "cooked_meal".into(),
-        kind: ItemKind::Food,
-        ..Item::default()
-    });
     for item in [
         Item {
             id: "small_beer".into(),
@@ -1295,14 +1290,28 @@ pub fn define_armor(
     });
 }
 
-pub fn add_inventory_item(
+pub(crate) fn inventory_food_definition(
+    kind: Option<ItemKind>,
+    item_id: &str,
+) -> Result<Option<&'static adventuresim_core::food::FoodDefinition>, String> {
+    let definition = adventuresim_core::food::definition(item_id);
+    if kind == Some(ItemKind::Food) || definition.is_some() {
+        definition
+            .map(Some)
+            .ok_or_else(|| format!("Food definition not found for {item_id}"))
+    } else {
+        Ok(None)
+    }
+}
+
+pub(crate) fn add_inventory_item_checked(
     ctx: &ReducerContext,
     character_id: u64,
     item_id: &str,
     quantity: u32,
-) -> Option<u64> {
+) -> Result<Option<u64>, String> {
     if quantity == 0 {
-        return None;
+        return Ok(None);
     }
 
     let kind = ctx
@@ -1311,14 +1320,14 @@ pub fn add_inventory_item(
         .id()
         .find(item_id.to_owned())
         .map(|definition| definition.kind);
+    let food_definition = inventory_food_definition(kind, item_id)?;
     let durable = kind.is_some_and(|kind| {
         matches!(
             kind,
             ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield | ItemKind::Clothing
         )
     });
-    let food =
-        kind == Some(ItemKind::Food) || adventuresim_core::food::definition(item_id).is_some();
+    let food = food_definition.is_some();
     // Every food unit is its own non-fungible batch. A partly consumed unit
     // remains quantity one while its authoritative lot mass/value/provenance
     // shrink, so it can never be merged back into fresh stock.
@@ -1343,14 +1352,25 @@ pub fn add_inventory_item(
                 item_id,
                 if individual { 1 } else { quantity },
             )
-            .ok()?;
+            .map_err(|error| format!("Could not create food lot: {error}"))?;
         }
         first.get_or_insert(item.id);
     }
     if food {
         let _ = crate::capability::refresh_character_capability(ctx, character_id);
     }
-    first
+    Ok(first)
+}
+
+pub fn add_inventory_item(
+    ctx: &ReducerContext,
+    character_id: u64,
+    item_id: &str,
+    quantity: u32,
+) -> Option<u64> {
+    add_inventory_item_checked(ctx, character_id, item_id, quantity)
+        .ok()
+        .flatten()
 }
 
 pub fn is_currency(ctx: &ReducerContext, item_id: &str) -> bool {
@@ -1627,6 +1647,36 @@ pub fn change_inventory_item(
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    #[test]
+    fn food_inventory_is_prevalidated_before_rows_can_be_inserted() {
+        let cooked = inventory_food_definition(Some(ItemKind::Food), "cooked_meal")
+            .unwrap()
+            .expect("cooked meal definition");
+        assert!(cooked.kcal_per_unit > 0.0);
+        assert!(inventory_food_definition(Some(ItemKind::Food), "missing_food").is_err());
+        assert_eq!(
+            inventory_food_definition(Some(ItemKind::Simple), "torch").unwrap(),
+            None
+        );
+        let source = include_str!("item.rs");
+        assert_eq!(
+            source.matches("id: \"cooked_meal\".into()").count(),
+            0,
+            "the standard food catalog must be the sole cooked-meal item seed"
+        );
+        let checked = source
+            .split("pub(crate) fn add_inventory_item_checked")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn add_inventory_item").next())
+            .expect("checked inventory insertion");
+        assert!(
+            checked.find("inventory_food_definition").unwrap()
+                < checked.find("inventory_item().insert").unwrap()
+        );
+        assert!(checked.contains("for _ in 0..count"));
+        assert!(checked.contains("create_personal_food_lot("));
+    }
 
     #[test]
     fn catalog_weapon_skill_distributions_cover_hybrids_and_ranged_families() {

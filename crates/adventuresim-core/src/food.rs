@@ -167,6 +167,16 @@ pub const FOOD_CATALOG: &[FoodDefinition] = &[
         growth_per_hour: 0.105,
         cooking_minutes: 22,
     },
+    FoodDefinition {
+        id: "cooked_meal",
+        name: "Cooked meal",
+        class: FoodClass::MixedMeal,
+        kcal_per_unit: 2_500.0,
+        mass_kg_per_unit: 0.65,
+        value_per_unit: 1.0,
+        growth_per_hour: 0.025,
+        cooking_minutes: 0,
+    },
 ];
 
 pub fn definition(id: &str) -> Option<&'static FoodDefinition> {
@@ -316,6 +326,23 @@ mod tests {
         assert_eq!(explicit_meal_consumption(-100.0, 500.0), 500.0);
         assert_eq!(explicit_meal_consumption(-1_000.0, 8_000.0), 4_000.0);
         assert_eq!(explicit_meal_consumption(f32::NAN, 500.0), 0.0);
+    }
+
+    #[test]
+    fn standard_cooked_meal_is_positive_and_unique() {
+        let meal = definition("cooked_meal").expect("standard cooked meal");
+        assert_eq!(meal.class, FoodClass::MixedMeal);
+        assert!(meal.kcal_per_unit > 0.0);
+        assert!(meal.mass_kg_per_unit > 0.0);
+        assert!(meal.value_per_unit > 0.0);
+        assert!(meal.growth_per_hour > 0.0);
+        assert_eq!(
+            FOOD_CATALOG
+                .iter()
+                .filter(|food| food.id == "cooked_meal")
+                .count(),
+            1
+        );
     }
 
     #[test]

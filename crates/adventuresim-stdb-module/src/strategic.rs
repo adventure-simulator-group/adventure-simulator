@@ -1217,6 +1217,9 @@ mod healing_tests {
             "npc_is_present(&provider_presence, problem_minute)",
             "default_merchant_provider(ctx, &settlement_id, &service_id, location_id)?",
             "storefront_stocks(",
+            "inventory_food_definition(Some(item.kind), item_id)?",
+            "add_to_party_inventory_checked(",
+            "add_inventory_item_checked(",
         ] {
             assert!(
                 trade.contains(authority_check),
@@ -9439,17 +9442,26 @@ pub(crate) fn add_to_party_inventory(
     item_id: &str,
     quantity: u32,
 ) {
+    let _ = add_to_party_inventory_checked(ctx, party_id, item_id, quantity);
+}
+
+fn add_to_party_inventory_checked(
+    ctx: &ReducerContext,
+    party_id: &str,
+    item_id: &str,
+    quantity: u32,
+) -> Result<(), String> {
     if quantity == 0 {
-        return;
+        return Ok(());
     }
-    if ctx
+    let kind = ctx
         .db
         .item()
         .id()
         .find(item_id.to_string())
-        .is_some_and(|row| row.kind == crate::ItemKind::Food)
-        || adventuresim_core::food::definition(item_id).is_some()
-    {
+        .map(|row| row.kind);
+    let food_definition = crate::item::inventory_food_definition(kind, item_id)?;
+    if food_definition.is_some() {
         let minute = ctx
             .db
             .party_authority()
@@ -9464,9 +9476,10 @@ pub(crate) fn add_to_party_inventory(
                 item_id: item_id.into(),
                 quantity: 1,
             });
-            crate::food::create_party_food_lot(ctx, row.id, item_id, 1, minute);
+            crate::food::create_party_food_lot(ctx, row.id, item_id, 1, minute)
+                .ok_or_else(|| format!("Could not create party food lot for {item_id}"))?;
         }
-        return;
+        return Ok(());
     }
     if item_is_durable(ctx, item_id) {
         for _ in 0..quantity {
@@ -9485,7 +9498,7 @@ pub(crate) fn add_to_party_inventory(
                 tier_5: 0.0,
             });
         }
-        return;
+        return Ok(());
     }
     if let Some(mut stack) = ctx
         .db
@@ -9513,6 +9526,7 @@ pub(crate) fn add_to_party_inventory(
             quantity,
         });
     }
+    Ok(())
 }
 
 fn credit_party_stake(
@@ -10974,6 +10988,7 @@ fn finalize_storefront_trade_impl(
         {
             return Err("Invalid merchant purchase".into());
         }
+        crate::item::inventory_food_definition(Some(item.kind), item_id)?;
         let catalog_kind = crate::item::economy_catalog_kind(item.kind);
         if !adventuresim_core::settlement_economy::storefront_stocks(
             &settlement_economy,
@@ -11143,7 +11158,7 @@ fn finalize_storefront_trade_impl(
     let equip = ctx.db.character_equip().character_id().find(character_id);
     for (item_id, quantity) in buy_item_ids.iter().zip(&buy_quantities) {
         if party_scope {
-            add_to_party_inventory(ctx, party_id.as_ref().unwrap(), item_id, *quantity);
+            add_to_party_inventory_checked(ctx, party_id.as_ref().unwrap(), item_id, *quantity)?;
             continue;
         }
         // Never add purchases to an equipped stack. An equipped item must stay
@@ -11178,10 +11193,12 @@ fn finalize_storefront_trade_impl(
                 stack.quantity = merged;
                 ctx.db.inventory_item().id().update(stack);
             } else {
-                crate::add_inventory_item(ctx, character_id, item_id, *quantity);
+                crate::item::add_inventory_item_checked(ctx, character_id, item_id, *quantity)?
+                    .ok_or("Merchant purchase created no inventory item")?;
             }
         } else {
-            crate::add_inventory_item(ctx, character_id, item_id, *quantity);
+            crate::item::add_inventory_item_checked(ctx, character_id, item_id, *quantity)?
+                .ok_or("Merchant purchase created no inventory item")?;
         }
     }
     let (owes, receives) = if cost >= proceeds {
