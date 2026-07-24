@@ -77,9 +77,12 @@ only investigation actions currently authorized at that site. A combat
 autoresolve action appears only for an open generated objective whose active
 hostile group and finale are bound to that exact site; evidence and other
 noncombat sites do not gain combat controls merely because the party arrived.
+When generated case authority resolves, including through a noncombat rescue
+or recovery, the site shows a plain completion notice and removes its
+pre-finale rest controls without exposing private cause or manifest data.
 Legacy direct bounties continue to require their accepted active contract.
 
-Location headers do not contain a quest tracker. The Map building tab carries a red exclamation while the party has an active quest. Map destination rows use a gold exclamation for available quests and a red exclamation for the party's active quest route or destination. Resolving the objective does not change the active marker to gold: it remains red while guiding the party back to the issuing settlement, until turn-in removes the active quest. Quest locations do not display a separate resolution badge over the center view.
+Location headers do not contain a quest tracker. The Map building tab carries a red exclamation while the party has an active quest. Map destination rows use a gold exclamation for available quests and a red exclamation for the party's active quest route or destination. Resolving the objective does not change the active marker to gold: it remains red while guiding the party back to the issuing settlement, until turn-in removes the active quest. The generated-case completion notice is ordinary page content rather than a marker over the center visual.
 
 So that new players don't naively accept difficult quests since they have no frame of reference for estimating their own/enemies power level, the quest should display recommended power level and their current value before they head out.
 ### Equations

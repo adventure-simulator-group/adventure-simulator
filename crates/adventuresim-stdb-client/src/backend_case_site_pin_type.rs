@@ -22,6 +22,7 @@ pub struct BackendCaseSitePin {
     pub tracked: bool,
     pub display_title: String,
     pub generated_case: bool,
+    pub case_resolved: bool,
     pub combat_available: bool,
 }
 
@@ -48,6 +49,7 @@ pub struct BackendCaseSitePinCols {
     pub tracked: __sdk::__query_builder::Col<BackendCaseSitePin, bool>,
     pub display_title: __sdk::__query_builder::Col<BackendCaseSitePin, String>,
     pub generated_case: __sdk::__query_builder::Col<BackendCaseSitePin, bool>,
+    pub case_resolved: __sdk::__query_builder::Col<BackendCaseSitePin, bool>,
     pub combat_available: __sdk::__query_builder::Col<BackendCaseSitePin, bool>,
 }
 
@@ -76,6 +78,7 @@ impl __sdk::__query_builder::HasCols for BackendCaseSitePin {
             tracked: __sdk::__query_builder::Col::new(table_name, "tracked"),
             display_title: __sdk::__query_builder::Col::new(table_name, "display_title"),
             generated_case: __sdk::__query_builder::Col::new(table_name, "generated_case"),
+            case_resolved: __sdk::__query_builder::Col::new(table_name, "case_resolved"),
             combat_available: __sdk::__query_builder::Col::new(table_name, "combat_available"),
         }
     }

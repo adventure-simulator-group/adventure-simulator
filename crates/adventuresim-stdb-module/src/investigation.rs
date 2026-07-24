@@ -683,6 +683,8 @@ pub struct BackendCaseSitePin {
     pub display_title: String,
     /// Generated presentation is deliberately independent of contract state.
     pub generated_case: bool,
+    /// Observer-safe completion state for the generated case.
+    pub case_resolved: bool,
     /// This reveals only that combat is currently a permitted onsite action.
     pub combat_available: bool,
 }
@@ -3863,6 +3865,7 @@ pub fn backend_case_site_pins(ctx: &ViewContext) -> Vec<BackendCaseSitePin> {
                 tracked,
                 display_title: presentation.display_title,
                 generated_case: presentation.generated_case,
+                case_resolved: presentation.case_resolved,
                 combat_available: presentation.combat_available,
             })
         })
@@ -3882,6 +3885,7 @@ pub fn backend_case_site_pins(ctx: &ViewContext) -> Vec<BackendCaseSitePin> {
 struct CaseSitePresentationView {
     display_title: String,
     generated_case: bool,
+    case_resolved: bool,
     combat_available: bool,
 }
 
@@ -3895,6 +3899,7 @@ fn case_site_presentation_view(
         return Some(CaseSitePresentationView {
             display_title: site.name.clone(),
             generated_case: false,
+            case_resolved: false,
             combat_available: false,
         });
     };
@@ -3961,6 +3966,7 @@ fn case_site_presentation_view(
     Some(CaseSitePresentationView {
         display_title: validated.manifest.consequence.public_summary,
         generated_case: true,
+        case_resolved: case.resolution_status != crate::strategic::CaseResolutionStatus::Open,
         combat_available,
     })
 }

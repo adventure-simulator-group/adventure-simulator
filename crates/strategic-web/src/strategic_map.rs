@@ -859,6 +859,7 @@ mod tests {
             tracked: true,
             display_title: title.into(),
             generated_case: false,
+            case_resolved: false,
             combat_available: false,
         }
     }

@@ -9,9 +9,21 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (1162)
+## Files (1174)
 
 - `.cargo/config.toml` — Tooling or build configuration.
+- `.codex-completion-web.err.log` — Repository support file.
+- `.codex-completion-web.out.log` — Repository support file.
+- `.codex-final-profile.err.log` — Repository support file.
+- `.codex-final-profile.out.log` — Repository support file.
+- `.codex-live-stdb.err.log` — Repository support file.
+- `.codex-live-stdb.out.log` — Repository support file.
+- `.codex-live-web.err.log` — Repository support file.
+- `.codex-live-web.out.log` — Repository support file.
+- `.codex-quest-e2e.err.log` — Repository support file.
+- `.codex-quest-e2e.out.log` — Repository support file.
+- `.codex-restored-stdb.err.log` — Repository support file.
+- `.codex-restored-stdb.out.log` — Repository support file.
 - `.codex-resume-stdb.err.log` — Repository support file.
 - `.codex-resume-stdb.out.log` — Repository support file.
 - `.codex-resume-web.err.log` — Repository support file.

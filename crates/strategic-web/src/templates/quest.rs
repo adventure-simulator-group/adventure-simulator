@@ -58,6 +58,7 @@ pub fn quest_location_map_page(
             selected_id,
             &format!("/locations/case-site/{}/map", site.case_site_id),
             html! {
+                @if !resolved {
                 section class="rest-service-menu quest-rest-menu" aria-label="Destination rest" {
                     (party_rest_menu(
                         &format!("/locations/case-site/{}/map/rest", site.case_site_id),
@@ -68,6 +69,7 @@ pub fn quest_location_map_page(
                         None,
                         soap_preview,
                     ))
+                }
                 }
             },
         ))
@@ -125,6 +127,12 @@ fn quest_location_center(
     let autoresolve_messages = autoresolve_info_messages(autoresolve_report);
     html! {
         main class="center-content settlement-main quest-location-main" {
+            @if resolved {
+                section class="strategic-notice quest-complete-notice" role="status" {
+                    h3 { "Quest complete" }
+                    p { "The local problem has been resolved." }
+                }
+            }
             @if let Some(notice) = recovery_notice {
                 section class="strategic-notice quest-recovery-notice" role="status" {
                     h3 { "Party recovery" }
@@ -443,6 +451,7 @@ mod tests {
             tracked: false,
             display_title: presentation.title.clone(),
             generated_case: true,
+            case_resolved: false,
             combat_available: true,
         };
         let action = BackendInvestigationAction {
@@ -506,6 +515,7 @@ mod tests {
             tracked: false,
             display_title: presentation.title.clone(),
             generated_case: true,
+            case_resolved: false,
             combat_available: false,
         };
         let markup = quest_location_center(
@@ -527,6 +537,54 @@ mod tests {
         assert!(!markup.contains("Waiting for party leader"));
         assert!(!markup.contains("Autoresolve"));
         assert!(!markup.contains("/missions/enter"));
+    }
+
+    #[test]
+    fn resolved_generated_noncombat_site_shows_clear_completion() {
+        let presentation = CaseSitePagePresentation {
+            title: "A missing villager".into(),
+            action_id: "site:rescue".into(),
+            allow_tactical_combat: false,
+        };
+        let site = BackendCaseSitePin {
+            owner_character_id: 7,
+            case_id: "journal:case".into(),
+            case_site_id: "site:rescue".into(),
+            origin_settlement_id: "settlement".into(),
+            name: "a camp in the woods".into(),
+            description: "The captive was found here.".into(),
+            scene_key: "forest".into(),
+            longitude_e7: 0,
+            latitude_e7: 0,
+            coordinates_are_geographic: false,
+            distance_m: 100,
+            knowledge_stage: "visited".into(),
+            tracked: false,
+            display_title: presentation.title.clone(),
+            generated_case: true,
+            case_resolved: true,
+            combat_available: false,
+        };
+
+        let markup = quest_location_center(
+            &presentation,
+            &site,
+            &[],
+            None,
+            &[],
+            false,
+            true,
+            None,
+            None,
+            true,
+            None,
+            false,
+        )
+        .into_string();
+
+        assert!(markup.contains("Quest complete"));
+        assert!(markup.contains("The local problem has been resolved."));
+        assert!(!markup.contains("quest-combat-actions"));
     }
 
     #[test]
@@ -552,6 +610,7 @@ mod tests {
             tracked: false,
             display_title: presentation.title.clone(),
             generated_case: true,
+            case_resolved: false,
             combat_available: false,
         };
         let notice = CaseSiteRecoveryNotice {
