@@ -4465,7 +4465,7 @@ fn grant_generated_witness_referral(
                 .db
                 .investigation_safe_claim_receipt()
                 .id()
-                .find(source_receipt_id)
+                .find(source_receipt_id.to_owned())
                 .ok_or("Testimony witness referral receipt is missing")?;
             if receipt.owner_character_id != character_id
                 || receipt.public_case_id != generated.public_case_id
