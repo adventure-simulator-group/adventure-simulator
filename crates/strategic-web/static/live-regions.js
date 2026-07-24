@@ -20,6 +20,11 @@
     };
   };
   window.strategicLiveRetryPolicyFactory = createDirtyRetryPolicy;
+  const liveRefreshUrl = (root = document, currentLocation = location) => (
+    root.querySelector("[data-live-refresh-url]")?.dataset.liveRefreshUrl
+      || `${currentLocation.pathname}${currentLocation.search}`
+  );
+  window.strategicLiveRefreshUrl = liveRefreshUrl;
   if (!document.querySelector("#strategic-live-revision")) return;
 
   let generation = 0;
@@ -96,7 +101,7 @@
     if (navigating) return;
     const currentGeneration = ++generation;
     const schedulePendingAtStart = scheduleEditorIsPending();
-    const response = await window.strategicBackgroundFetch("live-regions", `${location.pathname}${location.search}`, {
+    const response = await window.strategicBackgroundFetch("live-regions", liveRefreshUrl(), {
       headers: { Accept: "text/html", "X-Strategic-Live-Region": "true" },
     });
     if (!response.ok) return;

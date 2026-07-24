@@ -181,7 +181,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 script src="/static/character-action-dialog.js?v=character-actions-1" defer {}
                 @if scripts != ScriptProfile::Entry {
                     script src="/static/live-state.js?v=sse-3" defer {}
-                    script src="/static/live-regions.js?v=floating-time-editor-1" defer {}
+                    script src="/static/live-regions.js?v=post-result-refresh-url-1" defer {}
                 }
                 @if scripts == ScriptProfile::Strategic {
                     script src="/static/numeric-editor.js?v=shared-numeric-editor-2" defer {}
@@ -643,6 +643,8 @@ mod tests {
         let markup = page_shell("Chat", html! {}, html! {}, ScriptProfile::Strategic).into_string();
         assert!(markup.contains("/static/local-chat.js?v=local-chat-location-authority-1"));
         assert!(!markup.contains("local-chat.js?v=herbalist-private-1"));
+        assert!(markup.contains("/static/live-regions.js?v=post-result-refresh-url-1"));
+        assert!(!markup.contains("live-regions.js?v=floating-time-editor-1"));
     }
 
     #[test]

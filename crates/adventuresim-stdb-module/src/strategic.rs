@@ -300,7 +300,8 @@ mod healing_tests {
         MissionApproachCapability, MissionAttemptStatus, MissionAuthority, MissionOutcomeCandidate,
         RecruitmentOfferStatus, activity_incident_source_id, autoresolve_drop,
         case_refs_have_exact_dialogue_provenance, generated_dialogue_action_matches,
-        generated_dialogue_producer_recipient, generated_scene_key, hostile_group_authority_row,
+        generated_dialogue_producer_recipient, generated_scene_key,
+        generated_witness_visible_description, hostile_group_authority_row,
         hostile_resolution_for_objective, incident_group_matches,
         mission_candidate_from_capability, npc_conversation_authority_matches,
         player_participant_ids, project_local_chat_message, quest_encounter_archetype,
@@ -468,6 +469,21 @@ mod healing_tests {
             .expect("backend local chat view");
         assert!(view.contains("strategic_view_is_gateway(ctx)"));
         assert!(!view.contains("conversation_key"));
+    }
+
+    #[test]
+    fn generated_witness_hair_is_not_duplicated_in_referral_prose() {
+        let description = generated_witness_visible_description(
+            "average height",
+            "sturdy",
+            "brown hair",
+            "practical local woolens",
+        );
+        assert_eq!(
+            description,
+            "average height, sturdy, with brown hair, wearing practical local woolens"
+        );
+        assert!(!description.contains("hair hair"));
     }
 
     #[test]
@@ -5426,7 +5442,7 @@ fn dialogue_runtime_bindings(
     bindings.bind(
         S::SpeakerDescription,
         format!(
-            "{}, {}, {}, with {} hair and {}",
+            "{}, {}, {}, with {} and {}",
             npc.height, npc.build, npc.complexion, npc.hair, npc.visible_features
         ),
     );
@@ -5524,7 +5540,7 @@ fn dialogue_runtime_bindings(
         bindings.bind(
             S::ReferralDescription,
             format!(
-                "a {} {}, {} build, with {} hair and {}",
+                "a {} {}, {} build, with {} and {}",
                 format!("{:?}", contact.age_band).to_lowercase(),
                 format!("{:?}", contact.sex).to_lowercase(),
                 contact.build,
@@ -16488,6 +16504,15 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
     Ok(())
 }
 
+fn generated_witness_visible_description(
+    height: &str,
+    build: &str,
+    hair: &str,
+    clothing: &str,
+) -> String {
+    format!("{height}, {build}, with {hair}, wearing {clothing}")
+}
+
 fn generated_witness_candidates(
     ctx: &ReducerContext,
     settlement_id: &str,
@@ -16526,9 +16551,11 @@ fn generated_witness_candidates(
                 age_band,
                 sex,
                 profession: npc.profession,
-                visible_description: format!(
-                    "{}, {}, with {} hair, wearing {}",
-                    npc.height, npc.build, npc.hair, npc.clothing
+                visible_description: generated_witness_visible_description(
+                    &npc.height,
+                    &npc.build,
+                    &npc.hair,
+                    &npc.clothing,
                 ),
                 expected_location: presence.location_id,
                 presence_version,

@@ -6102,6 +6102,10 @@ fn rest_service_menu(
 ) -> Markup {
     html! {
     section class="rest-service-menu" aria-label=(format!("{} rest service", location))
+        data-live-refresh-url=[summary.map(|_| format!(
+            "/locations/settlement/{settlement_id}/{}",
+            if kind == "inn" { "inn" } else { "religion" }
+        ))]
         title=(if kind == "inn" { "A bed costs 1 coin per day. Injuries are tended before downtime." } else { "Sanctuary is free. Injuries are tended before downtime." }) {
         div class="rest-service-heading" { strong { "Rest" } }
         @if kind == "inn" {
@@ -6289,17 +6293,41 @@ fn blood_recovery_minutes(condition: &CharacterCondition) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        Character, CharacterCondition, LocationKind, MerchantShop, encumbrance_inventory_rail,
-        encumbrance_meter, filth_status_bar, format_rest_duration, live_merchant_shop_page,
-        merchant_inventory_sell_price, merchant_inventory_weight, need_balance_meter,
-        repair_custody_panel, repair_submit_control, rest_default_minutes,
-        settlement_rest_duration_control, strategic_condition_rail, strategic_encounter_panel,
+        Character, CharacterCondition, LocationKind, MerchantShop, RestSummary, SoapRestPreview,
+        encumbrance_inventory_rail, encumbrance_meter, filth_status_bar, format_rest_duration,
+        live_merchant_shop_page, merchant_inventory_sell_price, merchant_inventory_weight,
+        need_balance_meter, repair_custody_panel, repair_submit_control, rest_default_minutes,
+        rest_service_menu, settlement_rest_duration_control, strategic_condition_rail,
+        strategic_encounter_panel,
     };
     use crate::spacetimedb::{
         CharacterFilth, CharacterStrategicCondition, FilthOrigin, FilthSubstance, FoodLot,
         FoodPreparation, ItemKind, StrategicEncounter, StrategicEncounterLoss,
     };
     use adventuresim_core::equipment::EncumbranceSummary;
+
+    #[test]
+    fn post_rest_result_points_live_refresh_at_a_gettable_location() {
+        let summary = RestSummary {
+            minutes: 480,
+            gold_spent: 1,
+            gold_earned: 0,
+            notoriety_gained: 0.0,
+            healed: Vec::new(),
+            trained: Vec::new(),
+        };
+        let markup = rest_service_menu(
+            "Inn",
+            "riverdale",
+            "inn",
+            None,
+            Some(&summary),
+            SoapRestPreview::default(),
+        )
+        .into_string();
+        assert!(markup.contains("data-live-refresh-url=\"/locations/settlement/riverdale/inn\""));
+        assert!(!markup.contains("data-live-refresh-url=\"/settlements/riverdale/rest/inn\""));
+    }
 
     #[test]
     fn encounter_panel_renders_only_authoritative_choices_and_exact_losses() {

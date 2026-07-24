@@ -38,3 +38,32 @@ test("busy live region retries back off, cap, and can reset on idle", () => {
   assert.equal(timers.at(-1).delay, 250);
   assert.match(source, /document\.addEventListener\("focusout", reconcileDirtyWhenIdle\)/);
 });
+
+test("POST result pages provide a safe GET URL for live-region refreshes", () => {
+  const source = fs.readFileSync(path.join(root, "static", "live-regions.js"), "utf8");
+  const window = {};
+  vm.runInNewContext(source, {
+    window,
+    location: { pathname: "/settlements/riverdale/rest/inn", search: "" },
+    document: { querySelector: () => null },
+  });
+  const marker = {
+    querySelector: () => ({
+      dataset: { liveRefreshUrl: "/locations/settlement/riverdale/inn" },
+    }),
+  };
+  assert.equal(
+    window.strategicLiveRefreshUrl(
+      marker,
+      { pathname: "/settlements/riverdale/rest/inn", search: "" },
+    ),
+    "/locations/settlement/riverdale/inn",
+  );
+  assert.equal(
+    window.strategicLiveRefreshUrl(
+      { querySelector: () => null },
+      { pathname: "/locations/settlement/riverdale/inn", search: "?building=inn" },
+    ),
+    "/locations/settlement/riverdale/inn?building=inn",
+  );
+});

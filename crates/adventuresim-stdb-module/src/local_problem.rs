@@ -612,7 +612,7 @@ fn referral_text(
     tab: &str,
 ) -> String {
     let description = format!(
-        "{}, {}, with {} hair",
+        "{}, {}, with {}",
         contact.height, contact.build, contact.hair
     );
     format!(

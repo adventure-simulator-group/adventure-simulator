@@ -516,6 +516,68 @@ pub fn observer_scoped_id(context: &GenerationContext, kind: &str, name: &str) -
     scoped_id(&observer_scope(context), kind, name)
 }
 
+pub fn generated_testimony_pipeline(
+    context: &GenerationContext,
+    character_id: u64,
+    generated: &GeneratedCase,
+    witness: &WitnessBinding,
+    index: usize,
+    received_at: u64,
+) -> Result<(String, crate::investigation::PipelineInput), crate::investigation::ValidationError> {
+    use crate::investigation::{
+        AtomicProposition, CaseId, DisclosureMode, EventId, MemoryCondition, PerceptionCondition,
+        PipelineInput, PropositionId, TransmissionCondition,
+    };
+    let draft = witness
+        .testimony
+        .get(index)
+        .ok_or(crate::investigation::ValidationError::InvalidId)?;
+    let receipt_id = observer_scoped_id(
+        context,
+        "testimony",
+        &format!("{character_id}:{}:{index}", witness.id.0),
+    );
+    let pipeline = PipelineInput {
+        case_id: CaseId::new(&generated.canonical_case_id)?,
+        event_id: EventId::new(crate::investigation::compound_id(&[
+            "event",
+            &witness.id.0,
+            &index.to_string(),
+        ]))?,
+        proposition: AtomicProposition::new(
+            PropositionId::new(draft.proposition_id.clone())?,
+            &witness.npc_id,
+            "reported",
+            &draft.truthful_text,
+        )?,
+        observer_ref: witness.npc_id.clone(),
+        speaker_ref: witness.npc_id.clone(),
+        receipt_identity: receipt_id.clone(),
+        recollection_revision: 1,
+        perceived_text: draft.truthful_text.clone(),
+        recalled_text: match draft.reliability {
+            Reliability::Truthful | Reliability::PartlyTruthful => draft.truthful_text.clone(),
+            _ => draft.spoken_text.clone(),
+        },
+        disclosed_text: Some(draft.spoken_text.clone()),
+        transmitted_text: draft.spoken_text.clone(),
+        perception: PerceptionCondition::Clear,
+        memory: if draft.reliability == Reliability::Mistaken {
+            MemoryCondition::Confused
+        } else {
+            MemoryCondition::Accurate
+        },
+        disclosure: match draft.reliability {
+            Reliability::Deceptive => DisclosureMode::Distort,
+            Reliability::Evasive => DisclosureMode::Conceal,
+            _ => DisclosureMode::Disclose,
+        },
+        transmission: TransmissionCondition::Clear,
+        received_at,
+    };
+    Ok((receipt_id, pipeline))
+}
+
 fn choose<T: Copy>(
     seed: u64,
     module: &str,
@@ -2880,6 +2942,63 @@ mod tests {
                 .family,
             TemplateFamily::DisappearanceOrLoss
         );
+    }
+
+    #[test]
+    fn referred_witness_pipeline_fits_every_stable_id_budget_in_both_families() {
+        use crate::investigation::{ValidationError, compound_id, process_report};
+        for (seed, family) in [
+            (7, TemplateFamily::RecurringDepredation),
+            (11, TemplateFamily::DisappearanceOrLoss),
+        ] {
+            let mut context = context(seed, family);
+            for (index, witness) in context.witness_candidates.iter_mut().enumerate() {
+                witness.npc_id = format!("npc:riverdale:residences:{index}");
+            }
+            let generated = generate(&context).unwrap();
+            validate(&generated).unwrap();
+            let character_id = 17_849_106_825_763_413_937;
+            let mut claim_count = 0;
+            for witness in &generated.witnesses {
+                for index in 0..witness.testimony.len() {
+                    let (receipt_id, pipeline) = generated_testimony_pipeline(
+                        &context,
+                        character_id,
+                        &generated,
+                        witness,
+                        index,
+                        50_000,
+                    )
+                    .unwrap();
+                    assert!(receipt_id.starts_with("testimony:"));
+                    let (observation, recollection, claim) =
+                        process_report(pipeline.clone()).unwrap();
+                    let claim = claim.unwrap();
+                    for id in [
+                        observation.id.as_str(),
+                        recollection.id.as_str(),
+                        claim.id.as_str(),
+                    ] {
+                        assert!(id.len() <= 256);
+                    }
+                    claim_count += 1;
+                    if claim_count == 1 {
+                        let mut invalid = pipeline;
+                        invalid.receipt_identity = compound_id(&[
+                            "generated-testimony",
+                            &character_id.to_string(),
+                            &witness.id.0,
+                            &index.to_string(),
+                        ]);
+                        assert_eq!(
+                            process_report(invalid).unwrap_err(),
+                            ValidationError::InvalidId
+                        );
+                    }
+                }
+            }
+            assert!(claim_count >= generated.witnesses.len());
+        }
     }
     #[test]
     fn deterministic_and_counterfactual() {
