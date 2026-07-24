@@ -10,6 +10,7 @@ pub(super) struct SendLocalChatMessageArgs {
     pub sender_id: u64,
     pub subject_kind: String,
     pub subject_id: String,
+    pub location_id: String,
     pub body: String,
 }
 
@@ -19,6 +20,7 @@ impl From<SendLocalChatMessageArgs> for super::Reducer {
             sender_id: args.sender_id,
             subject_kind: args.subject_kind,
             subject_id: args.subject_id,
+            location_id: args.location_id,
             body: args.body,
         }
     }
@@ -44,9 +46,17 @@ pub trait send_local_chat_message {
         sender_id: u64,
         subject_kind: String,
         subject_id: String,
+        location_id: String,
         body: String,
     ) -> __sdk::Result<()> {
-        self.send_local_chat_message_then(sender_id, subject_kind, subject_id, body, |_, _| {})
+        self.send_local_chat_message_then(
+            sender_id,
+            subject_kind,
+            subject_id,
+            location_id,
+            body,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `send_local_chat_message` to run as soon as possible,
@@ -60,6 +70,7 @@ pub trait send_local_chat_message {
         sender_id: u64,
         subject_kind: String,
         subject_id: String,
+        location_id: String,
         body: String,
 
         callback: impl FnOnce(
@@ -76,6 +87,7 @@ impl send_local_chat_message for super::RemoteReducers {
         sender_id: u64,
         subject_kind: String,
         subject_id: String,
+        location_id: String,
         body: String,
 
         callback: impl FnOnce(
@@ -89,6 +101,7 @@ impl send_local_chat_message for super::RemoteReducers {
                 sender_id,
                 subject_kind,
                 subject_id,
+                location_id,
                 body,
             },
             callback,

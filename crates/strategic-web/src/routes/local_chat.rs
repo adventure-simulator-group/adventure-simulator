@@ -1,6 +1,6 @@
 use axum::{
     Form, Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::get,
 };
@@ -10,7 +10,7 @@ use serde_json::json;
 use super::{AppState, character_case_site_id};
 use crate::{
     session::Session,
-    spacetimedb::{Character, CharacterTime, LocalChatMessage, sql_string_literal},
+    spacetimedb::{BackendLocalChatMessage, Character, CharacterTime, sql_string_literal},
 };
 
 const MAX_CHAT_HISTORY: usize = 200;
@@ -30,9 +30,38 @@ struct LocalChatResponse {
     messages: Vec<LocalChatMessage>,
 }
 
+#[derive(Serialize)]
+struct LocalChatMessage {
+    id: u64,
+    sender_id: u64,
+    sender_name: String,
+    body: String,
+    created_micros: i64,
+}
+
+impl From<BackendLocalChatMessage> for LocalChatMessage {
+    fn from(message: BackendLocalChatMessage) -> Self {
+        Self {
+            id: message.id,
+            sender_id: message.sender_id,
+            sender_name: message.sender_name,
+            body: message.body,
+            created_micros: message.created_micros,
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct MessageForm {
     body: String,
+    #[serde(default)]
+    location_id: String,
+}
+
+#[derive(Default, Deserialize)]
+struct LocationQuery {
+    #[serde(default)]
+    location_id: String,
 }
 
 #[derive(Deserialize)]
@@ -54,23 +83,31 @@ fn npc_authority_matches(
     settlement_id: &str,
     npc: &LocalNpcRow,
     presence: &LocalNpcPresenceRow,
+    requested_location_id: &str,
     minute: u64,
 ) -> bool {
     let minute = (minute % 1_440) as u16;
     npc.id == presence.npc_id
         && npc.home_settlement_id == settlement_id
         && presence.settlement_id == settlement_id
-        && !presence.location_id.is_empty()
+        && presence.location_id == requested_location_id
+        && !requested_location_id.is_empty()
         && presence.start_minute <= minute
         && minute < presence.end_minute
 }
 
-async fn actor_and_key(
+enum ConversationSelector {
+    Npc(String),
+    PlayerParty(String),
+}
+
+async fn actor_and_selector(
     state: &AppState,
     actor_id: u64,
     kind: &str,
     subject_id: &str,
-) -> Result<(Character, String), String> {
+    location_id: &str,
+) -> Result<(Character, ConversationSelector), String> {
     let actor = state
         .db
         .query::<Character>(&format!("SELECT * FROM character WHERE id = {actor_id}"))
@@ -79,8 +116,8 @@ async fn actor_and_key(
         .into_iter()
         .next()
         .ok_or("Character not found")?;
-    let party_id = actor.party_id.as_deref().ok_or("Character has no party")?;
-    let key = match kind {
+    actor.party_id.as_deref().ok_or("Character has no party")?;
+    let selector = match kind {
         "npc" => {
             let settlement = actor
                 .current_settlement_id
@@ -119,12 +156,15 @@ async fn actor_and_key(
                 .await
                 .map_err(|error| error.to_string())?
                 .map_or(720, |time| time.minutes);
-            if !npc_authority_matches(settlement, &npc, &presence, minute) {
+            if !npc_authority_matches(settlement, &npc, &presence, location_id, minute) {
                 return Err("NPC is not local".into());
             }
-            format!("npc:{party_id}:{subject_id}")
+            ConversationSelector::Npc(subject_id.to_string())
         }
         "player" => {
+            if !location_id.is_empty() {
+                return Err("Player conversations do not accept an NPC location".into());
+            }
             let id: u64 = subject_id.parse().map_err(|_| "Invalid player")?;
             let subject = state
                 .db
@@ -143,53 +183,69 @@ async fn actor_and_key(
                 return Err("Player is not at this location".into());
             }
             let other = subject.party_id.as_deref().ok_or("Player has no party")?;
-            let (a, b) = if party_id <= other {
-                (party_id, other)
-            } else {
-                (other, party_id)
-            };
-            format!("players:{a}:{b}")
+            ConversationSelector::PlayerParty(other.to_string())
         }
         _ => return Err("Unknown Local subject".into()),
     };
-    Ok((actor, key))
+    Ok((actor, selector))
 }
 
 async fn messages(
     State(state): State<AppState>,
     Path((kind, subject_id)): Path<(String, String)>,
+    Query(query): Query<LocationQuery>,
     session: Session,
 ) -> Result<Json<LocalChatResponse>, (StatusCode, String)> {
     let actor_id = session
         .character_id_u64()
         .ok_or((StatusCode::UNAUTHORIZED, "Choose a character".into()))?;
-    let (_, key) = actor_and_key(&state, actor_id, &kind, &subject_id)
-        .await
-        .map_err(|e| (StatusCode::FORBIDDEN, e))?;
+    let (_, selector) =
+        actor_and_selector(&state, actor_id, &kind, &subject_id, &query.location_id)
+            .await
+            .map_err(|e| (StatusCode::FORBIDDEN, e))?;
+    let selector_filter = match &selector {
+        ConversationSelector::Npc(npc_id) => format!(
+            "conversation_kind = 'npc' AND subject_npc_id = {}",
+            sql_string_literal(npc_id)
+        ),
+        ConversationSelector::PlayerParty(party_id) => format!(
+            "conversation_kind = 'player' AND subject_party_id = {}",
+            sql_string_literal(party_id)
+        ),
+    };
     let mut messages = state
         .db
-        .query::<LocalChatMessage>(&format!(
-            "SELECT * FROM local_chat_message WHERE conversation_key = {}",
-            sql_string_literal(&key)
+        .query::<BackendLocalChatMessage>(&format!(
+            "SELECT * FROM backend_local_chat_messages WHERE owner_character_id = {actor_id} AND {selector_filter}"
         ))
         .await
         .map_err(|error| (StatusCode::SERVICE_UNAVAILABLE, error.to_string()))?;
+    // Close the gap between the authority read and returning private message bodies.
+    actor_and_selector(&state, actor_id, &kind, &subject_id, &query.location_id)
+        .await
+        .map_err(|e| (StatusCode::FORBIDDEN, e))?;
     messages.sort_by_key(|message| (message.created_micros, message.id));
     if messages.len() > MAX_CHAT_HISTORY {
         messages.drain(..messages.len() - MAX_CHAT_HISTORY);
     }
-    Ok(Json(LocalChatResponse { messages }))
+    Ok(Json(LocalChatResponse {
+        messages: messages.into_iter().map(Into::into).collect(),
+    }))
 }
 
 async fn send_message(
     State(state): State<AppState>,
     Path((kind, subject_id)): Path<(String, String)>,
+    Query(query): Query<LocationQuery>,
     session: Session,
     Form(form): Form<MessageForm>,
 ) -> StatusCode {
     let Some(actor_id) = session.character_id_u64() else {
         return StatusCode::UNAUTHORIZED;
     };
+    if query.location_id != form.location_id {
+        return StatusCode::BAD_REQUEST;
+    }
     match state
         .db
         .call(
@@ -198,6 +254,7 @@ async fn send_message(
                 json!(actor_id),
                 json!(kind),
                 json!(subject_id),
+                json!(form.location_id),
                 json!(form.body),
             ],
         )
@@ -247,17 +304,13 @@ async fn incoming(State(state): State<AppState>, session: Session) -> Json<Vec<I
         .unwrap_or_default();
     let all_messages = state
         .db
-        .query::<LocalChatMessage>("SELECT * FROM local_chat_message")
+        .query::<BackendLocalChatMessage>(&format!(
+            "SELECT * FROM backend_local_chat_messages WHERE owner_character_id = {actor_id} AND conversation_kind = 'player'"
+        ))
         .await
         .unwrap_or_default();
     let mut ids = std::collections::BTreeSet::new();
-    for message in all_messages.iter().filter(|m| {
-        m.conversation_key.starts_with("players:")
-            && m.conversation_key
-                .split(':')
-                .skip(1)
-                .any(|id| id == party_id)
-    }) {
+    for message in &all_messages {
         if message.sender_id != 0 && !own.contains(&message.sender_id) {
             ids.insert(message.sender_id);
         }
@@ -304,13 +357,39 @@ mod tests {
             start_minute: 0,
             end_minute: 1_440,
         };
-        assert!(npc_authority_matches("riverdale", &npc, &presence, 720));
+        assert!(npc_authority_matches(
+            "riverdale",
+            &npc,
+            &presence,
+            "inn",
+            720
+        ));
 
         presence.settlement_id = "ironforge".into();
-        assert!(!npc_authority_matches("riverdale", &npc, &presence, 720));
+        assert!(!npc_authority_matches(
+            "riverdale",
+            &npc,
+            &presence,
+            "inn",
+            720
+        ));
         presence.settlement_id = "riverdale".into();
         presence.end_minute = 600;
-        assert!(!npc_authority_matches("riverdale", &npc, &presence, 720));
+        assert!(!npc_authority_matches(
+            "riverdale",
+            &npc,
+            &presence,
+            "inn",
+            720
+        ));
+        presence.end_minute = 1_440;
+        assert!(!npc_authority_matches(
+            "riverdale",
+            &npc,
+            &presence,
+            "market",
+            720
+        ));
     }
 
     #[test]
@@ -321,12 +400,15 @@ mod tests {
         assert!(!javascript.contains("/api/local-chat/${encodeURIComponent(node.dataset"));
 
         let local_route = include_str!("local_chat.rs")
-            .split("async fn actor_and_key")
+            .split("async fn actor_and_selector")
             .nth(1)
             .and_then(|tail| tail.split("async fn messages").next())
             .expect("local chat authority handler");
         assert!(local_route.contains("SELECT * FROM settlement_npc WHERE id = {}"));
         assert!(local_route.contains("SELECT * FROM settlement_npc_presence WHERE npc_id = {}"));
+        assert!(
+            include_str!("local_chat.rs").contains("presence.location_id == requested_location_id")
+        );
         assert!(!local_route.contains("subject_id.starts_with"));
 
         let dialogue_route = include_str!("dialogue.rs");

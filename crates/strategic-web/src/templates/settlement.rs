@@ -5863,7 +5863,7 @@ pub(crate) fn party_portrait_overlay(
 /// filters are present so their messages can join the same stream as their
 /// backends become available.
 pub(crate) fn settlement_chat_area(location: &str, active_character: Option<&Character>) -> Markup {
-    chat_area(location, active_character, None, None, &[])
+    chat_area(location, active_character, None, None, None, &[])
 }
 
 pub(crate) fn settlement_chat_area_with_info(
@@ -5871,7 +5871,7 @@ pub(crate) fn settlement_chat_area_with_info(
     active_character: Option<&Character>,
     info_messages: &[String],
 ) -> Markup {
-    chat_area(location, active_character, None, None, info_messages)
+    chat_area(location, active_character, None, None, None, info_messages)
 }
 
 fn player_chat_area(subject: &Character, active_character: &Character) -> Markup {
@@ -5881,6 +5881,7 @@ fn player_chat_area(subject: &Character, active_character: &Character) -> Markup
         Some(active_character),
         None,
         Some(context),
+        None,
         &[],
     )
 }
@@ -5916,7 +5917,7 @@ fn settlement_npc_chat_area(
     location: &str,
     active_character: Option<&Character>,
     settlement_id: &str,
-    _location_id: &str,
+    location_id: &str,
     service_id: Option<&str>,
 ) -> Markup {
     chat_area(
@@ -5924,6 +5925,7 @@ fn settlement_npc_chat_area(
         active_character,
         Some((settlement_id, service_id.unwrap_or(""))),
         Some(("npc", String::new())),
+        Some(location_id),
         &[],
     )
 }
@@ -5933,6 +5935,7 @@ fn chat_area(
     _active_character: Option<&Character>,
     service_context: Option<(&str, &str)>,
     local_context: Option<(&str, String)>,
+    local_location_id: Option<&str>,
     info_messages: &[String],
 ) -> Markup {
     html! {
@@ -5944,7 +5947,8 @@ fn chat_area(
                 .filter(|context| context.1 == "herbalist")
                 .map(|_| adventuresim_core::strategic_economy::NPC_HERBALIST_EXAM_FEE)]
             data-local-chat-kind=[local_context.as_ref().map(|context| context.0)]
-            data-local-chat-subject=[local_context.as_ref().map(|context| context.1.as_str())] {
+            data-local-chat-subject=[local_context.as_ref().map(|context| context.1.as_str())]
+            data-local-chat-location=[local_location_id] {
             div class="settlement-chat-resize" role="separator" aria-label="Resize chat"
                 aria-orientation="horizontal" aria-valuemin="128" aria-valuemax="640"
                 aria-valuenow="184" tabindex="0" title="Drag to resize chat" {
@@ -8076,7 +8080,7 @@ mod tests {
 
     #[test]
     fn chat_uses_one_stream_with_all_channel_filters() {
-        let markup = chat_area("Lubeck", None, None, None, &[]).into_string();
+        let markup = chat_area("Lubeck", None, None, None, None, &[]).into_string();
 
         assert!(!markup.contains("role=\"tablist\""));
         for channel in ["local", "party", "settlement", "dm", "guild", "info"] {
@@ -8107,6 +8111,7 @@ mod tests {
         let chat = settlement_npc_chat_area("Market", None, "lubeck", "market", Some("merchants"))
             .into_string();
         assert!(chat.contains("data-local-chat-kind=\"npc\""));
+        assert!(chat.contains("data-local-chat-location=\"market\""));
         assert!(chat.contains("data-dialogue-catalog-revision"));
         assert!(!chat.contains("lubeck:merchants"));
     }

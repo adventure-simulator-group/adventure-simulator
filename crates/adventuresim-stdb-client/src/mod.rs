@@ -53,6 +53,8 @@ pub mod backend_investigation_journal_entry_type;
 pub mod backend_investigation_journal_table;
 pub mod backend_investigation_lead_type;
 pub mod backend_investigation_leads_table;
+pub mod backend_local_chat_message_type;
+pub mod backend_local_chat_messages_table;
 pub mod backend_local_problem_rumor_type;
 pub mod backend_local_problem_rumors_table;
 pub mod backend_local_problem_trade_effect_type;
@@ -326,7 +328,6 @@ pub mod limb_injury_table;
 pub mod limb_injury_type;
 pub mod limb_region_type;
 pub mod liquidate_party_inventory_reducer;
-pub mod local_chat_message_table;
 pub mod local_chat_message_type;
 pub mod local_problem_authority_type;
 pub mod local_problem_generation_explanation_type;
@@ -645,6 +646,8 @@ pub use backend_investigation_journal_entry_type::BackendInvestigationJournalEnt
 pub use backend_investigation_journal_table::*;
 pub use backend_investigation_lead_type::BackendInvestigationLead;
 pub use backend_investigation_leads_table::*;
+pub use backend_local_chat_message_type::BackendLocalChatMessage;
+pub use backend_local_chat_messages_table::*;
 pub use backend_local_problem_rumor_type::BackendLocalProblemRumor;
 pub use backend_local_problem_rumors_table::*;
 pub use backend_local_problem_trade_effect_type::BackendLocalProblemTradeEffect;
@@ -918,7 +921,6 @@ pub use limb_injury_table::*;
 pub use limb_injury_type::LimbInjury;
 pub use limb_region_type::LimbRegion;
 pub use liquidate_party_inventory_reducer::liquidate_party_inventory;
-pub use local_chat_message_table::*;
 pub use local_chat_message_type::LocalChatMessage;
 pub use local_problem_authority_type::LocalProblemAuthority;
 pub use local_problem_generation_explanation_type::LocalProblemGenerationExplanation;
@@ -1606,6 +1608,7 @@ pub enum Reducer {
         sender_id: u64,
         subject_kind: String,
         subject_id: String,
+        location_id: String,
         body: String,
     },
     SetCharacterReligion {
@@ -2632,11 +2635,13 @@ Reducer::CancelMissionRequest{
                 sender_id,
                 subject_kind,
                 subject_id,
+                location_id,
                 body,
 }             => __sats::bsatn::to_vec(&send_local_chat_message_reducer::SendLocalChatMessageArgs {
                 sender_id: sender_id.clone(),
                 subject_kind: subject_kind.clone(),
                 subject_id: subject_id.clone(),
+                location_id: location_id.clone(),
                 body: body.clone(),
 }),
             Reducer::SetCharacterReligion{
@@ -2949,6 +2954,7 @@ pub struct DbUpdate {
     backend_investigation_actions: __sdk::TableUpdate<BackendInvestigationAction>,
     backend_investigation_journal: __sdk::TableUpdate<BackendInvestigationJournalEntry>,
     backend_investigation_leads: __sdk::TableUpdate<BackendInvestigationLead>,
+    backend_local_chat_messages: __sdk::TableUpdate<BackendLocalChatMessage>,
     backend_local_problem_rumors: __sdk::TableUpdate<BackendLocalProblemRumor>,
     backend_local_problem_trade_effects: __sdk::TableUpdate<BackendLocalProblemTradeEffect>,
     backend_medical_examinations: __sdk::TableUpdate<MedicalExamination>,
@@ -2984,7 +2990,6 @@ pub struct DbUpdate {
     item: __sdk::TableUpdate<Item>,
     item_condition: __sdk::TableUpdate<ItemCondition>,
     limb_injury: __sdk::TableUpdate<LimbInjury>,
-    local_chat_message: __sdk::TableUpdate<LocalChatMessage>,
     local_problem_symptom: __sdk::TableUpdate<LocalProblemSymptom>,
     morale_event: __sdk::TableUpdate<MoraleEvent>,
     party: __sdk::TableUpdate<Party>,
@@ -3104,6 +3109,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "backend_investigation_leads" => db_update.backend_investigation_leads.append(
                     backend_investigation_leads_table::parse_table_update(table_update)?,
                 ),
+                "backend_local_chat_messages" => db_update.backend_local_chat_messages.append(
+                    backend_local_chat_messages_table::parse_table_update(table_update)?,
+                ),
                 "backend_local_problem_rumors" => db_update.backend_local_problem_rumors.append(
                     backend_local_problem_rumors_table::parse_table_update(table_update)?,
                 ),
@@ -3213,9 +3221,6 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "limb_injury" => db_update
                     .limb_injury
                     .append(limb_injury_table::parse_table_update(table_update)?),
-                "local_chat_message" => db_update
-                    .local_chat_message
-                    .append(local_chat_message_table::parse_table_update(table_update)?),
                 "local_problem_symptom" => db_update.local_problem_symptom.append(
                     local_problem_symptom_table::parse_table_update(table_update)?,
                 ),
@@ -3494,9 +3499,6 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.limb_injury = cache
             .apply_diff_to_table::<LimbInjury>("limb_injury", &self.limb_injury)
             .with_updates_by_pk(|row| &row.id);
-        diff.local_chat_message = cache
-            .apply_diff_to_table::<LocalChatMessage>("local_chat_message", &self.local_chat_message)
-            .with_updates_by_pk(|row| &row.id);
         diff.local_problem_symptom = cache
             .apply_diff_to_table::<LocalProblemSymptom>(
                 "local_problem_symptom",
@@ -3708,6 +3710,10 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_investigation_leads",
             &self.backend_investigation_leads,
         );
+        diff.backend_local_chat_messages = cache.apply_diff_to_table::<BackendLocalChatMessage>(
+            "backend_local_chat_messages",
+            &self.backend_local_chat_messages,
+        );
         diff.backend_local_problem_rumors = cache.apply_diff_to_table::<BackendLocalProblemRumor>(
             "backend_local_problem_rumors",
             &self.backend_local_problem_rumors,
@@ -3810,6 +3816,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_investigation_leads" => db_update
                     .backend_investigation_leads
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_local_chat_messages" => db_update
+                    .backend_local_chat_messages
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_local_problem_rumors" => db_update
                     .backend_local_problem_rumors
@@ -3915,9 +3924,6 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "limb_injury" => db_update
                     .limb_injury
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "local_chat_message" => db_update
-                    .local_chat_message
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "local_problem_symptom" => db_update
                     .local_problem_symptom
@@ -4103,6 +4109,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_investigation_leads" => db_update
                     .backend_investigation_leads
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_local_chat_messages" => db_update
+                    .backend_local_chat_messages
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_local_problem_rumors" => db_update
                     .backend_local_problem_rumors
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -4207,9 +4216,6 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "limb_injury" => db_update
                     .limb_injury
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "local_chat_message" => db_update
-                    .local_chat_message
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "local_problem_symptom" => db_update
                     .local_problem_symptom
@@ -4359,6 +4365,7 @@ pub struct AppliedDiff<'r> {
     backend_investigation_actions: __sdk::TableAppliedDiff<'r, BackendInvestigationAction>,
     backend_investigation_journal: __sdk::TableAppliedDiff<'r, BackendInvestigationJournalEntry>,
     backend_investigation_leads: __sdk::TableAppliedDiff<'r, BackendInvestigationLead>,
+    backend_local_chat_messages: __sdk::TableAppliedDiff<'r, BackendLocalChatMessage>,
     backend_local_problem_rumors: __sdk::TableAppliedDiff<'r, BackendLocalProblemRumor>,
     backend_local_problem_trade_effects:
         __sdk::TableAppliedDiff<'r, BackendLocalProblemTradeEffect>,
@@ -4395,7 +4402,6 @@ pub struct AppliedDiff<'r> {
     item: __sdk::TableAppliedDiff<'r, Item>,
     item_condition: __sdk::TableAppliedDiff<'r, ItemCondition>,
     limb_injury: __sdk::TableAppliedDiff<'r, LimbInjury>,
-    local_chat_message: __sdk::TableAppliedDiff<'r, LocalChatMessage>,
     local_problem_symptom: __sdk::TableAppliedDiff<'r, LocalProblemSymptom>,
     morale_event: __sdk::TableAppliedDiff<'r, MoraleEvent>,
     party: __sdk::TableAppliedDiff<'r, Party>,
@@ -4544,6 +4550,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendInvestigationLead>(
             "backend_investigation_leads",
             &self.backend_investigation_leads,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendLocalChatMessage>(
+            "backend_local_chat_messages",
+            &self.backend_local_chat_messages,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendLocalProblemRumor>(
@@ -4705,11 +4716,6 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             event,
         );
         callbacks.invoke_table_row_callbacks::<LimbInjury>("limb_injury", &self.limb_injury, event);
-        callbacks.invoke_table_row_callbacks::<LocalChatMessage>(
-            "local_chat_message",
-            &self.local_chat_message,
-            event,
-        );
         callbacks.invoke_table_row_callbacks::<LocalProblemSymptom>(
             "local_problem_symptom",
             &self.local_problem_symptom,
@@ -5551,6 +5557,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_investigation_actions_table::register_table(client_cache);
         backend_investigation_journal_table::register_table(client_cache);
         backend_investigation_leads_table::register_table(client_cache);
+        backend_local_chat_messages_table::register_table(client_cache);
         backend_local_problem_rumors_table::register_table(client_cache);
         backend_local_problem_trade_effects_table::register_table(client_cache);
         backend_medical_examinations_table::register_table(client_cache);
@@ -5586,7 +5593,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         item_table::register_table(client_cache);
         item_condition_table::register_table(client_cache);
         limb_injury_table::register_table(client_cache);
-        local_chat_message_table::register_table(client_cache);
         local_problem_symptom_table::register_table(client_cache);
         morale_event_table::register_table(client_cache);
         party_table::register_table(client_cache);
@@ -5646,6 +5652,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_investigation_actions",
         "backend_investigation_journal",
         "backend_investigation_leads",
+        "backend_local_chat_messages",
         "backend_local_problem_rumors",
         "backend_local_problem_trade_effects",
         "backend_medical_examinations",
@@ -5681,7 +5688,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "item",
         "item_condition",
         "limb_injury",
-        "local_chat_message",
         "local_problem_symptom",
         "morale_event",
         "party",
