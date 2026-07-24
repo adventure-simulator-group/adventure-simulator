@@ -871,6 +871,8 @@ pub fn surface_problem(
 
 #[cfg(test)]
 mod tests {
+    use crate::local_problem::stable_eligible_candidates;
+
     #[test]
     fn deterministic_rumor_selection_skips_unbacked_or_invalid_candidates() {
         let candidates = [
