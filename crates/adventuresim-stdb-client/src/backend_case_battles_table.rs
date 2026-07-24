@@ -3,6 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::backend_case_battle_type::BackendCaseBattle;
+use super::case_site_id_type::CaseSiteId;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_case_battles`.

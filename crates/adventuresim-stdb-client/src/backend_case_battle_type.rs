@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::case_site_id_type::CaseSiteId;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct BackendCaseBattle {
@@ -12,6 +14,7 @@ pub struct BackendCaseBattle {
     pub party_id: String,
     pub battle_id: String,
     pub mission_id: String,
+    pub case_site_id: CaseSiteId,
 }
 
 impl __sdk::InModule for BackendCaseBattle {
@@ -27,6 +30,7 @@ pub struct BackendCaseBattleCols {
     pub party_id: __sdk::__query_builder::Col<BackendCaseBattle, String>,
     pub battle_id: __sdk::__query_builder::Col<BackendCaseBattle, String>,
     pub mission_id: __sdk::__query_builder::Col<BackendCaseBattle, String>,
+    pub case_site_id: __sdk::__query_builder::Col<BackendCaseBattle, CaseSiteId>,
 }
 
 impl __sdk::__query_builder::HasCols for BackendCaseBattle {
@@ -38,6 +42,7 @@ impl __sdk::__query_builder::HasCols for BackendCaseBattle {
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             battle_id: __sdk::__query_builder::Col::new(table_name, "battle_id"),
             mission_id: __sdk::__query_builder::Col::new(table_name, "mission_id"),
+            case_site_id: __sdk::__query_builder::Col::new(table_name, "case_site_id"),
         }
     }
 }

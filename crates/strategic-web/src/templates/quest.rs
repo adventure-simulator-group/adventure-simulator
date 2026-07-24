@@ -6,7 +6,7 @@ use super::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use super::{empty_state, item_display_name, item_type_icon, sidebar_section};
 use crate::routes::travel::TravelDestination;
 use crate::spacetimedb::{
-    AutoresolveReport, BackendCaseSitePin, BattleLootItem, ContractPresentation,
+    AutoresolveReport, BackendCaseSitePin, BackendInvestigationAction, BattleLootItem,
     InventoryQuantityTarget, ItemDefinition, PartyInventoryItem,
 };
 use crate::{
@@ -17,9 +17,16 @@ use crate::{
     },
 };
 
+pub struct CaseSitePagePresentation {
+    pub title: String,
+    pub action_id: String,
+    pub allow_tactical_combat: bool,
+}
+
 pub fn quest_location_map_page(
-    quest: &ContractPresentation,
+    presentation: &CaseSitePagePresentation,
     site: &BackendCaseSitePin,
+    onsite_actions: &[BackendInvestigationAction],
     nearby: &[TravelDestination],
     selected_id: Option<&str>,
     active_character: Option<&Character>,
@@ -55,8 +62,9 @@ pub fn quest_location_map_page(
             },
         ))
         (quest_location_center(
-            quest,
+            presentation,
             site,
+            onsite_actions,
             active_character,
             party_members,
             can_fight,
@@ -79,8 +87,8 @@ pub fn quest_location_map_page(
         ))
     };
     super::quest_location_layout_with_session(
-        &format!("{} map", quest.title),
-        &quest.title,
+        &format!("{} map", presentation.title),
+        &presentation.title,
         &site.case_site_id,
         "map",
         content,
@@ -89,8 +97,9 @@ pub fn quest_location_map_page(
 }
 
 fn quest_location_center(
-    quest: &ContractPresentation,
+    presentation: &CaseSitePagePresentation,
     site: &BackendCaseSitePin,
+    onsite_actions: &[BackendInvestigationAction],
     active_character: Option<&Character>,
     party_members: &[Character],
     can_fight: bool,
@@ -114,10 +123,12 @@ fn quest_location_center(
                 @if show_combat_actions && (can_fight || !resolved) {
                 div class="quest-combat-actions" aria-label="Quest actions" {
                     @if can_fight {
-                        form action="/missions/enter" method="post" {
-                            button type="submit" class="btn btn-danger" { "Initiate Combat" }
+                        @if presentation.allow_tactical_combat {
+                            form action="/missions/enter" method="post" {
+                                button type="submit" class="btn btn-danger" { "Initiate Combat" }
+                            }
                         }
-                        form action=(format!("/quests/{}/autoresolve", quest.id)) method="post" {
+                        form action=(format!("/quests/{}/autoresolve", presentation.action_id)) method="post" {
                             button type="submit" class="btn btn-primary" { "Autoresolve" }
                         }
                     } @else if autoresolve_report.is_some_and(|report| report.victor == "enemies") {
@@ -128,8 +139,21 @@ fn quest_location_center(
                 }
                 }
             }
+            @if !onsite_actions.is_empty() {
+                section class="quest-onsite-investigation" aria-label="Onsite investigation" {
+                    h3 { "Investigate here" }
+                    @for action in onsite_actions {
+                        form method="post" action="/quests/actions" {
+                            input type="hidden" name="action_id" value=(&action.action_id);
+                            input type="hidden" name="method" value=(&action.method);
+                            input type="hidden" name="expected_version" value=(action.expected_version);
+                            button type="submit" { (&action.summary) }
+                        }
+                    }
+                }
+            }
             @if let Some(travel_planner) = travel_planner { (travel_planner) }
-            (settlement_chat_area_with_info(&quest.title, active_character, &autoresolve_messages))
+            (settlement_chat_area_with_info(&presentation.title, active_character, &autoresolve_messages))
         }
     }
 }
@@ -149,8 +173,9 @@ fn autoresolve_info_messages(report: Option<&AutoresolveReport>) -> Vec<String> 
 
 /// Enemy encounter and, once resolved, its loot at an off-road quest location.
 pub fn quest_location_enemy_page(
-    quest: &ContractPresentation,
+    presentation: &CaseSitePagePresentation,
     site: &BackendCaseSitePin,
+    onsite_actions: &[BackendInvestigationAction],
     active_character: Option<&Character>,
     party_members: &[Character],
     can_fight: bool,
@@ -209,7 +234,7 @@ pub fn quest_location_enemy_page(
                                 }
                             }
                     }}.render())
-                    (loot_stage_form(&quest.id))
+                    (loot_stage_form(&presentation.action_id))
                     (super::settlement::inventory_footer_controls("loot", "Move loot to targets", "Move all loot"))
                 }
                 }))
@@ -217,8 +242,9 @@ pub fn quest_location_enemy_page(
         }
 
         (quest_location_center(
-            quest,
+            presentation,
             site,
+            onsite_actions,
             active_character,
             party_members,
             can_fight,
@@ -269,8 +295,8 @@ pub fn quest_location_enemy_page(
         }
     };
     super::quest_location_layout_with_session(
-        &quest.title,
-        &quest.title,
+        &presentation.title,
+        &presentation.title,
         &site.case_site_id,
         "enemy",
         content,
@@ -338,5 +364,66 @@ mod tests {
         }];
         assert_eq!(inventory_target(&targets, "sword"), 4);
         assert_eq!(inventory_target(&targets, "shield"), 0);
+    }
+
+    #[test]
+    fn generated_site_offers_authorized_investigation_and_strategic_finale_only() {
+        let presentation = CaseSitePagePresentation {
+            title: "Travellers have gone missing".into(),
+            action_id: "site:known".into(),
+            allow_tactical_combat: false,
+        };
+        let site = BackendCaseSitePin {
+            owner_character_id: 7,
+            case_id: "journal:case".into(),
+            case_site_id: "site:known".into(),
+            origin_settlement_id: "settlement".into(),
+            name: "a camp in the woods".into(),
+            description: "A known place.".into(),
+            scene_key: "forest".into(),
+            longitude_e7: 0,
+            latitude_e7: 0,
+            coordinates_are_geographic: false,
+            distance_m: 4_000,
+            knowledge_stage: "visited".into(),
+            tracked: false,
+            display_title: presentation.title.clone(),
+            generated_case: true,
+            combat_available: true,
+        };
+        let action = BackendInvestigationAction {
+            owner_character_id: 7,
+            action_id: "action:inspect".into(),
+            method: "inspect_site".into(),
+            expected_version: 2,
+            summary: "Inspect the camp".into(),
+            known_prerequisites: String::new(),
+            duration_min_minutes: 15,
+            duration_max_minutes: 45,
+            uncertainty_bps: 2000,
+            skill_contributions: "awareness".into(),
+            weather_available: false,
+            required_case_site_id: site.case_site_id.clone(),
+            available: true,
+            can_travel_to_required_site: false,
+            unavailable_reason: String::new(),
+        };
+        let markup = quest_location_center(
+            &presentation,
+            &site,
+            &[action],
+            None,
+            &[],
+            true,
+            false,
+            None,
+            None,
+            true,
+        )
+        .into_string();
+        assert!(markup.contains("action=\"/quests/actions\""));
+        assert!(markup.contains("Inspect the camp"));
+        assert!(markup.contains("/quests/site:known/autoresolve"));
+        assert!(!markup.contains("/missions/enter"));
     }
 }

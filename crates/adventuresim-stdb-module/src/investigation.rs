@@ -6,10 +6,12 @@ use crate::{
     local_problem::local_problem_receipt,
     settlement_population::{settlement_npc, settlement_npc_presence},
     strategic::{
-        CustodyHolderKind, CustodyObjectKind, case_authority, case_authority__view, case_custody,
-        coordinate_distance_e7_m, living_party_member_ids, party_authority, party_authority__view,
-        party_journey_authority, party_member__view, quest_generation_authority,
-        quest_generation_authority__view, require_no_unresolved_encounter, require_party_ready,
+        CaseResolutionStatus, CustodyHolderKind, CustodyObjectKind, FinaleStatus,
+        HostileGroupDisposition, case_authority, case_authority__view, case_custody,
+        case_finale_authority__view, coordinate_distance_e7_m, hostile_group_authority__view,
+        living_party_member_ids, party_authority, party_authority__view, party_journey_authority,
+        party_member__view, quest_generation_authority, quest_generation_authority__view,
+        require_no_unresolved_encounter, require_party_ready,
         require_strategic_character_authority, require_strategic_gateway, settlement,
         strategic_gateway_authority__view, validate_quest_generation_authority,
     },
@@ -675,6 +677,13 @@ pub struct BackendCaseSitePin {
     pub distance_m: u64,
     pub knowledge_stage: String,
     pub tracked: bool,
+    /// Observer-safe problem wording from a fully validated generated manifest,
+    /// or the ordinary site name for a manual case.
+    pub display_title: String,
+    /// Generated presentation is deliberately independent of contract state.
+    pub generated_case: bool,
+    /// This reveals only that combat is currently a permitted onsite action.
+    pub combat_available: bool,
 }
 
 #[derive(Clone, Debug, SpacetimeType)]
@@ -3822,6 +3831,7 @@ pub fn backend_case_site_pins(ctx: &ViewContext) -> Vec<BackendCaseSitePin> {
             ) {
                 return None;
             }
+            let presentation = case_site_presentation_view(ctx, &site, aliases.as_ref())?;
             let tracked = ctx
                 .db
                 .character()
@@ -3835,7 +3845,9 @@ pub fn backend_case_site_pins(ctx: &ViewContext) -> Vec<BackendCaseSitePin> {
                 });
             Some(BackendCaseSitePin {
                 owner_character_id: lead.owner_character_id,
-                case_id: lead.case_id,
+                case_id: aliases
+                    .as_ref()
+                    .map_or_else(|| site.case_id.clone(), |aliases| aliases.1.clone()),
                 case_site_id: site.id.value,
                 origin_settlement_id: site.origin_settlement_id,
                 name: site.name,
@@ -3847,6 +3859,9 @@ pub fn backend_case_site_pins(ctx: &ViewContext) -> Vec<BackendCaseSitePin> {
                 distance_m: site.distance_m,
                 knowledge_stage: lead.destination_stage,
                 tracked,
+                display_title: presentation.display_title,
+                generated_case: presentation.generated_case,
+                combat_available: presentation.combat_available,
             })
         })
     {
@@ -3860,6 +3875,104 @@ pub fn backend_case_site_pins(ctx: &ViewContext) -> Vec<BackendCaseSitePin> {
         }
     }
     pins.into_values().collect()
+}
+
+struct CaseSitePresentationView {
+    display_title: String,
+    generated_case: bool,
+    combat_available: bool,
+}
+
+fn objective_path_targets_hostile(
+    path: &adventuresim_core::case::ObjectivePath,
+    hostile_group_id: &str,
+) -> bool {
+    use adventuresim_core::case::ObjectiveRequirement;
+    path.objectives
+        .iter()
+        .any(|objective| match &objective.requirement {
+            ObjectiveRequirement::Defeat {
+                hostile_group_id: expected,
+                ..
+            }
+            | ObjectiveRequirement::DriveOff {
+                hostile_group_id: expected,
+            } => expected == hostile_group_id,
+            _ => false,
+        })
+}
+
+fn case_site_presentation_view(
+    ctx: &ViewContext,
+    site: &CaseSiteAuthority,
+    aliases: Option<&(String, String)>,
+) -> Option<CaseSitePresentationView> {
+    let Some((canonical_case_id, _public_case_id)) = aliases else {
+        return Some(CaseSitePresentationView {
+            display_title: site.name.clone(),
+            generated_case: false,
+            combat_available: false,
+        });
+    };
+    let authority = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(canonical_case_id)?;
+    let validated = validate_quest_generation_authority(&authority).ok()?;
+    let generated_site = validated
+        .manifest
+        .sites
+        .iter()
+        .find(|generated_site| generated_site.id.0 == site.id.value)?;
+    if generated_site.safe_label != site.name {
+        return None;
+    }
+    let case = ctx.db.case_authority().id().find(canonical_case_id)?;
+    let combat_finale = validated.manifest.finales.iter().find(|finale| {
+        finale.site_id.0 == site.id.value
+            && finale.strategic_outcome_compatible
+            && finale.hostile_group_id.is_some()
+    });
+    let combat_available = combat_finale
+        .and_then(|finale| {
+            let hostile_group_id = finale.hostile_group_id.as_deref()?;
+            let group = ctx
+                .db
+                .hostile_group_authority()
+                .id()
+                .find(&hostile_group_id.to_string())?;
+            (group.case_site_id == site.id && group.disposition == HostileGroupDisposition::Active)
+                .then_some(hostile_group_id)
+        })
+        .is_some_and(|hostile_group_id| {
+            case.resolution_status == CaseResolutionStatus::Open
+                && ctx
+                    .db
+                    .case_finale_authority()
+                    .case_id()
+                    .filter(canonical_case_id)
+                    .filter(|finale| finale.status == FinaleStatus::Available)
+                    .any(|finale| {
+                        finale
+                            .eligible_path_index
+                            .and_then(|index| {
+                                validated
+                                    .manifest
+                                    .objectives
+                                    .alternatives
+                                    .get(index as usize)
+                            })
+                            .is_some_and(|path| {
+                                objective_path_targets_hostile(path, hostile_group_id)
+                            })
+                    })
+        });
+    Some(CaseSitePresentationView {
+        display_title: validated.manifest.consequence.public_summary,
+        generated_case: true,
+        combat_available,
+    })
 }
 
 fn lead_projects_exact_case_site_pin(
@@ -6873,6 +6986,61 @@ mod tests {
         assert!(projection.contains("case_site_authority()"));
         assert!(!projection.contains("destination_stage.as_str(), \"textual\""));
         assert!(!projection.contains("destination_stage.as_str(), \"approximate_area\""));
+    }
+
+    #[test]
+    fn generated_case_site_presentation_is_validated_and_action_only() {
+        let source = include_str!("investigation.rs");
+        let projection = source
+            .split("fn case_site_presentation_view")
+            .nth(1)
+            .and_then(|tail| tail.split("fn lead_projects_exact_case_site_pin").next())
+            .expect("generated case-site presentation helper");
+        for required in [
+            "validate_quest_generation_authority",
+            "generated_site.id.0 == site.id.value",
+            "generated_site.safe_label != site.name",
+            "finale.site_id.0 == site.id.value",
+            "group.case_site_id == site.id",
+            "HostileGroupDisposition::Active",
+            "CaseResolutionStatus::Open",
+            "FinaleStatus::Available",
+            "objective_path_targets_hostile",
+            "consequence.public_summary",
+        ] {
+            assert!(projection.contains(required), "{required}");
+        }
+        for forbidden in ["enemy_type", "cause", "factor_trace", "manifest_json"] {
+            assert!(!projection.contains(forbidden), "{forbidden} leaked");
+        }
+    }
+
+    #[test]
+    fn hostile_objective_matching_rejects_noncombat_paths() {
+        use adventuresim_core::case::{Objective, ObjectivePath, ObjectiveRequirement, SubjectId};
+        let hostile_path = ObjectivePath {
+            objectives: vec![Objective {
+                id: adventuresim_core::case::ObjectiveId::new("objective:defeat").unwrap(),
+                requirement: ObjectiveRequirement::Defeat {
+                    hostile_group_id: "hostile:one".into(),
+                    count: 1,
+                },
+            }],
+        };
+        assert!(objective_path_targets_hostile(&hostile_path, "hostile:one"));
+        assert!(!objective_path_targets_hostile(
+            &hostile_path,
+            "hostile:other"
+        ));
+        let rescue_path = ObjectivePath {
+            objectives: vec![Objective {
+                id: adventuresim_core::case::ObjectiveId::new("objective:rescue").unwrap(),
+                requirement: ObjectiveRequirement::Rescue {
+                    subject_id: SubjectId::new("subject:one").unwrap(),
+                },
+            }],
+        };
+        assert!(!objective_path_targets_hostile(&rescue_path, "hostile:one"));
     }
 
     #[test]

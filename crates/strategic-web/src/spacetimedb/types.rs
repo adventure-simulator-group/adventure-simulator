@@ -82,6 +82,7 @@ pub struct BackendCaseBattle {
     pub party_id: String,
     pub battle_id: String,
     pub mission_id: String,
+    pub case_site_id: CaseSiteId,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -101,6 +102,9 @@ pub struct BackendCaseSitePin {
     pub distance_m: u64,
     pub knowledge_stage: String,
     pub tracked: bool,
+    pub display_title: String,
+    pub generated_case: bool,
+    pub combat_available: bool,
 }
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use serde_json::Value;
@@ -1658,11 +1662,16 @@ mod tests {
             "coordinates_are_geographic": true,
             "distance_m": 1800,
             "knowledge_stage": "exact_believed",
-            "tracked": true
+            "tracked": true,
+            "display_title": "Something preys on travellers",
+            "generated_case": true,
+            "combat_available": true
         });
         let decoded: BackendCaseSitePin = serde_json::from_value(pin).unwrap();
         assert_eq!(decoded.latitude_e7, 521_234_567);
         assert_eq!(decoded.longitude_e7, 134_567_890);
+        assert!(decoded.generated_case);
+        assert!(decoded.combat_available);
     }
 
     #[test]
