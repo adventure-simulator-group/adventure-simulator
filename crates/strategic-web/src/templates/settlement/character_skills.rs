@@ -179,10 +179,10 @@ impl ActivityPreviewRates {
 }
 #[derive(Clone, Copy, Default)]
 pub(super) struct CharacterSkillActions<'a> {
-    cooking_href: Option<&'a str>,
-    cooking_open: bool,
-    examination_action: Option<&'a str>,
-    examination_open: bool,
+    pub(super) cooking_href: Option<&'a str>,
+    pub(super) cooking_open: bool,
+    pub(super) examination_action: Option<&'a str>,
+    pub(super) examination_open: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -788,9 +788,9 @@ pub(super) fn party_skill_row(
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct SkillRankBarOptions<'a> {
-    show_value: bool,
-    extra_class: Option<&'a str>,
-    aria_label: Option<&'a str>,
+    pub(super) show_value: bool,
+    pub(super) extra_class: Option<&'a str>,
+    pub(super) aria_label: Option<&'a str>,
 }
 
 impl Default for SkillRankBarOptions<'_> {
@@ -1200,4 +1200,541 @@ pub(super) fn format_schedule_hours(minutes: u16) -> String {
         _ => unreachable!("rounded schedule minute must be a quarter hour"),
     };
     format!("{hours}{fraction}h")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::spacetimedb::*;
+
+    #[test]
+    fn social_skill_family_has_an_average_and_six_expandable_icon_rows() {
+        let skills = CharacterSkills {
+            character_id: 7,
+            insight_hours: 100.0,
+            self_awareness_hours: 80.0,
+            humor_hours: 60.0,
+            command_hours: 40.0,
+            deception_hours: 20.0,
+            seduction_hours: 10.0,
+            ..CharacterSkills::default()
+        };
+        let markup = social_skill_rows(&skills, 1.0, None).into_string();
+        assert!(markup.contains("data-social-primary"));
+        assert!(markup.contains("Average of all six Social skills"));
+        assert_eq!(markup.matches("data-social-detail").count(), 6);
+        for icon in [
+            "conversation.svg",
+            "awareness.svg",
+            "inner-self.svg",
+            "juggler.svg",
+            "crown.svg",
+            "rose.svg",
+        ] {
+            assert!(markup.contains(icon), "missing social icon {icon}");
+        }
+    }
+
+    #[test]
+    fn skill_meter_and_schedule_use_segmented_rank_and_text_time_controls() {
+        let meter =
+            skill_rank_bar(3.5, 2.75, "Skill test", SkillRankBarOptions::default()).into_string();
+        for tier in 1..=5 {
+            assert!(meter.contains(&format!("skill-rank-segment-{tier}")));
+        }
+        assert!(meter.contains("role=\"meter\""));
+        assert!(meter.contains("aria-valuenow=\"2.8\""));
+        assert!(meter.contains("class=\"skill-rank-value\""));
+        assert!(!meter.contains("tabindex"));
+        let allocation = schedule_allocation_cell("smithing_minutes", 75, true).into_string();
+        assert!(allocation.contains("data-schedule-input"));
+        assert!(allocation.contains("data-schedule-display"));
+        assert!(allocation.contains("Click to enter a time such as 8, 8:30, or 830"));
+        assert!(!allocation.contains("data-schedule-step"));
+        assert!(!allocation.contains("type=\"range\""));
+        assert!(!allocation.contains("schedule-handle"));
+    }
+
+    #[test]
+    fn schedule_table_uses_compact_accessible_icon_headers() {
+        let skills = CharacterSkills {
+            character_id: 1,
+            polearm_hours: 0.0,
+            axe_hours: 0.0,
+            bludgeon_hours: 0.0,
+            sword_hours: 0.0,
+            knife_hours: 0.0,
+            dodge_hours: 0.0,
+            block_hours: 0.0,
+            bow_hours: 0.0,
+            crossbow_hours: 0.0,
+            firearm_hours: 0.0,
+            throw_hours: 0.0,
+            will_hours: 0.0,
+            insight_hours: 0.0,
+            self_awareness_hours: 0.0,
+            humor_hours: 0.0,
+            command_hours: 0.0,
+            deception_hours: 0.0,
+            seduction_hours: 0.0,
+            medicine_hours: 0.0,
+            cooking_hours: 0.0,
+            religion_hours: adventuresim_world_schema::ReligionHours {
+                roman_catholic: 1_000.0,
+                ..Default::default()
+            },
+            oral_languages: Default::default(),
+            written_languages: Default::default(),
+            stealth_hours: 0.0,
+            balance_hours: 0.0,
+            terrain_plains_hours: 0.0,
+            terrain_forest_hours: 0.0,
+            terrain_hills_hours: 0.0,
+            terrain_urban_hours: 0.0,
+            anatomy_hours: 0.0,
+            tailoring_hours: 0.0,
+            smithing_hours: 0.0,
+        };
+        let schedule = CharacterTrainingSchedule {
+            character_id: 1,
+            downtime: crate::spacetimedb::ScheduleAllocation {
+                combat_training_minutes: 90,
+                prayer_minutes: 120,
+                ..Default::default()
+            },
+            travel: crate::spacetimedb::ScheduleAllocation::default(),
+        };
+        let rendered = skills_table(
+            "Your skills",
+            &skills,
+            1.0,
+            1.0,
+            1.0,
+            Some(&schedule),
+            None,
+            false,
+            0.0,
+            Some(OfficialReligion::Judaism),
+            CombatTrainingProfile::default(),
+            false,
+            CharacterSkillActions::default(),
+        )
+        .into_string();
+
+        assert!(rendered.contains(
+            "scope=\"colgroup\" colspan=\"8\" class=\"schedule-table-title\">Your skills"
+        ));
+        assert_eq!(rendered.matches("<colgroup>").count(), 2);
+        assert!(rendered.contains(
+            "<col class=\"religion-auto-column\"><col class=\"party-skill-time-column\"><col class=\"religion-expand-column\">"
+        ));
+        assert_eq!(
+            rendered.matches("aria-label=\"Daily allocation\"").count(),
+            1
+        );
+        assert!(!rendered.contains("aria-label=\"Automatic training\""));
+        for label in ["Currency", "Virtue", "Morale", "Fatigue"] {
+            assert!(rendered.contains(&format!("aria-label=\"{label}\"")));
+        }
+        assert!(rendered.contains("data-religion-expand"));
+        assert!(!rendered.contains("class=\"skill-rank-value\""));
+        assert_eq!(
+            rendered.matches("class=\"party-skill-row").count(),
+            rendered.matches("class=\"religion-expand-cell\"").count(),
+        );
+        assert!(rendered.contains("aria-expanded=\"false\""));
+        assert!(rendered.contains("data-religion-primary=\"judaism\""));
+        assert!(rendered.contains("Expand Judaism Religion skill"));
+        assert!(rendered.contains("title=\"Judaism\""));
+        assert!(rendered.contains("/static/icons/religion/fontawesome-star-of-david.svg"));
+        assert!(!rendered.contains("data-combat-auto-toggle"));
+        for group in ["melee", "ranged", "defense"] {
+            assert!(rendered.contains(&format!("data-combat-expand=\"{group}\"")));
+            assert!(rendered.contains(&format!("data-combat-detail=\"{group}\"")));
+        }
+        assert!(!rendered.contains("aria-label=\"Religion details\""));
+        assert!(rendered.contains("aria-label=\"Skill details\""));
+        assert!(rendered.contains("Sparring and target practice"));
+        assert!(rendered.contains("Carousing"));
+        assert_eq!(rendered.matches("data-religion-detail").count(), 1);
+        assert!(!rendered.contains("title=\"Lutheranism\""));
+        assert!(!rendered.contains("religion_judaism_minutes"));
+        assert!(!rendered.contains("effective /"));
+        assert!(rendered.contains("100.0 effective hours; 0.0 directly studied hours"));
+        let primary_icon = rendered
+            .find("/static/icons/religion/fontawesome-star-of-david.svg")
+            .unwrap();
+        let expand = rendered.find("data-religion-expand").unwrap();
+        assert!(primary_icon < expand);
+        assert!(rendered.contains("class=\"religion-expand-cell\"><button"));
+        assert!(rendered.contains("aria-label=\"Will\""));
+        assert!(!rendered.contains("data-religion-auto-budget disabled"));
+        assert!(!rendered.contains("data-religion-manual-budget disabled"));
+        assert!(rendered.contains("/static/icons/game/coins.svg"));
+        assert!(!rendered.contains(">Gold</th>"));
+        assert!(!rendered.contains(">Virt.</th>"));
+
+        let rail = party_skills_rail(
+            "Your skills",
+            Some(&skills),
+            None,
+            Some(&schedule),
+            Some("/schedule"),
+            None,
+            false,
+            0.0,
+            Some("judaism"),
+            CombatTrainingProfile::default(),
+            CharacterSkillActions::default(),
+        )
+        .into_string();
+        assert!(!rail.contains("class=\"sidebar-header\">Your skills"));
+        assert!(rail.contains("<h3 class=\"sr-only\">Your skills</h3>"));
+        assert!(rail.contains("data-schedule-save-status"));
+        assert!(rail.contains("role=\"status\" aria-live=\"polite\" hidden"));
+        assert!(rail.contains("data-schedule-retry>Retry</button>"));
+        assert!(!rail.contains("data-activity-modal"));
+        assert!(!rail.contains("data-activity-open"));
+        let settlement_rail = party_skills_rail(
+            "Your skills",
+            Some(&skills),
+            None,
+            Some(&schedule),
+            Some("/locations/settlement/lubeck/party/1/schedule"),
+            None,
+            false,
+            0.0,
+            Some("judaism"),
+            CombatTrainingProfile::default(),
+            CharacterSkillActions::default(),
+        )
+        .into_string();
+        assert!(settlement_rail.contains("data-activity-modal"));
+        assert!(settlement_rail.contains("data-activity-open"));
+        assert!(!rail.contains(">⚙</span>"));
+        assert!(!rail.contains("aria-label=\"Automatic training\""));
+    }
+
+    #[test]
+    fn defense_will_uses_head_health_for_its_injury_adjusted_rank() {
+        let skills = CharacterSkills {
+            will_hours: 5_000.0,
+            ..Default::default()
+        };
+        let rendered = combat_skill_rows(
+            &skills,
+            0.2,
+            0.8,
+            1.0,
+            None,
+            CombatTrainingProfile::default(),
+        )
+        .into_string();
+        let will = rendered.find("aria-label=\"Will\"").unwrap();
+        let start = rendered[..will].rfind("<tr").unwrap();
+        let end = will + rendered[will..].find("</tr>").unwrap() + "</tr>".len();
+        let will_row = &rendered[start..end];
+        let rank = Skill::Will.training_rank(5_000.0);
+        let expected = skill_rank_bar(
+            rank,
+            rank * 0.2,
+            "5000 hours invested",
+            skill_rail_bar_options(),
+        )
+        .into_string();
+        assert!(will_row.contains(&expected));
+    }
+
+    #[test]
+    fn language_families_are_expandable_accessible_and_color_coded() {
+        let skills = CharacterSkills {
+            oral_languages: adventuresim_world_schema::OralLanguageHours {
+                east_central: 5_000.0,
+                ..Default::default()
+            },
+            written_languages: adventuresim_world_schema::WrittenLanguageHours {
+                german: 1_000.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let rendered = language_skill_rows(&skills, false).into_string();
+        assert!(rendered.contains("Expand Oral languages"));
+        assert!(rendered.contains("Expand Written languages"));
+        assert!(rendered.contains("language-oral language-blackletter"));
+        assert!(rendered.contains("language-written language-blackletter"));
+        assert!(rendered.contains(
+            "5000.0 effective hours; 5000.0 directly studied hours across Oral languages"
+        ));
+        assert!(rendered.contains(
+            "1000.0 effective hours; 1000.0 directly studied hours across Written languages"
+        ));
+        assert!(rendered.contains("title=\"East-central — Ostmitteldeutsch\""));
+        assert!(rendered.contains("5000.0 effective hours; 5000.0 directly studied hours"));
+        assert!(rendered.contains("title=\"Latin — Latine\""));
+        assert!(!rendered.contains("title=\"Romani — Romani\""));
+        assert_eq!(rendered.matches("data-language-detail=\"oral\"").count(), 4);
+        assert_eq!(
+            rendered.matches("data-language-detail=\"written\"").count(),
+            3
+        );
+    }
+
+    #[test]
+    fn language_families_are_hidden_without_effective_hours() {
+        let rendered = language_skill_rows(&CharacterSkills::default(), false).into_string();
+        assert!(!rendered.contains("Expand Oral languages"));
+        assert!(!rendered.contains("Expand Written languages"));
+        assert!(!rendered.contains("data-language-detail"));
+    }
+
+    #[test]
+    fn activity_rows_show_signed_daily_effects_instead_of_allocation_bars() {
+        let rendered = schedule_special_row(
+            "Thievery",
+            "market",
+            "thievery_minutes",
+            120,
+            true,
+            true,
+            ActivityEffectRates::linear(2.0, -1.0, 0.0, 0.0),
+            None,
+            None,
+            "Test activity",
+        )
+        .into_string();
+        for effect in ["gold", "virtue", "morale", "fatigue"] {
+            assert!(rendered.contains(&format!("data-activity-effect=\"{effect}\"")));
+        }
+        assert!(rendered.contains("schedule-effect-positive"));
+        assert!(rendered.contains(">+4</td>"));
+        assert!(rendered.contains("schedule-effect-negative"));
+        assert!(rendered.contains(">-2.0</td>"));
+        assert!(rendered.contains("<span class=\"sr-only\">Thievery</span>"));
+        assert!(!rendered.contains("<strong>Thievery</strong>"));
+        assert!(!rendered.contains("schedule-allocation-fill"));
+        assert!(!rendered.contains("schedule-special-track"));
+    }
+
+    #[test]
+    fn activity_training_column_totals_and_explains_effective_skill_hours() {
+        let combat =
+            activity_training_cell("Combat Training", "combat_training_minutes", 120, None)
+                .into_string();
+        assert!(combat.contains(">+2.00h<"));
+        assert!(combat.contains("Relevant combat skills: +2.00h"));
+
+        let carousing =
+            activity_training_cell("Carousing", "carousing_minutes", 120, None).into_string();
+        assert!(carousing.contains(">+0.50h<"));
+        assert!(carousing.contains("Humor: +0.50h"));
+
+        let profession = ProfessionActivityPreview {
+            training_rates: vec![
+                ("Medicine".into(), 0.5),
+                ("Anatomy".into(), 1.0 / 6.0),
+                ("Knife".into(), 1.0 / 6.0),
+                ("Tailoring".into(), 1.0 / 6.0),
+            ],
+            apprenticeship_accrued: 0,
+            practice_accrued: 0,
+            practice_threshold: 8 * 60 * PROFESSION_ACCRUAL_SCALE,
+            practice_reward: "gold",
+            tier_label: "apprentice",
+        };
+        let apprenticeship = activity_training_cell(
+            "Apprenticeship — herbalist",
+            "apprenticeship_minutes",
+            120,
+            Some(&profession),
+        )
+        .into_string();
+        assert!(apprenticeship.contains(">+2.00h<"));
+        assert!(apprenticeship.contains("Medicine: +1.00h"));
+        assert!(apprenticeship.contains("Anatomy: +0.33h"));
+        assert!(apprenticeship.contains("Knife: +0.33h"));
+        assert!(apprenticeship.contains("Tailoring: +0.33h"));
+
+        let leisure = activity_training_cell("Leisure", "leisure_minutes", 480, None).into_string();
+        assert!(leisure.contains(">—<"));
+        assert!(leisure.contains("No skill training"));
+    }
+
+    #[test]
+    fn profession_preview_uses_accrual_tier_reward_and_training_distribution() {
+        let threshold = APPRENTICESHIP_REWARD_THRESHOLD;
+        let row = CharacterApprenticeship {
+            id: 1,
+            character_id: 7,
+            service_id: "weapons".into(),
+            religion_id: None,
+            started_minute: 0,
+            apprenticeship_minutes_accrued: threshold - 60 * PROFESSION_ACCRUAL_SCALE,
+            practice_minutes_accrued: 0,
+        };
+        let journeyman = CharacterSkills {
+            smithing_hours: 4_000.0,
+            ..Default::default()
+        };
+        let preview = ActivityPreviewRates::default()
+            .with_professions(Some(&journeyman), std::slice::from_ref(&row));
+        let smith = preview.profession.get("weapons").unwrap();
+        assert_eq!(smith.tier_label, "journeyman");
+        assert_eq!(smith.practice_threshold, 8 * 60 * PROFESSION_ACCRUAL_SCALE);
+        assert_eq!(
+            smith.reward_delta("apprenticeship_minutes", 60),
+            [-1.0, 0.0]
+        );
+        assert_eq!(smith.training_rates, vec![("Smithing".into(), 1.0)]);
+
+        let master = CharacterSkills {
+            smithing_hours: 25_000.0,
+            ..Default::default()
+        };
+        let preview = ActivityPreviewRates::default().with_professions(Some(&master), &[row]);
+        let smith = preview.profession.get("weapons").unwrap();
+        assert_eq!(smith.tier_label, "master");
+        assert_eq!(smith.practice_threshold, 2 * 60 * PROFESSION_ACCRUAL_SCALE);
+        assert_eq!(
+            smith.reward_delta("profession_practice_minutes", 240),
+            [2.0, 0.0]
+        );
+    }
+
+    #[test]
+    fn server_rendered_effects_normalize_negative_zero() {
+        let rendered = activity_effect_cell("fatigue", -0.0006).into_string();
+        assert!(rendered.contains("schedule-effect-neutral"));
+        assert!(rendered.contains(">0</td>"));
+        assert!(!rendered.contains("-0.0"));
+
+        let negative = activity_effect_cell("fatigue", -0.06).into_string();
+        assert!(negative.contains("schedule-effect-negative"));
+        assert!(negative.contains(">-0.1</td>"));
+    }
+
+    #[test]
+    fn prayer_preview_uses_zero_partial_and_full_party_religion_checks() {
+        let minutes = 240;
+        let full = ActivityEffectRates::prayer(1.0).values(minutes)[2];
+        assert_eq!(ActivityEffectRates::prayer(0.0).values(minutes)[2], 0.0);
+        assert!((ActivityEffectRates::prayer(0.5).values(minutes)[2] - full * 0.5).abs() < 0.001);
+        assert!(full > 0.0);
+        assert!((ActivityEffectRates::meditation().values(minutes)[2] - full * 0.25).abs() < 0.001);
+    }
+
+    #[test]
+    fn leisure_and_labor_previews_decompose_the_shared_fatigue_outcome() {
+        let schedule = ScheduleAllocation {
+            labor_minutes: 240,
+            combat_training_minutes: 720,
+            ..Default::default()
+        };
+        let leisure = leisure_preview(&schedule, 0.0);
+        assert_eq!(leisure.outcome.leisure_hours, 8.0);
+        assert_eq!(leisure.outcome.fatigue_delta, 0.0);
+        assert_eq!(leisure.outcome.morale, 0.0);
+        assert_eq!(leisure.fatigue_display, -2.0);
+        assert_eq!(
+            ActivityEffectRates::linear(
+                0.0,
+                0.0,
+                0.0,
+                LABOR_FATIGUE_PER_HOUR / FATIGUE_RESERVOIR_PER_PREVIEW_POINT,
+            )
+            .values(schedule.labor_minutes)[3],
+            2.0
+        );
+        let rendered = schedule_special_row(
+            "Leisure",
+            "inn",
+            "leisure_minutes",
+            0,
+            false,
+            false,
+            ActivityEffectRates::default(),
+            Some(leisure),
+            None,
+            "Test leisure",
+        )
+        .into_string();
+        for attribute in [
+            "data-leisure-baseline-fatigue",
+            "data-leisure-labor-fatigue-rate",
+            "data-leisure-recovery-rate",
+            "data-leisure-morale-limit",
+            "data-leisure-morale-scale",
+            "data-leisure-fatigue-preview-divisor",
+        ] {
+            assert!(rendered.contains(attribute));
+        }
+        assert!(rendered.contains(">-2.0</td>"));
+    }
+
+    #[test]
+    fn schedule_and_equipment_scripts_use_the_new_interactions() {
+        let schedule = include_str!("../../static/training-schedule.js");
+        let numeric = include_str!("../../static/numeric-editor.js");
+        let equipment = include_str!("../../static/equipment-toggle.js");
+        let live_regions = include_str!("../../static/live-regions.js");
+        let immediate_activity = include_str!("../../static/immediate-activity.js");
+        let css = include_str!("../../static/css/strategic.css");
+        assert!(schedule.contains("function parseClock(value)"));
+        assert!(schedule.contains("window.StrategicNumericEditor.open"));
+        assert!(numeric.contains("input.type = 'text'"));
+        assert!(numeric.contains("confirm.addEventListener('click', () => finish(true))"));
+        assert!(numeric.contains("cancel.addEventListener('click', () => finish(false))"));
+        assert!(numeric.contains("input.addEventListener('wheel'"));
+        assert!(!numeric.contains("document.addEventListener('wheel'"));
+        assert!(schedule.contains("/^\\d{3,4}$/"));
+        assert!(schedule.contains("Math.round(wanted / STEP) * STEP"));
+        assert!(schedule.contains("function renderActivityPreview(row, minutes)"));
+        assert!(schedule.contains("function calculateLeisurePreview"));
+        assert!(schedule.contains("row.dataset.leisureFatiguePreviewDivisor"));
+        assert!(schedule.contains("function mountSchedules(root = document)"));
+        assert!(schedule.contains("[data-social-expand]"));
+        assert!(schedule.contains(".social-detail-row"));
+        assert!(schedule.contains("'strategic-live-regions-refreshed'"));
+        assert!(schedule.contains("event.detail.regions.includes('left-sidebar')"));
+        assert!(schedule.contains("function createLatestSaveQueue(send"));
+        assert!(schedule.contains("data-schedule-pending"));
+        assert!(schedule.contains("retry()"));
+        assert!(schedule.contains("data-schedule-save-status"));
+        assert!(schedule.contains("data-schedule-retry"));
+        assert!(schedule.contains("strategic-live-refresh-requested"));
+        assert!(schedule.contains("schedule-effect-positive"));
+        assert!(!schedule.contains("scheduleDrag"));
+        assert!(!schedule.contains("travel_"));
+        assert!(equipment.contains("'/api/equipment'"));
+        assert!(equipment.contains("window.location.reload()"));
+        assert!(live_regions.contains("const scrollOffsets = (selector)"));
+        assert!(live_regions.contains("region.scrollTop = offsets.top"));
+        assert!(live_regions.contains("replaced.includes(\"left-sidebar\")"));
+        assert!(live_regions.contains("document.querySelector('.numeric-editor')"));
+        assert!(live_regions.contains("[data-activity-modal]:not([hidden])"));
+        assert!(live_regions.contains("scheduleEditorIsPending"));
+        assert!(live_regions.contains("const schedulePendingAtStart = scheduleEditorIsPending()"));
+        assert!(live_regions.contains("!schedulePendingAtStart && !scheduleEditorIsPending()"));
+        assert!(immediate_activity.contains("typeof window === 'undefined'"));
+        assert!(immediate_activity.contains("input:not([type=\"hidden\"]):not(:disabled)"));
+        assert!(immediate_activity.contains("wrappedFocusTarget"));
+        assert!(immediate_activity.contains("strategic-editor-idle"));
+        assert!(css.contains(".numeric-editor-input {"));
+        assert!(css.contains("position: fixed;"));
+        assert!(css.contains("z-index: 80;"));
+        assert!(css.contains(".numeric-editor {"));
+        assert!(css.contains("right: auto;"));
+        assert!(css.contains("left: 50%;"));
+        assert!(css.contains("transform: translate(-50%, -50%);"));
+        assert!(css.contains(".numeric-editor-input::selection {"));
+        assert!(numeric.contains("document.body.append(editor)"));
+        assert!(numeric.contains("display.style.visibility = 'hidden'"));
+        assert!(!numeric.contains("display.hidden = true"));
+        assert!(numeric.contains("window.addEventListener('resize', positionEditor)"));
+        assert!(!css.contains(".party-skill-icon-column"));
+        assert!(css.contains(".numeric-editor-action {"));
+        assert!(css.contains(".numeric-editor-confirm { background: #2f7d3d; }"));
+        assert!(css.contains(".numeric-editor-cancel { background: #9c3434; }"));
+        assert!(css.contains(".schedule-save-status"));
+    }
 }

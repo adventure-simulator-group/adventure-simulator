@@ -1,4 +1,4 @@
-﻿use super::*;
+use super::*;
 
 pub(super) fn character_summary_rail(capability: Option<&CharacterCapability>) -> Markup {
     let tags = capability
@@ -38,6 +38,212 @@ pub(crate) fn character_stats_panel(
 
 pub(crate) fn character_visual_preview(character: &Character) -> Markup {
     visual_stage("character", &character.name, "Adventurer profile")
+}
+
+/// Active character's combined strategic view.
+pub fn party_personal_page(
+    location: &LocationView,
+    active_character: &Character,
+    party_members: &[Character],
+    capability: Option<&CharacterCapability>,
+    attributes: Option<&CharacterAttributes>,
+    skills: Option<&CharacterSkills>,
+    limbs: Option<&CharacterLimbs>,
+    condition: Option<&CharacterStrategicCondition>,
+    morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
+    religion_id: Option<&str>,
+    prayer_religion_check: f32,
+    schedule: Option<&CharacterTrainingSchedule>,
+    combat_profile: CombatTrainingProfile,
+    activity_preview: ActivityPreviewRates,
+    religious_demand: Option<&crate::spacetimedb::ReligiousDemand>,
+    notoriety: f32,
+    personality: Option<&crate::spacetimedb::CharacterPersonality>,
+    medical: &MedicalPresentation,
+    can_examine: bool,
+    injuries: &[LimbInjury],
+    projectiles: &[RetainedProjectile],
+    filth: &[crate::spacetimedb::CharacterFilth],
+    cooking: bool,
+    inventory: &[InventoryItem],
+    food_lots: &[FoodLot],
+    item_definitions: &[ItemDefinition],
+    character_action_dialog: Option<Markup>,
+    surgery_open: Option<&str>,
+    social_open: bool,
+) -> Markup {
+    let cooking_href = location.preserve_building(format!(
+        "{}/party/{}?cook=true",
+        location.base_path(),
+        active_character.id
+    ));
+    let examination_action = location.preserve_building(format!(
+        "{}/party/{}/examine",
+        location.base_path(),
+        active_character.id
+    ));
+    let cooking_open = cooking && medical.examination_id.is_none();
+    let surgery_path_template = location.preserve_building(format!(
+        "{}/party/{}/surgery/__limb__",
+        location.base_path(),
+        active_character.id
+    ));
+    let content = html! {
+        aside class="left-sidebar" {
+            (party_attributes_rail("Your attributes", attributes, limbs, medical, Some((&surgery_path_template, surgery_open)), injuries, projectiles))
+            (strategic_condition_rail(condition, morale_sources, filth, &location.preserve_building(format!("{}/party/{}/social", location.base_path(), active_character.id)), social_open))
+            (medical_rail(medical, &location.base_path(), active_character.id, active_character.id, true))
+            @if let Some(demand) = religious_demand {
+                (religious_demand_rail(demand, &location.base_path(), active_character.id))
+            }
+        }
+        main class="center-content settlement-main party-member-stage" {
+            (party_portrait_overlay(
+                party_members,
+                Some(active_character),
+                &location.base_path(),
+                Some(active_character.id),
+                can_examine,
+            ))
+            (visual_stage("character", &active_character.name, "Your identity, condition, and capabilities"))
+            (settlement_chat_area(&active_character.name, Some(active_character)))
+            (medical_examination_popup(medical, location, active_character.id, limbs, injuries, projectiles))
+        }
+        aside class="right-sidebar" {
+            (character_summary_rail(capability))
+            (character_bio_rail(active_character, religion_id, notoriety, personality, true, &location.base_path()))
+            @let schedule_action = format!("{}/party/{}/schedule", location.base_path(), active_character.id);
+            (party_skills_rail(
+                "Your skills", skills, limbs, schedule, Some(&schedule_action),
+                Some(activity_preview), religion_id.is_some(), prayer_religion_check,
+                religion_id.or(location.religion_id.as_deref()),
+                combat_profile,
+                CharacterSkillActions {
+                    cooking_href: Some(&cooking_href),
+                    cooking_open,
+                    examination_action: can_examine.then_some(examination_action.as_str()),
+                    examination_open: medical.examination_id.is_some(),
+                },
+            ))
+        }
+        @if cooking_open {
+            (cooking_activity_dialog(location, active_character, inventory, food_lots, item_definitions))
+        } @else if medical.examination_id.is_none() {
+            @if let Some(dialog) = character_action_dialog { (dialog) }
+        }
+    };
+    location.render_layout("Party", content, Some(&active_character.name))
+}
+
+pub fn party_stats_page(
+    location: &LocationView,
+    selected: &Character,
+    active_character: &Character,
+    party_members: &[Character],
+    capability: Option<&CharacterCapability>,
+    selected_attributes: Option<&CharacterAttributes>,
+    selected_skills: Option<&CharacterSkills>,
+    selected_limbs: Option<&CharacterLimbs>,
+    combat_profile: CombatTrainingProfile,
+    condition: Option<&CharacterStrategicCondition>,
+    morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
+    religion_id: Option<&str>,
+    active_party: Option<&Party>,
+    selected_party: Option<&Party>,
+    notoriety: f32,
+    personality: Option<&crate::spacetimedb::CharacterPersonality>,
+    medical: &MedicalPresentation,
+    can_examine: bool,
+    injuries: &[LimbInjury],
+    projectiles: &[RetainedProjectile],
+    filth: &[crate::spacetimedb::CharacterFilth],
+    character_action_dialog: Option<Markup>,
+    surgery_open: Option<&str>,
+    social_open: bool,
+) -> Markup {
+    let selected_attributes_title = format!("{}'s attributes", selected.name);
+    let selected_skills_title = format!("{}'s skills", selected.name);
+    let examination_action = location.preserve_building(format!(
+        "{}/party/{}/examine",
+        location.base_path(),
+        selected.id
+    ));
+    let surgery_path_template = location.preserve_building(format!(
+        "{}/party/{}/surgery/__limb__",
+        location.base_path(),
+        selected.id
+    ));
+    let content = html! {
+        aside class="left-sidebar" {
+            (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs, medical, Some((&surgery_path_template, surgery_open)), injuries, projectiles))
+            (strategic_condition_rail(condition, morale_sources, filth, &location.preserve_building(format!("{}/party/{}/social", location.base_path(), selected.id)), social_open))
+            (medical_rail(medical, &location.base_path(), active_character.id, selected.id, true))
+        }
+        @if medical.examination_id.is_none() {
+            @if let Some(dialog) = character_action_dialog { (dialog) }
+        }
+        main class="center-content settlement-main party-member-stage" {
+            (party_portrait_overlay(
+                party_members,
+                Some(active_character),
+                &location.base_path(),
+                Some(selected.id),
+                can_examine,
+            ))
+            (visual_stage("character", &selected.name, "Party member identity and capabilities"))
+            (player_chat_area(selected, active_character))
+            (medical_examination_popup(medical, location, selected.id, selected_limbs, injuries, projectiles))
+        }
+        aside class="right-sidebar" {
+            (character_summary_rail(capability))
+            (character_bio_rail(
+                selected,
+                religion_id,
+                notoriety,
+                personality,
+                selected.id == active_character.id,
+                &location.base_path(),
+            ))
+            (party_skills_rail(
+                &selected_skills_title, selected_skills, selected_limbs, None, None, None,
+                religion_id.is_some(), 0.0, religion_id.or(location.religion_id.as_deref()),
+                combat_profile,
+                CharacterSkillActions {
+                    examination_action: can_examine.then_some(examination_action.as_str()),
+                    examination_open: medical.examination_id.is_some(),
+                    ..Default::default()
+                },
+            ))
+            @if selected.id != active_character.id {
+                @if active_character.party_id == selected.party_id {
+                    @if active_party.is_some_and(|party| party.leader_id == selected.id) {
+                        (sidebar_section("Party", html! {
+                            form method="post" action=(format!("{}/party/{}/remove", location.base_path(), active_character.id)) {
+                                button type="submit" class="btn btn-danger btn-block" { "Leave party" }
+                            }
+                        }))
+                    } @else {
+                        (sidebar_section("Party", html! {
+                            form method="post" action=(format!("{}/party/{}/remove", location.base_path(), selected.id)) {
+                                button type="submit" class="btn btn-danger btn-block" {
+                                    @if active_party.is_some_and(|party| party.leader_id == active_character.id) { "Kick from party" }
+                                    @else { "Request kick" }
+                                }
+                            }
+                        }))
+                    }
+                } @else if let Some(party) = selected_party {
+                    (sidebar_section("Party", html! {
+                        p { (&party.name) }
+                        form method="post" action=(format!("/parties/{}/join-general", party.id)) {
+                            button type="submit" class="btn btn-primary btn-block" { "Request to join party" }
+                        }
+                    }))
+                }
+            }
+        }
+    };
+    location.render_layout("Party stats", content, Some(&active_character.name))
 }
 
 pub(super) fn religion_name(religion_id: Option<&str>) -> &'static str {
@@ -260,6 +466,26 @@ mod personality_tests {
                     "{tag} tooltip lacks a numeric morale effect: {description}"
                 );
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn canonical_imported_religions_have_ui_labels() {
+        for (id, label) in [
+            ("roman_catholic", "Roman Catholic"),
+            ("lutheran", "Lutheran"),
+            ("reformed", "Reformed"),
+            ("anglican", "Anglican"),
+            ("eastern_orthodox", "Eastern Orthodox"),
+            ("islamic", "Islamic"),
+            ("judaism", "Jewish"),
+        ] {
+            assert_eq!(religion_name(Some(id)), label);
         }
     }
 }

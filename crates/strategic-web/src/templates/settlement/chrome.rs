@@ -359,3 +359,143 @@ pub(crate) fn party_portrait_overlay(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::spacetimedb::*;
+    use crate::templates::settlement::test_support::*;
+
+    #[test]
+    fn aliases_are_deduplicated_and_do_not_repeat_the_canonical_name() {
+        let aliases = [
+            SettlementAlias {
+                id: "1".into(),
+                settlement_id: "viabundus-1".into(),
+                name: "Lubeke".into(),
+                prefix: None,
+                language: Some("deu".into()),
+            },
+            SettlementAlias {
+                id: "2".into(),
+                settlement_id: "viabundus-1".into(),
+                name: "Lübeck".into(),
+                prefix: None,
+                language: None,
+            },
+        ];
+
+        assert_eq!(settlement_alias_labels(&settlement(), &aliases), ["Lubeke"]);
+    }
+
+    #[test]
+    fn english_settlement_description_is_preferred_deterministically() {
+        let descriptions = [
+            SettlementDescription {
+                id: "1".into(),
+                settlement_id: "viabundus-1".into(),
+                kind: SettlementDescriptionKind::Settlement,
+                language: Some("deu".into()),
+                body: "Deutsch".into(),
+            },
+            SettlementDescription {
+                id: "2".into(),
+                settlement_id: "viabundus-1".into(),
+                kind: SettlementDescriptionKind::City,
+                language: Some("eng".into()),
+                body: "English city".into(),
+            },
+            SettlementDescription {
+                id: "3".into(),
+                settlement_id: "viabundus-1".into(),
+                kind: SettlementDescriptionKind::Settlement,
+                language: Some("eng".into()),
+                body: "English settlement".into(),
+            },
+        ];
+
+        assert_eq!(
+            preferred_settlement_description(&descriptions)
+                .unwrap()
+                .body,
+            "English settlement"
+        );
+    }
+
+    #[test]
+    fn settlement_overview_renders_enrichment_as_escaped_text() {
+        let aliases = [SettlementAlias {
+            id: "1".into(),
+            settlement_id: "viabundus-1".into(),
+            name: "Lubeke".into(),
+            prefix: None,
+            language: Some("deu".into()),
+        }];
+        let descriptions = [SettlementDescription {
+            id: "1".into(),
+            settlement_id: "viabundus-1".into(),
+            kind: SettlementDescriptionKind::Settlement,
+            language: Some("deu".into()),
+            body: "Burg & Markt <alt>".into(),
+        }];
+
+        let markup =
+            settlement_overview_page(&settlement(), &aliases, &descriptions, None, &[], None)
+                .into_string();
+
+        assert!(markup.contains("Also known as"));
+        assert!(markup.contains("Lubeke"));
+        assert!(markup.contains("Historical description — German"));
+        assert!(markup.contains("Burg &amp; Markt &lt;alt&gt;"));
+        assert!(!markup.contains("<alt>"));
+    }
+
+    #[test]
+    fn intentional_stages_have_distinct_semantics_and_no_prototype_copy() {
+        for (kind, label) in [
+            ("settlement", "At the settlement gates"),
+            ("route", "Roads and destinations"),
+            ("camp", "Camp beside the road"),
+            ("character", "Adventurer profile"),
+            ("service", "At the counter"),
+            ("quest", "Encounter ground"),
+            ("alchemy", "The apothecary workbench"),
+            ("chest", "Shared party stores"),
+        ] {
+            let markup = visual_stage(kind, "A Place", "An intentional scene").into_string();
+            assert!(markup.contains(label));
+            assert!(markup.contains("role=\"img\""));
+            assert!(!markup.contains("placeholder"));
+            assert!(!markup.contains("TODO"));
+            assert!(!markup.contains("visual-scene-emblem"));
+            assert!(!markup.contains("/static/icons/game/"));
+        }
+    }
+
+    #[test]
+    fn responsive_and_hidden_control_rules_keep_content_available() {
+        let layout = include_str!("../../static/css/layout.css");
+        let strategic = include_str!("../../static/css/strategic.css");
+        let utilities = include_str!("../../static/css/utilities.css");
+        assert!(layout.contains("grid-template-areas: \"main\" \"left\" \"right\""));
+        assert!(layout.contains(".right-sidebar {\n    display: block;"));
+        assert!(strategic.contains("@media (hover: none), (pointer: coarse)"));
+        assert!(utilities.contains(".inventory-count:focus-within"));
+        assert!(utilities.contains("@media (hover:none), (pointer:coarse)"));
+        assert!(utilities.contains("width: 2.75rem"));
+        assert!(utilities.contains("height: 2.75rem"));
+        assert!(utilities.contains("grid-template-columns: 2.75rem 1.4rem 2.75rem"));
+        for scene in [
+            "settlement",
+            "route",
+            "camp",
+            "quest",
+            "character",
+            "service",
+            "alchemy",
+            "chest",
+        ] {
+            assert!(strategic.contains(&format!(".service-visual-{scene}")));
+        }
+    }
+}

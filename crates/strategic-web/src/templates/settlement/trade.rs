@@ -354,101 +354,6 @@ pub fn party_discard_page(
     location.render_layout("Inventory", content, Some(&active_character.name))
 }
 
-/// Active character's combined strategic view.
-pub fn party_personal_page(
-    location: &LocationView,
-    active_character: &Character,
-    party_members: &[Character],
-    capability: Option<&CharacterCapability>,
-    attributes: Option<&CharacterAttributes>,
-    skills: Option<&CharacterSkills>,
-    limbs: Option<&CharacterLimbs>,
-    condition: Option<&CharacterStrategicCondition>,
-    morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
-    religion_id: Option<&str>,
-    prayer_religion_check: f32,
-    schedule: Option<&CharacterTrainingSchedule>,
-    combat_profile: CombatTrainingProfile,
-    activity_preview: ActivityPreviewRates,
-    religious_demand: Option<&crate::spacetimedb::ReligiousDemand>,
-    notoriety: f32,
-    personality: Option<&crate::spacetimedb::CharacterPersonality>,
-    medical: &MedicalPresentation,
-    can_examine: bool,
-    injuries: &[LimbInjury],
-    projectiles: &[RetainedProjectile],
-    filth: &[crate::spacetimedb::CharacterFilth],
-    cooking: bool,
-    inventory: &[InventoryItem],
-    food_lots: &[FoodLot],
-    item_definitions: &[ItemDefinition],
-    character_action_dialog: Option<Markup>,
-    surgery_open: Option<&str>,
-    social_open: bool,
-) -> Markup {
-    let cooking_href = location.preserve_building(format!(
-        "{}/party/{}?cook=true",
-        location.base_path(),
-        active_character.id
-    ));
-    let examination_action = location.preserve_building(format!(
-        "{}/party/{}/examine",
-        location.base_path(),
-        active_character.id
-    ));
-    let cooking_open = cooking && medical.examination_id.is_none();
-    let surgery_path_template = location.preserve_building(format!(
-        "{}/party/{}/surgery/__limb__",
-        location.base_path(),
-        active_character.id
-    ));
-    let content = html! {
-        aside class="left-sidebar" {
-            (party_attributes_rail("Your attributes", attributes, limbs, medical, Some((&surgery_path_template, surgery_open)), injuries, projectiles))
-            (strategic_condition_rail(condition, morale_sources, filth, &location.preserve_building(format!("{}/party/{}/social", location.base_path(), active_character.id)), social_open))
-            (medical_rail(medical, &location.base_path(), active_character.id, active_character.id, true))
-            @if let Some(demand) = religious_demand {
-                (religious_demand_rail(demand, &location.base_path(), active_character.id))
-            }
-        }
-        main class="center-content settlement-main party-member-stage" {
-            (party_portrait_overlay(
-                party_members,
-                Some(active_character),
-                &location.base_path(),
-                Some(active_character.id),
-                can_examine,
-            ))
-            (visual_stage("character", &active_character.name, "Your identity, condition, and capabilities"))
-            (settlement_chat_area(&active_character.name, Some(active_character)))
-            (medical_examination_popup(medical, location, active_character.id, limbs, injuries, projectiles))
-        }
-        aside class="right-sidebar" {
-            (character_summary_rail(capability))
-            (character_bio_rail(active_character, religion_id, notoriety, personality, true, &location.base_path()))
-            @let schedule_action = format!("{}/party/{}/schedule", location.base_path(), active_character.id);
-            (party_skills_rail(
-                "Your skills", skills, limbs, schedule, Some(&schedule_action),
-                Some(activity_preview), religion_id.is_some(), prayer_religion_check,
-                religion_id.or(location.religion_id.as_deref()),
-                combat_profile,
-                CharacterSkillActions {
-                    cooking_href: Some(&cooking_href),
-                    cooking_open,
-                    examination_action: can_examine.then_some(examination_action.as_str()),
-                    examination_open: medical.examination_id.is_some(),
-                },
-            ))
-        }
-        @if cooking_open {
-            (cooking_activity_dialog(location, active_character, inventory, food_lots, item_definitions))
-        } @else if medical.examination_id.is_none() {
-            @if let Some(dialog) = character_action_dialog { (dialog) }
-        }
-    };
-    location.render_layout("Party", content, Some(&active_character.name))
-}
-
 pub(super) fn cooking_activity_dialog(
     location: &LocationView,
     active_character: &Character,
@@ -1685,4 +1590,648 @@ pub(super) fn trade_inventory_table_header(
         th scope="col" class="inventory-column-weight" title="Weight" { (game_icon("Weight", "weight")) }
         th scope="col" class="inventory-column-gold" title="Currency" { (currency_header("Currency")) }
     } } }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::spacetimedb::*;
+    use crate::templates::settlement::test_support::*;
+    use adventuresim_core::equipment::EncumbranceSummary;
+
+    #[test]
+    fn inferred_general_blacksmith_exposes_limited_weapon_and_armor_stock() {
+        let industries = adventuresim_world_schema::InferredIndustryProfile::new(vec![
+            adventuresim_world_schema::IndustryEvidence::Fallback(
+                adventuresim_world_schema::FallbackIndustry::CommonAggregate,
+            ),
+        ])
+        .unwrap();
+        let economy =
+            adventuresim_world_schema::infer_settlement_economy(2, 500, 1, false, &industries)
+                .unwrap();
+
+        assert!(adventuresim_core::settlement_economy::storefront_stocks(
+            &economy,
+            adventuresim_core::settlement_economy::Storefront::Weapons,
+            "club",
+            adventuresim_core::settlement_economy::CatalogKind::Weapon,
+        ));
+        assert!(adventuresim_core::settlement_economy::storefront_stocks(
+            &economy,
+            adventuresim_core::settlement_economy::Storefront::Armor,
+            "leather vest",
+            adventuresim_core::settlement_economy::CatalogKind::Armor,
+        ));
+        for category in [
+            adventuresim_world_schema::StockCategory::Weapons,
+            adventuresim_world_schema::StockCategory::Armor,
+        ] {
+            assert_eq!(
+                economy
+                    .stock
+                    .iter()
+                    .find(|stock| stock.category == category)
+                    .unwrap()
+                    .abundance,
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn merchant_food_quote_and_weight_follow_remaining_lot() {
+        let mut lot = FoodLot {
+            id: 1,
+            inventory_item_id: Some(9),
+            party_inventory_item_id: None,
+            display_name: "Cooked meal".into(),
+            preparation: FoodPreparation::Stewed,
+            ingredient_item_ids: vec!["raw_venison".into()],
+            ingredient_quantities: vec![1.0],
+            mass_kg: 25.0,
+            nutrition_kcal: 5_000.0,
+            total_value: 10.0,
+            created_at_minute: 1,
+        };
+        assert_eq!(merchant_inventory_weight(None, Some(&lot)), "25");
+        assert_eq!(merchant_inventory_sell_price(None, Some(&lot)), 8);
+        lot.mass_kg = 6.25;
+        lot.total_value = 2.5;
+        assert_eq!(merchant_inventory_weight(None, Some(&lot)), "6.25");
+        assert_eq!(merchant_inventory_sell_price(None, Some(&lot)), 2);
+        lot.total_value = 0.5;
+        let zero = merchant_inventory_sell_price(None, Some(&lot));
+        assert_eq!(zero, 0);
+        assert_eq!(
+            adventuresim_core::strategic_economy::language_adjusted_sell_price(zero, 0.0),
+            0
+        );
+    }
+
+    #[test]
+    fn herbalist_stock_template_includes_every_prepared_course_and_ingredients() {
+        let ingredient = crate::spacetimedb::ItemDefinition {
+            kind: ItemKind::Ingredient,
+            ..Default::default()
+        };
+        let medication = crate::spacetimedb::ItemDefinition {
+            kind: ItemKind::Medication,
+            ..Default::default()
+        };
+        assert!(MerchantShop::Herbalist.stocks(&ingredient));
+        assert!(MerchantShop::Herbalist.stocks(&medication));
+        let apple = crate::spacetimedb::ItemDefinition {
+            id: "apple".into(),
+            kind: ItemKind::Food,
+            ..Default::default()
+        };
+        let pan = crate::spacetimedb::ItemDefinition {
+            id: "cooking_pan".into(),
+            ..Default::default()
+        };
+        assert!(MerchantShop::Inn.stocks(&apple));
+        assert!(MerchantShop::Inn.stocks(&pan));
+        assert!(!MerchantShop::Inn.stocks(&medication));
+        assert_eq!(adventuresim_core::disease::MEDICATION_RECIPES.len(), 8);
+        let definition = crate::spacetimedb::ItemDefinition {
+            id: "black_death_tonic".into(),
+            kind: ItemKind::Medication,
+            ..Default::default()
+        };
+        let rendered =
+            item_name_with_display("black_death_tonic", "Black Death tonic", Some(&definition))
+                .into_string();
+        assert!(rendered.contains("data-item-name=\"black_death_tonic\""));
+        assert!(rendered.contains("data-item-kind=\"medication\""));
+        assert!(rendered.contains(">Black Death tonic</span>"));
+    }
+
+    #[test]
+    fn encumbrance_meter_formats_exact_text_and_accessible_linear_position() {
+        let markup = encumbrance_meter(EncumbranceSummary::new(85.36, 150.0)).into_string();
+        assert!(markup.contains(">85.4 / 150.0 kg<"));
+        assert!(markup.contains(">-56.9%<"));
+        assert!(!markup.contains(">Weight"));
+        assert!(!markup.contains(">Penalty"));
+        assert!(markup.contains("Weight 85.4 / 150.0 kilograms; Penalty -56.9%"));
+        assert!(markup.contains("class=\"encumbrance-values\" aria-hidden=\"true\""));
+        assert!(markup.contains(
+            "<span class=\"encumbrance-weight\">85.4 / 150.0 kg</span><span class=\"encumbrance-penalty\">-56.9%</span>"
+        ));
+        assert!(
+            markup.contains(
+                "</div><div class=\"encumbrance-visual\"><div class=\"encumbrance-meter\""
+            )
+        );
+        assert!(markup.contains("role=\"meter\""));
+        assert!(markup.contains("aria-valuenow=\"56.9\""));
+        assert!(markup.contains("--encumbrance-position: 56.9067%"));
+    }
+
+    #[test]
+    fn overloaded_meter_keeps_burden_but_clamps_penalty_and_marker() {
+        let markup = encumbrance_meter(EncumbranceSummary::new(185.4, 150.0)).into_string();
+        assert!(markup.contains(">185.4 / 150.0 kg<"));
+        assert!(markup.contains(">-100.0%<"));
+        assert!(markup.contains("--encumbrance-position: 100.0000%"));
+    }
+
+    #[test]
+    fn encumbrance_css_uses_a_linear_midpoint_gradient_and_contrast_marker() {
+        let css = include_str!("../../static/css/strategic.css");
+        assert!(css.contains("linear-gradient(90deg, #238b45 0%, #f4d03f 50%, #c62828 100%)"));
+        assert!(css.contains(".encumbrance-marker"));
+        assert!(css.contains("background: #fff"));
+    }
+
+    #[test]
+    fn encumbrance_rail_scrolls_items_but_keeps_footer_and_meter_outside() {
+        let markup = encumbrance_inventory_rail(
+            maud::html! { table class="test-items" {} },
+            maud::html! { button class="test-footer" {} },
+            EncumbranceSummary::new(10.0, 100.0),
+        )
+        .into_string();
+        assert!(markup.contains(
+            "<div class=\"encumbrance-inventory-scroll\"><table class=\"test-items\"></table></div><button class=\"test-footer\"></button><div class=\"encumbrance\">"
+        ));
+
+        let css = include_str!("../../static/css/strategic.css");
+        assert!(css.contains(".sidebar-section:has(> .encumbrance-inventory-rail)"));
+        assert!(css.contains(".encumbrance-inventory-scroll"));
+        assert!(css.contains("overflow-y: auto"));
+        assert!(css.contains("padding-left: 3.25rem"));
+        assert!(css.contains("padding-right: 1.75rem"));
+        assert!(css.contains("container-type: inline-size"));
+        assert!(css.contains("flex: 0 0 50%"));
+        assert!(css.contains("width: 50%"));
+        assert!(css.contains("font-size: clamp(0.55rem, 4cqi, 0.78rem)"));
+        assert!(css.contains(".encumbrance-meter"));
+        assert!(css.contains("width: 100%"));
+        assert!(css.contains("@container (max-width: 12rem)"));
+        assert!(css.contains("padding-inline: 0.2rem"));
+        assert!(css.contains("font-size: 0.5rem"));
+        assert!(css.contains("@container (max-width: 10rem)"));
+        assert!(css.contains("padding-inline: 0.1rem"));
+        assert!(css.contains("padding-right: 0.05rem"));
+        assert!(css.contains("padding-left: 0.05rem"));
+        assert!(css.contains("font-size: 0.43rem"));
+    }
+
+    #[test]
+    fn merchant_tabs_render_personal_and_party_encumbrance_as_applicable() {
+        let character = Character {
+            id: 1,
+            name: "Trader".into(),
+            xp: 0,
+            level: 1,
+            gold: 0,
+            current_settlement_id: Some("viabundus-1".into()),
+            current_case_site_id: None,
+            party_id: Some("party".into()),
+            age_years: 20,
+            alive: true,
+            temporary: false,
+        };
+        let render = |shop| {
+            live_merchant_shop_page(
+                &settlement(),
+                &character,
+                &[],
+                &[],
+                &[],
+                &[],
+                None,
+                &[],
+                &[],
+                &[],
+                shop,
+                1.0,
+                0,
+                0,
+                &[],
+                None,
+                &[],
+                0,
+                EncumbranceSummary::new(10.0, 100.0),
+                EncumbranceSummary::new(30.0, 200.0),
+                None,
+                SoapRestPreview::default(),
+            )
+            .into_string()
+        };
+        let merchant = render(MerchantShop::Weapons);
+        assert!(merchant.contains("data-inventory-pane=\"player\""));
+        assert!(merchant.contains("data-inventory-pane=\"party\""));
+        assert!(merchant.contains(">10.0 / 100.0 kg<"));
+        assert!(merchant.contains(">30.0 / 200.0 kg<"));
+
+        let herbalist = render(MerchantShop::Herbalist);
+        assert!(herbalist.contains(">10.0 / 100.0 kg<"));
+        assert!(!herbalist.contains("data-inventory-pane=\"party\""));
+        assert!(!herbalist.contains(">30.0 / 200.0 kg<"));
+
+        let inn = render(MerchantShop::Inn);
+        assert!(inn.contains("Cooking supplies"));
+        assert!(inn.contains("aria-label=\"Inn rest service\""));
+    }
+
+    #[test]
+    fn disabled_repair_explanation_is_hoverable_and_focusable() {
+        let condition = crate::spacetimedb::ItemCondition {
+            inventory_item_id: 4,
+            tier_1: 0.0,
+            tier_2: 0.0,
+            tier_3: 0.0,
+            tier_4: 0.2,
+            tier_5: 0.0,
+        };
+        let rendered =
+            repair_submit_control(&settlement(), "weapons", 4, Some(&condition), 3).into_string();
+        assert!(rendered.contains("disabled-repair-explanation"));
+        assert!(rendered.contains("tabindex=\"0\""));
+        assert!(rendered.contains("All damage requires Smithing"));
+        assert!(rendered.contains("disabled"));
+    }
+
+    #[test]
+    fn tailor_repair_control_targets_the_clothing_service() {
+        let condition = crate::spacetimedb::ItemCondition {
+            inventory_item_id: 4,
+            tier_1: 0.25,
+            tier_2: 0.0,
+            tier_3: 0.0,
+            tier_4: 0.0,
+            tier_5: 0.0,
+        };
+        let rendered =
+            repair_submit_control(&settlement(), "clothing", 4, Some(&condition), 2).into_string();
+        assert!(rendered.contains("/clothing/repair"));
+        assert!(rendered.contains("row-repair-form"));
+        assert!(!rendered.contains("disabled"));
+    }
+
+    #[test]
+    fn collapsed_currency_label_hides_the_historical_denomination() {
+        let definition = crate::spacetimedb::ItemDefinition {
+            id: "lubeck_mark".into(),
+            kind: crate::spacetimedb::ItemKind::Currency,
+            base_value: Some(1),
+            weight: 0.01,
+            ..Default::default()
+        };
+        let rendered = item_name_with_quality(&definition.id, Some(&definition)).into_string();
+        assert!(rendered.contains(">Coin<"));
+        assert!(rendered.contains("data-currency-name=\"Lübeck mark\""));
+        assert!(!rendered.contains(">Lübeck mark<"));
+    }
+
+    #[test]
+    fn alcohol_labels_expose_a_shared_inventory_group() {
+        let definition = crate::spacetimedb::ItemDefinition {
+            id: "small_beer".into(),
+            kind: crate::spacetimedb::ItemKind::Simple,
+            alcohol_serving_ml: 500,
+            ..Default::default()
+        };
+        let rendered = item_name_with_quality(&definition.id, Some(&definition)).into_string();
+        assert!(rendered.contains("data-item-name=\"small_beer\""));
+        assert!(rendered.contains("data-item-group=\"alcohol\""));
+        assert!(rendered.contains("data-group-name=\"Alcohol\""));
+    }
+
+    #[test]
+    fn smith_player_actions_keep_sell_and_repair_in_one_hover_area() {
+        let repair = repair_submit_control(&settlement(), "weapons", 4, None, 3);
+        let rendered =
+            merchant_sell_repair_controls(4, "torch", 2, 3, 1, true, Some(repair)).into_string();
+
+        assert!(rendered.starts_with("<div class=\"inventory-row-actions smith-player-actions\">"));
+        assert_eq!(rendered.matches("data-merchant-sell=\"").count(), 1);
+        assert!(rendered.contains("data-dynamic-transfer"));
+        assert!(rendered.contains("data-default-transfer-mode=\"one\""));
+        assert!(rendered.contains("data-label-target=\"Sell surplus Torch\""));
+        assert!(rendered.contains("data-label-all=\"Sell all Torch\""));
+        assert!(rendered.contains("row-repair-form"));
+        assert_eq!(rendered.matches("smith-player-actions").count(), 1);
+    }
+
+    #[test]
+    fn equipped_smith_items_retain_the_repair_action_without_sell_controls() {
+        let repair = repair_submit_control(&settlement(), "weapons", 4, None, 3);
+        let rendered =
+            merchant_sell_repair_controls(4, "sword", 10, 1, 0, false, Some(repair)).into_string();
+
+        assert!(rendered.contains("smith-player-actions"));
+        assert!(rendered.contains("row-repair-form"));
+        assert!(!rendered.contains("data-merchant-sell"));
+        assert!(rendered.contains("Equipped items cannot be sold"));
+        assert!(rendered.contains("trade-transfer trade-transfer-left"));
+        assert!(rendered.contains("disabled"));
+    }
+
+    #[test]
+    fn non_smith_sell_controls_do_not_reserve_a_repair_slot() {
+        let rendered = merchant_sell_repair_controls(4, "shirt", 3, 1, 0, true, None).into_string();
+
+        assert!(rendered.starts_with("<div class=\"inventory-row-actions\">"));
+        assert!(!rendered.contains("smith-player-actions"));
+        assert!(rendered.contains("data-merchant-sell"));
+    }
+
+    #[test]
+    fn unavailable_transfer_button_keeps_a_disabled_action_slot() {
+        let rendered =
+            disabled_transfer_button("left", "Equipped items cannot be transferred").into_string();
+
+        assert!(rendered.contains("trade-transfer trade-transfer-left"));
+        assert!(rendered.contains("Equipped items cannot be transferred"));
+        assert!(rendered.contains("disabled"));
+        assert!(rendered.contains("inventory-transfer-glyph"));
+    }
+
+    #[test]
+    fn durability_bar_uses_qualitative_copy_and_marks_smith_repairable_damage() {
+        let condition = crate::spacetimedb::ItemCondition {
+            inventory_item_id: 4,
+            tier_1: 0.1,
+            tier_2: 0.0,
+            tier_3: 0.2,
+            tier_4: 0.1,
+            tier_5: 0.0,
+        };
+        let rendered = condition_bar(Some(&condition), Some(3)).into_string();
+        assert!(rendered.contains("condition-repairable"));
+        for tier in 1..=5 {
+            assert!(rendered.contains(&format!("condition-tier-{tier}")));
+        }
+        assert!(rendered.contains("flashing portion can be repaired"));
+        assert!(!rendered.contains("condition-number"));
+        assert!(!rendered.contains("% condition"));
+    }
+
+    #[test]
+    fn durable_item_names_expose_quality_color_and_description() {
+        let definition = crate::spacetimedb::ItemDefinition {
+            id: "commissioned_sword".into(),
+            weight: 1.0,
+            slot: ItemSlot::AnyHolding,
+            kind: crate::spacetimedb::ItemKind::Weapon,
+            base_value: None,
+            nutrition_kcal: 0.0,
+            water_capacity_ml: 0,
+            quality: 4,
+            durability_yield: 0.0,
+            durability_fracture: 0.0,
+            durability_wear: 0.0,
+            durability_failure_share: 0.0,
+            edge_sensitivity: 0.0,
+            handling_sensitivity: 0.0,
+            ..Default::default()
+        };
+
+        let rendered = item_name_with_quality(&definition.id, Some(&definition)).into_string();
+        assert!(rendered.contains("item-quality-4"));
+        assert!(rendered.contains("knightly commission"));
+    }
+
+    #[test]
+    fn completed_repair_bar_projects_the_condition_before_retrieval() {
+        let condition = crate::spacetimedb::ItemCondition {
+            inventory_item_id: 4,
+            tier_1: 0.1,
+            tier_2: 0.2,
+            tier_3: 0.0,
+            tier_4: 0.0,
+            tier_5: 0.0,
+        };
+
+        let rendered = completed_repair_condition_bar(Some(&condition), 3).into_string();
+        assert!(rendered.contains("Full durability"));
+        assert!(rendered.contains("width:100%"));
+    }
+
+    #[test]
+    fn smith_player_inventory_uses_the_compact_seven_column_table() {
+        let rendered = trade_inventory_table(
+            "test",
+            InventoryColumnSet::Weapons,
+            true,
+            true,
+            true,
+            html! {},
+        )
+        .into_string();
+        assert!(rendered.contains("smith-player-inventory-table"));
+        assert!(rendered.contains("inventory-column-type"));
+        assert!(rendered.contains("aria-label=\"Item type\""));
+        assert!(rendered.contains("inventory-column-durability"));
+        assert!(rendered.contains("hammer-nails.svg"));
+        assert!(!rendered.contains("Repair all eligible items"));
+        assert!(!rendered.contains("durability-header-label"));
+    }
+
+    #[test]
+    fn repair_all_precedes_the_sell_bulk_control() {
+        let rendered = inventory_footer_controls_with_leading(
+            Some(repair_all_control(&settlement(), "weapons")),
+            "sell",
+            "Sell surplus",
+            "Sell everything",
+        )
+        .into_string();
+        let repair = rendered.find("inventory-footer-repair").unwrap();
+        let sell = rendered.find("data-inventory-bulk=\"sell\"").unwrap();
+        assert!(rendered.contains("inventory-footer-actions-grouped"));
+        assert!(repair < sell);
+    }
+
+    #[test]
+    fn equipment_checkbox_is_enabled_only_for_equippable_items() {
+        let inventory = InventoryItem {
+            id: 7,
+            character_id: 9,
+            item_id: "sword".into(),
+            qty: 1,
+        };
+        let mut definition = crate::spacetimedb::ItemDefinition {
+            id: "sword".into(),
+            weight: 1.0,
+            slot: ItemSlot::AnyHolding,
+            kind: crate::spacetimedb::ItemKind::Weapon,
+            base_value: None,
+            nutrition_kcal: 0.0,
+            water_capacity_ml: 0,
+            quality: 3,
+            durability_yield: 0.0,
+            durability_fracture: 0.0,
+            durability_wear: 0.0,
+            durability_failure_share: 0.0,
+            edge_sensitivity: 0.0,
+            handling_sensitivity: 0.0,
+            ..Default::default()
+        };
+        let enabled = equipment_checkbox(&inventory, Some(&definition), false).into_string();
+        assert!(enabled.contains("data-equipment-toggle"));
+        assert!(!enabled.contains(" disabled"));
+        definition.slot = ItemSlot::None;
+        let disabled = equipment_checkbox(&inventory, Some(&definition), false).into_string();
+        assert!(disabled.contains(" disabled"));
+    }
+
+    #[test]
+    fn merchant_stock_table_hides_quantity_and_target_columns() {
+        let rendered = trade_inventory_table(
+            "merchant-left",
+            InventoryColumnSet::Basic,
+            false,
+            false,
+            false,
+            html! {},
+        )
+        .into_string();
+        assert!(rendered.contains("<colgroup>"));
+        assert!(!rendered.contains("inventory-column-count"));
+        assert!(!rendered.contains("inventory-column-target"));
+        assert!(rendered.contains("inventory-column-type"));
+        assert!(rendered.contains("inventory-column-weight"));
+        assert!(rendered.contains("inventory-column-gold"));
+        assert!(rendered.contains("title=\"Currency\""));
+        assert!(rendered.contains("aria-label=\"Currency\""));
+        assert!(rendered.contains("/static/icons/game/coins.svg"));
+    }
+
+    #[test]
+    fn inventory_type_header_and_row_share_the_first_column() {
+        let rendered = trade_inventory_table(
+            "test",
+            InventoryColumnSet::Basic,
+            true,
+            false,
+            false,
+            html! {
+                tr class="trade-inventory-row" {
+                    td class="inventory-item-type" { (item_type_icon("arming_sword")) }
+                    td class="inventory-item-name" { "Arming sword" }
+                    td { "1" } td { "1" } td { "12" }
+                }
+            },
+        )
+        .into_string();
+        let header = rendered.find("inventory-column-type").unwrap();
+        let item_header = rendered.find("inventory-column-item").unwrap();
+        let type_cell = rendered.find("inventory-item-type").unwrap();
+        let item_cell = rendered.find("inventory-item-name").unwrap();
+        assert!(header < item_header && type_cell < item_cell);
+        assert!(rendered.contains("/static/icons/game/broadsword.svg"));
+    }
+
+    #[test]
+    fn smith_custody_panel_shows_only_matching_service_orders() {
+        let orders = [
+            crate::spacetimedb::RepairOrder {
+                id: 1,
+                owner_character_id: 9,
+                inventory_item_id: 11,
+                item_id: "sword".into(),
+                settlement_id: "viabundus-1".into(),
+                smith_skill: 3,
+                submitted_at_minutes: 0,
+                ready_at_minutes: 10,
+                target_condition: 1.0,
+                quoted_cost: 12,
+            },
+            crate::spacetimedb::RepairOrder {
+                id: 2,
+                owner_character_id: 9,
+                inventory_item_id: 12,
+                item_id: "cuirass".into(),
+                settlement_id: "viabundus-1".into(),
+                smith_skill: 3,
+                submitted_at_minutes: 0,
+                ready_at_minutes: 10,
+                target_condition: 1.0,
+                quoted_cost: 24,
+            },
+        ];
+        let items = [
+            crate::spacetimedb::ItemDefinition {
+                id: "sword".into(),
+                weight: 1.0,
+                slot: ItemSlot::AnyHolding,
+                kind: crate::spacetimedb::ItemKind::Weapon,
+                base_value: None,
+                nutrition_kcal: 0.0,
+                water_capacity_ml: 0,
+                quality: 3,
+                durability_yield: 0.0,
+                durability_fracture: 0.0,
+                durability_wear: 0.0,
+                durability_failure_share: 0.0,
+                edge_sensitivity: 0.0,
+                handling_sensitivity: 0.0,
+                ..Default::default()
+            },
+            crate::spacetimedb::ItemDefinition {
+                id: "cuirass".into(),
+                weight: 1.0,
+                slot: ItemSlot::Chest,
+                kind: crate::spacetimedb::ItemKind::Armor,
+                base_value: None,
+                nutrition_kcal: 0.0,
+                water_capacity_ml: 0,
+                quality: 3,
+                durability_yield: 0.0,
+                durability_fracture: 0.0,
+                durability_wear: 0.0,
+                durability_failure_share: 0.0,
+                edge_sensitivity: 0.0,
+                handling_sensitivity: 0.0,
+                ..Default::default()
+            },
+        ];
+        let weapons = repair_custody_panel(
+            &settlement(),
+            MerchantShop::Weapons,
+            &orders,
+            &[],
+            &items,
+            0,
+            4,
+        )
+        .into_string();
+        let armor = repair_custody_panel(
+            &settlement(),
+            MerchantShop::Armor,
+            &orders,
+            &[],
+            &items,
+            0,
+            3,
+        )
+        .into_string();
+        assert!(weapons.contains("sword"));
+        assert!(!weapons.contains("cuirass"));
+        assert!(weapons.contains("repair-custody-table"));
+        assert!(weapons.contains("Smithing 4"));
+        assert!(weapons.contains("stat-icon-smithing"));
+        for tier in 1..=5 {
+            assert!(weapons.contains(&format!("skill-rank-segment-{tier}")));
+        }
+        assert!(weapons.contains("repair-custody-header-actions"));
+        assert!(weapons.contains("inventory-actions-header"));
+        assert!(weapons.contains("inventory-actions-cell"));
+        assert!(weapons.contains("Durability"));
+        assert!(weapons.contains("ETA"));
+        assert!(weapons.contains("Full repair cost"));
+        assert!(weapons.contains("repair-retrieve-all"));
+        assert!(weapons.contains("Retrieve up to two completed matching items"));
+        assert!(!weapons.to_lowercase().contains("affordable prefix"));
+        assert!(weapons.contains("/repairs/1/retrieve"));
+        assert!(weapons.contains(">12<"));
+        assert!(!weapons.contains("Target "));
+        assert!(armor.contains("cuirass"));
+        assert!(!armor.contains("sword"));
+    }
 }

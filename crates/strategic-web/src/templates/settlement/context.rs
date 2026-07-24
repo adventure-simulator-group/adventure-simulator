@@ -1,4 +1,4 @@
-﻿use super::*;
+use super::*;
 
 #[derive(Clone, Debug)]
 pub struct LocationView {
@@ -57,7 +57,12 @@ impl LocationView {
             })
     }
 
-    fn render_layout(&self, title: &str, content: Markup, logged_in_as: Option<&str>) -> Markup {
+    pub(super) fn render_layout(
+        &self,
+        title: &str,
+        content: Markup,
+        logged_in_as: Option<&str>,
+    ) -> Markup {
         if self.kind == LocationKind::Settlement {
             settlement_layout_with_session(
                 title,
@@ -82,5 +87,16 @@ impl LocationView {
                 logged_in_as,
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn location_kind_rejects_unknown_path_segments() {
+        assert_eq!("quest".parse(), Ok(LocationKind::Quest));
+        assert!("merchant".parse::<LocationKind>().is_err());
     }
 }

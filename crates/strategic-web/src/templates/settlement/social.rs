@@ -1,116 +1,5 @@
 use super::*;
 
-pub fn party_stats_page(
-    location: &LocationView,
-    selected: &Character,
-    active_character: &Character,
-    party_members: &[Character],
-    capability: Option<&CharacterCapability>,
-    selected_attributes: Option<&CharacterAttributes>,
-    selected_skills: Option<&CharacterSkills>,
-    selected_limbs: Option<&CharacterLimbs>,
-    combat_profile: CombatTrainingProfile,
-    condition: Option<&CharacterStrategicCondition>,
-    morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
-    religion_id: Option<&str>,
-    active_party: Option<&Party>,
-    selected_party: Option<&Party>,
-    notoriety: f32,
-    personality: Option<&crate::spacetimedb::CharacterPersonality>,
-    medical: &MedicalPresentation,
-    can_examine: bool,
-    injuries: &[LimbInjury],
-    projectiles: &[RetainedProjectile],
-    filth: &[crate::spacetimedb::CharacterFilth],
-    character_action_dialog: Option<Markup>,
-    surgery_open: Option<&str>,
-    social_open: bool,
-) -> Markup {
-    let selected_attributes_title = format!("{}'s attributes", selected.name);
-    let selected_skills_title = format!("{}'s skills", selected.name);
-    let examination_action = location.preserve_building(format!(
-        "{}/party/{}/examine",
-        location.base_path(),
-        selected.id
-    ));
-    let surgery_path_template = location.preserve_building(format!(
-        "{}/party/{}/surgery/__limb__",
-        location.base_path(),
-        selected.id
-    ));
-    let content = html! {
-        aside class="left-sidebar" {
-            (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs, medical, Some((&surgery_path_template, surgery_open)), injuries, projectiles))
-            (strategic_condition_rail(condition, morale_sources, filth, &location.preserve_building(format!("{}/party/{}/social", location.base_path(), selected.id)), social_open))
-            (medical_rail(medical, &location.base_path(), active_character.id, selected.id, true))
-        }
-        @if medical.examination_id.is_none() {
-            @if let Some(dialog) = character_action_dialog { (dialog) }
-        }
-        main class="center-content settlement-main party-member-stage" {
-            (party_portrait_overlay(
-                party_members,
-                Some(active_character),
-                &location.base_path(),
-                Some(selected.id),
-                can_examine,
-            ))
-            (visual_stage("character", &selected.name, "Party member identity and capabilities"))
-            (player_chat_area(selected, active_character))
-            (medical_examination_popup(medical, location, selected.id, selected_limbs, injuries, projectiles))
-        }
-        aside class="right-sidebar" {
-            (character_summary_rail(capability))
-            (character_bio_rail(
-                selected,
-                religion_id,
-                notoriety,
-                personality,
-                selected.id == active_character.id,
-                &location.base_path(),
-            ))
-            (party_skills_rail(
-                &selected_skills_title, selected_skills, selected_limbs, None, None, None,
-                religion_id.is_some(), 0.0, religion_id.or(location.religion_id.as_deref()),
-                combat_profile,
-                CharacterSkillActions {
-                    examination_action: can_examine.then_some(examination_action.as_str()),
-                    examination_open: medical.examination_id.is_some(),
-                    ..Default::default()
-                },
-            ))
-            @if selected.id != active_character.id {
-                @if active_character.party_id == selected.party_id {
-                    @if active_party.is_some_and(|party| party.leader_id == selected.id) {
-                        (sidebar_section("Party", html! {
-                            form method="post" action=(format!("{}/party/{}/remove", location.base_path(), active_character.id)) {
-                                button type="submit" class="btn btn-danger btn-block" { "Leave party" }
-                            }
-                        }))
-                    } @else {
-                        (sidebar_section("Party", html! {
-                            form method="post" action=(format!("{}/party/{}/remove", location.base_path(), selected.id)) {
-                                button type="submit" class="btn btn-danger btn-block" {
-                                    @if active_party.is_some_and(|party| party.leader_id == active_character.id) { "Kick from party" }
-                                    @else { "Request kick" }
-                                }
-                            }
-                        }))
-                    }
-                } @else if let Some(party) = selected_party {
-                    (sidebar_section("Party", html! {
-                        p { (&party.name) }
-                        form method="post" action=(format!("/parties/{}/join-general", party.id)) {
-                            button type="submit" class="btn btn-primary btn-block" { "Request to join party" }
-                        }
-                    }))
-                }
-            }
-        }
-    };
-    location.render_layout("Party stats", content, Some(&active_character.name))
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct SocialPresentation {
     pub affinity: f32,
@@ -540,5 +429,365 @@ pub(super) fn inventory_rail(
                 }
             }
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::spacetimedb::*;
+    use crate::templates::settlement::test_support::*;
+
+    #[test]
+    fn social_catalog_labels_are_generic_grounded_and_accessible() {
+        use adventuresim_core::social::{SocialActionKind, SocialTopic};
+        let defeat = SocialActionKind::Commiserate.description(SocialTopic::Defeat, true);
+        assert_eq!(defeat, "Commiserate about the defeat");
+        assert!(!defeat.to_ascii_lowercase().contains("goblin"));
+        let actions = social_actions(false, SocialTopic::Defeat);
+        assert_eq!(actions.len(), 6);
+        assert!(
+            actions
+                .iter()
+                .any(|(_, action, _)| *action == SocialActionKind::Listen)
+        );
+        assert_eq!(
+            social_actions(true, SocialTopic::Defeat),
+            vec![("inner-self", SocialActionKind::Reflect, "reflect")]
+        );
+        assert_eq!(social_actions(false, SocialTopic::Hunger).len(), 3);
+        assert_eq!(social_actions(false, SocialTopic::Faith).len(), 4);
+        assert_eq!(SocialActionKind::Commiserate.skill_name(false), "Deception");
+        assert_eq!(
+            SocialActionKind::Flirt.description(SocialTopic::Injury, false),
+            "Tell them the scar makes them look striking"
+        );
+        assert_eq!(familiarity_label(0.0), "0 hours");
+        assert_eq!(familiarity_label(0.4), "<1 hours");
+        assert_eq!(familiarity_label(9.4), "9 hours");
+        let tooltip = belief_tooltip(&crate::spacetimedb::SocialBelief {
+            id: "belief".into(),
+            observer_id: 1,
+            subject_id: 2,
+            axis: "self_regard".into(),
+            perceived_value: 1,
+            confidence: 0.64,
+            observed_at_minute: 0,
+        });
+        assert!(tooltip.contains("Confidence: 64%"));
+        assert!(tooltip.contains("Injury is touchy"));
+    }
+
+    #[test]
+    fn chat_uses_one_stream_with_all_channel_filters() {
+        let markup = chat_area("Lubeck", None, None, None, None, &[]).into_string();
+
+        assert!(!markup.contains("role=\"tablist\""));
+        for channel in ["local", "party", "settlement", "dm", "guild", "info"] {
+            assert!(
+                markup.contains(&format!("data-chat-filter=\"{channel}\"")),
+                "missing {channel} filter"
+            );
+        }
+        assert!(markup.contains("data-chat-channel=\"info\""));
+        assert!(!markup.contains("chat-channel-badge"));
+        assert!(markup.contains("class=\"settlement-chat-layout\""));
+        assert!(markup.contains("data-dialogue-topic-pane"));
+        assert!(markup.contains("data-dialogue-topic-list"));
+        assert!(markup.contains("data-dialogue-completion"));
+        assert!(markup.contains("autocomplete=\"off\""));
+        for label in ["Local", "Party", "Settlement", "DMs", "Guild", "Info"] {
+            assert!(markup.contains(&format!("aria-label=\"{label}\" title=\"{label}\"")));
+            assert!(!markup.contains(&format!(">{label}</")));
+        }
+    }
+
+    #[test]
+    fn settlement_npc_strip_exposes_accessible_authoritative_context() {
+        let strip = npc_portrait_strip("lubeck", "market").into_string();
+        assert!(strip.contains("aria-label=\"People here\""));
+        assert!(strip.contains("data-npc-settlement=\"lubeck\""));
+        assert!(strip.contains("data-npc-location=\"market\""));
+        let chat = settlement_npc_chat_area("Market", None, "lubeck", "market", Some("merchants"))
+            .into_string();
+        assert!(chat.contains("data-local-chat-kind=\"npc\""));
+        assert!(chat.contains("data-local-chat-location=\"market\""));
+        assert!(chat.contains("data-dialogue-catalog-revision"));
+        assert!(!chat.contains("lubeck:merchants"));
+    }
+
+    #[test]
+    fn non_service_locations_use_the_same_authoritative_npc_shell() {
+        let character = Character {
+            id: 1,
+            name: "Visitor".into(),
+            xp: 0,
+            level: 1,
+            gold: 0,
+            current_settlement_id: Some("viabundus-1".into()),
+            current_case_site_id: None,
+            party_id: Some("party".into()),
+            age_years: 20,
+            alive: true,
+            temporary: false,
+        };
+        for location in ["residences", "keep"] {
+            let markup = settlement_npc_location_page(
+                &settlement(),
+                &character,
+                &[],
+                location,
+                Some("Visitor"),
+            )
+            .into_string();
+            assert!(markup.contains(&format!("data-npc-location=\"{location}\"")));
+            assert!(markup.contains("data-npc-strip"));
+            assert!(markup.contains("data-dialogue-catalog-revision"));
+            assert!(markup.contains("aria-label=\"Settlement places\""));
+            assert!(markup.contains("href=\"/locations/settlement/viabundus-1/party/1\""));
+            assert!(markup.contains("href=\"/locations/settlement/viabundus-1/party-inventory\""));
+            assert!(!markup.contains(&format!("/places/{location}/party/")));
+        }
+    }
+
+    #[test]
+    fn chat_palette_meets_contrast_across_every_supported_theme() {
+        fn linear_channel(channel: u8) -> f64 {
+            let channel = f64::from(channel) / 255.0;
+            if channel <= 0.04045 {
+                channel / 12.92
+            } else {
+                ((channel + 0.055) / 1.055).powf(2.4)
+            }
+        }
+
+        fn luminance([red, green, blue]: [u8; 3]) -> f64 {
+            0.2126 * linear_channel(red)
+                + 0.7152 * linear_channel(green)
+                + 0.0722 * linear_channel(blue)
+        }
+
+        fn contrast(first: [u8; 3], second: [u8; 3]) -> f64 {
+            let (lighter, darker) = if luminance(first) > luminance(second) {
+                (luminance(first), luminance(second))
+            } else {
+                (luminance(second), luminance(first))
+            };
+            (lighter + 0.05) / (darker + 0.05)
+        }
+
+        fn mix(accent: [u8; 3], text: [u8; 3], accent_percent: u16) -> [u8; 3] {
+            std::array::from_fn(|index| {
+                let mixed = u16::from(accent[index]) * accent_percent
+                    + u16::from(text[index]) * (100 - accent_percent);
+                ((mixed + 50) / 100) as u8
+            })
+        }
+
+        // Dark themes use the lightest possible 88% panel composite (over
+        // white); light themes use the darkest possible composite (over
+        // black). This brackets the image content beneath the translucent chat.
+        let legacy_palettes = [
+            (
+                "Dark Arcanum",
+                [46, 49, 67],
+                [200, 202, 208],
+                [154, 158, 176],
+                [96, 165, 250],
+                [251, 191, 36],
+                [215, 169, 239],
+                [52, 211, 153],
+            ),
+            (
+                "Fraktur Nocturne",
+                [60, 49, 44],
+                [241, 227, 207],
+                [205, 185, 157],
+                [125, 159, 197],
+                [213, 166, 76],
+                [213, 167, 237],
+                [120, 173, 114],
+            ),
+            (
+                "Fraktur Texturina",
+                [216, 209, 190],
+                [42, 31, 20],
+                [74, 60, 44],
+                [58, 106, 138],
+                [184, 134, 11],
+                [116, 66, 141],
+                [74, 124, 63],
+            ),
+            (
+                "Imperial Crimson",
+                [217, 213, 204],
+                [26, 26, 26],
+                [61, 61, 61],
+                [26, 74, 138],
+                [196, 136, 11],
+                [113, 63, 140],
+                [45, 106, 48],
+            ),
+            (
+                "Northern Frost",
+                [211, 215, 220],
+                [28, 40, 51],
+                [52, 73, 94],
+                [46, 109, 164],
+                [212, 160, 23],
+                [115, 66, 147],
+                [39, 174, 96],
+            ),
+            (
+                "Renaissance Gold",
+                [216, 209, 190],
+                [42, 31, 20],
+                [74, 60, 44],
+                [58, 106, 138],
+                [184, 134, 11],
+                [123, 63, 145],
+                [74, 124, 63],
+            ),
+            (
+                "Verdant Chronicle",
+                [218, 214, 202],
+                [26, 60, 26],
+                [45, 90, 45],
+                [74, 122, 106],
+                [184, 115, 51],
+                [116, 66, 141],
+                [58, 122, 58],
+            ),
+        ];
+        for (palette, surface, primary, secondary, info, gold, dm, success) in legacy_palettes {
+            let channels = [
+                ("Local", primary),
+                ("Party", mix(info, primary, 40)),
+                ("Settlement", mix(gold, primary, 35)),
+                ("DM", mix(dm, primary, 35)),
+                ("Guild", mix(success, primary, 40)),
+                ("Info", secondary),
+            ];
+            let distinct = channels
+                .iter()
+                .map(|(_, color)| color)
+                .collect::<std::collections::HashSet<_>>();
+            assert_eq!(
+                distinct.len(),
+                channels.len(),
+                "{palette} channels must remain visually distinct"
+            );
+            for (channel, color) in channels {
+                assert!(
+                    contrast(color, surface) >= 4.5,
+                    "{palette} {channel} does not meet WCAG AA text contrast"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn chat_css_keeps_fallbacks_and_mobile_message_space() {
+        let css = include_str!("../../static/css/strategic.css");
+        let utilities = include_str!("../../static/css/utilities.css");
+        let trade_script = include_str!("../../static/party-trade.js");
+        let fallback = css
+            .find("background: rgb(33 21 15 / 88%);")
+            .expect("chat needs a background fallback");
+        let enhanced = css
+            .find("background: color-mix(in srgb, var(--panel-bg) 88%, transparent);")
+            .expect("chat should derive its translucent surface from the fixed palette");
+
+        assert!(fallback < enhanced);
+        assert!(css.contains("background: color-mix(in srgb, var(--header-bg) 86%, transparent);"));
+        assert!(css.contains(".chat-channel-filter input::after"));
+        assert!(css.contains("text-decoration: line-through"));
+        assert!(css.contains("outline: 2px solid var(--text-primary);"));
+        assert!(css.contains("0 0 0 2px var(--panel-bg)"));
+        assert!(css.contains(
+            "--chat-party-color: color-mix(in srgb, var(--info) 40%, var(--text-primary));"
+        ));
+        assert!(css.contains("--chat-settlement-color: color-mix(in srgb, var(--gold-color) 35%, var(--text-primary));"));
+        assert!(css.contains("--chat-dm-color: color-mix(in srgb, var(--icon-instinct, #7b3f91) 35%, var(--text-primary));"));
+        assert!(css.contains(
+            "--chat-guild-color: color-mix(in srgb, var(--success) 40%, var(--text-primary));"
+        ));
+        for variable in ["local", "party", "settlement", "dm", "guild", "info"] {
+            assert!(css.contains(&format!("var(--chat-{variable}-color)")));
+        }
+        assert!(!css.contains(".chat-channel-badge"));
+        assert!(css.contains("@media (max-width: 768px)"));
+        assert!(css.contains("flex-wrap: nowrap;"));
+        assert!(css.contains("min-height: 10rem;"));
+        assert!(css.contains(".repair-custody-list { margin-top: auto; }"));
+        assert!(css.contains("max-height: 50%;"));
+        assert!(css.contains("@keyframes repairable-damage-pulse"));
+        assert!(css.contains("@media (prefers-reduced-motion: reduce)"));
+        let repairable_rule = css
+            .split(".condition-repairable {")
+            .nth(1)
+            .and_then(|tail| tail.split('}').next())
+            .expect("repairable condition segments need a style rule");
+        assert!(!repairable_rule.contains("background-image"));
+        assert!(!repairable_rule.contains("box-shadow"));
+        for tier in 1..=5 {
+            assert!(css.contains(&format!(".condition-tier-{tier}")));
+            assert!(css.contains(&format!(".item-quality-{tier}")));
+        }
+        assert!(css.contains("color-mix(in srgb, var(--quality-color) 50%, var(--text-primary))"));
+        assert!(css.contains("filter: brightness(1.15)"));
+        assert!(css.contains("0%, 58%, 82%, 100%"));
+        assert!(css.contains("66%, 74%"));
+        assert!(!css.contains("left: -7rem;"));
+        assert!(css.contains(".smith-wares-scroll .trade-inventory-table"));
+        assert!(css.contains("--inventory-merchant-action-overhang"));
+        assert!(css.contains("--inventory-merchant-scrollbar-reserve: 8px;"));
+        assert!(css.contains("padding-left: var(--inventory-merchant-scrollbar-reserve);"));
+        assert!(css.contains("padding-right: var(--inventory-merchant-action-overhang);"));
+        assert!(css.contains("direction: rtl;"));
+        assert!(css.contains(".smith-wares-scroll > * { direction: ltr; }"));
+        assert!(css.contains("scrollbar-gutter: stable;"));
+        assert!(css.contains("overflow-x: clip;"));
+        assert!(css.contains("col.inventory-column-item { width: auto; }"));
+        assert!(css.contains(".smith-player-inventory-table"));
+        assert!(css.contains("width: 3.65rem;"));
+        assert!(css.contains("--repair-custody-action-overhang"));
+        assert!(css.contains("width: calc(100% + var(--repair-custody-action-overhang));"));
+        assert!(css.contains("padding-right: var(--repair-custody-action-overhang);"));
+        assert!(css.contains("scrollbar-gutter: stable;"));
+        assert!(utilities.contains(".inventory-row-actions.smith-player-actions"));
+        assert!(utilities.contains("--inventory-action-bridge:.3rem"));
+        assert!(!utilities.contains(".smith-wares-scroll .inventory-row-actions"));
+        assert!(utilities.contains(".inventory-actions-cell"));
+        assert!(
+            utilities.contains(".left-sidebar .inventory-actions-cell > .inventory-row-actions")
+        );
+        assert!(
+            utilities.contains(".right-sidebar .inventory-actions-cell > .inventory-row-actions")
+        );
+        assert!(utilities.contains("background:var(--inventory-row-background"));
+        assert!(utilities.contains("top:0; bottom:0;"));
+        assert!(utilities.contains(
+            ".trade-inventory-row:not(:last-child) .inventory-row-actions { bottom:-1px; }"
+        ));
+        assert!(utilities.contains(".inventory-row-actions .trade-transfer:disabled"));
+        assert!(utilities.contains("opacity:.42; transform:none;"));
+        assert!(utilities.contains("left:100%; padding-left:var(--inventory-action-bridge);"));
+        assert!(utilities.contains("right:100%; padding-right:var(--inventory-action-bridge);"));
+        assert!(css.contains(".inventory-browser-table-frame"));
+        assert!(css.contains("width:max-content;"));
+        assert!(utilities.contains(".inventory-footer-repair .repair-all-button"));
+        assert!(utilities.contains("grid-template-columns:repeat(2,1.35rem)"));
+        assert!(utilities.contains(".inventory-actions-header > .inventory-footer-actions"));
+        assert!(utilities.contains("thead:hover .inventory-footer-actions"));
+        assert!(utilities.contains("background:var(--panel-bg)"));
+        assert!(
+            utilities
+                .contains(".smith-player-actions .row-repair-form { position:static; order:0;")
+        );
+        assert!(trade_script.contains("if (stockRow) changeTradeDraftCount(stockRow, amount);"));
+        assert!(trade_script.contains("function applyDynamicTransferModifiers(event)"));
+        assert!(trade_script.contains("event.key === \"Shift\" || event.key === \"Control\""));
+        assert!(trade_script.contains("controlKey ? \"all\""));
     }
 }

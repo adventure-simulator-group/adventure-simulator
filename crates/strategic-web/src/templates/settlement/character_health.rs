@@ -878,3 +878,427 @@ pub(super) fn stat_icon(label: &str, category: &str, icon: &str, decorative: boo
         {}
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::spacetimedb::*;
+
+    #[test]
+    fn public_filth_serialization_and_template_expose_only_aggregate_origin() {
+        let deposit = CharacterFilth {
+            id: 1,
+            character_id: 7,
+            substance: FilthSubstance::Blood,
+            origin: FilthOrigin::Foreign,
+            amount: 2,
+            deposited_at: 10,
+        };
+        let serialized = serde_json::to_value(&deposit).unwrap();
+        assert!(serialized.get("source_character_id").is_none());
+        assert_eq!(
+            serialized.get("origin").and_then(|value| value.as_str()),
+            Some("Foreign")
+        );
+        let markup = filth_status_bar(&[deposit]).into_string();
+        assert!(markup.contains("2 foreign"));
+        assert!(!markup.contains("source_character_id"));
+        assert!(!markup.contains("filth-legend"));
+        assert!(!markup.contains("/100 filth</span>"));
+        assert!(markup.contains("data-strategic-tooltip=\"Filth accumulates"));
+        assert!(markup.contains("data-strategic-tooltip=\"Blood\n2\""));
+    }
+
+    #[test]
+    fn status_rail_places_filth_after_water() {
+        let condition = CharacterStrategicCondition {
+            character_id: 7,
+            morale: 0.0,
+            morale_bonus: 0.0,
+            morale_bonus_cap: 0.0,
+            fervor: 0.0,
+            pain: 0.0,
+            blood_loss: 0.0,
+            fear: 0.0,
+            fatigue: 0.0,
+            hunger: 0.0,
+            thirst: 0.0,
+            food_days: 1.0,
+            water_days: 1.0,
+            water_capacity_ml: 2_000,
+            incapacitation: 0.0,
+            check_multiplier: 1.0,
+            status: "ready".into(),
+        };
+        let markup =
+            strategic_condition_rail(Some(&condition), &[], &[], "/social", false).into_string();
+        assert!(markup.contains("class=\"morale-meter\""));
+        assert!(markup.contains("href=\"/social\" title=\"Open social menu\""));
+        assert!(markup.contains("aria-haspopup=\"dialog\" aria-expanded=\"false\""));
+        let water = markup.find("Water").expect("water meter");
+        let filth = markup.find("Filth").expect("filth meter");
+        assert!(water < filth);
+    }
+
+    #[test]
+    fn need_meter_places_reserve_right_and_incapacitation_left() {
+        let reserve =
+            need_balance_meter("Food", "meal", "Hunger", "Full", "hunger", 0.5, 0.0).into_string();
+        assert!(reserve.contains("--need-reserve: 50.0%; --need-deficit: 0.0%"));
+        assert!(reserve.contains("aria-valuenow=\"50\""));
+        assert!(reserve.contains(">Full</span>"));
+
+        let hydration = need_balance_meter(
+            "Water",
+            "water-drop",
+            "Thirst",
+            "Hydrated",
+            "thirst",
+            1.0,
+            0.0,
+        )
+        .into_string();
+        assert!(hydration.contains(">Hydrated</span>"));
+
+        let deficit =
+            need_balance_meter("Food", "meal", "Hunger", "Full", "hunger", 0.0, 1.0 / 9.0)
+                .into_string();
+        assert!(deficit.contains("--need-reserve: 0.0%; --need-deficit: 11.1%"));
+        assert!(deficit.contains("aria-valuenow=\"-11\""));
+    }
+
+    #[test]
+    fn surgery_supplies_are_icon_counts_with_hover_labels() {
+        let supply = surgery_supply("Bandages", "bandage-roll", 8).into_string();
+        assert!(supply.contains("class=\"surgery-supply\""));
+        assert!(supply.contains("data-strategic-tooltip=\"Bandages: 8 available\""));
+        assert!(supply.contains("bandage-roll.svg"));
+        assert!(supply.contains(">x8</span>"));
+        assert!(!supply.contains(">Bandages</span>"));
+    }
+
+    #[test]
+    fn surgery_item_icons_explain_consumed_reusable_and_equipped_supplies() {
+        let bandage =
+            surgery_item_requirement(SurgeryItemRequirement::BandageConsumed).into_string();
+        assert!(bandage.contains("data-strategic-tooltip=\"Expend one bandage\""));
+        assert!(bandage.contains(">x1</span>"));
+
+        let kit =
+            surgery_item_requirement(SurgeryItemRequirement::SurgeryKitReusable).into_string();
+        assert!(kit.contains("data-strategic-tooltip=\"Requires surgery kit\""));
+        assert!(kit.contains("aria-label=\"Requires surgery kit; reusable and not consumed\""));
+        assert!(kit.contains("medical-pack.svg"));
+        assert!(!kit.contains("surgery-item-overlay"));
+
+        let splint = surgery_item_requirement(SurgeryItemRequirement::SplintEquipped).into_string();
+        assert!(splint.contains("data-strategic-tooltip=\"Equips 1 splint\""));
+        assert!(splint.contains("check-mark.svg"));
+    }
+
+    #[test]
+    fn surgery_difficulty_uses_shared_skill_meter_for_met_and_unmet_ranks() {
+        let meter = surgery_difficulty_meter("Remove ball", 4.0, 2.0).into_string();
+        assert!(meter.contains("stat-icon-surgeon"));
+        assert!(meter.contains("role=\"meter\""));
+        for tier in 1..=5 {
+            assert!(meter.contains(&format!("skill-rank-segment-{tier}")));
+        }
+        assert_eq!(
+            meter
+                .matches("class=\"rank-current\" style=\"width:100.0%\"")
+                .count(),
+            2
+        );
+        assert_eq!(meter.matches("left:0.0%;width:100.0%").count(), 2);
+        assert!(!meter.contains("skill-rank-value"));
+        assert!(!meter.contains(">4.0<"));
+        assert!(meter.contains(
+            "aria-label=\"Remove ball: requires 4.0 procedure skill; current effective skill 2.0\""
+        ));
+        let over_cap = surgery_difficulty_meter("Remove ball", 7.2, 5.0).into_string();
+        assert!(over_cap.contains("surgery-difficulty-over-cap-marker"));
+        assert!(over_cap.contains("requires 7.2 procedure skill; current effective skill 5.0"));
+        assert!(!adventuresim_core::surgery::extraction_requires_surgery_kit(1.0));
+        assert!(adventuresim_core::surgery::extraction_requires_surgery_kit(
+            1.01
+        ));
+    }
+
+    #[test]
+    fn surgery_preview_uses_the_same_asymmetric_procedure_composition_as_reducers() {
+        let checks = [5.0, 5.0, 0.0];
+        let extraction = surgery_procedure_skill("extract", checks, false);
+        let stitching = surgery_procedure_skill("stitch", checks, false);
+        assert_eq!(
+            extraction,
+            adventuresim_core::surgery::procedure_skill("extract", 5.0, 5.0, 0.0, false)
+        );
+        assert_eq!(
+            stitching,
+            adventuresim_core::surgery::procedure_skill("stitch", 5.0, 5.0, 0.0, false)
+        );
+        assert!(extraction >= 4.0);
+        assert!(stitching < 4.0);
+        assert_eq!(surgery_procedure_skill("extract", checks, true), 2.5);
+    }
+
+    #[test]
+    fn unavailable_surgery_rows_are_greyed_and_buttons_keep_procedure_names() {
+        let row = surgery_procedure_row(
+            "/test",
+            "Stitch",
+            "scalpel",
+            "stitch",
+            &[SurgeryItemRequirement::SurgeryKitReusable],
+            10,
+            2.0,
+            0.0,
+            Some("No injury is present"),
+            Some("No injury is present"),
+            None,
+            true,
+            true,
+            None,
+        )
+        .into_string();
+        assert!(row.contains("surgery-procedure-unavailable"));
+        assert!(row.contains("data-strategic-tooltip=\"No injury is present\""));
+        assert!(row.contains("aria-label=\"Stitch: No injury is present\" tabindex=\"0\""));
+        assert!(row.contains("disabled title=\"No injury is present\""));
+        assert!(row.contains(">Stitch</button>"));
+        assert!(!row.contains(">No injury is present</button>"));
+    }
+
+    #[test]
+    fn bloody_procedure_names_concrete_automatic_alcohol_without_risk_numbers() {
+        let row = surgery_procedure_row(
+            "/test",
+            "Bandage",
+            "bandage-roll",
+            "bandage",
+            &[],
+            10,
+            0.0,
+            1.0,
+            None,
+            None,
+            None,
+            false,
+            true,
+            Some("aqua_vitae"),
+        )
+        .into_string();
+        assert!(row.contains("Consumes 1 Aqua vitae"));
+        assert!(row.contains("beer-stein.svg"));
+        assert!(!row.contains("infection probability"));
+        assert!(!row.contains("use_alcohol"));
+    }
+
+    #[test]
+    fn low_medicine_medical_html_contains_no_hidden_payload() {
+        let presentation = crate::medical::MedicalPresentation {
+            unavailable: false,
+            symptoms: vec!["coughing"],
+            diagnoses: Vec::new(),
+            ..Default::default()
+        };
+        let markup = medical_rail(&presentation, "/location", 1, 2, true).into_string();
+        assert!(markup.contains("coughing"));
+        assert!(!markup.contains("Examine"));
+        assert!(!markup.contains("Visible injuries"));
+        for forbidden in ["Vitals", "influenza", "infection_id", "disease", "humour-"] {
+            assert!(!markup.contains(forbidden), "leaked {forbidden}: {markup}");
+        }
+    }
+
+    #[test]
+    fn active_medication_is_listed_beneath_symptoms() {
+        let presentation = crate::medical::MedicalPresentation {
+            symptoms: vec!["coughing"],
+            medications: vec![crate::medical::MedicationPresentation {
+                equipment_id: 11,
+                disease_name: "Consumption",
+            }],
+            ..Default::default()
+        };
+        let markup = medical_rail(&presentation, "/location", 1, 2, false).into_string();
+        let symptoms_at = markup.find("coughing").unwrap();
+        let medication_at = markup.find("Taking medication for Consumption.").unwrap();
+        assert!(medication_at > symptoms_at);
+    }
+
+    #[test]
+    fn medicine_action_moves_from_portrait_to_the_skill_icon() {
+        let doctor = Character {
+            id: 1,
+            name: "Doctor".into(),
+            xp: 0,
+            level: 1,
+            gold: 100,
+            current_settlement_id: Some("willowmere".into()),
+            current_case_site_id: None,
+            party_id: Some("demo".into()),
+            age_years: 30,
+            alive: true,
+            temporary: false,
+        };
+        let portrait = party_portrait_overlay(
+            &[doctor.clone()],
+            Some(&doctor),
+            "/locations/settlement/willowmere",
+            Some(1),
+            true,
+        )
+        .into_string();
+        assert!(!portrait.contains("/examine"));
+        assert!(!portrait.contains("party-medical-examine"));
+        assert!(portrait.contains("party-alchemy-action"));
+
+        let skill = skill_action_icon(
+            "Medicine",
+            "medicine",
+            SkillAction::Post {
+                href: "/place/party/1/examine",
+                label: "Perform medical examination (15 minutes)",
+                open: false,
+            },
+            false,
+        )
+        .into_string();
+        assert!(skill.contains("/place/party/1/examine"));
+        assert!(skill.contains("Perform medical examination (15 minutes)"));
+        assert!(skill.contains("aria-haspopup=\"dialog\" aria-expanded=\"false\""));
+    }
+
+    #[test]
+    fn pending_examination_is_a_one_shot_center_popup_not_sidebar_history() {
+        let presentation = crate::medical::MedicalPresentation {
+            findings: vec!["coughing".into(), "fatigued".into()],
+            examination_id: Some(44),
+            examined_at: Some(8_640),
+            regional_humours: Some(
+                [crate::medical::HumourVitals {
+                    sanguine: 0.9,
+                    phlegmatic: 0.6,
+                    choleric: 0.8,
+                    melancholic: 1.0,
+                }; 7],
+            ),
+            possible_diagnoses: vec!["Catarrhal fever", "Consumption"],
+            ..Default::default()
+        };
+        let sidebar = medical_rail(&presentation, "/location", 1, 2, true).into_string();
+        assert!(!sidebar.contains("Four humours"));
+        assert!(!sidebar.contains("Possible ailments"));
+        assert!(!sidebar.contains("Observed at personal minute"));
+
+        let location = LocationView {
+            kind: LocationKind::Quest,
+            id: "location".into(),
+            name: "Location".into(),
+            religion_id: None,
+            category: None,
+            active_building: Some("inn".into()),
+        };
+        let popup =
+            medical_examination_popup(&presentation, &location, 2, None, &[], &[]).into_string();
+        assert!(popup.contains("medical-examination-overlay"));
+        assert!(popup.contains("aria-modal=\"true\""));
+        assert!(popup.contains("Possible ailments"));
+        assert!(popup.contains("Body regions"));
+        assert!(popup.contains("attribute-health-phlegmatic"));
+        assert!(popup.contains("Catarrhal fever"));
+        assert!(popup.contains("Close examination findings"));
+        assert!(popup.contains('×'));
+        assert!(!popup.contains("This result is discarded"));
+        assert!(popup.contains("/examination/44/dismiss"));
+        assert!(popup.contains("?building=inn"));
+        assert!(popup.contains("data-medical-examination"));
+        let lifecycle = include_str!("../../static/medical-examination.js");
+        assert!(lifecycle.contains("pagehide"));
+        assert!(lifecycle.contains("navigator.sendBeacon"));
+        assert!(lifecycle.contains("event.key !== \"Escape\""));
+        assert!(lifecycle.contains("restoreFocus"));
+        assert!(lifecycle.contains(".party-offer[role='dialog']"));
+    }
+
+    #[test]
+    fn examined_region_meter_has_text_and_aria_not_color_alone() {
+        let presentation = crate::medical::MedicalPresentation {
+            regional_humours: Some(
+                [crate::medical::HumourVitals {
+                    phlegmatic: 0.4,
+                    ..Default::default()
+                }; 7],
+            ),
+            ..Default::default()
+        };
+        let markup = regional_health_bar("Chest", 1.0, &presentation, 4, &[], &[]).into_string();
+        assert!(markup.contains("Phlegmatic"));
+        assert!(markup.contains("role=\"meter\""));
+        assert!(markup.contains("Chest:"));
+    }
+
+    #[test]
+    fn surgery_button_is_explicit_and_the_health_meter_is_not_clickable() {
+        let markup = attribute_group(
+            "Head",
+            "head",
+            0.75,
+            &crate::medical::MedicalPresentation::default(),
+            6,
+            Some(("/place/party/1/surgery", None)),
+            &[],
+            &[],
+            &[("Intelligence", "intelligence", 3.0)],
+        )
+        .into_string();
+
+        let link_start = markup.find("limb-surgery-button").unwrap();
+        let health_bar = markup.find("class=\"attribute-health-bar\"").unwrap();
+        let link_end = markup[link_start..].find("</a>").unwrap() + link_start;
+        let attribute_row = markup.find("class=\"party-attribute-row\"").unwrap();
+
+        assert!(link_start < link_end);
+        assert!(link_end < health_bar);
+        assert!(link_end < attribute_row);
+        assert!(markup.contains("aria-label=\"Open surgery menu for Head\""));
+        assert!(markup.contains("aria-haspopup=\"dialog\" aria-expanded=\"false\""));
+    }
+
+    #[test]
+    fn treated_cuts_and_fractures_expose_banded_health_bar_states() {
+        let injury = LimbInjury {
+            id: "1:chest".into(),
+            character_id: 1,
+            limb: LimbRegion::Chest,
+            cut_damage: 0.2,
+            bruise_damage: 0.2,
+            fracture_damage: 0.2,
+            bandaged: true,
+            stitched: false,
+            stitch_quality: 0.0,
+            splint_owner_id: Some(2),
+            splint_inventory_item_id: Some(3),
+            infection_exposure: 0.0,
+            infection_checks: 0,
+            infection_origin_minute: None,
+        };
+        let markup = regional_health_bar(
+            "Chest",
+            0.6,
+            &crate::medical::MedicalPresentation::default(),
+            4,
+            &[injury],
+            &[],
+        )
+        .into_string();
+
+        assert!(markup.contains("attribute-health-cut bandaged-cut"));
+        assert!(markup.contains("title=\"Bandaged cut damage\""));
+        assert!(markup.contains("attribute-health-fracture splinted-fracture"));
+        assert!(markup.contains("title=\"Splinted fracture\""));
+        assert!(markup.contains("20% splinted fracture"));
+    }
+}

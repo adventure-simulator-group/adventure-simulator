@@ -1,4 +1,4 @@
-﻿use super::*;
+use super::*;
 
 pub struct RestSummary {
     pub minutes: u64,
@@ -315,4 +315,107 @@ pub(super) fn blood_recovery_minutes(condition: &CharacterCondition) -> u64 {
         / condition.maximum_blood_ml)
         .clamp(0.0, 1.0);
     (missing_fraction / BLOOD_RECOVERY_FRACTION_PER_DAY * 1_440.0).ceil() as u64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::spacetimedb::*;
+
+    #[test]
+    fn post_rest_result_points_live_refresh_at_a_gettable_location() {
+        let summary = RestSummary {
+            minutes: 480,
+            gold_spent: 1,
+            gold_earned: 0,
+            notoriety_gained: 0.0,
+            healed: Vec::new(),
+            trained: Vec::new(),
+        };
+        let markup = rest_service_menu(
+            "Inn",
+            "riverdale",
+            "inn",
+            None,
+            Some(&summary),
+            SoapRestPreview::default(),
+        )
+        .into_string();
+        assert!(markup.contains("data-live-refresh-url=\"/settlements/riverdale/inn\""));
+        assert!(!markup.contains("data-live-refresh-url=\"/settlements/riverdale/rest/inn\""));
+    }
+
+    #[test]
+    fn rest_recommendation_includes_blood_recovery() {
+        let condition = CharacterCondition {
+            character_id: 1,
+            body_weight_kg: 70.0,
+            current_blood_ml: 4_900.0,
+            maximum_blood_ml: 5_000.0,
+            religion_id: None,
+        };
+
+        assert_eq!(
+            rest_default_minutes(None, None, Some(&condition), 0, 0),
+            Some(2_880)
+        );
+    }
+
+    #[test]
+    fn settlement_wake_control_is_accessible_and_defaults_to_eight() {
+        let markup = settlement_rest_duration_control(1_440, "hours").into_string();
+        assert!(markup.contains("data-wake-time"));
+        assert!(markup.contains("type=\"range\""));
+        assert!(markup.contains("step=\"60\""));
+        assert!(markup.contains("value=\"480\""));
+        assert!(markup.contains("type=\"text\""));
+        assert!(markup.contains("value=\"24:00\""));
+        assert!(markup.contains("pattern=\"[0-9]+:[0-5][0-9]\""));
+        assert!(markup.contains("aria-label=\"Wake time\""));
+        assert!(markup.contains("aria-valuetext=\"08:00\""));
+        assert!(markup.contains("name=\"requested_minutes\""));
+    }
+
+    #[test]
+    fn rest_supplies_are_icons_with_hover_only_details() {
+        let markup = soap_wash_preview(SoapRestPreview {
+            total_units: 1,
+            personal_units: 1,
+            available_units: 1,
+            alcohol_available: true,
+            alcohol_will_be_consumed: false,
+            ..SoapRestPreview::default()
+        })
+        .into_string();
+        assert!(markup.contains("aria-label=\"Soap\""));
+        assert!(markup.contains("aria-label=\"Alcohol\""));
+        assert!(markup.contains("water-drop.svg"));
+        assert!(markup.contains("beer-stein.svg"));
+        assert!(markup.contains("rest-consumable-indicator available"));
+        assert!(markup.contains("rest-consumable-indicator unavailable"));
+        assert!(!markup.contains("rest-soap-preview"));
+        assert!(markup.contains("Temperate characters do not drink"));
+    }
+
+    #[test]
+    fn days_recommendation_keeps_slider_disabled_and_minimum_one() {
+        let markup = settlement_rest_duration_control(3 * 1_440, "days").into_string();
+        assert!(markup.contains("value=\"days\" checked"));
+        assert!(markup.contains("aria-disabled=\"true\""));
+        assert!(
+            markup.contains(
+                "value=\"480\" aria-label=\"Wake time\" aria-valuetext=\"08:00\" disabled"
+            )
+        );
+        assert!(markup.contains("type=\"number\" name=\"duration\" value=\"3\""));
+        assert!(markup.contains("min=\"1\" max=\"365\" step=\"1\""));
+        assert!(markup.contains("name=\"requested_minutes\" disabled"));
+    }
+
+    #[test]
+    fn rest_summary_duration_keeps_subday_hours_and_minutes() {
+        assert_eq!(format_rest_duration(1_441), "1 day 1 minute");
+        assert_eq!(format_rest_duration(1_920), "1 day 8 hours");
+        assert_eq!(format_rest_duration(2_879), "1 day 23 hours 59 minutes");
+    }
 }

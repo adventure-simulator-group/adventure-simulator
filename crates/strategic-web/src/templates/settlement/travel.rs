@@ -975,3 +975,271 @@ pub(super) fn format_persisted_terrain_spans(route: Option<&PartyJourneyRoute>) 
             .join("|")
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::spacetimedb::*;
+    use crate::templates::settlement::test_support::*;
+
+    #[test]
+    fn encounter_panel_renders_only_authoritative_choices_and_exact_losses() {
+        let encounter = StrategicEncounter {
+            party_id: "party".into(),
+            encounter_id: "party:3".into(),
+            archetype: "bandits".into(),
+            enemy_count: 4,
+            roll_index: 3,
+            journey_movement_minute: 540,
+            journey_elapsed_minute: 700,
+            absolute_minute: 1_700,
+            longitude_e7: 1,
+            latitude_e7: 2,
+            terrain: "road".into(),
+            party_aware: false,
+            enemy_aware: true,
+            available_choices: vec!["attack".into(), "surrender".into()],
+            status: "awaiting_choice".into(),
+            selected_choice: None,
+            selection_explanation: "deterministic awareness".into(),
+            party_speed_m_per_minute: 60,
+            enemy_speed_m_per_minute: 80,
+            run_ineligibility: Some("too slow".into()),
+            penalty_minutes: 0,
+            loss_preview: vec![StrategicEncounterLoss {
+                owner_kind: "member".into(),
+                owner_id: 7,
+                inventory_id: 8,
+                item_id: "gold_coin".into(),
+                quantity: 12,
+                value_each: 1,
+            }],
+            outcome: None,
+        };
+        let rendered = strategic_encounter_panel(&encounter).into_string();
+        assert!(rendered.contains("The enemy surprised your party"));
+        assert!(rendered.contains("Cannot run: too slow"));
+        assert!(rendered.contains("12 × gold_coin"));
+        assert!(rendered.contains("value=\"attack\""));
+        assert!(rendered.contains("value=\"surrender\""));
+        assert!(!rendered.contains("value=\"run\""));
+        assert!(!rendered.contains("value=\"sneak\""));
+    }
+
+    #[test]
+    fn active_quest_destination_has_red_status_badge() {
+        let destination = quest_destination();
+
+        let markup = map_destination_list(&[destination], None, "/locations/settlement/test/map")
+            .into_string();
+
+        assert!(markup.contains("destination-quest-badge"));
+        assert!(markup.contains("aria-label=\"Active quest destination\""));
+        assert!(markup.contains("title=\"A camp beside the road.\nActive quest\""));
+        assert!(!markup.contains("destination-turn-in-badge"));
+    }
+
+    #[test]
+    fn current_settlement_has_no_conventional_quest_marker() {
+        let markup = map_destination_list_with_context(
+            &[],
+            None,
+            "/locations/settlement/market/map",
+            Some(MapCurrentLocation { name: "Market" }),
+            None,
+            None,
+        )
+        .into_string();
+
+        assert!(markup.contains("current-location-row"));
+        assert!(markup.contains("aria-current=\"location\""));
+        assert!(!markup.contains("destination-open-quest-badge"));
+        assert!(!markup.contains("destination-quest-badge"));
+        assert!(!markup.contains("href="));
+    }
+
+    #[test]
+    fn map_exposes_abandon_action_for_an_eligible_active_quest() {
+        let markup = map_destination_list_with_context(
+            &[],
+            None,
+            "/locations/settlement/issuer/map",
+            Some(MapCurrentLocation { name: "Issuer" }),
+            Some(MapAbandonableQuest {
+                id: "active",
+                title: "Drive off the bandits",
+            }),
+            None,
+        )
+        .into_string();
+
+        assert!(markup.contains("Active quest: "));
+        assert!(markup.contains("Drive off the bandits"));
+        assert!(markup.contains("action=\"/quests/active/abandon\""));
+        assert!(markup.contains("Abandon active quest"));
+    }
+
+    #[test]
+    fn map_rest_menu_is_pinned_below_the_destination_list() {
+        let markup = map_destination_list_with_rest(
+            &[],
+            None,
+            "/locations/case-site/active/map",
+            html! { section class="rest-service-menu" { "Rest party" } },
+        )
+        .into_string();
+
+        assert!(markup.contains("left-sidebar map-rest-sidebar"));
+        assert!(markup.contains("map-rest-sidebar-content"));
+        assert!(markup.contains("rest-service-menu"));
+        assert!(markup.contains("Rest party"));
+    }
+
+    #[test]
+    fn quest_location_travel_has_one_plain_action_without_settlement_buying() {
+        let destination = quest_destination();
+        let markup = map_destination_detail(
+            Some(&destination),
+            None,
+            false,
+            true,
+            false,
+            None,
+            None,
+            false,
+            None,
+            "/map",
+        )
+        .into_string();
+
+        assert!(markup.contains("Begin journey"));
+        assert!(markup.contains("action=\"/case-sites/quest-location/track\""));
+        assert!(markup.contains("Track site"));
+        assert!(!markup.contains("<p>A camp beside the road.</p>"));
+        assert!(!markup.contains("Active quest"));
+        assert!(!markup.contains("name=\"provisioning\""));
+        assert!(!markup.contains("data-provision-buy"));
+    }
+
+    #[test]
+    fn nonconnected_map_selection_has_detail_but_no_travel_form() {
+        let mut destination = settlement();
+        destination.id = "viabundus-99".into();
+        destination.name = "Distant town".into();
+        let markup = map_destination_detail(
+            None,
+            Some(&destination),
+            false,
+            true,
+            true,
+            None,
+            None,
+            false,
+            None,
+            "/locations/settlement/viabundus-1/map",
+        )
+        .into_string();
+
+        assert!(markup.contains("Distant town"));
+        assert!(markup.contains("No direct route."));
+        assert!(!markup.contains("Begin journey"));
+        assert!(!markup.contains("data-travel-submit"));
+    }
+
+    #[test]
+    fn connected_settlement_selection_keeps_existing_travel_action() {
+        let mut destination = quest_destination();
+        destination.id = "viabundus-2".into();
+        destination.name = "Connected town".into();
+        destination.quest_in_progress = false;
+        destination.travel_action = "/settlements/viabundus-2/travel".into();
+        let markup = map_destination_detail(
+            Some(&destination),
+            None,
+            false,
+            true,
+            true,
+            None,
+            None,
+            false,
+            None,
+            "/locations/settlement/viabundus-1/map",
+        )
+        .into_string();
+
+        assert!(markup.contains("action=\"/settlements/viabundus-2/travel\""));
+        assert!(markup.contains("data-travel-submit"));
+        assert!(markup.contains("Begin journey"));
+        assert!(!markup.contains("No direct route"));
+    }
+
+    #[test]
+    fn persisted_quest_camp_keeps_turnaround_movement_after_elapsed_rest() {
+        let mut journey = PartyJourney {
+            party_id: "party".into(),
+            gateway_bucket: 0,
+            origin: crate::spacetimedb::JourneyEndpoint::Settlement(
+                crate::spacetimedb::JourneySettlementEndpoint {
+                    id: "home".into(),
+                    name: "Home".into(),
+                },
+            ),
+            destination: crate::spacetimedb::JourneyEndpoint::CaseSite(
+                crate::spacetimedb::JourneyCaseSiteEndpoint {
+                    id: crate::spacetimedb::CaseSiteId {
+                        value: "quest".into(),
+                    },
+                    name: "Quest".into(),
+                },
+            ),
+            total_minutes: 720,
+            completed_minutes: 480,
+            camp_stop_minutes: vec![480],
+            forecast_camp_stop_minutes: vec![480],
+            fatigue_percent: 50,
+            plan_version: 1,
+            departure_minute: 10_000,
+            total_elapsed_minutes: 2_040,
+            completed_elapsed_minutes: 780,
+            walking_minutes_per_day: 480,
+            travel_at_night: false,
+            camp_duration_mode: crate::spacetimedb::CampDurationMode::Auto,
+            fixed_camp_minutes: 0,
+        };
+        let camp = |start, duration, from, to| crate::spacetimedb::JourneyCampInterval {
+            movement_minute: 480,
+            elapsed_start_minute: start,
+            elapsed_minutes: duration,
+            average_fatigue_start: from,
+            average_fatigue_end: to,
+            maximum_fatigue_end: to,
+        };
+        let itinerary = PartyJourneyItinerary {
+            party_id: "party".into(),
+            actual_camp_intervals: vec![camp(480, 300, 0.5, 0.2)],
+            forecast_camp_intervals: vec![camp(780, 300, 0.2, 0.0)],
+        };
+        assert!(
+            !camp_fire_is_lit(Some(&journey), Some(&itinerary)),
+            "resting at the current movement checkpoint leaves smoke-only embers"
+        );
+        journey.completed_minutes = 600;
+        assert!(
+            camp_fire_is_lit(Some(&journey), Some(&itinerary)),
+            "reaching a later camp relights the fire"
+        );
+        journey.completed_minutes = 480;
+        let encoded = format_persisted_itinerary(&journey, &itinerary);
+        assert!(encoded.contains("w,0,480,0,480"));
+        assert!(encoded.contains("m,480,600,480,0"));
+        assert!(encoded.contains("w,1080,960,480,960"));
+        assert_eq!(
+            encoded
+                .split('|')
+                .filter(|segment| segment.starts_with("m,"))
+                .count(),
+            1,
+            "one physical camp marker"
+        );
+    }
+}
