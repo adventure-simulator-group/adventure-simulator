@@ -127,6 +127,15 @@ expose use compiled generic dialogue responses, pre-issued bindings, the exact
 generated recipient, and one-use consumption. Cases and linked local problems
 may resolve without a contract.
 
+Generated physical investigation routes (`InspectSite`, `SearchArea`,
+`FollowTracks`, and `ReacquireTracks`) make bounded persistent progress without
+replacing terrain skill. Each attempt retains its ordinary skill-based chance,
+time, supplies, fatigue, and risk, while contiguous failures on the exact same
+observer capability raise the deterministic threshold until attempt six is
+guaranteed. Capability, observer, method, or version gaps reset that progress.
+Attempt authority and journal wording snapshot the threshold, uncertainty, and
+six-attempt bound at resolution time.
+
 Attack patterns are playable modules rather than private flavor. Initial
 surveillance remains pattern-neutral. Success earns one exact corroborated
 pattern proposition; only then does the dependent action disclose and enforce

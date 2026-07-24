@@ -3349,6 +3349,69 @@ fn commit_action_consequence(
     }
 }
 
+fn generated_physical_progress_kind(kind: action::InvestigationActionKind) -> bool {
+    matches!(
+        kind,
+        action::InvestigationActionKind::InspectSite
+            | action::InvestigationActionKind::SearchArea
+            | action::InvestigationActionKind::FollowTracks
+            | action::InvestigationActionKind::ReacquireTracks
+    )
+}
+
+fn contiguous_failed_attempts(
+    capability_id: &str,
+    owner_character_id: u64,
+    method: &str,
+    current_version: u32,
+    attempts: impl IntoIterator<Item = InvestigationActionAttempt>,
+) -> u32 {
+    let attempts = attempts
+        .into_iter()
+        .filter(|attempt| {
+            attempt.capability_id == capability_id
+                && attempt.owner_character_id == owner_character_id
+                && attempt.method == method
+                && !attempt.success
+                && attempt.expected_version < current_version
+        })
+        .map(|attempt| (attempt.expected_version, attempt))
+        .collect::<BTreeMap<_, _>>();
+    let mut cursor = current_version;
+    let mut failures = 0;
+    while cursor > 0 {
+        cursor -= 1;
+        if attempts.get(&cursor).is_none() {
+            break;
+        }
+        failures += 1;
+    }
+    failures
+}
+
+fn bounded_failure_wording(
+    progress: action::BoundedProgressResolution,
+    alternate_available: bool,
+) -> String {
+    let threshold_whole = progress.success_threshold_bps / 100;
+    let threshold_fraction = progress.success_threshold_bps % 100;
+    let progress_whole = progress.persistent_progress_bps / 100;
+    let progress_fraction = progress.persistent_progress_bps % 100;
+    let alternate = if alternate_available {
+        " Another currently supported route is also available."
+    } else {
+        " No alternate route is currently supported by the leads in your journal."
+    };
+    format!(
+        "No conclusive result. Persistent fieldwork advanced this exact route to attempt {} of {}; accumulated progress added {progress_whole}.{progress_fraction:02}% to this attempt's bounded success threshold of {threshold_whole}.{threshold_fraction:02}%, uncertainty fell to {}.{:02}%, and contiguous work guarantees success by attempt {}.{alternate}",
+        progress.attempt_number,
+        progress.guaranteed_by_attempt,
+        progress.resolution.resulting_uncertainty_bps / 100,
+        progress.resolution.resulting_uncertainty_bps % 100,
+        progress.guaranteed_by_attempt,
+    )
+}
+
 pub(crate) fn perform_investigation_action_authorized(
     ctx: &ReducerContext,
     actor_id: u64,
@@ -3408,7 +3471,7 @@ pub(crate) fn perform_investigation_action_authorized(
     let members = validate_live_action_prerequisites(ctx, &actor, &party_id, &capability, kind)?;
     let started_at = synchronize_party_activity_time(ctx, &members, party.leader_id)?;
     validate_generated_pattern_condition(ctx, &capability, kind, started_at)?;
-    let resolution = action::resolve(action::ResolutionInput {
+    let resolution_input = action::ResolutionInput {
         seed: capability.seed,
         attempt_index: expected_version,
         kind,
@@ -3423,7 +3486,25 @@ pub(crate) fn perform_investigation_action_authorized(
         current_uncertainty_bps: capability.uncertainty_bps,
         skills: party_action_skills(ctx, &party_id, actor_id, target_terrain)?,
         weather: action::WeatherAuthority::Unavailable,
+    };
+    let bounded_progress = (capability.provenance_kind == "generated"
+        && generated_physical_progress_kind(kind))
+    .then(|| {
+        let prior_failures = contiguous_failed_attempts(
+            &capability.id,
+            capability.owner_character_id,
+            &capability.method,
+            capability.version,
+            ctx.db
+                .investigation_action_attempt()
+                .capability_id()
+                .filter(&capability.id),
+        );
+        action::resolve_with_bounded_progress(resolution_input, prior_failures)
     });
+    let resolution = bounded_progress
+        .map(|progress| progress.resolution)
+        .unwrap_or_else(|| action::resolve(resolution_input));
     // This is the final mutation-boundary validation. Browser previews and
     // party votes are UX; only this transaction authorizes the shared time.
     validate_live_action_prerequisites(ctx, &actor, &party_id, &capability, kind)?;
@@ -3458,8 +3539,20 @@ pub(crate) fn perform_investigation_action_authorized(
             duration_minutes: resolution.cost.minutes,
             success: resolution.success,
             resulting_uncertainty_bps: resolution.resulting_uncertainty_bps,
-            private_resolution_json: serde_json::to_string(&resolution)
-                .map_err(|_| "Investigation resolution could not be recorded")?,
+            private_resolution_json: serde_json::to_string(
+                &bounded_progress
+                    .map(|progress| {
+                        serde_json::json!({
+                        "resolution": progress.resolution,
+                        "attempt_number": progress.attempt_number,
+                        "persistent_progress_bps": progress.persistent_progress_bps,
+                            "success_threshold_bps": progress.success_threshold_bps,
+                            "guaranteed_by_attempt": progress.guaranteed_by_attempt,
+                        })
+                    })
+                    .unwrap_or_else(|| serde_json::json!({ "resolution": resolution })),
+            )
+            .map_err(|_| "Investigation resolution could not be recorded")?,
         });
     let outcome_case_id = capability.case_id.clone();
     let safe_result_on_success = capability.safe_result_on_success.clone();
@@ -3497,6 +3590,8 @@ pub(crate) fn perform_investigation_action_authorized(
                 } else {
                     safe_result_on_success
                 }
+            } else if let Some(progress) = bounded_progress {
+                bounded_failure_wording(progress, alternate_available)
             } else {
                 adventuresim_core::quest_generation::failed_action_outcome_wording(
                     alternate_available,
@@ -5059,6 +5154,152 @@ pub fn share_investigation_belief(
 
 #[cfg(test)]
 mod tests {
+    fn failed_attempt(
+        id: &str,
+        capability_id: &str,
+        owner_character_id: u64,
+        method: &str,
+        expected_version: u32,
+        success: bool,
+    ) -> InvestigationActionAttempt {
+        InvestigationActionAttempt {
+            id: id.into(),
+            capability_id: capability_id.into(),
+            owner_character_id,
+            expected_version,
+            method: method.into(),
+            started_at: 0,
+            completed_at: 1,
+            duration_minutes: 1,
+            success,
+            resulting_uncertainty_bps: 9_000,
+            private_resolution_json: "{}".into(),
+        }
+    }
+
+    #[test]
+    fn bounded_progress_history_is_exact_contiguous_and_nontransferable() {
+        let exact = vec![
+            failed_attempt("a0", "cap-a", 7, "reacquire_tracks", 0, false),
+            failed_attempt("a1", "cap-a", 7, "reacquire_tracks", 1, false),
+            failed_attempt("a2", "cap-a", 7, "reacquire_tracks", 2, false),
+        ];
+        assert_eq!(
+            contiguous_failed_attempts("cap-a", 7, "reacquire_tracks", 3, exact.clone()),
+            3
+        );
+        assert_eq!(
+            contiguous_failed_attempts("cap-b", 7, "reacquire_tracks", 3, exact.clone()),
+            0
+        );
+        assert_eq!(
+            contiguous_failed_attempts("cap-a", 8, "reacquire_tracks", 3, exact.clone()),
+            0
+        );
+        assert_eq!(
+            contiguous_failed_attempts("cap-a", 7, "search_area", 3, exact.clone()),
+            0
+        );
+        assert_eq!(
+            contiguous_failed_attempts(
+                "cap-a",
+                7,
+                "reacquire_tracks",
+                3,
+                [exact[0].clone(), exact[2].clone()]
+            ),
+            1
+        );
+        let mut success_break = exact;
+        success_break[2].success = true;
+        assert_eq!(
+            contiguous_failed_attempts("cap-a", 7, "reacquire_tracks", 3, success_break),
+            0
+        );
+    }
+
+    #[test]
+    fn bounded_failure_wording_snapshots_progress_and_live_alternate_truthfully() {
+        let input = action::ResolutionInput {
+            seed: 1,
+            attempt_index: 0,
+            kind: action::InvestigationActionKind::ReacquireTracks,
+            terrain: action::Terrain::Road,
+            target_terrain: action::Terrain::Forest,
+            time_of_day: action::TimeOfDay::Day,
+            evidence_age_minutes: 600_000,
+            current_uncertainty_bps: 10_000,
+            skills: action::SkillContribution {
+                terrain_bps: 0,
+                awareness_bps: 0,
+                stealth_bps: 0,
+                assistance_bps: 0,
+                familiarity_bps: 0,
+            },
+            weather: action::WeatherAuthority::Unavailable,
+        };
+        let progress = (0..u64::MAX)
+            .find_map(|seed| {
+                let progress = action::resolve_with_bounded_progress(
+                    action::ResolutionInput { seed, ..input },
+                    0,
+                );
+                (!progress.resolution.success).then_some(progress)
+            })
+            .unwrap();
+        let without = bounded_failure_wording(progress, false);
+        assert!(without.contains("attempt 1 of 6"));
+        assert!(without.contains("uncertainty fell to 97.00%"));
+        assert!(without.contains("No alternate route is currently supported"));
+        let with = bounded_failure_wording(progress, true);
+        assert!(with.contains("Another currently supported route is also available"));
+        assert!(!with.contains("No alternate route"));
+    }
+
+    #[test]
+    fn bounded_progress_is_generated_physical_only_and_replay_precedes_history() {
+        let source = include_str!("investigation.rs");
+        let reducer = source
+            .split("pub(crate) fn perform_investigation_action_authorized")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .unwrap();
+        assert!(reducer.contains("capability.provenance_kind == \"generated\""));
+        assert!(reducer.contains("generated_physical_progress_kind(kind)"));
+        assert!(
+            reducer
+                .find("investigation_action_attempt().id().find")
+                .unwrap()
+                < reducer.find("contiguous_failed_attempts").unwrap()
+        );
+        let physical = source
+            .split("fn generated_physical_progress_kind")
+            .nth(1)
+            .and_then(|tail| tail.split("fn contiguous_failed_attempts").next())
+            .unwrap();
+        for kind in [
+            "InspectSite",
+            "SearchArea",
+            "FollowTracks",
+            "ReacquireTracks",
+        ] {
+            assert!(physical.contains(kind));
+        }
+        for nonphysical in [
+            "LocateContact",
+            "Watch",
+            "Patrol",
+            "LayAmbush",
+            "ApproachLead",
+        ] {
+            assert!(!physical.contains(nonphysical));
+        }
+        assert!(reducer.contains("\"attempt_number\""));
+        assert!(reducer.contains("\"persistent_progress_bps\""));
+        assert!(reducer.contains("\"success_threshold_bps\""));
+        assert!(reducer.contains("\"guaranteed_by_attempt\""));
+    }
+
     #[test]
     fn exact_site_projection_and_travel_require_explicit_case_provenance() {
         let source = include_str!("investigation.rs");
