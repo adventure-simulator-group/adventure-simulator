@@ -1,9 +1,11 @@
 [package]
 name = "adventuresim-character-creator"
-version.workspace = true
-edition.workspace = true
-repository.workspace = true
-license.workspace = true
+version = "0.1.0"
+edition = "2024"
+repository = "https://github.com/adventure-simulator-group/adventure-simulator"
+license = "GPL-3.0"
 
 [dependencies]
-bevy.workspace = true
+bevy = "0.18.0"
+
+[workspace]
