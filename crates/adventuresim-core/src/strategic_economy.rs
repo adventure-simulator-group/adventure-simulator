@@ -27,6 +27,16 @@ pub fn merchant_buy_price(base_value: u32) -> u32 {
     (base_value as f32 * MERCHANT_MARGIN * (1.0 + SALES_TAX)).ceil() as u32
 }
 
+/// Charges each complete inn day once and rounds any partial day up once.
+pub fn inn_full_board_cost(requested_minutes: u64) -> Option<u64> {
+    let minutes_per_day = crate::strategic_time::MINUTES_PER_DAY;
+    let complete_days = requested_minutes / minutes_per_day;
+    let partial_day = u64::from(requested_minutes % minutes_per_day != 0);
+    complete_days
+        .checked_add(partial_day)?
+        .checked_mul(u64::from(INN_FULL_BOARD_GOLD_PER_DAY))
+}
+
 pub fn merchant_sell_price(base_value: u32) -> u32 {
     (base_value as f32 / MERCHANT_MARGIN).floor().max(1.0) as u32
 }

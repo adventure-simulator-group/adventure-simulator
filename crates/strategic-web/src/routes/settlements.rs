@@ -4753,6 +4753,8 @@ async fn rest(
         after_time.as_ref(),
         before_notoriety.as_ref(),
         after_notoriety.as_ref(),
+        at_inn,
+        requested_minutes,
     );
     let logged_in_as = active_character
         .as_ref()
@@ -4818,6 +4820,8 @@ fn rest_summary(
     after_time: Option<&crate::spacetimedb::CharacterTime>,
     before_notoriety: Option<&CharacterNotoriety>,
     after_notoriety: Option<&CharacterNotoriety>,
+    at_inn: bool,
+    requested_minutes: u64,
 ) -> RestSummary {
     let minutes = before_time.zip(after_time).map_or(0, |(before, after)| {
         after.minutes.saturating_sub(before.minutes)
@@ -4832,6 +4836,8 @@ fn rest_summary(
     let before_currency = currency_total(before_inventory);
     let after_currency = currency_total(after_inventory);
     let gold_spent = before_currency.saturating_sub(after_currency);
+    let (full_board_gold_spent, additional_gold_spent) =
+        rest_spending_breakdown(gold_spent, at_inn, requested_minutes);
     let gold_earned = after_currency.saturating_sub(before_currency);
     let notoriety_gained = after_notoriety.map_or(0.0, |after| {
         after.value - before_notoriety.map_or(0.0, |before| before.value)
@@ -4846,12 +4852,28 @@ fn rest_summary(
     };
     RestSummary {
         minutes,
-        gold_spent,
+        full_board_gold_spent,
+        additional_gold_spent,
         gold_earned,
         notoriety_gained,
         healed,
         trained,
     }
+}
+
+fn rest_spending_breakdown(
+    total_gold_spent: u32,
+    at_inn: bool,
+    requested_minutes: u64,
+) -> (u32, u32) {
+    let full_board = if at_inn {
+        adventuresim_core::strategic_economy::inn_full_board_cost(requested_minutes)
+            .and_then(|cost| u32::try_from(cost).ok())
+            .unwrap_or(u32::MAX)
+    } else {
+        0
+    };
+    (full_board, total_gold_spent.saturating_sub(full_board))
 }
 
 fn limb_deltas(before: &CharacterLimbs, after: &CharacterLimbs) -> Vec<(String, f32)> {
@@ -6276,7 +6298,8 @@ mod rest_form_tests {
 
     use super::{
         RestForm, calculate_rest_supply_availability, calculate_soap_rest_preview,
-        camp_continue_block_reason, safe_rest_error, settlement_rest_minutes, travel_rest_minutes,
+        camp_continue_block_reason, rest_spending_breakdown, safe_rest_error,
+        settlement_rest_minutes, travel_rest_minutes,
     };
     use crate::spacetimedb::{
         Character, CharacterFilth, CharacterPersonality, Conscience, Conviction, Drive,
@@ -6451,6 +6474,7 @@ mod rest_form_tests {
 
     #[test]
     fn days_are_independent_whole_days_with_a_minimum_of_one() {
+        assert_eq!(settlement_rest_minutes(&form("1", "days", None)), Ok(1_440));
         assert_eq!(
             settlement_rest_minutes(&form("2", "days", Some(1_441))),
             Ok(2_880)
@@ -6462,6 +6486,13 @@ mod rest_form_tests {
             Ok(365 * 1_440)
         );
         assert!(settlement_rest_minutes(&form("366", "days", None)).is_err());
+    }
+
+    #[test]
+    fn rest_spending_itemizes_full_board_and_other_downtime_costs() {
+        assert_eq!(rest_spending_breakdown(4, true, 1_440), (2, 2));
+        assert_eq!(rest_spending_breakdown(10, true, 2_880), (4, 6));
+        assert_eq!(rest_spending_breakdown(2, false, 1_440), (0, 2));
     }
 
     #[test]
