@@ -43,9 +43,16 @@ class ProfileTests(unittest.TestCase):
 
     def test_strategic_only_profile_does_not_reserve_tactical_port(self):
         values = dev_stack.profile_values("demo", 23100)
-        self.assertEqual(dev_stack.profile_ports(values, with_tactical=False), [23100, 23101])
         self.assertEqual(
-            dev_stack.profile_ports(values, with_tactical=True),
+            dev_stack.profile_ports(values, dev_stack.ProfileMode.BARE_STRATEGIC),
+            [23100, 23101],
+        )
+        self.assertEqual(
+            dev_stack.profile_ports(values, dev_stack.ProfileMode.TACTICAL),
+            [23100, 23101],
+        )
+        self.assertEqual(
+            dev_stack.profile_ports(values, dev_stack.ProfileMode.STRATEGIC),
             [23100, 23101, 23102],
         )
 
@@ -191,13 +198,23 @@ class WorkflowTests(unittest.TestCase):
                     "--reset-profile", "demo", "--base-port", "23100",
                 ])
 
-    def test_profile_parser_supports_strategic_only_mode(self):
+    def test_profile_parser_supports_bare_strategic_mode(self):
         args = dev_stack.create_parser().parse_args([
-            "run-profile", "--strategic-only", "demo", "23100",
+            "run-profile", "--mode", "bare-strategic", "demo", "23100",
         ])
-        self.assertTrue(args.strategic_only)
+        self.assertEqual(args.mode, "bare-strategic")
         self.assertEqual(args.name, "demo")
         self.assertEqual(args.base_port, 23100)
+
+    def test_profile_parser_supports_tactical_mode(self):
+        args = dev_stack.create_parser().parse_args([
+            "run-profile", "--mode", "tactical", "demo", "23100",
+        ])
+        self.assertEqual(args.mode, "tactical")
+        self.assertEqual(args.mission_id, "test-mission")
+        self.assertEqual(args.scene_key, "hills")
+        self.assertEqual(args.character_id, 0)
+        self.assertEqual(args.enemy_count, 3)
 
     def test_binding_diff_detects_changed_and_extra_files(self):
         with tempfile.TemporaryDirectory() as left, tempfile.TemporaryDirectory() as right:
@@ -251,12 +268,35 @@ class WorkflowTests(unittest.TestCase):
     def test_just_recipe_shell_quotes_untrusted_parameters(self):
         source = Path(dev_stack.ROOT, "justfile").read_text()
         lines = [line for line in source.splitlines() if "run-profile" in line]
-        self.assertEqual(len(lines), 2)
+        self.assertEqual(len(lines), 3)
         for line in lines:
             compact = line.replace(" ", "")
             self.assertIn("{{quote(profile)}}", compact)
             self.assertIn("{{quote(base_port)}}", compact)
             self.assertNotIn("'{{profile}}'", line)
+
+    def test_write_and_remove_tactical_env_file(self):
+        with mock.patch.object(dev_stack, "TACTICAL_ENV_FILE", Path(tempfile.mkdtemp()) / ".env.tactical"):
+            dev_stack.write_tactical_env_file(
+                url="http://127.0.0.1:23310",
+                database="adventuresim-dev-demo-abc123",
+                port=23312,
+                mission_id="test-mission",
+                scene_key="hills",
+                character_id=0,
+                enemy_count=3,
+            )
+            content = dev_stack.TACTICAL_ENV_FILE.read_text()
+            self.assertIn("TACTICAL_SPACETIMEDB_URL=http://127.0.0.1:23310", content)
+            self.assertIn("TACTICAL_SPACETIMEDB_MODULE=adventuresim-dev-demo-abc123", content)
+            self.assertIn("TACTICAL_PORT=23312", content)
+            self.assertIn("TACTICAL_MISSION_ID=test-mission", content)
+            self.assertIn("TACTICAL_SCENE_KEY=hills", content)
+            self.assertIn("TACTICAL_CHARACTER_ID=0", content)
+            self.assertIn("TACTICAL_BOTS=3", content)
+            dev_stack.remove_tactical_env_file()
+            self.assertFalse(dev_stack.TACTICAL_ENV_FILE.exists())
+            dev_stack.remove_tactical_env_file()
 
     def test_strategic_only_recipes_skip_tactical_builds(self):
         source = Path(dev_stack.ROOT, "justfile").read_text()

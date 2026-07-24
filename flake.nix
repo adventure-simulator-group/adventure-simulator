@@ -72,7 +72,7 @@
             rust-analyzer-unwrapped
             just
             python3
-            wasm-bindgen-cli_0_2_106
+            wasm-bindgen-cli_0_2_108
             binaryen
             tracy
           ]) ++ [spacetimedb.packages.${system}.spacetime];

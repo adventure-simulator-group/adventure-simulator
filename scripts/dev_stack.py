@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
+from enum import Enum
 import hashlib
 import json
 import os
@@ -26,6 +27,31 @@ JWT_RE = re.compile(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")
 ROOT = Path(__file__).resolve().parents[1]
 MODULE_DIR = ROOT / "crates" / "adventuresim-stdb-module"
 CLIENT_DIR = ROOT / "crates" / "adventuresim-stdb-client" / "src"
+TACTICAL_ENV_FILE = ROOT / ".env.tactical"
+
+
+class ProfileMode(str, Enum):
+    """The three shapes an isolated profile can run in."""
+
+    STRATEGIC = "strategic"  # strategic-web + tactical dispatcher (full stack)
+    BARE_STRATEGIC = "bare-strategic"  # strategic-web only, no dispatcher
+    TACTICAL = "tactical"  # isolated DB + seeded standalone mission only
+
+
+def cargo_target_dir() -> Path:
+    try:
+        result = subprocess.run(
+            ["cargo", "-Z", "unstable-options", "config", "get", "build.target-dir"],
+            capture_output=True, text=True, cwd=ROOT, timeout=5,
+        )
+        if result.returncode == 0:
+            line = result.stdout.strip()
+            if line.startswith("build.target-dir"):
+                value = line.split("=", 1)[1].strip().strip('"').strip("'")
+                return Path(value)
+    except (subprocess.SubprocessError, OSError):
+        pass
+    return ROOT / "target"
 
 
 def worktree_fingerprint(root: Path = ROOT) -> str:
@@ -332,11 +358,39 @@ def ports_in_use(ports: list[int]) -> list[int]:
     return occupied
 
 
-def profile_ports(values: dict[str, object], with_tactical: bool) -> list[int]:
+def profile_ports(values: dict[str, object], mode: ProfileMode) -> list[int]:
     keys = ["spacetime_port", "web_port"]
-    if with_tactical:
+    if mode is ProfileMode.STRATEGIC:
         keys.append("tactical_port")
     return [int(values[key]) for key in keys]
+
+
+def write_tactical_env_file(
+    *,
+    url: str,
+    database: str,
+    port: int,
+    mission_id: str,
+    scene_key: str,
+    character_id: int,
+    enemy_count: int,
+) -> None:
+    TACTICAL_ENV_FILE.write_text(
+        "\n".join([
+            f"TACTICAL_SPACETIMEDB_URL={url}",
+            f"TACTICAL_SPACETIMEDB_MODULE={database}",
+            f"TACTICAL_PORT={port}",
+            f"TACTICAL_MISSION_ID={mission_id}",
+            f"TACTICAL_SCENE_KEY={scene_key}",
+            f"TACTICAL_CHARACTER_ID={character_id}",
+            f"TACTICAL_BOTS={enemy_count}",
+            "",
+        ])
+    )
+
+
+def remove_tactical_env_file() -> None:
+    TACTICAL_ENV_FILE.unlink(missing_ok=True)
 
 
 def listener_process_snapshot(port: int) -> dict[str, object] | None:
@@ -426,10 +480,15 @@ def identity_matches(expected: dict[str, object]) -> bool:
     actual = process_snapshot(int(expected.get("pid", 0)))
     if actual is None:
         return False
-    return (
-        os.path.normcase(str(actual["executable"])) == os.path.normcase(str(expected.get("executable", "")))
-        and actual["start_token"] == expected.get("start_token")
-    )
+    if actual["start_token"] != expected.get("start_token"):
+        return False
+    exe_matches = os.path.normcase(str(actual["executable"])) == os.path.normcase(str(expected.get("executable", "")))
+    if not exe_matches:
+        print(
+            f"note: executable path changed (likely exec'd): {expected.get('executable')} -> {actual['executable']}",
+            file=sys.stderr,
+        )
+    return True
 
 
 def terminate_verified(expected: dict[str, object]) -> None:
@@ -459,8 +518,9 @@ def terminate_verified(expected: dict[str, object]) -> None:
 
 
 def spawner_identity(profile: str, server: str, database: str, host: str, base_port: int) -> dict[str, object]:
-    dispatcher = ROOT / "target" / "debug" / ("adventuresim-tactical-server-dispatcher.exe" if os.name == "nt" else "adventuresim-tactical-server-dispatcher")
-    tactical = ROOT / "target" / "debug" / ("adventuresim-tactical-server.exe" if os.name == "nt" else "adventuresim-tactical-server")
+    target = cargo_target_dir()
+    dispatcher = target / "debug" / ("adventuresim-tactical-server-dispatcher.exe" if os.name == "nt" else "adventuresim-tactical-server-dispatcher")
+    tactical = target / "debug" / ("adventuresim-tactical-server.exe" if os.name == "nt" else "adventuresim-tactical-server")
     binaries = {}
     for name, path in (("dispatcher", dispatcher), ("tactical_server", tactical)):
         if not path.is_file():
@@ -603,8 +663,12 @@ def wait_for_spacetime(process: subprocess.Popen[str], metadata_file: Path, log_
 def run_profile(
     name: str,
     base_port: int,
+    mode: ProfileMode = ProfileMode.STRATEGIC,
     verify_http: bool = False,
-    with_tactical: bool = True,
+    mission_id: str = "test-mission",
+    scene_key: str = "hills",
+    character_id: int = 0,
+    enemy_count: int = 3,
 ) -> int:
     values = profile_values(name, base_port)
     state_root = runtime_root()
@@ -612,15 +676,16 @@ def run_profile(
     run_dir = ensure_secure_directory(profile_dir / "run", state_root)
     data_dir = ensure_secure_directory(profile_dir / "spacetimedb-data", state_root)
     with ProfileLock(profile_dir / "lifecycle.lock") as lifecycle:
-        ports = profile_ports(values, with_tactical)
+        ports = profile_ports(values, mode)
         occupied = ports_in_use(ports)
         if occupied:
             raise ValueError(f"isolated profile ports already occupied: {occupied}")
         server = f"http://127.0.0.1:{values['spacetime_port']}"
+        database = str(values["database"])
         stdb_config = {
             "role": "spacetimedb", "profile": name,
             "worktree_fingerprint": values["worktree_fingerprint"], "server": server,
-            "database": values["database"], "data_dir": str(data_dir),
+            "database": database, "data_dir": str(data_dir),
         }
         stdb_metadata = run_dir / "spacetime.identity.json"
         stdb_log = run_dir / "spacetime.log"
@@ -632,6 +697,7 @@ def run_profile(
         web_config = None
         spawner = None
         spawner_config = None
+        wrote_tactical_env = False
         try:
             listener = wait_for_spacetime(stdb, stdb_metadata, stdb_log, int(values["spacetime_port"]))
             if not identity_matches(listener):
@@ -640,7 +706,7 @@ def run_profile(
                 profile=name,
                 base_port=base_port,
                 server=server,
-                database=str(values["database"]),
+                database=database,
                 lock=lifecycle,
                 listener=listener,
             )
@@ -658,18 +724,42 @@ def run_profile(
                 return code
             code = seed(
                 server,
-                str(values["database"]),
+                database,
                 bootstrap_token,
-                include_damaged_demo=True,
+                include_damaged_demo=mode is not ProfileMode.TACTICAL,
             )
             if code:
                 return code
+
+            if mode is ProfileMode.TACTICAL:
+                result = run_checked([
+                    "spacetime", "call", "--server", server, database,
+                    "seed_standalone_tactical_mission", bootstrap_token,
+                    str(character_id), mission_id, scene_key, str(enemy_count),
+                ])
+                sys.stdout.write(result.stdout)
+                if result.returncode:
+                    print("standalone tactical mission seed failed; refusing to hide the reducer error.", file=sys.stderr)
+                    return result.returncode
+                write_tactical_env_file(
+                    url=server, database=database, port=int(values["tactical_port"]),
+                    mission_id=mission_id, scene_key=scene_key,
+                    character_id=character_id, enemy_count=enemy_count,
+                )
+                wrote_tactical_env = True
+                print("")
+                print(f"Isolated tactical database ready: {server} (database {database})")
+                print("Strategic layer and WASM client are not built or running.")
+                print("Run `just tactical` and `just client` in other terminals (no arguments needed).")
+                print("Press Ctrl+C to stop the isolated database.")
+                return stdb.wait()
+
             gateway_token = spacetime_auth_token()
-            if with_tactical:
+            if mode is ProfileMode.STRATEGIC:
                 spawner_config = spawner_identity(
                     name,
                     server,
-                    str(values["database"]),
+                    database,
                     "127.0.0.1",
                     int(values["tactical_port"]),
                 )
@@ -679,18 +769,17 @@ def run_profile(
                 return built.returncode
             environment = os.environ.copy()
             environment.update({
-                "SPACETIMEDB_HOST": server, "SPACETIMEDB_DATABASE": str(values["database"]),
+                "SPACETIMEDB_HOST": server, "SPACETIMEDB_DATABASE": database,
                 "SPACETIMEDB_TOKEN": gateway_token,
                 "BIND_ADDRESS": f"127.0.0.1:{values['web_port']}",
                 "STATIC_DIR": str(ROOT / "crates" / "strategic-web" / "static"),
                 "TACTICAL_STATIC_DIR": str(ROOT / "crates" / "adventuresim-stdb-module" / "static"),
             })
-            mode = "full-stack" if with_tactical else "strategic-only"
             print(
-                f"Starting isolated {mode} profile {name!r} "
+                f"Starting isolated {mode.value} profile {name!r} "
                 f"at http://127.0.0.1:{values['web_port']}"
             )
-            executable = ROOT / "target" / "debug" / ("strategic-web.exe" if os.name == "nt" else "strategic-web")
+            executable = cargo_target_dir() / "debug" / ("strategic-web.exe" if os.name == "nt" else "strategic-web")
             web_config = {"role": "strategic-web", "profile": name, "executable": str(executable), "server": server}
             log = secure_log(run_dir / "web.log")
             try:
@@ -715,6 +804,8 @@ def run_profile(
                 raise RuntimeError("strategic-web did not return HTTP 200")
             return web.wait()
         finally:
+            if wrote_tactical_env:
+                remove_tactical_env_file()
             if web_config is not None and (run_dir / "web.identity.json").exists():
                 stop_recorded(run_dir / "web.identity.json", web_config)
             try:
@@ -736,7 +827,7 @@ def canonical_spawner(action: str) -> int:
             stop_recorded(identity_file)
             return 0
         config = spawner_identity(
-            "canonical", "http://localhost:3000", "adventuresim-stdb-module", "127.0.0.1", 6001
+            "canonical", "http://localhost:23100", "adventuresim-stdb-module", "127.0.0.1", 6001
         )
         if action == "start":
             start_spawner(run_dir, config)
@@ -763,11 +854,19 @@ def create_parser() -> argparse.ArgumentParser:
     seed_parser.add_argument("--token", required=True)
     sub.add_parser("verify-bindings")
     runner = sub.add_parser("run-profile")
-    runner.add_argument("--strategic-only", action="store_true")
+    runner.add_argument("--mode", choices=[m.value for m in ProfileMode], default=ProfileMode.STRATEGIC.value)
+    runner.add_argument("--mission-id", default="test-mission")
+    runner.add_argument("--scene-key", default="hills")
+    runner.add_argument("--character-id", type=int, default=0)
+    runner.add_argument("--enemy-count", type=int, default=3)
     runner.add_argument("name")
     runner.add_argument("base_port", type=int)
     verifier = sub.add_parser("verify-profile")
-    verifier.add_argument("--strategic-only", action="store_true")
+    verifier.add_argument(
+        "--mode",
+        choices=(ProfileMode.STRATEGIC.value, ProfileMode.BARE_STRATEGIC.value),
+        default=ProfileMode.STRATEGIC.value,
+    )
     verifier.add_argument("name")
     verifier.add_argument("base_port", type=int)
     canonical = sub.add_parser("canonical-spawner")
@@ -788,13 +887,17 @@ def main() -> int:
         if args.command == "verify-bindings":
             return verify_bindings()
         if args.command == "run-profile":
-            return run_profile(args.name, args.base_port, with_tactical=not args.strategic_only)
+            return run_profile(
+                args.name, args.base_port, mode=ProfileMode(args.mode),
+                mission_id=args.mission_id, scene_key=args.scene_key,
+                character_id=args.character_id, enemy_count=args.enemy_count,
+            )
         if args.command == "verify-profile":
             return run_profile(
                 args.name,
                 args.base_port,
+                mode=ProfileMode(args.mode),
                 verify_http=True,
-                with_tactical=not args.strategic_only,
             )
         if args.command == "canonical-spawner":
             return canonical_spawner(args.action)
