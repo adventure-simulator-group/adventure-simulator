@@ -560,7 +560,9 @@ pub struct StrategicEncounter {
     pub journey_movement_minute: u64,
     pub journey_elapsed_minute: u64,
     pub absolute_minute: u64,
+    #[serde(rename = "longitude_e_7")]
     pub longitude_e7: i32,
+    #[serde(rename = "latitude_e_7")]
     pub latitude_e7: i32,
     pub terrain: String,
     pub party_aware: bool,
@@ -1730,6 +1732,44 @@ mod tests {
         assert!(!decoded.available);
         assert!(decoded.can_travel_to_required_site);
         assert!(decoded.unavailable_reason.contains("Travel"));
+    }
+
+    #[test]
+    fn strategic_encounter_decodes_the_spacetimedb_sql_shape() {
+        let row = serde_json::json!({
+            "party_id": "party-7",
+            "encounter_id": "party-7:3",
+            "archetype": "bandits",
+            "enemy_count": 4,
+            "roll_index": 3,
+            "journey_movement_minute": 540,
+            "journey_elapsed_minute": 700,
+            "absolute_minute": 1700,
+            "longitude_e_7": 134567890,
+            "latitude_e_7": 521234567,
+            "terrain": "road",
+            "party_aware": false,
+            "enemy_aware": true,
+            "available_choices": ["attack", "surrender"],
+            "status": "awaiting_choice",
+            "selected_choice": null,
+            "selection_explanation": "The enemy surprised the party.",
+            "party_speed_m_per_minute": 60,
+            "enemy_speed_m_per_minute": 80,
+            "run_ineligibility": "The enemy is faster.",
+            "penalty_minutes": 0,
+            "loss_preview": [],
+            "outcome": null
+        });
+
+        let decoded: StrategicEncounter = serde_json::from_value(row).unwrap();
+        assert_eq!(decoded.longitude_e7, 134_567_890);
+        assert_eq!(decoded.latitude_e7, 521_234_567);
+        assert_eq!(decoded.status, "awaiting_choice");
+        assert_eq!(
+            decoded.available_choices,
+            vec!["attack".to_string(), "surrender".to_string()]
+        );
     }
 
     #[test]

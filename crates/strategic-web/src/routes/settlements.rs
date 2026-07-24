@@ -1541,15 +1541,28 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
         .await
         .ok()
         .flatten();
-    let encounter = state
+    let encounter = match state
         .db
         .query_one::<StrategicEncounter>(&format!(
             "SELECT * FROM strategic_encounter WHERE party_id = {}",
             sql_string_literal(&party.id)
         ))
         .await
-        .ok()
-        .flatten();
+    {
+        Ok(encounter) => encounter,
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                party_id = %party.id,
+                "camp encounter state unavailable; refusing to render travel controls"
+            );
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Encounter details are temporarily unavailable. Reload camp before continuing travel.",
+            )
+                .into_response();
+        }
+    };
     let stats: Vec<CharacterStats> = state
         .db
         .query("SELECT * FROM character_stats")
@@ -1570,14 +1583,16 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
     .max(1);
     let planned_wake_minute =
         (current_party_minute.saturating_add(default_rest_minutes) % 1_440) as u16;
-    let can_continue_travel = encounter
-        .as_ref()
-        .is_none_or(|encounter| encounter.status != "awaiting_choice")
-        && is_walking_time(
+    let continue_block_reason = camp_continue_block_reason(
+        encounter
+            .as_ref()
+            .map(|encounter| encounter.status.as_str()),
+        is_walking_time(
             current_party_minute,
             party.walking_minutes_per_day,
             party.travel_at_night,
-        );
+        ),
+    );
     let remaining_journey_minutes = journey
         .as_ref()
         .map_or(party.camp_remaining_minutes, |row| {
@@ -1636,13 +1651,26 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
             default_rest_minutes,
             soap_preview,
             planned_wake_minute,
-            can_continue_travel,
+            continue_block_reason,
             encounter.as_ref(),
             Some(&character.name),
         )
         .into_string(),
     )
     .into_response()
+}
+
+fn camp_continue_block_reason(
+    encounter_status: Option<&str>,
+    is_walking_time: bool,
+) -> Option<&'static str> {
+    if encounter_status == Some("awaiting_choice") {
+        Some("Resolve the encounter above before continuing travel.")
+    } else if !is_walking_time {
+        Some("Rest until the planned walking window begins.")
+    } else {
+        None
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -6247,8 +6275,8 @@ mod rest_form_tests {
     use adventuresim_core::strategic_time::{is_walking_time, minutes_until_next_walking_start};
 
     use super::{
-        RestForm, calculate_rest_supply_availability, calculate_soap_rest_preview, safe_rest_error,
-        settlement_rest_minutes, travel_rest_minutes,
+        RestForm, calculate_rest_supply_availability, calculate_soap_rest_preview,
+        camp_continue_block_reason, safe_rest_error, settlement_rest_minutes, travel_rest_minutes,
     };
     use crate::spacetimedb::{
         Character, CharacterFilth, CharacterPersonality, Conscience, Conviction, Drive,
@@ -6479,6 +6507,20 @@ mod rest_form_tests {
             Some(2 * 60)
         );
         assert!(is_walking_time(21 * 60, 8 * 60, true));
+    }
+
+    #[test]
+    fn unresolved_encounters_override_walking_time_for_camp_continuation() {
+        assert_eq!(
+            camp_continue_block_reason(Some("awaiting_choice"), true),
+            Some("Resolve the encounter above before continuing travel.")
+        );
+        assert_eq!(camp_continue_block_reason(Some("resolved"), true), None);
+        assert_eq!(camp_continue_block_reason(None, true), None);
+        assert_eq!(
+            camp_continue_block_reason(None, false),
+            Some("Rest until the planned walking window begins.")
+        );
     }
 }
 
