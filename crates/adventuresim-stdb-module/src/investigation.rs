@@ -1918,7 +1918,7 @@ fn validate_referred_contact_authority(
     owner_character_id: u64,
     canonical_case_id: &str,
     witness_npc_id: &str,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let roots = ctx
         .db
         .investigation_action_capability()
@@ -1929,25 +1929,20 @@ fn validate_referred_contact_authority(
                 && capability.method == "locate_contact"
                 && capability.target_kind == "contact"
                 && capability.target_id == witness_npc_id
-                && capability.required_action_id.is_empty()
         })
         .collect::<Vec<_>>();
-    if roots.len() != 1 {
-        return Err("Referred contact capability authority is missing or ambiguous".into());
+    if roots.len() > 1 {
+        return Err("Referred contact capability authority is ambiguous".into());
     }
-    let root = &roots[0];
+    let Some(root) = roots.first() else {
+        return Ok(false);
+    };
+    if !root.required_action_id.is_empty() {
+        return Err("Referred contact capability is not an authored root".into());
+    }
     validate_capability_blueprint_reducer(ctx, root)?;
-    if root.provenance_kind == "manual" {
-        for successor in ctx
-            .db
-            .investigation_action_capability()
-            .owner_character_id()
-            .filter(owner_character_id)
-            .filter(|capability| capability.required_action_id == root.id)
-        {
-            validate_capability_blueprint_reducer(ctx, &successor)?;
-        }
-        return Ok(());
+    if root.provenance_kind != "generated" {
+        return Err("Generated referred contact root has invalid provenance".into());
     }
     let authority = generated_authority_reducer(ctx, root)
         .map_err(|()| "Generated contact authority is ambiguous or invalid")?
@@ -2014,7 +2009,7 @@ fn validate_referred_contact_authority(
             .ok_or("Generated contact successor is missing")?;
         validate_capability_blueprint_reducer(ctx, &successor)?;
     }
-    Ok(())
+    Ok(true)
 }
 
 fn complete_referred_contact_action(
@@ -2027,12 +2022,14 @@ fn complete_referred_contact_action(
     use adventuresim_core::quest_generation::{
         ReferredContactActionState, ReferredContactTransition, transition_referred_contact_action,
     };
-    validate_referred_contact_authority(
+    if !validate_referred_contact_authority(
         ctx,
         owner_character_id,
         canonical_case_id,
         witness_npc_id,
-    )?;
+    )? {
+        return Ok(());
+    }
     let capabilities: Vec<_> = ctx
         .db
         .investigation_action_capability()
@@ -4534,12 +4531,13 @@ pub(crate) fn persist_generated_testimony(
     dialogue_action_id: &str,
 ) -> Result<(), String> {
     use adventuresim_core::quest_generation::Reliability;
-    validate_referred_contact_authority(
-        ctx,
-        character_id,
-        &generated.canonical_case_id,
-        &witness.npc_id,
-    )?;
+    if !generated
+        .witnesses
+        .iter()
+        .any(|authoritative| authoritative == witness)
+    {
+        return Err("Generated testimony witness is absent from the authoritative manifest".into());
+    }
     let projection_plan =
         adventuresim_core::quest_generation::generated_testimony_projection_plan(witness)
             .map_err(str::to_string)?;
@@ -6997,11 +6995,9 @@ mod tests {
             })
             .unwrap();
         assert!(
-            generated
-                .find("validate_referred_contact_authority")
-                .unwrap()
-                < generated.find("for (index, draft)").unwrap()
+            generated.find(".witnesses").unwrap() < generated.find("for (index, draft)").unwrap()
         );
+        assert!(generated.contains("authoritative == witness"));
         assert!(generated.contains("for (index, draft) in projection_plan.iter().enumerate()"));
         assert!(generated.contains("draft.proposition_id.clone()"));
         assert!(generated.contains("draft.corrects_proposition_id"));
@@ -7019,6 +7015,9 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("fn complete_referred_contact_action").next())
             .unwrap();
+        assert!(preflight.contains("if roots.len() > 1"));
+        assert!(preflight.contains("return Ok(false)"));
+        assert!(preflight.contains("!root.required_action_id.is_empty()"));
         assert!(preflight.contains("validate_capability_blueprint_reducer(ctx, root)"));
         assert!(preflight.contains("expected_successors"));
         assert!(preflight.contains("Generated contact successor is missing"));
@@ -7036,6 +7035,7 @@ mod tests {
                     .find("investigation_action_attempt()\n        .insert")
                     .unwrap()
         );
+        assert!(completion.contains("return Ok(())"));
     }
 
     #[test]

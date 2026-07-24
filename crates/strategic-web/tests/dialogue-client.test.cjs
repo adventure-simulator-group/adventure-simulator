@@ -3,7 +3,11 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const source = fs.readFileSync(path.join(__dirname, "..", "static", "dialogue-client.js"), "utf8");
-const { dialogueCompletion, dialogueSubmission } = require("../static/dialogue-client.js");
+const {
+  dialogueCompletion,
+  dialogueSubmission,
+  dialogueTopicPayload,
+} = require("../static/dialogue-client.js");
 
 test("dialogue client is schema-driven with stable authoritative actions", () => {
   assert.match(source, /api\/dialogue\/start/);
@@ -25,7 +29,7 @@ test("known topics share the inline topic action contract", () => {
 
 test("client renders only persisted authoritative views and enforces prompt bounds", () => {
   assert.match(source, /view\.events\.forEach/);
-  assert.match(source, /expected_revision:\s*currentView\.revision/);
+  assert.match(source, /expected_revision:\s*binding\.revision/);
   assert.match(source, /choices\.length\s*<\s*prompt\.min_choices/);
 });
 
@@ -51,6 +55,41 @@ test("settlement NPC selection is accessible and actor-backed", () => {
 test("late dialogue responses cannot replace the newly selected NPC", () => {
   assert.match(source, /const actor = chat\.dataset\.localChatSubject/);
   assert.match(source, /chat\.dataset\.localChatSubject === actor/);
+  assert.match(source, /binding\.selectionGeneration === selectionGeneration/);
+  assert.match(source, /binding\.npcId === chat\.dataset\.localChatSubject/);
+  assert.match(source, /binding\.sessionId === view\.session_id/);
+});
+
+test("rapid provider-to-witness selection rejects stale topics and binds the witness session", () => {
+  const hans = {
+    sessionId: "dialogue:7:hans",
+    topicId: "referred-testimony",
+    revision: 0,
+    selectionGeneration: 1,
+    npcId: "npc:town:inn:0",
+  };
+  const agnes = {
+    sessionId: "dialogue:7:agnes",
+    topicId: "referred-testimony",
+    revision: 2,
+    selectionGeneration: 2,
+    npcId: "npc:town:inn:1",
+  };
+  assert.equal(
+    dialogueTopicPayload(hans, 2, "npc:town:inn:1", "stale-action"),
+    null,
+  );
+  assert.deepEqual(
+    dialogueTopicPayload(agnes, 2, "npc:town:inn:1", "agnes-action"),
+    {
+      session_id: "dialogue:7:agnes",
+      topic_id: "referred-testimony",
+      action_id: "agnes-action",
+      expected_revision: 2,
+    },
+  );
+  assert.match(source, /topicList\?\.replaceChildren\(\)/);
+  assert.match(source, /if \(topicPane\) topicPane\.hidden = true/);
 });
 
 test("only the same in-flight encounter start is deduplicated", () => {

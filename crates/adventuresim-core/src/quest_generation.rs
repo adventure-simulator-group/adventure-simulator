@@ -3550,6 +3550,39 @@ mod tests {
     }
 
     #[test]
+    fn secondary_testimony_without_a_contact_root_mutates_no_route() {
+        let mut states = vec![ReferredContactActionState {
+            id: "primary-contact".into(),
+            owner_character_id: 7,
+            case_id: "case".into(),
+            method: "locate_contact".into(),
+            target_kind: "contact".into(),
+            target_id: "primary-witness".into(),
+            required_action_id: String::new(),
+            active: true,
+            version: 0,
+            successful_attempt: false,
+        }];
+        let before = states.clone();
+        assert_eq!(
+            transition_referred_contact_action(&mut states, 7, "case", "secondary-witness")
+                .unwrap(),
+            ReferredContactTransition::NotApplicable
+        );
+        assert_eq!(states, before);
+
+        states.push(ReferredContactActionState {
+            id: "duplicate-primary-contact".into(),
+            ..states[0].clone()
+        });
+        assert_eq!(
+            transition_referred_contact_action(&mut states, 7, "case", "primary-witness")
+                .unwrap_err(),
+            "Referred witness matches multiple contact actions"
+        );
+    }
+
+    #[test]
     fn failed_route_does_not_revive_a_completed_contact_alternate() {
         let mut states = vec![
             ReferredContactActionState {
