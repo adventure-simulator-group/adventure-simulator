@@ -5259,9 +5259,12 @@ fn dialogue_fact_context(
             FactKey::ParticipantReferralContact {
                 role: npc.role.clone(),
             },
-            FactValue::Bool(
-                delivery_receipt.is_some_and(|receipt| receipt.contact_npc_id == npc.actor_id),
-            ),
+            FactValue::Bool(delivery_receipt.is_some_and(|receipt| {
+                adventuresim_core::quest_generation::exact_referral_contact(
+                    &receipt.contact_npc_id,
+                    &npc.actor_id,
+                )
+            })),
         );
     }
     if let (Some(player), Some(npc)) = (
@@ -5529,7 +5532,7 @@ fn dialogue_runtime_bindings(
         bindings.bind(S::ReferralRole, contact.profession);
         bindings.bind(S::ReferralLocation, receipt.expected_location_id.clone());
         bindings.bind(S::DescribedLocation, receipt.expected_location_id);
-        if contact.id == npc.id {
+        if adventuresim_core::quest_generation::exact_referral_contact(&contact.id, &npc.id) {
             let authority = ctx
                 .db
                 .quest_generation_authority()
@@ -5580,8 +5583,10 @@ fn receive_referred_testimony(
         .id()
         .find(&delivery.receipt_id)
         .ok_or("Rumor delivery receipt disappeared")?;
-    if receipt.contact_npc_id != live_npc.id
-        || receipt.settlement_id != session.settlement_id
+    if !adventuresim_core::quest_generation::exact_referral_contact(
+        &receipt.contact_npc_id,
+        &live_npc.id,
+    ) || receipt.settlement_id != session.settlement_id
         || receipt.expected_location_id != session.location_id
     {
         return Err("Addressed NPC is not the exact referred witness here".into());

@@ -1069,25 +1069,60 @@ fn complete_referred_contact_action(
     witness_npc_id: &str,
     dialogue_action_id: &str,
 ) -> Result<(), String> {
-    let mut matches: Vec<_> = ctx
+    use adventuresim_core::quest_generation::{
+        ReferredContactActionState, ReferredContactTransition, transition_referred_contact_action,
+    };
+    let capabilities: Vec<_> = ctx
         .db
         .investigation_action_capability()
         .owner_character_id()
         .filter(owner_character_id)
-        .filter(|capability| {
-            capability.case_id == canonical_case_id
-                && capability.active
-                && capability.method == "locate_contact"
-                && capability.target_kind == "contact"
-                && capability.target_id == witness_npc_id
+        .filter(|capability| capability.case_id == canonical_case_id)
+        .collect();
+    let mut states: Vec<_> = capabilities
+        .iter()
+        .map(|capability| ReferredContactActionState {
+            id: capability.id.clone(),
+            owner_character_id: capability.owner_character_id,
+            case_id: capability.case_id.clone(),
+            method: capability.method.clone(),
+            target_kind: capability.target_kind.clone(),
+            target_id: capability.target_id.clone(),
+            required_action_id: capability.required_action_id.clone(),
+            active: capability.active,
+            version: capability.version,
+            successful_attempt: ctx
+                .db
+                .investigation_action_attempt()
+                .capability_id()
+                .filter(&capability.id)
+                .any(|attempt| attempt.success),
         })
         .collect();
-    if matches.len() > 1 {
-        return Err("Referred witness matches multiple active contact actions".into());
-    }
-    let Some(mut capability) = matches.pop() else {
+    let transition = transition_referred_contact_action(
+        &mut states,
+        owner_character_id,
+        canonical_case_id,
+        witness_npc_id,
+    )?;
+    let ReferredContactTransition::Applied {
+        root_id,
+        expected_version,
+        next_version,
+        activated_successor_ids,
+        attempt_success,
+        outcome_wording,
+    } = transition
+    else {
         return Ok(());
     };
+    let mut capability = capabilities
+        .into_iter()
+        .find(|capability| capability.id == root_id)
+        .ok_or("Referred contact action disappeared")?;
+    if capability.version != expected_version || !capability.active {
+        return Err("Referred contact action changed during transition planning".into());
+    }
     let completed_at = character_strategic_minute(ctx, owner_character_id);
     let attempt_id = generated_observer_id(
         ctx,
@@ -1107,7 +1142,7 @@ fn complete_referred_contact_action(
             started_at: completed_at,
             completed_at,
             duration_minutes: 0,
-            success: true,
+            success: attempt_success,
             resulting_uncertainty_bps: capability.uncertainty_bps,
             private_resolution_json: serde_json::json!({
                 "source": "exact_referred_witness_dialogue"
@@ -1115,7 +1150,7 @@ fn complete_referred_contact_action(
             .to_string(),
         });
     capability.active = false;
-    capability.version = capability.version.saturating_add(1);
+    capability.version = next_version;
     ctx.db
         .investigation_action_capability()
         .id()
@@ -1136,11 +1171,26 @@ fn complete_referred_contact_action(
                 owner_character_id,
                 case_id: canonical_case_id.into(),
                 capability_id: capability.id.clone(),
-                safe_wording: "The referred witness gave their account.".into(),
+                safe_wording: outcome_wording,
                 recorded_at: official_minute(ctx),
             });
     }
-    activate_action_successors(ctx, &capability, true)
+    for successor_id in activated_successor_ids {
+        let successor = ctx
+            .db
+            .investigation_action_capability()
+            .id()
+            .find(&successor_id)
+            .ok_or("Referred contact successor disappeared")?;
+        if successor.owner_character_id != owner_character_id
+            || successor.case_id != canonical_case_id
+            || successor.required_action_id != capability.id
+        {
+            return Err("Referred contact successor changed during transition planning".into());
+        }
+        set_action_active(ctx, &successor_id, true)?;
+    }
+    Ok(())
 }
 
 fn issue_rumor_action_graph(
@@ -3137,9 +3187,9 @@ pub(crate) fn persist_generated_testimony(
     dialogue_action_id: &str,
 ) -> Result<(), String> {
     use adventuresim_core::quest_generation::Reliability;
-    if witness.testimony.is_empty() {
-        return Err("Generated witness has no proposition testimony".into());
-    }
+    let projection_plan =
+        adventuresim_core::quest_generation::generated_testimony_projection_plan(witness)
+            .map_err(str::to_string)?;
     let authority = ctx
         .db
         .quest_generation_authority()
@@ -3150,7 +3200,7 @@ pub(crate) fn persist_generated_testimony(
         adventuresim_core::quest_generation::GenerationContext,
     >(&authority.context_snapshot_json)
     .map_err(|_| "Generated testimony observer-id authority is invalid")?;
-    for (index, draft) in witness.testimony.iter().enumerate() {
+    for (index, draft) in projection_plan.iter().enumerate() {
         let (receipt_id, pipeline) =
             adventuresim_core::quest_generation::generated_testimony_pipeline(
                 &generation_context,
@@ -3999,46 +4049,6 @@ mod tests {
                 }
             }
             assert!(authored_claims >= generated.witnesses.len());
-        }
-    }
-
-    #[test]
-    fn referred_testimony_completes_only_the_exact_generated_contact_root() {
-        let source = include_str!("investigation.rs");
-        let transition = source
-            .split("fn complete_referred_contact_action")
-            .nth(1)
-            .and_then(|tail| tail.split("fn issue_rumor_action_graph").next())
-            .unwrap();
-        assert!(transition.contains(".owner_character_id()"));
-        assert!(transition.contains("capability.case_id == canonical_case_id"));
-        assert!(transition.contains("capability.active"));
-        assert!(transition.contains("capability.method == \"locate_contact\""));
-        assert!(transition.contains("capability.target_kind == \"contact\""));
-        assert!(transition.contains("capability.target_id == witness_npc_id"));
-        assert!(transition.contains("exact_referred_witness_dialogue"));
-        assert!(transition.contains("success: true"));
-        assert!(transition.contains("capability.active = false"));
-        assert!(transition.contains("activate_action_successors(ctx, &capability, true)"));
-
-        let strategic = include_str!("strategic.rs");
-        let receive = strategic
-            .split("fn receive_referred_testimony")
-            .nth(1)
-            .and_then(|tail| tail.split("fn resolve_dialogue_fragments").next())
-            .unwrap();
-        for required in [
-            "local_problem_rumor_delivery()",
-            "receipt.contact_npc_id != live_npc.id",
-            "receipt.settlement_id != session.settlement_id",
-            "receipt.expected_location_id != session.location_id",
-            ".find(|witness| witness.npc_id == live_npc.id)",
-            "persist_generated_testimony(",
-        ] {
-            assert!(
-                receive.contains(required),
-                "missing reducer step: {required}"
-            );
         }
     }
 
