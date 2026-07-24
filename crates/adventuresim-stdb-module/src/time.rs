@@ -1371,7 +1371,7 @@ fn require_character_rest_service(
         .db
         .settlement()
         .id()
-        .find(settlement_id)
+        .find(settlement_id.to_owned())
         .ok_or("Character's settlement not found")?;
     require_settlement_rest_service(&settlement.economy, at_inn)
 }

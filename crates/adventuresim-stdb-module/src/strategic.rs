@@ -4665,7 +4665,7 @@ fn require_navigable_npc_location(
         .db
         .settlement()
         .id()
-        .find(settlement_id)
+        .find(settlement_id.to_owned())
         .ok_or("Settlement not found")?;
     let has_keep = matches!(
         settlement.category,

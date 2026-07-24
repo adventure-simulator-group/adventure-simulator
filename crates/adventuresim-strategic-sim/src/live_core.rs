@@ -1599,12 +1599,12 @@ impl LiveRunner {
             leader_agent,
             CoreLoopEventKind::AcceptContract,
             format!(
-                "cycle={cycle};quest={};title={};difficulty={};enemy={}x{};distance_m={}",
+                "cycle={cycle};quest={};title={};difficulty={};opposition={} {};distance_m={}",
                 quest.id,
                 quest.title,
                 quest.difficulty,
-                quest.enemy_type,
-                quest.enemy_count,
+                quest.opposition_count_wording,
+                quest.opposition_wording,
                 case_site.distance_m
             ),
         );
