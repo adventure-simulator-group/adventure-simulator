@@ -641,7 +641,8 @@ fn referral_location_label(
             witness.npc_id == receipt.contact_npc_id
                 && witness.expected_location == receipt.expected_location_id
         })
-        .map(|witness| witness.expected_location_label.clone())
+        .map(adventuresim_core::quest_generation::referral_display_location)
+        .map(str::to_owned)
         .filter(|label| !label.is_empty())
         .ok_or_else(|| "Generated referral has no player-visible tab label".into())
 }
@@ -768,7 +769,7 @@ pub fn surface_problem(
     let text = referral_text(
         &symptom.public_summary,
         &contact,
-        &witness.expected_location_label,
+        adventuresim_core::quest_generation::referral_display_location(witness),
     );
     let receipt_id = format!("{character_id}:{}", problem.id);
     ctx.db.local_problem_receipt().insert(LocalProblemReceipt {

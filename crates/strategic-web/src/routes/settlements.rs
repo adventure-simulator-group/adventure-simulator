@@ -4482,6 +4482,25 @@ async fn rest(
     let Some(character_id) = session.character_id_u64() else {
         return Html("<h1>Choose a character first</h1>".to_string()).into_response();
     };
+    let settlements: Vec<Settlement> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM settlement WHERE id = {}",
+            sql_string_literal(&id)
+        ))
+        .await
+        .unwrap_or_default();
+    let Some(settlement) = settlements.first() else {
+        return Html("<h1>Settlement not found</h1>".to_string()).into_response();
+    };
+    let service = if at_inn {
+        adventuresim_core::settlement_economy::SettlementActionService::Inn
+    } else {
+        adventuresim_core::settlement_economy::SettlementActionService::Temple
+    };
+    if !settlement_action_service_available(&settlement.economy, service) {
+        return Html("<h1>Rest service unavailable</h1>".to_string()).into_response();
+    }
     let requested_minutes = match settlement_rest_minutes(&form) {
         Ok(minutes) => minutes,
         Err(message) => {
@@ -4513,17 +4532,6 @@ async fn rest(
         return Html(format!("<h1>Unable to rest</h1><p>{error}</p>")).into_response();
     }
 
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM settlement WHERE id = {}",
-            sql_string_literal(&id)
-        ))
-        .await
-        .unwrap_or_default();
-    let Some(settlement) = settlements.first() else {
-        return Html("<h1>Settlement not found</h1>".to_string()).into_response();
-    };
     let active_character = get_active_character(&state, Some(character_id)).await;
     if let Some(case_site_id) = active_character
         .as_ref()
@@ -4935,7 +4943,59 @@ async fn religion(
     Path(id): Path<String>,
     session: Session,
 ) -> Html<String> {
-    render_service_page(state, id, session, religion_page).await
+    render_service_page(
+        state,
+        id,
+        session,
+        adventuresim_core::settlement_economy::SettlementActionService::Temple,
+        religion_page,
+    )
+    .await
+}
+
+fn settlement_action_service_available(
+    profile: &adventuresim_world_schema::SettlementEconomyProfile,
+    service: adventuresim_core::settlement_economy::SettlementActionService,
+) -> bool {
+    adventuresim_core::settlement_economy::action_service_available(profile, service)
+}
+
+#[cfg(test)]
+mod service_availability_tests {
+    use super::settlement_action_service_available;
+    use adventuresim_core::settlement_economy::{
+        SettlementActionService, player_visible_npc_tabs, visible_npc_tab,
+    };
+    use adventuresim_world_schema::{SettlementEconomyProfile, SettlementService};
+
+    #[test]
+    fn direct_routes_reject_unadvertised_church_inn_and_armoury() {
+        let mut profile = SettlementEconomyProfile::stage_placeholder();
+        profile.services.clear();
+        assert!(!settlement_action_service_available(
+            &profile,
+            SettlementActionService::Temple
+        ));
+        assert!(!settlement_action_service_available(
+            &profile,
+            SettlementActionService::Inn
+        ));
+        let tabs = player_visible_npc_tabs(&profile, false);
+        assert!(visible_npc_tab(&tabs, "church").is_none());
+        assert!(visible_npc_tab(&tabs, "inn").is_none());
+        assert!(visible_npc_tab(&tabs, "armoury").is_none());
+
+        profile.services = vec![SettlementService::Inn, SettlementService::Temple];
+        profile.services.sort();
+        assert!(settlement_action_service_available(
+            &profile,
+            SettlementActionService::Temple
+        ));
+        assert!(settlement_action_service_available(
+            &profile,
+            SettlementActionService::Inn
+        ));
+    }
 }
 
 #[derive(Deserialize)]
@@ -4968,10 +5028,22 @@ async fn religion_dialogue(
         .next();
     let priest_religion_id = settlement
         .as_ref()
+        .filter(|settlement| {
+            settlement_action_service_available(
+                &settlement.economy,
+                adventuresim_core::settlement_economy::SettlementActionService::Temple,
+            )
+        })
         .map(|settlement| settlement.religion_id.clone())
         .unwrap_or_default();
     let represented_religion_ids = settlement
         .as_ref()
+        .filter(|settlement| {
+            settlement_action_service_available(
+                &settlement.economy,
+                adventuresim_core::settlement_economy::SettlementActionService::Temple,
+            )
+        })
         .map(|s| {
             s.religious_status
                 .represented_religions()
@@ -4989,8 +5061,12 @@ async fn religion_dialogue(
             can_choose: false,
         });
     };
-    let can_choose =
-        settlement.is_some() && character.current_settlement_id.as_deref() == Some(id.as_str());
+    let can_choose = settlement.as_ref().is_some_and(|settlement| {
+        settlement_action_service_available(
+            &settlement.economy,
+            adventuresim_core::settlement_economy::SettlementActionService::Temple,
+        )
+    }) && character.current_settlement_id.as_deref() == Some(id.as_str());
     let condition = state
         .db
         .query::<CharacterCondition>(&format!(
@@ -5040,6 +5116,16 @@ async fn set_religion(
             message: "There is no church here to receive your profession.",
         });
     };
+    if !settlement_action_service_available(
+        &settlement.economy,
+        adventuresim_core::settlement_economy::SettlementActionService::Temple,
+    ) {
+        return Json(ReligionChange {
+            changed: false,
+            religion_id: None,
+            message: "There is no church here to receive your profession.",
+        });
+    }
     if !settlement
         .religious_status
         .represented_religions()
@@ -5363,6 +5449,7 @@ async fn render_service_page(
     state: AppState,
     id: String,
     session: Session,
+    required_service: adventuresim_core::settlement_economy::SettlementActionService,
     render: ServiceRenderer,
 ) -> Html<String> {
     let settlement_sql = format!(
@@ -5378,6 +5465,18 @@ async fn render_service_page(
         Some(settlement) => settlement,
         None => return Html("<h1>Settlement not found</h1>".to_string()),
     };
+    if !settlement_action_service_available(&settlement.economy, required_service) {
+        return Html(
+            crate::templates::strategic_notice_page(
+                "Service unavailable",
+                "This settlement does not offer that service.",
+                &format!("/locations/settlement/{}", settlement.id),
+                "Return to settlement",
+                None,
+            )
+            .into_string(),
+        );
+    }
 
     let active_character_ref = active_character.as_ref().map(|(character, _)| character);
     let limbs_lookup = async {

@@ -20,6 +20,29 @@ pub struct SettlementNpcTab {
     pub label: &'static str,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SettlementActionService {
+    Inn,
+    Temple,
+}
+
+pub const fn action_service_location_id(service: SettlementActionService) -> &'static str {
+    match service {
+        SettlementActionService::Inn => "inn",
+        SettlementActionService::Temple => "church",
+    }
+}
+
+pub fn action_service_available(
+    profile: &SettlementEconomyProfile,
+    service: SettlementActionService,
+) -> bool {
+    match service {
+        SettlementActionService::Inn => storefront_available(profile, Storefront::Inn),
+        SettlementActionService::Temple => profile.has_service(Service::Temple),
+    }
+}
+
 pub fn player_visible_npc_tabs(
     profile: &SettlementEconomyProfile,
     has_keep: bool,
@@ -66,8 +89,16 @@ pub fn player_visible_npc_tabs(
             "herbalist",
             "Herbalist",
         ),
-        (storefront_available(profile, Storefront::Inn), "inn", "Inn"),
-        (profile.has_service(Service::Temple), "church", "Church"),
+        (
+            action_service_available(profile, SettlementActionService::Inn),
+            action_service_location_id(SettlementActionService::Inn),
+            "Inn",
+        ),
+        (
+            action_service_available(profile, SettlementActionService::Temple),
+            action_service_location_id(SettlementActionService::Temple),
+            "Church",
+        ),
     ] {
         if available {
             tabs.push(SettlementNpcTab { location_id, label });

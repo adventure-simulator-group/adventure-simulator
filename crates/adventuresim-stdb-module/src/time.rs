@@ -1338,6 +1338,25 @@ pub fn rest_at_settlement_hours(
     rest_for_minutes(ctx, character_id, requested_minutes, at_inn, true)
 }
 
+fn require_settlement_rest_service(
+    profile: &adventuresim_world_schema::SettlementEconomyProfile,
+    at_inn: bool,
+) -> Result<(), String> {
+    use adventuresim_core::settlement_economy::{
+        SettlementActionService, action_service_available,
+    };
+    let service = if at_inn {
+        SettlementActionService::Inn
+    } else {
+        SettlementActionService::Temple
+    };
+    if action_service_available(profile, service) {
+        Ok(())
+    } else {
+        Err("This settlement does not offer the requested rest service".into())
+    }
+}
+
 fn rest_for_minutes(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1346,9 +1365,17 @@ fn rest_for_minutes(
     explicit: bool,
 ) -> Result<(), String> {
     let character = crate::character::require_living_character(ctx, character_id)?;
-    if character.current_settlement_id.is_none() {
-        return Err("Settlement rest requires the character to be at a settlement".into());
-    }
+    let settlement_id = character
+        .current_settlement_id
+        .as_deref()
+        .ok_or("Settlement rest requires the character to be at a settlement")?;
+    let settlement = ctx
+        .db
+        .settlement()
+        .id()
+        .find(settlement_id)
+        .ok_or("Character's settlement not found")?;
+    require_settlement_rest_service(&settlement.economy, at_inn)?;
     ensure_character_time(ctx, character_id)?;
     let _ = refresh_clock(ctx)?;
     let mut character_time = ctx
@@ -2034,6 +2061,19 @@ pub fn update_training_schedule(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn settlement_rest_rejects_unavailable_inn_and_temple_services() {
+        use adventuresim_world_schema::SettlementService;
+
+        let mut profile = adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder();
+        assert!(require_settlement_rest_service(&profile, true).is_ok());
+        assert!(require_settlement_rest_service(&profile, false).is_err());
+        profile.services.clear();
+        assert!(require_settlement_rest_service(&profile, true).is_err());
+        profile.services.push(SettlementService::Temple);
+        assert!(require_settlement_rest_service(&profile, false).is_ok());
+    }
 
     #[test]
     fn immediate_activity_schedule_contains_only_the_selected_interval() {

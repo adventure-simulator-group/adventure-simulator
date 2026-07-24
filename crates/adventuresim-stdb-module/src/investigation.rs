@@ -2061,6 +2061,7 @@ fn validate_generated_pattern_condition(
                 profession: target.profession.clone(),
                 expected_settlement_id: target.expected_settlement_id.clone(),
                 expected_location: target.expected_location.clone(),
+                expected_location_label: String::new(),
                 presence_version: target.presence_version,
             };
             let current = adventuresim_core::quest_generation::WitnessCandidate {
@@ -2990,7 +2991,8 @@ pub fn receive_local_problem_rumor(
             witness.npc_id == receipt.contact_npc_id
                 && witness.expected_location == receipt.expected_location_id
         })
-        .map(|witness| witness.expected_location_label.clone())
+        .map(adventuresim_core::quest_generation::referral_display_location)
+        .map(str::to_owned)
         .filter(|label| !label.is_empty())
         .ok_or("Generated rumor referral has no player-visible tab label")?;
     let case_id = generated.public_case_id;
@@ -3316,8 +3318,13 @@ pub(crate) fn persist_generated_testimony(
                 witness_name: npc.name,
                 witness_description: witness.visible_description.clone(),
                 witness_occupation_or_relationship: npc.profession,
-                expected_location: witness.expected_location.clone(),
-                current_learned_location: witness.expected_location.clone(),
+                expected_location: adventuresim_core::quest_generation::referral_display_location(
+                    witness,
+                )
+                .to_owned(),
+                current_learned_location:
+                    adventuresim_core::quest_generation::referral_display_location(witness)
+                        .to_owned(),
                 contradiction_group: format!("generated-location:{}", generated.public_case_id),
                 corrected_by: String::new(),
                 recorded_at: official_minute(ctx),
