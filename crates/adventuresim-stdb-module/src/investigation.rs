@@ -2,13 +2,13 @@
 
 use crate::{
     character::{character, character__view, character_skills},
-    condition::{character_strategic_condition, character_strategic_condition__view},
+    condition::character_strategic_condition__view,
     local_problem::local_problem_receipt,
     settlement_population::{settlement_npc, settlement_npc_presence},
     strategic::{
         CustodyHolderKind, CustodyObjectKind, case_authority, case_custody,
         coordinate_distance_e7_m, living_party_member_ids, party_authority, party_authority__view,
-        party_journey_authority, party_member, party_member__view, quest_generation_authority,
+        party_journey_authority, party_member__view, quest_generation_authority,
         require_no_unresolved_encounter, require_party_ready,
         require_strategic_character_authority, require_strategic_gateway, settlement,
         strategic_gateway_authority__view,
