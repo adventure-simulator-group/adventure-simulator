@@ -56,7 +56,7 @@ pub fn journal_page(
                             @if !action.weather_available {
                                 p class="text-muted" { "Weather effects are unavailable and are not estimated." }
                             }
-                            form method="post" action="/investigations/actions" {
+                            form method="post" action="/quests/actions" {
                                 input type="hidden" name="action_id" value=(&action.action_id);
                                 input type="hidden" name="method" value=(&action.method);
                                 input type="hidden" name="expected_version" value=(action.expected_version);

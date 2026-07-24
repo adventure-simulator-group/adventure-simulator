@@ -607,7 +607,7 @@ fn character_switcher(name: &str) -> Markup {
                 }
             }
             div class="character-switcher-menu" {
-                a href="/investigations" class="btn btn-small" { "Investigation journal" }
+                a href="/quests" class="btn btn-small" { "Investigation journal" }
                 form action="/characters/switch" method="post" {
                     button type="submit" class="btn btn-small" { "Character select" }
                 }
