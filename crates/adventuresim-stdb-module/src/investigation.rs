@@ -6,9 +6,9 @@ use crate::{
     local_problem::local_problem_receipt,
     settlement_population::{settlement_npc, settlement_npc_presence},
     strategic::{
-        CaseResolutionStatus, CustodyHolderKind, CustodyObjectKind, FinaleStatus,
-        HostileGroupDisposition, case_authority, case_authority__view, case_custody,
-        case_finale_authority__view, coordinate_distance_e7_m, hostile_group_authority__view,
+        CustodyHolderKind, CustodyObjectKind, case_authority, case_authority__view, case_custody,
+        case_finale_authority__view, case_outcome_fact__view, coordinate_distance_e7_m,
+        generated_case_site_combat_eligible, hostile_group_authority__view,
         living_party_member_ids, party_authority, party_authority__view, party_journey_authority,
         party_member__view, quest_generation_authority, quest_generation_authority__view,
         require_no_unresolved_encounter, require_party_ready,
@@ -3831,7 +3831,8 @@ pub fn backend_case_site_pins(ctx: &ViewContext) -> Vec<BackendCaseSitePin> {
             ) {
                 return None;
             }
-            let presentation = case_site_presentation_view(ctx, &site, aliases.as_ref())?;
+            let presentation =
+                case_site_presentation_view(ctx, lead.owner_character_id, &site, aliases.as_ref())?;
             let tracked = ctx
                 .db
                 .character()
@@ -3883,27 +3884,9 @@ struct CaseSitePresentationView {
     combat_available: bool,
 }
 
-fn objective_path_targets_hostile(
-    path: &adventuresim_core::case::ObjectivePath,
-    hostile_group_id: &str,
-) -> bool {
-    use adventuresim_core::case::ObjectiveRequirement;
-    path.objectives
-        .iter()
-        .any(|objective| match &objective.requirement {
-            ObjectiveRequirement::Defeat {
-                hostile_group_id: expected,
-                ..
-            }
-            | ObjectiveRequirement::DriveOff {
-                hostile_group_id: expected,
-            } => expected == hostile_group_id,
-            _ => false,
-        })
-}
-
 fn case_site_presentation_view(
     ctx: &ViewContext,
+    owner_character_id: u64,
     site: &CaseSiteAuthority,
     aliases: Option<&(String, String)>,
 ) -> Option<CaseSitePresentationView> {
@@ -3929,45 +3912,63 @@ fn case_site_presentation_view(
         return None;
     }
     let case = ctx.db.case_authority().id().find(canonical_case_id)?;
-    let combat_finale = validated.manifest.finales.iter().find(|finale| {
-        finale.site_id.0 == site.id.value
-            && finale.strategic_outcome_compatible
-            && finale.hostile_group_id.is_some()
-    });
-    let combat_available = combat_finale
-        .and_then(|finale| {
-            let hostile_group_id = finale.hostile_group_id.as_deref()?;
-            let group = ctx
-                .db
-                .hostile_group_authority()
-                .id()
-                .find(&hostile_group_id.to_string())?;
-            (group.case_site_id == site.id && group.disposition == HostileGroupDisposition::Active)
-                .then_some(hostile_group_id)
-        })
-        .is_some_and(|hostile_group_id| {
-            case.resolution_status == CaseResolutionStatus::Open
-                && ctx
-                    .db
-                    .case_finale_authority()
-                    .case_id()
-                    .filter(canonical_case_id)
-                    .filter(|finale| finale.status == FinaleStatus::Available)
-                    .any(|finale| {
-                        finale
-                            .eligible_path_index
-                            .and_then(|index| {
-                                validated
-                                    .manifest
-                                    .objectives
-                                    .alternatives
-                                    .get(index as usize)
-                            })
-                            .is_some_and(|path| {
-                                objective_path_targets_hostile(path, hostile_group_id)
-                            })
-                    })
-        });
+    let party_id = ctx
+        .db
+        .character()
+        .id()
+        .find(owner_character_id)
+        .and_then(|character| character.party_id);
+    let combat_group_ids: BTreeSet<_> = validated
+        .manifest
+        .finales
+        .iter()
+        .filter(|finale| finale.site_id.0 == site.id.value && finale.strategic_outcome_compatible)
+        .filter_map(|finale| finale.hostile_group_id.as_deref())
+        .collect();
+    let hostile_groups: Vec<_> = if combat_group_ids.len() == 1 {
+        combat_group_ids
+            .iter()
+            .next()
+            .and_then(|group_id| {
+                ctx.db
+                    .hostile_group_authority()
+                    .id()
+                    .find(&(*group_id).to_string())
+            })
+            .into_iter()
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let finales: Vec<_> = ctx
+        .db
+        .case_finale_authority()
+        .case_id()
+        .filter(canonical_case_id)
+        .collect();
+    let facts = ctx
+        .db
+        .case_outcome_fact()
+        .case_id()
+        .filter(canonical_case_id)
+        .map(|row| serde_json::from_str(&row.fact_json))
+        .collect::<Result<Vec<adventuresim_core::case::OutcomeFact>, _>>()
+        .ok();
+    let combat_available =
+        party_id
+            .as_deref()
+            .zip(facts.as_deref())
+            .is_some_and(|(party_id, facts)| {
+                generated_case_site_combat_eligible(
+                    &validated.manifest,
+                    &case,
+                    site,
+                    &hostile_groups,
+                    &finales,
+                    facts,
+                    party_id,
+                )
+            });
     Some(CaseSitePresentationView {
         display_title: validated.manifest.consequence.public_summary,
         generated_case: true,
@@ -4050,7 +4051,7 @@ fn case_site_provenance_view(
     validated_case_site_aliases(&case, authorities)
 }
 
-fn case_site_provenance_reducer(
+pub(crate) fn case_site_provenance_reducer(
     ctx: &ReducerContext,
     site: &CaseSiteAuthority,
 ) -> Option<Option<(String, String)>> {
@@ -7000,12 +7001,9 @@ mod tests {
             "validate_quest_generation_authority",
             "generated_site.id.0 == site.id.value",
             "generated_site.safe_label != site.name",
-            "finale.site_id.0 == site.id.value",
-            "group.case_site_id == site.id",
-            "HostileGroupDisposition::Active",
-            "CaseResolutionStatus::Open",
-            "FinaleStatus::Available",
-            "objective_path_targets_hostile",
+            "generated_case_site_combat_eligible",
+            "find(owner_character_id)",
+            "case_outcome_fact()",
             "consequence.public_summary",
         ] {
             assert!(projection.contains(required), "{required}");
@@ -7013,34 +7011,6 @@ mod tests {
         for forbidden in ["enemy_type", "cause", "factor_trace", "manifest_json"] {
             assert!(!projection.contains(forbidden), "{forbidden} leaked");
         }
-    }
-
-    #[test]
-    fn hostile_objective_matching_rejects_noncombat_paths() {
-        use adventuresim_core::case::{Objective, ObjectivePath, ObjectiveRequirement, SubjectId};
-        let hostile_path = ObjectivePath {
-            objectives: vec![Objective {
-                id: adventuresim_core::case::ObjectiveId::new("objective:defeat").unwrap(),
-                requirement: ObjectiveRequirement::Defeat {
-                    hostile_group_id: "hostile:one".into(),
-                    count: 1,
-                },
-            }],
-        };
-        assert!(objective_path_targets_hostile(&hostile_path, "hostile:one"));
-        assert!(!objective_path_targets_hostile(
-            &hostile_path,
-            "hostile:other"
-        ));
-        let rescue_path = ObjectivePath {
-            objectives: vec![Objective {
-                id: adventuresim_core::case::ObjectiveId::new("objective:rescue").unwrap(),
-                requirement: ObjectiveRequirement::Rescue {
-                    subject_id: SubjectId::new("subject:one").unwrap(),
-                },
-            }],
-        };
-        assert!(!objective_path_targets_hostile(&rescue_path, "hostile:one"));
     }
 
     #[test]

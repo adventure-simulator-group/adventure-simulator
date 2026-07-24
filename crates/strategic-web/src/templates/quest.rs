@@ -120,7 +120,10 @@ fn quest_location_center(
             ))
             div class="quest-visual-wrap" {
                 (visual_stage("quest", &site.name, &site.description))
-                @if show_combat_actions && (can_fight || !resolved) {
+                @if show_combat_actions
+                    && (can_fight
+                        || (presentation.allow_tactical_combat && !resolved)
+                        || autoresolve_report.is_some_and(|report| report.victor == "enemies")) {
                 div class="quest-combat-actions" aria-label="Quest actions" {
                     @if can_fight {
                         @if presentation.allow_tactical_combat {
@@ -128,7 +131,7 @@ fn quest_location_center(
                                 button type="submit" class="btn btn-danger" { "Initiate Combat" }
                             }
                         }
-                        form action=(format!("/quests/{}/autoresolve", presentation.action_id)) method="post" {
+                        form action=(format!("/quests/{}/autoresolve", site.case_site_id)) method="post" {
                             button type="submit" class="btn btn-primary" { "Autoresolve" }
                         }
                     } @else if autoresolve_report.is_some_and(|report| report.victor == "enemies") {
@@ -424,6 +427,50 @@ mod tests {
         assert!(markup.contains("action=\"/quests/actions\""));
         assert!(markup.contains("Inspect the camp"));
         assert!(markup.contains("/quests/site:known/autoresolve"));
+        assert!(!markup.contains("/missions/enter"));
+    }
+
+    #[test]
+    fn unresolved_generated_noncombat_site_has_no_combat_panel() {
+        let presentation = CaseSitePagePresentation {
+            title: "A trail ends at the old well".into(),
+            action_id: "site:evidence".into(),
+            allow_tactical_combat: false,
+        };
+        let site = BackendCaseSitePin {
+            owner_character_id: 7,
+            case_id: "journal:case".into(),
+            case_site_id: "site:evidence".into(),
+            origin_settlement_id: "settlement".into(),
+            name: "the old well".into(),
+            description: "A place to inspect.".into(),
+            scene_key: "village".into(),
+            longitude_e7: 0,
+            latitude_e7: 0,
+            coordinates_are_geographic: false,
+            distance_m: 100,
+            knowledge_stage: "visited".into(),
+            tracked: false,
+            display_title: presentation.title.clone(),
+            generated_case: true,
+            combat_available: false,
+        };
+        let markup = quest_location_center(
+            &presentation,
+            &site,
+            &[],
+            None,
+            &[],
+            false,
+            false,
+            None,
+            None,
+            true,
+        )
+        .into_string();
+        assert!(!markup.contains("quest-combat-actions"));
+        assert!(!markup.contains("Waiting for party leader"));
+        assert!(!markup.contains("Autoresolve"));
         assert!(!markup.contains("/missions/enter"));
     }
 }
