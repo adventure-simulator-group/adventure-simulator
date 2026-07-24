@@ -301,8 +301,9 @@ mod healing_tests {
         activity_incident_source_id, autoresolve_drop, case_refs_have_exact_dialogue_provenance,
         generated_dialogue_action_matches, generated_dialogue_producer_recipient,
         generated_scene_key, hostile_group_authority_row, hostile_resolution_for_objective,
-        incident_group_matches, mission_candidate_from_capability, player_participant_ids,
-        quest_encounter_archetype, refreshed_recruitment_offer_status, sample_mission_candidate,
+        incident_group_matches, mission_candidate_from_capability,
+        npc_conversation_authority_matches, player_participant_ids, quest_encounter_archetype,
+        refreshed_recruitment_offer_status, sample_mission_candidate,
     };
     use adventuresim_core::encounter::EncounterArchetype;
     use std::collections::HashSet;
@@ -346,6 +347,54 @@ mod healing_tests {
                 candidate("candidate:c", HostileResolutionKind::Captured, 20),
             ],
         )
+    }
+
+    #[test]
+    fn persistent_npc_chat_authority_accepts_generated_ids_without_trusting_their_prefix() {
+        assert!(npc_conversation_authority_matches(
+            "riverdale",
+            "riverdale",
+            "npc:riverdale:inn:0",
+            "npc:riverdale:inn:0",
+            "riverdale",
+            "inn",
+            0,
+            1_440,
+            720,
+        ));
+        assert!(!npc_conversation_authority_matches(
+            "riverdale",
+            "ironforge",
+            "npc:riverdale:inn:0",
+            "npc:riverdale:inn:0",
+            "riverdale",
+            "inn",
+            0,
+            1_440,
+            720,
+        ));
+        assert!(!npc_conversation_authority_matches(
+            "riverdale",
+            "riverdale",
+            "npc:riverdale:inn:0",
+            "npc:riverdale:inn:1",
+            "riverdale",
+            "inn",
+            0,
+            1_440,
+            720,
+        ));
+        assert!(!npc_conversation_authority_matches(
+            "riverdale",
+            "riverdale",
+            "npc:riverdale:inn:0",
+            "npc:riverdale:inn:0",
+            "riverdale",
+            "inn",
+            0,
+            600,
+            720,
+        ));
     }
 
     #[test]
@@ -6769,13 +6818,71 @@ fn player_conversation_key(
     Ok(format!("players:{first}:{second}"))
 }
 
-fn npc_conversation_key(sender: &crate::Character, subject_id: &str) -> Result<String, String> {
+fn npc_conversation_authority_matches(
+    settlement_id: &str,
+    npc_home_settlement_id: &str,
+    npc_id: &str,
+    presence_npc_id: &str,
+    presence_settlement_id: &str,
+    presence_location_id: &str,
+    presence_start_minute: u16,
+    presence_end_minute: u16,
+    minute: u64,
+) -> bool {
+    let minute = (minute % 1_440) as u16;
+    npc_home_settlement_id == settlement_id
+        && presence_npc_id == npc_id
+        && presence_settlement_id == settlement_id
+        && !presence_location_id.is_empty()
+        && presence_start_minute <= minute
+        && minute < presence_end_minute
+}
+
+fn npc_conversation_key(
+    ctx: &ReducerContext,
+    sender: &crate::Character,
+    subject_id: &str,
+) -> Result<String, String> {
     let party_id = sender.party_id.as_deref().ok_or("Sender has no party")?;
     let settlement_id = sender
         .current_settlement_id
         .as_deref()
         .ok_or("NPC conversations require a settlement")?;
-    if !subject_id.starts_with(&format!("{settlement_id}:")) {
+    if subject_id.is_empty()
+        || subject_id.chars().count() > 160
+        || subject_id.chars().any(char::is_control)
+    {
+        return Err("NPC is not at the sender's settlement".into());
+    }
+    let npc = ctx
+        .db
+        .settlement_npc()
+        .id()
+        .find(&subject_id.to_string())
+        .ok_or("NPC is not at the sender's settlement")?;
+    let presence = ctx
+        .db
+        .settlement_npc_presence()
+        .npc_id()
+        .find(&subject_id.to_string())
+        .ok_or("NPC is not at the sender's settlement")?;
+    let minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(sender.id)
+        .map_or(720, |time| time.minutes);
+    if !npc_conversation_authority_matches(
+        settlement_id,
+        &npc.home_settlement_id,
+        &npc.id,
+        &presence.npc_id,
+        &presence.settlement_id,
+        &presence.location_id,
+        presence.start_minute,
+        presence.end_minute,
+        minute,
+    ) {
         return Err("NPC is not at the sender's settlement".into());
     }
     Ok(format!("npc:{party_id}:{subject_id}"))
@@ -6806,7 +6913,7 @@ pub fn send_local_chat_message(
             &sender,
             subject_id.parse().map_err(|_| "Invalid player subject")?,
         )?,
-        "npc" => npc_conversation_key(&sender, &subject_id)?,
+        "npc" => npc_conversation_key(ctx, &sender, &subject_id)?,
         _ => return Err("Unknown Local conversation subject".into()),
     };
     ctx.db.local_chat_message().insert(LocalChatMessage {

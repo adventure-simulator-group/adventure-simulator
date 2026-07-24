@@ -566,7 +566,16 @@ async fn start(
             ],
         )
         .await
-        .map_err(|_| StatusCode::CONFLICT)?;
+        .map_err(|error| {
+            tracing::warn!(
+                %error,
+                character_id,
+                npc_actor_id = %request.npc_actor_id,
+                location_id = %request.location_id,
+                "start_dialogue reducer rejected an NPC encounter"
+            );
+            StatusCode::CONFLICT
+        })?;
     Ok(Json(build_view(&state, character_id, &session_id).await?))
 }
 async fn view(
