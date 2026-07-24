@@ -2071,6 +2071,7 @@ fn validate_generated_pattern_condition(
                 profession: npc.profession.clone(),
                 visible_description: String::new(),
                 expected_location: presence.location_id.clone(),
+                expected_location_label: presence.location_id.clone(),
                 presence_version: current_version,
                 allowed_circumstances: Default::default(),
             };
