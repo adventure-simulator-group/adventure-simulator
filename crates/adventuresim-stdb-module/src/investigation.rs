@@ -769,6 +769,17 @@ fn capability_has_successful_attempt_view(ctx: &ViewContext, capability_id: &str
         .any(|attempt| attempt.success)
 }
 
+fn lead_is_live_contact_referral(
+    lead: &InvestigationLead,
+    owner_character_id: u64,
+    case_id: &str,
+) -> bool {
+    lead.owner_character_id == owner_character_id
+        && lead.case_id == case_id
+        && !lead.witness_name.is_empty()
+        && lead.corrected_by.is_empty()
+}
+
 fn capability_has_live_support_view(
     ctx: &ViewContext,
     capability: &InvestigationActionCapability,
@@ -792,7 +803,13 @@ fn capability_has_live_support_view(
             .investigation_lead()
             .owner_character_id()
             .filter(capability.owner_character_id)
-            .any(|lead| lead.case_id == capability.case_id && !lead.witness_name.is_empty())
+            .any(|lead| {
+                lead_is_live_contact_referral(
+                    &lead,
+                    capability.owner_character_id,
+                    &capability.case_id,
+                )
+            })
     {
         return false;
     }
@@ -1354,7 +1371,13 @@ fn capability_has_live_support_reducer(
             .investigation_lead()
             .owner_character_id()
             .filter(capability.owner_character_id)
-            .any(|lead| lead.case_id == capability.case_id && !lead.witness_name.is_empty())
+            .any(|lead| {
+                lead_is_live_contact_referral(
+                    &lead,
+                    capability.owner_character_id,
+                    &capability.case_id,
+                )
+            })
     {
         return false;
     }
@@ -2480,7 +2503,7 @@ fn validate_live_action_prerequisites(
             .investigation_lead()
             .owner_character_id()
             .filter(actor.id)
-            .any(|lead| lead.case_id == capability.case_id && !lead.witness_name.is_empty())
+            .any(|lead| lead_is_live_contact_referral(&lead, actor.id, &capability.case_id))
     {
         return Err("No live witness referral supports this action".into());
     }
@@ -4574,6 +4597,65 @@ mod tests {
             .expect("failed-alternate live-support predicate");
         assert!(recovery.contains("capability_has_live_support_reducer"));
         assert!(recovery.contains("exact_site_knowledge_is_live"));
+    }
+
+    #[test]
+    fn corrected_contact_referral_is_not_live_at_any_action_boundary() {
+        let referral = |owner_character_id, case_id: &str, corrected_by: &str| InvestigationLead {
+            id: "lead".into(),
+            owner_character_id,
+            case_id: case_id.into(),
+            proposition_id: String::new(),
+            summary: "Ask the cooper what she saw.".into(),
+            source_label: "local rumor".into(),
+            confidence_bps: 5_000,
+            destination_stage: "textual".into(),
+            directions: "Public square".into(),
+            exact_location_id: String::new(),
+            latitude_e7: 0,
+            longitude_e7: 0,
+            witness_name: "Greta".into(),
+            witness_description: "A tall cooper.".into(),
+            witness_occupation_or_relationship: "cooper".into(),
+            expected_location: "Public square".into(),
+            current_learned_location: String::new(),
+            contradiction_group: String::new(),
+            corrected_by: corrected_by.into(),
+            recorded_at: 50_000,
+        };
+        let live = referral(7, "case", "");
+        assert!(lead_is_live_contact_referral(&live, 7, "case"));
+        let corrected = referral(7, "case", "replacement-lead");
+        assert!(!lead_is_live_contact_referral(&corrected, 7, "case"));
+        let mut retracted = referral(7, "case", "");
+        retracted.witness_name.clear();
+        assert!(!lead_is_live_contact_referral(&retracted, 7, "case"));
+        assert!(!lead_is_live_contact_referral(&live, 8, "case"));
+        assert!(!lead_is_live_contact_referral(&live, 7, "other-case"));
+
+        let source = include_str!("investigation.rs");
+        let projection = source
+            .split("fn capability_has_live_support_view")
+            .nth(1)
+            .and_then(|tail| tail.split("fn exact_action_site_for_observer").next())
+            .expect("projection contact support");
+        assert!(projection.contains("lead_is_live_contact_referral"));
+        let recovery = source
+            .split("fn capability_has_live_support_reducer")
+            .nth(1)
+            .and_then(|tail| tail.split("fn complete_referred_contact_action").next())
+            .expect("recovery contact support");
+        assert!(recovery.contains("lead_is_live_contact_referral"));
+        let execution = source
+            .split("fn validate_live_action_prerequisites")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("fn case_objective_contains_custody_target")
+                    .next()
+            })
+            .expect("execution contact support");
+        assert!(execution.contains("lead_is_live_contact_referral"));
+        assert!(execution.contains("No live witness referral supports this action"));
     }
 
     #[test]
