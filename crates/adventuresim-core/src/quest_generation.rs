@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const CATALOG_REVISION: &str = "questgen-2026-07-23.1";
+pub const CATALOG_REVISION: &str = "questgen-2026-07-24.1";
 pub const MAX_SOLVER_CANDIDATES: usize = 4_096;
 pub const MAX_SOLVER_VISITED_NODES: usize = 16_384;
 pub const MAX_FACTOR_TRACE_RECORDS: usize = 32_768;
@@ -1825,14 +1825,26 @@ fn build_actions(
     match family {
         TemplateFamily::RecurringDepredation => vec![
             make(
+                "locate_contact",
+                InvestigationActionKind::LocateContact,
+                RouteClass::PatternSurveillance,
+                "contact",
+                witness_npc_id.into(),
+                None,
+                "approach",
+                true,
+                "Find the referred witness.",
+                vec![],
+            ),
+            make(
                 "approach",
                 InvestigationActionKind::ApproachLead,
                 RouteClass::PhysicalTrail,
                 "area",
                 area_id.into(),
-                None,
+                Some("locate_contact"),
                 "watch",
-                true,
+                false,
                 "Approach the last reported incident.",
                 vec![GeneratedActionOutput::Destination {
                     stage: GeneratedDestinationStage::ApproximateArea,
@@ -1886,9 +1898,9 @@ fn build_actions(
                 RouteClass::PatternSurveillance,
                 "contact",
                 witness_npc_id.into(),
-                None,
+                Some("locate_contact"),
                 "approach",
-                true,
+                false,
                 "Watch where incidents recur.",
                 vec![
                     GeneratedActionOutput::Destination {
@@ -2690,8 +2702,67 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
     if route_classes.len() < 2 {
         errors.push("case requires two materially different route classes".into());
     }
-    if case.actions.iter().filter(|a| a.active_initially).count() < 2 {
-        errors.push("two routes must be initially playable".into());
+    let initial_actions = case
+        .actions
+        .iter()
+        .filter(|action| action.active_initially)
+        .collect::<Vec<_>>();
+    match case.family {
+        TemplateFamily::RecurringDepredation => {
+            let valid_contact_entry = initial_actions.first().is_some_and(|entry| {
+                let successors = case
+                    .actions
+                    .iter()
+                    .filter(|action| action.prerequisite.as_ref() == Some(&entry.id))
+                    .collect::<Vec<_>>();
+                initial_actions.len() == 1
+                    && entry.kind == InvestigationActionKind::LocateContact
+                    && entry.target_kind == "contact"
+                    && entry.prerequisite.is_none()
+                    && case
+                        .witnesses
+                        .iter()
+                        .any(|witness| witness.npc_id == entry.target_id)
+                    && successors.len() == 2
+                    && successors.iter().all(|action| !action.active_initially)
+                    && successors
+                        .iter()
+                        .any(|action| action.kind == InvestigationActionKind::ApproachLead)
+                    && successors
+                        .iter()
+                        .any(|action| action.kind == InvestigationActionKind::Watch)
+                    && successors
+                        .iter()
+                        .map(|action| action.route)
+                        .collect::<BTreeSet<_>>()
+                        .len()
+                        == 2
+            });
+            if !valid_contact_entry {
+                errors.push(
+                    "recurring cases require one exact contact entry unlocking inactive approach and watch routes"
+                        .into(),
+                );
+            }
+        }
+        TemplateFamily::DisappearanceOrLoss => {
+            if initial_actions.len() < 2
+                || !initial_actions
+                    .iter()
+                    .any(|action| action.route == RouteClass::PhysicalTrail)
+                || initial_actions
+                    .iter()
+                    .map(|action| action.route)
+                    .collect::<BTreeSet<_>>()
+                    .len()
+                    < 2
+            {
+                errors.push(
+                    "disappearance cases require independent physical and witness entry routes"
+                        .into(),
+                );
+            }
+        }
     }
     let action_ids: BTreeSet<_> = case.actions.iter().map(|a| a.id.clone()).collect();
     let mut reachable: BTreeSet<ActionId> = case
@@ -3468,6 +3539,125 @@ mod tests {
     }
 
     #[test]
+    fn recurring_routes_unlock_only_after_exact_referred_contact() {
+        let method = |kind| match kind {
+            InvestigationActionKind::InspectSite => "inspect_site",
+            InvestigationActionKind::SearchArea => "search_area",
+            InvestigationActionKind::FollowTracks => "follow_tracks",
+            InvestigationActionKind::ReacquireTracks => "reacquire_tracks",
+            InvestigationActionKind::LocateContact => "locate_contact",
+            InvestigationActionKind::Watch => "watch",
+            InvestigationActionKind::Patrol => "patrol",
+            InvestigationActionKind::LayAmbush => "lay_ambush",
+            InvestigationActionKind::ApproachLead => "approach_lead",
+        };
+        for seed in [0, 7, 41, 255] {
+            let generated = generate(&context(seed, TemplateFamily::RecurringDepredation)).unwrap();
+            let contact = generated
+                .actions
+                .iter()
+                .find(|action| action.kind == InvestigationActionKind::LocateContact)
+                .unwrap();
+            let approach = generated
+                .actions
+                .iter()
+                .find(|action| action.kind == InvestigationActionKind::ApproachLead)
+                .unwrap();
+            let watch = generated
+                .actions
+                .iter()
+                .find(|action| action.kind == InvestigationActionKind::Watch)
+                .unwrap();
+            assert!(contact.active_initially);
+            for successor in [approach, watch] {
+                assert!(!successor.active_initially);
+                assert_eq!(successor.prerequisite.as_ref(), Some(&contact.id));
+            }
+
+            let mut states = generated
+                .actions
+                .iter()
+                .map(|action| ReferredContactActionState {
+                    id: action.id.0.clone(),
+                    owner_character_id: 7,
+                    case_id: generated.canonical_case_id.clone(),
+                    method: method(action.kind).into(),
+                    target_kind: action.target_kind.clone(),
+                    target_id: action.target_id.clone(),
+                    required_action_id: action
+                        .prerequisite
+                        .as_ref()
+                        .map_or_else(String::new, |id| id.0.clone()),
+                    active: action.active_initially,
+                    version: 0,
+                    successful_attempt: false,
+                })
+                .collect::<Vec<_>>();
+            for successor in [approach, watch] {
+                let state = states
+                    .iter()
+                    .find(|state| state.id == successor.id.0)
+                    .unwrap();
+                assert!(!state.active);
+                assert!(!states.iter().any(|candidate| {
+                    candidate.id == state.required_action_id && candidate.successful_attempt
+                }));
+            }
+            assert!(matches!(
+                transition_referred_contact_action(
+                    &mut states,
+                    7,
+                    &generated.canonical_case_id,
+                    &generated.witnesses[0].npc_id,
+                )
+                .unwrap(),
+                ReferredContactTransition::Applied { .. }
+            ));
+            for successor in [approach, watch] {
+                let state = states
+                    .iter()
+                    .find(|state| state.id == successor.id.0)
+                    .unwrap();
+                assert!(state.active);
+                assert!(states.iter().any(|candidate| {
+                    candidate.id == state.required_action_id && candidate.successful_attempt
+                }));
+            }
+        }
+    }
+
+    #[test]
+    fn arbitrary_single_root_graph_does_not_satisfy_entry_invariant() {
+        let mut generated = generate(&context(7, TemplateFamily::RecurringDepredation)).unwrap();
+        let root = generated
+            .actions
+            .iter_mut()
+            .find(|action| action.active_initially)
+            .unwrap();
+        root.kind = InvestigationActionKind::Watch;
+        assert!(validate(&generated).is_err());
+
+        let mut generated = generate(&context(7, TemplateFamily::RecurringDepredation)).unwrap();
+        let root_id = generated
+            .actions
+            .iter()
+            .find(|action| action.active_initially)
+            .unwrap()
+            .id
+            .clone();
+        let watch = generated
+            .actions
+            .iter_mut()
+            .find(|action| {
+                action.kind == InvestigationActionKind::Watch
+                    && action.prerequisite.as_ref() == Some(&root_id)
+            })
+            .unwrap();
+        watch.prerequisite = None;
+        assert!(validate(&generated).is_err());
+    }
+
+    #[test]
     fn deterministic_and_counterfactual() {
         let a = generate(&context(41, TemplateFamily::DisappearanceOrLoss)).unwrap();
         assert_eq!(
@@ -3526,7 +3716,7 @@ mod tests {
         assert_eq!(adult.bridge, Some("bridge.child_at_adult_venue"));
     }
     #[test]
-    fn graph_survives_removing_either_witness_route() {
+    fn graph_keeps_both_routes_reachable_from_authored_entries() {
         for family in [
             TemplateFamily::RecurringDepredation,
             TemplateFamily::DisappearanceOrLoss,
@@ -3539,12 +3729,29 @@ mod tests {
                 .map(|a| a.route)
                 .collect::<BTreeSet<_>>();
             assert_eq!(routes.len(), 2);
-            for route in routes {
-                assert!(
-                    case.actions
-                        .iter()
-                        .any(|a| a.route != route && a.active_initially)
-                );
+            if family == TemplateFamily::RecurringDepredation {
+                let roots = case
+                    .actions
+                    .iter()
+                    .filter(|action| action.active_initially)
+                    .collect::<Vec<_>>();
+                assert_eq!(roots.len(), 1);
+                assert_eq!(roots[0].kind, InvestigationActionKind::LocateContact);
+                let unlocked = case
+                    .actions
+                    .iter()
+                    .filter(|action| action.prerequisite.as_ref() == Some(&roots[0].id))
+                    .map(|action| action.route)
+                    .collect::<BTreeSet<_>>();
+                assert_eq!(unlocked, routes);
+            } else {
+                for route in routes {
+                    assert!(
+                        case.actions
+                            .iter()
+                            .any(|action| action.route != route && action.active_initially)
+                    );
+                }
             }
         }
     }
@@ -3914,16 +4121,29 @@ mod tests {
                     .actions
                     .iter()
                     .find(|action| {
-                        action.active_initially
-                            && action.outputs.iter().any(|output| {
-                                matches!(
-                                    output,
-                                    GeneratedActionOutput::Evidence { evidence_id }
-                                        if evidence_id == &pattern_evidence.id
-                                )
-                            })
+                        action.outputs.iter().any(|output| {
+                            matches!(
+                                output,
+                                GeneratedActionOutput::Evidence { evidence_id }
+                                    if evidence_id == &pattern_evidence.id
+                            )
+                        })
                     })
                     .expect("generic action earns the clue");
+                match family {
+                    TemplateFamily::RecurringDepredation => {
+                        let contact = case
+                            .actions
+                            .iter()
+                            .find(|action| action.kind == InvestigationActionKind::LocateContact)
+                            .expect("recurring case contact entry");
+                        assert!(!producer.active_initially);
+                        assert_eq!(producer.prerequisite.as_ref(), Some(&contact.id));
+                    }
+                    TemplateFamily::DisappearanceOrLoss => {
+                        assert!(producer.active_initially);
+                    }
+                }
                 prelearning_blueprints.insert(format!(
                     "{:?}:{}:{}",
                     producer.kind, producer.target_kind, producer.safe_summary

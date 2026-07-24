@@ -116,9 +116,7 @@ impl PartyAction {
             Self::TravelToSettlement { settlement_id, .. } => {
                 format!("Travel to settlement {settlement_id}")
             }
-            Self::TravelToCaseSite { case_site_id, .. } => {
-                format!("Travel to case site {case_site_id}")
-            }
+            Self::TravelToCaseSite { .. } => "Travel to investigation site".into(),
             Self::RemovePartyMember { character_id } => {
                 format!("Remove party member {character_id}")
             }
