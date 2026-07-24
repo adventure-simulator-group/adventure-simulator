@@ -1798,6 +1798,7 @@ pub fn set_character_religion(
             .id()
             .find(&settlement_id)
             .ok_or("Character's settlement not found")?;
+        require_profession_service(&settlement.economy)?;
         if !settlement
             .religious_status
             .represented_religions()
@@ -1821,14 +1822,38 @@ pub fn set_character_religion(
     refresh_character_strategic_condition(ctx, character_id).map(|_| ())
 }
 
+fn require_profession_service(
+    profile: &adventuresim_world_schema::SettlementEconomyProfile,
+) -> Result<(), String> {
+    use adventuresim_core::settlement_economy::{
+        SettlementActionService, action_service_available,
+    };
+    if action_service_available(profile, SettlementActionService::Temple) {
+        Ok(())
+    } else {
+        Err("This settlement has no church to receive a profession of faith".into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         CharacterNeeds, ProjectedMoraleSource, accumulated_leisure_morale,
         condition_projection_member_ids, food_reserve_days, holy_day_demand_has_expired,
-        leisure_morale_effect, rank_morale_sources, religion_cohort_pressure, water_reserve_days,
+        leisure_morale_effect, rank_morale_sources, religion_cohort_pressure,
+        require_profession_service, water_reserve_days,
     };
     use std::collections::BTreeMap;
+
+    #[test]
+    fn profession_requires_an_available_temple_service() {
+        let mut profile = adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder();
+        assert!(require_profession_service(&profile).is_err());
+        profile
+            .services
+            .push(adventuresim_world_schema::SettlementService::Temple);
+        assert!(require_profession_service(&profile).is_ok());
+    }
 
     #[test]
     fn irreverent_only_cohorts_create_no_religious_pressure() {

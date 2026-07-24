@@ -5547,11 +5547,10 @@ fn dialogue_runtime_bindings(
             ),
         );
         bindings.bind(S::ReferralRole, contact.profession);
-        bindings.bind(S::ReferralLocation, witness.expected_location_label.clone());
-        bindings.bind(
-            S::DescribedLocation,
-            witness.expected_location_label.clone(),
-        );
+        let referral_location =
+            adventuresim_core::quest_generation::referral_display_location(witness);
+        bindings.bind(S::ReferralLocation, referral_location.to_owned());
+        bindings.bind(S::DescribedLocation, referral_location.to_owned());
         if adventuresim_core::quest_generation::exact_referral_contact(&contact.id, &npc.id) {
             let testimony = witness
                 .testimony

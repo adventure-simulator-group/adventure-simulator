@@ -243,6 +243,7 @@ pub struct GeneratedPatternTarget {
     pub profession: String,
     pub expected_settlement_id: String,
     pub expected_location: String,
+    pub expected_location_label: String,
     pub presence_version: u64,
 }
 
@@ -353,6 +354,12 @@ pub struct WitnessBinding {
     pub expected_location_label: String,
     pub visible_description: String,
     pub testimony: Vec<TestimonyDraft>,
+}
+
+/// Exact player-visible tab label for every referral projection. The raw
+/// location ID remains separate authority for presence checks.
+pub fn referral_display_location(witness: &WitnessBinding) -> &str {
+    &witness.expected_location_label
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -2066,6 +2073,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             profession: candidate.profession.clone(),
             expected_settlement_id: context.settlement_id.clone(),
             expected_location: candidate.expected_location.clone(),
+            expected_location_label: candidate.expected_location_label.clone(),
             presence_version: candidate.presence_version,
         }
     });
@@ -2125,7 +2133,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 target.age_band,
                 target.sex,
                 target.profession,
-                target.expected_location
+                target.expected_location_label
             )
         }
         AttackPattern::Irregular => {
@@ -2747,6 +2755,14 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
             errors.push(format!("{} lacks persistent referral data", witness.id.0));
         }
     }
+    for target in &case.pattern_targets {
+        if target.expected_location.is_empty() || target.expected_location_label.is_empty() {
+            errors.push(format!(
+                "{} lacks persistent pattern-target location data",
+                target.cohort_id
+            ));
+        }
+    }
     for t in &case.factor_trace {
         if t.accepted && t.plausibility > 0 && t.plausibility < 5 && t.required_bridge.is_none() {
             errors.push(format!(
@@ -3126,6 +3142,7 @@ mod tests {
                         witness.expected_location_label, tab.label,
                         "{family:?} seed {seed} did not use the exact advertised tab label"
                     );
+                    assert_eq!(referral_display_location(witness), tab.label);
                 }
             }
         }
@@ -3889,6 +3906,28 @@ mod tests {
                 current,
                 &source.settlement_id
             ));
+            assert_eq!(
+                target.expected_location_label,
+                current.expected_location_label
+            );
+            assert!(
+                case.witnesses
+                    .iter()
+                    .flat_map(|witness| &witness.testimony)
+                    .any(|draft| draft
+                        .truthful_text
+                        .contains(&target.expected_location_label))
+            );
+            if target.expected_location != target.expected_location_label {
+                assert!(
+                    case.witnesses
+                        .iter()
+                        .flat_map(|witness| &witness.testimony)
+                        .all(|draft| !draft
+                            .truthful_text
+                            .contains(&format!("near {}.", target.expected_location)))
+                );
+            }
             let mut wrong_demographic = current.clone();
             wrong_demographic.demographic = if current.demographic == WitnessDemographic::Child {
                 WitnessDemographic::Guard
