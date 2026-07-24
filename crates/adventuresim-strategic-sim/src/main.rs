@@ -1,5 +1,5 @@
 use adventuresim_strategic_sim::*;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::{
     fs,
     io::Read,
@@ -15,6 +15,38 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Evaluate generated investigation quests through an observer-safe player agent.
+    QuestEval {
+        #[arg(long, value_enum, default_value_t = EvalPolicyArg::Scripted)]
+        policy: EvalPolicyArg,
+        #[arg(long, default_value_t = 41)]
+        seed: u64,
+        #[arg(long, default_value_t = 4)]
+        cases_per_template: u32,
+        /// Public player-visible trace and aggregate metrics.
+        #[arg(long)]
+        public_output: PathBuf,
+        /// Separate developer-only generator truth and factor audit.
+        #[arg(long)]
+        developer_output: PathBuf,
+        #[arg(long)]
+        endpoint: Option<String>,
+        #[arg(long, default_value = "gpt-4.1-nano")]
+        model: String,
+        /// Name of the environment variable containing the key; never the key itself.
+        #[arg(long, default_value = "OPENAI_API_KEY")]
+        api_key_env: String,
+        /// Required before any paid/provider network request.
+        #[arg(long, default_value_t = false)]
+        allow_network: bool,
+    },
+    /// Replay previously validated opaque actions for one deterministic fixture.
+    QuestEvalReplay {
+        #[arg(long)]
+        fixture: PathBuf,
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
     /// Generate profiles and run canonical settlement downtime.
     Run {
         #[arg(long)]
@@ -69,8 +101,77 @@ enum Command {
     },
 }
 
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum EvalPolicyArg {
+    Scripted,
+    Mock,
+    Openai,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
+    let command = match cli.command {
+        Command::QuestEval {
+            policy,
+            seed,
+            cases_per_template,
+            public_output,
+            developer_output,
+            endpoint,
+            model,
+            api_key_env,
+            allow_network,
+        } => {
+            let configs = golden_suite(seed, cases_per_template);
+            let limits = EvalLimits {
+                max_cases: cases_per_template
+                    .checked_mul(2)
+                    .ok_or("case count overflow")?,
+                ..EvalLimits::default()
+            };
+            let mut policy: Box<dyn QuestPolicy> = match policy {
+                EvalPolicyArg::Scripted => Box::new(ScriptedPolicy::default()),
+                EvalPolicyArg::Mock => Box::new(MockLlmPolicy),
+                EvalPolicyArg::Openai => {
+                    let config = ProviderConfig {
+                        endpoint: endpoint.unwrap_or_else(|| ProviderConfig::default().endpoint),
+                        model,
+                        api_key_env,
+                        allow_network,
+                        ..ProviderConfig::default()
+                    };
+                    // Construction validates opt-in and credential before case generation.
+                    Box::new(OpenAiCompatiblePolicy::new(config)?)
+                }
+            };
+            let bundle = evaluate_cases(&configs, policy.as_mut(), &limits)?;
+            fs::write(&public_output, serde_json::to_vec_pretty(&bundle.public)?)?;
+            fs::write(
+                &developer_output,
+                serde_json::to_vec_pretty(&bundle.developer)?,
+            )?;
+            eprintln!(
+                "quest evaluation: {}/{} solved; public={} developer={}",
+                bundle.public.metrics.solved,
+                bundle.public.metrics.cases,
+                public_output.display(),
+                developer_output.display()
+            );
+            return Ok(());
+        }
+        Command::QuestEvalReplay { fixture, output } => {
+            let recorded: ReplayCase = serde_json::from_slice(&read_bounded(&fixture)?)?;
+            let trace = replay_case(&recorded)?;
+            let json = serde_json::to_vec_pretty(&trace)?;
+            if let Some(path) = output {
+                fs::write(path, json)?;
+            } else {
+                println!("{}", String::from_utf8(json)?);
+            }
+            return Ok(());
+        }
+        command => command,
+    };
     if let Command::CoreLoop {
         host,
         database,
@@ -81,7 +182,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         party_size,
         run_nonce,
         output,
-    } = cli.command
+    } = command
     {
         let report = run_core_loop(CoreLoopConfig {
             host,
@@ -112,7 +213,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         return Ok(());
     }
-    let report = match cli.command {
+    let report = match command {
         Command::Run {
             config,
             output,
@@ -171,7 +272,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             emit(run_profiles(config, vec![a, b])?, output)?
         }
-        Command::CoreLoop { .. } => unreachable!(),
+        Command::CoreLoop { .. } | Command::QuestEval { .. } | Command::QuestEvalReplay { .. } => {
+            unreachable!()
+        }
     };
     eprintln!("{}", human_summary(&report));
     Ok(())

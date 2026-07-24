@@ -4,7 +4,13 @@ Local workflow for running the Adventure Simulator demo.
 
 For deterministic multi-year NPC balance experiments and replay commands, see
 [`STRATEGIC_SIMULATION.md`](STRATEGIC_SIMULATION.md), `just strategic-sim`, and
-`just test-strategic-sim`. The opt-in authoritative integration driver is
+`just test-strategic-sim`. Credential-free generated-investigation regression
+coverage is available through `just quest-eval` and `just quest-eval-mock`;
+these write separate player-visible and developer-only reports. Provider-backed
+runs require explicit `--allow-network` and read a key only from the named
+environment variable. See
+[`STRATEGIC_SIMULATION.md`](STRATEGIC_SIMULATION.md#investigation-quest-evaluator).
+The opt-in authoritative integration driver is
 `just strategic-sim-core-loop`; the recipe creates, claims, and deletes its own
   nonce-named loopback database, compiles a one-run bootstrap capability in
   memory, and accepts no host, database, or capability override.
