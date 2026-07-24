@@ -1327,6 +1327,88 @@ mod healing_tests {
     }
 
     #[test]
+    fn dialogue_case_provenance_fails_closed_for_generated_authority_damage() {
+        use adventuresim_core::quest_generation::TemplateFamily;
+        let generated = generated_case(11, TemplateFamily::DisappearanceOrLoss);
+        let generated_case = CaseAuthority {
+            id: generated.canonical_case_id.clone(),
+            investigation_case_id: generated.canonical_case_id.clone(),
+            provenance_kind: "generated".into(),
+            generated_case_id: generated.canonical_case_id.clone(),
+            local_problem_id: Some(generated.problem_id.clone()),
+            objective_expression_json: serde_json::to_string(&generated.objectives).unwrap(),
+            resolution_status: CaseResolutionStatus::Open,
+            resolved_by_party_id: None,
+        };
+        let context = adventuresim_core::quest_generation::GenerationContext {
+            seed: generated.generation_seed,
+            observer_entropy_hi: 1,
+            observer_entropy_lo: 2,
+            settlement_id: "test-settlement".into(),
+            settlement_name: "Test Settlement".into(),
+            scope: adventuresim_core::local_problem::Scope::Settlement {
+                settlement_id: "test-settlement".into(),
+            },
+            ordinal: 0,
+            now_minute: 10_000,
+            requested_family: Some(TemplateFamily::DisappearanceOrLoss),
+            witness_candidates: adventuresim_core::quest_generation::test_witnesses(),
+        };
+        let authority = QuestGenerationAuthority {
+            case_id: generated.canonical_case_id.clone(),
+            public_case_id: generated.public_case_id.clone(),
+            seed: generated.generation_seed,
+            catalog_revision: generated.catalog_revision.clone(),
+            context_snapshot_json: serde_json::to_string(&context).unwrap(),
+            manifest_json: serde_json::to_string(&generated).unwrap(),
+            factor_trace_json: serde_json::to_string(&generated.factor_trace).unwrap(),
+        };
+        assert!(
+            validated_generated_dialogue_manifest(&generated_case, Some(&authority))
+                .unwrap()
+                .is_some()
+        );
+        assert!(validated_generated_dialogue_manifest(&generated_case, None).is_err());
+        let mut malformed = authority.clone();
+        malformed.manifest_json = "not-json".into();
+        assert!(validated_generated_dialogue_manifest(&generated_case, Some(&malformed)).is_err());
+        let mut mismatched = authority.clone();
+        mismatched.public_case_id = "wrong-public".into();
+        assert!(validated_generated_dialogue_manifest(&generated_case, Some(&mismatched)).is_err());
+        let mut wrong_objective = generated_case.clone();
+        wrong_objective.objective_expression_json = "[]".into();
+        assert!(validated_generated_dialogue_manifest(&wrong_objective, Some(&authority)).is_err());
+        let manual = CaseAuthority {
+            id: "manual-case".into(),
+            investigation_case_id: "manual-case".into(),
+            provenance_kind: "manual".into(),
+            generated_case_id: String::new(),
+            local_problem_id: None,
+            objective_expression_json: "{}".into(),
+            resolution_status: CaseResolutionStatus::Open,
+            resolved_by_party_id: None,
+        };
+        assert_eq!(
+            validated_generated_dialogue_manifest(&manual, None).unwrap(),
+            None
+        );
+
+        let source = include_str!("strategic.rs");
+        let eligibility = source
+            .split("fn issue_dialogue_investigation_bindings")
+            .nth(1)
+            .and_then(|tail| tail.split("fn case_has_exact_dialogue_provenance").next())
+            .unwrap();
+        let execution = source
+            .split("fn apply_dialogue_investigation_action")
+            .nth(1)
+            .and_then(|tail| tail.split("fn same_location").next())
+            .unwrap();
+        assert!(eligibility.contains("generated_dialogue_recipient("));
+        assert!(execution.contains("generated_dialogue_recipient("));
+    }
+
+    #[test]
     fn generated_hostile_materialization_preserves_manifest_identity_across_links() {
         use adventuresim_core::{
             case::ObjectiveRequirement,
@@ -2678,6 +2760,9 @@ pub struct CaseAuthority {
     pub id: String,
     #[unique]
     pub investigation_case_id: String,
+    /// Immutable private origin used by dialogue and objective authority.
+    pub provenance_kind: String,
+    pub generated_case_id: String,
     pub local_problem_id: Option<String>,
     pub objective_expression_json: String,
     pub resolution_status: CaseResolutionStatus,
@@ -5698,18 +5783,53 @@ fn generated_dialogue_recipient(
     npc_ids: &HashSet<String>,
     fallback: String,
 ) -> Result<Option<String>, String> {
-    let Some(authority) = ctx.db.quest_generation_authority().case_id().find(&case.id) else {
+    let authority = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&case.generated_case_id);
+    let Some(manifest) = validated_generated_dialogue_manifest(case, authority.as_ref())? else {
         return Ok(Some(fallback));
     };
-    let manifest: adventuresim_core::quest_generation::GeneratedCase =
-        serde_json::from_str(&authority.manifest_json)
-            .map_err(|_| "Generated quest manifest is invalid")?;
     Ok(generated_dialogue_producer_recipient(
         &manifest,
         objective_id,
         action,
         npc_ids,
     ))
+}
+
+fn validated_generated_dialogue_manifest(
+    case: &CaseAuthority,
+    authority: Option<&QuestGenerationAuthority>,
+) -> Result<Option<adventuresim_core::quest_generation::GeneratedCase>, String> {
+    if case.provenance_kind == "manual" && case.generated_case_id.is_empty() {
+        return Ok(None);
+    }
+    if case.provenance_kind != "generated"
+        || case.generated_case_id.is_empty()
+        || case.generated_case_id != case.id
+    {
+        return Err("Case dialogue provenance is invalid".into());
+    }
+    let authority = authority.ok_or("Generated dialogue authority is missing")?;
+    let manifest: adventuresim_core::quest_generation::GeneratedCase =
+        serde_json::from_str(&authority.manifest_json)
+            .map_err(|_| "Generated quest manifest is invalid")?;
+    if authority.case_id != manifest.canonical_case_id
+        || authority.public_case_id != manifest.public_case_id
+        || manifest.canonical_case_id != case.generated_case_id
+        || serde_json::to_string(&manifest.objectives)
+            .map_err(|_| "Generated objective authority is invalid")?
+            != case.objective_expression_json
+    {
+        return Err("Generated dialogue authority does not match case provenance".into());
+    }
+    serde_json::from_str::<adventuresim_core::quest_generation::GenerationContext>(
+        &authority.context_snapshot_json,
+    )
+    .map_err(|_| "Generated dialogue context is invalid")?;
+    Ok(Some(manifest))
 }
 
 fn generated_dialogue_producer_recipient(
@@ -16778,6 +16898,8 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
     ctx.db.case_authority().insert(CaseAuthority {
         id: generated.canonical_case_id.clone(),
         investigation_case_id: generated.canonical_case_id.clone(),
+        provenance_kind: "generated".into(),
+        generated_case_id: generated.canonical_case_id.clone(),
         local_problem_id: Some(generated.problem_id.clone()),
         objective_expression_json: serde_json::to_string(&generated.objectives)
             .map_err(|_| "Could not encode generated objectives")?,

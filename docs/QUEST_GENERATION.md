@@ -87,6 +87,11 @@ capability ID from the private generation context and require its method,
 target, terrain, prerequisite, alternate, summary, consequence, and typed
 outputs to match the immutable manifest. Canonical and public case aliases are
 resolved only through private indexed authority, with collisions rejected.
+Private case/objective authority carries the same explicit manual-or-generated
+provenance. Dialogue eligibility and execution share one validator: only an
+explicitly manual case may use its current-NPC fallback, while a generated case
+requires its immutable manifest, context, objective expression, and authored
+dialogue producer to remain intact.
 
 ## Discovery and resolution
 
