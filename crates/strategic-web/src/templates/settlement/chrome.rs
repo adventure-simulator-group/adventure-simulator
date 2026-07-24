@@ -482,9 +482,9 @@ mod tests {
 
     #[test]
     fn responsive_and_hidden_control_rules_keep_content_available() {
-        let layout = include_str!("../../static/css/layout.css");
-        let strategic = include_str!("../../static/css/strategic.css");
-        let utilities = include_str!("../../static/css/utilities.css");
+        let layout = include_str!("../../../static/css/layout.css");
+        let strategic = include_str!("../../../static/css/strategic.css");
+        let utilities = include_str!("../../../static/css/utilities.css");
         assert!(layout.contains("grid-template-areas: \"main\" \"left\" \"right\""));
         assert!(layout.contains(".right-sidebar {\n    display: block;"));
         assert!(strategic.contains("@media (hover: none), (pointer: coarse)"));

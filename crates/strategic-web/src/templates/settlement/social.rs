@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use maud::{Markup, html};
 
 use super::{
@@ -7,7 +5,7 @@ use super::{
     context::LocationView,
     trade::{item_name_with_quality, trade_inventory_table_header},
 };
-use crate::spacetimedb::{Character, InventoryItem, ItemDefinition};
+use crate::spacetimedb::{Character, InventoryItem};
 use crate::templates::{decorative_game_icon, item_display_name, item_type_icon, sidebar_section};
 
 #[derive(Debug, Clone, Default)]
@@ -446,6 +444,7 @@ pub(super) fn inventory_rail(
 mod tests {
     use super::*;
     use crate::spacetimedb::*;
+    use crate::templates::settlement::settlement_npc_location_page;
     use crate::templates::settlement::test_support::*;
 
     #[test]
@@ -698,9 +697,9 @@ mod tests {
 
     #[test]
     fn chat_css_keeps_fallbacks_and_mobile_message_space() {
-        let css = include_str!("../../static/css/strategic.css");
-        let utilities = include_str!("../../static/css/utilities.css");
-        let trade_script = include_str!("../../static/party-trade.js");
+        let css = include_str!("../../../static/css/strategic.css");
+        let utilities = include_str!("../../../static/css/utilities.css");
+        let trade_script = include_str!("../../../static/party-trade.js");
         let fallback = css
             .find("background: rgb(33 21 15 / 88%);")
             .expect("chat needs a background fallback");

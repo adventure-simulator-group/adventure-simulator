@@ -1,4 +1,4 @@
-use adventuresim_core::{equipment::EncumbranceSummary, strategic_schedule::CombatTrainingProfile};
+use adventuresim_core::equipment::EncumbranceSummary;
 use maud::{Markup, html};
 
 use super::{
@@ -14,7 +14,6 @@ use super::{
         settlement_npc_chat_area,
     },
 };
-use crate::medical::MedicalPresentation;
 use crate::spacetimedb::{
     Character, CharacterCondition, CharacterEquip, CharacterLimbs, CharacterStats, FoodLot,
     InventoryItem, InventoryQuantityTarget, ItemDefinition, ItemSlot, PartyInventoryItem,
@@ -1755,7 +1754,7 @@ mod tests {
 
     #[test]
     fn encumbrance_css_uses_a_linear_midpoint_gradient_and_contrast_marker() {
-        let css = include_str!("../../static/css/strategic.css");
+        let css = include_str!("../../../static/css/strategic.css");
         assert!(css.contains("linear-gradient(90deg, #238b45 0%, #f4d03f 50%, #c62828 100%)"));
         assert!(css.contains(".encumbrance-marker"));
         assert!(css.contains("background: #fff"));
@@ -1773,7 +1772,7 @@ mod tests {
             "<div class=\"encumbrance-inventory-scroll\"><table class=\"test-items\"></table></div><button class=\"test-footer\"></button><div class=\"encumbrance\">"
         ));
 
-        let css = include_str!("../../static/css/strategic.css");
+        let css = include_str!("../../../static/css/strategic.css");
         assert!(css.contains(".sidebar-section:has(> .encumbrance-inventory-rail)"));
         assert!(css.contains(".encumbrance-inventory-scroll"));
         assert!(css.contains("overflow-y: auto"));

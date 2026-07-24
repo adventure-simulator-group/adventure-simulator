@@ -3,10 +3,7 @@ use std::{fmt, str::FromStr};
 use maud::Markup;
 
 use crate::spacetimedb::SettlementCategory;
-use crate::templates::{
-    camp_location_layout_with_session, quest_location_layout_with_session,
-    settlement_layout_with_session,
-};
+use crate::templates::{quest_location_layout_with_session, settlement_layout_with_session};
 
 #[derive(Clone, Debug)]
 pub struct LocationView {

@@ -2,7 +2,7 @@ use maud::{Markup, html};
 
 use super::trade::service_page;
 use crate::spacetimedb::{
-    Character, CharacterCondition, CharacterLimbs, CharacterStats, InventoryItem, ItemDefinition,
+    Character, CharacterCondition, CharacterLimbs, CharacterStats, InventoryItem, Settlement,
 };
 use crate::templates::decorative_game_icon;
 

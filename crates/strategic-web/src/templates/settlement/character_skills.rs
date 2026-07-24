@@ -1689,12 +1689,12 @@ mod tests {
 
     #[test]
     fn schedule_and_equipment_scripts_use_the_new_interactions() {
-        let schedule = include_str!("../../static/training-schedule.js");
-        let numeric = include_str!("../../static/numeric-editor.js");
-        let equipment = include_str!("../../static/equipment-toggle.js");
-        let live_regions = include_str!("../../static/live-regions.js");
-        let immediate_activity = include_str!("../../static/immediate-activity.js");
-        let css = include_str!("../../static/css/strategic.css");
+        let schedule = include_str!("../../../static/training-schedule.js");
+        let numeric = include_str!("../../../static/numeric-editor.js");
+        let equipment = include_str!("../../../static/equipment-toggle.js");
+        let live_regions = include_str!("../../../static/live-regions.js");
+        let immediate_activity = include_str!("../../../static/immediate-activity.js");
+        let css = include_str!("../../../static/css/strategic.css");
         assert!(schedule.contains("function parseClock(value)"));
         assert!(schedule.contains("window.StrategicNumericEditor.open"));
         assert!(numeric.contains("input.type = 'text'"));

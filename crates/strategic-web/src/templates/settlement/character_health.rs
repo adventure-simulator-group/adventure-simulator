@@ -1,9 +1,8 @@
 use maud::{Markup, html};
 
 use super::{
-    character_skills::{SkillAction, SkillRankBarOptions, skill_action_icon, skill_rank_bar},
-    chrome::party_portrait_overlay,
-    context::{LocationKind, LocationView},
+    character_skills::{SkillRankBarOptions, skill_rank_bar},
+    context::LocationView,
     trade::filth_status_bar,
 };
 use crate::medical::MedicalPresentation;
@@ -1216,7 +1215,7 @@ mod tests {
         assert!(popup.contains("/examination/44/dismiss"));
         assert!(popup.contains("?building=inn"));
         assert!(popup.contains("data-medical-examination"));
-        let lifecycle = include_str!("../../static/medical-examination.js");
+        let lifecycle = include_str!("../../../static/medical-examination.js");
         assert!(lifecycle.contains("pagehide"));
         assert!(lifecycle.contains("navigator.sendBeacon"));
         assert!(lifecycle.contains("event.key !== \"Escape\""));
