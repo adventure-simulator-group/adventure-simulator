@@ -65,7 +65,8 @@ use adventuresim_stdb_client::{
     seed_simulation_disease_reducer::seed_simulation_disease,
     seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage,
     seed_simulation_world_reducer::seed_simulation_world,
-    settlement_smith_table::SettlementSmithTableAccess,
+    settlement_service_type::SettlementService, settlement_smith_table::SettlementSmithTableAccess,
+    settlement_table::SettlementTableAccess,
     simulate_contract_issuer_interaction_reducer::simulate_contract_issuer_interaction,
     simulation_run_table::SimulationRunTableAccess, store_battle_loot_reducer::store_battle_loot,
     strategic_encounter_table::StrategicEncounterTableAccess,
@@ -546,6 +547,37 @@ impl LiveRunner {
         result
     }
 
+    fn settlement_rest_at_inn(&self, character_id: u64) -> Result<bool, String> {
+        let settlement_id = self
+            .connection
+            .db
+            .character()
+            .iter()
+            .find(|row| row.id == character_id)
+            .and_then(|character| character.current_settlement_id)
+            .ok_or("simulation character is not at a settlement")?;
+        let settlement = self
+            .connection
+            .db
+            .settlement()
+            .iter()
+            .find(|settlement| settlement.id == settlement_id)
+            .ok_or("simulation settlement is unavailable")?;
+        let service =
+            adventuresim_core::settlement_economy::select_available_settlement_rest_service(
+                settlement
+                    .economy
+                    .services
+                    .contains(&SettlementService::Inn),
+                settlement
+                    .economy
+                    .services
+                    .contains(&SettlementService::Temple),
+            )
+            .ok_or("simulation settlement offers neither an Inn nor a Temple")?;
+        Ok(adventuresim_core::settlement_economy::action_service_at_inn(service))
+    }
+
     fn party_for(&self, character_id: u64) -> Result<Party, String> {
         let character = self
             .connection
@@ -898,10 +930,11 @@ impl LiveRunner {
 
             if treatment_active {
                 self.set_medical_rest_schedule(agent)?;
+                let at_inn = self.settlement_rest_at_inn(character_id)?;
                 let result = reducer_call!(self, "ongoing_treatment_rest", |cb| self
                     .connection
                     .reducers
-                    .rest_at_settlement_hours_then(character_id, 1_440, false, cb));
+                    .rest_at_settlement_hours_then(character_id, 1_440, at_inn, cb));
                 self.call(result)?;
                 self.metrics.treatment_rest_minutes += 1_440;
                 self.metrics.recovery_rests += 1;
@@ -1076,10 +1109,11 @@ impl LiveRunner {
             self.metrics.treatment_gold_spent +=
                 gold_before.saturating_sub(self.personal_gold(character_id));
 
+            let at_inn = self.settlement_rest_at_inn(character_id)?;
             let result = reducer_call!(self, "medical_recovery_rest", |cb| self
                 .connection
                 .reducers
-                .rest_at_settlement_hours_then(character_id, 1_440, false, cb));
+                .rest_at_settlement_hours_then(character_id, 1_440, at_inn, cb));
             self.call(result)?;
             self.metrics.treatment_rest_minutes += 1_440;
             self.metrics.recovery_rests += 1;
@@ -1141,10 +1175,11 @@ impl LiveRunner {
             }
             self.maintain_equipment(agent)?;
             let character_id = self.character_ids[agent as usize];
+            let at_inn = self.settlement_rest_at_inn(character_id)?;
             let result = reducer_call!(self, "settlement_activity_rest", |cb| self
                 .connection
                 .reducers
-                .rest_at_settlement_hours_then(character_id, 1_440, false, cb));
+                .rest_at_settlement_hours_then(character_id, 1_440, at_inn, cb));
             self.call(result)?;
             self.event(
                 agent,
@@ -1369,10 +1404,11 @@ impl LiveRunner {
             let mut remaining = ready_at - now;
             while remaining > 0 {
                 let wait = remaining.min(1_440);
+                let at_inn = self.settlement_rest_at_inn(character_id)?;
                 let result = reducer_call!(self, "wait_for_repairs", |cb| self
                     .connection
                     .reducers
-                    .rest_at_settlement_hours_then(character_id, wait, false, cb));
+                    .rest_at_settlement_hours_then(character_id, wait, at_inn, cb));
                 self.call(result)?;
                 self.metrics.repair_wait_minutes += wait;
                 self.event(

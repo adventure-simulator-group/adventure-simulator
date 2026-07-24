@@ -1241,7 +1241,14 @@ pub fn resolve_religious_demand(
 
     match choice.as_str() {
         "observe" if demand.kind == "holy_day" => {
-            crate::time::rest_at_settlement(ctx, demand.character_id, 1, false)?;
+            // Holy-day demand represents private observance and abstention
+            // from work; it does not imply access to a Church service.
+            crate::time::spend_private_settlement_downtime(
+                ctx,
+                demand.character_id,
+                adventuresim_core::strategic_time::MINUTES_PER_DAY,
+                true,
+            )?;
             record_morale_event(
                 ctx,
                 demand.character_id,

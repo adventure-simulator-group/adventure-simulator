@@ -26,6 +26,12 @@ pub enum SettlementActionService {
     Temple,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SettlementDowntimeAccess {
+    PublicService { at_inn: bool },
+    PrivateSystem,
+}
+
 pub const fn action_service_location_id(service: SettlementActionService) -> &'static str {
     match service {
         SettlementActionService::Inn => "inn",
@@ -41,6 +47,50 @@ pub fn action_service_available(
         SettlementActionService::Inn => storefront_available(profile, Storefront::Inn),
         SettlementActionService::Temple => profile.has_service(Service::Temple),
     }
+}
+
+/// Maps the compatibility rest flag at the public reducer boundary.
+pub const fn required_settlement_rest_service(
+    access: SettlementDowntimeAccess,
+) -> Option<SettlementActionService> {
+    match access {
+        SettlementDowntimeAccess::PublicService { at_inn: true } => {
+            Some(SettlementActionService::Inn)
+        }
+        SettlementDowntimeAccess::PublicService { at_inn: false } => {
+            Some(SettlementActionService::Temple)
+        }
+        SettlementDowntimeAccess::PrivateSystem => None,
+    }
+}
+
+/// Deterministic venue selection for strategic automation. Prefer the
+/// no-charge Church and otherwise use an available Inn; no service means no
+/// valid call to a public settlement-rest reducer.
+pub fn available_settlement_rest_service(
+    profile: &SettlementEconomyProfile,
+) -> Option<SettlementActionService> {
+    select_available_settlement_rest_service(
+        action_service_available(profile, SettlementActionService::Inn),
+        action_service_available(profile, SettlementActionService::Temple),
+    )
+}
+
+pub const fn select_available_settlement_rest_service(
+    inn_available: bool,
+    temple_available: bool,
+) -> Option<SettlementActionService> {
+    if temple_available {
+        Some(SettlementActionService::Temple)
+    } else if inn_available {
+        Some(SettlementActionService::Inn)
+    } else {
+        None
+    }
+}
+
+pub const fn action_service_at_inn(service: SettlementActionService) -> bool {
+    matches!(service, SettlementActionService::Inn)
 }
 
 pub fn player_visible_npc_tabs(
@@ -112,6 +162,14 @@ pub fn visible_npc_tab<'a>(
     location_id: &str,
 ) -> Option<&'a SettlementNpcTab> {
     tabs.iter().find(|tab| tab.location_id == location_id)
+}
+
+pub fn npc_location_is_navigable(
+    profile: &SettlementEconomyProfile,
+    has_keep: bool,
+    location_id: &str,
+) -> bool {
+    visible_npc_tab(&player_visible_npc_tabs(profile, has_keep), location_id).is_some()
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -242,6 +300,43 @@ mod tests {
             "club",
             CatalogKind::Weapon
         ));
+    }
+
+    #[test]
+    fn simulator_selects_only_an_available_rest_venue() {
+        assert_eq!(
+            select_available_settlement_rest_service(true, true),
+            Some(SettlementActionService::Temple)
+        );
+        assert_eq!(
+            select_available_settlement_rest_service(false, true),
+            Some(SettlementActionService::Temple)
+        );
+        assert_eq!(select_available_settlement_rest_service(false, false), None);
+        assert!(action_service_at_inn(SettlementActionService::Inn));
+        assert!(!action_service_at_inn(SettlementActionService::Temple));
+        assert_eq!(
+            required_settlement_rest_service(SettlementDowntimeAccess::PrivateSystem),
+            None,
+            "party synchronization and companion convalescence are venue-neutral"
+        );
+        assert_eq!(
+            required_settlement_rest_service(SettlementDowntimeAccess::PublicService {
+                at_inn: false,
+            }),
+            Some(SettlementActionService::Temple)
+        );
+    }
+
+    #[test]
+    fn npc_navigation_rejects_hidden_services_and_impossible_keeps() {
+        let p = profile(vec![Service::Inn], vec![Stock::GeneralGoods]);
+        assert!(npc_location_is_navigable(&p, false, "inn"));
+        assert!(npc_location_is_navigable(&p, false, "residences"));
+        assert!(!npc_location_is_navigable(&p, false, "church"));
+        assert!(!npc_location_is_navigable(&p, false, "armoury"));
+        assert!(!npc_location_is_navigable(&p, false, "keep"));
+        assert!(npc_location_is_navigable(&p, true, "keep"));
     }
 
     #[test]
