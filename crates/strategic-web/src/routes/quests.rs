@@ -333,11 +333,7 @@ async fn store_battle_loot(
     {
         tracing::error!("Failed to store battle loot: {error:?}");
     }
-    let case_site_id = state
-        .db
-        .query_one::<Character>(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
-        ))
+    let case_site_id = super::data::character(&state, character_id)
         .await
         .ok()
         .flatten()
@@ -411,6 +407,21 @@ fn onsite_investigation_actions(
         .collect()
 }
 
+fn character_and_party_are_at_case_site(
+    character: Option<&Character>,
+    party: Option<&Party>,
+    case_site_id: &str,
+) -> bool {
+    character
+        .is_some_and(|character| character.current_case_site_id.as_deref() == Some(case_site_id))
+        && party.is_some_and(|party| {
+            party
+                .current_case_site_id
+                .as_ref()
+                .is_some_and(|id| id.value == case_site_id)
+        })
+}
+
 async fn quest_location_base(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -482,11 +493,7 @@ async fn rest_at_quest_location_with_redirect(
     let Some(character_id) = session.character_id_u64() else {
         return Redirect::to("/characters").into_response();
     };
-    let character = state
-        .db
-        .query_one::<Character>(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
-        ))
+    let character = super::data::character(&state, character_id)
         .await
         .ok()
         .flatten();
@@ -527,11 +534,7 @@ async fn render_quest_location(
     let Some(character_id) = session.character_id_u64() else {
         return Redirect::to("/characters").into_response();
     };
-    let character = state
-        .db
-        .query_one::<Character>(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
-        ))
+    let character = super::data::character(&state, character_id)
         .await
         .ok()
         .flatten();
@@ -604,12 +607,11 @@ async fn render_quest_location(
     } else {
         None
     };
-    let is_at_location = character
-        .as_ref()
-        .is_some_and(|c| c.current_case_site_id.as_deref() == Some(&site.case_site_id))
-        && party
-            .as_ref()
-            .is_some_and(|party| party.current_case_site_id.as_deref() == Some(&site.case_site_id));
+    let is_at_location = character_and_party_are_at_case_site(
+        character.as_ref(),
+        party.as_ref(),
+        &site.case_site_id,
+    );
     if !is_at_location {
         let return_href = character
             .as_ref()
@@ -968,11 +970,7 @@ async fn autoresolve_quest(
     let Some(character_id) = session.character_id_u64() else {
         return Redirect::to("/characters");
     };
-    let selected_case_site_id = state
-        .db
-        .query_one::<Character>(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
-        ))
+    let selected_case_site_id = super::data::character(&state, character_id)
         .await
         .ok()
         .flatten()
@@ -994,11 +992,7 @@ async fn autoresolve_quest(
     if let Err(ref error) = outcome {
         tracing::error!("Failed to autoresolve quest: {error:?}");
     }
-    let case_site_id = state
-        .db
-        .query_one::<Character>(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
-        ))
+    let case_site_id = super::data::character(&state, character_id)
         .await
         .ok()
         .flatten()
@@ -1119,6 +1113,47 @@ mod quest_route_tests {
         }
     }
 
+    fn character_at(case_site_id: Option<&str>) -> Character {
+        Character {
+            id: 7,
+            name: "Ada".into(),
+            xp: 0,
+            level: 1,
+            gold: 0,
+            current_settlement_id: None,
+            current_case_site_id: case_site_id.map(str::to_owned),
+            party_id: Some("party".into()),
+            age_years: 25,
+            alive: true,
+            temporary: false,
+        }
+    }
+
+    fn party_at(case_site_id: Option<&str>) -> Party {
+        Party {
+            id: "party".into(),
+            name: "Ada's party".into(),
+            leader_id: 7,
+            current_settlement_id: None,
+            current_case_site_id: case_site_id.map(|value| crate::spacetimedb::CaseSiteId {
+                value: value.to_owned(),
+            }),
+            active_contract_id: None,
+            is_solo: true,
+            camp_fatigue_percent: 50,
+            walking_minutes_per_day: 480,
+            travel_at_night: false,
+            camp_duration_mode: crate::spacetimedb::CampDurationMode::Auto,
+            fixed_camp_minutes: 0,
+            camp_destination: None,
+            camp_remaining_minutes: 0,
+            pooled_water_ml: 0.0,
+            medicine_target: 0.0,
+            command_target: 0.0,
+            religion_target: 0.0,
+        }
+    }
+
     #[test]
     fn autoresolve_stays_on_the_enemy_lifecycle_except_while_requesting_approval() {
         let enemy = "/locations/case-site/case-site-1/enemy";
@@ -1216,6 +1251,40 @@ mod quest_route_tests {
     }
 
     #[test]
+    fn case_site_guard_requires_matching_character_and_party_occupancy() {
+        let character = character_at(Some("site:known"));
+        let party = party_at(Some("site:known"));
+        assert!(character_and_party_are_at_case_site(
+            Some(&character),
+            Some(&party),
+            "site:known"
+        ));
+
+        let elsewhere_character = character_at(Some("site:other"));
+        assert!(!character_and_party_are_at_case_site(
+            Some(&elsewhere_character),
+            Some(&party),
+            "site:known"
+        ));
+        let elsewhere_party = party_at(Some("site:other"));
+        assert!(!character_and_party_are_at_case_site(
+            Some(&character),
+            Some(&elsewhere_party),
+            "site:known"
+        ));
+        assert!(!character_and_party_are_at_case_site(
+            None,
+            Some(&party),
+            "site:known"
+        ));
+        assert!(!character_and_party_are_at_case_site(
+            Some(&character),
+            None,
+            "site:known"
+        ));
+    }
+
+    #[test]
     fn generated_location_loader_keeps_owner_pin_and_occupancy_boundaries() {
         let source = include_str!("quests.rs");
         let loader = source
@@ -1225,11 +1294,36 @@ mod quest_route_tests {
             .expect("case-site loader");
         assert!(loader.contains("owner_character_id = {character_id}"));
         assert!(loader.contains("case_site_id = {}"));
-        assert!(loader.contains("current_case_site_id.as_deref() == Some(&site.case_site_id)"));
+        assert!(loader.contains("character_and_party_are_at_case_site("));
         assert!(loader.contains("if site.generated_case"));
         assert!(loader.contains("case_site_combat_permitted"));
         assert!(loader.contains("battle.case_site_id.value == site.case_site_id"));
         assert!(!loader.contains("active_contract_id.as_deref() == Some(&presentation"));
+    }
+
+    #[test]
+    fn site_sensitive_handlers_use_the_authoritative_character_loader() {
+        let source = include_str!("quests.rs");
+        let raw_character_query = ["query_one::<", "Character>"].concat();
+        let authoritative_loader = ["super::data::", "character(&state, character_id)"].concat();
+        assert!(!source.contains(&raw_character_query));
+        assert_eq!(source.matches(&authoritative_loader).count(), 5);
+        for (start, end) in [
+            ("async fn store_battle_loot", "enum QuestLocationTab"),
+            (
+                "async fn rest_at_quest_location_with_redirect",
+                "async fn render_quest_location",
+            ),
+            ("async fn render_quest_location", "async fn party_is_ready"),
+            ("async fn autoresolve_quest", "fn autoresolve_redirect"),
+        ] {
+            let handler = source
+                .split(start)
+                .nth(1)
+                .and_then(|tail| tail.split(end).next())
+                .expect("site-sensitive handler");
+            assert!(handler.contains(&authoritative_loader));
+        }
     }
 
     #[test]
@@ -1243,6 +1337,8 @@ mod quest_route_tests {
         assert!(handler.contains("Path(id): Path<String>"));
         assert!(handler.contains("selected_case_site_id.as_deref() != Some(id.as_str())"));
         assert!(handler.contains("character.current_case_site_id"));
+        let authoritative_loader = ["super::data::", "character(&state, character_id)"].concat();
+        assert_eq!(handler.matches(&authoritative_loader).count(), 2);
         assert!(!handler.contains("Path(_id)"));
     }
 }
