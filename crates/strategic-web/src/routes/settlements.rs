@@ -144,8 +144,8 @@ use super::inventory_forms::{
 };
 use super::redirect_to_local;
 use super::travel::{
-    TravelDestination, TravelForm, TravelProvisionForecast, active_contract_tooltip,
-    connected_destinations, populate_itinerary_forecasts,
+    CaseSiteKnowledgePresentation, TravelDestination, TravelForm, TravelProvisionForecast,
+    active_contract_tooltip, connected_destinations, populate_itinerary_forecasts,
 };
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
@@ -1127,7 +1127,8 @@ async fn settlement_map(
                 id: site.case_site_id.clone(),
                 name: site.name.clone(),
                 description: site.description.clone(),
-                summary: Some(format!("Exact {} destination", site.knowledge_stage)),
+                summary: CaseSiteKnowledgePresentation::from_stage(&site.knowledge_stage)
+                    .map(|knowledge| knowledge.label().to_string()),
                 travel_action: format!("/case-sites/{}/travel", site.case_site_id),
                 track_action: Some(format!("/case-sites/{}/track", site.case_site_id)),
                 tracked: site.tracked,
@@ -1141,7 +1142,14 @@ async fn settlement_map(
                 )
                 .saturating_mul(2),
                 itinerary_segments: Vec::new(),
-                quest_in_progress: true,
+                round_trip_destination: true,
+                case_site_knowledge: CaseSiteKnowledgePresentation::from_stage(
+                    &site.knowledge_stage,
+                ),
+                active_contract_destination: case_site_has_active_contract(
+                    &site.case_id,
+                    active_contract,
+                ),
                 provision_forecast: None,
                 terrain_route: None,
                 return_terrain_route: None,
@@ -1305,6 +1313,13 @@ fn settlement_html_travel_available(is_current_settlement: bool, has_party: bool
     is_current_settlement && has_party
 }
 
+fn case_site_has_active_contract(
+    case_id: &str,
+    active_contract: Option<&ContractPresentation>,
+) -> bool {
+    active_contract.is_some_and(|contract| contract.case_id == case_id)
+}
+
 fn can_abandon_active_contract(
     contract: &ContractPresentation,
     current_case_site_id: Option<&str>,
@@ -1356,6 +1371,18 @@ mod map_quest_tests {
             &quest(ContractPresentationStatus::ReadyToReport),
             None
         ));
+    }
+
+    #[test]
+    fn case_site_badge_requires_an_explicit_active_contract_case_match() {
+        let active = quest(ContractPresentationStatus::Accepted);
+
+        assert!(case_site_has_active_contract("case:active", Some(&active)));
+        assert!(!case_site_has_active_contract(
+            "case:reported-decoy",
+            Some(&active)
+        ));
+        assert!(!case_site_has_active_contract("case:active", None));
     }
 }
 

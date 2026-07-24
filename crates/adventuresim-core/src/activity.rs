@@ -63,7 +63,7 @@ pub fn settlement_population_scale(population_level: i32, population_estimate: u
 }
 
 pub fn labor_gold(hours: f32, strength_check: f32, endurance_check: f32) -> u32 {
-    (hours.max(0.0) * (strength_check.max(0.0) + endurance_check.max(0.0)) / 8.0).round() as u32
+    (hours.max(0.0) * (strength_check.max(0.0) + endurance_check.max(0.0)) / 4.0).round() as u32
 }
 
 pub fn thievery_gold(hours: f32, population_scale: f32, stealth_check: f32) -> u32 {
@@ -107,6 +107,24 @@ mod tests {
         assert_eq!(led_prayer_morale(60, 0.0), 0.0);
         assert_eq!(led_prayer_morale(60, 5.0), prayer_morale(60));
         assert_eq!(meditation_morale(60), prayer_morale(60) * 0.25);
+    }
+
+    #[test]
+    fn average_labor_covers_retail_daily_meals_and_inn_full_board() {
+        let meal = crate::food::definition("cooked_meal").expect("standard cooked meal");
+        let meals_per_day =
+            (crate::provisioning::STRATEGIC_TRAVEL_KCAL_PER_DAY / meal.kcal_per_unit).ceil() as u32;
+        let retail_meal = crate::strategic_economy::language_adjusted_buy_price(
+            crate::strategic_economy::merchant_buy_price(meal.value_per_unit.ceil() as u32),
+            0.0,
+        );
+        let retail_daily_meals = meals_per_day.saturating_mul(retail_meal);
+        let daily_labor = labor_gold(8.0, 2.0, 2.0);
+
+        assert_eq!(daily_labor, 8);
+        assert_eq!(retail_daily_meals, 6);
+        assert!(daily_labor >= retail_daily_meals);
+        assert!(retail_daily_meals >= crate::strategic_economy::INN_FULL_BOARD_GOLD_PER_DAY);
     }
 
     #[test]

@@ -6,6 +6,7 @@ pub const MERCHANT_MARGIN: f32 = 1.25;
 pub const SALES_TAX: f32 = 0.10;
 pub const NPC_HERBALIST_EXAM_FEE: u32 = 25;
 pub const HERBALIST_MEDICATION_PREMIUM: f32 = 1.50;
+pub const INN_FULL_BOARD_GOLD_PER_DAY: u32 = 2;
 
 /// Canonical ingredient values used by both item seeding and herbalist quotes.
 pub const MEDICINAL_INGREDIENT_VALUES: [(&str, u32); 11] = [

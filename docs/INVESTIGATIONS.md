@@ -87,7 +87,10 @@ prototype flow without making quest state the location authority.
 
 Available-quest, quest-giver/service, issuer-route, and turn-in exclamation
 markers are absent. Exact case-site pins are knowledge projections, not quest
-markers. Recruitment indicators are a separate social feature.
+markers. Reported exact locations and visited sites are labeled separately;
+an active-contract badge appears only when the party's active contract
+explicitly matches that case. Recruitment indicators are a separate social
+feature.
 
 ## Threat inference
 

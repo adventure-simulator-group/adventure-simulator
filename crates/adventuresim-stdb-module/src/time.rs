@@ -26,7 +26,7 @@ pub const BASE_HEALTH_RECOVERED_PER_DAY: f32 = 0.01;
 /// Additional daily recovery supplied by each point of the party Medicine
 /// check. Checks are capped at the five-point scale used by the strategic UI.
 pub const HEALTH_RECOVERED_PER_MEDICINE_CHECK_PER_DAY: f32 = 0.01;
-pub const INN_GOLD_PER_DAY: u32 = 1;
+pub const INN_GOLD_PER_DAY: u32 = adventuresim_core::strategic_economy::INN_FULL_BOARD_GOLD_PER_DAY;
 const MIN_SETTLEMENT_REST_MINUTES: u64 = 60;
 const MAX_SETTLEMENT_REST_MINUTES: u64 = MINUTES_PER_YEAR;
 /// The current authoritative strategic time. `official_minutes` is absolute;
@@ -1447,7 +1447,7 @@ fn rest_for_minutes(
         .character_id()
         .update(character_time);
     crate::social::settle_shared_party_time(ctx, character_id);
-    crate::condition::apply_elapsed_needs(ctx, character_id, elapsed)?;
+    crate::condition::apply_settlement_rest_elapsed_needs(ctx, character_id, elapsed, at_inn)?;
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
     if terminal.is_some() || !settled.alive {
         return Ok(());
@@ -2127,7 +2127,7 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("fn validate_settlement_rest_minutes").next())
             .expect("settlement rest implementation");
-        let needs = "crate::condition::apply_elapsed_needs(ctx, character_id, elapsed)?";
+        let needs = "crate::condition::apply_settlement_rest_elapsed_needs(";
         assert_eq!(rest.matches(needs).count(), 1);
         assert!(rest.find("settle_shared_party_time").unwrap() < rest.find(needs).unwrap());
         assert!(rest.find(needs).unwrap() < rest.find("finish_disease_interval").unwrap());
