@@ -17,11 +17,16 @@ local. Selecting someone else keeps the party in place and updates the visible p
 description, greeting, and eligible topics.
 
 The book button immediately to the right of the settlement identity and official time
-opens the character's journal without leaving the current location.
+toggles the character's journal without leaving the current location. Journal mode
+replaces the settlement's left rail with a recency-sorted quest list and its right rail
+with the selected quest's dry log; toggling it again or pressing Escape restores the
+location rails.
 
-The settlement overview links to residential areas and, for towns and larger settlements,
-the keep. These non-service places use the same authoritative portrait, description, and
-chat surface; villages and hamlets cannot enter a keep that their population does not have.
+Public squares, residential areas, and, for towns and larger settlements, the keep appear
+as selectable building tabs alongside services in the settlement header. Until bespoke
+building art is available, non-service tabs reuse neutral building art and house/castle
+icons. These places use the same authoritative portrait, description, and chat surface;
+villages and hamlets cannot enter a keep that their population does not have.
 
 NPC presences and daily time windows are strategic database state, not tactical
 positions or tick state. The player view exposes physical presentation, occupation,

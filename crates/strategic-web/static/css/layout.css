@@ -312,6 +312,10 @@
 }
 
 .journal-button:is(:hover, :focus-visible) { border-color: var(--accent-gold); }
+.journal-button.active {
+  border-color: var(--accent-gold);
+  background: color-mix(in srgb, var(--building-surface) 72%, var(--accent-gold));
+}
 
 .journal-button:focus-visible {
   outline: 2px solid var(--accent-light);
@@ -686,6 +690,12 @@
    city overrides belong in equally specific per-service rules only when those
    individual assets exist, so a missing higher-tier image never becomes a 404. */
 .settlement-top-bar:is([data-building-tier="village"], [data-building-tier="town"], [data-building-tier="city"])
+  .nav-tab[data-service-id=""],
+.settlement-top-bar:is([data-building-tier="village"], [data-building-tier="town"], [data-building-tier="city"])
+  .nav-tab[data-service-id="residences"],
+.settlement-top-bar:is([data-building-tier="village"], [data-building-tier="town"], [data-building-tier="city"])
+  .nav-tab[data-service-id="keep"],
+.settlement-top-bar:is([data-building-tier="village"], [data-building-tier="town"], [data-building-tier="city"])
   .nav-tab[data-service-id="map"] {
   --service-building-image: url("/static/styles/timber-framed/building/village/map.png?v=watchtower-2");
 }
@@ -822,6 +832,8 @@
 }
 
 .service-tab-icon-market { --service-tab-icon: url("/static/icons/settlement-services/market.png"); }
+.service-tab-icon-house { --service-tab-icon: url("/static/icons/game/house.svg"); }
+.service-tab-icon-castle { --service-tab-icon: url("/static/icons/game/castle.svg"); }
 .service-tab-icon-weapons { --service-tab-icon: url("/static/icons/settlement-services/weapons.png"); }
 .service-tab-icon-armor { --service-tab-icon: url("/static/icons/settlement-services/armor.png"); }
 .service-tab-icon-clothing { --service-tab-icon: url("/static/icons/settlement-services/clothing.png"); }

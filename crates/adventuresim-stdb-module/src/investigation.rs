@@ -7,11 +7,11 @@ use crate::{
     settlement_population::{settlement_npc, settlement_npc_presence},
     strategic::{
         CustodyHolderKind, CustodyObjectKind, case_authority, case_authority__view, case_custody,
-        case_finale_authority__view, case_outcome_fact__view, coordinate_distance_e7_m,
-        generated_case_site_combat_eligible, generated_case_site_combat_group_id,
-        hostile_group_authority__view, living_party_member_ids, party_authority,
-        party_authority__view, party_journey_authority, party_member__view,
-        quest_generation_authority, quest_generation_authority__view,
+        case_finale_authority__view, case_outcome__view, case_outcome_fact__view,
+        coordinate_distance_e7_m, generated_case_site_combat_eligible,
+        generated_case_site_combat_group_id, hostile_group_authority__view,
+        living_party_member_ids, party_authority, party_authority__view, party_journey_authority,
+        party_member__view, quest_generation_authority, quest_generation_authority__view,
         require_no_unresolved_encounter, require_party_ready,
         require_strategic_character_authority, require_strategic_gateway, settlement,
         strategic_gateway_authority__view, validate_quest_generation_authority,
@@ -657,6 +657,110 @@ pub struct BackendInvestigationActionOutcome {
     pub action_id: String,
     pub wording: String,
     pub recorded_at: u64,
+}
+
+#[derive(Clone, Debug, SpacetimeType)]
+pub struct BackendInvestigationCaseSummary {
+    pub owner_character_id: u64,
+    pub case_id: String,
+    pub title: String,
+    pub status: String,
+    pub latest_update_at: u64,
+}
+
+fn journal_case_resolution(ctx: &ViewContext, public_case_id: &str) -> (String, u64) {
+    let mut canonical_matches: Vec<_> = ctx
+        .db
+        .quest_generation_authority()
+        .public_case_id()
+        .filter(public_case_id)
+        .filter_map(|authority| {
+            validate_quest_generation_authority(&authority)
+                .ok()
+                .filter(|validated| validated.manifest.public_case_id == public_case_id)
+                .map(|validated| validated.manifest.canonical_case_id)
+        })
+        .collect();
+    canonical_matches.sort();
+    canonical_matches.dedup();
+    let canonical_case_id = match canonical_matches.as_slice() {
+        [canonical] => canonical.clone(),
+        [] => public_case_id.to_owned(),
+        _ => return ("open".into(), 0),
+    };
+    let Some(case) = ctx.db.case_authority().id().find(canonical_case_id.clone()) else {
+        return ("open".into(), 0);
+    };
+    let status = match case.resolution_status {
+        crate::strategic::CaseResolutionStatus::Open => "open",
+        crate::strategic::CaseResolutionStatus::Resolved => "completed",
+        crate::strategic::CaseResolutionStatus::Failed => "failed",
+    };
+    let resolved_at = ctx
+        .db
+        .case_outcome()
+        .case_id()
+        .find(canonical_case_id)
+        .map_or(0, |outcome| outcome.resolved_at_minute);
+    (status.into(), resolved_at)
+}
+
+#[view(accessor = backend_investigation_cases, public)]
+pub fn backend_investigation_cases(ctx: &ViewContext) -> Vec<BackendInvestigationCaseSummary> {
+    if !is_gateway(ctx) {
+        return Vec::new();
+    }
+    let journal = backend_investigation_journal(ctx);
+    let leads = backend_investigation_leads(ctx);
+    let mut cases: BTreeMap<(u64, String), (u64, String, u64)> = BTreeMap::new();
+    for (owner_character_id, case_id, summary, recorded_at, eligible_title) in journal
+        .into_iter()
+        .map(|row| {
+            (
+                row.owner_character_id,
+                row.case_id,
+                row.summary,
+                row.recorded_at,
+                true,
+            )
+        })
+        .chain(leads.into_iter().map(|row| {
+            let eligible_title = row.source_label != "witness referral";
+            (
+                row.owner_character_id,
+                row.case_id,
+                row.summary,
+                row.recorded_at,
+                eligible_title,
+            )
+        }))
+    {
+        let case = cases.entry((owner_character_id, case_id)).or_insert((
+            u64::MAX,
+            "Unlabelled problem".into(),
+            0,
+        ));
+        case.2 = case.2.max(recorded_at);
+        if eligible_title && recorded_at < case.0 {
+            case.0 = recorded_at;
+            case.1 = summary;
+        }
+    }
+    cases
+        .into_iter()
+        .map(
+            |((owner_character_id, case_id), (_title_at, title, visible_update_at))| {
+                let (status, status_update_at) = journal_case_resolution(ctx, &case_id);
+                BackendInvestigationCaseSummary {
+                    owner_character_id,
+                    case_id,
+                    title,
+                    status,
+                    latest_update_at: visible_update_at.max(status_update_at),
+                }
+            },
+        )
+        .collect()
 }
 
 /// Dedicated observer-safe map/travel projection. Unlike a raw lead, every

@@ -1,5 +1,5 @@
 (() => {
-  const services = new Set(["map", "merchants", "weapons", "armor", "clothing", "herbalist", "inn", "religion"]);
+  const services = new Set(["", "residences", "keep", "map", "merchants", "weapons", "armor", "clothing", "herbalist", "inn", "religion"]);
   const nav = document.querySelector("[data-settlement-id]");
   if (!nav) return;
   const current = new URL(window.location.href);
@@ -26,7 +26,8 @@
       if (!raw || !raw.startsWith("/locations/")) return;
       const url = new URL(raw, window.location.origin);
       if (!url.pathname.includes("/party")) return;
-      url.searchParams.set("building", building);
+      if (building) url.searchParams.set("building", building);
+      else url.searchParams.delete("building");
       node.setAttribute(attribute, `${url.pathname}${url.search}${url.hash}`);
     });
   };

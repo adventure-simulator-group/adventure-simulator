@@ -68,12 +68,12 @@ pub struct BackendInvestigationAction {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct BackendInvestigationActionOutcome {
+pub struct BackendInvestigationCaseSummary {
     pub owner_character_id: u64,
-    pub outcome_id: String,
-    pub action_id: String,
-    pub wording: String,
-    pub recorded_at: u64,
+    pub case_id: String,
+    pub title: String,
+    pub status: String,
+    pub latest_update_at: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

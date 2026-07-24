@@ -33,8 +33,12 @@ Completing the objective does not immediately close the quest or pay its promise
 ## Diegetic discovery and navigation
 
 Quest problems are discovered through local rumors and NPC testimony, not
-exclamation markers. A book button beside the current location and time opens
-the journal as a popup. The journal is deliberately a dry record of reports and
+exclamation markers. A book button beside the current location and time toggles
+a location-preserving journal tab: the left rail becomes the quest list and the
+right rail becomes the selected quest's log while the current location remains
+in the center. Open quests appear first, newest update first, followed by
+completed and failed quests in the same recency order; the first quest is
+selected by default. The journal is deliberately a dry record of reports and
 observations with their stated sources. It does not score confidence, identify
 contradictions or corrections, expose probabilities, interpret implications,
 list referrals or destinations, suggest investigation methods, or provide
