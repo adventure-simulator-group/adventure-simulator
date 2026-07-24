@@ -614,6 +614,7 @@ pub struct BackendInvestigationAction {
     pub weather_available: bool,
     pub required_case_site_id: String,
     pub available: bool,
+    pub can_travel_to_required_site: bool,
     pub unavailable_reason: String,
 }
 
@@ -735,7 +736,7 @@ pub fn backend_investigation_actions(ctx: &ViewContext) -> Vec<BackendInvestigat
             let cost = action::base_cost(kind);
             let required_case_site_id =
                 exact_action_site_for_observer(ctx, &capability, kind).unwrap_or_default();
-            let unavailable_reason =
+            let availability =
                 action_unavailable_reason_view(ctx, &capability, &required_case_site_id);
             Some(BackendInvestigationAction {
                 owner_character_id: capability.owner_character_id,
@@ -752,8 +753,9 @@ pub fn backend_investigation_actions(ctx: &ViewContext) -> Vec<BackendInvestigat
                         .into(),
                 weather_available: false,
                 required_case_site_id,
-                available: unavailable_reason.is_none(),
-                unavailable_reason: unavailable_reason.unwrap_or_default(),
+                available: availability.unavailable_reason.is_none(),
+                can_travel_to_required_site: availability.can_travel_to_required_site,
+                unavailable_reason: availability.unavailable_reason.unwrap_or_default(),
             })
         })
         .collect()
@@ -774,6 +776,12 @@ fn capability_has_live_support_view(
 ) -> bool {
     if !capability.required_action_id.is_empty()
         && !capability_has_successful_attempt_view(ctx, &capability.required_action_id)
+    {
+        return false;
+    }
+    if kind == action::InvestigationActionKind::InspectSite
+        && capability.target_kind == "site"
+        && exact_action_site_for_observer(ctx, capability, kind).is_none()
     {
         return false;
     }
@@ -814,7 +822,8 @@ fn exact_action_site_for_observer(
     if kind != action::InvestigationActionKind::InspectSite || capability.target_kind != "site" {
         return None;
     }
-    ctx.db
+    let lead = ctx
+        .db
         .investigation_lead()
         .owner_character_id()
         .filter(capability.owner_character_id)
@@ -826,22 +835,101 @@ fn exact_action_site_for_observer(
                     lead.destination_stage.as_str(),
                     "exact_believed" | "visited"
                 )
-        })
-        .map(|lead| lead.exact_location_id)
+        })?;
+    let site = ctx
+        .db
+        .case_site_authority()
+        .id_key()
+        .find(&lead.exact_location_id)?;
+    exact_site_knowledge_is_live(
+        &capability.case_id,
+        &capability.target_id,
+        &lead.case_id,
+        &lead.exact_location_id,
+        &lead.destination_stage,
+        &lead.corrected_by,
+        &site.case_id,
+        &site.id.value,
+        lead.latitude_e7 == site.latitude_e7 && lead.longitude_e7 == site.longitude_e7,
+    )
+    .then_some(lead.exact_location_id)
+}
+
+fn exact_site_knowledge_is_live(
+    capability_case_id: &str,
+    capability_target_id: &str,
+    lead_case_id: &str,
+    lead_exact_location_id: &str,
+    lead_destination_stage: &str,
+    lead_corrected_by: &str,
+    authority_case_id: &str,
+    authority_site_id: &str,
+    coordinates_match: bool,
+) -> bool {
+    capability_case_id == lead_case_id
+        && capability_case_id == authority_case_id
+        && capability_target_id == lead_exact_location_id
+        && capability_target_id == authority_site_id
+        && matches!(lead_destination_stage, "exact_believed" | "visited")
+        && lead_corrected_by.is_empty()
+        && coordinates_match
+}
+
+struct ProjectedActionAvailability {
+    unavailable_reason: Option<String>,
+    can_travel_to_required_site: bool,
+}
+
+fn projected_action_availability(
+    party_ready: bool,
+    required_case_site_id: &str,
+    occupying_required_site: bool,
+) -> ProjectedActionAvailability {
+    if !party_ready {
+        return ProjectedActionAvailability {
+            unavailable_reason: Some(
+                "An incapacitated party member must recover before the party can investigate."
+                    .into(),
+            ),
+            can_travel_to_required_site: false,
+        };
+    }
+    if !required_case_site_id.is_empty() && !occupying_required_site {
+        return ProjectedActionAvailability {
+            unavailable_reason: Some(
+                "Travel to the known investigation site before inspecting it.".into(),
+            ),
+            can_travel_to_required_site: true,
+        };
+    }
+    ProjectedActionAvailability {
+        unavailable_reason: None,
+        can_travel_to_required_site: false,
+    }
 }
 
 fn action_unavailable_reason_view(
     ctx: &ViewContext,
     capability: &InvestigationActionCapability,
     required_case_site_id: &str,
-) -> Option<String> {
+) -> ProjectedActionAvailability {
     let Some(character) = ctx.db.character().id().find(capability.owner_character_id) else {
-        return Some("The investigating character is currently unavailable.".into());
+        return ProjectedActionAvailability {
+            unavailable_reason: Some(
+                "The investigating character is currently unavailable.".into(),
+            ),
+            can_travel_to_required_site: false,
+        };
     };
     let Some(party_id) = character.party_id else {
-        return Some("Join or form a party before attempting this investigation.".into());
+        return ProjectedActionAvailability {
+            unavailable_reason: Some(
+                "Join or form a party before attempting this investigation.".into(),
+            ),
+            can_travel_to_required_site: false,
+        };
     };
-    if ctx
+    let party_ready = !ctx
         .db
         .party_member()
         .party_id()
@@ -854,25 +942,16 @@ fn action_unavailable_reason_view(
                 .character_id()
                 .find(member.id)
                 .is_some_and(|condition| condition.status == "incapacitated")
-        })
-    {
-        return Some(
-            "An incapacitated party member must recover before the party can investigate.".into(),
-        );
-    }
-    if !required_case_site_id.is_empty() {
-        let occupying_required_site = ctx
+        });
+    let occupying_required_site = !required_case_site_id.is_empty()
+        && ctx
             .db
             .party_authority()
             .id()
             .find(&party_id)
             .and_then(|party| party.current_case_site_id)
             .is_some_and(|site| site.value == required_case_site_id);
-        if !occupying_required_site {
-            return Some("Travel to the known investigation site before inspecting it.".into());
-        }
-    }
-    None
+    projected_action_availability(party_ready, required_case_site_id, occupying_required_site)
 }
 
 #[view(accessor = backend_investigation_action_outcomes, public)]
@@ -1247,6 +1326,26 @@ fn capability_has_live_support_reducer(
             .any(|attempt| attempt.success)
     {
         return false;
+    }
+    if kind == action::InvestigationActionKind::InspectSite && capability.target_kind == "site" {
+        let Some((site, lead)) =
+            exact_case_site_for_observer(ctx, capability.owner_character_id, &capability.target_id)
+        else {
+            return false;
+        };
+        if !exact_site_knowledge_is_live(
+            &capability.case_id,
+            &capability.target_id,
+            &lead.case_id,
+            &lead.exact_location_id,
+            &lead.destination_stage,
+            &lead.corrected_by,
+            &site.case_id,
+            &site.id.value,
+            lead.latitude_e7 == site.latitude_e7 && lead.longitude_e7 == site.longitude_e7,
+        ) {
+            return false;
+        }
     }
     let prerequisites = action::prerequisites(kind);
     if prerequisites.requires_contact_referral
@@ -4435,6 +4534,65 @@ mod tests {
         assert!(reducer.contains("expected_version"));
         assert!(reducer.contains("perform_investigation_action_authorized"));
         assert!(!reducer.contains("stage_investigation_lead"));
+    }
+
+    #[test]
+    fn corrected_exact_site_knowledge_is_not_live_action_support() {
+        assert!(exact_site_knowledge_is_live(
+            "case",
+            "site",
+            "case",
+            "site",
+            "exact_believed",
+            "",
+            "case",
+            "site",
+            true,
+        ));
+        assert!(!exact_site_knowledge_is_live(
+            "case",
+            "site",
+            "case",
+            "site",
+            "exact_believed",
+            "newer-lead",
+            "case",
+            "site",
+            true,
+        ));
+        let source = include_str!("investigation.rs");
+        let projection = source
+            .split("fn capability_has_live_support_view")
+            .nth(1)
+            .and_then(|tail| tail.split("fn exact_action_site_for_observer").next())
+            .expect("projection live-support predicate");
+        assert!(projection.contains("exact_action_site_for_observer"));
+        let recovery = source
+            .split("fn activate_action_successors")
+            .nth(1)
+            .and_then(|tail| tail.split("fn complete_referred_contact_action").next())
+            .expect("failed-alternate live-support predicate");
+        assert!(recovery.contains("capability_has_live_support_reducer"));
+        assert!(recovery.contains("exact_site_knowledge_is_live"));
+    }
+
+    #[test]
+    fn inspect_site_travel_requires_ready_off_site_party() {
+        let ready_off_site = projected_action_availability(true, "site", false);
+        assert!(ready_off_site.unavailable_reason.is_some());
+        assert!(ready_off_site.can_travel_to_required_site);
+
+        let incapacitated_off_site = projected_action_availability(false, "site", false);
+        assert!(incapacitated_off_site.unavailable_reason.is_some());
+        assert!(!incapacitated_off_site.can_travel_to_required_site);
+
+        let incapacitated_on_site = projected_action_availability(false, "site", true);
+        assert!(incapacitated_on_site.unavailable_reason.is_some());
+        assert!(!incapacitated_on_site.can_travel_to_required_site);
+
+        let ready_on_site = projected_action_availability(true, "site", true);
+        assert!(ready_on_site.unavailable_reason.is_none());
+        assert!(!ready_on_site.can_travel_to_required_site);
     }
 
     #[test]
