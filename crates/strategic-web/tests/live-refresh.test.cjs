@@ -49,7 +49,7 @@ test("POST result pages provide a safe GET URL for live-region refreshes", () =>
   });
   const marker = {
     querySelector: () => ({
-      dataset: { liveRefreshUrl: "/locations/settlement/riverdale/inn" },
+      dataset: { liveRefreshUrl: "/settlements/riverdale/inn" },
     }),
   };
   assert.equal(
@@ -57,7 +57,7 @@ test("POST result pages provide a safe GET URL for live-region refreshes", () =>
       marker,
       { pathname: "/settlements/riverdale/rest/inn", search: "" },
     ),
-    "/locations/settlement/riverdale/inn",
+    "/settlements/riverdale/inn",
   );
   assert.equal(
     window.strategicLiveRefreshUrl(

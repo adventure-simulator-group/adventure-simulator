@@ -4905,28 +4905,6 @@ pub fn start_dialogue(
             receipt.id.clone(),
             format!("receive-rumor:{character_id}:{}", receipt.id),
         )?;
-        let authority = ctx
-            .db
-            .quest_generation_authority()
-            .case_id()
-            .find(&receipt.opaque_case_ref)
-            .ok_or("Rumor is not backed by a generated case")?;
-        let generated: adventuresim_core::quest_generation::GeneratedCase =
-            serde_json::from_str(&authority.manifest_json)
-                .map_err(|_| "Generated testimony manifest is invalid")?;
-        if session.id != receipt.discovery_session_id
-            && let Some(witness) = generated
-                .witnesses
-                .iter()
-                .find(|witness| witness.npc_id == npc_actor_id)
-        {
-            crate::investigation::persist_generated_testimony(
-                ctx,
-                character_id,
-                &generated,
-                witness,
-            )?;
-        }
     }
     refresh_dialogue_topic_options(ctx, &session, character_id)?;
     Ok(())
@@ -5551,8 +5529,84 @@ fn dialogue_runtime_bindings(
         bindings.bind(S::ReferralRole, contact.profession);
         bindings.bind(S::ReferralLocation, receipt.expected_location_id.clone());
         bindings.bind(S::DescribedLocation, receipt.expected_location_id);
+        if contact.id == npc.id {
+            let authority = ctx
+                .db
+                .quest_generation_authority()
+                .case_id()
+                .find(&receipt.opaque_case_ref)
+                .ok_or("Rumor is not backed by a generated case")?;
+            let generated: adventuresim_core::quest_generation::GeneratedCase =
+                serde_json::from_str(&authority.manifest_json)
+                    .map_err(|_| "Generated testimony manifest is invalid")?;
+            let witness = generated
+                .witnesses
+                .iter()
+                .find(|witness| witness.npc_id == npc.id)
+                .ok_or("Referral contact is not the generated witness")?;
+            let testimony = witness
+                .testimony
+                .iter()
+                .map(|draft| draft.spoken_text.trim())
+                .filter(|text| !text.is_empty())
+                .collect::<Vec<_>>()
+                .join(" ");
+            if testimony.is_empty() || testimony.len() > 4_096 {
+                return Err("Generated witness testimony is unavailable or too large".into());
+            }
+            bindings.bind(S::Testimony, testimony);
+        }
     }
     Ok(bindings)
+}
+
+fn receive_referred_testimony(
+    ctx: &ReducerContext,
+    character_id: u64,
+    session: &DialogueSession,
+    live_npc: &crate::settlement_population::SettlementNpc,
+    action_id: &str,
+) -> Result<(), String> {
+    let delivery = ctx
+        .db
+        .local_problem_rumor_delivery()
+        .session_id()
+        .filter(&session.id)
+        .find(|delivery| delivery.character_id == character_id)
+        .ok_or("Dialogue has no exact local-problem referral")?;
+    let receipt = ctx
+        .db
+        .local_problem_receipt()
+        .id()
+        .find(&delivery.receipt_id)
+        .ok_or("Rumor delivery receipt disappeared")?;
+    if receipt.contact_npc_id != live_npc.id
+        || receipt.settlement_id != session.settlement_id
+        || receipt.expected_location_id != session.location_id
+    {
+        return Err("Addressed NPC is not the exact referred witness here".into());
+    }
+    let authority = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&receipt.opaque_case_ref)
+        .ok_or("Rumor is not backed by a generated case")?;
+    let generated: adventuresim_core::quest_generation::GeneratedCase =
+        serde_json::from_str(&authority.manifest_json)
+            .map_err(|_| "Generated testimony manifest is invalid")?;
+    let witness = generated
+        .witnesses
+        .iter()
+        .find(|witness| witness.npc_id == live_npc.id)
+        .ok_or("Referral contact is not the generated witness")?;
+    crate::investigation::persist_generated_testimony(
+        ctx,
+        character_id,
+        &generated,
+        witness,
+        action_id,
+    )
 }
 
 fn resolve_dialogue_fragments(
@@ -6618,6 +6672,9 @@ fn apply_dialogue_effect(
         }
         adventuresim_dialogue::Effect::ExamineDisease => {
             crate::disease::examine_by_herbalist(ctx, character_id, session.settlement_id.clone())
+        }
+        adventuresim_dialogue::Effect::ReceiveReferredTestimony => {
+            receive_referred_testimony(ctx, character_id, session, &live_npc, action_id)
         }
         adventuresim_dialogue::Effect::InvestigationAction { action } => {
             apply_dialogue_investigation_action(
