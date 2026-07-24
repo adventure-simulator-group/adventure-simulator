@@ -5480,7 +5480,8 @@ mod tests {
         let first_capability = exact_capability(7, "public-case", "site-a");
         let mut second_capability = first_capability.clone();
         second_capability.id = "cap-b".into();
-        let dependent_ids = [first_lead, second_lead].iter().flat_map(|lead| {
+        let corrected_leads = [first_lead, second_lead];
+        let dependent_ids = corrected_leads.iter().flat_map(|lead| {
             [&first_capability, &second_capability]
                 .into_iter()
                 .filter_map(|capability| {
