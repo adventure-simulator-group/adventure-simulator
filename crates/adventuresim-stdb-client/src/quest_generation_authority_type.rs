@@ -9,9 +9,12 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub struct QuestGenerationAuthority {
     pub case_id: String,
     pub public_case_id: String,
+    pub settlement_id: String,
+    pub settlement_name: String,
     pub seed: u64,
     pub catalog_revision: String,
     pub context_snapshot_json: String,
+    pub context_commitment: String,
     pub manifest_json: String,
     pub factor_trace_json: String,
 }
@@ -26,9 +29,12 @@ impl __sdk::InModule for QuestGenerationAuthority {
 pub struct QuestGenerationAuthorityCols {
     pub case_id: __sdk::__query_builder::Col<QuestGenerationAuthority, String>,
     pub public_case_id: __sdk::__query_builder::Col<QuestGenerationAuthority, String>,
+    pub settlement_id: __sdk::__query_builder::Col<QuestGenerationAuthority, String>,
+    pub settlement_name: __sdk::__query_builder::Col<QuestGenerationAuthority, String>,
     pub seed: __sdk::__query_builder::Col<QuestGenerationAuthority, u64>,
     pub catalog_revision: __sdk::__query_builder::Col<QuestGenerationAuthority, String>,
     pub context_snapshot_json: __sdk::__query_builder::Col<QuestGenerationAuthority, String>,
+    pub context_commitment: __sdk::__query_builder::Col<QuestGenerationAuthority, String>,
     pub manifest_json: __sdk::__query_builder::Col<QuestGenerationAuthority, String>,
     pub factor_trace_json: __sdk::__query_builder::Col<QuestGenerationAuthority, String>,
 }
@@ -39,12 +45,15 @@ impl __sdk::__query_builder::HasCols for QuestGenerationAuthority {
         QuestGenerationAuthorityCols {
             case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
             public_case_id: __sdk::__query_builder::Col::new(table_name, "public_case_id"),
+            settlement_id: __sdk::__query_builder::Col::new(table_name, "settlement_id"),
+            settlement_name: __sdk::__query_builder::Col::new(table_name, "settlement_name"),
             seed: __sdk::__query_builder::Col::new(table_name, "seed"),
             catalog_revision: __sdk::__query_builder::Col::new(table_name, "catalog_revision"),
             context_snapshot_json: __sdk::__query_builder::Col::new(
                 table_name,
                 "context_snapshot_json",
             ),
+            context_commitment: __sdk::__query_builder::Col::new(table_name, "context_commitment"),
             manifest_json: __sdk::__query_builder::Col::new(table_name, "manifest_json"),
             factor_trace_json: __sdk::__query_builder::Col::new(table_name, "factor_trace_json"),
         }
