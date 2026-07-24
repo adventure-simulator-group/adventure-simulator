@@ -63,6 +63,15 @@
             "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "The contract is still in your hands. Return when the work is complete." }] }],
             "effects": [], "prompt": null }]
         },
+        { "id": "referred-testimony", "label": "Ask what happened", "initially_known": true,
+          "conditions": { "op": "fact", "key": { "kind": "participant_referral_contact", "role": "professional" }, "equals": true },
+          "responses": [{ "id": "hear-referred-testimony", "priority": 0,
+            "turns": [
+              { "speaker": "player", "fragments": [{ "kind": "text", "value": "I was told you know what happened. What did you see or hear?" }] },
+              { "speaker": "professional", "fragments": [{ "kind": "runtime", "slot": "testimony" }] }
+            ],
+            "effects": [{ "kind": "receive_referred_testimony" }], "prompt": null }]
+        },
         { "id": "return-recovered-property", "label": "Return recovered property", "initially_known": true,
           "responses": [{ "id": "return-recovered-property", "priority": 0,
             "turns": [{ "speaker": "player", "fragments": [{ "kind": "text", "value": "I found the missing property and brought it back." }] }, { "speaker": "professional", "fragments": [{ "kind": "text", "value": "Then the matter is finally put right. I will see that it returns to its proper place." }] }],
@@ -86,8 +95,17 @@
               { "id": "yes", "label": "Please examine me.", "effects": [{ "kind": "examine_disease" }], "result_turns": [{ "speaker": "herbalist", "fragments": [{ "kind": "text", "value": "The examination is complete. I have recorded what I found; the treatments I can prepare are available here." }] }] },
               { "id": "no", "label": "Not now.", "result_turns": [{ "speaker": "herbalist", "fragments": [{ "kind": "text", "value": "As you wish. Come back if your condition worsens." }] }] }
             ] }
-        }]
-      }]
+        }] },
+        { "id": "referred-testimony", "label": "Ask what happened", "initially_known": true,
+          "conditions": { "op": "fact", "key": { "kind": "participant_referral_contact", "role": "herbalist" }, "equals": true },
+          "responses": [{ "id": "hear-referred-testimony", "priority": 0,
+            "turns": [
+              { "speaker": "patient", "fragments": [{ "kind": "text", "value": "I was told you know what happened. What did you see or hear?" }] },
+              { "speaker": "herbalist", "fragments": [{ "kind": "runtime", "slot": "testimony" }] }
+            ],
+            "effects": [{ "kind": "receive_referred_testimony" }], "prompt": null }]
+        }
+      ]
     },
     { "id": "religion-service", "roles": { "player": { "kind": "player" }, "cleric": { "kind": "npc" } },
       "on_start": [{ "id": "cleric-greeting", "priority": 0, "turns": [{ "speaker": "cleric", "fragments": [{ "kind": "text", "value": "Welcome. You may ask me about our " }, { "kind": "topic", "topic": "faith", "label": "faith" }, { "kind": "text", "value": "." }] }], "effects": [], "prompt": null }],
@@ -97,8 +115,17 @@
           "effects": [], "prompt": { "id": "profess-faith", "respondent": "player", "mode": "yes_no", "choices": [
             { "id": "yes", "label": "I profess this faith.", "effects": [{ "kind": "set_flag", "flag": "profess-local-faith", "value": true }], "result_turns": [{ "speaker": "cleric", "fragments": [{ "kind": "text", "value": "Welcome to the congregation. Your profession of faith has been recorded." }] }] },
             { "id": "no", "label": "I am only asking.", "result_turns": [{ "speaker": "cleric", "fragments": [{ "kind": "text", "value": "Then listen and consider; no profession is required." }] }] }
-          ] } }]
-      }]
+          ] } }] },
+        { "id": "referred-testimony", "label": "Ask what happened", "initially_known": true,
+          "conditions": { "op": "fact", "key": { "kind": "participant_referral_contact", "role": "cleric" }, "equals": true },
+          "responses": [{ "id": "hear-referred-testimony", "priority": 0,
+            "turns": [
+              { "speaker": "player", "fragments": [{ "kind": "text", "value": "I was told you know what happened. What did you see or hear?" }] },
+              { "speaker": "cleric", "fragments": [{ "kind": "runtime", "slot": "testimony" }] }
+            ],
+            "effects": [{ "kind": "receive_referred_testimony" }], "prompt": null }]
+        }
+      ]
     },
     { "id": "local-resident", "roles": { "player": { "kind": "player", "min": 1, "max": 4 }, "local": { "kind": "npc" } },
       "on_start": [
@@ -114,7 +141,10 @@
       "topics": [
         { "id": "introduction", "label": "Introduction", "initially_known": true, "responses": [{ "id": "local-introduction", "priority": 0, "turns": [{ "speaker": "player", "fragments": [{ "kind": "text", "value": "Tell me about yourself." }] }, { "speaker": "local", "fragments": [{ "kind": "text", "value": "My household and work are here. I know the ordinary comings and goings of this place." }] }], "effects": [], "prompt": null }] },
         { "id": "local-problem", "label": "Local trouble", "initially_known": true,
-          "conditions": { "op": "fact", "key": { "kind": "participant_rumor_case", "role": "local" }, "equals": true },
+          "conditions": { "op": "all", "conditions": [
+            { "op": "fact", "key": { "kind": "participant_rumor_case", "role": "local" }, "equals": true },
+            { "op": "not", "condition": { "op": "fact", "key": { "kind": "participant_referral_contact", "role": "local" }, "equals": true } }
+          ] },
           "responses": [{ "id": "problem-referral", "priority": 0,
             "turns": [{ "speaker": "local", "fragments": [
               { "kind": "text", "value": "People here have noticed " },
@@ -130,6 +160,15 @@
               { "kind": "text", "value": ". That is only what people are saying; judge the account for yourself." }
             ] }],
             "effects": [], "prompt": null }]
+        },
+        { "id": "referred-testimony", "label": "Ask what happened", "initially_known": true,
+          "conditions": { "op": "fact", "key": { "kind": "participant_referral_contact", "role": "local" }, "equals": true },
+          "responses": [{ "id": "hear-referred-testimony", "priority": 0,
+            "turns": [
+              { "speaker": "player", "fragments": [{ "kind": "text", "value": "I was told you know what happened. What did you see or hear?" }] },
+              { "speaker": "local", "fragments": [{ "kind": "runtime", "slot": "testimony" }] }
+            ],
+            "effects": [{ "kind": "receive_referred_testimony" }], "prompt": null }]
         },
         { "id": "return-recovered-property", "label": "Return recovered property", "initially_known": true,
           "responses": [{ "id": "return-recovered-property", "priority": 0,
@@ -149,6 +188,15 @@
         "responses": [{ "id": "list-open-roles", "priority": 0,
           "turns": [{ "speaker": "employer", "fragments": [{ "kind": "text", "value": "An adventuring company is looking for capable hands." }] }],
           "effects": [{ "kind": "learn_topic", "topic": "open-roles" }], "prompt": null }]
+      },
+      { "id": "referred-testimony", "label": "Ask what happened", "initially_known": true,
+        "conditions": { "op": "fact", "key": { "kind": "participant_referral_contact", "role": "employer" }, "equals": true },
+        "responses": [{ "id": "hear-referred-testimony", "priority": 0,
+          "turns": [
+            { "speaker": "player", "fragments": [{ "kind": "text", "value": "I was told you know what happened. What did you see or hear?" }] },
+            { "speaker": "employer", "fragments": [{ "kind": "runtime", "slot": "testimony" }] }
+          ],
+          "effects": [{ "kind": "receive_referred_testimony" }], "prompt": null }]
       }]
     }
   ]

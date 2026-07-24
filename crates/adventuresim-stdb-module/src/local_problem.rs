@@ -867,9 +867,16 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("pub fn join_dialogue_session").next())
             .unwrap();
-        assert!(start.contains("session.id != receipt.discovery_session_id"));
-        assert!(start.contains(".find(|witness| witness.npc_id == npc_actor_id)"));
-        assert!(start.contains("persist_generated_testimony("));
+        assert!(!start.contains("persist_generated_testimony("));
+        let receive = strategic
+            .split("fn receive_referred_testimony")
+            .nth(1)
+            .and_then(|tail| tail.split("fn resolve_dialogue_fragments").next())
+            .unwrap();
+        assert!(receive.contains("receipt.contact_npc_id != live_npc.id"));
+        assert!(receive.contains("receipt.expected_location_id != session.location_id"));
+        assert!(receive.contains(".find(|witness| witness.npc_id == live_npc.id)"));
+        assert!(receive.contains("persist_generated_testimony("));
         assert!(!start.contains("accept_contract("));
     }
 }

@@ -6103,7 +6103,7 @@ fn rest_service_menu(
     html! {
     section class="rest-service-menu" aria-label=(format!("{} rest service", location))
         data-live-refresh-url=[summary.map(|_| format!(
-            "/locations/settlement/{settlement_id}/{}",
+            "/settlements/{settlement_id}/{}",
             if kind == "inn" { "inn" } else { "religion" }
         ))]
         title=(if kind == "inn" { "A bed costs 1 coin per day. Injuries are tended before downtime." } else { "Sanctuary is free. Injuries are tended before downtime." }) {
@@ -6325,7 +6325,7 @@ mod tests {
             SoapRestPreview::default(),
         )
         .into_string();
-        assert!(markup.contains("data-live-refresh-url=\"/locations/settlement/riverdale/inn\""));
+        assert!(markup.contains("data-live-refresh-url=\"/settlements/riverdale/inn\""));
         assert!(!markup.contains("data-live-refresh-url=\"/settlements/riverdale/rest/inn\""));
     }
 

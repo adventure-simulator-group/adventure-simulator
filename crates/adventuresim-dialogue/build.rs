@@ -84,6 +84,7 @@ enum BuildEffect {
     BeginApprenticeship { profession: String },
     ExamineDisease,
     SetFlag { flag: String, value: bool },
+    ReceiveReferredTestimony,
     InvestigationAction { action: String },
 }
 
