@@ -6274,7 +6274,7 @@ mod tests {
             validate_generated_testimony_site(&generated, &draft, Some(&wrong_geometry)).is_err()
         );
         let mut missing_site = draft.clone();
-        missing_site.site_id = Some(SiteId::new("missing-site"));
+        missing_site.site_id = Some(SiteId::try_new("missing-site").unwrap());
         assert!(validate_generated_testimony_site(&generated, &missing_site, Some(&site)).is_err());
         let mut non_exact = draft;
         non_exact.destination_stage = "approximate_area".into();

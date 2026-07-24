@@ -296,8 +296,9 @@ fn record_autoresolve_report(
 #[cfg(test)]
 mod healing_tests {
     use super::{
-        CaseSiteAuthority, HostileResolutionKind, IncidentStatus, LocalChatMessage,
-        MissionApproachCapability, MissionAttemptStatus, MissionAuthority, MissionOutcomeCandidate,
+        CaseAuthority, CaseResolutionStatus, CaseSiteAuthority, HostileResolutionKind,
+        IncidentStatus, LocalChatMessage, MissionApproachCapability, MissionAttemptStatus,
+        MissionAuthority, MissionOutcomeCandidate, QuestGenerationAuthority,
         RecruitmentOfferStatus, activity_incident_source_id, autoresolve_drop,
         case_refs_have_exact_dialogue_provenance, generated_dialogue_action_matches,
         generated_dialogue_producer_recipient, generated_scene_key,
@@ -306,6 +307,7 @@ mod healing_tests {
         mission_candidate_from_capability, npc_conversation_authority_matches,
         player_participant_ids, project_local_chat_message, quest_encounter_archetype,
         refreshed_recruitment_offer_status, sample_mission_candidate,
+        validated_generated_dialogue_manifest,
     };
     use adventuresim_core::encounter::EncounterArchetype;
     use std::collections::HashSet;
