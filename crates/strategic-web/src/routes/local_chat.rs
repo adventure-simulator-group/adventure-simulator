@@ -10,7 +10,10 @@ use serde_json::json;
 use super::{AppState, character_case_site_id};
 use crate::{
     session::Session,
-    spacetimedb::{BackendLocalChatMessage, Character, CharacterTime, sql_string_literal},
+    spacetimedb::{
+        BackendLocalChatMessage, Character, CharacterTime, Settlement, SettlementCategory,
+        sql_string_literal,
+    },
 };
 
 const MAX_CHAT_HISTORY: usize = 200;
@@ -96,6 +99,18 @@ fn npc_authority_matches(
         && minute < presence.end_minute
 }
 
+fn npc_history_location_is_navigable(
+    profile: &adventuresim_world_schema::SettlementEconomyProfile,
+    category: &SettlementCategory,
+    location_id: &str,
+) -> bool {
+    let has_keep = matches!(
+        category,
+        SettlementCategory::Town | SettlementCategory::City | SettlementCategory::Capital
+    );
+    adventuresim_core::settlement_economy::npc_location_is_navigable(profile, has_keep, location_id)
+}
+
 enum ConversationSelector {
     Npc(String),
     PlayerParty(String),
@@ -123,6 +138,22 @@ async fn actor_and_selector(
                 .current_settlement_id
                 .as_deref()
                 .ok_or("NPC is not local")?;
+            let settlement_authority = state
+                .db
+                .query_one::<Settlement>(&format!(
+                    "SELECT * FROM settlement WHERE id = {}",
+                    sql_string_literal(settlement)
+                ))
+                .await
+                .map_err(|error| error.to_string())?
+                .ok_or("NPC is not local")?;
+            if !npc_history_location_is_navigable(
+                &settlement_authority.economy,
+                &settlement_authority.category,
+                location_id,
+            ) {
+                return Err("NPC is not local".into());
+            }
             if subject_id.chars().count() > 160
                 || subject_id.chars().any(char::is_control)
                 || subject_id.is_empty()
@@ -342,7 +373,53 @@ async fn incoming(State(state): State<AppState>, session: Session) -> Json<Vec<I
 
 #[cfg(test)]
 mod tests {
-    use super::{LocalNpcPresenceRow, LocalNpcRow, npc_authority_matches};
+    use super::{
+        LocalNpcPresenceRow, LocalNpcRow, npc_authority_matches, npc_history_location_is_navigable,
+    };
+    use crate::spacetimedb::SettlementCategory;
+
+    #[test]
+    fn hidden_npc_locations_cannot_authorize_chat_history() {
+        let mut profile = adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder();
+        assert!(npc_history_location_is_navigable(
+            &profile,
+            &SettlementCategory::Hamlet,
+            "inn"
+        ));
+        assert!(npc_history_location_is_navigable(
+            &profile,
+            &SettlementCategory::Hamlet,
+            "residences"
+        ));
+        assert!(!npc_history_location_is_navigable(
+            &profile,
+            &SettlementCategory::Hamlet,
+            "church"
+        ));
+        assert!(!npc_history_location_is_navigable(
+            &profile,
+            &SettlementCategory::Hamlet,
+            "armoury"
+        ));
+        assert!(!npc_history_location_is_navigable(
+            &profile,
+            &SettlementCategory::Hamlet,
+            "keep"
+        ));
+        profile
+            .services
+            .push(adventuresim_world_schema::SettlementService::Temple);
+        assert!(npc_history_location_is_navigable(
+            &profile,
+            &SettlementCategory::Town,
+            "church"
+        ));
+        assert!(npc_history_location_is_navigable(
+            &profile,
+            &SettlementCategory::Town,
+            "keep"
+        ));
+    }
 
     #[test]
     fn riverdale_inn_npc_chain_uses_authority_not_encoded_id_shape() {
