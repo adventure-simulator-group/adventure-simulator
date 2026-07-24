@@ -14144,6 +14144,7 @@ fn revalidate_party_after_departure_sync(
     expected_settlement_id: Option<&str>,
     expected_quest_location_id: Option<&str>,
     expected_active_contract_id: Option<&str>,
+    allow_incapacitated_case_site_withdrawal: bool,
 ) -> Result<Party, String> {
     let party = ctx
         .db
@@ -14187,8 +14188,24 @@ fn revalidate_party_after_departure_sync(
     if !departure_snapshot_allows_travel(true, members_match, true) {
         return Err("A party member changed location during departure synchronization".into());
     }
-    require_party_ready(ctx, party_id)?;
+    if departure_requires_ready_party(
+        expected_settlement_id,
+        expected_quest_location_id,
+        allow_incapacitated_case_site_withdrawal,
+    ) {
+        require_party_ready(ctx, party_id)?;
+    }
     Ok(party)
+}
+
+fn departure_requires_ready_party(
+    expected_settlement_id: Option<&str>,
+    expected_case_site_id: Option<&str>,
+    allow_incapacitated_case_site_withdrawal: bool,
+) -> bool {
+    !(allow_incapacitated_case_site_withdrawal
+        && expected_settlement_id.is_none()
+        && expected_case_site_id.is_some())
 }
 
 fn departure_snapshot_allows_travel(
@@ -14227,10 +14244,10 @@ mod departure_invariant_tests {
         CampDurationMode, CaseSiteId, JourneyCaseSiteEndpoint, JourneyEndpoint, JourneyRoutePlan,
         JourneyRoutePoint, JourneySettlementEndpoint, JourneyTerrainKind, JourneyTerrainSpan,
         JourneyTerrainWeights, Party, PartyJourneyRoute, common_movement_prefix,
-        departure_snapshot_allows_travel, party_can_continue_travel,
-        pending_incident_allows_departure, reconstruct_legacy_journey_coordinates,
-        route_position_at_minute, set_party_journey_state, straight_line_distance_m,
-        terrain_training_exposure, validate_journey_route_payload,
+        departure_requires_ready_party, departure_snapshot_allows_travel,
+        party_can_continue_travel, pending_incident_allows_departure,
+        reconstruct_legacy_journey_coordinates, route_position_at_minute, set_party_journey_state,
+        straight_line_distance_m, terrain_training_exposure, validate_journey_route_payload,
         zero_boundary_requires_settlement,
     };
 
@@ -14248,6 +14265,31 @@ mod departure_invariant_tests {
         assert!(!departure_snapshot_allows_travel(false, true, true));
         assert!(!departure_snapshot_allows_travel(true, false, true));
         assert!(departure_snapshot_allows_travel(true, true, true));
+    }
+
+    #[test]
+    fn only_case_site_withdrawal_may_bypass_departure_readiness() {
+        assert!(!departure_requires_ready_party(None, Some("site:a"), true));
+        assert!(departure_requires_ready_party(
+            Some("settlement:a"),
+            None,
+            true
+        ));
+        assert!(departure_requires_ready_party(None, None, true));
+        assert!(departure_requires_ready_party(None, Some("site:a"), false));
+    }
+
+    #[test]
+    fn settlement_travel_requests_the_bypass_only_for_case_site_origins() {
+        let source = include_str!("strategic.rs");
+        let travel = source
+            .split("fn travel_to_settlement_impl")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn set_party_camp_fatigue_percent").next())
+            .expect("settlement travel implementation");
+        assert!(travel.contains("(origin_kind == \"case_site\").then_some(origin_id.as_str())"));
+        assert!(travel.contains("origin_kind == \"case_site\","));
+        assert!(travel.contains("require_party_ready(ctx, &party.id)?"));
     }
 
     #[test]
@@ -14593,6 +14635,7 @@ fn travel_to_case_site_impl(
         Some(&site.origin_settlement_id),
         None,
         None,
+        false,
     )?;
     let (site, lead) = exact_case_site_for_observer(ctx, character_id, &case_site_id)
         .ok_or("Exact destination knowledge changed during departure synchronization")?;
@@ -14882,6 +14925,7 @@ fn travel_to_settlement_impl(
             (origin_kind == "settlement").then_some(origin_id.as_str()),
             (origin_kind == "case_site").then_some(origin_id.as_str()),
             None,
+            origin_kind == "case_site",
         )?);
     }
     let traveler_ids: Vec<u64> = if let Some(party) = party.as_ref() {

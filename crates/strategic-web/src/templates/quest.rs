@@ -23,6 +23,15 @@ pub struct CaseSitePagePresentation {
     pub allow_tactical_combat: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CaseSiteRecoveryNotice {
+    pub member_names: String,
+    pub causes: String,
+    pub resource_blocked: bool,
+    pub withdrawal_destination: String,
+    pub withdrawal_href: String,
+}
+
 pub fn quest_location_map_page(
     presentation: &CaseSitePagePresentation,
     site: &BackendCaseSitePin,
@@ -39,6 +48,7 @@ pub fn quest_location_map_page(
     can_configure_travel: bool,
     default_rest_minutes: u64,
     soap_preview: super::settlement::SoapRestPreview,
+    recovery_notice: Option<&CaseSiteRecoveryNotice>,
     logged_in_as: Option<&str>,
 ) -> Markup {
     let selected = selected_id.and_then(|id| nearby.iter().find(|entry| entry.id == id));
@@ -72,6 +82,8 @@ pub fn quest_location_map_page(
             autoresolve_report,
             None,
             false,
+            recovery_notice,
+            true,
         ))
         (map_destination_detail(
             selected,
@@ -107,10 +119,46 @@ fn quest_location_center(
     autoresolve_report: Option<&AutoresolveReport>,
     travel_planner: Option<Markup>,
     show_combat_actions: bool,
+    recovery_notice: Option<&CaseSiteRecoveryNotice>,
+    map_tab: bool,
 ) -> Markup {
     let autoresolve_messages = autoresolve_info_messages(autoresolve_report);
     html! {
         main class="center-content settlement-main quest-location-main" {
+            @if let Some(notice) = recovery_notice {
+                section class="strategic-notice quest-recovery-notice" role="status" {
+                    h3 { "Party recovery" }
+                    p {
+                        (&notice.member_names) " "
+                        @if notice.causes.is_empty() {
+                            "cannot currently act."
+                        } @else {
+                            "cannot currently act because of " (&notice.causes) "."
+                        }
+                    }
+                    @if notice.resource_blocked {
+                        p {
+                            "Field rest does not provide food or water. Resting longer may worsen these deficits."
+                        }
+                    } @else {
+                        p {
+                            "Field rest can reduce fatigue and permit natural recovery, but severe conditions may require settlement care."
+                        }
+                    }
+                    p {
+                        "An incapacitated party may still withdraw to a settlement. The journey costs time and carries normal travel risk; supplies and care become available after arrival."
+                    }
+                    p {
+                        a class="btn btn-secondary" href=(&notice.withdrawal_href) {
+                            @if map_tab {
+                                "Select " (&notice.withdrawal_destination) " and begin journey"
+                            } @else {
+                                "Open map and select " (&notice.withdrawal_destination)
+                            }
+                        }
+                    }
+                }
+            }
             (party_portrait_overlay(
                 party_members,
                 active_character,
@@ -188,6 +236,7 @@ pub fn quest_location_enemy_page(
     can_configure_travel: bool,
     default_rest_minutes: u64,
     soap_preview: super::settlement::SoapRestPreview,
+    recovery_notice: Option<&CaseSiteRecoveryNotice>,
     loot: &[BattleLootItem],
     pooled: &[PartyInventoryItem],
     stake: u64,
@@ -255,6 +304,8 @@ pub fn quest_location_enemy_page(
             autoresolve_report,
             None,
             true,
+            recovery_notice,
+            false,
         ))
 
         aside class=(if resolved { "right-sidebar" } else { "right-sidebar travel-preferences-only-sidebar" })
@@ -422,6 +473,8 @@ mod tests {
             None,
             None,
             true,
+            None,
+            false,
         )
         .into_string();
         assert!(markup.contains("action=\"/quests/actions\""));
@@ -466,11 +519,91 @@ mod tests {
             None,
             None,
             true,
+            None,
+            false,
         )
         .into_string();
         assert!(!markup.contains("quest-combat-actions"));
         assert!(!markup.contains("Waiting for party leader"));
         assert!(!markup.contains("Autoresolve"));
         assert!(!markup.contains("/missions/enter"));
+    }
+
+    #[test]
+    fn resource_blocked_recovery_notice_is_truthful_and_actionable() {
+        let presentation = CaseSitePagePresentation {
+            title: "The old graveyard".into(),
+            action_id: "site:old-graveyard".into(),
+            allow_tactical_combat: false,
+        };
+        let site = BackendCaseSitePin {
+            owner_character_id: 7,
+            case_id: "journal:case".into(),
+            case_site_id: "site:old-graveyard".into(),
+            origin_settlement_id: "settlement".into(),
+            name: "the old graveyard".into(),
+            description: "A place to inspect.".into(),
+            scene_key: "graveyard".into(),
+            longitude_e7: 0,
+            latitude_e7: 0,
+            coordinates_are_geographic: false,
+            distance_m: 100,
+            knowledge_stage: "visited".into(),
+            tracked: false,
+            display_title: presentation.title.clone(),
+            generated_case: true,
+            combat_available: false,
+        };
+        let notice = CaseSiteRecoveryNotice {
+            member_names: "Lukas".into(),
+            causes: "hunger, thirst".into(),
+            resource_blocked: true,
+            withdrawal_destination: "Ironforge".into(),
+            withdrawal_href: "/locations/case-site/site:old-graveyard/map?destination=ironforge"
+                .into(),
+        };
+        let enemy = quest_location_center(
+            &presentation,
+            &site,
+            &[],
+            None,
+            &[],
+            false,
+            false,
+            None,
+            None,
+            false,
+            Some(&notice),
+            false,
+        )
+        .into_string();
+        assert!(enemy.contains("Lukas"));
+        assert!(enemy.contains("hunger, thirst"));
+        assert!(enemy.contains("Field rest does not provide food or water"));
+        assert!(enemy.contains("Resting longer may worsen"));
+        assert!(enemy.contains("costs time and carries normal travel risk"));
+        assert!(enemy.contains("supplies and care become available after arrival"));
+        assert!(enemy.contains("Open map and select Ironforge"));
+        assert!(enemy.contains(
+            "href=\"/locations/case-site/site:old-graveyard/map?destination=ironforge\""
+        ));
+        assert!(!enemy.contains("guaranteed"));
+
+        let map = quest_location_center(
+            &presentation,
+            &site,
+            &[],
+            None,
+            &[],
+            false,
+            false,
+            None,
+            None,
+            false,
+            Some(&notice),
+            true,
+        )
+        .into_string();
+        assert!(map.contains("Select Ironforge and begin journey"));
     }
 }

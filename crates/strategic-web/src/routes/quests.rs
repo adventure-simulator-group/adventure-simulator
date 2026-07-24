@@ -27,11 +27,13 @@ use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
     AutoresolveReport, BackendCaseBattle, BackendCaseSitePin, BackendInvestigationAction,
     BattleLootItem, BattleResult, Character, CharacterAttributes, CharacterLimbs, CharacterStats,
-    CharacterTime, CharacterTrainingSchedule, ContractPresentation, ContractPresentationStatus,
-    InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem, PartyStake, Settlement,
+    CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, ContractPresentation,
+    ContractPresentationStatus, InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem,
+    PartyStake, Settlement,
 };
 use crate::templates::quest::{
-    CaseSitePagePresentation, quest_location_enemy_page, quest_location_map_page,
+    CaseSitePagePresentation, CaseSiteRecoveryNotice, quest_location_enemy_page,
+    quest_location_map_page,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -420,6 +422,80 @@ fn character_and_party_are_at_case_site(
                 .as_ref()
                 .is_some_and(|id| id.value == case_site_id)
         })
+}
+
+fn case_site_recovery_notice(
+    members: &[Character],
+    conditions: &[CharacterStrategicCondition],
+    site_id: &str,
+    nearest_settlement: Option<&TravelDestination>,
+) -> Option<CaseSiteRecoveryNotice> {
+    let incapacitated = members
+        .iter()
+        .filter_map(|member| {
+            let condition = conditions
+                .iter()
+                .find(|row| row.character_id == member.id && row.status == "incapacitated")?;
+            Some((member, condition))
+        })
+        .collect::<Vec<_>>();
+    if incapacitated.is_empty() {
+        return None;
+    }
+    let member_names = incapacitated
+        .iter()
+        .map(|(member, _)| member.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let has = |select: fn(&CharacterStrategicCondition) -> f32| {
+        incapacitated
+            .iter()
+            .any(|(_, condition)| select(condition) > 0.001)
+    };
+    let mut causes = Vec::new();
+    if has(|condition| condition.hunger) {
+        causes.push("hunger");
+    }
+    if has(|condition| condition.thirst) {
+        causes.push("thirst");
+    }
+    if has(|condition| condition.pain) {
+        causes.push("pain");
+    }
+    if has(|condition| condition.blood_loss) {
+        causes.push("blood loss");
+    }
+    if has(|condition| condition.fatigue) {
+        causes.push("fatigue");
+    }
+    if has(|condition| condition.fear) {
+        causes.push("fear");
+    }
+    let resource_blocked = causes.contains(&"hunger") || causes.contains(&"thirst");
+    let (withdrawal_destination, withdrawal_href) = nearest_settlement.map_or_else(
+        || {
+            (
+                "a settlement".to_owned(),
+                format!("/locations/case-site/{site_id}/map"),
+            )
+        },
+        |destination| {
+            (
+                destination.name.clone(),
+                format!(
+                    "/locations/case-site/{site_id}/map?destination={}",
+                    destination.id
+                ),
+            )
+        },
+    );
+    Some(CaseSiteRecoveryNotice {
+        member_names,
+        causes: causes.join(", "),
+        resource_blocked,
+        withdrawal_destination,
+        withdrawal_href,
+    })
 }
 
 async fn quest_location_base(
@@ -845,7 +921,13 @@ async fn render_quest_location(
             .flatten();
         }
     }
-    let party_ready = party_is_ready(&state, &party_members).await;
+    let (party_ready, strategic_conditions) = party_readiness(&state, &party_members).await;
+    let recovery_notice = case_site_recovery_notice(
+        &living_party_members,
+        &strategic_conditions,
+        &site.case_site_id,
+        nearby.first(),
+    );
     let can_fight = case_site_combat_permitted(
         site,
         legacy_quest.as_ref(),
@@ -889,6 +971,7 @@ async fn render_quest_location(
             can_configure_travel,
             default_rest_minutes,
             soap_preview,
+            recovery_notice.as_ref(),
             logged_in_as,
         ),
         QuestLocationTab::Enemy => quest_location_enemy_page(
@@ -904,6 +987,7 @@ async fn render_quest_location(
             can_configure_travel,
             default_rest_minutes,
             soap_preview,
+            recovery_notice.as_ref(),
             &loot,
             &pooled,
             stake,
@@ -915,7 +999,12 @@ async fn render_quest_location(
     Html(page.into_string()).into_response()
 }
 
-async fn party_is_ready(state: &AppState, members: &[Character]) -> bool {
+async fn party_readiness(
+    state: &AppState,
+    members: &[Character],
+) -> (bool, Vec<CharacterStrategicCondition>) {
+    let mut ready = true;
+    let mut conditions = Vec::new();
     for member in members
         .iter()
         .filter(|member| participates_in_party_readiness(member.alive))
@@ -929,20 +1018,25 @@ async fn party_is_ready(state: &AppState, members: &[Character]) -> bool {
             .await
             .is_err()
         {
-            return false;
+            ready = false;
+            continue;
         }
         let condition = state
             .db
-            .query_one::<crate::spacetimedb::CharacterStrategicCondition>(&format!(
+            .query_one::<CharacterStrategicCondition>(&format!(
                 "SELECT * FROM character_strategic_condition WHERE character_id = {}",
                 member.id
             ))
             .await;
-        if !matches!(condition, Ok(Some(condition)) if condition.status != "incapacitated") {
-            return false;
+        match condition {
+            Ok(Some(condition)) => {
+                ready &= condition.status != "incapacitated";
+                conditions.push(condition);
+            }
+            _ => ready = false,
         }
     }
-    true
+    (ready, conditions)
 }
 
 async fn party_targets(state: &AppState, party_id: &str) -> Vec<InventoryQuantityTarget> {
@@ -1154,6 +1248,60 @@ mod quest_route_tests {
         }
     }
 
+    fn strategic_condition(
+        character_id: u64,
+        status: &str,
+        hunger: f32,
+        thirst: f32,
+        pain: f32,
+        blood_loss: f32,
+        fatigue: f32,
+    ) -> CharacterStrategicCondition {
+        CharacterStrategicCondition {
+            character_id,
+            morale: 0.0,
+            morale_bonus: 0.0,
+            morale_bonus_cap: 0.0,
+            fervor: 0.0,
+            pain,
+            blood_loss,
+            fear: 0.0,
+            fatigue,
+            hunger,
+            thirst,
+            food_days: 0.0,
+            water_days: 0.0,
+            water_capacity_ml: 0,
+            incapacitation: hunger + thirst + pain + blood_loss + fatigue,
+            check_multiplier: 0.0,
+            status: status.into(),
+        }
+    }
+
+    fn withdrawal_destination() -> TravelDestination {
+        TravelDestination {
+            id: "ironforge".into(),
+            name: "Ironforge".into(),
+            description: String::new(),
+            summary: None,
+            travel_action: "/settlements/ironforge/travel".into(),
+            track_action: None,
+            tracked: false,
+            distance_m: 1_000,
+            journey_minutes: 60,
+            camp_stop_minutes: Vec::new(),
+            camp_forecasts: Vec::new(),
+            departure_minute: 0,
+            itinerary_total_elapsed_minutes: 60,
+            itinerary_segments: Vec::new(),
+            quest_in_progress: false,
+            provision_forecast: None,
+            terrain_route: None,
+            return_terrain_route: None,
+            route_fallback: true,
+        }
+    }
+
     #[test]
     fn autoresolve_stays_on_the_enemy_lifecycle_except_while_requesting_approval() {
         let enemy = "/locations/case-site/case-site-1/enemy";
@@ -1285,12 +1433,73 @@ mod quest_route_tests {
     }
 
     #[test]
+    fn recovery_notice_distinguishes_resource_deficits_from_rest_recovery() {
+        let member = character_at(Some("site:known"));
+        let destination = withdrawal_destination();
+        let resource_blocked = case_site_recovery_notice(
+            std::slice::from_ref(&member),
+            &[strategic_condition(
+                member.id,
+                "incapacitated",
+                4.0,
+                26.0,
+                0.0,
+                0.0,
+                0.0,
+            )],
+            "site:known",
+            Some(&destination),
+        )
+        .expect("resource deficit should produce recovery guidance");
+        assert_eq!(resource_blocked.member_names, "Ada");
+        assert_eq!(resource_blocked.causes, "hunger, thirst");
+        assert!(resource_blocked.resource_blocked);
+        assert_eq!(resource_blocked.withdrawal_destination, "Ironforge");
+        assert_eq!(
+            resource_blocked.withdrawal_href,
+            "/locations/case-site/site:known/map?destination=ironforge"
+        );
+
+        let rest_recoverable = case_site_recovery_notice(
+            std::slice::from_ref(&member),
+            &[strategic_condition(
+                member.id,
+                "incapacitated",
+                0.0,
+                0.0,
+                0.2,
+                0.1,
+                0.8,
+            )],
+            "site:known",
+            None,
+        )
+        .expect("recoverable condition should produce guidance");
+        assert_eq!(rest_recoverable.causes, "pain, blood loss, fatigue");
+        assert!(!rest_recoverable.resource_blocked);
+        assert_eq!(
+            rest_recoverable.withdrawal_href,
+            "/locations/case-site/site:known/map"
+        );
+
+        assert!(
+            case_site_recovery_notice(
+                &[member],
+                &[strategic_condition(7, "ready", 0.0, 0.0, 0.0, 0.0, 0.0,)],
+                "site:known",
+                Some(&destination),
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
     fn generated_location_loader_keeps_owner_pin_and_occupancy_boundaries() {
         let source = include_str!("quests.rs");
         let loader = source
             .split("async fn render_quest_location")
             .nth(1)
-            .and_then(|tail| tail.split("async fn party_is_ready").next())
+            .and_then(|tail| tail.split("async fn party_readiness").next())
             .expect("case-site loader");
         assert!(loader.contains("owner_character_id = {character_id}"));
         assert!(loader.contains("case_site_id = {}"));
@@ -1314,7 +1523,7 @@ mod quest_route_tests {
                 "async fn rest_at_quest_location_with_redirect",
                 "async fn render_quest_location",
             ),
-            ("async fn render_quest_location", "async fn party_is_ready"),
+            ("async fn render_quest_location", "async fn party_readiness"),
             ("async fn autoresolve_quest", "fn autoresolve_redirect"),
         ] {
             let handler = source
@@ -1324,6 +1533,24 @@ mod quest_route_tests {
                 .expect("site-sensitive handler");
             assert!(handler.contains(&authoritative_loader));
         }
+    }
+
+    #[test]
+    fn case_site_map_keeps_settlement_withdrawal_visible_when_party_is_not_ready() {
+        let source = include_str!("quests.rs");
+        let rendering = source
+            .split("let page = match tab")
+            .nth(1)
+            .and_then(|tail| tail.split("async fn party_readiness").next())
+            .expect("case-site page rendering");
+        let map = rendering
+            .split("QuestLocationTab::Map(selected)")
+            .nth(1)
+            .and_then(|tail| tail.split("QuestLocationTab::Enemy").next())
+            .expect("case-site map branch");
+        assert!(map.contains("can_control,"));
+        assert!(!map.contains("party_ready,"));
+        assert!(map.contains("recovery_notice.as_ref()"));
     }
 
     #[test]
