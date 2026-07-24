@@ -158,12 +158,20 @@
     );
     if (!payload) return null;
     return request("/api/dialogue/topic", payload).then((view) => {
-      if (binding.selectionGeneration === selectionGeneration
-        && binding.npcId === chat.dataset.localChatSubject
+      if (dialogueResponseIsCurrent(
+        binding,
+        selectionGeneration,
+        chat.dataset.localChatSubject || "",
+        currentView,
+      )
         && binding.sessionId === view.session_id) render(view);
     }).catch((error) => {
-      if (binding.selectionGeneration === selectionGeneration
-        && binding.npcId === chat.dataset.localChatSubject) {
+      if (dialogueResponseIsCurrent(
+        binding,
+        selectionGeneration,
+        chat.dataset.localChatSubject || "",
+        currentView,
+      )) {
         window.reportStrategicError(error, "choose dialogue topic");
       }
     });

@@ -61,6 +61,42 @@ test("late dialogue responses cannot replace the newly selected NPC", () => {
   assert.match(source, /binding\.sessionId === view\.session_id/);
 });
 
+test("late topic responses and errors cannot supersede a newer same-session revision", () => {
+  const topic = {
+    sessionId: "dialogue:7:witness",
+    topicId: "referred-testimony",
+    revision: 2,
+    selectionGeneration: 4,
+    npcId: "npc:town:inn:1",
+  };
+  assert.equal(
+    dialogueResponseIsCurrent(
+      topic,
+      4,
+      "npc:town:inn:1",
+      { session_id: topic.sessionId, revision: 2 },
+    ),
+    true,
+  );
+  assert.equal(
+    dialogueResponseIsCurrent(
+      topic,
+      4,
+      "npc:town:inn:1",
+      { session_id: topic.sessionId, revision: 3 },
+    ),
+    false,
+  );
+  const topicHandler = source
+    .split("const chooseTopic =")
+    .at(1)
+    .split("const answerPrompt =")
+    .at(0);
+  assert.match(topicHandler, /dialogueResponseIsCurrent\(/);
+  assert.match(topicHandler, /\.then\([\s\S]*dialogueResponseIsCurrent/);
+  assert.match(topicHandler, /\.catch\([\s\S]*dialogueResponseIsCurrent/);
+});
+
 test("rapid provider-to-witness selection rejects stale topics and binds the witness session", () => {
   const hans = {
     sessionId: "dialogue:7:hans",

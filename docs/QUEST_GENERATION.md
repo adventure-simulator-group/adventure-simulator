@@ -122,7 +122,10 @@ subsequent witnesses; only processing that account grants the next private
 referral and projects the persistent NPC's safe name, physical description,
 profession, and location-tab label into the journal. Referral execution
 revalidates observer, canonical/public case authority, NPC, settlement,
-location, catalog revision, dialogue session, and live presence. Missing,
+location, catalog revision, dialogue session, and live presence. Private
+referral authority records whether it came from the exact initial rumor receipt
+or an exact source witness and testimony draft; every use regenerates the
+manifest and revalidates that provenance and its one authored edge. Missing,
 cyclic, duplicate, or unreachable route-required witness edges fail generation
 validation. Secondary testimony with no authored contact action changes no
 route, while the primary contact still uniquely unlocks its successors.

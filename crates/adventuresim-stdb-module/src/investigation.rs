@@ -546,7 +546,12 @@ pub struct InvestigationWitnessReferral {
     pub witness_npc_id: String,
     pub expected_settlement_id: String,
     pub expected_location_id: String,
+    pub grant_kind: String,
+    pub source_receipt_id: String,
+    pub source_witness_id: String,
     pub source_witness_npc_id: String,
+    pub source_testimony_index: u32,
+    pub source_proposition_id: String,
     pub catalog_revision: String,
     pub granted_at: u64,
 }
@@ -4313,6 +4318,54 @@ fn witness_referral_context_matches(
         && referral.expected_location_id == location_id
 }
 
+fn validate_referral_manifest_provenance(
+    referral: &InvestigationWitnessReferral,
+    generated: &adventuresim_core::quest_generation::GeneratedCase,
+    witness: &adventuresim_core::quest_generation::WitnessBinding,
+) -> Result<(), String> {
+    match referral.grant_kind.as_str() {
+        "initial_rumor" => {
+            if referral.source_receipt_id.is_empty()
+                || !referral.source_witness_id.is_empty()
+                || referral.source_testimony_index != 0
+                || !referral.source_proposition_id.is_empty()
+                || generated.witnesses.first() != Some(witness)
+            {
+                return Err("Initial witness referral provenance is malformed".into());
+            }
+        }
+        "testimony" => {
+            if referral.source_receipt_id.is_empty() {
+                return Err("Testimony witness referral provenance is malformed".into());
+            }
+            let source = generated
+                .witnesses
+                .iter()
+                .find(|candidate| {
+                    candidate.id.0 == referral.source_witness_id
+                        && candidate.npc_id == referral.source_witness_npc_id
+                })
+                .ok_or("Testimony witness referral source disappeared")?;
+            let source_draft = source
+                .testimony
+                .get(referral.source_testimony_index as usize)
+                .filter(|draft| draft.proposition_id == referral.source_proposition_id)
+                .ok_or("Testimony witness referral draft disappeared")?;
+            if source_draft
+                .referred_witness_ids
+                .iter()
+                .filter(|target| **target == witness.id)
+                .count()
+                != 1
+            {
+                return Err("Testimony no longer authors one exact witness referral".into());
+            }
+        }
+        _ => return Err("Unknown witness referral provenance".into()),
+    }
+    Ok(())
+}
+
 fn authored_witness_referrals<'a>(
     generated: &'a adventuresim_core::quest_generation::GeneratedCase,
     witness: &adventuresim_core::quest_generation::WitnessBinding,
@@ -4338,13 +4391,23 @@ fn authored_witness_referrals<'a>(
         .collect()
 }
 
+enum WitnessReferralProvenance<'a> {
+    InitialRumor(&'a crate::local_problem::LocalProblemReceipt),
+    Testimony {
+        source_witness: &'a adventuresim_core::quest_generation::WitnessBinding,
+        testimony_index: usize,
+        source_draft: &'a adventuresim_core::quest_generation::TestimonyDraft,
+        source_receipt_id: &'a str,
+    },
+}
+
 fn grant_generated_witness_referral(
     ctx: &ReducerContext,
     character_id: u64,
     generated: &adventuresim_core::quest_generation::GeneratedCase,
     witness: &adventuresim_core::quest_generation::WitnessBinding,
     expected_settlement_id: &str,
-    source_witness_npc_id: &str,
+    provenance: WitnessReferralProvenance<'_>,
 ) -> Result<(), String> {
     if !generated
         .witnesses
@@ -4353,6 +4416,75 @@ fn grant_generated_witness_referral(
     {
         return Err("Generated witness referral is absent from its manifest".into());
     }
+    let (
+        grant_kind,
+        source_receipt_id,
+        source_witness_id,
+        source_witness_npc_id,
+        source_testimony_index,
+        source_proposition_id,
+    ) = match provenance {
+        WitnessReferralProvenance::InitialRumor(receipt) => {
+            if generated.witnesses.first() != Some(witness)
+                || receipt.character_id != character_id
+                || receipt.opaque_case_ref != generated.canonical_case_id
+                || receipt.problem_id != generated.problem_id
+                || receipt.settlement_id != expected_settlement_id
+                || receipt.contact_npc_id != witness.npc_id
+                || receipt.expected_location_id != witness.expected_location
+            {
+                return Err("Initial rumor does not grant the exact primary witness".into());
+            }
+            (
+                "initial_rumor".to_owned(),
+                receipt.id.clone(),
+                String::new(),
+                receipt.source_npc_id.clone(),
+                0,
+                String::new(),
+            )
+        }
+        WitnessReferralProvenance::Testimony {
+            source_witness,
+            testimony_index,
+            source_draft,
+            source_receipt_id,
+        } => {
+            if generated
+                .witnesses
+                .iter()
+                .filter(|candidate| *candidate == source_witness)
+                .count()
+                != 1
+                || source_witness.testimony.get(testimony_index) != Some(source_draft)
+                || !source_draft.referred_witness_ids.contains(&witness.id)
+            {
+                return Err("Testimony does not author the exact witness referral".into());
+            }
+            let receipt = ctx
+                .db
+                .investigation_safe_claim_receipt()
+                .id()
+                .find(source_receipt_id)
+                .ok_or("Testimony witness referral receipt is missing")?;
+            if receipt.owner_character_id != character_id
+                || receipt.public_case_id != generated.public_case_id
+                || receipt.proposition_id != source_draft.proposition_id
+                || receipt.consumed_by.is_empty()
+            {
+                return Err("Testimony witness referral receipt is inconsistent".into());
+            }
+            (
+                "testimony".to_owned(),
+                source_receipt_id.to_owned(),
+                source_witness.id.0.clone(),
+                source_witness.npc_id.clone(),
+                u32::try_from(testimony_index)
+                    .map_err(|_| "Testimony referral index is too large")?,
+                source_draft.proposition_id.clone(),
+            )
+        }
+    };
     let id = witness_referral_id(character_id, &generated.canonical_case_id, &witness.npc_id);
     let row = InvestigationWitnessReferral {
         id: id.clone(),
@@ -4362,7 +4494,12 @@ fn grant_generated_witness_referral(
         witness_npc_id: witness.npc_id.clone(),
         expected_settlement_id: expected_settlement_id.into(),
         expected_location_id: witness.expected_location.clone(),
-        source_witness_npc_id: source_witness_npc_id.into(),
+        grant_kind,
+        source_receipt_id,
+        source_witness_id,
+        source_witness_npc_id,
+        source_testimony_index,
+        source_proposition_id,
         catalog_revision: generated.catalog_revision.clone(),
         granted_at: official_minute(ctx),
     };
@@ -4373,7 +4510,12 @@ fn grant_generated_witness_referral(
             && existing.witness_npc_id == row.witness_npc_id
             && existing.expected_settlement_id == row.expected_settlement_id
             && existing.expected_location_id == row.expected_location_id
+            && existing.grant_kind == row.grant_kind
+            && existing.source_receipt_id == row.source_receipt_id
+            && existing.source_witness_id == row.source_witness_id
             && existing.source_witness_npc_id == row.source_witness_npc_id
+            && existing.source_testimony_index == row.source_testimony_index
+            && existing.source_proposition_id == row.source_proposition_id
             && existing.catalog_revision == row.catalog_revision
         {
             Ok(())
@@ -4472,6 +4614,43 @@ pub(crate) fn referred_generated_witness(
         })
         .cloned()
         .ok_or("Witness referral is absent from generated authority")?;
+    validate_referral_manifest_provenance(&referral, &validated.manifest, &witness)?;
+    match referral.grant_kind.as_str() {
+        "initial_rumor" => {
+            let receipt = ctx
+                .db
+                .local_problem_receipt()
+                .id()
+                .find(&referral.source_receipt_id)
+                .ok_or("Initial witness referral receipt disappeared")?;
+            if receipt.character_id != character_id
+                || receipt.opaque_case_ref != referral.canonical_case_id
+                || receipt.problem_id != validated.manifest.problem_id
+                || receipt.settlement_id != referral.expected_settlement_id
+                || receipt.contact_npc_id != referral.witness_npc_id
+                || receipt.expected_location_id != referral.expected_location_id
+                || receipt.source_npc_id != referral.source_witness_npc_id
+            {
+                return Err("Initial witness referral no longer matches its receipt".into());
+            }
+        }
+        "testimony" => {
+            let receipt = ctx
+                .db
+                .investigation_safe_claim_receipt()
+                .id()
+                .find(&referral.source_receipt_id)
+                .ok_or("Testimony witness referral receipt disappeared")?;
+            if receipt.owner_character_id != character_id
+                || receipt.public_case_id != referral.public_case_id
+                || receipt.proposition_id != referral.source_proposition_id
+                || receipt.consumed_by.is_empty()
+            {
+                return Err("Testimony witness referral no longer matches its receipt".into());
+            }
+        }
+        _ => unreachable!("validated referral kind"),
+    }
     Ok(Some((validated.manifest, witness)))
 }
 
@@ -4535,7 +4714,7 @@ pub fn receive_local_problem_rumor(
         &generated,
         referred_witness,
         &receipt.settlement_id,
-        &receipt.source_npc_id,
+        WitnessReferralProvenance::InitialRumor(&receipt),
     )?;
     let case_id = generated.public_case_id;
     let lead_id = inv::compound_id(&["lead", "rumor", &receipt.id]);
@@ -4823,6 +5002,21 @@ pub(crate) fn persist_generated_testimony(
             .find(&receipt_id)
             .is_some()
         {
+            for referred in authored_witness_referrals(generated, witness, draft)? {
+                grant_generated_witness_referral(
+                    ctx,
+                    character_id,
+                    generated,
+                    referred,
+                    &generation_context.settlement_id,
+                    WitnessReferralProvenance::Testimony {
+                        source_witness: witness,
+                        testimony_index: index,
+                        source_draft: draft,
+                        source_receipt_id: &receipt_id,
+                    },
+                )?;
+            }
             continue;
         }
         let correction_belief_id = draft
@@ -4953,7 +5147,12 @@ pub(crate) fn persist_generated_testimony(
                 generated,
                 referred,
                 &generation_context.settlement_id,
-                &witness.npc_id,
+                WitnessReferralProvenance::Testimony {
+                    source_witness: witness,
+                    testimony_index: index,
+                    source_draft: draft,
+                    source_receipt_id: &receipt_id,
+                },
             )?;
         }
     }
@@ -6158,7 +6357,12 @@ mod tests {
             witness_npc_id: secondary.npc_id.clone(),
             expected_settlement_id: "riverdale".into(),
             expected_location_id: secondary.expected_location.clone(),
+            grant_kind: "testimony".into(),
+            source_receipt_id: "testimony-receipt".into(),
+            source_witness_id: primary.id.0.clone(),
             source_witness_npc_id: primary.npc_id.clone(),
+            source_testimony_index: 0,
+            source_proposition_id: primary.testimony[0].proposition_id.clone(),
             catalog_revision: generated.catalog_revision.clone(),
             granted_at: 50_000,
         };
@@ -6200,6 +6404,68 @@ mod tests {
                 mismatch.3,
             ));
         }
+
+        assert!(validate_referral_manifest_provenance(&referral, &generated, secondary).is_ok());
+        for malformed in [
+            InvestigationWitnessReferral {
+                source_witness_id: "witness:wrong".into(),
+                ..referral.clone()
+            },
+            InvestigationWitnessReferral {
+                source_testimony_index: 1,
+                ..referral.clone()
+            },
+            InvestigationWitnessReferral {
+                source_proposition_id: "proposition:wrong".into(),
+                ..referral.clone()
+            },
+            InvestigationWitnessReferral {
+                grant_kind: "unknown".into(),
+                ..referral.clone()
+            },
+        ] {
+            assert!(
+                validate_referral_manifest_provenance(&malformed, &generated, secondary).is_err()
+            );
+        }
+        let mut absent_edge_case = generated.clone();
+        absent_edge_case.witnesses[0].testimony[0]
+            .referred_witness_ids
+            .clear();
+        assert!(
+            validate_referral_manifest_provenance(
+                &referral,
+                &absent_edge_case,
+                &absent_edge_case.witnesses[1],
+            )
+            .is_err()
+        );
+        let mut ambiguous_edge_case = generated.clone();
+        ambiguous_edge_case.witnesses[0].testimony[0]
+            .referred_witness_ids
+            .push(secondary.id.clone());
+        assert!(
+            validate_referral_manifest_provenance(
+                &referral,
+                &ambiguous_edge_case,
+                &ambiguous_edge_case.witnesses[1],
+            )
+            .is_err()
+        );
+
+        let initial = InvestigationWitnessReferral {
+            grant_kind: "initial_rumor".into(),
+            source_receipt_id: "receipt:primary".into(),
+            source_witness_id: String::new(),
+            source_witness_npc_id: "npc:rumor-source".into(),
+            source_testimony_index: 0,
+            source_proposition_id: String::new(),
+            witness_npc_id: primary.npc_id.clone(),
+            expected_location_id: primary.expected_location.clone(),
+            ..referral.clone()
+        };
+        assert!(validate_referral_manifest_provenance(&initial, &generated, primary).is_ok());
+        assert!(validate_referral_manifest_provenance(&initial, &generated, secondary).is_err());
     }
 
     #[test]
