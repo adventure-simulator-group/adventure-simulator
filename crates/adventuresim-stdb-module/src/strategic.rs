@@ -1237,6 +1237,15 @@ mod healing_tests {
             !trade.contains("let storefront = match catalog_kind"),
             "the reducer must not infer a different storefront from item kind"
         );
+
+        let party_purchase = source
+            .split("fn add_to_party_inventory_checked")
+            .nth(1)
+            .and_then(|tail| tail.split("fn credit_party_stake").next())
+            .expect("party inventory purchase implementation");
+        assert!(party_purchase.contains("inventory_food_definition(kind, item_id)?"));
+        assert!(party_purchase.contains("for _ in 0..quantity"));
+        assert!(party_purchase.contains("create_party_food_lot(ctx, row.id, item_id, 1, minute)"));
     }
 
     #[test]
