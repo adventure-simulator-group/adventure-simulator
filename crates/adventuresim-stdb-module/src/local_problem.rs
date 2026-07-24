@@ -102,7 +102,7 @@ pub struct LocalProblemRumorDelivery {
     /// The private observer receipt consumed by investigation authority.
     /// This is intentionally not derived from the delivery row ID.
     pub receipt_id: String,
-    pub delivery_text: String,
+    pub fragments_json: String,
 }
 
 #[derive(Clone, Debug, SpacetimeType)]
@@ -111,7 +111,7 @@ pub struct BackendLocalProblemRumor {
     pub character_id: u64,
     pub settlement_id: String,
     pub session_id: String,
-    pub delivery_text: String,
+    pub fragments_json: String,
 }
 
 #[derive(Clone, Debug)]
@@ -252,7 +252,7 @@ pub fn backend_local_problem_rumors(ctx: &ViewContext) -> Vec<BackendLocalProble
             character_id: r.character_id,
             settlement_id: r.settlement_id,
             session_id: r.session_id,
-            delivery_text: r.delivery_text,
+            fragments_json: r.fragments_json,
         })
         .collect()
 }
@@ -761,7 +761,7 @@ pub fn surface_problem(
                 settlement_id,
                 session_id: session_id.into(),
                 receipt_id: receipt.id,
-                delivery_text: lp::referral_text(
+                fragments_json: referral_fragments_json(lp::referral_presentation(
                     &receipt.safe_summary,
                     source_npc
                         .as_ref()
@@ -773,7 +773,7 @@ pub fn surface_problem(
                     &contact.build,
                     &contact.hair,
                     &location_label,
-                ),
+                ))?,
             });
         return Ok(());
     }
@@ -842,7 +842,7 @@ pub fn surface_problem(
         if location_label.is_empty() {
             continue;
         }
-        let text = lp::referral_text(
+        let presentation = lp::referral_presentation(
             &symptom.public_summary,
             source_npc
                 .as_ref()
@@ -877,16 +877,57 @@ pub fn surface_problem(
                 settlement_id,
                 session_id: session_id.into(),
                 receipt_id,
-                delivery_text: text,
+                fragments_json: referral_fragments_json(presentation)?,
             });
         return Ok(());
     }
     Ok(())
 }
 
+fn referral_fragments_json(presentation: lp::ReferralPresentation) -> Result<String, String> {
+    let mut fragments = vec![adventuresim_dialogue::Fragment::Text {
+        value: presentation.lead,
+    }];
+    if let Some((label, topic)) = presentation.topic {
+        fragments.push(adventuresim_dialogue::Fragment::Topic { topic, label });
+    }
+    if !presentation.trailing.is_empty() {
+        fragments.push(adventuresim_dialogue::Fragment::Text {
+            value: presentation.trailing,
+        });
+    }
+    serde_json::to_string(&fragments)
+        .map_err(|error| format!("failed to serialize referral dialogue: {error}"))
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::local_problem::stable_eligible_candidates;
+    use crate::local_problem::{referral_fragments_json, stable_eligible_candidates};
+
+    #[test]
+    fn self_referral_serializes_an_inline_testimony_topic() {
+        let json =
+            referral_fragments_json(adventuresim_core::local_problem::ReferralPresentation {
+                lead: "I am the witness. Ask me about ".into(),
+                topic: Some(("what I saw".into(), "referred-testimony".into())),
+                trailing: ".".into(),
+            })
+            .unwrap();
+        let fragments: Vec<adventuresim_dialogue::Fragment> = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            fragments,
+            vec![
+                adventuresim_dialogue::Fragment::Text {
+                    value: "I am the witness. Ask me about ".into()
+                },
+                adventuresim_dialogue::Fragment::Topic {
+                    topic: "referred-testimony".into(),
+                    label: "what I saw".into()
+                },
+                adventuresim_dialogue::Fragment::Text { value: ".".into() }
+            ]
+        );
+    }
 
     #[test]
     fn deterministic_rumor_selection_skips_unbacked_or_invalid_candidates() {

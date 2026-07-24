@@ -452,9 +452,9 @@ pub fn discovery_action(
 }
 
 #[allow(clippy::too_many_arguments)]
-/// Formats a safe referral and explicitly distinguishes a same-named contact
-/// from the NPC who is currently speaking.
-pub fn referral_text(
+/// Formats a safe referral, including an inline topic when the speaker is the
+/// contact, and explicitly distinguishes a same-named contact from the speaker.
+pub fn referral_presentation(
     summary: &str,
     source: Option<(&str, &str)>,
     contact_id: &str,
@@ -464,18 +464,52 @@ pub fn referral_text(
     contact_build: &str,
     contact_hair: &str,
     tab: &str,
-) -> String {
+) -> ReferralPresentation {
     let description = format!("{contact_height}, {contact_build}, with {contact_hair}");
+    if source.is_some_and(|(source_id, _)| source_id == contact_id) {
+        return ReferralPresentation {
+            lead: format!("{summary} I am the person you were sent to. Ask me about "),
+            topic: Some(("what I saw".into(), "referred-testimony".into())),
+            trailing: ".".into(),
+        };
+    }
     if source.is_some_and(|(source_id, source_name)| {
         source_id != contact_id && source_name.eq_ignore_ascii_case(contact_name)
     }) {
-        return format!(
+        return ReferralPresentation::plain(format!(
             "{summary} Ask the other {contact_name}—not me. The one you want is the {contact_profession}: {description}, usually found at the {tab}."
-        );
+        ));
     }
-    format!(
+    ReferralPresentation::plain(format!(
         "{summary} Ask {contact_name}—the {contact_profession}, {description}, usually found at the {tab}."
-    )
+    ))
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReferralPresentation {
+    pub lead: String,
+    /// `(visible label, dialogue topic id)`.
+    pub topic: Option<(String, String)>,
+    pub trailing: String,
+}
+
+impl ReferralPresentation {
+    fn plain(lead: String) -> Self {
+        Self {
+            lead,
+            topic: None,
+            trailing: String::new(),
+        }
+    }
+
+    pub fn text(&self) -> String {
+        let mut text = self.lead.clone();
+        if let Some((label, _)) = &self.topic {
+            text.push_str(label);
+        }
+        text.push_str(&self.trailing);
+        text
+    }
 }
 
 #[cfg(test)]
@@ -493,7 +527,7 @@ mod tests {
 
     #[test]
     fn referral_explicitly_disambiguates_a_same_named_other_person() {
-        let text = referral_text(
+        let text = referral_presentation(
             "Livestock have been disappearing.",
             Some(("npc:riverdale:inn:0", "Hans Wagner")),
             "npc:riverdale:residences:0",
@@ -506,11 +540,11 @@ mod tests {
         );
 
         assert_eq!(
-            text,
+            text.text(),
             "Livestock have been disappearing. Ask the other Hans Wagner—not me. The one you want is the householder: average height, slender, with brown hair, usually found at the Residences."
         );
 
-        let self_referral = referral_text(
+        let self_referral = referral_presentation(
             "I saw it myself.",
             Some(("npc:riverdale:inn:0", "Hans Wagner")),
             "npc:riverdale:inn:0",
@@ -521,8 +555,14 @@ mod tests {
             "black hair",
             "Inn",
         );
-        assert!(!self_referral.contains("the other"));
-        assert!(!self_referral.contains("not me"));
+        assert_eq!(
+            self_referral.text(),
+            "I saw it myself. I am the person you were sent to. Ask me about what I saw."
+        );
+        assert_eq!(
+            self_referral.topic,
+            Some(("what I saw".into(), "referred-testimony".into()))
+        );
     }
     #[test]
     fn generator_is_deterministic_and_explains_separate_weights() {

@@ -65,8 +65,6 @@
   const chat = document.querySelector("[data-local-chat-subject][data-dialogue-catalog-revision]");
   if (!chat) return;
   const messages = chat.querySelector(".settlement-chat-messages");
-  const topicPane = chat.querySelector("[data-dialogue-topic-pane]");
-  const topicList = chat.querySelector("[data-dialogue-topic-list]");
   const input = chat.querySelector(".settlement-chat-composer input");
   const send = chat.querySelector(".settlement-chat-composer button");
   const completion = chat.querySelector("[data-dialogue-completion]");
@@ -103,7 +101,9 @@
     const diagnoses = examination.diagnoses.length ? examination.diagnoses : [{ disease_name: examination.message, medication_name: "" }];
     diagnoses.forEach((diagnosis) => { const row = document.createElement("div"); row.className = "chat-npc-message"; row.dataset.chatChannel = "local"; row.dataset.dialogueScripted = "true"; const timestamp = document.createElement("span"); timestamp.className = "chat-timestamp"; timestamp.textContent = "[--:--] "; const speaker = document.createElement("strong"); speaker.textContent = "Herbalist: "; row.append(timestamp, speaker, document.createTextNode(diagnosis.medication_name ? `You have ${diagnosis.disease_name}. I recommend ` : diagnosis.disease_name)); if (diagnosis.medication_name) { const medication = document.createElement("button"); medication.type = "button"; medication.className = "chat-quest-link"; medication.dataset.dialogueMedication = diagnosis.medication_name; medication.textContent = diagnosis.medication_name; row.append(medication, document.createTextNode(".")); } messages.append(row); });
   };
-  const activeCandidates = () => currentView?.open_prompt?.choices || currentView?.topics || [];
+  // Topics are exposed by highlighted phrases in dialogue, not by guessing
+  // hidden topic labels in the free-text box.
+  const activeCandidates = () => currentView?.open_prompt?.choices || [];
   const isMultiPrompt = () => currentView?.open_prompt?.mode === "Multi";
   const refreshCompletion = () => {
     if (!input || !completion) return;
@@ -142,10 +142,6 @@
     });
     renderPrompt(view.open_prompt);
     renderExamination(view.examination);
-    if (topicPane && topicList) {
-      topicList.replaceChildren(...view.topics.map((topic) => { const item = document.createElement("li"); item.append(topicAnchor(topic, { ...binding, topicId: topic.id })); return item; }));
-      topicPane.hidden = false;
-    }
     refreshCompletion();
     messages.scrollTop = messages.scrollHeight;
   };
@@ -260,8 +256,6 @@
     chat.dataset.localChatSubject = npc.id;
     chat.dispatchEvent(new Event("local-chat-subject-changed"));
     currentView = null;
-    topicList?.replaceChildren();
-    if (topicPane) topicPane.hidden = true;
     messages?.querySelectorAll("[data-dialogue-scripted]").forEach((node) => node.remove());
     refreshCompletion();
     npcStrip?.querySelectorAll("button").forEach((candidate) => {

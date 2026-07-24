@@ -14,11 +14,14 @@ moves with the chat's top edge. The selected NPC's description is centered in th
 remaining stage between the two strips. Service pages
 initially select the service provider, while other locations select a deterministic
 local. Selecting someone else keeps the party in place and updates the visible physical
-description, greeting, and eligible topics.
+description and greeting. Dialogue subjects appear as highlighted phrases in
+what NPCs actually say rather than in a separate topic list.
 Names are not globally or settlement-locally unique. When one NPC refers the player
 to a different local who has the same displayed name, the dialogue explicitly says
 that it means "the other" person and repeats the contact's profession, appearance,
 and usual location.
+When the speaker is the contact, they identify themselves in the first person
+and make their testimony subject clickable in that line.
 
 The book button immediately to the right of the settlement identity and official time
 toggles the character's journal without leaving the current location. Journal mode

@@ -21,9 +21,9 @@ test("dialogue client is schema-driven with stable authoritative actions", () =>
   assert.doesNotMatch(source, /professionDetails|openQuestOffer|beginHerbalistConversation|dialogueActions/);
 });
 
-test("known topics share the inline topic action contract", () => {
-  assert.match(source, /data-dialogue-topic-pane/);
-  assert.match(source, /topicList\.replaceChildren/);
+test("topics are exposed only through inline dialogue text", () => {
+  assert.doesNotMatch(source, /data-dialogue-topic-pane/);
+  assert.doesNotMatch(source, /topicList\.replaceChildren/);
   assert.match(source, /row\.append\(topicAnchor/);
   assert.match(source, /document\.createDocumentFragment\(\)/);
   assert.match(source, /fragment\.append\(anchor, edit\)/);
@@ -137,8 +137,8 @@ test("rapid provider-to-witness selection rejects stale topics and binds the wit
       expected_revision: 2,
     },
   );
-  assert.match(source, /topicList\?\.replaceChildren\(\)/);
-  assert.match(source, /if \(topicPane\) topicPane\.hidden = true/);
+  assert.doesNotMatch(source, /topicList\?\.replaceChildren\(\)/);
+  assert.doesNotMatch(source, /if \(topicPane\) topicPane\.hidden = true/);
 });
 
 test("a delayed prompt answer cannot supersede a newly selected witness", () => {

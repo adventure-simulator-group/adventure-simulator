@@ -374,11 +374,6 @@ fn chat_area(
                         }
                     }
                 }
-                aside class="settlement-chat-topics" data-dialogue-topic-pane hidden
-                    aria-label="Dialogue topics" {
-                    h3 { "Topics" }
-                    ul data-dialogue-topic-list {}
-                }
             }
         }
     }
@@ -501,8 +496,8 @@ mod tests {
         assert!(markup.contains("data-chat-channel=\"info\""));
         assert!(!markup.contains("chat-channel-badge"));
         assert!(markup.contains("class=\"settlement-chat-layout\""));
-        assert!(markup.contains("data-dialogue-topic-pane"));
-        assert!(markup.contains("data-dialogue-topic-list"));
+        assert!(!markup.contains("data-dialogue-topic-pane"));
+        assert!(!markup.contains("data-dialogue-topic-list"));
         assert!(markup.contains("data-dialogue-completion"));
         assert!(markup.contains("autocomplete=\"off\""));
         for label in ["Local", "Party", "Settlement", "DMs", "Guild", "Info"] {
