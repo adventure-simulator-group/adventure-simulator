@@ -6102,10 +6102,10 @@ fn rest_service_menu(
 ) -> Markup {
     html! {
     section class="rest-service-menu" aria-label=(format!("{} rest service", location))
-        data-live-refresh-url=[summary.map(|_| format!(
+        data-live-refresh-url=(format!(
             "/settlements/{settlement_id}/{}",
             if kind == "inn" { "inn" } else { "religion" }
-        ))]
+        ))
         title=(if kind == "inn" { "A bed costs 1 coin per day. Injuries are tended before downtime." } else { "Sanctuary is free. Injuries are tended before downtime." }) {
         div class="rest-service-heading" { strong { "Rest" } }
         @if kind == "inn" {
@@ -6307,7 +6307,7 @@ mod tests {
     use adventuresim_core::equipment::EncumbranceSummary;
 
     #[test]
-    fn post_rest_result_points_live_refresh_at_a_gettable_location() {
+    fn rest_pages_keep_a_gettable_refresh_marker_across_repeated_refreshes() {
         let summary = RestSummary {
             minutes: 480,
             gold_spent: 1,
@@ -6316,17 +6316,24 @@ mod tests {
             healed: Vec::new(),
             trained: Vec::new(),
         };
-        let markup = rest_service_menu(
-            "Inn",
-            "riverdale",
-            "inn",
-            None,
-            Some(&summary),
-            SoapRestPreview::default(),
-        )
-        .into_string();
-        assert!(markup.contains("data-live-refresh-url=\"/settlements/riverdale/inn\""));
-        assert!(!markup.contains("data-live-refresh-url=\"/settlements/riverdale/rest/inn\""));
+        for (location, kind, expected) in [
+            ("Inn", "inn", "/settlements/riverdale/inn"),
+            ("Church", "temple", "/settlements/riverdale/religion"),
+        ] {
+            for rest_summary in [Some(&summary), None] {
+                let markup = rest_service_menu(
+                    location,
+                    "riverdale",
+                    kind,
+                    None,
+                    rest_summary,
+                    SoapRestPreview::default(),
+                )
+                .into_string();
+                assert!(markup.contains(&format!("data-live-refresh-url=\"{expected}\"")));
+                assert!(!markup.contains("data-live-refresh-url=\"/settlements/riverdale/rest/"));
+            }
+        }
     }
 
     #[test]

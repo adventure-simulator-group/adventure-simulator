@@ -61,6 +61,35 @@ test("POST result pages provide a safe GET URL for live-region refreshes", () =>
   );
   assert.equal(
     window.strategicLiveRefreshUrl(
+      marker,
+      { pathname: "/settlements/riverdale/rest/inn", search: "" },
+    ),
+    "/settlements/riverdale/inn",
+    "repeated refreshes retain the canonical marked GET URL",
+  );
+  assert.equal(
+    window.strategicLiveRefreshUrl(
+      {
+        querySelector: () => ({
+          dataset: { liveRefreshUrl: "/settlements/riverdale/religion" },
+        }),
+      },
+      { pathname: "/settlements/riverdale/rest/temple", search: "" },
+    ),
+    "/settlements/riverdale/religion",
+  );
+  for (const kind of ["inn", "temple"]) {
+    assert.equal(
+      window.strategicLiveRefreshUrl(
+        { querySelector: () => null },
+        { pathname: `/settlements/riverdale/rest/${kind}`, search: "" },
+      ),
+      null,
+      "a missing marker must never turn a POST action into a GET refresh",
+    );
+  }
+  assert.equal(
+    window.strategicLiveRefreshUrl(
       { querySelector: () => null },
       { pathname: "/locations/settlement/riverdale/inn", search: "?building=inn" },
     ),

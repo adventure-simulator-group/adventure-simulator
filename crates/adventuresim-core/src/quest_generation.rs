@@ -1537,6 +1537,26 @@ fn report_id(v: ReportDescription) -> &'static str {
     }
 }
 
+fn ambiguous_report_description(v: ReportDescription) -> &'static str {
+    match v {
+        ReportDescription::ArmedPeople => "a group of armed figures",
+        ReportDescription::SmallUprightFigures => "several small figures moving upright",
+        ReportDescription::LargeUprightBeast => "a large shape that seemed to stand upright",
+        ReportDescription::GauntHuman => "a gaunt, human-shaped figure",
+        ReportDescription::WalkingDead => "a person moving with a stiff, shambling gait",
+        ReportDescription::LargeAnimal => "the silhouette of a large animal",
+        ReportDescription::DoglikeBeast => "a low, dog-shaped beast",
+        ReportDescription::UnseenNightVisitor => "something hidden in the darkness",
+    }
+}
+
+fn ambiguous_visual_claim(v: ReportDescription, place: &str) -> String {
+    format!(
+        "It looked like {}, near {place}.",
+        ambiguous_report_description(v)
+    )
+}
+
 fn terrain(site: SiteKind) -> Terrain {
     match site {
         SiteKind::Cave | SiteKind::Crypt => Terrain::Underground,
@@ -2095,11 +2115,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     let npc2 = secondary.npc_id.clone();
     let unreliable_statement = match account_style {
         AccountStyle::VisualClaim => {
-            format!(
-                "It looked like {:?}, near {}.",
-                description,
-                label(secondary_site_kind)
-            )
+            ambiguous_visual_claim(description, label(secondary_site_kind))
         }
         AccountStyle::HeardOnly => format!(
             "I only heard it moving near {}; I never saw it clearly.",
@@ -3062,6 +3078,26 @@ pub fn test_witnesses() -> Vec<WitnessCandidate> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_report_description_has_ambiguous_natural_testimony() {
+        assert_eq!(ALL_REPORTS.len(), 8);
+        for report in ALL_REPORTS {
+            let prose = ambiguous_report_description(*report);
+            let claim = ambiguous_visual_claim(*report, "the old bridge");
+            assert!(!prose.is_empty());
+            assert!(
+                !claim.contains(&format!("{report:?}")),
+                "{report:?} leaked its Rust identifier"
+            );
+            assert!(claim.starts_with("It looked like "));
+            assert!(claim.ends_with(", near the old bridge."));
+            assert!(
+                !claim.to_ascii_lowercase().contains("definitely"),
+                "eyewitness prose must remain uncertain"
+            );
+        }
+    }
 
     fn inn_only_settlement_witnesses() -> (
         Vec<crate::settlement_economy::SettlementNpcTab>,
