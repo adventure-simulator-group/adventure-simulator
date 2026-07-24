@@ -397,6 +397,10 @@ fn case_site_combat_permitted(
     }
 }
 
+fn case_site_is_resolved(site: &BackendCaseSitePin, has_battle_result: bool) -> bool {
+    site.case_resolved || has_battle_result
+}
+
 fn onsite_investigation_actions(
     actions: Vec<BackendInvestigationAction>,
     case_site_id: &str,
@@ -785,7 +789,7 @@ async fn render_quest_location(
     } else {
         Vec::new()
     };
-    let resolved = !results.is_empty();
+    let resolved = case_site_is_resolved(site, !results.is_empty());
     let autoresolve_report = if let Some(case_battle) = case_battle.as_ref() {
         state
             .db
@@ -1162,6 +1166,7 @@ mod quest_route_tests {
             tracked: false,
             display_title: "Travellers have gone missing".into(),
             generated_case,
+            case_resolved: false,
             combat_available,
         }
     }
@@ -1382,6 +1387,17 @@ mod quest_route_tests {
             true,
             true,
         ));
+    }
+
+    #[test]
+    fn generated_noncombat_completion_does_not_require_a_battle_result() {
+        let mut site = case_site(true, false);
+        site.case_resolved = true;
+
+        assert!(case_site_is_resolved(&site, false));
+        site.case_resolved = false;
+        assert!(case_site_is_resolved(&site, true));
+        assert!(!case_site_is_resolved(&site, false));
     }
 
     #[test]

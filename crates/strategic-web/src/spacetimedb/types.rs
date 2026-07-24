@@ -104,6 +104,7 @@ pub struct BackendCaseSitePin {
     pub tracked: bool,
     pub display_title: String,
     pub generated_case: bool,
+    pub case_resolved: bool,
     pub combat_available: bool,
 }
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};

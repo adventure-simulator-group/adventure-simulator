@@ -192,6 +192,10 @@ investigation reducer. Strategic autoresolve is offered only when the
 validated generated finale, a pending objective path, and an active hostile
 group all bind the exact occupied site. Battle results are joined back to the
 page by typed case-site authority rather than canonical/public case aliases.
+The observer-safe case-site projection also exposes whether the generated case
+has resolved, including noncombat finales that produce no battle result. A
+resolved site shows an explicit completion notice and no longer offers
+pre-finale rest controls.
 Manual bounty pages retain their accepted-contract and active-contract gates.
 
 ## Developer tools
