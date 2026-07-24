@@ -282,72 +282,81 @@ pub fn apply_elapsed_needs(
     character_id: u64,
     elapsed_minutes: u64,
 ) -> Result<(), String> {
-    apply_elapsed_needs_with_food_provision(
+    apply_elapsed_needs_with_provision(
         ctx,
         character_id,
         elapsed_minutes,
-        ElapsedFoodProvision::PersonalSupplies,
+        ElapsedNeedsProvision::PersonalSupplies,
     )
 }
 
 /// Applies settlement-rest needs exactly once, with paid inn stays providing
-/// full board instead of consuming the character's carried food.
+/// full board instead of consuming the character's or party's provisions.
 pub fn apply_settlement_rest_elapsed_needs(
     ctx: &ReducerContext,
     character_id: u64,
     elapsed_minutes: u64,
     at_inn: bool,
 ) -> Result<(), String> {
-    let food_provision = if at_inn {
-        ElapsedFoodProvision::InnBoard
+    let provision = if at_inn {
+        ElapsedNeedsProvision::InnBoard
     } else {
-        ElapsedFoodProvision::PersonalSupplies
+        ElapsedNeedsProvision::PersonalSupplies
     };
-    apply_elapsed_needs_with_food_provision(ctx, character_id, elapsed_minutes, food_provision)
+    apply_elapsed_needs_with_provision(ctx, character_id, elapsed_minutes, provision)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ElapsedFoodProvision {
+enum ElapsedNeedsProvision {
     PersonalSupplies,
     InnBoard,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct ElapsedFoodPlan {
-    balance_kcal: f32,
-    consume_personal_food: bool,
+struct ElapsedNeedsPlan {
+    food_balance_kcal: f32,
+    consume_stored_food: bool,
+    water_balance_ml: f32,
+    consume_stored_water: bool,
 }
 
-fn elapsed_food_plan(
-    starting_balance_kcal: f32,
+fn elapsed_needs_plan(
+    starting_food_balance_kcal: f32,
+    starting_water_balance_ml: f32,
     elapsed_minutes: u64,
-    provision: ElapsedFoodProvision,
-) -> ElapsedFoodPlan {
+    provision: ElapsedNeedsProvision,
+) -> ElapsedNeedsPlan {
     match provision {
-        ElapsedFoodProvision::PersonalSupplies => {
+        ElapsedNeedsProvision::PersonalSupplies => {
             let elapsed_days = elapsed_minutes as f32 / (24.0 * 60.0);
-            ElapsedFoodPlan {
-                balance_kcal: starting_balance_kcal - elapsed_days * TRAVEL_CALORIES_PER_DAY,
-                consume_personal_food: true,
+            ElapsedNeedsPlan {
+                food_balance_kcal: starting_food_balance_kcal
+                    - elapsed_days * TRAVEL_CALORIES_PER_DAY,
+                consume_stored_food: true,
+                water_balance_ml: starting_water_balance_ml
+                    - elapsed_days * TRAVEL_WATER_ML_PER_DAY,
+                consume_stored_water: true,
             }
         }
         // Full board covers the elapsed interval and brings an underfed guest
-        // back to neutral, without creating surplus fullness.
-        ElapsedFoodProvision::InnBoard => ElapsedFoodPlan {
-            balance_kcal: starting_balance_kcal.max(0.0),
-            consume_personal_food: false,
+        // back to neutral, without creating surplus fullness or consuming
+        // provisions carried by the guest or party.
+        ElapsedNeedsProvision::InnBoard => ElapsedNeedsPlan {
+            food_balance_kcal: starting_food_balance_kcal.max(0.0),
+            consume_stored_food: false,
+            water_balance_ml: starting_water_balance_ml.max(0.0),
+            consume_stored_water: false,
         },
     }
 }
 
-fn apply_elapsed_needs_with_food_provision(
+fn apply_elapsed_needs_with_provision(
     ctx: &ReducerContext,
     character_id: u64,
     elapsed_minutes: u64,
-    food_provision: ElapsedFoodProvision,
+    provision: ElapsedNeedsProvision,
 ) -> Result<(), String> {
     initialize_character_condition(ctx, character_id)?;
-    let elapsed_days = elapsed_minutes as f32 / (24.0 * 60.0);
     let mut needs = ctx
         .db
         .character_needs()
@@ -355,13 +364,18 @@ fn apply_elapsed_needs_with_food_provision(
         .find(character_id)
         .ok_or("Character needs not found")?;
 
-    let food_plan = elapsed_food_plan(needs.food_balance_kcal, elapsed_minutes, food_provision);
-    needs.food_balance_kcal = food_plan.balance_kcal;
+    let needs_plan = elapsed_needs_plan(
+        needs.food_balance_kcal,
+        needs.water_balance_ml,
+        elapsed_minutes,
+        provision,
+    );
+    needs.food_balance_kcal = needs_plan.food_balance_kcal;
     ctx.db
         .character_needs()
         .character_id()
         .update(needs.clone());
-    if food_plan.consume_personal_food {
+    if needs_plan.consume_stored_food {
         crate::food::consume_travel_food_to_zero(ctx, character_id)?;
     }
     needs = ctx
@@ -371,8 +385,8 @@ fn apply_elapsed_needs_with_food_provision(
         .find(character_id)
         .ok_or("Character needs not found")?;
 
-    needs.water_balance_ml -= elapsed_days * TRAVEL_WATER_ML_PER_DAY;
-    if needs.water_balance_ml < 0.0 {
+    needs.water_balance_ml = needs_plan.water_balance_ml;
+    if needs_plan.consume_stored_water && needs.water_balance_ml < 0.0 {
         if let Some(party_id) = ctx
             .db
             .character()
@@ -1912,10 +1926,11 @@ fn require_profession_service(
 #[cfg(test)]
 mod tests {
     use super::{
-        CharacterNeeds, ElapsedFoodProvision, ProjectedMoraleSource, TRAVEL_CALORIES_PER_DAY,
-        accumulated_leisure_morale, condition_projection_member_ids, elapsed_food_plan,
-        food_reserve_days, holy_day_demand_has_expired, leisure_morale_effect, rank_morale_sources,
-        religion_cohort_pressure, require_profession_service, water_reserve_days,
+        CharacterNeeds, ElapsedNeedsProvision, ProjectedMoraleSource, TRAVEL_CALORIES_PER_DAY,
+        TRAVEL_WATER_ML_PER_DAY, accumulated_leisure_morale, condition_projection_member_ids,
+        elapsed_needs_plan, food_reserve_days, holy_day_demand_has_expired, leisure_morale_effect,
+        rank_morale_sources, religion_cohort_pressure, require_profession_service,
+        water_reserve_days,
     };
     use std::collections::BTreeMap;
 
@@ -1975,31 +1990,48 @@ mod tests {
     }
 
     #[test]
-    fn inn_board_clears_food_deficit_without_consuming_personal_food() {
-        let plan = elapsed_food_plan(-1_450.0, MINUTES_PER_DAY, ElapsedFoodProvision::InnBoard);
-
-        assert_eq!(plan.balance_kcal, 0.0);
-        assert!(!plan.consume_personal_food);
-    }
-
-    #[test]
-    fn inn_board_preserves_existing_fullness_without_creating_more() {
-        let plan = elapsed_food_plan(250.0, MINUTES_PER_DAY * 3, ElapsedFoodProvision::InnBoard);
-
-        assert_eq!(plan.balance_kcal, 250.0);
-        assert!(!plan.consume_personal_food);
-    }
-
-    #[test]
-    fn non_inn_elapsed_needs_still_draw_from_personal_food() {
-        let plan = elapsed_food_plan(
-            -500.0,
+    fn inn_board_clears_food_and_water_deficits_without_consuming_provisions() {
+        let plan = elapsed_needs_plan(
+            -1_450.0,
+            -900.0,
             MINUTES_PER_DAY,
-            ElapsedFoodProvision::PersonalSupplies,
+            ElapsedNeedsProvision::InnBoard,
         );
 
-        assert_eq!(plan.balance_kcal, -500.0 - TRAVEL_CALORIES_PER_DAY);
-        assert!(plan.consume_personal_food);
+        assert_eq!(plan.food_balance_kcal, 0.0);
+        assert_eq!(plan.water_balance_ml, 0.0);
+        assert!(!plan.consume_stored_food);
+        assert!(!plan.consume_stored_water);
+    }
+
+    #[test]
+    fn inn_board_preserves_existing_food_and_water_fullness_without_creating_more() {
+        let plan = elapsed_needs_plan(
+            250.0,
+            375.0,
+            MINUTES_PER_DAY * 3,
+            ElapsedNeedsProvision::InnBoard,
+        );
+
+        assert_eq!(plan.food_balance_kcal, 250.0);
+        assert_eq!(plan.water_balance_ml, 375.0);
+        assert!(!plan.consume_stored_food);
+        assert!(!plan.consume_stored_water);
+    }
+
+    #[test]
+    fn non_inn_elapsed_needs_still_draw_from_carried_provisions() {
+        let plan = elapsed_needs_plan(
+            -500.0,
+            250.0,
+            MINUTES_PER_DAY,
+            ElapsedNeedsProvision::PersonalSupplies,
+        );
+
+        assert_eq!(plan.food_balance_kcal, -500.0 - TRAVEL_CALORIES_PER_DAY);
+        assert_eq!(plan.water_balance_ml, 250.0 - TRAVEL_WATER_ML_PER_DAY);
+        assert!(plan.consume_stored_food);
+        assert!(plan.consume_stored_water);
     }
 
     #[test]

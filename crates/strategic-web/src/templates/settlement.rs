@@ -6147,10 +6147,10 @@ fn rest_service_menu(
             "/settlements/{settlement_id}/{}",
             if kind == "inn" { "inn" } else { "religion" }
         ))
-        title=(if kind == "inn" { "Full board costs 2 coin per day. Meals and injury treatment are included." } else { "Sanctuary is free. Injuries are tended before downtime." }) {
+        title=(if kind == "inn" { "Full board costs 2 coin per day. Meals, drinking water, and injury treatment are included." } else { "Sanctuary is free. Injuries are tended before downtime." }) {
         div class="rest-service-heading" { strong { "Rest" } }
         @if kind == "inn" {
-            p class="rest-service-copy" { "2 coin / day · meals + treatment included" }
+            p class="rest-service-copy" { "2 coin / day · meals + water + treatment included" }
         } @else {
             p class="rest-service-copy" { "Free · treatment included" }
         }
@@ -6856,7 +6856,8 @@ mod tests {
         .into_string();
 
         assert!(markup.contains("Full board costs 2 coin per day"));
-        assert!(markup.contains("meals + treatment included"));
+        assert!(markup.contains("Meals, drinking water, and injury treatment are included"));
+        assert!(markup.contains("meals + water + treatment included"));
     }
 
     #[test]
