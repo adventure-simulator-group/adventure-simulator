@@ -780,6 +780,61 @@ fn lead_is_live_contact_referral(
         && lead.corrected_by.is_empty()
 }
 
+fn generated_pattern_evidence_id(outputs_json: &str) -> Result<Option<String>, &'static str> {
+    let outputs = serde_json::from_str::<
+        Vec<adventuresim_core::quest_generation::GeneratedActionOutput>,
+    >(outputs_json)
+    .map_err(|_| "Generated action output authority is invalid")?;
+    Ok(outputs.into_iter().find_map(|output| match output {
+        adventuresim_core::quest_generation::GeneratedActionOutput::PatternCondition {
+            evidence_id,
+            ..
+        } => Some(evidence_id.0),
+        _ => None,
+    }))
+}
+
+fn observer_pattern_route_has_live_corroborated_clue(
+    owner_character_id: u64,
+    case_id: &str,
+    evidence_id: &str,
+    knowledge: impl IntoIterator<Item = InvestigationEvidenceKnowledge>,
+) -> bool {
+    knowledge.into_iter().any(|knowledge| {
+        knowledge.owner_character_id == owner_character_id
+            && knowledge.case_id == case_id
+            && knowledge.evidence_id == evidence_id
+    })
+}
+
+fn capability_has_live_pattern_support_view(
+    ctx: &ViewContext,
+    capability: &InvestigationActionCapability,
+) -> bool {
+    let Some(output) = ctx
+        .db
+        .investigation_generated_action_output()
+        .capability_id()
+        .find(&capability.id)
+    else {
+        return true;
+    };
+    let evidence_id = match generated_pattern_evidence_id(&output.outputs_json) {
+        Ok(Some(evidence_id)) => evidence_id,
+        Ok(None) => return true,
+        Err(_) => return false,
+    };
+    observer_pattern_route_has_live_corroborated_clue(
+        capability.owner_character_id,
+        &capability.case_id,
+        &evidence_id,
+        ctx.db
+            .investigation_evidence_knowledge()
+            .owner_character_id()
+            .filter(capability.owner_character_id),
+    )
+}
+
 fn capability_has_live_support_view(
     ctx: &ViewContext,
     capability: &InvestigationActionCapability,
@@ -788,6 +843,9 @@ fn capability_has_live_support_view(
     if !capability.required_action_id.is_empty()
         && !capability_has_successful_attempt_view(ctx, &capability.required_action_id)
     {
+        return false;
+    }
+    if !capability_has_live_pattern_support_view(ctx, capability) {
         return false;
     }
     if kind == action::InvestigationActionKind::InspectSite
@@ -1344,6 +1402,9 @@ fn capability_has_live_support_reducer(
     {
         return false;
     }
+    if !capability_has_live_pattern_support_reducer(ctx, capability) {
+        return false;
+    }
     if kind == action::InvestigationActionKind::InspectSite && capability.target_kind == "site" {
         let Some((site, lead)) =
             exact_case_site_for_observer(ctx, capability.owner_character_id, &capability.target_id)
@@ -1397,6 +1458,34 @@ fn capability_has_live_support_reducer(
         return false;
     }
     !prerequisites.requires_tracks || !capability.required_action_id.is_empty()
+}
+
+fn capability_has_live_pattern_support_reducer(
+    ctx: &ReducerContext,
+    capability: &InvestigationActionCapability,
+) -> bool {
+    let Some(output) = ctx
+        .db
+        .investigation_generated_action_output()
+        .capability_id()
+        .find(&capability.id)
+    else {
+        return true;
+    };
+    let evidence_id = match generated_pattern_evidence_id(&output.outputs_json) {
+        Ok(Some(evidence_id)) => evidence_id,
+        Ok(None) => return true,
+        Err(_) => return false,
+    };
+    observer_pattern_route_has_live_corroborated_clue(
+        capability.owner_character_id,
+        &capability.case_id,
+        &evidence_id,
+        ctx.db
+            .investigation_evidence_knowledge()
+            .owner_character_id()
+            .filter(capability.owner_character_id),
+    )
 }
 
 fn complete_referred_contact_action(
@@ -2327,16 +2416,15 @@ fn validate_generated_pattern_condition(
     }) else {
         return Ok(());
     };
-    if !ctx
-        .db
-        .investigation_evidence_knowledge()
-        .owner_character_id()
-        .filter(capability.owner_character_id)
-        .any(|knowledge| {
-            knowledge.case_id == capability.case_id
-                && knowledge.evidence_id.as_str() == evidence_id.as_str()
-        })
-    {
+    if !observer_pattern_route_has_live_corroborated_clue(
+        capability.owner_character_id,
+        &capability.case_id,
+        evidence_id,
+        ctx.db
+            .investigation_evidence_knowledge()
+            .owner_character_id()
+            .filter(capability.owner_character_id),
+    ) {
         return Err("The selected pattern has not been corroborated yet".into());
     }
     use adventuresim_core::quest_generation::GeneratedPatternCondition as C;
@@ -4813,6 +4901,85 @@ mod tests {
             2,
             "pattern authority is checked before resolution and at the mutation boundary"
         );
+    }
+
+    #[test]
+    fn pattern_route_support_requires_exact_observer_clue_knowledge() {
+        use adventuresim_core::quest_generation::{
+            EvidenceId, GeneratedActionOutput, GeneratedPatternCondition,
+        };
+
+        let outputs_json = serde_json::to_string(&[GeneratedActionOutput::PatternCondition {
+            evidence_id: EvidenceId("pattern-clue".into()),
+            condition: GeneratedPatternCondition::BroadSurvey,
+        }])
+        .unwrap();
+        assert_eq!(
+            generated_pattern_evidence_id(&outputs_json).unwrap(),
+            Some("pattern-clue".into())
+        );
+        let learned = InvestigationEvidenceKnowledge {
+            id: "knowledge".into(),
+            owner_character_id: 7,
+            case_id: "case".into(),
+            evidence_id: "pattern-clue".into(),
+            source_id: "search-attempt".into(),
+            learned_at: 50_000,
+        };
+        assert!(observer_pattern_route_has_live_corroborated_clue(
+            7,
+            "case",
+            "pattern-clue",
+            [learned.clone()],
+        ));
+        assert!(!observer_pattern_route_has_live_corroborated_clue(
+            7,
+            "case",
+            "pattern-clue",
+            Vec::<InvestigationEvidenceKnowledge>::new(),
+        ));
+        assert!(!observer_pattern_route_has_live_corroborated_clue(
+            8,
+            "case",
+            "pattern-clue",
+            [learned.clone()],
+        ));
+        assert!(!observer_pattern_route_has_live_corroborated_clue(
+            7,
+            "other-case",
+            "pattern-clue",
+            [learned.clone()],
+        ));
+        assert!(!observer_pattern_route_has_live_corroborated_clue(
+            7,
+            "case",
+            "other-clue",
+            [learned],
+        ));
+
+        let source = include_str!("investigation.rs");
+        let projection = source
+            .split("fn capability_has_live_support_view")
+            .nth(1)
+            .and_then(|tail| tail.split("fn exact_action_site_for_observer").next())
+            .expect("pattern projection support");
+        assert!(projection.contains("capability_has_live_pattern_support_view"));
+        let recovery = source
+            .split("fn capability_has_live_support_reducer")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("fn capability_has_live_pattern_support_reducer")
+                    .next()
+            })
+            .expect("pattern recovery support");
+        assert!(recovery.contains("capability_has_live_pattern_support_reducer"));
+        let execution = source
+            .split("fn validate_generated_pattern_condition")
+            .nth(1)
+            .and_then(|tail| tail.split("fn validate_live_action_prerequisites").next())
+            .expect("pattern execution support");
+        assert!(execution.contains("observer_pattern_route_has_live_corroborated_clue"));
+        assert!(execution.contains("The selected pattern has not been corroborated yet"));
     }
 
     #[test]
