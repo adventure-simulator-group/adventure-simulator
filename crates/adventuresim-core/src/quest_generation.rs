@@ -3848,20 +3848,12 @@ mod tests {
         assert!(validate(&stranded).is_err());
 
         let mut exact = generate(&context(7, TemplateFamily::RecurringDepredation)).unwrap();
-        let reveal_id = exact
+        let physical_resolution_id = exact
             .actions
             .iter()
             .find(|action| {
-                action.route == RouteClass::PatternSurveillance
-                    && action.outputs.iter().any(|output| {
-                        matches!(
-                            output,
-                            GeneratedActionOutput::Destination {
-                                stage: GeneratedDestinationStage::Exact,
-                                ..
-                            }
-                        )
-                    })
+                action.route == RouteClass::PhysicalTrail
+                    && action.kind == InvestigationActionKind::InspectSite
             })
             .unwrap()
             .id
@@ -3882,8 +3874,11 @@ mod tests {
                     })
             })
             .unwrap()
-            .prerequisite = Some(reveal_id);
-        assert!(validate(&exact).is_err());
+            .prerequisite = Some(physical_resolution_id);
+        assert!(
+            validate(&exact).is_err(),
+            "a physical exact-site producer stranded in a route-local cycle remained valid"
+        );
     }
 
     #[test]
