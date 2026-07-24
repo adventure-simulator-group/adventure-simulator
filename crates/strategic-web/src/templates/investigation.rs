@@ -118,7 +118,12 @@ pub fn journal_page(
                         },
                         "exact_believed" | "visited" => {
                             p class="journal-destination" data-exact-destination=(&lead.exact_location_id) {
-                                "Believed exact destination: " (&lead.exact_location_id)
+                                "Believed exact destination: "
+                                @if lead.current_learned_location.is_empty() {
+                                    "Known investigation site"
+                                } @else {
+                                    (&lead.current_learned_location)
+                                }
                             }
                         },
                         _ => {}
@@ -182,6 +187,35 @@ mod tests {
         assert!(markup.contains("Expected at: workshops"));
         assert!(markup.contains("Directions: beyond the mill"));
         assert!(!markup.contains("data-exact-destination"));
+    }
+
+    #[test]
+    fn journal_uses_safe_site_label_while_retaining_opaque_authority_id() {
+        let lead = BackendInvestigationLead {
+            owner_character_id: 1,
+            case_id: "case".into(),
+            lead_id: "lead".into(),
+            summary: "The trail ends at an old croft.".into(),
+            source_label: "your party's investigation".into(),
+            confidence_bps: 8_000,
+            destination_stage: "exact_believed".into(),
+            directions: String::new(),
+            exact_location_id: "site:private-hash".into(),
+            latitude_e7: 0,
+            longitude_e7: 0,
+            witness_name: String::new(),
+            witness_description: String::new(),
+            witness_occupation_or_relationship: String::new(),
+            expected_location: String::new(),
+            current_learned_location: "The abandoned croft".into(),
+            contradiction_group: String::new(),
+            corrected_by: String::new(),
+            recorded_at: 1,
+        };
+        let markup = journal_page(&[], &[lead], &[], &[], "Ada", None).into_string();
+        assert!(markup.contains("Believed exact destination: The abandoned croft"));
+        assert!(markup.contains("data-exact-destination=\"site:private-hash\""));
+        assert!(!markup.contains("Believed exact destination: site:private-hash"));
     }
 
     #[test]

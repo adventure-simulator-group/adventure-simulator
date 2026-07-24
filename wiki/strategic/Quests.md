@@ -55,7 +55,10 @@ abducted person, retrieve and return a lost asset, expose a fabricated claim,
 or defeat/drive off recurring attackers. Unsupported endings are not rolled.
 The modular cases create no contracts: entering the tavern guarantees a rumor
 entry point, and referrals identify witnesses by appearance and expected
-location. A route first reveals travel-capable exact knowledge; only after the
+location. Recurring problems begin with that exact referred contact and unlock
+their approach and watch branches only after the contact succeeds;
+disappearance/loss cases retain independent physical and witness starts.
+A route first reveals travel-capable exact knowledge; only after the
 party travels to and occupies that site can a separate inspection, ambush,
 retrieval, or rescue action resolve it.
 

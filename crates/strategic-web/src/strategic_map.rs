@@ -985,7 +985,7 @@ mod tests {
     #[test]
     fn selected_case_site_has_a_pin_and_computed_terrain_route() {
         let map = map_bundle();
-        let site = case_site("case-site-1", "Bandits in the woods", 11.0, 53.2);
+        let site = case_site("site:opaque-hash", "The abandoned croft", 11.0, 53.2);
         let route = adventuresim_terrain::RoutePlan {
             points: vec![
                 adventuresim_terrain::RoutePoint {
@@ -1011,15 +1011,16 @@ mod tests {
             std::slice::from_ref(&site),
             "origin",
             &BTreeSet::new(),
-            Some("case-site-1"),
+            Some("site:opaque-hash"),
             "/locations/settlement/origin/map",
             Some(&route),
         )
         .into_string();
 
-        assert!(markup.contains("data-case-site-id=\"case-site-1\""));
-        assert!(markup.contains("?destination=case-site-1"));
-        assert!(markup.contains("Known case site: Bandits in the woods"));
+        assert!(markup.contains("data-case-site-id=\"site:opaque-hash\""));
+        assert!(markup.contains("?destination=site:opaque-hash"));
+        assert!(markup.contains("Known case site: The abandoned croft"));
+        assert!(!markup.contains("Known case site: site:opaque-hash"));
         assert!(markup.contains("map-quest-shape"));
         assert!(markup.contains("data-map-selection-line"));
         assert!(markup.contains("map-terrain-route"));

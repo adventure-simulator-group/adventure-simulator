@@ -41,8 +41,10 @@ producers, bridges, and the private replay trace.
 
 Validation fails unless:
 
-- there is exactly one true finale site and two independent initially playable
-  investigation routes;
+- there is exactly one true finale site;
+- recurring cases begin with one exact referred-contact action, which unlocks
+  inactive approach and watch routes only after that contact succeeds;
+- disappearance/loss cases retain independent physical and witness roots;
 - every route can disclose the same site with a typed exact output;
 - targets name materialized sites, areas, or persistent NPC authority;
 - unusual selected relations have their event/evidence/lead bridge;
@@ -88,6 +90,8 @@ witness. Corrections reuse the proposition they revise, preserving an earlier
 false believed pin until the correction is learned.
 
 Only an authoritative typed exact destination output can create an exact pin.
+The raw site ID remains navigation authority; player-facing journal text and
+the matching map pin use the site's generated safe name.
 Discovery actions execute at a known contact, settlement, area, or predecessor
 route and may reveal travel-capable knowledge. They never also resolve custody.
 After travel establishes authoritative occupancy, a separate `InspectSite` or
@@ -103,7 +107,9 @@ pattern proposition; only then does the dependent action disclose and enforce
 its nighttime window, roadside route, authored victim profile, or broad
 schedule-free search. Unreliable testimony may contradict that proposition
 until the evidence is learned, and the dependent capability requires knowledge
-of the exact evidence ID rather than inferring from the canonical event.
+of the exact evidence ID and successful completion of its authored predecessor,
+rather than inferring from the canonical event. Projection, failed-route
+recovery, and execution all apply those same live-support requirements.
 Victim-specific patterns bind an opaque cohort reference to one persistent
 settlement NPC in private authority, including their authored demographic and a
 versioned presence fingerprint. The learned clue exposes only legitimate

@@ -1300,13 +1300,38 @@ fn validate_action_route_graph(
             return Err("Investigation alternate route crosses authority boundaries".into());
         }
     }
-    if capabilities
+    let active = capabilities
         .iter()
         .filter(|capability| capability.active)
-        .count()
-        < 2
-    {
-        return Err("Investigation needs two immediately playable routes".into());
+        .collect::<Vec<_>>();
+    if active.is_empty() {
+        return Err("Investigation needs an immediately playable entry action".into());
+    }
+    if active.len() == 1 {
+        let entry = active[0];
+        if entry.method != "locate_contact"
+            || entry.target_kind != "contact"
+            || !entry.required_action_id.is_empty()
+        {
+            return Err("A single investigation entry must be an exact referred contact".into());
+        }
+        let successors = capabilities
+            .iter()
+            .filter(|candidate| candidate.required_action_id == entry.id)
+            .collect::<Vec<_>>();
+        if successors.len() != 2
+            || successors.iter().any(|candidate| candidate.active)
+            || !successors
+                .iter()
+                .any(|candidate| candidate.method == "approach_lead")
+            || !successors
+                .iter()
+                .any(|candidate| candidate.method == "watch")
+        {
+            return Err(
+                "The referred contact must unlock inactive approach and watch routes".into(),
+            );
+        }
     }
     Ok(())
 }
@@ -1380,11 +1405,32 @@ fn activate_action_successors(
             FailedActionAlternateTransition::Unavailable => {}
         }
     }
-    let alternate_available = !succeeded && !activate.is_empty();
     for id in activate {
         set_action_active(ctx, &id, true)?;
     }
-    Ok(alternate_available)
+    if succeeded {
+        return Ok(false);
+    }
+    Ok(ctx
+        .db
+        .investigation_action_capability()
+        .owner_character_id()
+        .filter(capability.owner_character_id)
+        .filter(|candidate| {
+            candidate.case_id == capability.case_id
+                && candidate.id != capability.id
+                && candidate.active
+                && !ctx
+                    .db
+                    .investigation_action_attempt()
+                    .capability_id()
+                    .filter(&candidate.id)
+                    .any(|attempt| attempt.success)
+        })
+        .any(|candidate| {
+            parse_action_kind(&candidate.method)
+                .is_ok_and(|kind| capability_has_live_support_reducer(ctx, &candidate, kind))
+        }))
 }
 
 fn capability_has_live_support_reducer(
@@ -2177,6 +2223,10 @@ fn persist_action_result_lead(
         }
         adventuresim_core::quest_generation::GeneratedDestinationStage::Exact => "exact_believed",
     });
+    let exact_location_label = site
+        .as_ref()
+        .map(|site| site.name.clone())
+        .unwrap_or_default();
     let (stage, exact_location_id, latitude_e7, longitude_e7) = if let Some(site) = site {
         (
             "exact_believed",
@@ -2220,7 +2270,7 @@ fn persist_action_result_lead(
         witness_description: String::new(),
         witness_occupation_or_relationship: String::new(),
         expected_location: String::new(),
-        current_learned_location: String::new(),
+        current_learned_location: exact_location_label,
         contradiction_group: format!("action-location:{}", capability.case_id),
         corrected_by: String::new(),
         recorded_at: official_minute(ctx),
@@ -2528,6 +2578,9 @@ fn validate_live_action_prerequisites(
     capability: &InvestigationActionCapability,
     kind: action::InvestigationActionKind,
 ) -> Result<Vec<u64>, String> {
+    if !capability_has_live_support_reducer(ctx, capability, kind) {
+        return Err("The current journal no longer supports this investigation route".into());
+    }
     require_party_ready(ctx, party_id)?;
     require_no_unresolved_encounter(ctx, party_id)?;
     let party = ctx
@@ -3026,9 +3079,19 @@ pub fn backend_case_site_pins(ctx: &ViewContext) -> Vec<BackendCaseSitePin> {
                 .case_site_authority()
                 .id_key()
                 .find(&lead.exact_location_id)?;
-            if site.case_id != lead.case_id
-                || site.latitude_e7 != lead.latitude_e7
-                || site.longitude_e7 != lead.longitude_e7
+            let generated_public_case_id = ctx
+                .db
+                .quest_generation_authority()
+                .case_id()
+                .find(&site.case_id)
+                .and_then(|authority| {
+                    serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(
+                        &authority.manifest_json,
+                    )
+                    .ok()
+                })
+                .map(|generated| generated.public_case_id);
+            if !lead_projects_exact_case_site_pin(&lead, &site, generated_public_case_id.as_deref())
             {
                 return None;
             }
@@ -3072,6 +3135,23 @@ pub fn backend_case_site_pins(ctx: &ViewContext) -> Vec<BackendCaseSitePin> {
     pins.into_values().collect()
 }
 
+fn lead_projects_exact_case_site_pin(
+    lead: &InvestigationLead,
+    site: &CaseSiteAuthority,
+    generated_public_case_id: Option<&str>,
+) -> bool {
+    lead.corrected_by.is_empty()
+        && matches!(
+            lead.destination_stage.as_str(),
+            "exact_believed" | "visited"
+        )
+        && (lead.case_id == site.case_id
+            || generated_public_case_id.is_some_and(|public| lead.case_id == public))
+        && lead.exact_location_id == site.id.value
+        && lead.latitude_e7 == site.latitude_e7
+        && lead.longitude_e7 == site.longitude_e7
+}
+
 #[view(accessor = backend_character_case_site_locations, public)]
 pub fn backend_character_case_site_locations(
     ctx: &ViewContext,
@@ -3100,13 +3180,28 @@ pub(crate) fn exact_case_site_for_observer(
         .case_site_authority()
         .id_key()
         .find(&case_site_id.to_string())?;
+    let generated_public_case_id = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&site.case_id)
+        .and_then(|authority| {
+            serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(
+                &authority.manifest_json,
+            )
+            .ok()
+        })
+        .map(|generated| generated.public_case_id);
     ctx.db
         .investigation_lead()
         .owner_character_id()
         .filter(observer_character_id)
         .find(|lead| {
             lead.exact_location_id == case_site_id
-                && lead.case_id == site.case_id
+                && (lead.case_id == site.case_id
+                    || generated_public_case_id
+                        .as_deref()
+                        .is_some_and(|public| lead.case_id == public))
                 && lead.latitude_e7 == site.latitude_e7
                 && lead.longitude_e7 == site.longitude_e7
                 && lead.corrected_by.is_empty()
@@ -3190,7 +3285,7 @@ pub(crate) fn disclose_exact_case_site(
         witness_description: String::new(),
         witness_occupation_or_relationship: String::new(),
         expected_location: String::new(),
-        current_learned_location: String::new(),
+        current_learned_location: site.name.clone(),
         contradiction_group: format!("case-site:{}", site.case_id),
         corrected_by: String::new(),
         recorded_at,
@@ -3751,9 +3846,13 @@ pub(crate) fn persist_generated_testimony(
                     witness,
                 )
                 .to_owned(),
-                current_learned_location:
-                    adventuresim_core::quest_generation::referral_display_location(witness)
-                        .to_owned(),
+                current_learned_location: site.as_ref().filter(|_| exact).map_or_else(
+                    || {
+                        adventuresim_core::quest_generation::referral_display_location(witness)
+                            .to_owned()
+                    },
+                    |site| site.name.clone(),
+                ),
                 contradiction_group: format!("generated-location:{}", generated.public_case_id),
                 corrected_by: String::new(),
                 recorded_at: official_minute(ctx),
@@ -4591,6 +4690,66 @@ mod tests {
     }
 
     #[test]
+    fn exact_witness_belief_projects_a_pin_without_route_completion() {
+        let site = CaseSiteAuthority {
+            id_key: "site:opaque".into(),
+            id: CaseSiteId {
+                value: "site:opaque".into(),
+            },
+            case_id: "canonical-case".into(),
+            origin_settlement_id: "settlement".into(),
+            name: "The abandoned croft".into(),
+            description: "A roofless croft beyond the mill.".into(),
+            scene_key: "ruins".into(),
+            longitude_e7: 110_000_000,
+            latitude_e7: 532_000_000,
+            coordinates_are_geographic: true,
+            distance_m: 8_000,
+        };
+        let lead = InvestigationLead {
+            id: "witness-lead".into(),
+            owner_character_id: 7,
+            case_id: "public-case".into(),
+            proposition_id: "reported-place".into(),
+            summary: "I saw it enter the old croft.".into(),
+            source_label: "the referred local witness".into(),
+            confidence_bps: 5_000,
+            destination_stage: "exact_believed".into(),
+            directions: String::new(),
+            exact_location_id: site.id.value.clone(),
+            latitude_e7: site.latitude_e7,
+            longitude_e7: site.longitude_e7,
+            witness_name: "Marta".into(),
+            witness_description: "A short, dark-haired miller.".into(),
+            witness_occupation_or_relationship: "miller".into(),
+            expected_location: "The mill".into(),
+            current_learned_location: site.name.clone(),
+            contradiction_group: "reported-place".into(),
+            corrected_by: String::new(),
+            recorded_at: 1,
+        };
+        assert!(lead_projects_exact_case_site_pin(
+            &lead,
+            &site,
+            Some("public-case")
+        ));
+        let mut approximate = lead.clone();
+        approximate.destination_stage = "approximate_area".into();
+        assert!(!lead_projects_exact_case_site_pin(
+            &approximate,
+            &site,
+            Some("public-case")
+        ));
+        let mut corrected = lead;
+        corrected.corrected_by = "later-testimony".into();
+        assert!(!lead_projects_exact_case_site_pin(
+            &corrected,
+            &site,
+            Some("public-case")
+        ));
+    }
+
+    #[test]
     fn source_has_authorization_idempotency_and_no_implicit_sharing() {
         let source = include_str!("investigation.rs");
         assert!(source.contains("require_strategic_gateway(ctx)?"));
@@ -4980,6 +5139,53 @@ mod tests {
             .expect("pattern execution support");
         assert!(execution.contains("observer_pattern_route_has_live_corroborated_clue"));
         assert!(execution.contains("The selected pattern has not been corroborated yet"));
+        let live_execution = source
+            .split("fn validate_live_action_prerequisites")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("fn case_objective_contains_custody_target")
+                    .next()
+            })
+            .expect("live execution support");
+        assert!(live_execution.contains("capability_has_live_support_reducer"));
+        let reducer_support = source
+            .split("fn capability_has_live_support_reducer")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("fn capability_has_live_pattern_support_reducer")
+                    .next()
+            })
+            .expect("combined reducer support");
+        assert!(
+            reducer_support.find("required_action_id").unwrap()
+                < reducer_support
+                    .find("capability_has_live_pattern_support_reducer")
+                    .unwrap()
+        );
+    }
+
+    #[test]
+    fn failed_action_wording_counts_any_other_live_supported_route() {
+        let source = include_str!("investigation.rs");
+        let recovery = source
+            .split("fn activate_action_successors")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("\nfn capability_has_live_support_reducer")
+                    .next()
+            })
+            .expect("failed route recovery");
+        assert!(recovery.contains("candidate.id != capability.id"));
+        assert!(recovery.contains("candidate.active"));
+        assert!(recovery.contains("capability_has_live_support_reducer"));
+        assert!(recovery.contains("set_action_active"));
+        assert!(
+            recovery.rfind("set_action_active").unwrap()
+                < recovery
+                    .rfind("capability_has_live_support_reducer")
+                    .unwrap(),
+            "availability must be computed after successor state updates"
+        );
     }
 
     #[test]

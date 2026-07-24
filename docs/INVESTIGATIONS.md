@@ -108,10 +108,14 @@ success thresholds, and weights never enter browser state.
 The initial action vocabulary is inspect site, search area, follow or reacquire
 tracks, locate a contact, watch, patrol, lay an ambush, and approach a lead.
 Rumors materialize all nine as two linked routes: witness-led search and
-observation-led interception. Only the two roots begin active; successful
-actions unlock their successors and failed actions reactivate a validated
-same-owner, same-case alternate. Approximate areas are private strategic
-geometry, not client-authored destinations.
+observation-led interception. A recurring case begins with the exact referred
+contact; succeeding there unlocks inactive approach and watch branches.
+Disappearance/loss cases instead retain independent physical and witness roots.
+Successful actions unlock their successors, and failed actions reactivate a
+validated same-owner, same-case alternate. Failure text reports whether any
+other currently live-supported case route remains, including a patrol already
+supported by its exact clue. Approximate areas are private strategic geometry,
+not client-authored destinations.
 Resolution uses authoritative terrain, time of day, evidence age, relevant
 skills, bounded party assistance, and observer familiarity. Weather is
 explicitly unavailable until the strategic layer owns authoritative weather;
@@ -121,7 +125,9 @@ Every attempt is idempotent and consumes strenuous strategic time, including a
 failed attempt. Failure may increase risk or uncertainty, but it does not
 silently invalidate alternate investigation routes. Approximate discoveries
 remain directions or areas. An exact map pin is disclosed only when an
-authoritative result supports exact observer knowledge. Watches, patrols, and
+authoritative result supports exact observer knowledge. Journal and map-pin
+text use the site's safe generated name; opaque site IDs remain navigation
+authority and are not shown as destination labels. Watches, patrols, and
 ambush preparation remain strategic actions; they do not persist tactical tick
 state and cannot fabricate a combat result.
 Before spending time the reducer revalidates party readiness, co-location,
