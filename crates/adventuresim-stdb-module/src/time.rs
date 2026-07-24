@@ -1447,6 +1447,7 @@ fn rest_for_minutes(
         .character_id()
         .update(character_time);
     crate::social::settle_shared_party_time(ctx, character_id);
+    crate::condition::apply_elapsed_needs(ctx, character_id, elapsed)?;
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
     if terminal.is_some() || !settled.alive {
         return Ok(());
@@ -2116,6 +2117,27 @@ mod tests {
         assert!(validate_settlement_rest_minutes(MAX_SETTLEMENT_REST_MINUTES).is_ok());
         assert!(validate_settlement_rest_minutes(MIN_SETTLEMENT_REST_MINUTES - 1).is_err());
         assert!(validate_settlement_rest_minutes(MAX_SETTLEMENT_REST_MINUTES + 1).is_err());
+    }
+
+    #[test]
+    fn settlement_rest_consumes_elapsed_needs_once_in_terminal_safe_order() {
+        let source = include_str!("time.rs");
+        let rest = source
+            .split("fn rest_for_minutes")
+            .nth(1)
+            .and_then(|tail| tail.split("fn validate_settlement_rest_minutes").next())
+            .expect("settlement rest implementation");
+        let needs = "crate::condition::apply_elapsed_needs(ctx, character_id, elapsed)?";
+        assert_eq!(rest.matches(needs).count(), 1);
+        assert!(rest.find("settle_shared_party_time").unwrap() < rest.find(needs).unwrap());
+        assert!(rest.find(needs).unwrap() < rest.find("finish_disease_interval").unwrap());
+        assert!(
+            rest.find("finish_disease_interval").unwrap()
+                < rest.find("terminal.is_some()").unwrap()
+        );
+        assert!(
+            rest.find("terminal.is_some()").unwrap() < rest.find("clear_stomach_fullness").unwrap()
+        );
     }
 
     #[test]

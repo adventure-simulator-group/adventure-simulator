@@ -8,6 +8,11 @@ row identifies the batch, while mass, calories, value, and fractional ingredient
 provenance live on the lot. Partly eaten lots retain quantity one and scale all
 four conserved properties together. Transfers, cooking, and sales therefore
 move a complete remaining batch rather than manufacturing rounded sub-units.
+Food definitions are validated before either personal or party inventory is
+mutated, so an acquisition cannot leave an inedible inventory row without its
+lot metadata. Inns sell a standard cooked meal with a fixed lot profile;
+player-cooked meals reuse that item ID but retain their derived name, nutrition,
+mass, value, contamination, and ingredient provenance on their own lot.
 
 The public lot records its inventory link, display name, preparation method,
 ingredient provenance, mass, useful calories, value, and creation minute. A
@@ -22,6 +27,10 @@ Ingestion uses current concentration times consumed mass as a direct dose for
 existing Dysentery (`Bloody flux`), whose vector is already food/water. The
 exposure identity includes character, lot, and strategic minute. Immunity
 applies and an unresolved Dysentery episode prevents duplicate infection.
+Travel, camp rest, and settlement rest all apply elapsed nutritional demand
+once and then automatically consume the oldest pooled and personal food lots
+toward a zero balance. Settlement recovery therefore uses carried provisions;
+it does not grant free food.
 
 ## Cooking
 
