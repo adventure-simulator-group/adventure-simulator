@@ -1757,48 +1757,75 @@ mod healing_tests {
             })
             .collect();
         let facts = Vec::new();
-        assert!(generated_case_site_combat_eligible(
-            &generated,
-            &case,
-            &site,
-            std::slice::from_ref(&group),
-            &finales,
-            &facts,
-            "party",
-        ));
-        assert!(!generated_case_site_combat_eligible(
-            &generated,
-            &case,
-            &site,
-            std::slice::from_ref(&group),
-            &[],
-            &facts,
-            "party",
-        ));
+        assert_eq!(
+            generated_case_site_combat_eligible(
+                &generated,
+                &case,
+                &site,
+                std::slice::from_ref(&group),
+                &finales,
+                &facts,
+                "party",
+            )
+            .map(|eligible| eligible.id.as_str()),
+            Some(hostile_group_id.as_str()),
+        );
+        assert!(
+            generated_case_site_combat_eligible(
+                &generated,
+                &case,
+                &site,
+                std::slice::from_ref(&group),
+                &[],
+                &facts,
+                "party",
+            )
+            .is_none()
+        );
         let mut consumed_finales = finales.clone();
         for finale in &mut consumed_finales {
             finale.status = FinaleStatus::Executed;
         }
-        assert!(!generated_case_site_combat_eligible(
-            &generated,
-            &case,
-            &site,
-            std::slice::from_ref(&group),
-            &consumed_finales,
-            &facts,
-            "party",
-        ));
+        assert!(
+            generated_case_site_combat_eligible(
+                &generated,
+                &case,
+                &site,
+                std::slice::from_ref(&group),
+                &consumed_finales,
+                &facts,
+                "party",
+            )
+            .is_none()
+        );
         let mut wrong_group = group.clone();
         wrong_group.case_site_id = CaseSiteId::from("site:wrong".to_string());
-        assert!(!generated_case_site_combat_eligible(
-            &generated,
-            &case,
-            &site,
-            std::slice::from_ref(&wrong_group),
-            &finales,
-            &facts,
-            "party",
-        ));
+        assert!(
+            generated_case_site_combat_eligible(
+                &generated,
+                &case,
+                &site,
+                std::slice::from_ref(&wrong_group),
+                &finales,
+                &facts,
+                "party",
+            )
+            .is_none()
+        );
+        let mut extra_group = group.clone();
+        extra_group.id = "hostile-group:unexpected".into();
+        assert!(
+            generated_case_site_combat_eligible(
+                &generated,
+                &case,
+                &site,
+                &[group.clone(), extra_group],
+                &finales,
+                &facts,
+                "party",
+            )
+            .is_none()
+        );
         let evidence_site = generated
             .sites
             .iter()
@@ -1808,26 +1835,32 @@ mod healing_tests {
         noncombat_site.id_key = evidence_site.id.0.clone();
         noncombat_site.id = CaseSiteId::from(evidence_site.id.0.clone());
         noncombat_site.name = evidence_site.safe_label.clone();
-        assert!(!generated_case_site_combat_eligible(
-            &generated,
-            &case,
-            &noncombat_site,
-            std::slice::from_ref(&group),
-            &finales,
-            &facts,
-            "party",
-        ));
+        assert!(
+            generated_case_site_combat_eligible(
+                &generated,
+                &case,
+                &noncombat_site,
+                std::slice::from_ref(&group),
+                &finales,
+                &facts,
+                "party",
+            )
+            .is_none()
+        );
         let mut stale_case = case.clone();
         stale_case.objective_expression_json = "[]".into();
-        assert!(!generated_case_site_combat_eligible(
-            &generated,
-            &stale_case,
-            &site,
-            std::slice::from_ref(&group),
-            &finales,
-            &facts,
-            "party",
-        ));
+        assert!(
+            generated_case_site_combat_eligible(
+                &generated,
+                &stale_case,
+                &site,
+                std::slice::from_ref(&group),
+                &finales,
+                &facts,
+                "party",
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -16278,32 +16311,32 @@ fn mission_candidate_from_capability(
     }
 }
 
-pub(crate) fn generated_case_site_combat_eligible(
+pub(crate) fn generated_case_site_combat_eligible<'a>(
     generated: &adventuresim_core::quest_generation::GeneratedCase,
     case: &CaseAuthority,
     case_site: &CaseSiteAuthority,
-    hostile_groups: &[HostileGroupAuthority],
+    hostile_groups: &'a [HostileGroupAuthority],
     finales: &[CaseFinaleAuthority],
     facts: &[adventuresim_core::case::OutcomeFact],
     party_id: &str,
-) -> bool {
+) -> Option<&'a HostileGroupAuthority> {
     if case.provenance_kind != "generated"
         || case.generated_case_id != case.id
         || case.id != generated.canonical_case_id
         || case_site.case_id != case.id
         || case.resolution_status != CaseResolutionStatus::Open
     {
-        return false;
+        return None;
     }
     let Some(generated_site) = generated
         .sites
         .iter()
         .find(|site| site.id.0 == case_site.id.value)
     else {
-        return false;
+        return None;
     };
     if generated_site.safe_label != case_site.name {
-        return false;
+        return None;
     }
     let mut finale_group_ids: BTreeSet<&str> = generated
         .finales
@@ -16314,7 +16347,7 @@ pub(crate) fn generated_case_site_combat_eligible(
         .filter_map(|finale| finale.hostile_group_id.as_deref())
         .collect();
     let Some(hostile_group_id) = finale_group_ids.pop_first() else {
-        return false;
+        return None;
     };
     if !finale_group_ids.is_empty()
         || !generated
@@ -16324,29 +16357,30 @@ pub(crate) fn generated_case_site_combat_eligible(
                 group_id == hostile_group_id && site_id.0 == case_site.id.value
             })
     {
-        return false;
+        return None;
     }
-    let matching_groups: Vec<_> = hostile_groups
+    let site_groups: Vec<_> = hostile_groups
         .iter()
-        .filter(|group| {
-            group.id == hostile_group_id
-                && group.case_site_id == case_site.id
-                && group.disposition == HostileGroupDisposition::Active
-        })
+        .filter(|group| group.case_site_id == case_site.id)
         .collect();
-    if matching_groups.len() != 1 {
-        return false;
+    let [hostile_group] = site_groups.as_slice() else {
+        return None;
+    };
+    if hostile_group.id != hostile_group_id
+        || hostile_group.disposition != HostileGroupDisposition::Active
+    {
+        return None;
     }
     let Ok(expression) = serde_json::from_str::<adventuresim_core::case::ObjectiveExpression>(
         &case.objective_expression_json,
     ) else {
-        return false;
+        return None;
     };
     if expression != generated.objectives {
-        return false;
+        return None;
     }
     let Ok(core_case_id) = adventuresim_core::case::CaseId::new(case.id.clone()) else {
-        return false;
+        return None;
     };
     let evaluation = expression.evaluate(&core_case_id, party_id, facts);
     expression
@@ -16381,6 +16415,7 @@ pub(crate) fn generated_case_site_combat_eligible(
                         && finale.eligible_path_index == u16::try_from(path_index).ok()
                 })
         })
+        .then_some(*hostile_group)
 }
 
 pub(crate) fn ensure_bound_mission_authority(
@@ -16413,16 +16448,6 @@ pub(crate) fn ensure_bound_mission_authority(
     if exact_case_site_for_observer(ctx, observer_character_id, &case_site.id.value).is_none() {
         return Err("Mission observer does not know or have a visited exact case site".into());
     }
-    let group = ctx
-        .db
-        .hostile_group_authority()
-        .iter()
-        .find(|group| group.case_site_id == case_site.id)
-        .ok_or("Case site has no materialized hostile group")?;
-    if group.disposition != HostileGroupDisposition::Active {
-        return Err("Hostile group is already resolved".into());
-    }
-    let hostile_group_id = group.id;
     let case = ctx
         .db
         .case_authority()
@@ -16445,7 +16470,7 @@ pub(crate) fn ensure_bound_mission_authority(
                 .map_err(|_| "Stored outcome fact is invalid".to_string())
         })
         .collect::<Result<Vec<_>, _>>()?;
-    match case_site_provenance_reducer(ctx, case_site) {
+    let hostile_group_id = match case_site_provenance_reducer(ctx, case_site) {
         Some(Some((canonical_case_id, _))) => {
             let authority = ctx
                 .db
@@ -16462,7 +16487,7 @@ pub(crate) fn ensure_bound_mission_authority(
                 .case_id()
                 .filter(&canonical_case_id)
                 .collect();
-            if !generated_case_site_combat_eligible(
+            generated_case_site_combat_eligible(
                 &validated.manifest,
                 &case,
                 case_site,
@@ -16470,11 +16495,20 @@ pub(crate) fn ensure_bound_mission_authority(
                 &finales,
                 &facts,
                 party_id,
-            ) {
-                return Err("Generated strategic combat is not available at this site".into());
-            }
+            )
+            .map(|group| group.id.clone())
+            .ok_or("Generated strategic combat is not available at this site")?
         }
         Some(None) => {
+            let group = ctx
+                .db
+                .hostile_group_authority()
+                .iter()
+                .find(|group| group.case_site_id == case_site.id)
+                .ok_or("Case site has no materialized hostile group")?;
+            if group.disposition != HostileGroupDisposition::Active {
+                return Err("Hostile group is already resolved".into());
+            }
             let accepted_contract = ctx
                 .db
                 .contract_authority()
@@ -16494,9 +16528,10 @@ pub(crate) fn ensure_bound_mission_authority(
             if party.active_contract_id.as_deref() != Some(&accepted_contract.id) {
                 return Err("This quest requires an accepted active contract".into());
             }
+            group.id
         }
         None => return Err("Case-site combat provenance is invalid or ambiguous".into()),
-    }
+    };
     let core_case_id =
         adventuresim_core::case::CaseId::new(case.id.clone()).map_err(|_| "Case ID is invalid")?;
     let evaluation = expression.evaluate(&core_case_id, party_id, &facts);
