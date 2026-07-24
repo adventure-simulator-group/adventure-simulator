@@ -61,6 +61,9 @@ pub struct BackendInvestigationAction {
     pub uncertainty_bps: u16,
     pub skill_contributions: String,
     pub weather_available: bool,
+    pub required_case_site_id: String,
+    pub available: bool,
+    pub unavailable_reason: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -1662,6 +1665,30 @@ mod tests {
     }
 
     #[test]
+    fn investigation_action_projection_decodes_eligibility_contract() {
+        let action = serde_json::json!({
+            "owner_character_id": 7,
+            "action_id": "action-public",
+            "method": "inspect_site",
+            "expected_version": 2,
+            "summary": "Inspect the abandoned croft.",
+            "known_prerequisites": "Reach the croft.",
+            "duration_min_minutes": 30,
+            "duration_max_minutes": 90,
+            "uncertainty_bps": 2000,
+            "skill_contributions": "awareness",
+            "weather_available": false,
+            "required_case_site_id": "site-public",
+            "available": false,
+            "unavailable_reason": "Travel to the known investigation site before inspecting it."
+        });
+        let decoded: BackendInvestigationAction = serde_json::from_value(action).unwrap();
+        assert_eq!(decoded.required_case_site_id, "site-public");
+        assert!(!decoded.available);
+        assert!(decoded.unavailable_reason.contains("Travel"));
+    }
+
+    #[test]
     fn investigation_projection_rejects_noncanonical_coordinate_names() {
         let lead = serde_json::json!({
             "owner_character_id": 7,
@@ -1725,6 +1752,9 @@ mod tests {
             uncertainty_bps: 7_000,
             skill_contributions: "terrain".into(),
             weather_available: false,
+            required_case_site_id: String::new(),
+            available: true,
+            unavailable_reason: String::new(),
         };
         let lead = BackendInvestigationLead {
             owner_character_id: 7,

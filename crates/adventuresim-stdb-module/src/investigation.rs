@@ -2,14 +2,16 @@
 
 use crate::{
     character::{character, character__view, character_skills},
+    condition::character_strategic_condition,
     local_problem::local_problem_receipt,
     settlement_population::{settlement_npc, settlement_npc_presence},
     strategic::{
         CustodyHolderKind, CustodyObjectKind, case_authority, case_custody,
         coordinate_distance_e7_m, living_party_member_ids, party_authority,
-        party_journey_authority, quest_generation_authority, require_no_unresolved_encounter,
-        require_party_ready, require_strategic_character_authority, require_strategic_gateway,
-        settlement, strategic_gateway_authority__view,
+        party_journey_authority, party_member, quest_generation_authority,
+        require_no_unresolved_encounter, require_party_ready,
+        require_strategic_character_authority, require_strategic_gateway, settlement,
+        strategic_gateway_authority__view,
     },
     time::{
         advance_investigation_time, character_time, synchronize_party_activity_time, world_clock,
@@ -610,6 +612,9 @@ pub struct BackendInvestigationAction {
     pub uncertainty_bps: u16,
     pub skill_contributions: String,
     pub weather_available: bool,
+    pub required_case_site_id: String,
+    pub available: bool,
+    pub unavailable_reason: String,
 }
 
 #[derive(Clone, Debug, SpacetimeType)]
@@ -722,7 +727,16 @@ pub fn backend_investigation_actions(ctx: &ViewContext) -> Vec<BackendInvestigat
         .filter(|capability| capability.active)
         .filter_map(|capability| {
             let kind = parse_action_kind(&capability.method).ok()?;
+            if capability_has_successful_attempt_view(ctx, &capability.id)
+                || !capability_has_live_support_view(ctx, &capability, kind)
+            {
+                return None;
+            }
             let cost = action::base_cost(kind);
+            let required_case_site_id =
+                exact_action_site_for_observer(ctx, &capability, kind).unwrap_or_default();
+            let unavailable_reason =
+                action_unavailable_reason_view(ctx, &capability, &required_case_site_id);
             Some(BackendInvestigationAction {
                 owner_character_id: capability.owner_character_id,
                 action_id: capability.id,
@@ -737,9 +751,128 @@ pub fn backend_investigation_actions(ctx: &ViewContext) -> Vec<BackendInvestigat
                     "terrain, awareness, stealth, local familiarity, and bounded party assistance"
                         .into(),
                 weather_available: false,
+                required_case_site_id,
+                available: unavailable_reason.is_none(),
+                unavailable_reason: unavailable_reason.unwrap_or_default(),
             })
         })
         .collect()
+}
+
+fn capability_has_successful_attempt_view(ctx: &ViewContext, capability_id: &str) -> bool {
+    ctx.db
+        .investigation_action_attempt()
+        .capability_id()
+        .filter(capability_id)
+        .any(|attempt| attempt.success)
+}
+
+fn capability_has_live_support_view(
+    ctx: &ViewContext,
+    capability: &InvestigationActionCapability,
+    kind: action::InvestigationActionKind,
+) -> bool {
+    if !capability.required_action_id.is_empty()
+        && !capability_has_successful_attempt_view(ctx, &capability.required_action_id)
+    {
+        return false;
+    }
+    let prerequisites = action::prerequisites(kind);
+    if prerequisites.requires_contact_referral
+        && !ctx
+            .db
+            .investigation_lead()
+            .owner_character_id()
+            .filter(capability.owner_character_id)
+            .any(|lead| lead.case_id == capability.case_id && !lead.witness_name.is_empty())
+    {
+        return false;
+    }
+    if prerequisites.requires_approximate_destination
+        && capability.target_kind != "area"
+        && !ctx
+            .db
+            .investigation_lead()
+            .owner_character_id()
+            .filter(capability.owner_character_id)
+            .any(|lead| {
+                lead.case_id == capability.case_id
+                    && lead.destination_stage == "approximate_area"
+                    && lead.corrected_by.is_empty()
+            })
+    {
+        return false;
+    }
+    !prerequisites.requires_tracks || !capability.required_action_id.is_empty()
+}
+
+fn exact_action_site_for_observer(
+    ctx: &ViewContext,
+    capability: &InvestigationActionCapability,
+    kind: action::InvestigationActionKind,
+) -> Option<String> {
+    if kind != action::InvestigationActionKind::InspectSite || capability.target_kind != "site" {
+        return None;
+    }
+    ctx.db
+        .investigation_lead()
+        .owner_character_id()
+        .filter(capability.owner_character_id)
+        .find(|lead| {
+            lead.case_id == capability.case_id
+                && lead.exact_location_id == capability.target_id
+                && lead.corrected_by.is_empty()
+                && matches!(
+                    lead.destination_stage.as_str(),
+                    "exact_believed" | "visited"
+                )
+        })
+        .map(|lead| lead.exact_location_id)
+}
+
+fn action_unavailable_reason_view(
+    ctx: &ViewContext,
+    capability: &InvestigationActionCapability,
+    required_case_site_id: &str,
+) -> Option<String> {
+    let Some(character) = ctx.db.character().id().find(capability.owner_character_id) else {
+        return Some("The investigating character is currently unavailable.".into());
+    };
+    let Some(party_id) = character.party_id else {
+        return Some("Join or form a party before attempting this investigation.".into());
+    };
+    if ctx
+        .db
+        .party_member()
+        .party_id()
+        .filter(&party_id)
+        .filter_map(|membership| ctx.db.character().id().find(membership.character_id))
+        .filter(|member| member.alive)
+        .any(|member| {
+            ctx.db
+                .character_strategic_condition()
+                .character_id()
+                .find(member.id)
+                .is_some_and(|condition| condition.status == "incapacitated")
+        })
+    {
+        return Some(
+            "An incapacitated party member must recover before the party can investigate.".into(),
+        );
+    }
+    if !required_case_site_id.is_empty() {
+        let occupying_required_site = ctx
+            .db
+            .party_authority()
+            .id()
+            .find(&party_id)
+            .and_then(|party| party.current_case_site_id)
+            .is_some_and(|site| site.value == required_case_site_id);
+        if !occupying_required_site {
+            return Some("Travel to the known investigation site before inspecting it.".into());
+        }
+    }
+    None
 }
 
 #[view(accessor = backend_investigation_action_outcomes, public)]
@@ -1028,7 +1161,7 @@ fn activate_action_successors(
     ctx: &ReducerContext,
     capability: &InvestigationActionCapability,
     succeeded: bool,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let mut activate = Vec::new();
     if succeeded {
         activate.extend(
@@ -1043,23 +1176,105 @@ fn activate_action_successors(
                 .map(|candidate| candidate.id),
         );
     } else {
-        let alternate = ctx
+        use adventuresim_core::quest_generation::{
+            FailedActionAlternateTransition, ReferredContactActionState,
+            transition_failed_action_alternate,
+        };
+        let capabilities: Vec<_> = ctx
             .db
             .investigation_action_capability()
-            .id()
-            .find(&capability.alternate_route_action_id)
-            .ok_or("Investigation recovery route no longer exists")?;
-        if alternate.owner_character_id != capability.owner_character_id
-            || alternate.case_id != capability.case_id
-        {
-            return Err("Investigation recovery route no longer matches its case".into());
+            .owner_character_id()
+            .filter(capability.owner_character_id)
+            .filter(|candidate| candidate.case_id == capability.case_id)
+            .collect();
+        let mut states = capabilities
+            .iter()
+            .map(|candidate| ReferredContactActionState {
+                id: candidate.id.clone(),
+                owner_character_id: candidate.owner_character_id,
+                case_id: candidate.case_id.clone(),
+                method: candidate.method.clone(),
+                target_kind: candidate.target_kind.clone(),
+                target_id: candidate.target_id.clone(),
+                required_action_id: candidate.required_action_id.clone(),
+                active: candidate.active,
+                version: candidate.version,
+                successful_attempt: ctx
+                    .db
+                    .investigation_action_attempt()
+                    .capability_id()
+                    .filter(&candidate.id)
+                    .any(|attempt| attempt.success),
+            })
+            .collect::<Vec<_>>();
+        match transition_failed_action_alternate(
+            &mut states,
+            capability.owner_character_id,
+            &capability.case_id,
+            &capability.alternate_route_action_id,
+        )? {
+            FailedActionAlternateTransition::Activated { alternate_id } => {
+                let alternate = capabilities
+                    .iter()
+                    .find(|candidate| candidate.id == alternate_id)
+                    .ok_or("Investigation recovery route no longer exists")?;
+                let kind = parse_action_kind(&alternate.method)?;
+                if capability_has_live_support_reducer(ctx, alternate, kind) {
+                    activate.push(alternate_id);
+                }
+            }
+            FailedActionAlternateTransition::Unavailable => {}
         }
-        activate.push(alternate.id);
     }
+    let alternate_available = !succeeded && !activate.is_empty();
     for id in activate {
         set_action_active(ctx, &id, true)?;
     }
-    Ok(())
+    Ok(alternate_available)
+}
+
+fn capability_has_live_support_reducer(
+    ctx: &ReducerContext,
+    capability: &InvestigationActionCapability,
+    kind: action::InvestigationActionKind,
+) -> bool {
+    if !capability.required_action_id.is_empty()
+        && !ctx
+            .db
+            .investigation_action_attempt()
+            .capability_id()
+            .filter(&capability.required_action_id)
+            .any(|attempt| attempt.success)
+    {
+        return false;
+    }
+    let prerequisites = action::prerequisites(kind);
+    if prerequisites.requires_contact_referral
+        && !ctx
+            .db
+            .investigation_lead()
+            .owner_character_id()
+            .filter(capability.owner_character_id)
+            .any(|lead| lead.case_id == capability.case_id && !lead.witness_name.is_empty())
+    {
+        return false;
+    }
+    if prerequisites.requires_approximate_destination
+        && capability.target_kind != "area"
+        && !ctx
+            .db
+            .investigation_lead()
+            .owner_character_id()
+            .filter(capability.owner_character_id)
+            .any(|lead| {
+                lead.case_id == capability.case_id
+                    && lead.destination_stage == "approximate_area"
+                    && lead.corrected_by.is_empty()
+            })
+    {
+        return false;
+    }
+    !prerequisites.requires_tracks || !capability.required_action_id.is_empty()
 }
 
 fn complete_referred_contact_action(
@@ -2512,6 +2727,23 @@ pub(crate) fn perform_investigation_action_authorized(
             private_resolution_json: serde_json::to_string(&resolution)
                 .map_err(|_| "Investigation resolution could not be recorded")?,
         });
+    capability.version = capability.version.saturating_add(1);
+    capability.seed = ctx.random::<u64>();
+    capability.uncertainty_bps = resolution.resulting_uncertainty_bps;
+    capability.active = !resolution.success;
+    ctx.db
+        .investigation_action_capability()
+        .id()
+        .update(capability);
+    let alternate_available = activate_action_successors(
+        ctx,
+        &ctx.db
+            .investigation_action_capability()
+            .id()
+            .find(&action_id)
+            .ok_or("Investigation action disappeared")?,
+        resolution.success,
+    )?;
     ctx.db
         .investigation_action_outcome()
         .insert(InvestigationActionOutcome {
@@ -2530,28 +2762,13 @@ pub(crate) fn perform_investigation_action_authorized(
                     capability.safe_result_on_success.clone()
                 }
             } else {
-                "No conclusive result. Time passed and the validated alternate route remains available."
-                    .into()
+                adventuresim_core::quest_generation::failed_action_outcome_wording(
+                    alternate_available,
+                )
+                .into()
             },
             recorded_at: completed_at,
         });
-    capability.version = capability.version.saturating_add(1);
-    capability.seed = ctx.random::<u64>();
-    capability.uncertainty_bps = resolution.resulting_uncertainty_bps;
-    capability.active = !resolution.success;
-    ctx.db
-        .investigation_action_capability()
-        .id()
-        .update(capability);
-    activate_action_successors(
-        ctx,
-        &ctx.db
-            .investigation_action_capability()
-            .id()
-            .find(&action_id)
-            .ok_or("Investigation action disappeared")?,
-        resolution.success,
-    )?;
     Ok(())
 }
 
@@ -4179,6 +4396,11 @@ mod tests {
     #[test]
     fn action_projection_and_reducer_keep_hidden_authority_server_side() {
         let source = include_str!("investigation.rs");
+        let projected_type = source
+            .split("pub struct BackendInvestigationAction")
+            .nth(1)
+            .and_then(|tail| tail.split("#[derive").next())
+            .expect("action projection type");
         let projection = source
             .split("pub fn backend_investigation_actions")
             .nth(1)
@@ -4190,16 +4412,19 @@ mod tests {
         for hidden in [
             "case_id",
             "target_id",
-            "latitude_e7",
-            "longitude_e7",
             "resolution_seed",
             "success_threshold",
         ] {
             assert!(
-                !projection.contains(hidden),
+                !projected_type.contains(hidden),
                 "{hidden} leaked into projection"
             );
         }
+        assert!(projected_type.contains("required_case_site_id"));
+        assert!(projected_type.contains("available"));
+        assert!(projection.contains("capability_has_successful_attempt_view"));
+        assert!(projection.contains("capability_has_live_support_view"));
+        assert!(projection.contains("action_unavailable_reason_view"));
 
         let reducer = source
             .split("pub fn perform_investigation_action")

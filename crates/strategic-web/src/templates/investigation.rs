@@ -10,6 +10,7 @@ pub fn journal_page(
     actions: &[BackendInvestigationAction],
     outcomes: &[BackendInvestigationActionOutcome],
     character_name: &str,
+    feedback: Option<&str>,
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
@@ -24,6 +25,11 @@ pub fn journal_page(
             header {
                 h1 { "Investigation journal" }
                 p class="text-muted" { "Claims, evidence, referrals, and places known to this character." }
+            }
+            @if let Some(feedback) = feedback {
+                section class="strategic-notice journal-feedback" role="alert" {
+                    p { (feedback) }
+                }
             }
             @if entries.is_empty() && leads.is_empty() {
                 section class="strategic-notice" { p { "No problems or leads have reached you yet." } }
@@ -56,11 +62,25 @@ pub fn journal_page(
                             @if !action.weather_available {
                                 p class="text-muted" { "Weather effects are unavailable and are not estimated." }
                             }
-                            form method="post" action="/quests/actions" {
-                                input type="hidden" name="action_id" value=(&action.action_id);
-                                input type="hidden" name="method" value=(&action.method);
-                                input type="hidden" name="expected_version" value=(action.expected_version);
-                                button type="submit" { "Attempt " (action.method.replace('_', " ")) }
+                            @if action.available {
+                                form method="post" action="/quests/actions" {
+                                    input type="hidden" name="action_id" value=(&action.action_id);
+                                    input type="hidden" name="method" value=(&action.method);
+                                    input type="hidden" name="expected_version" value=(action.expected_version);
+                                    button type="submit" { "Attempt " (action.method.replace('_', " ")) }
+                                }
+                            } @else {
+                                p class="journal-action-unavailable" role="status" {
+                                    (&action.unavailable_reason)
+                                }
+                                button type="button" disabled {
+                                    "Attempt " (action.method.replace('_', " "))
+                                }
+                                @if !action.required_case_site_id.is_empty() {
+                                    form method="post" action=(format!("/case-sites/{}/travel", action.required_case_site_id)) {
+                                        button type="submit" { "Travel to investigation site" }
+                                    }
+                                }
                             }
                         }
                     }
@@ -154,7 +174,7 @@ mod tests {
             corrected_by: String::new(),
             recorded_at: 1,
         };
-        let markup = journal_page(&[], &[lead], &[], &[], "Ada").into_string();
+        let markup = journal_page(&[], &[lead], &[], &[], "Ada", None).into_string();
         assert!(markup.contains("Source: the innkeeper"));
         assert!(markup.contains("confidence 55%"));
         assert!(markup.contains("Conflicts with another account"));
@@ -162,5 +182,64 @@ mod tests {
         assert!(markup.contains("Expected at: workshops"));
         assert!(markup.contains("Directions: beyond the mill"));
         assert!(!markup.contains("data-exact-destination"));
+    }
+
+    #[test]
+    fn journal_disables_off_site_inspection_and_offers_safe_travel() {
+        let action = BackendInvestigationAction {
+            owner_character_id: 1,
+            action_id: "inspect".into(),
+            method: "inspect_site".into(),
+            expected_version: 2,
+            summary: "Inspect the abandoned croft.".into(),
+            known_prerequisites: "Reach the croft.".into(),
+            duration_min_minutes: 30,
+            duration_max_minutes: 90,
+            uncertainty_bps: 2_000,
+            skill_contributions: "awareness".into(),
+            weather_available: false,
+            required_case_site_id: "site-public".into(),
+            available: false,
+            unavailable_reason: "Travel to the known investigation site before inspecting it."
+                .into(),
+        };
+        let markup = journal_page(
+            &[],
+            &[],
+            &[action],
+            &[],
+            "Ada",
+            Some("That investigation route is no longer available."),
+        )
+        .into_string();
+        assert!(markup.contains("role=\"alert\""));
+        assert!(markup.contains("That investigation route is no longer available."));
+        assert!(markup.contains("Travel to the known investigation site"));
+        assert!(markup.contains("action=\"/case-sites/site-public/travel\""));
+        assert!(markup.contains("disabled"));
+        assert!(!markup.contains("action=\"/quests/actions\""));
+    }
+
+    #[test]
+    fn journal_enables_authoritatively_available_site_action() {
+        let action = BackendInvestigationAction {
+            owner_character_id: 1,
+            action_id: "inspect".into(),
+            method: "inspect_site".into(),
+            expected_version: 2,
+            summary: "Inspect the abandoned croft.".into(),
+            known_prerequisites: "Reach the croft.".into(),
+            duration_min_minutes: 30,
+            duration_max_minutes: 90,
+            uncertainty_bps: 2_000,
+            skill_contributions: "awareness".into(),
+            weather_available: false,
+            required_case_site_id: "site-public".into(),
+            available: true,
+            unavailable_reason: String::new(),
+        };
+        let markup = journal_page(&[], &[], &[action], &[], "Ada", None).into_string();
+        assert!(markup.contains("action=\"/quests/actions\""));
+        assert!(!markup.contains("journal-action-unavailable"));
     }
 }

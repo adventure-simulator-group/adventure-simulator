@@ -1087,7 +1087,10 @@ async fn settlement_map(
     let is_current_settlement = active_character.as_ref().is_some_and(|(character, _)| {
         character.current_settlement_id.as_deref() == Some(&settlement.id)
     });
-    let can_travel = map_data_initialized && is_current_settlement && active_party.is_some();
+    // The interactive map bundle is optional presentation. Exact observer-owned
+    // case sites must remain selectable and travelable through the HTML fallback.
+    let can_travel =
+        settlement_html_travel_available(is_current_settlement, active_party.is_some());
     if can_travel {
         for site in case_sites
             .iter()
@@ -1272,6 +1275,10 @@ async fn settlement_map(
     )
 }
 
+fn settlement_html_travel_available(is_current_settlement: bool, has_party: bool) -> bool {
+    is_current_settlement && has_party
+}
+
 fn can_abandon_active_contract(
     contract: &ContractPresentation,
     current_case_site_id: Option<&str>,
@@ -1282,6 +1289,13 @@ fn can_abandon_active_contract(
 #[cfg(test)]
 mod map_quest_tests {
     use super::*;
+
+    #[test]
+    fn html_case_site_travel_does_not_depend_on_optional_map_data() {
+        assert!(settlement_html_travel_available(true, true));
+        assert!(!settlement_html_travel_available(false, true));
+        assert!(!settlement_html_travel_available(true, false));
+    }
 
     fn quest(status: ContractPresentationStatus) -> ContractPresentation {
         ContractPresentation {
@@ -4468,6 +4482,14 @@ fn parsed_rest_minutes(form: &RestForm) -> Result<u64, &'static str> {
     })
 }
 
+fn safe_rest_error(error: &str) -> &'static str {
+    if error.contains("Not enough coin") {
+        "You do not have enough coin for that inn stay."
+    } else {
+        "The rest could not be completed. Review the duration and try again."
+    }
+}
+
 async fn rest(
     State(state): State<AppState>,
     Path((id, kind)): Path<(String, String)>,
@@ -4506,7 +4528,19 @@ async fn rest(
         Err(message) => {
             return (
                 axum::http::StatusCode::BAD_REQUEST,
-                Html(format!("<h1>Unable to rest</h1><p>{message}</p>")),
+                Html(
+                    crate::templates::strategic_notice_page(
+                        "Unable to rest",
+                        message,
+                        &format!(
+                            "/settlements/{id}/{}",
+                            if at_inn { "inn" } else { "religion" }
+                        ),
+                        "Return to rest service",
+                        None,
+                    )
+                    .into_string(),
+                ),
             )
                 .into_response();
         }
@@ -4529,7 +4563,23 @@ async fn rest(
         )
         .await
     {
-        return Html(format!("<h1>Unable to rest</h1><p>{error}</p>")).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Html(
+                crate::templates::strategic_notice_page(
+                    "Unable to rest",
+                    safe_rest_error(&error.to_string()),
+                    &format!(
+                        "/settlements/{id}/{}",
+                        if at_inn { "inn" } else { "religion" }
+                    ),
+                    "Return to rest service",
+                    None,
+                )
+                .into_string(),
+            ),
+        )
+            .into_response();
     }
 
     let active_character = get_active_character(&state, Some(character_id)).await;
@@ -6089,7 +6139,7 @@ mod rest_form_tests {
     use adventuresim_core::strategic_time::{is_walking_time, minutes_until_next_walking_start};
 
     use super::{
-        RestForm, calculate_rest_supply_availability, calculate_soap_rest_preview,
+        RestForm, calculate_rest_supply_availability, calculate_soap_rest_preview, safe_rest_error,
         settlement_rest_minutes, travel_rest_minutes,
     };
     use crate::spacetimedb::{
@@ -6237,6 +6287,10 @@ mod rest_form_tests {
             settlement_rest_minutes(&form("24:01", "hours", Some(1_441))),
             Ok(1_441)
         );
+        assert_eq!(
+            settlement_rest_minutes(&form("36:32", "hours", Some(2_192))),
+            Ok(2_192)
+        );
         assert!(settlement_rest_minutes(&form("23:59", "hours", Some(1_439))).is_err());
     }
 
@@ -6267,6 +6321,11 @@ mod rest_form_tests {
         );
         assert!(settlement_rest_minutes(&form("0", "days", None)).is_err());
         assert!(settlement_rest_minutes(&form("1.5", "days", None)).is_err());
+        assert_eq!(
+            settlement_rest_minutes(&form("365", "days", None)),
+            Ok(365 * 1_440)
+        );
+        assert!(settlement_rest_minutes(&form("366", "days", None)).is_err());
     }
 
     #[test]
@@ -6280,6 +6339,15 @@ mod rest_form_tests {
         assert_eq!(blank.requested_minutes, None);
         assert_eq!(settlement_rest_minutes(&blank), Ok(2_880));
         assert!(settlement_rest_minutes(&form("24:00", "hours", Some(1_441))).is_err());
+    }
+
+    #[test]
+    fn rest_failures_have_safe_visible_prose() {
+        assert_eq!(
+            safe_rest_error("Not enough coin to pay for the inn stay"),
+            "You do not have enough coin for that inn stay."
+        );
+        assert!(!safe_rest_error("private injury authority 123").contains("123"));
     }
 
     #[test]
