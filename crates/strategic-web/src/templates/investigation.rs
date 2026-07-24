@@ -48,7 +48,7 @@ pub fn journal_page(
                 section class="journal-actions" {
                     h2 { "Ways to investigate" }
                     @for action in actions {
-                        article class="journal-card journal-action" data-action-id=(&action.action_id) {
+                        article class="journal-card journal-action" {
                             h3 { (&action.summary) }
                             p { (&action.known_prerequisites) }
                             p class="journal-action-cost" {
@@ -87,14 +87,14 @@ pub fn journal_page(
                 }
             }
             @for lead in leads {
-                article class="journal-card journal-lead" data-case-id=(&lead.case_id) data-lead-id=(&lead.lead_id) {
+                article class="journal-card journal-lead" {
                     h2 { (&lead.summary) }
                     p class="journal-source" { "Source: " (&lead.source_label) " / confidence " (lead.confidence_bps / 100) "%" }
                     @if !lead.contradiction_group.is_empty() {
                         p class="journal-contradiction" { "Conflicts with another account." }
                     }
                     @if !lead.corrected_by.is_empty() {
-                        p class="journal-correction" { "Corrected by " (&lead.corrected_by) }
+                        p class="journal-correction" { "A later account from " (&lead.corrected_by) " revises this account." }
                     }
                     @if !lead.witness_name.is_empty() || !lead.witness_description.is_empty() {
                         section class="journal-referral" {
@@ -117,7 +117,7 @@ pub fn journal_page(
                             p class="journal-directions" { "Directions: " (&lead.directions) }
                         },
                         "exact_believed" | "visited" => {
-                            p class="journal-destination" data-exact-destination=(&lead.exact_location_id) {
+                            p class="journal-destination" {
                                 "Believed exact destination: "
                                 @if lead.current_learned_location.is_empty() {
                                     "Known investigation site"
@@ -131,11 +131,11 @@ pub fn journal_page(
                 }
             }
             @for entry in entries {
-                article class="journal-card journal-revision" data-record-id=(&entry.record_id) {
+                article class="journal-card journal-revision" {
                     p { (&entry.summary) }
                     p class="journal-source" { "Source: " (&entry.source_label) " / confidence " (entry.confidence_bps / 100) "%" }
                     @if !entry.supersedes.is_empty() {
-                        p class="journal-correction" { "Revises " (&entry.supersedes) }
+                        p class="journal-correction" { "This account revises " (&entry.supersedes) "." }
                     }
                 }
             }
@@ -214,7 +214,8 @@ mod tests {
         };
         let markup = journal_page(&[], &[lead], &[], &[], "Ada", None).into_string();
         assert!(markup.contains("Believed exact destination: The abandoned croft"));
-        assert!(markup.contains("data-exact-destination=\"site:private-hash\""));
+        assert!(!markup.contains("data-exact-destination"));
+        assert!(!markup.contains("site:private-hash"));
         assert!(!markup.contains("Believed exact destination: site:private-hash"));
     }
 

@@ -12494,28 +12494,14 @@ fn set_party_journey_state(
     party: &mut Party,
     current_settlement_id: Option<String>,
     current_case_site_id: Option<CaseSiteId>,
-    camp_destination_id: Option<String>,
-    camp_destination_kind: Option<String>,
+    camp_destination: Option<JourneyEndpoint>,
     camp_remaining_minutes: u64,
 ) {
     // Deliberately touch only journey fields. In particular, leadership may
     // have changed while movement committed a terminal event.
     party.current_settlement_id = current_settlement_id;
     party.current_case_site_id = current_case_site_id;
-    party.camp_destination = match (camp_destination_id, camp_destination_kind.as_deref()) {
-        (Some(id), Some("settlement")) => {
-            Some(JourneyEndpoint::Settlement(JourneySettlementEndpoint {
-                id,
-                name: String::new(),
-            }))
-        }
-        (Some(id), Some("case_site")) => Some(JourneyEndpoint::CaseSite(JourneyCaseSiteEndpoint {
-            id: CaseSiteId { value: id },
-            name: String::new(),
-        })),
-        (None, None) => None,
-        _ => unreachable!("validated camp destination"),
-    };
+    party.camp_destination = camp_destination;
     party.camp_remaining_minutes = camp_remaining_minutes;
 }
 
@@ -14040,14 +14026,23 @@ fn reconstruct_legacy_journey_coordinates(
 #[cfg(test)]
 mod departure_invariant_tests {
     use super::{
-        CampDurationMode, JourneyEndpoint, JourneyRoutePlan, JourneyRoutePoint,
-        JourneySettlementEndpoint, JourneyTerrainKind, JourneyTerrainSpan, JourneyTerrainWeights,
-        Party, PartyJourneyRoute, common_movement_prefix, departure_snapshot_allows_travel,
-        party_can_continue_travel, pending_incident_allows_departure,
-        reconstruct_legacy_journey_coordinates, route_position_at_minute, set_party_journey_state,
-        straight_line_distance_m, terrain_training_exposure, validate_journey_route_payload,
+        CampDurationMode, CaseSiteId, JourneyCaseSiteEndpoint, JourneyEndpoint, JourneyRoutePlan,
+        JourneyRoutePoint, JourneySettlementEndpoint, JourneyTerrainKind, JourneyTerrainSpan,
+        JourneyTerrainWeights, Party, PartyJourneyRoute, common_movement_prefix,
+        departure_snapshot_allows_travel, party_can_continue_travel,
+        pending_incident_allows_departure, reconstruct_legacy_journey_coordinates,
+        route_position_at_minute, set_party_journey_state, straight_line_distance_m,
+        terrain_training_exposure, validate_journey_route_payload,
         zero_boundary_requires_settlement,
     };
+
+    fn endpoint_name(endpoint: &JourneyEndpoint) -> &str {
+        match endpoint {
+            JourneyEndpoint::Settlement(endpoint) => &endpoint.name,
+            JourneyEndpoint::CaseSite(endpoint) => &endpoint.name,
+            JourneyEndpoint::Camp(name) => name,
+        }
+    }
 
     #[test]
     fn departure_requires_unchanged_party_members_and_incident_snapshot() {
@@ -14277,14 +14272,37 @@ mod departure_invariant_tests {
             command_target: 0.0,
             religion_target: 0.0,
         };
+        let settlement_destination = JourneyEndpoint::Settlement(JourneySettlementEndpoint {
+            id: "destination".into(),
+            name: "Distant town".into(),
+        });
         set_party_journey_state(
             &mut fresh_party,
-            Some("destination".into()),
             None,
             None,
-            None,
-            0,
+            Some(settlement_destination),
+            30,
         );
+        assert_eq!(
+            fresh_party.camp_destination.as_ref().map(endpoint_name),
+            Some("Distant town")
+        );
+        let case_site_destination = JourneyEndpoint::CaseSite(JourneyCaseSiteEndpoint {
+            id: CaseSiteId::from("site:known".to_string()),
+            name: "a camp in the woods".into(),
+        });
+        set_party_journey_state(
+            &mut fresh_party,
+            None,
+            None,
+            Some(case_site_destination),
+            30,
+        );
+        assert_eq!(
+            fresh_party.camp_destination.as_ref().map(endpoint_name),
+            Some("a camp in the woods")
+        );
+        set_party_journey_state(&mut fresh_party, Some("destination".into()), None, None, 0);
         assert_eq!(fresh_party.leader_id, 2);
         assert_eq!(
             fresh_party.current_settlement_id.as_deref(),
@@ -14467,8 +14485,10 @@ fn travel_to_case_site_impl(
             &mut party,
             None,
             None,
-            Some(case_site_id),
-            Some("case_site".into()),
+            Some(JourneyEndpoint::CaseSite(JourneyCaseSiteEndpoint {
+                id: CaseSiteId::from(case_site_id),
+                name: site.name.clone(),
+            })),
             travel_minutes.saturating_sub(leg_minutes),
         );
         ctx.db.party_authority().id().update(party);
@@ -14499,7 +14519,6 @@ fn travel_to_case_site_impl(
         &mut party,
         None,
         Some(CaseSiteId::from(case_site_id)),
-        None,
         None,
         0,
     );
@@ -14751,8 +14770,10 @@ fn travel_to_settlement_impl(
                 party,
                 None,
                 None,
-                Some(settlement_id),
-                Some("settlement".into()),
+                Some(JourneyEndpoint::Settlement(JourneySettlementEndpoint {
+                    id: settlement_id,
+                    name: destination.name.clone(),
+                })),
                 travel_minutes.saturating_sub(leg_minutes),
             );
             ctx.db.party_authority().id().update(party.clone());
@@ -14788,7 +14809,7 @@ fn travel_to_settlement_impl(
     }
 
     if let Some(ref mut party) = party {
-        set_party_journey_state(party, Some(settlement_id.clone()), None, None, None, 0);
+        set_party_journey_state(party, Some(settlement_id.clone()), None, None, 0);
         ctx.db.party_authority().id().update(party.clone());
         finish_party_journey(ctx, &party.id);
         let departing_incident = departing_case_site.as_ref().and_then(|site_id| {
@@ -15022,7 +15043,6 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
         &mut party,
         current_settlement_id,
         current_case_site_id,
-        None,
         None,
         0,
     );
