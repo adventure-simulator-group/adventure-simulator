@@ -2348,10 +2348,8 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             kind: evidence_kind,
             proposition_id: correction_prop.clone(),
             site_id: evidence_site.clone(),
-            safe_description: format!(
-                "This {:?} clue preserves a useful lead without identifying the culprit outright.",
-                evidence_kind,
-            ),
+            safe_description:
+                "This clue preserves a useful lead without identifying the culprit outright.".into(),
             corrects_proposition_id: Some(scoped_id(&prefix, "proposition", "description")),
         },
         GeneratedEvidence {
@@ -4038,6 +4036,28 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn evidence_descriptions_do_not_expose_internal_variant_names() {
+        for family in [
+            TemplateFamily::RecurringDepredation,
+            TemplateFamily::DisappearanceOrLoss,
+        ] {
+            for seed in 0..256 {
+                let generated = generate(&context(seed, family)).unwrap();
+                for evidence in generated.evidence {
+                    assert!(
+                        !evidence
+                            .safe_description
+                            .contains(&format!("{:?}", evidence.kind)),
+                        "seed {seed} exposed {:?} in player-facing evidence",
+                        evidence.kind
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn hard_zero_and_rare_rules_are_auditable() {
         let mut trace = Vec::new();
