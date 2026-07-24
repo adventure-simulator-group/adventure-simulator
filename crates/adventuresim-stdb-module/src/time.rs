@@ -1416,10 +1416,7 @@ fn rest_for_minutes(
 
     validate_settlement_rest_minutes(requested_minutes)?;
 
-    let cost = requested_minutes
-        .div_ceil(MINUTES_PER_DAY)
-        .checked_mul(u64::from(INN_GOLD_PER_DAY))
-        .ok_or("Inn cost overflow")?;
+    let cost = inn_stay_cost(requested_minutes)?;
     if at_inn {
         crate::item::consume_personal_currency(ctx, character_id, cost)
             .map_err(|_| "Not enough coin to pay for the inn stay".to_string())?;
@@ -1537,6 +1534,11 @@ fn rest_for_minutes(
     crate::food::clear_stomach_fullness(ctx, character_id);
     crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(())
+}
+
+fn inn_stay_cost(requested_minutes: u64) -> Result<u64, String> {
+    adventuresim_core::strategic_economy::inn_full_board_cost(requested_minutes)
+        .ok_or_else(|| "Inn cost overflow".to_string())
 }
 
 fn validate_settlement_rest_minutes(requested_minutes: u64) -> Result<(), String> {
@@ -2120,6 +2122,14 @@ mod tests {
     }
 
     #[test]
+    fn inn_stay_cost_only_rounds_up_partial_days() {
+        assert_eq!(inn_stay_cost(MINUTES_PER_DAY), Ok(2));
+        assert_eq!(inn_stay_cost(2 * MINUTES_PER_DAY), Ok(4));
+        assert_eq!(inn_stay_cost(1), Ok(2));
+        assert_eq!(inn_stay_cost(MINUTES_PER_DAY + 1), Ok(4));
+    }
+
+    #[test]
     fn settlement_rest_consumes_elapsed_needs_once_in_terminal_safe_order() {
         let source = include_str!("time.rs");
         let rest = source
@@ -2127,6 +2137,7 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("fn validate_settlement_rest_minutes").next())
             .expect("settlement rest implementation");
+        assert_eq!(rest.matches("inn_stay_cost(requested_minutes)?").count(), 1);
         let needs = "crate::condition::apply_settlement_rest_elapsed_needs(";
         assert_eq!(rest.matches(needs).count(), 1);
         assert!(rest.find("settle_shared_party_time").unwrap() < rest.find(needs).unwrap());

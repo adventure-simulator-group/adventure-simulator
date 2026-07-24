@@ -319,7 +319,8 @@ pub enum MerchantShop {
 
 pub struct RestSummary {
     pub minutes: u64,
-    pub gold_spent: u32,
+    pub full_board_gold_spent: u32,
+    pub additional_gold_spent: u32,
     pub gold_earned: u32,
     pub notoriety_gained: f32,
     pub healed: Vec<(String, f32)>,
@@ -6187,7 +6188,16 @@ fn rest_service_menu(
                         a href=(format!("/settlements/{settlement_id}/{}", if kind == "inn" { "inn" } else { "religion" })) class="rest-summary-close" aria-label="Close rest summary" { "×" }
                     }
                     p { (format_rest_duration(summary.minutes)) " passed." }
-                    @if summary.gold_spent > 0 { p { (summary.gold_spent) " coin paid." } }
+                    @if summary.full_board_gold_spent > 0 {
+                        p { (summary.full_board_gold_spent) " coin paid for full board." }
+                    }
+                    @if summary.additional_gold_spent > 0 {
+                        @if summary.full_board_gold_spent > 0 {
+                            p { (summary.additional_gold_spent) " additional coin spent during rest." }
+                        } @else {
+                            p { (summary.additional_gold_spent) " coin paid." }
+                        }
+                    }
                     @if summary.gold_earned > 0 { p { (summary.gold_earned) " coin earned from activities." } }
                     @if summary.notoriety_gained > 0.0 { p class="schedule-effect-negative" { (format!("-{:.1}", summary.notoriety_gained)) " Virtue from activities." } }
                     @if summary.healed.is_empty() { p { "No injuries needed tending." } } @else {
@@ -6351,7 +6361,8 @@ mod tests {
     fn rest_pages_keep_a_gettable_refresh_marker_across_repeated_refreshes() {
         let summary = RestSummary {
             minutes: 480,
-            gold_spent: 1,
+            full_board_gold_spent: 0,
+            additional_gold_spent: 1,
             gold_earned: 0,
             notoriety_gained: 0.0,
             healed: Vec::new(),
@@ -6375,6 +6386,58 @@ mod tests {
                 assert!(!markup.contains("data-live-refresh-url=\"/settlements/riverdale/rest/"));
             }
         }
+    }
+
+    #[test]
+    fn inn_rest_summary_separates_full_board_from_additional_spending() {
+        let summary = RestSummary {
+            minutes: 2_880,
+            full_board_gold_spent: 4,
+            additional_gold_spent: 6,
+            gold_earned: 0,
+            notoriety_gained: 0.0,
+            healed: Vec::new(),
+            trained: Vec::new(),
+        };
+        let markup = rest_service_menu(
+            "Inn",
+            "ironforge",
+            "inn",
+            None,
+            Some(&summary),
+            SoapRestPreview::default(),
+        )
+        .into_string();
+
+        assert!(markup.contains("4 coin paid for full board."));
+        assert!(markup.contains("6 additional coin spent during rest."));
+        assert!(!markup.contains("10 coin paid."));
+    }
+
+    #[test]
+    fn temple_rest_keeps_neutral_spending_copy() {
+        let summary = RestSummary {
+            minutes: 1_440,
+            full_board_gold_spent: 0,
+            additional_gold_spent: 2,
+            gold_earned: 0,
+            notoriety_gained: 0.0,
+            healed: Vec::new(),
+            trained: Vec::new(),
+        };
+        let markup = rest_service_menu(
+            "Church",
+            "ironforge",
+            "temple",
+            None,
+            Some(&summary),
+            SoapRestPreview::default(),
+        )
+        .into_string();
+
+        assert!(markup.contains("2 coin paid."));
+        assert!(!markup.contains("additional coin"));
+        assert!(!markup.contains("paid for full board"));
     }
 
     #[test]
