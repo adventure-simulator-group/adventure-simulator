@@ -305,12 +305,12 @@ mod healing_tests {
         case_refs_have_exact_dialogue_provenance, generated_case_site_combat_eligible,
         generated_dialogue_action_matches, generated_dialogue_producer_recipient,
         generated_scene_key, generated_witness_visible_description, hostile_group_authority_row,
-        hostile_resolution_for_objective, incident_group_matches,
+        hostile_resolution_for_objective, incident_group_matches, merchant_storefront,
         mission_candidate_from_capability, npc_conversation_authority_matches,
         player_participant_ids, project_local_chat_message, quest_encounter_archetype,
         quest_generation_context_commitment, refreshed_recruitment_offer_status,
-        sample_mission_candidate, validate_quest_generation_authority,
-        validated_generated_dialogue_manifest,
+        sample_mission_candidate, unique_default_merchant_provider,
+        validate_quest_generation_authority, validated_generated_dialogue_manifest,
     };
     use adventuresim_core::encounter::EncounterArchetype;
     use std::collections::HashSet;
@@ -1185,6 +1185,58 @@ mod healing_tests {
         assert!(accept.contains("ContractInteractionStage::Accept"));
         assert!(report.contains("ContractInteractionStage::Report"));
         assert!(report.contains("xp_reward"));
+    }
+
+    #[test]
+    fn merchant_trade_is_bound_to_a_closed_storefront_and_persistent_provider() {
+        use adventuresim_core::settlement_economy::Storefront;
+
+        assert_eq!(
+            merchant_storefront("merchants").unwrap(),
+            (Storefront::General, "market")
+        );
+        assert_eq!(
+            merchant_storefront("inn").unwrap(),
+            (Storefront::Inn, "inn")
+        );
+        assert!(merchant_storefront("herbalist").is_err());
+        assert!(merchant_storefront("../inn").is_err());
+
+        let source = include_str!("strategic.rs");
+        let trade = source
+            .split("fn finalize_storefront_trade_impl")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]\npub fn leave_party").next())
+            .expect("storefront trade implementation");
+        for authority_check in [
+            "character.current_settlement_id.as_deref() != Some(&settlement_id)",
+            "storefront_available(",
+            "provider.home_settlement_id != settlement_id",
+            "provider.service_id != service_id",
+            "provider_presence.location_id != location_id",
+            "npc_is_present(&provider_presence, problem_minute)",
+            "default_merchant_provider(ctx, &settlement_id, &service_id, location_id)?",
+            "storefront_stocks(",
+        ] {
+            assert!(
+                trade.contains(authority_check),
+                "missing merchant authority check: {authority_check}"
+            );
+        }
+        assert!(
+            !trade.contains("let storefront = match catalog_kind"),
+            "the reducer must not infer a different storefront from item kind"
+        );
+    }
+
+    #[test]
+    fn merchant_provider_selection_rejects_ambiguous_defaults() {
+        assert_eq!(
+            unique_default_merchant_provider(["provider".to_string()]).unwrap(),
+            "provider"
+        );
+        assert!(unique_default_merchant_provider(Vec::<String>::new()).is_err());
+        assert!(unique_default_merchant_provider(["one".to_string(), "two".to_string()]).is_err());
     }
 
     #[test]
@@ -10718,20 +10770,120 @@ pub fn finalize_merchant_trade(
     sell_quantities: Vec<u32>,
     party_scope: bool,
 ) -> Result<(), String> {
-    crate::character::require_living_character(ctx, character_id)?;
-    if require_settlement_service(
+    let provider_npc_id = default_merchant_provider(ctx, &settlement_id, "merchants", "market")?;
+    finalize_storefront_trade_impl(
         ctx,
-        &settlement_id,
-        adventuresim_world_schema::SettlementService::Market,
+        character_id,
+        settlement_id,
+        "merchants".into(),
+        provider_npc_id,
+        buy_item_ids,
+        buy_quantities,
+        sell_inventory_ids,
+        sell_quantities,
+        party_scope,
     )
-    .is_err()
-    {
-        require_settlement_service(
-            ctx,
-            &settlement_id,
-            adventuresim_world_schema::SettlementService::GeneralStore,
-        )?;
+}
+
+#[reducer]
+pub fn finalize_storefront_trade(
+    ctx: &ReducerContext,
+    character_id: u64,
+    settlement_id: String,
+    service_id: String,
+    provider_npc_id: String,
+    buy_item_ids: Vec<String>,
+    buy_quantities: Vec<u32>,
+    sell_inventory_ids: Vec<u64>,
+    sell_quantities: Vec<u32>,
+    party_scope: bool,
+) -> Result<(), String> {
+    finalize_storefront_trade_impl(
+        ctx,
+        character_id,
+        settlement_id,
+        service_id,
+        provider_npc_id,
+        buy_item_ids,
+        buy_quantities,
+        sell_inventory_ids,
+        sell_quantities,
+        party_scope,
+    )
+}
+
+fn merchant_storefront(
+    service_id: &str,
+) -> Result<
+    (
+        adventuresim_core::settlement_economy::Storefront,
+        &'static str,
+    ),
+    String,
+> {
+    use adventuresim_core::settlement_economy::Storefront;
+    match service_id {
+        "merchants" => Ok((Storefront::General, "market")),
+        "weapons" => Ok((Storefront::Weapons, "forge")),
+        "armor" => Ok((Storefront::Armor, "armoury")),
+        "clothing" => Ok((Storefront::Clothing, "tailor")),
+        "inn" => Ok((Storefront::Inn, "inn")),
+        _ => Err("Unknown merchant storefront".into()),
     }
+}
+
+fn default_merchant_provider(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+    service_id: &str,
+    location_id: &str,
+) -> Result<String, String> {
+    unique_default_merchant_provider(
+        ctx.db
+            .settlement_npc()
+            .iter()
+            .filter(|npc| npc.home_settlement_id == settlement_id && npc.service_id == service_id)
+            .filter_map(|npc| {
+                ctx.db
+                    .settlement_npc_presence()
+                    .npc_id()
+                    .find(&npc.id)
+                    .filter(|presence| {
+                        presence.settlement_id == settlement_id
+                            && presence.location_id == location_id
+                            && presence.is_default
+                    })
+                    .map(|_| npc.id)
+            }),
+    )
+}
+
+fn unique_default_merchant_provider(
+    providers: impl IntoIterator<Item = String>,
+) -> Result<String, String> {
+    let providers = providers.into_iter().collect::<Vec<_>>();
+    match providers.as_slice() {
+        [provider] => Ok(provider.clone()),
+        [] => Err("Merchant service provider not found".into()),
+        _ => Err("Merchant service provider is ambiguous".into()),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn finalize_storefront_trade_impl(
+    ctx: &ReducerContext,
+    character_id: u64,
+    settlement_id: String,
+    service_id: String,
+    provider_npc_id: String,
+    buy_item_ids: Vec<String>,
+    buy_quantities: Vec<u32>,
+    sell_inventory_ids: Vec<u64>,
+    sell_quantities: Vec<u32>,
+    party_scope: bool,
+) -> Result<(), String> {
+    crate::character::require_living_character(ctx, character_id)?;
+    let (storefront, location_id) = merchant_storefront(&service_id)?;
     if buy_item_ids.len() != buy_quantities.len()
         || sell_inventory_ids.len() != sell_quantities.len()
     {
@@ -10750,6 +10902,41 @@ pub fn finalize_merchant_trade(
         .id()
         .find(&settlement_id)
         .ok_or("Settlement not found")?;
+    if !adventuresim_core::settlement_economy::storefront_available(&settlement.economy, storefront)
+    {
+        return Err("This settlement does not offer that service".into());
+    }
+    let provider = ctx
+        .db
+        .settlement_npc()
+        .id()
+        .find(&provider_npc_id)
+        .ok_or("Merchant service provider not found")?;
+    let provider_presence = ctx
+        .db
+        .settlement_npc_presence()
+        .npc_id()
+        .find(&provider_npc_id)
+        .ok_or("Merchant service provider has no presence")?;
+    let problem_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(0, |time| time.minutes);
+    if provider.home_settlement_id != settlement_id
+        || provider.service_id != service_id
+        || provider_presence.settlement_id != settlement_id
+        || provider_presence.location_id != location_id
+        || !provider_presence.is_default
+        || !crate::settlement_population::npc_is_present(&provider_presence, problem_minute)
+    {
+        return Err("Merchant service provider is not available".into());
+    }
+    if default_merchant_provider(ctx, &settlement_id, &service_id, location_id)? != provider_npc_id
+    {
+        return Err("Merchant service provider does not match this storefront".into());
+    }
     let speaker = ctx
         .db
         .character_skills()
@@ -10763,12 +10950,6 @@ pub fn finalize_merchant_trade(
     let (_, shared_language) =
         adventuresim_world_schema::best_common_oral_language(speaker, merchant);
     let settlement_economy = settlement.economy.clone();
-    let problem_minute = ctx
-        .db
-        .character_time()
-        .character_id()
-        .find(character_id)
-        .map_or(0, |time| time.minutes);
     let problem_effects =
         crate::local_problem::settlement_effects(ctx, &settlement_id, problem_minute);
     // Sales are inventory-instance operations. Preserve each submitted stack
@@ -10793,15 +10974,7 @@ pub fn finalize_merchant_trade(
         {
             return Err("Invalid merchant purchase".into());
         }
-        use adventuresim_core::settlement_economy::{CatalogKind as C, Storefront as S};
         let catalog_kind = crate::item::economy_catalog_kind(item.kind);
-        let storefront = match catalog_kind {
-            C::Weapon | C::Shield => S::Weapons,
-            C::Armor => S::Armor,
-            C::Clothing => S::Clothing,
-            C::Food => S::Inn,
-            _ => S::General,
-        };
         if !adventuresim_core::settlement_economy::storefront_stocks(
             &settlement_economy,
             storefront,

@@ -41,6 +41,21 @@ struct BuildingQuery {
     cook: Option<bool>,
 }
 
+#[derive(Deserialize)]
+struct MerchantProviderRow {
+    id: String,
+    home_settlement_id: String,
+    service_id: String,
+}
+
+#[derive(Deserialize)]
+struct MerchantProviderPresenceRow {
+    npc_id: String,
+    settlement_id: String,
+    location_id: String,
+    is_default: bool,
+}
+
 impl BuildingQuery {
     fn valid(&self) -> Option<&str> {
         self.building
@@ -67,7 +82,7 @@ impl BuildingQuery {
 
 #[cfg(test)]
 mod building_query_tests {
-    use super::{BuildingQuery, character_details_path};
+    use super::{BuildingQuery, character_details_path, merchant_service_location};
 
     #[test]
     fn building_query_is_closed_and_preserved_on_redirects() {
@@ -109,6 +124,17 @@ mod building_query_tests {
             building.append_to(character_details_path("settlement", "x", 7, Some(3))),
             "/locations/settlement/x/party/7/stats?building=inn"
         );
+    }
+
+    #[test]
+    fn merchant_offer_routes_accept_only_bound_storefront_services() {
+        assert_eq!(merchant_service_location("merchants"), Some("market"));
+        assert_eq!(merchant_service_location("weapons"), Some("forge"));
+        assert_eq!(merchant_service_location("armor"), Some("armoury"));
+        assert_eq!(merchant_service_location("clothing"), Some("tailor"));
+        assert_eq!(merchant_service_location("inn"), Some("inn"));
+        assert_eq!(merchant_service_location("herbalist"), None);
+        assert_eq!(merchant_service_location("../inn"), None);
     }
 }
 
@@ -294,7 +320,7 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/settlements/{id}/merchants", get(merchants))
         .route(
-            "/settlements/{id}/merchants/offer",
+            "/settlements/{id}/storefront/{service_id}/offer",
             post(finalize_merchant_offer),
         )
         .route("/settlements/{id}/weapons", get(weapons))
@@ -4306,11 +4332,14 @@ async fn merchants(
 
 async fn finalize_merchant_offer(
     State(state): State<AppState>,
-    Path(id): Path<String>,
+    Path((id, service_id)): Path<(String, String)>,
     session: Session,
     Form(form): Form<MerchantOfferForm>,
 ) -> Redirect {
-    let fallback = format!("/settlements/{id}/merchants");
+    let Some(location_id) = merchant_service_location(&service_id) else {
+        return Redirect::to(&format!("/settlements/{id}/merchants"));
+    };
+    let fallback = format!("/settlements/{id}/{service_id}");
     let mut trade_completed = false;
     if let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await {
         if let (Ok(buys), Ok(sells)) = (form.buys(), form.sells()) {
@@ -4322,14 +4351,19 @@ async fn finalize_merchant_offer(
                 .into_iter()
                 .map(|entry| (entry.id, entry.quantity))
                 .unzip();
-            if !items.is_empty() || !sell_ids.is_empty() {
+            let provider_npc_id = merchant_provider_id(&state, &id, &service_id, location_id).await;
+            if items.is_empty() && sell_ids.is_empty() {
+                trade_completed = true;
+            } else if let Some(provider_npc_id) = provider_npc_id {
                 match state
                     .db
                     .call(
-                        "finalize_merchant_trade",
+                        "finalize_storefront_trade",
                         &[
                             json!(character.id),
-                            json!(id),
+                            json!(&id),
+                            json!(&service_id),
+                            json!(provider_npc_id),
                             json!(items),
                             json!(quantities),
                             json!(sell_ids),
@@ -4344,8 +4378,6 @@ async fn finalize_merchant_offer(
                         tracing::warn!(%error, settlement_id = %id, "merchant offer was rejected");
                     }
                 }
-            } else {
-                trade_completed = true;
             }
         }
     }
@@ -4354,6 +4386,55 @@ async fn finalize_merchant_offer(
     } else {
         Redirect::to(&fallback)
     }
+}
+
+fn merchant_service_location(service_id: &str) -> Option<&'static str> {
+    match service_id {
+        "merchants" => Some("market"),
+        "weapons" => Some("forge"),
+        "armor" => Some("armoury"),
+        "clothing" => Some("tailor"),
+        "inn" => Some("inn"),
+        _ => None,
+    }
+}
+
+async fn merchant_provider_id(
+    state: &AppState,
+    settlement_id: &str,
+    service_id: &str,
+    location_id: &str,
+) -> Option<String> {
+    let settlement_literal = sql_string_literal(settlement_id);
+    let providers_sql =
+        format!("SELECT * FROM settlement_npc WHERE home_settlement_id = {settlement_literal}");
+    let presences_sql =
+        format!("SELECT * FROM settlement_npc_presence WHERE settlement_id = {settlement_literal}");
+    let (providers, presences) = tokio::join!(
+        state.db.query::<MerchantProviderRow>(&providers_sql),
+        state
+            .db
+            .query::<MerchantProviderPresenceRow>(&presences_sql),
+    );
+    let providers = providers.ok()?;
+    let presences = presences.ok()?;
+    let mut matches = providers.into_iter().filter_map(|provider| {
+        (provider.home_settlement_id == settlement_id && provider.service_id == service_id)
+            .then_some(provider)
+            .and_then(|provider| {
+                presences
+                    .iter()
+                    .any(|presence| {
+                        presence.npc_id == provider.id
+                            && presence.settlement_id == settlement_id
+                            && presence.location_id == location_id
+                            && presence.is_default
+                    })
+                    .then_some(provider.id)
+            })
+    });
+    let provider = matches.next()?;
+    matches.next().is_none().then_some(provider)
 }
 
 async fn rest_at_settlement_map(
