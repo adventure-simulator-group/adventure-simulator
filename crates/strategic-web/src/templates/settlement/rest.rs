@@ -52,7 +52,7 @@ pub struct SoapRestPreview {
     pub alcohol_will_be_consumed: bool,
 }
 
-pub(super) fn soap_wash_preview(preview: SoapRestPreview) -> Markup {
+fn soap_wash_preview(preview: SoapRestPreview) -> Markup {
     let soap_tooltip = if preview.total_units > 0 {
         let source = if preview.personal_units > 0 && preview.shared_units > 0 {
             format!(
@@ -196,11 +196,11 @@ pub(super) fn rest_service_menu(
     }
 }
 
-pub(super) fn settlement_rest_duration_control(initial_minutes: u64, unit: &str) -> Markup {
+fn settlement_rest_duration_control(initial_minutes: u64, unit: &str) -> Markup {
     wake_time_rest_duration_control("settlement-rest", initial_minutes, unit, 1_440, None, None)
 }
 
-pub(super) fn wake_time_rest_duration_control(
+fn wake_time_rest_duration_control(
     id_prefix: &str,
     initial_minutes: u64,
     unit: &str,
@@ -253,7 +253,7 @@ pub(super) fn wake_time_rest_duration_control(
     }
 }
 
-pub(super) fn format_rest_duration(minutes: u64) -> String {
+fn format_rest_duration(minutes: u64) -> String {
     let days = minutes / 1_440;
     let hours = minutes % 1_440 / 60;
     let minutes = minutes % 60;
@@ -273,7 +273,7 @@ pub(super) fn format_rest_duration(minutes: u64) -> String {
     parts.join(" ")
 }
 
-pub(super) fn days_to_full_health(limbs: &CharacterLimbs) -> u16 {
+fn days_to_full_health(limbs: &CharacterLimbs) -> u16 {
     let lowest_health = [
         limbs.left_arm_health,
         limbs.right_arm_health,
@@ -311,9 +311,9 @@ pub(crate) fn rest_default_minutes(
 }
 
 /// This must match the strategic module's `BLOOD_RECOVERY_FRACTION_PER_DAY`.
-pub(super) const BLOOD_RECOVERY_FRACTION_PER_DAY: f32 = 0.01;
+const BLOOD_RECOVERY_FRACTION_PER_DAY: f32 = 0.01;
 
-pub(super) fn blood_recovery_minutes(condition: &CharacterCondition) -> u64 {
+fn blood_recovery_minutes(condition: &CharacterCondition) -> u64 {
     if condition.maximum_blood_ml <= 0.0 {
         return 0;
     }
@@ -329,7 +329,7 @@ mod tests {
     use crate::spacetimedb::*;
 
     #[test]
-    fn post_rest_result_points_live_refresh_at_a_gettable_location() {
+    fn rest_pages_keep_a_gettable_refresh_marker_across_repeated_refreshes() {
         let summary = RestSummary {
             minutes: 480,
             gold_spent: 1,
@@ -338,17 +338,24 @@ mod tests {
             healed: Vec::new(),
             trained: Vec::new(),
         };
-        let markup = rest_service_menu(
-            "Inn",
-            "riverdale",
-            "inn",
-            None,
-            Some(&summary),
-            SoapRestPreview::default(),
-        )
-        .into_string();
-        assert!(markup.contains("data-live-refresh-url=\"/settlements/riverdale/inn\""));
-        assert!(!markup.contains("data-live-refresh-url=\"/settlements/riverdale/rest/inn\""));
+        for (location, kind, expected) in [
+            ("Inn", "inn", "/settlements/riverdale/inn"),
+            ("Church", "temple", "/settlements/riverdale/religion"),
+        ] {
+            for rest_summary in [Some(&summary), None] {
+                let markup = rest_service_menu(
+                    location,
+                    "riverdale",
+                    kind,
+                    None,
+                    rest_summary,
+                    SoapRestPreview::default(),
+                )
+                .into_string();
+                assert!(markup.contains(&format!("data-live-refresh-url=\"{expected}\"")));
+                assert!(!markup.contains("data-live-refresh-url=\"/settlements/riverdale/rest/"));
+            }
+        }
     }
 
     #[test]

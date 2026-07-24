@@ -166,10 +166,7 @@ pub fn settlement_npc_location_page(
     )
 }
 
-fn settlement_alias_labels(
-    settlement: &Settlement,
-    aliases: &[SettlementAlias],
-) -> Vec<String> {
+fn settlement_alias_labels(settlement: &Settlement, aliases: &[SettlementAlias]) -> Vec<String> {
     let canonical = settlement.name.to_lowercase();
     let mut labels = BTreeSet::new();
     for alias in aliases {

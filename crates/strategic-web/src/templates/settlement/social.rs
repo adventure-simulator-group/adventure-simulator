@@ -8,9 +8,7 @@ use super::{
     trade::{item_name_with_quality, trade_inventory_table_header},
 };
 use crate::spacetimedb::{Character, InventoryItem, ItemDefinition};
-use crate::templates::{
-    decorative_game_icon, item_display_name, item_type_icon, sidebar_section,
-};
+use crate::templates::{decorative_game_icon, item_display_name, item_type_icon, sidebar_section};
 
 #[derive(Debug, Clone, Default)]
 pub struct SocialPresentation {
@@ -23,7 +21,7 @@ pub struct SocialPresentation {
     pub unavailable: bool,
 }
 
-pub(super) fn social_actions(
+fn social_actions(
     is_self: bool,
     topic: adventuresim_core::social::SocialTopic,
 ) -> Vec<(
@@ -48,7 +46,7 @@ pub(super) fn social_actions(
     .collect()
 }
 
-pub(super) fn perceived_trait(axis: &str, value: i8) -> (&'static str, &'static str) {
+fn perceived_trait(axis: &str, value: i8) -> (&'static str, &'static str) {
     match (axis, value.signum()) {
         ("drive", 1) => ("Drive", "Ambitious"),
         ("drive", -1) => ("Drive", "Content"),
@@ -66,7 +64,7 @@ pub(super) fn perceived_trait(axis: &str, value: i8) -> (&'static str, &'static 
     }
 }
 
-pub(super) fn familiarity_label(hours: f32) -> String {
+fn familiarity_label(hours: f32) -> String {
     if hours.is_finite() && hours > 0.0 && hours < 1.0 {
         "<1 hours".into()
     } else {
@@ -74,14 +72,14 @@ pub(super) fn familiarity_label(hours: f32) -> String {
     }
 }
 
-pub(super) fn belief_style(confidence: f32) -> String {
+fn belief_style(confidence: f32) -> String {
     format!(
         "--belief-confidence:{:.0}%",
         confidence.clamp(0.0, 1.0) * 100.0
     )
 }
 
-pub(super) fn personality_reaction_hint(axis: &str, value: i8) -> &'static str {
+fn personality_reaction_hint(axis: &str, value: i8) -> &'static str {
     match (axis, value.signum()) {
         ("drive", 1) => {
             "Likely reaction: Rallying can motivate them after defeat; pity or flippancy may offend."
@@ -111,7 +109,7 @@ pub(super) fn personality_reaction_hint(axis: &str, value: i8) -> &'static str {
     }
 }
 
-pub(super) fn belief_tooltip(belief: &crate::spacetimedb::SocialBelief) -> String {
+fn belief_tooltip(belief: &crate::spacetimedb::SocialBelief) -> String {
     format!(
         "Confidence: {:.0}%\n{}",
         belief.confidence.clamp(0.0, 1.0) * 100.0,
@@ -310,7 +308,7 @@ pub(super) fn settlement_npc_chat_area(
     )
 }
 
-pub(super) fn chat_area(
+fn chat_area(
     location: &str,
     _active_character: Option<&Character>,
     service_context: Option<(&str, &str)>,

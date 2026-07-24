@@ -124,12 +124,12 @@ pub fn settlement_map_page(
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct MapCurrentLocation<'a> {
+struct MapCurrentLocation<'a> {
     name: &'a str,
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct MapAbandonableQuest<'a> {
+struct MapAbandonableQuest<'a> {
     id: &'a str,
     title: &'a str,
 }
@@ -159,7 +159,7 @@ pub(crate) fn map_destination_list_with_rest(
     )
 }
 
-pub(super) fn map_destination_list_with_context(
+fn map_destination_list_with_context(
     destinations: &[TravelDestination],
     selected_id: Option<&str>,
     base_path: &str,
@@ -444,7 +444,7 @@ pub(crate) fn travel_planner_bar(
     )
 }
 
-pub(super) fn quest_destination_tooltip(destination: &TravelDestination) -> Option<String> {
+fn quest_destination_tooltip(destination: &TravelDestination) -> Option<String> {
     destination.quest_in_progress.then(|| {
         destination.summary.as_ref().map_or_else(
             || destination.description.clone(),
@@ -581,7 +581,7 @@ pub(crate) fn travel_planner_bar_for(
     }
 }
 
-pub(super) fn format_camp_stops(stops: &[u64]) -> String {
+fn format_camp_stops(stops: &[u64]) -> String {
     stops
         .iter()
         .map(u64::to_string)
@@ -589,7 +589,7 @@ pub(super) fn format_camp_stops(stops: &[u64]) -> String {
         .join(",")
 }
 
-pub(super) fn format_terrain_spans(destination: &TravelDestination) -> String {
+fn format_terrain_spans(destination: &TravelDestination) -> String {
     destination
         .terrain_route
         .as_ref()
@@ -631,7 +631,7 @@ pub(super) fn format_terrain_spans(destination: &TravelDestination) -> String {
         })
 }
 
-pub(super) fn format_camp_forecasts(destination: &TravelDestination) -> String {
+fn format_camp_forecasts(destination: &TravelDestination) -> String {
     destination
         .camp_forecasts
         .iter()
@@ -646,7 +646,7 @@ pub(super) fn format_camp_forecasts(destination: &TravelDestination) -> String {
         .join("|")
 }
 
-pub(super) fn format_itinerary_segments(segments: &[ItinerarySegment]) -> String {
+fn format_itinerary_segments(segments: &[ItinerarySegment]) -> String {
     segments
         .iter()
         .map(|segment| {
@@ -671,10 +671,7 @@ pub(super) fn format_itinerary_segments(segments: &[ItinerarySegment]) -> String
         .join("|")
 }
 
-pub(super) fn format_persisted_itinerary(
-    journey: &PartyJourney,
-    itinerary: &PartyJourneyItinerary,
-) -> String {
+fn format_persisted_itinerary(journey: &PartyJourney, itinerary: &PartyJourneyItinerary) -> String {
     let mut camps: Vec<_> = itinerary
         .actual_camp_intervals
         .iter()
@@ -777,7 +774,7 @@ pub(super) fn format_persisted_itinerary(
     output.join("|")
 }
 
-pub(super) fn format_legacy_persisted_itinerary(journey: &PartyJourney) -> String {
+fn format_legacy_persisted_itinerary(journey: &PartyJourney) -> String {
     let total_movement = if journey.destination.case_site_id().is_some() {
         journey.total_minutes.saturating_mul(2)
     } else {
@@ -796,7 +793,7 @@ pub(crate) struct CampTravelDestination {
     pub current: bool,
 }
 
-pub(super) fn camp_fire_is_lit(
+fn camp_fire_is_lit(
     journey: Option<&PartyJourney>,
     itinerary: Option<&PartyJourneyItinerary>,
 ) -> bool {
@@ -906,7 +903,7 @@ pub fn camp_page(
     )
 }
 
-pub(super) fn strategic_encounter_panel(encounter: &StrategicEncounter) -> Markup {
+fn strategic_encounter_panel(encounter: &StrategicEncounter) -> Markup {
     let threat = encounter.archetype.parse::<ThreatId>().ok();
     let threat_name = threat
         .map(|id| id.display_name(u32::from(encounter.enemy_count)))
@@ -968,7 +965,7 @@ pub(super) fn strategic_encounter_panel(encounter: &StrategicEncounter) -> Marku
     }
 }
 
-pub(super) fn format_persisted_terrain_spans(route: Option<&PartyJourneyRoute>) -> String {
+fn format_persisted_terrain_spans(route: Option<&PartyJourneyRoute>) -> String {
     route.map_or_else(String::new, |route| {
         route
             .spans

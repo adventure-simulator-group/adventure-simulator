@@ -1,25 +1,24 @@
-use adventuresim_core::{
-    equipment::EncumbranceSummary,
-    strategic_schedule::CombatTrainingProfile,
-};
+use adventuresim_core::{equipment::EncumbranceSummary, strategic_schedule::CombatTrainingProfile};
 use maud::{Markup, html};
 
 use super::{
     character_details::religion_name,
+    character_health::stat_icon,
     character_skills::{SkillRankBarOptions, skill_rank_bar},
     chrome::{party_portrait_overlay, visual_stage},
     context::LocationView,
     rest::{RestSummary, SoapRestPreview, rest_default_minutes, rest_service_menu},
     social::{
         inventory_rail, merchant_offers_rail, npc_description_stage, npc_location_id,
-        npc_portrait_strip, player_chat_area, settlement_chat_area,
-        settlement_chat_area_with_info, settlement_npc_chat_area,
+        npc_portrait_strip, player_chat_area, settlement_chat_area, settlement_chat_area_with_info,
+        settlement_npc_chat_area,
     },
 };
 use crate::medical::MedicalPresentation;
 use crate::spacetimedb::{
     Character, CharacterCondition, CharacterEquip, CharacterLimbs, CharacterStats, FoodLot,
     InventoryItem, InventoryQuantityTarget, ItemDefinition, ItemSlot, PartyInventoryItem,
+    Settlement,
 };
 use crate::templates::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use crate::templates::{
@@ -502,7 +501,7 @@ pub(super) fn cooking_activity_dialog(
     }
 }
 
-pub(super) fn cooking_method(
+fn cooking_method(
     value: &str,
     label: &str,
     icon: &str,
@@ -714,7 +713,7 @@ pub(super) fn service_page(
     )
 }
 
-pub(super) fn party_trade_inventory_rail(
+fn party_trade_inventory_rail(
     character: &Character,
     inventory: &[InventoryItem],
     items: &[crate::spacetimedb::ItemDefinition],
@@ -762,7 +761,7 @@ pub(super) fn party_trade_inventory_rail(
     }
 }
 
-pub(super) fn discard_inventory_rail(
+fn discard_inventory_rail(
     character: &Character,
     inventory: &[InventoryItem],
     items: &[crate::spacetimedb::ItemDefinition],
@@ -1100,11 +1099,11 @@ pub fn party_pool_page(
     location.render_layout("Party inventory", content, Some(&character.name))
 }
 
-pub(super) fn item_weight(item: Option<&crate::spacetimedb::ItemDefinition>) -> String {
+fn item_weight(item: Option<&crate::spacetimedb::ItemDefinition>) -> String {
     item.map_or_else(|| "—".to_owned(), |item| weight_display(item.weight))
 }
 
-pub(super) fn merchant_inventory_weight(
+fn merchant_inventory_weight(
     definition: Option<&crate::spacetimedb::ItemDefinition>,
     food_lot: Option<&FoodLot>,
 ) -> String {
@@ -1114,7 +1113,7 @@ pub(super) fn merchant_inventory_weight(
     )
 }
 
-pub(super) fn merchant_inventory_sell_price(
+fn merchant_inventory_sell_price(
     definition: Option<&crate::spacetimedb::ItemDefinition>,
     food_lot: Option<&FoodLot>,
 ) -> u32 {
@@ -1134,7 +1133,7 @@ pub(super) fn merchant_inventory_sell_price(
     )
 }
 
-pub(super) fn encumbrance_inventory_rail(
+fn encumbrance_inventory_rail(
     content: Markup,
     footer_controls: Markup,
     summary: EncumbranceSummary,
@@ -1148,7 +1147,7 @@ pub(super) fn encumbrance_inventory_rail(
     }
 }
 
-pub(super) fn encumbrance_meter(summary: EncumbranceSummary) -> Markup {
+fn encumbrance_meter(summary: EncumbranceSummary) -> Markup {
     let penalty_percent = summary.penalty_fraction() * 100.0;
     let weight_text = format!("{:.1} / {:.1} kg", summary.burden_kg, summary.capacity_kg);
     let penalty_text = format!("-{penalty_percent:.1}%");
@@ -1178,7 +1177,7 @@ pub(super) fn encumbrance_meter(summary: EncumbranceSummary) -> Markup {
     }
 }
 
-pub(super) fn equipment_checkbox(
+fn equipment_checkbox(
     inventory: &InventoryItem,
     definition: Option<&crate::spacetimedb::ItemDefinition>,
     equipped: bool,
@@ -1204,7 +1203,7 @@ pub(super) fn equipment_checkbox(
     }
 }
 
-pub(super) fn item_value(item: Option<&crate::spacetimedb::ItemDefinition>) -> String {
+fn item_value(item: Option<&crate::spacetimedb::ItemDefinition>) -> String {
     item.and_then(|item| item.base_value)
         .map_or_else(|| "—".to_owned(), |value| value.to_string())
 }
@@ -1225,7 +1224,7 @@ pub(in crate::templates) fn item_name_with_quality(
     }
 }
 
-pub(super) fn item_name_with_display(
+fn item_name_with_display(
     item_id: &str,
     display_name: &str,
     definition: Option<&crate::spacetimedb::ItemDefinition>,
@@ -1287,7 +1286,7 @@ pub(super) fn item_name_with_display(
     }
 }
 
-pub(super) fn weight_display(weight: f32) -> String {
+fn weight_display(weight: f32) -> String {
     let display = format!("{weight:.2}");
     display
         .trim_end_matches('0')
@@ -1295,7 +1294,7 @@ pub(super) fn weight_display(weight: f32) -> String {
         .to_owned()
 }
 
-pub(super) fn trade_inventory_table(
+fn trade_inventory_table(
     namespace: &str,
     optional_columns: InventoryColumnSet,
     show_quantities: bool,
@@ -1314,19 +1313,14 @@ pub(super) fn trade_inventory_table(
     .render()
 }
 
-pub(super) fn target_quantity(targets: &[InventoryQuantityTarget], item_id: &str) -> u32 {
+fn target_quantity(targets: &[InventoryQuantityTarget], item_id: &str) -> u32 {
     targets
         .iter()
         .find(|target| target.item_id == item_id)
         .map_or(0, |target| target.quantity)
 }
 
-pub(super) fn quantity_target_control(
-    quantity: u32,
-    target: u32,
-    item_id: &str,
-    party_scope: bool,
-) -> Markup {
+fn quantity_target_control(quantity: u32, target: u32, item_id: &str, party_scope: bool) -> Markup {
     let item_name = item_display_name(item_id);
     html! {
         span class="inventory-target-control" data-target-control data-quantity=(quantity) data-item-id=(item_id) data-party-scope=(party_scope) title=(format!("Carrying {quantity}; target {target}")) {
@@ -1341,25 +1335,20 @@ pub(crate) fn transfer_glyph(count: usize) -> Markup {
     html! { span class=(format!("inventory-transfer-glyph arrows-{count}")) aria-hidden="true" { @for _ in 0..count { i {} } } }
 }
 
-pub(super) fn disabled_transfer_button(direction: &str, explanation: &str) -> Markup {
+fn disabled_transfer_button(direction: &str, explanation: &str) -> Markup {
     html! {
         button type="button" class=(format!("trade-transfer trade-transfer-{direction}")) disabled title=(explanation) aria-label=(explanation) { (transfer_glyph(1)) }
     }
 }
 
-pub(super) fn merchant_buy_controls(
-    item_id: &str,
-    price: u32,
-    target: u32,
-    available: u32,
-) -> Markup {
+fn merchant_buy_controls(item_id: &str, price: u32, target: u32, available: u32) -> Markup {
     let item_name = item_display_name(item_id);
     html! { span class="inventory-row-actions" {
         button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-merchant-buy=(item_id) data-merchant-buy-price=(price) data-transfer-mode="one" data-target=(target) data-count=(available) data-label-one=(format!("Buy one {item_name}")) data-label-target=(format!("Buy {item_name} to target")) data-label-all=(format!("Buy all {item_name}")) aria-label=(format!("Buy one {item_name}")) title=(format!("Buy one {item_name}")) { (transfer_glyph(1)) }
     } }
 }
 
-pub(super) fn merchant_sell_controls(
+fn merchant_sell_controls(
     id: u64,
     item_id: &str,
     price: u32,
@@ -1372,7 +1361,7 @@ pub(super) fn merchant_sell_controls(
     } }
 }
 
-pub(super) fn merchant_sell_repair_controls(
+fn merchant_sell_repair_controls(
     id: u64,
     item_id: &str,
     price: u32,
@@ -1393,7 +1382,7 @@ pub(super) fn merchant_sell_repair_controls(
     } }
 }
 
-pub(super) fn condition_bar(
+fn condition_bar(
     condition: Option<&crate::spacetimedb::ItemCondition>,
     repair_skill: Option<u8>,
 ) -> Markup {
@@ -1420,7 +1409,7 @@ pub(super) fn condition_bar(
     }
 }
 
-pub(super) fn completed_repair_condition_bar(
+fn completed_repair_condition_bar(
     condition: Option<&crate::spacetimedb::ItemCondition>,
     smith_skill: u8,
 ) -> Markup {
@@ -1441,7 +1430,7 @@ pub(super) fn completed_repair_condition_bar(
     condition_bar(Some(&repaired), None)
 }
 
-pub(super) fn repair_all_control(settlement: &Settlement, service_id: &str) -> Markup {
+fn repair_all_control(settlement: &Settlement, service_id: &str) -> Markup {
     html! {
         form class="repair-all-form inventory-footer-repair" action=(format!("/settlements/{}/{}/repair-all", settlement.id, service_id)) method="post" {
             button type="submit" class="repair-all-button" title="Entrust all eligible items for repair" aria-label="Repair all eligible items" {
@@ -1451,7 +1440,7 @@ pub(super) fn repair_all_control(settlement: &Settlement, service_id: &str) -> M
     }
 }
 
-pub(super) fn repair_submit_control(
+fn repair_submit_control(
     settlement: &Settlement,
     service_id: &str,
     inventory_item_id: u64,
@@ -1485,7 +1474,7 @@ pub(super) fn repair_submit_control(
     }
 }
 
-pub(super) fn repair_custody_panel(
+fn repair_custody_panel(
     settlement: &Settlement,
     shop: MerchantShop,
     orders: &[crate::spacetimedb::RepairOrder],
@@ -1585,7 +1574,7 @@ pub(crate) fn inventory_footer_controls(
     inventory_footer_controls_with_leading(None, action, target_label, all_label)
 }
 
-pub(super) fn inventory_footer_controls_with_leading(
+fn inventory_footer_controls_with_leading(
     leading: Option<Markup>,
     action: &str,
     target_label: &str,
@@ -1598,7 +1587,7 @@ pub(super) fn inventory_footer_controls_with_leading(
     } }
 }
 
-pub(super) fn currency_header(label: &str) -> Markup {
+fn currency_header(label: &str) -> Markup {
     game_icon(label, "coins")
 }
 

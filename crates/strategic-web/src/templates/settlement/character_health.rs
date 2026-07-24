@@ -1,9 +1,7 @@
 use maud::{Markup, html};
 
 use super::{
-    character_skills::{
-        SkillAction, SkillRankBarOptions, skill_action_icon, skill_rank_bar,
-    },
+    character_skills::{SkillAction, SkillRankBarOptions, skill_action_icon, skill_rank_bar},
     chrome::party_portrait_overlay,
     context::{LocationKind, LocationView},
     trade::filth_status_bar,
@@ -17,7 +15,7 @@ use crate::templates::{
     decorative_game_icon, game_icon, item_display_name, sidebar_section, stat_icon_path,
 };
 
-pub(super) fn surgery_limb_name(limb: LimbRegion) -> &'static str {
+fn surgery_limb_name(limb: LimbRegion) -> &'static str {
     match limb {
         LimbRegion::LeftArm => "Left arm",
         LimbRegion::RightArm => "Right arm",
@@ -29,7 +27,7 @@ pub(super) fn surgery_limb_name(limb: LimbRegion) -> &'static str {
     }
 }
 
-pub(super) fn surgery_limb_slug(limb: LimbRegion) -> &'static str {
+fn surgery_limb_slug(limb: LimbRegion) -> &'static str {
     match limb {
         LimbRegion::LeftArm => "left-arm",
         LimbRegion::RightArm => "right-arm",
@@ -41,15 +39,11 @@ pub(super) fn surgery_limb_slug(limb: LimbRegion) -> &'static str {
     }
 }
 
-pub(super) fn surgery_duration(procedure: &str, skill: f32, dc: f32) -> u64 {
+fn surgery_duration(procedure: &str, skill: f32, dc: f32) -> u64 {
     adventuresim_core::surgery::procedure_duration_minutes(procedure, skill, dc)
 }
 
-pub(super) fn surgery_procedure_skill(
-    procedure: &str,
-    checks: [f32; 3],
-    self_treatment: bool,
-) -> f32 {
+fn surgery_procedure_skill(procedure: &str, checks: [f32; 3], self_treatment: bool) -> f32 {
     adventuresim_core::surgery::procedure_skill(
         procedure,
         checks[0],
@@ -60,13 +54,13 @@ pub(super) fn surgery_procedure_skill(
 }
 
 #[derive(Clone, Copy)]
-pub(super) enum SurgeryItemRequirement {
+enum SurgeryItemRequirement {
     BandageConsumed,
     SurgeryKitReusable,
     SplintEquipped,
 }
 
-pub(super) fn surgery_supply(label: &str, icon: &str, quantity: u32) -> Markup {
+fn surgery_supply(label: &str, icon: &str, quantity: u32) -> Markup {
     let description = format!("{label}: {quantity} available");
     html! {
         div class="surgery-supply" data-strategic-tooltip=(&description)
@@ -77,7 +71,7 @@ pub(super) fn surgery_supply(label: &str, icon: &str, quantity: u32) -> Markup {
     }
 }
 
-pub(super) fn surgery_item_requirement(requirement: SurgeryItemRequirement) -> Markup {
+fn surgery_item_requirement(requirement: SurgeryItemRequirement) -> Markup {
     let (label, accessible_label, icon) = match requirement {
         SurgeryItemRequirement::BandageConsumed => {
             ("Expend one bandage", "Expend one bandage", "bandage-roll")
@@ -110,11 +104,7 @@ pub(super) fn surgery_item_requirement(requirement: SurgeryItemRequirement) -> M
     }
 }
 
-pub(super) fn surgery_difficulty_meter(
-    procedure_label: &str,
-    dc: f32,
-    effective_skill: f32,
-) -> Markup {
+fn surgery_difficulty_meter(procedure_label: &str, dc: f32, effective_skill: f32) -> Markup {
     let difficulty = dc.max(0.0);
     let over_cap = difficulty > 5.0;
     let meter_label = format!("{procedure_label} procedure difficulty");
@@ -143,7 +133,7 @@ pub(super) fn surgery_difficulty_meter(
     }
 }
 
-pub(super) fn surgery_procedure_row(
+fn surgery_procedure_row(
     action: &str,
     label: &str,
     icon: &str,
@@ -425,7 +415,7 @@ pub(super) fn strategic_condition_rail(
     }
 }
 
-pub(super) fn need_balance_meter(
+fn need_balance_meter(
     label: &str,
     icon: &str,
     deficit_label: &str,
@@ -566,7 +556,7 @@ pub(super) fn medical_examination_popup(
     }
 }
 
-pub(super) fn regional_health_values(limbs: Option<&CharacterLimbs>) -> [f32; 7] {
+fn regional_health_values(limbs: Option<&CharacterLimbs>) -> [f32; 7] {
     limbs.map_or([1.0; 7], |limbs| {
         [
             limbs.left_arm_health,
@@ -640,7 +630,7 @@ pub(super) fn party_attributes_rail(
     }
 }
 
-pub(super) fn limb_attribute_column(
+fn limb_attribute_column(
     name: &str,
     slug: &str,
     side: &str,
@@ -667,7 +657,7 @@ pub(super) fn limb_attribute_column(
     )
 }
 
-pub(super) fn attribute_group(
+fn attribute_group(
     name: &str,
     slug: &str,
     health: f32,
@@ -693,7 +683,7 @@ pub(super) fn attribute_group(
     )
 }
 
-pub(super) fn attribute_group_with_labels(
+fn attribute_group_with_labels(
     name: &str,
     slug: &str,
     health: f32,
@@ -732,7 +722,7 @@ pub(super) fn attribute_group_with_labels(
     }
 }
 
-pub(super) fn regional_health_bar(
+fn regional_health_bar(
     name: &str,
     physical_health: f32,
     medical: &MedicalPresentation,
@@ -857,13 +847,7 @@ pub(super) fn regional_health_bar(
     }
 }
 
-pub(super) fn attribute_row(
-    name: &str,
-    icon: &str,
-    value: f32,
-    health: f32,
-    show_label: bool,
-) -> Markup {
+fn attribute_row(name: &str, icon: &str, value: f32, health: f32, show_label: bool) -> Markup {
     let effective_value = value * health.clamp(0.0, 1.0);
     let current_width = (effective_value.clamp(0.0, 5.0) / 5.0) * 100.0;
     let damage_width = ((value - effective_value).max(0.0) / 5.0) * 100.0;

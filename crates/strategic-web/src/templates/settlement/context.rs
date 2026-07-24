@@ -2,8 +2,9 @@ use std::{fmt, str::FromStr};
 
 use maud::Markup;
 
-use super::{
-    SettlementCategory, camp_location_layout_with_session, quest_location_layout_with_session,
+use crate::spacetimedb::SettlementCategory;
+use crate::templates::{
+    camp_location_layout_with_session, quest_location_layout_with_session,
     settlement_layout_with_session,
 };
 

@@ -31,7 +31,7 @@ pub struct ActivityPreviewRates {
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct ProfessionActivityPreview {
+struct ProfessionActivityPreview {
     training_rates: Vec<(String, f32)>,
     apprenticeship_accrued: u64,
     practice_accrued: u64,
@@ -40,8 +40,8 @@ pub(super) struct ProfessionActivityPreview {
     tier_label: &'static str,
 }
 
-pub(super) const PROFESSION_ACCRUAL_SCALE: u64 = MINUTES_PER_DAY;
-pub(super) const APPRENTICESHIP_REWARD_THRESHOLD: u64 = 8 * 60 * PROFESSION_ACCRUAL_SCALE;
+const PROFESSION_ACCRUAL_SCALE: u64 = MINUTES_PER_DAY;
+const APPRENTICESHIP_REWARD_THRESHOLD: u64 = 8 * 60 * PROFESSION_ACCRUAL_SCALE;
 
 impl ProfessionActivityPreview {
     fn reward_delta(&self, allocation_name: &str, minutes: u16) -> [f32; 2] {
@@ -325,7 +325,7 @@ pub(super) fn party_skills_rail(
     }
 }
 
-pub(super) fn skills_table(
+fn skills_table(
     title: &str,
     skills: &CharacterSkills,
     head_health: f32,
@@ -432,7 +432,7 @@ pub(super) fn skills_table(
     }
 }
 
-pub(super) fn terrain_skill_rows(skills: &CharacterSkills, schedule_context: bool) -> Markup {
+fn terrain_skill_rows(skills: &CharacterSkills, schedule_context: bool) -> Markup {
     let entries = [
         (
             "Plains",
@@ -491,7 +491,7 @@ pub(super) fn terrain_skill_rows(skills: &CharacterSkills, schedule_context: boo
     }
 }
 
-pub(super) fn language_skill_rows(skills: &CharacterSkills, schedule_context: bool) -> Markup {
+fn language_skill_rows(skills: &CharacterSkills, schedule_context: bool) -> Markup {
     use adventuresim_world_schema::{OralLanguage, WrittenLanguage};
     let oral_effective = OralLanguage::ALL
         .into_iter()
@@ -531,7 +531,7 @@ pub(super) fn language_skill_rows(skills: &CharacterSkills, schedule_context: bo
     }
 }
 
-pub(super) fn religion_skill_rows(
+fn religion_skill_rows(
     skills: &CharacterSkills,
     health: f32,
     schedule: Option<&CharacterTrainingSchedule>,
@@ -608,7 +608,7 @@ pub(super) fn religion_skill_rows(
     }
 }
 
-pub(super) fn social_skill_rows(
+fn social_skill_rows(
     skills: &CharacterSkills,
     health: f32,
     schedule: Option<&CharacterTrainingSchedule>,
@@ -675,7 +675,7 @@ pub(super) fn social_skill_rows(
     }
 }
 
-pub(super) fn combat_skill_rows(
+fn combat_skill_rows(
     skills: &CharacterSkills,
     head_health: f32,
     upper_health: f32,
@@ -707,7 +707,7 @@ pub(super) fn combat_skill_rows(
     }
 }
 
-pub(super) fn combat_meta_group(
+fn combat_meta_group(
     name: &str,
     icon: &str,
     schedule: Option<&CharacterTrainingSchedule>,
@@ -761,7 +761,7 @@ pub(super) fn combat_meta_group(
     }
 }
 
-pub(super) fn religion_expand_button(primary: OfficialReligion) -> Markup {
+fn religion_expand_button(primary: OfficialReligion) -> Markup {
     html! {
         button type="button" class="religion-expand-button" data-religion-expand
             aria-expanded="false"
@@ -772,11 +772,11 @@ pub(super) fn religion_expand_button(primary: OfficialReligion) -> Markup {
     }
 }
 
-pub(super) fn schedule_header_icon(icon: &str, label: &str) -> Markup {
+fn schedule_header_icon(icon: &str, label: &str) -> Markup {
     html! { span class="schedule-header-icon" { (game_icon(label, icon)) } }
 }
 
-pub(super) fn party_skill_row(
+fn party_skill_row(
     name: &str,
     icon: &str,
     skill: Skill,
@@ -822,7 +822,7 @@ impl Default for SkillRankBarOptions<'_> {
     }
 }
 
-pub(super) fn skill_rail_bar_options() -> SkillRankBarOptions<'static> {
+fn skill_rail_bar_options() -> SkillRankBarOptions<'static> {
     SkillRankBarOptions {
         show_value: false,
         ..SkillRankBarOptions::default()
@@ -867,7 +867,7 @@ pub(super) fn skill_rank_bar(
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-pub(super) struct ActivityEffectRates {
+struct ActivityEffectRates {
     gold_per_hour: f32,
     virtue_per_hour: f32,
     morale_per_hour: f32,
@@ -879,13 +879,13 @@ pub(super) struct ActivityEffectRates {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(super) struct LeisurePreview {
+struct LeisurePreview {
     current_fatigue: f32,
     outcome: LeisureOutcome,
     fatigue_display: f32,
 }
 
-pub(super) fn core_daily_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
+fn core_daily_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
     DailySchedule {
         combat_training_minutes: schedule.combat_training_minutes,
         carousing_minutes: schedule.carousing_minutes,
@@ -906,10 +906,7 @@ pub(super) fn core_daily_schedule(schedule: &ScheduleAllocation) -> DailySchedul
     }
 }
 
-pub(super) fn leisure_preview(
-    schedule: &ScheduleAllocation,
-    current_fatigue: f32,
-) -> LeisurePreview {
+fn leisure_preview(schedule: &ScheduleAllocation, current_fatigue: f32) -> LeisurePreview {
     let outcome = settlement_leisure_outcome(
         core_daily_schedule(schedule),
         MINUTES_PER_DAY,
@@ -984,7 +981,7 @@ impl ActivityEffectRates {
     }
 }
 
-pub(super) fn activity_effect_cell(kind: &str, value: f32) -> Markup {
+fn activity_effect_cell(kind: &str, value: f32) -> Markup {
     let rounded = if kind == "gold" {
         value.round()
     } else {
@@ -1011,7 +1008,7 @@ pub(super) fn activity_effect_cell(kind: &str, value: f32) -> Markup {
     }
 }
 
-pub(super) fn activity_training_cell(
+fn activity_training_cell(
     label: &str,
     allocation_name: &str,
     minutes: u16,
@@ -1053,7 +1050,7 @@ pub(super) fn activity_training_cell(
     }
 }
 
-pub(super) fn schedule_special_row(
+fn schedule_special_row(
     label: &str,
     icon: &str,
     allocation_name: &str,
@@ -1113,7 +1110,7 @@ pub(super) fn schedule_special_row(
     }
 }
 
-pub(super) fn schedule_service_selection(name: &str, service_id: &str) -> Markup {
+fn schedule_service_selection(name: &str, service_id: &str) -> Markup {
     html! {
         tr hidden aria-hidden="true" {
             td colspan="9" { input type="hidden" name=(name) value=(service_id); }
@@ -1121,12 +1118,12 @@ pub(super) fn schedule_service_selection(name: &str, service_id: &str) -> Markup
     }
 }
 
-pub(super) fn profession_label(service_id: &str) -> &'static str {
+fn profession_label(service_id: &str) -> &'static str {
     adventuresim_core::profession::profession_for_service(service_id)
         .map_or("profession", |profession| profession.label)
 }
 
-pub(super) fn schedule_allocation_cell(name: &str, minutes: u16, editable: bool) -> Markup {
+fn schedule_allocation_cell(name: &str, minutes: u16, editable: bool) -> Markup {
     html! {
         td class="party-skill-allocation" data-schedule-value=(name) {
             @if editable {
@@ -1141,7 +1138,7 @@ pub(super) fn schedule_allocation_cell(name: &str, minutes: u16, editable: bool)
     }
 }
 
-pub(super) fn schedule_icon(label: &str, icon: &str, actionable: bool, activity: &str) -> Markup {
+fn schedule_icon(label: &str, icon: &str, actionable: bool, activity: &str) -> Markup {
     html! {
         @if actionable {
             button type="button" class="schedule-activity-button" data-activity-open=(activity)
@@ -1159,7 +1156,7 @@ pub(super) fn schedule_icon(label: &str, icon: &str, actionable: bool, activity:
     }
 }
 
-pub(super) fn immediate_activity_dialog(action: &str) -> Markup {
+fn immediate_activity_dialog(action: &str) -> Markup {
     html! {
         div class="activity-modal" data-activity-modal hidden {
             button type="button" class="activity-modal-backdrop" data-activity-close
@@ -1208,7 +1205,7 @@ pub(super) fn immediate_activity_dialog(action: &str) -> Markup {
     }
 }
 
-pub(super) fn format_schedule_hours(minutes: u16) -> String {
+fn format_schedule_hours(minutes: u16) -> String {
     let rounded = ((u32::from(minutes) + 7) / 15) * 15;
     let hours = rounded / 60;
     let fraction = match rounded % 60 {
