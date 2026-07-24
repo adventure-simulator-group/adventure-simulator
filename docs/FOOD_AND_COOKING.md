@@ -31,9 +31,10 @@ exposure identity includes character, lot, and strategic minute. Immunity
 applies and an unresolved Dysentery episode prevents duplicate infection.
 Travel, camp rest, and non-inn settlement rest apply elapsed nutritional demand
 once and then automatically consume the oldest pooled and personal food lots
-toward a zero balance. Paid inn rest is full board: its elapsed calories are
-covered, any pre-existing food deficit is cleared to zero, and carried food
-lots are preserved. Temple, private, field, and camp rest provide no food.
+toward a zero balance. Paid inn rest is full board: its elapsed calories and
+ordinary drinking water are covered, any pre-existing food or water deficit is
+cleared to zero, and personal and party provisions are preserved. Temple,
+private, field, and camp rest provide no food or drinking water.
 
 ## Cooking
 
