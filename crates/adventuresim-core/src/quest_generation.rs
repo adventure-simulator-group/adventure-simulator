@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const CATALOG_REVISION: &str = "questgen-2026-07-24.1";
+pub const CATALOG_REVISION: &str = "questgen-2026-07-24.2";
 pub const MAX_SOLVER_CANDIDATES: usize = 4_096;
 pub const MAX_SOLVER_VISITED_NODES: usize = 16_384;
 pub const MAX_FACTOR_TRACE_RECORDS: usize = 32_768;
@@ -341,6 +341,8 @@ pub struct TestimonyDraft {
     pub site_id: Option<SiteId>,
     /// Proposition superseded by this claim. Set only on the later correction.
     pub corrects_proposition_id: Option<String>,
+    /// Exact authored witnesses this account explicitly refers the observer to.
+    pub referred_witness_ids: Vec<WitnessId>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -2301,6 +2303,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                         decoy_site.clone()
                     }),
                     corrects_proposition_id: None,
+                    referred_witness_ids: vec![witness2.clone()],
                 },
                 TestimonyDraft {
                     proposition_id: pattern_prop.clone(),
@@ -2310,6 +2313,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     destination_stage: "textual".into(),
                     site_id: None,
                     corrects_proposition_id: None,
+                    referred_witness_ids: vec![],
                 },
             ],
         },
@@ -2334,6 +2338,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 destination_stage: "route_segment".into(),
                 site_id: Some(finale_site.clone()),
                 corrects_proposition_id: Some(description_prop.clone()),
+                referred_witness_ids: vec![],
             }],
         },
     ];
@@ -2931,13 +2936,75 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
             }
         }
     }
-    for witness in &case.witnesses {
+    let witness_positions = case
+        .witnesses
+        .iter()
+        .enumerate()
+        .map(|(index, witness)| (witness.id.clone(), index))
+        .collect::<BTreeMap<_, _>>();
+    let mut referral_edges = BTreeMap::<WitnessId, BTreeSet<WitnessId>>::new();
+    for (source_index, witness) in case.witnesses.iter().enumerate() {
         if witness.npc_id.is_empty()
             || witness.expected_location.is_empty()
             || witness.expected_location_label.is_empty()
             || witness.visible_description.is_empty()
         {
             errors.push(format!("{} lacks persistent referral data", witness.id.0));
+        }
+        for referred in witness
+            .testimony
+            .iter()
+            .flat_map(|draft| &draft.referred_witness_ids)
+        {
+            let Some(target_index) = witness_positions.get(referred) else {
+                errors.push(format!(
+                    "{} refers to missing witness {}",
+                    witness.id.0, referred.0
+                ));
+                continue;
+            };
+            if *target_index <= source_index {
+                errors.push(format!(
+                    "{} has a cyclic or backward witness referral to {}",
+                    witness.id.0, referred.0
+                ));
+            }
+            if !referral_edges
+                .entry(witness.id.clone())
+                .or_default()
+                .insert(referred.clone())
+            {
+                errors.push(format!(
+                    "{} repeats witness referral {}",
+                    witness.id.0, referred.0
+                ));
+            }
+        }
+    }
+    if let Some(primary) = case.witnesses.first() {
+        let mut reachable = BTreeSet::from([primary.id.clone()]);
+        let mut frontier = vec![primary.id.clone()];
+        while let Some(source) = frontier.pop() {
+            for target in referral_edges.get(&source).into_iter().flatten() {
+                if reachable.insert(target.clone()) {
+                    frontier.push(target.clone());
+                }
+            }
+        }
+        for witness in case.witnesses.iter().skip(1) {
+            let route_required = witness
+                .testimony
+                .iter()
+                .any(|draft| draft.corrects_proposition_id.is_some())
+                || case.actions.iter().any(|action| {
+                    action.target_kind == "contact" && action.target_id == witness.npc_id
+                });
+            if route_required && !reachable.contains(&witness.id) {
+                errors.push(format!(
+                    "{} is not reachable from the primary witness through authored referrals",
+                    witness.id.0
+                ));
+            }
         }
     }
     for target in &case.pattern_targets {
@@ -3423,6 +3490,41 @@ mod tests {
             }
             assert!(claim_count >= generated.witnesses.len());
         }
+    }
+
+    #[test]
+    fn secondary_witnesses_require_explicit_acyclic_referral_edges() {
+        let generated = generate(&context(7, TemplateFamily::RecurringDepredation)).unwrap();
+        let secondary_id = generated.witnesses[1].id.clone();
+        assert!(
+            generated.witnesses[0]
+                .testimony
+                .iter()
+                .any(|draft| draft.referred_witness_ids.contains(&secondary_id))
+        );
+
+        let mut unreachable = generated.clone();
+        for draft in &mut unreachable.witnesses[0].testimony {
+            draft.referred_witness_ids.clear();
+        }
+        assert!(
+            validate(&unreachable)
+                .unwrap_err()
+                .iter()
+                .any(|error| { error.contains("not reachable from the primary witness") })
+        );
+
+        let mut cyclic = generated;
+        let primary_id = cyclic.witnesses[0].id.clone();
+        cyclic.witnesses[1].testimony[0]
+            .referred_witness_ids
+            .push(primary_id);
+        assert!(
+            validate(&cyclic)
+                .unwrap_err()
+                .iter()
+                .any(|error| { error.contains("cyclic or backward witness referral") })
+        );
     }
 
     #[test]

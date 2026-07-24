@@ -43,11 +43,19 @@
       expected_revision: binding.revision,
     };
   };
+  const dialogueResponseIsCurrent = (binding, currentGeneration, currentNpcId, currentView) => Boolean(
+    binding
+    && binding.selectionGeneration === currentGeneration
+    && binding.npcId === currentNpcId
+    && binding.sessionId === currentView?.session_id
+    && binding.revision === currentView?.revision
+  );
 
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
       dialogueCompletion,
       dialogueSubmission,
+      dialogueResponseIsCurrent,
       dialogueTopicPayload,
       exactCandidate,
     };
@@ -166,7 +174,27 @@
       window.reportStrategicError(new Error(`Choose between ${prompt?.min_choices ?? 0} and ${prompt?.max_choices ?? 0} responses.`), "answer dialogue prompt");
       return;
     }
-    return request("/api/dialogue/answer", { session_id: currentView.session_id, prompt_row_id: prompt.id, choice_ids: choices, action_id: actionId(), expected_revision: currentView.revision }).then(render).catch((error) => window.reportStrategicError(error, "answer dialogue prompt"));
+    const binding = {
+      sessionId: currentView.session_id,
+      revision: currentView.revision,
+      selectionGeneration,
+      npcId: chat.dataset.localChatSubject || "",
+    };
+    return request("/api/dialogue/answer", { session_id: binding.sessionId, prompt_row_id: prompt.id, choice_ids: choices, action_id: actionId(), expected_revision: binding.revision }).then((view) => {
+      if (dialogueResponseIsCurrent(
+        binding,
+        selectionGeneration,
+        chat.dataset.localChatSubject || "",
+        currentView,
+      ) && binding.sessionId === view.session_id) render(view);
+    }).catch((error) => {
+      if (dialogueResponseIsCurrent(
+        binding,
+        selectionGeneration,
+        chat.dataset.localChatSubject || "",
+        currentView,
+      )) window.reportStrategicError(error, "answer dialogue prompt");
+    });
   };
   const submitTypedAction = () => {
     if (!currentView || !input) return false;

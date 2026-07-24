@@ -115,6 +115,18 @@ and expected location tab. Testimony is issued only when the addressed NPC is th
 witness. Corrections reuse the proposition they revise, preserving an earlier
 false believed pin until the correction is learned.
 
+Witness discovery is an explicit authored graph, not permission inferred from
+private manifest membership. The initial rumor grants an observer-bound
+referral to the primary witness. Individual testimony drafts may refer to exact
+subsequent witnesses; only processing that account grants the next private
+referral and projects the persistent NPC's safe name, physical description,
+profession, and location-tab label into the journal. Referral execution
+revalidates observer, canonical/public case authority, NPC, settlement,
+location, catalog revision, dialogue session, and live presence. Missing,
+cyclic, duplicate, or unreachable route-required witness edges fail generation
+validation. Secondary testimony with no authored contact action changes no
+route, while the primary contact still uniquely unlocks its successors.
+
 Only an authoritative typed exact destination output can create an exact pin.
 The raw site ID remains navigation authority; player-facing journal text and
 the matching map pin use the site's generated safe name.
@@ -136,6 +148,10 @@ the deterministic threshold until attempt six is guaranteed. Capability,
 observer, method, or version gaps reset that progress; manual investigation
 actions remain unbounded. Attempt authority and journal wording snapshot the
 threshold, uncertainty, and six-attempt bound at resolution time.
+When exact destination knowledge is corrected, dependent progress is matched
+through validated private canonical/public case aliases. Unsupported routes
+receive a fresh version and seed; an exact replacement that still supports the
+same route preserves its contiguous work.
 
 Attack patterns are playable modules rather than private flavor. Initial
 surveillance remains pattern-neutral. Success earns one exact corroborated
