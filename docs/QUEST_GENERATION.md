@@ -104,11 +104,14 @@ dialogue producer to remain intact.
 
 ## Discovery and resolution
 
-Entering an inn guarantees symptom discovery when an unknown local problem is
-available. This records a markerless journal referral; it does not accept a
-contract or disclose testimony. Any local can repeat the rumor and name the
-referred persistent NPC by visible description, profession, and expected
-location tab. Testimony is issued only when the addressed NPC is the bound
+Entering an inn guarantees symptom discovery when an available unknown
+**validated generated quest problem** exists. This records a markerless journal
+referral; it does not accept a contract or disclose testimony. Legacy/manual
+seeded `LocalProblemAuthority` rows currently drive settlement simulation
+modifiers and effects only and are intentionally non-discoverable; retiring
+that producer is separate work. Any local can repeat a validated generated
+rumor and name the referred persistent NPC by visible description, profession,
+and expected location tab. Testimony is issued only when the addressed NPC is the bound
 witness. Corrections reuse the proposition they revise, preserving an earlier
 false believed pin until the correction is learned.
 
