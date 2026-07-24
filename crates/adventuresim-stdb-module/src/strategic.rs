@@ -296,13 +296,14 @@ fn record_autoresolve_report(
 #[cfg(test)]
 mod healing_tests {
     use super::{
-        CaseSiteAuthority, HostileResolutionKind, IncidentStatus, MissionApproachCapability,
-        MissionAttemptStatus, MissionAuthority, MissionOutcomeCandidate, RecruitmentOfferStatus,
-        activity_incident_source_id, autoresolve_drop, case_refs_have_exact_dialogue_provenance,
-        generated_dialogue_action_matches, generated_dialogue_producer_recipient,
-        generated_scene_key, hostile_group_authority_row, hostile_resolution_for_objective,
-        incident_group_matches, mission_candidate_from_capability,
-        npc_conversation_authority_matches, player_participant_ids, quest_encounter_archetype,
+        CaseSiteAuthority, HostileResolutionKind, IncidentStatus, LocalChatMessage,
+        MissionApproachCapability, MissionAttemptStatus, MissionAuthority, MissionOutcomeCandidate,
+        RecruitmentOfferStatus, activity_incident_source_id, autoresolve_drop,
+        case_refs_have_exact_dialogue_provenance, generated_dialogue_action_matches,
+        generated_dialogue_producer_recipient, generated_scene_key, hostile_group_authority_row,
+        hostile_resolution_for_objective, incident_group_matches,
+        mission_candidate_from_capability, npc_conversation_authority_matches,
+        player_participant_ids, project_local_chat_message, quest_encounter_archetype,
         refreshed_recruitment_offer_status, sample_mission_candidate,
     };
     use adventuresim_core::encounter::EncounterArchetype;
@@ -358,6 +359,7 @@ mod healing_tests {
             "npc:riverdale:inn:0",
             "riverdale",
             "inn",
+            "inn",
             0,
             1_440,
             720,
@@ -368,6 +370,7 @@ mod healing_tests {
             "npc:riverdale:inn:0",
             "npc:riverdale:inn:0",
             "riverdale",
+            "inn",
             "inn",
             0,
             1_440,
@@ -380,6 +383,7 @@ mod healing_tests {
             "npc:riverdale:inn:1",
             "riverdale",
             "inn",
+            "inn",
             0,
             1_440,
             720,
@@ -391,10 +395,79 @@ mod healing_tests {
             "npc:riverdale:inn:0",
             "riverdale",
             "inn",
+            "inn",
             0,
             600,
             720,
         ));
+        assert!(!npc_conversation_authority_matches(
+            "riverdale",
+            "riverdale",
+            "npc:riverdale:inn:0",
+            "npc:riverdale:inn:0",
+            "riverdale",
+            "inn",
+            "market",
+            0,
+            1_440,
+            720,
+        ));
+    }
+
+    #[test]
+    fn private_chat_projection_only_emits_rows_for_the_two_parties() {
+        let row = LocalChatMessage {
+            id: 9,
+            gateway_bucket: 0,
+            audience_party_id: "party:a".into(),
+            other_party_id: "party:b".into(),
+            npc_id: String::new(),
+            sender_id: 10,
+            sender_name: "Ada".into(),
+            body: "Meet by the well.".into(),
+            created_micros: 20,
+        };
+        let projected = project_local_chat_message(row, &[10, 11], &[20]);
+        assert_eq!(
+            projected
+                .iter()
+                .map(|message| message.owner_character_id)
+                .collect::<Vec<_>>(),
+            vec![10, 11, 20]
+        );
+        assert!(
+            projected
+                .iter()
+                .all(|message| message.body == "Meet by the well.")
+        );
+        assert_eq!(projected[0].subject_party_id, "party:b");
+        assert_eq!(projected[2].subject_party_id, "party:a");
+        assert!(
+            !projected
+                .iter()
+                .any(|message| message.owner_character_id == 30)
+        );
+    }
+
+    #[test]
+    fn local_chat_writes_are_gateway_only_and_raw_rows_are_private() {
+        let source = include_str!("strategic.rs");
+        assert!(source.contains("#[table(accessor = local_chat_message)]"));
+        assert!(!source.contains("#[table(accessor = local_chat_message, public)]"));
+        let reducer = source
+            .split("pub fn send_local_chat_message")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("local chat reducer");
+        assert!(reducer.contains("require_strategic_gateway(ctx)?"));
+        assert!(reducer.contains("location_id: String"));
+        let view = source
+            .split("pub fn backend_local_chat_messages")
+            .nth(1)
+            .and_then(|tail| tail.split("/// Scripted dialogue").next())
+            .expect("backend local chat view");
+        assert!(view.contains("strategic_view_is_gateway(ctx)"));
+        assert!(!view.contains("conversation_key"));
     }
 
     #[test]
@@ -4032,17 +4105,115 @@ pub struct PartyLeaderVote {
 }
 
 #[derive(Clone, Debug)]
-#[table(accessor = local_chat_message, public)]
+#[table(accessor = local_chat_message)]
 pub struct LocalChatMessage {
     #[primary_key]
     #[auto_inc]
     pub id: u64,
     #[index(btree)]
-    pub conversation_key: String,
+    pub gateway_bucket: u8,
+    #[index(btree)]
+    pub audience_party_id: String,
+    pub other_party_id: String,
+    pub npc_id: String,
     pub sender_id: u64,
     pub sender_name: String,
     pub body: String,
     pub created_micros: i64,
+}
+
+#[derive(Clone, Debug, SpacetimeType)]
+pub struct BackendLocalChatMessage {
+    pub id: u64,
+    pub owner_character_id: u64,
+    pub conversation_kind: String,
+    pub subject_party_id: String,
+    pub subject_npc_id: String,
+    pub sender_id: u64,
+    pub sender_name: String,
+    pub body: String,
+    pub created_micros: i64,
+}
+
+fn local_chat_party_viewer_ids(ctx: &ViewContext, party_id: &str) -> Vec<u64> {
+    ctx.db
+        .party_member()
+        .party_id()
+        .filter(party_id)
+        .map(|member| member.character_id)
+        .collect()
+}
+
+fn project_local_chat_message(
+    row: LocalChatMessage,
+    audience_viewers: &[u64],
+    other_viewers: &[u64],
+) -> Vec<BackendLocalChatMessage> {
+    let mut projections = Vec::new();
+    let mut push = |owner_character_id, conversation_kind, subject_party_id, subject_npc_id| {
+        projections.push(BackendLocalChatMessage {
+            id: row.id,
+            owner_character_id,
+            conversation_kind,
+            subject_party_id,
+            subject_npc_id,
+            sender_id: row.sender_id,
+            sender_name: row.sender_name.clone(),
+            body: row.body.clone(),
+            created_micros: row.created_micros,
+        });
+    };
+    if row.npc_id.is_empty() {
+        for &owner_character_id in audience_viewers {
+            push(
+                owner_character_id,
+                "player".into(),
+                row.other_party_id.clone(),
+                String::new(),
+            );
+        }
+        if row.other_party_id != row.audience_party_id {
+            for &owner_character_id in other_viewers {
+                push(
+                    owner_character_id,
+                    "player".into(),
+                    row.audience_party_id.clone(),
+                    String::new(),
+                );
+            }
+        }
+    } else {
+        for &owner_character_id in audience_viewers {
+            push(
+                owner_character_id,
+                "npc".into(),
+                String::new(),
+                row.npc_id.clone(),
+            );
+        }
+    }
+    projections
+}
+
+#[view(accessor = backend_local_chat_messages, public)]
+pub fn backend_local_chat_messages(ctx: &ViewContext) -> Vec<BackendLocalChatMessage> {
+    if !strategic_view_is_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .local_chat_message()
+        .gateway_bucket()
+        .filter(0u8)
+        .flat_map(|row| {
+            let audience_viewers = local_chat_party_viewer_ids(ctx, &row.audience_party_id);
+            let other_viewers = if row.npc_id.is_empty() {
+                local_chat_party_viewer_ids(ctx, &row.other_party_id)
+            } else {
+                Vec::new()
+            };
+            project_local_chat_message(row, &audience_viewers, &other_viewers)
+        })
+        .collect()
 }
 
 /// Scripted dialogue is authoritative and intentionally separate from free-form local chat.
@@ -6794,11 +6965,11 @@ fn same_location(ctx: &ReducerContext, left: &crate::Character, right: &crate::C
         && (left.current_settlement_id.is_some() || left_site.is_some())
 }
 
-fn player_conversation_key(
+fn player_conversation_parties(
     ctx: &ReducerContext,
     sender: &crate::Character,
     subject_id: u64,
-) -> Result<String, String> {
+) -> Result<(String, String), String> {
     let subject = ctx
         .db
         .character()
@@ -6810,12 +6981,7 @@ fn player_conversation_key(
     }
     let sender_party = sender.party_id.as_deref().ok_or("Sender has no party")?;
     let subject_party = subject.party_id.as_deref().ok_or("Subject has no party")?;
-    let (first, second) = if sender_party <= subject_party {
-        (sender_party, subject_party)
-    } else {
-        (subject_party, sender_party)
-    };
-    Ok(format!("players:{first}:{second}"))
+    Ok((sender_party.to_string(), subject_party.to_string()))
 }
 
 fn npc_conversation_authority_matches(
@@ -6825,6 +6991,7 @@ fn npc_conversation_authority_matches(
     presence_npc_id: &str,
     presence_settlement_id: &str,
     presence_location_id: &str,
+    requested_location_id: &str,
     presence_start_minute: u16,
     presence_end_minute: u16,
     minute: u64,
@@ -6833,15 +7000,17 @@ fn npc_conversation_authority_matches(
     npc_home_settlement_id == settlement_id
         && presence_npc_id == npc_id
         && presence_settlement_id == settlement_id
-        && !presence_location_id.is_empty()
+        && presence_location_id == requested_location_id
+        && !requested_location_id.is_empty()
         && presence_start_minute <= minute
         && minute < presence_end_minute
 }
 
-fn npc_conversation_key(
+fn npc_conversation_party(
     ctx: &ReducerContext,
     sender: &crate::Character,
     subject_id: &str,
+    location_id: &str,
 ) -> Result<String, String> {
     let party_id = sender.party_id.as_deref().ok_or("Sender has no party")?;
     let settlement_id = sender
@@ -6879,13 +7048,14 @@ fn npc_conversation_key(
         &presence.npc_id,
         &presence.settlement_id,
         &presence.location_id,
+        location_id,
         presence.start_minute,
         presence.end_minute,
         minute,
     ) {
         return Err("NPC is not at the sender's settlement".into());
     }
-    Ok(format!("npc:{party_id}:{subject_id}"))
+    Ok(party_id.to_string())
 }
 
 #[reducer]
@@ -6894,8 +7064,10 @@ pub fn send_local_chat_message(
     sender_id: u64,
     subject_kind: String,
     subject_id: String,
+    location_id: String,
     body: String,
 ) -> Result<(), String> {
+    require_strategic_gateway(ctx)?;
     crate::character::require_living_character(ctx, sender_id)?;
     let sender = ctx
         .db
@@ -6907,18 +7079,31 @@ pub fn send_local_chat_message(
     if body.is_empty() || body.chars().count() > 500 {
         return Err("Messages must contain 1 to 500 characters".into());
     }
-    let conversation_key = match subject_kind.as_str() {
-        "player" => player_conversation_key(
-            ctx,
-            &sender,
-            subject_id.parse().map_err(|_| "Invalid player subject")?,
-        )?,
-        "npc" => npc_conversation_key(ctx, &sender, &subject_id)?,
+    let (audience_party_id, other_party_id, npc_id) = match subject_kind.as_str() {
+        "player" => {
+            if !location_id.is_empty() {
+                return Err("Player conversations do not accept an NPC location".into());
+            }
+            let (audience_party_id, other_party_id) = player_conversation_parties(
+                ctx,
+                &sender,
+                subject_id.parse().map_err(|_| "Invalid player subject")?,
+            )?;
+            (audience_party_id, other_party_id, String::new())
+        }
+        "npc" => (
+            npc_conversation_party(ctx, &sender, &subject_id, &location_id)?,
+            String::new(),
+            subject_id,
+        ),
         _ => return Err("Unknown Local conversation subject".into()),
     };
     ctx.db.local_chat_message().insert(LocalChatMessage {
         id: 0,
-        conversation_key,
+        gateway_bucket: 0,
+        audience_party_id,
+        other_party_id,
+        npc_id,
         sender_id,
         sender_name: sender.name,
         body: body.to_string(),

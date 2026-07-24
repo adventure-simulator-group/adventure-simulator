@@ -661,9 +661,12 @@ pub struct PartyLeaderVote {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LocalChatMessage {
+pub struct BackendLocalChatMessage {
     pub id: u64,
-    pub conversation_key: String,
+    pub owner_character_id: u64,
+    pub conversation_kind: String,
+    pub subject_party_id: String,
+    pub subject_npc_id: String,
     pub sender_id: u64,
     pub sender_name: String,
     pub body: String,

@@ -8,7 +8,10 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct LocalChatMessage {
     pub id: u64,
-    pub conversation_key: String,
+    pub gateway_bucket: u8,
+    pub audience_party_id: String,
+    pub other_party_id: String,
+    pub npc_id: String,
     pub sender_id: u64,
     pub sender_name: String,
     pub body: String,
@@ -24,7 +27,10 @@ impl __sdk::InModule for LocalChatMessage {
 /// Provides typed access to columns for query building.
 pub struct LocalChatMessageCols {
     pub id: __sdk::__query_builder::Col<LocalChatMessage, u64>,
-    pub conversation_key: __sdk::__query_builder::Col<LocalChatMessage, String>,
+    pub gateway_bucket: __sdk::__query_builder::Col<LocalChatMessage, u8>,
+    pub audience_party_id: __sdk::__query_builder::Col<LocalChatMessage, String>,
+    pub other_party_id: __sdk::__query_builder::Col<LocalChatMessage, String>,
+    pub npc_id: __sdk::__query_builder::Col<LocalChatMessage, String>,
     pub sender_id: __sdk::__query_builder::Col<LocalChatMessage, u64>,
     pub sender_name: __sdk::__query_builder::Col<LocalChatMessage, String>,
     pub body: __sdk::__query_builder::Col<LocalChatMessage, String>,
@@ -36,7 +42,10 @@ impl __sdk::__query_builder::HasCols for LocalChatMessage {
     fn cols(table_name: &'static str) -> Self::Cols {
         LocalChatMessageCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
-            conversation_key: __sdk::__query_builder::Col::new(table_name, "conversation_key"),
+            gateway_bucket: __sdk::__query_builder::Col::new(table_name, "gateway_bucket"),
+            audience_party_id: __sdk::__query_builder::Col::new(table_name, "audience_party_id"),
+            other_party_id: __sdk::__query_builder::Col::new(table_name, "other_party_id"),
+            npc_id: __sdk::__query_builder::Col::new(table_name, "npc_id"),
             sender_id: __sdk::__query_builder::Col::new(table_name, "sender_id"),
             sender_name: __sdk::__query_builder::Col::new(table_name, "sender_name"),
             body: __sdk::__query_builder::Col::new(table_name, "body"),
@@ -49,7 +58,8 @@ impl __sdk::__query_builder::HasCols for LocalChatMessage {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct LocalChatMessageIxCols {
-    pub conversation_key: __sdk::__query_builder::IxCol<LocalChatMessage, String>,
+    pub audience_party_id: __sdk::__query_builder::IxCol<LocalChatMessage, String>,
+    pub gateway_bucket: __sdk::__query_builder::IxCol<LocalChatMessage, u8>,
     pub id: __sdk::__query_builder::IxCol<LocalChatMessage, u64>,
 }
 
@@ -57,7 +67,8 @@ impl __sdk::__query_builder::HasIxCols for LocalChatMessage {
     type IxCols = LocalChatMessageIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         LocalChatMessageIxCols {
-            conversation_key: __sdk::__query_builder::IxCol::new(table_name, "conversation_key"),
+            audience_party_id: __sdk::__query_builder::IxCol::new(table_name, "audience_party_id"),
+            gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
         }
     }

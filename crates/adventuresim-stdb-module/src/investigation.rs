@@ -820,6 +820,35 @@ fn parse_action_terrain(value: &str) -> Result<action::Terrain, String> {
 /// Trusted generator seam. The opaque id is the only authority returned to a
 /// browser. Hidden targets, seeds, and consequences remain private.
 #[allow(clippy::too_many_arguments)]
+fn validate_investigation_action_text(
+    id: &str,
+    case_id: &str,
+    target_kind: &str,
+    target_id: &str,
+    safe_summary: &str,
+    known_prerequisites: &str,
+    safe_result_on_success: &str,
+    required_action_id: &str,
+    alternate_route_action_id: &str,
+) -> Result<(), String> {
+    for text in [
+        id,
+        case_id,
+        target_kind,
+        target_id,
+        safe_summary,
+        known_prerequisites,
+        safe_result_on_success,
+        alternate_route_action_id,
+    ] {
+        bounded(text)?;
+    }
+    // Root actions have no predecessor. Successor actions still carry the
+    // observer-scoped prerequisite id and are validated as ordinary text.
+    bounded_optional(required_action_id)
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn issue_investigation_action_capability(
     ctx: &ReducerContext,
     id: String,
@@ -838,7 +867,7 @@ pub(crate) fn issue_investigation_action_capability(
     required_action_id: String,
     alternate_route_action_id: String,
 ) -> Result<(), String> {
-    for text in [
+    validate_investigation_action_text(
         &id,
         &case_id,
         &target_kind,
@@ -848,9 +877,7 @@ pub(crate) fn issue_investigation_action_capability(
         &safe_result_on_success,
         &required_action_id,
         &alternate_route_action_id,
-    ] {
-        bounded(text)?;
-    }
+    )?;
     bps(uncertainty_bps)?;
     if alternate_route_action_id == id {
         return Err("A critical action needs a distinct recovery route".into());
@@ -3750,6 +3777,76 @@ pub fn share_investigation_belief(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn both_generated_families_issue_root_and_successor_action_text() {
+        use adventuresim_core::{
+            local_problem::Scope,
+            quest_generation::{
+                GeneratedActionOutput, GenerationContext, TemplateFamily, generate,
+                observer_scoped_id, test_witnesses,
+            },
+        };
+
+        for (seed, family) in [
+            (7, TemplateFamily::RecurringDepredation),
+            (11, TemplateFamily::DisappearanceOrLoss),
+        ] {
+            let context = GenerationContext {
+                seed,
+                observer_entropy_hi: seed ^ 0x6f62_7365_7276_6572,
+                observer_entropy_lo: seed.rotate_left(23) ^ 0x7175_6573_742d_7631,
+                settlement_id: "lubeck".into(),
+                settlement_name: "Lubeck".into(),
+                scope: Scope::Settlement {
+                    settlement_id: "lubeck".into(),
+                },
+                ordinal: 0,
+                now_minute: 50_000,
+                requested_family: Some(family),
+                witness_candidates: test_witnesses(),
+            };
+            let manifest = generate(&context).expect("family should generate");
+            let mut saw_root = false;
+            let mut saw_successor = false;
+            for action in &manifest.actions {
+                let remap = |id: &adventuresim_core::quest_generation::ActionId| {
+                    observer_scoped_id(&context, "capability", &format!("1:{}", id.0))
+                };
+                let required_action_id =
+                    action.prerequisite.as_ref().map_or_else(String::new, remap);
+                saw_root |= required_action_id.is_empty();
+                saw_successor |= !required_action_id.is_empty();
+                let earned_clue = action.outputs.iter().find_map(|output| match output {
+                    GeneratedActionOutput::Evidence { evidence_id } => manifest
+                        .evidence
+                        .iter()
+                        .find(|evidence| evidence.id == *evidence_id)
+                        .map(|evidence| evidence.safe_description.clone()),
+                    _ => None,
+                });
+                validate_investigation_action_text(
+                    &remap(&action.id),
+                    &manifest.public_case_id,
+                    &action.target_kind,
+                    &action.target_id,
+                    &action.safe_summary,
+                    "Complete the preceding generated lead and remain with your ready, co-located party.",
+                    earned_clue.as_deref().unwrap_or(
+                        "The investigation produces a new, source-attributed lead.",
+                    ),
+                    &required_action_id,
+                    &remap(&action.alternate),
+                )
+                .expect("generated issuance text should accept an absent root prerequisite");
+            }
+            assert!(saw_root, "{family:?} did not generate a root action");
+            assert!(
+                saw_successor,
+                "{family:?} did not generate a successor action"
+            );
+        }
+    }
 
     #[test]
     fn non_exact_rows_are_sanitized_without_coordinates() {

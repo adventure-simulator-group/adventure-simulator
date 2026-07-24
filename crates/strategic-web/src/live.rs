@@ -24,6 +24,7 @@ use adventuresim_stdb_client::{
     backend_dialogue_prompts_table::BackendDialoguePromptsTableAccess,
     backend_dialogue_sessions_table::BackendDialogueSessionsTableAccess,
     backend_dialogue_topic_options_table::BackendDialogueTopicOptionsTableAccess,
+    backend_local_chat_messages_table::BackendLocalChatMessagesTableAccess,
     battle_loot_item_table::BattleLootItemTableAccess,
     battle_participant_table::BattleParticipantTableAccess,
     battle_result_table::BattleResultTableAccess,
@@ -45,7 +46,6 @@ use adventuresim_stdb_client::{
     inventory_item_table::InventoryItemTableAccess,
     inventory_quantity_target_table::InventoryQuantityTargetTableAccess,
     item_condition_table::ItemConditionTableAccess, limb_injury_table::LimbInjuryTableAccess,
-    local_chat_message_table::LocalChatMessageTableAccess,
     morale_event_table::MoraleEventTableAccess,
     party_action_request_table::PartyActionRequestTableAccess,
     party_inventory_item_table::PartyInventoryItemTableAccess,
@@ -197,7 +197,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.recruitment_offer());
         invalidate_on_changes!(state.0._connection.db.strategic_encounter());
         invalidate_on_view_changes!(state.0._connection.db.backend_contracts());
-        invalidate_on_changes!(state.0._connection.db.local_chat_message());
+        invalidate_on_view_changes!(state.0._connection.db.backend_local_chat_messages());
         invalidate_on_view_changes!(state.0._connection.db.backend_dialogue_sessions());
         invalidate_on_view_changes!(state.0._connection.db.backend_dialogue_participants());
         invalidate_on_view_changes!(state.0._connection.db.backend_dialogue_events());
@@ -253,7 +253,7 @@ impl LiveState {
             .add_query(|query| query.from.inventory_quantity_target())
             .add_query(|query| query.from.item())
             .add_query(|query| query.from.item_condition())
-            .add_query(|query| query.from.local_chat_message())
+            .add_query(|query| query.from.backend_local_chat_messages())
             .add_query(|query| query.from.backend_dialogue_sessions())
             .add_query(|query| query.from.backend_dialogue_participants())
             .add_query(|query| query.from.backend_dialogue_events())
