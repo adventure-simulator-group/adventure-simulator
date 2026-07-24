@@ -250,6 +250,16 @@ and thirst and refill personal containers. Foraging, intermediate freshwater
 stops, weather-based water use, spoilage, food quality, and manual eating or
 drinking remain future layers.
 
+Field rest at a quest location consumes the same food and water needs as other
+elapsed wilderness time. It can relieve fatigue and permit natural injury
+recovery, but it cannot create missing supplies; continuing to rest while
+hungry or thirsty may therefore worsen incapacitation. An incapacitated party
+at a case site may make an emergency withdrawal to a settlement even though it
+cannot investigate, fight, or begin an outbound quest journey. The withdrawal
+still advances time and retains normal journey and encounter risk. The
+case-site interface identifies the current incapacitation causes and links to
+the nearest settlement choice on the map.
+
 # Emergency alcohol hydration
 
 Movement consumes pooled water and then personal carried water before touching
