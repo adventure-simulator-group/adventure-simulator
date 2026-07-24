@@ -18,6 +18,9 @@ pub struct BackendInvestigationAction {
     pub uncertainty_bps: u16,
     pub skill_contributions: String,
     pub weather_available: bool,
+    pub required_case_site_id: String,
+    pub available: bool,
+    pub unavailable_reason: String,
 }
 
 impl __sdk::InModule for BackendInvestigationAction {
@@ -39,6 +42,9 @@ pub struct BackendInvestigationActionCols {
     pub uncertainty_bps: __sdk::__query_builder::Col<BackendInvestigationAction, u16>,
     pub skill_contributions: __sdk::__query_builder::Col<BackendInvestigationAction, String>,
     pub weather_available: __sdk::__query_builder::Col<BackendInvestigationAction, bool>,
+    pub required_case_site_id: __sdk::__query_builder::Col<BackendInvestigationAction, String>,
+    pub available: __sdk::__query_builder::Col<BackendInvestigationAction, bool>,
+    pub unavailable_reason: __sdk::__query_builder::Col<BackendInvestigationAction, String>,
 }
 
 impl __sdk::__query_builder::HasCols for BackendInvestigationAction {
@@ -68,6 +74,12 @@ impl __sdk::__query_builder::HasCols for BackendInvestigationAction {
                 "skill_contributions",
             ),
             weather_available: __sdk::__query_builder::Col::new(table_name, "weather_available"),
+            required_case_site_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "required_case_site_id",
+            ),
+            available: __sdk::__query_builder::Col::new(table_name, "available"),
+            unavailable_reason: __sdk::__query_builder::Col::new(table_name, "unavailable_reason"),
         }
     }
 }
