@@ -1,6 +1,25 @@
-use super::*;
+use adventuresim_core::strategic_schedule::CombatTrainingProfile;
+use maud::{Markup, html};
 
-pub(super) fn character_summary_rail(capability: Option<&CharacterCapability>) -> Markup {
+use super::{
+    character_health::{
+        medical_examination_popup, medical_rail, party_attributes_rail, strategic_condition_rail,
+    },
+    character_skills::{ActivityPreviewRates, CharacterSkillActions, party_skills_rail},
+    chrome::{party_portrait_overlay, visual_stage},
+    context::LocationView,
+    social::{player_chat_area, settlement_chat_area},
+    trade::{cooking_activity_dialog, religious_demand_rail},
+};
+use crate::medical::MedicalPresentation;
+use crate::spacetimedb::{
+    Character, CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterSkills,
+    CharacterStrategicCondition, CharacterTrainingSchedule, FoodLot, InventoryItem, ItemDefinition,
+    LimbInjury, Party, RetainedProjectile,
+};
+use crate::templates::{decorative_game_icon, sidebar_section};
+
+fn character_summary_rail(capability: Option<&CharacterCapability>) -> Markup {
     let tags = capability
         .map(CharacterCapability::summary_tags)
         .unwrap_or_default();
@@ -262,7 +281,7 @@ pub(super) fn religion_name(religion_id: Option<&str>) -> &'static str {
     }
 }
 
-pub(super) fn character_bio_rail(
+fn character_bio_rail(
     character: &Character,
     religion_id: Option<&str>,
     notoriety: f32,
@@ -306,7 +325,7 @@ pub(super) fn character_bio_rail(
     }
 }
 
-pub(super) fn personality_tags(
+fn personality_tags(
     personality: &crate::spacetimedb::CharacterPersonality,
 ) -> Vec<(&'static str, &'static str)> {
     use crate::spacetimedb::{

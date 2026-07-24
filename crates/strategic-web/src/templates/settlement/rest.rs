@@ -1,4 +1,10 @@
-use super::*;
+use maud::{Markup, html};
+
+use super::trade::service_page;
+use crate::spacetimedb::{
+    Character, CharacterCondition, CharacterLimbs, CharacterStats, InventoryItem, ItemDefinition,
+};
+use crate::templates::decorative_game_icon;
 
 pub struct RestSummary {
     pub minutes: u64,

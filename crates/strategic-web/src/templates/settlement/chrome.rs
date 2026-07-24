@@ -1,4 +1,15 @@
-use super::*;
+use std::collections::BTreeSet;
+
+use maud::{Markup, html};
+
+use super::social::{npc_description_stage, npc_portrait_strip, settlement_npc_chat_area};
+use crate::spacetimedb::{
+    Character, Settlement, SettlementAlias, SettlementCategory, SettlementDescription,
+    SettlementDescriptionKind,
+};
+use crate::templates::{
+    game_icon, population_description, settlement_layout_with_session, sidebar_section,
+};
 
 fn settlement_has_keep(category: &SettlementCategory) -> bool {
     matches!(
@@ -155,7 +166,7 @@ pub fn settlement_npc_location_page(
     )
 }
 
-pub(super) fn settlement_alias_labels(
+fn settlement_alias_labels(
     settlement: &Settlement,
     aliases: &[SettlementAlias],
 ) -> Vec<String> {
@@ -178,7 +189,7 @@ pub(super) fn settlement_alias_labels(
     labels
 }
 
-pub(super) fn preferred_settlement_description(
+fn preferred_settlement_description(
     descriptions: &[SettlementDescription],
 ) -> Option<&SettlementDescription> {
     descriptions.iter().min_by_key(|description| {
@@ -190,7 +201,7 @@ pub(super) fn preferred_settlement_description(
     })
 }
 
-pub(super) fn language_label(language: Option<&str>) -> &str {
+fn language_label(language: Option<&str>) -> &str {
     match language {
         Some("dan") => "Danish",
         Some("deu") => "German",
@@ -224,7 +235,7 @@ pub(super) fn format_population(settlement: &Settlement) -> String {
     }
 }
 
-pub(super) fn format_number(value: u32) -> String {
+fn format_number(value: u32) -> String {
     let digits = value.to_string();
     let first_group = match digits.len() % 3 {
         0 => 3,

@@ -1,4 +1,21 @@
-use super::*;
+use maud::{Markup, html};
+
+use super::{
+    character_skills::{
+        SkillAction, SkillRankBarOptions, skill_action_icon, skill_rank_bar,
+    },
+    chrome::party_portrait_overlay,
+    context::{LocationKind, LocationView},
+    trade::filth_status_bar,
+};
+use crate::medical::MedicalPresentation;
+use crate::spacetimedb::{
+    Character, CharacterAttributes, CharacterLimbs, CharacterStrategicCondition, LimbInjury,
+    LimbRegion, ProjectileKind, RetainedProjectile,
+};
+use crate::templates::{
+    decorative_game_icon, game_icon, item_display_name, sidebar_section, stat_icon_path,
+};
 
 pub(super) fn surgery_limb_name(limb: LimbRegion) -> &'static str {
     match limb {

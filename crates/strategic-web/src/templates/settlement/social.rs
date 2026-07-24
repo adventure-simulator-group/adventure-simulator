@@ -1,4 +1,16 @@
-use super::*;
+use std::collections::HashSet;
+
+use maud::{Markup, html};
+
+use super::{
+    character_details::religion_name,
+    context::LocationView,
+    trade::{item_name_with_quality, trade_inventory_table_header},
+};
+use crate::spacetimedb::{Character, InventoryItem, ItemDefinition};
+use crate::templates::{
+    decorative_game_icon, item_display_name, item_type_icon, sidebar_section,
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct SocialPresentation {

@@ -1,4 +1,23 @@
-use super::*;
+use adventuresim_core::{
+    activity::{PRAYER_MORALE_LIMIT, PRAYER_MORALE_SCALE_MINUTES, settlement_population_scale},
+    prelude::Skill,
+    strategic_schedule::{
+        BASELINE_FATIGUE_PER_DAY, CombatTrainingProfile, DailySchedule,
+        FATIGUE_RESERVOIR_PER_PREVIEW_POINT, LABOR_FATIGUE_PER_HOUR,
+        LEISURE_FATIGUE_RECOVERY_PER_HOUR, LEISURE_MORALE_LIMIT, LEISURE_MORALE_SCALE_FATIGUE,
+        LeisureOutcome, settlement_leisure_outcome,
+    },
+    strategic_time::MINUTES_PER_DAY,
+};
+use adventuresim_world_schema::OfficialReligion;
+use maud::{Markup, html};
+
+use super::character_health::stat_icon;
+use crate::spacetimedb::{
+    CharacterApprenticeship, CharacterAttributes, CharacterCapability, CharacterLimbs,
+    CharacterSkills, CharacterStats, CharacterTrainingSchedule, ScheduleAllocation, Settlement,
+};
+use crate::templates::{game_icon, religion_icon, sidebar_section};
 
 #[derive(Clone, Debug, Default)]
 pub struct ActivityPreviewRates {

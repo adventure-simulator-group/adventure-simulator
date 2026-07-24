@@ -1,4 +1,31 @@
-use super::*;
+use adventuresim_core::{
+    equipment::EncumbranceSummary,
+    strategic_schedule::CombatTrainingProfile,
+};
+use maud::{Markup, html};
+
+use super::{
+    character_details::religion_name,
+    character_skills::{SkillRankBarOptions, skill_rank_bar},
+    chrome::{party_portrait_overlay, visual_stage},
+    context::LocationView,
+    rest::{RestSummary, SoapRestPreview, rest_default_minutes, rest_service_menu},
+    social::{
+        inventory_rail, merchant_offers_rail, npc_description_stage, npc_location_id,
+        npc_portrait_strip, player_chat_area, settlement_chat_area,
+        settlement_chat_area_with_info, settlement_npc_chat_area,
+    },
+};
+use crate::medical::MedicalPresentation;
+use crate::spacetimedb::{
+    Character, CharacterCondition, CharacterEquip, CharacterLimbs, CharacterStats, FoodLot,
+    InventoryItem, InventoryQuantityTarget, ItemDefinition, ItemSlot, PartyInventoryItem,
+};
+use crate::templates::inventory_browser::{InventoryBrowser, InventoryColumnSet};
+use crate::templates::{
+    empty_state, game_icon, item_display_name, item_type_header, item_type_icon,
+    settlement_layout_with_session, sidebar_section,
+};
 
 /// The currently available merchant storefronts. They share trade mechanics,
 /// but each storefront limits the stock shown on its left-hand side.
