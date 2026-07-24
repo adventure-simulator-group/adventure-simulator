@@ -5924,6 +5924,84 @@ fn dialogue_runtime_bindings(
     Ok(bindings)
 }
 
+fn referred_testimony_context_matches(
+    receipt_character_id: u64,
+    character_id: u64,
+    expected_npc_id: &str,
+    addressed_npc_id: &str,
+    receipt_settlement_id: &str,
+    session_settlement_id: &str,
+    expected_location_id: &str,
+    session_location_id: &str,
+) -> bool {
+    receipt_character_id == character_id
+        && adventuresim_core::quest_generation::exact_referral_contact(
+            expected_npc_id,
+            addressed_npc_id,
+        )
+        && receipt_settlement_id == session_settlement_id
+        && expected_location_id == session_location_id
+}
+
+#[cfg(test)]
+mod referred_testimony_context_tests {
+    use super::referred_testimony_context_matches;
+
+    #[test]
+    fn selected_witness_is_bound_to_the_exact_receipt_session_and_location() {
+        assert!(referred_testimony_context_matches(
+            7,
+            7,
+            "npc:town:inn:1",
+            "npc:town:inn:1",
+            "town",
+            "town",
+            "inn",
+            "inn",
+        ));
+        assert!(!referred_testimony_context_matches(
+            7,
+            7,
+            "npc:town:inn:1",
+            "npc:town:inn:0",
+            "town",
+            "town",
+            "inn",
+            "inn",
+        ));
+        assert!(!referred_testimony_context_matches(
+            7,
+            7,
+            "npc:town:inn:1",
+            "npc:town:inn:1",
+            "town",
+            "other-town",
+            "inn",
+            "inn",
+        ));
+        assert!(!referred_testimony_context_matches(
+            7,
+            7,
+            "npc:town:inn:1",
+            "npc:town:inn:1",
+            "town",
+            "town",
+            "inn",
+            "residences",
+        ));
+        assert!(!referred_testimony_context_matches(
+            8,
+            7,
+            "npc:town:inn:1",
+            "npc:town:inn:1",
+            "town",
+            "town",
+            "inn",
+            "inn",
+        ));
+    }
+}
+
 fn receive_referred_testimony(
     ctx: &ReducerContext,
     character_id: u64,
@@ -5944,12 +6022,16 @@ fn receive_referred_testimony(
         .id()
         .find(&delivery.receipt_id)
         .ok_or("Rumor delivery receipt disappeared")?;
-    if !adventuresim_core::quest_generation::exact_referral_contact(
+    if !referred_testimony_context_matches(
+        receipt.character_id,
+        character_id,
         &receipt.contact_npc_id,
         &live_npc.id,
-    ) || receipt.settlement_id != session.settlement_id
-        || receipt.expected_location_id != session.location_id
-    {
+        &receipt.settlement_id,
+        &session.settlement_id,
+        &receipt.expected_location_id,
+        &session.location_id,
+    ) {
         return Err("Addressed NPC is not the exact referred witness here".into());
     }
     let authority = ctx
