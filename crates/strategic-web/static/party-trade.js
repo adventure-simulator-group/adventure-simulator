@@ -333,6 +333,19 @@ function updateMerchantGoldDraft() {
   if (goldRow) setTradeDraftCount(goldRow, goldChange);
 }
 
+function selectMerchantInventoryScope(tab) {
+  if (!tab) return false;
+  const root = tab.closest("[data-inventory-tabs]");
+  if (!root) return false;
+  root.querySelectorAll("[data-inventory-tab]").forEach((entry) => entry.classList.toggle("active", entry === tab));
+  root.querySelectorAll("[data-inventory-pane]").forEach((pane) => { pane.hidden = pane.dataset.inventoryPane !== tab.dataset.inventoryTab; });
+  const scope = document.querySelector("#merchant-offer [name='inventory_scope']");
+  if (scope) scope.value = tab.dataset.inventoryTab;
+  resetTradeDraft(document.querySelector("#merchant-offer"));
+  refreshInventoryPanel(root.querySelector('[data-inventory-pane]:not([hidden])'));
+  return true;
+}
+
 document.addEventListener("click", (event) => {
   const dynamicTransfer = event.target.closest?.("[data-dynamic-transfer]");
   const clickTarget = dynamicTransfer || event.target;
@@ -341,13 +354,7 @@ document.addEventListener("click", (event) => {
   }
   const tab = clickTarget.closest("[data-inventory-tab]");
   if (tab) {
-    const root = tab.closest("[data-inventory-tabs]");
-    root.querySelectorAll("[data-inventory-tab]").forEach((entry) => entry.classList.toggle("active", entry === tab));
-    root.querySelectorAll("[data-inventory-pane]").forEach((pane) => { pane.hidden = pane.dataset.inventoryPane !== tab.dataset.inventoryTab; });
-    const scope = document.querySelector("#merchant-offer [name='inventory_scope']");
-    if (scope) scope.value = tab.dataset.inventoryTab;
-    resetTradeDraft(document.querySelector("#merchant-offer"));
-    refreshInventoryPanel(root.querySelector('[data-inventory-pane]:not([hidden])'));
+    selectMerchantInventoryScope(tab);
     return;
   }
   const targetValue = clickTarget.closest("[data-target-value]");
@@ -600,9 +607,9 @@ function initializeProvisioningDraft() {
   if (!requested.size || params.get("inventory_scope") !== "party") return;
 
   const partyTab = document.querySelector('[data-inventory-tab="party"]');
-  if (!partyTab) return;
-  partyTab.click();
+  if (!selectMerchantInventoryScope(partyTab)) return;
   const draft = strategicTradeUi.state.merchantDraft ||= new Map();
+  let stagedFoodRow = null;
   requested.forEach((quantity, itemId) => {
     const source = merchantRow(itemId, document.querySelector(".left-sidebar"));
     const button = source?.querySelector("[data-merchant-buy]");
@@ -611,7 +618,12 @@ function initializeProvisioningDraft() {
     (strategicTradeUi.state.merchantBuyPrices ||= new Map()).set(itemId, Number(button.dataset.merchantBuyPrice));
     setTradeDraftCount(source, -quantity);
     setTradeDraftCount(ensureMerchantPlayerRow(itemId, source), quantity);
+    if (itemId === "travel_ration") stagedFoodRow = source;
   });
+  const foodParent = stagedFoodRow?.closest("tbody")?.querySelector(":scope > .food-parent-row");
+  if (foodParent?.getAttribute("aria-expanded") !== "true") {
+    foodParent?.querySelector("[data-food-toggle]")?.click();
+  }
   updateMerchantGoldDraft();
   updateMerchantOfferForm();
 }
