@@ -63,6 +63,7 @@ pub struct BackendInvestigationAction {
     pub weather_available: bool,
     pub required_case_site_id: String,
     pub available: bool,
+    pub can_travel_to_required_site: bool,
     pub unavailable_reason: String,
 }
 
@@ -1680,11 +1681,13 @@ mod tests {
             "weather_available": false,
             "required_case_site_id": "site-public",
             "available": false,
+            "can_travel_to_required_site": true,
             "unavailable_reason": "Travel to the known investigation site before inspecting it."
         });
         let decoded: BackendInvestigationAction = serde_json::from_value(action).unwrap();
         assert_eq!(decoded.required_case_site_id, "site-public");
         assert!(!decoded.available);
+        assert!(decoded.can_travel_to_required_site);
         assert!(decoded.unavailable_reason.contains("Travel"));
     }
 
@@ -1754,6 +1757,7 @@ mod tests {
             weather_available: false,
             required_case_site_id: String::new(),
             available: true,
+            can_travel_to_required_site: false,
             unavailable_reason: String::new(),
         };
         let lead = BackendInvestigationLead {

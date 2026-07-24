@@ -76,7 +76,7 @@ pub fn journal_page(
                                 button type="button" disabled {
                                     "Attempt " (action.method.replace('_', " "))
                                 }
-                                @if !action.required_case_site_id.is_empty() {
+                                @if action.can_travel_to_required_site {
                                     form method="post" action=(format!("/case-sites/{}/travel", action.required_case_site_id)) {
                                         button type="submit" { "Travel to investigation site" }
                                     }
@@ -200,6 +200,7 @@ mod tests {
             weather_available: false,
             required_case_site_id: "site-public".into(),
             available: false,
+            can_travel_to_required_site: true,
             unavailable_reason: "Travel to the known investigation site before inspecting it."
                 .into(),
         };
@@ -236,10 +237,39 @@ mod tests {
             weather_available: false,
             required_case_site_id: "site-public".into(),
             available: true,
+            can_travel_to_required_site: false,
             unavailable_reason: String::new(),
         };
         let markup = journal_page(&[], &[], &[action], &[], "Ada", None).into_string();
         assert!(markup.contains("action=\"/quests/actions\""));
         assert!(!markup.contains("journal-action-unavailable"));
+    }
+
+    #[test]
+    fn journal_never_offers_travel_to_an_incapacitated_party() {
+        let action = BackendInvestigationAction {
+            owner_character_id: 1,
+            action_id: "inspect".into(),
+            method: "inspect_site".into(),
+            expected_version: 2,
+            summary: "Inspect the abandoned croft.".into(),
+            known_prerequisites: "Reach the croft.".into(),
+            duration_min_minutes: 30,
+            duration_max_minutes: 90,
+            uncertainty_bps: 2_000,
+            skill_contributions: "awareness".into(),
+            weather_available: false,
+            required_case_site_id: "site-public".into(),
+            available: false,
+            can_travel_to_required_site: false,
+            unavailable_reason:
+                "An incapacitated party member must recover before the party can investigate."
+                    .into(),
+        };
+        let markup = journal_page(&[], &[], &[action], &[], "Ada", None).into_string();
+        assert!(markup.contains("incapacitated party member"));
+        assert!(!markup.contains("Travel to investigation site"));
+        assert!(!markup.contains("action=\"/case-sites/site-public/travel\""));
+        assert!(!markup.contains("action=\"/quests/actions\""));
     }
 }
