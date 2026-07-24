@@ -276,7 +276,6 @@ impl QuestPolicy for OpenAiCompatiblePolicy {
         Ok(decision)
     }
 }
-}
 
 fn check_deadline(deadline: Option<Instant>) -> Result<(), String> {
     if deadline.is_some_and(|end| Instant::now() >= end) {
