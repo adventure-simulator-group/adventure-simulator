@@ -7974,7 +7974,7 @@ mod tests {
             name: "Bandit camp".to_string(),
             description: "A camp beside the road.".to_string(),
             summary: Some("Active quest".to_string()),
-            travel_action: "/quests/quest-location/travel".to_string(),
+            travel_action: "/case-sites/quest-location/travel".to_string(),
             track_action: Some("/case-sites/quest-location/track".to_string()),
             tracked: false,
             distance_m: 1_000,
@@ -8079,6 +8079,7 @@ mod tests {
         .into_string();
 
         assert!(markup.contains("Begin journey"));
+        assert!(markup.contains("action=\"/case-sites/quest-location/travel\""));
         assert!(markup.contains("action=\"/case-sites/quest-location/track\""));
         assert!(markup.contains("Track site"));
         assert!(!markup.contains("<p>A camp beside the road.</p>"));

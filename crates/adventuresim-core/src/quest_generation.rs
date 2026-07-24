@@ -414,6 +414,53 @@ pub enum ReferredContactTransition {
     },
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FailedActionAlternateTransition {
+    Activated { alternate_id: String },
+    Unavailable,
+}
+
+pub fn transition_failed_action_alternate(
+    states: &mut [ReferredContactActionState],
+    owner_character_id: u64,
+    canonical_case_id: &str,
+    alternate_id: &str,
+) -> Result<FailedActionAlternateTransition, &'static str> {
+    let Some(alternate_index) = states.iter().position(|candidate| {
+        candidate.id == alternate_id
+            && candidate.owner_character_id == owner_character_id
+            && candidate.case_id == canonical_case_id
+    }) else {
+        return Err("Investigation recovery route no longer matches its case");
+    };
+    if states[alternate_index].successful_attempt {
+        return Ok(FailedActionAlternateTransition::Unavailable);
+    }
+    let prerequisite_id = states[alternate_index].required_action_id.clone();
+    if !prerequisite_id.is_empty()
+        && !states.iter().any(|candidate| {
+            candidate.id == prerequisite_id
+                && candidate.owner_character_id == owner_character_id
+                && candidate.case_id == canonical_case_id
+                && candidate.successful_attempt
+        })
+    {
+        return Ok(FailedActionAlternateTransition::Unavailable);
+    }
+    states[alternate_index].active = true;
+    Ok(FailedActionAlternateTransition::Activated {
+        alternate_id: alternate_id.into(),
+    })
+}
+
+pub const fn failed_action_outcome_wording(alternate_available: bool) -> &'static str {
+    if alternate_available {
+        "No conclusive result. Time passed, but another supported route remains available."
+    } else {
+        "No conclusive result. Time passed, and no alternate route is currently supported by the leads in your journal."
+    }
+}
+
 pub fn exact_referral_contact(expected_npc_id: &str, addressed_npc_id: &str) -> bool {
     expected_npc_id == addressed_npc_id
 }
@@ -3379,6 +3426,47 @@ mod tests {
         let root_after_replay = states.iter().find(|state| state.id == root_id).unwrap();
         assert_eq!(root_after_replay.version, 1);
     }
+
+    #[test]
+    fn failed_route_does_not_revive_a_completed_contact_alternate() {
+        let mut states = vec![
+            ReferredContactActionState {
+                id: "search".into(),
+                owner_character_id: 7,
+                case_id: "case".into(),
+                method: "search_area".into(),
+                target_kind: "area".into(),
+                target_id: "area".into(),
+                required_action_id: String::new(),
+                active: true,
+                version: 1,
+                successful_attempt: false,
+            },
+            ReferredContactActionState {
+                id: "contact".into(),
+                owner_character_id: 7,
+                case_id: "case".into(),
+                method: "locate_contact".into(),
+                target_kind: "contact".into(),
+                target_id: "witness".into(),
+                required_action_id: String::new(),
+                active: false,
+                version: 1,
+                successful_attempt: true,
+            },
+        ];
+
+        assert_eq!(
+            transition_failed_action_alternate(&mut states, 7, "case", "contact").unwrap(),
+            FailedActionAlternateTransition::Unavailable
+        );
+        assert!(!states[1].active);
+        assert_eq!(
+            failed_action_outcome_wording(false),
+            "No conclusive result. Time passed, and no alternate route is currently supported by the leads in your journal."
+        );
+    }
+
     #[test]
     fn deterministic_and_counterfactual() {
         let a = generate(&context(41, TemplateFamily::DisappearanceOrLoss)).unwrap();

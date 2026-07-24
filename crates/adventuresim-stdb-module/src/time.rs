@@ -1325,7 +1325,7 @@ pub fn rest_at_settlement(
     )
 }
 
-/// Spend settlement time in hour-sized increments.  This intentionally keeps
+/// Spend an exact number of settlement minutes. This intentionally keeps
 /// each character's clock independent: sharing a settlement does not force a
 /// party to keep identical strategic times.
 #[reducer]
@@ -1414,11 +1414,7 @@ fn rest_for_minutes(
             .find(|choice| choice.0 == character_id)
     });
 
-    if !(MIN_SETTLEMENT_REST_MINUTES..=MAX_SETTLEMENT_REST_MINUTES).contains(&requested_minutes)
-        || requested_minutes % MIN_SETTLEMENT_REST_MINUTES != 0
-    {
-        return Err("Settlement rest must use whole hours between one hour and one year".into());
-    }
+    validate_settlement_rest_minutes(requested_minutes)?;
 
     let cost = requested_minutes
         .div_ceil(MINUTES_PER_DAY)
@@ -1540,6 +1536,14 @@ fn rest_for_minutes(
     crate::food::clear_stomach_fullness(ctx, character_id);
     crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(())
+}
+
+fn validate_settlement_rest_minutes(requested_minutes: u64) -> Result<(), String> {
+    if (MIN_SETTLEMENT_REST_MINUTES..=MAX_SETTLEMENT_REST_MINUTES).contains(&requested_minutes) {
+        Ok(())
+    } else {
+        Err("Settlement rest must last between one hour and one year".into())
+    }
 }
 
 /// Venue-neutral private downtime for system-owned clock synchronization,
@@ -2102,6 +2106,16 @@ mod tests {
         assert!(require_settlement_rest_service(&profile, true).is_err());
         profile.services.push(SettlementService::Temple);
         assert!(require_settlement_rest_service(&profile, false).is_ok());
+    }
+
+    #[test]
+    fn settlement_rest_accepts_exact_wake_minutes_with_bounded_duration() {
+        assert!(validate_settlement_rest_minutes(36 * 60 + 32).is_ok());
+        assert!(validate_settlement_rest_minutes(2 * MINUTES_PER_DAY).is_ok());
+        assert!(validate_settlement_rest_minutes(MIN_SETTLEMENT_REST_MINUTES).is_ok());
+        assert!(validate_settlement_rest_minutes(MAX_SETTLEMENT_REST_MINUTES).is_ok());
+        assert!(validate_settlement_rest_minutes(MIN_SETTLEMENT_REST_MINUTES - 1).is_err());
+        assert!(validate_settlement_rest_minutes(MAX_SETTLEMENT_REST_MINUTES + 1).is_err());
     }
 
     #[test]
