@@ -159,6 +159,8 @@ pub struct PublicTraceEvent {
     pub choice_kind: ChoiceKind,
     pub result: String,
     pub learned: Vec<String>,
+    /// Structured correction provenance; metrics must not infer it from prose.
+    pub corrected_proposition_ids: Vec<String>,
     pub game_minutes: u32,
     pub resource_cost: u16,
 }

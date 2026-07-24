@@ -122,6 +122,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             api_key_env,
             allow_network,
         } => {
+            if !(1..=500).contains(&cases_per_template) {
+                return Err("cases_per_template must be 1..=500".into());
+            }
+            validate_distinct_output_paths(&public_output, &developer_output)?;
             let configs = golden_suite(seed, cases_per_template);
             let limits = EvalLimits {
                 max_cases: cases_per_template
@@ -280,6 +284,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn validate_distinct_output_paths(
+    public_output: &Path,
+    developer_output: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let normalize = |path: &Path| -> Result<PathBuf, Box<dyn std::error::Error>> {
+        if path.exists() {
+            Ok(fs::canonicalize(path)?)
+        } else {
+            Ok(std::env::current_dir()?.join(path))
+        }
+    };
+    if normalize(public_output)? == normalize(developer_output)? {
+        return Err("public and developer evaluation outputs must be distinct paths".into());
+    }
+    Ok(())
+}
+
 fn read_bounded(path: &Path) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let mut bytes = Vec::new();
     fs::File::open(path)?
@@ -300,4 +321,15 @@ fn emit(
         println!("{}", String::from_utf8(json)?);
     }
     Ok(report)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn public_and_developer_outputs_must_differ() {
+        let path = PathBuf::from("quest-eval-same-output.json");
+        assert!(validate_distinct_output_paths(&path, &path).is_err());
+    }
 }

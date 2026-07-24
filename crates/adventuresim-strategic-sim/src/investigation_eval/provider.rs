@@ -10,7 +10,9 @@ use reqwest::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    env, thread,
+    env,
+    io::Read,
+    thread,
     time::{Duration, Instant},
 };
 
@@ -129,7 +131,12 @@ impl OpenAiCompatiblePolicy {
         })
     }
 
-    fn request(&mut self, frame: &PlayerFrame, repair: bool) -> Result<PolicyDecision, String> {
+    fn request(
+        &mut self,
+        frame: &PlayerFrame,
+        repair: bool,
+        deadline: Option<Instant>,
+    ) -> Result<PolicyDecision, String> {
         if self.requests >= self.config.max_requests {
             return Err("provider request budget exhausted".into());
         }
@@ -143,16 +150,6 @@ impl OpenAiCompatiblePolicy {
             u64::from(self.config.max_completion_tokens),
             &self.config,
         );
-        if self.estimated_cost_microusd.saturating_add(projected) > self.config.max_cost_microusd {
-            return Err("provider cost budget exceeded".into());
-        }
-        if let Some(previous) = self.last_request {
-            let minimum =
-                Duration::from_secs_f64(60.0 / f64::from(self.config.requests_per_minute));
-            if let Some(wait) = minimum.checked_sub(previous.elapsed()) {
-                thread::sleep(wait.min(Duration::from_secs(2)));
-            }
-        }
         let body = ChatRequest {
             model: &self.config.model,
             messages: vec![
@@ -174,13 +171,30 @@ impl OpenAiCompatiblePolicy {
         };
         let mut retry = 0;
         loop {
+            check_deadline(deadline)?;
+            self.throttle(deadline)?;
+            check_deadline(deadline)?;
+            // Reserve the maximum priced completion before every transmission.
+            // Failures, malformed responses, retries, and repair attempts all
+            // consume their bounded reservation rather than evading the cap.
+            if self.estimated_cost_microusd.saturating_add(projected)
+                > self.config.max_cost_microusd
+            {
+                return Err("provider cost budget exceeded".into());
+            }
+            self.estimated_cost_microusd = self.estimated_cost_microusd.saturating_add(projected);
             self.requests += 1;
             self.last_request = Some(Instant::now());
+            let timeout = deadline
+                .and_then(|end| end.checked_duration_since(Instant::now()))
+                .map(|remaining| remaining.min(self.config.timeout))
+                .unwrap_or(self.config.timeout);
             let response = self
                 .client
                 .post(self.endpoint.clone())
                 .header(AUTHORIZATION, format!("Bearer {}", self.key))
                 .header(CONTENT_TYPE, "application/json")
+                .timeout(timeout)
                 .json(&body)
                 .send()
                 .map_err(|error| format!("provider request failed: {error}"))?;
@@ -189,7 +203,7 @@ impl OpenAiCompatiblePolicy {
             {
                 if retry < self.config.max_retries && self.requests < self.config.max_requests {
                     retry += 1;
-                    thread::sleep(Duration::from_millis(100_u64 << retry));
+                    sleep_before_retry(Duration::from_millis(100_u64 << retry), deadline)?;
                     continue;
                 }
                 return Err(format!(
@@ -206,12 +220,7 @@ impl OpenAiCompatiblePolicy {
             {
                 return Err("provider response exceeds byte budget".into());
             }
-            let bytes = response
-                .bytes()
-                .map_err(|error| format!("provider response read failed: {error}"))?;
-            if bytes.len() > MAX_PROVIDER_RESPONSE_BYTES {
-                return Err("provider response exceeds byte budget".into());
-            }
+            let bytes = read_bounded_response(response)?;
             let envelope: ChatResponse = serde_json::from_slice(&bytes)
                 .map_err(|_| "provider returned malformed response envelope")?;
             let content = envelope
@@ -221,9 +230,18 @@ impl OpenAiCompatiblePolicy {
                 .message
                 .content
                 .as_bytes();
-            self.estimated_cost_microusd = self.estimated_cost_microusd.saturating_add(projected);
             return parse_provider_decision(content);
         }
+    }
+
+    fn throttle(&self, deadline: Option<Instant>) -> Result<(), String> {
+        if let Some(previous) = self.last_request {
+            let minimum = Duration::from_secs_f64(60.0 / f64::from(self.config.requests_per_minute));
+            if let Some(wait) = minimum.checked_sub(previous.elapsed()) {
+                sleep_before_retry(wait, deadline)?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -233,14 +251,63 @@ impl QuestPolicy for OpenAiCompatiblePolicy {
     }
 
     fn decide(&mut self, frame: &PlayerFrame) -> Result<PolicyDecision, String> {
-        match self.request(frame, false) {
+        match self.request(frame, false, None) {
             Ok(decision) => Ok(decision),
             Err(first) if first.contains("provider JSON") || first.contains("schema") => self
-                .request(frame, true)
+                .request(frame, true, None)
                 .map_err(|repair| format!("{first}; bounded repair failed: {repair}")),
             Err(error) => Err(error),
         }
     }
+    fn decide_before(
+        &mut self,
+        frame: &PlayerFrame,
+        deadline: Instant,
+    ) -> Result<PolicyDecision, String> {
+        check_deadline(Some(deadline))?;
+        let decision = match self.request(frame, false, Some(deadline)) {
+            Ok(decision) => Ok(decision),
+            Err(first) if first.contains("provider JSON") || first.contains("schema") => self
+                .request(frame, true, Some(deadline))
+                .map_err(|repair| format!("{first}; bounded repair failed: {repair}")),
+            Err(error) => Err(error),
+        }?;
+        check_deadline(Some(deadline))?;
+        Ok(decision)
+    }
+}
+}
+
+fn check_deadline(deadline: Option<Instant>) -> Result<(), String> {
+    if deadline.is_some_and(|end| Instant::now() >= end) {
+        Err("quest evaluator wall-time budget exceeded".into())
+    } else {
+        Ok(())
+    }
+}
+
+fn sleep_before_retry(wait: Duration, deadline: Option<Instant>) -> Result<(), String> {
+    let capped = deadline
+        .and_then(|end| end.checked_duration_since(Instant::now()))
+        .map(|remaining| wait.min(remaining))
+        .unwrap_or(wait);
+    if capped.is_zero() {
+        return Err("quest evaluator wall-time budget exceeded".into());
+    }
+    thread::sleep(capped);
+    check_deadline(deadline)
+}
+
+fn read_bounded_response(mut response: impl Read) -> Result<Vec<u8>, String> {
+    let mut bytes = Vec::with_capacity(MAX_PROVIDER_RESPONSE_BYTES.saturating_add(1));
+    response
+        .take((MAX_PROVIDER_RESPONSE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("provider response read failed: {error}"))?;
+    if bytes.len() > MAX_PROVIDER_RESPONSE_BYTES {
+        return Err("provider response exceeds byte budget".into());
+    }
+    Ok(bytes)
 }
 
 fn estimate_tokens(text: &str) -> u64 {
@@ -326,5 +393,13 @@ mod tests {
         let config = ProviderConfig::default();
         assert!(format!("{config:?}").contains("OPENAI_API_KEY"));
         assert!(!format!("{config:?}").contains("Bearer"));
+    }
+
+    #[test]
+    fn chunked_or_unknown_length_response_is_bounded() {
+        let oversized = std::io::Cursor::new(vec![b'x'; MAX_PROVIDER_RESPONSE_BYTES + 2]);
+        assert!(read_bounded_response(oversized).is_err());
+        let small = std::io::Cursor::new(b"{}".to_vec());
+        assert_eq!(read_bounded_response(small).unwrap(), b"{}");
     }
 }

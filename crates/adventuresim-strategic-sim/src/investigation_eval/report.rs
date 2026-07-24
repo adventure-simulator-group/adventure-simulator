@@ -121,6 +121,8 @@ pub struct ReplayCase {
     pub expected_digest: String,
 }
 
+pub const MAX_REPLAY_DECISIONS: usize = 1_000;
+
 pub fn evaluate_cases(
     configs: &[EvalCaseConfig],
     policy: &mut dyn QuestPolicy,
@@ -131,10 +133,11 @@ pub fn evaluate_cases(
         return Err("case count exceeds evaluator bounds".into());
     }
     let started = Instant::now();
+    let deadline = started + Duration::from_millis(limits.max_wall_time_ms);
     let mut traces = Vec::new();
     let mut private = Vec::new();
     for config in configs {
-        if started.elapsed() > Duration::from_millis(limits.max_wall_time_ms) {
+        if Instant::now() >= deadline {
             return Err("quest evaluator wall-time budget exceeded".into());
         }
         let mut environment = InvestigationEnvironment::generate(config.clone())?;
@@ -157,15 +160,27 @@ pub fn evaluate_cases(
                 termination = Termination::Loop;
                 break;
             }
-            let decision = match policy.decide(environment.frame()) {
+            if Instant::now() >= deadline {
+                termination = Termination::BudgetExceeded;
+                break;
+            }
+            let decision = match policy.decide_before(environment.frame(), deadline) {
                 Ok(decision) => decision,
-                Err(_) => {
-                    termination = Termination::PolicyError;
+                Err(error) => {
+                    termination = if error.contains("wall-time budget") {
+                        Termination::BudgetExceeded
+                    } else {
+                        Termination::PolicyError
+                    };
                     break;
                 }
             };
             if environment.apply(&decision).is_err() {
                 termination = Termination::PolicyError;
+                break;
+            }
+            if Instant::now() >= deadline {
+                termination = Termination::BudgetExceeded;
                 break;
             }
         }
@@ -193,11 +208,14 @@ pub fn evaluate_cases(
 }
 
 pub fn replay_case(recorded: &ReplayCase) -> Result<PublicQuestTrace, String> {
+    if recorded.decisions.len() > MAX_REPLAY_DECISIONS {
+        return Err("recorded action replay exceeds decision cap".into());
+    }
     let mut environment = InvestigationEnvironment::generate(EvalCaseConfig::fixture(
         recorded.seed,
         recorded.family,
     ))?;
-    for decision in &recorded.decisions {
+    for decision in recorded.decisions.iter().take(MAX_REPLAY_DECISIONS) {
         environment.apply(decision)?;
     }
     let termination = if environment.is_solved() {
@@ -262,8 +280,8 @@ fn metrics(traces: &[PublicQuestTrace], private: &[DeveloperCaseAnalysis]) -> Qu
     let corrections = traces
         .iter()
         .flat_map(|trace| &trace.events)
-        .filter(|event| event.learned.iter().any(|item| item.contains("correct")))
-        .count() as u32;
+        .map(|event| event.corrected_proposition_ids.len() as u32)
+        .sum();
     let prepared = traces
         .iter()
         .filter(|trace| {
@@ -460,5 +478,49 @@ mod tests {
             assert!(!public.contains(&case.canonical_case_id));
             assert!(!public.contains(&case.generator_manifest_digest));
         }
+    }
+
+    #[test]
+    fn correction_metric_uses_structured_ids_not_prose() {
+        let trace = PublicQuestTrace {
+            version: EVAL_FORMAT_VERSION,
+            case_id: "case:public".into(),
+            policy: "fixture".into(),
+            events: vec![super::super::PublicTraceEvent {
+                step: 0,
+                frame_digest: "digest".into(),
+                choice_id: "choice:fixture".into(),
+                choice_kind: super::super::ChoiceKind::InterviewWitness,
+                result: "ordinary testimony".into(),
+                learned: vec!["no correction wording here".into()],
+                corrected_proposition_ids: vec!["claim:wrong".into()],
+                game_minutes: 1,
+                resource_cost: 0,
+            }],
+            solved: false,
+            exhausted: false,
+            termination: Termination::StepLimit,
+            route: None,
+            semantic_digest: "fixture".into(),
+        };
+        assert_eq!(metrics(&[trace], &[]).false_hypothesis_corrections, 1);
+    }
+
+    #[test]
+    fn replay_rejects_unbounded_decision_lists_before_execution() {
+        let recorded = ReplayCase {
+            seed: 1,
+            family: TemplateFamily::RecurringDepredation,
+            decisions: vec![
+                PolicyDecision {
+                    version: EVAL_FORMAT_VERSION,
+                    choice_id: "choice:fixture".into(),
+                    arguments: Default::default(),
+                };
+                MAX_REPLAY_DECISIONS + 1
+            ],
+            expected_digest: "unused".into(),
+        };
+        assert!(replay_case(&recorded).is_err());
     }
 }
