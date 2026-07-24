@@ -56,9 +56,10 @@ test("settlement NPC selection is accessible and actor-backed", () => {
 test("late dialogue responses cannot replace the newly selected NPC", () => {
   assert.match(source, /const actor = chat\.dataset\.localChatSubject/);
   assert.match(source, /chat\.dataset\.localChatSubject === actor/);
-  assert.match(source, /binding\.selectionGeneration === selectionGeneration/);
-  assert.match(source, /binding\.npcId === chat\.dataset\.localChatSubject/);
-  assert.match(source, /binding\.sessionId === view\.session_id/);
+  assert.match(source, /dialogueResponseIsCurrent\(/);
+  assert.match(source, /binding\.selectionGeneration === currentGeneration/);
+  assert.match(source, /binding\.npcId === currentNpcId/);
+  assert.match(source, /binding\.sessionId === currentView\?\.session_id/);
 });
 
 test("late topic responses and errors cannot supersede a newer same-session revision", () => {
