@@ -8,6 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct QuestGenerationAuthority {
     pub case_id: String,
+    pub public_case_id: String,
     pub seed: u64,
     pub catalog_revision: String,
     pub context_snapshot_json: String,
@@ -24,6 +25,7 @@ impl __sdk::InModule for QuestGenerationAuthority {
 /// Provides typed access to columns for query building.
 pub struct QuestGenerationAuthorityCols {
     pub case_id: __sdk::__query_builder::Col<QuestGenerationAuthority, String>,
+    pub public_case_id: __sdk::__query_builder::Col<QuestGenerationAuthority, String>,
     pub seed: __sdk::__query_builder::Col<QuestGenerationAuthority, u64>,
     pub catalog_revision: __sdk::__query_builder::Col<QuestGenerationAuthority, String>,
     pub context_snapshot_json: __sdk::__query_builder::Col<QuestGenerationAuthority, String>,
@@ -36,6 +38,7 @@ impl __sdk::__query_builder::HasCols for QuestGenerationAuthority {
     fn cols(table_name: &'static str) -> Self::Cols {
         QuestGenerationAuthorityCols {
             case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
+            public_case_id: __sdk::__query_builder::Col::new(table_name, "public_case_id"),
             seed: __sdk::__query_builder::Col::new(table_name, "seed"),
             catalog_revision: __sdk::__query_builder::Col::new(table_name, "catalog_revision"),
             context_snapshot_json: __sdk::__query_builder::Col::new(
@@ -53,6 +56,7 @@ impl __sdk::__query_builder::HasCols for QuestGenerationAuthority {
 /// Provides typed access to indexed columns for query building.
 pub struct QuestGenerationAuthorityIxCols {
     pub case_id: __sdk::__query_builder::IxCol<QuestGenerationAuthority, String>,
+    pub public_case_id: __sdk::__query_builder::IxCol<QuestGenerationAuthority, String>,
 }
 
 impl __sdk::__query_builder::HasIxCols for QuestGenerationAuthority {
@@ -60,6 +64,7 @@ impl __sdk::__query_builder::HasIxCols for QuestGenerationAuthority {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         QuestGenerationAuthorityIxCols {
             case_id: __sdk::__query_builder::IxCol::new(table_name, "case_id"),
+            public_case_id: __sdk::__query_builder::IxCol::new(table_name, "public_case_id"),
         }
     }
 }
