@@ -810,6 +810,44 @@ enum GeneratedPatternAuthority {
     Invalid,
 }
 
+fn generated_capability_safe_text(
+    manifest: &adventuresim_core::quest_generation::GeneratedCase,
+    generated: &adventuresim_core::quest_generation::GeneratedAction,
+) -> (String, String) {
+    let evidence_summary = |evidence_id: &str| {
+        manifest
+            .evidence
+            .iter()
+            .find(|evidence| evidence.id.0 == evidence_id)
+            .map(|evidence| evidence.safe_description.clone())
+    };
+    let learned_condition = generated.outputs.iter().find_map(|output| match output {
+        adventuresim_core::quest_generation::GeneratedActionOutput::PatternCondition {
+            evidence_id,
+            ..
+        } => evidence_summary(&evidence_id.0),
+        _ => None,
+    });
+    let earned_clue = generated.outputs.iter().find_map(|output| match output {
+        adventuresim_core::quest_generation::GeneratedActionOutput::Evidence { evidence_id } => {
+            evidence_summary(&evidence_id.0)
+        }
+        _ => None,
+    });
+    (
+        learned_condition.map_or_else(
+            || {
+                "Complete the preceding generated lead and remain with your ready, co-located party."
+                    .into()
+            },
+            |clue| format!("First learn and retain this corroborated clue: {clue}"),
+        ),
+        earned_clue.unwrap_or_else(|| {
+            "The investigation produces a new, source-attributed lead.".into()
+        }),
+    )
+}
+
 fn generated_pattern_authority(
     capability: &InvestigationActionCapability,
     authority: Option<(&str, &str)>,
@@ -867,6 +905,8 @@ fn generated_pattern_authority(
         .as_ref()
         .map_or_else(String::new, remap);
     let expected_alternate = remap(&generated.alternate);
+    let (expected_known_prerequisites, expected_safe_result) =
+        generated_capability_safe_text(&manifest, generated);
     let expected_terrain = manifest
         .sites
         .iter()
@@ -887,6 +927,8 @@ fn generated_pattern_authority(
         || capability.required_action_id != expected_required
         || capability.alternate_route_action_id != expected_alternate
         || capability.safe_summary != generated.safe_summary
+        || capability.known_prerequisites != expected_known_prerequisites
+        || capability.safe_result_on_success != expected_safe_result
     {
         return GeneratedPatternAuthority::Invalid;
     }
@@ -2204,13 +2246,13 @@ fn issue_rumor_action_graph(
                 "capability",
                 &format!("{owner_character_id}:{}", generated.id.0),
             );
-            if ctx
+            if let Some(existing) = ctx
                 .db
                 .investigation_action_capability()
                 .id()
                 .find(&capability_id)
-                .is_some()
             {
+                validate_capability_blueprint_reducer(ctx, &existing)?;
                 continue;
             }
             let remap = |id: &adventuresim_core::quest_generation::ActionId| {
@@ -2257,26 +2299,8 @@ fn issue_rumor_action_graph(
                     _ => None,
                 })
                 .unwrap_or(InvestigationActionConsequence::None);
-            let evidence_summary = |evidence_id: &str| {
-                manifest
-                    .evidence
-                    .iter()
-                    .find(|evidence| evidence.id.0 == evidence_id)
-                    .map(|evidence| evidence.safe_description.clone())
-            };
-            let learned_condition = generated.outputs.iter().find_map(|output| match output {
-                adventuresim_core::quest_generation::GeneratedActionOutput::PatternCondition {
-                    evidence_id,
-                    ..
-                } => evidence_summary(&evidence_id.0),
-                _ => None,
-            });
-            let earned_clue = generated.outputs.iter().find_map(|output| match output {
-                adventuresim_core::quest_generation::GeneratedActionOutput::Evidence {
-                    evidence_id,
-                } => evidence_summary(&evidence_id.0),
-                _ => None,
-            });
+            let (known_prerequisites, safe_result_on_success) =
+                generated_capability_safe_text(&manifest, generated);
             issue_investigation_action_capability(
                 ctx,
                 capability_id,
@@ -2287,19 +2311,19 @@ fn issue_rumor_action_graph(
                 generated.kind,
                 generated.target_kind.clone(),
                 generated.target_id.clone(),
-                site_terrain.or(area_terrain).unwrap_or(action::Terrain::Settlement),
+                site_terrain
+                    .or(area_terrain)
+                    .unwrap_or(action::Terrain::Settlement),
                 ctx.random::<u64>(),
                 7_000,
                 generated.safe_summary.clone(),
-                learned_condition.map_or_else(
-                    || "Complete the preceding generated lead and remain with your ready, co-located party.".into(),
-                    |clue| format!("First learn and retain this corroborated clue: {clue}"),
-                ),
-                earned_clue.unwrap_or_else(|| {
-                    "The investigation produces a new, source-attributed lead.".into()
-                }),
+                known_prerequisites,
+                safe_result_on_success,
                 consequence,
-                generated.prerequisite.as_ref().map_or_else(String::new, remap),
+                generated
+                    .prerequisite
+                    .as_ref()
+                    .map_or_else(String::new, remap),
                 remap(&generated.alternate),
             )?;
             ctx.db.investigation_generated_action_output().insert(
@@ -4238,6 +4262,39 @@ pub(crate) fn stage_investigation_claim(
     Ok(())
 }
 
+fn validate_generated_testimony_site(
+    generated: &adventuresim_core::quest_generation::GeneratedCase,
+    draft: &adventuresim_core::quest_generation::TestimonyDraft,
+    site: Option<&CaseSiteAuthority>,
+) -> Result<(), &'static str> {
+    if draft.destination_stage != "exact_believed" {
+        return Ok(());
+    }
+    let site_id = draft
+        .site_id
+        .as_ref()
+        .filter(|site_id| !site_id.0.is_empty())
+        .ok_or("Exact generated testimony has no site identity")?;
+    let generated_site = generated
+        .sites
+        .iter()
+        .find(|site| site.id == *site_id)
+        .ok_or("Exact generated testimony site is absent from the manifest")?;
+    let site = site.ok_or("Exact generated testimony site authority is missing")?;
+    if site.case_id != generated.canonical_case_id
+        || site.id.value != site_id.0
+        || site.id_key != site_id.0
+        || site.name != generated_site.safe_label
+        || site.distance_m == 0
+        || (site.coordinates_are_geographic
+            && (!(-1_800_000_000..=1_800_000_000).contains(&site.longitude_e7)
+                || !(-900_000_000..=900_000_000).contains(&site.latitude_e7)))
+    {
+        return Err("Exact generated testimony site authority is inconsistent");
+    }
+    Ok(())
+}
+
 pub(crate) fn persist_generated_testimony(
     ctx: &ReducerContext,
     character_id: u64,
@@ -4267,6 +4324,14 @@ pub(crate) fn persist_generated_testimony(
     .map_err(|_| "Generated testimony manifest authority is invalid")?;
     if authoritative_manifest != *generated {
         return Err("Generated testimony manifest does not match private authority".into());
+    }
+    for draft in &projection_plan {
+        let site = draft
+            .site_id
+            .as_ref()
+            .and_then(|site_id| ctx.db.case_site_authority().id_key().find(&site_id.0));
+        validate_generated_testimony_site(generated, draft, site.as_ref())
+            .map_err(str::to_string)?;
     }
     let generation_context = serde_json::from_str::<
         adventuresim_core::quest_generation::GenerationContext,
@@ -5786,6 +5851,8 @@ mod tests {
                     .any(|output| matches!(output, GeneratedActionOutput::PatternCondition { .. }))
             })
             .unwrap();
+        let (known_prerequisites, safe_result_on_success) =
+            generated_capability_safe_text(&manifest, generated);
         let capability = InvestigationActionCapability {
             id: observer_scoped_id(&context, "capability", &format!("7:{}", generated.id.0)),
             owner_character_id: 7,
@@ -5817,8 +5884,8 @@ mod tests {
             evidence_age_origin_minute: 0,
             uncertainty_bps: 0,
             safe_summary: generated.safe_summary.clone(),
-            known_prerequisites: String::new(),
-            safe_result_on_success: String::new(),
+            known_prerequisites,
+            safe_result_on_success,
             consequence_json: serde_json::to_string(&InvestigationActionConsequence::None).unwrap(),
             required_action_id: generated
                 .prerequisite
@@ -5899,7 +5966,7 @@ mod tests {
             generated_pattern_authority(&wrong_case, authority, Some(&exact_outputs)),
             GeneratedPatternAuthority::Invalid
         );
-        for mutate in 0..8 {
+        for mutate in 0..10 {
             let mut changed = capability.clone();
             match mutate {
                 0 => changed.method = "watch".into(),
@@ -5909,7 +5976,9 @@ mod tests {
                 4 => changed.required_action_id = "wrong-required".into(),
                 5 => changed.alternate_route_action_id = "wrong-alternate".into(),
                 6 => changed.safe_summary = "wrong summary".into(),
-                _ => changed.consequence_json = r#"{"kind":"rescue_subject"}"#.into(),
+                7 => changed.consequence_json = r#"{"kind":"rescue_subject"}"#.into(),
+                8 => changed.known_prerequisites = "wrong prerequisites".into(),
+                _ => changed.safe_result_on_success = "wrong result".into(),
             }
             assert_eq!(
                 generated_pattern_authority(&changed, authority, Some(&exact_outputs)),
@@ -6028,6 +6097,20 @@ mod tests {
             assert!(body.contains("exactly_one_generated_authority"));
             assert!(!body.contains(".iter()"));
         }
+        let issuer = source
+            .split("fn issue_rumor_action_graph")
+            .nth(1)
+            .and_then(|tail| tail.split("fn issue_investigation_actions").next())
+            .unwrap();
+        assert!(issuer.contains("if let Some(existing)"));
+        assert!(issuer.contains("validate_capability_blueprint_reducer(ctx, &existing)?"));
+        assert!(issuer.contains("generated_capability_safe_text(&manifest, generated)"));
+        assert!(
+            issuer
+                .find("validate_capability_blueprint_reducer(ctx, &existing)?")
+                .unwrap()
+                < issuer.find("continue;").unwrap()
+        );
     }
 
     #[test]
@@ -6107,6 +6190,10 @@ mod tests {
         assert!(generated.contains(".filter(|_| exact)"));
         assert!(generated.contains("prior.corrected_by = lead_id.clone()"));
         assert!(generated.contains("prior.proposition_id == *corrected_proposition"));
+        assert!(
+            generated.find("validate_generated_testimony_site").unwrap()
+                < generated.find("for (index, draft)").unwrap()
+        );
         let preflight = source
             .split("fn validate_referred_contact_authority")
             .nth(1)
@@ -6129,6 +6216,70 @@ mod tests {
                     .find("investigation_action_attempt()\n        .insert")
                     .unwrap()
         );
+    }
+
+    #[test]
+    fn exact_generated_testimony_requires_matching_private_site_authority() {
+        use adventuresim_core::{
+            local_problem::Scope,
+            quest_generation::{
+                GenerationContext, SiteId, TemplateFamily, generate, test_witnesses,
+            },
+        };
+        let generated = generate(&GenerationContext {
+            seed: 7,
+            observer_entropy_hi: 11,
+            observer_entropy_lo: 13,
+            settlement_id: "lubeck".into(),
+            settlement_name: "Lubeck".into(),
+            scope: Scope::Settlement {
+                settlement_id: "lubeck".into(),
+            },
+            ordinal: 0,
+            now_minute: 50_000,
+            requested_family: Some(TemplateFamily::RecurringDepredation),
+            witness_candidates: test_witnesses(),
+        })
+        .unwrap();
+        let generated_site = &generated.sites[0];
+        let mut draft = generated.witnesses[0].testimony[0].clone();
+        draft.destination_stage = "exact_believed".into();
+        draft.site_id = Some(generated_site.id.clone());
+        let site = CaseSiteAuthority {
+            id_key: generated_site.id.0.clone(),
+            id: CaseSiteId::from(generated_site.id.0.clone()),
+            case_id: generated.canonical_case_id.clone(),
+            origin_settlement_id: "lubeck".into(),
+            name: generated_site.safe_label.clone(),
+            description: String::new(),
+            scene_key: "generated".into(),
+            longitude_e7: 100,
+            latitude_e7: 200,
+            coordinates_are_geographic: true,
+            distance_m: 1_000,
+        };
+        assert!(validate_generated_testimony_site(&generated, &draft, Some(&site)).is_ok());
+        assert!(validate_generated_testimony_site(&generated, &draft, None).is_err());
+        let mut cross_case = site.clone();
+        cross_case.case_id = "other-case".into();
+        assert!(validate_generated_testimony_site(&generated, &draft, Some(&cross_case)).is_err());
+        let mut wrong_identity = site.clone();
+        wrong_identity.name = "wrong generated site".into();
+        assert!(
+            validate_generated_testimony_site(&generated, &draft, Some(&wrong_identity)).is_err()
+        );
+        let mut wrong_geometry = site.clone();
+        wrong_geometry.latitude_e7 = i32::MAX;
+        assert!(
+            validate_generated_testimony_site(&generated, &draft, Some(&wrong_geometry)).is_err()
+        );
+        let mut missing_site = draft.clone();
+        missing_site.site_id = Some(SiteId::new("missing-site"));
+        assert!(validate_generated_testimony_site(&generated, &missing_site, Some(&site)).is_err());
+        let mut non_exact = draft;
+        non_exact.destination_stage = "approximate_area".into();
+        non_exact.site_id = None;
+        assert!(validate_generated_testimony_site(&generated, &non_exact, None).is_ok());
     }
 
     #[test]
