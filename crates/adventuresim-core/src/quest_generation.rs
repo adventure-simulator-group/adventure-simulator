@@ -357,6 +357,111 @@ pub struct GeneratedAction {
     pub outputs: Vec<GeneratedActionOutput>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReferredContactActionState {
+    pub id: String,
+    pub owner_character_id: u64,
+    pub case_id: String,
+    pub method: String,
+    pub target_kind: String,
+    pub target_id: String,
+    pub required_action_id: String,
+    pub active: bool,
+    pub version: u32,
+    pub successful_attempt: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ReferredContactTransition {
+    NotApplicable,
+    Replay,
+    Applied {
+        root_id: String,
+        expected_version: u32,
+        next_version: u32,
+        activated_successor_ids: Vec<String>,
+        attempt_success: bool,
+        outcome_wording: String,
+    },
+}
+
+pub fn exact_referral_contact(expected_npc_id: &str, addressed_npc_id: &str) -> bool {
+    expected_npc_id == addressed_npc_id
+}
+
+pub fn generated_testimony_projection_plan(
+    witness: &WitnessBinding,
+) -> Result<Vec<TestimonyDraft>, &'static str> {
+    if witness.testimony.is_empty() {
+        Err("Generated witness has no proposition testimony")
+    } else {
+        Ok(witness.testimony.clone())
+    }
+}
+
+pub fn transition_referred_contact_action(
+    states: &mut [ReferredContactActionState],
+    owner_character_id: u64,
+    canonical_case_id: &str,
+    witness_npc_id: &str,
+) -> Result<ReferredContactTransition, &'static str> {
+    let matches: Vec<_> = states
+        .iter()
+        .enumerate()
+        .filter(|(_, capability)| {
+            capability.owner_character_id == owner_character_id
+                && capability.case_id == canonical_case_id
+                && capability.method == "locate_contact"
+                && capability.target_kind == "contact"
+                && capability.target_id == witness_npc_id
+        })
+        .map(|(index, _)| index)
+        .collect();
+    if matches.len() > 1 {
+        return Err("Referred witness matches multiple contact actions");
+    }
+    let Some(root_index) = matches.first().copied() else {
+        return Ok(ReferredContactTransition::NotApplicable);
+    };
+    if !states[root_index].active {
+        return Ok(if states[root_index].successful_attempt {
+            ReferredContactTransition::Replay
+        } else {
+            ReferredContactTransition::NotApplicable
+        });
+    }
+    let root_id = states[root_index].id.clone();
+    let expected_version = states[root_index].version;
+    let successor_indices: Vec<_> = states
+        .iter()
+        .enumerate()
+        .filter(|(_, candidate)| {
+            candidate.owner_character_id == owner_character_id
+                && candidate.case_id == canonical_case_id
+                && candidate.required_action_id == root_id
+        })
+        .map(|(index, _)| index)
+        .collect();
+    let activated_successor_ids = successor_indices
+        .iter()
+        .map(|index| states[*index].id.clone())
+        .collect();
+    states[root_index].active = false;
+    states[root_index].version = states[root_index].version.saturating_add(1);
+    states[root_index].successful_attempt = true;
+    for index in successor_indices {
+        states[index].active = true;
+    }
+    Ok(ReferredContactTransition::Applied {
+        root_id,
+        expected_version,
+        next_version: states[root_index].version,
+        activated_successor_ids,
+        attempt_success: true,
+        outcome_wording: "The referred witness gave their account.".into(),
+    })
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum GeneratedActionOutput {
@@ -2999,6 +3104,130 @@ mod tests {
             }
             assert!(claim_count >= generated.witnesses.len());
         }
+    }
+
+    #[test]
+    fn exact_referred_witness_projects_clues_and_completes_contact_root_idempotently() {
+        use crate::investigation::process_report;
+
+        let mut source = context(11, TemplateFamily::DisappearanceOrLoss);
+        for (index, witness) in source.witness_candidates.iter_mut().enumerate() {
+            witness.npc_id = format!("npc:riverdale:{index}");
+        }
+        let generated = generate(&source).expect("generated disappearance case");
+        let witness = generated.witnesses.first().expect("exact referred witness");
+        let same_name_other_id = "npc:riverdale:same-name-collision";
+        let witness_name = "Hans Wagner";
+        let other_name = "Hans Wagner";
+        assert_eq!(witness_name, other_name);
+        assert!(exact_referral_contact(&witness.npc_id, &witness.npc_id));
+        assert!(!exact_referral_contact(&witness.npc_id, same_name_other_id));
+
+        let projection_plan =
+            generated_testimony_projection_plan(witness).expect("public testimony projections");
+        let character_id = 17_849_106_825_763_413_937;
+        let mut public_testimony = Vec::new();
+        let mut public_leads = Vec::new();
+        for (index, draft) in projection_plan.iter().enumerate() {
+            let (_, pipeline) = generated_testimony_pipeline(
+                &source,
+                character_id,
+                &generated,
+                witness,
+                index,
+                source.now_minute,
+            )
+            .expect("private testimony pipeline");
+            let (_, _, claim) = process_report(pipeline).expect("production claim processing");
+            let claim = claim.expect("generated testimony is disclosed");
+            public_testimony.push((claim.proposition_id.as_str().to_string(), claim.statement));
+            public_leads.push((draft.proposition_id.clone(), draft.spoken_text.clone()));
+        }
+        assert_eq!(public_testimony.len(), witness.testimony.len());
+        assert_eq!(public_leads.len(), witness.testimony.len());
+        assert!(
+            public_testimony
+                .iter()
+                .all(|(_, statement)| !statement.is_empty())
+        );
+        assert!(public_leads.iter().all(|(_, summary)| !summary.is_empty()));
+
+        let method = |kind| match kind {
+            InvestigationActionKind::InspectSite => "inspect_site",
+            InvestigationActionKind::SearchArea => "search_area",
+            InvestigationActionKind::FollowTracks => "follow_tracks",
+            InvestigationActionKind::ReacquireTracks => "reacquire_tracks",
+            InvestigationActionKind::LocateContact => "locate_contact",
+            InvestigationActionKind::Watch => "watch",
+            InvestigationActionKind::Patrol => "patrol",
+            InvestigationActionKind::LayAmbush => "lay_ambush",
+            InvestigationActionKind::ApproachLead => "approach_lead",
+        };
+        let mut states: Vec<_> = generated
+            .actions
+            .iter()
+            .map(|action| ReferredContactActionState {
+                id: action.id.0.clone(),
+                owner_character_id: character_id,
+                case_id: generated.canonical_case_id.clone(),
+                method: method(action.kind).into(),
+                target_kind: action.target_kind.clone(),
+                target_id: action.target_id.clone(),
+                required_action_id: action
+                    .prerequisite
+                    .as_ref()
+                    .map_or_else(String::new, |id| id.0.clone()),
+                active: action.active_initially,
+                version: 0,
+                successful_attempt: false,
+            })
+            .collect();
+        let applied = transition_referred_contact_action(
+            &mut states,
+            character_id,
+            &generated.canonical_case_id,
+            &witness.npc_id,
+        )
+        .expect("exact witness transition");
+        let ReferredContactTransition::Applied {
+            root_id,
+            expected_version,
+            next_version,
+            activated_successor_ids,
+            attempt_success,
+            outcome_wording,
+        } = applied
+        else {
+            panic!("exact witness should complete the active contact root");
+        };
+        assert_eq!(expected_version, 0);
+        assert_eq!(next_version, 1);
+        assert!(attempt_success);
+        assert!(!outcome_wording.is_empty());
+        let root = states.iter().find(|state| state.id == root_id).unwrap();
+        assert!(!root.active);
+        assert!(root.successful_attempt);
+        assert_eq!(root.version, 1);
+        assert!(!activated_successor_ids.is_empty());
+        assert!(activated_successor_ids.iter().all(|id| {
+            states
+                .iter()
+                .find(|state| state.id == *id)
+                .is_some_and(|state| state.active && state.required_action_id == root_id)
+        }));
+
+        assert_eq!(
+            transition_referred_contact_action(
+                &mut states,
+                character_id,
+                &generated.canonical_case_id,
+                &witness.npc_id,
+            )
+            .expect("idempotent replay"),
+            ReferredContactTransition::Replay
+        );
+        let root_after_replay = states.iter().find(|state| state.id == root_id).unwrap();
+        assert_eq!(root_after_replay.version, 1);
     }
     #[test]
     fn deterministic_and_counterfactual() {
