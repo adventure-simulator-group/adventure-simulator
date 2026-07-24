@@ -707,6 +707,18 @@ pub fn backend_investigation_journal(ctx: &ViewContext) -> Vec<BackendInvestigat
                 if belief.owner_character_id != r.owner_character_id {
                     return None;
                 }
+                let supersedes = safe_superseded_revision_label(
+                    &r,
+                    (!r.supersedes.is_empty())
+                        .then(|| {
+                            ctx.db
+                                .investigation_belief_revision()
+                                .id()
+                                .find(&r.supersedes)
+                        })
+                        .flatten()
+                        .as_ref(),
+                );
                 Some(BackendInvestigationJournalEntry {
                     owner_character_id: r.owner_character_id,
                     case_id: belief.case_id,
@@ -717,7 +729,7 @@ pub fn backend_investigation_journal(ctx: &ViewContext) -> Vec<BackendInvestigat
                     confidence_bps: r.confidence_bps,
                     contradiction_group: belief.conflict_group,
                     corrected_by: String::new(),
-                    supersedes: r.supersedes,
+                    supersedes,
                     recorded_at: r.recorded_at,
                 })
             }),
@@ -741,7 +753,12 @@ pub fn backend_investigation_leads(ctx: &ViewContext) -> Vec<BackendInvestigatio
         .investigation_lead()
         .owner_character_id()
         .filter(0u64..)
-        .map(sanitize_lead)
+        .map(|lead| {
+            let correction = (!lead.corrected_by.is_empty())
+                .then(|| ctx.db.investigation_lead().id().find(&lead.corrected_by))
+                .flatten();
+            sanitize_lead(lead, correction.as_ref())
+        })
         .collect()
 }
 
@@ -4162,8 +4179,56 @@ pub(crate) fn mark_case_site_visited(
     Ok(())
 }
 
-fn sanitize_lead(row: InvestigationLead) -> BackendInvestigationLead {
+fn safe_correction_label(
+    row: &InvestigationLead,
+    correction: Option<&InvestigationLead>,
+) -> String {
+    if row.corrected_by.is_empty() {
+        return String::new();
+    }
+    let Some(correction) = correction.filter(|correction| {
+        correction.owner_character_id == row.owner_character_id && correction.case_id == row.case_id
+    }) else {
+        return "a later account".into();
+    };
+    if !correction.witness_name.is_empty() {
+        correction.witness_name.clone()
+    } else if !correction.source_label.is_empty() {
+        correction.source_label.clone()
+    } else {
+        "a later account".into()
+    }
+}
+
+fn safe_superseded_revision_label(
+    row: &InvestigationBeliefRevision,
+    superseded: Option<&InvestigationBeliefRevision>,
+) -> String {
+    if row.supersedes.is_empty() {
+        return String::new();
+    }
+    let Some(superseded) = superseded.filter(|superseded| {
+        superseded.owner_character_id == row.owner_character_id
+            && superseded.belief_id == row.belief_id
+    }) else {
+        return "an earlier account".into();
+    };
+    if superseded.provenance_label.is_empty() {
+        format!("revision {}", superseded.revision)
+    } else {
+        format!(
+            "revision {} from {}",
+            superseded.revision, superseded.provenance_label
+        )
+    }
+}
+
+fn sanitize_lead(
+    row: InvestigationLead,
+    correction: Option<&InvestigationLead>,
+) -> BackendInvestigationLead {
     let exact = matches!(row.destination_stage.as_str(), "exact_believed" | "visited");
+    let corrected_by = safe_correction_label(&row, correction);
     BackendInvestigationLead {
         owner_character_id: row.owner_character_id,
         case_id: row.case_id,
@@ -4186,7 +4251,7 @@ fn sanitize_lead(row: InvestigationLead) -> BackendInvestigationLead {
         expected_location: row.expected_location,
         current_learned_location: row.current_learned_location,
         contradiction_group: row.contradiction_group,
-        corrected_by: row.corrected_by,
+        corrected_by,
         recorded_at: row.recorded_at,
     }
 }
@@ -5568,7 +5633,7 @@ pub fn share_investigation_lead(
     ctx.db.investigation_lead().insert(InvestigationLead {
         id: copy_id,
         owner_character_id: recipient_id,
-        source_label: format!("shared by character {sender_id}"),
+        source_label: format!("shared by {}", sender.name),
         ..source
     });
     ctx.db
@@ -5680,7 +5745,7 @@ pub fn share_investigation_belief(
             statement: source.statement.clone(),
             confidence_bps: source.confidence_bps,
             provenance_kind: "shared_by".into(),
-            provenance_label: format!("shared by character {sender_id}"),
+            provenance_label: format!("shared by {}", sender.name),
             supersedes: existing
                 .as_ref()
                 .map_or_else(String::new, |belief| belief.current_revision_id.clone()),
@@ -6657,9 +6722,95 @@ mod tests {
             corrected_by: String::new(),
             recorded_at: 1,
         };
-        let safe = sanitize_lead(row);
+        let safe = sanitize_lead(row, None);
         assert!(safe.exact_location_id.is_empty());
         assert_eq!((safe.latitude_e7, safe.longitude_e7), (0, 0));
+    }
+
+    #[test]
+    fn journal_cross_scope_references_degrade_to_safe_chronology() {
+        let lead = InvestigationLead {
+            id: "lead:one".into(),
+            owner_character_id: 7,
+            case_id: "case:public".into(),
+            proposition_id: String::new(),
+            summary: "An uncertain account".into(),
+            source_label: "the miller".into(),
+            confidence_bps: 5000,
+            destination_stage: "textual".into(),
+            directions: String::new(),
+            exact_location_id: String::new(),
+            latitude_e7: 0,
+            longitude_e7: 0,
+            witness_name: String::new(),
+            witness_description: String::new(),
+            witness_occupation_or_relationship: String::new(),
+            expected_location: String::new(),
+            current_learned_location: String::new(),
+            contradiction_group: String::new(),
+            corrected_by: "lead:later".into(),
+            recorded_at: 1,
+        };
+        let mut correction = lead.clone();
+        correction.id = "lead:later".into();
+        correction.corrected_by.clear();
+        correction.witness_name = "Greta".into();
+        assert_eq!(safe_correction_label(&lead, Some(&correction)), "Greta");
+        correction.witness_name.clear();
+        correction.source_label = "another witness".into();
+        assert_eq!(
+            safe_correction_label(&lead, Some(&correction)),
+            "another witness"
+        );
+        correction.owner_character_id = 8;
+        assert_eq!(
+            safe_correction_label(&lead, Some(&correction)),
+            "a later account"
+        );
+        correction.owner_character_id = 7;
+        correction.case_id = "case:other".into();
+        assert_eq!(
+            safe_correction_label(&lead, Some(&correction)),
+            "a later account"
+        );
+        assert_eq!(safe_correction_label(&lead, None), "a later account");
+
+        let revision = InvestigationBeliefRevision {
+            id: "revision:two".into(),
+            owner_character_id: 7,
+            belief_id: "belief:one".into(),
+            revision: 2,
+            statement: "Later account".into(),
+            confidence_bps: 6000,
+            provenance_kind: "witness".into(),
+            provenance_label: "Greta".into(),
+            supersedes: "revision:one".into(),
+            recorded_at: 2,
+        };
+        let mut earlier = revision.clone();
+        earlier.id = "revision:one".into();
+        earlier.revision = 1;
+        earlier.provenance_label = "the miller".into();
+        earlier.supersedes.clear();
+        assert_eq!(
+            safe_superseded_revision_label(&revision, Some(&earlier)),
+            "revision 1 from the miller"
+        );
+        earlier.belief_id = "belief:other".into();
+        assert_eq!(
+            safe_superseded_revision_label(&revision, Some(&earlier)),
+            "an earlier account"
+        );
+        earlier.belief_id = revision.belief_id.clone();
+        earlier.owner_character_id = 8;
+        assert_eq!(
+            safe_superseded_revision_label(&revision, Some(&earlier)),
+            "an earlier account"
+        );
+        assert_eq!(
+            safe_superseded_revision_label(&revision, None),
+            "an earlier account"
+        );
     }
 
     #[test]

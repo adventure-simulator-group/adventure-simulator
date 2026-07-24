@@ -218,13 +218,53 @@ async fn travel_to_case_site(
         },
     )
     .await;
-    if let Err(ref error) = outcome {
-        tracing::error!("Failed to travel to case site: {error:?}");
-        return (StatusCode::BAD_REQUEST, error.clone()).into_response();
+    match outcome {
+        Ok(PartyActionOutcome::Executed) => Redirect::to("/camp").into_response(),
+        Ok(PartyActionOutcome::Requested) => (
+            StatusCode::ACCEPTED,
+            Html(
+                crate::templates::strategic_notice_page(
+                    "Travel requested",
+                    "The party leader has been asked to begin this journey.",
+                    "/quests",
+                    "Return to the journal",
+                    None,
+                )
+                .into_string(),
+            ),
+        )
+            .into_response(),
+        Err(error) => {
+            tracing::warn!(%error, character_id, "case-site travel rejected");
+            (
+                StatusCode::BAD_REQUEST,
+                Html(
+                    crate::templates::strategic_notice_page(
+                        "Travel could not begin",
+                        safe_case_site_travel_error(&error),
+                        "/quests",
+                        "Return to the journal",
+                        None,
+                    )
+                    .into_string(),
+                ),
+            )
+                .into_response()
+        }
     }
-    match outcome.unwrap() {
-        PartyActionOutcome::Executed => StatusCode::NO_CONTENT.into_response(),
-        PartyActionOutcome::Requested => StatusCode::ACCEPTED.into_response(),
+}
+
+fn safe_case_site_travel_error(error: &str) -> &'static str {
+    if error.contains("incapacitated") {
+        "An incapacitated party member must recover before the party can travel."
+    } else if error.contains("current journey") || error.contains("camped") {
+        "Finish or change the party's current journey before starting another."
+    } else if error.contains("origin settlement") {
+        "This journey must begin at the settlement named by the exact directions."
+    } else if error.contains("party leader") {
+        "Only the party leader can begin this journey immediately."
+    } else {
+        "The exact destination or the party's travel readiness changed. Review the journal before trying again."
     }
 }
 
@@ -942,5 +982,18 @@ mod quest_route_tests {
             )),
             "/?party-requested=autoresolve",
         );
+    }
+
+    #[test]
+    fn case_site_travel_errors_are_safe_and_actionable() {
+        assert_eq!(
+            safe_case_site_travel_error("An incapacitated member cannot act"),
+            "An incapacitated party member must recover before the party can travel."
+        );
+        assert_eq!(
+            safe_case_site_travel_error("private canonical site mismatch: site:secret"),
+            "The exact destination or the party's travel readiness changed. Review the journal before trying again."
+        );
+        assert!(!safe_case_site_travel_error("site:secret").contains("site:secret"));
     }
 }
