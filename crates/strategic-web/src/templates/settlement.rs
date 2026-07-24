@@ -744,6 +744,7 @@ pub fn settlement_map_page(
     soap_preview: SoapRestPreview,
     can_travel: bool,
     provision_forecast: Option<&TravelProvisionForecast>,
+    provisioning_path: Option<&str>,
     is_current_settlement: bool,
     abandonable_quest: Option<&ContractPresentation>,
     logged_in_as: Option<&str>,
@@ -808,7 +809,7 @@ pub fn settlement_map_page(
             selected_settlement,
             selected_settlement.is_some_and(|destination| destination.id == settlement.id),
             can_travel,
-            true,
+            provisioning_path,
             provision_forecast,
             active_party,
             active_party.is_some_and(|party| party.leader_id == active_character.map_or(0, |character| character.id)),
@@ -984,7 +985,7 @@ pub(crate) fn map_destination_detail(
     selected_settlement: Option<&Settlement>,
     selected_is_current: bool,
     can_travel: bool,
-    provisioning_available: bool,
+    provisioning_path: Option<&str>,
     provision_forecast: Option<&TravelProvisionForecast>,
     party: Option<&Party>,
     can_configure_travel: bool,
@@ -994,14 +995,6 @@ pub(crate) fn map_destination_detail(
     let camp_fatigue_percent = party.map_or(50, |party| party.camp_fatigue_percent);
     let travel_disabled = party.is_some_and(|party| party.walking_minutes_per_day == 0);
     let inspecting_nonroute = selected.is_none() && selected_settlement.is_some();
-    let market_path = format!(
-        "/settlements/{}/merchants",
-        map_path
-            .trim_end_matches("/map")
-            .rsplit('/')
-            .next()
-            .unwrap_or("")
-    );
     html! {
         aside class=(if party.is_some() && can_configure_travel && !inspecting_nonroute { "right-sidebar travel-configuration-sidebar" } else { "right-sidebar" }) {
             @if party.is_some() && can_configure_travel {
@@ -1010,7 +1003,7 @@ pub(crate) fn map_destination_detail(
                     (travel_planner_bar(selected, camp_fatigue_percent))
                 }
                 (travel_preferences_form(party.expect("party checked above"), &format!("{map_path}/travel-configuration")))
-                @if provisioning_available {
+                @if let Some(provisioning_path) = provisioning_path {
                     div class="travel-provisioning-control" data-provisioning-control {
                         div class="travel-provisioning-input" {
                             input type="hidden" value="0" data-target-surplus;
@@ -1033,10 +1026,10 @@ pub(crate) fn map_destination_detail(
                             }
                             @if let Some(forecast) = provision_forecast {
                                 a class="btn btn-secondary" data-provision-buy
-                                    data-market-path=(&market_path)
+                                    data-market-path=(provisioning_path)
                                     data-initial-rations=(forecast.rations_to_buy)
                                     data-initial-waterskins=(forecast.waterskins_to_buy)
-                                    href=(&market_path) { "Buy" }
+                                    href=(provisioning_path) { "Buy" }
                             } @else {
                                 button type="button" class="btn btn-secondary" disabled title="Provision estimates are unavailable" { "Buy" }
                             }
@@ -8220,7 +8213,7 @@ mod tests {
             None,
             false,
             true,
-            false,
+            None,
             None,
             None,
             false,
@@ -8249,7 +8242,7 @@ mod tests {
             Some(&destination),
             false,
             true,
-            true,
+            Some("/settlements/viabundus-1/inn"),
             None,
             None,
             false,
@@ -8278,7 +8271,7 @@ mod tests {
             None,
             false,
             true,
-            true,
+            Some("/settlements/viabundus-1/inn"),
             None,
             None,
             false,
@@ -8291,6 +8284,53 @@ mod tests {
         assert!(markup.contains("data-travel-submit"));
         assert!(markup.contains("Begin journey"));
         assert!(!markup.contains("No direct route"));
+    }
+
+    #[test]
+    fn provisioning_buy_uses_the_selected_exposed_storefront() {
+        let mut destination = quest_destination();
+        destination.provision_forecast = Some(TravelProvisionForecast {
+            rations_to_buy: 2,
+            waterskins_to_buy: 1,
+            ..TravelProvisionForecast::default()
+        });
+        let party = Party {
+            id: "party-1".into(),
+            name: "Test party".into(),
+            leader_id: 1,
+            current_settlement_id: Some("ironforge".into()),
+            current_case_site_id: None,
+            active_contract_id: None,
+            is_solo: true,
+            camp_fatigue_percent: 50,
+            walking_minutes_per_day: 480,
+            travel_at_night: false,
+            camp_duration_mode: crate::spacetimedb::CampDurationMode::Auto,
+            fixed_camp_minutes: 0,
+            camp_destination: None,
+            camp_remaining_minutes: 0,
+            pooled_water_ml: 0.0,
+            medicine_target: 5.0,
+            command_target: 5.0,
+            religion_target: 4.0,
+        };
+        let markup = map_destination_detail(
+            Some(&destination),
+            None,
+            false,
+            true,
+            Some("/settlements/ironforge/inn"),
+            destination.provision_forecast.as_ref(),
+            Some(&party),
+            true,
+            None,
+            "/locations/settlement/ironforge/map",
+        )
+        .into_string();
+
+        assert!(markup.contains("data-market-path=\"/settlements/ironforge/inn\""));
+        assert!(markup.contains("href=\"/settlements/ironforge/inn\""));
+        assert!(!markup.contains("/settlements/ironforge/merchants"));
     }
 
     #[test]

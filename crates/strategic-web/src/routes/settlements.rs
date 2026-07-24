@@ -1118,11 +1118,8 @@ async fn settlement_map(
     let can_travel =
         settlement_html_travel_available(is_current_settlement, active_party.is_some());
     if can_travel {
-        for site in case_sites
-            .iter()
-            .filter(|site| site.origin_settlement_id == settlement.id)
-        {
-            let distance_m = site.distance_m;
+        for site in &case_sites {
+            let distance_m = crate::routes::quests::straight_line_distance_m(site, settlement);
             destinations.push(TravelDestination {
                 id: site.case_site_id.clone(),
                 name: site.name.clone(),
@@ -1277,6 +1274,11 @@ async fn settlement_map(
         active_party.as_ref().map(|party| party.id.as_str()),
     )
     .await;
+    let provisioning_path = if can_travel {
+        provisioning_storefront_path(&state, settlement).await
+    } else {
+        None
+    };
     Html(
         settlement_map_page(
             settlement,
@@ -1292,6 +1294,7 @@ async fn settlement_map(
             soap_preview,
             can_travel,
             provision_forecast,
+            provisioning_path.as_deref(),
             is_current_settlement,
             active_contract.filter(|contract| {
                 can_abandon_active_contract(
@@ -1330,6 +1333,20 @@ fn can_abandon_active_contract(
 #[cfg(test)]
 mod map_quest_tests {
     use super::*;
+
+    #[test]
+    fn exact_owned_case_sites_use_the_current_settlement_as_the_map_origin() {
+        let source = include_str!("settlements.rs");
+        let map = source
+            .split("async fn settlement_map(")
+            .nth(1)
+            .and_then(|tail| tail.split("fn settlement_html_travel_available").next())
+            .expect("settlement map route");
+
+        assert!(map.contains("for site in &case_sites"));
+        assert!(map.contains("straight_line_distance_m(site, settlement)"));
+        assert!(!map.contains("site.origin_settlement_id == settlement.id"));
+    }
 
     #[test]
     fn html_case_site_travel_does_not_depend_on_optional_map_data() {
@@ -4490,6 +4507,24 @@ async fn merchant_provider_id(
     });
     let provider = matches.next()?;
     matches.next().is_none().then_some(provider)
+}
+
+async fn provisioning_storefront_path(state: &AppState, settlement: &Settlement) -> Option<String> {
+    use adventuresim_core::settlement_economy::{Storefront, storefront_available};
+
+    for (storefront, service_id, location_id) in [
+        (Storefront::General, "merchants", "market"),
+        (Storefront::Inn, "inn", "inn"),
+    ] {
+        if storefront_available(&settlement.economy, storefront)
+            && merchant_provider_id(state, &settlement.id, service_id, location_id)
+                .await
+                .is_some()
+        {
+            return Some(format!("/settlements/{}/{service_id}", settlement.id));
+        }
+    }
+    None
 }
 
 async fn rest_at_settlement_map(

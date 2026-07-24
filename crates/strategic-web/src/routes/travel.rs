@@ -142,7 +142,7 @@ pub(crate) fn active_contract_tooltip(contract: &ContractPresentation) -> String
 #[derive(Debug, Default, Deserialize)]
 pub struct TravelForm {}
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct TravelProvisionForecast {
     pub planning_minutes: u64,
     pub living_members: u32,

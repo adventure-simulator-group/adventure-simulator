@@ -986,6 +986,13 @@ mod healing_tests {
             .expect("case-site travel implementation");
         assert_eq!(travel.matches("exact_case_site_for_observer").count(), 2);
         assert!(travel.contains("\"case_site\""));
+        assert!(travel.contains("expected_settlement_id = party.current_settlement_id.clone()"));
+        assert!(travel.contains("expected_case_site_id = party.current_case_site_id.clone()"));
+        assert!(travel.contains("JourneyEndpoint::Settlement"));
+        assert!(travel.contains("JourneyEndpoint::CaseSite"));
+        assert!(travel.contains("origin_coordinates"));
+        assert!(travel.contains("departing_settlement"));
+        assert!(!travel.contains("site.origin_settlement_id"));
         assert!(!travel.contains("ctx.db.quest().id().find(&case_site_id)"));
 
         let continuation = source
@@ -14810,10 +14817,24 @@ fn travel_to_case_site_impl(
     if party.camp_destination.is_some() {
         return Err("Break camp and continue the current journey first".into());
     }
-    let (site, _lead) = exact_case_site_for_observer(ctx, character_id, &case_site_id)
+    exact_case_site_for_observer(ctx, character_id, &case_site_id)
         .ok_or("That exact site has not been disclosed to this observer")?;
-    if character.current_settlement_id.as_ref() != Some(&site.origin_settlement_id) {
-        return Err("Travel to this site must begin at its known origin settlement".into());
+    let expected_settlement_id = party.current_settlement_id.clone();
+    let expected_case_site_id = party.current_case_site_id.clone();
+    if expected_settlement_id.is_some() == expected_case_site_id.is_some() {
+        return Err("Party must be at one authoritative location to travel".into());
+    }
+    if character.current_settlement_id != expected_settlement_id
+        || crate::investigation::character_case_site_id(ctx, character_id)
+            != expected_case_site_id.as_ref().map(|id| id.value.clone())
+    {
+        return Err("Party leader location does not match the party".into());
+    }
+    if expected_case_site_id
+        .as_ref()
+        .is_some_and(|origin| origin.value == case_site_id)
+    {
+        return Err("The party is already at that case site".into());
     }
     require_party_ready(ctx, &party_id)?;
     let traveler_ids = living_party_member_ids(ctx, &party_id);
@@ -14822,8 +14843,8 @@ fn travel_to_case_site_impl(
         ctx,
         &party_id,
         character_id,
-        Some(&site.origin_settlement_id),
-        None,
+        expected_settlement_id.as_deref(),
+        expected_case_site_id.as_deref(),
         None,
         false,
     )?;
@@ -14831,26 +14852,60 @@ fn travel_to_case_site_impl(
         .ok_or("Exact destination knowledge changed during departure synchronization")?;
     let traveler_ids = living_party_member_ids(ctx, &party_id);
 
-    let origin = ctx
-        .db
-        .settlement()
-        .id()
-        .find(&site.origin_settlement_id)
-        .ok_or("Case-site origin settlement not found")?;
+    let (origin_endpoint, origin_coordinates, origin_is_geographic, departing_settlement) =
+        if let Some(origin_id) = expected_settlement_id.as_deref() {
+            let origin = ctx
+                .db
+                .settlement()
+                .id()
+                .find(origin_id.to_owned())
+                .ok_or("Current settlement not found")?;
+            (
+                JourneyEndpoint::Settlement(JourneySettlementEndpoint {
+                    id: origin.id.clone(),
+                    name: origin.name,
+                }),
+                (origin.coord_x, origin.coord_y),
+                site.coordinates_are_geographic && origin.source_node_id.is_some(),
+                true,
+            )
+        } else {
+            let origin_id = expected_case_site_id
+                .as_ref()
+                .ok_or("Current case site not found")?;
+            let origin = ctx
+                .db
+                .case_site_authority()
+                .id_key()
+                .find(&origin_id.value)
+                .ok_or("Current case site not found")?;
+            (
+                JourneyEndpoint::CaseSite(JourneyCaseSiteEndpoint {
+                    id: origin.id.clone(),
+                    name: origin.name,
+                }),
+                (
+                    f64::from(origin.longitude_e7) / 10_000_000.0,
+                    f64::from(origin.latitude_e7) / 10_000_000.0,
+                ),
+                site.coordinates_are_geographic && origin.coordinates_are_geographic,
+                false,
+            )
+        };
     let destination = (
         f64::from(lead.longitude_e7) / 10_000_000.0,
         f64::from(lead.latitude_e7) / 10_000_000.0,
     );
     if let Some(route) = route.as_ref() {
-        validate_journey_route(ctx, route, (origin.coord_x, origin.coord_y), destination)?;
-        validate_return_journey_route(ctx, route, destination, (origin.coord_x, origin.coord_y))?;
+        validate_journey_route(ctx, route, origin_coordinates, destination)?;
+        validate_return_journey_route(ctx, route, destination, origin_coordinates)?;
     }
     let distance_m = straight_line_distance_m(
-        origin.coord_x,
-        origin.coord_y,
+        origin_coordinates.0,
+        origin_coordinates.1,
         destination.0,
         destination.1,
-        site.coordinates_are_geographic && origin.source_node_id.is_some(),
+        origin_is_geographic,
     );
     let travel_minutes = route
         .as_ref()
@@ -14858,10 +14913,7 @@ fn travel_to_case_site_impl(
     start_party_journey(
         ctx,
         &party,
-        JourneyEndpoint::Settlement(JourneySettlementEndpoint {
-            id: origin.id.clone(),
-            name: origin.name.clone(),
-        }),
+        origin_endpoint,
         JourneyEndpoint::CaseSite(JourneyCaseSiteEndpoint {
             id: CaseSiteId {
                 value: site.id.value.clone(),
@@ -14872,9 +14924,9 @@ fn travel_to_case_site_impl(
         departure_minute,
         route.as_ref(),
     )?;
-    crate::condition::prepare_party_waterskins(ctx, &party_id, true)?;
+    crate::condition::prepare_party_waterskins(ctx, &party_id, departing_settlement)?;
     for member_id in traveler_ids.iter().copied() {
-        crate::condition::prepare_character_waterskins(ctx, member_id, true)?;
+        crate::condition::prepare_character_waterskins(ctx, member_id, departing_settlement)?;
     }
     // Filling shared waterskins updates the persisted party row. Keep the
     // local copy in sync so the camp/location update below cannot restore the
