@@ -9,7 +9,7 @@ use crate::{
         CustodyHolderKind, CustodyObjectKind, case_authority, case_custody,
         coordinate_distance_e7_m, living_party_member_ids, party_authority, party_authority__view,
         party_journey_authority, party_member__view, quest_generation_authority,
-        require_no_unresolved_encounter, require_party_ready,
+        quest_generation_authority__view, require_no_unresolved_encounter, require_party_ready,
         require_strategic_character_authority, require_strategic_gateway, settlement,
         strategic_gateway_authority__view,
     },
