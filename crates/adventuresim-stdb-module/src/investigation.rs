@@ -3412,6 +3412,68 @@ fn bounded_failure_wording(
     )
 }
 
+fn private_action_resolution_json(
+    resolution: action::Resolution,
+    bounded_progress: Option<action::BoundedProgressResolution>,
+) -> Result<String, String> {
+    if let Some(progress) = bounded_progress {
+        serde_json::to_string(&serde_json::json!({
+            "resolution": progress.resolution,
+            "attempt_number": progress.attempt_number,
+            "persistent_progress_bps": progress.persistent_progress_bps,
+            "success_threshold_bps": progress.success_threshold_bps,
+            "guaranteed_by_attempt": progress.guaranteed_by_attempt,
+        }))
+    } else {
+        // Preserve the historical bare Resolution audit shape for manual and
+        // otherwise unbounded actions.
+        serde_json::to_string(&resolution)
+    }
+    .map_err(|_| "Investigation resolution could not be recorded".into())
+}
+
+fn capability_progress_depends_on_exact_lead(
+    capability: &InvestigationActionCapability,
+    lead: &InvestigationLead,
+) -> bool {
+    capability.provenance_kind == "generated"
+        && capability.active
+        && capability.owner_character_id == lead.owner_character_id
+        && (capability.case_id == lead.case_id || capability.generated_case_id == lead.case_id)
+        && capability.target_kind == "site"
+        && capability.target_id == lead.exact_location_id
+        && matches!(
+            lead.destination_stage.as_str(),
+            "exact_believed" | "visited"
+        )
+        && parse_action_kind(&capability.method).is_ok_and(generated_physical_progress_kind)
+}
+
+fn reset_capability_progress_for_corrected_lead(
+    ctx: &ReducerContext,
+    lead: &InvestigationLead,
+) -> Result<(), String> {
+    if lead.exact_location_id.is_empty() {
+        return Ok(());
+    }
+    let candidates: Vec<_> = ctx
+        .db
+        .investigation_action_capability()
+        .owner_character_id()
+        .filter(lead.owner_character_id)
+        .filter(|capability| capability_progress_depends_on_exact_lead(capability, lead))
+        .collect();
+    for mut capability in candidates {
+        capability.version = capability.version.saturating_add(1);
+        capability.seed = ctx.random::<u64>();
+        ctx.db
+            .investigation_action_capability()
+            .id()
+            .update(capability);
+    }
+    Ok(())
+}
+
 pub(crate) fn perform_investigation_action_authorized(
     ctx: &ReducerContext,
     actor_id: u64,
@@ -3539,20 +3601,7 @@ pub(crate) fn perform_investigation_action_authorized(
             duration_minutes: resolution.cost.minutes,
             success: resolution.success,
             resulting_uncertainty_bps: resolution.resulting_uncertainty_bps,
-            private_resolution_json: serde_json::to_string(
-                &bounded_progress
-                    .map(|progress| {
-                        serde_json::json!({
-                        "resolution": progress.resolution,
-                        "attempt_number": progress.attempt_number,
-                        "persistent_progress_bps": progress.persistent_progress_bps,
-                            "success_threshold_bps": progress.success_threshold_bps,
-                            "guaranteed_by_attempt": progress.guaranteed_by_attempt,
-                        })
-                    })
-                    .unwrap_or_else(|| serde_json::json!({ "resolution": resolution })),
-            )
-            .map_err(|_| "Investigation resolution could not be recorded")?,
+            private_resolution_json: private_action_resolution_json(resolution, bounded_progress)?,
         });
     let outcome_case_id = capability.case_id.clone();
     let safe_result_on_success = capability.safe_result_on_success.clone();
@@ -4595,7 +4644,8 @@ pub(crate) fn persist_generated_testimony(
                     .collect::<Vec<_>>()
                 {
                     prior.corrected_by = lead_id.clone();
-                    ctx.db.investigation_lead().id().update(prior);
+                    ctx.db.investigation_lead().id().update(prior.clone());
+                    reset_capability_progress_for_corrected_lead(ctx, &prior)?;
                 }
             }
         }
@@ -4886,8 +4936,12 @@ pub fn discover_investigation_lead(
         if prior.owner_character_id != character_id || prior.case_id != receipt.public_case_id {
             return Err("Correction target does not match observer and case".into());
         }
+        let invalidated_live_support = prior.corrected_by.is_empty();
         prior.corrected_by = lead_id.clone();
-        ctx.db.investigation_lead().id().update(prior);
+        ctx.db.investigation_lead().id().update(prior.clone());
+        if invalidated_live_support {
+            reset_capability_progress_for_corrected_lead(ctx, &prior)?;
+        }
     }
     ctx.db.investigation_lead().insert(InvestigationLead {
         id: lead_id,
@@ -5177,6 +5231,181 @@ mod tests {
         }
     }
 
+    fn exact_lead(owner: u64, case_id: &str, site_id: &str) -> InvestigationLead {
+        InvestigationLead {
+            id: "lead".into(),
+            owner_character_id: owner,
+            case_id: case_id.into(),
+            proposition_id: "proposition".into(),
+            summary: "Exact lead".into(),
+            source_label: "witness".into(),
+            confidence_bps: 8_000,
+            destination_stage: "exact_believed".into(),
+            directions: String::new(),
+            exact_location_id: site_id.into(),
+            latitude_e7: 1,
+            longitude_e7: 2,
+            witness_name: String::new(),
+            witness_description: String::new(),
+            witness_occupation_or_relationship: String::new(),
+            expected_location: String::new(),
+            current_learned_location: String::new(),
+            contradiction_group: "group".into(),
+            corrected_by: String::new(),
+            recorded_at: 0,
+        }
+    }
+
+    fn exact_capability(owner: u64, case_id: &str, site_id: &str) -> InvestigationActionCapability {
+        InvestigationActionCapability {
+            id: "capability".into(),
+            owner_character_id: owner,
+            case_id: case_id.into(),
+            provenance_kind: "generated".into(),
+            generated_case_id: "canonical-case".into(),
+            method: "inspect_site".into(),
+            version: 1,
+            target_kind: "site".into(),
+            target_id: site_id.into(),
+            target_terrain: "forest".into(),
+            seed: 1,
+            evidence_age_origin_minute: 0,
+            uncertainty_bps: 9_000,
+            safe_summary: "Inspect".into(),
+            known_prerequisites: String::new(),
+            safe_result_on_success: "Found".into(),
+            consequence_json: "{}".into(),
+            required_action_id: String::new(),
+            alternate_route_action_id: String::new(),
+            active: true,
+        }
+    }
+
+    #[test]
+    fn testimony_correction_resets_only_exact_dependent_progress_chain() {
+        let lead = exact_lead(7, "public-case", "site-a");
+        let capability = exact_capability(7, "public-case", "site-a");
+        assert!(capability_progress_depends_on_exact_lead(
+            &capability,
+            &lead
+        ));
+        for unrelated in [
+            InvestigationActionCapability {
+                id: "other-capability".into(),
+                target_id: "site-b".into(),
+                ..capability.clone()
+            },
+            InvestigationActionCapability {
+                owner_character_id: 8,
+                ..capability.clone()
+            },
+            InvestigationActionCapability {
+                case_id: "other-case".into(),
+                ..capability.clone()
+            },
+            InvestigationActionCapability {
+                method: "watch".into(),
+                ..capability.clone()
+            },
+            InvestigationActionCapability {
+                provenance_kind: "manual".into(),
+                generated_case_id: String::new(),
+                ..capability.clone()
+            },
+        ] {
+            assert!(!capability_progress_depends_on_exact_lead(
+                &unrelated, &lead
+            ));
+        }
+        let failure = failed_attempt("attempt-0", "capability", 7, "inspect_site", 0, false);
+        assert_eq!(
+            contiguous_failed_attempts("capability", 7, "inspect_site", 1, [failure.clone()]),
+            1
+        );
+        // Correction bumps version without manufacturing an attempt. Relearning
+        // the same site leaves that gap intact, so progress restarts at attempt 1.
+        assert_eq!(
+            contiguous_failed_attempts("capability", 7, "inspect_site", 2, [failure]),
+            0
+        );
+        let restarted = (2..7)
+            .map(|version| {
+                failed_attempt(
+                    &format!("attempt-{version}"),
+                    "capability",
+                    7,
+                    "inspect_site",
+                    version,
+                    false,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            contiguous_failed_attempts("capability", 7, "inspect_site", 7, restarted),
+            action::GENERATED_PHYSICAL_ATTEMPT_BOUND - 1
+        );
+        assert!(!exact_site_knowledge_is_live(
+            "public-case",
+            "site-a",
+            "public-case",
+            "site-a",
+            "exact_believed",
+            "correction-lead",
+            "canonical-case",
+            "site-a",
+            true,
+            Some("canonical-case"),
+            Some("public-case"),
+        ));
+    }
+
+    #[test]
+    fn correction_paths_reset_after_invalidation_and_replay_before_mutation() {
+        let source = include_str!("investigation.rs");
+        let generated = source
+            .split("pub(crate) fn persist_generated_testimony")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .unwrap();
+        assert!(
+            generated.find("investigation_safe_claim_receipt").unwrap()
+                < generated
+                    .find("reset_capability_progress_for_corrected_lead")
+                    .unwrap()
+        );
+        assert!(
+            generated
+                .find("prior.corrected_by = lead_id.clone()")
+                .unwrap()
+                < generated
+                    .find("reset_capability_progress_for_corrected_lead")
+                    .unwrap()
+        );
+        let generic = source
+            .split("pub fn discover_investigation_lead")
+            .nth(1)
+            .and_then(|tail| tail.split("fn same_place").next())
+            .unwrap();
+        assert!(
+            generic.find("idempotent(").unwrap()
+                < generic
+                    .find("reset_capability_progress_for_corrected_lead")
+                    .unwrap()
+        );
+        assert!(generic.contains("invalidated_live_support"));
+        let reset = source
+            .split("fn reset_capability_progress_for_corrected_lead")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("pub(crate) fn perform_investigation_action_authorized")
+                    .next()
+            })
+            .unwrap();
+        assert!(reset.contains("capability_progress_depends_on_exact_lead"));
+        assert!(reset.contains("capability.version.saturating_add(1)"));
+        assert!(reset.contains("capability.seed = ctx.random"));
+    }
+
     #[test]
     fn bounded_progress_history_is_exact_contiguous_and_nontransferable() {
         let exact = vec![
@@ -5254,6 +5483,15 @@ mod tests {
         let with = bounded_failure_wording(progress, true);
         assert!(with.contains("Another currently supported route is also available"));
         assert!(!with.contains("No alternate route"));
+        let bare = private_action_resolution_json(progress.resolution, None).unwrap();
+        assert_eq!(
+            serde_json::from_str::<action::Resolution>(&bare).unwrap(),
+            progress.resolution
+        );
+        let bounded = private_action_resolution_json(progress.resolution, Some(progress)).unwrap();
+        let bounded: serde_json::Value = serde_json::from_str(&bounded).unwrap();
+        assert_eq!(bounded["attempt_number"], 1);
+        assert_eq!(bounded["guaranteed_by_attempt"], 6);
     }
 
     #[test]
