@@ -1331,7 +1331,7 @@ fn quantity_target_control(quantity: u32, target: u32, item_id: &str, party_scop
     }
 }
 
-pub(crate) fn transfer_glyph(count: usize) -> Markup {
+pub(in crate::templates) fn transfer_glyph(count: usize) -> Markup {
     html! { span class=(format!("inventory-transfer-glyph arrows-{count}")) aria-hidden="true" { @for _ in 0..count { i {} } } }
 }
 
@@ -1566,7 +1566,7 @@ fn repair_custody_panel(
     }
 }
 
-pub(crate) fn inventory_footer_controls(
+pub(in crate::templates) fn inventory_footer_controls(
     action: &str,
     target_label: &str,
     all_label: &str,

@@ -34,6 +34,9 @@ pub use trade::{
     MerchantShop, alchemy_page, live_merchant_shop_page, merchants_page, party_discard_page,
     party_inventory_page, party_pool_page, religion_page,
 };
+pub(in crate::templates) use trade::{
+    inventory_footer_controls, item_name_with_quality, transfer_glyph,
+};
 pub(crate) use travel::{
     CampTravelDestination, map_destination_detail, map_destination_list_with_rest,
     travel_preferences_form,
