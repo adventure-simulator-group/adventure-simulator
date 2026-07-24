@@ -171,7 +171,7 @@ pub const FOOD_CATALOG: &[FoodDefinition] = &[
         id: "cooked_meal",
         name: "Cooked meal",
         class: FoodClass::MixedMeal,
-        kcal_per_unit: 2_500.0,
+        kcal_per_unit: 3_000.0,
         mass_kg_per_unit: 0.65,
         value_per_unit: 1.0,
         growth_per_hour: 0.025,

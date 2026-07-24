@@ -13,6 +13,8 @@ mutated, so an acquisition cannot leave an inedible inventory row without its
 lot metadata. Inns sell a standard cooked meal with a fixed lot profile;
 player-cooked meals reuse that item ID but retain their derived name, nutrition,
 mass, value, contamination, and ingredient provenance on their own lot.
+The standard meal provides 3,000 kcal, so two meals cover the ordinary
+6,000-kcal daily demand.
 
 The public lot records its inventory link, display name, preparation method,
 ingredient provenance, mass, useful calories, value, and creation minute. A
@@ -27,10 +29,11 @@ Ingestion uses current concentration times consumed mass as a direct dose for
 existing Dysentery (`Bloody flux`), whose vector is already food/water. The
 exposure identity includes character, lot, and strategic minute. Immunity
 applies and an unresolved Dysentery episode prevents duplicate infection.
-Travel, camp rest, and settlement rest all apply elapsed nutritional demand
+Travel, camp rest, and non-inn settlement rest apply elapsed nutritional demand
 once and then automatically consume the oldest pooled and personal food lots
-toward a zero balance. Settlement recovery therefore uses carried provisions;
-it does not grant free food.
+toward a zero balance. Paid inn rest is full board: its elapsed calories are
+covered, any pre-existing food deficit is cleared to zero, and carried food
+lots are preserved. Temple, private, field, and camp rest provide no food.
 
 ## Cooking
 

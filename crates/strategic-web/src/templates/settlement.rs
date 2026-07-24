@@ -163,7 +163,7 @@ impl ActivityPreviewRates {
             .max(capability.athletics)
             .max(capability.endurance);
         Self {
-            labor_gold_per_hour: (strength.max(0.0) + endurance.max(0.0)) / 8.0,
+            labor_gold_per_hour: (strength.max(0.0) + endurance.max(0.0)) / 4.0,
             thievery_gold_per_hour: population.max(0.0) * (1.0 + stealth.max(0.0)) / 8.0,
             thievery_virtue_per_hour: -population.max(0.0) * 0.5 / (1.0 + stealth.max(0.0)),
             raiding_gold_per_hour: (2.0 + combat.max(0.0)) / 6.0,
@@ -753,7 +753,7 @@ pub fn settlement_map_page(
     let base_path = format!("/locations/settlement/{}/map", settlement.id);
     let connected_ids = destinations
         .iter()
-        .filter(|destination| !destination.quest_in_progress)
+        .filter(|destination| !destination.round_trip_destination)
         .map(|destination| destination.id.as_str())
         .collect::<BTreeSet<_>>();
     let content = html! {
@@ -895,7 +895,7 @@ fn map_destination_list_with_context(
                                 data-travel-name=(&destination.name)
                                 data-travel-description=[destination_tooltip.as_deref()]
                                 data-travel-minutes=(destination.journey_minutes)
-                                data-travel-round-trip=(destination.quest_in_progress)
+                                data-travel-round-trip=(destination.round_trip_destination)
                                 data-travel-camp-stops=(format_camp_stops(&destination.camp_stop_minutes))
                                 data-travel-camp-forecasts=(format_camp_forecasts(destination))
                                 data-travel-distance=(format_distance(destination.distance_m)) {
@@ -911,7 +911,12 @@ fn map_destination_list_with_context(
                                         data-waterskin-ml=(forecast.waterskin_capacity_ml) {}
                                 }
                                 strong { (&destination.name) }
-                                @if destination.quest_in_progress {
+                                @if let Some(knowledge) = destination.case_site_knowledge {
+                                    span class="text-muted small-copy destination-case-site-status" {
+                                        (knowledge.label())
+                                    }
+                                }
+                                @if destination.active_contract_destination {
                                     span class="destination-quest-badge" title=(destination_tooltip.as_deref().unwrap_or("Active quest destination"))
                                         aria-label="Active quest destination" { "!" }
                                 }
@@ -1070,9 +1075,7 @@ pub(crate) fn map_destination_detail(
                         }
                     }
                     p class="text-muted small-copy" {
-                        @if !destination.quest_in_progress {
-                            @if let Some(summary) = &destination.summary { (summary) " · " }
-                        }
+                        @if let Some(summary) = &destination.summary { (summary) " · " }
                         (format_distance(destination.distance_m))
                         " · " (format_journey_time(destination.journey_minutes))
                         @if destination.route_fallback {
@@ -1127,7 +1130,7 @@ pub(crate) fn travel_planner_bar(
         selected_name,
         &selected_description,
         selected.is_some_and(|destination| {
-            destination.quest_in_progress && destination.return_terrain_route.is_none()
+            destination.round_trip_destination && destination.return_terrain_route.is_none()
         }),
         selected_minutes,
         &selected_camp_stops,
@@ -1150,7 +1153,7 @@ pub(crate) fn travel_planner_bar(
 }
 
 fn quest_destination_tooltip(destination: &TravelDestination) -> Option<String> {
-    destination.quest_in_progress.then(|| {
+    destination.case_site_knowledge.map(|_| {
         destination.summary.as_ref().map_or_else(
             || destination.description.clone(),
             |summary| format!("{}\n{summary}", destination.description),
@@ -6132,10 +6135,10 @@ fn rest_service_menu(
             "/settlements/{settlement_id}/{}",
             if kind == "inn" { "inn" } else { "religion" }
         ))
-        title=(if kind == "inn" { "A bed costs 1 coin per day. Injuries are tended before downtime." } else { "Sanctuary is free. Injuries are tended before downtime." }) {
+        title=(if kind == "inn" { "Full board costs 2 coin per day. Meals and injury treatment are included." } else { "Sanctuary is free. Injuries are tended before downtime." }) {
         div class="rest-service-heading" { strong { "Rest" } }
         @if kind == "inn" {
-            p class="rest-service-copy" { "1 coin / day · treatment included" }
+            p class="rest-service-copy" { "2 coin / day · meals + treatment included" }
         } @else {
             p class="rest-service-copy" { "Free · treatment included" }
         }
@@ -6809,6 +6812,22 @@ mod tests {
         assert!(markup.contains("aria-label=\"Wake time\""));
         assert!(markup.contains("aria-valuetext=\"08:00\""));
         assert!(markup.contains("name=\"requested_minutes\""));
+    }
+
+    #[test]
+    fn inn_rest_advertises_full_board() {
+        let markup = rest_service_menu(
+            "Inn",
+            "riverdale",
+            "inn",
+            Some(1_440),
+            None,
+            SoapRestPreview::default(),
+        )
+        .into_string();
+
+        assert!(markup.contains("Full board costs 2 coin per day"));
+        assert!(markup.contains("meals + treatment included"));
     }
 
     #[test]
@@ -7979,7 +7998,7 @@ mod tests {
             id: "quest-location".to_string(),
             name: "Bandit camp".to_string(),
             description: "A camp beside the road.".to_string(),
-            summary: Some("Active quest".to_string()),
+            summary: Some("Reported exact location".to_string()),
             travel_action: "/case-sites/quest-location/travel".to_string(),
             track_action: Some("/case-sites/quest-location/track".to_string()),
             tracked: false,
@@ -7990,7 +8009,11 @@ mod tests {
             departure_minute: 0,
             itinerary_total_elapsed_minutes: 96,
             itinerary_segments: Vec::new(),
-            quest_in_progress: true,
+            round_trip_destination: true,
+            case_site_knowledge: Some(
+                crate::routes::travel::CaseSiteKnowledgePresentation::ReportedExactLocation,
+            ),
+            active_contract_destination: false,
             provision_forecast: None,
             terrain_route: None,
             return_terrain_route: None,
@@ -7999,16 +8022,45 @@ mod tests {
     }
 
     #[test]
-    fn active_quest_destination_has_red_status_badge() {
+    fn reported_exact_destination_is_neutral_and_keeps_round_trip_planning() {
         let destination = quest_destination();
+
+        let markup = map_destination_list(&[destination], None, "/locations/settlement/test/map")
+            .into_string();
+
+        assert!(markup.contains("data-travel-round-trip=\"true\""));
+        assert!(markup.contains("destination-case-site-status"));
+        assert!(markup.contains("Reported exact location"));
+        assert!(!markup.contains("destination-quest-badge"));
+        assert!(!markup.contains("aria-label=\"Active quest destination\""));
+        assert!(markup.contains("title=\"A camp beside the road.\nReported exact location\""));
+        assert!(!markup.contains("destination-turn-in-badge"));
+    }
+
+    #[test]
+    fn visited_destination_uses_visited_case_site_label() {
+        let mut destination = quest_destination();
+        destination.summary = Some("Visited case site".into());
+        destination.case_site_knowledge =
+            Some(crate::routes::travel::CaseSiteKnowledgePresentation::VisitedCaseSite);
+
+        let markup = map_destination_list(&[destination], None, "/locations/settlement/test/map")
+            .into_string();
+
+        assert!(markup.contains("Visited case site"));
+        assert!(!markup.contains("aria-label=\"Active quest destination\""));
+    }
+
+    #[test]
+    fn active_contract_destination_badge_requires_explicit_match() {
+        let mut destination = quest_destination();
+        destination.active_contract_destination = true;
 
         let markup = map_destination_list(&[destination], None, "/locations/settlement/test/map")
             .into_string();
 
         assert!(markup.contains("destination-quest-badge"));
         assert!(markup.contains("aria-label=\"Active quest destination\""));
-        assert!(markup.contains("title=\"A camp beside the road.\nActive quest\""));
-        assert!(!markup.contains("destination-turn-in-badge"));
     }
 
     #[test]
@@ -8089,7 +8141,7 @@ mod tests {
         assert!(markup.contains("action=\"/case-sites/quest-location/track\""));
         assert!(markup.contains("Track site"));
         assert!(!markup.contains("<p>A camp beside the road.</p>"));
-        assert!(!markup.contains("Active quest"));
+        assert!(markup.contains("Reported exact location"));
         assert!(!markup.contains("name=\"provisioning\""));
         assert!(!markup.contains("data-provision-buy"));
     }
@@ -8124,7 +8176,9 @@ mod tests {
         let mut destination = quest_destination();
         destination.id = "viabundus-2".into();
         destination.name = "Connected town".into();
-        destination.quest_in_progress = false;
+        destination.round_trip_destination = false;
+        destination.case_site_knowledge = None;
+        destination.active_contract_destination = false;
         destination.travel_action = "/settlements/viabundus-2/travel".into();
         let markup = map_destination_detail(
             Some(&destination),
