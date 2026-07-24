@@ -154,7 +154,11 @@ minutes on road/open/sparse/deep terrain. Running costs 20/30/45/60 minutes and
 is offered only when sustainable speed exceeds enemy speed. Sustainable speed
 includes the members' current fatigue after reaching the boundary, aggregate personal and party encumbrance, party-size
 logistics, and terrain; mounts are neutral until modeled. Unresolved rows block
-departure, redirection, rest continuation, and travel continuation.
+departure, redirection, rest continuation, and travel continuation. At camp,
+the authoritative choices replace rest controls and disable Continue travel
+with an explicit instruction to resolve the encounter first. If encounter
+presentation cannot be decoded, the camp request fails closed instead of
+presenting travel as available.
 
 Bandit surrender removes every currency stack and every carried or equipped
 item worth at least 20, from the party pool and every living member. The UI

@@ -1529,7 +1529,7 @@ pub fn camp_page(
     default_rest_minutes: u64,
     soap_preview: SoapRestPreview,
     planned_wake_minute: u16,
-    can_continue_travel: bool,
+    continue_block_reason: Option<&str>,
     encounter: Option<&StrategicEncounter>,
     logged_in_as: Option<&str>,
 ) -> Markup {
@@ -1589,14 +1589,7 @@ pub fn camp_page(
                 div class="travel-planner-vertical" {
                     (travel_planner_bar_for(destination_name, "", false, party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, terrain_route, provision_forecast, journey.map_or(0, |item| item.departure_minute), journey.map_or(party.camp_remaining_minutes, |item| item.total_elapsed_minutes), &match (journey, itinerary) { (Some(journey), Some(itinerary)) => format_persisted_itinerary(journey, itinerary), (Some(journey), None) => format_legacy_persisted_itinerary(journey), _ => String::new() }, &format_persisted_terrain_spans(terrain_route)))
                 }
-                form action="/camp/continue" method="post" {
-                    button type="submit" class="btn btn-primary btn-small btn-block"
-                        disabled[!can_continue_travel]
-                        title=(if can_continue_travel { "Continue travel" } else { "Rest until the planned walking window begins" }) {
-                        "Continue travel"
-                    }
-                }
-                p class="travel-action-status" data-travel-action-status role="alert" hidden {}
+                (camp_continue_control(continue_block_reason))
             }
             (sidebar_section("Travel preferences", travel_preferences_form(party, "/camp/travel-configuration")))
         }
@@ -1609,6 +1602,25 @@ pub fn camp_page(
         content,
         logged_in_as,
     )
+}
+
+fn camp_continue_control(block_reason: Option<&str>) -> Markup {
+    html! {
+        form action="/camp/continue" method="post" {
+            button type="submit" class="btn btn-primary btn-small btn-block"
+                disabled[block_reason.is_some()]
+                title=(block_reason.unwrap_or("Continue travel")) {
+                "Continue travel"
+            }
+        }
+        @if let Some(reason) = block_reason {
+            p class="travel-action-status" data-travel-action-status role="alert" {
+                (reason)
+            }
+        } @else {
+            p class="travel-action-status" data-travel-action-status role="alert" hidden {}
+        }
+    }
 }
 
 fn strategic_encounter_panel(encounter: &StrategicEncounter) -> Markup {
@@ -6323,11 +6335,11 @@ fn blood_recovery_minutes(condition: &CharacterCondition) -> u64 {
 mod tests {
     use super::{
         Character, CharacterCondition, LocationKind, MerchantShop, RestSummary, SoapRestPreview,
-        encumbrance_inventory_rail, encumbrance_meter, filth_status_bar, format_rest_duration,
-        live_merchant_shop_page, merchant_inventory_sell_price, merchant_inventory_weight,
-        need_balance_meter, repair_custody_panel, repair_submit_control, rest_default_minutes,
-        rest_service_menu, settlement_rest_duration_control, strategic_condition_rail,
-        strategic_encounter_panel,
+        camp_continue_control, encumbrance_inventory_rail, encumbrance_meter, filth_status_bar,
+        format_rest_duration, live_merchant_shop_page, merchant_inventory_sell_price,
+        merchant_inventory_weight, need_balance_meter, repair_custody_panel, repair_submit_control,
+        rest_default_minutes, rest_service_menu, settlement_rest_duration_control,
+        strategic_condition_rail, strategic_encounter_panel,
     };
     use crate::spacetimedb::{
         CharacterFilth, CharacterStrategicCondition, FilthOrigin, FilthSubstance, FoodLot,
@@ -6407,6 +6419,23 @@ mod tests {
         assert!(rendered.contains("value=\"surrender\""));
         assert!(!rendered.contains("value=\"run\""));
         assert!(!rendered.contains("value=\"sneak\""));
+    }
+
+    #[test]
+    fn unresolved_encounter_disables_camp_continuation_with_actionable_copy() {
+        let rendered = camp_continue_control(Some(
+            "Resolve the encounter above before continuing travel.",
+        ))
+        .into_string();
+
+        assert!(rendered.contains("action=\"/camp/continue\""));
+        assert!(rendered.contains("disabled"));
+        assert!(rendered.contains("Resolve the encounter above"));
+        assert!(!rendered.contains("role=\"alert\" hidden"));
+
+        let enabled = camp_continue_control(None).into_string();
+        assert!(!enabled.contains("disabled"));
+        assert!(enabled.contains("role=\"alert\" hidden"));
     }
 
     #[test]
