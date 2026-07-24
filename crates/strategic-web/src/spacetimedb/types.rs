@@ -34,7 +34,9 @@ pub struct BackendInvestigationLead {
     pub destination_stage: String,
     pub directions: String,
     pub exact_location_id: String,
+    #[serde(rename = "latitude_e_7")]
     pub latitude_e7: i32,
+    #[serde(rename = "longitude_e_7")]
     pub longitude_e7: i32,
     pub witness_name: String,
     pub witness_description: String,
@@ -87,7 +89,9 @@ pub struct BackendCaseSitePin {
     pub name: String,
     pub description: String,
     pub scene_key: String,
+    #[serde(rename = "longitude_e_7")]
     pub longitude_e7: i32,
+    #[serde(rename = "latitude_e_7")]
     pub latitude_e7: i32,
     pub coordinates_are_geographic: bool,
     pub distance_m: u64,
@@ -1608,6 +1612,79 @@ mod tests {
             serde_json::from_str::<MissionStatus>("\"Starting\"").unwrap(),
             MissionStatus::Pending
         );
+    }
+
+    #[test]
+    fn investigation_projection_coordinates_match_spacetimedb_sql_schema() {
+        let lead = serde_json::json!({
+            "owner_character_id": 7,
+            "case_id": "case-public",
+            "lead_id": "lead-public",
+            "summary": "Tracks cross the north road.",
+            "source_label": "witness",
+            "confidence_bps": 6500,
+            "destination_stage": "exact_believed",
+            "directions": "Beyond the old milestone.",
+            "exact_location_id": "site-public",
+            "latitude_e_7": 521234567,
+            "longitude_e_7": 134567890,
+            "witness_name": "Greta",
+            "witness_description": "A tall cooper with grey hair.",
+            "witness_occupation_or_relationship": "cooper",
+            "expected_location": "Public square",
+            "current_learned_location": "Public square",
+            "contradiction_group": "creature-shape",
+            "corrected_by": "",
+            "recorded_at": 50000
+        });
+        let decoded: BackendInvestigationLead = serde_json::from_value(lead).unwrap();
+        assert_eq!(decoded.latitude_e7, 521_234_567);
+        assert_eq!(decoded.longitude_e7, 134_567_890);
+
+        let pin = serde_json::json!({
+            "owner_character_id": 7,
+            "case_id": "case-public",
+            "case_site_id": "site-public",
+            "origin_settlement_id": "settlement-public",
+            "name": "Old milestone",
+            "description": "A weathered stone beside the north road.",
+            "scene_key": "roadside",
+            "longitude_e_7": 134567890,
+            "latitude_e_7": 521234567,
+            "coordinates_are_geographic": true,
+            "distance_m": 1800,
+            "knowledge_stage": "exact_believed",
+            "tracked": true
+        });
+        let decoded: BackendCaseSitePin = serde_json::from_value(pin).unwrap();
+        assert_eq!(decoded.latitude_e7, 521_234_567);
+        assert_eq!(decoded.longitude_e7, 134_567_890);
+    }
+
+    #[test]
+    fn investigation_projection_rejects_noncanonical_coordinate_names() {
+        let lead = serde_json::json!({
+            "owner_character_id": 7,
+            "case_id": "case-public",
+            "lead_id": "lead-public",
+            "summary": "Tracks cross the north road.",
+            "source_label": "witness",
+            "confidence_bps": 6500,
+            "destination_stage": "exact_believed",
+            "directions": "Beyond the old milestone.",
+            "exact_location_id": "site-public",
+            "latitude_e7": 521234567,
+            "longitude_e7": 134567890,
+            "witness_name": "Greta",
+            "witness_description": "A tall cooper with grey hair.",
+            "witness_occupation_or_relationship": "cooper",
+            "expected_location": "Public square",
+            "current_learned_location": "Public square",
+            "contradiction_group": "creature-shape",
+            "corrected_by": "",
+            "recorded_at": 50000
+        });
+        assert!(serde_json::from_value::<BackendInvestigationLead>(lead).is_err());
     }
 
     #[test]
