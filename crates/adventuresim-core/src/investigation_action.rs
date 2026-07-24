@@ -116,10 +116,10 @@ pub struct Resolution {
     pub effective_skill_bps: u16,
 }
 
-/// A valid generated physical investigation route always resolves by this
-/// attempt when its uninterrupted failure history remains intact.
-pub const GENERATED_PHYSICAL_ATTEMPT_BOUND: u32 = 6;
-pub const GENERATED_PHYSICAL_PROGRESS_BPS_PER_FAILURE: u16 = 1_900;
+/// A valid generated investigation route always resolves by this attempt when
+/// its uninterrupted failure history remains intact.
+pub const GENERATED_ACTION_ATTEMPT_BOUND: u32 = 6;
+pub const GENERATED_ACTION_PROGRESS_BPS_PER_FAILURE: u16 = 1_900;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BoundedProgressResolution {
@@ -269,15 +269,15 @@ pub fn resolve(input: ResolutionInput) -> Resolution {
     }
 }
 
-/// Preserve the ordinary physical resolution and costs while allowing repeated
-/// work on one generated route to accumulate bounded, non-transferable progress.
+/// Preserve the ordinary resolution and costs while allowing repeated work on
+/// one generated route to accumulate bounded, non-transferable progress.
 pub fn resolve_with_bounded_progress(
     input: ResolutionInput,
     consecutive_failures: u32,
 ) -> BoundedProgressResolution {
     let mut resolution = resolve(input);
-    let prior = consecutive_failures.min(GENERATED_PHYSICAL_ATTEMPT_BOUND - 1);
-    let progress = u32::from(GENERATED_PHYSICAL_PROGRESS_BPS_PER_FAILURE).saturating_mul(prior);
+    let prior = consecutive_failures.min(GENERATED_ACTION_ATTEMPT_BOUND - 1);
+    let progress = u32::from(GENERATED_ACTION_PROGRESS_BPS_PER_FAILURE).saturating_mul(prior);
     let success_threshold_bps = u32::from(resolution.effective_skill_bps)
         .saturating_add(progress)
         .min(10_000) as u16;
@@ -305,7 +305,7 @@ pub fn resolve_with_bounded_progress(
         attempt_number: prior.saturating_add(1),
         persistent_progress_bps: progress.min(10_000) as u16,
         success_threshold_bps,
-        guaranteed_by_attempt: GENERATED_PHYSICAL_ATTEMPT_BOUND,
+        guaranteed_by_attempt: GENERATED_ACTION_ATTEMPT_BOUND,
     }
 }
 
@@ -397,14 +397,34 @@ mod tests {
                 assert!(sixth.resolution.success);
                 assert_eq!(sixth.persistent_progress_bps, 9_500);
                 assert_eq!(sixth.success_threshold_bps, 10_000);
-                assert_eq!(
-                    sixth.guaranteed_by_attempt,
-                    GENERATED_PHYSICAL_ATTEMPT_BOUND
-                );
+                assert_eq!(sixth.guaranteed_by_attempt, GENERATED_ACTION_ATTEMPT_BOUND);
             }
             if high_skill {
                 assert!(saw_ordinary_early_success);
             }
+        }
+    }
+
+    #[test]
+    fn every_action_kind_keeps_its_native_first_attempt_resolution() {
+        for kind in [
+            InvestigationActionKind::InspectSite,
+            InvestigationActionKind::SearchArea,
+            InvestigationActionKind::FollowTracks,
+            InvestigationActionKind::ReacquireTracks,
+            InvestigationActionKind::LocateContact,
+            InvestigationActionKind::Watch,
+            InvestigationActionKind::Patrol,
+            InvestigationActionKind::LayAmbush,
+            InvestigationActionKind::ApproachLead,
+        ] {
+            let candidate = input(kind);
+            let ordinary = resolve(candidate);
+            let bounded = resolve_with_bounded_progress(candidate, 0);
+            assert_eq!(bounded.resolution, ordinary);
+            assert_eq!(bounded.attempt_number, 1);
+            assert_eq!(bounded.persistent_progress_bps, 0);
+            assert_eq!(bounded.success_threshold_bps, ordinary.effective_skill_bps);
         }
     }
 

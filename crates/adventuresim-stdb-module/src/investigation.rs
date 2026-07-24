@@ -21,7 +21,7 @@ use adventuresim_core::investigation as inv;
 use adventuresim_core::investigation_action as action;
 use adventuresim_core::skill::Skill;
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_TEXT: usize = 512;
 const AREA_RADIUS_TOLERANCE_M: u64 = 1;
@@ -3349,14 +3349,26 @@ fn commit_action_consequence(
     }
 }
 
-fn generated_physical_progress_kind(kind: action::InvestigationActionKind) -> bool {
-    matches!(
-        kind,
-        action::InvestigationActionKind::InspectSite
-            | action::InvestigationActionKind::SearchArea
-            | action::InvestigationActionKind::FollowTracks
-            | action::InvestigationActionKind::ReacquireTracks
-    )
+fn generated_progress_kind(kind: action::InvestigationActionKind) -> bool {
+    use action::InvestigationActionKind as K;
+    match kind {
+        K::InspectSite
+        | K::SearchArea
+        | K::FollowTracks
+        | K::ReacquireTracks
+        | K::LocateContact
+        | K::Watch
+        | K::Patrol
+        | K::LayAmbush
+        | K::ApproachLead => true,
+    }
+}
+
+fn capability_uses_bounded_progress(
+    provenance_kind: &str,
+    kind: action::InvestigationActionKind,
+) -> bool {
+    provenance_kind == "generated" && generated_progress_kind(kind)
 }
 
 fn contiguous_failed_attempts(
@@ -3446,24 +3458,51 @@ fn capability_progress_depends_on_exact_lead(
             lead.destination_stage.as_str(),
             "exact_believed" | "visited"
         )
-        && parse_action_kind(&capability.method).is_ok_and(generated_physical_progress_kind)
+        && parse_action_kind(&capability.method).is_ok_and(generated_progress_kind)
 }
 
-fn reset_capability_progress_for_corrected_lead(
+fn dependent_capability_ids_for_exact_lead(
     ctx: &ReducerContext,
     lead: &InvestigationLead,
-) -> Result<(), String> {
+) -> BTreeSet<String> {
     if lead.exact_location_id.is_empty() {
-        return Ok(());
+        return BTreeSet::new();
     }
-    let candidates: Vec<_> = ctx
-        .db
+    ctx.db
         .investigation_action_capability()
         .owner_character_id()
         .filter(lead.owner_character_id)
         .filter(|capability| capability_progress_depends_on_exact_lead(capability, lead))
-        .collect();
-    for mut capability in candidates {
+        .map(|capability| capability.id)
+        .collect()
+}
+
+fn unique_capability_ids(capability_ids: impl IntoIterator<Item = String>) -> BTreeSet<String> {
+    capability_ids.into_iter().collect()
+}
+
+fn correction_requires_progress_reset(has_live_replacement_support: bool) -> bool {
+    !has_live_replacement_support
+}
+
+fn reset_unsupported_capability_progress(
+    ctx: &ReducerContext,
+    capability_ids: impl IntoIterator<Item = String>,
+) -> Result<(), String> {
+    for capability_id in unique_capability_ids(capability_ids) {
+        let Some(mut capability) = ctx
+            .db
+            .investigation_action_capability()
+            .id()
+            .find(&capability_id)
+        else {
+            continue;
+        };
+        if !correction_requires_progress_reset(
+            exact_action_case_site_for_observer(ctx, &capability).is_some(),
+        ) {
+            continue;
+        }
         capability.version = capability.version.saturating_add(1);
         capability.seed = ctx.random::<u64>();
         ctx.db
@@ -3549,21 +3588,20 @@ pub(crate) fn perform_investigation_action_authorized(
         skills: party_action_skills(ctx, &party_id, actor_id, target_terrain)?,
         weather: action::WeatherAuthority::Unavailable,
     };
-    let bounded_progress = (capability.provenance_kind == "generated"
-        && generated_physical_progress_kind(kind))
-    .then(|| {
-        let prior_failures = contiguous_failed_attempts(
-            &capability.id,
-            capability.owner_character_id,
-            &capability.method,
-            capability.version,
-            ctx.db
-                .investigation_action_attempt()
-                .capability_id()
-                .filter(&capability.id),
-        );
-        action::resolve_with_bounded_progress(resolution_input, prior_failures)
-    });
+    let bounded_progress = capability_uses_bounded_progress(&capability.provenance_kind, kind)
+        .then(|| {
+            let prior_failures = contiguous_failed_attempts(
+                &capability.id,
+                capability.owner_character_id,
+                &capability.method,
+                capability.version,
+                ctx.db
+                    .investigation_action_attempt()
+                    .capability_id()
+                    .filter(&capability.id),
+            );
+            action::resolve_with_bounded_progress(resolution_input, prior_failures)
+        });
     let resolution = bounded_progress
         .map(|progress| progress.resolution)
         .unwrap_or_else(|| action::resolve(resolution_input));
@@ -4509,6 +4547,7 @@ pub(crate) fn persist_generated_testimony(
             .map_err(str::to_string)?;
     }
     let generation_context = validated_authority.context;
+    let mut corrected_capability_ids = BTreeSet::new();
     for (index, draft) in projection_plan.iter().enumerate() {
         let (receipt_id, pipeline) =
             adventuresim_core::quest_generation::generated_testimony_pipeline(
@@ -4643,13 +4682,15 @@ pub(crate) fn persist_generated_testimony(
                     })
                     .collect::<Vec<_>>()
                 {
+                    corrected_capability_ids
+                        .extend(dependent_capability_ids_for_exact_lead(ctx, &prior));
                     prior.corrected_by = lead_id.clone();
-                    ctx.db.investigation_lead().id().update(prior.clone());
-                    reset_capability_progress_for_corrected_lead(ctx, &prior)?;
+                    ctx.db.investigation_lead().id().update(prior);
                 }
             }
         }
     }
+    reset_unsupported_capability_progress(ctx, corrected_capability_ids)?;
     complete_referred_contact_action(
         ctx,
         character_id,
@@ -4937,10 +4978,13 @@ pub fn discover_investigation_lead(
             return Err("Correction target does not match observer and case".into());
         }
         let invalidated_live_support = prior.corrected_by.is_empty();
+        let dependent_capability_ids = invalidated_live_support
+            .then(|| dependent_capability_ids_for_exact_lead(ctx, &prior))
+            .unwrap_or_default();
         prior.corrected_by = lead_id.clone();
-        ctx.db.investigation_lead().id().update(prior.clone());
+        ctx.db.investigation_lead().id().update(prior);
         if invalidated_live_support {
-            reset_capability_progress_for_corrected_lead(ctx, &prior)?;
+            reset_unsupported_capability_progress(ctx, dependent_capability_ids)?;
         }
     }
     ctx.db.investigation_lead().insert(InvestigationLead {
@@ -5304,7 +5348,7 @@ mod tests {
                 ..capability.clone()
             },
             InvestigationActionCapability {
-                method: "watch".into(),
+                active: false,
                 ..capability.clone()
             },
             InvestigationActionCapability {
@@ -5342,7 +5386,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             contiguous_failed_attempts("capability", 7, "inspect_site", 7, restarted),
-            action::GENERATED_PHYSICAL_ATTEMPT_BOUND - 1
+            action::GENERATED_ACTION_ATTEMPT_BOUND - 1
         );
         assert!(!exact_site_knowledge_is_live(
             "public-case",
@@ -5370,7 +5414,7 @@ mod tests {
         assert!(
             generated.find("investigation_safe_claim_receipt").unwrap()
                 < generated
-                    .find("reset_capability_progress_for_corrected_lead")
+                    .find("dependent_capability_ids_for_exact_lead")
                     .unwrap()
         );
         assert!(
@@ -5378,7 +5422,7 @@ mod tests {
                 .find("prior.corrected_by = lead_id.clone()")
                 .unwrap()
                 < generated
-                    .find("reset_capability_progress_for_corrected_lead")
+                    .rfind("reset_unsupported_capability_progress")
                     .unwrap()
         );
         let generic = source
@@ -5389,21 +5433,65 @@ mod tests {
         assert!(
             generic.find("idempotent(").unwrap()
                 < generic
-                    .find("reset_capability_progress_for_corrected_lead")
+                    .find("reset_unsupported_capability_progress")
                     .unwrap()
         );
         assert!(generic.contains("invalidated_live_support"));
         let reset = source
-            .split("fn reset_capability_progress_for_corrected_lead")
+            .split("fn reset_unsupported_capability_progress")
             .nth(1)
             .and_then(|tail| {
                 tail.split("pub(crate) fn perform_investigation_action_authorized")
                     .next()
             })
             .unwrap();
-        assert!(reset.contains("capability_progress_depends_on_exact_lead"));
+        assert!(reset.contains("unique_capability_ids"));
+        assert!(reset.contains("correction_requires_progress_reset"));
+        assert!(reset.contains("exact_action_case_site_for_observer"));
         assert!(reset.contains("capability.version.saturating_add(1)"));
         assert!(reset.contains("capability.seed = ctx.random"));
+    }
+
+    #[test]
+    fn testimony_correction_dedupes_caps_and_preserves_replacement_support() {
+        let unique = unique_capability_ids([
+            "cap-a".to_string(),
+            "cap-a".to_string(),
+            "cap-b".to_string(),
+            "cap-b".to_string(),
+        ]);
+        assert_eq!(
+            unique,
+            BTreeSet::from(["cap-a".to_string(), "cap-b".to_string()])
+        );
+        let mut reset_counts = BTreeMap::<String, u32>::new();
+        for capability_id in unique {
+            *reset_counts.entry(capability_id).or_default() += 1;
+        }
+        assert_eq!(reset_counts["cap-a"], 1);
+        assert_eq!(reset_counts["cap-b"], 1);
+        assert!(correction_requires_progress_reset(false));
+        assert!(!correction_requires_progress_reset(true));
+
+        let mut first_lead = exact_lead(7, "public-case", "site-a");
+        first_lead.id = "lead-a".into();
+        let mut second_lead = first_lead.clone();
+        second_lead.id = "lead-b".into();
+        let first_capability = exact_capability(7, "public-case", "site-a");
+        let mut second_capability = first_capability.clone();
+        second_capability.id = "cap-b".into();
+        let dependent_ids = [first_lead, second_lead].iter().flat_map(|lead| {
+            [&first_capability, &second_capability]
+                .into_iter()
+                .filter_map(|capability| {
+                    capability_progress_depends_on_exact_lead(capability, lead)
+                        .then(|| capability.id.clone())
+                })
+        });
+        assert_eq!(
+            unique_capability_ids(dependent_ids),
+            BTreeSet::from(["capability".to_string(), "cap-b".to_string()])
+        );
     }
 
     #[test]
@@ -5495,23 +5583,22 @@ mod tests {
     }
 
     #[test]
-    fn bounded_progress_is_generated_physical_only_and_replay_precedes_history() {
+    fn bounded_progress_covers_every_generated_kind_and_replay_precedes_history() {
         let source = include_str!("investigation.rs");
         let reducer = source
             .split("pub(crate) fn perform_investigation_action_authorized")
             .nth(1)
             .and_then(|tail| tail.split("#[reducer]").next())
             .unwrap();
-        assert!(reducer.contains("capability.provenance_kind == \"generated\""));
-        assert!(reducer.contains("generated_physical_progress_kind(kind)"));
+        assert!(reducer.contains("capability_uses_bounded_progress"));
         assert!(
             reducer
                 .find("investigation_action_attempt().id().find")
                 .unwrap()
                 < reducer.find("contiguous_failed_attempts").unwrap()
         );
-        let physical = source
-            .split("fn generated_physical_progress_kind")
+        let generated = source
+            .split("fn generated_progress_kind")
             .nth(1)
             .and_then(|tail| tail.split("fn contiguous_failed_attempts").next())
             .unwrap();
@@ -5520,17 +5607,28 @@ mod tests {
             "SearchArea",
             "FollowTracks",
             "ReacquireTracks",
-        ] {
-            assert!(physical.contains(kind));
-        }
-        for nonphysical in [
             "LocateContact",
             "Watch",
             "Patrol",
             "LayAmbush",
             "ApproachLead",
         ] {
-            assert!(!physical.contains(nonphysical));
+            assert!(generated.contains(kind));
+        }
+        assert!(!generated.contains("_ =>"));
+        for kind in [
+            action::InvestigationActionKind::InspectSite,
+            action::InvestigationActionKind::SearchArea,
+            action::InvestigationActionKind::FollowTracks,
+            action::InvestigationActionKind::ReacquireTracks,
+            action::InvestigationActionKind::LocateContact,
+            action::InvestigationActionKind::Watch,
+            action::InvestigationActionKind::Patrol,
+            action::InvestigationActionKind::LayAmbush,
+            action::InvestigationActionKind::ApproachLead,
+        ] {
+            assert!(capability_uses_bounded_progress("generated", kind));
+            assert!(!capability_uses_bounded_progress("manual", kind));
         }
         assert!(reducer.contains("\"attempt_number\""));
         assert!(reducer.contains("\"persistent_progress_bps\""));

@@ -127,14 +127,15 @@ expose use compiled generic dialogue responses, pre-issued bindings, the exact
 generated recipient, and one-use consumption. Cases and linked local problems
 may resolve without a contract.
 
-Generated physical investigation routes (`InspectSite`, `SearchArea`,
-`FollowTracks`, and `ReacquireTracks`) make bounded persistent progress without
-replacing terrain skill. Each attempt retains its ordinary skill-based chance,
-time, supplies, fatigue, and risk, while contiguous failures on the exact same
-observer capability raise the deterministic threshold until attempt six is
-guaranteed. Capability, observer, method, or version gaps reset that progress.
-Attempt authority and journal wording snapshot the threshold, uncertainty, and
-six-attempt bound at resolution time.
+Every generated investigation route makes bounded persistent progress without
+replacing its native skill check. This includes physical searches and tracking,
+contact-finding and approach actions, observation, patrol, and ambush routes.
+Each attempt retains its ordinary skill-based chance, time, supplies, fatigue,
+and risk, while contiguous failures on the exact same observer capability raise
+the deterministic threshold until attempt six is guaranteed. Capability,
+observer, method, or version gaps reset that progress; manual investigation
+actions remain unbounded. Attempt authority and journal wording snapshot the
+threshold, uncertainty, and six-attempt bound at resolution time.
 
 Attack patterns are playable modules rather than private flavor. Initial
 surveillance remains pattern-neutral. Success earns one exact corroborated
