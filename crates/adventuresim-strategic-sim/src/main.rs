@@ -289,16 +289,51 @@ fn validate_distinct_output_paths(
     developer_output: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let normalize = |path: &Path| -> Result<PathBuf, Box<dyn std::error::Error>> {
-        if path.exists() {
-            Ok(fs::canonicalize(path)?)
+        let absolute = if path.is_absolute() {
+            path.to_path_buf()
         } else {
-            Ok(std::env::current_dir()?.join(path))
+            std::env::current_dir()?.join(path)
+        };
+        // `canonicalize` cannot normalize a not-yet-created output. Collapse
+        // `.` and `..` lexically first, then resolve existing aliases/symlinks.
+        let lexical = lexical_normalize(&absolute);
+        if lexical.exists() {
+            Ok(lexical_normalize(&fs::canonicalize(lexical)?))
+        } else {
+            Ok(lexical)
         }
     };
-    if normalize(public_output)? == normalize(developer_output)? {
+    let public = normalize(public_output)?;
+    let developer = normalize(developer_output)?;
+    let same = if cfg!(windows) {
+        public
+            .to_string_lossy()
+            .eq_ignore_ascii_case(&developer.to_string_lossy())
+    } else {
+        public == developer
+    };
+    if same {
         return Err("public and developer evaluation outputs must be distinct paths".into());
     }
     Ok(())
+}
+
+fn lexical_normalize(path: &Path) -> PathBuf {
+    use std::path::Component;
+
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::Normal(segment) => normalized.push(segment),
+        }
+    }
+    normalized
 }
 
 fn read_bounded(path: &Path) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
@@ -331,5 +366,14 @@ mod tests {
     fn public_and_developer_outputs_must_differ() {
         let path = PathBuf::from("quest-eval-same-output.json");
         assert!(validate_distinct_output_paths(&path, &path).is_err());
+    }
+
+    #[test]
+    fn nonexistent_lexical_aliases_are_rejected() {
+        let canonical = PathBuf::from("quest-eval-alias.json");
+        let alias = PathBuf::from("new-output-directory")
+            .join("..")
+            .join("quest-eval-alias.json");
+        assert!(validate_distinct_output_paths(&canonical, &alias).is_err());
     }
 }
