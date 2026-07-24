@@ -50,8 +50,17 @@ pub struct InvestigationEnvironment {
     /// Ordinary schedules are player-visible state, not a pipeline error.
     witness_returns_at: BTreeMap<usize, u64>,
     trace: Vec<PublicTraceEvent>,
+    completed_action_provenance: Vec<CompletedAction>,
     route: Option<RouteClass>,
     solved: bool,
+}
+
+#[derive(Clone, Debug)]
+struct CompletedAction {
+    action_index: usize,
+    route: RouteClass,
+    target_kind: String,
+    target_id: String,
 }
 
 impl InvestigationEnvironment {
@@ -96,6 +105,7 @@ impl InvestigationEnvironment {
             prepared: BTreeSet::new(),
             witness_returns_at,
             trace: Vec::new(),
+            completed_action_provenance: Vec::new(),
             route: None,
             solved: false,
         };
@@ -130,6 +140,7 @@ impl InvestigationEnvironment {
         let kind = legal.kind;
         let waiting_for_witness = matches!(&capability, Capability::WaitForWitness(_));
         let mut learned = Vec::new();
+        let mut corrected_proposition_ids = Vec::new();
         let (result, minutes, cost) = match capability {
             Capability::EnterTavern => {
                 self.tavern_entered = true;
@@ -173,6 +184,7 @@ impl InvestigationEnvironment {
                     });
                     if let Some(corrected) = &statement.corrects_proposition_id {
                         self.frame.journal.corrections.push(corrected.clone());
+                        corrected_proposition_ids.push(corrected.clone());
                     }
                     learned.push(statement.spoken_text.clone());
                 }
@@ -204,7 +216,12 @@ impl InvestigationEnvironment {
                     return Err("site action requires authoritative occupancy".into());
                 }
                 self.completed_actions.insert(index);
-                self.route.get_or_insert(route);
+                self.completed_action_provenance.push(CompletedAction {
+                    action_index: index,
+                    route,
+                    target_kind: action.target_kind.clone(),
+                    target_id: action.target_id.clone(),
+                });
                 for output in &action.outputs {
                     match output {
                         GeneratedActionOutput::Destination { stage, site_id } => {
@@ -245,6 +262,7 @@ impl InvestigationEnvironment {
                                 });
                                 if let Some(corrected) = &evidence.corrects_proposition_id {
                                     self.frame.journal.corrections.push(corrected.clone());
+                                    corrected_proposition_ids.push(corrected.clone());
                                 }
                                 learned.push(evidence.safe_description.clone());
                             }
@@ -310,6 +328,7 @@ impl InvestigationEnvironment {
             choice_kind: kind,
             result,
             learned,
+            corrected_proposition_ids,
             game_minutes: minutes,
             resource_cost: cost,
         });
@@ -440,19 +459,7 @@ impl InvestigationEnvironment {
                 );
             }
             for finale in &self.generated.finales {
-                if self.visited_sites.contains(&finale.site_id.0)
-                    && self
-                        .generated
-                        .actions
-                        .iter()
-                        .enumerate()
-                        .any(|(index, action)| {
-                            self.completed_actions.contains(&index)
-                                && action.route == self.route.unwrap_or(action.route)
-                                && action.target_kind == "site"
-                        })
-                {
-                    let route = self.route.unwrap_or(RouteClass::PhysicalTrail);
+                if let Some(route) = self.admissible_finale_route(&finale.site_id.0) {
                     self.push_choice(
                         &mut choices,
                         ChoiceKind::Conclude,
@@ -468,6 +475,11 @@ impl InvestigationEnvironment {
 
     fn action_available(&self, index: usize) -> bool {
         let action = &self.generated.actions[index];
+        // A tavern referral alone is not enough to materialize an investigation
+        // action. The player must first hear a source-attributed account.
+        if action.active_initially && self.interviewed.is_empty() {
+            return false;
+        }
         if !action.active_initially
             && action.prerequisite.as_ref().is_some_and(|required| {
                 !self
@@ -483,6 +495,27 @@ impl InvestigationEnvironment {
             return false;
         }
         action.target_kind != "site" || self.visited_sites.contains(&action.target_id)
+    }
+
+    fn admissible_finale_route(&self, finale_site_id: &str) -> Option<RouteClass> {
+        self.completed_action_provenance.iter().rev().find_map(|completed| {
+            (completed.target_kind == "site"
+                && completed.target_id == finale_site_id
+                && self.visited_sites.contains(finale_site_id)
+                && self.action_chain_complete(completed.action_index))
+            .then_some(completed.route)
+        })
+    }
+
+    fn action_chain_complete(&self, index: usize) -> bool {
+        let Some(action) = self.generated.actions.get(index) else { return false };
+        match &action.prerequisite {
+            None => self.completed_actions.contains(&index),
+            Some(required) => self.completed_actions.contains(&index)
+                && self.generated.actions.iter().enumerate().find_map(|(prior, candidate)|
+                    (&candidate.id == required).then_some(prior)
+                ).is_some_and(|prior| self.action_chain_complete(prior)),
+        }
     }
 
     fn witness_available(&self, index: usize) -> bool {
@@ -726,5 +759,72 @@ mod tests {
         assert!(!public.contains(&private.true_site));
         assert!(!public.contains("factor_ids"));
         assert!(!public.contains("plausibility"));
+    }
+
+    #[test]
+    fn tavern_referral_requires_visible_testimony_before_roots() {
+        let mut env = InvestigationEnvironment::generate(EvalCaseConfig::fixture(
+            9,
+            TemplateFamily::RecurringDepredation,
+        ))
+        .unwrap();
+        let tavern = env.frame().legal_choices[0].choice_id.clone();
+        env.apply(&PolicyDecision {
+            version: EVAL_FORMAT_VERSION,
+            choice_id: tavern,
+            arguments: DecisionArguments::default(),
+        })
+        .unwrap();
+        assert!(env
+            .frame()
+            .legal_choices
+            .iter()
+            .all(|choice| choice.kind != ChoiceKind::Investigate));
+        let witness = env
+            .frame()
+            .legal_choices
+            .iter()
+            .find(|choice| choice.kind == ChoiceKind::InterviewWitness)
+            .unwrap()
+            .choice_id
+            .clone();
+        env.apply(&PolicyDecision {
+            version: EVAL_FORMAT_VERSION,
+            choice_id: witness,
+            arguments: DecisionArguments::default(),
+        })
+        .unwrap();
+        assert!(env
+            .frame()
+            .legal_choices
+            .iter()
+            .any(|choice| choice.kind == ChoiceKind::Investigate));
+    }
+
+    #[test]
+    fn mixed_route_progress_cannot_offer_an_unrelated_finale() {
+        let mut env = InvestigationEnvironment::generate(EvalCaseConfig::fixture(
+            17,
+            TemplateFamily::DisappearanceOrLoss,
+        ))
+        .unwrap();
+        let finale_site = env.generated.finales[0].site_id.0.clone();
+        env.visited_sites.insert(finale_site.clone());
+        let (action_index, route, target_kind, target_id) = env
+            .generated
+            .actions
+            .iter()
+            .enumerate()
+            .find(|(_, action)| action.target_id != finale_site)
+            .map(|(index, action)| (index, action.route, action.target_kind.clone(), action.target_id.clone()))
+            .unwrap();
+        env.completed_actions.insert(action_index);
+        env.completed_action_provenance.push(CompletedAction {
+            action_index,
+            route,
+            target_kind,
+            target_id,
+        });
+        assert_eq!(env.admissible_finale_route(&finale_site), None);
     }
 }
