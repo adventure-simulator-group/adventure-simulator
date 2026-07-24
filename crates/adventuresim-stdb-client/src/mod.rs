@@ -230,6 +230,7 @@ pub mod finale_kind_type;
 pub mod finale_status_type;
 pub mod finalize_merchant_trade_reducer;
 pub mod finalize_party_offer_reducer;
+pub mod finalize_storefront_trade_reducer;
 pub mod finish_world_data_import_reducer;
 pub mod fish_commodity_type;
 pub mod fishing_industry_type;
@@ -824,6 +825,7 @@ pub use finale_kind_type::FinaleKind;
 pub use finale_status_type::FinaleStatus;
 pub use finalize_merchant_trade_reducer::finalize_merchant_trade;
 pub use finalize_party_offer_reducer::finalize_party_offer;
+pub use finalize_storefront_trade_reducer::finalize_storefront_trade;
 pub use finish_world_data_import_reducer::finish_world_data_import;
 pub use fish_commodity_type::FishCommodity;
 pub use fishing_industry_type::FishingIndustry;
@@ -1419,6 +1421,17 @@ pub enum Reducer {
         inventory_item_ids: Vec<u64>,
         quantities: Vec<u32>,
     },
+    FinalizeStorefrontTrade {
+        character_id: u64,
+        settlement_id: String,
+        service_id: String,
+        provider_npc_id: String,
+        buy_item_ids: Vec<String>,
+        buy_quantities: Vec<u32>,
+        sell_inventory_ids: Vec<u64>,
+        sell_quantities: Vec<u32>,
+        party_scope: bool,
+    },
     FinishWorldDataImport {
         artifact_id: String,
     },
@@ -1832,6 +1845,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::ExaminePatient { .. } => "examine_patient",
             Reducer::FinalizeMerchantTrade { .. } => "finalize_merchant_trade",
             Reducer::FinalizePartyOffer { .. } => "finalize_party_offer",
+            Reducer::FinalizeStorefrontTrade { .. } => "finalize_storefront_trade",
             Reducer::FinishWorldDataImport { .. } => "finish_world_data_import",
             Reducer::ImportSettlementAliases { .. } => "import_settlement_aliases",
             Reducer::ImportSettlementDescriptions { .. } => "import_settlement_descriptions",
@@ -2300,6 +2314,27 @@ Reducer::CancelMissionRequest{
                 to_character_ids: to_character_ids.clone(),
                 inventory_item_ids: inventory_item_ids.clone(),
                 quantities: quantities.clone(),
+}),
+            Reducer::FinalizeStorefrontTrade{
+                character_id,
+                settlement_id,
+                service_id,
+                provider_npc_id,
+                buy_item_ids,
+                buy_quantities,
+                sell_inventory_ids,
+                sell_quantities,
+                party_scope,
+}             => __sats::bsatn::to_vec(&finalize_storefront_trade_reducer::FinalizeStorefrontTradeArgs {
+                character_id: character_id.clone(),
+                settlement_id: settlement_id.clone(),
+                service_id: service_id.clone(),
+                provider_npc_id: provider_npc_id.clone(),
+                buy_item_ids: buy_item_ids.clone(),
+                buy_quantities: buy_quantities.clone(),
+                sell_inventory_ids: sell_inventory_ids.clone(),
+                sell_quantities: sell_quantities.clone(),
+                party_scope: party_scope.clone(),
 }),
             Reducer::FinishWorldDataImport{
                 artifact_id,

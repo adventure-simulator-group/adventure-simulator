@@ -3203,7 +3203,7 @@ pub fn live_merchant_shop_page(
             (repair_custody_panel(settlement, shop, repair_orders, conditions, items, now_minutes, smith_skill))
         }
         }
-        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None, false)) (npc_portrait_strip(&settlement.id, npc_location_id(service_id))) (npc_description_stage(title, "Merchant counter and attending craftsperson")) (settlement_npc_chat_area(title, Some(character), &settlement.id, npc_location_id(service_id), Some(service_id))) form # "merchant-offer" class="party-offer" action=(if matches!(shop, MerchantShop::Herbalist) { format!("/settlements/{}/herbalist/purchase", settlement.id) } else { format!("/settlements/{}/merchants/offer", settlement.id) }) method="post" hidden role="dialog" aria-modal="true" aria-label="Confirm merchant offer" tabindex="-1" { span class="party-offer-summary" { "Review and submit the staged trade." } input type="hidden" name="return_to" value=(format!("/settlements/{}/{}", settlement.id, service_id)); input type="hidden" name="inventory_scope" value="player"; button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
+        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None, false)) (npc_portrait_strip(&settlement.id, npc_location_id(service_id))) (npc_description_stage(title, "Merchant counter and attending craftsperson")) (settlement_npc_chat_area(title, Some(character), &settlement.id, npc_location_id(service_id), Some(service_id))) form # "merchant-offer" class="party-offer" action=(if matches!(shop, MerchantShop::Herbalist) { format!("/settlements/{}/herbalist/purchase", settlement.id) } else { format!("/settlements/{}/storefront/{}/offer", settlement.id, service_id) }) method="post" hidden role="dialog" aria-modal="true" aria-label="Confirm merchant offer" tabindex="-1" { span class="party-offer-summary" { "Review and submit the staged trade." } input type="hidden" name="return_to" value=(format!("/settlements/{}/{}", settlement.id, service_id)); input type="hidden" name="inventory_scope" value="player"; button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
         aside class="right-sidebar inventory-owner-panel" data-inventory-tabs {
             nav class="inventory-owner-tabs" aria-label="Trading inventory" {
                 button type="button" class="inventory-owner-tab active" data-inventory-tab="player" { "Player" }
@@ -6759,18 +6759,24 @@ mod tests {
             .into_string()
         };
         let merchant = render(MerchantShop::Weapons);
+        assert!(merchant.contains("action=\"/settlements/viabundus-1/storefront/weapons/offer\""));
         assert!(merchant.contains("data-inventory-pane=\"player\""));
         assert!(merchant.contains("data-inventory-pane=\"party\""));
         assert!(merchant.contains(">10.0 / 100.0 kg<"));
         assert!(merchant.contains(">30.0 / 200.0 kg<"));
 
+        let general = render(MerchantShop::General);
+        assert!(general.contains("action=\"/settlements/viabundus-1/storefront/merchants/offer\""));
+
         let herbalist = render(MerchantShop::Herbalist);
+        assert!(herbalist.contains("action=\"/settlements/viabundus-1/herbalist/purchase\""));
         assert!(herbalist.contains(">10.0 / 100.0 kg<"));
         assert!(!herbalist.contains("data-inventory-pane=\"party\""));
         assert!(!herbalist.contains(">30.0 / 200.0 kg<"));
 
         let inn = render(MerchantShop::Inn);
         assert!(inn.contains("Cooking supplies"));
+        assert!(inn.contains("action=\"/settlements/viabundus-1/storefront/inn/offer\""));
         assert!(inn.contains("aria-label=\"Inn rest service\""));
     }
 
