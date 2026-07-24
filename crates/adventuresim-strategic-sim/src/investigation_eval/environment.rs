@@ -157,7 +157,7 @@ impl InvestigationEnvironment {
                         witness_id: witness.id.0.clone(),
                         display_name: witness_name(&witness.npc_id),
                         physical_description: witness.visible_description.clone(),
-                        expected_location: witness.expected_location.clone(),
+                        expected_location: witness.expected_location_label.clone(),
                         interviewed: false,
                         availability: WitnessAvailability::Available,
                     })
@@ -204,8 +204,7 @@ impl InvestigationEnvironment {
                 self.refresh_witness_availability();
                 learned.push("The referred witness returns to their expected location.".into());
                 (
-                    "The party waits rather than treating an ordinary absence as a failure."
-                        .into(),
+                    "The party waits rather than treating an ordinary absence as a failure.".into(),
                     wait as u32,
                     1,
                 )
@@ -498,23 +497,34 @@ impl InvestigationEnvironment {
     }
 
     fn admissible_finale_route(&self, finale_site_id: &str) -> Option<RouteClass> {
-        self.completed_action_provenance.iter().rev().find_map(|completed| {
-            (completed.target_kind == "site"
-                && completed.target_id == finale_site_id
-                && self.visited_sites.contains(finale_site_id)
-                && self.action_chain_complete(completed.action_index))
-            .then_some(completed.route)
-        })
+        self.completed_action_provenance
+            .iter()
+            .rev()
+            .find_map(|completed| {
+                (completed.target_kind == "site"
+                    && completed.target_id == finale_site_id
+                    && self.visited_sites.contains(finale_site_id)
+                    && self.action_chain_complete(completed.action_index))
+                .then_some(completed.route)
+            })
     }
 
     fn action_chain_complete(&self, index: usize) -> bool {
-        let Some(action) = self.generated.actions.get(index) else { return false };
+        let Some(action) = self.generated.actions.get(index) else {
+            return false;
+        };
         match &action.prerequisite {
             None => self.completed_actions.contains(&index),
-            Some(required) => self.completed_actions.contains(&index)
-                && self.generated.actions.iter().enumerate().find_map(|(prior, candidate)|
-                    (&candidate.id == required).then_some(prior)
-                ).is_some_and(|prior| self.action_chain_complete(prior)),
+            Some(required) => {
+                self.completed_actions.contains(&index)
+                    && self
+                        .generated
+                        .actions
+                        .iter()
+                        .enumerate()
+                        .find_map(|(prior, candidate)| (&candidate.id == required).then_some(prior))
+                        .is_some_and(|prior| self.action_chain_complete(prior))
+            }
         }
     }
 
@@ -530,7 +540,9 @@ impl InvestigationEnvironment {
         let interviewed = &self.interviewed;
         for (index, referral) in self.frame.discovery.referrals.iter_mut().enumerate() {
             referral.availability = if interviewed.contains(&index)
-                || returns.get(&index).is_none_or(|return_at| game_minute >= *return_at)
+                || returns
+                    .get(&index)
+                    .is_none_or(|return_at| game_minute >= *return_at)
             {
                 WitnessAvailability::Available
             } else if game_minute == 0 {
@@ -674,6 +686,7 @@ fn generation_context(seed: u64, family: TemplateFamily) -> qg::GenerationContex
         profession: id.into(),
         visible_description: description.into(),
         expected_location: location.into(),
+        expected_location_label: location.into(),
         presence_version: 1,
         allowed_circumstances: circumstances.clone(),
     };
@@ -775,11 +788,12 @@ mod tests {
             arguments: DecisionArguments::default(),
         })
         .unwrap();
-        assert!(env
-            .frame()
-            .legal_choices
-            .iter()
-            .all(|choice| choice.kind != ChoiceKind::Investigate));
+        assert!(
+            env.frame()
+                .legal_choices
+                .iter()
+                .all(|choice| choice.kind != ChoiceKind::Investigate)
+        );
         let witness = env
             .frame()
             .legal_choices
@@ -794,11 +808,12 @@ mod tests {
             arguments: DecisionArguments::default(),
         })
         .unwrap();
-        assert!(env
-            .frame()
-            .legal_choices
-            .iter()
-            .any(|choice| choice.kind == ChoiceKind::Investigate));
+        assert!(
+            env.frame()
+                .legal_choices
+                .iter()
+                .any(|choice| choice.kind == ChoiceKind::Investigate)
+        );
     }
 
     #[test]
@@ -816,7 +831,14 @@ mod tests {
             .iter()
             .enumerate()
             .find(|(_, action)| action.target_id != finale_site)
-            .map(|(index, action)| (index, action.route, action.target_kind.clone(), action.target_id.clone()))
+            .map(|(index, action)| {
+                (
+                    index,
+                    action.route,
+                    action.target_kind.clone(),
+                    action.target_id.clone(),
+                )
+            })
             .unwrap();
         env.completed_actions.insert(action_index);
         env.completed_action_provenance.push(CompletedAction {
