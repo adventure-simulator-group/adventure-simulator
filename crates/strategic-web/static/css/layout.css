@@ -299,6 +299,33 @@
   box-shadow: inset 0 1px 2px #fff2, inset 0 -2px 3px #0009, 0 1px 3px #0008;
 }
 
+.journal-button {
+  display: grid;
+  width: 2.35rem;
+  height: 2.35rem;
+  flex: 0 0 2.35rem;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--building-frame-tint) 72%, white);
+  border-radius: 50%;
+  background: var(--building-surface);
+  box-shadow: inset 0 1px 2px #fff2, inset 0 -2px 3px #0009, 0 1px 3px #0008;
+}
+
+.journal-button:is(:hover, :focus-visible) { border-color: var(--accent-gold); }
+
+.journal-button:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 2px;
+}
+
+.journal-button-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  background: var(--text-primary);
+  -webkit-mask: url("/static/icons/game/open-book.svg") center / contain no-repeat;
+  mask: url("/static/icons/game/open-book.svg") center / contain no-repeat;
+}
+
 .settlement-name {
   font-family: var(--font-heading), serif;
   font-size: var(--font-size-lg);

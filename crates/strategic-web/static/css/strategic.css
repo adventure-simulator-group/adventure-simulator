@@ -1576,6 +1576,56 @@ body.activity-modal-open { overflow: hidden; }
 .activity-submit { width: 100%; padding: 0.55rem; cursor: pointer; }
 
 body.character-action-dialog-open { overflow: hidden; }
+
+.journal-dialog {
+  position: fixed;
+  inset: 0;
+  width: min(64rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  margin: auto;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius);
+  background: var(--panel-bg);
+  color: var(--text-primary);
+  box-shadow: 0 1rem 3rem rgb(0 0 0 / 70%);
+}
+
+.journal-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.journal-dialog::backdrop { background: rgb(0 0 0 / 72%); }
+
+.journal-dialog-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  padding: .75rem 1rem;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--header-bg);
+}
+
+.journal-dialog-header h2 { margin: 0; }
+.journal-dialog-header form { margin: 0; }
+
+.journal-dialog-close {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 1.65rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.journal-dialog-content {
+  min-height: 10rem;
+  padding: 1rem;
+  overflow-y: auto;
+}
 .character-action-overlay {
   position: fixed;
   z-index: 1050;
@@ -1901,42 +1951,57 @@ body.character-action-dialog-open { overflow: hidden; }
 }
 
 .settlement-npc-strip {
+  position: absolute;
+  z-index: 6;
+  right: 1rem;
+  bottom: calc(var(--chat-bottom-gap) + var(--chat-panel-height) + 0.55rem);
+  left: 1rem;
   display: flex;
-  gap: .55rem;
+  gap: .9rem;
   align-items: flex-start;
   justify-content: center;
   overflow-x: auto;
-  padding: .45rem .8rem;
-  min-height: 4.8rem;
+  padding: .25rem .8rem;
+  min-height: 4.3rem;
+  pointer-events: auto;
 }
 
 .settlement-npc-portrait {
-  width: 4.4rem;
-  flex: 0 0 4.4rem;
-  border: 1px solid var(--border-color, #665b48);
-  border-radius: .35rem;
-  background: rgba(20, 18, 15, .82);
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
   color: inherit;
-  padding: .3rem;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
 }
 
-.settlement-npc-portrait.active,
-.settlement-npc-portrait[aria-pressed="true"] {
-  border-color: #d4aa53;
-  box-shadow: 0 0 0 2px rgba(212, 170, 83, .28);
+.settlement-npc-portrait:is(.active, [aria-pressed="true"]) .party-portrait-initial {
+  box-shadow:
+    0 0 0 2px var(--accent-gold),
+    0 0 0 4px rgb(212 170 83 / 28%);
 }
 
 .settlement-npc-initials {
-  display: grid;
-  place-items: center;
-  height: 2.4rem;
   background: #373026;
-  font-size: 1.15rem;
-  font-weight: 700;
 }
 
-.settlement-npc-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .7rem; margin-top: .2rem; }
-.npc-description-stage p { max-width: 42rem; text-align: center; }
+.npc-description-stage {
+  position: absolute;
+  inset: 7rem 1rem calc(var(--chat-bottom-gap) + var(--chat-panel-height) + 5.2rem);
+  display: flex;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  overflow: hidden;
+  text-align: center;
+  pointer-events: none;
+}
+
+.npc-description-stage > * { max-width: min(42rem, 100%); }
+.npc-description-stage h2,
+.npc-description-stage p { margin-right: auto; margin-left: auto; text-align: center; }
 
 .party-portrait {
   position: relative;

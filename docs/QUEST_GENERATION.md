@@ -105,8 +105,9 @@ dialogue producer to remain intact.
 ## Discovery and resolution
 
 Entering an inn guarantees symptom discovery when an available unknown
-**validated generated quest problem** exists. This records a markerless journal
-referral; it does not accept a contract or disclose testimony. Legacy/manual
+**validated generated quest problem** exists. This records the rumor in the
+player's dry journal and grants a private referral authority; it does not
+accept a contract or disclose testimony. Legacy/manual
 seeded `LocalProblemAuthority` rows currently drive settlement simulation
 modifiers and effects only and are intentionally non-discoverable; retiring
 that producer is separate work. Any local can repeat a validated generated
@@ -119,8 +120,9 @@ Witness discovery is an explicit authored graph, not permission inferred from
 private manifest membership. The initial rumor grants an observer-bound
 referral to the primary witness. Individual testimony drafts may refer to exact
 subsequent witnesses; only processing that account grants the next private
-referral and projects the persistent NPC's safe name, physical description,
-profession, and location-tab label into the journal. Referral execution
+referral. The journal intentionally does not project that referral, its
+location, or any suggested next action; those details remain in the dialogue
+the player actually heard. Referral execution
 revalidates observer, canonical/public case authority, NPC, settlement,
 location, catalog revision, dialogue session, and live presence. Private
 referral authority records whether it came from the exact initial rumor receipt
@@ -131,8 +133,9 @@ validation. Secondary testimony with no authored contact action changes no
 route, while the primary contact still uniquely unlocks its successors.
 
 Only an authoritative typed exact destination output can create an exact pin.
-The raw site ID remains navigation authority; player-facing journal text and
-the matching map pin use the site's generated safe name.
+The raw site ID remains navigation authority; the matching map pin uses the
+site's generated safe name. The journal does not interpret or restate the pin
+as a destination.
 Discovery actions execute at a known contact, settlement, area, or predecessor
 route and may reveal travel-capable knowledge. They never also resolve custody.
 After travel establishes authoritative occupancy, a separate `InspectSite` or

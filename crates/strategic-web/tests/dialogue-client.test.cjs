@@ -56,6 +56,14 @@ test("settlement NPC selection is accessible and actor-backed", () => {
   assert.match(source, /generation === selectionGeneration/);
 });
 
+test("settlement NPCs reuse the circular party portrait structure", () => {
+  assert.match(source, /party-portrait settlement-npc-portrait/);
+  assert.match(source, /party-portrait-initial settlement-npc-initials/);
+  assert.match(source, /party-portrait-face/);
+  assert.match(source, /party-portrait-name settlement-npc-name/);
+  assert.match(source, /portrait\.append\(face, name\)/);
+});
+
 test("late dialogue responses cannot replace the newly selected NPC", () => {
   assert.match(source, /const actor = chat\.dataset\.localChatSubject/);
   assert.match(source, /chat\.dataset\.localChatSubject === actor/);

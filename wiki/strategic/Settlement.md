@@ -8,10 +8,16 @@ inn is the discovery funnel; a settlement without an available inn uses overview
 Every seeded or imported settlement has persistent local NPC identities in addition to
 its service providers. The overview/public area and service locations contain multiple
 people; towns and larger settlements also populate a keep. A horizontal, keyboard-
-navigable portrait strip selects whom the active character addresses. Service pages
+navigable circular portrait strip selects whom the active character addresses. It is
+attached just above the resizable chat panel, opposite the party portrait strip, and
+moves with the chat's top edge. The selected NPC's description is centered in the
+remaining stage between the two strips. Service pages
 initially select the service provider, while other locations select a deterministic
 local. Selecting someone else keeps the party in place and updates the visible physical
 description, greeting, and eligible topics.
+
+The book button immediately to the right of the settlement identity and official time
+opens the character's journal without leaving the current location.
 
 The settlement overview links to residential areas and, for towns and larger settlements,
 the keep. These non-service places use the same authoritative portrait, description, and
