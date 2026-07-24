@@ -962,12 +962,27 @@ async fn party_targets(state: &AppState, party_id: &str) -> Vec<InventoryQuantit
 
 async fn autoresolve_quest(
     State(state): State<AppState>,
-    Path(_id): Path<String>,
+    Path(id): Path<String>,
     session: Session,
 ) -> Redirect {
     let Some(character_id) = session.character_id_u64() else {
         return Redirect::to("/characters");
     };
+    let selected_case_site_id = state
+        .db
+        .query_one::<Character>(&format!(
+            "SELECT * FROM character WHERE id = {character_id}"
+        ))
+        .await
+        .ok()
+        .flatten()
+        .and_then(|character| character.current_case_site_id);
+    if selected_case_site_id.as_deref() != Some(id.as_str()) {
+        return selected_case_site_id.map_or_else(
+            || Redirect::to("/characters"),
+            |case_site_id| Redirect::to(&format!("/locations/case-site/{case_site_id}/enemy")),
+        );
+    }
     let outcome = execute_or_request_party_action(
         &state,
         character_id,
@@ -1215,5 +1230,19 @@ mod quest_route_tests {
         assert!(loader.contains("case_site_combat_permitted"));
         assert!(loader.contains("battle.case_site_id.value == site.case_site_id"));
         assert!(!loader.contains("active_contract_id.as_deref() == Some(&presentation"));
+    }
+
+    #[test]
+    fn autoresolve_url_site_must_match_authoritative_character_occupancy() {
+        let source = include_str!("quests.rs");
+        let handler = source
+            .split("async fn autoresolve_quest")
+            .nth(1)
+            .and_then(|tail| tail.split("fn autoresolve_redirect").next())
+            .expect("autoresolve handler");
+        assert!(handler.contains("Path(id): Path<String>"));
+        assert!(handler.contains("selected_case_site_id.as_deref() != Some(id.as_str())"));
+        assert!(handler.contains("character.current_case_site_id"));
+        assert!(!handler.contains("Path(_id)"));
     }
 }

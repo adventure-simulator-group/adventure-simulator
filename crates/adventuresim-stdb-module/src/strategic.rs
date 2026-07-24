@@ -33,12 +33,12 @@ use crate::{
     condition::character_condition,
     investigation::{
         CaseSiteAuthority, CaseSiteId, EvidencePresentationKind, PartyCaseSiteTracking,
-        case_site_authority, disclose_exact_case_site, exact_case_site_for_observer,
-        investigation_area_authority, investigation_belief, investigation_case_authority,
-        investigation_event_authority, investigation_evidence_authority,
-        investigation_evidence_knowledge, investigation_lead, investigation_received_testimony,
-        investigation_testimony_bundle, mark_case_site_visited, party_case_site_tracking,
-        referred_generated_witness,
+        case_site_authority, case_site_provenance_reducer, disclose_exact_case_site,
+        exact_case_site_for_observer, investigation_area_authority, investigation_belief,
+        investigation_case_authority, investigation_event_authority,
+        investigation_evidence_authority, investigation_evidence_knowledge, investigation_lead,
+        investigation_received_testimony, investigation_testimony_bundle, mark_case_site_visited,
+        party_case_site_tracking, referred_generated_witness,
     },
     item::{InventoryItem, inventory_item, item},
     local_problem::{local_problem_receipt, local_problem_rumor_delivery},
@@ -297,13 +297,14 @@ fn record_autoresolve_report(
 #[cfg(test)]
 mod healing_tests {
     use super::{
-        CaseAuthority, CaseResolutionStatus, CaseSiteAuthority, HostileResolutionKind,
-        IncidentStatus, LocalChatMessage, MissionApproachCapability, MissionAttemptStatus,
-        MissionAuthority, MissionOutcomeCandidate, QuestGenerationAuthority,
+        CaseAuthority, CaseFinaleAuthority, CaseResolutionStatus, CaseSiteAuthority, CaseSiteId,
+        FinaleKind, FinaleStatus, HostileGroupAuthority, HostileGroupDisposition,
+        HostileResolutionKind, IncidentStatus, LocalChatMessage, MissionApproachCapability,
+        MissionAttemptStatus, MissionAuthority, MissionOutcomeCandidate, QuestGenerationAuthority,
         RecruitmentOfferStatus, activity_incident_source_id, autoresolve_drop,
-        case_refs_have_exact_dialogue_provenance, generated_dialogue_action_matches,
-        generated_dialogue_producer_recipient, generated_scene_key,
-        generated_witness_visible_description, hostile_group_authority_row,
+        case_refs_have_exact_dialogue_provenance, generated_case_site_combat_eligible,
+        generated_dialogue_action_matches, generated_dialogue_producer_recipient,
+        generated_scene_key, generated_witness_visible_description, hostile_group_authority_row,
         hostile_resolution_for_objective, incident_group_matches,
         mission_candidate_from_capability, npc_conversation_authority_matches,
         player_participant_ids, project_local_chat_message, quest_encounter_archetype,
@@ -886,6 +887,20 @@ mod healing_tests {
         assert!(body.contains("complete_bound_mission_success("));
         assert!(body.contains("autoresolve_report()"));
         assert!(!body.contains("record_battle_result("));
+        let binding = source
+            .split("pub(crate) fn ensure_bound_mission_authority")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("mission binding");
+        assert!(binding.contains("generated_case_site_combat_eligible("));
+        assert!(binding.contains("ContractStatus::Accepted"));
+        assert!(binding.contains("party.active_contract_id"));
+        let projection = include_str!("investigation.rs")
+            .split("fn case_site_presentation_view")
+            .nth(1)
+            .and_then(|tail| tail.split("fn lead_projects_exact_case_site_pin").next())
+            .expect("generated case-site projection");
+        assert!(projection.contains("generated_case_site_combat_eligible("));
     }
 
     #[test]
@@ -1677,6 +1692,142 @@ mod healing_tests {
             .and_then(|tail| tail.split("fn hostile_group_authority_row").next())
             .expect("hostile-group materializer");
         assert!(!materializer.contains("site.id.value"));
+    }
+
+    #[test]
+    fn generated_combat_eligibility_fails_closed_across_site_group_and_finale_authority() {
+        use adventuresim_core::quest_generation::TemplateFamily;
+
+        let generated = generated_case(7, TemplateFamily::RecurringDepredation);
+        let (hostile_group_id, hostile_site_id, _, _) = generated
+            .hostile_groups
+            .first()
+            .expect("recurring case has hostile authority");
+        let generated_site = generated
+            .sites
+            .iter()
+            .find(|site| site.id == *hostile_site_id)
+            .expect("hostile site exists");
+        let site = CaseSiteAuthority {
+            id_key: generated_site.id.0.clone(),
+            id: CaseSiteId::from(generated_site.id.0.clone()),
+            case_id: generated.canonical_case_id.clone(),
+            origin_settlement_id: "test-settlement".into(),
+            name: generated_site.safe_label.clone(),
+            description: "known generated site".into(),
+            scene_key: "forest".into(),
+            longitude_e7: 0,
+            latitude_e7: 0,
+            coordinates_are_geographic: false,
+            distance_m: 1,
+        };
+        let case = CaseAuthority {
+            id: generated.canonical_case_id.clone(),
+            investigation_case_id: generated.canonical_case_id.clone(),
+            provenance_kind: "generated".into(),
+            generated_case_id: generated.canonical_case_id.clone(),
+            local_problem_id: Some(generated.problem_id.clone()),
+            objective_expression_json: serde_json::to_string(&generated.objectives).unwrap(),
+            resolution_status: CaseResolutionStatus::Open,
+            resolved_by_party_id: None,
+        };
+        let group = HostileGroupAuthority {
+            id: hostile_group_id.clone(),
+            case_site_id: site.id.clone(),
+            enemy_type: "test-hostile".into(),
+            enemy_count: 1,
+            difficulty: 1,
+            drop_item_id: None,
+            drop_quantity: 0,
+            disposition: HostileGroupDisposition::Active,
+        };
+        let finales: Vec<_> = generated
+            .objectives
+            .alternatives
+            .iter()
+            .enumerate()
+            .map(|(path_index, _)| CaseFinaleAuthority {
+                id: format!("finale:{}:{path_index}", generated.canonical_case_id),
+                case_id: generated.canonical_case_id.clone(),
+                kind: FinaleKind::RecordResolution,
+                resolution_status: CaseResolutionStatus::Resolved,
+                eligible_path_index: Some(path_index as u16),
+                priority: 100,
+                status: FinaleStatus::Available,
+            })
+            .collect();
+        let facts = Vec::new();
+        assert!(generated_case_site_combat_eligible(
+            &generated,
+            &case,
+            &site,
+            std::slice::from_ref(&group),
+            &finales,
+            &facts,
+            "party",
+        ));
+        assert!(!generated_case_site_combat_eligible(
+            &generated,
+            &case,
+            &site,
+            std::slice::from_ref(&group),
+            &[],
+            &facts,
+            "party",
+        ));
+        let mut consumed_finales = finales.clone();
+        for finale in &mut consumed_finales {
+            finale.status = FinaleStatus::Executed;
+        }
+        assert!(!generated_case_site_combat_eligible(
+            &generated,
+            &case,
+            &site,
+            std::slice::from_ref(&group),
+            &consumed_finales,
+            &facts,
+            "party",
+        ));
+        let mut wrong_group = group.clone();
+        wrong_group.case_site_id = CaseSiteId::from("site:wrong".to_string());
+        assert!(!generated_case_site_combat_eligible(
+            &generated,
+            &case,
+            &site,
+            std::slice::from_ref(&wrong_group),
+            &finales,
+            &facts,
+            "party",
+        ));
+        let evidence_site = generated
+            .sites
+            .iter()
+            .find(|candidate| candidate.id != *hostile_site_id)
+            .expect("recurring case has a non-hostile site");
+        let mut noncombat_site = site.clone();
+        noncombat_site.id_key = evidence_site.id.0.clone();
+        noncombat_site.id = CaseSiteId::from(evidence_site.id.0.clone());
+        noncombat_site.name = evidence_site.safe_label.clone();
+        assert!(!generated_case_site_combat_eligible(
+            &generated,
+            &case,
+            &noncombat_site,
+            std::slice::from_ref(&group),
+            &finales,
+            &facts,
+            "party",
+        ));
+        let mut stale_case = case.clone();
+        stale_case.objective_expression_json = "[]".into();
+        assert!(!generated_case_site_combat_eligible(
+            &generated,
+            &stale_case,
+            &site,
+            std::slice::from_ref(&group),
+            &finales,
+            &facts,
+            "party",
+        ));
     }
 
     #[test]
@@ -16127,6 +16278,111 @@ fn mission_candidate_from_capability(
     }
 }
 
+pub(crate) fn generated_case_site_combat_eligible(
+    generated: &adventuresim_core::quest_generation::GeneratedCase,
+    case: &CaseAuthority,
+    case_site: &CaseSiteAuthority,
+    hostile_groups: &[HostileGroupAuthority],
+    finales: &[CaseFinaleAuthority],
+    facts: &[adventuresim_core::case::OutcomeFact],
+    party_id: &str,
+) -> bool {
+    if case.provenance_kind != "generated"
+        || case.generated_case_id != case.id
+        || case.id != generated.canonical_case_id
+        || case_site.case_id != case.id
+        || case.resolution_status != CaseResolutionStatus::Open
+    {
+        return false;
+    }
+    let Some(generated_site) = generated
+        .sites
+        .iter()
+        .find(|site| site.id.0 == case_site.id.value)
+    else {
+        return false;
+    };
+    if generated_site.safe_label != case_site.name {
+        return false;
+    }
+    let mut finale_group_ids: BTreeSet<&str> = generated
+        .finales
+        .iter()
+        .filter(|finale| {
+            finale.site_id.0 == case_site.id.value && finale.strategic_outcome_compatible
+        })
+        .filter_map(|finale| finale.hostile_group_id.as_deref())
+        .collect();
+    let Some(hostile_group_id) = finale_group_ids.pop_first() else {
+        return false;
+    };
+    if !finale_group_ids.is_empty()
+        || !generated
+            .hostile_groups
+            .iter()
+            .any(|(group_id, site_id, _, _)| {
+                group_id == hostile_group_id && site_id.0 == case_site.id.value
+            })
+    {
+        return false;
+    }
+    let matching_groups: Vec<_> = hostile_groups
+        .iter()
+        .filter(|group| {
+            group.id == hostile_group_id
+                && group.case_site_id == case_site.id
+                && group.disposition == HostileGroupDisposition::Active
+        })
+        .collect();
+    if matching_groups.len() != 1 {
+        return false;
+    }
+    let Ok(expression) = serde_json::from_str::<adventuresim_core::case::ObjectiveExpression>(
+        &case.objective_expression_json,
+    ) else {
+        return false;
+    };
+    if expression != generated.objectives {
+        return false;
+    }
+    let Ok(core_case_id) = adventuresim_core::case::CaseId::new(case.id.clone()) else {
+        return false;
+    };
+    let evaluation = expression.evaluate(&core_case_id, party_id, facts);
+    expression
+        .alternatives
+        .iter()
+        .enumerate()
+        .any(|(path_index, path)| {
+            let hostile_pending =
+                path.objectives
+                    .iter()
+                    .enumerate()
+                    .any(|(objective_index, objective)| {
+                        evaluation
+                            .alternatives
+                            .get(path_index)
+                            .and_then(|progress| progress.get(objective_index))
+                            .is_some_and(|progress| {
+                                progress.state == adventuresim_core::case::EvaluationState::Pending
+                            })
+                            && hostile_resolution_for_objective(
+                                &objective.requirement,
+                                hostile_group_id,
+                            )
+                            .is_some()
+                    });
+            hostile_pending
+                && finales.iter().any(|finale| {
+                    finale.case_id == case.id
+                        && finale.kind == FinaleKind::RecordResolution
+                        && finale.resolution_status == CaseResolutionStatus::Resolved
+                        && finale.status == FinaleStatus::Available
+                        && finale.eligible_path_index == u16::try_from(path_index).ok()
+                })
+        })
+}
+
 pub(crate) fn ensure_bound_mission_authority(
     ctx: &ReducerContext,
     mission_id: &str,
@@ -16189,6 +16445,58 @@ pub(crate) fn ensure_bound_mission_authority(
                 .map_err(|_| "Stored outcome fact is invalid".to_string())
         })
         .collect::<Result<Vec<_>, _>>()?;
+    match case_site_provenance_reducer(ctx, case_site) {
+        Some(Some((canonical_case_id, _))) => {
+            let authority = ctx
+                .db
+                .quest_generation_authority()
+                .case_id()
+                .find(&canonical_case_id)
+                .ok_or("Generated combat authority is unavailable")?;
+            let validated = validate_quest_generation_authority(&authority)
+                .map_err(|_| "Generated combat authority is invalid")?;
+            let hostile_groups: Vec<_> = ctx.db.hostile_group_authority().iter().collect();
+            let finales: Vec<_> = ctx
+                .db
+                .case_finale_authority()
+                .case_id()
+                .filter(&canonical_case_id)
+                .collect();
+            if !generated_case_site_combat_eligible(
+                &validated.manifest,
+                &case,
+                case_site,
+                &hostile_groups,
+                &finales,
+                &facts,
+                party_id,
+            ) {
+                return Err("Generated strategic combat is not available at this site".into());
+            }
+        }
+        Some(None) => {
+            let accepted_contract = ctx
+                .db
+                .contract_authority()
+                .case_id()
+                .filter(&case.id)
+                .find(|contract| {
+                    contract.status == ContractStatus::Accepted
+                        && contract.accepted_by.as_deref() == Some(party_id)
+                })
+                .ok_or("This quest requires an accepted active contract")?;
+            let party = ctx
+                .db
+                .party_authority()
+                .id()
+                .find(&party_id.to_string())
+                .ok_or("Party not found")?;
+            if party.active_contract_id.as_deref() != Some(&accepted_contract.id) {
+                return Err("This quest requires an accepted active contract".into());
+            }
+        }
+        None => return Err("Case-site combat provenance is invalid or ambiguous".into()),
+    }
     let core_case_id =
         adventuresim_core::case::CaseId::new(case.id.clone()).map_err(|_| "Case ID is invalid")?;
     let evaluation = expression.evaluate(&core_case_id, party_id, &facts);
@@ -16437,6 +16745,11 @@ pub fn autoresolve_mission(
         .as_ref()
         .and_then(|id| ctx.db.case_site_authority().id_key().find(&id.value))
         .ok_or("Party is not at a case site")?;
+    if crate::investigation::character_case_site_id(ctx, character_id).as_deref()
+        != Some(case_site.id.as_str())
+    {
+        return Err("Character and party case-site occupancy do not agree".into());
+    }
     require_party_ready(ctx, &party_id)?;
 
     let mission = ensure_bound_mission_authority(
