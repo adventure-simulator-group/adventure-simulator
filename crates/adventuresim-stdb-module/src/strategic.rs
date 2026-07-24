@@ -1733,6 +1733,39 @@ mod healing_tests {
     }
 
     #[test]
+    fn outcome_ingestion_preflights_provenance_before_any_mutation() {
+        let source = include_str!("strategic.rs");
+        let helper = source
+            .split("fn validated_case_outcome_provenance")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(crate) fn ingest_case_outcome_fact").next())
+            .unwrap();
+        for required in [
+            "\"manual\" if case.generated_case_id.is_empty()",
+            "authorities.is_empty()",
+            "\"generated\" if case.generated_case_id == case.id",
+            "authorities.len() != 1",
+            "validate_quest_generation_authority",
+            "objectives != validated.manifest.objectives",
+        ] {
+            assert!(helper.contains(required), "{required}");
+        }
+        let ingestion = source
+            .split("pub(crate) fn ingest_case_outcome_fact")
+            .nth(1)
+            .and_then(|tail| tail.split("fn select_case_finale").next())
+            .unwrap();
+        let preflight = ingestion.find("validated_case_outcome_provenance").unwrap();
+        let objective = ingestion.find("objective_expression_json").unwrap();
+        let first_insert = ingestion.find(".insert(").unwrap();
+        let first_update = ingestion.find(".update(").unwrap();
+        assert!(preflight < objective);
+        assert!(objective < first_insert);
+        assert!(preflight < first_update);
+        assert!(ingestion.contains("if let Some(validated) = generated_provenance"));
+    }
+
+    #[test]
     fn generated_noncombat_resolution_closes_problem_without_contract_authority() {
         let source = include_str!("strategic.rs");
         let finale = source
@@ -15723,6 +15756,52 @@ pub(crate) fn record_subject_rescued_or_released(
 /// Sole trusted fact ingestion and evaluation seam. Callers must already have
 /// authenticated their strategic authority and bind `source_id` to a durable
 /// domain receipt; no public reducer exposes this function.
+fn validated_case_outcome_provenance(
+    ctx: &ReducerContext,
+    case: &CaseAuthority,
+) -> Result<Option<ValidatedQuestGenerationAuthority>, String> {
+    let mut authorities: Vec<_> = ctx
+        .db
+        .quest_generation_authority()
+        .iter()
+        .filter(|authority| {
+            authority.case_id == case.id
+                || authority.public_case_id == case.id
+                || (!case.generated_case_id.is_empty()
+                    && (authority.case_id == case.generated_case_id
+                        || authority.public_case_id == case.generated_case_id))
+        })
+        .collect();
+    authorities.sort_by(|left, right| left.case_id.cmp(&right.case_id));
+    authorities.dedup_by(|left, right| left.case_id == right.case_id);
+    match case.provenance_kind.as_str() {
+        "manual" if case.generated_case_id.is_empty() => {
+            if authorities.is_empty() {
+                Ok(None)
+            } else {
+                Err("Manual case collides with generated quest authority".into())
+            }
+        }
+        "generated" if case.generated_case_id == case.id && !case.generated_case_id.is_empty() => {
+            if authorities.len() != 1 {
+                return Err("Generated case must have exactly one quest authority".into());
+            }
+            let validated = validate_quest_generation_authority(&authorities[0])?;
+            if validated.manifest.canonical_case_id != case.id {
+                return Err("Generated case authority does not match case provenance".into());
+            }
+            let objectives: adventuresim_core::case::ObjectiveExpression =
+                serde_json::from_str(&case.objective_expression_json)
+                    .map_err(|_| "Case objective authority is invalid")?;
+            if objectives != validated.manifest.objectives {
+                return Err("Generated case objectives do not match its manifest".into());
+            }
+            Ok(Some(validated))
+        }
+        _ => Err("Case provenance tuple is invalid".into()),
+    }
+}
+
 pub(crate) fn ingest_case_outcome_fact(
     ctx: &ReducerContext,
     source_id: &str,
@@ -15736,6 +15815,10 @@ pub(crate) fn ingest_case_outcome_fact(
         .id()
         .find(&case_id.to_string())
         .ok_or("Case not found")?;
+    let generated_provenance = validated_case_outcome_provenance(ctx, &case)?;
+    let expression: adventuresim_core::case::ObjectiveExpression =
+        serde_json::from_str(&case.objective_expression_json)
+            .map_err(|_| "Case objective authority is invalid")?;
     let fact_id = format!(
         "fact:{}",
         source_id.strip_prefix("outcome:").unwrap_or(source_id)
@@ -15778,9 +15861,6 @@ pub(crate) fn ingest_case_outcome_fact(
         happened_at_minute: fact.happened_at,
     });
 
-    let expression: adventuresim_core::case::ObjectiveExpression =
-        serde_json::from_str(&case.objective_expression_json)
-            .map_err(|_| "Case objective authority is invalid")?;
     let facts = ctx
         .db
         .case_outcome_fact()
@@ -15860,8 +15940,7 @@ pub(crate) fn ingest_case_outcome_fact(
             party_id,
         )?;
     }
-    if let Some(authority) = ctx.db.quest_generation_authority().case_id().find(&case.id) {
-        let validated = validate_quest_generation_authority(&authority)?;
+    if let Some(validated) = generated_provenance {
         ensure_settlement_activity_inner(ctx, &validated.context.settlement_id)?;
     }
     Ok(())
