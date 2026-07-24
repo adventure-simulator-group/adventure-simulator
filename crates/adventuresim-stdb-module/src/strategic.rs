@@ -306,7 +306,8 @@ mod healing_tests {
         hostile_resolution_for_objective, incident_group_matches,
         mission_candidate_from_capability, npc_conversation_authority_matches,
         player_participant_ids, project_local_chat_message, quest_encounter_archetype,
-        refreshed_recruitment_offer_status, sample_mission_candidate,
+        quest_generation_context_commitment, refreshed_recruitment_offer_status,
+        sample_mission_candidate, validate_quest_generation_authority,
         validated_generated_dialogue_manifest,
     };
     use adventuresim_core::encounter::EncounterArchetype;
@@ -1344,8 +1345,8 @@ mod healing_tests {
         };
         let context = adventuresim_core::quest_generation::GenerationContext {
             seed: generated.generation_seed,
-            observer_entropy_hi: 1,
-            observer_entropy_lo: 2,
+            observer_entropy_hi: generated.generation_seed ^ 0x6f62_7365_7276_6572,
+            observer_entropy_lo: generated.generation_seed.rotate_left(23) ^ 0x7175_6573_742d_7631,
             settlement_id: "test-settlement".into(),
             settlement_name: "Test Settlement".into(),
             scope: adventuresim_core::local_problem::Scope::Settlement {
@@ -1356,12 +1357,16 @@ mod healing_tests {
             requested_family: Some(TemplateFamily::DisappearanceOrLoss),
             witness_candidates: adventuresim_core::quest_generation::test_witnesses(),
         };
+        let context_snapshot_json = serde_json::to_string(&context).unwrap();
         let authority = QuestGenerationAuthority {
             case_id: generated.canonical_case_id.clone(),
             public_case_id: generated.public_case_id.clone(),
+            settlement_id: context.settlement_id.clone(),
+            settlement_name: context.settlement_name.clone(),
             seed: generated.generation_seed,
             catalog_revision: generated.catalog_revision.clone(),
-            context_snapshot_json: serde_json::to_string(&context).unwrap(),
+            context_commitment: quest_generation_context_commitment(&context_snapshot_json),
+            context_snapshot_json,
             manifest_json: serde_json::to_string(&generated).unwrap(),
             factor_trace_json: serde_json::to_string(&generated.factor_trace).unwrap(),
         };
@@ -1370,6 +1375,7 @@ mod healing_tests {
                 .unwrap()
                 .is_some()
         );
+        assert!(validate_quest_generation_authority(&authority).is_ok());
         assert!(validated_generated_dialogue_manifest(&generated_case, None).is_err());
         let mut malformed = authority.clone();
         malformed.manifest_json = "not-json".into();
@@ -1380,6 +1386,100 @@ mod healing_tests {
         let mut wrong_objective = generated_case.clone();
         wrong_objective.objective_expression_json = "[]".into();
         assert!(validated_generated_dialogue_manifest(&wrong_objective, Some(&authority)).is_err());
+        let mut mutations = Vec::new();
+        let mut wrong_seed = authority.clone();
+        wrong_seed.seed ^= 1;
+        mutations.push(wrong_seed);
+        let mut wrong_catalog = authority.clone();
+        wrong_catalog.catalog_revision = "old-catalog".into();
+        mutations.push(wrong_catalog);
+        let mut wrong_trace = authority.clone();
+        wrong_trace.factor_trace_json = "[]".into();
+        mutations.push(wrong_trace);
+        let mut wrong_commitment = authority.clone();
+        wrong_commitment.context_commitment = "wrong".into();
+        mutations.push(wrong_commitment);
+        let mutate_context =
+            |authority: &QuestGenerationAuthority,
+             mutate: fn(&mut adventuresim_core::quest_generation::GenerationContext),
+             refresh_commitment: bool| {
+                let mut changed = authority.clone();
+                let mut context: adventuresim_core::quest_generation::GenerationContext =
+                    serde_json::from_str(&changed.context_snapshot_json).unwrap();
+                mutate(&mut context);
+                changed.context_snapshot_json = serde_json::to_string(&context).unwrap();
+                if refresh_commitment {
+                    changed.context_commitment =
+                        quest_generation_context_commitment(&changed.context_snapshot_json);
+                }
+                changed
+            };
+        mutations.push(mutate_context(
+            &authority,
+            |context| context.observer_entropy_hi ^= 1,
+            false,
+        ));
+        mutations.push(mutate_context(
+            &authority,
+            |context| context.observer_entropy_lo ^= 1,
+            false,
+        ));
+        mutations.push(mutate_context(
+            &authority,
+            |context| context.seed ^= 1,
+            true,
+        ));
+        mutations.push(mutate_context(
+            &authority,
+            |context| context.settlement_id = "other-settlement".into(),
+            true,
+        ));
+        mutations.push(mutate_context(
+            &authority,
+            |context| context.settlement_name = "Other Settlement".into(),
+            true,
+        ));
+        mutations.push(mutate_context(
+            &authority,
+            |context| {
+                context.scope = adventuresim_core::local_problem::Scope::Settlement {
+                    settlement_id: "other-scope".into(),
+                }
+            },
+            true,
+        ));
+        mutations.push(mutate_context(
+            &authority,
+            |context| context.ordinal = context.ordinal.saturating_add(1),
+            true,
+        ));
+        mutations.push(mutate_context(
+            &authority,
+            |context| context.now_minute = context.now_minute.saturating_add(1),
+            true,
+        ));
+        mutations.push(mutate_context(
+            &authority,
+            |context| {
+                context.requested_family = Some(TemplateFamily::RecurringDepredation);
+            },
+            true,
+        ));
+        mutations.push(mutate_context(
+            &authority,
+            |context| {
+                context.witness_candidates.pop();
+            },
+            true,
+        ));
+        let mut wrong_manifest = authority.clone();
+        let mut changed_manifest = generated.clone();
+        changed_manifest.problem_id.push_str("-changed");
+        wrong_manifest.manifest_json = serde_json::to_string(&changed_manifest).unwrap();
+        mutations.push(wrong_manifest);
+        for mutation in mutations {
+            assert!(validate_quest_generation_authority(&mutation).is_err());
+        }
         let manual = CaseAuthority {
             id: "manual-case".into(),
             investigation_case_id: "manual-case".into(),
@@ -1408,6 +1508,31 @@ mod healing_tests {
             .unwrap();
         assert!(eligibility.contains("generated_dialogue_recipient("));
         assert!(execution.contains("generated_dialogue_recipient("));
+        let validator_source = source
+            .split("pub(crate) fn validate_quest_generation_authority")
+            .nth(1)
+            .and_then(|tail| tail.split("/// A separately accepted agreement").next())
+            .unwrap();
+        for required in [
+            "context_commitment",
+            "context.seed",
+            "generation_seed",
+            "CATALOG_REVISION",
+            "factor_trace",
+            "qg::validate",
+            "qg::generate",
+            "regenerated != manifest",
+        ] {
+            assert!(validator_source.contains(required));
+        }
+        for consumer in [
+            "fn generated_dialogue_recipient",
+            "fn ensure_settlement_activity_inner",
+            "fn generate_quest_for_settlement",
+        ] {
+            let body = source.split(consumer).nth(1).unwrap();
+            assert!(body.contains("validate_quest_generation_authority"));
+        }
     }
 
     #[test]
@@ -1549,7 +1674,10 @@ mod healing_tests {
             .unwrap();
         for field in [
             "seed",
+            "settlement_id",
+            "settlement_name",
             "context_snapshot_json",
+            "context_commitment",
             "manifest_json",
             "factor_trace_json",
         ] {
@@ -2781,11 +2909,77 @@ pub struct QuestGenerationAuthority {
     pub case_id: String,
     #[index(btree)]
     pub public_case_id: String,
+    pub settlement_id: String,
+    pub settlement_name: String,
     pub seed: u64,
     pub catalog_revision: String,
     pub context_snapshot_json: String,
+    pub context_commitment: String,
     pub manifest_json: String,
     pub factor_trace_json: String,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ValidatedQuestGenerationAuthority {
+    pub context: adventuresim_core::quest_generation::GenerationContext,
+    pub manifest: adventuresim_core::quest_generation::GeneratedCase,
+}
+
+pub(crate) fn quest_generation_context_commitment(context_json: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"adventuresim.quest-generation-context.v1\0");
+    hasher.update(context_json.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+pub(crate) fn validate_quest_generation_authority(
+    authority: &QuestGenerationAuthority,
+) -> Result<ValidatedQuestGenerationAuthority, String> {
+    use adventuresim_core::quest_generation as qg;
+    if authority.context_commitment
+        != quest_generation_context_commitment(&authority.context_snapshot_json)
+    {
+        return Err("Quest generation context commitment mismatch".into());
+    }
+    let context: qg::GenerationContext = serde_json::from_str(&authority.context_snapshot_json)
+        .map_err(|_| "Quest generation context is invalid")?;
+    let manifest: qg::GeneratedCase = serde_json::from_str(&authority.manifest_json)
+        .map_err(|_| "Quest generation manifest is invalid")?;
+    let trace: Vec<qg::FactorTrace> = serde_json::from_str(&authority.factor_trace_json)
+        .map_err(|_| "Quest generation factor trace is invalid")?;
+    let scope_matches = matches!(
+        &context.scope,
+        adventuresim_core::local_problem::Scope::Settlement { settlement_id }
+            if settlement_id == &context.settlement_id
+    );
+    if authority.case_id != manifest.canonical_case_id
+        || authority.public_case_id != manifest.public_case_id
+        || authority.seed != context.seed
+        || authority.seed != manifest.generation_seed
+        || authority.catalog_revision != qg::CATALOG_REVISION
+        || authority.catalog_revision != manifest.catalog_revision
+        || manifest.catalog_revision != qg::CATALOG_REVISION
+        || trace != manifest.factor_trace
+        || authority.settlement_id != context.settlement_id
+        || authority.settlement_name != context.settlement_name
+        || context.settlement_id.is_empty()
+        || context.settlement_name.is_empty()
+        || !scope_matches
+    {
+        return Err("Quest generation authority metadata is inconsistent".into());
+    }
+    qg::validate(&manifest).map_err(|errors| {
+        format!(
+            "Quest generation manifest failed validation: {}",
+            errors.join("; ")
+        )
+    })?;
+    let regenerated = qg::generate(&context)
+        .map_err(|error| format!("Quest generation replay failed: {error:?}"))?;
+    if regenerated != manifest {
+        return Err("Quest generation replay does not match stored manifest".into());
+    }
+    Ok(ValidatedQuestGenerationAuthority { context, manifest })
 }
 
 /// A separately accepted agreement concerning a case. This row is private:
@@ -5637,9 +5831,7 @@ fn dialogue_runtime_bindings(
             .case_id()
             .find(&receipt.opaque_case_ref)
             .ok_or("Rumor is not backed by a generated case")?;
-        let generated: adventuresim_core::quest_generation::GeneratedCase =
-            serde_json::from_str(&authority.manifest_json)
-                .map_err(|_| "Generated testimony manifest is invalid")?;
+        let generated = validate_quest_generation_authority(&authority)?.manifest;
         let witness = generated
             .witnesses
             .iter()
@@ -5719,9 +5911,7 @@ fn receive_referred_testimony(
         .case_id()
         .find(&receipt.opaque_case_ref)
         .ok_or("Rumor is not backed by a generated case")?;
-    let generated: adventuresim_core::quest_generation::GeneratedCase =
-        serde_json::from_str(&authority.manifest_json)
-            .map_err(|_| "Generated testimony manifest is invalid")?;
+    let generated = validate_quest_generation_authority(&authority)?.manifest;
     let witness = generated
         .witnesses
         .iter()
@@ -5768,11 +5958,9 @@ fn dialogue_binding_id(
 fn observer_case_refs(ctx: &ReducerContext, case: &CaseAuthority) -> HashSet<String> {
     let mut refs = HashSet::from([case.id.clone(), case.investigation_case_id.clone()]);
     if let Some(authority) = ctx.db.quest_generation_authority().case_id().find(&case.id)
-        && let Ok(manifest) = serde_json::from_str::<
-            adventuresim_core::quest_generation::GeneratedCase,
-        >(&authority.manifest_json)
+        && let Ok(validated) = validate_quest_generation_authority(&authority)
     {
-        refs.insert(manifest.public_case_id);
+        refs.insert(validated.manifest.public_case_id);
     }
     refs
 }
@@ -5815,9 +6003,8 @@ fn validated_generated_dialogue_manifest(
         return Err("Case dialogue provenance is invalid".into());
     }
     let authority = authority.ok_or("Generated dialogue authority is missing")?;
-    let manifest: adventuresim_core::quest_generation::GeneratedCase =
-        serde_json::from_str(&authority.manifest_json)
-            .map_err(|_| "Generated quest manifest is invalid")?;
+    let validated = validate_quest_generation_authority(authority)?;
+    let manifest = validated.manifest;
     if authority.case_id != manifest.canonical_case_id
         || authority.public_case_id != manifest.public_case_id
         || manifest.canonical_case_id != case.generated_case_id
@@ -5827,10 +6014,6 @@ fn validated_generated_dialogue_manifest(
     {
         return Err("Generated dialogue authority does not match case provenance".into());
     }
-    serde_json::from_str::<adventuresim_core::quest_generation::GenerationContext>(
-        &authority.context_snapshot_json,
-    )
-    .map_err(|_| "Generated dialogue context is invalid")?;
     Ok(Some(manifest))
 }
 
@@ -15677,12 +15860,9 @@ pub(crate) fn ingest_case_outcome_fact(
             party_id,
         )?;
     }
-    if let Some(authority) = ctx.db.quest_generation_authority().case_id().find(&case.id)
-        && let Ok(context) = serde_json::from_str::<
-            adventuresim_core::quest_generation::GenerationContext,
-        >(&authority.context_snapshot_json)
-    {
-        ensure_settlement_activity_inner(ctx, &context.settlement_id)?;
+    if let Some(authority) = ctx.db.quest_generation_authority().case_id().find(&case.id) {
+        let validated = validate_quest_generation_authority(&authority)?;
+        ensure_settlement_activity_inner(ctx, &validated.context.settlement_id)?;
     }
     Ok(())
 }
@@ -16815,23 +16995,27 @@ fn ensure_settlement_activity_inner(
                 && tracked_quests.contains(&quest.id))
         })
         .count();
-    let active_generated_cases = ctx
-        .db
-        .quest_generation_authority()
-        .iter()
-        .filter(|authority| {
-            serde_json::from_str::<adventuresim_core::quest_generation::GenerationContext>(
-                &authority.context_snapshot_json,
-            )
-            .is_ok_and(|context| context.settlement_id == settlement_id)
-                && ctx
-                    .db
-                    .case_authority()
-                    .id()
-                    .find(&authority.case_id)
-                    .is_some_and(|case| case.resolution_status == CaseResolutionStatus::Open)
-        })
-        .count();
+    let active_generated_cases =
+        ctx.db
+            .quest_generation_authority()
+            .iter()
+            .try_fold(0usize, |count, authority| {
+                let validated = validate_quest_generation_authority(&authority)?;
+                Ok::<_, String>(
+                    count
+                        + usize::from(
+                            validated.context.settlement_id == settlement_id
+                                && ctx
+                                    .db
+                                    .case_authority()
+                                    .id()
+                                    .find(&authority.case_id)
+                                    .is_some_and(|case| {
+                                        case.resolution_status == CaseResolutionStatus::Open
+                                    }),
+                        ),
+                )
+            })?;
     let active = active_contracts.saturating_add(active_generated_cases);
     for _ in active..settlement_activity_target(settlement_id) {
         generate_quest_for_settlement(ctx, settlement_id)?;
@@ -17093,11 +17277,10 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         .db
         .quest_generation_authority()
         .iter()
-        .filter(|row| {
-            serde_json::from_str::<qg::GenerationContext>(&row.context_snapshot_json)
-                .is_ok_and(|context| context.settlement_id == settlement_id)
-        })
-        .count() as u16;
+        .try_fold(0u16, |count, row| {
+            let validated = validate_quest_generation_authority(&row)?;
+            Ok::<_, String>(count + u16::from(validated.context.settlement_id == settlement_id))
+        })?;
     let seed = ctx.random::<u64>();
     let observer_entropy_hi = ctx.random::<u64>();
     let observer_entropy_lo = ctx.random::<u64>();
@@ -17286,15 +17469,19 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         status: FinaleStatus::Available,
     });
     crate::local_problem::materialize_generated_problem(ctx, &generated, settlement_id)?;
+    let context_snapshot_json =
+        serde_json::to_string(&context).map_err(|_| "Could not encode quest generation context")?;
     ctx.db
         .quest_generation_authority()
         .insert(QuestGenerationAuthority {
             case_id: generated.canonical_case_id.clone(),
             public_case_id: generated.public_case_id.clone(),
+            settlement_id: context.settlement_id.clone(),
+            settlement_name: context.settlement_name.clone(),
             seed,
             catalog_revision: generated.catalog_revision.clone(),
-            context_snapshot_json: serde_json::to_string(&context)
-                .map_err(|_| "Could not encode quest generation context")?,
+            context_commitment: quest_generation_context_commitment(&context_snapshot_json),
+            context_snapshot_json,
             manifest_json: serde_json::to_string(&generated)
                 .map_err(|_| "Could not encode quest generation manifest")?,
             factor_trace_json: serde_json::to_string(&generated.factor_trace)

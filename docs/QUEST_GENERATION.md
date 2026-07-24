@@ -69,6 +69,15 @@ has no public table accessor. Gateway projections expose only symptoms and
 observer-owned knowledge; browsers never receive canonical causes, traces,
 undiscovered evidence, true/decoy status, or hidden coordinates.
 
+The private authority also stores a domain-separated SHA-256 commitment to the
+exact serialized generation context, including observer-ID entropy. Every
+authoritative consumer validates that commitment, row identities, seed,
+catalog revision, factor trace, settlement scope, and the core manifest
+invariants, then deterministically regenerates the complete manifest from the
+stored context and requires exact equality. Observer IDs and generated state
+are derived only after this validation; malformed or stale authority fails
+closed instead of becoming manual behavior.
+
 Canonical case IDs are used by objective authority. Journals use a separate
 public case ID. The reducer samples a separate 128-bit observer-ID secret and
 persists it only in generation authority. SHA-256 domain-separated IDs for

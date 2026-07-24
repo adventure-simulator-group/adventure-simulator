@@ -11,7 +11,7 @@ use crate::{
         party_journey_authority, party_member__view, quest_generation_authority,
         quest_generation_authority__view, require_no_unresolved_encounter, require_party_ready,
         require_strategic_character_authority, require_strategic_gateway, settlement,
-        strategic_gateway_authority__view,
+        strategic_gateway_authority__view, validate_quest_generation_authority,
     },
     time::{
         advance_investigation_time, character_time, synchronize_party_activity_time, world_clock,
@@ -867,6 +867,8 @@ fn generated_pattern_authority(
     let Some((manifest_json, context_json)) = authority else {
         return GeneratedPatternAuthority::Invalid;
     };
+    // `authority` is supplied only by the unique-row wrappers after the
+    // centralized commitment, replay, and semantic validation succeeds.
     let Ok(manifest) =
         serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(manifest_json)
     else {
@@ -1014,20 +1016,14 @@ fn exactly_one_generated_authority(
 }
 
 fn validated_generated_authority_candidate(
-    case_id: String,
-    public_case_id: String,
-    manifest_json: String,
-    context_json: String,
+    authority: crate::strategic::QuestGenerationAuthority,
 ) -> Result<(String, String, String), ()> {
-    let manifest =
-        serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(&manifest_json)
-            .map_err(|_| ())?;
-    if manifest.canonical_case_id != case_id || manifest.public_case_id != public_case_id {
-        return Err(());
-    }
-    serde_json::from_str::<adventuresim_core::quest_generation::GenerationContext>(&context_json)
-        .map_err(|_| ())?;
-    Ok((case_id, manifest_json, context_json))
+    validate_quest_generation_authority(&authority).map_err(|_| ())?;
+    Ok((
+        authority.case_id,
+        authority.manifest_json,
+        authority.context_snapshot_json,
+    ))
 }
 
 fn generated_authority_view(
@@ -1048,12 +1044,7 @@ fn generated_authority_view(
             continue;
         }
         if let Some(authority) = ctx.db.quest_generation_authority().case_id().find(alias) {
-            let candidate = validated_generated_authority_candidate(
-                authority.case_id,
-                authority.public_case_id,
-                authority.manifest_json,
-                authority.context_snapshot_json,
-            )?;
+            let candidate = validated_generated_authority_candidate(authority)?;
             candidates.push((alias.clone(), candidate.0, candidate.1, candidate.2));
         }
         for authority in ctx
@@ -1062,12 +1053,7 @@ fn generated_authority_view(
             .public_case_id()
             .filter(alias)
         {
-            let candidate = validated_generated_authority_candidate(
-                authority.case_id,
-                authority.public_case_id,
-                authority.manifest_json,
-                authority.context_snapshot_json,
-            )?;
+            let candidate = validated_generated_authority_candidate(authority)?;
             candidates.push((alias.clone(), candidate.0, candidate.1, candidate.2));
         }
     }
@@ -1096,12 +1082,7 @@ fn generated_authority_reducer(
             continue;
         }
         if let Some(authority) = ctx.db.quest_generation_authority().case_id().find(alias) {
-            let candidate = validated_generated_authority_candidate(
-                authority.case_id,
-                authority.public_case_id,
-                authority.manifest_json,
-                authority.context_snapshot_json,
-            )?;
+            let candidate = validated_generated_authority_candidate(authority)?;
             candidates.push((alias.clone(), candidate.0, candidate.1, candidate.2));
         }
         for authority in ctx
@@ -1110,12 +1091,7 @@ fn generated_authority_reducer(
             .public_case_id()
             .filter(alias)
         {
-            let candidate = validated_generated_authority_candidate(
-                authority.case_id,
-                authority.public_case_id,
-                authority.manifest_json,
-                authority.context_snapshot_json,
-            )?;
+            let candidate = validated_generated_authority_candidate(authority)?;
             candidates.push((alias.clone(), candidate.0, candidate.1, candidate.2));
         }
     }
@@ -1615,14 +1591,9 @@ fn generated_observer_id(
         .quest_generation_authority()
         .case_id()
         .find(&case_id.to_string())
-        .and_then(|authority| {
-            serde_json::from_str::<adventuresim_core::quest_generation::GenerationContext>(
-                &authority.context_snapshot_json,
-            )
-            .ok()
-        })
-        .map(|context| {
-            adventuresim_core::quest_generation::observer_scoped_id(&context, kind, name)
+        .and_then(|authority| validate_quest_generation_authority(&authority).ok())
+        .map(|validated| {
+            adventuresim_core::quest_generation::observer_scoped_id(&validated.context, kind, name)
         })
 }
 
@@ -2199,12 +2170,9 @@ fn issue_rumor_action_graph(
         .case_id()
         .find(&case_id.to_string())
     {
-        let manifest: adventuresim_core::quest_generation::GeneratedCase =
-            serde_json::from_str(&authority.manifest_json)
-                .map_err(|_| "Generated action blueprint is invalid")?;
-        let generation_context: adventuresim_core::quest_generation::GenerationContext =
-            serde_json::from_str(&authority.context_snapshot_json)
-                .map_err(|_| "Generated observer-id authority is invalid")?;
+        let validated = validate_quest_generation_authority(&authority)?;
+        let manifest = validated.manifest;
+        let generation_context = validated.context;
         for target in &manifest.pattern_targets {
             let row = InvestigationPatternTargetAuthority {
                 cohort_id: target.cohort_id.clone(),
@@ -2654,21 +2622,15 @@ fn persist_action_result_lead(
     attempt_id: &str,
     resolution: &action::Resolution,
 ) -> Result<(), String> {
-    let public_case_id = ctx
-        .db
-        .quest_generation_authority()
-        .case_id()
-        .find(&capability.case_id)
-        .and_then(|authority| {
-            serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(
-                &authority.manifest_json,
-            )
-            .ok()
+    let public_case_id = generated_authority_reducer(ctx, capability)
+        .map_err(|()| "Generated action authority is invalid")?
+        .map(|(manifest, _)| {
+            serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(&manifest)
+                .map(|generated| generated.public_case_id)
+                .map_err(|_| "Validated generated manifest became invalid")
         })
-        .map_or_else(
-            || capability.case_id.clone(),
-            |generated| generated.public_case_id,
-        );
+        .transpose()?
+        .unwrap_or_else(|| capability.case_id.clone());
     let kind = parse_action_kind(&capability.method)?;
     let generated_outputs = ctx
         .db
@@ -3590,13 +3552,8 @@ pub fn backend_case_site_pins(ctx: &ViewContext) -> Vec<BackendCaseSitePin> {
                 .quest_generation_authority()
                 .case_id()
                 .find(&site.case_id)
-                .and_then(|authority| {
-                    serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(
-                        &authority.manifest_json,
-                    )
-                    .ok()
-                })
-                .map(|generated| generated.public_case_id);
+                .and_then(|authority| validate_quest_generation_authority(&authority).ok())
+                .map(|validated| validated.manifest.public_case_id);
             if !lead_projects_exact_case_site_pin(&lead, &site, generated_public_case_id.as_deref())
             {
                 return None;
@@ -3731,13 +3688,8 @@ pub(crate) fn exact_case_site_for_observer(
         .quest_generation_authority()
         .case_id()
         .find(&site.case_id)
-        .and_then(|authority| {
-            serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(
-                &authority.manifest_json,
-            )
-            .ok()
-        })
-        .map(|generated| generated.public_case_id);
+        .and_then(|authority| validate_quest_generation_authority(&authority).ok())
+        .map(|validated| validated.manifest.public_case_id);
     ctx.db
         .investigation_lead()
         .owner_character_id()
@@ -4051,9 +4003,7 @@ pub fn receive_local_problem_rumor(
         .case_id()
         .find(&canonical_case_id)
         .ok_or("Rumor is not linked to a real generated case")?;
-    let generated: adventuresim_core::quest_generation::GeneratedCase =
-        serde_json::from_str(&generation.manifest_json)
-            .map_err(|_| "Generated rumor manifest is invalid")?;
+    let generated = validate_quest_generation_authority(&generation)?.manifest;
     let referral_location_label = generated
         .witnesses
         .iter()
@@ -4318,11 +4268,8 @@ pub(crate) fn persist_generated_testimony(
         .case_id()
         .find(&generated.canonical_case_id)
         .ok_or("Generated testimony case authority is missing")?;
-    let authoritative_manifest = serde_json::from_str::<
-        adventuresim_core::quest_generation::GeneratedCase,
-    >(&authority.manifest_json)
-    .map_err(|_| "Generated testimony manifest authority is invalid")?;
-    if authoritative_manifest != *generated {
+    let validated_authority = validate_quest_generation_authority(&authority)?;
+    if validated_authority.manifest != *generated {
         return Err("Generated testimony manifest does not match private authority".into());
     }
     for draft in &projection_plan {
@@ -4333,10 +4280,7 @@ pub(crate) fn persist_generated_testimony(
         validate_generated_testimony_site(generated, draft, site.as_ref())
             .map_err(str::to_string)?;
     }
-    let generation_context = serde_json::from_str::<
-        adventuresim_core::quest_generation::GenerationContext,
-    >(&authority.context_snapshot_json)
-    .map_err(|_| "Generated testimony observer-id authority is invalid")?;
+    let generation_context = validated_authority.context;
     for (index, draft) in projection_plan.iter().enumerate() {
         let (receipt_id, pipeline) =
             adventuresim_core::quest_generation::generated_testimony_pipeline(
@@ -6047,24 +5991,6 @@ mod tests {
             ]),
             Err(())
         );
-        assert!(
-            validated_generated_authority_candidate(
-                "wrong-canonical".into(),
-                manifest.public_case_id.clone(),
-                manifest_json.clone(),
-                context_json.clone(),
-            )
-            .is_err()
-        );
-        assert!(
-            validated_generated_authority_candidate(
-                manifest.canonical_case_id.clone(),
-                "wrong-public".into(),
-                manifest_json.clone(),
-                context_json.clone(),
-            )
-            .is_err()
-        );
         assert_eq!(
             exactly_one_generated_authority([
                 ("public-a".into(), "manifest-a".into(), "context-a".into()),
@@ -6097,6 +6023,18 @@ mod tests {
             assert!(body.contains("exactly_one_generated_authority"));
             assert!(!body.contains(".iter()"));
         }
+        let candidate_validator = source
+            .split("fn validated_generated_authority_candidate")
+            .nth(1)
+            .and_then(|tail| tail.split("fn generated_authority_view").next())
+            .unwrap();
+        assert!(candidate_validator.contains("validate_quest_generation_authority"));
+        let observer_ids = source
+            .split("fn generated_observer_id")
+            .nth(1)
+            .and_then(|tail| tail.split("fn set_action_active").next())
+            .unwrap();
+        assert!(observer_ids.contains("validate_quest_generation_authority"));
         let issuer = source
             .split("fn issue_rumor_action_graph")
             .nth(1)
