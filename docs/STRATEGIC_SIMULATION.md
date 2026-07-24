@@ -163,6 +163,65 @@ cargo run -p adventuresim-strategic-sim -- replay --report report.json
 cargo run -p adventuresim-strategic-sim -- matched --seed 42 --days 365
 # Safe disposable integration run (requires local SpacetimeDB 2.6.1):
 just strategic-sim-core-loop 42 8 20 30 2
+just quest-eval 41 4
+just quest-eval-mock 41 4
+```
+
+## Investigation quest evaluator
+
+`quest-eval` tests both modular investigation templates without a database or
+API credential. It enters the tavern, learns the problem and witness referrals,
+interviews visible NPCs by physical description and expected location, follows
+advertised evidence/actions, travels only after an exact destination is learned,
+prepares, and attempts an earned finale. The scripted and mock-LLM policies are
+deterministic and fully offline. The mock policy still round-trips through the
+same strict JSON decision schema used by a provider.
+
+This is a deterministic case-evaluation environment over the real quest
+generator and its evidence/action graph. It does not claim to be a live
+SpacetimeDB client and does not duplicate combat. A policy receives only a
+serializable player frame: visible dialogue, source-attributed claims, evidence,
+casebook locations, party capabilities/resources, and opaque IDs for currently
+legal typed choices. Arbitrary reducer names or object IDs are never accepted.
+
+Public traces and developer truth must be written to different files:
+
+```powershell
+cargo run -p adventuresim-strategic-sim -- quest-eval `
+  --policy mock --seed 41 --cases-per-template 8 `
+  --public-output quest-eval-public.json `
+  --developer-output quest-eval-developer.json
+```
+
+The developer artifact contains canonical cause/site, generator manifest
+digest, factor weights, bridges, catalog revision, and marginal audits. It is
+joined to the public run only afterward through the public report digest. Never
+give it to a policy or publish it as a player trace. Metrics unavailable in the
+offline runtime are tagged `not_measured` with a reason.
+
+An inexpensive OpenAI-compatible provider can be enabled explicitly. The
+command accepts only the name of an API-key environment variable:
+
+```powershell
+cargo run -p adventuresim-strategic-sim -- quest-eval `
+  --policy openai --allow-network --api-key-env OPENAI_API_KEY `
+  --public-output quest-eval-public.json `
+  --developer-output quest-eval-developer.json
+```
+
+Provider mode requires HTTPS except for loopback fixtures, rejects URL
+credentials/query/fragment, disables redirects, and bounds cases, steps,
+requests, tokens, bytes, wall time, retries, and estimated cost. It performs at
+most one schema-repair request. Missing opt-in or key fails before case
+generation or network work. Game text is delimited as untrusted prompt data.
+Live paid execution is intentionally absent from CI.
+
+Replay means replaying recorded validated opaque actions against the same
+deterministic fixture; it does not claim that a live model is reproducible:
+
+```powershell
+cargo run -p adventuresim-strategic-sim -- quest-eval-replay `
+  --fixture regression-case.json --output replayed-trace.json
 ```
 
 Direct `core-loop` invocation is intentionally an expert-only path: its process

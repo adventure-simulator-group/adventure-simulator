@@ -63,6 +63,23 @@ party travels to and occupies that site can a separate inspection, ambush,
 retrieval, or rescue action resolve it.
 
 ## Planning
+
+### Automated investigation evaluation
+
+The strategic simulator includes an offline player-agent harness for modular
+cases. Its observation boundary mirrors what a player may learn: tavern rumors,
+NPC physical descriptions, expected building/tab locations, spoken claims,
+evidence provenance, corrected beliefs, learned location precision, party
+preparation, and currently legal actions. Actions return as opaque capability
+IDs and are executed only if still legal.
+
+Scripted and deterministic mock-LLM policies cover markerless tavern discovery
+and both template families without credentials. A separately enabled
+OpenAI-compatible policy is a content evaluator, never quest authority.
+Canonical cause, true destination, generation factors, and causal bridges stay
+in a separate post-run developer artifact. The harness operates on the actual
+generated evidence/route graph but does not invent a parallel combat model;
+dimensions unavailable outside the live runtime are reported as not measured.
 Since you know what enemies you will face at the destination and can estimate what enemies you'll possibly face on the journey, you should plan a party in advance to account for this. For now this is mainly a question of whether you expect to encounter armored enemies (and therefore need hammers/rondels), hordes of weak enemies (therefore want a cleaving sword/axe/hammer and heavy armor), large enemies (therefore want a polearm), and enemies with projectiles (therefore want armor/full-plate). You will also want to account for difficult terrain or the need for stealth/detection during [travel](Travel.md) in your party composition, the latter is important if you're traveling through an area with enemies that are too dangerous for your party to fight against.
 ### Mixed-Level
 Quests are not balanced around the assumption that all members of a party have a similar power level, in fact its generally the case that you *want* a mixed-strength party. When you set out to clear out a vampire crypt, you need a very skilled armored duelist or two to fight the vampire. But you'll also be encountering plenty of zombies and skeletons, which can be efficiently dealt with by a small group of decent semi-armored combatants with clubs and axes. 

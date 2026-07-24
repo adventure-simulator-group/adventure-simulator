@@ -518,6 +518,14 @@ strategic-sim seed="42" population="100" days="1095":
 test-strategic-sim:
     @cargo test -p adventuresim-strategic-sim
 
+# Credential-free investigation evaluator. Public and private outputs are
+# deliberately separate artifacts.
+quest-eval seed="41" cases_per_template="4":
+    @cargo run -p adventuresim-strategic-sim -- quest-eval --policy scripted --seed {{seed}} --cases-per-template {{cases_per_template}} --public-output quest-eval-public.json --developer-output quest-eval-developer.json
+
+quest-eval-mock seed="41" cases_per_template="4":
+    @cargo run -p adventuresim-strategic-sim -- quest-eval --policy mock --seed {{seed}} --cases-per-template {{cases_per_template}} --public-output quest-eval-public.json --developer-output quest-eval-developer.json
+
 # Own one nonce-named local database for the duration of the command. There is
 # intentionally no database or server override.
 strategic-sim-core-loop seed="42" population="4" cycles="100" duration_days="365" party_size="2": spacetime-version-check spacetime-start

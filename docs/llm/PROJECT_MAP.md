@@ -9,25 +9,9 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (1174)
+## Files (1164)
 
 - `.cargo/config.toml` — Tooling or build configuration.
-- `.codex-completion-web.err.log` — Repository support file.
-- `.codex-completion-web.out.log` — Repository support file.
-- `.codex-final-profile.err.log` — Repository support file.
-- `.codex-final-profile.out.log` — Repository support file.
-- `.codex-live-stdb.err.log` — Repository support file.
-- `.codex-live-stdb.out.log` — Repository support file.
-- `.codex-live-web.err.log` — Repository support file.
-- `.codex-live-web.out.log` — Repository support file.
-- `.codex-quest-e2e.err.log` — Repository support file.
-- `.codex-quest-e2e.out.log` — Repository support file.
-- `.codex-restored-stdb.err.log` — Repository support file.
-- `.codex-restored-stdb.out.log` — Repository support file.
-- `.codex-resume-stdb.err.log` — Repository support file.
-- `.codex-resume-stdb.out.log` — Repository support file.
-- `.codex-resume-web.err.log` — Repository support file.
-- `.codex-resume-web.out.log` — Repository support file.
 - `.codex/hooks.json` — Repository support file.
 - `.codex/hooks/prevent_early_stop.js` — Repository support file.
 - `.envrc` — Repository support file.
@@ -722,6 +706,12 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-strategic-sim/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-strategic-sim/src/analysis.rs` — Rust source module for this component.
 - `crates/adventuresim-strategic-sim/src/config.rs` — Rust source module for this component.
+- `crates/adventuresim-strategic-sim/src/investigation_eval/environment.rs` — Rust source module.
+- `crates/adventuresim-strategic-sim/src/investigation_eval/mod.rs` — Rust source module.
+- `crates/adventuresim-strategic-sim/src/investigation_eval/policy.rs` — Rust source module.
+- `crates/adventuresim-strategic-sim/src/investigation_eval/provider.rs` — Rust source module.
+- `crates/adventuresim-strategic-sim/src/investigation_eval/report.rs` — Rust source module.
+- `crates/adventuresim-strategic-sim/src/investigation_eval/types.rs` — Rust source module.
 - `crates/adventuresim-strategic-sim/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-strategic-sim/src/live_core.rs` — Rust source module for this component.
 - `crates/adventuresim-strategic-sim/src/main.rs` — Rust source module for this component.
