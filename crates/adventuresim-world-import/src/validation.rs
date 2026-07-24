@@ -1,16 +1,86 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use adventuresim_world_schema::{
     CURRENT_INFERENCE_RULES_VERSION, CompiledWorld, DerivedHistoricalVegetationMethod,
-    DroughtProfile, HistoricalVegetation, SettlementHydrology, SettlementImport, SoilEvidence,
-    SurfaceGeology, TravelRoute, TreeSpeciesProfile, WORLD_SCHEMA_VERSION,
+    DroughtProfile, HistoricalVegetation, MAX_EDGE_GEOMETRY_POINTS, MAX_WORLD_GEOMETRY_POINTS,
+    PLAYABLE_BOUNDS, SettlementHydrology, SettlementImport, SoilEvidence, SurfaceGeology,
+    TravelEdgeProvenance, TravelRoute, TreeSpeciesProfile, WORLD_SCHEMA_VERSION,
     historical_vegetation_matches_context, valid_sources_markdown,
 };
+use sha2::{Digest, Sha256};
 
 use crate::{Error, Result};
 
+fn geodesic_segment_m(
+    a: adventuresim_world_schema::TravelGeometryPoint,
+    b: adventuresim_world_schema::TravelGeometryPoint,
+) -> u32 {
+    let dlat = (b.latitude() - a.latitude()).to_radians();
+    let dlon = (b.longitude() - a.longitude()).to_radians();
+    let h = (dlat / 2.0).sin().powi(2)
+        + a.latitude().to_radians().cos()
+            * b.latitude().to_radians().cos()
+            * (dlon / 2.0).sin().powi(2);
+    (6_371_000.0 * 2.0 * h.sqrt().asin()).round() as u32
+}
+
+fn validate_inferred_geometry(
+    edge: &adventuresim_world_schema::TravelEdgeImport,
+    node_coordinates: &HashMap<u64, (f64, f64)>,
+) -> Result<()> {
+    if edge.geometry.len() < 2 || edge.geometry.len() > MAX_EDGE_GEOMETRY_POINTS {
+        return Err(Error::Validation(format!(
+            "inferred edge {} has invalid geometry size",
+            edge.id
+        )));
+    }
+    let [west, south, east, north] = PLAYABLE_BOUNDS;
+    if edge.geometry.iter().any(|point| {
+        let (lat, lon) = (point.latitude(), point.longitude());
+        lon < west || lon > east || lat < south || lat > north
+    }) || edge.geometry.windows(2).any(|pair| pair[0] == pair[1])
+    {
+        return Err(Error::Validation(format!(
+            "inferred edge {} has out-of-bounds or duplicate geometry points",
+            edge.id
+        )));
+    }
+    let endpoint_matches =
+        |point: adventuresim_world_schema::TravelGeometryPoint, node_id: u64| -> bool {
+            let Some(&(lat, lon)) = node_coordinates.get(&node_id) else {
+                return false;
+            };
+            let Ok(expected) = adventuresim_world_schema::TravelGeometryPoint::new(lon, lat) else {
+                return false;
+            };
+            point.longitude_e7.abs_diff(expected.longitude_e7) <= 1
+                && point.latitude_e7.abs_diff(expected.latitude_e7) <= 1
+        };
+    if !endpoint_matches(edge.geometry[0], edge.from_node_id)
+        || !endpoint_matches(*edge.geometry.last().unwrap(), edge.to_node_id)
+    {
+        return Err(Error::Validation(format!(
+            "inferred edge {} geometry endpoints do not match its nodes",
+            edge.id
+        )));
+    }
+    let length = edge
+        .geometry
+        .windows(2)
+        .map(|pair| geodesic_segment_m(pair[0], pair[1]) as u64)
+        .sum::<u64>();
+    if length.abs_diff(u64::from(edge.length_m)) > 2 {
+        return Err(Error::Validation(format!(
+            "inferred edge {} geometry length does not reconcile",
+            edge.id
+        )));
+    }
+    Ok(())
+}
+
 pub fn validate(world: &CompiledWorld) -> Result<()> {
     crate::sources::industries::validate_semantics(world)?;
+    crate::sources::economies::validate_semantics(world)?;
     if world.metadata.schema_version != WORLD_SCHEMA_VERSION {
         return Err(Error::Validation(format!(
             "schema version {} is not supported (expected {WORLD_SCHEMA_VERSION})",
@@ -93,6 +163,11 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
     }
 
     let node_ids: HashSet<_> = world.nodes.iter().map(|node| node.id).collect();
+    let node_coordinates = world
+        .nodes
+        .iter()
+        .map(|node| (node.id, (node.latitude, node.longitude)))
+        .collect::<HashMap<_, _>>();
     if node_ids.len() != world.nodes.len() {
         return Err(Error::Validation("world node IDs are not unique".into()));
     }
@@ -128,6 +203,16 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
     if edge_ids.len() != world.edges.len() {
         return Err(Error::Validation("travel edge IDs are not unique".into()));
     }
+    let total_geometry = world
+        .edges
+        .iter()
+        .try_fold(0usize, |total, edge| total.checked_add(edge.geometry.len()))
+        .ok_or_else(|| Error::Validation("world geometry point count overflowed".into()))?;
+    if total_geometry > MAX_WORLD_GEOMETRY_POINTS {
+        return Err(Error::Validation(
+            "world geometry point count exceeds its bound".into(),
+        ));
+    }
     for edge in &world.edges {
         if !valid_sources_markdown(&edge.sources) {
             return Err(Error::Validation(format!(
@@ -146,6 +231,24 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
                 "travel edge {} connects a node to itself",
                 edge.id
             )));
+        }
+        match edge.provenance {
+            TravelEdgeProvenance::DocumentedViabundus if !edge.geometry.is_empty() => {
+                return Err(Error::Validation(format!(
+                    "documented edge {} unexpectedly embeds normalized geometry",
+                    edge.id
+                )));
+            }
+            TravelEdgeProvenance::InferredWalkingLink => {
+                if edge.id >> 63 != 1 || !matches!(edge.route, TravelRoute::Land(_)) {
+                    return Err(Error::Validation(format!(
+                        "inferred edge {} has invalid identity or route",
+                        edge.id
+                    )));
+                }
+                validate_inferred_geometry(edge, &node_coordinates)?;
+            }
+            _ => {}
         }
         if edge.length_m == 0 {
             return Err(Error::Validation(format!(
@@ -178,6 +281,27 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
                 edge.id
             )));
         }
+    }
+    let inferred = world
+        .edges
+        .iter()
+        .filter(|edge| edge.provenance == TravelEdgeProvenance::InferredWalkingLink)
+        .collect::<Vec<_>>();
+    let geometry_bytes = serde_json::to_vec(
+        &inferred
+            .iter()
+            .map(|edge| (&edge.id, &edge.geometry))
+            .collect::<Vec<_>>(),
+    )?;
+    let geometry_sha = format!("{:x}", Sha256::digest(geometry_bytes));
+    if world.report.inferred_road_edges != inferred.len()
+        || (!inferred.is_empty()
+            && (world.report.base_terrain_package_sha256.len() != 64
+                || world.report.inferred_road_geometry_sha256 != geometry_sha))
+    {
+        return Err(Error::Validation(
+            "inferred-road report identity does not reconcile".into(),
+        ));
     }
     let sum = |f: fn(&adventuresim_world_schema::RouteTerrain) -> usize| {
         world.edges.iter().map(|e| f(&e.terrain)).sum::<usize>()
@@ -518,9 +642,33 @@ pub fn validate(world: &CompiledWorld) -> Result<()> {
             world.settlements.len(),
         )
     {
-        return Err(Error::Validation(
-            "build report counts do not match the compiled world".into(),
-        ));
+        let actual = serde_json::json!({
+            "nodes": world.nodes.len(),
+            "edges": world.edges.len(),
+            "settlements": world.settlements.len(),
+            "settlement_aliases": world.settlement_aliases.len(),
+            "settlement_descriptions": world.settlement_descriptions.len(),
+            "route_crossings": world.edges.iter().filter(|edge| edge.route.has_crossing()).count(),
+            "toll_edges": world.edges.iter().filter(|edge| edge.toll.is_some()).count(),
+            "tree_species_fallbacks": world.settlements.iter().filter(|settlement| matches!(settlement.tree_species, TreeSpeciesProfile::Inferred(_))).count(),
+            "tree_species_candidates": world.settlements.iter().map(|settlement| match &settlement.tree_species {
+                TreeSpeciesProfile::Modeled(profile) => profile.candidates().len(),
+                TreeSpeciesProfile::Inferred(profile) => profile.species().len(),
+            }).sum::<usize>(),
+            "soil_fallbacks": world.settlements.iter().filter(|settlement| settlement.soil.evidence == SoilEvidence::DeterministicInference).count(),
+            "geology_fallbacks": world.settlements.iter().filter(|settlement| matches!(settlement.geology, SurfaceGeology::Inferred(_))).count(),
+            "drought_fallbacks": world.settlements.iter().filter(|settlement| matches!(settlement.drought, DroughtProfile::Inferred(_))).count(),
+            "hydrology_landlocked_settlements": world.settlements.iter().filter(|settlement| settlement.hydrology == SettlementHydrology::default()).count(),
+            "hydrology_edge_crossings": world.edges.iter().map(|edge| match &edge.route {
+                TravelRoute::Land(route) => route.water_crossings.len(),
+                TravelRoute::Ferry(_) => 0,
+            }).sum::<usize>(),
+            "ferry_edges": world.edges.iter().filter(|edge| matches!(edge.route, TravelRoute::Ferry(_))).count(),
+        });
+        return Err(Error::Validation(format!(
+            "build report counts do not match the compiled world; report={} actual={actual}",
+            serde_json::to_string(&world.report).expect("world build report serializes")
+        )));
     }
     Ok(())
 }
@@ -689,11 +837,12 @@ fn land_use_counts_are_consistent(
     normalized: usize,
     settlements: usize,
 ) -> bool {
+    const HYDE_SOURCE_FILES: usize = 4;
     samples == settlements
         && fallbacks <= samples
         && normalized <= samples - fallbacks
-        && ((settlements == 0 && (rasters == 0 || rasters == 5))
-            || (settlements > 0 && rasters == 5))
+        && ((settlements == 0 && (rasters == 0 || rasters == HYDE_SOURCE_FILES))
+            || (settlements > 0 && rasters == HYDE_SOURCE_FILES))
 }
 
 fn elevation_counts_are_consistent(
@@ -711,9 +860,11 @@ fn elevation_counts_are_consistent(
 #[cfg(test)]
 mod tests {
     use adventuresim_world_schema::{
-        CURRENT_INFERENCE_RULES_VERSION, CompiledWorld, SpatialGridSpec, WORLD_SCHEMA_VERSION,
-        WorldBuildReport, WorldMetadata,
+        CURRENT_INFERENCE_RULES_VERSION, CompiledWorld, LandRoute, RouteTerrain, SpatialGridSpec,
+        TravelEdgeImport, TravelEdgeProvenance, TravelGeometryPoint, TravelRoute,
+        WORLD_SCHEMA_VERSION, WorldBuildReport, WorldMetadata,
     };
+    use std::collections::HashMap;
 
     use super::elevation_counts_are_consistent;
     use super::forest_counts_are_consistent;
@@ -746,6 +897,58 @@ mod tests {
             settlement_descriptions: Vec::new(),
             report: WorldBuildReport::default(),
         }
+    }
+
+    fn inferred_edge() -> (TravelEdgeImport, HashMap<u64, (f64, f64)>) {
+        let nodes = HashMap::from([(1, (51.0, 9.0)), (2, (51.0, 9.01))]);
+        let geometry = vec![
+            TravelGeometryPoint::new(9.0, 51.0).unwrap(),
+            TravelGeometryPoint::new(9.005, 51.0).unwrap(),
+            TravelGeometryPoint::new(9.01, 51.0).unwrap(),
+        ];
+        let length_m = geometry
+            .windows(2)
+            .map(|p| super::geodesic_segment_m(p[0], p[1]) as u64)
+            .sum::<u64>() as u32;
+        (
+            TravelEdgeImport {
+                id: 1 << 63,
+                from_node_id: 1,
+                to_node_id: 2,
+                route: TravelRoute::Land(LandRoute {
+                    bridge: None,
+                    water_crossings: Vec::new(),
+                }),
+                provenance: TravelEdgeProvenance::InferredWalkingLink,
+                geometry,
+                toll: None,
+                length_m,
+                slope_multiplier: 1.0,
+                terrain: RouteTerrain::stage_placeholder(),
+                certainty: 1,
+                section: "test".into(),
+                sources: "- test".into(),
+            },
+            nodes,
+        )
+    }
+
+    #[test]
+    fn inferred_geometry_rejects_swapped_floating_duplicate_and_length_tampering() {
+        let (edge, nodes) = inferred_edge();
+        assert!(super::validate_inferred_geometry(&edge, &nodes).is_ok());
+        let mut swapped = edge.clone();
+        swapped.geometry.swap(0, 2);
+        assert!(super::validate_inferred_geometry(&swapped, &nodes).is_err());
+        let mut floating = edge.clone();
+        floating.geometry[0] = TravelGeometryPoint::new(9.0001, 51.0).unwrap();
+        assert!(super::validate_inferred_geometry(&floating, &nodes).is_err());
+        let mut duplicate = edge.clone();
+        duplicate.geometry[1] = duplicate.geometry[0];
+        assert!(super::validate_inferred_geometry(&duplicate, &nodes).is_err());
+        let mut length = edge;
+        length.length_m += 50;
+        assert!(super::validate_inferred_geometry(&length, &nodes).is_err());
     }
 
     #[test]
@@ -835,13 +1038,13 @@ mod tests {
 
     #[test]
     fn land_use_report_requires_all_source_rasters_and_samples() {
-        assert!(land_use_counts_are_consistent(5, 3, 1, 1, 3));
+        assert!(land_use_counts_are_consistent(4, 3, 1, 1, 3));
         assert!(land_use_counts_are_consistent(0, 0, 0, 0, 0));
-        assert!(land_use_counts_are_consistent(5, 0, 0, 0, 0));
-        assert!(!land_use_counts_are_consistent(4, 3, 0, 0, 3));
-        assert!(!land_use_counts_are_consistent(5, 2, 0, 0, 3));
-        assert!(!land_use_counts_are_consistent(5, 3, 4, 0, 3));
-        assert!(!land_use_counts_are_consistent(5, 3, 1, 3, 3));
+        assert!(land_use_counts_are_consistent(4, 0, 0, 0, 0));
+        assert!(!land_use_counts_are_consistent(5, 3, 0, 0, 3));
+        assert!(!land_use_counts_are_consistent(4, 2, 0, 0, 3));
+        assert!(!land_use_counts_are_consistent(4, 3, 4, 0, 3));
+        assert!(!land_use_counts_are_consistent(4, 3, 1, 3, 3));
     }
 
     #[test]

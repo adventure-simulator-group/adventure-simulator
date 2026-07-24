@@ -24,17 +24,22 @@ use adventuresim_stdb_client::{
     character_capability_table::CharacterCapabilityTableAccess,
     character_condition_table::CharacterConditionTableAccess,
     character_equip_table::CharacterEquipTableAccess,
+    character_filth_table::CharacterFilthTableAccess,
     character_limbs_table::CharacterLimbsTableAccess,
     character_morale_source_table::CharacterMoraleSourceTableAccess,
     character_needs_table::CharacterNeedsTableAccess,
     character_notoriety_table::CharacterNotorietyTableAccess,
-    character_personality_table::CharacterPersonalityTableAccess,
     character_skills_table::CharacterSkillsTableAccess,
     character_stats_table::CharacterStatsTableAccess,
     character_strategic_condition_table::CharacterStrategicConditionTableAccess,
     character_table::CharacterTableAccess,
     character_training_schedule_table::CharacterTrainingScheduleTableAccess,
-    equipped_medication_table::EquippedMedicationTableAccess,
+    dialogue_event_table::DialogueEventTableAccess,
+    dialogue_participant_table::DialogueParticipantTableAccess,
+    dialogue_prompt_table::DialoguePromptTableAccess,
+    dialogue_session_table::DialogueSessionTableAccess,
+    dialogue_topic_option_table::DialogueTopicOptionTableAccess,
+    equipped_medication_table::EquippedMedicationTableAccess, food_lot_table::FoodLotTableAccess,
     inventory_item_table::InventoryItemTableAccess,
     inventory_quantity_target_table::InventoryQuantityTargetTableAccess,
     item_condition_table::ItemConditionTableAccess, limb_injury_table::LimbInjuryTableAccess,
@@ -58,6 +63,7 @@ use adventuresim_stdb_client::{
     settlement_description_table::SettlementDescriptionTableAccess,
     settlement_outbreak_table::SettlementOutbreakTableAccess,
     settlement_smith_table::SettlementSmithTableAccess,
+    strategic_encounter_table::StrategicEncounterTableAccess,
     strategic_incident_table::StrategicIncidentTableAccess,
     tactical_server_request_table::TacticalServerRequestTableAccess,
     tactical_server_table::TacticalServerTableAccess,
@@ -149,6 +155,7 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.settlement_alias());
         invalidate_on_changes!(state.0._connection.db.settlement_description());
         invalidate_on_changes!(state.0._connection.db.inventory_item());
+        invalidate_on_changes!(state.0._connection.db.food_lot());
         invalidate_on_changes!(state.0._connection.db.item_condition());
         invalidate_on_changes!(state.0._connection.db.repair_order());
         invalidate_on_changes!(state.0._connection.db.settlement_smith());
@@ -158,20 +165,26 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.party_inventory_state());
         invalidate_on_changes!(state.0._connection.db.party_stake());
         invalidate_on_changes!(state.0._connection.db.character_equip());
+        invalidate_on_changes!(state.0._connection.db.character_filth());
         invalidate_on_changes!(state.0._connection.db.equipped_medication());
         invalidate_on_changes!(state.0._connection.db.character_capability());
         invalidate_on_changes!(state.0._connection.db.character_condition());
         invalidate_on_changes!(state.0._connection.db.character_needs());
         invalidate_on_changes!(state.0._connection.db.character_strategic_condition());
         invalidate_on_changes!(state.0._connection.db.character_morale_source());
-        invalidate_on_changes!(state.0._connection.db.character_personality());
         invalidate_on_changes!(state.0._connection.db.character_notoriety());
         invalidate_on_changes!(state.0._connection.db.morale_event());
         invalidate_on_changes!(state.0._connection.db.religious_demand());
         invalidate_on_changes!(state.0._connection.db.strategic_incident());
+        invalidate_on_changes!(state.0._connection.db.strategic_encounter());
         invalidate_on_changes!(state.0._connection.db.quest());
         invalidate_on_changes!(state.0._connection.db.quest_issuer());
         invalidate_on_changes!(state.0._connection.db.local_chat_message());
+        invalidate_on_changes!(state.0._connection.db.dialogue_session());
+        invalidate_on_changes!(state.0._connection.db.dialogue_participant());
+        invalidate_on_changes!(state.0._connection.db.dialogue_event());
+        invalidate_on_changes!(state.0._connection.db.dialogue_prompt());
+        invalidate_on_changes!(state.0._connection.db.dialogue_topic_option());
         invalidate_on_changes!(state.0._connection.db.battle_result());
         invalidate_on_changes!(state.0._connection.db.autoresolve_report());
         invalidate_on_changes!(state.0._connection.db.battle_loot_item());
@@ -196,16 +209,17 @@ impl LiveState {
             .add_query(|query| query.from.battle_participant())
             .add_query(|query| query.from.battle_result())
             .add_query(|query| query.from.autoresolve_report())
+            .add_query(|query| query.from.strategic_encounter())
             .add_query(|query| query.from.character())
             .add_query(|query| query.from.character_attributes())
             .add_query(|query| query.from.character_capability())
             .add_query(|query| query.from.character_condition())
             .add_query(|query| query.from.character_equip())
+            .add_query(|query| query.from.character_filth())
             .add_query(|query| query.from.character_limbs())
             .add_query(|query| query.from.limb_injury())
             .add_query(|query| query.from.retained_projectile())
             .add_query(|query| query.from.character_morale_source())
-            .add_query(|query| query.from.character_personality())
             .add_query(|query| query.from.character_needs())
             .add_query(|query| query.from.character_notoriety())
             .add_query(|query| query.from.character_skills())
@@ -215,10 +229,16 @@ impl LiveState {
             .add_query(|query| query.from.character_training_schedule())
             .add_query(|query| query.from.connected_players())
             .add_query(|query| query.from.inventory_item())
+            .add_query(|query| query.from.food_lot())
             .add_query(|query| query.from.inventory_quantity_target())
             .add_query(|query| query.from.item())
             .add_query(|query| query.from.item_condition())
             .add_query(|query| query.from.local_chat_message())
+            .add_query(|query| query.from.dialogue_session())
+            .add_query(|query| query.from.dialogue_participant())
+            .add_query(|query| query.from.dialogue_event())
+            .add_query(|query| query.from.dialogue_prompt())
+            .add_query(|query| query.from.dialogue_topic_option())
             .add_query(|query| query.from.morale_event())
             .add_query(|query| query.from.party())
             .add_query(|query| query.from.party_action_request())

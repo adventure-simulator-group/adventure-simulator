@@ -100,6 +100,20 @@ pub(crate) fn owned_run(ctx: &ReducerContext, nonce: &str) -> Result<SimulationR
     Ok(run)
 }
 
+pub(crate) fn sender_owns_simulation_character(ctx: &ReducerContext, character_id: u64) -> bool {
+    ctx.db
+        .simulation_run()
+        .id()
+        .find(0)
+        .is_some_and(|run| run.owner == ctx.sender())
+        && ctx
+            .db
+            .simulation_character()
+            .character_id()
+            .find(character_id)
+            .is_some()
+}
+
 #[reducer]
 pub fn seed_simulation_world(ctx: &ReducerContext, nonce: String) -> Result<(), String> {
     owned_run(ctx, &nonce)?;
@@ -188,20 +202,39 @@ pub fn configure_simulation_character(
     .into_iter()
     .all(|value| value.is_finite() && (0.5..=5.0).contains(&value));
     let skills_valid = [
-        skills.melee_hours,
+        skills.polearm_hours,
+        skills.axe_hours,
+        skills.bludgeon_hours,
+        skills.sword_hours,
+        skills.knife_hours,
         skills.dodge_hours,
         skills.block_hours,
-        skills.ranged_hours,
+        skills.bow_hours,
+        skills.crossbow_hours,
+        skills.firearm_hours,
+        skills.throw_hours,
         skills.will_hours,
-        skills.charisma_hours,
+        skills.insight_hours,
+        skills.self_awareness_hours,
+        skills.humor_hours,
+        skills.command_hours,
+        skills.deception_hours,
+        skills.seduction_hours,
         skills.medicine_hours,
         skills.stealth_hours,
         skills.balance_hours,
-        skills.surgeon_hours,
+        skills.anatomy_hours,
+        skills.tailoring_hours,
     ]
     .into_iter()
     .all(|value| value.is_finite() && (0.0..=MAX_INITIAL_SKILL_HOURS).contains(&value))
-        && simulation_religion_hours_valid(skills.religion_hours);
+        && simulation_religion_hours_valid(skills.religion_hours)
+        && skills
+            .oral_languages
+            .direct_fields_valid(MAX_INITIAL_SKILL_HOURS)
+        && skills
+            .written_languages
+            .direct_fields_valid(MAX_INITIAL_SKILL_HOURS);
     if !attributes_valid || !skills_valid || downtime.allocated_minutes() > 1_440 {
         return Err("Simulation profile is outside bounded gameplay ranges".into());
     }
@@ -306,7 +339,7 @@ pub fn seed_simulation_disease(
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested, false)?;
     let (elapsed, terminal) =
-        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit)?;
+        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, false)?;
     let mut time = ctx
         .db
         .character_time()

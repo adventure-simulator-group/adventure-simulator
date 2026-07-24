@@ -6,16 +6,17 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct ReligionMinutes {
-    pub roman_catholic: u16,
-    pub lutheran: u16,
-    pub reformed: u16,
-    pub anglican: u16,
-    pub eastern_orthodox: u16,
-    pub islamic: u16,
-    pub judaism: u16,
+pub struct OralLanguageHours {
+    pub east_central: f32,
+    pub west_central: f32,
+    pub low: f32,
+    pub yiddish: f32,
+    pub latin: f32,
+    pub romani: f32,
+    pub elven: f32,
+    pub dwarfish: f32,
 }
 
-impl __sdk::InModule for ReligionMinutes {
+impl __sdk::InModule for OralLanguageHours {
     type Module = super::RemoteModule;
 }

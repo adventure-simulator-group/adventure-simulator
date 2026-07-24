@@ -1,5 +1,10 @@
 # Architecture MVP - Adventure Simulator
 
+The strategic dialogue subsystem is documented in [DIALOGUE.md](DIALOGUE.md).
+Its compiled catalog and evaluator are shared by the web and SpacetimeDB module;
+authoritative sessions are strategic persistence, while free-form chat remains
+separate.
+
 Minimal SpacetimeDB implementation for Adventure Simulator.
 
 - **Strategic Layer**: SpacetimeDB for character progression, inventory, parties, missions
@@ -16,6 +21,15 @@ production NPC rows or persist tactical state.
 
 ## Offline world compilation
 
+The MVP playable area is the exact EPSG:4326 box
+`[8.965, 50.877, 11.110, 52.211]`. The shared world-schema constant is the
+authority for canonical import, map clipping, terrain lookup, and routing.
+Viabundus topology is filtered before environmental enrichment: settlements
+and edge endpoints outside the box are not canonical world records. Raster
+readers may consume the smallest enclosing whole-degree source cells
+`[8, 50, 12, 53]`, but generated manifests and runtime access retain the exact
+decimal boundary.
+
 Raw historical and geographic datasets are compiled outside SpacetimeDB by the
 native `adventuresim-world-import` crate. Each upstream format has an isolated
 source module; the outer builder combines them into a validated canonical
@@ -23,6 +37,21 @@ world. `adventuresim-world-schema` contains the dependency-light, versioned
 import types shared by the compiler and strategic module. The strategic module
 accepts those records through reducers but never parses raw datasets or depends
 on native geospatial libraries.
+
+Generated strategic map tiles and terrain-routing packs are a separate data
+distribution boundary from the AGPL software. The offline compiler copies the
+canonical `MAP_DATA_LICENSE.md` terms beside each bundle, while strategic-web
+serves the same notice at `/map/data-license`. Deployments must retain that
+notice so source-specific attribution and pass-through conditions travel with
+the otherwise optional file-backed artifacts.
+
+Normal development consumes a separately pinned compiled runtime ZIP containing
+`world-1544.json`, the AVIF strategic-map package, and the coherent final
+terrain-routing package. `just load-world` installs that small immutable bundle
+when absent and loads the compiled JSON; raw source initialization and offline
+geospatial compilation are release-maintainer workflows, not fresh-checkout
+requirements. The runtime archive carries both the strategic-map licence and a
+generated notice derived from the compiled world's embedded source manifests.
 
 Every gridded enrichment shares the canonical `SpatialGridSpec` described in
 `docs/SPATIAL_GRID.md`. The complete spec and inference-rules version are
@@ -101,6 +130,31 @@ mutable tables that invalidate strategic UI fragments and fans those database
 changes out to selected-character pages as Datastar server-sent events.
 Large static world tables, including settlements, routes, aliases, and source
 descriptions, stay out of this subscription and are queried on demand.
+
+Strategic terrain is a separate, optional native artifact rather than a
+SpacetimeDB grid. The offline compiler preserves the initialized GLO-30 cells
+in independently compressed chunks and merges road, water, and forest surface
+classes. `strategic-web` streams verified chunk ranges from the pack into a
+bounded LRU; it never allocates the continental pack in RAM. Route requests run
+deterministic A* on a two-worker blocking pool with a cooperative deadline, an
+expanding search corridor, and a bounded normalized-endpoint cache. It submits
+the bounded route geometry, terrain spans, package digest, aggregate distance,
+and directional travel time to planned travel reducers. Quest journeys persist
+separately planned outbound and return legs, and camp redirects replace the
+remaining route rather than reusing its old straight-line duration.
+
+Travel and travel-approval reducers accept calls only from the singleton
+authenticated strategic gateway identity, and planned routes must match the
+package digest that identity registered at startup. Reducers also re-check the
+current character, party authority, destination, coordinate/span continuity,
+physical distance, and a maximum-speed lower bound before persisting the active
+party route. The first authenticated gateway claim is an operational trust
+bootstrap: deploy the database privately and start the intended gateway first.
+A compromised registered gateway can still forge routes within those semantic
+bounds, so its `SPACETIMEDB_TOKEN` is a server credential and must not be shared
+with browsers. The tactical server still owns every live
+position and terrain interaction; neither raw raster cells nor tactical ticks
+are stored in SpacetimeDB.
 
 Browser-facing deployments terminate HTTPS at a reverse proxy and negotiate
 HTTP/2 or HTTP/3. Multiplexing prevents the long-lived Datastar SSE stream from
@@ -251,12 +305,19 @@ servers cannot supply an arbitrary XP award.
 | `limb_injury` | Per-character, per-limb cut, bruise, fracture, bandage, stitch, and applied-splint state |
 | `retained_projectile` | Durable retained arrowhead/ball records with extraction difficulty; no tactical anatomy or tick state |
 | `character_condition` | Durable strategic blood volume, body weight, and religion selection |
+| `character_filth` / private filth provenance and disease snapshots | Public bounded dirt/blood deposits expose only Own/Foreign/Unknown; exact source IDs and blood-compatible source episodes remain private |
+| private travel/blood checkpoints | Fractional travel-dirt progress and committed blood-exposure evaluation prefixes used to make chunked time advance deterministic |
 | `settlement` | Strategic settlement data, including its legal religious status and current church |
 | `morale_event` | Time-stamped strategic successes and setbacks with seven-day decay |
 | `character_morale_source` | Refreshable named, signed contributions used by the morale meter breakdown |
 | `character_strategic_condition` | Refreshable derived morale, ally-restoration percentage, and incapacitation projection for server-authoritative UI and action gating |
-| `character_personality` | Immutable strategic personality axes; one typed row per newly created character, with missing legacy rows interpreted as neutral without requiring a materialized backfill |
-| `inventory_item` | Persistent items |
+| `character_personality` | Nine immutable strategic personality axes, including Temperance; one typed row per newly created character |
+| `alcohol_consumption` | Durable per-character/per-evening fixed-point ethanol history and idempotent morale-evaluation marker |
+| `inventory_item` / `item` | Persistent concrete stacks and explicit definitions; alcohol serving volume, ABV, net hydration, medical protection, and disinfectant effectiveness are definition data rather than inferred IDs |
+| `character_affinity` | Directional subject-to-actor signed anchor, lazily decayed on the subject's personal strategic clock |
+| `character_familiarity` | Canonical symmetric pair and shared-party strategic minutes |
+| `social_belief` | Private observer-specific perceived personality axis, confidence, and observation minute |
+| `social_interaction` | One durable record per authoritative social attempt and its realized morale outcome |
 | `party` | Party groups, active quest, and aggregate skill-check targets; every character belongs to at least a solo party |
 | `party_member` | Party membership, including the recruitment role that filled a slot |
 | `party_recruitment_role` | Named party-independent role requirements and slot quantities |
@@ -272,6 +333,22 @@ servers cannot supply an arbitrary XP award.
 | `character` / `party` location fields | Current settlement or quest location (never tactical positions) |
 | `port_allocation` | Tactical server port allocation (singleton) |
 
+`character_personality`, `character_affinity`, `character_familiarity`,
+`social_belief`, and `social_interaction` are private module tables. Gateway-
+guarded views expose relationship state and observer beliefs only to the trusted
+SSR identity and return no rows to other callers; browsers do not subscribe to
+true personality or relationship history. Social reducers require that same
+gateway identity, derive a closed topic from a current negative morale source,
+and revalidate living state, party membership, co-location, source ownership,
+and a topic/action cooldown. External attempts write one interaction and one
+morale event atomically; self-only Reflection updates a self-belief without
+changing Affinity or Familiarity. Strategic relationship state
+never contains tactical positions, HP, damage ticks, or enemies.
+
+This is a pre-launch clean schema change. Development databases must be
+recreated/reseeded; there is intentionally no Charisma compatibility field,
+migration, dual-read path, or preservation of disposable characters.
+
 ### Key Reducers
 
 | Reducer | Description |
@@ -283,7 +360,7 @@ servers cannot supply an arbitrary XP award.
 | internal `transition_character_to_dead` | Idempotently commit a durable death outcome and trigger leadership reevaluation |
 | `create_recruitment_role` / `update_recruitment_role` / `delete_recruitment_role` | Create, resize, edit, and remove grouped party recruitment slots |
 | `save_recruitment_role` / `delete_saved_recruitment_role` | Manage reusable role presets |
-| `update_party_check_targets` | Configure non-filtering Medicine, Charisma, and Religion aggregate goals; Surgery is individual only |
+| `update_party_check_targets` | Configure non-filtering Medicine, Command, and Religion aggregate goals; surgical capability is an individual Anatomy/Knife/Tailoring composite |
 | `upgrade_manual_surgery` | Idempotently adopt legacy limb deficits into injury rows and upsert surgery item definitions |
 | `treat_limb` | Perform one individual bandage, stitch, splint, splint removal, or projectile extraction with participant-local time |
 | `request_to_join_party` / `accept_party_join_request` / `reject_party_join_request` | Role recruitment and atomic party merging; destination leadership remains intact while source members, pooled assets, and stakes transfer |
@@ -291,6 +368,7 @@ servers cannot supply an arbitrary XP award.
 | `send_local_chat_message` / `record_local_npc_message` | Persist location-gated, party-owned Local conversations |
 | `refresh_capabilities` | Recompute automatic character tags through the shared core evaluator |
 | `refresh_strategic_condition` | Recompute morale, pain, blood loss, fear, fatigue, readiness, and check effectiveness |
+| explicit rest reducers | Require the registered strategic gateway (or the owner of the target disposable simulation character), validate the physical rest location and one-year work bound, atomically plan washing, then advance rest and nightly alcohol chronology |
 | `set_character_religion` | Record church conversion or biography renunciation for religious relationships |
 | `ensure_settlement_activity` | Maintain 3–5 visible quests and 1–2 locally generated recruiting NPC quest parties |
 | `start_mission` | Allocate port, record mission |
@@ -299,11 +377,15 @@ servers cannot supply an arbitrary XP award.
 | `start_quest` / `complete_quest` | Quest management |
 | `travel_to_quest` | Advance strategic time and move a party to its off-road quest location |
 | `autoresolve_quest` | Run the bounded shared-core melee/ranged simulation, commit per-hit cut/blunt/projectile facts into manual limb injuries, blood loss, and spent ammunition, retain a seeded summary and expandable combat log, and complete or retain the quest according to the outcome |
-| `treat_limb` | Align one surgeon and patient on their personal clocks, advance only those participants, and perform one validated projectile-removal, bandage, stitch, or splint procedure |
+| `treat_limb` | Align one treating character and patient on their personal clocks, advance only those participants, and perform one validated Anatomy-based projectile-removal, bandage, stitch, or splint procedure |
 
 The current strategic module does not yet persist a player-identity-to-character ownership mapping.
 Most strategic reducers therefore rely on the authenticated strategic gateway and simulator's
 database connection as a system-wide trust boundary; character IDs alone are not authorization.
+The public rest and surgery reducers enforce that boundary directly: only the registered gateway
+may mutate a normal character, while a simulation-run owner may act only through a character
+registered to that disposable run. Settlement rest additionally derives tavern eligibility from
+the character's persisted settlement presence rather than trusting a caller flag.
 Reducers that already have a concrete identity relationship (world imports, simulation runs,
 tactical servers, and religious-demand ownership) validate `ctx.sender()` directly. Equipment
 repair follows the existing strategic boundary until ownership is introduced consistently for all
@@ -454,3 +536,41 @@ Spawn points are defined in GLB/GLTF files using node naming:
 - **Idempotent commit**: Prevents double-counting rewards
 - **Tactical state is ephemeral**: HP/damage/positions disappear when mission ends
 - **Quest locations are strategic places**: their identity and travel coordinates persist, but no enemies, tactical positions, or combat ticks are stored there. Autoresolve writes only final injury and reward results.
+
+## Strategic random encounters
+
+Random encounters are canonical journey events, not tactical state. A private
+authority row persists one journey entropy seed and its next three-hour roll
+cursor; neither value is exposed through subscriptions. Terrain, day/night,
+and distance plus matching enemy archetype for that party's accepted active
+quest affect bounded selection rolls. An interruption row persists the exact route position,
+movement/elapsed/absolute minute, awareness result, available typed choices,
+and surrender preview. It never persists enemy HP, positions, or combat ticks.
+
+Unresolved encounters guard travel, rest, party membership, quest abandonment,
+equipment, and inventory mutations that could bypass or invalidate them. Combat
+uses the shared final autoresolve commit path for wounds, blood, ammunition,
+equipment contact wear, filth, morale, loot, and diagnostics. Random victories
+remain separate from `BattleResult` and quest completion.
+
+## Language persistence
+
+Language is strategic state. Compiled settlements persist a versioned, deterministic vernacular profile inferred inside the exact playable bounds; the three German shares total exactly 10,000 basis points. Characters persist direct Oral and Written hours. Effective proficiency is derived once from symmetric correlation matrices and is never recursively stored. The importer CLI can inspect a coordinate with `--infer-languages LONGITUDE LATITUDE`.
+
+Rules-v9 adds two immutable gameplay projections. A bounded settlement economy
+profile combines population, route access, documented town status, and the
+canonical industry profile into prosperity, service availability,
+specializations, and relative stock categories. Every gap-fill stock fact is
+typed as deterministic fabrication rather than attributed to an upstream
+dataset. Authoritative reducers consult the profile; it is not a UI-only hint.
+
+Road inference uses a two-stage artifact contract. The documented-base terrain
+pack contains only Viabundus roads plus source-mapped water, forest, elevation,
+and Jung wetlands. World compilation runs bounded A* against that immutable
+digest, so a proposed road cannot lower its own cost. Accepted polylines are
+stored in schema 25 with explicit inferred provenance. Final map generation
+requires the same base digest and feeds those exact polylines to both the visible
+quiet road layer and the final routing road mask; both identities are recorded.
+Jung v1.1 wetland posterior/categorical pixels are bounded to playable coverage;
+water remains impassable, roads take precedence, and other wetland cells use the
+distinct slow terrain surface.

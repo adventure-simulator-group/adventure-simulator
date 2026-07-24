@@ -5,6 +5,16 @@ pub const MINUTES_PER_DAY: u64 = 1_440;
 pub const UNTREATED_CUT_DETERIORATION_PER_DAY: f32 = 0.025;
 pub const UNTREATED_CUT_BLOOD_LOSS_PER_DAY: f32 = 0.08;
 pub const PROJECTILE_KIT_DC_THRESHOLD: f32 = 1.0;
+/// Small visible contamination transferred by a successful bloody procedure.
+pub const PROCEDURE_BLOOD_EXPOSURE_FILTH: u16 = 2;
+
+pub fn procedure_blood_exposure(procedure: &str, treating_other: bool) -> u16 {
+    if treating_other && matches!(procedure, "bandage" | "stitch" | "extract") {
+        PROCEDURE_BLOOD_EXPOSURE_FILTH
+    } else {
+        0
+    }
+}
 
 pub fn effective_skill(skill: f32, self_treatment: bool) -> f32 {
     (skill
@@ -14,6 +24,22 @@ pub fn effective_skill(skill: f32, self_treatment: bool) -> f32 {
             0.0
         })
     .max(0.0)
+}
+
+/// Compose the procedure's complete leaf checks and apply self-treatment once.
+pub fn procedure_skill(
+    procedure: &str,
+    anatomy: f32,
+    knife: f32,
+    tailoring: f32,
+    self_treatment: bool,
+) -> f32 {
+    let composite = match procedure {
+        "extract" => (anatomy + knife) * 0.5,
+        "stitch" => (anatomy + tailoring) * 0.5,
+        _ => anatomy,
+    };
+    effective_skill(composite, self_treatment)
 }
 
 pub fn procedure_duration_minutes(procedure: &str, skill: f32, dc: f32) -> u64 {
@@ -132,8 +158,36 @@ mod tests {
     }
 
     #[test]
+    fn only_blood_contact_procedures_contaminate_the_actor() {
+        assert_eq!(
+            procedure_blood_exposure("bandage", true),
+            PROCEDURE_BLOOD_EXPOSURE_FILTH
+        );
+        assert_eq!(
+            procedure_blood_exposure("stitch", true),
+            PROCEDURE_BLOOD_EXPOSURE_FILTH
+        );
+        assert_eq!(
+            procedure_blood_exposure("extract", true),
+            PROCEDURE_BLOOD_EXPOSURE_FILTH
+        );
+        assert_eq!(procedure_blood_exposure("splint", true), 0);
+        assert_eq!(procedure_blood_exposure("remove-splint", true), 0);
+        assert_eq!(procedure_blood_exposure("bandage", false), 0);
+    }
+
+    #[test]
     fn self_treatment_penalty_is_shared() {
         assert!(effective_skill(2.0, false) > effective_skill(4.0, true));
+    }
+
+    #[test]
+    fn procedure_composition_distinguishes_extraction_from_stitching() {
+        assert_eq!(procedure_skill("extract", 5.0, 5.0, 0.0, false), 5.0);
+        assert_eq!(procedure_skill("stitch", 5.0, 5.0, 0.0, false), 2.5);
+        assert!(procedure_skill("extract", 5.0, 5.0, 0.0, false) >= 4.0);
+        assert!(procedure_skill("stitch", 5.0, 5.0, 0.0, false) < 4.0);
+        assert_eq!(procedure_skill("extract", 5.0, 5.0, 0.0, true), 2.5);
     }
 
     #[test]

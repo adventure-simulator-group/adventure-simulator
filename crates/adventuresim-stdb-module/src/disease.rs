@@ -283,7 +283,7 @@ pub enum DiseaseTerminalCause {
     Neurologic,
 }
 
-fn parse_id(value: &str) -> Result<DiseaseId, String> {
+pub(crate) fn parse_id(value: &str) -> Result<DiseaseId, String> {
     match value {
         "influenza" => Ok(DiseaseId::Influenza),
         "dysentery" => Ok(DiseaseId::Dysentery),
@@ -462,12 +462,33 @@ fn persist_outbreak_episodes(
     Ok(())
 }
 
+fn merge_acquisition_proposals(
+    mut proposals: Vec<InfectionEpisode>,
+    additional: impl IntoIterator<Item = InfectionEpisode>,
+) -> Vec<InfectionEpisode> {
+    for candidate in additional {
+        if let Some(existing) = proposals
+            .iter_mut()
+            .find(|episode| episode.disease_id == candidate.disease_id)
+        {
+            if (candidate.contracted_at, candidate.id) < (existing.contracted_at, existing.id) {
+                *existing = candidate;
+            }
+        } else {
+            proposals.push(candidate);
+        }
+    }
+    proposals.sort_by_key(|episode| (episode.contracted_at, episode.id));
+    proposals
+}
+
 /// Returns the safe prefix of an interval and a terminal mechanism, if any.
 /// All boundary events at the earliest minute are considered together.
 pub fn clip_elapsed_for_disease(
     ctx: &ReducerContext,
     character_id: u64,
     requested: u64,
+    allow_healing: bool,
 ) -> Result<(u64, Option<TerminalFailure>), String> {
     if requested == 0 {
         return Ok((0, None));
@@ -485,8 +506,18 @@ pub fn clip_elapsed_for_disease(
         .find(character_id)
         .map_or(3.0, |a| a.immunity);
     let mut episodes = character_episodes(ctx, character_id)?;
-    let proposed =
-        outbreak_episodes_through(ctx, character_id, now, now.saturating_add(requested))?;
+    let interval_end = now.saturating_add(requested);
+    let proposed = merge_acquisition_proposals(
+        outbreak_episodes_through(ctx, character_id, now, interval_end)?,
+        crate::filth::blood_episodes_through(
+            ctx,
+            character_id,
+            now,
+            interval_end,
+            false,
+            allow_healing,
+        )?,
+    );
     episodes.extend(proposed.iter().copied());
     let mut events = episodes
         .iter()
@@ -508,6 +539,10 @@ pub fn clip_elapsed_for_disease(
             .into_iter()
             .filter(|episode| disease::infection_occurs_through(*episode, through)),
     )?;
+    // Re-evaluate only the committed prefix and advance the private cursor.
+    // Absolute-minute seeds guarantee the same proposal as preview/full evaluation.
+    let _ =
+        crate::filth::blood_episodes_through(ctx, character_id, now, through, true, allow_healing)?;
     for event in events.iter().filter(|event| event.minute <= through) {
         match event.kind {
             DiseaseEventKind::SymptomOnset => notice(
@@ -560,6 +595,7 @@ pub fn preview_elapsed_for_disease(
     ctx: &ReducerContext,
     character_id: u64,
     requested: u64,
+    allow_healing: bool,
 ) -> Result<u64, String> {
     let now = ctx
         .db
@@ -574,12 +610,17 @@ pub fn preview_elapsed_for_disease(
         .find(character_id)
         .map_or(3.0, |a| a.immunity);
     let mut episodes = character_episodes(ctx, character_id)?;
-    episodes.extend(outbreak_episodes_through(
-        ctx,
-        character_id,
-        now,
-        now.saturating_add(requested),
-    )?);
+    episodes.extend(merge_acquisition_proposals(
+        outbreak_episodes_through(ctx, character_id, now, now.saturating_add(requested))?,
+        crate::filth::blood_episodes_through(
+            ctx,
+            character_id,
+            now,
+            now.saturating_add(requested),
+            false,
+            allow_healing,
+        )?,
+    ));
     Ok(
         disease::first_combined_terminal(&episodes, now, now.saturating_add(requested), immunity)
             .map_or(requested, |(minute, _)| minute.saturating_sub(now)),
@@ -616,7 +657,7 @@ pub fn finish_disease_interval(
     Ok(())
 }
 
-fn disease_key(id: DiseaseId) -> &'static str {
+pub(crate) fn disease_key(id: DiseaseId) -> &'static str {
     match id {
         DiseaseId::Influenza => "influenza",
         DiseaseId::Dysentery => "dysentery",
@@ -1137,7 +1178,9 @@ pub(crate) fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
         .find(PHYSICIAN_ID)
         .ok_or_else(|| "Physician Demo is missing skill data".to_string())?;
     physician_skills.medicine_hours = 1_000_000.0;
-    physician_skills.surgeon_hours = 1_000_000.0;
+    physician_skills.anatomy_hours = 1_000_000.0;
+    physician_skills.knife_hours = 1_000_000.0;
+    physician_skills.tailoring_hours = 1_000_000.0;
     ctx.db
         .character_skills()
         .character_id()
@@ -1202,6 +1245,7 @@ pub(crate) fn seed_sick_character(ctx: &ReducerContext) -> Result<(), String> {
     equip_medication(ctx, patient_h, medication_id)?;
     crate::capability::refresh_character_capability(ctx, PHYSICIAN_ID)?;
     crate::capability::refresh_character_capability(ctx, AMBIGUOUS_PHYSICIAN_ID)?;
+    crate::filth::seed_demo(ctx, SICK_CHARACTER_ID, 9_999_999_999_999_996)?;
     Ok(())
 }
 
@@ -1217,6 +1261,11 @@ pub fn examine_by_herbalist(
     if patient.current_settlement_id.as_deref() != Some(&settlement_id) {
         return Err("Patient must be at this herbalist's settlement".into());
     }
+    crate::strategic::require_settlement_service(
+        ctx,
+        &settlement_id,
+        adventuresim_world_schema::SettlementService::Herbalist,
+    )?;
     let herbalist = ensure_settlement_herbalist(ctx, &settlement_id);
     crate::strategic::consume_personal_gold(
         ctx,
@@ -1318,6 +1367,11 @@ pub fn purchase_from_herbalist(
     item_ids: Vec<String>,
     quantities: Vec<u32>,
 ) -> Result<(), String> {
+    crate::strategic::require_settlement_service(
+        ctx,
+        &settlement_id,
+        adventuresim_world_schema::SettlementService::Herbalist,
+    )?;
     let patient = crate::require_living_character(ctx, patient_id)?;
     if patient.current_settlement_id.as_deref() != Some(&settlement_id) {
         return Err("Patient must be at this herbalist's settlement".into());
@@ -1326,6 +1380,13 @@ pub fn purchase_from_herbalist(
         return Err("Herbalist purchase entries must be aligned".into());
     }
     ensure_settlement_herbalist(ctx, &settlement_id);
+    let economy = ctx
+        .db
+        .settlement()
+        .id()
+        .find(settlement_id.clone())
+        .ok_or("Settlement not found")?
+        .economy;
 
     let mut cost = 0u64;
     for (item_id, quantity) in item_ids.iter().zip(&quantities) {
@@ -1338,6 +1399,14 @@ pub fn purchase_from_herbalist(
             .id()
             .find(item_id)
             .ok_or("Herbalist item not found")?;
+        if !adventuresim_core::settlement_economy::storefront_stocks(
+            &economy,
+            adventuresim_core::settlement_economy::Storefront::Herbalist,
+            item_id,
+            crate::item::economy_catalog_kind(definition.kind),
+        ) {
+            return Err("This herbalist does not stock that item".into());
+        }
         let unit_price = match definition.kind {
             crate::ItemKind::Ingredient => {
                 adventuresim_core::strategic_economy::merchant_buy_price(
@@ -1374,7 +1443,7 @@ fn advance_medical_participants(
     let elapsed = participants
         .iter()
         .try_fold(requested_minutes, |limit, character_id| {
-            let disease = preview_elapsed_for_disease(ctx, *character_id, limit)?;
+            let disease = preview_elapsed_for_disease(ctx, *character_id, limit, true)?;
             let injury =
                 crate::surgery::preview_elapsed_for_injuries(ctx, *character_id, limit, true)?;
             Ok::<u64, String>(limit.min(disease).min(injury))

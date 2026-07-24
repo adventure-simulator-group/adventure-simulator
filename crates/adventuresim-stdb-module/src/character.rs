@@ -4,6 +4,7 @@ use strum::VariantArray;
 
 use crate::{
     ItemSlot, Settlement, add_inventory_item,
+    alcohol::alcohol_consumption,
     capability::character_capability,
     condition::{
         character_condition, character_morale_source, character_needs,
@@ -213,17 +214,37 @@ pub struct CharacterStats {
 pub struct CharacterSkills {
     #[primary_key]
     pub character_id: u64,
-    pub melee_hours: f32,
+    pub polearm_hours: f32,
+    pub axe_hours: f32,
+    pub bludgeon_hours: f32,
+    pub sword_hours: f32,
+    pub knife_hours: f32,
     pub dodge_hours: f32,
     pub block_hours: f32,
-    pub ranged_hours: f32,
+    pub bow_hours: f32,
+    pub crossbow_hours: f32,
+    pub firearm_hours: f32,
+    pub throw_hours: f32,
     pub will_hours: f32,
-    pub charisma_hours: f32,
+    pub insight_hours: f32,
+    pub self_awareness_hours: f32,
+    pub humor_hours: f32,
+    pub command_hours: f32,
+    pub deception_hours: f32,
+    pub seduction_hours: f32,
     pub medicine_hours: f32,
+    pub cooking_hours: f32,
     pub religion_hours: adventuresim_world_schema::ReligionHours,
+    pub oral_languages: adventuresim_world_schema::OralLanguageHours,
+    pub written_languages: adventuresim_world_schema::WrittenLanguageHours,
     pub stealth_hours: f32,
     pub balance_hours: f32,
-    pub surgeon_hours: f32,
+    pub terrain_plains_hours: f32,
+    pub terrain_forest_hours: f32,
+    pub terrain_hills_hours: f32,
+    pub terrain_urban_hours: f32,
+    pub anatomy_hours: f32,
+    pub tailoring_hours: f32,
     pub smithing_hours: f32,
 }
 
@@ -395,6 +416,7 @@ pub(crate) fn delete_temporary_character(
             ctx.db.repair_order().id().delete(repair.id);
         }
         ctx.db.inventory_item().id().delete(row.id);
+        crate::food::delete_personal_food_lot(ctx, row.id);
     }
 
     for row in ctx
@@ -460,6 +482,7 @@ pub(crate) fn delete_temporary_character(
     {
         ctx.db.character_morale_source().id().delete(&row.id);
     }
+    crate::social::cleanup_character_social(ctx, character.id);
     for row in ctx
         .db
         .religious_demand()
@@ -477,6 +500,15 @@ pub(crate) fn delete_temporary_character(
         .collect::<Vec<_>>()
     {
         ctx.db.inventory_quantity_target().id().delete(&row.id);
+    }
+    for row in ctx
+        .db
+        .alcohol_consumption()
+        .by_character()
+        .filter(character.id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.alcohol_consumption().id().delete(&row.id);
     }
 
     ctx.db.character_stats().character_id().delete(character.id);
@@ -636,7 +668,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
         0.22,
         0.05,
         Some(crate::surgery::ProjectileKind::Arrowhead),
-    );
+    )?;
     crate::surgery::commit_hit_injury(
         ctx,
         DAMAGED_CHARACTER_ID,
@@ -644,7 +676,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
         0.18,
         0.0,
         None,
-    );
+    )?;
     let mut bandaged = crate::surgery::injury_for(
         ctx,
         DAMAGED_CHARACTER_ID,
@@ -661,7 +693,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
         0.0,
         0.42,
         None,
-    );
+    )?;
     let mut splinted = crate::surgery::injury_for(
         ctx,
         DAMAGED_CHARACTER_ID,
@@ -676,7 +708,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
         0.15,
         0.08,
         Some(crate::surgery::ProjectileKind::Ball),
-    );
+    )?;
 
     crate::add_inventory_item(ctx, DAMAGED_CHARACTER_ID, "bandage", 8);
     crate::add_inventory_item(ctx, DAMAGED_CHARACTER_ID, "surgery_kit", 1);
@@ -692,7 +724,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
         .ok_or("Surgery demo primary surgeon is missing time")?
         .minutes
         .max(200);
-    for (id, surgeon_hours, lag) in [
+    for (id, procedure_hours, lag) in [
         (DAMAGED_CHARACTER_ID, 20_000.0, 0),
         (9_000_001, 3_333.0, 100),
         (9_000_002, 500.0, 200),
@@ -703,7 +735,9 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
             .character_id()
             .find(id)
             .ok_or("Surgery demo character is missing skills")?;
-        skills.surgeon_hours = surgeon_hours;
+        skills.anatomy_hours = procedure_hours;
+        skills.knife_hours = procedure_hours;
+        skills.tailoring_hours = procedure_hours;
         ctx.db.character_skills().character_id().update(skills);
         let mut time = ctx
             .db
@@ -725,7 +759,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
         0.36,
         0.08,
         Some(crate::surgery::ProjectileKind::Arrowhead),
-    );
+    )?;
     crate::surgery::commit_hit_injury(
         ctx,
         9_000_002,
@@ -733,7 +767,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
         0.04,
         0.50,
         None,
-    );
+    )?;
 
     let equip = ctx
         .db
@@ -895,6 +929,50 @@ pub(crate) fn insert_new_npc_character(
     insert_character_with_origin(ctx, name, id, temporary, true)
 }
 
+pub(crate) fn set_character_languages_for_settlement(
+    ctx: &ReducerContext,
+    character_id: u64,
+    settlement_id: &str,
+    npc: bool,
+) -> Result<(), String> {
+    let settlement = ctx
+        .db
+        .settlement()
+        .id()
+        .find(&settlement_id.to_string())
+        .ok_or_else(|| format!("Unknown settlement {settlement_id}"))?;
+    let mut skills = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(character_id)
+        .ok_or_else(|| format!("Character {character_id} has no skills"))?;
+    let (oral, written) = adventuresim_world_schema::initial_character_languages(
+        settlement.languages,
+        character_id,
+        npc,
+    );
+    skills.oral_languages = oral;
+    skills.written_languages = written;
+    ctx.db.character_skills().character_id().update(skills);
+    Ok(())
+}
+
+pub(crate) fn shared_language_coefficient(
+    ctx: &ReducerContext,
+    left_id: u64,
+    right_id: u64,
+) -> f32 {
+    let Some(left) = ctx.db.character_skills().character_id().find(left_id) else {
+        return 0.0;
+    };
+    let Some(right) = ctx.db.character_skills().character_id().find(right_id) else {
+        return 0.0;
+    };
+    adventuresim_world_schema::best_common_oral_language(left.oral_languages, right.oral_languages)
+        .1
+}
+
 fn insert_character_with_origin(
     ctx: &ReducerContext,
     name: String,
@@ -932,22 +1010,44 @@ fn insert_character_with_origin(
         calories_used: 0.0,
         focus: 1.0,
     });
+    let (oral_languages, written_languages) =
+        adventuresim_world_schema::initial_character_languages(start_settlement.languages, id, npc);
     let _character_skills = ctx.db.character_skills().insert(CharacterSkills {
         character_id: id,
-        melee_hours: 2000.0,
+        polearm_hours: 2000.0,
+        axe_hours: 2000.0,
+        bludgeon_hours: 2000.0,
+        sword_hours: 2000.0,
+        knife_hours: 2000.0,
         dodge_hours: 1000.0,
         block_hours: 1000.0,
-        ranged_hours: 1000.0,
+        bow_hours: 1000.0,
+        crossbow_hours: 1000.0,
+        firearm_hours: 1000.0,
+        throw_hours: 1000.0,
         will_hours: 1000.0,
-        charisma_hours: 1000.0,
+        insight_hours: 1000.0,
+        self_awareness_hours: 1000.0,
+        humor_hours: 1000.0,
+        command_hours: 1000.0,
+        deception_hours: 1000.0,
+        seduction_hours: 1000.0,
         medicine_hours: 1000.0,
+        cooking_hours: 0.0,
         religion_hours: adventuresim_world_schema::ReligionHours {
             roman_catholic: 1000.0,
             ..Default::default()
         },
+        oral_languages,
+        written_languages,
         stealth_hours: 1000.0,
         balance_hours: 1000.0,
-        surgeon_hours: 1000.0,
+        terrain_plains_hours: 0.0,
+        terrain_forest_hours: 0.0,
+        terrain_hills_hours: 0.0,
+        terrain_urban_hours: 0.0,
+        anatomy_hours: 1000.0,
+        tailoring_hours: 1000.0,
         smithing_hours: 1000.0,
     });
     crate::time::initialize_character_time(ctx, id)?;
@@ -1025,6 +1125,7 @@ pub fn equip_item(
     inventory_item_id: u64,
     destination: ItemSlot,
 ) -> Result<(), String> {
+    crate::strategic::require_character_no_unresolved_encounter(ctx, character_id)?;
     require_living_character(ctx, character_id)?;
     let inventory = ctx
         .db

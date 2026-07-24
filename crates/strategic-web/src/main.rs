@@ -9,6 +9,7 @@ mod medical;
 mod routes;
 mod session;
 mod spacetimedb;
+mod strategic_map;
 mod templates;
 
 use std::net::SocketAddr;
@@ -23,13 +24,20 @@ use axum::{
     response::Response,
 };
 use clap::Parser;
-use tower_http::services::ServeDir;
+use tower_http::{compression::CompressionLayer, services::ServeDir};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use config::Config;
 use live::LiveState;
 use routes::{AppState, build_router};
 use spacetimedb::SpacetimeClient;
+
+fn sats_option_string(value: Option<&str>) -> serde_json::Value {
+    match value {
+        Some(value) => serde_json::json!({ "some": value }),
+        None => serde_json::json!({ "none": [] }),
+    }
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -55,6 +63,15 @@ async fn main() -> anyhow::Result<()> {
     // Create SpacetimeDB client
     let db = SpacetimeClient::new(&config.spacetimedb_host, &config.spacetimedb_database)
         .with_token(config.spacetimedb_token.clone());
+    if config
+        .spacetimedb_token
+        .as_deref()
+        .is_none_or(|token| token.trim().is_empty())
+    {
+        anyhow::bail!(
+            "SPACETIMEDB_TOKEN is required: strategic travel reducers accept only the registered gateway identity"
+        );
+    }
     let live = LiveState::connect(
         &config.spacetimedb_host,
         &config.spacetimedb_database,
@@ -62,7 +79,51 @@ async fn main() -> anyhow::Result<()> {
     )?;
 
     // Create app state
-    let state = AppState { db, live };
+    let assets = (|| -> anyhow::Result<_> {
+        let map = strategic_map::StrategicMap::load(&config.strategic_map_bundle_dir)?;
+        let pack = adventuresim_terrain::TerrainPack::load(
+            &config
+                .strategic_map_bundle_dir
+                .join("terrain-routing-v2.json"),
+            &config
+                .strategic_map_bundle_dir
+                .join("terrain-routing-v2.pack"),
+        )?;
+        map.validate_terrain_identity(&pack)?;
+        let digest = pack.digest().to_string();
+        Ok((
+            std::sync::Arc::new(map),
+            std::sync::Arc::new(routes::travel::TerrainPlanner::new(std::sync::Arc::new(
+                pack,
+            ))),
+            digest,
+        ))
+    })();
+    let (strategic_map, terrain) = match assets {
+        Ok((map, terrain, digest)) => {
+            tracing::info!(bundle=%config.strategic_map_bundle_dir.display(),%digest,"loaded coherent final strategic map and terrain bundle");
+            (Some(map), Some(terrain))
+        }
+        Err(error) => {
+            tracing::warn!(bundle=%config.strategic_map_bundle_dir.display(),%error,"strategic map and terrain bundle unavailable or incoherent; disabling both");
+            (None, None)
+        }
+    };
+    db.call(
+        "register_strategic_gateway",
+        &[
+            sats_option_string(terrain.as_ref().map(|planner| planner.digest())),
+            serde_json::json!(if terrain.is_some() { 1_u32 } else { 0_u32 }),
+        ],
+    )
+    .await
+    .map_err(|error| anyhow::anyhow!("could not register strategic gateway: {error}"))?;
+    let state = AppState {
+        db,
+        live,
+        strategic_map,
+        terrain,
+    };
 
     // Build router
     let app = build_router(state);
@@ -76,7 +137,9 @@ async fn main() -> anyhow::Result<()> {
     // Add health check before the outer request tracing layer so it is logged too.
     let app = app.route("/health", axum::routing::get(health_check));
 
-    let app = app.layer(axum::middleware::from_fn(log_http_request));
+    let app = app
+        .layer(CompressionLayer::new())
+        .layer(axum::middleware::from_fn(log_http_request));
 
     // Parse bind address
     let addr: SocketAddr = config
@@ -145,5 +208,19 @@ impl Drop for HttpRequestLog {
                 "http request canceled before a response was produced"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sats_option_string;
+
+    #[test]
+    fn gateway_registration_uses_spacetimedb_option_sum_json() {
+        assert_eq!(
+            sats_option_string(Some("digest")),
+            serde_json::json!({ "some": "digest" })
+        );
+        assert_eq!(sats_option_string(None), serde_json::json!({ "none": [] }));
     }
 }

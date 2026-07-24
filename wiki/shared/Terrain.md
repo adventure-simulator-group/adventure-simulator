@@ -1,4 +1,6 @@
 # Map
+
+The terrain profile currently affects strategic routing and can select possible scene context. Tactical resolution of hazardous terrain is intended but not yet implemented; [#212](https://github.com/adventure-simulator-group/adventure-simulator/issues/212) tracks the handoff and committed-result contract.
 The world map is a grid where each square has a height and an enum for the terrain type. Each of these affect both the speed of travel and the difficulty of climb/swim check to avoid injury. We should not try and create our own, we should be able to find both height and biome data from some open GIS dataset. At minimum, it should be easy to find modern data for these, but there may also be a historical dataset that we can use.
 
 The strategic import records a bounded terrain profile on each road/ferry edge:

@@ -173,7 +173,22 @@ pub struct DiseaseDefinition {
     pub peak_attributes: AttributeImpairment,
     pub symptoms: &'static [Symptom],
     pub acquired_immunity: f32,
-    pub wound_borne: bool,
+    pub transmission_vectors: &'static [TransmissionVector],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum TransmissionVector {
+    CloseContact,
+    FoodWater,
+    Vermin,
+    Wound,
+    Blood,
+}
+
+impl DiseaseDefinition {
+    pub fn supports(&self, vector: TransmissionVector) -> bool {
+        self.transmission_vectors.contains(&vector)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -433,7 +448,7 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         },
         COUGH,
         0.30,
-        false,
+        &[TransmissionVector::CloseContact],
     ),
     d(
         DiseaseId::Dysentery,
@@ -453,7 +468,7 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         },
         FLUX,
         0.15,
-        false,
+        &[TransmissionVector::FoodWater],
     ),
     d(
         DiseaseId::Typhus,
@@ -473,7 +488,7 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         },
         SPOTTED,
         0.55,
-        false,
+        &[TransmissionVector::CloseContact, TransmissionVector::Vermin],
     ),
     d(
         DiseaseId::Tetanus,
@@ -497,7 +512,7 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         },
         LOCKJAW,
         0.05,
-        true,
+        &[TransmissionVector::Wound],
     ),
     d(
         DiseaseId::Erysipelas,
@@ -516,7 +531,7 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         },
         RASH,
         0.15,
-        true,
+        &[TransmissionVector::Wound],
     ),
     d(
         DiseaseId::Smallpox,
@@ -540,7 +555,7 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         },
         POX,
         0.90,
-        false,
+        &[TransmissionVector::CloseContact],
     ),
     d(
         DiseaseId::Plague,
@@ -564,7 +579,11 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         },
         BUBOES,
         0.50,
-        false,
+        &[
+            TransmissionVector::CloseContact,
+            TransmissionVector::Vermin,
+            TransmissionVector::Blood,
+        ],
     ),
     d(
         DiseaseId::Consumption,
@@ -587,7 +606,7 @@ pub const STARTER_DISEASES: [DiseaseDefinition; 8] = [
         },
         CONSUMPTION,
         0.20,
-        false,
+        &[TransmissionVector::CloseContact],
     ),
 ];
 const Z: AttributeImpairment = AttributeImpairment {
@@ -618,7 +637,7 @@ const fn d(
     peak_attributes: AttributeImpairment,
     symptoms: &'static [Symptom],
     acquired_immunity: f32,
-    wound_borne: bool,
+    transmission_vectors: &'static [TransmissionVector],
 ) -> DiseaseDefinition {
     DiseaseDefinition {
         id,
@@ -634,7 +653,7 @@ const fn d(
         peak_attributes,
         symptoms,
         acquired_immunity,
-        wound_borne,
+        transmission_vectors,
     }
 }
 

@@ -21,6 +21,7 @@ use futures_util::{
     future::join_all,
     stream::{self, StreamExt},
 };
+use maud::Markup;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -37,6 +38,7 @@ const BUILDINGS: &[&str] = &[
 #[derive(Clone, Debug, Default, Deserialize)]
 struct BuildingQuery {
     building: Option<String>,
+    cook: Option<bool>,
 }
 
 impl BuildingQuery {
@@ -49,32 +51,63 @@ impl BuildingQuery {
     fn append_to(&self, path: String) -> String {
         self.valid().map_or_else(
             || path.clone(),
-            |building| format!("{path}?building={building}"),
+            |building| {
+                format!(
+                    "{path}{}building={building}",
+                    if path.contains('?') { "&" } else { "?" }
+                )
+            },
         )
+    }
+
+    fn cooking(&self) -> bool {
+        self.cook == Some(true)
     }
 }
 
 #[cfg(test)]
 mod building_query_tests {
-    use super::BuildingQuery;
+    use super::{BuildingQuery, character_details_path};
 
     #[test]
     fn building_query_is_closed_and_preserved_on_redirects() {
         let valid = BuildingQuery {
             building: Some("inn".into()),
+            ..Default::default()
         };
         assert_eq!(valid.valid(), Some("inn"));
         assert_eq!(
             valid.append_to("/locations/settlement/x/party/1".into()),
             "/locations/settlement/x/party/1?building=inn"
         );
+        assert_eq!(
+            valid.append_to("/locations/settlement/x/party/1?cook=true".into()),
+            "/locations/settlement/x/party/1?cook=true&building=inn"
+        );
         let invalid = BuildingQuery {
             building: Some("../religion".into()),
+            ..Default::default()
         };
         assert_eq!(invalid.valid(), None);
         assert_eq!(
             invalid.append_to("/locations/settlement/x/party/1".into()),
             "/locations/settlement/x/party/1"
+        );
+    }
+
+    #[test]
+    fn examination_returns_to_the_same_character_shell_and_building() {
+        let building = BuildingQuery {
+            building: Some("inn".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            building.append_to(character_details_path("settlement", "x", 7, Some(7))),
+            "/locations/settlement/x/party/7?building=inn"
+        );
+        assert_eq!(
+            building.append_to(character_details_path("settlement", "x", 7, Some(3))),
+            "/locations/settlement/x/party/7/stats?building=inn"
         );
     }
 }
@@ -92,23 +125,26 @@ use super::travel::{
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
-    CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterNotoriety,
-    CharacterPersonality, CharacterSkills, CharacterStats, CharacterStrategicCondition,
-    CharacterTime, CharacterTrainingSchedule, EquippedMedication, HerbalistExaminationRow,
-    InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget, ItemCondition, ItemDefinition,
-    ItemKind, ItemSlot, LimbInjury, LimbRegion, MedicalExaminationRow, Party, PartyInventoryItem,
-    PartyJourney, PartyJourneyItinerary, PartyMember, PartyRecruitmentRole, PartyStake, Quest,
-    QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
-    RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription,
-    SettlementSmith, TravelEdge,
+    AlcoholConsumption, Character, CharacterAffinity, CharacterAttributes, CharacterCapability,
+    CharacterCondition, CharacterEquip, CharacterFamiliarity, CharacterFilth, CharacterLimbs,
+    CharacterMoraleSource, CharacterNeeds, CharacterNotoriety, CharacterPersonality,
+    CharacterSkills, CharacterStats, CharacterStrategicCondition, CharacterTime,
+    CharacterTrainingSchedule, CharacterVirtue, EquippedMedication, FoodLot,
+    HerbalistExaminationRow, InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget,
+    ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury, LimbRegion,
+    MedicalExaminationRow, Party, PartyInventoryItem, PartyJourney, PartyJourneyItinerary,
+    PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, Quest, QuestIssuer,
+    QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder, RetainedProjectile,
+    ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription, SettlementSmith,
+    SocialBelief, StrategicEncounter, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
-    RestSummary, alchemy_page, camp_page, inn_page, live_merchant_shop_page, merchants_page,
-    party_discard_page, party_inventory_page, party_personal_page, party_pool_page,
-    party_stats_page, religion_page, rest_result_page, settlement_map_page,
-    settlement_overview_page, surgery_page,
+    RestSummary, SoapRestPreview, SocialPresentation, alchemy_page, camp_page,
+    live_merchant_shop_page, merchants_page, party_discard_page, party_inventory_page,
+    party_personal_page, party_pool_page, party_social_dialog, party_stats_page, religion_page,
+    rest_default_minutes, rest_result_page, settlement_map_page, settlement_overview_page,
+    surgery_dialog,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -140,6 +176,7 @@ pub fn routes() -> Router<AppState> {
             post(update_camp_travel_configuration),
         )
         .route("/camp/continue", post(continue_camp_travel))
+        .route("/camp/encounter", post(resolve_camp_encounter))
         .route("/camp/destination/{id}", post(change_camp_destination))
         .route(
             "/api/settlements/{id}/service-quests",
@@ -160,6 +197,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/locations/{kind}/{id}/party/{character_id}",
             get(party_personal),
+        )
+        .route(
+            "/locations/{kind}/{id}/party/{character_id}/cook",
+            post(cook_food),
         )
         .route(
             "/locations/{kind}/{id}/party/{character_id}/inventory",
@@ -204,6 +245,10 @@ pub fn routes() -> Router<AppState> {
             get(party_stats),
         )
         .route(
+            "/locations/{kind}/{id}/party/{character_id}/social",
+            get(party_social).post(perform_social_action),
+        )
+        .route(
             "/locations/{kind}/{id}/party/{character_id}/surgery/{limb}",
             get(surgery),
         )
@@ -230,6 +275,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/locations/{kind}/{id}/party/{character_id}/schedule",
             post(update_training_schedule),
+        )
+        .route(
+            "/locations/{kind}/{id}/party/{character_id}/activity",
+            post(perform_immediate_activity),
         )
         .route(
             "/locations/{kind}/{id}/party/{character_id}/religion/renounce",
@@ -287,6 +336,7 @@ fn parse_surgery_limb(slug: &str) -> Option<LimbRegion> {
 async fn surgery(
     State(state): State<AppState>,
     Path((kind, id, patient_id, limb)): Path<(String, String, u64, String)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Html<String> {
     let Some(actor_id) = session.character_id_u64() else {
@@ -295,13 +345,14 @@ async fn surgery(
     let Some(selected_limb) = parse_surgery_limb(&limb) else {
         return Html("<h1>Limb not found</h1>".into());
     };
-    let location = match resolve_location(&state, &kind, &id).await {
+    let mut location = match resolve_location(&state, &kind, &id).await {
         LocationLookup::Found(location) => location,
         LocationLookup::NotFound => return Html("<h1>Location not found</h1>".into()),
         LocationLookup::Unavailable => {
             return Html("<h1>Strategic data is unavailable</h1>".into());
         }
     };
+    location.active_building = building.valid().map(str::to_owned);
     let Some((active, _)) = get_active_character(&state, Some(actor_id)).await else {
         return Html("<h1>Choose a character first</h1>".into());
     };
@@ -339,6 +390,42 @@ async fn surgery(
         ))
         .await
         .unwrap_or_default();
+    let item_definitions = state
+        .db
+        .query::<ItemDefinition>("SELECT * FROM item")
+        .await
+        .unwrap_or_default();
+    let alcohol_count = inventory
+        .iter()
+        .filter(|entry| {
+            item_definitions
+                .iter()
+                .any(|def| def.id == entry.item_id && def.alcohol_disinfectant_effectiveness > 0)
+        })
+        .map(|entry| entry.qty)
+        .sum();
+    let disinfectants = inventory
+        .iter()
+        .filter_map(|entry| {
+            item_definitions
+                .iter()
+                .find(|def| def.id == entry.item_id && def.alcohol_disinfectant_effectiveness > 0)
+                .map(|def| {
+                    (
+                        def.alcohol_disinfectant_effectiveness,
+                        entry.id,
+                        def.id.as_str(),
+                    )
+                })
+        })
+        .collect::<Vec<_>>();
+    let selected_alcohol = adventuresim_core::alcohol::best_disinfectant(
+        &disinfectants
+            .iter()
+            .map(|(effectiveness, id, _)| (*effectiveness, *id))
+            .collect::<Vec<_>>(),
+    )
+    .map(|index| disinfectants[index].2);
     let actor_injuries = if actor_id == patient_id {
         injuries.clone()
     } else {
@@ -357,9 +444,11 @@ async fn surgery(
             .map(|item| item.qty)
             .sum()
     };
-    let skill = get_character_capability(&state, actor_id)
+    let procedure_checks = get_character_capability(&state, actor_id)
         .await
-        .map_or(0.0, |capability| capability.surgery);
+        .map_or([0.0; 3], |capability| {
+            [capability.anatomy, capability.knife, capability.tailoring]
+        });
     let available_splints = inventory
         .iter()
         .filter(|item| {
@@ -370,42 +459,56 @@ async fn surgery(
         })
         .map(|item| item.qty)
         .sum();
-    let patient_capability = get_character_capability(&state, patient_id).await;
-    let patient_attributes =
-        query_single::<CharacterAttributes>(&state, "character_attributes", patient_id).await;
-    let patient_skills =
-        query_single::<CharacterSkills>(&state, "character_skills", patient_id).await;
-    let patient_limbs = query_single::<CharacterLimbs>(&state, "character_limbs", patient_id).await;
-    let medical = medical_presentation(&state, actor_id, patient_id).await;
-    let combat_profile = get_combat_training_profile(&state, patient_id).await;
-    Html(
-        surgery_page(
-            &location,
-            &active,
-            &patient,
-            &party_members,
-            patient_capability.as_ref(),
-            patient_attributes.as_ref(),
-            patient_skills.as_ref(),
-            patient_limbs.as_ref(),
-            &medical,
-            combat_profile,
-            &injuries,
-            &projectiles,
-            selected_limb,
-            quantity("bandage"),
-            quantity("surgery_kit"),
-            available_splints,
-            skill,
+    let dialog = surgery_dialog(
+        &location,
+        &active,
+        &patient,
+        &injuries,
+        &projectiles,
+        selected_limb,
+        quantity("bandage"),
+        quantity("surgery_kit"),
+        available_splints,
+        quantity("soft_soap"),
+        alcohol_count,
+        selected_alcohol,
+        procedure_checks,
+    );
+    if patient_id == active.id {
+        render_party_personal(
+            &state,
+            &kind,
+            &id,
+            patient_id,
+            building,
+            &session,
+            Some(dialog),
+            Some(&limb),
+            false,
         )
-        .into_string(),
-    )
+        .await
+    } else {
+        render_party_stats(
+            &state,
+            &kind,
+            &id,
+            patient_id,
+            building,
+            &session,
+            Some(dialog),
+            Some(&limb),
+            false,
+        )
+        .await
+    }
 }
 
 #[derive(Deserialize)]
 struct SurgeryProcedureForm {
     procedure: String,
     projectile_id: Option<u64>,
+    #[serde(default)]
+    use_soap: bool,
 }
 
 /// SpacetimeDB's raw HTTP reducer API expects algebraic `Option<T>` values,
@@ -464,15 +567,16 @@ mod surgery_reducer_argument_tests {
 async fn perform_surgery(
     State(state): State<AppState>,
     Path((kind, id, patient_id, limb)): Path<(String, String, u64, String)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
     Form(form): Form<SurgeryProcedureForm>,
 ) -> Redirect {
     let destination = format!("/locations/{kind}/{id}/party/{patient_id}/surgery/{limb}");
     let Some(actor_id) = session.character_id_u64() else {
-        return Redirect::to(&destination);
+        return Redirect::to(&building.append_to(destination));
     };
     if parse_surgery_limb(&limb).is_none() {
-        return Redirect::to(&destination);
+        return Redirect::to(&building.append_to(destination));
     }
     if let Err(error) = state
         .db
@@ -484,13 +588,14 @@ async fn perform_surgery(
                 json!(limb),
                 json!(form.procedure),
                 spacetime_option_u64(form.projectile_id),
+                json!(form.use_soap),
             ],
         )
         .await
     {
         tracing::warn!(?error, "Manual surgery procedure failed");
     }
-    Redirect::to(&destination)
+    Redirect::to(&building.append_to(destination))
 }
 
 #[derive(Default, Deserialize)]
@@ -667,13 +772,36 @@ struct RepairItemForm {
     inventory_item_id: u64,
 }
 
+fn repair_service(shop: &str) -> Option<&'static str> {
+    match shop {
+        "weapons" => Some("weapons"),
+        "armor" => Some("armor"),
+        "clothing" => Some("clothing"),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod repair_route_tests {
+    use super::repair_service;
+
+    #[test]
+    fn repair_routes_dispatch_all_and_only_the_three_authoritative_services() {
+        assert_eq!(repair_service("weapons"), Some("weapons"));
+        assert_eq!(repair_service("armor"), Some("armor"));
+        assert_eq!(repair_service("clothing"), Some("clothing"));
+        assert_eq!(repair_service("merchants"), None);
+        assert_eq!(repair_service("smith"), None);
+    }
+}
+
 async fn submit_repair(
     State(state): State<AppState>,
     Path((id, shop)): Path<(String, String)>,
     session: Session,
     Form(form): Form<RepairItemForm>,
 ) -> Redirect {
-    if matches!(shop.as_str(), "weapons" | "armor") {
+    if let Some(service) = repair_service(&shop) {
         if let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
         {
             let _ = state
@@ -683,6 +811,7 @@ async fn submit_repair(
                     &[
                         json!(character.id),
                         json!(id),
+                        json!(service),
                         json!(form.inventory_item_id),
                     ],
                 )
@@ -697,14 +826,14 @@ async fn submit_all_repairs(
     Path((id, shop)): Path<(String, String)>,
     session: Session,
 ) -> Redirect {
-    if matches!(shop.as_str(), "weapons" | "armor") {
+    if let Some(service) = repair_service(&shop) {
         if let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
         {
             let _ = state
                 .db
                 .call(
                     "submit_all_repairable_items",
-                    &[json!(character.id), json!(id), json!(shop == "armor")],
+                    &[json!(character.id), json!(id), json!(service)],
                 )
                 .await;
         }
@@ -717,7 +846,9 @@ async fn retrieve_repair(
     Path((id, shop, order_id)): Path<(String, String, u64)>,
     session: Session,
 ) -> Redirect {
-    if let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await {
+    if repair_service(&shop).is_some()
+        && let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
+    {
         let _ = state
             .db
             .call(
@@ -741,7 +872,7 @@ async fn retrieve_repairs(
     session: Session,
     Form(form): Form<RetrieveRepairsForm>,
 ) -> Redirect {
-    if matches!(shop.as_str(), "weapons" | "armor")
+    if let Some(service) = repair_service(&shop)
         && let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
     {
         let _ = state
@@ -751,7 +882,7 @@ async fn retrieve_repairs(
                 &[
                     json!(character.id),
                     json!(id),
-                    json!(shop == "armor"),
+                    json!(service),
                     json!(form.item_id),
                     json!(form.limit),
                 ],
@@ -854,7 +985,12 @@ async fn settlement_map(
         .query("SELECT * FROM travel_edge")
         .await
         .unwrap_or_default();
-    let mut destinations = connected_destinations(settlement, &settlements, &edges);
+    let map_data_initialized = crate::strategic_map::has_geographic_source(settlement);
+    let mut destinations = if map_data_initialized {
+        connected_destinations(settlement, &settlements, &edges)
+    } else {
+        Vec::new()
+    };
     let quests: Vec<Quest> = state
         .db
         .query("SELECT * FROM quest")
@@ -878,12 +1014,11 @@ async fn settlement_map(
     } else {
         None
     };
-    let markers = QuestMapMarkers::new(
-        &quests,
-        active_party
-            .as_ref()
-            .and_then(|party| party.active_quest_id.as_deref()),
-    );
+    let active_quest_id = active_party
+        .as_ref()
+        .and_then(|party| party.active_quest_id.as_deref());
+    let markers = QuestMapMarkers::new(&quests, active_quest_id);
+    let map_quests = map_quests_for_settlement(&quests, &settlement.id, active_quest_id);
     for destination in &mut destinations {
         markers.decorate_settlement(destination);
     }
@@ -891,7 +1026,7 @@ async fn settlement_map(
     let is_current_settlement = active_character.as_ref().is_some_and(|(character, _)| {
         character.current_settlement_id.as_deref() == Some(&settlement.id)
     });
-    let can_travel = is_current_settlement && active_party.is_some();
+    let can_travel = map_data_initialized && is_current_settlement && active_party.is_some();
     if let Some(quest) = active_quest.filter(|quest| quest.status == QuestStatus::Accepted) {
         if can_travel && settlement.id == quest.settlement_id {
             let distance_m = crate::routes::quests::straight_line_distance_m(quest, settlement);
@@ -916,6 +1051,9 @@ async fn settlement_map(
                 turn_in_ready: false,
                 open_quest_available: false,
                 provision_forecast: None,
+                terrain_route: None,
+                return_terrain_route: None,
+                route_fallback: true,
             });
         } else if can_travel {
             if let Some(next_settlement_id) =
@@ -945,6 +1083,40 @@ async fn settlement_map(
                     destination.active_quest_route = true;
                 }
             }
+        }
+    }
+    if let Some(selected_id) = query.destination.as_deref()
+        && let Some(destination) = destinations
+            .iter_mut()
+            .find(|destination| destination.id == selected_id)
+    {
+        let goal = if destination.quest_in_progress {
+            map_quests
+                .iter()
+                .find(|quest| quest.id == destination.id)
+                .map(|quest| (quest.location_coord_y, quest.location_coord_x))
+        } else {
+            settlements
+                .iter()
+                .find(|candidate| candidate.id == destination.id)
+                .map(|candidate| (candidate.coord_y, candidate.coord_x))
+        };
+        if let Some(goal) = goal {
+            let terrain_profile = if let Some((character, _)) = active_character.as_ref() {
+                crate::routes::party_terrain_profile(&state, character)
+                    .await
+                    .unwrap_or_default()
+            } else {
+                adventuresim_terrain::TerrainSkillProfile::default()
+            };
+            crate::routes::travel::apply_terrain_route(
+                destination,
+                state.terrain.as_deref(),
+                (settlement.coord_y, settlement.coord_x),
+                goal,
+                terrain_profile,
+            )
+            .await;
         }
     }
     let party_members = get_active_party_members(
@@ -1024,15 +1196,25 @@ async fn settlement_map(
         .as_deref()
         .and_then(|id| destinations.iter().find(|destination| destination.id == id))
         .and_then(|destination| destination.provision_forecast.as_ref());
+    let soap_preview = soap_rest_preview(
+        &state,
+        &party_members,
+        active_party.as_ref().map(|party| party.id.as_str()),
+    )
+    .await;
     Html(
         settlement_map_page(
             settlement,
+            &settlements,
+            &map_quests,
+            state.strategic_map.as_deref(),
             &destinations,
             query.destination.as_deref(),
             active_character.as_ref().map(|(character, _)| character),
             active_party.as_ref(),
             &party_members,
             default_rest_minutes,
+            soap_preview,
             can_travel,
             provision_forecast,
             is_current_settlement,
@@ -1056,6 +1238,23 @@ async fn settlement_map(
 
 fn can_abandon_active_quest(quest: &Quest, current_quest_location_id: Option<&str>) -> bool {
     quest.status == QuestStatus::Accepted && current_quest_location_id.is_none()
+}
+
+fn map_quests_for_settlement(
+    quests: &[Quest],
+    settlement_id: &str,
+    active_quest_id: Option<&str>,
+) -> Vec<Quest> {
+    quests
+        .iter()
+        .filter(|quest| {
+            quest.settlement_id == settlement_id
+                && (quest.status == QuestStatus::Available
+                    || (quest.status == QuestStatus::Accepted
+                        && active_quest_id == Some(quest.id.as_str())))
+        })
+        .cloned()
+        .collect()
 }
 
 #[cfg(test)]
@@ -1098,6 +1297,40 @@ mod map_quest_tests {
             &quest(QuestStatus::Completed),
             None
         ));
+    }
+
+    #[test]
+    fn map_quest_pins_are_bounded_to_the_local_issuer_and_active_destination() {
+        let mut local_available = quest(QuestStatus::Available);
+        local_available.id = "local-available".into();
+        local_available.accepted_by = None;
+        let mut remote_available = local_available.clone();
+        remote_available.id = "remote-available".into();
+        remote_available.settlement_id = "elsewhere".into();
+        let mut local_active = quest(QuestStatus::Accepted);
+        local_active.id = "local-active".into();
+        let mut local_inactive = local_active.clone();
+        local_inactive.id = "other-party-active".into();
+        let mut completed = quest(QuestStatus::Completed);
+        completed.id = "local-completed".into();
+
+        let visible = map_quests_for_settlement(
+            &[
+                local_available,
+                remote_available,
+                local_active,
+                local_inactive,
+                completed,
+            ],
+            "issuer",
+            Some("local-active"),
+        );
+        let ids = visible
+            .iter()
+            .map(|quest| quest.id.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(ids, ["local-available", "local-active"]);
     }
 }
 
@@ -1270,6 +1503,24 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
         .await
         .ok()
         .flatten();
+    let terrain_route = state
+        .db
+        .query_one::<PartyJourneyRoute>(&format!(
+            "SELECT * FROM party_journey_route WHERE party_id = {}",
+            sql_string_literal(&party.id)
+        ))
+        .await
+        .ok()
+        .flatten();
+    let encounter = state
+        .db
+        .query_one::<StrategicEncounter>(&format!(
+            "SELECT * FROM strategic_encounter WHERE party_id = {}",
+            sql_string_literal(&party.id)
+        ))
+        .await
+        .ok()
+        .flatten();
     let stats: Vec<CharacterStats> = state
         .db
         .query("SELECT * FROM character_stats")
@@ -1290,46 +1541,105 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
     .max(1);
     let planned_wake_minute =
         (current_party_minute.saturating_add(default_rest_minutes) % 1_440) as u16;
-    let can_continue_travel = is_walking_time(
-        current_party_minute,
-        party.walking_minutes_per_day,
-        party.travel_at_night,
-    );
+    let can_continue_travel = encounter
+        .as_ref()
+        .is_none_or(|encounter| encounter.status != "awaiting_choice")
+        && is_walking_time(
+            current_party_minute,
+            party.walking_minutes_per_day,
+            party.travel_at_night,
+        );
     let remaining_journey_minutes = journey
         .as_ref()
         .map_or(party.camp_remaining_minutes, |row| {
             row.total_elapsed_minutes
                 .saturating_sub(row.completed_elapsed_minutes)
         });
+    let remaining_rest_intervals: Vec<_> = journey
+        .as_ref()
+        .zip(itinerary.as_ref())
+        .into_iter()
+        .flat_map(|(journey, itinerary)| {
+            let remaining_start = journey.completed_elapsed_minutes;
+            let remaining_end = journey.total_elapsed_minutes;
+            itinerary
+                .forecast_camp_intervals
+                .iter()
+                .filter_map(move |camp| {
+                    let camp_start = camp.elapsed_start_minute.max(remaining_start);
+                    let camp_end = camp
+                        .elapsed_start_minute
+                        .saturating_add(camp.elapsed_minutes)
+                        .min(remaining_end);
+                    (camp_end > camp_start).then(|| {
+                        (
+                            journey.departure_minute.saturating_add(camp_start),
+                            camp_end - camp_start,
+                        )
+                    })
+                })
+        })
+        .collect();
     let provision_forecast = travel_provision_forecast_for_minutes(
         &state,
         Some(&party),
         &party_members,
         remaining_journey_minutes,
+        &remaining_rest_intervals,
         false,
     )
     .await
     .ok()
     .flatten();
     let camp_destinations = camp_settlement_destinations(&state, &party, journey.as_ref()).await;
+    let soap_preview = soap_rest_preview(&state, &party_members, Some(&party.id)).await;
     Html(
         camp_page(
             &party,
             journey.as_ref(),
             itinerary.as_ref(),
+            terrain_route.as_ref(),
             &destination_name,
             Some(&character),
             &party_members,
             &camp_destinations,
             provision_forecast.as_ref(),
             default_rest_minutes,
+            soap_preview,
             planned_wake_minute,
             can_continue_travel,
+            encounter.as_ref(),
             Some(&character.name),
         )
         .into_string(),
     )
     .into_response()
+}
+
+#[derive(Debug, Deserialize)]
+struct EncounterChoiceForm {
+    choice: String,
+}
+
+async fn resolve_camp_encounter(
+    State(state): State<AppState>,
+    session: Session,
+    Form(form): Form<EncounterChoiceForm>,
+) -> Response {
+    let Some(character_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    match state
+        .db
+        .call(
+            "resolve_strategic_encounter",
+            &[json!(character_id), json!(form.choice)],
+        )
+        .await
+    {
+        Ok(()) => Redirect::to("/camp").into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
 }
 
 async fn camp_settlement_destinations(
@@ -1453,11 +1763,27 @@ pub(crate) async fn travel_provision_forecast(
     destination: &TravelDestination,
     departing_settlement: bool,
 ) -> Result<Option<TravelProvisionForecast>, String> {
+    let rest_intervals: Vec<_> = destination
+        .itinerary_segments
+        .iter()
+        .filter(|segment| {
+            segment.kind == adventuresim_core::strategic_time::ItinerarySegmentKind::Camp
+        })
+        .map(|segment| {
+            (
+                destination
+                    .departure_minute
+                    .saturating_add(segment.elapsed_start),
+                segment.elapsed_minutes,
+            )
+        })
+        .collect();
     travel_provision_forecast_for_minutes(
         state,
         party,
         travelers,
         destination.itinerary_total_elapsed_minutes,
+        &rest_intervals,
         departing_settlement,
     )
     .await
@@ -1468,9 +1794,11 @@ async fn travel_provision_forecast_for_minutes(
     party: Option<&Party>,
     travelers: &[Character],
     planning_minutes: u64,
+    rest_intervals: &[(u64, u64)],
     departing_settlement: bool,
 ) -> Result<Option<TravelProvisionForecast>, String> {
-    let travelers: Vec<_> = travelers.iter().filter(|traveler| traveler.alive).collect();
+    let mut travelers: Vec<_> = travelers.iter().filter(|traveler| traveler.alive).collect();
+    travelers.sort_by_key(|traveler| traveler.id);
     let items: Vec<ItemDefinition> = state
         .db
         .query("SELECT * FROM item")
@@ -1485,10 +1813,18 @@ async fn travel_provision_forecast_for_minutes(
     let Some(waterskin) = items.iter().find(|item| item.id == STANDARD_WATERSKIN_ID) else {
         return Ok(None);
     };
+    let food_lots: Vec<FoodLot> = state
+        .db
+        .query("SELECT * FROM food_lot")
+        .await
+        .map_err(|error| error.to_string())?;
     let mut food_reserve_kcal = 0.0;
+    let mut food_lot_kcal = 0.0;
     let mut water_reserve_ml = 0.0;
     let mut ration_count = 0;
     let mut waterskin_count = 0;
+    let mut alcohol_supplies = Vec::new();
+    let mut expected_morale_demands = Vec::new();
     for traveler in &travelers {
         let Some(needs) = state
             .db
@@ -1509,6 +1845,88 @@ async fn travel_provision_forecast_for_minutes(
             ))
             .await
             .map_err(|error| error.to_string())?;
+        for entry in &inventory {
+            if let Some(def) = items.iter().find(|def| def.id == entry.item_id) {
+                alcohol_supplies.push(adventuresim_core::alcohol::ScopedAlcoholSupply {
+                    properties: adventuresim_core::alcohol::AlcoholProperties {
+                        serving_ml: def.alcohol_serving_ml,
+                        abv_basis_points: def.alcohol_abv_basis_points,
+                        net_hydration_ml: def.alcohol_net_hydration_ml,
+                        disinfectant_effectiveness: def.alcohol_disinfectant_effectiveness,
+                        disinfectant_focused: def.alcohol_disinfectant_focused,
+                        potable: def.alcohol_potable,
+                    },
+                    quantity: entry.qty,
+                    item_id: def.id.clone(),
+                    stable_id: entry.id,
+                    owner: Some(traveler.id),
+                });
+            }
+        }
+        let time = query_single::<CharacterTime>(state, "character_time", traveler.id).await;
+        let personality =
+            query_single::<CharacterPersonality>(state, "character_personality", traveler.id).await;
+        if time.is_some() {
+            let history = state
+                .db
+                .query::<AlcoholConsumption>(&format!(
+                    "SELECT * FROM alcohol_consumption WHERE character_id = {}",
+                    traveler.id
+                ))
+                .await
+                .map_err(|error| error.to_string())?;
+            let mut evenings: Vec<_> = rest_intervals
+                .iter()
+                .map(|(start, minutes)| {
+                    adventuresim_core::alcohol::rest_evenings(
+                        *start,
+                        start.saturating_add(*minutes),
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .flatten()
+                .filter(|evening| {
+                    !history
+                        .iter()
+                        .any(|row| row.evening_id == *evening && row.morale_evaluated)
+                })
+                .collect();
+            evenings.sort_unstable();
+            evenings.dedup();
+            match personality.map(|p| p.temperance) {
+                Some(crate::spacetimedb::Temperance::Temperate) => {}
+                Some(crate::spacetimedb::Temperance::Drunkard) => {
+                    expected_morale_demands.extend(evenings.into_iter().map(|evening| {
+                        (
+                            evening,
+                            traveler.id,
+                            adventuresim_core::alcohol::HEAVY_ETHANOL_ML,
+                        )
+                    }));
+                }
+                _ => {
+                    let mut heavy_evenings: Vec<u64> = history
+                        .iter()
+                        .filter(|row| adventuresim_core::alcohol::qualifying_heavy(row.ethanol_ml))
+                        .map(|row| row.evening_id)
+                        .collect();
+                    for evening in evenings {
+                        let had_recent_heavy = heavy_evenings.iter().any(|prior| {
+                            *prior < evening
+                                && evening - *prior < adventuresim_core::alcohol::ROLLING_WEEK_DAYS
+                        });
+                        let target = if had_recent_heavy {
+                            adventuresim_core::alcohol::MODEST_ETHANOL_ML
+                        } else {
+                            heavy_evenings.push(evening);
+                            adventuresim_core::alcohol::HEAVY_ETHANOL_ML
+                        };
+                        expected_morale_demands.push((evening, traveler.id, target));
+                    }
+                }
+            }
+        }
         let owned = |item_id: &str| {
             inventory
                 .iter()
@@ -1517,6 +1935,14 @@ async fn travel_provision_forecast_for_minutes(
                 .sum::<u32>()
         };
         food_reserve_kcal += needs.food_balance_kcal;
+        food_lot_kcal += food_lots
+            .iter()
+            .filter(|lot| {
+                lot.inventory_item_id
+                    .is_some_and(|id| inventory.iter().any(|entry| entry.id == id))
+            })
+            .map(|lot| lot.nutrition_kcal.max(0.0))
+            .sum::<f32>();
         water_reserve_ml += needs.water_balance_ml;
         ration_count += owned(STANDARD_TRAVEL_RATION_ID);
         let skins = owned(STANDARD_WATERSKIN_ID);
@@ -1535,11 +1961,37 @@ async fn travel_provision_forecast_for_minutes(
             ))
             .await
             .map_err(|error| error.to_string())?;
+        for entry in &pooled {
+            if let Some(def) = items.iter().find(|def| def.id == entry.item_id) {
+                alcohol_supplies.push(adventuresim_core::alcohol::ScopedAlcoholSupply {
+                    properties: adventuresim_core::alcohol::AlcoholProperties {
+                        serving_ml: def.alcohol_serving_ml,
+                        abv_basis_points: def.alcohol_abv_basis_points,
+                        net_hydration_ml: def.alcohol_net_hydration_ml,
+                        disinfectant_effectiveness: def.alcohol_disinfectant_effectiveness,
+                        disinfectant_focused: def.alcohol_disinfectant_focused,
+                        potable: def.alcohol_potable,
+                    },
+                    quantity: entry.quantity,
+                    item_id: def.id.clone(),
+                    stable_id: entry.id,
+                    owner: None,
+                });
+            }
+        }
         ration_count += pooled
             .iter()
             .filter(|row| row.item_id == STANDARD_TRAVEL_RATION_ID)
             .map(|row| row.quantity)
             .sum::<u32>();
+        food_lot_kcal += food_lots
+            .iter()
+            .filter(|lot| {
+                lot.party_inventory_item_id
+                    .is_some_and(|id| pooled.iter().any(|entry| entry.id == id))
+            })
+            .map(|lot| lot.nutrition_kcal.max(0.0))
+            .sum::<f32>();
         let party_skins = pooled
             .iter()
             .filter(|row| row.item_id == STANDARD_WATERSKIN_ID)
@@ -1551,15 +2003,27 @@ async fn travel_provision_forecast_for_minutes(
             water_reserve_ml += party.pooled_water_ml.max(0.0);
         }
     }
+    expected_morale_demands.sort_by_key(|(evening, character_id, _)| (*evening, *character_id));
+    let ordered_morale_demands: Vec<_> = expected_morale_demands
+        .into_iter()
+        .map(|(_, character_id, target)| (character_id, target))
+        .collect();
+    let emergency_alcohol_hydration_ml =
+        adventuresim_core::alcohol::hydration_after_expected_drinking(
+            alcohol_supplies,
+            &ordered_morale_demands,
+        );
     let inputs = PartyProvisioningInputs {
         planning_minutes,
         living_members: travelers.len() as u32,
         food_reserve_kcal,
+        food_lot_kcal,
         water_reserve_ml,
         ration_count,
         waterskin_count,
         ration_kcal: ration.nutrition_kcal,
         waterskin_capacity_ml: waterskin.water_capacity_ml,
+        emergency_alcohol_hydration_ml,
         ..Default::default()
     };
     let result = inputs.forecast();
@@ -1568,6 +2032,9 @@ async fn travel_provision_forecast_for_minutes(
         living_members: travelers.len() as u32,
         food_days: result.food_days,
         water_days: result.water_days,
+        ordinary_water_days: result.ordinary_water_days,
+        emergency_alcohol_days: result.emergency_alcohol_days,
+        emergency_alcohol_hydration_ml,
         food_reserve_kcal,
         water_reserve_ml,
         ration_count,
@@ -2164,6 +2631,32 @@ async fn party_personal(
     Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Html<String> {
+    render_party_personal(
+        &state,
+        &kind,
+        &id,
+        character_id,
+        building,
+        &session,
+        None,
+        None,
+        false,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn render_party_personal(
+    state: &AppState,
+    kind: &str,
+    id: &str,
+    character_id: u64,
+    building: BuildingQuery,
+    session: &Session,
+    dialog: Option<Markup>,
+    surgery_open: Option<&str>,
+    social_open: bool,
+) -> Html<String> {
     let mut location = match resolve_location(&state, &kind, &id).await {
         LocationLookup::Found(location) => location,
         LocationLookup::NotFound => return Html("<h1>Location not found</h1>".to_string()),
@@ -2172,7 +2665,7 @@ async fn party_personal(
         }
     };
     location.active_building = building.valid().map(str::to_owned);
-    let Some((active_character, _)) =
+    let Some((active_character, active_inventory)) =
         get_active_character(&state, session.character_id_u64()).await
     else {
         return Html("<h1>Choose a character first</h1>".to_string());
@@ -2212,6 +2705,13 @@ async fn party_personal(
         ))
         .await
         .unwrap_or_default();
+    let apprenticeships: Vec<crate::spacetimedb::CharacterApprenticeship> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM character_apprenticeship WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default();
     let capability = get_character_capability(&state, character_id).await;
     let combat_profile = get_combat_training_profile(&state, character_id).await;
     let can_examine = get_character_capability(&state, active_character.id)
@@ -2240,7 +2740,8 @@ async fn party_personal(
         capability.as_ref(),
         settlement.as_ref(),
         stats.as_ref(),
-    );
+    )
+    .with_professions(skills.first(), &apprenticeships);
     let condition = get_strategic_condition(&state, character_id).await;
     let morale_sources = get_morale_sources(&state, character_id).await;
     let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
@@ -2255,8 +2756,9 @@ async fn party_personal(
     let notoriety = query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id)
         .await
         .map_or(0.0, |notoriety| notoriety.value);
-    let personality =
-        query_single::<CharacterPersonality>(&state, "character_personality", character_id).await;
+    // Authoritative personality is private. Ordinary pages render only
+    // observer-specific beliefs through the dedicated social route.
+    let personality: Option<CharacterPersonality> = None;
     let medical = medical_presentation(&state, character_id, character_id).await;
     let injuries = state
         .db
@@ -2281,6 +2783,23 @@ async fn party_personal(
         .unwrap_or_default()
         .into_iter()
         .next();
+    let filth = state
+        .db
+        .query::<crate::spacetimedb::CharacterFilth>(&format!(
+            "SELECT * FROM character_filth WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default();
+    let food_lots = state
+        .db
+        .query::<FoodLot>("SELECT * FROM food_lot")
+        .await
+        .unwrap_or_default();
+    let item_definitions = state
+        .db
+        .query::<ItemDefinition>("SELECT * FROM item")
+        .await
+        .unwrap_or_default();
     Html(
         party_personal_page(
             &location,
@@ -2304,9 +2823,85 @@ async fn party_personal(
             can_examine,
             &injuries,
             &projectiles,
+            &filth,
+            building.cooking(),
+            &active_inventory,
+            &food_lots,
+            &item_definitions,
+            dialog,
+            surgery_open,
+            social_open,
         )
         .into_string(),
     )
+}
+
+#[derive(Deserialize)]
+struct CookFoodForm {
+    method: String,
+    inventory_item_ids: String,
+    quantities: String,
+}
+
+async fn cook_food(
+    State(state): State<AppState>,
+    Path((kind, id, character_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
+    session: Session,
+    Form(form): Form<CookFoodForm>,
+) -> Response {
+    if session.character_id_u64() != Some(character_id) {
+        return (
+            StatusCode::FORBIDDEN,
+            "Only the selected character can cook",
+        )
+            .into_response();
+    }
+    let parse = |value: &str| -> Result<Vec<u64>, _> {
+        value
+            .split(',')
+            .filter(|value| !value.is_empty())
+            .map(str::parse)
+            .collect()
+    };
+    let ids = match parse(&form.inventory_item_ids) {
+        Ok(value) => value,
+        Err(_) => return (StatusCode::BAD_REQUEST, "Invalid ingredient selection").into_response(),
+    };
+    let quantities = match form
+        .quantities
+        .split(',')
+        .filter(|value| !value.is_empty())
+        .map(str::parse::<u32>)
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(value) => value,
+        Err(_) => {
+            return (StatusCode::BAD_REQUEST, "Invalid ingredient quantities").into_response();
+        }
+    };
+    let method = match form.method.as_str() {
+        "pan-fry" => json!({ "panFry": {} }),
+        "stew" => json!({ "stew": {} }),
+        "roast" => json!({ "roast": {} }),
+        "bake" => json!({ "bake": {} }),
+        _ => return (StatusCode::BAD_REQUEST, "Invalid cooking method").into_response(),
+    };
+    if let Err(error) = state
+        .db
+        .call(
+            "cook_food",
+            &[json!(character_id), method, json!(ids), json!(quantities)],
+        )
+        .await
+    {
+        tracing::warn!(%error, character_id, "cooking failed");
+        return (StatusCode::BAD_REQUEST, error.to_string()).into_response();
+    }
+    Redirect::to(&building.append_to(format!(
+        "/locations/{kind}/{id}/party/{character_id}?cook=true"
+    )))
+    .into_response()
 }
 
 async fn party_religion_knowledge_check(
@@ -2409,39 +3004,6 @@ struct TrainingScheduleForm {
     apprenticeship_service_id: Option<String>,
     profession_practice_minutes: u16,
     profession_service_id: Option<String>,
-    #[serde(default)]
-    combat_minutes: u16,
-    #[serde(default)]
-    combat_auto_train: bool,
-    melee_minutes: u16,
-    dodge_minutes: u16,
-    block_minutes: u16,
-    ranged_minutes: u16,
-    will_minutes: u16,
-    charisma_minutes: u16,
-    medicine_minutes: u16,
-    #[serde(default)]
-    religion_minutes: u16,
-    #[serde(default)]
-    religion_auto_train: bool,
-    #[serde(default)]
-    religion_roman_catholic_minutes: u16,
-    #[serde(default)]
-    religion_lutheran_minutes: u16,
-    #[serde(default)]
-    religion_reformed_minutes: u16,
-    #[serde(default)]
-    religion_anglican_minutes: u16,
-    #[serde(default)]
-    religion_eastern_orthodox_minutes: u16,
-    #[serde(default)]
-    religion_islamic_minutes: u16,
-    #[serde(default)]
-    religion_judaism_minutes: u16,
-    stealth_minutes: u16,
-    balance_minutes: u16,
-    surgeon_minutes: u16,
-    smithing_minutes: u16,
     labor_minutes: u16,
     prayer_minutes: u16,
     thievery_minutes: u16,
@@ -2454,40 +3016,15 @@ mod training_schedule_form_tests {
     use serde_json::json;
 
     #[test]
-    fn omitted_checkbox_and_inactive_religion_inputs_deserialize_as_false_and_zero() {
+    fn schedule_form_contains_only_activity_allocations() {
         let form: TrainingScheduleForm = serde_json::from_value(json!({
-            "melee_minutes": 0, "dodge_minutes": 0, "block_minutes": 0,
-            "ranged_minutes": 0, "will_minutes": 0, "charisma_minutes": 0,
-            "medicine_minutes": 0, "stealth_minutes": 0, "balance_minutes": 0,
-            "surgeon_minutes": 0, "smithing_minutes": 0, "labor_minutes": 0,
-            "prayer_minutes": 0, "thievery_minutes": 0, "raiding_minutes": 0
+            "combat_training_minutes": 90, "labor_minutes": 15,
+            "prayer_minutes": 30, "thievery_minutes": 0, "raiding_minutes": 0
         }))
         .unwrap();
-        assert!(!form.religion_auto_train);
-        assert!(!form.combat_auto_train);
-        assert_eq!(form.combat_minutes, 0);
-        assert_eq!(form.religion_minutes, 0);
-        assert_eq!(form.religion_judaism_minutes, 0);
-    }
-
-    #[test]
-    fn submitted_schedule_retains_both_religion_allocation_branches() {
-        let form: TrainingScheduleForm = serde_json::from_value(json!({
-            "melee_minutes": 0, "dodge_minutes": 0, "block_minutes": 0,
-            "ranged_minutes": 0, "will_minutes": 0, "charisma_minutes": 0,
-            "medicine_minutes": 0, "combat_minutes": 90, "combat_auto_train": true,
-            "religion_minutes": 120,
-            "religion_auto_train": false, "religion_judaism_minutes": 45,
-            "stealth_minutes": 0, "balance_minutes": 0, "surgeon_minutes": 0,
-            "smithing_minutes": 0, "labor_minutes": 0, "prayer_minutes": 0,
-            "thievery_minutes": 0, "raiding_minutes": 0
-        }))
-        .unwrap();
-        assert!(!form.religion_auto_train);
-        assert!(form.combat_auto_train);
-        assert_eq!(form.combat_minutes, 90);
-        assert_eq!(form.religion_minutes, 120);
-        assert_eq!(form.religion_judaism_minutes, 45);
+        assert_eq!(form.combat_training_minutes, 90);
+        assert_eq!(form.labor_minutes, 15);
+        assert_eq!(form.prayer_minutes, 30);
     }
 }
 
@@ -2512,30 +3049,6 @@ async fn update_training_schedule(
         apprenticeship_service_id: form.apprenticeship_service_id,
         profession_practice_minutes: form.profession_practice_minutes,
         profession_service_id: form.profession_service_id,
-        combat_minutes: form.combat_minutes,
-        combat_auto_train: form.combat_auto_train,
-        melee_minutes: form.melee_minutes,
-        dodge_minutes: form.dodge_minutes,
-        block_minutes: form.block_minutes,
-        ranged_minutes: form.ranged_minutes,
-        will_minutes: form.will_minutes,
-        charisma_minutes: form.charisma_minutes,
-        medicine_minutes: form.medicine_minutes,
-        religion_minutes: form.religion_minutes,
-        religion_auto_train: form.religion_auto_train,
-        religion_minutes_by_tradition: adventuresim_world_schema::ReligionMinutes {
-            roman_catholic: form.religion_roman_catholic_minutes,
-            lutheran: form.religion_lutheran_minutes,
-            reformed: form.religion_reformed_minutes,
-            anglican: form.religion_anglican_minutes,
-            eastern_orthodox: form.religion_eastern_orthodox_minutes,
-            islamic: form.religion_islamic_minutes,
-            judaism: form.religion_judaism_minutes,
-        },
-        stealth_minutes: form.stealth_minutes,
-        balance_minutes: form.balance_minutes,
-        surgeon_minutes: form.surgeon_minutes,
-        smithing_minutes: form.smithing_minutes,
         labor_minutes: form.labor_minutes,
         prayer_minutes: form.prayer_minutes,
         thievery_minutes: form.thievery_minutes,
@@ -2561,6 +3074,81 @@ async fn update_training_schedule(
             tracing::warn!(%error, character_id, "failed to update training schedule");
             (StatusCode::BAD_REQUEST, error.to_string()).into_response()
         }
+    }
+}
+
+#[derive(Deserialize)]
+struct ImmediateActivityForm {
+    activity: String,
+    requested_minutes: u64,
+    #[serde(default)]
+    service_id: Option<String>,
+}
+
+fn immediate_activity_arg(activity: &str) -> Option<serde_json::Value> {
+    let tag = match activity {
+        "prayer" => "prayer",
+        "combat_training" => "combatTraining",
+        "carousing" => "carousing",
+        "apprenticeship" => "apprenticeship",
+        "profession_practice" => "professionPractice",
+        "labor" => "labor",
+        "thievery" => "thievery",
+        "raiding" => "raiding",
+        _ => return None,
+    };
+    Some(json!({ (tag): {} }))
+}
+
+async fn perform_immediate_activity(
+    State(state): State<AppState>,
+    Path((kind, id, character_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
+    session: Session,
+    Form(form): Form<ImmediateActivityForm>,
+) -> Response {
+    if session.character_id_u64() != Some(character_id) {
+        return (
+            StatusCode::FORBIDDEN,
+            "Select this character before performing an activity",
+        )
+            .into_response();
+    }
+    let Some(activity) = immediate_activity_arg(&form.activity) else {
+        return (StatusCode::BAD_REQUEST, "Unknown activity").into_response();
+    };
+    if form.requested_minutes < 60
+        || form.requested_minutes > 1_440
+        || form.requested_minutes % 60 != 0
+    {
+        return (StatusCode::BAD_REQUEST, "Choose one to 24 whole hours").into_response();
+    }
+    let service_id = form.service_id.filter(|value| !value.is_empty());
+    match state
+        .db
+        .call(
+            "perform_immediate_activity",
+            &[
+                json!(character_id),
+                activity,
+                json!(form.requested_minutes),
+                json!(service_id),
+            ],
+        )
+        .await
+    {
+        Ok(()) => {
+            if let Some((character, _)) = get_active_character(&state, Some(character_id)).await
+                && let Some(quest_id) = character.current_quest_location_id
+            {
+                return Redirect::to(&format!("/locations/quest/{quest_id}")).into_response();
+            }
+            Redirect::to(
+                &building.append_to(format!("/locations/{kind}/{id}/party/{character_id}")),
+            )
+            .into_response()
+        }
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     }
 }
 
@@ -2645,16 +3233,27 @@ async fn party_member(
         .query("SELECT * FROM item")
         .await
         .unwrap_or_default();
+    let food_lots: Vec<FoodLot> = state
+        .db
+        .query("SELECT * FROM food_lot")
+        .await
+        .unwrap_or_default();
     let selected_targets = personal_inventory_targets(&state, selected.id).await;
     let active_targets = personal_inventory_targets(&state, active_character.id).await;
     let encumbrance_rows =
         EncumbranceRows::query(&state, &[selected.id, active_character.id]).await;
-    let selected_encumbrance =
-        personal_encumbrance(selected.id, &selected_inventory, &items, &encumbrance_rows);
+    let selected_encumbrance = personal_encumbrance(
+        selected.id,
+        &selected_inventory,
+        &items,
+        &food_lots,
+        &encumbrance_rows,
+    );
     let active_encumbrance = personal_encumbrance(
         active_character.id,
         &active_inventory,
         &items,
+        &food_lots,
         &encumbrance_rows,
     );
 
@@ -3045,6 +3644,32 @@ async fn party_stats(
     Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Html<String> {
+    render_party_stats(
+        &state,
+        &kind,
+        &id,
+        character_id,
+        building,
+        &session,
+        None,
+        None,
+        false,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn render_party_stats(
+    state: &AppState,
+    kind: &str,
+    id: &str,
+    character_id: u64,
+    building: BuildingQuery,
+    session: &Session,
+    dialog: Option<Markup>,
+    surgery_open: Option<&str>,
+    social_open: bool,
+) -> Html<String> {
     let mut location = match resolve_location(&state, &kind, &id).await {
         LocationLookup::Found(location) => location,
         LocationLookup::NotFound => return Html("<h1>Location not found</h1>".to_string()),
@@ -3144,8 +3769,7 @@ async fn party_stats(
     let notoriety = query_single::<CharacterNotoriety>(&state, "character_notoriety", character_id)
         .await
         .map_or(0.0, |notoriety| notoriety.value);
-    let personality =
-        query_single::<CharacterPersonality>(&state, "character_personality", character_id).await;
+    let personality: Option<CharacterPersonality> = None;
     let medical = medical_presentation(&state, active_character.id, character_id).await;
     let injuries = state
         .db
@@ -3158,6 +3782,13 @@ async fn party_stats(
         .db
         .query::<RetainedProjectile>(&format!(
             "SELECT * FROM retained_projectile WHERE character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default();
+    let filth = state
+        .db
+        .query::<CharacterFilth>(&format!(
+            "SELECT * FROM character_filth WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();
@@ -3183,6 +3814,10 @@ async fn party_stats(
             can_examine,
             &injuries,
             &projectiles,
+            &filth,
+            dialog,
+            surgery_open,
+            social_open,
         )
         .into_string(),
     )
@@ -3254,9 +3889,11 @@ pub(crate) async fn medical_presentation(
 async fn examine_patient(
     State(state): State<AppState>,
     Path((kind, id, target_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Redirect {
-    if let Some(doctor_id) = session.character_id_u64()
+    let doctor_id = session.character_id_u64();
+    if let Some(doctor_id) = doctor_id
         && let Err(error) = state
             .db
             .call("examine_patient", &[json!(doctor_id), json!(target_id)])
@@ -3264,15 +3901,17 @@ async fn examine_patient(
     {
         tracing::warn!(%error, doctor_id, target_id, "patient examination rejected");
     }
-    Redirect::to(&format!("/locations/{kind}/{id}/party/{target_id}/stats"))
+    Redirect::to(&building.append_to(character_details_path(&kind, &id, target_id, doctor_id)))
 }
 
 async fn dismiss_medical_examination(
     State(state): State<AppState>,
     Path((kind, id, target_id, examination_id)): Path<(String, String, u64, u64)>,
+    Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Redirect {
-    if let Some(doctor_id) = session.character_id_u64()
+    let doctor_id = session.character_id_u64();
+    if let Some(doctor_id) = doctor_id
         && let Err(error) = state
             .db
             .call(
@@ -3283,7 +3922,15 @@ async fn dismiss_medical_examination(
     {
         tracing::warn!(%error, doctor_id, target_id, examination_id, "examination dismissal rejected");
     }
-    Redirect::to(&format!("/locations/{kind}/{id}/party/{target_id}/stats"))
+    Redirect::to(&building.append_to(character_details_path(&kind, &id, target_id, doctor_id)))
+}
+
+fn character_details_path(kind: &str, id: &str, target_id: u64, viewer_id: Option<u64>) -> String {
+    if viewer_id == Some(target_id) {
+        format!("/locations/{kind}/{id}/party/{target_id}")
+    } else {
+        format!("/locations/{kind}/{id}/party/{target_id}/stats")
+    }
 }
 
 async fn get_strategic_condition(
@@ -3311,6 +3958,196 @@ async fn get_morale_sources(state: &AppState, character_id: u64) -> Vec<Characte
         .unwrap_or_default();
     sources.sort_by(|left, right| right.magnitude.abs().total_cmp(&left.magnitude.abs()));
     sources
+}
+
+async fn party_social(
+    State(state): State<AppState>,
+    Path((kind, id, target_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
+    session: Session,
+) -> Html<String> {
+    let mut location = match resolve_location(&state, &kind, &id).await {
+        LocationLookup::Found(location) => location,
+        LocationLookup::NotFound => return Html("<h1>Location not found</h1>".into()),
+        LocationLookup::Unavailable => {
+            return Html("<h1>Strategic data is unavailable</h1>".into());
+        }
+    };
+    location.active_building = building.valid().map(str::to_owned);
+    let Some((active, _)) = get_active_character(&state, session.character_id_u64()).await else {
+        return Html("<h1>Choose a character first</h1>".into());
+    };
+    let selected = if target_id == active.id {
+        active.clone()
+    } else {
+        match state
+            .db
+            .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {target_id}"))
+            .await
+            .ok()
+            .flatten()
+        {
+            Some(value) => value,
+            None => return Html("<h1>Party member not found</h1>".into()),
+        }
+    };
+    let same_party = target_id == active.id
+        || (active.party_id.is_some() && active.party_id == selected.party_id);
+    let colocated = active.current_settlement_id == selected.current_settlement_id
+        && active.current_quest_location_id == selected.current_quest_location_id;
+    if !same_party
+        || !colocated
+        || !active.alive
+        || !selected.alive
+        || !character_is_at_location(&active, &location)
+    {
+        return Html("<h1>Social actions require a living, co-located party member</h1>".into());
+    }
+    let party_members = get_active_party_members(&state, Some(&active)).await;
+    let sources = get_morale_sources(&state, target_id).await;
+    let actor_sources = get_morale_sources(&state, active.id).await;
+    let mut shared_concerns = actor_sources
+        .iter()
+        .filter(|source| {
+            adventuresim_core::social::social_source_eligible(&source.kind, source.magnitude)
+        })
+        .filter_map(|source| adventuresim_core::social::topic_for_source_kind(&source.kind))
+        .collect::<Vec<_>>();
+    shared_concerns.sort_by_key(|topic| format!("{topic:?}"));
+    shared_concerns.dedup();
+    let religion_id = query_single::<CharacterCondition>(&state, "character_condition", target_id)
+        .await
+        .and_then(|value| value.religion_id);
+    let virtue = query_single::<CharacterVirtue>(&state, "character_virtue", target_id)
+        .await
+        .map_or(0.0, |value| value.value);
+    let target_minute = query_single::<CharacterTime>(&state, "character_time", target_id)
+        .await
+        .map_or(0, |v| v.minutes);
+    let affinity_id = format!("{target_id}:{}", active.id);
+    let affinity_result = state
+        .db
+        .query_one::<CharacterAffinity>(&format!(
+            "SELECT * FROM backend_character_affinities WHERE id = {}",
+            sql_string_literal(&affinity_id)
+        ))
+        .await;
+    let affinity_available = affinity_result.is_ok();
+    let affinity = affinity_result.ok().flatten().map_or(0.0, |v| {
+        adventuresim_core::social::settle_affinity(
+            v.anchor,
+            target_minute.saturating_sub(v.anchor_minute),
+        )
+    });
+    let (low, high) = (active.id.min(target_id), active.id.max(target_id));
+    let familiarity_id = format!("{low}:{high}");
+    let familiarity_result = state
+        .db
+        .query_one::<CharacterFamiliarity>(&format!(
+            "SELECT * FROM backend_character_familiarities WHERE id = {}",
+            sql_string_literal(&familiarity_id)
+        ))
+        .await;
+    let familiarity_available = familiarity_result.is_ok();
+    let shared_minutes = familiarity_result
+        .ok()
+        .flatten()
+        .map_or(0, |v| v.shared_minutes);
+    let beliefs_result = state
+        .db
+        .query::<SocialBelief>(&format!(
+            "SELECT * FROM backend_social_beliefs WHERE observer_id = {}",
+            active.id
+        ))
+        .await;
+    let beliefs_available = beliefs_result.is_ok();
+    let beliefs = match beliefs_result {
+        Ok(rows) => rows
+            .into_iter()
+            .filter(|row| row.subject_id == target_id)
+            .collect(),
+        Err(error) => {
+            tracing::error!(%error, observer_id=active.id, target_id, "private social belief query failed closed");
+            Vec::new()
+        }
+    };
+    let social = SocialPresentation {
+        affinity,
+        familiarity_hours: adventuresim_core::social::effective_familiarity_hours(
+            shared_minutes,
+            party_members.iter().filter(|v| v.alive).count(),
+            true,
+        ),
+        religion_id,
+        virtue,
+        beliefs,
+        shared_concerns,
+        unavailable: !beliefs_available || !affinity_available || !familiarity_available,
+    };
+    let dialog = party_social_dialog(&location, &selected, &active, &sources, &social);
+    if target_id == active.id {
+        render_party_personal(
+            &state,
+            &kind,
+            &id,
+            target_id,
+            building,
+            &session,
+            Some(dialog),
+            None,
+            true,
+        )
+        .await
+    } else {
+        render_party_stats(
+            &state,
+            &kind,
+            &id,
+            target_id,
+            building,
+            &session,
+            Some(dialog),
+            None,
+            true,
+        )
+        .await
+    }
+}
+
+#[derive(Deserialize)]
+struct SocialActionForm {
+    source_id: String,
+    action_kind: String,
+}
+
+async fn perform_social_action(
+    State(state): State<AppState>,
+    Path((kind, id, target_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
+    session: Session,
+    Form(form): Form<SocialActionForm>,
+) -> Response {
+    let Some(actor_id) = session.character_id_u64() else {
+        return (StatusCode::UNAUTHORIZED, "Choose a character first").into_response();
+    };
+    // The actor is derived exclusively from the signed session, never form input.
+    if let Err(error) = state
+        .db
+        .call(
+            "perform_social_action",
+            &[
+                json!(actor_id),
+                json!(target_id),
+                json!(form.source_id),
+                json!(form.action_kind),
+            ],
+        )
+        .await
+    {
+        tracing::warn!(%error, actor_id, target_id, "social action rejected");
+    }
+    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party/{target_id}/social")))
+        .into_response()
 }
 
 #[derive(Deserialize)]
@@ -3540,76 +4377,7 @@ async fn inn(
     Path(id): Path<String>,
     session: Session,
 ) -> Html<String> {
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM settlement WHERE id = {}",
-            sql_string_literal(&id)
-        ))
-        .await
-        .unwrap_or_default();
-
-    let settlement = match settlements.first() {
-        Some(s) => s,
-        None => return Html("<h1>Settlement not found</h1>".to_string()),
-    };
-
-    let active_character = get_active_character(&state, session.character_id_u64()).await;
-    let party_members = get_active_party_members(
-        &state,
-        active_character.as_ref().map(|(character, _)| character),
-    )
-    .await;
-    let logged_in_as = active_character
-        .as_ref()
-        .map(|(character, _)| character.name.clone());
-    let limbs = match active_character.as_ref() {
-        Some((character, _)) => {
-            query_single::<CharacterLimbs>(&state, "character_limbs", character.id).await
-        }
-        None => None,
-    };
-    let stats = match active_character.as_ref() {
-        Some((character, _)) => {
-            query_single::<CharacterStats>(&state, "character_stats", character.id).await
-        }
-        None => None,
-    };
-    let condition = match active_character.as_ref() {
-        Some((character, _)) => {
-            query_single::<CharacterCondition>(&state, "character_condition", character.id).await
-        }
-        None => None,
-    };
-    let (field_repair_minutes, smith_wait_minutes) = match active_character.as_ref() {
-        Some((character, inventory)) => {
-            equipment_rest_recommendation(&state, character.id, &id, inventory).await
-        }
-        None => (0, 0),
-    };
-    let items = state
-        .db
-        .query::<ItemDefinition>("SELECT * FROM item")
-        .await
-        .unwrap_or_default();
-    Html(
-        inn_page(
-            settlement,
-            active_character.as_ref().map(|(character, _)| character),
-            active_character
-                .as_ref()
-                .map_or(&[], |(_, inventory)| inventory.as_slice()),
-            &items,
-            &party_members,
-            limbs.as_ref(),
-            stats.as_ref(),
-            condition.as_ref(),
-            field_repair_minutes,
-            smith_wait_minutes,
-            logged_in_as.as_deref(),
-        )
-        .into_string(),
-    )
+    merchant_shop(state, id, session, MerchantShop::Inn).await
 }
 
 #[derive(Deserialize)]
@@ -3796,6 +4564,16 @@ async fn rest(
         .query::<ItemDefinition>("SELECT * FROM item")
         .await
         .unwrap_or_default();
+    let soap_preview = soap_rest_preview(
+        &state,
+        active_character
+            .as_ref()
+            .map_or(&[][..], |(character, _)| std::slice::from_ref(character)),
+        active_character
+            .as_ref()
+            .and_then(|(character, _)| character.party_id.as_deref()),
+    )
+    .await;
     Html(
         rest_result_page(
             settlement,
@@ -3808,6 +4586,7 @@ async fn rest(
             logged_in_as.as_deref(),
             at_inn,
             &summary,
+            soap_preview,
         )
         .into_string(),
     )
@@ -3897,13 +4676,30 @@ fn limb_deltas(before: &CharacterLimbs, after: &CharacterLimbs) -> Vec<(String, 
 
 fn skill_deltas(before: &CharacterSkills, after: &CharacterSkills) -> Vec<(String, f32)> {
     [
-        ("Melee", before.melee_hours, after.melee_hours),
+        ("Polearm", before.polearm_hours, after.polearm_hours),
+        ("Axe", before.axe_hours, after.axe_hours),
+        ("Bludgeon", before.bludgeon_hours, after.bludgeon_hours),
+        ("Sword", before.sword_hours, after.sword_hours),
+        ("Knife", before.knife_hours, after.knife_hours),
         ("Dodge", before.dodge_hours, after.dodge_hours),
         ("Block", before.block_hours, after.block_hours),
-        ("Ranged", before.ranged_hours, after.ranged_hours),
+        ("Bow", before.bow_hours, after.bow_hours),
+        ("Crossbow", before.crossbow_hours, after.crossbow_hours),
+        ("Firearm", before.firearm_hours, after.firearm_hours),
+        ("Throw", before.throw_hours, after.throw_hours),
         ("Will", before.will_hours, after.will_hours),
-        ("Charisma", before.charisma_hours, after.charisma_hours),
+        ("Insight", before.insight_hours, after.insight_hours),
+        (
+            "Self-awareness",
+            before.self_awareness_hours,
+            after.self_awareness_hours,
+        ),
+        ("Humor", before.humor_hours, after.humor_hours),
+        ("Command", before.command_hours, after.command_hours),
+        ("Deception", before.deception_hours, after.deception_hours),
+        ("Seduction", before.seduction_hours, after.seduction_hours),
         ("Medicine", before.medicine_hours, after.medicine_hours),
+        ("Cooking", before.cooking_hours, after.cooking_hours),
         (
             "Religion",
             before.religion_hours.total_direct(),
@@ -3911,7 +4707,8 @@ fn skill_deltas(before: &CharacterSkills, after: &CharacterSkills) -> Vec<(Strin
         ),
         ("Stealth", before.stealth_hours, after.stealth_hours),
         ("Balance", before.balance_hours, after.balance_hours),
-        ("Surgeon", before.surgeon_hours, after.surgeon_hours),
+        ("Anatomy", before.anatomy_hours, after.anatomy_hours),
+        ("Tailoring", before.tailoring_hours, after.tailoring_hours),
         ("Smithing", before.smithing_hours, after.smithing_hours),
     ]
     .into_iter()
@@ -4146,6 +4943,7 @@ struct ReligionForm {
 struct ReligionDialogue {
     religion_id: Option<String>,
     priest_religion_id: String,
+    represented_religion_ids: Vec<String>,
     can_choose: bool,
 }
 
@@ -4168,11 +4966,22 @@ async fn religion_dialogue(
         .as_ref()
         .map(|settlement| settlement.religion_id.clone())
         .unwrap_or_default();
+    let represented_religion_ids = settlement
+        .as_ref()
+        .map(|s| {
+            s.religious_status
+                .represented_religions()
+                .into_iter()
+                .map(|r| r.religion_id().to_string())
+                .collect()
+        })
+        .unwrap_or_default();
     let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
     else {
         return Json(ReligionDialogue {
             religion_id: None,
             priest_religion_id,
+            represented_religion_ids,
             can_choose: false,
         });
     };
@@ -4191,6 +5000,7 @@ async fn religion_dialogue(
     Json(ReligionDialogue {
         religion_id: condition.and_then(|condition| condition.religion_id),
         priest_religion_id,
+        represented_religion_ids,
         can_choose,
     })
 }
@@ -4226,7 +5036,12 @@ async fn set_religion(
             message: "There is no church here to receive your profession.",
         });
     };
-    if religion_id != settlement.religion_id {
+    if !settlement
+        .religious_status
+        .represented_religions()
+        .iter()
+        .any(|religion| religion.religion_id() == religion_id)
+    {
         return Json(ReligionChange {
             changed: false,
             religion_id: None,
@@ -4301,6 +5116,7 @@ type ServiceRenderer = fn(
     Option<&CharacterCondition>,
     u64,
     u64,
+    SoapRestPreview,
     Option<&str>,
 ) -> maud::Markup;
 
@@ -4320,6 +5136,18 @@ async fn merchant_shop(
     let Some(settlement) = settlements.first() else {
         return Html("<h1>Settlement not found</h1>".to_string());
     };
+    if !shop.available_at(settlement) {
+        return Html(
+            crate::templates::strategic_notice_page(
+                "Service unavailable",
+                "This settlement does not offer that service.",
+                &format!("/locations/settlement/{}", settlement.id),
+                "Return to settlement",
+                None,
+            )
+            .into_string(),
+        );
+    }
     let logged_in_as = active_character
         .as_ref()
         .map(|(character, _)| character.name.clone());
@@ -4351,9 +5179,10 @@ async fn merchant_shop(
         "SELECT * FROM character_time WHERE character_id = {}",
         character.id
     );
-    let (party_members, items, equip, trade_context, conditions, smiths, orders, times) = tokio::join!(
+    let (party_members, items, food_lots, equip, trade_context, conditions, smiths, orders, times) = tokio::join!(
         get_active_party_members(&state, Some(character)),
         state.db.query::<ItemDefinition>("SELECT * FROM item"),
+        state.db.query::<FoodLot>("SELECT * FROM food_lot"),
         state.db.query::<CharacterEquip>(&equip_sql),
         inventory_trade_context(&state, character),
         state.db.query::<ItemCondition>(&condition_sql),
@@ -4374,18 +5203,55 @@ async fn merchant_shop(
         !matches!(shop, MerchantShop::Herbalist),
     )
     .await;
+    let (inn_rest_default, inn_soap_preview) = if matches!(shop, MerchantShop::Inn) {
+        let (limbs, stats, condition) = tokio::join!(
+            query_single::<CharacterLimbs>(&state, "character_limbs", character.id),
+            query_single::<CharacterStats>(&state, "character_stats", character.id),
+            query_single::<CharacterCondition>(&state, "character_condition", character.id),
+        );
+        let (field_repair_minutes, smith_wait_minutes) =
+            equipment_rest_recommendation(&state, character.id, &id, inventory).await;
+        let soap = soap_rest_preview(
+            &state,
+            std::slice::from_ref(character),
+            character.party_id.as_deref(),
+        )
+        .await;
+        (
+            rest_default_minutes(
+                limbs.as_ref(),
+                stats.as_ref(),
+                condition.as_ref(),
+                field_repair_minutes,
+                smith_wait_minutes,
+            ),
+            soap,
+        )
+    } else {
+        (None, SoapRestPreview::default())
+    };
+    let speaker = query_single::<CharacterSkills>(&state, "character_skills", character.id)
+        .await
+        .map_or_default(|skills| skills.oral_languages);
+    let mut merchant_languages = adventuresim_world_schema::OralLanguageHours::default();
+    *merchant_languages.direct_mut(settlement.languages.dominant_german()) =
+        adventuresim_world_schema::ORAL_FLUENCY_HOURS;
+    let (_, shared_language) =
+        adventuresim_world_schema::best_common_oral_language(speaker, merchant_languages);
     Html(
         live_merchant_shop_page(
             settlement,
             character,
             inventory,
             &items,
+            &food_lots.unwrap_or_default(),
             &party_members,
             equip.first(),
             &personal_targets,
             &party_targets,
             &pooled,
             shop,
+            shared_language,
             &conditions.unwrap_or_default(),
             smiths.unwrap_or_default().first(),
             &orders.unwrap_or_default(),
@@ -4395,6 +5261,8 @@ async fn merchant_shop(
                 .map_or(0, |time| time.minutes),
             encumbrance.personal,
             encumbrance.party,
+            inn_rest_default,
+            inn_soap_preview,
         )
         .into_string(),
     )
@@ -4517,6 +5385,12 @@ async fn render_service_page(
         condition_lookup,
         equipment_lookup,
     );
+    let soap_preview = soap_rest_preview(
+        &state,
+        active_character_ref.map_or(&[][..], std::slice::from_ref),
+        active_character_ref.and_then(|character| character.party_id.as_deref()),
+    )
+    .await;
     let logged_in_as = active_character
         .as_ref()
         .map(|(character, _)| character.name.clone());
@@ -4536,6 +5410,7 @@ async fn render_service_page(
             condition.as_ref(),
             equipment_recovery.0,
             equipment_recovery.1,
+            soap_preview,
             logged_in_as.as_deref(),
         )
         .into_string(),
@@ -4652,10 +5527,21 @@ async fn inventory_encumbrance_summaries(
         .flatten()
         .collect::<Vec<_>>();
     let rows = EncumbranceRows::query(state, &encumbrance_ids).await;
+    let food_lots = state
+        .db
+        .query::<FoodLot>("SELECT * FROM food_lot")
+        .await
+        .unwrap_or_default();
     InventoryEncumbranceSummaries {
-        personal: personal_encumbrance(active_character.id, active_inventory, items, &rows),
+        personal: personal_encumbrance(
+            active_character.id,
+            active_inventory,
+            items,
+            &food_lots,
+            &rows,
+        ),
         party: include_party
-            .then(|| party_encumbrance(members, &all_inventories, pooled, items, &rows))
+            .then(|| party_encumbrance(members, &all_inventories, pooled, items, &food_lots, &rows))
             .unwrap_or_default(),
     }
 }
@@ -4709,6 +5595,7 @@ fn personal_encumbrance(
     character_id: u64,
     inventory: &[InventoryItem],
     items: &[ItemDefinition],
+    food_lots: &[FoodLot],
     rows: &EncumbranceRows,
 ) -> EncumbranceSummary {
     let body_weight = rows
@@ -4724,7 +5611,15 @@ fn personal_encumbrance(
     let inventory_weight = inventory
         .iter()
         .filter(|row| row.character_id == character_id)
-        .map(|row| item_stack_weight_kg(&row.item_id, row.qty, items))
+        .map(|row| {
+            food_lots
+                .iter()
+                .find(|lot| lot.inventory_item_id == Some(row.id))
+                .map_or_else(
+                    || item_stack_weight_kg(&row.item_id, row.qty, items),
+                    |lot| lot.mass_kg.max(0.0),
+                )
+        })
         .sum::<f32>();
     let capacity = rows
         .attributes
@@ -4751,17 +5646,32 @@ fn party_encumbrance(
     inventories: &[InventoryItem],
     pooled: &[PartyInventoryItem],
     items: &[ItemDefinition],
+    food_lots: &[FoodLot],
     rows: &EncumbranceRows,
 ) -> EncumbranceSummary {
     let member_summary = members.iter().filter(|member| member.alive).fold(
         EncumbranceSummary::default(),
         |summary, member| {
-            summary.combined(personal_encumbrance(member.id, inventories, items, rows))
+            summary.combined(personal_encumbrance(
+                member.id,
+                inventories,
+                items,
+                food_lots,
+                rows,
+            ))
         },
     );
     let pooled_weight = pooled
         .iter()
-        .map(|row| item_stack_weight_kg(&row.item_id, row.quantity, items))
+        .map(|row| {
+            food_lots
+                .iter()
+                .find(|lot| lot.party_inventory_item_id == Some(row.id))
+                .map_or_else(
+                    || item_stack_weight_kg(&row.item_id, row.quantity, items),
+                    |lot| lot.mass_kg.max(0.0),
+                )
+        })
         .sum::<f32>();
     member_summary.combined(EncumbranceSummary::new(pooled_weight, 0.0))
 }
@@ -4832,8 +5742,7 @@ async fn get_combat_training_profile(state: &AppState, character_id: u64) -> Com
             .flatten();
         if let Some(item) = definition {
             hands.push(EquippedCombatItem {
-                melee: item.kind == ItemKind::Weapon && item.melee,
-                ranged: item.kind == ItemKind::Weapon && item.ranged,
+                weapons: item.weapon_skills.core(),
                 shield: item.kind == ItemKind::Shield,
                 balance: item.balance,
             });
@@ -4883,11 +5792,177 @@ pub(crate) async fn get_active_party_members(
     members
 }
 
+pub(crate) async fn soap_rest_preview(
+    state: &AppState,
+    members: &[Character],
+    party_id: Option<&str>,
+) -> SoapRestPreview {
+    let (filth, personal, shared, definitions, personalities) = tokio::join!(
+        state
+            .db
+            .query::<CharacterFilth>("SELECT * FROM character_filth"),
+        state
+            .db
+            .query::<InventoryItem>("SELECT * FROM inventory_item"),
+        state
+            .db
+            .query::<PartyInventoryItem>("SELECT * FROM party_inventory_item"),
+        state.db.query::<ItemDefinition>("SELECT * FROM item"),
+        state
+            .db
+            .query::<CharacterPersonality>("SELECT * FROM character_personality"),
+    );
+    let personal = personal.unwrap_or_default();
+    let shared = shared.unwrap_or_default();
+    let mut preview = calculate_soap_rest_preview(
+        members,
+        &filth.unwrap_or_default(),
+        &personal,
+        &shared,
+        party_id,
+    );
+    calculate_rest_supply_availability(
+        &mut preview,
+        members,
+        &personal,
+        &shared,
+        &definitions.unwrap_or_default(),
+        &personalities.unwrap_or_default(),
+        party_id,
+    );
+    preview
+}
+
+fn calculate_rest_supply_availability(
+    preview: &mut SoapRestPreview,
+    members: &[Character],
+    personal: &[InventoryItem],
+    shared: &[PartyInventoryItem],
+    definitions: &[ItemDefinition],
+    personalities: &[CharacterPersonality],
+    party_id: Option<&str>,
+) {
+    const SOAP_ITEM_ID: &str = "soft_soap";
+    let living_ids = members
+        .iter()
+        .filter(|member| member.alive)
+        .map(|member| member.id)
+        .collect::<std::collections::BTreeSet<_>>();
+    let is_temperate = |character_id| {
+        personalities
+            .iter()
+            .find(|personality| personality.character_id == character_id)
+            .is_some_and(|personality| {
+                personality.temperance == crate::spacetimedb::Temperance::Temperate
+            })
+    };
+    let alcoholic_ids = definitions
+        .iter()
+        .filter(|item| {
+            item.alcohol_potable
+                && item.alcohol_serving_ml > 0
+                && item.alcohol_abv_basis_points > 0
+                && !item.alcohol_disinfectant_focused
+        })
+        .map(|item| item.id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+
+    let personal_soap = personal
+        .iter()
+        .filter(|stack| living_ids.contains(&stack.character_id) && stack.item_id == SOAP_ITEM_ID)
+        .map(|stack| stack.qty)
+        .sum::<u32>();
+    let shared_soap = party_id.map_or(0, |party_id| {
+        shared
+            .iter()
+            .filter(|stack| stack.party_id == party_id && stack.item_id == SOAP_ITEM_ID)
+            .map(|stack| stack.quantity)
+            .sum::<u32>()
+    });
+    preview.available_units = personal_soap.saturating_add(shared_soap);
+
+    let personal_alcohol = personal.iter().any(|stack| {
+        living_ids.contains(&stack.character_id)
+            && stack.qty > 0
+            && alcoholic_ids.contains(stack.item_id.as_str())
+    });
+    let personal_drink = personal.iter().any(|stack| {
+        living_ids.contains(&stack.character_id)
+            && !is_temperate(stack.character_id)
+            && stack.qty > 0
+            && alcoholic_ids.contains(stack.item_id.as_str())
+    });
+    let shared_alcohol = party_id.is_some_and(|party_id| {
+        shared.iter().any(|stack| {
+            stack.party_id == party_id
+                && stack.quantity > 0
+                && alcoholic_ids.contains(stack.item_id.as_str())
+        })
+    });
+    let has_non_temperate_member = living_ids
+        .iter()
+        .any(|character_id| !is_temperate(*character_id));
+    preview.alcohol_available = personal_alcohol || shared_alcohol;
+    preview.alcohol_will_be_consumed =
+        personal_drink || (shared_alcohol && has_non_temperate_member);
+}
+
+fn calculate_soap_rest_preview(
+    members: &[Character],
+    filth: &[CharacterFilth],
+    personal: &[InventoryItem],
+    shared: &[PartyInventoryItem],
+    party_id: Option<&str>,
+) -> SoapRestPreview {
+    const SOAP_ITEM_ID: &str = "soft_soap";
+    let mut personal_units = 0_u32;
+    let mut need_after_personal = 0_u32;
+    for member in members.iter().filter(|member| member.alive) {
+        let amount = filth
+            .iter()
+            .filter(|deposit| deposit.character_id == member.id)
+            .map(|deposit| u32::from(deposit.amount))
+            .sum::<u32>();
+        let needed = amount.div_ceil(u32::from(adventuresim_core::filth::SOAP_CLEANSING_CAPACITY));
+        let available = personal
+            .iter()
+            .filter(|stack| stack.character_id == member.id && stack.item_id == SOAP_ITEM_ID)
+            .map(|stack| stack.qty)
+            .sum::<u32>();
+        let used = needed.min(available);
+        personal_units = personal_units.saturating_add(used);
+        need_after_personal = need_after_personal.saturating_add(needed.saturating_sub(used));
+    }
+    let shared_available = party_id.map_or(0, |party_id| {
+        shared
+            .iter()
+            .filter(|stack| stack.party_id == party_id && stack.item_id == SOAP_ITEM_ID)
+            .map(|stack| stack.quantity)
+            .sum()
+    });
+    let shared_units = need_after_personal.min(shared_available);
+    SoapRestPreview {
+        total_units: personal_units.saturating_add(shared_units),
+        personal_units,
+        shared_units,
+        ..SoapRestPreview::default()
+    }
+}
+
 #[cfg(test)]
 mod rest_form_tests {
     use adventuresim_core::strategic_time::{is_walking_time, minutes_until_next_walking_start};
 
-    use super::{RestForm, settlement_rest_minutes, travel_rest_minutes};
+    use super::{
+        RestForm, calculate_rest_supply_availability, calculate_soap_rest_preview,
+        settlement_rest_minutes, travel_rest_minutes,
+    };
+    use crate::spacetimedb::{
+        Character, CharacterFilth, CharacterPersonality, Conscience, Conviction, Drive,
+        FilthOrigin, FilthSubstance, Hygiene, InventoryItem, ItemDefinition, Nerve, Outlook,
+        PartyInventoryItem, SelfRegard, Sociability, Temperance,
+    };
+    use crate::templates::settlement::SoapRestPreview;
 
     fn form(duration: &str, unit: &str, requested_minutes: Option<u64>) -> RestForm {
         RestForm {
@@ -4895,6 +5970,130 @@ mod rest_form_tests {
             unit: unit.into(),
             requested_minutes,
         }
+    }
+
+    fn member(id: u64) -> Character {
+        Character {
+            id,
+            name: format!("Member {id}"),
+            xp: 0,
+            level: 1,
+            gold: 0,
+            current_settlement_id: None,
+            current_quest_location_id: None,
+            party_id: Some("party".into()),
+            age_years: 30,
+            alive: true,
+            temporary: false,
+        }
+    }
+
+    fn personality(character_id: u64, temperance: Temperance) -> CharacterPersonality {
+        CharacterPersonality {
+            character_id,
+            nerve: Nerve::Neutral,
+            drive: Drive::Neutral,
+            outlook: Outlook::Neutral,
+            sociability: Sociability::Neutral,
+            conscience: Conscience::Neutral,
+            self_regard: SelfRegard::Neutral,
+            conviction: Conviction::Neutral,
+            hygiene: Hygiene::Neutral,
+            temperance,
+        }
+    }
+
+    #[test]
+    fn soap_preview_exactly_splits_personal_and_shared_units() {
+        let filth = [
+            CharacterFilth {
+                id: 1,
+                character_id: 1,
+                substance: FilthSubstance::Dirt,
+                origin: FilthOrigin::Unknown,
+                amount: 26,
+                deposited_at: 0,
+            },
+            CharacterFilth {
+                id: 2,
+                character_id: 2,
+                substance: FilthSubstance::Blood,
+                origin: FilthOrigin::Foreign,
+                amount: 30,
+                deposited_at: 0,
+            },
+        ];
+        let personal = [InventoryItem {
+            id: 1,
+            character_id: 1,
+            item_id: "soft_soap".into(),
+            qty: 1,
+        }];
+        let shared = [PartyInventoryItem {
+            id: 1,
+            party_id: "party".into(),
+            item_id: "soft_soap".into(),
+            quantity: 2,
+        }];
+        let preview = calculate_soap_rest_preview(
+            &[member(1), member(2)],
+            &filth,
+            &personal,
+            &shared,
+            Some("party"),
+        );
+        assert_eq!(preview.personal_units, 1);
+        assert_eq!(preview.shared_units, 2);
+        assert_eq!(preview.total_units, 3);
+    }
+
+    #[test]
+    fn rest_supply_availability_greys_alcohol_for_temperate_characters() {
+        let supplies = [
+            InventoryItem {
+                id: 1,
+                character_id: 1,
+                item_id: "soft_soap".into(),
+                qty: 1,
+            },
+            InventoryItem {
+                id: 2,
+                character_id: 1,
+                item_id: "table_wine".into(),
+                qty: 1,
+            },
+        ];
+        let alcohol = ItemDefinition {
+            id: "table_wine".into(),
+            alcohol_serving_ml: 250,
+            alcohol_abv_basis_points: 1_200,
+            alcohol_potable: true,
+            ..ItemDefinition::default()
+        };
+        let mut preview = SoapRestPreview::default();
+        calculate_rest_supply_availability(
+            &mut preview,
+            &[member(1)],
+            &supplies,
+            &[],
+            &[alcohol.clone()],
+            &[personality(1, Temperance::Temperate)],
+            Some("party"),
+        );
+        assert_eq!(preview.available_units, 1);
+        assert!(preview.alcohol_available);
+        assert!(!preview.alcohol_will_be_consumed);
+
+        calculate_rest_supply_availability(
+            &mut preview,
+            &[member(1)],
+            &supplies,
+            &[],
+            &[alcohol],
+            &[personality(1, Temperance::Neutral)],
+            Some("party"),
+        );
+        assert!(preview.alcohol_will_be_consumed);
     }
 
     #[test]
@@ -5053,7 +6252,7 @@ mod encumbrance_tests {
     };
     use crate::spacetimedb::{
         Character, CharacterAttributes, CharacterCondition, CharacterLimbs, CharacterNeeds,
-        InventoryItem, ItemDefinition, PartyInventoryItem,
+        FoodLot, FoodPreparation, InventoryItem, ItemDefinition, PartyInventoryItem,
     };
     use serde_json::json;
 
@@ -5146,7 +6345,7 @@ mod encumbrance_tests {
             item_id: "sword".into(),
             qty: 3,
         }];
-        let summary = personal_encumbrance(1, &inventory, &[item("sword", 4.0)], &rows());
+        let summary = personal_encumbrance(1, &inventory, &[item("sword", 4.0)], &[], &rows());
         assert_eq!(summary.burden_kg, 84.5);
         assert_eq!(summary.capacity_kg, 300.0);
     }
@@ -5178,6 +6377,7 @@ mod encumbrance_tests {
             &inventories,
             &pooled,
             &[item("sword", 4.0)],
+            &[],
             &rows(),
         );
         assert_eq!(summary.burden_kg, 92.5);
@@ -5206,10 +6406,48 @@ mod encumbrance_tests {
                 qty: 4,
             }],
             &[],
+            &[],
             &EncumbranceRows::default(),
         );
         assert_eq!(summary.burden_kg, 0.0);
         assert_eq!(summary.capacity_kg, 0.0);
         assert_eq!(summary.penalty_fraction(), 1.0);
+    }
+
+    #[test]
+    fn linked_food_lot_mass_replaces_static_item_weight() {
+        let inventory = vec![InventoryItem {
+            id: 40,
+            character_id: 1,
+            item_id: "cooked_meal".into(),
+            qty: 1,
+        }];
+        let lots = vec![FoodLot {
+            id: 5,
+            inventory_item_id: Some(40),
+            party_inventory_item_id: None,
+            display_name: "Large stew".into(),
+            preparation: FoodPreparation::Stewed,
+            ingredient_item_ids: vec!["raw_venison".into()],
+            ingredient_quantities: vec![25.0],
+            mass_kg: 25.0,
+            nutrition_kcal: 10_000.0,
+            total_value: 25.0,
+            created_at_minute: 1,
+        }];
+        let summary =
+            personal_encumbrance(1, &inventory, &[item("cooked_meal", 0.0)], &lots, &rows());
+        assert_eq!(summary.burden_kg, 97.5);
+
+        let mut partial = lots[0].clone();
+        partial.mass_kg = 6.25;
+        let summary = personal_encumbrance(
+            1,
+            &inventory,
+            &[item("cooked_meal", 0.0)],
+            &[partial],
+            &rows(),
+        );
+        assert_eq!(summary.burden_kg, 78.75);
     }
 }

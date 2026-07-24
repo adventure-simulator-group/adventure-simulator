@@ -13,9 +13,12 @@ use serde_json::json;
 use super::{
     AppState, PartyAction, PartyActionOutcome, execute_or_request_party_action,
     participates_in_party_readiness,
-    settlements::{RestForm, get_active_party_members, living_party_members, travel_rest_minutes},
+    settlements::{
+        RestForm, get_active_party_members, living_party_members, soap_rest_preview,
+        travel_rest_minutes,
+    },
     travel::{
-        QuestMapMarkers, TravelDestination, TravelForm, active_quest_tooltip,
+        QuestMapMarkers, TravelDestination, TravelForm, active_quest_tooltip, apply_terrain_route,
         populate_itinerary_forecasts, settlement_destination,
     },
 };
@@ -545,7 +548,8 @@ async fn render_quest_location(
             .and_then(|party| party.active_quest_id.as_deref()),
     );
     let mut nearby: Vec<TravelDestination> = settlements
-        .into_iter()
+        .iter()
+        .cloned()
         .map(|settlement| {
             let distance_m = straight_line_distance_m(quest, &settlement);
             settlement_destination(settlement, distance_m, offroad_journey_minutes(distance_m))
@@ -556,6 +560,30 @@ async fn render_quest_location(
     }
     nearby.sort_by_key(|destination| destination.distance_m);
     nearby.truncate(5);
+    if let QuestLocationTab::Map(Some(selected_id)) = &tab
+        && let Some(destination) = nearby
+            .iter_mut()
+            .find(|destination| destination.id == *selected_id)
+        && let Some(settlement) = settlements
+            .iter()
+            .find(|settlement| settlement.id == destination.id)
+    {
+        let terrain_profile = if let Some(character) = character.as_ref() {
+            crate::routes::party_terrain_profile(&state, character)
+                .await
+                .unwrap_or_default()
+        } else {
+            adventuresim_terrain::TerrainSkillProfile::default()
+        };
+        apply_terrain_route(
+            destination,
+            state.terrain.as_deref(),
+            (quest.location_coord_y, quest.location_coord_x),
+            (settlement.coord_y, settlement.coord_x),
+            terrain_profile,
+        )
+        .await;
+    }
     let can_control = character.as_ref().zip(party.as_ref()).is_some();
     let can_configure_travel = character
         .as_ref()
@@ -710,6 +738,12 @@ async fn render_quest_location(
             .as_ref()
             .is_some_and(|party| party.active_quest_id.as_deref() == Some(&quest.id));
     let logged_in_as = character.as_ref().map(|c| c.name.as_str());
+    let soap_preview = soap_rest_preview(
+        &state,
+        &party_members,
+        party.as_ref().map(|party| party.id.as_str()),
+    )
+    .await;
     let page = match tab {
         QuestLocationTab::Map(selected) => quest_location_map_page(
             quest,
@@ -724,6 +758,7 @@ async fn render_quest_location(
             party.as_ref(),
             can_configure_travel,
             default_rest_minutes,
+            soap_preview,
             logged_in_as,
         ),
         QuestLocationTab::Enemy => quest_location_enemy_page(
@@ -736,6 +771,7 @@ async fn render_quest_location(
             party.as_ref(),
             can_configure_travel,
             default_rest_minutes,
+            soap_preview,
             &loot,
             &pooled,
             stake,

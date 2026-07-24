@@ -30,6 +30,39 @@ pub fn merchant_sell_price(base_value: u32) -> u32 {
     (base_value as f32 / MERCHANT_MARGIN).floor().max(1.0) as u32
 }
 
+pub fn language_adjusted_buy_price(price: u32, shared_language: f32) -> u32 {
+    let coefficient = if shared_language.is_finite() {
+        shared_language.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    (price as f32 * (1.0 + (1.0 - coefficient) * 0.25)).ceil() as u32
+}
+
+pub fn language_adjusted_sell_price(price: u32, shared_language: f32) -> u32 {
+    if price == 0 {
+        return 0;
+    }
+    let coefficient = if shared_language.is_finite() {
+        shared_language.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    (price as f32 * (1.0 - (1.0 - coefficient) * 0.20))
+        .floor()
+        .max(1.0) as u32
+}
+
+/// Food lots can have fractional remaining value after a meal. Unlike a whole
+/// item quote, a sub-coin remainder may sell for zero and must never be rounded
+/// back up into a fresh unit of value.
+pub fn merchant_sell_food_lot_value(total_value: f32) -> Option<u64> {
+    if !total_value.is_finite() || total_value < 0.0 {
+        return None;
+    }
+    Some((total_value / MERCHANT_MARGIN).floor() as u64)
+}
+
 /// Checked line extension used by every authoritative merchant total. A quote
 /// that cannot be represented is rejected instead of being silently capped.
 pub fn checked_merchant_line_total(unit_price: u32, quantity: u32) -> Option<u64> {
@@ -102,6 +135,14 @@ mod tests {
     }
 
     #[test]
+    fn language_penalty_hurts_both_sides_of_a_trade() {
+        assert!(language_adjusted_buy_price(100, 0.0) > language_adjusted_buy_price(100, 1.0));
+        assert!(language_adjusted_sell_price(100, 0.0) < language_adjusted_sell_price(100, 1.0));
+        assert_eq!(language_adjusted_sell_price(0, 0.0), 0);
+        assert_eq!(language_adjusted_sell_price(1, 0.0), 1);
+    }
+
+    #[test]
     fn party_purchases_use_pooled_coin_then_personal_coin() {
         assert_eq!(split_party_purchase_payment(8, 20, 15), Some((8, 7)));
         assert_eq!(split_party_purchase_payment(20, 8, 15), Some((15, 0)));
@@ -141,5 +182,12 @@ mod tests {
         ] {
             assert!((2..=4).contains(&settlement_herbalist_medicine_skill(id)));
         }
+    }
+
+    #[test]
+    fn partial_food_sale_never_recreates_consumed_value() {
+        assert_eq!(merchant_sell_food_lot_value(3.0), Some(2));
+        assert_eq!(merchant_sell_food_lot_value(0.75), Some(0));
+        assert_eq!(merchant_sell_food_lot_value(f32::NAN), None);
     }
 }

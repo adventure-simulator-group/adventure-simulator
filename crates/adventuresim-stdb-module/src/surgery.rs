@@ -4,6 +4,7 @@
 //! Tactical positions and ticks remain transient; only committed hit outcomes
 //! cross into these rows.
 
+use adventuresim_core::prelude::*;
 use adventuresim_core::strategic_time::MINUTES_PER_DAY;
 #[cfg(test)]
 use adventuresim_core::surgery::untreated_cut_progress;
@@ -15,8 +16,8 @@ use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
 
 use crate::character::character;
 use crate::{
-    CharacterLimbs, character_condition, character_limbs, character_time, infection_episode,
-    inventory_item,
+    CharacterLimbs, character_attributes, character_condition, character_equip, character_limbs,
+    character_skills, character_stats, character_time, infection_episode, inventory_item,
 };
 
 pub const BRUISE_HEALING_PER_DAY: f32 = 0.035;
@@ -25,7 +26,6 @@ pub const STITCH_HEALING_BONUS_PER_LEVEL: f32 = 0.006;
 pub const RETAINED_PROJECTILE_HEALING_MULTIPLIER: f32 = 0.60;
 pub const FRACTURE_SINGLE_HIT_THRESHOLD: f32 = 0.18;
 pub const STANDING_INFECTION_CHECK_EXPOSURE: f32 = 0.05;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
 pub enum LimbRegion {
     LeftArm,
@@ -257,7 +257,7 @@ pub fn commit_hit_injury(
     cut_damage: f32,
     blunt_damage: f32,
     projectile: Option<ProjectileKind>,
-) {
+) -> Result<(), String> {
     backfill_character_injuries(ctx, character_id);
     let mut injury = injury_for(ctx, character_id, limb);
     injury.cut_damage += cut_damage.max(0.0);
@@ -275,6 +275,13 @@ pub fn commit_hit_injury(
         injury.bandaged = false;
         injury.stitched = false;
         injury.stitch_quality = 0.0;
+        crate::filth::deposit_now(
+            ctx,
+            character_id,
+            crate::filth::FilthSubstance::Blood,
+            Some(character_id),
+            (cut_damage * 50.0).ceil().clamp(1.0, 20.0) as u16,
+        )?;
     }
     store_injury(ctx, injury);
     if let Some(kind) = projectile.filter(|_| cut_damage + blunt_damage > 0.0) {
@@ -293,6 +300,7 @@ pub fn commit_hit_injury(
         });
     }
     refresh_limb_projection(ctx, character_id, limb);
+    Ok(())
 }
 
 pub fn fracture_from_single_hit(blunt_damage: f32) -> f32 {
@@ -465,7 +473,11 @@ pub fn settle_injuries(
                 injury.stitched,
                 injury.stitch_quality,
             );
-            accrue_standing_infection(ctx, injury, exposure * protection)?;
+            let dirt = adventuresim_core::filth::dirt_wound_multiplier(crate::filth::dirt_total(
+                ctx,
+                character_id,
+            ));
+            accrue_standing_infection(ctx, injury, exposure * protection * dirt)?;
         }
         store_injury(ctx, injury.clone());
     }
@@ -644,10 +656,59 @@ fn consume_one(ctx: &ReducerContext, character_id: u64, item_id: &str) -> Result
     Ok(())
 }
 
-fn surgeon_check(ctx: &ReducerContext, actor_id: u64, patient_id: u64) -> Result<f32, String> {
-    let skill = crate::capability::evaluate_character(ctx, actor_id)?.surgery;
-    Ok(adventuresim_core::surgery::effective_skill(
-        skill,
+fn procedure_check(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    patient_id: u64,
+    procedure: &str,
+) -> Result<f32, String> {
+    let attributes = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(actor_id)
+        .ok_or("Character attributes not found")?;
+    let attributes = crate::disease::effective_attributes(ctx, actor_id, attributes)?;
+    let skills = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(actor_id)
+        .ok_or("Character skills not found")?;
+    let equip = ctx
+        .db
+        .character_equip()
+        .character_id()
+        .find(actor_id)
+        .ok_or("Character equipment not found")?;
+    let body = ctx
+        .db
+        .character_limbs()
+        .character_id()
+        .find(actor_id)
+        .ok_or("Character limbs not found")?;
+    let essentials = ctx
+        .db
+        .character_stats()
+        .character_id()
+        .find(actor_id)
+        .ok_or("Character stats not found")?;
+    let equipment = crate::capability::StrategicEquipment::load(ctx, actor_id, &equip);
+    let check = |skill| {
+        skills.skill_check_by_parts(
+            skill,
+            &attributes,
+            &body,
+            &essentials,
+            &equipment,
+            LimbWeights::both_arms(),
+        )
+    };
+    Ok(adventuresim_core::surgery::procedure_skill(
+        procedure,
+        check(Skill::Anatomy),
+        check(Skill::Knife),
+        check(Skill::Tailoring),
         actor_id == patient_id,
     ))
 }
@@ -720,7 +781,7 @@ fn align_and_advance(
         vec![actor_id, patient_id]
     };
     let safe_duration = participants.iter().try_fold(duration, |limit, id| {
-        let disease = crate::disease::preview_elapsed_for_disease(ctx, *id, limit)?;
+        let disease = crate::disease::preview_elapsed_for_disease(ctx, *id, limit, true)?;
         let injury = preview_elapsed_for_injuries(ctx, *id, limit, true)?;
         Ok::<u64, String>(limit.min(disease).min(injury))
     })?;
@@ -746,11 +807,13 @@ pub fn treat_limb(
     limb_slug: String,
     procedure: String,
     projectile_id: Option<u64>,
+    use_soap: bool,
 ) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, actor_id)?;
     crate::item::upsert_surgery_items(ctx);
     require_together(ctx, actor_id, patient_id)?;
     let limb = LimbRegion::parse(&limb_slug).ok_or("Unknown limb")?;
-    let skill = surgeon_check(ctx, actor_id, patient_id)?;
+    let skill = procedure_check(ctx, actor_id, patient_id, &procedure)?;
     let mut injury = injury_for(ctx, patient_id, limb);
     let projectile = projectile_id.and_then(|id| ctx.db.retained_projectile().id().find(id));
     let dc = match procedure.as_str() {
@@ -776,7 +839,7 @@ pub fn treat_limb(
     };
     if skill < dc {
         return Err(format!(
-            "Insufficient Surgery skill: this procedure requires {dc:.1}"
+            "Insufficient procedure skill: this procedure requires {dc:.1}"
         ));
     }
     if procedure == "stitch" && item_quantity(ctx, actor_id, "surgery_kit") == 0 {
@@ -794,13 +857,34 @@ pub fn treat_limb(
     if procedure == "splint" && available_splints(ctx, actor_id) == 0 {
         return Err("Applying a splint requires one splint".into());
     }
+    let soap_applicable = matches!(procedure.as_str(), "bandage" | "stitch" | "extract");
+    if use_soap
+        && (!soap_applicable || item_quantity(ctx, actor_id, crate::filth::SOAP_ITEM_ID) == 0)
+    {
+        return Err("The selected procedure cannot use an available unit of soap".into());
+    }
     let duration = duration_minutes(&procedure, skill, dc);
     if !align_and_advance(ctx, actor_id, patient_id, duration)? {
         return Ok(());
     }
     require_together(ctx, actor_id, patient_id)?;
     injury = injury_for(ctx, patient_id, limb);
-    let clean_check = infection_control_check(ctx, actor_id, skill);
+    let selected_alcohol = soap_applicable
+        .then(|| crate::alcohol::best_disinfectant(ctx, actor_id))
+        .flatten();
+    if use_soap {
+        consume_one(ctx, actor_id, crate::filth::SOAP_ITEM_ID)?;
+    }
+    if let Some((inventory_id, _, _)) = selected_alcohol.as_ref() {
+        crate::alcohol::consume_inventory_row(ctx, *inventory_id)?;
+    }
+    let clean_check = infection_control_check(ctx, actor_id, skill)
+        + adventuresim_core::alcohol::surgery_control_bonus(
+            use_soap,
+            selected_alcohol
+                .as_ref()
+                .map(|(_, _, effectiveness)| *effectiveness),
+        );
     match procedure.as_str() {
         "bandage" => {
             consume_one(ctx, actor_id, "bandage")?;
@@ -850,6 +934,17 @@ pub fn treat_limb(
             ctx.db.retained_projectile().id().delete(projectile.id);
         }
         _ => unreachable!(),
+    }
+    let exposure =
+        adventuresim_core::surgery::procedure_blood_exposure(&procedure, actor_id != patient_id);
+    if exposure > 0 {
+        crate::filth::deposit_now(
+            ctx,
+            actor_id,
+            crate::filth::FilthSubstance::Blood,
+            Some(patient_id),
+            exposure,
+        )?;
     }
     store_injury(ctx, injury);
     refresh_limb_projection(ctx, patient_id, limb);

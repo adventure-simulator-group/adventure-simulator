@@ -6,8 +6,8 @@
   const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   const MAX_U32 = 4294967295;
-  const TRACK_START = 3;
-  const TRACK_END = 97;
+  const TRACK_START = 0;
+  const TRACK_END = 100;
   const DAWN = 6 * 60;
   const DAYLIGHT = 8 * 60;
   const SUNSET = 18 * 60;
@@ -19,6 +19,29 @@
     const [kind, start, duration, movementStart, movementDuration, fatigueStart, fatigueEnd, fatigueMax, requiredRest] = entry.split(",");
     return { kind, start: Number(start), duration: Number(duration), movementStart: Number(movementStart), movementDuration: Number(movementDuration), fatigueStart: Number(fatigueStart), fatigueEnd: Number(fatigueEnd), fatigueMax: Number(fatigueMax), requiredRest: Number(requiredRest) };
   }).filter((segment) => [segment.start, segment.duration].every(Number.isFinite));
+  const parseTerrain = (value) => {
+    const entries = (value || "").split("|").filter(Boolean);
+    const parsed = [];
+    let cursor = 0;
+    for (const entry of entries) {
+      const fields = entry.split(",");
+      if (fields.length !== 8) return [];
+      const [kind, startText, durationText, checkText, plainsText, forestText, hillsText, urbanText] = fields;
+      const start = Number(startText);
+      const duration = Number(durationText);
+      const check = Number(checkText) / 1000;
+      const weights = [plainsText, forestText, hillsText, urbanText].map(Number);
+      if (!["road", "open", "sparse-woods", "deep-woods", "wetland"].includes(kind)
+          || !Number.isSafeInteger(start) || start < 0
+          || !Number.isSafeInteger(duration) || duration <= 0
+          || start !== cursor || !Number.isFinite(check) || check < 0 || check > 5
+          || weights.some((weight) => !Number.isSafeInteger(weight) || weight < 0 || weight > 1000)
+          || weights.reduce((sum, weight) => sum + weight, 0) !== 1000) return [];
+      parsed.push({ kind, start, duration, check, weights });
+      cursor += duration;
+    }
+    return parsed;
+  };
   const position = (minute, total) => TRACK_START + (TRACK_END - TRACK_START) * clamp(total > 0 ? minute / total : 0);
   const setPathRange = (path, start, end, total) => {
     if (!path) return;
@@ -250,6 +273,60 @@
     }
   };
 
+  const renderTerrain = (planner, terrain, itinerary, total, movementTotal, roundTrip) => {
+    const track = planner.querySelector("[data-terrain-track]");
+    const summary = planner.querySelector("[data-terrain-summary]");
+    const description = planner.querySelector("[data-terrain-course-description]");
+    if (!track) return;
+    track.replaceChildren();
+    const labels = { road: "Road", open: "Open", "sparse-woods": "Sparse woods", "deep-woods": "Deep woods", wetland: "Wetland" };
+    const pieces = terrainPieces(terrain, itinerary, movementTotal, roundTrip);
+    for (const piece of pieces) {
+      const node = document.createElement("span");
+      node.className = `travel-terrain-segment ${piece.kind}`;
+      node.style.top = `${piece.start / total * 100}%`;
+      node.style.height = `${piece.duration / total * 100}%`;
+      node.title = piece.kind === "stopped" ? "Camp · stopped" : `${labels[piece.kind]} · Terrain ${piece.check.toFixed(2)} · ${(1 + piece.check / 10).toFixed(2)}× speed`;
+      node.tabIndex = 0;
+      node.setAttribute("aria-label", `${node.title}, elapsed minute ${Math.round(piece.start)} to ${Math.round(piece.start + piece.duration)}`);
+      track.append(node);
+    }
+    if (description) {
+      description.replaceChildren();
+      for (const piece of pieces) {
+        const item = document.createElement("li");
+        const label = piece.kind === "stopped" ? "Camp, stopped" : labels[piece.kind];
+        item.textContent = `${label}: elapsed minute ${Math.round(piece.start)} to ${Math.round(piece.start + piece.duration)}`;
+        description.append(item);
+      }
+    }
+    const ordered = [...new Set(terrain.map((span) => labels[span.kind]))];
+    if (summary) summary.textContent = ordered.length ? `Terrain: ${ordered.join(", ")}` : "Terrain unavailable; legacy estimate";
+    attachRailTooltip(track, (fraction) => Array.from(track.children).find((node) => fraction * 100 >= parseFloat(node.style.top) && fraction * 100 <= parseFloat(node.style.top) + parseFloat(node.style.height))?.title || "Terrain unavailable");
+  };
+
+  const terrainPieces = (terrain, itinerary, movementTotal, roundTrip) => {
+    const pieces = [];
+    for (const elapsed of itinerary) {
+      if (elapsed.kind !== "w") {
+        pieces.push({ kind: "stopped", start: elapsed.start, duration: elapsed.duration });
+        continue;
+      }
+      for (const span of terrain) {
+        const starts = [span.start];
+        if (roundTrip) starts.push(movementTotal - span.start - span.duration);
+        for (const routeStart of starts) {
+          const overlapStart = Math.max(routeStart, elapsed.movementStart);
+          const overlapEnd = Math.min(routeStart + span.duration, elapsed.movementStart + elapsed.movementDuration);
+          if (overlapEnd <= overlapStart) continue;
+          const ratio = elapsed.movementDuration > 0 ? elapsed.duration / elapsed.movementDuration : 0;
+          pieces.push({ kind: span.kind, start: elapsed.start + (overlapStart - elapsed.movementStart) * ratio, duration: (overlapEnd - overlapStart) * ratio, check: span.check, weights: span.weights });
+        }
+      }
+    }
+    return pieces.sort((left, right) => left.start - right.start || left.kind.localeCompare(right.kind));
+  };
+
   const initializeTravelPlanner = () => {
     const planner = document.querySelector("[data-travel-planner]");
     if (!planner || planner.dataset.travelPlannerReady === "true") return;
@@ -264,6 +341,7 @@
       targetDisplay.textContent = String(initialTarget);
     }
     let currentPlan;
+    const terrain = parseTerrain(planner.dataset.terrainSpans);
 
     const showPlan = ({ name, origin = "Start", oneWay, movementTotal, elapsedTotal, completedElapsed = 0, departure = 0, segments = [], description = "", roundTrip = movementTotal > oneWay }) => {
       if (!name || elapsedTotal <= 0) { planner.hidden = true; return; }
@@ -301,6 +379,7 @@
       planner.hidden = false;
       setPathRange(planner.querySelector("[data-travel-progress]"), 0, completedElapsed, elapsedTotal);
       renderFatigue(planner, segments, elapsedTotal);
+      renderTerrain(planner, terrain, segments, elapsedTotal, movementTotal, roundTrip);
       renderTimeRail(planner, departure, elapsedTotal);
       currentPlan = { elapsedTotal, completedElapsed };
     };
@@ -328,6 +407,8 @@
       const members = Number(planner.dataset.provisionLivingMembers);
       const foodDays = Number(planner.dataset.provisionFoodDays);
       const waterDays = Number(planner.dataset.provisionWaterDays);
+      const ordinaryWaterDays = Number(planner.dataset.provisionOrdinaryWaterDays);
+      const emergencyAlcoholDays = Number(planner.dataset.provisionEmergencyAlcoholDays);
       if (![total, members, foodDays, waterDays].every(Number.isFinite) || total <= 0 || members <= 0) return;
       const target = clamp(Number(targetInput?.value || 0), -365, 365);
       const returnUrl = new URL(location.href);
@@ -343,6 +424,9 @@
         const surplus = available - (totalDays - completedDays);
         const label = row?.querySelector("[data-surplus-summary]");
         if (label) label.textContent = surplus >= 0 ? `${Number(surplus.toFixed(1))} day${Math.abs(surplus - 1) < .05 ? "" : "s"} surplus` : `${Number(Math.abs(surplus).toFixed(1))} days short`;
+        if (kind === "water" && label && Number.isFinite(ordinaryWaterDays) && Number.isFinite(emergencyAlcoholDays)) {
+          label.textContent += ` (${Number(ordinaryWaterDays.toFixed(1))} ordinary water + ${Number(emergencyAlcoholDays.toFixed(1))} emergency alcohol)`;
+        }
       });
       const rationKcal = Number(planner.dataset.provisionRationKcal);
       const skinMl = Number(planner.dataset.provisionWaterskinMl);

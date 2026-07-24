@@ -56,6 +56,7 @@ pub struct SettlementSmith {
     pub settlement_id: String,
     pub weaponsmith_skill: u8,
     pub armourer_skill: u8,
+    pub tailor_skill: u8,
 }
 
 #[derive(Clone, Debug)]
@@ -83,7 +84,30 @@ pub struct RepairOrder {
 }
 
 fn durable(kind: ItemKind) -> bool {
-    matches!(kind, ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield)
+    matches!(
+        kind,
+        ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield | ItemKind::Clothing
+    )
+}
+
+fn repair_service(value: &str) -> Result<adventuresim_core::durability::RepairService, String> {
+    adventuresim_core::durability::RepairService::parse(value)
+        .ok_or_else(|| "Unknown repair service".into())
+}
+
+fn repair_kind(kind: ItemKind) -> Option<adventuresim_core::durability::RepairItemKind> {
+    use adventuresim_core::durability::RepairItemKind;
+    match kind {
+        ItemKind::Weapon => Some(RepairItemKind::Weapon),
+        ItemKind::Shield => Some(RepairItemKind::Shield),
+        ItemKind::Armor => Some(RepairItemKind::Armor),
+        ItemKind::Clothing => Some(RepairItemKind::Clothing),
+        _ => None,
+    }
+}
+
+fn service_matches(service: adventuresim_core::durability::RepairService, kind: ItemKind) -> bool {
+    repair_kind(kind).is_some_and(|kind| service.matches(kind))
 }
 
 pub(crate) fn initialize_item_condition(ctx: &ReducerContext, inventory: &InventoryItem) {
@@ -159,6 +183,7 @@ pub(crate) fn ensure_settlement_smith(
         settlement_id: settlement_id.to_owned(),
         weaponsmith_skill: stable_skill(settlement_id, 0x5745_4150),
         armourer_skill: stable_skill(settlement_id, 0x4152_4d52),
+        tailor_skill: stable_skill(settlement_id, 0x5441_494c),
     })
 }
 
@@ -256,10 +281,21 @@ pub fn backfill_equipment_condition_and_smiths(ctx: &ReducerContext) {
 }
 
 fn service_skill(ctx: &ReducerContext, settlement_id: &str, kind: ItemKind) -> Result<u8, String> {
+    use adventuresim_world_schema::SettlementService as S;
+    let specialist = match kind {
+        ItemKind::Weapon | ItemKind::Shield => S::Weaponsmith,
+        ItemKind::Armor => S::Armorer,
+        ItemKind::Clothing => S::Tailor,
+        _ => return Err("This service does not repair that item kind".into()),
+    };
+    if crate::strategic::require_settlement_service(ctx, settlement_id, specialist).is_err() {
+        crate::strategic::require_settlement_service(ctx, settlement_id, S::GeneralBlacksmith)?;
+    }
     let service = ensure_settlement_smith(ctx, settlement_id);
     match kind {
         ItemKind::Weapon | ItemKind::Shield => Ok(service.weaponsmith_skill),
         ItemKind::Armor => Ok(service.armourer_skill),
+        ItemKind::Clothing => Ok(service.tailor_skill),
         _ => Err("This service does not repair that item kind".into()),
     }
 }
@@ -310,6 +346,7 @@ fn submit(
     ctx: &ReducerContext,
     character_id: u64,
     settlement_id: &str,
+    service: adventuresim_core::durability::RepairService,
     inventory_item_id: u64,
 ) -> Result<u64, String> {
     let character = ctx
@@ -345,6 +382,9 @@ fn submit(
         .id()
         .find(&inventory.item_id)
         .ok_or("Item definition not found")?;
+    if !service_matches(service, definition.kind) {
+        return Err("That item does not belong to this repair service".into());
+    }
     let skill = service_skill(ctx, settlement_id, definition.kind)?;
     let condition = ctx
         .db
@@ -358,7 +398,7 @@ fn submit(
         return Err(if bins.total() <= f32::EPSILON {
             "Item is not damaged"
         } else {
-            "All damage is beyond this smith's skill"
+            "All damage is beyond this craftsperson's skill"
         }
         .into());
     }
@@ -401,9 +441,17 @@ pub fn submit_item_for_repair(
     ctx: &ReducerContext,
     character_id: u64,
     settlement_id: String,
+    service: String,
     inventory_item_id: u64,
 ) -> Result<(), String> {
-    submit(ctx, character_id, &settlement_id, inventory_item_id).map(|_| ())
+    submit(
+        ctx,
+        character_id,
+        &settlement_id,
+        repair_service(&service)?,
+        inventory_item_id,
+    )
+    .map(|_| ())
 }
 
 #[reducer]
@@ -411,8 +459,9 @@ pub fn submit_all_repairable_items(
     ctx: &ReducerContext,
     character_id: u64,
     settlement_id: String,
-    armourer: bool,
+    service: String,
 ) -> Result<(), String> {
+    let service = repair_service(&service)?;
     let ids: Vec<u64> = ctx
         .db
         .inventory_item()
@@ -420,22 +469,17 @@ pub fn submit_all_repairable_items(
         .filter(character_id)
         .filter_map(|inventory| {
             let kind = ctx.db.item().id().find(&inventory.item_id)?.kind;
-            let matching = if armourer {
-                kind == ItemKind::Armor
-            } else {
-                matches!(kind, ItemKind::Weapon | ItemKind::Shield)
-            };
-            matching.then_some(inventory.id)
+            service_matches(service, kind).then_some(inventory.id)
         })
         .collect();
     let mut submitted = 0;
     for id in ids {
-        if submit(ctx, character_id, &settlement_id, id).is_ok() {
+        if submit(ctx, character_id, &settlement_id, service, id).is_ok() {
             submitted += 1;
         }
     }
     if submitted == 0 {
-        return Err("No matching item has damage this smith can repair".into());
+        return Err("No matching item has damage this service can repair".into());
     }
     Ok(())
 }
@@ -518,10 +562,11 @@ pub fn retrieve_repaired_items(
     ctx: &ReducerContext,
     character_id: u64,
     settlement_id: String,
-    armourer: bool,
+    service: String,
     item_id: Option<String>,
     limit: u32,
 ) -> Result<(), String> {
+    let service = repair_service(&service)?;
     if limit == 0 {
         return Err("Retrieve count must be positive".into());
     }
@@ -543,13 +588,12 @@ pub fn retrieve_repaired_items(
                 && item_id
                     .as_ref()
                     .is_none_or(|item_id| item_id == &order.item_id)
-                && ctx.db.item().id().find(&order.item_id).is_some_and(|item| {
-                    if armourer {
-                        item.kind == ItemKind::Armor
-                    } else {
-                        matches!(item.kind, ItemKind::Weapon | ItemKind::Shield)
-                    }
-                })
+                && ctx
+                    .db
+                    .item()
+                    .id()
+                    .find(&order.item_id)
+                    .is_some_and(|item| service_matches(service, item.kind))
         })
         .map(|order| (order.submitted_at_minutes, order.id, order.quoted_cost))
         .collect();
@@ -573,11 +617,12 @@ pub fn retrieve_repaired_items(
 }
 
 /// Field maintenance is automatic after bodily convalescence. It repairs only
-/// yellow bins and only through the character's trained Smithing rating.
+/// yellow bins and uses Tailoring for clothing, Smithing for other equipment.
 pub(crate) fn field_repair(
     ctx: &ReducerContext,
     character_id: u64,
     smithing: u8,
+    tailoring: u8,
     available_minutes: u64,
 ) -> u64 {
     let mut remaining = available_minutes;
@@ -596,7 +641,19 @@ pub(crate) fn field_repair(
             continue;
         };
         let mut bins = condition.bins();
-        let eligible_skill = smithing.min(2);
+        let item_kind = ctx
+            .db
+            .inventory_item()
+            .id()
+            .find(id)
+            .and_then(|inventory| ctx.db.item().id().find(&inventory.item_id))
+            .map(|item| item.kind);
+        let eligible_skill = if item_kind == Some(ItemKind::Clothing) {
+            tailoring
+        } else {
+            smithing
+        }
+        .min(2);
         let eligible = bins.repairable(eligible_skill);
         let possible = remaining as f32 / REPAIR_MINUTES_PER_FULL_ITEM as f32;
         let repaired = eligible.min(possible);
@@ -704,4 +761,32 @@ pub fn seed_simulation_equipment_damage(
         .update(condition);
     crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clothing_instances_receive_durable_condition_tracking() {
+        assert!(durable(ItemKind::Clothing));
+        assert!(durable(ItemKind::Weapon));
+        assert!(!durable(ItemKind::Medication));
+    }
+
+    #[test]
+    fn repair_services_are_strict_three_way_item_filters() {
+        let weapons = repair_service("weapons").unwrap();
+        let armor = repair_service("armor").unwrap();
+        let clothing = repair_service("clothing").unwrap();
+        assert!(service_matches(weapons, ItemKind::Weapon));
+        assert!(service_matches(weapons, ItemKind::Shield));
+        assert!(!service_matches(weapons, ItemKind::Armor));
+        assert!(!service_matches(weapons, ItemKind::Clothing));
+        assert!(service_matches(armor, ItemKind::Armor));
+        assert!(!service_matches(armor, ItemKind::Clothing));
+        assert!(service_matches(clothing, ItemKind::Clothing));
+        assert!(!service_matches(clothing, ItemKind::Weapon));
+        assert!(repair_service("smith").is_err());
+    }
 }

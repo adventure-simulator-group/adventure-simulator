@@ -11,7 +11,7 @@ to the tactical interface.
 - Make the interface feel like part of the physical game world. Prefer visual
   treatments that suggest a place, building, material, or constructed object
   over generic application chrome.
-- A settlement service tab should read as the silhouette of the building that
+- A settlement Place Facade should read as the silhouette of the building that
   houses the service, rather than as an abstract symbol for the activity. For
   example, use an inn silhouette for the inn instead of a beer stein.
 - The selected service establishes the architectural treatment for the
@@ -23,6 +23,107 @@ to the tactical interface.
 - Existing interface art is largely placeholder material. Introduce richer
   raster textures or detailed SVG artwork incrementally without changing
   layout or interaction behavior unless the task calls for it.
+
+## Strategic UI pattern vocabulary
+
+Use the following names consistently in interface discussions, specifications,
+CSS, and implementation comments. They describe the strategic layer's spatial
+and interaction patterns; they are not necessarily DOM class names.
+
+### World Header
+
+The **World Header** is the semi-diegetic navigation layer at the top of every
+strategic page.
+
+- Its upper-left **World Context** always states the current time and place.
+- Its upper-right **Character Switcher** is the active character's portrait
+  and provides character switching.
+- Its central navigation is a row of **Place Facades**. A Place Facade is a
+  physical representation of a place the player can use, not an abstract
+  application tab. In settlements it normally depicts a building; in the
+  wilderness it may depict a party tent or a destination's cave, hut, camp, or
+  other point of interest.
+- A Place Facade reserves a quiet, low-detail facade field for a standard
+  purpose icon. The physical facade may otherwise vary substantially between
+  locations. The icon communicates the mechanical purpose, while the facade
+  communicates the specific place.
+
+### Side Panels and Scene Stage
+
+The **Scene Stage** is the central strategic canvas below the World Header. It
+currently hosts maps and placeholder imagery, and will eventually host small
+3D scenes and the characters in them. It is the least utility-critical layer:
+overlays may cover it whenever needed.
+
+The **Side Panels** sit below and visually behind the World Header on either
+side of the Scene Stage.
+
+- The left **Other Panel** generally presents the counterpart in an
+  interaction: an NPC, merchant, or other outside entity.
+- The right **Self Panel** generally presents the player-facing side of the
+  interaction. In a merchant exchange, party inventory belongs here because it
+  is closer to the player than the merchant. When interacting with a party
+  member or party inventory, however, that entity belongs in the Other Panel.
+- These are spatial defaults, not ownership rules. Inspection and comparison
+  views may use both panels for a single person or subject.
+
+### Stage overlays
+
+**Stage overlays** occupy the Scene Stage rather than nesting inside a Side
+Panel. They may be opaque or translucent as their purpose requires.
+
+- The **Conversation Dock** is the bottom-centered, resizable chat overlay.
+  It may expand upward into the Scene Stage and uses a partially transparent
+  surface when that supports readability.
+- The **Party Rail** is the top-centered portrait overlay for party members,
+  open party slots, the invite control, and party inventory. Hover controls
+  emerge below a Party Rail portrait.
+- The **Counterparty Rail** mirrors the Party Rail just above the Conversation
+  Dock on the opposing side. Its hover controls emerge above its portraits so
+  they do not collide with the Conversation Dock.
+- A **Stage Modal** is a menu or dialog opened from a Side Panel. Do not place
+  such menus inside the constrained panel that launched them; open them over
+  the Scene Stage instead.
+
+### Controls and information patterns
+
+- **Segmented Meters** communicate numeric values primarily through bars, not
+  adjacent numeric labels. A meter may stack multiple color-differentiated
+  quantities in one track (for example, `x + y + z / total`) and must include
+  regular tick marks so each contribution is estimable at a glance on an
+  approximately zero-to-five scale. Reveal exact values to one decimal place
+  through an Instant Tooltip.
+- **Difficulty Bands** are the five stable colors used for skill-meter
+  sections. Reuse those colors wherever an immediate skill-check difficulty
+  cue is useful, including nested portions of a durability meter that show the
+  skill required for repair. Do not use those colors to communicate damage.
+- **Tactile Buttons** are raised, three-dimensional controls used for anything
+  clickable. Their pressed and unpressed states must remain visually obvious.
+- **Instant Tooltips** are styled, immediate hover and keyboard-focus
+  descriptions. Do not use delayed, unstyled browser tooltips. Prefer icons
+  over word labels for meters and controls where the icon can carry the name;
+  the Instant Tooltip supplies that name.
+- An **Exchange List** is the shared inventory-list pattern for every item
+  exchange: merchant trade, transfers to allies, cooking-pot inputs, and loot.
+  Preserve its URL-backed sorting, filtering, column visibility, nested rows,
+  offer-acceptance redirects, and row actions across these contexts. In the
+  Other Panel, place its scrollbar on the outer edge so it does not interfere
+  with row controls.
+- **Edge Actions** are the row actions in an Exchange List. They sit at the
+  row's inner edge: on the left side of a Self Panel row and the right side of
+  an Other Panel row. Activating them expands the row background outward and
+  reveals each action as a Tactile Button. Shift applies the action up or down
+  to the target quantity; Control applies it to the whole stack regardless of
+  target quantity.
+
+### Interaction philosophy
+
+The strategic interface is **power-user-first, hover-revealed**. Optimize for
+players who have learned the system, even when that leaves advanced behavior
+less immediately discoverable for new players. Do not add persistent
+explanatory copy merely to surface every feature: Instant Tooltips, clear
+spatial placement, and efficient modifier interactions are the intended path
+to learned fluency.
 
 ## Readability and accessibility
 
@@ -122,7 +223,8 @@ frame/<variant>/bottom-right.png
 - Corners remain fixed while edge pieces repeat along their corresponding axis.
 - The center is normally transparent or omitted because a `surface` supplies
   the interior. Add a center part only when the artwork genuinely requires it.
-- Use frames for side panels, dialogs, inventories, chat areas, menus, cards,
+- Use frames for Side Panels, Stage Modals, Exchange Lists, Conversation Docks,
+  menus, cards,
   and similar bounded regions.
 
 ### Horizontal band
@@ -191,9 +293,9 @@ rather than creating a new asset anatomy for every use:
 - Panel = surface + frame + optional ornament.
 - Sidebar = surface + frame or vertical supports.
 - Header = surface + horizontal band + optional ornament.
-- Service tab = grayscale building background + separate service icon +
+- Place Facade = grayscale building background + separate purpose icon +
   horizontal-band plinth.
-- Dialog = surface + frame + horizontal band.
+- Stage Modal = surface + frame + horizontal band.
 - List section = surface + dividers.
 
 These names describe implementation compositions, not additional asset
@@ -249,11 +351,10 @@ cartoon village, a textured painting, or a detailed model building.
   the reserved facade field rather than floating above or obscuring the roof.
   Scale and space the buildings generously enough that the mark remains large
   and legible within that field at the final rendered tab size.
-- Give the service navigation the full horizontal header width. Place the
-  current location and time at the upper-left and the character profile control
-  at the upper-right as high-layer corner overlays; they must remain clickable
-  when service buildings pass underneath them and must not reserve flex space
-  beside the building row.
+- Give the Place Facade row the full horizontal World Header width. Place the
+  World Context at the upper-left and the Character Switcher at the upper-right
+  as high-layer corner overlays; they must remain clickable when Place Facades
+  pass underneath them and must not reserve flex space beside the row.
 - Position service marks with tier-level custom properties, never per-building
   offsets. Every building in one village, town, or city set must share the same
   mark baseline and size; taller, more prosperous sets may move the whole mark
@@ -306,8 +407,8 @@ cartoon village, a textured painting, or a detailed model building.
   shoreline plus tier-appropriate sheds, wharves, masts, or warehouses. In a
   city, water belongs behind a continuous built-up quay rather than between the
   viewer and an isolated distant skyline. Keep water shallow and the center
-  quiet enough that the service tabs remain dominant.
-- Reserve the largest uninterrupted facade field for the overlaid service mark.
+  quiet enough that the Place Facades remain dominant.
+- Reserve the largest uninterrupted facade field for the overlaid purpose icon.
   Place doors beside that field, normally at a lower outer corner, rather than
   centered beneath it; this keeps the building low and the mark large.
 - Treat town and city service buildings as restrained backlit silhouettes.

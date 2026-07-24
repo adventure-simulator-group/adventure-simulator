@@ -23,6 +23,8 @@ pub enum ItemKind {
     Ingredient,
 
     Medication,
+
+    Food,
 }
 
 impl __sdk::InModule for ItemKind {

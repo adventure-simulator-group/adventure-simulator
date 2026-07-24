@@ -31,11 +31,40 @@ use crate::{
 };
 
 const EXPECTED_SRS: i64 = 3035;
+const GEOPACKAGE_APPLICATION_ID_1_0: i64 = 0x4750_3130;
+const GEOPACKAGE_APPLICATION_ID_1_1: i64 = 0x4750_3131;
+const GEOPACKAGE_APPLICATION_ID_CURRENT: i64 = 0x4750_4b47;
 const SETTLEMENT_ADJACENCY_METERS: f64 = 2_000.0;
 const SOURCE_MARGIN_METERS: f64 = 10_000.0;
 const CROSSING_DEDUP_METERS: f64 = 5.0;
 const ENDPOINT_TOUCH_METERS: f64 = 5.0;
 const INDEX_CELL_METERS: f64 = 10_000.0;
+const MAX_GEOMETRY_BLOB_BYTES: usize = 8 * 1024 * 1024;
+const MAX_WKB_NESTING_DEPTH: usize = 8;
+const MAX_WKB_GEOMETRY_NODES: usize = 100_000;
+const MAX_WKB_COORDINATES: usize = 500_000;
+const MAX_SPATIAL_GRID_CELLS_PER_FEATURE: usize = 10_000;
+const MAX_HYDROLOGY_SOURCE_FILES: usize = 256;
+const MAX_DECODED_HYDROLOGY_FEATURES: usize = 1_000_000;
+const MAX_TOTAL_SPATIAL_GRID_REFERENCES: usize = 10_000_000;
+const MAX_TOTAL_DECODED_COORDINATES: usize = 50_000_000;
+// Deliberately wider than EPSG:3035's European area of use and the imported
+// source extent, while still preventing hostile ordinates from exploding
+// geometric operations or spatial-grid ranges.
+const SAFE_EPSG_3035_MIN_METERS: f64 = -1_000_000.0;
+const SAFE_EPSG_3035_MAX_METERS: f64 = 10_000_000.0;
+
+/// OGC GeoPackage assigned `GP10` and `GP11` to the 1.0 and 1.1 revisions,
+/// then standardized on `GPKG`. Official distributions may legitimately retain
+/// any of these application IDs.
+const fn is_geopackage_application_id(application_id: i64) -> bool {
+    matches!(
+        application_id,
+        GEOPACKAGE_APPLICATION_ID_1_0
+            | GEOPACKAGE_APPLICATION_ID_1_1
+            | GEOPACKAGE_APPLICATION_ID_CURRENT
+    )
+}
 
 pub(crate) fn enrich(
     mut draft: WorldDraft<DroughtSettlementDraft>,
@@ -153,6 +182,8 @@ fn finish_edge(
         from_node_id: edge.from_node_id,
         to_node_id: edge.to_node_id,
         route,
+        provenance: edge.provenance,
+        geometry: Vec::new(),
         toll: edge.toll,
         length_m: edge.length_m,
         slope_multiplier: edge.slope_multiplier,
@@ -235,8 +266,9 @@ impl HydrologyDatabase {
             )));
         }
         let mut features = Vec::new();
+        let mut decoded_coordinates = 0_usize;
         for path in &paths {
-            read_geopackage(path, bounds, &mut features)?;
+            read_geopackage(path, bounds, &mut decoded_coordinates, &mut features)?;
         }
         if !features
             .iter()
@@ -246,7 +278,7 @@ impl HydrologyDatabase {
                 "EU-Hydro source contains no River_Net_l features in the world extent".into(),
             ));
         }
-        let spatial_grid = build_spatial_grid(&features);
+        let spatial_grid = build_spatial_grid(&features)?;
         Ok(Self {
             files_read: paths.len(),
             features,
@@ -511,21 +543,52 @@ fn line_length(line: Line<f64>) -> f64 {
     ((line.end.x - line.start.x).powi(2) + (line.end.y - line.start.y).powi(2)).sqrt()
 }
 
-fn build_spatial_grid(features: &[WaterFeature]) -> HashMap<(i32, i32), Vec<usize>> {
+fn build_spatial_grid(features: &[WaterFeature]) -> Result<HashMap<(i32, i32), Vec<usize>>> {
     let mut grid: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
+    let mut total_references = 0_usize;
     for (index, feature) in features.iter().enumerate() {
         let Some(rect) = feature.geometry.bounding_rect() else {
             continue;
         };
         let (min_x, max_x) = grid_range(rect.min().x, rect.max().x);
         let (min_y, max_y) = grid_range(rect.min().y, rect.max().y);
+        let x_cells = i64::from(max_x) - i64::from(min_x) + 1;
+        let y_cells = i64::from(max_y) - i64::from(min_y) + 1;
+        let cell_count = x_cells
+            .checked_mul(y_cells)
+            .and_then(|count| usize::try_from(count).ok())
+            .ok_or_else(|| {
+                Error::Validation(format!(
+                    "hydrology feature {index} has an invalid spatial-grid extent"
+                ))
+            })?;
+        if cell_count > MAX_SPATIAL_GRID_CELLS_PER_FEATURE {
+            return Err(Error::Validation(format!(
+                "hydrology feature {index} spans {cell_count} spatial-grid cells, exceeding the per-feature bound of {MAX_SPATIAL_GRID_CELLS_PER_FEATURE}"
+            )));
+        }
+        add_spatial_grid_references(&mut total_references, cell_count, index)?;
         for x in min_x..=max_x {
             for y in min_y..=max_y {
                 grid.entry((x, y)).or_default().push(index);
             }
         }
     }
-    grid
+    Ok(grid)
+}
+
+fn add_spatial_grid_references(total: &mut usize, count: usize, feature: usize) -> Result<()> {
+    *total = total.checked_add(count).ok_or_else(|| {
+        Error::Validation(format!(
+            "hydrology feature {feature} overflows the cumulative spatial-grid reference count"
+        ))
+    })?;
+    if *total > MAX_TOTAL_SPATIAL_GRID_REFERENCES {
+        return Err(Error::Validation(format!(
+            "hydrology feature {feature} raises the cumulative spatial-grid references to {total}, exceeding the bound of {MAX_TOTAL_SPATIAL_GRID_REFERENCES}"
+        )));
+    }
+    Ok(())
 }
 
 fn grid_range(minimum: f64, maximum: f64) -> (i32, i32) {
@@ -655,6 +718,12 @@ fn collect_geopackages(directory: &Path, output: &mut Vec<PathBuf>) -> Result<()
             .extension()
             .is_some_and(|extension| extension.eq_ignore_ascii_case("gpkg"))
         {
+            if output.len() >= MAX_HYDROLOGY_SOURCE_FILES {
+                return Err(Error::Validation(format!(
+                    "{} contains more than the supported {MAX_HYDROLOGY_SOURCE_FILES} hydrology GeoPackage files",
+                    directory.display()
+                )));
+            }
             output.push(path);
         }
     }
@@ -664,6 +733,7 @@ fn collect_geopackages(directory: &Path, output: &mut Vec<PathBuf>) -> Result<()
 fn read_geopackage(
     path: &Path,
     bounds: Option<Bounds>,
+    decoded_coordinates: &mut usize,
     output: &mut Vec<WaterFeature>,
 ) -> Result<()> {
     let connection =
@@ -679,7 +749,7 @@ fn read_geopackage(
             path: path.to_path_buf(),
             source,
         })?;
-    if application_id != 0x4750_4b47 {
+    if !is_geopackage_application_id(application_id) {
         return Err(Error::Validation(format!(
             "{} is not an OGC GeoPackage",
             path.display()
@@ -700,7 +770,7 @@ fn read_geopackage(
     }
     let mut tables = connection
         .prepare(
-            "SELECT table_name, column_name, geometry_type_name, srs_id FROM gpkg_geometry_columns",
+            "SELECT table_name, column_name, geometry_type_name, srs_id, z, m FROM gpkg_geometry_columns",
         )
         .map_err(|source| Error::GeoPackage {
             path: path.to_path_buf(),
@@ -713,6 +783,8 @@ fn read_geopackage(
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
                 row.get::<_, i64>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, i64>(5)?,
             ))
         })
         .map_err(|source| Error::GeoPackage {
@@ -724,7 +796,7 @@ fn read_geopackage(
             path: path.to_path_buf(),
             source,
         })?;
-    for (table, geometry_column, geometry_type, srs) in metadata {
+    for (table, geometry_column, geometry_type, srs, z, m) in metadata {
         let Some(kind) = feature_kind(&table) else {
             continue;
         };
@@ -756,13 +828,22 @@ fn read_geopackage(
                 path.display()
             )));
         }
+        if !matches!(z, 0..=2) || !matches!(m, 0..=2) {
+            return Err(Error::Validation(format!(
+                "{} table {table} has invalid GeoPackage z/m requirements {z}/{m}",
+                path.display()
+            )));
+        }
         read_feature_table(
             &connection,
             path,
             &table,
             &geometry_column,
+            z,
+            m,
             kind,
             bounds,
+            decoded_coordinates,
             output,
         )?;
     }
@@ -786,8 +867,11 @@ fn read_feature_table(
     path: &Path,
     table: &str,
     geometry_column: &str,
+    z_requirement: i64,
+    m_requirement: i64,
     kind: FeatureKind,
     bounds: Option<Bounds>,
+    decoded_coordinates: &mut usize,
     output: &mut Vec<WaterFeature>,
 ) -> Result<()> {
     let layout = table_layout(connection, path, table)?;
@@ -811,6 +895,11 @@ fn read_feature_table(
             "NULL".into()
         }
     };
+    // Some official EU-Hydro basin packages declare their categorical code
+    // fields as REAL even though every populated value is integral. Normalize
+    // those codes at the source boundary so rusqlite does not reject the row
+    // before the canonical sentinel and range handling below can run.
+    let integer_value = |name: &str| format!("CAST({} AS INTEGER)", value(name));
     let rtree = format!("rtree_{table}_{geometry_column}");
     let use_rtree = bounds.is_some()
         && layout.integer_primary_key.is_some()
@@ -846,12 +935,17 @@ fn read_feature_table(
         .as_ref()
         .map(|column| format!(" ORDER BY f.{}", quote_identifier(column)))
         .unwrap_or_else(|| format!(" ORDER BY f.{}", quote_identifier(geometry_column)));
+    let feature_id = layout
+        .integer_primary_key
+        .as_ref()
+        .map(|column| format!("f.{}", quote_identifier(column)))
+        .unwrap_or_else(|| "NULL".into());
     let sql = format!(
-        "SELECT f.{}, {}, {}, {}, {} FROM {from}{where_clause}{order_by}",
+        "SELECT {feature_id}, length(f.{0}), f.{0}, {1}, {2}, {3}, {4} FROM {from}{where_clause}{order_by}",
         quote_identifier(geometry_column),
-        value("STRAHLER"),
-        value("HYP"),
-        value("NVS"),
+        integer_value("STRAHLER"),
+        integer_value("HYP"),
+        integer_value("NVS"),
         value("AREA_GEO"),
     );
     let mut statement = connection
@@ -878,45 +972,77 @@ fn read_feature_table(
         path: path.to_path_buf(),
         source,
     })? {
+        let feature_id = row
+            .get::<_, Option<i64>>(0)
+            .map_err(|source| Error::GeoPackage {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        let geometry_length = row.get::<_, i64>(1).map_err(|source| Error::GeoPackage {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        let feature = feature_id
+            .map(|id| format!(" feature {id}"))
+            .unwrap_or_default();
+        if geometry_length < 0
+            || usize::try_from(geometry_length)
+                .map_or(true, |length| length > MAX_GEOMETRY_BLOB_BYTES)
+        {
+            return Err(Error::Validation(format!(
+                "{} table {table}{feature} GeoPackage geometry is outside the {}-byte bound",
+                path.display(),
+                MAX_GEOMETRY_BLOB_BYTES
+            )));
+        }
         let geometry = row
-            .get::<_, Vec<u8>>(0)
+            .get::<_, Vec<u8>>(2)
             .map_err(|source| Error::GeoPackage {
                 path: path.to_path_buf(),
                 source,
             })?;
         let order = row
-            .get::<_, Option<i64>>(1)
-            .map_err(|source| Error::GeoPackage {
-                path: path.to_path_buf(),
-                source,
-            })?;
-        let persistence = row
-            .get::<_, Option<i64>>(2)
-            .map_err(|source| Error::GeoPackage {
-                path: path.to_path_buf(),
-                source,
-            })?;
-        let navigability = row
             .get::<_, Option<i64>>(3)
             .map_err(|source| Error::GeoPackage {
                 path: path.to_path_buf(),
                 source,
             })?;
-        let area = row
-            .get::<_, Option<f64>>(4)
+        let persistence = row
+            .get::<_, Option<i64>>(4)
             .map_err(|source| Error::GeoPackage {
                 path: path.to_path_buf(),
                 source,
             })?;
+        let navigability = row
+            .get::<_, Option<i64>>(5)
+            .map_err(|source| Error::GeoPackage {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        let area = row
+            .get::<_, Option<f64>>(6)
+            .map_err(|source| Error::GeoPackage {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        let (geometry, coordinate_count) =
+            normalize_mixed_geopackage_wkb_with_count(geometry, z_requirement, m_requirement)
+                .map_err(|error| {
+                    Error::Validation(format!(
+                        "{} table {table}{feature} has invalid GeoPackage geometry: {error}",
+                        path.display()
+                    ))
+                })?;
+        add_decoded_coordinates(decoded_coordinates, coordinate_count, path, table, &feature)?;
         let geometry = GpkgWkb(geometry).to_geo().map_err(|error| {
             Error::Validation(format!(
-                "{} table {table} has invalid GeoPackage geometry: {error}",
+                "{} table {table}{feature} has invalid GeoPackage geometry: {error}",
                 path.display()
             ))
         })?;
         if !decoded_geometry_matches(kind, &geometry) {
             return Err(Error::Validation(format!(
-                "{} table {table} contains geometry incompatible with its feature class",
+                "{} table {table}{feature} contains geometry incompatible with its feature class",
                 path.display()
             )));
         }
@@ -929,6 +1055,7 @@ fn read_feature_table(
         let area_square_meters = area
             .filter(|value| value.is_finite() && *value >= 0.0)
             .unwrap_or_else(|| geometry_area_hint(&geometry));
+        ensure_decoded_feature_capacity(output.len(), path, table, &feature)?;
         output.push(WaterFeature {
             kind,
             geometry,
@@ -949,6 +1076,418 @@ fn read_feature_table(
         });
     }
     Ok(())
+}
+
+fn ensure_decoded_feature_capacity(
+    count: usize,
+    path: &Path,
+    table: &str,
+    feature: &str,
+) -> Result<()> {
+    if count >= MAX_DECODED_HYDROLOGY_FEATURES {
+        return Err(Error::Validation(format!(
+            "{} table {table}{feature} exceeds the cumulative decoded hydrology feature bound of {MAX_DECODED_HYDROLOGY_FEATURES}",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+fn add_decoded_coordinates(
+    total: &mut usize,
+    count: usize,
+    path: &Path,
+    table: &str,
+    feature: &str,
+) -> Result<()> {
+    *total = total.checked_add(count).ok_or_else(|| {
+        Error::Validation(format!(
+            "{} table {table}{feature} overflows the cumulative decoded coordinate count",
+            path.display()
+        ))
+    })?;
+    if *total > MAX_TOTAL_DECODED_COORDINATES {
+        return Err(Error::Validation(format!(
+            "{} table {table}{feature} raises the cumulative decoded coordinates to {total}, exceeding the bound of {MAX_TOTAL_DECODED_COORDINATES}",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+/// EU-Hydro v1.3 mixes ISO WKB dimensional type codes on collection roots
+/// with EWKB Z/M flag bits on their children. GeoPackage permits ISO WKB, so
+/// translate only those equivalent Z/M flags before passing the blob to the
+/// strict GeoPackage decoder. Walking the complete geometry also ensures a
+/// truncated source blob cannot be made acceptable by normalization.
+#[cfg(test)]
+fn normalize_mixed_geopackage_wkb(
+    geometry: Vec<u8>,
+    z_requirement: i64,
+    m_requirement: i64,
+) -> std::result::Result<Vec<u8>, &'static str> {
+    normalize_mixed_geopackage_wkb_with_count(geometry, z_requirement, m_requirement)
+        .map(|(geometry, _)| geometry)
+}
+
+fn normalize_mixed_geopackage_wkb_with_count(
+    mut geometry: Vec<u8>,
+    z_requirement: i64,
+    m_requirement: i64,
+) -> std::result::Result<(Vec<u8>, usize), &'static str> {
+    if geometry.len() > MAX_GEOMETRY_BLOB_BYTES {
+        return Err("GeoPackage geometry exceeds its byte bound");
+    }
+    if geometry.len() < 8 || geometry[..2] != *b"GP" {
+        return Err("missing GeoPackage binary header");
+    }
+    if geometry[2] != 0 {
+        return Err("unsupported GeoPackage binary version");
+    }
+    let flags = geometry[3];
+    if flags & 0xc0 != 0 {
+        return Err("GeoPackage binary header has nonzero reserved bits");
+    }
+    if flags & 0x20 != 0 {
+        return Err("extended GeoPackage binary geometry is unsupported");
+    }
+    if flags & 0x10 != 0 {
+        return Err("empty GeoPackage geometry is invalid for a hydrology feature");
+    }
+    let little_endian = flags & 0x01 != 0;
+    let srs = if little_endian {
+        i32::from_le_bytes(
+            geometry[4..8]
+                .try_into()
+                .expect("header length was checked"),
+        )
+    } else {
+        i32::from_be_bytes(
+            geometry[4..8]
+                .try_into()
+                .expect("header length was checked"),
+        )
+    };
+    if i64::from(srs) != EXPECTED_SRS {
+        return Err("GeoPackage geometry uses an unexpected SRS");
+    }
+    let envelope_doubles = match (flags >> 1) & 0x07 {
+        0 => 0,
+        1 => 4,
+        2 | 3 => 6,
+        4 => 8,
+        _ => return Err("invalid GeoPackage envelope indicator"),
+    };
+    let header_len = 8_usize
+        .checked_add(envelope_doubles * 8)
+        .ok_or("GeoPackage header length overflow")?;
+    if geometry.len() < header_len {
+        return Err("truncated GeoPackage binary header");
+    }
+
+    let mut cursor = header_len;
+    let mut budget = WkbBudget::default();
+    let dimensions = normalize_wkb_geometry(
+        &mut geometry,
+        &mut cursor,
+        None,
+        None,
+        false,
+        0,
+        &mut budget,
+    )?;
+    validate_dimension_requirement(z_requirement, dimensions.z, "z")?;
+    validate_dimension_requirement(m_requirement, dimensions.m, "m")?;
+    if cursor != geometry.len() {
+        return Err("trailing bytes after GeoPackage geometry");
+    }
+    Ok((geometry, budget.coordinates))
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct WkbDimensions {
+    z: bool,
+    m: bool,
+}
+
+impl WkbDimensions {
+    const fn coordinate_count(self) -> usize {
+        2 + self.z as usize + self.m as usize
+    }
+
+    const fn iso_offset(self) -> u32 {
+        match (self.z, self.m) {
+            (false, false) => 0,
+            (true, false) => 1_000,
+            (false, true) => 2_000,
+            (true, true) => 3_000,
+        }
+    }
+}
+
+#[derive(Default)]
+struct WkbBudget {
+    nodes: usize,
+    coordinates: usize,
+}
+
+fn validate_dimension_requirement(
+    requirement: i64,
+    present: bool,
+    axis: &'static str,
+) -> std::result::Result<(), &'static str> {
+    match (requirement, present) {
+        (0, false) | (1, true) | (2, _) => Ok(()),
+        (0, true) => Err(if axis == "z" {
+            "GeoPackage geometry has prohibited z coordinates"
+        } else {
+            "GeoPackage geometry has prohibited m coordinates"
+        }),
+        (1, false) => Err(if axis == "z" {
+            "GeoPackage geometry is missing mandatory z coordinates"
+        } else {
+            "GeoPackage geometry is missing mandatory m coordinates"
+        }),
+        _ => Err("invalid GeoPackage dimension requirement"),
+    }
+}
+
+fn normalize_wkb_geometry(
+    bytes: &mut [u8],
+    cursor: &mut usize,
+    expected_type: Option<u32>,
+    expected_dimensions: Option<WkbDimensions>,
+    allow_ewkb: bool,
+    depth: usize,
+    budget: &mut WkbBudget,
+) -> std::result::Result<WkbDimensions, &'static str> {
+    if depth > MAX_WKB_NESTING_DEPTH {
+        return Err("WKB geometry exceeds its nesting-depth bound");
+    }
+    add_wkb_nodes(budget, 1)?;
+    let byte_order = *bytes.get(*cursor).ok_or("truncated WKB byte order")?;
+    *cursor += 1;
+    let little_endian = match byte_order {
+        0 => false,
+        1 => true,
+        _ => return Err("invalid WKB byte order"),
+    };
+    let type_offset = *cursor;
+    let raw_type = read_wkb_u32(bytes, cursor, little_endian)?;
+    let (base_type, dimensions, normalized_type, was_ewkb) =
+        normalize_wkb_type(raw_type, allow_ewkb)?;
+    if expected_type.is_some_and(|expected| expected != base_type) {
+        return Err("WKB collection child has an incompatible geometry type");
+    }
+    if expected_dimensions.is_some_and(|expected| expected != dimensions) {
+        return Err("WKB collection child has incompatible dimensions");
+    }
+    if normalized_type != raw_type {
+        let encoded = if little_endian {
+            normalized_type.to_le_bytes()
+        } else {
+            normalized_type.to_be_bytes()
+        };
+        bytes[type_offset..type_offset + 4].copy_from_slice(&encoded);
+    }
+
+    match base_type {
+        1 => {
+            add_wkb_coordinates(budget, 1)?;
+            validate_wkb_coordinates(bytes, cursor, 1, dimensions, little_endian, false)?;
+        }
+        2 => {
+            let points = read_wkb_u32(bytes, cursor, little_endian)? as usize;
+            if points < 2 {
+                return Err("WKB LineString has fewer than two coordinates");
+            }
+            add_wkb_coordinates(budget, points)?;
+            validate_wkb_coordinates(bytes, cursor, points, dimensions, little_endian, false)?;
+        }
+        3 => {
+            let rings = read_wkb_u32(bytes, cursor, little_endian)? as usize;
+            if rings == 0 {
+                return Err("non-empty WKB Polygon has no rings");
+            }
+            add_wkb_nodes(budget, rings)?;
+            for _ in 0..rings {
+                let points = read_wkb_u32(bytes, cursor, little_endian)? as usize;
+                if points < 4 {
+                    return Err("WKB polygon ring has fewer than four coordinates");
+                }
+                add_wkb_coordinates(budget, points)?;
+                validate_wkb_coordinates(bytes, cursor, points, dimensions, little_endian, true)?;
+            }
+        }
+        4..=7 => {
+            let children = read_wkb_u32(bytes, cursor, little_endian)? as usize;
+            if children == 0 {
+                return Err("non-empty WKB collection has no children");
+            }
+            if children > MAX_WKB_GEOMETRY_NODES.saturating_sub(budget.nodes) {
+                return Err("WKB geometry exceeds its node bound");
+            }
+            let child_type = match base_type {
+                4 => Some(1),
+                5 => Some(2),
+                6 => Some(3),
+                7 => None,
+                _ => unreachable!(),
+            };
+            for _ in 0..children {
+                normalize_wkb_geometry(
+                    bytes,
+                    cursor,
+                    child_type,
+                    (base_type != 7).then_some(dimensions),
+                    !was_ewkb,
+                    depth + 1,
+                    budget,
+                )?;
+            }
+        }
+        _ => return Err("unsupported WKB geometry type"),
+    }
+    Ok(dimensions)
+}
+
+fn add_wkb_nodes(budget: &mut WkbBudget, count: usize) -> std::result::Result<(), &'static str> {
+    budget.nodes = budget
+        .nodes
+        .checked_add(count)
+        .ok_or("WKB geometry-node count overflow")?;
+    if budget.nodes > MAX_WKB_GEOMETRY_NODES {
+        return Err("WKB geometry exceeds its node bound");
+    }
+    Ok(())
+}
+
+fn normalize_wkb_type(
+    raw_type: u32,
+    allow_ewkb: bool,
+) -> std::result::Result<(u32, WkbDimensions, u32, bool), &'static str> {
+    const EWKB_Z: u32 = 0x8000_0000;
+    const EWKB_M: u32 = 0x4000_0000;
+    const EWKB_SRID: u32 = 0x2000_0000;
+    const EWKB_FLAGS: u32 = EWKB_Z | EWKB_M | EWKB_SRID;
+
+    if raw_type & EWKB_FLAGS != 0 {
+        if !allow_ewkb {
+            return Err("EWKB flags are not allowed on a GeoPackage root geometry");
+        }
+        if raw_type & EWKB_SRID != 0 || (raw_type & !EWKB_FLAGS) > 7 {
+            return Err("unsupported EWKB geometry type");
+        }
+        let base_type = raw_type & !EWKB_FLAGS;
+        if base_type == 0 {
+            return Err("unsupported EWKB geometry type");
+        }
+        let has_z = raw_type & EWKB_Z != 0;
+        let has_m = raw_type & EWKB_M != 0;
+        let dimensions = WkbDimensions { z: has_z, m: has_m };
+        return Ok((
+            base_type,
+            dimensions,
+            base_type + dimensions.iso_offset(),
+            true,
+        ));
+    }
+
+    let base_type = raw_type % 1_000;
+    let dimension_class = raw_type / 1_000;
+    if !(1..=7).contains(&base_type) || dimension_class > 3 {
+        return Err("unsupported ISO WKB geometry type");
+    }
+    let dimensions = match dimension_class {
+        0 => WkbDimensions { z: false, m: false },
+        1 => WkbDimensions { z: true, m: false },
+        2 => WkbDimensions { z: false, m: true },
+        3 => WkbDimensions { z: true, m: true },
+        _ => unreachable!(),
+    };
+    Ok((base_type, dimensions, raw_type, false))
+}
+
+fn add_wkb_coordinates(
+    budget: &mut WkbBudget,
+    count: usize,
+) -> std::result::Result<(), &'static str> {
+    budget.coordinates = budget
+        .coordinates
+        .checked_add(count)
+        .ok_or("WKB coordinate count overflow")?;
+    if budget.coordinates > MAX_WKB_COORDINATES {
+        return Err("WKB geometry exceeds its coordinate bound");
+    }
+    Ok(())
+}
+
+fn validate_wkb_coordinates(
+    bytes: &[u8],
+    cursor: &mut usize,
+    count: usize,
+    dimensions: WkbDimensions,
+    little_endian: bool,
+    require_closed: bool,
+) -> std::result::Result<(), &'static str> {
+    let coordinate_width = dimensions.coordinate_count();
+    let mut first = [0_u64; 4];
+    let mut last = [0_u64; 4];
+    for coordinate in 0..count {
+        for ordinate in 0..coordinate_width {
+            let end = cursor.checked_add(8).ok_or("WKB offset overflow")?;
+            let encoded: [u8; 8] = bytes
+                .get(*cursor..end)
+                .ok_or("truncated WKB coordinate data")?
+                .try_into()
+                .expect("coordinate slice length was checked");
+            *cursor = end;
+            let bits = u64::from_ne_bytes(encoded);
+            if coordinate == 0 {
+                first[ordinate] = bits;
+            }
+            if coordinate + 1 == count {
+                last[ordinate] = bits;
+            }
+            if ordinate >= 2 {
+                continue;
+            }
+            let value = if little_endian {
+                f64::from_le_bytes(encoded)
+            } else {
+                f64::from_be_bytes(encoded)
+            };
+            if !value.is_finite() {
+                return Err("WKB x/y coordinate is not finite");
+            }
+            if !(SAFE_EPSG_3035_MIN_METERS..=SAFE_EPSG_3035_MAX_METERS).contains(&value) {
+                return Err("WKB x/y coordinate is outside the safe EPSG:3035 extent");
+            }
+        }
+    }
+    if require_closed && first[..coordinate_width] != last[..coordinate_width] {
+        return Err("WKB polygon ring is not closed");
+    }
+    Ok(())
+}
+
+fn read_wkb_u32(
+    bytes: &[u8],
+    cursor: &mut usize,
+    little_endian: bool,
+) -> std::result::Result<u32, &'static str> {
+    let end = cursor.checked_add(4).ok_or("WKB offset overflow")?;
+    let value: [u8; 4] = bytes
+        .get(*cursor..end)
+        .ok_or("truncated WKB integer")?
+        .try_into()
+        .expect("slice length was checked");
+    *cursor = end;
+    Ok(if little_endian {
+        u32::from_le_bytes(value)
+    } else {
+        u32::from_be_bytes(value)
+    })
 }
 
 fn source_geometry_type_matches(kind: FeatureKind, geometry_type: &str) -> bool {
@@ -1275,6 +1814,352 @@ mod tests {
     use super::*;
 
     #[test]
+    fn normalizes_real_eu_hydro_multipolygon_zm_child_dialect() {
+        let geometry = eu_hydro_multipolygon_zm();
+        assert_eq!(
+            &geometry[..22],
+            &[
+                0x47, 0x50, 0x00, 0x01, 0xdb, 0x0b, 0x00, 0x00, 0x01, 0xbe, 0x0b, 0x00, 0x00, 0x01,
+                0x00, 0x00, 0x00, 0x01, 0x03, 0x00, 0x00, 0xc0,
+            ][..]
+        );
+
+        let normalized = normalize_mixed_geopackage_wkb(geometry, 1, 1).unwrap();
+        assert_eq!(&normalized[18..22], &3_003_u32.to_le_bytes());
+        let decoded = GpkgWkb(normalized).to_geo().unwrap();
+        let Geometry::MultiPolygon(polygons) = decoded else {
+            panic!("expected multipolygon");
+        };
+        assert_eq!(polygons.0.len(), 1);
+        assert_eq!(polygons.0[0].exterior().0.len(), 5);
+    }
+
+    #[test]
+    fn mixed_eu_hydro_geometry_rejects_truncated_coordinate_data() {
+        let mut geometry = eu_hydro_multipolygon_zm();
+        geometry.pop();
+        assert_eq!(
+            normalize_mixed_geopackage_wkb(geometry, 1, 1).unwrap_err(),
+            "truncated WKB coordinate data"
+        );
+    }
+
+    #[test]
+    fn rejects_ewkb_flags_on_the_geopackage_root() {
+        let mut geometry = eu_hydro_multipolygon_zm();
+        geometry[9..13].copy_from_slice(&0xc000_0006_u32.to_le_bytes());
+        assert_eq!(
+            normalize_mixed_geopackage_wkb(geometry, 1, 1).unwrap_err(),
+            "EWKB flags are not allowed on a GeoPackage root geometry"
+        );
+    }
+
+    #[test]
+    fn enforces_geopackage_dimension_metadata() {
+        let geometry = eu_hydro_multipolygon_zm();
+        assert_eq!(
+            normalize_mixed_geopackage_wkb(geometry.clone(), 0, 1).unwrap_err(),
+            "GeoPackage geometry has prohibited z coordinates"
+        );
+        assert_eq!(
+            normalize_mixed_geopackage_wkb(geometry.clone(), 1, 0).unwrap_err(),
+            "GeoPackage geometry has prohibited m coordinates"
+        );
+        normalize_mixed_geopackage_wkb(geometry, 2, 2).unwrap();
+
+        assert_eq!(
+            validate_dimension_requirement(1, false, "z").unwrap_err(),
+            "GeoPackage geometry is missing mandatory z coordinates"
+        );
+        assert_eq!(
+            validate_dimension_requirement(1, false, "m").unwrap_err(),
+            "GeoPackage geometry is missing mandatory m coordinates"
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_geopackage_binary_headers() {
+        let geometry = eu_hydro_multipolygon_zm();
+        for (index, value, expected) in [
+            (2, 1, "unsupported GeoPackage binary version"),
+            (
+                3,
+                geometry[3] | 0x80,
+                "GeoPackage binary header has nonzero reserved bits",
+            ),
+            (
+                3,
+                geometry[3] | 0x20,
+                "extended GeoPackage binary geometry is unsupported",
+            ),
+            (
+                3,
+                geometry[3] | 0x10,
+                "empty GeoPackage geometry is invalid for a hydrology feature",
+            ),
+        ] {
+            let mut malformed = geometry.clone();
+            malformed[index] = value;
+            assert_eq!(
+                normalize_mixed_geopackage_wkb(malformed, 1, 1).unwrap_err(),
+                expected
+            );
+        }
+
+        let mut wrong_srs = geometry;
+        wrong_srs[4..8].copy_from_slice(&4_326_i32.to_le_bytes());
+        assert_eq!(
+            normalize_mixed_geopackage_wkb(wrong_srs, 1, 1).unwrap_err(),
+            "GeoPackage geometry uses an unexpected SRS"
+        );
+
+        let mut invalid_envelope = eu_hydro_multipolygon_zm();
+        invalid_envelope[3] = (invalid_envelope[3] & !0x0e) | (5 << 1);
+        assert_eq!(
+            normalize_mixed_geopackage_wkb(invalid_envelope, 1, 1).unwrap_err(),
+            "invalid GeoPackage envelope indicator"
+        );
+
+        let mut big_endian_header = eu_hydro_multipolygon_zm();
+        big_endian_header[3] &= !0x01;
+        big_endian_header[4..8].copy_from_slice(&(EXPECTED_SRS as i32).to_be_bytes());
+        normalize_mixed_geopackage_wkb(big_endian_header, 1, 1).unwrap();
+    }
+
+    #[test]
+    fn bounds_geometry_bytes_nodes_coordinates_and_nesting() {
+        assert_eq!(
+            normalize_mixed_geopackage_wkb(vec![0; MAX_GEOMETRY_BLOB_BYTES + 1], 2, 2).unwrap_err(),
+            "GeoPackage geometry exceeds its byte bound"
+        );
+
+        let mut too_many_nodes = minimal_gpkg_header();
+        too_many_nodes.push(1);
+        too_many_nodes.extend_from_slice(&7_u32.to_le_bytes());
+        too_many_nodes.extend_from_slice(&((MAX_WKB_GEOMETRY_NODES + 1) as u32).to_le_bytes());
+        assert_eq!(
+            normalize_mixed_geopackage_wkb(too_many_nodes, 2, 2).unwrap_err(),
+            "WKB geometry exceeds its node bound"
+        );
+
+        let mut too_many_coordinates = minimal_gpkg_header();
+        too_many_coordinates.push(1);
+        too_many_coordinates.extend_from_slice(&2_u32.to_le_bytes());
+        too_many_coordinates.extend_from_slice(&((MAX_WKB_COORDINATES + 1) as u32).to_le_bytes());
+        assert_eq!(
+            normalize_mixed_geopackage_wkb(too_many_coordinates, 2, 2).unwrap_err(),
+            "WKB geometry exceeds its coordinate bound"
+        );
+
+        let mut too_deep = minimal_gpkg_header();
+        for _ in 0..=MAX_WKB_NESTING_DEPTH + 1 {
+            too_deep.push(1);
+            too_deep.extend_from_slice(&7_u32.to_le_bytes());
+            too_deep.extend_from_slice(&1_u32.to_le_bytes());
+        }
+        assert_eq!(
+            normalize_mixed_geopackage_wkb(too_deep, 2, 2).unwrap_err(),
+            "WKB geometry exceeds its nesting-depth bound"
+        );
+    }
+
+    #[test]
+    fn polygon_rings_are_charged_before_iteration() {
+        let mut geometry = minimal_gpkg_header();
+        geometry.push(1);
+        geometry.extend_from_slice(&3_u32.to_le_bytes());
+        geometry.extend_from_slice(&(MAX_WKB_GEOMETRY_NODES as u32).to_le_bytes());
+        assert_eq!(
+            normalize_mixed_geopackage_wkb(geometry, 2, 2).unwrap_err(),
+            "WKB geometry exceeds its node bound"
+        );
+    }
+
+    #[test]
+    fn rejects_empty_or_undersized_wkb_structures() {
+        for (geometry_type, count, expected) in [
+            (2, 0, "WKB LineString has fewer than two coordinates"),
+            (3, 0, "non-empty WKB Polygon has no rings"),
+            (7, 0, "non-empty WKB collection has no children"),
+        ] {
+            assert_eq!(
+                normalize_mixed_geopackage_wkb(counted_wkb_geometry(geometry_type, count), 2, 2,)
+                    .unwrap_err(),
+                expected
+            );
+        }
+
+        let mut short_ring = counted_wkb_geometry(3, 1);
+        short_ring.extend_from_slice(&3_u32.to_le_bytes());
+        assert_eq!(
+            normalize_mixed_geopackage_wkb(short_ring, 2, 2).unwrap_err(),
+            "WKB polygon ring has fewer than four coordinates"
+        );
+    }
+
+    #[test]
+    fn rejects_one_point_lines_and_unclosed_polygon_rings() {
+        let mut one_point_line = counted_wkb_geometry(2, 1);
+        one_point_line.extend_from_slice(&0.0_f64.to_le_bytes());
+        one_point_line.extend_from_slice(&0.0_f64.to_le_bytes());
+        assert_eq!(
+            normalize_mixed_geopackage_wkb(one_point_line, 2, 2).unwrap_err(),
+            "WKB LineString has fewer than two coordinates"
+        );
+
+        let mut unclosed_ring = counted_wkb_geometry(3, 1);
+        unclosed_ring.extend_from_slice(&4_u32.to_le_bytes());
+        for (x, y) in [(0.0_f64, 0.0_f64), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)] {
+            unclosed_ring.extend_from_slice(&x.to_le_bytes());
+            unclosed_ring.extend_from_slice(&y.to_le_bytes());
+        }
+        assert_eq!(
+            normalize_mixed_geopackage_wkb(unclosed_ring, 2, 2).unwrap_err(),
+            "WKB polygon ring is not closed"
+        );
+    }
+
+    #[test]
+    fn rejects_nonfinite_and_out_of_extent_xy_coordinates() {
+        for (coordinates, expected) in [
+            (
+                [(f64::NAN, 0.0), (0.0, 0.0)],
+                "WKB x/y coordinate is not finite",
+            ),
+            (
+                [(0.0, f64::INFINITY), (0.0, 0.0)],
+                "WKB x/y coordinate is not finite",
+            ),
+            (
+                [(SAFE_EPSG_3035_MAX_METERS + 1.0, 0.0), (0.0, 0.0)],
+                "WKB x/y coordinate is outside the safe EPSG:3035 extent",
+            ),
+        ] {
+            assert_eq!(
+                normalize_mixed_geopackage_wkb(line_wkb_geometry(coordinates), 2, 2).unwrap_err(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn spatial_grid_rejects_a_feature_spanning_too_many_cells() {
+        let feature = WaterFeature {
+            kind: FeatureKind::River,
+            geometry: Geometry::LineString(geo::LineString::from(vec![
+                (SAFE_EPSG_3035_MIN_METERS, SAFE_EPSG_3035_MIN_METERS),
+                (SAFE_EPSG_3035_MAX_METERS, SAFE_EPSG_3035_MAX_METERS),
+            ])),
+            order: StrahlerOrder::new(1).unwrap(),
+            persistence: FlowPersistence::Perennial,
+            navigable: false,
+            area_square_meters: 0.0,
+        };
+        let error = build_spatial_grid(&[feature]).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("exceeding the per-feature bound"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn cumulative_feature_and_grid_reference_budgets_are_bounded() {
+        let path = Path::new("many-small-features.gpkg");
+        ensure_decoded_feature_capacity(
+            MAX_DECODED_HYDROLOGY_FEATURES - 1,
+            path,
+            "River_Net_l",
+            " feature 999999",
+        )
+        .unwrap();
+        let error = ensure_decoded_feature_capacity(
+            MAX_DECODED_HYDROLOGY_FEATURES,
+            path,
+            "River_Net_l",
+            " feature 1000000",
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("cumulative decoded"), "{error}");
+
+        let mut coordinates = MAX_TOTAL_DECODED_COORDINATES - 2;
+        add_decoded_coordinates(&mut coordinates, 2, path, "River_Net_l", " feature 999999")
+            .unwrap();
+        let error =
+            add_decoded_coordinates(&mut coordinates, 1, path, "River_Net_l", " feature 1000000")
+                .unwrap_err();
+        assert!(
+            error.to_string().contains("cumulative decoded coordinates"),
+            "{error}"
+        );
+
+        let mut references = MAX_TOTAL_SPATIAL_GRID_REFERENCES - 2;
+        add_spatial_grid_references(&mut references, 2, 999_999).unwrap();
+        let error = add_spatial_grid_references(&mut references, 1, 1_000_000).unwrap_err();
+        assert!(
+            error.to_string().contains("cumulative spatial-grid"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn source_file_discovery_has_a_cumulative_bound() {
+        let nonce = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "adventuresim-many-hydrology-files-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir(&directory).unwrap();
+        for index in 0..=MAX_HYDROLOGY_SOURCE_FILES {
+            fs::write(directory.join(format!("{index}.gpkg")), []).unwrap();
+        }
+        let mut paths = Vec::new();
+        let error = collect_geopackages(&directory, &mut paths).unwrap_err();
+        assert!(
+            error.to_string().contains("more than the supported"),
+            "{error}"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn accepts_all_ogc_geopackage_application_ids() {
+        for application_id in [
+            GEOPACKAGE_APPLICATION_ID_1_0,
+            GEOPACKAGE_APPLICATION_ID_1_1,
+            GEOPACKAGE_APPLICATION_ID_CURRENT,
+        ] {
+            let fixture = Fixture::new();
+            let connection = Connection::open(&fixture.path).unwrap();
+            connection
+                .pragma_update(None, "application_id", application_id)
+                .unwrap();
+            drop(connection);
+
+            HydrologyDatabase::open(&fixture.directory, None).unwrap();
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_geopackage_application_id() {
+        let fixture = Fixture::new();
+        let connection = Connection::open(&fixture.path).unwrap();
+        connection
+            .pragma_update(None, "application_id", 0x5351_4c69_i64)
+            .unwrap();
+        drop(connection);
+
+        let error = HydrologyDatabase::open(&fixture.directory, None)
+            .err()
+            .expect("an unrelated SQLite application ID must be rejected");
+        assert!(error.to_string().contains("is not an OGC GeoPackage"));
+    }
+
+    #[test]
     fn canal_access_cannot_exist_without_river_access() {
         let access = FlowingWaterAccess::RiverAndCanal(RiverAndCanalAccess {
             river: RiverAccess {
@@ -1286,6 +2171,28 @@ mod tests {
             canal_navigable: true,
         });
         assert!(matches!(access, FlowingWaterAccess::RiverAndCanal(_)));
+    }
+
+    fn eu_hydro_multipolygon_zm() -> Vec<u8> {
+        // Real EU-Hydro prefix: a no-envelope GeoPackage header, ISO 3006
+        // MultiPolygon ZM root, and EWKB 0xC0000003 Polygon ZM child.
+        let mut bytes = vec![
+            0x47, 0x50, 0x00, 0x01, 0xdb, 0x0b, 0x00, 0x00, 0x01, 0xbe, 0x0b, 0x00, 0x00, 0x01,
+            0x00, 0x00, 0x00, 0x01, 0x03, 0x00, 0x00, 0xc0, 0x01, 0x00, 0x00, 0x00, 0x05, 0x00,
+            0x00, 0x00,
+        ];
+        for (x, y) in [
+            (0.0_f64, 0.0_f64),
+            (10.0, 0.0),
+            (10.0, 10.0),
+            (0.0, 10.0),
+            (0.0, 0.0),
+        ] {
+            for coordinate in [x, y, 5.0, 7.0] {
+                bytes.extend_from_slice(&coordinate.to_le_bytes());
+            }
+        }
+        bytes
     }
 
     #[test]
@@ -1583,6 +2490,45 @@ mod tests {
     }
 
     #[test]
+    fn geometry_errors_identify_the_source_feature() {
+        let fixture = Fixture::new();
+        let connection = Connection::open(&fixture.path).unwrap();
+        connection
+            .execute("UPDATE River_Net_l SET geom = X'00' WHERE fid = 1", [])
+            .unwrap();
+        drop(connection);
+
+        let error = HydrologyDatabase::open(&fixture.directory, None)
+            .err()
+            .expect("invalid feature geometry must be rejected");
+        let message = error.to_string();
+        assert!(message.contains("River_Net_l feature 1"), "{message}");
+    }
+
+    #[test]
+    fn geometry_root_must_satisfy_registered_dimensions() {
+        let fixture = Fixture::new();
+        let connection = Connection::open(&fixture.path).unwrap();
+        connection
+            .execute(
+                "UPDATE gpkg_geometry_columns SET z = 1 WHERE table_name = 'River_Net_l'",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+
+        let error = HydrologyDatabase::open(&fixture.directory, None)
+            .err()
+            .expect("a mandatory absent z dimension must be rejected");
+        let message = error.to_string();
+        assert!(
+            message.contains("River_Net_l feature 1")
+                && message.contains("missing mandatory z coordinates"),
+            "{message}"
+        );
+    }
+
+    #[test]
     #[ignore = "requires extracted official EU-Hydro basin GeoPackages in EU_HYDRO_DIR"]
     fn reads_downloaded_eu_hydro_distribution() {
         let directory = std::env::var_os("EU_HYDRO_DIR").expect("set EU_HYDRO_DIR");
@@ -1729,6 +2675,29 @@ mod tests {
         bytes.extend_from_slice(&(EXPECTED_SRS as i32).to_le_bytes());
         for coordinate in [min_x, max_x, min_y, max_y] {
             bytes.extend_from_slice(&coordinate.to_le_bytes());
+        }
+        bytes
+    }
+
+    fn minimal_gpkg_header() -> Vec<u8> {
+        let mut bytes = b"GP\0\x01".to_vec();
+        bytes.extend_from_slice(&(EXPECTED_SRS as i32).to_le_bytes());
+        bytes
+    }
+
+    fn counted_wkb_geometry(geometry_type: u32, count: u32) -> Vec<u8> {
+        let mut bytes = minimal_gpkg_header();
+        bytes.push(1);
+        bytes.extend_from_slice(&geometry_type.to_le_bytes());
+        bytes.extend_from_slice(&count.to_le_bytes());
+        bytes
+    }
+
+    fn line_wkb_geometry(coordinates: [(f64, f64); 2]) -> Vec<u8> {
+        let mut bytes = counted_wkb_geometry(2, coordinates.len() as u32);
+        for (x, y) in coordinates {
+            bytes.extend_from_slice(&x.to_le_bytes());
+            bytes.extend_from_slice(&y.to_le_bytes());
         }
         bytes
     }

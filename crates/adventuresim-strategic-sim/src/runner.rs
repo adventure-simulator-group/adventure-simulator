@@ -98,13 +98,6 @@ impl StrategicBackend for NativeSettlementBackend {
             MINUTES_PER_DAY,
             ActivityTrainingProfile::default(),
         );
-        apply_religion_training(
-            &mut state.skills.religion,
-            state.profile.schedule.religions,
-            MINUTES_PER_DAY,
-            None,
-            state.profile.schedule.prayer,
-        );
         let checks = Checks {
             attrs: &state.profile.attributes,
             skills: state.skills,
@@ -287,12 +280,6 @@ fn run_manifest(mut manifest: RunManifest) -> Result<SimulationReport, Simulatio
         if profile.schedule.raiding > 0 {
             return Err(SimulationError::InvalidConfig(format!(
                 "agent {} assigns raiding minutes, but native raiding execution is unsupported until equipped capabilities are authoritative",
-                profile.agent_id
-            )));
-        }
-        if profile.schedule.religion_auto_train || profile.schedule.religion > 0 {
-            return Err(SimulationError::InvalidConfig(format!(
-                "agent {} uses automatic Religion training; simulator profiles require explicit per-tradition allocations",
                 profile.agent_id
             )));
         }
@@ -489,19 +476,32 @@ fn quantize_canonical_floats(report: &mut SimulationReport) {
 }
 
 fn quantize_skills(skills: &mut SkillHours) {
-    skills.melee = q32(skills.melee);
+    skills.polearm = q32(skills.polearm);
+    skills.axe = q32(skills.axe);
+    skills.bludgeon = q32(skills.bludgeon);
+    skills.sword = q32(skills.sword);
+    skills.knife = q32(skills.knife);
     skills.dodge = q32(skills.dodge);
     skills.block = q32(skills.block);
-    skills.ranged = q32(skills.ranged);
+    skills.bow = q32(skills.bow);
+    skills.crossbow = q32(skills.crossbow);
+    skills.firearm = q32(skills.firearm);
+    skills.throw = q32(skills.throw);
     skills.will = q32(skills.will);
-    skills.charisma = q32(skills.charisma);
+    skills.insight = q32(skills.insight);
+    skills.self_awareness = q32(skills.self_awareness);
+    skills.humor = q32(skills.humor);
+    skills.command = q32(skills.command);
+    skills.deception = q32(skills.deception);
+    skills.seduction = q32(skills.seduction);
     skills.medicine = q32(skills.medicine);
     for religion in OfficialReligion::ALL {
         *skills.religion.direct_mut(religion) = q32(skills.religion.direct(religion));
     }
     skills.stealth = q32(skills.stealth);
     skills.balance = q32(skills.balance);
-    skills.surgeon = q32(skills.surgeon);
+    skills.anatomy = q32(skills.anatomy);
+    skills.tailoring = q32(skills.tailoring);
 }
 
 fn total_skill_hours(skills: SkillHours) -> f64 {
@@ -763,17 +763,35 @@ struct SimSkills(SkillHours);
 impl PlayerSkills for SimSkills {
     fn skill_hours_trained(&self, skill: Skill) -> f32 {
         match skill {
-            Skill::Melee => self.0.melee,
+            Skill::Polearm => self.0.polearm,
+            Skill::Axe => self.0.axe,
+            Skill::Bludgeon => self.0.bludgeon,
+            Skill::Sword => self.0.sword,
+            Skill::Knife => self.0.knife,
             Skill::Dodge => self.0.dodge,
             Skill::Block => self.0.block,
-            Skill::Ranged => self.0.ranged,
+            Skill::Bow => self.0.bow,
+            Skill::Crossbow => self.0.crossbow,
+            Skill::Firearm => self.0.firearm,
+            Skill::Throw => self.0.throw,
             Skill::Will => self.0.will,
-            Skill::Charisma => self.0.charisma,
+            Skill::Insight => self.0.insight,
+            Skill::SelfAwareness => self.0.self_awareness,
+            Skill::Humor => self.0.humor,
+            Skill::Command => self.0.command,
+            Skill::Deception => self.0.deception,
+            Skill::Seduction => self.0.seduction,
             Skill::Medicine => self.0.medicine,
+            Skill::Cooking => self.0.cooking,
             Skill::Religion => self.0.religion.maximum_effective(),
             Skill::Stealth => self.0.stealth,
             Skill::Balance => self.0.balance,
-            Skill::Surgeon => self.0.surgeon,
+            Skill::TerrainPlains
+            | Skill::TerrainForest
+            | Skill::TerrainHills
+            | Skill::TerrainUrban => 0.0,
+            Skill::Anatomy => self.0.anatomy,
+            Skill::Tailoring => self.0.tailoring,
             Skill::Smithing => self.0.smithing,
         }
     }

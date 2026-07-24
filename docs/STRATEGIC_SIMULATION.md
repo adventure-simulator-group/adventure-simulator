@@ -1,5 +1,8 @@
 # Strategic NPC simulation
 
+Provision scenarios use multiple food definitions and aggregate useful calories
+across independent lots. Drivers must not assume all food is `travel_ration`.
+
 `adventuresim-strategic-sim` is a native, deterministic experiment harness for
 balance exploration and regression reproduction. It has two deliberately
 different backends: a fast native settlement-activity model for multi-year
@@ -43,7 +46,7 @@ sinks; the runner therefore does not assert naive currency conservation.
 
 Profiles retain their seed and all inputs needed for inspection: a deterministic sparse personality
 (two through four non-neutral axes); correlated, bounded attributes; an explicit personality-by-attribute
-build role; initial skills; training and activity allocations;
+build role; initial leaf skills; activity allocations that produce training;
 activity-versus-quest, risk, and recovery preferences; equipment style and
 utility weights; and provisioning, reserve, and spending preferences. Some
 fields are recorded for later slices and do not yet affect settlement choices. Build derivation keeps
@@ -166,3 +169,10 @@ Direct `core-loop` invocation is intentionally an expert-only path: its process
 must inherit the same `ADVENTURESIM_SIM_BOOTSTRAP_TOKEN` used to compile and
 publish that disposable module. There is no token CLI option. Prefer the recipe,
 which keeps the capability confined to one shell process and always cleans up.
+
+The reducer-backed core loop subscribes to strategic encounters and resolves
+each through the same public reducer used by the Map/camp UI. Its report records
+encounter frequency; sneak, detour, attack, run, and surrender choices; escape
+eligibility; exact surrendered item/value losses; encounter defeats; and full
+party wipes. Encounter events in the trace retain the canonical encounter ID,
+chosen action, and authoritative outcome for replay diagnostics.

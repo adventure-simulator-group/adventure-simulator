@@ -111,7 +111,7 @@ impl RecruitmentRoleForm {
             endurance: self.endurance,
             medicine: 0,
             surgery: 0,
-            charisma: 0,
+            command: 0,
             religion: 0,
         }
     }
@@ -125,7 +125,7 @@ impl RecruitmentRoleForm {
 #[derive(Deserialize)]
 struct PartyCheckTargetsForm {
     medicine: f32,
-    charisma: f32,
+    command: f32,
     religion: f32,
 }
 
@@ -140,7 +140,7 @@ async fn update_party_check_targets(
             actor_id,
             PartyAction::UpdatePartyCheckTargets {
                 medicine: form.medicine,
-                charisma: form.charisma,
+                command: form.command,
                 religion: form.religion,
             },
         )
@@ -441,9 +441,9 @@ async fn recruitment_panel_fragment(
         .iter()
         .map(|value| value.medicine)
         .collect();
-    let charisma: Vec<f32> = member_capabilities
+    let command: Vec<f32> = member_capabilities
         .iter()
-        .map(|value| value.charisma)
+        .map(|value| value.command)
         .collect();
     let religion: Vec<f32> = member_capabilities
         .iter()
@@ -453,7 +453,7 @@ async fn recruitment_panel_fragment(
         medicine: adventuresim_core::capability::aggregate_bounded_party_check(
             medicine.iter().copied(),
         ),
-        charisma: adventuresim_core::capability::aggregate_party_charisma(charisma.iter().copied()),
+        command: adventuresim_core::capability::aggregate_party_command(command.iter().copied()),
         religion: adventuresim_core::capability::aggregate_party_check(religion.iter().copied()),
     };
     let mut panels = Vec::new();
@@ -517,24 +517,25 @@ async fn recruitment_panel_fragment(
                     .unwrap_or_default()
                     .into_iter()
                     .next();
-                let contribution = capability.as_ref().map_or_default(|candidate| {
-                    PartyCheckSummary {
-                        medicine:
-                            adventuresim_core::capability::aggregate_bounded_party_contribution(
-                                &medicine,
-                                candidate.medicine,
+                let contribution =
+                    capability
+                        .as_ref()
+                        .map_or_default(|candidate| PartyCheckSummary {
+                            medicine:
+                                adventuresim_core::capability::aggregate_bounded_party_contribution(
+                                    &medicine,
+                                    candidate.medicine,
+                                ),
+                            command:
+                                adventuresim_core::capability::aggregate_party_command_contribution(
+                                    &command,
+                                    candidate.command,
+                                ),
+                            religion: adventuresim_core::capability::aggregate_party_contribution(
+                                &religion,
+                                candidate.religion,
                             ),
-                        charisma:
-                            adventuresim_core::capability::aggregate_party_charisma_contribution(
-                                &charisma,
-                                candidate.charisma,
-                            ),
-                        religion: adventuresim_core::capability::aggregate_party_contribution(
-                            &religion,
-                            candidate.religion,
-                        ),
-                    }
-                });
+                        });
                 applicants.push(RecruitmentApplicant {
                     request: request.clone(),
                     character,

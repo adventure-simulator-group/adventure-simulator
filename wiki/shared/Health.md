@@ -1,5 +1,10 @@
 Damage and recuperation are based on real values, but if you did this in basically any other RPG it would become extremely boring and punishing. However, in our case [combat](../tactical/Combat.md) is designed around the assumption that players will reliably be able to avoid taking damage, either by dodging, blocking, or it being absorbed by armor, so this isn't a completely unreasonable target.
 
+Foodborne illness uses existing Dysentery / Bloody flux. Eating evaluates a
+direct dose from the lot's lazily grown contamination and amount consumed;
+immunity applies and duplicate unresolved infection is prevented. Contamination
+details remain private simulation state.
+
 However, inevitably damage will occur, and to prevent this from being a fun-killer we must use the two [approaches](../Meta.md) to skip the tedium:
 # Abstraction-based Approach
 The first of which is that even if it takes a very long time to heal from injuries, we can simply [skip ahead](../strategic/Time.md) until your character is healed. This only works well when resting at [settlements](../strategic/Settlement.md) though. If your party is mid-quest and you take a serious injury, you're either going to have to call it off or fight with a handicap. Unless...
@@ -11,6 +16,35 @@ Why elves? Because they are the designated race for casual players who aren't lo
 # Damage
 
 ## Disease
+
+Diseases declare typed transmission vectors (close contact, food/water,
+vermin, wounds, or blood) rather than a generic contagious flag. Dirt modestly
+raises the standing infection risk of cuts. Blood only transmits a disease when
+that disease explicitly supports the blood vector. Plague is the current starter
+bloodborne disease; influenza is not. A blood deposit privately snapshots active,
+blood-compatible source infection episodes at deposition. Exact source IDs and
+disease snapshots live in private provenance tables. The public filth row and
+character sheet expose only own, foreign, or unknown origin, so direct subscribers
+cannot recover the source identity. Blood remains visibly dirty until washed, but follows one
+global rule: infectiousness falls linearly to zero over two strategic days.
+Foreign infected blood can establish a new episode during strategic time advance.
+Open cuts make that risk dramatic, bandages reduce it substantially, and stitches
+reduce it further; intact skin retains only a small baseline route. Evaluation
+skips clean and expired intervals in O(deposits), scans only merged infectious
+windows, and predicts bandaged/stitched wound closure so split and unsplit time
+advances use the same route at each exposure minute.
+
+Successful bandaging, stitching, and projectile extraction transfer 2 filth points
+of the patient's blood to the acting surgeon. This occurs only after procedure
+requirements and elapsed time succeed. Another patient's active Plague snapshot is
+therefore reachable through ordinary care; self-treatment adds no procedure deposit.
+
+Autoresolve currently creates self/attacker blood deposits as it commits strategic
+wounds. The real-time tactical handoff does not yet carry per-hit wound provenance,
+so equivalent tactical blood deposits remain a documented follow-up rather than
+inventing tactical tick state in SpacetimeDB. Synthetic autoresolve opponents also
+lack durable character identities, so their blood is recorded with unknown source
+provenance.
 
 Characters do not innately know their diseases. Everyone can see compact,
 deduplicated outward symptoms. A completed examination can additionally find
@@ -71,7 +105,7 @@ accelerates the remaining course while mitigating symptoms; it never instantly
 cures disease. Unequipping discards the course, and medication records are also
 removed automatically when their matching disease resolves. Immunity resists acquisition and attenuates severity; resolved episodes can
 confer disease-specific acquired immunity. Open cuts may introduce wound disease
-with Surgery reducing residual risk; blunt damage does not.
+with the treating character's relevant Anatomy-based procedure check reducing residual risk; blunt damage does not.
 
 Outbreak acquisition hashes each actual minute of presence. This keeps late
 arrival, departure and re-entry exact and makes one long stay identical to the
@@ -98,16 +132,34 @@ During recovery, the existing bounded party Medicine check supplies **1 percenta
 
 Autoresolve calculates every hit through the shared melee and ranged exchanges and commits its body part, cut and blunt shares, and projectile kind. Strategic wounds are split per limb into cuts, bruising, and fracture severity. Fracture severity is a condition within blunt trauma and never adds a second copy of the hit's health damage. Cuts remain open after battle: they deteriorate at 2.5% health per day and drain blood in proportion to wound size until manually bandaged. Bandaging consumes one bandage and permanently stabilizes that wound; its health-bar segment changes from solid red to banded pink. Bruising heals without a procedure. A single blunt hit over 18% limb health creates fracture severity proportional to the excess. Untreated fractures are graphite grey, while splinted fractures use lighter grey bands so treatment state is not communicated by color alone.
 
-Clicking any limb preserves the character sheet and replaces its right rail with surgery. The normal limb bar and surgery view share the same per-limb cut, bruise, fracture, bandage, and projectile state. Procedures show supplies, time, and difficulty but keep infection odds hidden. The surgeon and patient must share a location, party, and personal character time; the lagging participant waits to the later clock, then only those participants advance by the procedure duration. Self-treatment applies a 2.5-point Surgery penalty. Bandaging is available at Surgery 0. Stitching is separate, requires Surgery 2 and a reusable surgery kit, and its quality accelerates healing. A splint's exact inventory row moves into a separate limb-applied slot while retaining its weight and owner, never displaces armor, and returns automatically when the fracture heals; anyone may remove it, while application requires Surgery training.
+Each limb heading has an explicit raised surgery icon button beside its
+informational health meter. Activating it preserves both character rails and
+opens that limb's surgery interface as a modal dialog; the button remains
+visibly inset while the dialog is open. The normal limb bar and surgery dialog
+share the same per-limb cut, bruise, fracture, bandage, and projectile state.
+Procedures show supplies, time, and difficulty but keep infection odds hidden.
+The treating character and patient must share a location, party, and personal
+character time; the lagging participant waits to the later clock, then only
+those participants advance by the procedure duration. Self-treatment applies a
+2.5-point penalty to the resulting procedure check. Bandaging and splinting use
+Anatomy. Stitching averages Anatomy and Tailoring and requires a reusable
+surgery kit; its quality accelerates healing. A splint's exact inventory row
+moves into a separate limb-applied slot while retaining its weight and owner,
+never displaces armor, and returns automatically when the fracture heals;
+anyone may remove it.
+
+Bandaging, stitching, and projectile extraction may optionally consume one unit
+of the acting character's soft soap. Soap improves infection control independently
+of Surgery skill and other supplies; procedures remain possible without it.
 
 Any unhealed cut accumulates deterministic standing wound exposure. Bandaging
-reduces that exposure and stitch quality reduces it further; a diseased surgeon
+reduces that exposure and stitch quality reduces it further; a diseased treating character
 also worsens contamination exposure during a procedure. Retained projectiles do
 not add a separate recurring complication roll.
 
-Retained arrowheads and balls appear inside the affected limb bar. Extraction DC combines the individual hit's damage with a seeded depth component and is deliberately uncapped: shallow projectiles can be removed at Surgery 0 while difficult positions may exceed DC 5. A procedure cannot be attempted until the surgeon meets its required Surgery skill. The procedure meter shows met skill brightly, unmet required skill darkly, and ranks beyond the requirement as empty. Retention imposes only a flat 40% healing-rate penalty. Successful extraction adds cut damage and bleeding, but it does not carry an additional recurring projectile complication. Projectile kind is an explicit extension point for later DC multipliers such as barbed arrows.
+Retained arrowheads and balls appear inside the affected limb bar. Extraction DC combines the individual hit's damage with a seeded depth component and is deliberately uncapped: shallow projectiles need little training while difficult positions may exceed DC 5. A procedure cannot be attempted until the treating character's relevant composite check meets its requirement. The procedure meter shows met skill brightly, unmet required skill darkly, and ranks beyond the requirement as empty. Retention imposes only a flat 40% healing-rate penalty. Successful extraction adds cut damage and bleeding, but it does not carry an additional recurring projectile complication. Projectile kind is an explicit extension point for later DC multipliers such as barbed arrows.
 
-Projectile extraction above DC 1 requires a reusable surgery kit. Shallower
+Projectile extraction averages Anatomy and Knife; procedures above DC 1 require a reusable surgery kit. Shallower
 projectiles remain removable without one.
 
 Characters also persist current and maximum blood volume. Maximum volume currently assumes a 70 kg body at 70 ml/kg. Autoresolve commits immediate blood loss alongside final body-part injuries, open cuts continue draining blood on every authoritative personal-time path, and settlement rest recovers 1% of maximum blood volume per day. Losing 30% of maximum blood volume contributes 100% strategic incapacitation.
@@ -136,3 +188,14 @@ fn update_blood_loss_poise_factor(character):
 	percentage_of_total_blood_volume = character.blood / character.max_blood
 	character.blood_loss_poise_factor = (1 - percentage_of_total_blood_volume) / PERCENT_BLOOD_LOSS_UNCONSCIOUS
 ```
+
+# Alcohol disinfection
+
+Successful bloody procedures (bandaging, stitching, and projectile extraction)
+automatically use the actor's best eligible personal alcohol unit when one is
+available. Effectiveness is explicit item metadata; aqua vitae therefore adds
+more hidden infection control than wine or beer. Equal candidates use the
+lowest inventory-row ID. The chosen unit is consumed only after procedure time
+successfully completes. Soap remains independently optional, and its bonus adds
+to alcohol before the hidden infection check saturates. Lack of alcohol never
+blocks treatment, and no UI exposes a numeric infection probability.

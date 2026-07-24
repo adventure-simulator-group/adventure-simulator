@@ -10,7 +10,7 @@ use crate::templates::stat_game_icon_name;
 #[derive(Clone, Copy, Default)]
 pub struct PartyCheckSummary {
     pub medicine: f32,
-    pub charisma: f32,
+    pub command: f32,
     pub religion: f32,
 }
 
@@ -429,7 +429,7 @@ pub fn aggregate_check_bars(
             data-party-aggregate-checks {
             @for (label, icon, field, current, target, added) in [
                 ("Medicine", "medicine", "medicine", checks.medicine, party.medicine_target, contribution.map_or(0.0, |value| value.medicine)),
-                ("Charisma", "charisma", "charisma", checks.charisma, party.charisma_target, contribution.map_or(0.0, |value| value.charisma)),
+                ("Command", "command", "command", checks.command, party.command_target, contribution.map_or(0.0, |value| value.command)),
                 ("Religion", "religion", "religion", checks.religion, party.religion_target, contribution.map_or(0.0, |value| value.religion)),
             ] {
                 @if contribution.is_none() || added.abs() > 0.005 {
@@ -484,20 +484,24 @@ fn party_check_target_form(
     target_position: f32,
     can_manage: bool,
 ) -> Markup {
+    let description = if contribution.abs() > 0.005 {
+        format!(
+            "{label}: {current:.1} {contribution:+.1} = {:.1}; target {target:.0}",
+            current + contribution
+        )
+    } else {
+        format!("{label}: {current:.1}; target {target:.0}")
+    };
     html! {
         form action="/party-recruitment/check-targets" method="post" class="party-check-target-form"
             data-party-check-target-form data-check-name=(field) {
             input type="hidden" name="medicine" value=(party.medicine_target.round().clamp(0.0, 5.0));
-            input type="hidden" name="charisma" value=(party.charisma_target.round().clamp(0.0, 5.0));
+            input type="hidden" name="command" value=(party.command_target.round().clamp(0.0, 5.0));
             input type="hidden" name="religion" value=(party.religion_target.round().clamp(0.0, 5.0));
             div class=(if can_manage { "party-check-track party-check-track-editable" } else { "party-check-track" })
                 data-party-check-track data-check-name=(field) data-check-label=(label)
                 data-check-current=(current) data-check-target=(target)
-                title=(if contribution.abs() > 0.005 {
-                    format!("{label}: {current:.1} {contribution:+.1} = {:.1}; target {target:.0}", current + contribution)
-                } else {
-                    format!("{label}: {current:.1}; target {target:.0}")
-                }) {
+                tabindex="0" aria-label=(&description) data-strategic-tooltip=(&description) {
                 span class="party-check-current" style=(format!("width:{current_width:.1}%")) {}
                 @if contribution.abs() > 0.005 {
                     span class=(if contribution > 0.0 { "party-check-contribution" } else { "party-check-contribution party-check-contribution-negative" })

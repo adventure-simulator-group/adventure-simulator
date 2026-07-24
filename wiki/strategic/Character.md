@@ -5,11 +5,57 @@ You aren't exactly spawning a character into the world; ostensibly, you are obta
 
 ## Personality
 
-Characters have an immutable sparse personality drawn from seven discrete axes. Only non-neutral tags are displayed. Generated NPCs receive two to four randomly selected non-neutral axes; the current direct player-character creation path remains neutral. Personality changes raw morale reactions rather than replacing Will, Charisma, or Religion knowledge.
+Characters have an immutable sparse personality drawn from eight discrete axes. Generated NPCs receive two to four randomly selected non-neutral axes; the current direct player-character creation path remains neutral. Personality changes raw morale reactions rather than replacing Will, Social skills, or Religion knowledge. The hygiene axis is Slovenly/Cleanly: Slovenly characters ignore filth morale, while Cleanly characters strongly dislike filth and appreciate being completely clean. Other characters never see these authoritative tags directly.
+
+Authoritative personality is private. Other characters instead keep durable,
+observer-specific beliefs with confidence and observation time. Beliefs may be
+wrong and can later be corrected. Insight forms beliefs about other people and
+is opposed by Deception where applicable; Self-awareness governs beliefs about
+oneself. Public morale labels never reveal the true trait that changed a
+reaction.
+
+## Relationships
+
+Affinity is directional: how the subject currently regards a particular actor.
+It is anchored to the subject's personal strategic clock and exponentially
+decays toward neutral with a 30-day half-life without crossing neutral.
+Familiarity is symmetric shared-party time stored once for the canonical
+character pair. Its displayed effective hours divide shared time by current
+party size while both characters remain together, and use the undivided total
+after they separate.
+
+The former Charisma skill is replaced by the Social family: **Insight**,
+**Self-awareness**, **Humor**, **Command**, **Deception**, and **Seduction**.
+Social outcomes combine the action skill, current Affinity and Familiarity,
+the actor's diagnosis, the target's true personality and topic sensitivity,
+and a server roll. Listening is low-risk exploration; more presumptuous actions
+have greater upside and downside. Only recognized negative morale concerns are
+actionable. Their topic is derived by the server, and repeating the same
+approach to the same topic has a cooldown even if the source row is refreshed.
+Characters use Self-awareness to Reflect on their own concern; reflection can
+revise a self-belief but never changes Affinity or Familiarity. The interface
+shows only a qualitative, familiarity-weighted affinity estimate rather than
+the authoritative value. Observed traits and morale-source interpretations use
+greyer text when confidence is lower; their exact confidence is available on
+hover together with a hint about which approaches that trait may favor or
+resent.
+
+The available social approaches are filtered by the concern rather than showing
+every Social skill for every problem. Commiseration is always available as one
+action: it uses Insight when the actor currently shares that kind of concern and
+Deception when they do not, so sincere and feigned variants never appear at the
+same time. Action labels remain grounded in facts the simulation actually knows.
+The character sheet groups the six skills beneath an expandable **Social** row,
+whose displayed value is their average.
 
 When mortal creation is reworked, players should choose among several generated whole characters with different personality tags. Players will not customize individual tags: personality is part of choosing an existing mortal person rather than assembling one stat by stat.
 
 ## Mortal
+
+Character personality includes an immutable Temperance axis. **Temperate** and
+**Drunkard** are visible non-neutral tags; the neutral state is omitted like
+other neutral axes. Random mortal/NPC profiles still activate exactly two to
+four distinct axes across the expanded nine-axis catalog.
 Mortal characters [age](../strategic/Time.md) normally and eventually die. They cannot have their physical features customized; when rolling them, players must choose from a limited selection of randomly generated characters. They are cheap and efficient, ideal for players who want a [roguelike](https://en.wikipedia.org/wiki/Roguelike)/extraction-esque experience of frequently rolling new characters, quickly obtaining power, dying, and starting over.
 ### Humans
 [Default](https://en.wikipedia.org/wiki/Human).
@@ -74,3 +120,5 @@ Mortals risen from the dead through unnatural magic.
 Characters begin alive. Death is an authoritative strategic transition: `Character.alive` is the fast life-state flag and one immutable `CharacterDeath` row retains the first typed cause, source, optional committed-outcome identifier, and the character's personal strategic minute. Repeating the transition is idempotent and cannot replace the original context. Tactical combat may submit a final death outcome, but tactical positions, hit points, enemies, and tick state never enter strategic persistence.
 
 Dead characters remain visible for history and party context, but cannot train, rest, travel, trade, manage equipment or inventory, enter combat, use party actions, recruit, change membership, or chat. Party readiness, forecasts, provisioning, movement, needs, condition updates, and combat construction consider living members only; a corpse's personal minute and location remain fixed while survivors continue. Dead members are not recorded as battle participants, receive no victory morale, mission experience, loot stake, or quest reward, and participant life state is checked again when loot is stored. A disposable simulation capability provides the deterministic death path used for integration testing; ordinary production identities cannot invoke it.
+
+Characters initialize with the German vernacular selected deterministically from their final settlement profile. NPC Yiddish incidence is also deterministic; every selected Yiddish speaker retains a decent local German dialect at the documented 0.8 effective shared-language coefficient. Quest-company leaders atomically replace both Oral and Written language identity after being moved to their authoritative settlement, so a random creation origin cannot leak into their language record.

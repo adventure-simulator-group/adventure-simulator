@@ -14,3 +14,10 @@ mod validation;
 pub use builder::WorldBuilder;
 pub use error::{Error, Result};
 pub use sources::drought::derive_profiles as derive_owda_profiles;
+#[cfg(feature = "strategic-map-renderer")]
+pub use sources::forest_cover::{
+    PREPARED_FOREST_FORMAT, PreparedForestRaster, read_prepared_forest_raster,
+    validate_prepared_forest_manifest,
+};
+pub use sources::potential_vegetation::{WetlandSpatialData, wetland_spatial_data};
+pub use validation::validate as validate_world;

@@ -1,5 +1,16 @@
 # Third-party notices
 
+## Strategic map data
+
+The generated Paper map and terrain-routing packs adapt Viabundus Pre-modern
+Street Map 2, Copernicus DEM GLO-30, and Copernicus Land Monitoring Service
+forest data offline. Their canonical redistribution notice is
+[MAP_DATA_LICENSE.md](MAP_DATA_LICENSE.md). It applies CC BY-SA 4.0 to the
+project-owned contributions, excludes the generated data artifacts from the
+software AGPL, identifies modifications, and retains the source-specific
+attribution, liability, and no-endorsement terms. The compiler copies that
+notice beside every generated map or terrain pack.
+
 ## Game Icons
 
 The strategic web interface vendors monochrome SVG artwork from

@@ -7,7 +7,7 @@ When the player clicks the [Attack button](../client/Controls.md#direct-controls
 ### Skill check algorithm
 Broadly speaking, the flow goes like this:
 1. Calculate accuracy based on:
-	1. The attacker's melee [skill check](../shared/Stats.md#Skills)
+	1. The attacker's weighted weapon [skill check](../shared/Stats.md#Skills). Each weapon distributes its check across Polearm, Axe, Bludgeon, Sword, Knife, Bow, Crossbow, Firearm, and Throw; hybrid tags are normalized.
 		1. pass in LimbWeights configured for whatever limb(s) they are attacking with
 		2. If they are two handing, 0.75 for main and 0.25 for off-hand
 	2. Multiply by weapon term (small knife: 2.0, long hammer: 0.5)
@@ -67,8 +67,8 @@ $$
 
 Ranged attacks use the same attack-minus-defense exchange, armor coverage,
 penetration, padding, and critical-hit rules as melee attacks. The attacker's
-Ranged check replaces Melee, both arms contribute to aiming, and the weapon's
-projectile energy replaces muscular striking force. Focus adds the character's
+Bow, Crossbow, Firearm, or Throw distribution supplies the weapon check, both
+arms contribute to aiming, and the weapon's projectile energy replaces muscular striking force. Focus adds the character's
 Precision to both melee and ranged accuracy; Agility remains the reflex term.
 
 An alert defender may dodge a projectile or interpose a shield using the normal
@@ -179,7 +179,7 @@ matching the impact severity. The failure share makes segmented construction loc
 plate while a monolithic breastplate loses much more usefulness from a comparable fracture.
 
 The five-bin condition remains one visually continuous bar. Bins indicate the Smithing skill needed
-to repair that portion, not discrete named faults. The first two bins are yellow and field-repairable;
+for weapons, armor, and shields, or Tailoring for clothing, not discrete named faults. The first two bins are yellow and field-repairable;
 the last three are red and require settlement facilities. Stiff weapon steel has a relatively high
 yield threshold but a closer fracture threshold. Ductile armor yields and dents sooner while being
 harder to shatter.
@@ -239,3 +239,12 @@ also writes a compact report containing the seed, victor, round count, summary,
 and an expandable exchange log. Enemy health and temporary combat state remain
 transient, so this diagnostic report does not change the tactical persistence
 boundary.
+
+Strategic encounters pass an explicit `Normal`, `AlliesSurprise`, or
+`EnemiesSurprise` opening into autoresolve. Awareness is not rolled again in
+combat, and exactly one side receives a surprise turn. Quest and random combat
+share the complete persistent-outcome commit path (injuries and retained
+projectiles, blood loss, ammunition, weapon/shield/armor contact wear, combat
+dirt and blood filth, morale, loot classification, and diagnostics). Random
+encounter reports use encounter IDs and never create quest battle results or
+complete an active quest.

@@ -2,6 +2,7 @@
 
 pub mod characters;
 mod data;
+pub mod dialogue;
 pub mod home;
 mod inventory_forms;
 pub mod local_chat;
@@ -29,8 +30,9 @@ use crate::live::LiveState;
 use crate::session::{CHARACTER_COOKIE, Session};
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    Character, CharacterStrategicCondition, CharacterTime, Party, PartyActionRequest, PartyMember,
-    SpacetimeClient, WorldClock,
+    Character, CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats,
+    CharacterStrategicCondition, CharacterTime, Party, PartyActionRequest, PartyJourney,
+    PartyJourneyRoute, PartyMember, Quest, Settlement, SpacetimeClient, WorldClock,
 };
 
 /// Application state shared across routes
@@ -38,6 +40,8 @@ use crate::spacetimedb::{
 pub struct AppState {
     pub db: SpacetimeClient,
     pub live: LiveState,
+    pub strategic_map: Option<std::sync::Arc<crate::strategic_map::StrategicMap>>,
+    pub terrain: Option<std::sync::Arc<travel::TerrainPlanner>>,
 }
 
 pub(crate) use party_actions::PartyAction;
@@ -70,7 +74,7 @@ pub(crate) fn redirect_to_local(return_to: &str, fallback: &str) -> Redirect {
 
 #[cfg(test)]
 mod return_url_tests {
-    use super::local_return_url;
+    use super::{local_return_url, terrain_mental_check};
 
     #[test]
     fn return_urls_are_local_paths_with_optional_query_and_fragment() {
@@ -94,6 +98,16 @@ mod return_url_tests {
         assert_eq!(split_party_purchase_payment(8, 20, 15), Some((8, 7)));
         assert_eq!(split_party_purchase_payment(20, 8, 15), Some((15, 0)));
         assert_eq!(split_party_purchase_payment(4, 5, 10), None);
+    }
+
+    #[test]
+    fn terrain_mental_check_applies_authoritative_head_health() {
+        let healthy = terrain_mental_check(2.0, 2.0, 2.0, 1.0, 1.0);
+        let injured = terrain_mental_check(2.0, 2.0, 2.0, 1.0, 0.5);
+        let destroyed = terrain_mental_check(2.0, 2.0, 2.0, 1.0, 0.0);
+        assert_eq!(healthy, 3.0);
+        assert_eq!(injured, 2.0);
+        assert_eq!(destroyed, 1.0);
     }
 }
 
@@ -170,7 +184,8 @@ pub(crate) async fn execute_or_request_party_action(
         }
     }
     if party.leader_id == actor_id {
-        let (reducer, args) = action.reducer_call(actor_id);
+        let planned = planned_travel_call(state, actor_id, &action).await?;
+        let (reducer, args) = planned.unwrap_or_else(|| action.reducer_call(actor_id));
         state
             .db
             .call(reducer, &args)
@@ -229,6 +244,335 @@ pub(crate) async fn execute_or_request_party_action(
     Ok(PartyActionOutcome::Requested)
 }
 
+pub(crate) async fn party_terrain_profile(
+    state: &AppState,
+    actor: &Character,
+) -> Result<adventuresim_terrain::TerrainSkillProfile, String> {
+    let member_ids = if let Some(party_id) = actor.party_id.as_deref() {
+        state
+            .db
+            .query::<PartyMember>(&format!(
+                "SELECT * FROM party_member WHERE party_id = {}",
+                sql_string_literal(party_id)
+            ))
+            .await
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .map(|member| member.character_id)
+            .collect::<Vec<_>>()
+    } else {
+        vec![actor.id]
+    };
+    let mut checks = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
+    for id in member_ids {
+        let Some(character) = state
+            .db
+            .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {id}"))
+            .await
+            .map_err(|e| e.to_string())?
+        else {
+            continue;
+        };
+        if !character.alive {
+            continue;
+        }
+        let Some(attributes) = state
+            .db
+            .query_one::<CharacterAttributes>(&format!(
+                "SELECT * FROM character_attributes WHERE character_id = {id}"
+            ))
+            .await
+            .map_err(|e| e.to_string())?
+        else {
+            continue;
+        };
+        let Some(stats) = state
+            .db
+            .query_one::<CharacterStats>(&format!(
+                "SELECT * FROM character_stats WHERE character_id = {id}"
+            ))
+            .await
+            .map_err(|e| e.to_string())?
+        else {
+            continue;
+        };
+        let Some(limbs) = state
+            .db
+            .query_one::<CharacterLimbs>(&format!(
+                "SELECT * FROM character_limbs WHERE character_id = {id}"
+            ))
+            .await
+            .map_err(|e| e.to_string())?
+        else {
+            continue;
+        };
+        let Some(skills) = state
+            .db
+            .query_one::<CharacterSkills>(&format!(
+                "SELECT * FROM character_skills WHERE character_id = {id}"
+            ))
+            .await
+            .map_err(|e| e.to_string())?
+        else {
+            continue;
+        };
+        for (index, (skill, hours)) in [
+            (
+                adventuresim_core::skill::Skill::TerrainPlains,
+                skills.terrain_plains_hours,
+            ),
+            (
+                adventuresim_core::skill::Skill::TerrainForest,
+                skills.terrain_forest_hours,
+            ),
+            (
+                adventuresim_core::skill::Skill::TerrainHills,
+                skills.terrain_hills_hours,
+            ),
+            (
+                adventuresim_core::skill::Skill::TerrainUrban,
+                skills.terrain_urban_hours,
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            checks[index].push(terrain_mental_check(
+                skill.training_rank(hours),
+                attributes.instinct,
+                attributes.intelligence,
+                stats.focus,
+                limbs.head_health,
+            ));
+        }
+    }
+    let aggregate = |values: &[f32]| {
+        (adventuresim_core::capability::aggregate_bounded_party_check(values.iter().copied())
+            .clamp(0.0, 5.0)
+            * 1_000.0)
+            .round() as u16
+    };
+    Ok(adventuresim_terrain::TerrainSkillProfile {
+        plains: aggregate(&checks[0]),
+        forest: aggregate(&checks[1]),
+        hills: aggregate(&checks[2]),
+        urban: aggregate(&checks[3]),
+    })
+}
+
+fn terrain_mental_check(
+    training_rank: f32,
+    instinct: f32,
+    intelligence: f32,
+    focus: f32,
+    head_health: f32,
+) -> f32 {
+    let head_health = head_health.clamp(0.0, 1.0);
+    let attribute_check =
+        instinct * head_health + intelligence * head_health * focus.clamp(0.0, 1.0);
+    ((training_rank + attribute_check) * 0.5).clamp(0.0, 5.0)
+}
+
+async fn planned_travel_call(
+    state: &AppState,
+    actor_id: u64,
+    action: &PartyAction,
+) -> Result<Option<(&'static str, Vec<serde_json::Value>)>, String> {
+    let Some(terrain) = state.terrain.as_deref() else {
+        return Ok(None);
+    };
+    let character = state
+        .db
+        .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {actor_id}"))
+        .await
+        .map_err(|error| error.to_string())?
+        .ok_or("Character not found")?;
+    let terrain_profile = party_terrain_profile(state, &character).await?;
+    let (reducer, destination) = match action {
+        PartyAction::TravelToSettlement { settlement_id } => {
+            let destination = state
+                .db
+                .query_one::<Settlement>(&format!(
+                    "SELECT * FROM settlement WHERE id = {}",
+                    sql_string_literal(settlement_id)
+                ))
+                .await
+                .map_err(|error| error.to_string())?
+                .ok_or("Settlement not found")?;
+            (
+                "travel_to_settlement_planned",
+                (destination.coord_y, destination.coord_x),
+            )
+        }
+        PartyAction::TravelToQuest { quest_id } => {
+            let destination = state
+                .db
+                .query_one::<Quest>(&format!(
+                    "SELECT * FROM quest WHERE id = {}",
+                    sql_string_literal(quest_id)
+                ))
+                .await
+                .map_err(|error| error.to_string())?
+                .ok_or("Quest not found")?;
+            (
+                "travel_to_quest_planned",
+                (destination.location_coord_y, destination.location_coord_x),
+            )
+        }
+        _ => return Ok(None),
+    };
+    let origin = if let Some(id) = character.current_settlement_id.as_deref() {
+        let settlement = state
+            .db
+            .query_one::<Settlement>(&format!(
+                "SELECT * FROM settlement WHERE id = {}",
+                sql_string_literal(id)
+            ))
+            .await
+            .map_err(|error| error.to_string())?
+            .ok_or("Origin settlement not found")?;
+        (settlement.coord_y, settlement.coord_x)
+    } else if let Some(id) = character.current_quest_location_id.as_deref() {
+        let quest = state
+            .db
+            .query_one::<Quest>(&format!(
+                "SELECT * FROM quest WHERE id = {}",
+                sql_string_literal(id)
+            ))
+            .await
+            .map_err(|error| error.to_string())?
+            .ok_or("Origin quest not found")?;
+        (quest.location_coord_y, quest.location_coord_x)
+    } else if let Some(party_id) = character.party_id.as_deref() {
+        let journey = state
+            .db
+            .query_one::<PartyJourney>(&format!(
+                "SELECT * FROM party_journey WHERE party_id = {}",
+                sql_string_literal(party_id)
+            ))
+            .await
+            .map_err(|error| error.to_string())?
+            .ok_or("Camp journey not found")?;
+        let route = state
+            .db
+            .query_one::<PartyJourneyRoute>(&format!(
+                "SELECT * FROM party_journey_route WHERE party_id = {}",
+                sql_string_literal(party_id)
+            ))
+            .await
+            .map_err(|error| error.to_string())?
+            .ok_or("Camp terrain route not found")?;
+        persisted_route_position(&route, journey.completed_minutes)
+            .ok_or("Camp terrain route position is unavailable")?
+    } else {
+        return Ok(None);
+    };
+    let plan = match terrain
+        .plan_with_profile(origin, destination, terrain_profile)
+        .await
+    {
+        Ok(plan) => plan,
+        Err(error) => {
+            tracing::warn!(%error, actor_id, "terrain route unavailable at execution; using legacy travel reducer");
+            return Ok(None);
+        }
+    };
+    let return_plan = if matches!(action, PartyAction::TravelToQuest { .. }) {
+        match terrain
+            .plan_with_profile(destination, origin, terrain_profile)
+            .await
+        {
+            Ok(plan) => Some(plan),
+            Err(error) => {
+                tracing::warn!(%error, actor_id, "quest return terrain route unavailable at execution; using legacy travel reducer");
+                return Ok(None);
+            }
+        }
+    } else {
+        None
+    };
+    let route_json = terrain_route_json(terrain.digest(), &plan, return_plan.as_ref());
+    let destination_id = match action {
+        PartyAction::TravelToSettlement { settlement_id } => settlement_id,
+        PartyAction::TravelToQuest { quest_id } => quest_id,
+        _ => unreachable!(),
+    };
+    Ok(Some((
+        reducer,
+        vec![json!(actor_id), json!(destination_id), route_json],
+    )))
+}
+
+fn persisted_route_position(route: &PartyJourneyRoute, minute: u64) -> Option<(f64, f64)> {
+    let coordinate = |point: &crate::spacetimedb::JourneyRoutePoint| {
+        (
+            f64::from(point.latitude_e7) / 10_000_000.0,
+            f64::from(point.longitude_e7) / 10_000_000.0,
+        )
+    };
+    let distance = |from: (f64, f64), to: (f64, f64)| {
+        let earth_radius_m = 6_371_000.0_f64;
+        let lat1 = from.0.to_radians();
+        let lat2 = to.0.to_radians();
+        let delta_lat = (to.0 - from.0).to_radians();
+        let delta_lon = (to.1 - from.1).to_radians();
+        let a = (delta_lat / 2.0).sin().powi(2)
+            + lat1.cos() * lat2.cos() * (delta_lon / 2.0).sin().powi(2);
+        (earth_radius_m * 2.0 * a.sqrt().atan2((1.0 - a).sqrt())).round() as u64
+    };
+    let lengths = route
+        .points
+        .windows(2)
+        .map(|pair| distance(coordinate(&pair[0]), coordinate(&pair[1])))
+        .collect::<Vec<_>>();
+    let total = lengths.iter().sum::<u64>();
+    if total == 0 || route.minutes == 0 {
+        return route.points.first().map(coordinate);
+    }
+    let target = total.saturating_mul(minute.min(route.minutes)) / route.minutes;
+    let mut traversed = 0_u64;
+    for (index, length) in lengths.into_iter().enumerate() {
+        if traversed.saturating_add(length) >= target {
+            let from = coordinate(&route.points[index]);
+            let to = coordinate(&route.points[index + 1]);
+            let fraction = if length == 0 {
+                0.0
+            } else {
+                target.saturating_sub(traversed) as f64 / length as f64
+            };
+            return Some((
+                from.0 + (to.0 - from.0) * fraction,
+                from.1 + (to.1 - from.1) * fraction,
+            ));
+        }
+        traversed = traversed.saturating_add(length);
+    }
+    route.points.last().map(coordinate)
+}
+
+fn terrain_route_json(
+    digest: &str,
+    plan: &adventuresim_terrain::RoutePlan,
+    return_plan: Option<&adventuresim_terrain::RoutePlan>,
+) -> serde_json::Value {
+    let leg_json = |plan: &adventuresim_terrain::RoutePlan| {
+        json!({
+            "distance_m": plan.distance_m,
+            "minutes": plan.minutes,
+            "points": plan.points.iter().map(|point| json!({"latitude_e7":(point.latitude*10_000_000.0).round() as i32,"longitude_e7":(point.longitude*10_000_000.0).round() as i32})).collect::<Vec<_>>(),
+            "spans": plan.spans.iter().filter_map(|span| { let kind=match span.surface { adventuresim_terrain::Surface::Road=>"Road",adventuresim_terrain::Surface::Open=>"Open",adventuresim_terrain::Surface::SparseWoods=>"SparseWoods",adventuresim_terrain::Surface::DeepWoods=>"DeepWoods",adventuresim_terrain::Surface::Wetland=>"Wetland",adventuresim_terrain::Surface::Water=>return None};Some(json!({"kind":kind,"terrain":span.terrain,"training_multiplier_permille":span.training_multiplier_permille,"check_millirank":span.check_millirank,"start_minute":span.start_minute,"duration_minutes":span.duration_minutes})) }).collect::<Vec<_>>()
+        })
+    };
+    json!({
+        "package_digest": digest,
+        "distance_m": plan.distance_m,
+        "minutes": plan.minutes,
+        "points": plan.points.iter().map(|point| json!({"latitude_e7":(point.latitude*10_000_000.0).round() as i32,"longitude_e7":(point.longitude*10_000_000.0).round() as i32})).collect::<Vec<_>>(),
+        "spans": plan.spans.iter().filter_map(|span| { let kind=match span.surface { adventuresim_terrain::Surface::Road=>"Road",adventuresim_terrain::Surface::Open=>"Open",adventuresim_terrain::Surface::SparseWoods=>"SparseWoods",adventuresim_terrain::Surface::DeepWoods=>"DeepWoods",adventuresim_terrain::Surface::Wetland=>"Wetland",adventuresim_terrain::Surface::Water=>return None};Some(json!({"kind":kind,"terrain":span.terrain,"training_multiplier_permille":span.training_multiplier_permille,"check_millirank":span.check_millirank,"start_minute":span.start_minute,"duration_minutes":span.duration_minutes})) }).collect::<Vec<_>>(),
+        "return_route": return_plan.map(leg_json)
+    })
+}
+
 #[cfg(test)]
 mod readiness_tests {
     use super::participates_in_party_readiness;
@@ -245,6 +589,18 @@ pub(crate) async fn approve_party_action(
     leader_id: u64,
     request: &PartyActionRequest,
 ) -> Result<(), String> {
+    if let Ok(action) = serde_json::from_str::<PartyAction>(&request.payload)
+        && let Some((_, args)) = planned_travel_call(state, leader_id, &action).await?
+    {
+        return state
+            .db
+            .call(
+                "approve_party_action_request_planned",
+                &[json!(leader_id), json!(request.id), args[2].clone()],
+            )
+            .await
+            .map_err(|error| error.to_string());
+    }
     state
         .db
         .call(
@@ -259,10 +615,19 @@ pub(crate) async fn approve_party_action(
 /// Build the complete router
 pub fn build_router(state: AppState) -> Router {
     Router::new()
+        .route(
+            crate::strategic_map::DATA_LICENSE_PATH,
+            get(crate::strategic_map::data_license),
+        )
+        .route(
+            "/map/tiles/{theme}/{zoom}/{x}/{tile}",
+            get(crate::strategic_map::world_tile),
+        )
         .merge(characters::routes())
         .merge(
             Router::new()
                 .merge(home::routes())
+                .merge(dialogue::routes())
                 .merge(local_chat::routes())
                 .merge(settlements::routes())
                 .merge(parties::routes())

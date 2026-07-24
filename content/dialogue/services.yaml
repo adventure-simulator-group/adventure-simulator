@@ -1,0 +1,97 @@
+{
+  "conversations": [
+    {
+      "id": "service-professions",
+      "roles": { "player": { "kind": "player", "min": 1, "max": 4 }, "professional": { "kind": "npc" } },
+      "on_start": [
+        { "id": "merchant-greeting", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "service", "role": "professional" }, "equals": "merchants" }, "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Welcome, traveler. Ask me about my " }, { "kind": "topic", "topic": "profession", "label": "trade" }, { "kind": "text", "value": " or the " }, { "kind": "topic", "topic": "quest", "label": "work" }, { "kind": "text", "value": " available here." }] }], "effects": [], "prompt": null },
+        { "id": "weaponsmith-greeting", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "service", "role": "professional" }, "equals": "weapons" }, "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Welcome to the forge. Ask me about the weaponsmith's " }, { "kind": "topic", "topic": "profession", "label": "profession" }, { "kind": "text", "value": " or any " }, { "kind": "topic", "topic": "quest", "label": "work" }, { "kind": "text", "value": " I can offer." }] }], "effects": [], "prompt": null },
+        { "id": "armourer-greeting", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "service", "role": "professional" }, "equals": "armor" }, "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Welcome. Ask me about the armourer's " }, { "kind": "topic", "topic": "profession", "label": "profession" }, { "kind": "text", "value": " or any " }, { "kind": "topic", "topic": "quest", "label": "work" }, { "kind": "text", "value": " that needs doing." }] }], "effects": [], "prompt": null },
+        { "id": "tailor-greeting", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "service", "role": "professional" }, "equals": "clothing" }, "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Welcome. Ask me about the tailor's " }, { "kind": "topic", "topic": "profession", "label": "profession" }, { "kind": "text", "value": " or any " }, { "kind": "topic", "topic": "quest", "label": "work" }, { "kind": "text", "value": " available." }] }], "effects": [], "prompt": null },
+        { "id": "innkeeper-greeting", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "service", "role": "professional" }, "equals": "inn" }, "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Welcome to the inn. Ask me about this " }, { "kind": "topic", "topic": "profession", "label": "profession" }, { "kind": "text", "value": " or any " }, { "kind": "topic", "topic": "quest", "label": "work" }, { "kind": "text", "value": " I have for travelers." }] }], "effects": [], "prompt": null }
+      ],
+      "topics": [
+        { "id": "profession", "label": "Profession", "initially_known": true,
+          "responses": [
+          { "id": "merchant-profession", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "service", "role": "professional" }, "equals": "merchants" }, "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Welcome! We learn to judge goods, bargain fairly, and keep trade moving between towns. Ask if you wish to become an " }, { "kind": "topic", "topic": "apprenticeship", "label": "apprentice" }] }], "effects": [{ "kind": "learn_topic", "topic": "apprenticeship" }], "prompt": null },
+          { "id": "weaponsmith-profession", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "service", "role": "professional" }, "equals": "weapons" }, "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Welcome! A weaponsmith learns to forge, fit, and maintain the tools a fighting company depends upon. Ask if you wish to become an " }, { "kind": "topic", "topic": "apprenticeship", "label": "apprentice" }] }], "effects": [{ "kind": "learn_topic", "topic": "apprenticeship" }], "prompt": null },
+          { "id": "armourer-profession", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "service", "role": "professional" }, "equals": "armor" }, "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Welcome! An armourer shapes and repairs protection that must move with its wearer and endure hard blows. Ask if you wish to become an " }, { "kind": "topic", "topic": "apprenticeship", "label": "apprentice" }] }], "effects": [{ "kind": "learn_topic", "topic": "apprenticeship" }], "prompt": null },
+          { "id": "tailor-profession", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "service", "role": "professional" }, "equals": "clothing" }, "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Welcome! A tailor turns cloth into durable, well-fitted garments and learns the trade of the needle. Ask if you wish to become an " }, { "kind": "topic", "topic": "apprenticeship", "label": "apprentice" }] }], "effects": [{ "kind": "learn_topic", "topic": "apprenticeship" }], "prompt": null },
+          { "id": "innkeeper-profession", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "service", "role": "professional" }, "equals": "inn" }, "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Welcome! An innkeeper makes a living through hospitality, good judgment, and knowing how to speak with every sort of traveler. Ask if you wish to become an " }, { "kind": "topic", "topic": "apprenticeship", "label": "apprentice" }] }], "effects": [{ "kind": "learn_topic", "topic": "apprenticeship" }], "prompt": null },
+          { "id": "explain-profession", "priority": 0,
+            "turns": [
+              { "speaker": "player", "fragments": [{ "kind": "text", "value": "Tell me about your profession." }] },
+              { "speaker": "professional", "fragments": [
+                { "kind": "text", "value": "I can teach you the work of this profession. " },
+                { "kind": "topic", "topic": "apprenticeship", "label": "apprentice" }
+              ] }
+            ],
+            "effects": [{ "kind": "learn_topic", "topic": "apprenticeship" }], "prompt": null }]
+        },
+        { "id": "apprenticeship", "label": "Apprenticeship",
+          "responses": [{ "id": "offer-apprenticeship", "priority": 0,
+            "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Are you interested in becoming my apprentice?" }] }],
+            "effects": [],
+            "prompt": { "id": "accept-apprenticeship", "respondent": "player", "mode": "yes_no", "resolution": "first_response",
+              "choices": [
+                { "id": "yes", "label": "Yes", "effects": [{ "kind": "begin_apprenticeship", "profession": "selected-service" }], "result_turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Good. Your apprenticeship begins now; keep to the schedule and I will teach you the trade." }] }] },
+                { "id": "no", "label": "No", "result_turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Very well. The offer remains open if you reconsider." }] }] }
+              ] }
+          }]
+        },
+        { "id": "quest", "label": "Work", "initially_known": true,
+          "responses": [{ "id": "quest-turn-in", "priority": 20, "conditions": { "op": "fact", "key": { "kind": "quest_state", "quest": "selected-service-quest" }, "equals": "completed" },
+            "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "You have completed the work. Shall we settle the contract?" }] }],
+            "effects": [], "prompt": { "id": "turn-in-work", "respondent": "player", "mode": "yes_no", "choices": [
+              { "id": "turn-in", "label": "Collect the reward.", "effects": [{ "kind": "turn_in_quest", "quest": "selected-service-quest" }], "result_turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "The contract is settled. Here is the agreed reward." }] }] },
+              { "id": "wait", "label": "Not yet.", "result_turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Return when you are ready to settle it." }] }] }
+            ] }
+          }, { "id": "quest-offer", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "quest_state", "quest": "selected-service-quest" }, "equals": "available" },
+            "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "There is work for an adventuring company, if you are interested." }] }],
+            "effects": [],
+            "prompt": { "id": "accept-work", "respondent": "player", "mode": "yes_no",
+              "choices": [
+                { "id": "interested", "label": "I'm interested.", "effects": [{ "kind": "accept_quest", "quest": "selected-service-quest" }], "result_turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Then the contract is yours. Return here when the work is complete." }] }] },
+                { "id": "decline", "label": "Not now.", "result_turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Another company may claim it, but ask again if it remains available." }] }] }
+              ] }
+          }, { "id": "quest-in-progress", "priority": 0,
+            "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "The contract is still in your hands. Return when the work is complete." }] }],
+            "effects": [], "prompt": null }]
+        }
+      ]
+    },
+    { "id": "herbalist-examination", "roles": { "patient": { "kind": "player" }, "herbalist": { "kind": "npc" } },
+      "on_start": [{ "id": "herbalist-greeting", "priority": 0, "turns": [{ "speaker": "herbalist", "fragments": [{ "kind": "text", "value": "Welcome. If you are unwell, I can offer an " }, { "kind": "topic", "topic": "examination", "label": "examination" }, { "kind": "text", "value": "." }] }], "effects": [], "prompt": null }],
+      "topics": [{ "id": "examination", "label": "Examination", "initially_known": true,
+        "responses": [{ "id": "examine", "priority": 0,
+          "turns": [{ "speaker": "herbalist", "fragments": [{ "kind": "text", "value": "Let me examine you and see what treatment is needed." }] }],
+          "effects": [],
+          "prompt": { "id": "request-examination", "respondent": "patient", "mode": "yes_no",
+            "choices": [
+              { "id": "yes", "label": "Please examine me.", "effects": [{ "kind": "examine_disease" }], "result_turns": [{ "speaker": "herbalist", "fragments": [{ "kind": "text", "value": "The examination is complete. I have recorded what I found; the treatments I can prepare are available here." }] }] },
+              { "id": "no", "label": "Not now.", "result_turns": [{ "speaker": "herbalist", "fragments": [{ "kind": "text", "value": "As you wish. Come back if your condition worsens." }] }] }
+            ] }
+        }]
+      }]
+    },
+    { "id": "religion-service", "roles": { "player": { "kind": "player" }, "cleric": { "kind": "npc" } },
+      "on_start": [{ "id": "cleric-greeting", "priority": 0, "turns": [{ "speaker": "cleric", "fragments": [{ "kind": "text", "value": "Welcome. You may ask me about our " }, { "kind": "topic", "topic": "faith", "label": "faith" }, { "kind": "text", "value": "." }] }], "effects": [], "prompt": null }],
+      "topics": [{ "id": "faith", "label": "Faith", "initially_known": true,
+        "responses": [{ "id": "explain-faith", "priority": 0,
+          "turns": [{ "speaker": "cleric", "fragments": [{ "kind": "text", "value": "Our congregation welcomes travelers who wish to learn its doctrine. Do you wish to profess our local faith?" }] }],
+          "effects": [], "prompt": { "id": "profess-faith", "respondent": "player", "mode": "yes_no", "choices": [
+            { "id": "yes", "label": "I profess this faith.", "effects": [{ "kind": "set_flag", "flag": "profess-local-faith", "value": true }], "result_turns": [{ "speaker": "cleric", "fragments": [{ "kind": "text", "value": "Welcome to the congregation. Your profession of faith has been recorded." }] }] },
+            { "id": "no", "label": "I am only asking.", "result_turns": [{ "speaker": "cleric", "fragments": [{ "kind": "text", "value": "Then listen and consider; no profession is required." }] }] }
+          ] } }]
+      }]
+    },
+    { "id": "recruitment", "roles": { "player": { "kind": "player" }, "employer": { "kind": "npc" } },
+      "on_start": [{ "id": "recruitment-greeting", "priority": 0, "turns": [{ "speaker": "employer", "fragments": [{ "kind": "text", "value": "Welcome. Ask about the " }, { "kind": "topic", "topic": "open-roles", "label": "open roles" }, { "kind": "text", "value": " if you seek a place in a company." }] }], "effects": [], "prompt": null }],
+      "topics": [{ "id": "open-roles", "label": "Recruitment", "initially_known": true,
+        "responses": [{ "id": "list-open-roles", "priority": 0,
+          "turns": [{ "speaker": "employer", "fragments": [{ "kind": "text", "value": "An adventuring company is looking for capable hands." }] }],
+          "effects": [{ "kind": "learn_topic", "topic": "open-roles" }], "prompt": null }]
+      }]
+    }
+  ]
+}

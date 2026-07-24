@@ -12,15 +12,22 @@ pub mod accept_quest_reducer;
 pub mod agricultural_commodity_type;
 pub mod agricultural_limitation_type;
 pub mod agriculture_industry_type;
+pub mod alcohol_consumption_table;
+pub mod alcohol_consumption_type;
+pub mod answer_dialogue_prompt_reducer;
+pub mod approve_party_action_request_planned_reducer;
 pub mod approve_party_action_request_reducer;
 pub mod autoresolve_quest_reducer;
 pub mod autoresolve_report_table;
 pub mod autoresolve_report_type;
 pub mod available_water_capacity_type;
+pub mod backend_character_affinities_table;
+pub mod backend_character_familiarities_table;
 pub mod backend_committed_cuts_table;
 pub mod backend_herbalist_examinations_table;
 pub mod backend_infection_episodes_table;
 pub mod backend_medical_examinations_table;
+pub mod backend_social_beliefs_table;
 pub mod backfill_character_deaths_and_leadership_reducer;
 pub mod backfill_equipment_condition_and_smiths_reducer;
 pub mod backfill_item_values_reducer;
@@ -34,6 +41,7 @@ pub mod battle_result_table;
 pub mod battle_result_type;
 pub mod begin_apprenticeship_reducer;
 pub mod begin_world_data_import_reducer;
+pub mod blood_exposure_checkpoint_type;
 pub mod bootstrap_development_world_reducer;
 pub mod built_settlement_cover_type;
 pub mod calibrate_weapon_precision_reducer;
@@ -45,6 +53,7 @@ pub mod catholic_lutheran_church_type;
 pub mod catholic_reformed_church_type;
 pub mod cation_exchange_capacity_type;
 pub mod change_inventory_item_reducer;
+pub mod character_affinity_type;
 pub mod character_apprenticeship_table;
 pub mod character_apprenticeship_type;
 pub mod character_attributes_table;
@@ -57,6 +66,9 @@ pub mod character_death_table;
 pub mod character_death_type;
 pub mod character_equip_table;
 pub mod character_equip_type;
+pub mod character_familiarity_type;
+pub mod character_filth_table;
+pub mod character_filth_type;
 pub mod character_illness_status_table;
 pub mod character_illness_status_type;
 pub mod character_limbs_table;
@@ -78,12 +90,14 @@ pub mod character_strategic_condition_type;
 pub mod character_table;
 pub mod character_time_table;
 pub mod character_time_type;
+pub mod character_topic_knowledge_type;
 pub mod character_training_schedule_table;
 pub mod character_training_schedule_type;
 pub mod character_type;
 pub mod character_virtue_table;
 pub mod character_virtue_type;
 pub mod charcoal_burning_industry_type;
+pub mod choose_dialogue_topic_reducer;
 pub mod claim_simulation_run_reducer;
 pub mod committed_cut_type;
 pub mod configure_simulation_character_reducer;
@@ -95,6 +109,8 @@ pub mod construction_commodity_type;
 pub mod construction_industry_type;
 pub mod continue_camp_travel_reducer;
 pub mod conviction_type;
+pub mod cook_food_reducer;
+pub mod cooking_method_type;
 pub mod craft_medication_reducer;
 pub mod create_character_reducer;
 pub mod create_named_character_reducer;
@@ -114,6 +130,18 @@ pub mod derived_historical_vegetation_cover_type;
 pub mod derived_historical_vegetation_method_type;
 pub mod derived_historical_vegetation_type;
 pub mod derived_industry_type;
+pub mod dialogue_action_type;
+pub mod dialogue_answer_type;
+pub mod dialogue_event_table;
+pub mod dialogue_event_type;
+pub mod dialogue_participant_table;
+pub mod dialogue_participant_type;
+pub mod dialogue_prompt_table;
+pub mod dialogue_prompt_type;
+pub mod dialogue_session_table;
+pub mod dialogue_session_type;
+pub mod dialogue_topic_option_table;
+pub mod dialogue_topic_option_type;
 pub mod direct_historical_vegetation_cover_type;
 pub mod direct_historical_vegetation_method_type;
 pub mod direct_historical_vegetation_type;
@@ -128,6 +156,7 @@ pub mod dominant_leaf_type_type;
 pub mod drive_type;
 pub mod drought_history_type;
 pub mod drought_profile_type;
+pub mod eat_food_reducer;
 pub mod edge_endpoint_type;
 pub mod edge_progress_permille_type;
 pub mod elevation_meters_type;
@@ -146,6 +175,10 @@ pub mod fallback_historical_vegetation_type;
 pub mod fallback_industry_type;
 pub mod ferry_route_type;
 pub mod ferry_waterway_type;
+pub mod filth_disease_snapshot_type;
+pub mod filth_origin_type;
+pub mod filth_provenance_type;
+pub mod filth_substance_type;
 pub mod finalize_merchant_trade_reducer;
 pub mod finalize_party_offer_reducer;
 pub mod finish_world_data_import_reducer;
@@ -153,6 +186,10 @@ pub mod fish_commodity_type;
 pub mod fishing_industry_type;
 pub mod flow_persistence_type;
 pub mod flowing_water_access_type;
+pub mod food_contamination_type;
+pub mod food_lot_table;
+pub mod food_lot_type;
+pub mod food_preparation_type;
 pub mod forest_commodity_type;
 pub mod forest_cover_type;
 pub mod forestry_industry_type;
@@ -166,7 +203,9 @@ pub mod herbalist_examination_type;
 pub mod historical_vegetation_type;
 pub mod historical_wetland_type;
 pub mod historical_woodland_type;
+pub mod hygiene_type;
 pub mod igneous_rock_type;
+pub mod immediate_activity_type;
 pub mod import_settlement_aliases_reducer;
 pub mod import_settlement_descriptions_reducer;
 pub mod import_settlements_reducer;
@@ -189,7 +228,14 @@ pub mod item_kind_type;
 pub mod item_slot_type;
 pub mod item_table;
 pub mod item_type;
+pub mod join_dialogue_session_reducer;
 pub mod journey_camp_interval_type;
+pub mod journey_route_leg_type;
+pub mod journey_route_plan_type;
+pub mod journey_route_point_type;
+pub mod journey_terrain_kind_type;
+pub mod journey_terrain_span_type;
+pub mod journey_terrain_weights_type;
 pub mod kill_simulation_character_reducer;
 pub mod land_route_type;
 pub mod land_use_fraction_type;
@@ -221,6 +267,7 @@ pub mod morale_event_type;
 pub mod native_range_evidence_type;
 pub mod nerve_type;
 pub mod official_religion_type;
+pub mod oral_language_hours_type;
 pub mod organic_soil_type;
 pub mod other_non_textured_soil_type;
 pub mod outlook_type;
@@ -235,8 +282,11 @@ pub mod party_item_condition_table;
 pub mod party_item_condition_type;
 pub mod party_join_request_table;
 pub mod party_join_request_type;
+pub mod party_journey_encounter_authority_type;
 pub mod party_journey_itinerary_table;
 pub mod party_journey_itinerary_type;
+pub mod party_journey_route_table;
+pub mod party_journey_route_type;
 pub mod party_journey_table;
 pub mod party_journey_type;
 pub mod party_leader_vote_table;
@@ -251,13 +301,17 @@ pub mod party_table;
 pub mod party_type;
 pub mod pasture_cover_type;
 pub mod peat_cutting_industry_type;
+pub mod perform_immediate_activity_reducer;
+pub mod perform_social_action_reducer;
 pub mod potential_vegetation_class_type;
 pub mod potential_vegetation_posterior_type;
 pub mod potential_vegetation_type;
 pub mod pottery_commodity_type;
 pub mod pottery_industry_type;
 pub mod production_scale_type;
+pub mod profile_fact_provenance_type;
 pub mod projectile_kind_type;
+pub mod prosperity_tier_type;
 pub mod purchase_from_herbalist_reducer;
 pub mod quarry_commodity_type;
 pub mod quarrying_industry_type;
@@ -269,9 +323,9 @@ pub mod quest_type;
 pub mod recruitment_requirements_type;
 pub mod refresh_capabilities_reducer;
 pub mod refresh_strategic_condition_reducer;
+pub mod register_strategic_gateway_reducer;
 pub mod reject_party_join_request_reducer;
 pub mod religion_hours_type;
-pub mod religion_minutes_type;
 pub mod religious_demand_table;
 pub mod religious_demand_type;
 pub mod remove_party_member_reducer;
@@ -284,6 +338,7 @@ pub mod request_tactical_server_for_scene_reducer;
 pub mod request_tactical_server_reducer;
 pub mod request_to_join_party_reducer;
 pub mod resolve_religious_demand_reducer;
+pub mod resolve_strategic_encounter_reducer;
 pub mod resolved_party_action_type;
 pub mod rest_at_camp_reducer;
 pub mod rest_at_settlement_hours_reducer;
@@ -337,14 +392,18 @@ pub mod settlement_description_batch_row_type;
 pub mod settlement_description_kind_type;
 pub mod settlement_description_table;
 pub mod settlement_description_type;
+pub mod settlement_economy_profile_type;
 pub mod settlement_herbalist_type;
 pub mod settlement_hydrology_type;
 pub mod settlement_import_type;
+pub mod settlement_language_profile_type;
 pub mod settlement_outbreak_table;
 pub mod settlement_outbreak_type;
 pub mod settlement_religious_status_type;
+pub mod settlement_service_type;
 pub mod settlement_smith_table;
 pub mod settlement_smith_type;
+pub mod settlement_stock_type;
 pub mod settlement_table;
 pub mod settlement_type;
 pub mod simulation_character_table;
@@ -352,6 +411,9 @@ pub mod simulation_character_type;
 pub mod simulation_run_table;
 pub mod simulation_run_type;
 pub mod sociability_type;
+pub mod social_action_cooldown_type;
+pub mod social_belief_type;
+pub mod social_interaction_type;
 pub mod soil_acidity_type;
 pub mod soil_basis_points_type;
 pub mod soil_depth_type;
@@ -361,9 +423,16 @@ pub mod soil_profile_type;
 pub mod soil_properties_type;
 pub mod soil_substrate_type;
 pub mod soil_water_regime_type;
+pub mod start_dialogue_reducer;
+pub mod stock_category_type;
 pub mod stone_content_percent_type;
 pub mod store_battle_loot_reducer;
 pub mod strahler_order_type;
+pub mod strategic_encounter_loss_type;
+pub mod strategic_encounter_table;
+pub mod strategic_encounter_type;
+pub mod strategic_gateway_authority_table;
+pub mod strategic_gateway_authority_type;
 pub mod strategic_incident_table;
 pub mod strategic_incident_type;
 pub mod submit_all_repairable_items_reducer;
@@ -376,13 +445,18 @@ pub mod tactical_server_request_table;
 pub mod tactical_server_request_type;
 pub mod tactical_server_table;
 pub mod tactical_server_type;
+pub mod temperance_type;
 pub mod topsoil_organic_carbon_type;
 pub mod transfer_party_item_reducer;
-pub mod travel_edge_import_type;
+pub mod travel_edge_load_type;
+pub mod travel_edge_provenance_type;
 pub mod travel_edge_table;
 pub mod travel_edge_type;
+pub mod travel_filth_progress_type;
 pub mod travel_route_type;
+pub mod travel_to_quest_planned_reducer;
 pub mod travel_to_quest_reducer;
+pub mod travel_to_settlement_planned_reducer;
 pub mod travel_to_settlement_reducer;
 pub mod treat_limb_reducer;
 pub mod tree_species_id_type;
@@ -397,6 +471,7 @@ pub mod update_training_schedule_reducer;
 pub mod upgrade_manual_surgery_reducer;
 pub mod vote_for_party_leader_reducer;
 pub mod water_distance_meters_type;
+pub mod weapon_skill_distribution_type;
 pub mod western_christian_arrangement_type;
 pub mod withdraw_party_inventory_item_reducer;
 pub mod woodland_type;
@@ -409,6 +484,7 @@ pub mod world_node_import_type;
 pub mod world_node_table;
 pub mod world_node_type;
 pub mod wrb_reference_group_type;
+pub mod written_language_hours_type;
 
 pub use abandon_quest_reducer::abandon_quest;
 pub use accept_party_join_request_reducer::accept_party_join_request;
@@ -416,15 +492,22 @@ pub use accept_quest_reducer::accept_quest;
 pub use agricultural_commodity_type::AgriculturalCommodity;
 pub use agricultural_limitation_type::AgriculturalLimitation;
 pub use agriculture_industry_type::AgricultureIndustry;
+pub use alcohol_consumption_table::*;
+pub use alcohol_consumption_type::AlcoholConsumption;
+pub use answer_dialogue_prompt_reducer::answer_dialogue_prompt;
+pub use approve_party_action_request_planned_reducer::approve_party_action_request_planned;
 pub use approve_party_action_request_reducer::approve_party_action_request;
 pub use autoresolve_quest_reducer::autoresolve_quest;
 pub use autoresolve_report_table::*;
 pub use autoresolve_report_type::AutoresolveReport;
 pub use available_water_capacity_type::AvailableWaterCapacity;
+pub use backend_character_affinities_table::*;
+pub use backend_character_familiarities_table::*;
 pub use backend_committed_cuts_table::*;
 pub use backend_herbalist_examinations_table::*;
 pub use backend_infection_episodes_table::*;
 pub use backend_medical_examinations_table::*;
+pub use backend_social_beliefs_table::*;
 pub use backfill_character_deaths_and_leadership_reducer::backfill_character_deaths_and_leadership;
 pub use backfill_equipment_condition_and_smiths_reducer::backfill_equipment_condition_and_smiths;
 pub use backfill_item_values_reducer::backfill_item_values;
@@ -438,6 +521,7 @@ pub use battle_result_table::*;
 pub use battle_result_type::BattleResult;
 pub use begin_apprenticeship_reducer::begin_apprenticeship;
 pub use begin_world_data_import_reducer::begin_world_data_import;
+pub use blood_exposure_checkpoint_type::BloodExposureCheckpoint;
 pub use bootstrap_development_world_reducer::bootstrap_development_world;
 pub use built_settlement_cover_type::BuiltSettlementCover;
 pub use calibrate_weapon_precision_reducer::calibrate_weapon_precision;
@@ -449,6 +533,7 @@ pub use catholic_lutheran_church_type::CatholicLutheranChurch;
 pub use catholic_reformed_church_type::CatholicReformedChurch;
 pub use cation_exchange_capacity_type::CationExchangeCapacity;
 pub use change_inventory_item_reducer::change_inventory_item;
+pub use character_affinity_type::CharacterAffinity;
 pub use character_apprenticeship_table::*;
 pub use character_apprenticeship_type::CharacterApprenticeship;
 pub use character_attributes_table::*;
@@ -461,6 +546,9 @@ pub use character_death_table::*;
 pub use character_death_type::CharacterDeath;
 pub use character_equip_table::*;
 pub use character_equip_type::CharacterEquip;
+pub use character_familiarity_type::CharacterFamiliarity;
+pub use character_filth_table::*;
+pub use character_filth_type::CharacterFilth;
 pub use character_illness_status_table::*;
 pub use character_illness_status_type::CharacterIllnessStatus;
 pub use character_limbs_table::*;
@@ -482,12 +570,14 @@ pub use character_strategic_condition_type::CharacterStrategicCondition;
 pub use character_table::*;
 pub use character_time_table::*;
 pub use character_time_type::CharacterTime;
+pub use character_topic_knowledge_type::CharacterTopicKnowledge;
 pub use character_training_schedule_table::*;
 pub use character_training_schedule_type::CharacterTrainingSchedule;
 pub use character_type::Character;
 pub use character_virtue_table::*;
 pub use character_virtue_type::CharacterVirtue;
 pub use charcoal_burning_industry_type::CharcoalBurningIndustry;
+pub use choose_dialogue_topic_reducer::choose_dialogue_topic;
 pub use claim_simulation_run_reducer::claim_simulation_run;
 pub use committed_cut_type::CommittedCut;
 pub use configure_simulation_character_reducer::configure_simulation_character;
@@ -499,6 +589,8 @@ pub use construction_commodity_type::ConstructionCommodity;
 pub use construction_industry_type::ConstructionIndustry;
 pub use continue_camp_travel_reducer::continue_camp_travel;
 pub use conviction_type::Conviction;
+pub use cook_food_reducer::cook_food;
+pub use cooking_method_type::CookingMethod;
 pub use craft_medication_reducer::craft_medication;
 pub use create_character_reducer::create_character;
 pub use create_named_character_reducer::create_named_character;
@@ -518,6 +610,18 @@ pub use derived_historical_vegetation_cover_type::DerivedHistoricalVegetationCov
 pub use derived_historical_vegetation_method_type::DerivedHistoricalVegetationMethod;
 pub use derived_historical_vegetation_type::DerivedHistoricalVegetation;
 pub use derived_industry_type::DerivedIndustry;
+pub use dialogue_action_type::DialogueAction;
+pub use dialogue_answer_type::DialogueAnswer;
+pub use dialogue_event_table::*;
+pub use dialogue_event_type::DialogueEvent;
+pub use dialogue_participant_table::*;
+pub use dialogue_participant_type::DialogueParticipant;
+pub use dialogue_prompt_table::*;
+pub use dialogue_prompt_type::DialoguePrompt;
+pub use dialogue_session_table::*;
+pub use dialogue_session_type::DialogueSession;
+pub use dialogue_topic_option_table::*;
+pub use dialogue_topic_option_type::DialogueTopicOption;
 pub use direct_historical_vegetation_cover_type::DirectHistoricalVegetationCover;
 pub use direct_historical_vegetation_method_type::DirectHistoricalVegetationMethod;
 pub use direct_historical_vegetation_type::DirectHistoricalVegetation;
@@ -532,6 +636,7 @@ pub use dominant_leaf_type_type::DominantLeafType;
 pub use drive_type::Drive;
 pub use drought_history_type::DroughtHistory;
 pub use drought_profile_type::DroughtProfile;
+pub use eat_food_reducer::eat_food;
 pub use edge_endpoint_type::EdgeEndpoint;
 pub use edge_progress_permille_type::EdgeProgressPermille;
 pub use elevation_meters_type::ElevationMeters;
@@ -550,6 +655,10 @@ pub use fallback_historical_vegetation_type::FallbackHistoricalVegetation;
 pub use fallback_industry_type::FallbackIndustry;
 pub use ferry_route_type::FerryRoute;
 pub use ferry_waterway_type::FerryWaterway;
+pub use filth_disease_snapshot_type::FilthDiseaseSnapshot;
+pub use filth_origin_type::FilthOrigin;
+pub use filth_provenance_type::FilthProvenance;
+pub use filth_substance_type::FilthSubstance;
 pub use finalize_merchant_trade_reducer::finalize_merchant_trade;
 pub use finalize_party_offer_reducer::finalize_party_offer;
 pub use finish_world_data_import_reducer::finish_world_data_import;
@@ -557,6 +666,10 @@ pub use fish_commodity_type::FishCommodity;
 pub use fishing_industry_type::FishingIndustry;
 pub use flow_persistence_type::FlowPersistence;
 pub use flowing_water_access_type::FlowingWaterAccess;
+pub use food_contamination_type::FoodContamination;
+pub use food_lot_table::*;
+pub use food_lot_type::FoodLot;
+pub use food_preparation_type::FoodPreparation;
 pub use forest_commodity_type::ForestCommodity;
 pub use forest_cover_type::ForestCover;
 pub use forestry_industry_type::ForestryIndustry;
@@ -570,7 +683,9 @@ pub use herbalist_examination_type::HerbalistExamination;
 pub use historical_vegetation_type::HistoricalVegetation;
 pub use historical_wetland_type::HistoricalWetland;
 pub use historical_woodland_type::HistoricalWoodland;
+pub use hygiene_type::Hygiene;
 pub use igneous_rock_type::IgneousRock;
+pub use immediate_activity_type::ImmediateActivity;
 pub use import_settlement_aliases_reducer::import_settlement_aliases;
 pub use import_settlement_descriptions_reducer::import_settlement_descriptions;
 pub use import_settlements_reducer::import_settlements;
@@ -593,7 +708,14 @@ pub use item_kind_type::ItemKind;
 pub use item_slot_type::ItemSlot;
 pub use item_table::*;
 pub use item_type::Item;
+pub use join_dialogue_session_reducer::join_dialogue_session;
 pub use journey_camp_interval_type::JourneyCampInterval;
+pub use journey_route_leg_type::JourneyRouteLeg;
+pub use journey_route_plan_type::JourneyRoutePlan;
+pub use journey_route_point_type::JourneyRoutePoint;
+pub use journey_terrain_kind_type::JourneyTerrainKind;
+pub use journey_terrain_span_type::JourneyTerrainSpan;
+pub use journey_terrain_weights_type::JourneyTerrainWeights;
 pub use kill_simulation_character_reducer::kill_simulation_character;
 pub use land_route_type::LandRoute;
 pub use land_use_fraction_type::LandUseFraction;
@@ -625,6 +747,7 @@ pub use morale_event_type::MoraleEvent;
 pub use native_range_evidence_type::NativeRangeEvidence;
 pub use nerve_type::Nerve;
 pub use official_religion_type::OfficialReligion;
+pub use oral_language_hours_type::OralLanguageHours;
 pub use organic_soil_type::OrganicSoil;
 pub use other_non_textured_soil_type::OtherNonTexturedSoil;
 pub use outlook_type::Outlook;
@@ -639,8 +762,11 @@ pub use party_item_condition_table::*;
 pub use party_item_condition_type::PartyItemCondition;
 pub use party_join_request_table::*;
 pub use party_join_request_type::PartyJoinRequest;
+pub use party_journey_encounter_authority_type::PartyJourneyEncounterAuthority;
 pub use party_journey_itinerary_table::*;
 pub use party_journey_itinerary_type::PartyJourneyItinerary;
+pub use party_journey_route_table::*;
+pub use party_journey_route_type::PartyJourneyRoute;
 pub use party_journey_table::*;
 pub use party_journey_type::PartyJourney;
 pub use party_leader_vote_table::*;
@@ -655,13 +781,17 @@ pub use party_table::*;
 pub use party_type::Party;
 pub use pasture_cover_type::PastureCover;
 pub use peat_cutting_industry_type::PeatCuttingIndustry;
+pub use perform_immediate_activity_reducer::perform_immediate_activity;
+pub use perform_social_action_reducer::perform_social_action;
 pub use potential_vegetation_class_type::PotentialVegetationClass;
 pub use potential_vegetation_posterior_type::PotentialVegetationPosterior;
 pub use potential_vegetation_type::PotentialVegetation;
 pub use pottery_commodity_type::PotteryCommodity;
 pub use pottery_industry_type::PotteryIndustry;
 pub use production_scale_type::ProductionScale;
+pub use profile_fact_provenance_type::ProfileFactProvenance;
 pub use projectile_kind_type::ProjectileKind;
+pub use prosperity_tier_type::ProsperityTier;
 pub use purchase_from_herbalist_reducer::purchase_from_herbalist;
 pub use quarry_commodity_type::QuarryCommodity;
 pub use quarrying_industry_type::QuarryingIndustry;
@@ -673,9 +803,9 @@ pub use quest_type::Quest;
 pub use recruitment_requirements_type::RecruitmentRequirements;
 pub use refresh_capabilities_reducer::refresh_capabilities;
 pub use refresh_strategic_condition_reducer::refresh_strategic_condition;
+pub use register_strategic_gateway_reducer::register_strategic_gateway;
 pub use reject_party_join_request_reducer::reject_party_join_request;
 pub use religion_hours_type::ReligionHours;
-pub use religion_minutes_type::ReligionMinutes;
 pub use religious_demand_table::*;
 pub use religious_demand_type::ReligiousDemand;
 pub use remove_party_member_reducer::remove_party_member;
@@ -688,6 +818,7 @@ pub use request_tactical_server_for_scene_reducer::request_tactical_server_for_s
 pub use request_tactical_server_reducer::request_tactical_server;
 pub use request_to_join_party_reducer::request_to_join_party;
 pub use resolve_religious_demand_reducer::resolve_religious_demand;
+pub use resolve_strategic_encounter_reducer::resolve_strategic_encounter;
 pub use resolved_party_action_type::ResolvedPartyAction;
 pub use rest_at_camp_reducer::rest_at_camp;
 pub use rest_at_settlement_hours_reducer::rest_at_settlement_hours;
@@ -741,14 +872,18 @@ pub use settlement_description_batch_row_type::SettlementDescriptionBatchRow;
 pub use settlement_description_kind_type::SettlementDescriptionKind;
 pub use settlement_description_table::*;
 pub use settlement_description_type::SettlementDescription;
+pub use settlement_economy_profile_type::SettlementEconomyProfile;
 pub use settlement_herbalist_type::SettlementHerbalist;
 pub use settlement_hydrology_type::SettlementHydrology;
 pub use settlement_import_type::SettlementImport;
+pub use settlement_language_profile_type::SettlementLanguageProfile;
 pub use settlement_outbreak_table::*;
 pub use settlement_outbreak_type::SettlementOutbreak;
 pub use settlement_religious_status_type::SettlementReligiousStatus;
+pub use settlement_service_type::SettlementService;
 pub use settlement_smith_table::*;
 pub use settlement_smith_type::SettlementSmith;
+pub use settlement_stock_type::SettlementStock;
 pub use settlement_table::*;
 pub use settlement_type::Settlement;
 pub use simulation_character_table::*;
@@ -756,6 +891,9 @@ pub use simulation_character_type::SimulationCharacter;
 pub use simulation_run_table::*;
 pub use simulation_run_type::SimulationRun;
 pub use sociability_type::Sociability;
+pub use social_action_cooldown_type::SocialActionCooldown;
+pub use social_belief_type::SocialBelief;
+pub use social_interaction_type::SocialInteraction;
 pub use soil_acidity_type::SoilAcidity;
 pub use soil_basis_points_type::SoilBasisPoints;
 pub use soil_depth_type::SoilDepth;
@@ -765,9 +903,16 @@ pub use soil_profile_type::SoilProfile;
 pub use soil_properties_type::SoilProperties;
 pub use soil_substrate_type::SoilSubstrate;
 pub use soil_water_regime_type::SoilWaterRegime;
+pub use start_dialogue_reducer::start_dialogue;
+pub use stock_category_type::StockCategory;
 pub use stone_content_percent_type::StoneContentPercent;
 pub use store_battle_loot_reducer::store_battle_loot;
 pub use strahler_order_type::StrahlerOrder;
+pub use strategic_encounter_loss_type::StrategicEncounterLoss;
+pub use strategic_encounter_table::*;
+pub use strategic_encounter_type::StrategicEncounter;
+pub use strategic_gateway_authority_table::*;
+pub use strategic_gateway_authority_type::StrategicGatewayAuthority;
 pub use strategic_incident_table::*;
 pub use strategic_incident_type::StrategicIncident;
 pub use submit_all_repairable_items_reducer::submit_all_repairable_items;
@@ -780,13 +925,18 @@ pub use tactical_server_request_table::*;
 pub use tactical_server_request_type::TacticalServerRequest;
 pub use tactical_server_table::*;
 pub use tactical_server_type::TacticalServer;
+pub use temperance_type::Temperance;
 pub use topsoil_organic_carbon_type::TopsoilOrganicCarbon;
 pub use transfer_party_item_reducer::transfer_party_item;
-pub use travel_edge_import_type::TravelEdgeImport;
+pub use travel_edge_load_type::TravelEdgeLoad;
+pub use travel_edge_provenance_type::TravelEdgeProvenance;
 pub use travel_edge_table::*;
 pub use travel_edge_type::TravelEdge;
+pub use travel_filth_progress_type::TravelFilthProgress;
 pub use travel_route_type::TravelRoute;
+pub use travel_to_quest_planned_reducer::travel_to_quest_planned;
 pub use travel_to_quest_reducer::travel_to_quest;
+pub use travel_to_settlement_planned_reducer::travel_to_settlement_planned;
 pub use travel_to_settlement_reducer::travel_to_settlement;
 pub use treat_limb_reducer::treat_limb;
 pub use tree_species_id_type::TreeSpeciesId;
@@ -801,6 +951,7 @@ pub use update_training_schedule_reducer::update_training_schedule;
 pub use upgrade_manual_surgery_reducer::upgrade_manual_surgery;
 pub use vote_for_party_leader_reducer::vote_for_party_leader;
 pub use water_distance_meters_type::WaterDistanceMeters;
+pub use weapon_skill_distribution_type::WeaponSkillDistribution;
 pub use western_christian_arrangement_type::WesternChristianArrangement;
 pub use withdraw_party_inventory_item_reducer::withdraw_party_inventory_item;
 pub use woodland_type::Woodland;
@@ -813,6 +964,7 @@ pub use world_node_import_type::WorldNodeImport;
 pub use world_node_table::*;
 pub use world_node_type::WorldNode;
 pub use wrb_reference_group_type::WrbReferenceGroup;
+pub use written_language_hours_type::WrittenLanguageHours;
 
 #[derive(Clone, PartialEq, Debug)]
 
@@ -834,9 +986,22 @@ pub enum Reducer {
         character_id: u64,
         quest_id: String,
     },
+    AnswerDialoguePrompt {
+        character_id: u64,
+        prompt_row_id: String,
+        choice_ids_json: String,
+        action_id: String,
+        expected_revision: u64,
+        catalog_revision: String,
+    },
     ApprovePartyActionRequest {
         leader_id: u64,
         request_id: u64,
+    },
+    ApprovePartyActionRequestPlanned {
+        leader_id: u64,
+        request_id: u64,
+        route: JourneyRoutePlan,
     },
     AutoresolveQuest {
         character_id: u64,
@@ -871,6 +1036,14 @@ pub enum Reducer {
         item_id: String,
         by_quantity: i32,
     },
+    ChooseDialogueTopic {
+        character_id: u64,
+        session_id: String,
+        topic_id: String,
+        action_id: String,
+        expected_revision: u64,
+        catalog_revision: String,
+    },
     ClaimSimulationRun {
         bootstrap_token: String,
         nonce: String,
@@ -888,6 +1061,12 @@ pub enum Reducer {
     },
     ContinueCampTravel {
         character_id: u64,
+    },
+    CookFood {
+        character_id: u64,
+        method: CookingMethod,
+        inventory_item_ids: Vec<u64>,
+        quantities: Vec<u32>,
     },
     CraftMedication {
         character_id: u64,
@@ -955,6 +1134,10 @@ pub enum Reducer {
         leader_id: u64,
         request_id: u64,
     },
+    EatFood {
+        character_id: u64,
+        inventory_item_id: u64,
+    },
     EndTacticalServer {
         success: bool,
         reported_xp_gained: i32,
@@ -1011,10 +1194,18 @@ pub enum Reducer {
         settlements: Vec<SettlementImport>,
     },
     ImportTravelEdges {
-        edges: Vec<TravelEdgeImport>,
+        edges: Vec<TravelEdgeLoad>,
     },
     ImportWorldNodes {
         nodes: Vec<WorldNodeImport>,
+    },
+    JoinDialogueSession {
+        character_id: u64,
+        session_id: String,
+        role: String,
+        action_id: String,
+        expected_revision: u64,
+        catalog_revision: String,
     },
     KillSimulationCharacter {
         nonce: String,
@@ -1032,6 +1223,18 @@ pub enum Reducer {
         party_inventory_item_ids: Vec<u64>,
         quantities: Vec<u32>,
     },
+    PerformImmediateActivity {
+        character_id: u64,
+        activity: ImmediateActivity,
+        requested_minutes: u64,
+        service_id: Option<String>,
+    },
+    PerformSocialAction {
+        actor_id: u64,
+        target_id: u64,
+        source_id: String,
+        action_kind: String,
+    },
     PurchaseFromHerbalist {
         patient_id: u64,
         settlement_id: String,
@@ -1043,6 +1246,10 @@ pub enum Reducer {
     },
     RefreshStrategicCondition {
         character_id: u64,
+    },
+    RegisterStrategicGateway {
+        terrain_package_digest: Option<String>,
+        terrain_schema: u32,
     },
     RejectPartyJoinRequest {
         leader_id: u64,
@@ -1084,6 +1291,10 @@ pub enum Reducer {
         demand_id: u64,
         choice: String,
     },
+    ResolveStrategicEncounter {
+        character_id: u64,
+        choice: String,
+    },
     RestAtCamp {
         character_id: u64,
         requested_minutes: u64,
@@ -1105,7 +1316,7 @@ pub enum Reducer {
     RetrieveRepairedItems {
         character_id: u64,
         settlement_id: String,
-        armourer: bool,
+        service: String,
         item_id: Option<String>,
         limit: u32,
     },
@@ -1161,6 +1372,13 @@ pub enum Reducer {
         automatic_camp_duration: bool,
         fixed_camp_minutes: u16,
     },
+    StartDialogue {
+        character_id: u64,
+        session_id: String,
+        conversation_id: String,
+        npc_actor_id: String,
+        catalog_revision: String,
+    },
     StoreBattleLoot {
         character_id: u64,
         quest_id: String,
@@ -1170,11 +1388,12 @@ pub enum Reducer {
     SubmitAllRepairableItems {
         character_id: u64,
         settlement_id: String,
-        armourer: bool,
+        service: String,
     },
     SubmitItemForRepair {
         character_id: u64,
         settlement_id: String,
+        service: String,
         inventory_item_id: u64,
     },
     SynchronizeCharacterTime {
@@ -1190,9 +1409,19 @@ pub enum Reducer {
         character_id: u64,
         quest_id: String,
     },
+    TravelToQuestPlanned {
+        character_id: u64,
+        quest_id: String,
+        route: JourneyRoutePlan,
+    },
     TravelToSettlement {
         character_id: u64,
         settlement_id: String,
+    },
+    TravelToSettlementPlanned {
+        character_id: u64,
+        settlement_id: String,
+        route: JourneyRoutePlan,
     },
     TreatLimb {
         actor_id: u64,
@@ -1200,6 +1429,7 @@ pub enum Reducer {
         limb_slug: String,
         procedure: String,
         projectile_id: Option<u64>,
+        use_soap: bool,
     },
     TurnInQuest {
         character_id: u64,
@@ -1216,7 +1446,7 @@ pub enum Reducer {
     UpdatePartyCheckTargets {
         leader_id: u64,
         medicine: f32,
-        charisma: f32,
+        command: f32,
         religion: f32,
     },
     UpdateRecruitmentRole {
@@ -1254,7 +1484,11 @@ impl __sdk::Reducer for Reducer {
             Reducer::AbandonQuest { .. } => "abandon_quest",
             Reducer::AcceptPartyJoinRequest { .. } => "accept_party_join_request",
             Reducer::AcceptQuest { .. } => "accept_quest",
+            Reducer::AnswerDialoguePrompt { .. } => "answer_dialogue_prompt",
             Reducer::ApprovePartyActionRequest { .. } => "approve_party_action_request",
+            Reducer::ApprovePartyActionRequestPlanned { .. } => {
+                "approve_party_action_request_planned"
+            }
             Reducer::AutoresolveQuest { .. } => "autoresolve_quest",
             Reducer::BackfillCharacterDeathsAndLeadership => {
                 "backfill_character_deaths_and_leadership"
@@ -1271,9 +1505,11 @@ impl __sdk::Reducer for Reducer {
             Reducer::CalibrateWeaponPrecision => "calibrate_weapon_precision",
             Reducer::CancelMissionRequest { .. } => "cancel_mission_request",
             Reducer::ChangeInventoryItem { .. } => "change_inventory_item",
+            Reducer::ChooseDialogueTopic { .. } => "choose_dialogue_topic",
             Reducer::ClaimSimulationRun { .. } => "claim_simulation_run",
             Reducer::ConfigureSimulationCharacter { .. } => "configure_simulation_character",
             Reducer::ContinueCampTravel { .. } => "continue_camp_travel",
+            Reducer::CookFood { .. } => "cook_food",
             Reducer::CraftMedication { .. } => "craft_medication",
             Reducer::CreateCharacter { .. } => "create_character",
             Reducer::CreateNamedCharacter { .. } => "create_named_character",
@@ -1289,6 +1525,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::DismissHerbalistExamination { .. } => "dismiss_herbalist_examination",
             Reducer::DismissMedicalExamination { .. } => "dismiss_medical_examination",
             Reducer::DismissPartyActionRequest { .. } => "dismiss_party_action_request",
+            Reducer::EatFood { .. } => "eat_food",
             Reducer::EndTacticalServer { .. } => "end_tactical_server",
             Reducer::EnsureSettlementActivity { .. } => "ensure_settlement_activity",
             Reducer::EnterMission { .. } => "enter_mission",
@@ -1304,13 +1541,17 @@ impl __sdk::Reducer for Reducer {
             Reducer::ImportSettlements { .. } => "import_settlements",
             Reducer::ImportTravelEdges { .. } => "import_travel_edges",
             Reducer::ImportWorldNodes { .. } => "import_world_nodes",
+            Reducer::JoinDialogueSession { .. } => "join_dialogue_session",
             Reducer::KillSimulationCharacter { .. } => "kill_simulation_character",
             Reducer::LeaveMission { .. } => "leave_mission",
             Reducer::LeaveParty { .. } => "leave_party",
             Reducer::LiquidatePartyInventory { .. } => "liquidate_party_inventory",
+            Reducer::PerformImmediateActivity { .. } => "perform_immediate_activity",
+            Reducer::PerformSocialAction { .. } => "perform_social_action",
             Reducer::PurchaseFromHerbalist { .. } => "purchase_from_herbalist",
             Reducer::RefreshCapabilities { .. } => "refresh_capabilities",
             Reducer::RefreshStrategicCondition { .. } => "refresh_strategic_condition",
+            Reducer::RegisterStrategicGateway { .. } => "register_strategic_gateway",
             Reducer::RejectPartyJoinRequest { .. } => "reject_party_join_request",
             Reducer::RemovePartyMember { .. } => "remove_party_member",
             Reducer::RenameSavedRecruitmentRole { .. } => "rename_saved_recruitment_role",
@@ -1320,6 +1561,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::RequestTacticalServerForScene { .. } => "request_tactical_server_for_scene",
             Reducer::RequestToJoinParty { .. } => "request_to_join_party",
             Reducer::ResolveReligiousDemand { .. } => "resolve_religious_demand",
+            Reducer::ResolveStrategicEncounter { .. } => "resolve_strategic_encounter",
             Reducer::RestAtCamp { .. } => "rest_at_camp",
             Reducer::RestAtSettlement { .. } => "rest_at_settlement",
             Reducer::RestAtSettlementHours { .. } => "rest_at_settlement_hours",
@@ -1335,13 +1577,16 @@ impl __sdk::Reducer for Reducer {
             Reducer::SetInventoryQuantityTarget { .. } => "set_inventory_quantity_target",
             Reducer::SetPartyCampFatiguePercent { .. } => "set_party_camp_fatigue_percent",
             Reducer::SetPartyTravelItinerary { .. } => "set_party_travel_itinerary",
+            Reducer::StartDialogue { .. } => "start_dialogue",
             Reducer::StoreBattleLoot { .. } => "store_battle_loot",
             Reducer::SubmitAllRepairableItems { .. } => "submit_all_repairable_items",
             Reducer::SubmitItemForRepair { .. } => "submit_item_for_repair",
             Reducer::SynchronizeCharacterTime { .. } => "synchronize_character_time",
             Reducer::TransferPartyItem { .. } => "transfer_party_item",
             Reducer::TravelToQuest { .. } => "travel_to_quest",
+            Reducer::TravelToQuestPlanned { .. } => "travel_to_quest_planned",
             Reducer::TravelToSettlement { .. } => "travel_to_settlement",
+            Reducer::TravelToSettlementPlanned { .. } => "travel_to_settlement_planned",
             Reducer::TreatLimb { .. } => "treat_limb",
             Reducer::TurnInQuest { .. } => "turn_in_quest",
             Reducer::UnequipMedication { .. } => "unequip_medication",
@@ -1379,12 +1624,36 @@ impl __sdk::Reducer for Reducer {
                 character_id: character_id.clone(),
                 quest_id: quest_id.clone(),
 }),
+            Reducer::AnswerDialoguePrompt{
+                character_id,
+                prompt_row_id,
+                choice_ids_json,
+                action_id,
+                expected_revision,
+                catalog_revision,
+}             => __sats::bsatn::to_vec(&answer_dialogue_prompt_reducer::AnswerDialoguePromptArgs {
+                character_id: character_id.clone(),
+                prompt_row_id: prompt_row_id.clone(),
+                choice_ids_json: choice_ids_json.clone(),
+                action_id: action_id.clone(),
+                expected_revision: expected_revision.clone(),
+                catalog_revision: catalog_revision.clone(),
+}),
             Reducer::ApprovePartyActionRequest{
                 leader_id,
                 request_id,
 }             => __sats::bsatn::to_vec(&approve_party_action_request_reducer::ApprovePartyActionRequestArgs {
                 leader_id: leader_id.clone(),
                 request_id: request_id.clone(),
+}),
+            Reducer::ApprovePartyActionRequestPlanned{
+                leader_id,
+                request_id,
+                route,
+}             => __sats::bsatn::to_vec(&approve_party_action_request_planned_reducer::ApprovePartyActionRequestPlannedArgs {
+                leader_id: leader_id.clone(),
+                request_id: request_id.clone(),
+                route: route.clone(),
 }),
             Reducer::AutoresolveQuest{
                 character_id,
@@ -1446,6 +1715,21 @@ Reducer::CancelMissionRequest{
                 item_id: item_id.clone(),
                 by_quantity: by_quantity.clone(),
 }),
+            Reducer::ChooseDialogueTopic{
+                character_id,
+                session_id,
+                topic_id,
+                action_id,
+                expected_revision,
+                catalog_revision,
+}             => __sats::bsatn::to_vec(&choose_dialogue_topic_reducer::ChooseDialogueTopicArgs {
+                character_id: character_id.clone(),
+                session_id: session_id.clone(),
+                topic_id: topic_id.clone(),
+                action_id: action_id.clone(),
+                expected_revision: expected_revision.clone(),
+                catalog_revision: catalog_revision.clone(),
+}),
             Reducer::ClaimSimulationRun{
                 bootstrap_token,
                 nonce,
@@ -1478,6 +1762,17 @@ Reducer::CancelMissionRequest{
                 character_id,
 }             => __sats::bsatn::to_vec(&continue_camp_travel_reducer::ContinueCampTravelArgs {
                 character_id: character_id.clone(),
+}),
+            Reducer::CookFood{
+                character_id,
+                method,
+                inventory_item_ids,
+                quantities,
+}             => __sats::bsatn::to_vec(&cook_food_reducer::CookFoodArgs {
+                character_id: character_id.clone(),
+                method: method.clone(),
+                inventory_item_ids: inventory_item_ids.clone(),
+                quantities: quantities.clone(),
 }),
             Reducer::CraftMedication{
                 character_id,
@@ -1596,6 +1891,13 @@ Reducer::CancelMissionRequest{
                 leader_id: leader_id.clone(),
                 request_id: request_id.clone(),
 }),
+            Reducer::EatFood{
+                character_id,
+                inventory_item_id,
+}             => __sats::bsatn::to_vec(&eat_food_reducer::EatFoodArgs {
+                character_id: character_id.clone(),
+                inventory_item_id: inventory_item_id.clone(),
+}),
             Reducer::EndTacticalServer{
                 success,
                 reported_xp_gained,
@@ -1703,6 +2005,21 @@ Reducer::CancelMissionRequest{
 }             => __sats::bsatn::to_vec(&import_world_nodes_reducer::ImportWorldNodesArgs {
                 nodes: nodes.clone(),
 }),
+            Reducer::JoinDialogueSession{
+                character_id,
+                session_id,
+                role,
+                action_id,
+                expected_revision,
+                catalog_revision,
+}             => __sats::bsatn::to_vec(&join_dialogue_session_reducer::JoinDialogueSessionArgs {
+                character_id: character_id.clone(),
+                session_id: session_id.clone(),
+                role: role.clone(),
+                action_id: action_id.clone(),
+                expected_revision: expected_revision.clone(),
+                catalog_revision: catalog_revision.clone(),
+}),
             Reducer::KillSimulationCharacter{
                 nonce,
                 character_id,
@@ -1731,6 +2048,28 @@ Reducer::CancelMissionRequest{
                 party_inventory_item_ids: party_inventory_item_ids.clone(),
                 quantities: quantities.clone(),
 }),
+            Reducer::PerformImmediateActivity{
+                character_id,
+                activity,
+                requested_minutes,
+                service_id,
+}             => __sats::bsatn::to_vec(&perform_immediate_activity_reducer::PerformImmediateActivityArgs {
+                character_id: character_id.clone(),
+                activity: activity.clone(),
+                requested_minutes: requested_minutes.clone(),
+                service_id: service_id.clone(),
+}),
+            Reducer::PerformSocialAction{
+                actor_id,
+                target_id,
+                source_id,
+                action_kind,
+}             => __sats::bsatn::to_vec(&perform_social_action_reducer::PerformSocialActionArgs {
+                actor_id: actor_id.clone(),
+                target_id: target_id.clone(),
+                source_id: source_id.clone(),
+                action_kind: action_kind.clone(),
+}),
             Reducer::PurchaseFromHerbalist{
                 patient_id,
                 settlement_id,
@@ -1751,6 +2090,13 @@ Reducer::CancelMissionRequest{
                 character_id,
 }             => __sats::bsatn::to_vec(&refresh_strategic_condition_reducer::RefreshStrategicConditionArgs {
                 character_id: character_id.clone(),
+}),
+            Reducer::RegisterStrategicGateway{
+                terrain_package_digest,
+                terrain_schema,
+}             => __sats::bsatn::to_vec(&register_strategic_gateway_reducer::RegisterStrategicGatewayArgs {
+                terrain_package_digest: terrain_package_digest.clone(),
+                terrain_schema: terrain_schema.clone(),
 }),
             Reducer::RejectPartyJoinRequest{
                 leader_id,
@@ -1823,6 +2169,13 @@ Reducer::CancelMissionRequest{
                 demand_id: demand_id.clone(),
                 choice: choice.clone(),
 }),
+            Reducer::ResolveStrategicEncounter{
+                character_id,
+                choice,
+}             => __sats::bsatn::to_vec(&resolve_strategic_encounter_reducer::ResolveStrategicEncounterArgs {
+                character_id: character_id.clone(),
+                choice: choice.clone(),
+}),
             Reducer::RestAtCamp{
                 character_id,
                 requested_minutes,
@@ -1858,13 +2211,13 @@ Reducer::CancelMissionRequest{
             Reducer::RetrieveRepairedItems{
                 character_id,
                 settlement_id,
-                armourer,
+                service,
                 item_id,
                 limit,
 }             => __sats::bsatn::to_vec(&retrieve_repaired_items_reducer::RetrieveRepairedItemsArgs {
                 character_id: character_id.clone(),
                 settlement_id: settlement_id.clone(),
-                armourer: armourer.clone(),
+                service: service.clone(),
                 item_id: item_id.clone(),
                 limit: limit.clone(),
 }),
@@ -1962,6 +2315,19 @@ Reducer::CancelMissionRequest{
                 automatic_camp_duration: automatic_camp_duration.clone(),
                 fixed_camp_minutes: fixed_camp_minutes.clone(),
 }),
+            Reducer::StartDialogue{
+                character_id,
+                session_id,
+                conversation_id,
+                npc_actor_id,
+                catalog_revision,
+}             => __sats::bsatn::to_vec(&start_dialogue_reducer::StartDialogueArgs {
+                character_id: character_id.clone(),
+                session_id: session_id.clone(),
+                conversation_id: conversation_id.clone(),
+                npc_actor_id: npc_actor_id.clone(),
+                catalog_revision: catalog_revision.clone(),
+}),
             Reducer::StoreBattleLoot{
                 character_id,
                 quest_id,
@@ -1976,19 +2342,21 @@ Reducer::CancelMissionRequest{
             Reducer::SubmitAllRepairableItems{
                 character_id,
                 settlement_id,
-                armourer,
+                service,
 }             => __sats::bsatn::to_vec(&submit_all_repairable_items_reducer::SubmitAllRepairableItemsArgs {
                 character_id: character_id.clone(),
                 settlement_id: settlement_id.clone(),
-                armourer: armourer.clone(),
+                service: service.clone(),
 }),
             Reducer::SubmitItemForRepair{
                 character_id,
                 settlement_id,
+                service,
                 inventory_item_id,
 }             => __sats::bsatn::to_vec(&submit_item_for_repair_reducer::SubmitItemForRepairArgs {
                 character_id: character_id.clone(),
                 settlement_id: settlement_id.clone(),
+                service: service.clone(),
                 inventory_item_id: inventory_item_id.clone(),
 }),
             Reducer::SynchronizeCharacterTime{
@@ -2014,6 +2382,15 @@ Reducer::CancelMissionRequest{
                 character_id: character_id.clone(),
                 quest_id: quest_id.clone(),
 }),
+            Reducer::TravelToQuestPlanned{
+                character_id,
+                quest_id,
+                route,
+}             => __sats::bsatn::to_vec(&travel_to_quest_planned_reducer::TravelToQuestPlannedArgs {
+                character_id: character_id.clone(),
+                quest_id: quest_id.clone(),
+                route: route.clone(),
+}),
             Reducer::TravelToSettlement{
                 character_id,
                 settlement_id,
@@ -2021,18 +2398,29 @@ Reducer::CancelMissionRequest{
                 character_id: character_id.clone(),
                 settlement_id: settlement_id.clone(),
 }),
+            Reducer::TravelToSettlementPlanned{
+                character_id,
+                settlement_id,
+                route,
+}             => __sats::bsatn::to_vec(&travel_to_settlement_planned_reducer::TravelToSettlementPlannedArgs {
+                character_id: character_id.clone(),
+                settlement_id: settlement_id.clone(),
+                route: route.clone(),
+}),
             Reducer::TreatLimb{
                 actor_id,
                 patient_id,
                 limb_slug,
                 procedure,
                 projectile_id,
+                use_soap,
 }             => __sats::bsatn::to_vec(&treat_limb_reducer::TreatLimbArgs {
                 actor_id: actor_id.clone(),
                 patient_id: patient_id.clone(),
                 limb_slug: limb_slug.clone(),
                 procedure: procedure.clone(),
                 projectile_id: projectile_id.clone(),
+                use_soap: use_soap.clone(),
 }),
             Reducer::TurnInQuest{
                 character_id,
@@ -2058,12 +2446,12 @@ Reducer::CancelMissionRequest{
             Reducer::UpdatePartyCheckTargets{
                 leader_id,
                 medicine,
-                charisma,
+                command,
                 religion,
 }             => __sats::bsatn::to_vec(&update_party_check_targets_reducer::UpdatePartyCheckTargetsArgs {
                 leader_id: leader_id.clone(),
                 medicine: medicine.clone(),
-                charisma: charisma.clone(),
+                command: command.clone(),
                 religion: religion.clone(),
 }),
             Reducer::UpdateRecruitmentRole{
@@ -2117,11 +2505,15 @@ Reducer::VoteForPartyLeader{
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct DbUpdate {
+    alcohol_consumption: __sdk::TableUpdate<AlcoholConsumption>,
     autoresolve_report: __sdk::TableUpdate<AutoresolveReport>,
+    backend_character_affinities: __sdk::TableUpdate<CharacterAffinity>,
+    backend_character_familiarities: __sdk::TableUpdate<CharacterFamiliarity>,
     backend_committed_cuts: __sdk::TableUpdate<CommittedCut>,
     backend_herbalist_examinations: __sdk::TableUpdate<HerbalistExamination>,
     backend_infection_episodes: __sdk::TableUpdate<InfectionEpisodeRow>,
     backend_medical_examinations: __sdk::TableUpdate<MedicalExamination>,
+    backend_social_beliefs: __sdk::TableUpdate<SocialBelief>,
     battle_loot_item: __sdk::TableUpdate<BattleLootItem>,
     battle_participant: __sdk::TableUpdate<BattleParticipant>,
     battle_result: __sdk::TableUpdate<BattleResult>,
@@ -2132,6 +2524,7 @@ pub struct DbUpdate {
     character_condition: __sdk::TableUpdate<CharacterCondition>,
     character_death: __sdk::TableUpdate<CharacterDeath>,
     character_equip: __sdk::TableUpdate<CharacterEquip>,
+    character_filth: __sdk::TableUpdate<CharacterFilth>,
     character_illness_status: __sdk::TableUpdate<CharacterIllnessStatus>,
     character_limbs: __sdk::TableUpdate<CharacterLimbs>,
     character_morale_source: __sdk::TableUpdate<CharacterMoraleSource>,
@@ -2145,7 +2538,13 @@ pub struct DbUpdate {
     character_training_schedule: __sdk::TableUpdate<CharacterTrainingSchedule>,
     character_virtue: __sdk::TableUpdate<CharacterVirtue>,
     connected_players: __sdk::TableUpdate<ConnectedPlayer>,
+    dialogue_event: __sdk::TableUpdate<DialogueEvent>,
+    dialogue_participant: __sdk::TableUpdate<DialogueParticipant>,
+    dialogue_prompt: __sdk::TableUpdate<DialoguePrompt>,
+    dialogue_session: __sdk::TableUpdate<DialogueSession>,
+    dialogue_topic_option: __sdk::TableUpdate<DialogueTopicOption>,
     equipped_medication: __sdk::TableUpdate<EquippedMedication>,
+    food_lot: __sdk::TableUpdate<FoodLot>,
     inventory_item: __sdk::TableUpdate<InventoryItem>,
     inventory_quantity_target: __sdk::TableUpdate<InventoryQuantityTarget>,
     item: __sdk::TableUpdate<Item>,
@@ -2161,6 +2560,7 @@ pub struct DbUpdate {
     party_join_request: __sdk::TableUpdate<PartyJoinRequest>,
     party_journey: __sdk::TableUpdate<PartyJourney>,
     party_journey_itinerary: __sdk::TableUpdate<PartyJourneyItinerary>,
+    party_journey_route: __sdk::TableUpdate<PartyJourneyRoute>,
     party_leader_vote: __sdk::TableUpdate<PartyLeaderVote>,
     party_member: __sdk::TableUpdate<PartyMember>,
     party_recruitment_role: __sdk::TableUpdate<PartyRecruitmentRole>,
@@ -2178,6 +2578,8 @@ pub struct DbUpdate {
     settlement_smith: __sdk::TableUpdate<SettlementSmith>,
     simulation_character: __sdk::TableUpdate<SimulationCharacter>,
     simulation_run: __sdk::TableUpdate<SimulationRun>,
+    strategic_encounter: __sdk::TableUpdate<StrategicEncounter>,
+    strategic_gateway_authority: __sdk::TableUpdate<StrategicGatewayAuthority>,
     strategic_incident: __sdk::TableUpdate<StrategicIncident>,
     tactical_server: __sdk::TableUpdate<TacticalServer>,
     tactical_server_request: __sdk::TableUpdate<TacticalServerRequest>,
@@ -2193,9 +2595,20 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_update in __sdk::transaction_update_iter_table_updates(raw) {
             match &table_update.table_name[..] {
+                "alcohol_consumption" => db_update
+                    .alcohol_consumption
+                    .append(alcohol_consumption_table::parse_table_update(table_update)?),
                 "autoresolve_report" => db_update
                     .autoresolve_report
                     .append(autoresolve_report_table::parse_table_update(table_update)?),
+                "backend_character_affinities" => db_update.backend_character_affinities.append(
+                    backend_character_affinities_table::parse_table_update(table_update)?,
+                ),
+                "backend_character_familiarities" => {
+                    db_update.backend_character_familiarities.append(
+                        backend_character_familiarities_table::parse_table_update(table_update)?,
+                    )
+                }
                 "backend_committed_cuts" => db_update.backend_committed_cuts.append(
                     backend_committed_cuts_table::parse_table_update(table_update)?,
                 ),
@@ -2209,6 +2622,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 ),
                 "backend_medical_examinations" => db_update.backend_medical_examinations.append(
                     backend_medical_examinations_table::parse_table_update(table_update)?,
+                ),
+                "backend_social_beliefs" => db_update.backend_social_beliefs.append(
+                    backend_social_beliefs_table::parse_table_update(table_update)?,
                 ),
                 "battle_loot_item" => db_update
                     .battle_loot_item
@@ -2240,6 +2656,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "character_equip" => db_update
                     .character_equip
                     .append(character_equip_table::parse_table_update(table_update)?),
+                "character_filth" => db_update
+                    .character_filth
+                    .append(character_filth_table::parse_table_update(table_update)?),
                 "character_illness_status" => db_update.character_illness_status.append(
                     character_illness_status_table::parse_table_update(table_update)?,
                 ),
@@ -2279,9 +2698,27 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "connected_players" => db_update
                     .connected_players
                     .append(connected_players_table::parse_table_update(table_update)?),
+                "dialogue_event" => db_update
+                    .dialogue_event
+                    .append(dialogue_event_table::parse_table_update(table_update)?),
+                "dialogue_participant" => db_update.dialogue_participant.append(
+                    dialogue_participant_table::parse_table_update(table_update)?,
+                ),
+                "dialogue_prompt" => db_update
+                    .dialogue_prompt
+                    .append(dialogue_prompt_table::parse_table_update(table_update)?),
+                "dialogue_session" => db_update
+                    .dialogue_session
+                    .append(dialogue_session_table::parse_table_update(table_update)?),
+                "dialogue_topic_option" => db_update.dialogue_topic_option.append(
+                    dialogue_topic_option_table::parse_table_update(table_update)?,
+                ),
                 "equipped_medication" => db_update
                     .equipped_medication
                     .append(equipped_medication_table::parse_table_update(table_update)?),
+                "food_lot" => db_update
+                    .food_lot
+                    .append(food_lot_table::parse_table_update(table_update)?),
                 "inventory_item" => db_update
                     .inventory_item
                     .append(inventory_item_table::parse_table_update(table_update)?),
@@ -2327,6 +2764,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "party_journey_itinerary" => db_update.party_journey_itinerary.append(
                     party_journey_itinerary_table::parse_table_update(table_update)?,
                 ),
+                "party_journey_route" => db_update
+                    .party_journey_route
+                    .append(party_journey_route_table::parse_table_update(table_update)?),
                 "party_leader_vote" => db_update
                     .party_leader_vote
                     .append(party_leader_vote_table::parse_table_update(table_update)?),
@@ -2378,6 +2818,12 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "simulation_run" => db_update
                     .simulation_run
                     .append(simulation_run_table::parse_table_update(table_update)?),
+                "strategic_encounter" => db_update
+                    .strategic_encounter
+                    .append(strategic_encounter_table::parse_table_update(table_update)?),
+                "strategic_gateway_authority" => db_update.strategic_gateway_authority.append(
+                    strategic_gateway_authority_table::parse_table_update(table_update)?,
+                ),
                 "strategic_incident" => db_update
                     .strategic_incident
                     .append(strategic_incident_table::parse_table_update(table_update)?),
@@ -2425,6 +2871,12 @@ impl __sdk::DbUpdate for DbUpdate {
     ) -> AppliedDiff<'_> {
         let mut diff = AppliedDiff::default();
 
+        diff.alcohol_consumption = cache
+            .apply_diff_to_table::<AlcoholConsumption>(
+                "alcohol_consumption",
+                &self.alcohol_consumption,
+            )
+            .with_updates_by_pk(|row| &row.id);
         diff.autoresolve_report = cache
             .apply_diff_to_table::<AutoresolveReport>(
                 "autoresolve_report",
@@ -2476,6 +2928,9 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.character_equip = cache
             .apply_diff_to_table::<CharacterEquip>("character_equip", &self.character_equip)
             .with_updates_by_pk(|row| &row.character_id);
+        diff.character_filth = cache
+            .apply_diff_to_table::<CharacterFilth>("character_filth", &self.character_filth)
+            .with_updates_by_pk(|row| &row.id);
         diff.character_illness_status = cache
             .apply_diff_to_table::<CharacterIllnessStatus>(
                 "character_illness_status",
@@ -2530,12 +2985,36 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.character_virtue = cache
             .apply_diff_to_table::<CharacterVirtue>("character_virtue", &self.character_virtue)
             .with_updates_by_pk(|row| &row.character_id);
+        diff.dialogue_event = cache
+            .apply_diff_to_table::<DialogueEvent>("dialogue_event", &self.dialogue_event)
+            .with_updates_by_pk(|row| &row.id);
+        diff.dialogue_participant = cache
+            .apply_diff_to_table::<DialogueParticipant>(
+                "dialogue_participant",
+                &self.dialogue_participant,
+            )
+            .with_updates_by_pk(|row| &row.id);
+        diff.dialogue_prompt = cache
+            .apply_diff_to_table::<DialoguePrompt>("dialogue_prompt", &self.dialogue_prompt)
+            .with_updates_by_pk(|row| &row.id);
+        diff.dialogue_session = cache
+            .apply_diff_to_table::<DialogueSession>("dialogue_session", &self.dialogue_session)
+            .with_updates_by_pk(|row| &row.id);
+        diff.dialogue_topic_option = cache
+            .apply_diff_to_table::<DialogueTopicOption>(
+                "dialogue_topic_option",
+                &self.dialogue_topic_option,
+            )
+            .with_updates_by_pk(|row| &row.id);
         diff.equipped_medication = cache
             .apply_diff_to_table::<EquippedMedication>(
                 "equipped_medication",
                 &self.equipped_medication,
             )
             .with_updates_by_pk(|row| &row.inventory_item_id);
+        diff.food_lot = cache
+            .apply_diff_to_table::<FoodLot>("food_lot", &self.food_lot)
+            .with_updates_by_pk(|row| &row.id);
         diff.inventory_item = cache
             .apply_diff_to_table::<InventoryItem>("inventory_item", &self.inventory_item)
             .with_updates_by_pk(|row| &row.id);
@@ -2597,6 +3076,12 @@ impl __sdk::DbUpdate for DbUpdate {
             .apply_diff_to_table::<PartyJourneyItinerary>(
                 "party_journey_itinerary",
                 &self.party_journey_itinerary,
+            )
+            .with_updates_by_pk(|row| &row.party_id);
+        diff.party_journey_route = cache
+            .apply_diff_to_table::<PartyJourneyRoute>(
+                "party_journey_route",
+                &self.party_journey_route,
             )
             .with_updates_by_pk(|row| &row.party_id);
         diff.party_leader_vote = cache
@@ -2668,6 +3153,18 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.simulation_run = cache
             .apply_diff_to_table::<SimulationRun>("simulation_run", &self.simulation_run)
             .with_updates_by_pk(|row| &row.id);
+        diff.strategic_encounter = cache
+            .apply_diff_to_table::<StrategicEncounter>(
+                "strategic_encounter",
+                &self.strategic_encounter,
+            )
+            .with_updates_by_pk(|row| &row.party_id);
+        diff.strategic_gateway_authority = cache
+            .apply_diff_to_table::<StrategicGatewayAuthority>(
+                "strategic_gateway_authority",
+                &self.strategic_gateway_authority,
+            )
+            .with_updates_by_pk(|row| &row.id);
         diff.strategic_incident = cache
             .apply_diff_to_table::<StrategicIncident>(
                 "strategic_incident",
@@ -2695,6 +3192,14 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.world_node = cache
             .apply_diff_to_table::<WorldNode>("world_node", &self.world_node)
             .with_updates_by_pk(|row| &row.id);
+        diff.backend_character_affinities = cache.apply_diff_to_table::<CharacterAffinity>(
+            "backend_character_affinities",
+            &self.backend_character_affinities,
+        );
+        diff.backend_character_familiarities = cache.apply_diff_to_table::<CharacterFamiliarity>(
+            "backend_character_familiarities",
+            &self.backend_character_familiarities,
+        );
         diff.backend_committed_cuts = cache.apply_diff_to_table::<CommittedCut>(
             "backend_committed_cuts",
             &self.backend_committed_cuts,
@@ -2711,6 +3216,10 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_medical_examinations",
             &self.backend_medical_examinations,
         );
+        diff.backend_social_beliefs = cache.apply_diff_to_table::<SocialBelief>(
+            "backend_social_beliefs",
+            &self.backend_social_beliefs,
+        );
         diff.connected_players = cache
             .apply_diff_to_table::<ConnectedPlayer>("connected_players", &self.connected_players);
 
@@ -2720,8 +3229,17 @@ impl __sdk::DbUpdate for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_rows in raw.tables {
             match &table_rows.table[..] {
+                "alcohol_consumption" => db_update
+                    .alcohol_consumption
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "autoresolve_report" => db_update
                     .autoresolve_report
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_affinities" => db_update
+                    .backend_character_affinities
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_familiarities" => db_update
+                    .backend_character_familiarities
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_committed_cuts" => db_update
                     .backend_committed_cuts
@@ -2734,6 +3252,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_medical_examinations" => db_update
                     .backend_medical_examinations
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_social_beliefs" => db_update
+                    .backend_social_beliefs
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "battle_loot_item" => db_update
                     .battle_loot_item
@@ -2764,6 +3285,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_equip" => db_update
                     .character_equip
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_filth" => db_update
+                    .character_filth
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_illness_status" => db_update
                     .character_illness_status
@@ -2804,8 +3328,26 @@ impl __sdk::DbUpdate for DbUpdate {
                 "connected_players" => db_update
                     .connected_players
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "dialogue_event" => db_update
+                    .dialogue_event
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "dialogue_participant" => db_update
+                    .dialogue_participant
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "dialogue_prompt" => db_update
+                    .dialogue_prompt
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "dialogue_session" => db_update
+                    .dialogue_session
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "dialogue_topic_option" => db_update
+                    .dialogue_topic_option
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "equipped_medication" => db_update
                     .equipped_medication
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "food_lot" => db_update
+                    .food_lot
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "inventory_item" => db_update
                     .inventory_item
@@ -2851,6 +3393,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "party_journey_itinerary" => db_update
                     .party_journey_itinerary
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "party_journey_route" => db_update
+                    .party_journey_route
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "party_leader_vote" => db_update
                     .party_leader_vote
@@ -2902,6 +3447,12 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "simulation_run" => db_update
                     .simulation_run
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "strategic_encounter" => db_update
+                    .strategic_encounter
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "strategic_gateway_authority" => db_update
+                    .strategic_gateway_authority
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "strategic_incident" => db_update
                     .strategic_incident
@@ -2937,8 +3488,17 @@ impl __sdk::DbUpdate for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_rows in raw.tables {
             match &table_rows.table[..] {
+                "alcohol_consumption" => db_update
+                    .alcohol_consumption
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "autoresolve_report" => db_update
                     .autoresolve_report
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_affinities" => db_update
+                    .backend_character_affinities
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_familiarities" => db_update
+                    .backend_character_familiarities
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_committed_cuts" => db_update
                     .backend_committed_cuts
@@ -2951,6 +3511,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_medical_examinations" => db_update
                     .backend_medical_examinations
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_social_beliefs" => db_update
+                    .backend_social_beliefs
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "battle_loot_item" => db_update
                     .battle_loot_item
@@ -2981,6 +3544,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_equip" => db_update
                     .character_equip
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_filth" => db_update
+                    .character_filth
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_illness_status" => db_update
                     .character_illness_status
@@ -3021,8 +3587,26 @@ impl __sdk::DbUpdate for DbUpdate {
                 "connected_players" => db_update
                     .connected_players
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "dialogue_event" => db_update
+                    .dialogue_event
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "dialogue_participant" => db_update
+                    .dialogue_participant
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "dialogue_prompt" => db_update
+                    .dialogue_prompt
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "dialogue_session" => db_update
+                    .dialogue_session
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "dialogue_topic_option" => db_update
+                    .dialogue_topic_option
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "equipped_medication" => db_update
                     .equipped_medication
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "food_lot" => db_update
+                    .food_lot
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "inventory_item" => db_update
                     .inventory_item
@@ -3068,6 +3652,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "party_journey_itinerary" => db_update
                     .party_journey_itinerary
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "party_journey_route" => db_update
+                    .party_journey_route
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "party_leader_vote" => db_update
                     .party_leader_vote
@@ -3119,6 +3706,12 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "simulation_run" => db_update
                     .simulation_run
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "strategic_encounter" => db_update
+                    .strategic_encounter
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "strategic_gateway_authority" => db_update
+                    .strategic_gateway_authority
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "strategic_incident" => db_update
                     .strategic_incident
@@ -3156,11 +3749,15 @@ impl __sdk::DbUpdate for DbUpdate {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
+    alcohol_consumption: __sdk::TableAppliedDiff<'r, AlcoholConsumption>,
     autoresolve_report: __sdk::TableAppliedDiff<'r, AutoresolveReport>,
+    backend_character_affinities: __sdk::TableAppliedDiff<'r, CharacterAffinity>,
+    backend_character_familiarities: __sdk::TableAppliedDiff<'r, CharacterFamiliarity>,
     backend_committed_cuts: __sdk::TableAppliedDiff<'r, CommittedCut>,
     backend_herbalist_examinations: __sdk::TableAppliedDiff<'r, HerbalistExamination>,
     backend_infection_episodes: __sdk::TableAppliedDiff<'r, InfectionEpisodeRow>,
     backend_medical_examinations: __sdk::TableAppliedDiff<'r, MedicalExamination>,
+    backend_social_beliefs: __sdk::TableAppliedDiff<'r, SocialBelief>,
     battle_loot_item: __sdk::TableAppliedDiff<'r, BattleLootItem>,
     battle_participant: __sdk::TableAppliedDiff<'r, BattleParticipant>,
     battle_result: __sdk::TableAppliedDiff<'r, BattleResult>,
@@ -3171,6 +3768,7 @@ pub struct AppliedDiff<'r> {
     character_condition: __sdk::TableAppliedDiff<'r, CharacterCondition>,
     character_death: __sdk::TableAppliedDiff<'r, CharacterDeath>,
     character_equip: __sdk::TableAppliedDiff<'r, CharacterEquip>,
+    character_filth: __sdk::TableAppliedDiff<'r, CharacterFilth>,
     character_illness_status: __sdk::TableAppliedDiff<'r, CharacterIllnessStatus>,
     character_limbs: __sdk::TableAppliedDiff<'r, CharacterLimbs>,
     character_morale_source: __sdk::TableAppliedDiff<'r, CharacterMoraleSource>,
@@ -3184,7 +3782,13 @@ pub struct AppliedDiff<'r> {
     character_training_schedule: __sdk::TableAppliedDiff<'r, CharacterTrainingSchedule>,
     character_virtue: __sdk::TableAppliedDiff<'r, CharacterVirtue>,
     connected_players: __sdk::TableAppliedDiff<'r, ConnectedPlayer>,
+    dialogue_event: __sdk::TableAppliedDiff<'r, DialogueEvent>,
+    dialogue_participant: __sdk::TableAppliedDiff<'r, DialogueParticipant>,
+    dialogue_prompt: __sdk::TableAppliedDiff<'r, DialoguePrompt>,
+    dialogue_session: __sdk::TableAppliedDiff<'r, DialogueSession>,
+    dialogue_topic_option: __sdk::TableAppliedDiff<'r, DialogueTopicOption>,
     equipped_medication: __sdk::TableAppliedDiff<'r, EquippedMedication>,
+    food_lot: __sdk::TableAppliedDiff<'r, FoodLot>,
     inventory_item: __sdk::TableAppliedDiff<'r, InventoryItem>,
     inventory_quantity_target: __sdk::TableAppliedDiff<'r, InventoryQuantityTarget>,
     item: __sdk::TableAppliedDiff<'r, Item>,
@@ -3200,6 +3804,7 @@ pub struct AppliedDiff<'r> {
     party_join_request: __sdk::TableAppliedDiff<'r, PartyJoinRequest>,
     party_journey: __sdk::TableAppliedDiff<'r, PartyJourney>,
     party_journey_itinerary: __sdk::TableAppliedDiff<'r, PartyJourneyItinerary>,
+    party_journey_route: __sdk::TableAppliedDiff<'r, PartyJourneyRoute>,
     party_leader_vote: __sdk::TableAppliedDiff<'r, PartyLeaderVote>,
     party_member: __sdk::TableAppliedDiff<'r, PartyMember>,
     party_recruitment_role: __sdk::TableAppliedDiff<'r, PartyRecruitmentRole>,
@@ -3217,6 +3822,8 @@ pub struct AppliedDiff<'r> {
     settlement_smith: __sdk::TableAppliedDiff<'r, SettlementSmith>,
     simulation_character: __sdk::TableAppliedDiff<'r, SimulationCharacter>,
     simulation_run: __sdk::TableAppliedDiff<'r, SimulationRun>,
+    strategic_encounter: __sdk::TableAppliedDiff<'r, StrategicEncounter>,
+    strategic_gateway_authority: __sdk::TableAppliedDiff<'r, StrategicGatewayAuthority>,
     strategic_incident: __sdk::TableAppliedDiff<'r, StrategicIncident>,
     tactical_server: __sdk::TableAppliedDiff<'r, TacticalServer>,
     tactical_server_request: __sdk::TableAppliedDiff<'r, TacticalServerRequest>,
@@ -3237,9 +3844,24 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         event: &EventContext,
         callbacks: &mut __sdk::DbCallbacks<RemoteModule>,
     ) {
+        callbacks.invoke_table_row_callbacks::<AlcoholConsumption>(
+            "alcohol_consumption",
+            &self.alcohol_consumption,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<AutoresolveReport>(
             "autoresolve_report",
             &self.autoresolve_report,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterAffinity>(
+            "backend_character_affinities",
+            &self.backend_character_affinities,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterFamiliarity>(
+            "backend_character_familiarities",
+            &self.backend_character_familiarities,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CommittedCut>(
@@ -3260,6 +3882,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<MedicalExamination>(
             "backend_medical_examinations",
             &self.backend_medical_examinations,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<SocialBelief>(
+            "backend_social_beliefs",
+            &self.backend_social_beliefs,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BattleLootItem>(
@@ -3306,6 +3933,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<CharacterEquip>(
             "character_equip",
             &self.character_equip,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterFilth>(
+            "character_filth",
+            &self.character_filth,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CharacterIllnessStatus>(
@@ -3373,11 +4005,37 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.connected_players,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<DialogueEvent>(
+            "dialogue_event",
+            &self.dialogue_event,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<DialogueParticipant>(
+            "dialogue_participant",
+            &self.dialogue_participant,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<DialoguePrompt>(
+            "dialogue_prompt",
+            &self.dialogue_prompt,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<DialogueSession>(
+            "dialogue_session",
+            &self.dialogue_session,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<DialogueTopicOption>(
+            "dialogue_topic_option",
+            &self.dialogue_topic_option,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<EquippedMedication>(
             "equipped_medication",
             &self.equipped_medication,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<FoodLot>("food_lot", &self.food_lot, event);
         callbacks.invoke_table_row_callbacks::<InventoryItem>(
             "inventory_item",
             &self.inventory_item,
@@ -3439,6 +4097,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<PartyJourneyItinerary>(
             "party_journey_itinerary",
             &self.party_journey_itinerary,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<PartyJourneyRoute>(
+            "party_journey_route",
+            &self.party_journey_route,
             event,
         );
         callbacks.invoke_table_row_callbacks::<PartyLeaderVote>(
@@ -3512,6 +4175,16 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<SimulationRun>(
             "simulation_run",
             &self.simulation_run,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<StrategicEncounter>(
+            "strategic_encounter",
+            &self.strategic_encounter,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<StrategicGatewayAuthority>(
+            "strategic_gateway_authority",
+            &self.strategic_gateway_authority,
             event,
         );
         callbacks.invoke_table_row_callbacks::<StrategicIncident>(
@@ -4197,11 +4870,15 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type QueryBuilder = __sdk::QueryBuilder;
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
+        alcohol_consumption_table::register_table(client_cache);
         autoresolve_report_table::register_table(client_cache);
+        backend_character_affinities_table::register_table(client_cache);
+        backend_character_familiarities_table::register_table(client_cache);
         backend_committed_cuts_table::register_table(client_cache);
         backend_herbalist_examinations_table::register_table(client_cache);
         backend_infection_episodes_table::register_table(client_cache);
         backend_medical_examinations_table::register_table(client_cache);
+        backend_social_beliefs_table::register_table(client_cache);
         battle_loot_item_table::register_table(client_cache);
         battle_participant_table::register_table(client_cache);
         battle_result_table::register_table(client_cache);
@@ -4212,6 +4889,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         character_condition_table::register_table(client_cache);
         character_death_table::register_table(client_cache);
         character_equip_table::register_table(client_cache);
+        character_filth_table::register_table(client_cache);
         character_illness_status_table::register_table(client_cache);
         character_limbs_table::register_table(client_cache);
         character_morale_source_table::register_table(client_cache);
@@ -4225,7 +4903,13 @@ impl __sdk::SpacetimeModule for RemoteModule {
         character_training_schedule_table::register_table(client_cache);
         character_virtue_table::register_table(client_cache);
         connected_players_table::register_table(client_cache);
+        dialogue_event_table::register_table(client_cache);
+        dialogue_participant_table::register_table(client_cache);
+        dialogue_prompt_table::register_table(client_cache);
+        dialogue_session_table::register_table(client_cache);
+        dialogue_topic_option_table::register_table(client_cache);
         equipped_medication_table::register_table(client_cache);
+        food_lot_table::register_table(client_cache);
         inventory_item_table::register_table(client_cache);
         inventory_quantity_target_table::register_table(client_cache);
         item_table::register_table(client_cache);
@@ -4241,6 +4925,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         party_join_request_table::register_table(client_cache);
         party_journey_table::register_table(client_cache);
         party_journey_itinerary_table::register_table(client_cache);
+        party_journey_route_table::register_table(client_cache);
         party_leader_vote_table::register_table(client_cache);
         party_member_table::register_table(client_cache);
         party_recruitment_role_table::register_table(client_cache);
@@ -4258,6 +4943,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         settlement_smith_table::register_table(client_cache);
         simulation_character_table::register_table(client_cache);
         simulation_run_table::register_table(client_cache);
+        strategic_encounter_table::register_table(client_cache);
+        strategic_gateway_authority_table::register_table(client_cache);
         strategic_incident_table::register_table(client_cache);
         tactical_server_table::register_table(client_cache);
         tactical_server_request_table::register_table(client_cache);
@@ -4267,11 +4954,15 @@ impl __sdk::SpacetimeModule for RemoteModule {
         world_node_table::register_table(client_cache);
     }
     const ALL_TABLE_NAMES: &'static [&'static str] = &[
+        "alcohol_consumption",
         "autoresolve_report",
+        "backend_character_affinities",
+        "backend_character_familiarities",
         "backend_committed_cuts",
         "backend_herbalist_examinations",
         "backend_infection_episodes",
         "backend_medical_examinations",
+        "backend_social_beliefs",
         "battle_loot_item",
         "battle_participant",
         "battle_result",
@@ -4282,6 +4973,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "character_condition",
         "character_death",
         "character_equip",
+        "character_filth",
         "character_illness_status",
         "character_limbs",
         "character_morale_source",
@@ -4295,7 +4987,13 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "character_training_schedule",
         "character_virtue",
         "connected_players",
+        "dialogue_event",
+        "dialogue_participant",
+        "dialogue_prompt",
+        "dialogue_session",
+        "dialogue_topic_option",
         "equipped_medication",
+        "food_lot",
         "inventory_item",
         "inventory_quantity_target",
         "item",
@@ -4311,6 +5009,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "party_join_request",
         "party_journey",
         "party_journey_itinerary",
+        "party_journey_route",
         "party_leader_vote",
         "party_member",
         "party_recruitment_role",
@@ -4328,6 +5027,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "settlement_smith",
         "simulation_character",
         "simulation_run",
+        "strategic_encounter",
+        "strategic_gateway_authority",
         "strategic_incident",
         "tactical_server",
         "tactical_server_request",

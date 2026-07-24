@@ -1,6 +1,6 @@
 use crate::rng::{StableRng, sub_seed};
 use adventuresim_core::strategic_schedule::{DailySchedule, SkillHours};
-use adventuresim_world_schema::{ReligionHours, ReligionMinutes};
+use adventuresim_world_schema::ReligionHours;
 use serde::{Deserialize, Serialize};
 
 const PROFILE_DOMAIN: u64 = 0x5052_4f46_494c_4501;
@@ -94,6 +94,20 @@ pub enum Conviction {
     Zealous,
     Irreverent,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Hygiene {
+    Neutral,
+    Slovenly,
+    Cleanly,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Temperance {
+    Neutral,
+    Temperate,
+    Drunkard,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -105,6 +119,8 @@ pub struct Personality {
     pub conscience: Conscience,
     pub self_regard: SelfRegard,
     pub conviction: Conviction,
+    pub hygiene: Hygiene,
+    pub temperance: Temperance,
 }
 
 impl Personality {
@@ -117,6 +133,8 @@ impl Personality {
             conscience: Conscience::Neutral,
             self_regard: SelfRegard::Neutral,
             conviction: Conviction::Neutral,
+            hygiene: Hygiene::Neutral,
+            temperance: Temperance::Neutral,
         }
     }
 
@@ -128,6 +146,8 @@ impl Personality {
             + usize::from(self.conscience != Conscience::Neutral)
             + usize::from(self.self_regard != SelfRegard::Neutral)
             + usize::from(self.conviction != Conviction::Neutral)
+            + usize::from(self.hygiene != Hygiene::Neutral)
+            + usize::from(self.temperance != Temperance::Neutral)
     }
 }
 
@@ -236,36 +256,52 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
     let schedule = generated_schedule(&mut rng, preferred_activity, build.role);
     let initial = |rng: &mut StableRng| rng.range(200.0, 2_000.0);
     let mut initial_skills = SkillHours {
-        melee: initial(&mut rng),
+        polearm: initial(&mut rng),
+        axe: initial(&mut rng),
+        bludgeon: initial(&mut rng),
+        sword: initial(&mut rng),
+        knife: initial(&mut rng),
         dodge: initial(&mut rng),
         block: initial(&mut rng),
-        ranged: initial(&mut rng),
+        bow: initial(&mut rng),
+        crossbow: initial(&mut rng),
+        firearm: initial(&mut rng),
+        throw: initial(&mut rng),
         will: initial(&mut rng),
-        charisma: initial(&mut rng),
+        insight: initial(&mut rng),
+        self_awareness: initial(&mut rng),
+        humor: initial(&mut rng),
+        command: initial(&mut rng),
+        deception: initial(&mut rng),
+        seduction: initial(&mut rng),
         medicine: initial(&mut rng),
+        cooking: initial(&mut rng),
         religion: ReligionHours {
             roman_catholic: initial(&mut rng),
             ..Default::default()
         },
         stealth: initial(&mut rng),
         balance: initial(&mut rng),
-        surgeon: initial(&mut rng),
+        anatomy: initial(&mut rng),
+        tailoring: initial(&mut rng),
         smithing: initial(&mut rng),
     };
     let specialty = rng.range(2_500.0, 5_000.0);
     match build.role {
         BuildRole::FrontLine => {
-            initial_skills.melee = specialty;
+            initial_skills.sword = specialty;
             initial_skills.block = specialty * 0.8;
         }
-        BuildRole::Ranged => initial_skills.ranged = specialty,
+        BuildRole::Ranged => initial_skills.bow = specialty,
         BuildRole::Skirmisher => {
             initial_skills.dodge = specialty;
-            initial_skills.melee = specialty * 0.7;
+            initial_skills.knife = specialty * 0.7;
         }
         BuildRole::Healer => {
             initial_skills.medicine = specialty;
-            initial_skills.surgeon = specialty * 0.7;
+            initial_skills.anatomy = specialty * 0.7;
+            initial_skills.knife = specialty * 0.7;
+            initial_skills.tailoring = specialty * 0.7;
         }
         BuildRole::Devout => initial_skills.religion.roman_catholic = specialty,
         BuildRole::Civilian => {}
@@ -328,10 +364,7 @@ fn generated_schedule(
     // Ten-minute units make profiles readable and keep allocation exact.
     let activity_minutes = 240 + (rng.next_u64() % 49) as u16 * 10;
     let training_minutes = 120 + (rng.next_u64() % 37) as u16 * 10;
-    let mut s = DailySchedule {
-        combat_auto_train: false,
-        ..DailySchedule::default()
-    };
+    let mut s = DailySchedule::default();
     match preferred {
         ActivityPreference::Labor => s.labor = activity_minutes,
         ActivityPreference::Prayer => s.prayer = activity_minutes,
@@ -339,25 +372,23 @@ fn generated_schedule(
         ActivityPreference::Raiding => s.raiding = activity_minutes,
     }
     match role {
-        BuildRole::FrontLine => s.melee = training_minutes,
-        BuildRole::Skirmisher => s.dodge = training_minutes,
-        BuildRole::Ranged => s.ranged = training_minutes,
-        BuildRole::Healer => s.medicine = training_minutes,
-        BuildRole::Devout => {
-            s.religion_auto_train = false;
-            s.religions = ReligionMinutes {
-                roman_catholic: training_minutes,
-                ..Default::default()
-            };
+        BuildRole::FrontLine | BuildRole::Skirmisher | BuildRole::Ranged => {
+            s.combat_training_minutes = training_minutes
         }
-        BuildRole::Civilian => s.will = training_minutes,
+        BuildRole::Healer => {
+            s.apprenticeship_minutes = training_minutes;
+            s.apprenticeship_service_id =
+                Some(adventuresim_core::profession::ProfessionId::Herbalist);
+        }
+        BuildRole::Devout => s.prayer = s.prayer.saturating_add(training_minutes),
+        BuildRole::Civilian => s.carousing_minutes = training_minutes,
     }
     s
 }
 
 fn generated_personality(rng: &mut StableRng) -> Personality {
     let mut p = Personality::neutral();
-    let mut axes = [0_u8, 1, 2, 3, 4, 5, 6];
+    let mut axes = [0_u8, 1, 2, 3, 4, 5, 6, 7, 8];
     for index in (1..axes.len()).rev() {
         axes.swap(index, rng.next_u64() as usize % (index + 1));
     }
@@ -406,11 +437,25 @@ fn generated_personality(rng: &mut StableRng) -> Personality {
                     SelfRegard::Humble
                 }
             }
-            _ => {
+            6 => {
                 p.conviction = if rng.next_u64().is_multiple_of(2) {
                     Conviction::Zealous
                 } else {
                     Conviction::Irreverent
+                }
+            }
+            7 => {
+                p.hygiene = if rng.next_u64().is_multiple_of(2) {
+                    Hygiene::Slovenly
+                } else {
+                    Hygiene::Cleanly
+                }
+            }
+            _ => {
+                p.temperance = if rng.next_u64().is_multiple_of(2) {
+                    Temperance::Temperate
+                } else {
+                    Temperance::Drunkard
                 }
             }
         }

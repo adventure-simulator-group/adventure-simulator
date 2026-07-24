@@ -1,5 +1,15 @@
 # Management
+Food uses the same collapsed-parent disclosure pattern as coin in the browser,
+but the rows below `Food` are non-fungible quantity-one lots, including edible
+herbalist ingredients such as garlic and sage. Each lot retains age, preparation,
+fractional ingredient provenance, nutrition, value, and hidden contamination.
+Partial eating scales the lot fields while the row continues to identify the
+remaining batch; custody, cooking, and sales move that complete remainder. See
+[`docs/FOOD_AND_COOKING.md`](../../docs/FOOD_AND_COOKING.md).
+
 Inventory management should NOT be a full-time job. When players come home from laboring at the spreadsheet mines all day they should not *have* to toil more in what is ostensibly their reprieve from such work. But this is adventure _simulator_, not adventure _handwaver_, so we need to use the interface to abstract over all of the things that normally make inventory management tedious while still preserving the underlying depth.
+
+The ordinary inventory rows shown by this interface represent items packed in a character's backpack. They are carried and count toward encumbrance, but they are not automatically in hand or otherwise immediately retrievable during tactical play. The party inventory is likewise a shared chest, not equipment distributed across members. Immediate-access equipment, hands, pockets, and other tactical placement are a separate lower-level model; the backpack view deliberately abstracts those choices until that model is available.
 
 ## Automation
 Most aspects of resupplying, looting, selling, and stocking rations for an upcoming adventure can be effectively automated.
@@ -38,6 +48,28 @@ member consumes shared party rations and pooled water before their own supply;
  communal consumption does not alter party stakes. Provision purchases are
  staged into the party inventory at the General Market and use party gold when
  the offer is submitted.
+
+Alcohol remains a discrete whole-unit supply. One small beer, table-wine
+serving, or aqua-vitae measure is one stack unit used consistently by drinking,
+travel, and surgery; partially consumed containers are deferred to #150. Item
+definitions explicitly record serving volume, ABV in basis points, net
+emergency hydration, and disinfectant effectiveness. ABV must be at most
+10,000 basis points, and usable hydration is clamped to the serving's physical
+non-alcohol water volume; invalid seeded definitions fail initialization.
+Quantity targets become
+reserve floors only while resting at a settlement. Nightly drinking first uses
+surplus shared-party stacks, then surplus personal stacks, and finally buys a
+table-wine serving for immediate consumption with that character's personal
+coin. It creates no debt and never spends unrestricted party wealth. On the
+road the reserve floor is ignored because the carried stock was reserved for
+travel.
+
+Ordinary drinks are selected deterministically before stronger
+disinfectant-focused alcohol. A Drunkard below -10 morale may consume the
+protected strong supply only after ordinary potable alcohol is exhausted.
+Shared stacks precede personal stacks, then weak disinfectant effectiveness,
+item ID, and inventory-row ID provide stable tie-breaking.
+
 # Inventory icons
 
 Inventory tables include a narrow **Type** column before the item name. Its
@@ -75,3 +107,14 @@ precision, reach, penetration, damage-type, and block columns. Armourers show
 armor and currency and offer coverage, resistance, padding, flexibility, and
 range-of-motion columns. General inventory views offer the union; merchants
 whose goods do not use combat statistics retain only the basic columns.
+# Soap
+
+Soft soap is a stackable, discrete personal or shared-party supply. One whole
+unit provides 25 points of cleansing capacity against the bounded 100-point
+filth meter; any unused capacity is lost at the end of that wash. Automatic
+washing consumes stable personal stacks first, then stable shared-party stacks.
+When shared soap is scarce, it is assigned deterministically by health risk:
+diseased blood first, then the strongest blood exposure, total filth, and character
+ID as a final tie-breaker. Every explicit rest control previews the exact whole
+units that will be consumed, split between personal and shared supplies, and warns
+that the same soap is used by surgery.

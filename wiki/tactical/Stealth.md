@@ -1,4 +1,6 @@
 # Strategic
+
+This is the intended strategic/tactical contract. The stealth detection model and its tactical handoff are not yet implemented; [#212](https://github.com/adventure-simulator-group/adventure-simulator/issues/212) tracks the work. Current quest combat is not evidence that stealth scenes already exist.
 When traveling, the party has a detection radius and a perception multiplier. The detection radius is the radius at which an enemy with a perception multiplier of 1.0 will detect you.
 
 The detection radius is *mostly* based on party size versus the party member with the highest [stealth score](../shared/Stats.md), who is ostensibly scouting ahead of the rest of the party. But every party member's stealth score does contribute marginally, which could mean multiple scouts if there's multiple with relatively high scores or just ensuring that everyone avoids leaving tracks.
@@ -6,6 +8,15 @@ The detection radius is *mostly* based on party size versus the party member wit
 The party perception multiplier should essentially give more weight to the party members with higher stealth, as they are further ahead, and is fundamentally based on their [eyesight attribute](../shared/Stats.md).
 
 If a party encounters an enemy party which does not detect them, they can choose to fight, sneak past, or take the long way around. The long way is guaranteed to succeed, but adds the most travel time. Sneaking past checks the stealth of *all* party members equally, so the weakest link can get you caught. If they choose to fight, then enter a tactical scenario in which the enemy party does not yet detect the players.
+
+Strategic awareness is resolved once from independent deterministic party and
+enemy rolls. Party-only awareness offers sneak, detour, or an allies-surprise
+attack. Sneaking performs a second domain-separated whole-party check using the
+weakest member; failure starts a normal battle. Enemy-only awareness starts an
+enemies-surprise attack and bandits may demand surrender. Mutual awareness
+offers a normal attack, sustainable-speed run when eligible, and bandit
+surrender. Neither-aware results do not interrupt. Autoresolve never rerolls
+stealth, so only the authoritative side receives a surprise opener.
 # Tactical
 The players start positioned relative to their stealth skill, essentially far enough away that enemies do not detect non-scouting party members regardless of line of sight.
 

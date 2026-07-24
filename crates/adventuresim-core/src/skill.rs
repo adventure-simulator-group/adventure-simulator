@@ -20,21 +20,60 @@ pub enum Skill {
     /// Mental. Intuitive. Resist pain and morale penalties. (5000h)
     #[assoc(max_hours = 5000.0, kind = SkillKind::Mental, is_trained = false)]
     Will,
-    /// Mental. Intuitive. Party morale buff, traveling focus. (20000h)
+    /// Mental. Intuitive. Reading another character's motives and temperament.
+    #[assoc(max_hours = 10000.0, kind = SkillKind::Mental, is_trained = false)]
+    Insight,
+    /// Mental. Intuitive. Recognizing one's own motives and temperament.
+    #[assoc(max_hours = 10000.0, kind = SkillKind::Mental, is_trained = false)]
+    SelfAwareness,
+    /// Mental. Intuitive. Relieving tension through levity.
+    #[assoc(max_hours = 12000.0, kind = SkillKind::Mental, is_trained = false)]
+    Humor,
+    /// Mental. Intuitive. Rallying and coordinating others.
     #[assoc(max_hours = 20000.0, kind = SkillKind::Mental, is_trained = false)]
-    Charisma,
+    Command,
+    /// Mental. Intuitive. Sustaining a plausible false impression.
+    #[assoc(max_hours = 15000.0, kind = SkillKind::Mental, is_trained = false)]
+    Deception,
+    /// Mental. Intuitive. Reading and expressing romantic interest.
+    #[assoc(max_hours = 15000.0, kind = SkillKind::Mental, is_trained = false)]
+    Seduction,
     /// Mental. Trained. Party health recovery bonus. (10000h)
     #[assoc(max_hours = 10000.0, kind = SkillKind::Mental, is_trained = true)]
     Medicine,
+    /// Mental. Trained. Food preparation, safety, and kitchen technique. (10000h)
+    #[assoc(max_hours = 10000.0, kind = SkillKind::Mental, is_trained = true)]
+    Cooking,
     /// Mental. Trained. Knowledge of a specific religious tradition. (5000h)
     #[assoc(max_hours = 5000.0, kind = SkillKind::Mental, is_trained = true)]
     Religion,
-    /// Physical. Intuitive. Attack damage, agility for dodges, precision for hits. (8000h)
+    /// Physical. Intuitive. Long hafted weapons. (8000h)
     #[assoc(max_hours = 8000.0, kind = SkillKind::Physical, is_trained = false)]
-    Melee,
-    /// Physical. Intuitive. Ranged accuracy, aim time. (15000h)
+    Polearm,
+    /// Physical. Intuitive. Axes and cleaving weapons. (8000h)
+    #[assoc(max_hours = 8000.0, kind = SkillKind::Physical, is_trained = false)]
+    Axe,
+    /// Physical. Intuitive. Hammers, maces, and other impact weapons. (8000h)
+    #[assoc(max_hours = 8000.0, kind = SkillKind::Physical, is_trained = false)]
+    Bludgeon,
+    /// Physical. Intuitive. Long blades. (8000h)
+    #[assoc(max_hours = 8000.0, kind = SkillKind::Physical, is_trained = false)]
+    Sword,
+    /// Physical. Intuitive. Short weapons, including knives and short blades. (8000h)
+    #[assoc(max_hours = 8000.0, kind = SkillKind::Physical, is_trained = false)]
+    Knife,
+    /// Physical. Intuitive. Bows. (15000h)
     #[assoc(max_hours = 15000.0, kind = SkillKind::Physical, is_trained = false)]
-    Ranged,
+    Bow,
+    /// Physical. Intuitive. Crossbows. (15000h)
+    #[assoc(max_hours = 15000.0, kind = SkillKind::Physical, is_trained = false)]
+    Crossbow,
+    /// Physical. Intuitive. Firearms. (15000h)
+    #[assoc(max_hours = 15000.0, kind = SkillKind::Physical, is_trained = false)]
+    Firearm,
+    /// Physical. Intuitive. Thrown weapons. (15000h)
+    #[assoc(max_hours = 15000.0, kind = SkillKind::Physical, is_trained = false)]
+    Throw,
     /// Physical. Intuitive. Shield defense, poise damage on block. (12000h)
     #[assoc(max_hours = 12000.0, kind = SkillKind::Physical, is_trained = false)]
     Block,
@@ -44,12 +83,27 @@ pub enum Skill {
     /// Physical. Intuitive. Movement noise (agility), detection radius (precision). (8000h)
     #[assoc(max_hours = 8000.0, kind = SkillKind::Physical, is_trained = false)]
     Stealth,
-    /// Physical. Intuitive. Poise in melee, terrain speed. (30000h)
+    /// Physical. Intuitive. Poise in melee. (30000h)
     #[assoc(max_hours = 30000.0, kind = SkillKind::Physical, is_trained = false)]
     Balance,
-    /// Physical. Trained. Manual wound treatment and surgery. (10000h)
+    /// Mental. Intuitive. Movement through open country. (30000h)
+    #[assoc(max_hours = 30000.0, kind = SkillKind::Mental, is_trained = false)]
+    TerrainPlains,
+    /// Mental. Intuitive. Movement through woodland. (30000h)
+    #[assoc(max_hours = 30000.0, kind = SkillKind::Mental, is_trained = false)]
+    TerrainForest,
+    /// Mental. Intuitive. Movement through hilly ground. (30000h)
+    #[assoc(max_hours = 30000.0, kind = SkillKind::Mental, is_trained = false)]
+    TerrainHills,
+    /// Mental. Intuitive. Movement through built-up ground. (30000h)
+    #[assoc(max_hours = 30000.0, kind = SkillKind::Mental, is_trained = false)]
+    TerrainUrban,
+    /// Mental. Trained. Knowledge of bodies and wounds. (10000h)
+    #[assoc(max_hours = 10000.0, kind = SkillKind::Mental, is_trained = true)]
+    Anatomy,
+    /// Physical. Trained. Sewing, clothing repair, and wound stitching. (10000h)
     #[assoc(max_hours = 10000.0, kind = SkillKind::Physical, is_trained = true)]
-    Surgeon,
+    Tailoring,
     /// Physical. Trained. Field maintenance and equipment repair. (10000h)
     #[assoc(max_hours = 10000.0, kind = SkillKind::Physical, is_trained = true)]
     Smithing,
@@ -94,11 +148,18 @@ impl Skill {
     pub const fn is_upper_body(&self) -> bool {
         matches!(
             self,
-            Skill::Melee
-                | Skill::Ranged
+            Skill::Polearm
+                | Skill::Axe
+                | Skill::Bludgeon
+                | Skill::Sword
+                | Skill::Knife
+                | Skill::Bow
+                | Skill::Crossbow
+                | Skill::Firearm
+                | Skill::Throw
                 | Skill::Block
                 | Skill::Stealth
-                | Skill::Surgeon
+                | Skill::Tailoring
                 | Skill::Smithing
         )
     }

@@ -11,7 +11,7 @@ pub enum ProfessionId {
     Armourer,
     Tailor,
     Herbalist,
-    Innkeeper,
+    Cook,
     Religion,
 }
 
@@ -23,7 +23,7 @@ impl ProfessionId {
             Self::Armourer => "armor",
             Self::Tailor => "clothing",
             Self::Herbalist => "herbalist",
-            Self::Innkeeper => "inn",
+            Self::Cook => "inn",
             Self::Religion => "religion",
         }
     }
@@ -35,7 +35,7 @@ impl ProfessionId {
             "armor" => Some(Self::Armourer),
             "clothing" => Some(Self::Tailor),
             "herbalist" => Some(Self::Herbalist),
-            "inn" => Some(Self::Innkeeper),
+            "inn" => Some(Self::Cook),
             "religion" => Some(Self::Religion),
             _ => None,
         }
@@ -68,6 +68,55 @@ pub enum PracticeReward {
     Virtue,
 }
 
+/// Written exposure per hour of profession work. Religious language depends
+/// on the enrolled denomination and is resolved by the strategic server.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ProfessionLiteracyProfile {
+    pub vernacular: f32,
+    pub latin: f32,
+    pub religious: bool,
+}
+
+pub fn profession_literacy_profile(service_id: &str) -> ProfessionLiteracyProfile {
+    match service_id {
+        "merchants" => ProfessionLiteracyProfile {
+            vernacular: 0.40,
+            latin: 0.0,
+            religious: false,
+        },
+        "herbalist" => ProfessionLiteracyProfile {
+            vernacular: 0.05,
+            latin: 0.25,
+            religious: false,
+        },
+        "weapons" | "armor" => ProfessionLiteracyProfile {
+            vernacular: 0.03,
+            latin: 0.0,
+            religious: false,
+        },
+        "clothing" => ProfessionLiteracyProfile {
+            vernacular: 0.08,
+            latin: 0.0,
+            religious: false,
+        },
+        "inn" => ProfessionLiteracyProfile {
+            vernacular: 0.02,
+            latin: 0.0,
+            religious: false,
+        },
+        "religion" => ProfessionLiteracyProfile {
+            vernacular: 0.0,
+            latin: 0.0,
+            religious: true,
+        },
+        _ => ProfessionLiteracyProfile {
+            vernacular: 0.0,
+            latin: 0.0,
+            religious: false,
+        },
+    }
+}
+
 /// Progression earned within a profession. Enrollment is stored separately.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProfessionTier {
@@ -91,11 +140,15 @@ impl ProfessionTier {
 }
 
 const CHARISMA: &[ProfessionSkillWeight] = &[ProfessionSkillWeight {
-    skill: Skill::Charisma,
+    skill: Skill::Command,
     weight: 1.0,
 }];
 const SMITHING: &[ProfessionSkillWeight] = &[ProfessionSkillWeight {
     skill: Skill::Smithing,
+    weight: 1.0,
+}];
+const TAILORING: &[ProfessionSkillWeight] = &[ProfessionSkillWeight {
+    skill: Skill::Tailoring,
     weight: 1.0,
 }];
 const MEDICAL: &[ProfessionSkillWeight] = &[
@@ -104,10 +157,22 @@ const MEDICAL: &[ProfessionSkillWeight] = &[
         weight: 0.5,
     },
     ProfessionSkillWeight {
-        skill: Skill::Surgeon,
-        weight: 0.5,
+        skill: Skill::Anatomy,
+        weight: 1.0 / 6.0,
+    },
+    ProfessionSkillWeight {
+        skill: Skill::Knife,
+        weight: 1.0 / 6.0,
+    },
+    ProfessionSkillWeight {
+        skill: Skill::Tailoring,
+        weight: 1.0 / 6.0,
     },
 ];
+const COOKING: &[ProfessionSkillWeight] = &[ProfessionSkillWeight {
+    skill: Skill::Cooking,
+    weight: 1.0,
+}];
 const RELIGION: &[ProfessionSkillWeight] = &[ProfessionSkillWeight {
     skill: Skill::Religion,
     weight: 1.0,
@@ -147,7 +212,7 @@ pub const PROFESSIONS: &[ProfessionDefinition] = &[
         service_id: "clothing",
         label: "tailor",
         description: "Tailors cut, fit, and repair clothing for work, travel, and display.",
-        skills: SMITHING,
+        skills: TAILORING,
         religious: false,
         practice_reward: PracticeReward::Gold,
     },
@@ -161,11 +226,11 @@ pub const PROFESSIONS: &[ProfessionDefinition] = &[
         practice_reward: PracticeReward::Gold,
     },
     ProfessionDefinition {
-        id: ProfessionId::Innkeeper,
+        id: ProfessionId::Cook,
         service_id: "inn",
-        label: "innkeeper",
-        description: "Innkeepers practice hospitality, conversation, and the management of a busy public house.",
-        skills: CHARISMA,
+        label: "cook",
+        description: "Cooks prepare safe, nourishing meals and manage a busy tavern kitchen.",
+        skills: COOKING,
         religious: false,
         practice_reward: PracticeReward::Gold,
     },
@@ -259,6 +324,11 @@ mod tests {
             "weaponsmith"
         );
         assert_eq!(profession_for_service("religion").unwrap().religious, true);
+        assert_eq!(
+            profession_for_service("inn").unwrap().id,
+            ProfessionId::Cook
+        );
+        assert_eq!(profession_for_service("inn").unwrap().skills, COOKING);
         assert!(profession_for_service("smith").is_none());
         for profession in PROFESSIONS {
             assert_eq!(profession.id.service_id(), profession.service_id);
@@ -288,8 +358,9 @@ mod tests {
         assert_eq!(
             profession_tier(herbalist, |skill| match skill {
                 Skill::Medicine => 20_000.0,
-                Skill::Surgeon => 0.0,
-                _ => unreachable!(),
+                Skill::Anatomy => 0.0,
+                Skill::Knife | Skill::Tailoring => 20_000.0,
+                _ => unreachable!("unexpected medical skill: {skill:?}"),
             }),
             ProfessionTier::Apprentice
         );

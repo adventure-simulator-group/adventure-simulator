@@ -4,12 +4,12 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::travel_edge_import_type::TravelEdgeImport;
+use super::travel_edge_load_type::TravelEdgeLoad;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct ImportTravelEdgesArgs {
-    pub edges: Vec<TravelEdgeImport>,
+    pub edges: Vec<TravelEdgeLoad>,
 }
 
 impl From<ImportTravelEdgesArgs> for super::Reducer {
@@ -33,7 +33,7 @@ pub trait import_travel_edges {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`import_travel_edges:import_travel_edges_then`] to run a callback after the reducer completes.
-    fn import_travel_edges(&self, edges: Vec<TravelEdgeImport>) -> __sdk::Result<()> {
+    fn import_travel_edges(&self, edges: Vec<TravelEdgeLoad>) -> __sdk::Result<()> {
         self.import_travel_edges_then(edges, |_, _| {})
     }
 
@@ -45,7 +45,7 @@ pub trait import_travel_edges {
     ///  and its status can be observed with the `callback`.
     fn import_travel_edges_then(
         &self,
-        edges: Vec<TravelEdgeImport>,
+        edges: Vec<TravelEdgeLoad>,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -58,7 +58,7 @@ pub trait import_travel_edges {
 impl import_travel_edges for super::RemoteReducers {
     fn import_travel_edges_then(
         &self,
-        edges: Vec<TravelEdgeImport>,
+        edges: Vec<TravelEdgeLoad>,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,

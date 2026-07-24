@@ -1,5 +1,12 @@
 # Viabundus world data
 
+Canonical MVP compilation retains only nodes, settlements, and complete road
+edges whose endpoints are within `[8.965, 50.877, 11.110, 52.211]`. This
+filter runs before environmental enrichment, so out-of-bounds settlements do
+not consume raster sampling work or enter SpacetimeDB. The independently
+generated presentation map clips full-precision road and water geometry at the
+same exact boundary.
+
 The strategic world-import pipeline uses **Viabundus Pre-modern Street Map 2**,
 version 2 (released 25 April 2025), edited by Bart Holterman et al.
 
@@ -13,11 +20,12 @@ Zenodo record, unique safe CSV names, and an inventory of every consumed CSV;
 it verifies consumed bytes before granting reproducible snapshot status.
 Legacy sidecars without sizes remain explicitly release-blocked.
 
-The upstream CSVs are downloaded locally into the Git-ignored `viabundus/`
-directory with `just init-viabundus`. The native Rust world compiler reads them
-from its source-specific `sources::viabundus` module, then enriches the draft
-with required values from the other initialized sources. `just compile-world`
-writes the validated, schema-versioned artifact to
+For normal development, `just init-world-data` installs the reviewed upstream
+CSVs into the Git-ignored `viabundus/` directory as the Viabundus component of
+the pinned source-separated bundle. The native Rust world compiler reads the
+files from its source-specific `sources::viabundus` module, then enriches the
+draft with required values from the other initialized sources. `just
+compile-world` writes the validated, schema-versioned artifact to
 `target/world-1544.json`. The generated strategic graph contains
 the source attributes required to route between and identify settlements in
 1544: nodes, active land/ferry edges, settlement metadata, active alternative
@@ -27,6 +35,68 @@ the source-independent world schema. Each settlement also retains its
 approximate population estimate. It is an adapted
 dataset and must retain this attribution and CC BY-SA 4.0 licensing when
 distributed.
+
+The settlement Map screen uses the separately generated
+`target/strategic-map/strategic-map-v1.json` presentation package and
+`target/strategic-map/strategic-map-tiles-v1.pack` world-tile asset. `just
+build-strategic-map` derives both versioned files with an embedded content digest from the
+initialized Viabundus v2 roads, ferries, and 1500 water polygons, generalized
+Copernicus GLO-30 elevation, and every available prepared Copernicus forest
+tile. It clips the view to the supported northern-European envelope and
+simplifies source geometry for a multilevel raster presentation; it does not change or replace
+canonical routing data. Native elevation is classified into hilly areas rather
+than absolute-height colour bands. Forest
+coverage is deliberately partial: the generator renders only
+installed TCD/DLT tile pairs and records their exact bounds instead of filling
+missing regions with inferred vegetation.
+
+The server exposes individual AVIF images from an indexed pack beneath a small
+inline SVG settlement overlay. Each tile URL includes the pack's SHA-256 and is
+served with `public, max-age=31536000, immutable`. The browser loads only tiles
+covering the current viewport at an appropriate zoom from the Paper pyramid.
+The offline raster compiler belongs to `adventuresim-world-import`, not the web
+server. `strategic-web` optionally loads `STRATEGIC_MAP_BUNDLE_DIR` (default
+`target/strategic-map`) at runtime and has no raster renderer or encoder
+dependency. A missing or invalid bundle does not prevent startup: settlement
+selection and direct travel continue through the surrounding HTML interface.
+Current and selected settlements, locally issued available quests, the party's
+active quest when it is at the issuing settlement, direct-route state,
+population-class settlement pictograms, collision-managed names, destination
+links, and the straight selection line remain dynamic HTML/SVG and are served
+on every map response. Label priority responds
+to the current zoom while the raster package remains unchanged and cacheable.
+A four-pixel encoded gutter prevents seams between lossy
+tiles, while the deepest level uses high-quality AVIF. The map uses a
+single green forest mask at 20 percent canopy, light brown for hilly open
+ground, and dark green where forest and hills overlap. It draws no symbolic
+hill or mountain stamps; native elevation remains in the independent terrain
+pack for routing and future terrain presentation. Forest is classified once on the
+prepared 0.001-degree canopy grid; every coarser level is an area average of
+2-by-2 children, and adjacent mip levels are blended while rendering. Forest
+boundaries therefore retain one sampling history across zoom levels instead of
+switching between a procedural low-detail field and native samples. The
+coverage remains offline raster content rather than dynamic browser geometry.
+Viabundus zoom importance also
+controls road visibility, weight, and ink strength, while a subtle globally
+positioned parchment texture keeps adjacent tile gutters identical.
+
+The stable `strategic-map-v1.json` and `strategic-map-tiles-v1.pack` filenames
+are versioned, not content-addressed; the pack digest query parameter is every
+tile route's cache key.
+Adventure Simulator's contributions to the generated map and terrain packs are
+distributed under CC BY-SA 4.0 rather than the repository software's AGPL.
+Every bundle must retain the generated `STRATEGIC_MAP_DATA_LICENSE.md` notice
+or provide a reasonably prominent link to the canonical `MAP_DATA_LICENSE.md`;
+the server exposes the latter at `/map/data-license`.
+The compact schema-3 deployment manifest carries renderer revision 8, reviewed
+source identities, coverage counts, and the indexed AVIF pyramid, but not the
+offline roads, compound water rings, elevation cells/contours, or forest
+regions used to render it. Its embedded SHA-256 covers every deployed field;
+strategic-web revalidates that digest and the exact source URLs before
+rendering. A
+legacy initializer sidecar without recorded byte
+sizes is accepted only with the explicit
+`legacy-release-blocked-missing-sizes` package status.
 
 Active Viabundus bridge and toll nodes are projected onto their incident travel
 edges with their `from`, `to`, or `both` endpoint identity intact. Ferry routes

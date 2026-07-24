@@ -17,7 +17,8 @@ use crate::{
     CharacterAttributes, CharacterSkills, CharacterStats, character_attributes, character_equip,
     character_limbs, character_skills, character_stats, settlement,
 };
-use adventuresim_world_schema::{OfficialReligion, ReligionMinutes};
+use adventuresim_world_schema::{OfficialReligion, OralLanguage, WrittenLanguage};
+use std::collections::BTreeMap;
 
 /// Natural recovery without useful medical support while taking full
 /// settlement downtime.
@@ -67,27 +68,26 @@ pub struct ScheduleAllocation {
     pub apprenticeship_service_id: Option<String>,
     pub profession_practice_minutes: u16,
     pub profession_service_id: Option<String>,
-    pub combat_minutes: u16,
-    pub combat_auto_train: bool,
-    pub melee_minutes: u16,
-    pub dodge_minutes: u16,
-    pub block_minutes: u16,
-    pub ranged_minutes: u16,
-    pub will_minutes: u16,
-    pub charisma_minutes: u16,
-    pub medicine_minutes: u16,
-    pub religion_minutes: u16,
-    pub religion_auto_train: bool,
-    pub religion_minutes_by_tradition: ReligionMinutes,
-    pub stealth_minutes: u16,
-    pub balance_minutes: u16,
-    pub surgeon_minutes: u16,
-    pub smithing_minutes: u16,
     /// Paid physical work; also trains Will at reduced speed.
     pub labor_minutes: u16,
     pub prayer_minutes: u16,
     pub thievery_minutes: u16,
     pub raiding_minutes: u16,
+}
+
+/// An explicit settlement activity selected by the player.  Profession
+/// variants use the separate `service_id` reducer argument so this remains a
+/// small, stable discriminator in generated clients.
+#[derive(Clone, Copy, Debug, SpacetimeType)]
+pub enum ImmediateActivity {
+    Prayer,
+    CombatTraining,
+    Carousing,
+    Apprenticeship,
+    ProfessionPractice,
+    Labor,
+    Thievery,
+    Raiding,
 }
 
 /// Daily settlement plan. The empty travel allocation is retained temporarily
@@ -138,26 +138,6 @@ pub struct CharacterNotoriety {
 impl ScheduleAllocation {
     pub fn allocated_minutes(&self) -> u64 {
         allocated_schedule_minutes([
-            if self.combat_auto_train {
-                self.combat_minutes
-            } else {
-                self.melee_minutes
-                    .saturating_add(self.dodge_minutes)
-                    .saturating_add(self.block_minutes)
-                    .saturating_add(self.ranged_minutes)
-            },
-            self.will_minutes,
-            self.charisma_minutes,
-            self.medicine_minutes,
-            if self.religion_auto_train {
-                self.religion_minutes
-            } else {
-                u16::try_from(self.religion_minutes_by_tradition.total()).unwrap_or(u16::MAX)
-            },
-            self.stealth_minutes,
-            self.balance_minutes,
-            self.surgeon_minutes,
-            self.smithing_minutes,
             self.labor_minutes,
             self.prayer_minutes,
             self.thievery_minutes,
@@ -170,20 +150,7 @@ impl ScheduleAllocation {
     }
 
     fn uses_quarter_hours(&self) -> bool {
-        let mut values = vec![
-            self.combat_minutes,
-            self.melee_minutes,
-            self.dodge_minutes,
-            self.block_minutes,
-            self.ranged_minutes,
-            self.will_minutes,
-            self.charisma_minutes,
-            self.medicine_minutes,
-            self.religion_minutes,
-            self.stealth_minutes,
-            self.balance_minutes,
-            self.surgeon_minutes,
-            self.smithing_minutes,
+        let values = vec![
             self.labor_minutes,
             self.prayer_minutes,
             self.thievery_minutes,
@@ -193,11 +160,6 @@ impl ScheduleAllocation {
             self.apprenticeship_minutes,
             self.profession_practice_minutes,
         ];
-        values.extend(
-            OfficialReligion::ALL
-                .into_iter()
-                .map(|r| self.religion_minutes_by_tradition.get(r)),
-        );
         values.into_iter().all(|minutes| minutes % 15 == 0)
     }
 }
@@ -271,7 +233,7 @@ pub fn advance_character_time(
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, false)?;
     let (elapsed, terminal) =
-        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit)?;
+        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, false)?;
     let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, false)?;
     let elapsed = settled.elapsed;
     character_time.minutes = character_time.minutes.saturating_add(elapsed);
@@ -279,12 +241,70 @@ pub fn advance_character_time(
         .character_time()
         .character_id()
         .update(character_time);
+    crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
     if terminal.is_some() || !settled.alive {
         return Ok(false);
     }
     crate::condition::apply_travel_condition(ctx, character_id, starting_minute, elapsed, 0)?;
     crate::capability::refresh_character_capability(ctx, character_id)?;
+    Ok(true)
+}
+
+/// Actual strategic movement, split at exact dirt boundaries so filth and its
+/// wound-risk multiplier are independent of caller chunking.
+pub fn preview_travel_time(
+    ctx: &ReducerContext,
+    character_id: u64,
+    requested: u64,
+) -> Result<u64, String> {
+    let injury = crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested, false)?;
+    crate::disease::preview_elapsed_for_disease(ctx, character_id, injury, false)
+}
+
+/// Commit a terminal injury or disease event that falls exactly on the
+/// character's current strategic minute. This intentionally grants no elapsed
+/// travel time, condition use, filth, or training.
+pub fn settle_travel_boundary(ctx: &ReducerContext, character_id: u64) -> Result<bool, String> {
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    if !character.alive {
+        return Ok(false);
+    }
+    advance_character_time(ctx, character_id, 0)
+}
+
+pub fn advance_travel_time(
+    ctx: &ReducerContext,
+    character_id: u64,
+    mut minutes: u64,
+) -> Result<bool, String> {
+    while minutes > 0 {
+        let chunk = minutes.min(crate::filth::next_travel_dirt_boundary(ctx, character_id));
+        let before = ctx
+            .db
+            .character_time()
+            .character_id()
+            .find(character_id)
+            .map_or(0, |row| row.minutes);
+        let alive = advance_character_time(ctx, character_id, chunk)?;
+        let after = ctx
+            .db
+            .character_time()
+            .character_id()
+            .find(character_id)
+            .map_or(before, |row| row.minutes);
+        let elapsed = after.saturating_sub(before);
+        crate::filth::record_travel_elapsed(ctx, character_id, elapsed, after)?;
+        if !alive || elapsed < chunk {
+            return Ok(false);
+        }
+        minutes -= elapsed;
+    }
     Ok(true)
 }
 
@@ -307,10 +327,11 @@ pub fn advance_character_wait_time(
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, true)?;
     let (elapsed, terminal) =
-        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit)?;
+        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, true)?;
     let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, true)?;
     time.minutes = time.minutes.saturating_add(settled.elapsed);
     ctx.db.character_time().character_id().update(time);
+    crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
     if terminal.is_some() || !settled.alive {
         return Ok(false);
@@ -334,11 +355,7 @@ pub fn advance_character_wait_time(
 fn default_schedule(character_id: u64) -> CharacterTrainingSchedule {
     CharacterTrainingSchedule {
         character_id,
-        downtime: ScheduleAllocation {
-            combat_auto_train: true,
-            religion_auto_train: true,
-            ..Default::default()
-        },
+        downtime: ScheduleAllocation::default(),
         travel: ScheduleAllocation::default(),
     }
 }
@@ -396,10 +413,18 @@ fn profession_training_hours(
     skill: Skill,
 ) -> f32 {
     match skill {
-        Skill::Charisma => skills.charisma_hours,
+        Skill::Insight => skills.insight_hours,
+        Skill::SelfAwareness => skills.self_awareness_hours,
+        Skill::Humor => skills.humor_hours,
+        Skill::Command => skills.command_hours,
+        Skill::Deception => skills.deception_hours,
+        Skill::Seduction => skills.seduction_hours,
         Skill::Smithing => skills.smithing_hours,
         Skill::Medicine => skills.medicine_hours,
-        Skill::Surgeon => skills.surgeon_hours,
+        Skill::Cooking => skills.cooking_hours,
+        Skill::Anatomy => skills.anatomy_hours,
+        Skill::Knife => skills.knife_hours,
+        Skill::Tailoring => skills.tailoring_hours,
         Skill::Religion => apprenticeship
             .religion_id
             .as_deref()
@@ -563,28 +588,69 @@ fn apply_training(
     activities: adventuresim_core::strategic_schedule::ActivityTrainingProfile,
 ) {
     let mut hours = SkillHours {
-        melee: skills.melee_hours,
+        polearm: skills.polearm_hours,
+        axe: skills.axe_hours,
+        bludgeon: skills.bludgeon_hours,
+        sword: skills.sword_hours,
+        knife: skills.knife_hours,
         dodge: skills.dodge_hours,
         block: skills.block_hours,
-        ranged: skills.ranged_hours,
+        bow: skills.bow_hours,
+        crossbow: skills.crossbow_hours,
+        firearm: skills.firearm_hours,
+        throw: skills.throw_hours,
         will: skills.will_hours,
-        charisma: skills.charisma_hours,
+        insight: skills.insight_hours,
+        self_awareness: skills.self_awareness_hours,
+        humor: skills.humor_hours,
+        command: skills.command_hours,
+        deception: skills.deception_hours,
+        seduction: skills.seduction_hours,
         medicine: skills.medicine_hours,
+        cooking: skills.cooking_hours,
         religion: skills.religion_hours,
         stealth: skills.stealth_hours,
         balance: skills.balance_hours,
-        surgeon: skills.surgeon_hours,
+        anatomy: skills.anatomy_hours,
+        tailoring: skills.tailoring_hours,
         smithing: skills.smithing_hours,
     };
     apply_schedule_training(&mut hours, core_schedule(schedule), elapsed, activities);
-    let (allocations, prayer_religion) = resolve_religion_training(ctx, character_id, schedule);
+    let prayer_religion = ctx
+        .db
+        .character_condition()
+        .character_id()
+        .find(character_id)
+        .and_then(|condition| condition.religion_id)
+        .as_deref()
+        .and_then(OfficialReligion::from_id);
     apply_religion_training(
         &mut hours.religion,
-        allocations,
         elapsed,
         prayer_religion,
         schedule.prayer_minutes,
     );
+    if let Some(character) = ctx.db.character().id().find(character_id) {
+        if let Some(settlement_id) = character.current_settlement_id {
+            if let Some(settlement) = ctx.db.settlement().id().find(&settlement_id) {
+                // Ordinary life supplies bounded ambient exposure during the
+                // waking two-thirds of actual elapsed settlement time.
+                let exposure = elapsed as f32 / 60.0 * (2.0 / 3.0);
+                skills.oral_languages.add_direct(
+                    OralLanguage::EastCentral,
+                    exposure * f32::from(settlement.languages.east_central_bp) / 10_000.0,
+                );
+                skills.oral_languages.add_direct(
+                    OralLanguage::WestCentral,
+                    exposure * f32::from(settlement.languages.west_central_bp) / 10_000.0,
+                );
+                skills.oral_languages.add_direct(
+                    OralLanguage::Low,
+                    exposure * f32::from(settlement.languages.low_bp) / 10_000.0,
+                );
+            }
+        }
+    }
     for (minutes, service_id) in [
         (
             schedule.apprenticeship_minutes,
@@ -595,6 +661,56 @@ fn apply_training(
             schedule.profession_service_id.as_deref(),
         ),
     ] {
+        if minutes > 0 {
+            if let Some(service_id) = service_id {
+                let work_hours =
+                    elapsed as f32 / MINUTES_PER_DAY as f32 * f32::from(minutes) / 60.0;
+                let profile =
+                    adventuresim_core::profession::profession_literacy_profile(service_id);
+                let vernacular = ctx
+                    .db
+                    .character()
+                    .id()
+                    .find(character_id)
+                    .and_then(|character| character.current_settlement_id)
+                    .and_then(|id| ctx.db.settlement().id().find(&id))
+                    .map_or(WrittenLanguage::German, |settlement| {
+                        if settlement.languages.dominant_german() == OralLanguage::Low {
+                            WrittenLanguage::Low
+                        } else {
+                            WrittenLanguage::German
+                        }
+                    });
+                skills
+                    .written_languages
+                    .add_direct(vernacular, work_hours * profile.vernacular);
+                skills
+                    .written_languages
+                    .add_direct(WrittenLanguage::Latin, work_hours * profile.latin);
+                if profile.religious {
+                    let religion = apprenticeship_for_service(ctx, character_id, "religion")
+                        .and_then(|row| row.religion_id)
+                        .as_deref()
+                        .and_then(OfficialReligion::from_id);
+                    match religion {
+                        Some(OfficialReligion::RomanCatholic) => skills
+                            .written_languages
+                            .add_direct(WrittenLanguage::Latin, work_hours),
+                        Some(OfficialReligion::Judaism) => {
+                            skills
+                                .written_languages
+                                .add_direct(WrittenLanguage::Hebrew, work_hours * 0.75);
+                            skills
+                                .written_languages
+                                .add_direct(WrittenLanguage::Yiddish, work_hours * 0.25);
+                        }
+                        _ => skills
+                            .written_languages
+                            .add_direct(WrittenLanguage::German, work_hours),
+                    }
+                }
+            }
+        }
         if minutes == 0 || service_id != Some("religion") {
             continue;
         }
@@ -607,53 +723,32 @@ fn apply_training(
             hours.religion.add_direct(religion, trained);
         }
     }
-    skills.melee_hours = hours.melee;
+    skills.polearm_hours = hours.polearm;
+    skills.axe_hours = hours.axe;
+    skills.bludgeon_hours = hours.bludgeon;
+    skills.sword_hours = hours.sword;
+    skills.knife_hours = hours.knife;
     skills.dodge_hours = hours.dodge;
     skills.block_hours = hours.block;
-    skills.ranged_hours = hours.ranged;
+    skills.bow_hours = hours.bow;
+    skills.crossbow_hours = hours.crossbow;
+    skills.firearm_hours = hours.firearm;
+    skills.throw_hours = hours.throw;
     skills.will_hours = hours.will;
-    skills.charisma_hours = hours.charisma;
+    skills.insight_hours = hours.insight;
+    skills.self_awareness_hours = hours.self_awareness;
+    skills.humor_hours = hours.humor;
+    skills.command_hours = hours.command;
+    skills.deception_hours = hours.deception;
+    skills.seduction_hours = hours.seduction;
     skills.medicine_hours = hours.medicine;
+    skills.cooking_hours = hours.cooking;
     skills.religion_hours = hours.religion;
     skills.stealth_hours = hours.stealth;
     skills.balance_hours = hours.balance;
-    skills.surgeon_hours = hours.surgeon;
+    skills.anatomy_hours = hours.anatomy;
+    skills.tailoring_hours = hours.tailoring;
     skills.smithing_hours = hours.smithing;
-}
-
-fn resolve_religion_training(
-    ctx: &ReducerContext,
-    character_id: u64,
-    schedule: &ScheduleAllocation,
-) -> (ReligionMinutes, Option<OfficialReligion>) {
-    let profession = ctx
-        .db
-        .character_condition()
-        .character_id()
-        .find(character_id)
-        .and_then(|condition| condition.religion_id)
-        .as_deref()
-        .and_then(OfficialReligion::from_id);
-    if !schedule.religion_auto_train {
-        return (schedule.religion_minutes_by_tradition, profession);
-    }
-
-    let targets = if let Some(religion) = profession {
-        vec![religion]
-    } else {
-        ctx.db
-            .character()
-            .id()
-            .find(character_id)
-            .and_then(|character| character.current_settlement_id)
-            .and_then(|settlement_id| ctx.db.settlement().id().find(&settlement_id))
-            .map(|settlement| settlement.religious_status.represented_religions())
-            .unwrap_or_default()
-    };
-    (
-        ReligionMinutes::split_evenly(schedule.religion_minutes, &targets),
-        profession,
-    )
 }
 
 pub(crate) fn core_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
@@ -670,22 +765,6 @@ pub(crate) fn core_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
             .profession_service_id
             .as_deref()
             .and_then(adventuresim_core::profession::ProfessionId::from_service_id),
-        combat: schedule.combat_minutes,
-        combat_auto_train: schedule.combat_auto_train,
-        melee: schedule.melee_minutes,
-        dodge: schedule.dodge_minutes,
-        block: schedule.block_minutes,
-        ranged: schedule.ranged_minutes,
-        will: schedule.will_minutes,
-        charisma: schedule.charisma_minutes,
-        medicine: schedule.medicine_minutes,
-        religion: schedule.religion_minutes,
-        religion_auto_train: schedule.religion_auto_train,
-        religions: schedule.religion_minutes_by_tradition,
-        stealth: schedule.stealth_minutes,
-        balance: schedule.balance_minutes,
-        surgeon: schedule.surgeon_minutes,
-        smithing: schedule.smithing_minutes,
         labor: schedule.labor_minutes,
         prayer: schedule.prayer_minutes,
         thievery: schedule.thievery_minutes,
@@ -720,6 +799,41 @@ fn apply_activity_outcomes(
     schedule: &ScheduleAllocation,
     elapsed: u64,
     interval_end_minute: u64,
+) -> Result<ActivityRisks, String> {
+    apply_activity_outcomes_inner(
+        ctx,
+        character_id,
+        schedule,
+        elapsed,
+        interval_end_minute,
+        true,
+    )
+}
+
+fn apply_activity_outcomes_without_leisure(
+    ctx: &ReducerContext,
+    character_id: u64,
+    schedule: &ScheduleAllocation,
+    elapsed: u64,
+    interval_end_minute: u64,
+) -> Result<ActivityRisks, String> {
+    apply_activity_outcomes_inner(
+        ctx,
+        character_id,
+        schedule,
+        elapsed,
+        interval_end_minute,
+        false,
+    )
+}
+
+fn apply_activity_outcomes_inner(
+    ctx: &ReducerContext,
+    character_id: u64,
+    schedule: &ScheduleAllocation,
+    elapsed: u64,
+    interval_end_minute: u64,
+    apply_leisure: bool,
 ) -> Result<ActivityRisks, String> {
     let character = ctx
         .db
@@ -847,17 +961,146 @@ fn apply_activity_outcomes(
             .character_id()
             .update(notoriety);
     }
-    crate::condition::apply_settlement_leisure_condition(
-        ctx,
-        character_id,
-        core_schedule(schedule),
-        elapsed,
-        interval_end_minute,
-    )?;
+    if apply_leisure {
+        crate::condition::apply_settlement_leisure_condition(
+            ctx,
+            character_id,
+            core_schedule(schedule),
+            elapsed,
+            interval_end_minute,
+        )?;
+    }
     Ok(ActivityRisks {
         thievery_discovery: outcome.thievery_discovery_chance,
         raiding_retaliation: outcome.raiding_retaliation_chance,
     })
+}
+
+fn immediate_activity_schedule(
+    activity: ImmediateActivity,
+    minutes: u16,
+    service_id: Option<&str>,
+) -> ScheduleAllocation {
+    let mut schedule = ScheduleAllocation::default();
+    match activity {
+        ImmediateActivity::Prayer => schedule.prayer_minutes = minutes,
+        ImmediateActivity::CombatTraining => schedule.combat_training_minutes = minutes,
+        ImmediateActivity::Carousing => schedule.carousing_minutes = minutes,
+        ImmediateActivity::Apprenticeship => {
+            schedule.apprenticeship_minutes = minutes;
+            schedule.apprenticeship_service_id = service_id.map(str::to_owned);
+        }
+        ImmediateActivity::ProfessionPractice => {
+            schedule.profession_practice_minutes = minutes;
+            schedule.profession_service_id = service_id.map(str::to_owned);
+        }
+        ImmediateActivity::Labor => schedule.labor_minutes = minutes,
+        ImmediateActivity::Thievery => schedule.thievery_minutes = minutes,
+        ImmediateActivity::Raiding => schedule.raiding_minutes = minutes,
+    }
+    schedule
+}
+
+/// Perform one selected activity continuously. Unlike settlement rest this
+/// neither convalesces, repairs, washes, heals, supplies an inn, nor consults
+/// or mutates the saved daily plan.
+#[reducer]
+pub fn perform_immediate_activity(
+    ctx: &ReducerContext,
+    character_id: u64,
+    activity: ImmediateActivity,
+    requested_minutes: u64,
+    service_id: Option<&str>,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    if character.current_settlement_id.is_none() {
+        return Err("Activities may only be performed at a settlement".into());
+    }
+    if !(60..=MINUTES_PER_DAY).contains(&requested_minutes) || requested_minutes % 60 != 0 {
+        return Err("Activity duration must use whole hours from one to 24 hours".into());
+    }
+    ensure_character_time(ctx, character_id)?;
+    let _ = refresh_clock(ctx)?;
+    let minutes = u16::try_from(requested_minutes).map_err(|_| "Activity duration is too long")?;
+    let schedule = immediate_activity_schedule(activity, minutes, service_id);
+    validate_profession_schedule(ctx, character_id, &schedule)?;
+
+    let mut character_time = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character time record not found")?;
+    let injury_limit =
+        crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested_minutes, false)?;
+    let (elapsed, terminal) =
+        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, false)?;
+    let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, false)?;
+    let elapsed = settled.elapsed;
+    character_time.minutes = character_time
+        .minutes
+        .checked_add(elapsed)
+        .ok_or("Character clock overflow")?;
+    let interval_end = character_time.minutes;
+    ctx.db
+        .character_time()
+        .character_id()
+        .update(character_time);
+    crate::social::settle_shared_party_time(ctx, character_id);
+    crate::condition::apply_elapsed_needs(ctx, character_id, elapsed)?;
+    crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    if terminal.is_some() || !settled.alive {
+        return Ok(());
+    }
+
+    // The activity allocation describes this one interval directly. Applying
+    // it over one canonical day makes both linear and saturating effects use
+    // the selected number of minutes, while the personal clock advances only
+    // by the actual interval (which may have been clipped by an incident).
+    let effective_minutes = u16::try_from(elapsed.min(requested_minutes)).unwrap_or(minutes);
+    let effective_schedule = immediate_activity_schedule(activity, effective_minutes, service_id);
+    let mut skills = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character skills not found")?;
+    let profile = activity_training_profile(ctx, character_id)?;
+    apply_training(
+        ctx,
+        character_id,
+        &mut skills,
+        &effective_schedule,
+        MINUTES_PER_DAY,
+        profile,
+    );
+    ctx.db.character_skills().character_id().update(skills);
+    let risks = apply_activity_outcomes_without_leisure(
+        ctx,
+        character_id,
+        &effective_schedule,
+        MINUTES_PER_DAY,
+        interval_end,
+    )?;
+    if matches!(activity, ImmediateActivity::Prayer) {
+        crate::condition::record_immediate_prayer_morale(ctx, character_id, effective_minutes)?;
+    }
+    if matches!(activity, ImmediateActivity::Labor) {
+        let mut stats = ctx
+            .db
+            .character_stats()
+            .character_id()
+            .find(character_id)
+            .ok_or("Character stats not found")?;
+        stats.calories_used += f32::from(effective_minutes) / 60.0
+            * adventuresim_core::strategic_schedule::LABOR_FATIGUE_PER_HOUR;
+        ctx.db.character_stats().character_id().update(stats);
+    }
+    crate::strategic::maybe_trigger_activity_incident(ctx, character_id, risks)?;
+    crate::capability::refresh_character_capability(ctx, character_id)?;
+    crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
+    Ok(())
 }
 
 const ACTIVITY_MINUTE_SCALE: u64 = MINUTES_PER_DAY;
@@ -991,11 +1234,13 @@ pub fn rest_at_settlement(
     requested_days: u16,
     at_inn: bool,
 ) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
     rest_for_minutes(
         ctx,
         character_id,
         u64::from(requested_days) * MINUTES_PER_DAY,
         at_inn,
+        true,
     )
 }
 
@@ -1009,7 +1254,8 @@ pub fn rest_at_settlement_hours(
     requested_minutes: u64,
     at_inn: bool,
 ) -> Result<(), String> {
-    rest_for_minutes(ctx, character_id, requested_minutes, at_inn)
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
+    rest_for_minutes(ctx, character_id, requested_minutes, at_inn, true)
 }
 
 fn rest_for_minutes(
@@ -1017,8 +1263,12 @@ fn rest_for_minutes(
     character_id: u64,
     requested_minutes: u64,
     at_inn: bool,
+    explicit: bool,
 ) -> Result<(), String> {
-    crate::character::require_living_character(ctx, character_id)?;
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    if character.current_settlement_id.is_none() {
+        return Err("Settlement rest requires the character to be at a settlement".into());
+    }
     ensure_character_time(ctx, character_id)?;
     let _ = refresh_clock(ctx)?;
     let mut character_time = ctx
@@ -1030,6 +1280,21 @@ fn rest_for_minutes(
     if requested_minutes == 0 {
         return Ok(());
     }
+    let conversation_choice = character.party_id.as_ref().and_then(|party_id| {
+        let snapshot: Vec<_> = crate::strategic::living_party_member_ids(ctx, party_id)
+            .into_iter()
+            .filter_map(|id| {
+                ctx.db
+                    .character_skills()
+                    .character_id()
+                    .find(id)
+                    .map(|skills| (id, skills.oral_languages))
+            })
+            .collect();
+        adventuresim_world_schema::party_common_oral_choices(&snapshot)
+            .into_iter()
+            .find(|choice| choice.0 == character_id)
+    });
 
     if !(MIN_SETTLEMENT_REST_MINUTES..=MAX_SETTLEMENT_REST_MINUTES).contains(&requested_minutes)
         || requested_minutes % MIN_SETTLEMENT_REST_MINUTES != 0
@@ -1046,10 +1311,14 @@ fn rest_for_minutes(
             .map_err(|_| "Not enough coin to pay for the inn stay".to_string())?;
     }
 
+    if explicit {
+        crate::filth::wash_before_explicit_rest(ctx, character_id)?;
+    }
+
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested_minutes, true)?;
     let (elapsed, terminal) =
-        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit)?;
+        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, true)?;
     let medicine_check = party_medicine_check(ctx, character_id)?;
     let convalescing = convalescence_minutes(ctx, character_id, medicine_check).min(elapsed);
     let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, true)?;
@@ -1063,22 +1332,38 @@ fn rest_for_minutes(
         .character_time()
         .character_id()
         .update(character_time);
+    crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
     if terminal.is_some() || !settled.alive {
         return Ok(());
     }
+    crate::alcohol::process_rest_evenings(
+        ctx,
+        character_id,
+        starting_minute,
+        starting_minute.saturating_add(elapsed),
+        true,
+    )?;
 
-    let smithing_skill = ctx
+    let (smithing_skill, tailoring_skill) = ctx
         .db
         .character_skills()
         .character_id()
         .find(character_id)
-        .map(|skills| Skill::Smithing.training_rank(skills.smithing_hours).floor() as u8)
-        .unwrap_or(0);
+        .map(|skills| {
+            (
+                Skill::Smithing.training_rank(skills.smithing_hours).floor() as u8,
+                Skill::Tailoring
+                    .training_rank(skills.tailoring_hours)
+                    .floor() as u8,
+            )
+        })
+        .unwrap_or((0, 0));
     let maintenance_elapsed = crate::repair::field_repair(
         ctx,
         character_id,
         smithing_skill,
+        tailoring_skill,
         elapsed.saturating_sub(convalescing),
     );
     let training_elapsed = elapsed
@@ -1116,6 +1401,12 @@ fn rest_for_minutes(
             training_elapsed,
             activities,
         );
+        if let Some((_, language, coefficient)) = conversation_choice {
+            skills.oral_languages.add_direct(
+                language,
+                training_elapsed as f32 / 60.0 * (2.0 / 3.0) * coefficient,
+            );
+        }
         ctx.db.character_skills().character_id().update(skills);
         let risks = apply_activity_outcomes(
             ctx,
@@ -1128,6 +1419,7 @@ fn rest_for_minutes(
     }
 
     crate::condition::apply_rest_condition(ctx, character_id, elapsed)?;
+    crate::food::clear_stomach_fullness(ctx, character_id);
     crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(())
 }
@@ -1177,7 +1469,7 @@ pub(crate) fn synchronize_party_departure_time(
             .find(member_id)
             .is_some_and(|character| character.current_settlement_id.is_some());
         if at_settlement {
-            rest_for_minutes(ctx, member_id, elapsed, false)?;
+            rest_for_minutes(ctx, member_id, elapsed, false, false)?;
         } else {
             advance_personal_camp_time(ctx, member_id, elapsed)?;
         }
@@ -1208,18 +1500,26 @@ fn advance_personal_camp_time(
     let starting_minute = time.minutes;
     let injury_limit = crate::surgery::preview_elapsed_for_injuries(ctx, member_id, elapsed, true)?;
     let (elapsed, terminal) =
-        crate::disease::clip_elapsed_for_disease(ctx, member_id, injury_limit)?;
+        crate::disease::clip_elapsed_for_disease(ctx, member_id, injury_limit, true)?;
     let convalescing =
         convalescence_minutes(ctx, member_id, party_medicine_check(ctx, member_id)?).min(elapsed);
     let settled = crate::surgery::settle_injuries(ctx, member_id, elapsed, true)?;
     let elapsed = settled.elapsed;
     time.minutes = time.minutes.saturating_add(elapsed);
     ctx.db.character_time().character_id().update(time);
+    crate::social::settle_shared_party_time(ctx, member_id);
     crate::condition::apply_elapsed_needs(ctx, member_id, elapsed)?;
     crate::disease::finish_disease_interval(ctx, member_id, terminal)?;
     if terminal.is_some() || !settled.alive {
         return Ok(());
     }
+    crate::alcohol::process_rest_evenings(
+        ctx,
+        member_id,
+        starting_minute,
+        starting_minute.saturating_add(elapsed),
+        false,
+    )?;
     let starting_fatigue = ctx
         .db
         .character_stats()
@@ -1294,7 +1594,7 @@ pub(crate) fn rest_temporary_party_member_until_healed_at_settlement(
     let recovery_minutes =
         convalescence_minutes(ctx, character_id, party_medicine_check(ctx, character_id)?);
     if recovery_minutes > 0 {
-        rest_for_minutes(ctx, character_id, recovery_minutes, false)?;
+        rest_for_minutes(ctx, character_id, recovery_minutes, false, false)?;
     }
     Ok(())
 }
@@ -1308,9 +1608,14 @@ pub fn rest_at_camp(
     character_id: u64,
     requested_minutes: u64,
 ) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
+    crate::strategic::require_character_no_unresolved_encounter(ctx, character_id)?;
     crate::character::require_living_character(ctx, character_id)?;
     if requested_minutes == 0 {
         return Ok(());
+    }
+    if requested_minutes > MINUTES_PER_YEAR {
+        return Err("Camp rest cannot exceed one year".into());
     }
     let character = ctx
         .db
@@ -1335,15 +1640,34 @@ pub fn rest_at_camp(
         return Err("The party is not at a field rest location".into());
     }
     let members = crate::strategic::living_party_member_ids(ctx, &party_id);
+    // This reducer is an explicit player-chosen rest. Washing precedes disease
+    // and injury interval clipping, and dead members were excluded above.
+    crate::filth::wash_party_before_explicit_rest(ctx, &members)?;
     let elapsed = members
         .iter()
         .try_fold(requested_minutes, |limit, member_id| {
-            let disease = crate::disease::preview_elapsed_for_disease(ctx, *member_id, limit)?;
+            let disease =
+                crate::disease::preview_elapsed_for_disease(ctx, *member_id, limit, true)?;
             let injury =
                 crate::surgery::preview_elapsed_for_injuries(ctx, *member_id, limit, true)?;
             Ok::<u64, String>(limit.min(disease).min(injury))
         })?;
     let fatigue_before = party_fatigue_summary(ctx, &members)?;
+    let language_snapshot: Vec<_> = members
+        .iter()
+        .filter_map(|id| {
+            ctx.db
+                .character_skills()
+                .character_id()
+                .find(*id)
+                .map(|skills| (*id, skills.oral_languages))
+        })
+        .collect();
+    let language_choices: BTreeMap<_, _> =
+        adventuresim_world_schema::party_common_oral_choices(&language_snapshot)
+            .into_iter()
+            .map(|(id, language, coefficient)| (id, (language, coefficient)))
+            .collect();
     for member_id in members {
         ensure_character_time(ctx, member_id)?;
         let mut time = ctx
@@ -1360,30 +1684,48 @@ pub fn rest_at_camp(
             .map_or(0.0, |stats| stats.calories_used.max(0.0));
         let medicine_check = party_medicine_check(ctx, member_id)?;
         let convalescing = convalescence_minutes(ctx, member_id, medicine_check).min(elapsed);
-        let (_, terminal) = crate::disease::clip_elapsed_for_disease(ctx, member_id, elapsed)?;
+        let (_, terminal) =
+            crate::disease::clip_elapsed_for_disease(ctx, member_id, elapsed, true)?;
         let settled = crate::surgery::settle_injuries(ctx, member_id, elapsed, true)?;
         let member_elapsed = settled.elapsed;
         time.minutes = time.minutes.saturating_add(member_elapsed);
         let interval_end_minute = time.minutes;
         ctx.db.character_time().character_id().update(time);
+        crate::social::settle_shared_party_time(ctx, member_id);
         crate::condition::apply_elapsed_needs(ctx, member_id, member_elapsed)?;
         crate::disease::finish_disease_interval(ctx, member_id, terminal)?;
         if terminal.is_some() || !settled.alive {
             continue;
         }
+        crate::alcohol::process_rest_evenings(
+            ctx,
+            member_id,
+            interval_end_minute.saturating_sub(member_elapsed),
+            interval_end_minute,
+            false,
+        )?;
         crate::condition::apply_camp_rest_recovery_condition(ctx, member_id, member_elapsed)?;
+        crate::food::clear_stomach_fullness(ctx, member_id);
         let convalescing = convalescing.min(member_elapsed);
-        let smithing_skill = ctx
+        let (smithing_skill, tailoring_skill) = ctx
             .db
             .character_skills()
             .character_id()
             .find(member_id)
-            .map(|skills| Skill::Smithing.training_rank(skills.smithing_hours).floor() as u8)
-            .unwrap_or(0);
+            .map(|skills| {
+                (
+                    Skill::Smithing.training_rank(skills.smithing_hours).floor() as u8,
+                    Skill::Tailoring
+                        .training_rank(skills.tailoring_hours)
+                        .floor() as u8,
+                )
+            })
+            .unwrap_or((0, 0));
         let maintenance = crate::repair::field_repair(
             ctx,
             member_id,
             smithing_skill,
+            tailoring_skill,
             adventuresim_core::durability::remaining_after_priority(member_elapsed, convalescing),
         );
         let fatigue_rest =
@@ -1407,6 +1749,12 @@ pub fn rest_at_camp(
                 .ok_or("Character skill record not found")?;
             let activities = activity_training_profile(ctx, member_id)?;
             apply_training(ctx, member_id, &mut skills, &allowed, downtime, activities);
+            if let Some((language, coefficient)) = language_choices.get(&member_id) {
+                skills.oral_languages.add_direct(
+                    *language,
+                    downtime as f32 / 60.0 * (2.0 / 3.0) * coefficient,
+                );
+            }
             ctx.db.character_skills().character_id().update(skills);
             crate::condition::apply_settlement_leisure_condition(
                 ctx,
@@ -1506,7 +1854,7 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested_elapsed, true)?;
     let (elapsed, terminal) =
-        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit)?;
+        crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, true)?;
     let convalescing =
         convalescence_minutes(ctx, character_id, party_medicine_check(ctx, character_id)?)
             .min(elapsed);
@@ -1517,6 +1865,7 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         .character_time()
         .character_id()
         .update(character_time);
+    crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
     if terminal.is_some() || !settled.alive {
         return Ok(forced_catch_up);
@@ -1606,62 +1955,48 @@ mod tests {
     use super::*;
 
     #[test]
-    fn training_uses_the_daily_minute_allocation() {
-        let mut skills = CharacterSkills {
-            character_id: 1,
-            melee_hours: 0.0,
-            dodge_hours: 0.0,
-            block_hours: 0.0,
-            ranged_hours: 0.0,
-            will_hours: 0.0,
-            charisma_hours: 0.0,
-            medicine_hours: 0.0,
-            religion_hours: adventuresim_world_schema::ReligionHours::default(),
-            stealth_hours: 0.0,
-            balance_hours: 0.0,
-            surgeon_hours: 0.0,
-            smithing_hours: 0.0,
-        };
+    fn immediate_activity_schedule_contains_only_the_selected_interval() {
+        let schedule = immediate_activity_schedule(
+            ImmediateActivity::ProfessionPractice,
+            180,
+            Some("weapons"),
+        );
+        assert_eq!(schedule.profession_practice_minutes, 180);
+        assert_eq!(schedule.profession_service_id.as_deref(), Some("weapons"));
+        assert_eq!(schedule.allocated_minutes(), 180);
+        let prayer = immediate_activity_schedule(ImmediateActivity::Prayer, 60, None);
+        assert_eq!(prayer.prayer_minutes, 60);
+        assert_eq!(prayer.allocated_minutes(), 60);
+    }
+
+    #[test]
+    fn activity_training_uses_the_daily_minute_allocation() {
         let allocation = ScheduleAllocation {
-            combat_minutes: 0,
-            combat_auto_train: false,
-            melee_minutes: 90,
-            dodge_minutes: 30,
-            block_minutes: 0,
-            ranged_minutes: 0,
-            will_minutes: 0,
-            charisma_minutes: 0,
-            medicine_minutes: 0,
-            religion_minutes: 0,
-            religion_auto_train: false,
-            religion_minutes_by_tradition: ReligionMinutes::default(),
-            stealth_minutes: 0,
-            balance_minutes: 0,
-            surgeon_minutes: 0,
-            smithing_minutes: 0,
+            combat_training_minutes: 90,
             labor_minutes: 480,
             prayer_minutes: 60,
-            thievery_minutes: 0,
-            raiding_minutes: 0,
-        };
-        let mut hours = SkillHours {
-            melee: skills.melee_hours,
-            dodge: skills.dodge_hours,
             ..Default::default()
         };
+        let mut hours = SkillHours::default();
         apply_schedule_training(
             &mut hours,
             core_schedule(&allocation),
             MINUTES_PER_DAY * 2,
-            ActivityTrainingProfile::default(),
+            ActivityTrainingProfile {
+                combat: adventuresim_core::strategic_schedule::CombatTrainingProfile {
+                    weapons: adventuresim_core::equipment::WeaponSkillDistribution {
+                        sword: 1.0,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            },
         );
-        skills.melee_hours = hours.melee;
-        skills.dodge_hours = hours.dodge;
-        skills.will_hours = hours.will;
-        assert_eq!(skills.melee_hours, 3.0);
-        assert_eq!(skills.dodge_hours, 1.0);
-        assert_eq!(skills.will_hours, 4.0);
-        assert_eq!(allocation.allocated_minutes(), 660);
+        assert!((hours.sword - 0.1875).abs() < f32::EPSILON);
+        assert!((hours.dodge - 0.1875).abs() < f32::EPSILON);
+        assert!((hours.balance - 0.1875).abs() < f32::EPSILON);
+        assert!((hours.will - 4.1875).abs() < f32::EPSILON);
+        assert_eq!(allocation.allocated_minutes(), 630);
     }
 
     #[test]

@@ -11,7 +11,9 @@ use super::historical_vegetation_type::HistoricalVegetation;
 use super::inferred_industry_profile_type::InferredIndustryProfile;
 use super::land_use_profile_type::LandUseProfile;
 use super::potential_vegetation_type::PotentialVegetation;
+use super::settlement_economy_profile_type::SettlementEconomyProfile;
 use super::settlement_hydrology_type::SettlementHydrology;
+use super::settlement_language_profile_type::SettlementLanguageProfile;
 use super::settlement_religious_status_type::SettlementReligiousStatus;
 use super::soil_profile_type::SoilProfile;
 use super::surface_geology_type::SurfaceGeology;
@@ -36,9 +38,11 @@ pub struct SettlementImport {
     pub soil: SoilProfile,
     pub geology: SurfaceGeology,
     pub religious_status: SettlementReligiousStatus,
+    pub languages: SettlementLanguageProfile,
     pub drought: DroughtProfile,
     pub hydrology: SettlementHydrology,
     pub industries: InferredIndustryProfile,
+    pub economy: SettlementEconomyProfile,
     pub scene_key: String,
     pub sources: String,
 }

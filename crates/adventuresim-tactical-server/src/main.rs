@@ -214,12 +214,24 @@ fn spawn_connected_player(
     };
 
     let skills = Skills {
-        melee_hours: player.skills.melee_hours,
+        polearm_hours: player.skills.polearm_hours,
+        axe_hours: player.skills.axe_hours,
+        bludgeon_hours: player.skills.bludgeon_hours,
+        sword_hours: player.skills.sword_hours,
+        knife_hours: player.skills.knife_hours,
         dodge_hours: player.skills.dodge_hours,
         block_hours: player.skills.block_hours,
-        ranged_hours: player.skills.ranged_hours,
+        bow_hours: player.skills.bow_hours,
+        crossbow_hours: player.skills.crossbow_hours,
+        firearm_hours: player.skills.firearm_hours,
+        throw_hours: player.skills.throw_hours,
         will_hours: player.skills.will_hours,
-        charisma_hours: player.skills.charisma_hours,
+        insight_hours: player.skills.insight_hours,
+        self_awareness_hours: player.skills.self_awareness_hours,
+        humor_hours: player.skills.humor_hours,
+        command_hours: player.skills.command_hours,
+        deception_hours: player.skills.deception_hours,
+        seduction_hours: player.skills.seduction_hours,
         medicine_hours: player.skills.medicine_hours,
         religion_hours: {
             let religion = &player.skills.religion_hours;
@@ -239,7 +251,8 @@ fn spawn_connected_player(
         },
         stealth_hours: player.skills.stealth_hours,
         balance_hours: player.skills.balance_hours,
-        surgeon_hours: player.skills.surgeon_hours,
+        anatomy_hours: player.skills.anatomy_hours,
+        tailoring_hours: player.skills.tailoring_hours,
         smithing_hours: player.skills.smithing_hours,
     };
     let limbs = Limbs {
@@ -334,9 +347,21 @@ fn spawn_connected_player(
             | ItemKind::Clothing
             | ItemKind::Currency
             | ItemKind::Ingredient
-            | ItemKind::Medication => {}
+            | ItemKind::Medication
+            | ItemKind::Food => {}
             ItemKind::Weapon => {
                 item_cmd.insert(WeaponItem {
+                    skill_weights: [
+                        item.item.weapon_skills.polearm,
+                        item.item.weapon_skills.axe,
+                        item.item.weapon_skills.bludgeon,
+                        item.item.weapon_skills.sword,
+                        item.item.weapon_skills.knife,
+                        item.item.weapon_skills.bow,
+                        item.item.weapon_skills.crossbow,
+                        item.item.weapon_skills.firearm,
+                        item.item.weapon_skills.throw_skill,
+                    ],
                     accuracy: item.item.accuracy,
                     penetration: item.item.penetration,
                     reach: item.item.reach,

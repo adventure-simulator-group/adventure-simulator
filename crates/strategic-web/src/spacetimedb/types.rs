@@ -1,6 +1,6 @@
 //! SpacetimeDB response types
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use serde_json::Value;
 
 /// Response from SpacetimeDB SQL query (array of result sets)
@@ -94,6 +94,16 @@ personality_axis!(Conviction {
     Zealous,
     Irreverent
 });
+personality_axis!(Hygiene {
+    Neutral,
+    Slovenly,
+    Cleanly
+});
+personality_axis!(Temperance {
+    Neutral,
+    Temperate,
+    Drunkard
+});
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterPersonality {
@@ -105,6 +115,31 @@ pub struct CharacterPersonality {
     pub conscience: Conscience,
     pub self_regard: SelfRegard,
     pub conviction: Conviction,
+    pub hygiene: Hygiene,
+    pub temperance: Temperance,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum FilthSubstance {
+    Dirt,
+    Blood,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum FilthOrigin {
+    Own,
+    Foreign,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterFilth {
+    pub id: u64,
+    pub character_id: u64,
+    pub substance: FilthSubstance,
+    pub origin: FilthOrigin,
+    pub amount: u16,
+    pub deposited_at: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,11 +161,75 @@ pub struct Settlement {
     pub population_level: i32,
     pub population_estimate: u32,
     pub category: SettlementCategory,
+    pub languages: adventuresim_world_schema::SettlementLanguageProfile,
     pub industries: adventuresim_world_schema::InferredIndustryProfile,
+    pub economy: adventuresim_world_schema::SettlementEconomyProfile,
+    #[serde(deserialize_with = "deserialize_settlement_religious_status")]
+    pub religious_status: adventuresim_world_schema::SettlementReligiousStatus,
     pub scene_key: String,
     pub religion_id: String,
     pub currency_id: String,
     pub source_node_id: Option<u64>,
+}
+
+fn deserialize_settlement_religious_status<'de, D>(
+    deserializer: D,
+) -> Result<adventuresim_world_schema::SettlementReligiousStatus, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    serde_json::from_value(normalize_religious_status(value)).map_err(D::Error::custom)
+}
+
+fn normalize_religious_status(value: Value) -> Value {
+    let Value::Object(mut status) = value else {
+        return value;
+    };
+    if status.len() != 1 {
+        return Value::Object(status);
+    }
+
+    let (variant, payload) = status.into_iter().next().expect("checked one variant");
+    let payload = match variant.as_str() {
+        "Established" => wrap_single_field(payload, "religion"),
+        "LocallyDetermined" => wrap_single_field(payload, "church"),
+        "Parity" | "MultiConfessional" => {
+            wrap_single_field(normalize_western_arrangement(payload), "arrangement")
+        }
+        _ => payload,
+    };
+    status = [(variant, payload)].into_iter().collect();
+    Value::Object(status)
+}
+
+fn normalize_western_arrangement(value: Value) -> Value {
+    let Value::Object(mut arrangement) = value else {
+        return value;
+    };
+    if arrangement.len() != 1 || arrangement.contains_key("arrangement") {
+        return Value::Object(arrangement);
+    }
+
+    let (variant, payload) = arrangement
+        .into_iter()
+        .next()
+        .expect("checked one arrangement variant");
+    arrangement = [(variant, wrap_single_field(payload, "church"))]
+        .into_iter()
+        .collect();
+    Value::Object(arrangement)
+}
+
+fn wrap_single_field(value: Value, field: &str) -> Value {
+    if value
+        .as_object()
+        .is_some_and(|object| object.contains_key(field))
+    {
+        value
+    } else {
+        Value::Object([(field.to_string(), value)].into_iter().collect())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -229,7 +328,7 @@ pub struct Party {
     pub camp_remaining_minutes: u64,
     pub pooled_water_ml: f32,
     pub medicine_target: f32,
-    pub charisma_target: f32,
+    pub command_target: f32,
     pub religion_target: f32,
 }
 
@@ -263,6 +362,43 @@ pub struct PartyJourney {
     pub fixed_camp_minutes: u16,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StrategicEncounterLoss {
+    pub owner_kind: String,
+    pub owner_id: u64,
+    pub inventory_id: u64,
+    pub item_id: String,
+    pub quantity: u32,
+    pub value_each: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StrategicEncounter {
+    pub party_id: String,
+    pub encounter_id: String,
+    pub archetype: String,
+    pub enemy_count: u16,
+    pub roll_index: u64,
+    pub journey_movement_minute: u64,
+    pub journey_elapsed_minute: u64,
+    pub absolute_minute: u64,
+    pub longitude_e7: i32,
+    pub latitude_e7: i32,
+    pub terrain: String,
+    pub party_aware: bool,
+    pub enemy_aware: bool,
+    pub available_choices: Vec<String>,
+    pub status: String,
+    pub selected_choice: Option<String>,
+    pub selection_explanation: String,
+    pub party_speed_m_per_minute: u32,
+    pub enemy_speed_m_per_minute: u32,
+    pub run_ineligibility: Option<String>,
+    pub penalty_minutes: u64,
+    pub loss_preview: Vec<StrategicEncounterLoss>,
+    pub outcome: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JourneyCampInterval {
     pub movement_minute: u64,
@@ -278,6 +414,57 @@ pub struct PartyJourneyItinerary {
     pub party_id: String,
     pub actual_camp_intervals: Vec<JourneyCampInterval>,
     pub forecast_camp_intervals: Vec<JourneyCampInterval>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum JourneyTerrainKind {
+    Road,
+    Open,
+    SparseWoods,
+    DeepWoods,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JourneyRoutePoint {
+    pub latitude_e7: i32,
+    pub longitude_e7: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JourneyTerrainSpan {
+    pub kind: JourneyTerrainKind,
+    pub terrain: JourneyTerrainWeights,
+    pub training_multiplier_permille: u16,
+    pub check_millirank: u16,
+    pub start_minute: u64,
+    pub duration_minutes: u64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct JourneyTerrainWeights {
+    pub plains: u16,
+    pub forest: u16,
+    pub hills: u16,
+    pub urban: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JourneyRouteLeg {
+    pub distance_m: u64,
+    pub minutes: u64,
+    pub points: Vec<JourneyRoutePoint>,
+    pub spans: Vec<JourneyTerrainSpan>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyJourneyRoute {
+    pub party_id: String,
+    pub package_digest: String,
+    pub distance_m: u64,
+    pub minutes: u64,
+    pub points: Vec<JourneyRoutePoint>,
+    pub spans: Vec<JourneyTerrainSpan>,
+    pub return_route: Option<JourneyRouteLeg>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -394,7 +581,7 @@ pub struct RecruitmentRequirements {
     pub endurance: u8,
     pub medicine: u8,
     pub surgery: u8,
-    pub charisma: u8,
+    pub command: u8,
     pub religion: u8,
 }
 
@@ -457,8 +644,11 @@ pub struct CharacterCapability {
     pub athletics: f32,
     pub endurance: f32,
     pub medicine: f32,
+    pub anatomy: f32,
+    pub knife: f32,
+    pub tailoring: f32,
     pub surgery: f32,
-    pub charisma: f32,
+    pub command: f32,
     pub religion: f32,
     pub weapon_precision: f32,
 }
@@ -494,7 +684,7 @@ impl CharacterCapability {
             (self.endurance, "Endurance"),
             (self.medicine, "Medicine"),
             (self.surgery, "Surgery"),
-            (self.charisma, "Charisma"),
+            (self.command, "Command"),
             (self.religion, "Religion"),
         ] {
             if adventuresim_core::capability::rating(value)
@@ -514,6 +704,31 @@ pub struct InventoryItem {
     pub item_id: String,
     #[serde(alias = "quantity")]
     pub qty: u32,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum FoodPreparation {
+    Raw,
+    Preserved,
+    PanFried,
+    Stewed,
+    Roasted,
+    Baked,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FoodLot {
+    pub id: u64,
+    pub inventory_item_id: Option<u64>,
+    pub party_inventory_item_id: Option<u64>,
+    pub display_name: String,
+    pub preparation: FoodPreparation,
+    pub ingredient_item_ids: Vec<String>,
+    pub ingredient_quantities: Vec<f32>,
+    pub mass_kg: f32,
+    pub nutrition_kcal: f32,
+    pub total_value: f32,
+    pub created_at_minute: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -583,6 +798,8 @@ pub struct ItemDefinition {
     #[serde(default)]
     pub ranged: bool,
     #[serde(default)]
+    pub weapon_skills: WeaponSkillDistribution,
+    #[serde(default)]
     pub blunt: bool,
     #[serde(default)]
     pub slash: bool,
@@ -594,6 +811,18 @@ pub struct ItemDefinition {
     pub nutrition_kcal: f32,
     #[serde(default)]
     pub water_capacity_ml: u32,
+    #[serde(default)]
+    pub alcohol_serving_ml: u32,
+    #[serde(default)]
+    pub alcohol_abv_basis_points: u16,
+    #[serde(default)]
+    pub alcohol_net_hydration_ml: u32,
+    #[serde(default)]
+    pub alcohol_disinfectant_effectiveness: u16,
+    #[serde(default)]
+    pub alcohol_disinfectant_focused: bool,
+    #[serde(default)]
+    pub alcohol_potable: bool,
     #[serde(default)]
     pub quality: u8,
     #[serde(default)]
@@ -608,6 +837,36 @@ pub struct ItemDefinition {
     pub edge_sensitivity: f32,
     #[serde(default)]
     pub handling_sensitivity: f32,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+pub struct WeaponSkillDistribution {
+    pub polearm: f32,
+    pub axe: f32,
+    pub bludgeon: f32,
+    pub sword: f32,
+    pub knife: f32,
+    pub bow: f32,
+    pub crossbow: f32,
+    pub firearm: f32,
+    #[serde(alias = "throw")]
+    pub throw_skill: f32,
+}
+
+impl WeaponSkillDistribution {
+    pub fn core(self) -> adventuresim_core::equipment::WeaponSkillDistribution {
+        adventuresim_core::equipment::WeaponSkillDistribution {
+            polearm: self.polearm,
+            axe: self.axe,
+            bludgeon: self.bludgeon,
+            sword: self.sword,
+            knife: self.knife,
+            bow: self.bow,
+            crossbow: self.crossbow,
+            firearm: self.firearm,
+            throw: self.throw_skill,
+        }
+    }
 }
 
 impl Default for ItemDefinition {
@@ -630,12 +889,19 @@ impl Default for ItemDefinition {
             balance: 0.0,
             melee: false,
             ranged: false,
+            weapon_skills: WeaponSkillDistribution::default(),
             blunt: false,
             slash: false,
             pierce: false,
             base_value: None,
             nutrition_kcal: 0.0,
             water_capacity_ml: 0,
+            alcohol_serving_ml: 0,
+            alcohol_abv_basis_points: 0,
+            alcohol_net_hydration_ml: 0,
+            alcohol_disinfectant_effectiveness: 0,
+            alcohol_disinfectant_focused: false,
+            alcohol_potable: false,
             quality: 0,
             durability_yield: 0.0,
             durability_fracture: 0.0,
@@ -684,6 +950,7 @@ pub struct SettlementSmith {
     pub settlement_id: String,
     pub weaponsmith_skill: u8,
     pub armourer_skill: u8,
+    pub tailor_skill: u8,
 }
 
 #[allow(dead_code)]
@@ -758,6 +1025,8 @@ pub enum ItemKind {
     Ingredient,
     #[serde(alias = "Medication", alias = "medication")]
     Medication,
+    #[serde(alias = "Food", alias = "food")]
+    Food,
 }
 
 /// Attribute values for a character. These mirror the public strategic tables
@@ -783,20 +1052,40 @@ pub struct CharacterAttributes {
     pub right_leg_agility: f32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CharacterSkills {
     pub character_id: u64,
-    pub melee_hours: f32,
+    pub polearm_hours: f32,
+    pub axe_hours: f32,
+    pub bludgeon_hours: f32,
+    pub sword_hours: f32,
+    pub knife_hours: f32,
     pub dodge_hours: f32,
     pub block_hours: f32,
-    pub ranged_hours: f32,
+    pub bow_hours: f32,
+    pub crossbow_hours: f32,
+    pub firearm_hours: f32,
+    pub throw_hours: f32,
     pub will_hours: f32,
-    pub charisma_hours: f32,
+    pub insight_hours: f32,
+    pub self_awareness_hours: f32,
+    pub humor_hours: f32,
+    pub command_hours: f32,
+    pub deception_hours: f32,
+    pub seduction_hours: f32,
     pub medicine_hours: f32,
+    pub cooking_hours: f32,
     pub religion_hours: adventuresim_world_schema::ReligionHours,
+    pub oral_languages: adventuresim_world_schema::OralLanguageHours,
+    pub written_languages: adventuresim_world_schema::WrittenLanguageHours,
     pub stealth_hours: f32,
     pub balance_hours: f32,
-    pub surgeon_hours: f32,
+    pub terrain_plains_hours: f32,
+    pub terrain_forest_hours: f32,
+    pub terrain_hills_hours: f32,
+    pub terrain_urban_hours: f32,
+    pub anatomy_hours: f32,
+    pub tailoring_hours: f32,
     pub smithing_hours: f32,
 }
 
@@ -804,6 +1093,26 @@ pub struct CharacterSkills {
 pub struct CharacterTime {
     pub character_id: u64,
     pub minutes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterApprenticeship {
+    pub id: u64,
+    pub character_id: u64,
+    pub service_id: String,
+    pub religion_id: Option<String>,
+    pub started_minute: u64,
+    pub apprenticeship_minutes_accrued: u64,
+    pub practice_minutes_accrued: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlcoholConsumption {
+    pub id: String,
+    pub character_id: u64,
+    pub evening_id: u64,
+    pub ethanol_ml: u32,
+    pub morale_evaluated: bool,
 }
 
 /// Queried only by strategic-web and immediately sanitized. Browser responses
@@ -862,22 +1171,6 @@ pub struct ScheduleAllocation {
     pub apprenticeship_service_id: Option<String>,
     pub profession_practice_minutes: u16,
     pub profession_service_id: Option<String>,
-    pub combat_minutes: u16,
-    pub combat_auto_train: bool,
-    pub melee_minutes: u16,
-    pub dodge_minutes: u16,
-    pub block_minutes: u16,
-    pub ranged_minutes: u16,
-    pub will_minutes: u16,
-    pub charisma_minutes: u16,
-    pub medicine_minutes: u16,
-    pub religion_minutes: u16,
-    pub religion_auto_train: bool,
-    pub religion_minutes_by_tradition: adventuresim_world_schema::ReligionMinutes,
-    pub stealth_minutes: u16,
-    pub balance_minutes: u16,
-    pub surgeon_minutes: u16,
-    pub smithing_minutes: u16,
     pub labor_minutes: u16,
     pub prayer_minutes: u16,
     pub thievery_minutes: u16,
@@ -894,6 +1187,12 @@ pub struct CharacterTrainingSchedule {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterNotoriety {
+    pub character_id: u64,
+    pub value: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterVirtue {
     pub character_id: u64,
     pub value: f32,
 }
@@ -1001,6 +1300,35 @@ pub struct CharacterMoraleSource {
     pub kind: String,
     pub label: String,
     pub magnitude: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterAffinity {
+    pub id: String,
+    pub subject_id: u64,
+    pub actor_id: u64,
+    pub anchor: f32,
+    pub anchor_minute: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterFamiliarity {
+    pub id: String,
+    pub low_id: u64,
+    pub high_id: u64,
+    pub shared_minutes: u64,
+    pub joint_minute_anchor: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialBelief {
+    pub id: String,
+    pub observer_id: u64,
+    pub subject_id: u64,
+    pub axis: String,
+    pub perceived_value: i8,
+    pub confidence: f32,
+    pub observed_at_minute: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1131,6 +1459,39 @@ mod tests {
         assert_eq!(
             ItemSlot::AnyHolding.sats_json(),
             serde_json::json!({ "anyHolding": {} })
+        );
+    }
+
+    #[test]
+    fn settlement_religion_normalizes_single_field_sats_variants() {
+        use adventuresim_world_schema::{
+            CatholicLutheranChurch, OfficialReligion, SettlementReligiousStatus,
+            WesternChristianArrangement,
+        };
+
+        let established: SettlementReligiousStatus = serde_json::from_value(
+            normalize_religious_status(serde_json::json!({ "Established": "Lutheran" })),
+        )
+        .unwrap();
+        assert_eq!(
+            established,
+            SettlementReligiousStatus::Established {
+                religion: OfficialReligion::Lutheran,
+            }
+        );
+
+        let parity: SettlementReligiousStatus =
+            serde_json::from_value(normalize_religious_status(serde_json::json!({
+                "Parity": { "CatholicLutheran": "RomanCatholic" }
+            })))
+            .unwrap();
+        assert_eq!(
+            parity,
+            SettlementReligiousStatus::Parity {
+                arrangement: WesternChristianArrangement::CatholicLutheran {
+                    church: CatholicLutheranChurch::RomanCatholic,
+                },
+            }
         );
     }
 }

@@ -47,7 +47,7 @@
     const editing = active?.matches?.("input, textarea, select, [contenteditable='true'], [role='slider']");
     return hasStagedInventoryChanges()
       || Boolean(window.strategicRestDuration?.isDirty?.(document))
-      || Boolean(document.querySelector("dialog[open], [data-role-inspection-panel], [data-service-role-inspection]"))
+      || Boolean(document.querySelector("dialog[open], [data-role-inspection-panel], [data-service-role-inspection], [data-activity-modal]:not([hidden])"))
       || Boolean(document.querySelector('.numeric-editor'))
       || Boolean(editing);
   };

@@ -9,7 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub(super) struct RetrieveRepairedItemsArgs {
     pub character_id: u64,
     pub settlement_id: String,
-    pub armourer: bool,
+    pub service: String,
     pub item_id: Option<String>,
     pub limit: u32,
 }
@@ -19,7 +19,7 @@ impl From<RetrieveRepairedItemsArgs> for super::Reducer {
         Self::RetrieveRepairedItems {
             character_id: args.character_id,
             settlement_id: args.settlement_id,
-            armourer: args.armourer,
+            service: args.service,
             item_id: args.item_id,
             limit: args.limit,
         }
@@ -45,14 +45,14 @@ pub trait retrieve_repaired_items {
         &self,
         character_id: u64,
         settlement_id: String,
-        armourer: bool,
+        service: String,
         item_id: Option<String>,
         limit: u32,
     ) -> __sdk::Result<()> {
         self.retrieve_repaired_items_then(
             character_id,
             settlement_id,
-            armourer,
+            service,
             item_id,
             limit,
             |_, _| {},
@@ -69,7 +69,7 @@ pub trait retrieve_repaired_items {
         &self,
         character_id: u64,
         settlement_id: String,
-        armourer: bool,
+        service: String,
         item_id: Option<String>,
         limit: u32,
 
@@ -86,7 +86,7 @@ impl retrieve_repaired_items for super::RemoteReducers {
         &self,
         character_id: u64,
         settlement_id: String,
-        armourer: bool,
+        service: String,
         item_id: Option<String>,
         limit: u32,
 
@@ -100,7 +100,7 @@ impl retrieve_repaired_items for super::RemoteReducers {
             RetrieveRepairedItemsArgs {
                 character_id,
                 settlement_id,
-                armourer,
+                service,
                 item_id,
                 limit,
             },

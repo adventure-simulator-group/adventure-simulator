@@ -42,8 +42,10 @@ against a malicious or noncanonical client.
 ## Operational notices and unresolved boundaries
 
 - **Viabundus:** retain attribution and CC BY-SA 4.0. The project applies a
-  conservative BY-SA treatment; compatibility with differently licensed
-  combined output remains unresolved.
+  conservative BY-SA treatment to its generated map and terrain contributions,
+  keeps those artifacts outside the software AGPL, and carries the complete
+  source-specific terms in `MAP_DATA_LICENSE.md`. This policy is specific to
+  those reviewed packs and does not authorize an unrelated combined output.
 - **Copernicus DEM:** retain the prescribed Copernicus/WorldDEM production
   credit and European Commission/ESA no-liability notice.
 - **HYDE 3.5:** retain HYDE attribution, the CC BY 3.0 licence link, and an

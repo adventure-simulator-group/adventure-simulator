@@ -23,18 +23,21 @@ use std::{collections::BTreeSet, fmt, str::FromStr};
 use super::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use super::{
     camp_location_layout_with_session, decorative_game_icon, empty_state, game_icon,
-    item_type_header, item_type_icon, population_description, quest_location_layout_with_session,
-    religion_icon, settlement_layout_with_session, sidebar_section, stat_icon_path,
+    item_display_name, item_type_header, item_type_icon, population_description,
+    quest_location_layout_with_session, religion_icon, settlement_layout_with_session,
+    sidebar_section, stat_icon_path,
 };
 use crate::medical::MedicalPresentation;
 use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
-    CharacterLimbs, CharacterSkills, CharacterStats, CharacterStrategicCondition,
-    CharacterTrainingSchedule, InventoryItem, InventoryQuantityTarget, ItemSlot, LimbInjury,
-    LimbRegion, Party, PartyInventoryItem, PartyJourney, PartyJourneyItinerary, ProjectileKind,
-    Quest, RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementCategory,
-    SettlementDescription, SettlementDescriptionKind,
+    Character, CharacterApprenticeship, CharacterAttributes, CharacterCapability,
+    CharacterCondition, CharacterEquip, CharacterLimbs, CharacterSkills, CharacterStats,
+    CharacterStrategicCondition, CharacterTrainingSchedule, FoodLot, InventoryItem,
+    InventoryQuantityTarget, ItemDefinition, ItemSlot, JourneyTerrainKind, LimbInjury, LimbRegion,
+    Party, PartyInventoryItem, PartyJourney, PartyJourneyItinerary, PartyJourneyRoute,
+    ProjectileKind, Quest, QuestStatus, RetainedProjectile, ScheduleAllocation, Settlement,
+    SettlementAlias, SettlementCategory, SettlementDescription, SettlementDescriptionKind,
+    StrategicEncounter,
 };
 
 #[derive(Clone, Debug)]
@@ -47,7 +50,7 @@ pub struct LocationView {
     pub active_building: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct ActivityPreviewRates {
     labor_gold_per_hour: f32,
     thievery_gold_per_hour: f32,
@@ -55,6 +58,47 @@ pub struct ActivityPreviewRates {
     raiding_gold_per_hour: f32,
     raiding_virtue_per_hour: f32,
     current_fatigue: f32,
+    profession: std::collections::BTreeMap<String, ProfessionActivityPreview>,
+}
+
+#[derive(Clone, Debug)]
+struct ProfessionActivityPreview {
+    training_rates: Vec<(String, f32)>,
+    apprenticeship_accrued: u64,
+    practice_accrued: u64,
+    practice_threshold: u64,
+    practice_reward: &'static str,
+    tier_label: &'static str,
+}
+
+const PROFESSION_ACCRUAL_SCALE: u64 = MINUTES_PER_DAY;
+const APPRENTICESHIP_REWARD_THRESHOLD: u64 = 8 * 60 * PROFESSION_ACCRUAL_SCALE;
+
+impl ProfessionActivityPreview {
+    fn reward_delta(&self, allocation_name: &str, minutes: u16) -> [f32; 2] {
+        let (accrued, threshold, sign, reward) = match allocation_name {
+            "apprenticeship_minutes" => (
+                self.apprenticeship_accrued,
+                APPRENTICESHIP_REWARD_THRESHOLD,
+                -1.0,
+                "gold",
+            ),
+            "profession_practice_minutes" => (
+                self.practice_accrued,
+                self.practice_threshold,
+                1.0,
+                self.practice_reward,
+            ),
+            _ => return [0.0, 0.0],
+        };
+        let after = accrued.saturating_add(u64::from(minutes) * PROFESSION_ACCRUAL_SCALE);
+        let delta = (after / threshold).saturating_sub(accrued / threshold) as f32 * sign;
+        if reward == "virtue" {
+            [0.0, delta]
+        } else {
+            [delta, 0.0]
+        }
+    }
 }
 
 impl ActivityPreviewRates {
@@ -124,7 +168,63 @@ impl ActivityPreviewRates {
             raiding_gold_per_hour: (2.0 + combat.max(0.0)) / 6.0,
             raiding_virtue_per_hour: -1.5,
             current_fatigue,
+            profession: Default::default(),
         }
+    }
+
+    pub fn with_professions(
+        mut self,
+        skills: Option<&CharacterSkills>,
+        apprenticeships: &[CharacterApprenticeship],
+    ) -> Self {
+        let Some(skills) = skills else { return self };
+        for row in apprenticeships {
+            let Some(definition) =
+                adventuresim_core::profession::profession_for_service(&row.service_id)
+            else {
+                continue;
+            };
+            let hours = |skill: Skill| match skill {
+                Skill::Command => skills.command_hours,
+                Skill::Smithing => skills.smithing_hours,
+                Skill::Tailoring => skills.tailoring_hours,
+                Skill::Medicine => skills.medicine_hours,
+                Skill::Anatomy => skills.anatomy_hours,
+                Skill::Knife => skills.knife_hours,
+                Skill::Cooking => skills.cooking_hours,
+                Skill::Religion => row
+                    .religion_id
+                    .as_deref()
+                    .and_then(OfficialReligion::from_id)
+                    .map_or(0.0, |religion| skills.religion_hours.direct(religion)),
+                _ => 0.0,
+            };
+            let tier = adventuresim_core::profession::profession_tier(definition, hours);
+            let practice_threshold = match tier {
+                adventuresim_core::profession::ProfessionTier::Master => 2 * 60 * MINUTES_PER_DAY,
+                _ => 8 * 60 * MINUTES_PER_DAY,
+            };
+            let practice_reward = match definition.practice_reward {
+                adventuresim_core::profession::PracticeReward::Gold => "gold",
+                adventuresim_core::profession::PracticeReward::Virtue => "virtue",
+            };
+            self.profession.insert(
+                row.service_id.clone(),
+                ProfessionActivityPreview {
+                    training_rates: definition
+                        .skills
+                        .iter()
+                        .map(|entry| (format!("{:?}", entry.skill), entry.weight))
+                        .collect(),
+                    apprenticeship_accrued: row.apprenticeship_minutes_accrued,
+                    practice_accrued: row.practice_minutes_accrued,
+                    practice_threshold,
+                    practice_reward,
+                    tier_label: tier.title(definition.religious),
+                },
+            );
+        }
+        self
     }
 }
 
@@ -165,6 +265,17 @@ impl LocationView {
         format!("/locations/{}/{}", self.kind, self.id)
     }
 
+    pub fn preserve_building(&self, path: String) -> String {
+        self.active_building
+            .as_deref()
+            .map_or(path.clone(), |building| {
+                format!(
+                    "{path}{}building={building}",
+                    if path.contains('?') { "&" } else { "?" }
+                )
+            })
+    }
+
     fn render_layout(&self, title: &str, content: Markup, logged_in_as: Option<&str>) -> Markup {
         if self.kind == LocationKind::Settlement {
             settlement_layout_with_session(
@@ -176,6 +287,7 @@ impl LocationView {
                     .unwrap_or(&SettlementCategory::Unknown),
                 self.active_building.as_deref().unwrap_or(""),
                 self.religion_id.as_deref(),
+                None,
                 content,
                 logged_in_as,
             )
@@ -201,6 +313,7 @@ pub enum MerchantShop {
     Armor,
     Clothing,
     Herbalist,
+    Inn,
 }
 
 pub struct RestSummary {
@@ -213,6 +326,45 @@ pub struct RestSummary {
 }
 
 impl MerchantShop {
+    pub fn storefront(self) -> adventuresim_core::settlement_economy::Storefront {
+        use adventuresim_core::settlement_economy::Storefront as S;
+        match self {
+            Self::General => S::General,
+            Self::Weapons => S::Weapons,
+            Self::Armor => S::Armor,
+            Self::Clothing => S::Clothing,
+            Self::Herbalist => S::Herbalist,
+            Self::Inn => S::Inn,
+        }
+    }
+
+    pub fn available_at(self, settlement: &Settlement) -> bool {
+        adventuresim_core::settlement_economy::storefront_available(
+            &settlement.economy,
+            self.storefront(),
+        )
+    }
+
+    fn stocks_at(self, settlement: &Settlement, item: &crate::spacetimedb::ItemDefinition) -> bool {
+        use adventuresim_core::settlement_economy::CatalogKind as C;
+        let kind = match item.kind {
+            crate::spacetimedb::ItemKind::Simple => C::Simple,
+            crate::spacetimedb::ItemKind::Weapon => C::Weapon,
+            crate::spacetimedb::ItemKind::Armor => C::Armor,
+            crate::spacetimedb::ItemKind::Shield => C::Shield,
+            crate::spacetimedb::ItemKind::Clothing => C::Clothing,
+            crate::spacetimedb::ItemKind::Currency => C::Currency,
+            crate::spacetimedb::ItemKind::Ingredient => C::Ingredient,
+            crate::spacetimedb::ItemKind::Medication => C::Medication,
+            crate::spacetimedb::ItemKind::Food => C::Food,
+        };
+        adventuresim_core::settlement_economy::storefront_stocks(
+            &settlement.economy,
+            self.storefront(),
+            &item.id,
+            kind,
+        )
+    }
     pub fn service_id(self) -> &'static str {
         match self {
             Self::General => "merchants",
@@ -220,6 +372,7 @@ impl MerchantShop {
             Self::Armor => "armor",
             Self::Clothing => "clothing",
             Self::Herbalist => "herbalist",
+            Self::Inn => "inn",
         }
     }
 
@@ -230,10 +383,12 @@ impl MerchantShop {
             Self::Armor => "Armourer",
             Self::Clothing => "Tailor",
             Self::Herbalist => "Herbalist",
+            Self::Inn => "The Inn",
         }
     }
 
-    fn stocks(self, kind: crate::spacetimedb::ItemKind) -> bool {
+    fn stocks(self, item: &crate::spacetimedb::ItemDefinition) -> bool {
+        let kind = item.kind;
         match self {
             Self::General => !matches!(
                 kind,
@@ -251,11 +406,18 @@ impl MerchantShop {
                 kind,
                 crate::spacetimedb::ItemKind::Ingredient | crate::spacetimedb::ItemKind::Medication
             ),
+            Self::Inn => {
+                adventuresim_core::food::definition(&item.id).is_some()
+                    || matches!(
+                        item.id.as_str(),
+                        "cooking_pan" | "cooking_pot" | "portable_oven"
+                    )
+            }
         }
     }
 
-    fn shows_inventory(self, kind: crate::spacetimedb::ItemKind) -> bool {
-        kind == crate::spacetimedb::ItemKind::Currency || self.stocks(kind)
+    fn shows_inventory(self, item: &crate::spacetimedb::ItemDefinition) -> bool {
+        item.kind == crate::spacetimedb::ItemKind::Currency || self.stocks(item)
     }
 }
 
@@ -359,6 +521,7 @@ pub fn alchemy_page(
         &settlement.category,
         "herbalist",
         Some(&settlement.religion_id),
+        Some(&settlement.economy),
         content,
         Some(&character.name),
     )
@@ -383,7 +546,17 @@ pub fn settlement_overview_page(
                     dl class="location-stat-list" {
                         div { dt { "Population" } dd { (format_population(settlement)) } }
                         div { dt { "Size" } dd { (population_description(settlement.population_level)) } }
+                        div { dt { "Prosperity" } dd { (format!("{:?} ({}/1000)", settlement.economy.prosperity_tier, settlement.economy.prosperity_score)) } }
+                        div { dt { "Services" } dd { (settlement.economy.services.iter().map(|v| format!("{:?}", v)).collect::<Vec<_>>().join(", ")) } }
+                        div { dt { "Specialties" } dd { (settlement.economy.specializations.iter().map(|v| format!("{:?}", v)).collect::<Vec<_>>().join(", ")) } }
+                        div { dt { "Faiths" } dd { (settlement.religious_status.represented_religions().iter().map(|r| r.label()).collect::<Vec<_>>().join(", ")) } }
                         div { dt { "Coordinates" } dd { (format!("{}, {}", settlement.coord_x as i32, settlement.coord_y as i32)) } }
+                        div { dt { "Languages" } dd { (format!(
+                            "East-central {:.1}% · West-central {:.1}% · Low {:.1}%",
+                            f32::from(settlement.languages.east_central_bp) / 100.0,
+                            f32::from(settlement.languages.west_central_bp) / 100.0,
+                            f32::from(settlement.languages.low_bp) / 100.0,
+                        )) } }
                         @if !alias_labels.is_empty() {
                             div { dt { "Also known as" } dd { (alias_labels.join(", ")) } }
                         }
@@ -415,6 +588,7 @@ pub fn settlement_overview_page(
         &settlement.category,
         "",
         Some(&settlement.religion_id),
+        Some(&settlement.economy),
         content,
         logged_in_as,
     )
@@ -466,12 +640,16 @@ fn language_label(language: Option<&str>) -> &str {
 
 pub fn settlement_map_page(
     settlement: &Settlement,
+    settlements: &[Settlement],
+    quests: &[Quest],
+    strategic_map: Option<&crate::strategic_map::StrategicMap>,
     destinations: &[TravelDestination],
     selected_id: Option<&str>,
     active_character: Option<&Character>,
     active_party: Option<&Party>,
-    party_members: &[Character],
+    _party_members: &[Character],
     default_rest_minutes: u64,
+    soap_preview: SoapRestPreview,
     can_travel: bool,
     provision_forecast: Option<&TravelProvisionForecast>,
     is_current_settlement: bool,
@@ -481,7 +659,15 @@ pub fn settlement_map_page(
     logged_in_as: Option<&str>,
 ) -> Markup {
     let selected = selected_id.and_then(|id| destinations.iter().find(|entry| entry.id == id));
+    let selected_settlement =
+        selected_id.and_then(|id| settlements.iter().find(|entry| entry.id == id));
+    let selected_quest = selected_id.and_then(|id| quests.iter().find(|entry| entry.id == id));
     let base_path = format!("/locations/settlement/{}/map", settlement.id);
+    let connected_ids = destinations
+        .iter()
+        .filter(|destination| !destination.quest_in_progress)
+        .map(|destination| destination.id.as_str())
+        .collect::<BTreeSet<_>>();
     let content = html! {
         (map_destination_list_with_context(
             destinations,
@@ -505,17 +691,36 @@ pub fn settlement_map_page(
                         "Rest party",
                         default_rest_minutes,
                         None,
+                        soap_preview,
                     ))
                 }
             }),
         ))
-        main class="center-content settlement-main settlement-overview" {
-            (party_portrait_overlay(party_members, active_character, &format!("/locations/settlement/{}", settlement.id), None, false))
-            (visual_stage("route", &settlement.name, "Roads and known destinations from this settlement"))
-            (settlement_chat_area(&settlement.name, active_character))
+        main class="center-content settlement-main settlement-map-main" {
+            @if settlement.source_node_id.is_some() {
+                @if let Some(strategic_map) = strategic_map {
+                    (crate::strategic_map::strategic_map(
+                        strategic_map,
+                        settlements,
+                        quests,
+                        &settlement.id,
+                        &connected_ids,
+                        selected_id,
+                        &base_path,
+                        selected.and_then(|destination| destination.terrain_route.as_ref()),
+                    ))
+                } @else {
+                    (crate::strategic_map::strategic_map_bundle_unavailable())
+                }
+            } @else {
+                (crate::strategic_map::strategic_map_unavailable(&settlement.name))
+            }
         }
         (map_destination_detail(
             selected,
+            selected_settlement,
+            selected_quest,
+            selected_settlement.is_some_and(|destination| destination.id == settlement.id),
             can_travel,
             true,
             provision_forecast,
@@ -532,6 +737,7 @@ pub fn settlement_map_page(
         &settlement.category,
         "map",
         Some(&settlement.religion_id),
+        Some(&settlement.economy),
         content,
         logged_in_as,
     )
@@ -623,6 +829,8 @@ fn map_destination_list_with_context(
                                         data-living-members=(forecast.living_members)
                                         data-food-days=(forecast.food_days)
                                         data-water-days=(forecast.water_days)
+                                        data-ordinary-water-days=(forecast.ordinary_water_days)
+                                        data-emergency-alcohol-days=(forecast.emergency_alcohol_days)
                                         data-ration-kcal=(forecast.ration_kcal)
                                         data-waterskin-ml=(forecast.waterskin_capacity_ml) {}
                                 }
@@ -700,6 +908,9 @@ pub(crate) fn travel_preferences_form(party: &Party, action: &str) -> Markup {
 
 pub(crate) fn map_destination_detail(
     selected: Option<&TravelDestination>,
+    selected_settlement: Option<&Settlement>,
+    selected_quest: Option<&Quest>,
+    selected_is_current: bool,
     can_travel: bool,
     provisioning_available: bool,
     provision_forecast: Option<&TravelProvisionForecast>,
@@ -710,6 +921,7 @@ pub(crate) fn map_destination_detail(
 ) -> Markup {
     let camp_fatigue_percent = party.map_or(50, |party| party.camp_fatigue_percent);
     let travel_disabled = party.is_some_and(|party| party.walking_minutes_per_day == 0);
+    let inspecting_nonroute = selected.is_none() && selected_settlement.is_some();
     let market_path = format!(
         "/settlements/{}/merchants",
         map_path
@@ -719,7 +931,7 @@ pub(crate) fn map_destination_detail(
             .unwrap_or("")
     );
     html! {
-        aside class=(if party.is_some() && can_configure_travel { "right-sidebar travel-configuration-sidebar" } else { "right-sidebar" }) {
+        aside class=(if party.is_some() && can_configure_travel && !inspecting_nonroute { "right-sidebar travel-configuration-sidebar" } else { "right-sidebar" }) {
             @if party.is_some() && can_configure_travel {
             (sidebar_section("Travel configuration", html! {
                 div class=(if selected.is_some() { "travel-planner-vertical" } else { "travel-planner-vertical no-destination" }) {
@@ -739,6 +951,13 @@ pub(crate) fn map_destination_detail(
                             span class="travel-provisioning-icons" {
                                 span class="travel-provisioning-icon food" { (game_icon("Food", "meal")) }
                                 span class="travel-provisioning-icon water" { (game_icon("Water", "water-drop")) }
+                                @if let Some(forecast) = provision_forecast {
+                                    span class="travel-provisioning-icon alcohol"
+                                        title=(format!("Emergency alcohol adds {:.2} days of hydration", forecast.emergency_alcohol_days)) {
+                                        (game_icon("Emergency alcohol hydration", "beer-stein"))
+                                        span class="travel-provisioning-alcohol-days" { (format!("+{:.2}d", forecast.emergency_alcohol_days)) }
+                                    }
+                                }
                             }
                             @if let Some(forecast) = provision_forecast {
                                 a class="btn btn-secondary" data-provision-buy
@@ -782,6 +1001,50 @@ pub(crate) fn map_destination_detail(
                         }
                         (format_distance(destination.distance_m))
                         " · " (format_journey_time(destination.journey_minutes))
+                        @if destination.route_fallback {
+                            span class="travel-route-estimate-warning" { " · Legacy straight-line estimate" }
+                        }
+                    }
+                }))
+            } @else if let Some(quest) = selected_quest {
+                (sidebar_section("Destination", html! {
+                    h3 { (&quest.title) }
+                    p { (&quest.description) }
+                    @if !quest.location_description.is_empty() {
+                        p class="text-muted small-copy" { (&quest.location_description) }
+                    }
+                    p class="no-direct-route" role="status" {
+                        @match quest.status {
+                            QuestStatus::Available => {
+                                strong { "Quest destination." }
+                                " Accept and activate this quest at its issuing settlement before travelling here."
+                            }
+                            QuestStatus::Accepted => {
+                                strong { "Active quest destination." }
+                                " Your party has accepted this quest, but cannot begin the journey from its current strategic location."
+                            }
+                            QuestStatus::Completed => {
+                                strong { "Quest completed." }
+                                " Return to the issuing settlement to report your success and claim the reward."
+                            }
+                        }
+                    }
+                }))
+            } @else if let Some(destination) = selected_settlement {
+                (sidebar_section("Destination", html! {
+                    h3 { (&destination.name) }
+                    p { (settlement_description(destination.population_level)) }
+                    dl class="settlement-stats" {
+                        div { dt { "Size" } dd { (format_population(destination)) } }
+                    }
+                    p class="no-direct-route" role="status" {
+                        @if selected_is_current {
+                            strong { "Current settlement." }
+                            " Your party is already here."
+                        } @else {
+                            strong { "No direct route." }
+                            " Travel is only available to settlements connected to the current location."
+                        }
                     }
                 }))
             } @else {
@@ -813,11 +1076,14 @@ pub(crate) fn travel_planner_bar(
     travel_planner_bar_for(
         selected_name,
         &selected_description,
-        selected.is_some_and(|destination| destination.quest_in_progress),
+        selected.is_some_and(|destination| {
+            destination.quest_in_progress && destination.return_terrain_route.is_none()
+        }),
         selected_minutes,
         &selected_camp_stops,
         &selected_camp_forecasts,
         camp_fatigue_percent,
+        None,
         None,
         provision_forecast,
         selected
@@ -829,6 +1095,7 @@ pub(crate) fn travel_planner_bar(
         &selected.map_or_else(String::new, |destination| {
             format_itinerary_segments(&destination.itinerary_segments)
         }),
+        &selected.map_or_else(String::new, |destination| format_terrain_spans(destination)),
     )
 }
 
@@ -850,10 +1117,12 @@ pub(crate) fn travel_planner_bar_for(
     camp_forecasts: &str,
     camp_fatigue_percent: u8,
     journey: Option<&PartyJourney>,
+    journey_route: Option<&PartyJourneyRoute>,
     provision_forecast: Option<&TravelProvisionForecast>,
     preview_departure_minute: u64,
     preview_elapsed_minutes: u64,
     preview_segments: &str,
+    terrain_spans: &str,
 ) -> Markup {
     let journey_origin_name = journey.map_or("", |item| item.origin_name.as_str());
     let journey_destination_name = journey.map_or("", |item| item.destination_name.as_str());
@@ -862,7 +1131,11 @@ pub(crate) fn travel_planner_bar_for(
         .map_or(0, |item| item.total_minutes);
     let journey_total_minutes = journey.map_or(0, |item| {
         if item.destination_kind == "quest" {
-            item.total_minutes.saturating_mul(2)
+            item.total_minutes.saturating_add(
+                journey_route
+                    .and_then(|route| route.return_route.as_ref())
+                    .map_or(item.total_minutes, |route| route.minutes),
+            )
         } else {
             item.total_minutes
         }
@@ -879,7 +1152,7 @@ pub(crate) fn travel_planner_bar_for(
                     .iter()
                     .chain(item.forecast_camp_stop_minutes.iter())
                     .rev()
-                    .map(|minute| item.total_minutes.saturating_mul(2).saturating_sub(*minute)),
+                    .map(|minute| journey_total_minutes.saturating_sub(*minute)),
             );
         }
         format_camp_stops(&stops)
@@ -902,12 +1175,15 @@ pub(crate) fn travel_planner_bar_for(
             data-total-elapsed-minutes=(journey.map_or(preview_elapsed_minutes, |item| item.total_elapsed_minutes))
             data-completed-elapsed-minutes=(journey.map_or(0, |item| item.completed_elapsed_minutes))
             data-itinerary-segments=(preview_segments)
+            data-terrain-spans=(terrain_spans)
             data-journey-camp-stops=(journey_camp_stops)
             data-journey-forecast-stops=(journey_forecast_stops)
             data-provision-planning-minutes=[provision_forecast.map(|row| row.planning_minutes)]
             data-provision-living-members=[provision_forecast.map(|row| row.living_members)]
             data-provision-food-days=[provision_forecast.map(|row| row.food_days)]
             data-provision-water-days=[provision_forecast.map(|row| row.water_days)]
+            data-provision-ordinary-water-days=[provision_forecast.map(|row| row.ordinary_water_days)]
+            data-provision-emergency-alcohol-days=[provision_forecast.map(|row| row.emergency_alcohol_days)]
             data-provision-food-reserve=[provision_forecast.map(|row| row.food_reserve_kcal)]
             data-provision-water-reserve=[provision_forecast.map(|row| row.water_reserve_ml)]
             data-provision-rations=[provision_forecast.map(|row| row.ration_count)]
@@ -921,7 +1197,7 @@ pub(crate) fn travel_planner_bar_for(
                     div class="travel-resource-row food" aria-label="Food provisions" {
                         span class="travel-resource-icon" { (game_icon("Food", "meal")) }
                         svg class="travel-resource-track" viewBox="0 0 32 100" preserveAspectRatio="none" aria-hidden="true" {
-                            path class="travel-resource-path base" d="M 16 3 V 97" pathLength="100" {}
+                            path class="travel-resource-path base" d="M 16 0 V 100" pathLength="100" {}
                             path class="travel-resource-path target" data-resource-target pathLength="100" {}
                             path class="travel-resource-path actual" data-resource-fill pathLength="100" {}
                         }
@@ -930,7 +1206,7 @@ pub(crate) fn travel_planner_bar_for(
                     div class="travel-resource-row water" aria-label="Water provisions" {
                         span class="travel-resource-icon" { (game_icon("Water", "water-drop")) }
                         svg class="travel-resource-track" viewBox="0 0 32 100" preserveAspectRatio="none" aria-hidden="true" {
-                            path class="travel-resource-path base" d="M 16 3 V 97" pathLength="100" {}
+                            path class="travel-resource-path base" d="M 16 0 V 100" pathLength="100" {}
                             path class="travel-resource-path target" data-resource-target pathLength="100" {}
                             path class="travel-resource-path actual" data-resource-fill pathLength="100" {}
                         }
@@ -940,6 +1216,12 @@ pub(crate) fn travel_planner_bar_for(
                         span class="travel-resource-icon" { (game_icon("Fatigue", "heart-minus")) }
                         div class="travel-fatigue-track" data-fatigue-track {}
                         span class="sr-only" data-fatigue-summary aria-live="polite" {}
+                    }
+                    div class="travel-resource-row terrain" aria-label="Terrain along route" {
+                        span class="travel-resource-icon" { (game_icon("Terrain", "mountains")) }
+                        div class="travel-terrain-track" data-terrain-track aria-describedby="terrain-course-description" {}
+                        span class="sr-only" data-terrain-summary aria-live="polite" {}
+                        ol id="terrain-course-description" class="sr-only" data-terrain-course-description {}
                     }
                     div class="travel-resource-row daylight" aria-label="Day and night" {
                         span class="travel-resource-icon" { (game_icon("Day and night", "sun")) }
@@ -960,6 +1242,48 @@ fn format_camp_stops(stops: &[u64]) -> String {
         .map(u64::to_string)
         .collect::<Vec<_>>()
         .join(",")
+}
+
+fn format_terrain_spans(destination: &TravelDestination) -> String {
+    destination
+        .terrain_route
+        .as_ref()
+        .map_or_else(String::new, |route| {
+            route
+                .spans
+                .iter()
+                .map(|span| (span, 0_u64))
+                .chain(
+                    destination
+                        .return_terrain_route
+                        .iter()
+                        .flat_map(|return_route| {
+                            return_route.spans.iter().map(|span| (span, route.minutes))
+                        }),
+                )
+                .filter_map(|(span, offset)| {
+                    let kind = match span.surface {
+                        adventuresim_terrain::Surface::Road => "road",
+                        adventuresim_terrain::Surface::Open => "open",
+                        adventuresim_terrain::Surface::SparseWoods => "sparse-woods",
+                        adventuresim_terrain::Surface::DeepWoods => "deep-woods",
+                        adventuresim_terrain::Surface::Wetland => "wetland",
+                        adventuresim_terrain::Surface::Water => return None,
+                    };
+                    Some(format!(
+                        "{kind},{},{},{},{},{},{},{}",
+                        span.start_minute.saturating_add(offset),
+                        span.duration_minutes,
+                        span.check_millirank,
+                        span.terrain.plains,
+                        span.terrain.forest,
+                        span.terrain.hills,
+                        span.terrain.urban,
+                    ))
+                })
+                .collect::<Vec<_>>()
+                .join("|")
+        })
 }
 
 fn format_camp_forecasts(destination: &TravelDestination) -> String {
@@ -1143,14 +1467,17 @@ pub fn camp_page(
     party: &Party,
     journey: Option<&PartyJourney>,
     itinerary: Option<&PartyJourneyItinerary>,
+    terrain_route: Option<&PartyJourneyRoute>,
     destination_name: &str,
     active_character: Option<&Character>,
     party_members: &[Character],
     camp_destinations: &[CampTravelDestination],
     provision_forecast: Option<&TravelProvisionForecast>,
     default_rest_minutes: u64,
+    soap_preview: SoapRestPreview,
     planned_wake_minute: u16,
     can_continue_travel: bool,
+    encounter: Option<&StrategicEncounter>,
     logged_in_as: Option<&str>,
 ) -> Markup {
     let camp_fire_lit = camp_fire_is_lit(journey, itinerary);
@@ -1181,15 +1508,18 @@ pub fn camp_page(
                 }))
             }
             }
-            section class="rest-service-menu camp-rest-menu" aria-label="Camp rest" {
-                (party_rest_menu(
-                    "/camp/rest",
-                    "camp-rest",
-                    "Rest at camp",
-                    "Rest party",
-                    default_rest_minutes,
-                    Some(planned_wake_minute),
-                ))
+            @if encounter.is_none_or(|encounter| encounter.status != "awaiting_choice") {
+                section class="rest-service-menu camp-rest-menu" aria-label="Camp rest" {
+                    (party_rest_menu(
+                        "/camp/rest",
+                        "camp-rest",
+                        "Rest at camp",
+                        "Rest party",
+                        default_rest_minutes,
+                        Some(planned_wake_minute),
+                        soap_preview,
+                    ))
+                }
             }
         }
         main class="center-content settlement-main settlement-overview" {
@@ -1198,10 +1528,13 @@ pub fn camp_page(
             (settlement_chat_area("Camp", active_character))
         }
         aside class="right-sidebar camp-journey-sidebar" {
+            @if let Some(encounter) = encounter.filter(|encounter| encounter.status == "awaiting_choice") {
+                (strategic_encounter_panel(encounter))
+            }
             div class="sidebar-section camp-journey-section" {
                 h3 class="sidebar-header" { "Journey" }
                 div class="travel-planner-vertical" {
-                    (travel_planner_bar_for(destination_name, "", false, party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, provision_forecast, journey.map_or(0, |item| item.departure_minute), journey.map_or(party.camp_remaining_minutes, |item| item.total_elapsed_minutes), &match (journey, itinerary) { (Some(journey), Some(itinerary)) => format_persisted_itinerary(journey, itinerary), (Some(journey), None) => format_legacy_persisted_itinerary(journey), _ => String::new() }))
+                    (travel_planner_bar_for(destination_name, "", false, party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, terrain_route, provision_forecast, journey.map_or(0, |item| item.departure_minute), journey.map_or(party.camp_remaining_minutes, |item| item.total_elapsed_minutes), &match (journey, itinerary) { (Some(journey), Some(itinerary)) => format_persisted_itinerary(journey, itinerary), (Some(journey), None) => format_legacy_persisted_itinerary(journey), _ => String::new() }, &format_persisted_terrain_spans(terrain_route)))
                 }
                 form action="/camp/continue" method="post" {
                     button type="submit" class="btn btn-primary btn-small btn-block"
@@ -1225,6 +1558,91 @@ pub fn camp_page(
     )
 }
 
+fn strategic_encounter_panel(encounter: &StrategicEncounter) -> Markup {
+    let awareness = match (encounter.party_aware, encounter.enemy_aware) {
+        (true, false) => "Your party spotted them first",
+        (false, true) => "The enemy surprised your party",
+        (true, true) => "Both sides are aware",
+        (false, false) => "Neither side is aware",
+    };
+    html! {
+        section class="sidebar-section strategic-encounter" aria-label="Random encounter" {
+            h3 class="sidebar-header" { "Encounter" }
+            p class="encounter-summary" {
+                strong { (encounter.enemy_count) " " (encounter.archetype.as_str()) }
+                " on " (encounter.terrain.as_str())
+            }
+            p { (awareness) }
+            p class="text-muted small-copy" { (encounter.selection_explanation.as_str()) }
+            @if let Some(reason) = encounter.run_ineligibility.as_deref() {
+                p class="encounter-warning" { "Cannot run: " (reason) }
+            }
+            @if !encounter.loss_preview.is_empty() {
+                details class="encounter-surrender-preview" {
+                    summary { "Exact surrender losses" }
+                    ul {
+                        @for loss in &encounter.loss_preview {
+                            li {
+                                (loss.quantity) " × " (loss.item_id.as_str())
+                                " (" (loss.value_each) " value each, " (loss.owner_kind.as_str()) ")"
+                            }
+                        }
+                    }
+                }
+            }
+            div class="encounter-actions" {
+                @for choice in &encounter.available_choices {
+                    form action="/camp/encounter" method="post" {
+                        input type="hidden" name="choice" value=(choice);
+                        button type="submit" class="btn btn-primary btn-small btn-block" {
+                            (match choice.as_str() {
+                                "sneak" => "Sneak past",
+                                "detour" => "Take a detour",
+                                "attack" => "Attack",
+                                "run" => "Run",
+                                "surrender" => "Surrender",
+                                _ => choice.as_str(),
+                            })
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn format_persisted_terrain_spans(route: Option<&PartyJourneyRoute>) -> String {
+    route.map_or_else(String::new, |route| {
+        route
+            .spans
+            .iter()
+            .map(|span| (span, 0_u64))
+            .chain(route.return_route.iter().flat_map(|return_route| {
+                return_route.spans.iter().map(|span| (span, route.minutes))
+            }))
+            .map(|(span, offset)| {
+                let kind = match span.kind {
+                    JourneyTerrainKind::Road => "road",
+                    JourneyTerrainKind::Open => "open",
+                    JourneyTerrainKind::SparseWoods => "sparse-woods",
+                    JourneyTerrainKind::DeepWoods => "deep-woods",
+                };
+                format!(
+                    "{kind},{},{},{},{},{},{},{}",
+                    span.start_minute.saturating_add(offset),
+                    span.duration_minutes,
+                    span.check_millirank,
+                    span.terrain.plains,
+                    span.terrain.forest,
+                    span.terrain.hills,
+                    span.terrain.urban,
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("|")
+    })
+}
+
 pub(crate) fn party_rest_menu(
     action: &str,
     id_prefix: &str,
@@ -1232,6 +1650,7 @@ pub(crate) fn party_rest_menu(
     submit_label: &str,
     default_minutes: u64,
     scheduled_wake_minute: Option<u16>,
+    soap_preview: SoapRestPreview,
 ) -> Markup {
     html! {
         div class="rest-service-heading" { strong { (heading) } }
@@ -1246,6 +1665,61 @@ pub(crate) fn party_rest_menu(
             ))
             button type="submit" class="btn btn-primary btn-small btn-block" data-rest-submit {
                 (submit_label)
+            }
+        }
+        (soap_wash_preview(soap_preview))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SoapRestPreview {
+    pub total_units: u32,
+    pub personal_units: u32,
+    pub shared_units: u32,
+    pub available_units: u32,
+    pub alcohol_available: bool,
+    pub alcohol_will_be_consumed: bool,
+}
+
+fn soap_wash_preview(preview: SoapRestPreview) -> Markup {
+    let soap_tooltip = if preview.total_units > 0 {
+        let source = if preview.personal_units > 0 && preview.shared_units > 0 {
+            format!(
+                " ({} personal, {} shared)",
+                preview.personal_units, preview.shared_units
+            )
+        } else if preview.shared_units > 0 {
+            " (shared)".to_string()
+        } else {
+            " (personal)".to_string()
+        };
+        format!(
+            "Washing before rest will use {} soft soap{}. Soap is also a surgical supply.",
+            preview.total_units, source
+        )
+    } else if preview.available_units > 0 {
+        "Soft soap is available, but none is needed for washing before this rest. Soap is also a surgical supply."
+            .to_string()
+    } else {
+        "No soft soap is available for washing before rest. Soap is also a surgical supply."
+            .to_string()
+    };
+    let alcohol_tooltip = if preview.alcohol_will_be_consumed {
+        "Alcohol is available and will be consumed automatically during nightly rest."
+    } else if preview.alcohol_available {
+        "Alcohol is available, but no eligible character will drink it. Temperate characters do not drink."
+    } else {
+        "No alcohol is available for automatic consumption during nightly rest."
+    };
+    html! {
+        div class="rest-consumable-indicators" aria-label="Automatic rest supplies" {
+            span class=(if preview.available_units > 0 { "rest-consumable-indicator available" } else { "rest-consumable-indicator unavailable" })
+                role="img" tabindex="0" aria-label="Soap" title=(soap_tooltip) {
+                (decorative_game_icon("water-drop"))
+            }
+            span class=(if preview.alcohol_will_be_consumed { "rest-consumable-indicator available" } else { "rest-consumable-indicator unavailable" })
+                role="img" tabindex="0" aria-label="Alcohol" title=(alcohol_tooltip) {
+                (decorative_game_icon("beer-stein"))
             }
         }
     }
@@ -1320,42 +1794,7 @@ pub fn merchants_page(
         logged_in_as,
         None,
         None,
-    )
-}
-
-/// Inn interface.
-pub fn inn_page(
-    settlement: &Settlement,
-    active_character: Option<&Character>,
-    inventory: &[InventoryItem],
-    items: &[crate::spacetimedb::ItemDefinition],
-    party_members: &[Character],
-    limbs: Option<&CharacterLimbs>,
-    stats: Option<&CharacterStats>,
-    condition: Option<&CharacterCondition>,
-    field_repair_minutes: u64,
-    smith_wait_minutes: u64,
-    logged_in_as: Option<&str>,
-) -> Markup {
-    service_page(
-        settlement,
-        "inn",
-        "The Inn",
-        "Innkeeper",
-        "Rest, recover, and manage your downtime from the lodging menu.",
-        active_character,
-        inventory,
-        items,
-        party_members,
-        logged_in_as,
-        rest_default_minutes(
-            limbs,
-            stats,
-            condition,
-            field_repair_minutes,
-            smith_wait_minutes,
-        ),
-        None,
+        SoapRestPreview::default(),
     )
 }
 
@@ -1371,6 +1810,7 @@ pub fn religion_page(
     condition: Option<&CharacterCondition>,
     field_repair_minutes: u64,
     smith_wait_minutes: u64,
+    soap_preview: SoapRestPreview,
     logged_in_as: Option<&str>,
 ) -> Markup {
     service_page(
@@ -1392,6 +1832,7 @@ pub fn religion_page(
             smith_wait_minutes,
         ),
         None,
+        soap_preview,
     )
 }
 
@@ -1494,11 +1935,35 @@ pub fn party_personal_page(
     can_examine: bool,
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
+    filth: &[crate::spacetimedb::CharacterFilth],
+    cooking: bool,
+    inventory: &[InventoryItem],
+    food_lots: &[FoodLot],
+    item_definitions: &[ItemDefinition],
+    character_action_dialog: Option<Markup>,
+    surgery_open: Option<&str>,
+    social_open: bool,
 ) -> Markup {
+    let cooking_href = location.preserve_building(format!(
+        "{}/party/{}?cook=true",
+        location.base_path(),
+        active_character.id
+    ));
+    let examination_action = location.preserve_building(format!(
+        "{}/party/{}/examine",
+        location.base_path(),
+        active_character.id
+    ));
+    let cooking_open = cooking && medical.examination_id.is_none();
+    let surgery_path_template = location.preserve_building(format!(
+        "{}/party/{}/surgery/__limb__",
+        location.base_path(),
+        active_character.id
+    ));
     let content = html! {
         aside class="left-sidebar" {
-            (party_attributes_rail("Your attributes", attributes, limbs, medical, Some(&format!("{}/party/{}/surgery", location.base_path(), active_character.id)), injuries, projectiles))
-            (strategic_condition_rail(condition, morale_sources))
+            (party_attributes_rail("Your attributes", attributes, limbs, medical, Some((&surgery_path_template, surgery_open)), injuries, projectiles))
+            (strategic_condition_rail(condition, morale_sources, filth, &location.preserve_building(format!("{}/party/{}/social", location.base_path(), active_character.id)), social_open))
             (medical_rail(medical, &location.base_path(), active_character.id, active_character.id, true))
             @if let Some(demand) = religious_demand {
                 (religious_demand_rail(demand, &location.base_path(), active_character.id))
@@ -1514,7 +1979,7 @@ pub fn party_personal_page(
             ))
             (visual_stage("character", &active_character.name, "Your identity, condition, and capabilities"))
             (settlement_chat_area(&active_character.name, Some(active_character)))
-            (medical_examination_popup(medical, &location.base_path(), active_character.id, limbs, injuries, projectiles))
+            (medical_examination_popup(medical, location, active_character.id, limbs, injuries, projectiles))
         }
         aside class="right-sidebar" {
             (character_summary_rail(capability))
@@ -1525,10 +1990,218 @@ pub fn party_personal_page(
                 Some(activity_preview), religion_id.is_some(), prayer_religion_check,
                 religion_id.or(location.religion_id.as_deref()),
                 combat_profile,
+                CharacterSkillActions {
+                    cooking_href: Some(&cooking_href),
+                    cooking_open,
+                    examination_action: can_examine.then_some(examination_action.as_str()),
+                    examination_open: medical.examination_id.is_some(),
+                },
             ))
+        }
+        @if cooking_open {
+            (cooking_activity_dialog(location, active_character, inventory, food_lots, item_definitions))
+        } @else if medical.examination_id.is_none() {
+            @if let Some(dialog) = character_action_dialog { (dialog) }
         }
     };
     location.render_layout("Party", content, Some(&active_character.name))
+}
+
+fn cooking_activity_dialog(
+    location: &LocationView,
+    active_character: &Character,
+    inventory: &[InventoryItem],
+    food_lots: &[FoodLot],
+    item_definitions: &[ItemDefinition],
+) -> Markup {
+    let close_href = location.preserve_building(format!(
+        "{}/party/{}",
+        location.base_path(),
+        active_character.id
+    ));
+    let cook_action = location.preserve_building(format!(
+        "{}/party/{}/cook",
+        location.base_path(),
+        active_character.id
+    ));
+    let owns = |item_id: &str| {
+        inventory
+            .iter()
+            .any(|row| row.item_id == item_id && row.qty > 0)
+    };
+    let pan = owns("cooking_pan");
+    let pot = owns("cooking_pot");
+    let oven = owns("portable_oven");
+    let ingredients = inventory
+        .iter()
+        .filter(|item| {
+            food_lots
+                .iter()
+                .any(|lot| lot.inventory_item_id == Some(item.id))
+        })
+        .collect::<Vec<_>>();
+    html! {
+        div class="character-action-overlay" data-character-action-dialog data-initial-focus="[data-cooking-method]:checked" {
+            a class="character-action-backdrop" href=(&close_href) aria-label="Close cooking dialog" {}
+            section class="character-action-dialog cooking-dialog" role="dialog" aria-modal="true" aria-labelledby="cooking-dialog-title" tabindex="-1" {
+            header class="character-action-dialog-header" {
+                h2 id="cooking-dialog-title" { "Cooking" }
+                a class="character-action-dialog-close" href=(&close_href) aria-label="Close cooking dialog" { "×" }
+            }
+            div class="cooking-activity" data-cooking-activity {
+            aside class="cooking-pot" aria-label="Cooking pot" {
+                (sidebar_section("Pot", html! {
+                    p class="text-muted small-copy cooking-pot-empty" data-cooking-pot-empty {
+                        "Transfer ingredients here to prepare a meal."
+                    }
+                    (trade_inventory_table("cooking-pot-left", InventoryColumnSet::Basic, true, false, false, html! {}))
+                }))
+            }
+            main class="cooking-stage" {
+                section class="cooking-workspace" aria-label="Cooking workspace" {
+                    div class="cooking-method-list" aria-label="Cooking instrument" {
+                        (cooking_method("pan-fry", "Pan-fry", "meal", pan, "A pan is required", false))
+                        (cooking_method("stew", "Stew", "water-bottle", pot, "A pot and water are required", false))
+                        (cooking_method("roast", "Roast / skewer", "campfire", true, "", true))
+                        (cooking_method("bake", "Bake", "bread", oven, "A portable oven is required", false))
+                    }
+                    img class="cooking-stage-placeholder" src="/static/icons/game/campfire.svg"
+                        alt="Placeholder for the cooking vessel and fire";
+                    p class="text-muted small-copy" { "Cooking scene placeholder" }
+                }
+                form id="cooking-submit-form" class="cooking-submit-form" method="post"
+                    action=(&cook_action) {
+                    input type="hidden" name="inventory_item_ids" value="" data-cooking-ids;
+                    input type="hidden" name="quantities" value="" data-cooking-quantities;
+                    div class="party-offer cooking-actions" {
+                        a class="party-offer-cancel" href=(&close_href) { "Cancel" }
+                        button type="submit" disabled title="Select at least one ingredient" data-cook-submit { "Cook" }
+                    }
+                }
+            }
+            aside class="cooking-ingredients" aria-label="Ingredient inventory" {
+                @let title = format!("{}'s inventory", active_character.name);
+                (sidebar_section(&title, html! {
+                    @if ingredients.is_empty() {
+                        (empty_state("No food carried.", None, None))
+                    } @else {
+                        (trade_inventory_table("cooking-inventory-right", InventoryColumnSet::Basic, true, false, false, html! {
+                            @for item in ingredients {
+                                @let definition = item_definitions.iter().find(|definition| definition.id == item.item_id);
+                                @let food_lot = food_lots.iter().find(|lot| lot.inventory_item_id == Some(item.id));
+                                @let display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());
+                                @let unit_mass = food_lot.map_or_else(|| definition.map_or(0.0, |definition| definition.weight), |lot| lot.mass_kg / item.qty.max(1) as f32);
+                                @let value = food_lot.map_or_else(|| item_value(definition), |lot| weight_display(lot.total_value));
+                                tr class="trade-inventory-row trade-row-player" data-cooking-source=(item.id) data-item-key=(&item.item_id) {
+                                    td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
+                                    td class="inventory-item-name" {
+                                        (item_name_with_display(&item.item_id, &display_name, definition))
+                                        span class="inventory-row-actions" {
+                                            @if food_lot.is_some() {
+                                                @let safety = adventuresim_core::food::definition(&item.item_id).map_or(5, |food| food.cooking_minutes);
+                                                button type="button" class="trade-transfer trade-transfer-left"
+                                                    data-cooking-stage=(item.id) data-cooking-name=(&display_name)
+                                                    data-count=(item.qty) data-mass=(format!("{unit_mass:.4}")) data-safety=(safety)
+                                                    data-dynamic-transfer data-default-transfer-mode="one" data-transfer-mode="one"
+                                                    data-label-one=(format!("Add one {display_name} to the pot"))
+                                                    data-label-target=(format!("Add {display_name} to the pot"))
+                                                    data-label-all=(format!("Add all {display_name} to the pot"))
+                                                    aria-label=(format!("Add one {display_name} to the pot"))
+                                                    title=(format!("Add one {display_name} to the pot")) { (transfer_glyph(1)) }
+                                            } @else {
+                                                (disabled_transfer_button("left", "Only food ingredients can be added to the pot"))
+                                            }
+                                        }
+                                    }
+                                    td class="inventory-count" { (item.qty) }
+                                    td class="inventory-weight" { (weight_display(unit_mass)) }
+                                    td class="inventory-gold" { (value) }
+                                }
+                            }
+                        }))
+                    }
+                }))
+            }
+            }
+            }
+        }
+    }
+}
+
+fn cooking_method(
+    value: &str,
+    label: &str,
+    icon: &str,
+    available: bool,
+    reason: &str,
+    selected: bool,
+) -> Markup {
+    html! {
+        label class=(if available { "cooking-method" } else { "cooking-method disabled" })
+            title=(if available { label } else { reason }) {
+            input type="radio" name="method" value=(value) form="cooking-submit-form"
+                checked[selected] disabled[!available]
+                data-cooking-method data-unavailable-reason=[(!available).then_some(reason)];
+            span class="cooking-method-icon"
+                style=(format!("--cooking-method-icon: url('/static/icons/game/{icon}.svg')"))
+                aria-hidden="true" {}
+            span class="sr-only" { (label) }
+            @if !available { span class="sr-only" { (reason) } }
+        }
+    }
+}
+
+fn filth_status_bar(deposits: &[crate::spacetimedb::CharacterFilth]) -> Markup {
+    use crate::spacetimedb::{FilthOrigin, FilthSubstance};
+    let dirt: u16 = deposits
+        .iter()
+        .filter(|d| d.substance == FilthSubstance::Dirt)
+        .map(|d| d.amount)
+        .fold(0, u16::saturating_add);
+    let blood: u16 = deposits
+        .iter()
+        .filter(|d| d.substance == FilthSubstance::Blood)
+        .map(|d| d.amount)
+        .fold(0, u16::saturating_add);
+    let total = dirt
+        .saturating_add(blood)
+        .min(adventuresim_core::filth::MAX_FILTH);
+    let dirt_width = f32::from(dirt.min(total));
+    let blood_width = f32::from(blood.min(total.saturating_sub(dirt.min(total))));
+    let (own_blood, foreign_blood, unknown_blood) = deposits
+        .iter()
+        .filter(|d| d.substance == FilthSubstance::Blood)
+        .fold((0_u16, 0_u16, 0_u16), |mut amounts, deposit| {
+            match deposit.origin {
+                FilthOrigin::Own => amounts.0 = amounts.0.saturating_add(deposit.amount),
+                FilthOrigin::Foreign => amounts.1 = amounts.1.saturating_add(deposit.amount),
+                FilthOrigin::Unknown => amounts.2 = amounts.2.saturating_add(deposit.amount),
+            }
+            amounts
+        });
+    let summary = format!(
+        "Current: {total}/100 — {dirt} dirt, {blood} blood ({own_blood} own, {foreign_blood} foreign, {unknown_blood} unknown)."
+    );
+    let details = format!(
+        "Filth accumulates from travel, combat, and medical treatment. Dirt and blood fill this bar. Foreign blood can transmit bloodborne disease, with greater risk through open cuts and lesser risk through bandaged cuts. Soap is used automatically before rest to wash filth away.\n\n{summary}"
+    );
+    html! {
+        div class="filth-status" tabindex="0" role="meter" aria-valuemin="0" aria-valuemax="100"
+            aria-valuenow=(total) aria-label=(format!("Filth {total} out of 100"))
+            data-strategic-tooltip=(&details) {
+            strong class="metric-label filth-status-label" { "Filth" }
+            span class="filth-track" aria-hidden="true" {
+                @if dirt > 0 {
+                    span class="filth-segment filth-dirt" style=(format!("width:{dirt_width}%"))
+                        data-strategic-tooltip=(format!("Dirt\n{dirt}")) {}
+                }
+                @if blood > 0 {
+                    span class="filth-segment filth-blood" style=(format!("width:{blood_width}%"))
+                        data-strategic-tooltip=(format!("Blood\n{blood}")) {}
+                }
+            }
+        }
+    }
 }
 
 fn religious_demand_rail(
@@ -1546,7 +2219,7 @@ fn religious_demand_rail(
                 h3 { (&demand.title) }
                 p { (&demand.description) }
                 p class="text-muted small-copy" {
-                    "Observe and bear the practical cost, or decline. Party Charisma automatically reduces the morale cost of neglect and can remove it entirely."
+                    "Observe and bear the practical cost, or decline. Party Command automatically reduces the morale cost of neglect and can remove it entirely."
                 }
                 form method="post" action=(action) class="religious-demand-actions" {
                     button type="submit" name="choice" value="observe" class="btn btn-primary" { "Observe" }
@@ -1579,14 +2252,31 @@ pub fn party_stats_page(
     can_examine: bool,
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
+    filth: &[crate::spacetimedb::CharacterFilth],
+    character_action_dialog: Option<Markup>,
+    surgery_open: Option<&str>,
+    social_open: bool,
 ) -> Markup {
     let selected_attributes_title = format!("{}'s attributes", selected.name);
     let selected_skills_title = format!("{}'s skills", selected.name);
+    let examination_action = location.preserve_building(format!(
+        "{}/party/{}/examine",
+        location.base_path(),
+        selected.id
+    ));
+    let surgery_path_template = location.preserve_building(format!(
+        "{}/party/{}/surgery/__limb__",
+        location.base_path(),
+        selected.id
+    ));
     let content = html! {
         aside class="left-sidebar" {
-            (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs, medical, Some(&format!("{}/party/{}/surgery", location.base_path(), selected.id)), injuries, projectiles))
-            (strategic_condition_rail(condition, morale_sources))
+            (party_attributes_rail(&selected_attributes_title, selected_attributes, selected_limbs, medical, Some((&surgery_path_template, surgery_open)), injuries, projectiles))
+            (strategic_condition_rail(condition, morale_sources, filth, &location.preserve_building(format!("{}/party/{}/social", location.base_path(), selected.id)), social_open))
             (medical_rail(medical, &location.base_path(), active_character.id, selected.id, true))
+        }
+        @if medical.examination_id.is_none() {
+            @if let Some(dialog) = character_action_dialog { (dialog) }
         }
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(
@@ -1598,7 +2288,7 @@ pub fn party_stats_page(
             ))
             (visual_stage("character", &selected.name, "Party member identity and capabilities"))
             (player_chat_area(selected, active_character))
-            (medical_examination_popup(medical, &location.base_path(), selected.id, selected_limbs, injuries, projectiles))
+            (medical_examination_popup(medical, location, selected.id, selected_limbs, injuries, projectiles))
         }
         aside class="right-sidebar" {
             (character_summary_rail(capability))
@@ -1614,6 +2304,11 @@ pub fn party_stats_page(
                 &selected_skills_title, selected_skills, selected_limbs, None, None, None,
                 religion_id.is_some(), 0.0, religion_id.or(location.religion_id.as_deref()),
                 combat_profile,
+                CharacterSkillActions {
+                    examination_action: can_examine.then_some(examination_action.as_str()),
+                    examination_open: medical.examination_id.is_some(),
+                    ..Default::default()
+                },
             ))
             @if selected.id != active_character.id {
                 @if active_character.party_id == selected.party_id {
@@ -1647,6 +2342,233 @@ pub fn party_stats_page(
     location.render_layout("Party stats", content, Some(&active_character.name))
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct SocialPresentation {
+    pub affinity: f32,
+    pub familiarity_hours: f32,
+    pub religion_id: Option<String>,
+    pub virtue: f32,
+    pub beliefs: Vec<crate::spacetimedb::SocialBelief>,
+    pub shared_concerns: Vec<adventuresim_core::social::SocialTopic>,
+    pub unavailable: bool,
+}
+
+fn social_actions(
+    is_self: bool,
+    topic: adventuresim_core::social::SocialTopic,
+) -> Vec<(
+    &'static str,
+    adventuresim_core::social::SocialActionKind,
+    &'static str,
+)> {
+    use adventuresim_core::social::SocialActionKind::*;
+    if is_self {
+        return vec![("inner-self", Reflect, "reflect")];
+    }
+    [
+        ("awareness", Listen, "listen"),
+        ("awareness", Commiserate, "commiserate"),
+        ("juggler", LightenMood, "humor"),
+        ("crown", Rally, "command"),
+        ("conversation", Reframe, "deception"),
+        ("rose", Flirt, "seduction"),
+    ]
+    .into_iter()
+    .filter(|(_, action, _)| action.available_for(topic))
+    .collect()
+}
+
+fn perceived_trait(axis: &str, value: i8) -> (&'static str, &'static str) {
+    match (axis, value.signum()) {
+        ("drive", 1) => ("Drive", "Ambitious"),
+        ("drive", -1) => ("Drive", "Content"),
+        ("self_regard", 1) => ("Self-regard", "Proud"),
+        ("self_regard", -1) => ("Self-regard", "Humble"),
+        ("conviction", 1) => ("Conviction", "Zealous"),
+        ("conviction", -1) => ("Conviction", "Irreverent"),
+        ("hygiene", 1) => ("Hygiene", "Cleanly"),
+        ("hygiene", -1) => ("Hygiene", "Slovenly"),
+        ("drive", _) => ("Drive", "Neutral"),
+        ("self_regard", _) => ("Self-regard", "Neutral"),
+        ("conviction", _) => ("Conviction", "Neutral"),
+        ("hygiene", _) => ("Hygiene", "Neutral"),
+        _ => ("Personality", "Uncertain"),
+    }
+}
+
+fn familiarity_label(hours: f32) -> String {
+    if hours.is_finite() && hours > 0.0 && hours < 1.0 {
+        "<1 hours".into()
+    } else {
+        format!("{:.0} hours", hours.max(0.0))
+    }
+}
+
+fn belief_style(confidence: f32) -> String {
+    format!(
+        "--belief-confidence:{:.0}%",
+        confidence.clamp(0.0, 1.0) * 100.0
+    )
+}
+
+fn personality_reaction_hint(axis: &str, value: i8) -> &'static str {
+    match (axis, value.signum()) {
+        ("drive", 1) => {
+            "Likely reaction: Rallying can motivate them after defeat; pity or flippancy may offend."
+        }
+        ("drive", -1) => {
+            "Likely reaction: Listening and commiseration are safer than pressuring them to prove themselves."
+        }
+        ("self_regard", 1) => {
+            "Likely reaction: Injury is touchy; admiration may land better than pity or minimizing the wound."
+        }
+        ("self_regard", -1) => {
+            "Likely reaction: Plain sympathy is safer; conspicuous flattery may feel insincere."
+        }
+        ("conviction", 1) => {
+            "Likely reaction: Treat moral concerns seriously; jokes and false reassurance are especially risky."
+        }
+        ("conviction", -1) => {
+            "Likely reaction: Gentle reframing may work better than appeals to duty or conviction."
+        }
+        ("hygiene", 1) => {
+            "Likely reaction: Filth is genuinely upsetting; acknowledge it rather than dismissing the concern."
+        }
+        ("hygiene", -1) => {
+            "Likely reaction: They may not share strong concern about grime, so forceful reassurance can seem strange."
+        }
+        _ => "Likely reaction: Their response to riskier social actions remains uncertain.",
+    }
+}
+
+fn belief_tooltip(belief: &crate::spacetimedb::SocialBelief) -> String {
+    format!(
+        "Confidence: {:.0}%\n{}",
+        belief.confidence.clamp(0.0, 1.0) * 100.0,
+        personality_reaction_hint(&belief.axis, belief.perceived_value)
+    )
+}
+
+/// Dedicated social view. It intentionally receives observer-specific beliefs
+/// rather than authoritative personality.
+pub fn party_social_dialog(
+    location: &LocationView,
+    selected: &Character,
+    active_character: &Character,
+    morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
+    social: &SocialPresentation,
+) -> Markup {
+    let social_href = location.preserve_building(format!(
+        "{}/party/{}/social",
+        location.base_path(),
+        selected.id
+    ));
+    let affinity_label = match social.affinity {
+        value if value >= 50.0 => "Devoted",
+        value if value >= 15.0 => "Warm",
+        value if value <= -50.0 => "Hostile",
+        value if value <= -15.0 => "Cold",
+        _ => "Neutral",
+    };
+    let is_self = selected.id == active_character.id;
+    let affinity_certainty = if social.familiarity_hours >= 48.0 {
+        "fairly certain"
+    } else if social.familiarity_hours >= 8.0 {
+        "tentative"
+    } else {
+        "uncertain"
+    };
+    let close_href = location.preserve_building(if is_self {
+        format!("{}/party/{}", location.base_path(), selected.id)
+    } else {
+        format!("{}/party/{}/stats", location.base_path(), selected.id)
+    });
+    html! {
+        div class="character-action-overlay" data-character-action-dialog {
+            a class="character-action-backdrop" href=(&close_href) aria-label="Close social dialog" {}
+            section class="character-action-dialog social-dialog" role="dialog" aria-modal="true" aria-labelledby="social-dialog-title" tabindex="-1" {
+                header class="character-action-dialog-header" {
+                    h2 id="social-dialog-title" { "Social — " (selected.name) }
+                    a class="character-action-dialog-close" href=(&close_href) aria-label="Close social dialog" { "×" }
+                }
+                div class="social-rail" data-social-panel data-target-id=(selected.id) {
+            (sidebar_section("What you believe", html! {
+                dl class="social-biography" {
+                    div { dt { "Age" } dd { (selected.age_years) } }
+                    div { dt { "Religion" } dd { (religion_name(social.religion_id.as_deref())) } }
+                    div { dt { "Virtue" } dd { (format!("{:+.0}", social.virtue)) } }
+                    @if !is_self {
+                        div { dt { "Affinity toward you" } dd { (affinity_label) " (" (affinity_certainty) ")" } }
+                        div { dt { "Familiarity" } dd { (familiarity_label(social.familiarity_hours)) } }
+                    }
+                }
+                @if social.unavailable {
+                    p class="social-unavailable" role="status" { "Your impressions are unavailable right now." }
+                } @else if social.beliefs.is_empty() {
+                    p class="text-muted small-copy" { "You have not formed a confident impression of their personality yet." }
+                } @else {
+                    ul class="perceived-traits" aria-label="Perceived personality traits" {
+                        @for belief in &social.beliefs {
+                            @let (_, value) = perceived_trait(&belief.axis, belief.perceived_value);
+                            li class="perceived-trait" style=(belief_style(belief.confidence))
+                                tabindex="0" data-strategic-tooltip=(belief_tooltip(belief)) {
+                                (value)
+                            }
+                        }
+                    }
+                }
+            }))
+            (sidebar_section("Morale sources", html! {
+                @if morale_sources.is_empty() { p class="text-muted" { "No current morale effects." } }
+                div class="social-source-list" {
+                    @for source in morale_sources {
+                        @let topic = adventuresim_core::social::topic_for_source_kind(&source.kind);
+                        article class=(if source.magnitude < 0.0 { "social-source social-source-negative" } else { "social-source social-source-positive" }) {
+                            div class="social-source-context" {
+                                div { strong { (&source.label) } span { (format!("{:+.1}", source.magnitude)) } }
+                                @if let Some(axis) = topic.and_then(adventuresim_core::social::axis_for_topic) {
+                                    @if let Some(belief) = social.beliefs.iter().find(|belief| belief.axis == axis.slug()) {
+                                        @let (axis_name, value) = perceived_trait(&belief.axis, belief.perceived_value);
+                                        p class="belief-copy" style=(belief_style(belief.confidence))
+                                            tabindex="0" data-strategic-tooltip=(belief_tooltip(belief)) {
+                                            "You think their " (axis_name) " is " (value) "."
+                                        }
+                                    } @else {
+                                        p { "The relevant personality trait is uncertain." }
+                                    }
+                                } @else {
+                                    p { "No specific personality trait is known to govern this concern." }
+                                }
+                            }
+                            @if source.magnitude < 0.0 {
+                                @if let Some(topic) = topic {
+                                  div class="social-actions" aria-label=(format!("Actions for {}", source.label)) {
+                                    @let shares_concern = social.shared_concerns.contains(&topic);
+                                    @for (default_icon, action, value) in social_actions(is_self, topic) {
+                                      @let action_shares_concern = action != adventuresim_core::social::SocialActionKind::Commiserate || shares_concern;
+                                      @let icon = if action == adventuresim_core::social::SocialActionKind::Commiserate && !shares_concern { "conversation" } else { default_icon };
+                                      @let description = action.description(topic, action_shares_concern);
+                                    form method="post" action=(&social_href) {
+                                        input type="hidden" name="source_id" value=(&source.id);
+                                        button type="submit" name="action_kind" value=(value) class="social-action"
+                                            aria-label=(description) title=(description) data-strategic-tooltip=(format!("{}\n{} · {} risk", description, action.skill_name(action_shares_concern), if action.risk() >= 0.6 { "high" } else if action.risk() >= 0.3 { "moderate" } else { "low" })) {
+                                            (decorative_game_icon(icon))
+                                        }
+                                    }
+                                    }
+                                  }
+                                }
+                            }
+                        }
+                    }
+                }
+            }))
+                }
+            }
+        }
+    }
+}
+
 fn surgery_limb_name(limb: LimbRegion) -> &'static str {
     match limb {
         LimbRegion::LeftArm => "Left arm",
@@ -1675,6 +2597,16 @@ fn surgery_duration(procedure: &str, skill: f32, dc: f32) -> u64 {
     adventuresim_core::surgery::procedure_duration_minutes(procedure, skill, dc)
 }
 
+fn surgery_procedure_skill(procedure: &str, checks: [f32; 3], self_treatment: bool) -> f32 {
+    adventuresim_core::surgery::procedure_skill(
+        procedure,
+        checks[0],
+        checks[1],
+        checks[2],
+        self_treatment,
+    )
+}
+
 #[derive(Clone, Copy)]
 enum SurgeryItemRequirement {
     BandageConsumed,
@@ -1685,7 +2617,7 @@ enum SurgeryItemRequirement {
 fn surgery_supply(label: &str, icon: &str, quantity: u32) -> Markup {
     let description = format!("{label}: {quantity} available");
     html! {
-        div class="surgery-supply" data-tooltip=(&description)
+        div class="surgery-supply" data-strategic-tooltip=(&description)
             aria-label=(&description) tabindex="0" {
             (decorative_game_icon(icon))
             span class="surgery-item-overlay surgery-item-quantity" aria-hidden="true" { "x" (quantity) }
@@ -1708,7 +2640,7 @@ fn surgery_item_requirement(requirement: SurgeryItemRequirement) -> Markup {
         }
     };
     html! {
-        span class="surgery-item-requirement" data-tooltip=(label)
+        span class="surgery-item-requirement" data-strategic-tooltip=(label)
             aria-label=(accessible_label) tabindex="0" {
             (decorative_game_icon(icon))
             @match requirement {
@@ -1729,14 +2661,14 @@ fn surgery_item_requirement(requirement: SurgeryItemRequirement) -> Markup {
 fn surgery_difficulty_meter(procedure_label: &str, dc: f32, effective_skill: f32) -> Markup {
     let difficulty = dc.max(0.0);
     let over_cap = difficulty > 5.0;
-    let meter_label = format!("{procedure_label} Surgery difficulty");
+    let meter_label = format!("{procedure_label} procedure difficulty");
     let accessible_label = format!(
-        "{procedure_label}: requires {difficulty:.1} Surgery; current effective skill {:.1}",
+        "{procedure_label}: requires {difficulty:.1} procedure skill; current effective skill {:.1}",
         effective_skill.max(0.0)
     );
     html! {
         div class=(if over_cap { "surgery-difficulty surgery-difficulty-over-cap" } else { "surgery-difficulty" })
-            title=[over_cap.then_some("Difficulty exceeds the normal Surgery skill scale")] {
+            title=[over_cap.then_some("Difficulty exceeds the normal procedure skill scale")] {
             (stat_icon(&meter_label, "skills", "surgeon", true))
             (skill_rank_bar(
                 difficulty,
@@ -1767,6 +2699,9 @@ fn surgery_procedure_row(
     unavailable: Option<&str>,
     disabled: Option<&str>,
     projectile_id: Option<u64>,
+    soap_available: bool,
+    soap_applicable: bool,
+    selected_alcohol: Option<&str>,
 ) -> Markup {
     let row_class = if unavailable.is_some() {
         "surgery-procedure surgery-procedure-unavailable"
@@ -1776,11 +2711,17 @@ fn surgery_procedure_row(
     let unavailable_label = unavailable.map(|reason| format!("{label}: {reason}"));
     html! {
         form method="post" action=(action) class=(row_class)
-            data-tooltip=[unavailable] aria-label=[unavailable_label.as_deref()]
+            data-strategic-tooltip=[unavailable] aria-label=[unavailable_label.as_deref()]
             tabindex=[unavailable.map(|_| "0")] {
             input type="hidden" name="procedure" value=(procedure);
             @if let Some(projectile_id) = projectile_id {
                 input type="hidden" name="projectile_id" value=(projectile_id);
+            }
+            @if soap_applicable {
+                label class="surgery-soap-option" title="Consumes one unit; lowers contamination risk independently of other supplies" {
+                    input type="checkbox" name="use_soap" value="true" disabled[!soap_available];
+                    " Use 1 soft soap"
+                }
             }
             @if icon == "bullet-visual" {
                 span class="procedure-projectile-visual projectile-ball" role="img" aria-label=(label) {}
@@ -1804,6 +2745,12 @@ fn surgery_procedure_row(
                     }
                 }
             }
+            @if let Some(item_id) = selected_alcohol {
+                div class="surgery-alcohol-consumption" aria-label=(format!("Consumes one {} for disinfection", item_display_name(item_id))) {
+                    (game_icon(&format!("Consumes one {}", item_display_name(item_id)), "beer-stein"))
+                    span { "Consumes 1 " (item_display_name(item_id)) }
+                }
+            }
             @if let Some(reason) = disabled {
                 button type="submit" class="btn btn-block" disabled title=(reason) aria-label=(format!("{label}: {reason}")) { (label) }
             } @else {
@@ -1813,30 +2760,29 @@ fn surgery_procedure_row(
     }
 }
 
-/// Manual limb treatment replaces the ordinary right rail while retaining the
-/// portrait stage and a keyboard-navigable list of every limb on the left.
+/// Manual limb treatment is an SSR-open dialog over the ordinary character rails.
 #[allow(clippy::too_many_arguments)]
-pub fn surgery_page(
+pub fn surgery_dialog(
     location: &LocationView,
     active_character: &Character,
     patient: &Character,
-    party_members: &[Character],
-    capability: Option<&CharacterCapability>,
-    attributes: Option<&CharacterAttributes>,
-    skills: Option<&CharacterSkills>,
-    limbs: Option<&CharacterLimbs>,
-    medical: &MedicalPresentation,
-    combat_profile: CombatTrainingProfile,
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
     selected_limb: LimbRegion,
     bandages: u32,
     surgery_kits: u32,
     splints: u32,
-    surgery_skill: f32,
+    soaps: u32,
+    alcohol_units: u32,
+    selected_alcohol: Option<&str>,
+    procedure_checks: [f32; 3],
 ) -> Markup {
-    let base = format!("{}/party/{}/surgery", location.base_path(), patient.id);
-    let action = format!("{base}/{}/procedure", surgery_limb_slug(selected_limb));
+    let action = location.preserve_building(format!(
+        "{}/party/{}/surgery/{}/procedure",
+        location.base_path(),
+        patient.id,
+        surgery_limb_slug(selected_limb)
+    ));
     let selected = injuries.iter().find(|injury| injury.limb == selected_limb);
     let cut = selected.map_or(0.0, |injury| injury.cut_damage.max(0.0));
     let bruise = selected.map_or(0.0, |injury| injury.bruise_damage.max(0.0));
@@ -1845,52 +2791,57 @@ pub fn surgery_page(
     let stitched = selected.is_some_and(|injury| injury.stitched);
     let splinted = selected.is_some_and(|injury| injury.splint_inventory_item_id.is_some());
     let has_kit = surgery_kits > 0;
-    let effective_skill = adventuresim_core::surgery::effective_skill(
-        surgery_skill,
-        active_character.id == patient.id,
-    );
-    let content = html! {
-        aside class="left-sidebar" {
-            (character_summary_rail(capability))
-            (party_attributes_rail(&format!("{}'s attributes", patient.name), attributes, limbs, medical, Some(&base), injuries, projectiles))
-            (party_skills_rail(&format!("{}'s skills", patient.name), skills, limbs, None, None, None, false, 0.0, None, combat_profile))
-        }
-        main class="center-content settlement-main party-member-stage" {
-            (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(patient.id), false))
-            (visual_stage("npc", &patient.name, &format!("TODO: {} portrait", patient.name.to_lowercase())))
-            (player_chat_area(patient, active_character))
-        }
-        aside class="right-sidebar surgery-rail" {
-            (sidebar_section(&format!("{} — {}", patient.name, surgery_limb_name(selected_limb)), html! {
+    let self_treatment = active_character.id == patient.id;
+    let procedure_skill =
+        |procedure| surgery_procedure_skill(procedure, procedure_checks, self_treatment);
+    let anatomy_skill = procedure_skill("bandage");
+    let extraction_skill = procedure_skill("extract");
+    let stitching_skill = procedure_skill("stitch");
+    let close_href = location.preserve_building(if self_treatment {
+        format!("{}/party/{}", location.base_path(), patient.id)
+    } else {
+        format!("{}/party/{}/stats", location.base_path(), patient.id)
+    });
+    html! {
+        div class="character-action-overlay" data-character-action-dialog {
+            a class="character-action-backdrop" href=(&close_href) aria-label="Close surgery dialog" {}
+            section class="character-action-dialog surgery-dialog" role="dialog" aria-modal="true" aria-labelledby="surgery-dialog-title" tabindex="-1" {
+                header class="character-action-dialog-header" {
+                    h2 id="surgery-dialog-title" { (patient.name) " — " (surgery_limb_name(selected_limb)) }
+                    a class="character-action-dialog-close" href=(&close_href) aria-label="Close surgery dialog" { "×" }
+                }
+                div class="surgery-rail" {
                 div class="surgery-supplies" aria-label="Surgery supplies" {
                     (surgery_supply("Bandages", "bandage-roll", bandages))
                     (surgery_supply("Surgery kits", "medical-pack", surgery_kits))
                     (surgery_supply("Splints", "arm-bandage", splints))
+                    (surgery_supply("Soft soap", "water-drop", soaps))
+                    (surgery_supply("Disinfecting alcohol", "beer-stein", alcohol_units))
                 }
                 div class="surgery-procedures" {
                     @for projectile in projectiles.iter().filter(|projectile| projectile.limb == selected_limb) {
                         @let requires_kit = adventuresim_core::surgery::extraction_requires_surgery_kit(projectile.extraction_dc);
-                        (surgery_procedure_row(&action, match projectile.kind { ProjectileKind::Arrowhead => "Remove arrowhead", ProjectileKind::Ball => "Remove ball" }, match projectile.kind { ProjectileKind::Arrowhead => "plain-arrow", ProjectileKind::Ball => "bullet-visual" }, "extract", if requires_kit { &[SurgeryItemRequirement::SurgeryKitReusable] } else { &[] }, surgery_duration("extract", effective_skill, projectile.extraction_dc), projectile.extraction_dc,
-                            effective_skill, None, if effective_skill < projectile.extraction_dc { Some("Insufficient Surgery skill") } else if requires_kit && !has_kit { Some("No surgery kit") } else { None }, Some(projectile.id)))
+                        (surgery_procedure_row(&action, match projectile.kind { ProjectileKind::Arrowhead => "Remove arrowhead", ProjectileKind::Ball => "Remove ball" }, match projectile.kind { ProjectileKind::Arrowhead => "plain-arrow", ProjectileKind::Ball => "bullet-visual" }, "extract", if requires_kit { &[SurgeryItemRequirement::SurgeryKitReusable] } else { &[] }, surgery_duration("extract", extraction_skill, projectile.extraction_dc), projectile.extraction_dc,
+                            extraction_skill, None, if extraction_skill < projectile.extraction_dc { Some("Insufficient Anatomy + Knife skill") } else if requires_kit && !has_kit { Some("No surgery kit") } else { None }, Some(projectile.id), soaps > 0, true, selected_alcohol))
                     }
-                    (surgery_procedure_row(&action, "Bandage", "bandage-roll", "bandage", &[SurgeryItemRequirement::BandageConsumed], surgery_duration("bandage", effective_skill, 0.0), 0.0,
-                        effective_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if bandaged { Some("Already bandaged") } else if bandages == 0 { Some("No bandages") } else { None }, None))
-                    (surgery_procedure_row(&action, "Stitch", "scalpel", "stitch", &[SurgeryItemRequirement::SurgeryKitReusable], surgery_duration("stitch", effective_skill, 2.0), 2.0,
-                        effective_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if stitched { Some("Already stitched") } else if effective_skill < 2.0 { Some("Insufficient Surgery skill") } else if !has_kit { Some("No surgery kit") } else { None }, None))
+                    (surgery_procedure_row(&action, "Bandage", "bandage-roll", "bandage", &[SurgeryItemRequirement::BandageConsumed], surgery_duration("bandage", anatomy_skill, 0.0), 0.0,
+                        anatomy_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if bandaged { Some("Already bandaged") } else if bandages == 0 { Some("No bandages") } else { None }, None, soaps > 0, true, selected_alcohol))
+                    (surgery_procedure_row(&action, "Stitch", "scalpel", "stitch", &[SurgeryItemRequirement::SurgeryKitReusable], surgery_duration("stitch", stitching_skill, 2.0), 2.0,
+                        stitching_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if stitched { Some("Already stitched") } else if stitching_skill < 2.0 { Some("Insufficient Anatomy + Tailoring skill") } else if !has_kit { Some("No surgery kit") } else { None }, None, soaps > 0, true, selected_alcohol))
                     @if splinted {
-                        (surgery_procedure_row(&action, "Remove splint", "arm-bandage", "remove-splint", &[], surgery_duration("remove-splint", effective_skill, 0.0), 0.0, effective_skill, None, None, None))
+                        (surgery_procedure_row(&action, "Remove splint", "arm-bandage", "remove-splint", &[], surgery_duration("remove-splint", anatomy_skill, 0.0), 0.0, anatomy_skill, None, None, None, false, false, None))
                     } @else {
-                        (surgery_procedure_row(&action, "Splint", "arm-bandage", "splint", &[SurgeryItemRequirement::SplintEquipped], surgery_duration("splint", effective_skill, 1.0), 1.0,
-                            effective_skill, if fracture <= 0.0 { Some("No injury is present") } else { None }, if fracture <= 0.0 { Some("No injury is present") } else if effective_skill < 1.0 { Some("Insufficient Surgery skill") } else if splints == 0 { Some("No splints") } else { None }, None))
+                        (surgery_procedure_row(&action, "Splint", "arm-bandage", "splint", &[SurgeryItemRequirement::SplintEquipped], surgery_duration("splint", anatomy_skill, 1.0), 1.0,
+                            anatomy_skill, if fracture <= 0.0 { Some("No injury is present") } else { None }, if fracture <= 0.0 { Some("No injury is present") } else if anatomy_skill < 1.0 { Some("Insufficient Anatomy skill") } else if splints == 0 { Some("No splints") } else { None }, None, false, false, None))
                     }
                     @if cut <= 0.0 && bruise > 0.0 && fracture <= 0.0 {
                         p class="text-muted small-copy" { "Bruising must heal on its own." }
                     }
                 }
-            }))
+                }
+            }
         }
-    };
-    location.render_layout("Surgery", content, Some(&active_character.name))
+    }
 }
 
 fn service_page(
@@ -1906,6 +2857,7 @@ fn service_page(
     logged_in_as: Option<&str>,
     rest_default_minutes: Option<u64>,
     rest_summary: Option<&RestSummary>,
+    soap_preview: SoapRestPreview,
 ) -> Markup {
     let trade_offers: Option<(&str, &[&str])> = match service_id {
         "merchants" => Some((
@@ -1935,20 +2887,18 @@ fn service_page(
             @if service_id == "inn" {
                 div class="service-left-stack" {
                     div class="service-inventory-area" { (merchant_offers_rail("Inn supplies", &["Rations", "Water", "Supplies", "Bed for the night"])) }
-                    (rest_service_menu("Inn", &settlement.id, "inn", rest_default_minutes, rest_summary))
+                    (rest_service_menu("Inn", &settlement.id, "inn", rest_default_minutes, rest_summary, soap_preview))
                 }
             } @else if service_id == "religion" {
                 div class="service-left-stack" {
                     div class="service-inventory-area" {
                         (sidebar_section("Church services", html! {
-                            p { "Faith: " strong { (religion_name(Some(&settlement.religion_id))) } }
-                            @if active_character.is_some() {
-                                p class="small-copy" { "Speak with the priest below to profess this church's faith. Renunciation is available only from your biography." }
+                            p title=[active_character.is_some().then_some("Speak with the priest to profess this faith. Renunciation is available from your biography. Shared conviction strengthens allied Command; conflicting conviction penalizes morale.")] {
+                                "Faith: " strong { (religion_name(Some(&settlement.religion_id))) }
                             }
-                            p class="text-muted small-copy" { "Shared conviction strengthens allied Charisma. Conflicting conviction turns that influence into a morale penalty." }
                         }))
                     }
-                    (rest_service_menu("Temple", &settlement.id, "temple", rest_default_minutes, rest_summary))
+                    (rest_service_menu("Temple", &settlement.id, "temple", rest_default_minutes, rest_summary, soap_preview))
                 }
             } @else if let Some((stock_title, offers)) = trade_offers {
                 (merchant_offers_rail(stock_title, offers))
@@ -2001,6 +2951,7 @@ fn service_page(
         &settlement.category,
         service_id,
         Some(&settlement.religion_id),
+        Some(&settlement.economy),
         content,
         logged_in_as,
     )
@@ -2028,6 +2979,7 @@ fn party_trade_inventory_rail(
                             @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
                             @let definition = items.iter().find(|definition| definition.id == item.item_id);
                             @let target = target_quantity(recipient_targets, &item.item_id);
+                            @let item_name = item_display_name(&item.item_id);
                                 tr class=(if direction == "left" { "trade-inventory-row trade-row-player" } else { "trade-inventory-row trade-row-merchant" }) data-item-key=(&item.item_id) {
                                     td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                                     td class="inventory-item-name" {
@@ -2036,7 +2988,7 @@ fn party_trade_inventory_rail(
                                             @if is_equipped {
                                                 (disabled_transfer_button(direction, "Equipped items cannot be transferred"))
                                             } @else {
-                                                button type="button" class=(format!("trade-transfer trade-transfer-{direction} party-draft-transfer")) data-dynamic-transfer data-default-transfer-mode="one" data-from=(character.id) data-to=(recipient_id) data-item=(item.id) data-key=(&item.item_id) data-count=(item.qty) data-target=(target) data-transfer-mode="one" data-label-one=(format!("Transfer one {}", item.item_id)) data-label-target=(format!("Transfer {} to target", item.item_id)) data-label-all=(format!("Transfer all {}", item.item_id)) aria-label=(format!("Transfer one {}", item.item_id)) title=(format!("Transfer one {}", item.item_id)) { (transfer_glyph(1)) }
+                                                button type="button" class=(format!("trade-transfer trade-transfer-{direction} party-draft-transfer")) data-dynamic-transfer data-default-transfer-mode="one" data-from=(character.id) data-to=(recipient_id) data-item=(item.id) data-key=(&item.item_id) data-count=(item.qty) data-target=(target) data-transfer-mode="one" data-label-one=(format!("Transfer one {item_name}")) data-label-target=(format!("Transfer {item_name} to target")) data-label-all=(format!("Transfer all {item_name}")) aria-label=(format!("Transfer one {item_name}")) title=(format!("Transfer one {item_name}")) { (transfer_glyph(1)) }
                                             }
                                         }
                                     }
@@ -2071,6 +3023,7 @@ fn discard_inventory_rail(
                         @for item in inventory {
                             @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
                             @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                            @let item_name = item_display_name(&item.item_id);
                             tr class="trade-inventory-row trade-row-player" data-discard-source=(item.id) data-item-key=(&item.item_id) {
                                 td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                                 td class="inventory-item-name" {
@@ -2082,11 +3035,11 @@ fn discard_inventory_rail(
                                             button type="button" class="trade-transfer trade-transfer-left"
                                             data-discard-item=(item.id) data-count=(item.qty)
                                             data-dynamic-transfer data-default-transfer-mode="one" data-transfer-mode="one"
-                                            data-label-one=(format!("Discard one {}", item.item_id))
-                                            data-label-target=(format!("Discard {} down to target", item.item_id))
-                                            data-label-all=(format!("Discard all {}", item.item_id))
-                                            aria-label=(format!("Discard {}", item.item_id))
-                                            title=(format!("Discard one {}", item.item_id)) { (transfer_glyph(1)) }
+                                            data-label-one=(format!("Discard one {item_name}"))
+                                            data-label-target=(format!("Discard {item_name} down to target"))
+                                            data-label-all=(format!("Discard all {item_name}"))
+                                            aria-label=(format!("Discard {item_name}"))
+                                            title=(format!("Discard one {item_name}")) { (transfer_glyph(1)) }
                                         }
                                     }
                                 }
@@ -2108,25 +3061,37 @@ pub fn live_merchant_shop_page(
     character: &Character,
     inventory: &[InventoryItem],
     items: &[crate::spacetimedb::ItemDefinition],
+    food_lots: &[FoodLot],
     party_members: &[Character],
     equip: Option<&CharacterEquip>,
     personal_targets: &[InventoryQuantityTarget],
     party_targets: &[InventoryQuantityTarget],
     pooled: &[PartyInventoryItem],
     shop: MerchantShop,
+    shared_language: f32,
     conditions: &[crate::spacetimedb::ItemCondition],
     smith: Option<&crate::spacetimedb::SettlementSmith>,
     repair_orders: &[crate::spacetimedb::RepairOrder],
     now_minutes: u64,
     personal_encumbrance: EncumbranceSummary,
     party_encumbrance: EncumbranceSummary,
+    rest_default_minutes: Option<u64>,
+    soap_preview: SoapRestPreview,
 ) -> Markup {
     let title = shop.title();
     let service_id = shop.service_id();
+    // Herbalist purchases use a separate reducer and retain their specialized quote.
+    let trade_language = if matches!(shop, MerchantShop::Herbalist) {
+        1.0
+    } else {
+        shared_language
+    };
     let smith_skill = smith
         .map(|smith| {
             if matches!(shop, MerchantShop::Armor) {
                 smith.armourer_skill
+            } else if matches!(shop, MerchantShop::Clothing) {
+                smith.tailor_skill
             } else {
                 smith.weaponsmith_skill
             }
@@ -2136,27 +3101,34 @@ pub fn live_merchant_shop_page(
         html! {}
     } else {
         inventory_footer_controls_with_leading(
-            matches!(shop, MerchantShop::Weapons | MerchantShop::Armor)
-                .then(|| repair_all_control(settlement, service_id)),
+            matches!(
+                shop,
+                MerchantShop::Weapons | MerchantShop::Armor | MerchantShop::Clothing
+            )
+            .then(|| repair_all_control(settlement, service_id)),
             "sell",
             "Sell surplus",
             "Sell everything",
         )
     };
     let content = html! {
-        aside class="left-sidebar smith-wares-column" { (sidebar_section(if matches!(shop, MerchantShop::Herbalist) { "Prepared medicines and ingredients" } else { "Merchant stock" }, html! {
+        aside class=(if matches!(shop, MerchantShop::Inn) { "left-sidebar smith-wares-column service-left-sidebar" } else { "left-sidebar smith-wares-column" }) {
+        div class=(if matches!(shop, MerchantShop::Inn) { "service-left-stack" } else { "merchant-stock-stack" }) {
+        div class=(if matches!(shop, MerchantShop::Inn) { "service-inventory-area" } else { "merchant-stock-area" }) {
+        (sidebar_section(if matches!(shop, MerchantShop::Herbalist) { "Prepared medicines and ingredients" } else if matches!(shop, MerchantShop::Inn) { "Cooking supplies" } else { "Merchant stock" }, html! {
             div class="smith-wares-scroll" {
             (trade_inventory_table("merchant-left", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, false, false, false, html! {
-                @for item in items.iter().filter(|item| shop.stocks(item.kind)) {
+                @for item in items.iter().filter(|item| shop.stocks_at(settlement, item)) {
                     @let is_currency = item.kind == crate::spacetimedb::ItemKind::Currency;
                     @let medication_recipe = adventuresim_core::disease::medication_recipe_for_item(&item.id);
-                    @let buy_price = medication_recipe.map_or_else(
+                    @let buy_price = adventuresim_core::strategic_economy::language_adjusted_buy_price(medication_recipe.map_or_else(
                         || adventuresim_core::strategic_economy::merchant_buy_price(item.base_value.unwrap_or(1)),
                         adventuresim_core::strategic_economy::herbalist_medication_price,
-                    );
-                    @let sell_price = (item.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32;
+                    ), trade_language);
+                    @let sell_price = adventuresim_core::strategic_economy::language_adjusted_sell_price((item.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32, trade_language);
                     @let target = target_quantity(personal_targets, &item.id);
-                    tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) data-herbalist-medication-name=[medication_recipe.map(|recipe| recipe.name)] { td class="inventory-item-type" { (item_type_icon(&item.id)) } td class="inventory-item-name" { (item_name_with_display(medication_recipe.map_or(item.id.as_str(), |recipe| recipe.name), Some(item))) @if !is_currency { (merchant_buy_controls(&item.id, buy_price, target, 999)) } } td class="inventory-count" hidden { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
+                    @let display_name = medication_recipe.map_or_else(|| item_display_name(&item.id), |recipe| recipe.name.to_owned());
+                    tr class="trade-inventory-row trade-row-merchant" data-merchant-item=(&item.id) data-merchant-sell-price=(sell_price) data-group-summary="catalog" data-herbalist-medication-name=[medication_recipe.map(|recipe| recipe.name)] { td class="inventory-item-type" { (item_type_icon(&item.id)) } td class="inventory-item-name" { (item_name_with_display(&item.id, &display_name, Some(item))) @if !is_currency { (merchant_buy_controls(&item.id, buy_price, target, 999)) } } td class="inventory-count" hidden { "999" } td class="inventory-weight" { (weight_display(item.weight)) } td class="inventory-gold" { (buy_price) } }
                 }
             }))
             (inventory_footer_controls("buy", "Buy to targets", "Buy everything"))
@@ -2165,7 +3137,12 @@ pub fn live_merchant_shop_page(
             }
             }
         }))
-        @if matches!(shop, MerchantShop::Weapons | MerchantShop::Armor) {
+        }
+        @if matches!(shop, MerchantShop::Inn) {
+            (rest_service_menu("Inn", &settlement.id, "inn", rest_default_minutes, None, soap_preview))
+        }
+        }
+        @if matches!(shop, MerchantShop::Weapons | MerchantShop::Armor | MerchantShop::Clothing) {
             (repair_custody_panel(settlement, shop, repair_orders, conditions, items, now_minutes, smith_skill))
         }
         }
@@ -2180,24 +3157,25 @@ pub fn live_merchant_shop_page(
             div data-inventory-pane="player" {
             div class="sidebar-section" {
                 (encumbrance_inventory_rail(html! {
-                (trade_inventory_table("merchant-player-right", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, true, true, matches!(shop, MerchantShop::Weapons | MerchantShop::Armor), html! {
-                    @for item in inventory.iter().filter(|item| items.iter().find(|definition| definition.id == item.item_id).is_some_and(|definition| shop.shows_inventory(definition.kind))) {
+                (trade_inventory_table("merchant-player-right", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, true, true, matches!(shop, MerchantShop::Weapons | MerchantShop::Armor | MerchantShop::Clothing), html! {
+                    @for item in inventory.iter().filter(|item| items.iter().find(|definition| definition.id == item.item_id).is_some_and(|definition| shop.shows_inventory(definition))) {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                        @let food_lot = food_lots.iter().find(|lot| lot.inventory_item_id == Some(item.id));
                         @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
                         @let is_equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
-                        @let sell_price = definition.map_or(0, |definition| (definition.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32);
+                        @let sell_price = adventuresim_core::strategic_economy::language_adjusted_sell_price(merchant_inventory_sell_price(definition, food_lot), trade_language);
                         @let target = target_quantity(personal_targets, &item.item_id);
                         tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-merchant-equipped=(is_equipped) data-inventory-quantity=(item.qty) data-target=(target) {
                         @let condition = conditions.iter().find(|condition| condition.inventory_item_id == item.id);
                         @let repair_skill = smith_skill;
-                        @let durable_item = definition.is_some_and(|definition| matches!(definition.kind, crate::spacetimedb::ItemKind::Weapon | crate::spacetimedb::ItemKind::Armor | crate::spacetimedb::ItemKind::Shield));
-                        @let service_matches = definition.is_some_and(|definition| if matches!(shop, MerchantShop::Armor) { definition.kind == crate::spacetimedb::ItemKind::Armor } else { matches!(definition.kind, crate::spacetimedb::ItemKind::Weapon | crate::spacetimedb::ItemKind::Shield) });
+                        @let durable_item = definition.is_some_and(|definition| matches!(definition.kind, crate::spacetimedb::ItemKind::Weapon | crate::spacetimedb::ItemKind::Armor | crate::spacetimedb::ItemKind::Shield | crate::spacetimedb::ItemKind::Clothing));
+                        @let service_matches = definition.is_some_and(|definition| if matches!(shop, MerchantShop::Armor) { definition.kind == crate::spacetimedb::ItemKind::Armor } else if matches!(shop, MerchantShop::Clothing) { definition.kind == crate::spacetimedb::ItemKind::Clothing } else { matches!(definition.kind, crate::spacetimedb::ItemKind::Weapon | crate::spacetimedb::ItemKind::Shield) });
                         @let can_sell = !is_currency && !is_equipped;
                         td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                         td class="inventory-item-name" { (item_name_with_quality(&item.item_id, definition)) @if !matches!(shop, MerchantShop::Herbalist) && (can_sell || service_matches) { (merchant_sell_repair_controls(item.id, &item.item_id, sell_price, item.qty, target, can_sell, service_matches.then(|| repair_submit_control(settlement, service_id, item.id, condition, repair_skill)))) } }
-                        td class="inventory-count" { (quantity_target_control(item.qty, target, &item.item_id, false)) } td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped)) } td class="inventory-durability" { @if durable_item { (condition_bar(condition, service_matches.then_some(repair_skill))) } @else { "—" } } td class="inventory-weight" { (item_weight(definition)) } td class="inventory-gold" { (sell_price) }
+                        td class="inventory-count" { (quantity_target_control(item.qty, target, &item.item_id, false)) } td class="inventory-equipped" { (equipment_checkbox(item, definition, is_equipped)) } td class="inventory-durability" { @if durable_item { (condition_bar(condition, service_matches.then_some(repair_skill))) } @else { "—" } } td class="inventory-weight" { (merchant_inventory_weight(definition, food_lot)) } td class="inventory-gold" { (sell_price) }
                     }}
-                    @for target in personal_targets.iter().filter(|target| target.quantity > 0 && !inventory.iter().any(|item| item.item_id == target.item_id) && items.iter().find(|definition| definition.id == target.item_id).is_some_and(|definition| shop.shows_inventory(definition.kind))) {
+                    @for target in personal_targets.iter().filter(|target| target.quantity > 0 && !inventory.iter().any(|item| item.item_id == target.item_id) && items.iter().find(|definition| definition.id == target.item_id).is_some_and(|definition| shop.shows_inventory(definition))) {
                         @let definition = items.iter().find(|definition| definition.id == target.item_id);
                         tr class="trade-inventory-row trade-row-player" data-merchant-item=(&target.item_id) data-inventory-quantity="0" data-target=(target.quantity) {
                             td class="inventory-item-type" { (item_type_icon(&target.item_id)) }
@@ -2217,16 +3195,17 @@ pub fn live_merchant_shop_page(
             div class="sidebar-section" {
                 (encumbrance_inventory_rail(html! {
                 (trade_inventory_table("merchant-party-right", if matches!(shop, MerchantShop::Weapons) { InventoryColumnSet::Weapons } else if matches!(shop, MerchantShop::Armor) { InventoryColumnSet::Armor } else { InventoryColumnSet::Basic }, true, false, false, html! {
-                    @for item in pooled.iter().filter(|item| items.iter().find(|definition| definition.id == item.item_id).is_some_and(|definition| shop.shows_inventory(definition.kind))) {
+                    @for item in pooled.iter().filter(|item| items.iter().find(|definition| definition.id == item.item_id).is_some_and(|definition| shop.shows_inventory(definition))) {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                        @let food_lot = food_lots.iter().find(|lot| lot.party_inventory_item_id == Some(item.id));
                         @let is_currency = definition.is_some_and(|definition| definition.kind == crate::spacetimedb::ItemKind::Currency);
-                        @let sell_price = definition.map_or(0, |definition| (definition.base_value.unwrap_or(1) as f32 / 1.25).floor().max(1.0) as u32);
+                        @let sell_price = adventuresim_core::strategic_economy::language_adjusted_sell_price(merchant_inventory_sell_price(definition, food_lot), trade_language);
                         @let target = target_quantity(party_targets, &item.item_id);
                         tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-party-inventory-id=(item.id) data-inventory-quantity=(item.quantity) data-target=(target) {
                             td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                             td class="inventory-item-name" { (item_name_with_quality(&item.item_id, definition)) @if !is_currency { (merchant_sell_controls(item.id, &item.item_id, sell_price, item.quantity, target)) } }
                             td class="inventory-count" { (quantity_target_control(item.quantity, target, &item.item_id, true)) }
-                            td class="inventory-weight" { (item_weight(definition)) }
+                            td class="inventory-weight" { (merchant_inventory_weight(definition, food_lot)) }
                             td class="inventory-gold" { (sell_price) }
                         }
                     }
@@ -2243,7 +3222,7 @@ pub fn live_merchant_shop_page(
                             td class="inventory-gold" { (item_value(definition)) }
                         }
                     }
-                    @for target in party_targets.iter().filter(|target| target.quantity > 0 && !pooled.iter().any(|item| item.item_id == target.item_id) && items.iter().find(|definition| definition.id == target.item_id).is_some_and(|definition| shop.shows_inventory(definition.kind))) {
+                    @for target in party_targets.iter().filter(|target| target.quantity > 0 && !pooled.iter().any(|item| item.item_id == target.item_id) && items.iter().find(|definition| definition.id == target.item_id).is_some_and(|definition| shop.shows_inventory(definition))) {
                         @let definition = items.iter().find(|definition| definition.id == target.item_id);
                         tr class="trade-inventory-row trade-row-player" data-merchant-item=(&target.item_id) data-inventory-quantity="0" data-target=(target.quantity) {
                             td class="inventory-item-type" { (item_type_icon(&target.item_id)) }
@@ -2267,6 +3246,7 @@ pub fn live_merchant_shop_page(
         &settlement.category,
         service_id,
         Some(&settlement.religion_id),
+        Some(&settlement.economy),
         content,
         Some(&character.name),
     )
@@ -2302,11 +3282,12 @@ pub fn party_pool_page(
                             @let value = definition.and_then(|definition| definition.base_value).unwrap_or(0) as u64;
                             @let target = target_quantity(personal_targets, &item.item_id);
                             @let current = inventory.iter().find(|personal| personal.item_id == item.item_id).map_or(0, |personal| personal.qty);
+                            @let item_name = item_display_name(&item.item_id);
                             tr class="trade-inventory-row" {
                                 td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                                 td class="inventory-item-name" {
                                     (item_name_with_quality(&item.item_id, definition))
-                                span class="inventory-row-actions" { button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="withdraw" data-transfer-mode="one" data-count=(item.quantity) data-current=(current) data-target=(target) data-label-one=(format!("Withdraw one {}", item.item_id)) data-label-target=(format!("Withdraw {} to target", item.item_id)) data-label-all=(format!("Withdraw all {}", item.item_id)) title=(if value > stake { format!("Withdraw one {}; {} personal coin required", item.item_id, value - stake) } else { format!("Withdraw one {} using your stake", item.item_id) }) aria-label=(format!("Withdraw one {}", item.item_id)) { (transfer_glyph(1)) } }
+                                span class="inventory-row-actions" { button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="withdraw" data-transfer-mode="one" data-count=(item.quantity) data-current=(current) data-target=(target) data-label-one=(format!("Withdraw one {item_name}")) data-label-target=(format!("Withdraw {item_name} to target")) data-label-all=(format!("Withdraw all {item_name}")) title=(if value > stake { format!("Withdraw one {item_name}; {} personal coin required", value - stake) } else { format!("Withdraw one {item_name} using your stake") }) aria-label=(format!("Withdraw one {item_name}")) { (transfer_glyph(1)) } }
                                 }
                                 td class="inventory-count" { (quantity_target_control(item.quantity, target_quantity(party_targets, &item.item_id), &item.item_id, true)) }
                                 td class="inventory-weight" { (item_weight(definition)) }
@@ -2332,6 +3313,7 @@ pub fn party_pool_page(
                             @let equipped = equip.is_some_and(|equip| [equip.left_hand_item_id, equip.right_hand_item_id, equip.left_arm_armor_id, equip.right_arm_armor_id, equip.left_leg_armor_id, equip.right_leg_armor_id, equip.head_armor_id, equip.chest_armor_id, equip.stomach_armor_id].contains(&Some(item.id)));
                             @let target = target_quantity(party_targets, &item.item_id);
                             @let current = pooled.iter().find(|pooled| pooled.item_id == item.item_id).map_or(0, |pooled| pooled.quantity);
+                            @let item_name = item_display_name(&item.item_id);
                             tr class="trade-inventory-row" {
                                 td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                                 td class="inventory-item-name" {
@@ -2340,7 +3322,7 @@ pub fn party_pool_page(
                                         @if equipped {
                                             (disabled_transfer_button("left", "Equipped items cannot be deposited"))
                                         } @else {
-                                            button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="deposit" data-transfer-mode="one" data-count=(item.qty) data-current=(current) data-target=(target) data-label-one=(format!("Deposit one {}", item.item_id)) data-label-target=(format!("Deposit {} to target", item.item_id)) data-label-all=(format!("Deposit all {}", item.item_id)) aria-label=(format!("Deposit one {}", item.item_id)) title=(format!("Deposit one {}", item.item_id)) { (transfer_glyph(1)) }
+                                            button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="deposit" data-transfer-mode="one" data-count=(item.qty) data-current=(current) data-target=(target) data-label-one=(format!("Deposit one {item_name}")) data-label-target=(format!("Deposit {item_name} to target")) data-label-all=(format!("Deposit all {item_name}")) aria-label=(format!("Deposit one {item_name}")) title=(format!("Deposit one {item_name}")) { (transfer_glyph(1)) }
                                         }
                                     }
                                 }
@@ -2361,6 +3343,36 @@ pub fn party_pool_page(
 
 fn item_weight(item: Option<&crate::spacetimedb::ItemDefinition>) -> String {
     item.map_or_else(|| "—".to_owned(), |item| weight_display(item.weight))
+}
+
+fn merchant_inventory_weight(
+    definition: Option<&crate::spacetimedb::ItemDefinition>,
+    food_lot: Option<&FoodLot>,
+) -> String {
+    food_lot.map_or_else(
+        || item_weight(definition),
+        |lot| weight_display(lot.mass_kg),
+    )
+}
+
+fn merchant_inventory_sell_price(
+    definition: Option<&crate::spacetimedb::ItemDefinition>,
+    food_lot: Option<&FoodLot>,
+) -> u32 {
+    food_lot.map_or_else(
+        || {
+            definition.map_or(0, |definition| {
+                adventuresim_core::strategic_economy::merchant_sell_price(
+                    definition.base_value.unwrap_or(1),
+                )
+            })
+        },
+        |lot| {
+            adventuresim_core::strategic_economy::merchant_sell_food_lot_value(lot.total_value)
+                .and_then(|value| u32::try_from(value).ok())
+                .unwrap_or(0)
+        },
+    )
 }
 
 fn encumbrance_inventory_rail(
@@ -2416,10 +3428,11 @@ fn equipment_checkbox(
         definition.slot != ItemSlot::None
             || definition.kind == crate::spacetimedb::ItemKind::Medication
     });
+    let item_name = item_display_name(&inventory.item_id);
     let label = if equipped {
-        format!("Unequip {}", inventory.item_id)
+        format!("Unequip {item_name}")
     } else {
-        format!("Equip {}", inventory.item_id)
+        format!("Equip {item_name}")
     };
     html! {
         input type="checkbox"
@@ -2448,14 +3461,19 @@ pub(super) fn item_name_with_quality(
                 data-item-kind="currency" data-currency-name=(currency_name) { "Coin" }
         }
     } else {
-        item_name_with_display(item_id, definition)
+        let display_name = item_display_name(item_id);
+        item_name_with_display(item_id, &display_name, definition)
     }
 }
 
 fn item_name_with_display(
+    item_id: &str,
     display_name: &str,
     definition: Option<&crate::spacetimedb::ItemDefinition>,
 ) -> Markup {
+    let alcohol_group = definition
+        .filter(|item| item.alcohol_serving_ml > 0)
+        .map(|_| "alcohol");
     let quality = definition
         .filter(|item| {
             matches!(
@@ -2487,8 +3505,11 @@ fn item_name_with_display(
     });
     html! {
         span class=(quality.map_or_else(|| "inventory-item-label".to_string(), |quality| format!("inventory-item-label item-quality-{quality}"))) title=[label]
-            data-item-name=(display_name)
+            data-item-name=(item_id)
             data-item-kind=[definition.map(|item| format!("{:?}", item.kind).to_ascii_lowercase())]
+            data-item-group=[alcohol_group]
+            data-group-name=[alcohol_group.map(|_| "Alcohol")]
+            data-food-lot=[adventuresim_core::food::definition(item_id).map(|_| "true")]
             data-stat-accuracy=[definition.map(|item| weight_display(item.accuracy))]
             data-stat-reach=[definition.map(|item| weight_display(item.reach))]
             data-stat-penetration=[definition.map(|item| weight_display(item.penetration))]
@@ -2542,11 +3563,12 @@ fn target_quantity(targets: &[InventoryQuantityTarget], item_id: &str) -> u32 {
 }
 
 fn quantity_target_control(quantity: u32, target: u32, item_id: &str, party_scope: bool) -> Markup {
+    let item_name = item_display_name(item_id);
     html! {
         span class="inventory-target-control" data-target-control data-quantity=(quantity) data-item-id=(item_id) data-party-scope=(party_scope) title=(format!("Carrying {quantity}; target {target}")) {
             span class="inventory-target-value" data-target-value role="button" tabindex="0"
-                aria-label=(format!("Target quantity for {item_id}"))
-                title=(format!("Click to edit the target quantity for {item_id}")) { (target) }
+                aria-label=(format!("Target quantity for {item_name}"))
+                title=(format!("Click to edit the target quantity for {item_name}")) { (target) }
         }
     }
 }
@@ -2562,8 +3584,9 @@ fn disabled_transfer_button(direction: &str, explanation: &str) -> Markup {
 }
 
 fn merchant_buy_controls(item_id: &str, price: u32, target: u32, available: u32) -> Markup {
+    let item_name = item_display_name(item_id);
     html! { span class="inventory-row-actions" {
-        button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-merchant-buy=(item_id) data-merchant-buy-price=(price) data-transfer-mode="one" data-target=(target) data-count=(available) data-label-one=(format!("Buy one {item_id}")) data-label-target=(format!("Buy {item_id} to target")) data-label-all=(format!("Buy all {item_id}")) aria-label=(format!("Buy one {item_id}")) title=(format!("Buy one {item_id}")) { (transfer_glyph(1)) }
+        button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-merchant-buy=(item_id) data-merchant-buy-price=(price) data-transfer-mode="one" data-target=(target) data-count=(available) data-label-one=(format!("Buy one {item_name}")) data-label-target=(format!("Buy {item_name} to target")) data-label-all=(format!("Buy all {item_name}")) aria-label=(format!("Buy one {item_name}")) title=(format!("Buy one {item_name}")) { (transfer_glyph(1)) }
     } }
 }
 
@@ -2574,8 +3597,9 @@ fn merchant_sell_controls(
     quantity: u32,
     target: u32,
 ) -> Markup {
+    let item_name = item_display_name(item_id);
     html! { span class="inventory-row-actions" {
-        button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-merchant-sell=(id) data-item-name=(item_id) data-merchant-sell-price=(price) data-transfer-mode="one" data-count=(quantity) data-target=(target) data-label-one=(format!("Sell one {item_id}")) data-label-target=(format!("Sell surplus {item_id}")) data-label-all=(format!("Sell all {item_id}")) aria-label=(format!("Sell one {item_id}")) title=(format!("Sell one {item_id}")) { (transfer_glyph(1)) }
+        button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-merchant-sell=(id) data-item-name=(item_id) data-merchant-sell-price=(price) data-transfer-mode="one" data-count=(quantity) data-target=(target) data-label-one=(format!("Sell one {item_name}")) data-label-target=(format!("Sell surplus {item_name}")) data-label-all=(format!("Sell all {item_name}")) aria-label=(format!("Sell one {item_name}")) title=(format!("Sell one {item_name}")) { (transfer_glyph(1)) }
     } }
 }
 
@@ -2589,10 +3613,11 @@ fn merchant_sell_repair_controls(
     repair: Option<Markup>,
 ) -> Markup {
     let has_repair = repair.is_some();
+    let item_name = item_display_name(item_id);
     html! { div class=(if has_repair { "inventory-row-actions smith-player-actions" } else { "inventory-row-actions" }) {
         @if let Some(repair) = repair { (repair) }
         @if can_sell {
-            button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-merchant-sell=(id) data-item-name=(item_id) data-merchant-sell-price=(price) data-transfer-mode="one" data-count=(quantity) data-target=(target) data-label-one=(format!("Sell one {item_id}")) data-label-target=(format!("Sell surplus {item_id}")) data-label-all=(format!("Sell all {item_id}")) aria-label=(format!("Sell one {item_id}")) title=(format!("Sell one {item_id}")) { (transfer_glyph(1)) }
+            button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-merchant-sell=(id) data-item-name=(item_id) data-merchant-sell-price=(price) data-transfer-mode="one" data-count=(quantity) data-target=(target) data-label-one=(format!("Sell one {item_name}")) data-label-target=(format!("Sell surplus {item_name}")) data-label-all=(format!("Sell all {item_name}")) aria-label=(format!("Sell one {item_name}")) title=(format!("Sell one {item_name}")) { (transfer_glyph(1)) }
         } @else if has_repair {
             (disabled_transfer_button("left", "Equipped items cannot be sold"))
         }
@@ -2708,17 +3733,18 @@ fn repair_custody_panel(
                 && items
                     .iter()
                     .find(|item| item.id == order.item_id)
-                    .is_some_and(|item| shop.stocks(item.kind))
+                    .is_some_and(|item| shop.stocks(item))
         })
         .collect();
     matching.sort_by_key(|order| (order.submitted_at_minutes, order.id));
     html! {
         section class="repair-custody-panel" aria-label="Items entrusted for repair" {
             header class="repair-custody-header" {
-                h3 { "In the smith's care" }
-                span class="repair-custody-skill" title=(format!("Smithing {smith_skill}")) {
-                    (stat_icon("Smithing", "skills", "smithing", false))
-                    (skill_rank_bar(f32::from(smith_skill), f32::from(smith_skill), &format!("Smithing {smith_skill}"), SkillRankBarOptions::default()))
+                h3 { @if matches!(shop, MerchantShop::Clothing) { "In the tailor's care" } @else { "In the smith's care" } }
+                @let craft = if matches!(shop, MerchantShop::Clothing) { "Tailoring" } else { "Smithing" };
+                span class="repair-custody-skill" title=(format!("{craft} {smith_skill}")) {
+                    (stat_icon(craft, "skills", if craft == "Tailoring" { "sewing-needle" } else { "smithing" }, false))
+                    (skill_rank_bar(f32::from(smith_skill), f32::from(smith_skill), &format!("{craft} {smith_skill}"), SkillRankBarOptions::default()))
                 }
             }
             div class="repair-custody-scroll" {
@@ -2821,6 +3847,69 @@ fn trade_inventory_table_header(show_equipped: bool, condition_header: Option<Ma
     } } }
 }
 
+#[derive(Clone, Copy, Default)]
+struct CharacterSkillActions<'a> {
+    cooking_href: Option<&'a str>,
+    cooking_open: bool,
+    examination_action: Option<&'a str>,
+    examination_open: bool,
+}
+
+#[derive(Clone, Copy)]
+enum SkillAction<'a> {
+    Get {
+        href: &'a str,
+        label: &'a str,
+        open: bool,
+    },
+    Post {
+        href: &'a str,
+        label: &'a str,
+        open: bool,
+    },
+}
+
+fn skill_action_icon(name: &str, icon: &str, action: SkillAction<'_>, inside_form: bool) -> Markup {
+    let (href, label, open) = match action {
+        SkillAction::Get { href, label, open } | SkillAction::Post { href, label, open } => {
+            (href, label, open)
+        }
+    };
+    html! {
+        @match action {
+            SkillAction::Get { .. } => {
+                a class=(if open { "character-menu-button is-open" } else { "character-menu-button" })
+                    href=(href) title=(label) aria-label=(label) aria-haspopup="dialog" aria-expanded=(open)
+                    data-dialog-opener=(href) {
+                    span class="stat-icon" style=(format!("--stat-icon: url('/static/icons/game/{icon}.svg')")) aria-hidden="true" {}
+                    @if open { span class="sr-only" { " (open)" } }
+                }
+            }
+            SkillAction::Post { .. } => {
+                @if inside_form {
+                    button type="submit" class=(if open { "character-menu-button is-open" } else { "character-menu-button" })
+                        formaction=(href) formmethod="post"
+                        title=(label) aria-label=(label) aria-haspopup="dialog" aria-expanded=(open)
+                        data-dialog-opener=(href) {
+                        span class="stat-icon" style=(format!("--stat-icon: url('/static/icons/game/{icon}.svg')")) aria-hidden="true" {}
+                        @if open { span class="sr-only" { " (open)" } }
+                    }
+                } @else {
+                    form method="post" action=(href) class="character-menu-button-form" {
+                        button type="submit" class=(if open { "character-menu-button is-open" } else { "character-menu-button" })
+                            title=(label) aria-label=(label) aria-haspopup="dialog" aria-expanded=(open)
+                            data-dialog-opener=(href) {
+                            span class="stat-icon" style=(format!("--stat-icon: url('/static/icons/game/{icon}.svg')")) aria-hidden="true" {}
+                            @if open { span class="sr-only" { " (open)" } }
+                        }
+                    }
+                }
+            }
+        }
+        span class="sr-only" { (name) }
+    }
+}
+
 fn party_skills_rail(
     title: &str,
     skills: Option<&CharacterSkills>,
@@ -2832,6 +3921,7 @@ fn party_skills_rail(
     prayer_religion_check: f32,
     training_religion_id: Option<&str>,
     combat_profile: CombatTrainingProfile,
+    actions: CharacterSkillActions<'_>,
 ) -> Markup {
     let head_health = limbs.map_or(1.0, |limbs| limbs.head_health);
     let upper_health = limbs.map_or(1.0, |limbs| {
@@ -2850,20 +3940,26 @@ fn party_skills_rail(
                             title, skills, head_health, upper_health, lower_health, Some(schedule),
                             activity_preview, professes_religion, prayer_religion_check,
                             training_religion_id.and_then(OfficialReligion::from_id),
-                            combat_profile,
+                            combat_profile, action.starts_with("/locations/settlement/"),
+                            actions,
                         ))
                         div class="schedule-save-status" data-schedule-save-status role="status" aria-live="polite" hidden {
                             span { "Schedule could not be saved." }
                             button type="button" data-schedule-retry { "Retry" }
                         }
                     }
+                    @if action.starts_with("/locations/settlement/") {
+                        (immediate_activity_dialog(&action.replace("/schedule", "/activity")))
+                    }
                     script src="/static/training-schedule.js?v=apprentice-system-1" {}
+                    script src="/static/immediate-activity.js?v=manual-activities-1" {}
                 } @else {
                     (skills_table(
                         title, skills, head_health, upper_health, lower_health, None, None,
                         professes_religion, prayer_religion_check,
                         training_religion_id.and_then(OfficialReligion::from_id),
-                        combat_profile,
+                        combat_profile, false,
+                        actions,
                     ))
                     script src="/static/training-schedule.js?v=apprentice-system-1" {}
                 }
@@ -2887,6 +3983,8 @@ fn skills_table(
     prayer_religion_check: f32,
     training_religion: Option<OfficialReligion>,
     combat_profile: CombatTrainingProfile,
+    immediate_actions: bool,
+    actions: CharacterSkillActions<'_>,
 ) -> Markup {
     html! {
             table class="party-skills-table" {
@@ -2916,15 +4014,18 @@ fn skills_table(
                     th scope="col" aria-label="Skill details" {}
                 } }
                 tbody {
-                    @if skills.will_hours > 0.0 { (party_skill_row("Will", "will", Skill::Will, skills.will_hours, head_health, schedule.is_some())) }
-                    @if skills.charisma_hours > 0.0 { (party_skill_row("Charisma", "charisma", Skill::Charisma, skills.charisma_hours, head_health, schedule.is_some())) }
-                    @if skills.medicine_hours > 0.0 { (party_skill_row("Medicine", "medicine", Skill::Medicine, skills.medicine_hours, head_health, schedule.is_some())) }
+                    @if skills.will_hours > 0.0 { (party_skill_row("Will", "will", Skill::Will, skills.will_hours, head_health, schedule.is_some(), None)) }
+                    (social_skill_rows(skills, head_health, schedule))
+                    @if skills.medicine_hours > 0.0 { (party_skill_row("Medicine", "medicine", Skill::Medicine, skills.medicine_hours, head_health, schedule.is_some(), actions.examination_action.map(|href| SkillAction::Post { href, label: "Perform medical examination (15 minutes)", open: actions.examination_open }))) }
+                    (party_skill_row("Cooking", "cooking", Skill::Cooking, skills.cooking_hours, head_health, schedule.is_some(), actions.cooking_href.map(|href| SkillAction::Get { href, label: "Open cooking menu", open: actions.cooking_open })))
                     (religion_skill_rows(skills, head_health, schedule, training_religion))
-                    (combat_skill_rows(skills, upper_health, lower_health, schedule, combat_profile))
-                    @if skills.stealth_hours > 0.0 { (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, upper_health, schedule.is_some())) }
-                    @if skills.balance_hours > 0.0 { (party_skill_row("Balance", "balance", Skill::Balance, skills.balance_hours, lower_health, schedule.is_some())) }
-                    @if skills.surgeon_hours > 0.0 { (party_skill_row("Surgeon", "surgeon", Skill::Surgeon, skills.surgeon_hours, upper_health, schedule.is_some())) }
-                    @if skills.smithing_hours > 0.0 { (party_skill_row("Smithing", "smithing", Skill::Smithing, skills.smithing_hours, upper_health, schedule.is_some())) }
+                    (language_skill_rows(skills, schedule.is_some()))
+                    (combat_skill_rows(skills, head_health, upper_health, lower_health, schedule, combat_profile))
+                    @if skills.stealth_hours > 0.0 { (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, upper_health, schedule.is_some(), None)) }
+                    (terrain_skill_rows(skills, schedule.is_some()))
+                    @if skills.anatomy_hours > 0.0 { (party_skill_row("Anatomy", "surgeon", Skill::Anatomy, skills.anatomy_hours, head_health, schedule.is_some(), None)) }
+                    @if skills.tailoring_hours > 0.0 { (party_skill_row("Tailoring", "sewing-needle", Skill::Tailoring, skills.tailoring_hours, upper_health, schedule.is_some(), None)) }
+                    @if skills.smithing_hours > 0.0 { (party_skill_row("Smithing", "smithing", Skill::Smithing, skills.smithing_hours, upper_health, schedule.is_some(), None)) }
                     @if let Some(schedule) = schedule {
                         @let preview = activity_preview.unwrap_or_default();
                         tr class="schedule-divider" { td colspan="9" {} }
@@ -2942,31 +4043,135 @@ fn skills_table(
                         (schedule_special_row(
                             if professes_religion { "Prayer" } else { "Meditate" },
                             if professes_religion { "prayer" } else { "inner-self" },
-                            "prayer_minutes", schedule.downtime.prayer_minutes, true,
+                            "prayer_minutes", schedule.downtime.prayer_minutes, true, immediate_actions,
                             if professes_religion { ActivityEffectRates::prayer(prayer_religion_check / 5.0) } else { ActivityEffectRates::meditation() }, None,
+                            None,
                             if professes_religion {
                                 "Prayer trains the professed Religion at 25% speed; morale depends on party knowledge and satisfies Fervor-driven needs."
                             } else {
                                 "Meditation gives modest morale independently of party Religion knowledge and does not train Religion or create Fervor."
                             },
                         ))
-                        (schedule_special_row("Combat Training", "crossed-swords", "combat_training_minutes", schedule.downtime.combat_training_minutes, true, ActivityEffectRates::default(), None, "Sparring and target practice train equipped Combat skills together with Will and Balance."))
-                        (schedule_special_row("Carousing", "beer-stein", "carousing_minutes", schedule.downtime.carousing_minutes, true, ActivityEffectRates::linear(-0.5, -0.05, 0.5, 0.0), None, "Drink and socialize to improve morale and train Charisma at 25% speed, at a small cost to Virtue."))
+                        (schedule_special_row("Combat Training", "crossed-swords", "combat_training_minutes", schedule.downtime.combat_training_minutes, true, immediate_actions, ActivityEffectRates::default(), None, None, "Sparring and target practice train equipped Combat skills together with Will and Balance."))
+                        (schedule_special_row("Carousing", "beer-stein", "carousing_minutes", schedule.downtime.carousing_minutes, true, immediate_actions, ActivityEffectRates::carousing(), None, None, "Drink and socialize to improve morale and train Humor at 25% speed, at a small cost to Virtue."))
                         @if let Some(service_id) = schedule.downtime.apprenticeship_service_id.as_deref() {
                             (schedule_service_selection("apprenticeship_service_id", service_id))
-                            (schedule_special_row(&format!("Apprenticeship — {}", profession_label(service_id)), "open-book", "apprenticeship_minutes", schedule.downtime.apprenticeship_minutes, true, ActivityEffectRates::linear(-1.0, 0.0, 0.0, 0.0), None, "Pay for instruction in an enrolled profession. Religious students are called novices."))
+                            (schedule_special_row(&format!("Apprenticeship — {}", profession_label(service_id)), "open-book", "apprenticeship_minutes", schedule.downtime.apprenticeship_minutes, true, immediate_actions && preview.profession.contains_key(service_id), ActivityEffectRates::default(), None, preview.profession.get(service_id), "Pay one coin per completed eight hours of instruction in an enrolled profession. Religious students are called novices."))
                         }
                         @if let Some(service_id) = schedule.downtime.profession_service_id.as_deref() {
-                            @let religious = service_id == "religion";
                             (schedule_service_selection("profession_service_id", service_id))
-                            (schedule_special_row(&format!("Profession Practice — {}", profession_label(service_id)), if religious { "holy-symbol" } else { "anvil" }, "profession_practice_minutes", schedule.downtime.profession_practice_minutes, true, if religious { ActivityEffectRates::linear(0.0, 0.25, 0.0, 0.0) } else { ActivityEffectRates::linear(0.5, 0.0, 0.0, 0.0) }, None, if religious { "Practice as a cleric or teacher to serve the community and earn Virtue; religious practice never earns money." } else { "Practice an enrolled profession independently. Journeymen earn a modest income and masters earn a good income while teaching apprentices." }))
+                            @if let Some(profession) = preview.profession.get(service_id) {
+                                @if profession.tier_label != "apprentice" && profession.tier_label != "novice" {
+                                    @let religious = service_id == "religion";
+                                    (schedule_special_row(&format!("Profession Practice — {}", profession_label(service_id)), if religious { "holy-symbol" } else { "anvil" }, "profession_practice_minutes", schedule.downtime.profession_practice_minutes, true, immediate_actions, ActivityEffectRates::default(), None, Some(profession), if religious { "Practice as a cleric or teacher to serve the community and earn Virtue; teachers earn faster than clerics." } else { "Practice an enrolled profession independently. Journeymen earn one coin per eight hours; masters earn one per two hours." }))
+                                }
+                            }
                         }
-                        (schedule_special_row("Labor", "hammer-sickle", "labor_minutes", schedule.downtime.labor_minutes, true, ActivityEffectRates::linear(preview.labor_gold_per_hour, 0.0, 0.0, LABOR_FATIGUE_PER_HOUR / FATIGUE_RESERVOIR_PER_PREVIEW_POINT), None, "Earn coin during settlement downtime from Strength and Endurance checks; trains Will at 25% speed and generates fatigue."))
-                        (schedule_special_row("Thievery", "lockpicks", "thievery_minutes", schedule.downtime.thievery_minutes, true, ActivityEffectRates::linear(preview.thievery_gold_per_hour, preview.thievery_virtue_per_hour, 0.0, 0.0), None, "Settlement downtime can earn coin and risk discovery while training Stealth at 25% speed."))
-                        (schedule_special_row("Raiding", "mounted-knight", "raiding_minutes", schedule.downtime.raiding_minutes, true, ActivityEffectRates::linear(preview.raiding_gold_per_hour, preview.raiding_virtue_per_hour, 0.0, 0.0), None, "Settlement downtime can earn coin and risk retaliation while feeding the equipment-derived Combat training distribution at 25% speed."))
+                        (schedule_special_row("Labor", "hammer-sickle", "labor_minutes", schedule.downtime.labor_minutes, true, immediate_actions, ActivityEffectRates::linear(preview.labor_gold_per_hour, 0.0, 0.0, LABOR_FATIGUE_PER_HOUR / FATIGUE_RESERVOIR_PER_PREVIEW_POINT), None, None, "Earn coin during settlement downtime from Strength and Endurance checks; trains Will at 25% speed and generates fatigue."))
+                        (schedule_special_row("Thievery", "lockpicks", "thievery_minutes", schedule.downtime.thievery_minutes, true, immediate_actions, ActivityEffectRates::linear(preview.thievery_gold_per_hour, preview.thievery_virtue_per_hour, 0.0, 0.0), None, None, "Settlement downtime can earn coin and risk discovery while training Stealth at 25% speed."))
+                        (schedule_special_row("Raiding", "mounted-knight", "raiding_minutes", schedule.downtime.raiding_minutes, true, immediate_actions, ActivityEffectRates::linear(preview.raiding_gold_per_hour, preview.raiding_virtue_per_hour, 0.0, 0.0), None, None, "Settlement downtime can earn coin and risk retaliation while feeding the equipment-derived Combat training distribution at 25% speed."))
                         @let leisure = leisure_preview(&schedule.downtime, preview.current_fatigue);
-                        (schedule_special_row("Leisure", "bed", "leisure_minutes", 0, false, ActivityEffectRates::default(), Some(leisure), "Unallocated downtime first offsets baseline and activity fatigue; only surplus recovery improves morale."))
+                        (schedule_special_row("Leisure", "bed", "leisure_minutes", 0, false, false, ActivityEffectRates::default(), Some(leisure), None, "Unallocated downtime first offsets baseline and activity fatigue; only surplus recovery improves morale."))
                     }
+            }
+        }
+    }
+}
+
+fn terrain_skill_rows(skills: &CharacterSkills, schedule_context: bool) -> Markup {
+    let entries = [
+        (
+            "Plains",
+            "plains",
+            Skill::TerrainPlains,
+            skills.terrain_plains_hours,
+        ),
+        (
+            "Forest",
+            "forest",
+            Skill::TerrainForest,
+            skills.terrain_forest_hours,
+        ),
+        (
+            "Hills",
+            "hills",
+            Skill::TerrainHills,
+            skills.terrain_hills_hours,
+        ),
+        (
+            "Urban",
+            "urban",
+            Skill::TerrainUrban,
+            skills.terrain_urban_hours,
+        ),
+    ];
+    let rank = entries
+        .iter()
+        .map(|entry| entry.2.training_rank(entry.3))
+        .sum::<f32>()
+        / 4.0;
+    html! {
+        tr class="party-skill-row terrain-primary-row" data-terrain-primary {
+            th scope="row" class="party-skill-name party-skill-icon-cell" { (stat_icon("Terrain", "terrain", "terrain", false)) }
+            td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
+                (skill_rank_bar(rank, rank, "Unweighted mean; route previews use the local terrain mixture", skill_rail_bar_options()))
+            }
+            td class="religion-expand-cell" {
+                button type="button" class="religion-expand-button" data-terrain-expand aria-expanded="false" aria-label="Expand Terrain skills" title="Expand Terrain" {
+                    span class="religion-expand-chevron" aria-hidden="true" { "›" }
+                }
+            }
+        }
+        @for (name, icon, skill, hours) in entries {
+            tr class="party-skill-row terrain-detail-row" data-terrain-detail hidden {
+                th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
+                    (stat_icon(name, "terrain", icon, false))
+                }
+                td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
+                    @let sub_rank = skill.training_rank(hours);
+                    (skill_rank_bar(sub_rank, sub_rank, &format!("{:.1} hours invested", hours.max(0.0)), skill_rail_bar_options()))
+                }
+                td class="religion-expand-cell" {}
+            }
+        }
+    }
+}
+
+fn language_skill_rows(skills: &CharacterSkills, schedule_context: bool) -> Markup {
+    use adventuresim_world_schema::{OralLanguage, WrittenLanguage};
+    let oral_effective = OralLanguage::ALL
+        .into_iter()
+        .map(|language| skills.oral_languages.effective(language))
+        .fold(0.0, f32::max);
+    let oral_direct = OralLanguage::ALL
+        .into_iter()
+        .map(|language| skills.oral_languages.direct(language).max(0.0))
+        .sum::<f32>();
+    let written_effective = WrittenLanguage::ALL
+        .into_iter()
+        .map(|language| skills.written_languages.effective(language))
+        .fold(0.0, f32::max);
+    let written_direct = WrittenLanguage::ALL
+        .into_iter()
+        .map(|language| skills.written_languages.direct(language).max(0.0))
+        .sum::<f32>();
+    html! {
+        @for (family, effective, direct, kind) in [("Oral",oral_effective,oral_direct,"oral"),("Written",written_effective,written_direct,"written")] {
+            @if effective.is_finite() && effective > 0.0 {
+                tr class=(format!("party-skill-row language-primary-row language-{kind}")) {
+                    th scope="row" class="party-skill-name party-skill-icon-cell" { span class=(format!("language-monogram language-{kind}")) title=(format!("{family} languages")) aria-hidden="true" { (if kind=="oral" {"O"} else {"W"}) } span class="sr-only" { (family) } }
+                    td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { (skill_rank_bar((effective/1000.0).clamp(0.0,5.0),(effective/1000.0).clamp(0.0,5.0),&format!("{effective:.1} effective hours; {direct:.1} directly studied hours across {family} languages"),skill_rail_bar_options())) }
+                    td class="religion-expand-cell" { button type="button" class="religion-expand-button" data-language-expand=(kind) aria-expanded="false" aria-label=(format!("Expand {family} languages")) { span class="religion-expand-chevron" aria-hidden="true" { "›" } } }
+                }
+                @if kind=="oral" { @for language in OralLanguage::ALL { @let descriptor=language.descriptor(); @let effective=skills.oral_languages.effective(language);
+                    @if effective.is_finite() && effective > 0.0 {
+                        tr class="party-skill-row language-detail-row" data-language-detail="oral" hidden { th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" { span class=(if descriptor.germanic_style {"language-monogram language-oral language-blackletter"} else {"language-monogram language-oral"}) title=(format!("{} — {}",descriptor.english,descriptor.native)) aria-hidden="true" { (descriptor.monogram) } span class="sr-only" { (descriptor.english) } } td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let direct=skills.oral_languages.direct(language).max(0.0); (skill_rank_bar((effective/1000.0).clamp(0.0,5.0),(effective/1000.0).clamp(0.0,5.0),&format!("{effective:.1} effective hours; {direct:.1} directly studied hours"),skill_rail_bar_options())) } td class="religion-expand-cell" {} }
+                    }
+                }} @else { @for language in WrittenLanguage::ALL { @let descriptor=language.descriptor(); @let effective=skills.written_languages.effective(language);
+                    @if effective.is_finite() && effective > 0.0 {
+                        tr class="party-skill-row language-detail-row" data-language-detail="written" hidden { th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" { span class=(if descriptor.germanic_style {"language-monogram language-written language-blackletter"} else {"language-monogram language-written"}) title=(format!("{} — {}",descriptor.english,descriptor.native)) aria-hidden="true" { (descriptor.monogram) } span class="sr-only" { (descriptor.english) } } td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let direct=skills.written_languages.direct(language).max(0.0); (skill_rank_bar((effective/1000.0).clamp(0.0,5.0),(effective/1000.0).clamp(0.0,5.0),&format!("{effective:.1} effective hours; {direct:.1} directly studied hours"),skill_rail_bar_options())) } td class="religion-expand-cell" {} }
+                    }
+                }}
             }
         }
     }
@@ -3049,59 +4254,111 @@ fn religion_skill_rows(
     }
 }
 
+fn social_skill_rows(
+    skills: &CharacterSkills,
+    health: f32,
+    schedule: Option<&CharacterTrainingSchedule>,
+) -> Markup {
+    let entries = [
+        ("Insight", "insight", Skill::Insight, skills.insight_hours),
+        (
+            "Self-awareness",
+            "self-awareness",
+            Skill::SelfAwareness,
+            skills.self_awareness_hours,
+        ),
+        ("Humor", "humor", Skill::Humor, skills.humor_hours),
+        ("Command", "command", Skill::Command, skills.command_hours),
+        (
+            "Deception",
+            "deception",
+            Skill::Deception,
+            skills.deception_hours,
+        ),
+        (
+            "Seduction",
+            "seduction",
+            Skill::Seduction,
+            skills.seduction_hours,
+        ),
+    ];
+    if entries.iter().all(|entry| entry.3 <= 0.0) {
+        return html! {};
+    }
+    let rank = entries
+        .iter()
+        .map(|entry| entry.2.training_rank(entry.3))
+        .sum::<f32>()
+        / entries.len() as f32;
+    let effective_rank = rank * health.clamp(0.0, 1.0);
+    html! {
+        tr class="party-skill-row social-primary-row" data-social-primary {
+            th scope="row" class="party-skill-name party-skill-icon-cell" {
+                (stat_icon("Social", "skills", "social", false))
+            }
+            td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
+                (skill_rank_bar(rank, effective_rank, "Average of all six Social skills", skill_rail_bar_options()))
+            }
+            td class="religion-expand-cell" {
+                button type="button" class="religion-expand-button" data-social-expand
+                    aria-expanded="false" aria-label="Expand Social skills" title="Expand Social" {
+                    span class="religion-expand-chevron" aria-hidden="true" { "›" }
+                }
+            }
+        }
+        @for (name, icon, skill, hours) in entries {
+            tr class="party-skill-row social-detail-row" data-social-detail hidden {
+                th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
+                    (stat_icon(name, "skills", icon, false))
+                }
+                td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
+                    @let sub_rank = skill.training_rank(hours);
+                    (skill_rank_bar(sub_rank, sub_rank * health.clamp(0.0, 1.0), &format!("{:.0} hours invested", hours.max(0.0)), skill_rail_bar_options()))
+                }
+                td class="religion-expand-cell" {}
+            }
+        }
+    }
+}
+
 fn combat_skill_rows(
     skills: &CharacterSkills,
+    head_health: f32,
     upper_health: f32,
     lower_health: f32,
     schedule: Option<&CharacterTrainingSchedule>,
     profile: CombatTrainingProfile,
 ) -> Markup {
-    if [
-        skills.melee_hours,
-        skills.ranged_hours,
-        skills.dodge_hours,
-        skills.block_hours,
-    ]
-    .into_iter()
-    .all(|hours| hours <= 0.0)
-    {
-        return html! {};
-    }
     let weights = profile.weights();
-    let entries = [
-        (
-            "Melee",
-            "melee",
-            Skill::Melee,
-            skills.melee_hours,
-            upper_health,
-            weights[0],
-        ),
-        (
-            "Ranged",
-            "ranged",
-            Skill::Ranged,
-            skills.ranged_hours,
-            upper_health,
-            weights[3],
-        ),
-        (
-            "Dodge",
-            "dodge",
-            Skill::Dodge,
-            skills.dodge_hours,
-            lower_health,
-            weights[1],
-        ),
-        (
-            "Block",
-            "block",
-            Skill::Block,
-            skills.block_hours,
-            upper_health,
-            weights[2],
-        ),
-    ];
+    html! {
+        (combat_meta_group("Melee", "crossed-swords", schedule, &[
+            ("Polearm", "spear-hook", Skill::Polearm, skills.polearm_hours, upper_health, weights[0]),
+            ("Axe", "battle-axe", Skill::Axe, skills.axe_hours, upper_health, weights[1]),
+            ("Bludgeon", "flanged-mace", Skill::Bludgeon, skills.bludgeon_hours, upper_health, weights[2]),
+            ("Sword", "sword", Skill::Sword, skills.sword_hours, upper_health, weights[3]),
+            ("Knife", "bowie-knife", Skill::Knife, skills.knife_hours, upper_health, weights[4]),
+        ]))
+        (combat_meta_group("Ranged", "archery-target", schedule, &[
+            ("Bow", "bow-arrow", Skill::Bow, skills.bow_hours, upper_health, weights[5]),
+            ("Crossbow", "crossbow", Skill::Crossbow, skills.crossbow_hours, upper_health, weights[6]),
+            ("Firearm", "musket", Skill::Firearm, skills.firearm_hours, upper_health, weights[7]),
+            ("Throw", "throwing-ball", Skill::Throw, skills.throw_hours, upper_health, weights[8]),
+        ]))
+        (combat_meta_group("Defense", "shield", schedule, &[
+            ("Dodge", "dodge", Skill::Dodge, skills.dodge_hours, lower_health, weights[9]),
+            ("Block", "block", Skill::Block, skills.block_hours, upper_health, weights[10]),
+            ("Balance", "balance", Skill::Balance, skills.balance_hours, lower_health, weights[11]),
+            ("Will", "will", Skill::Will, skills.will_hours, head_health, weights[12]),
+        ]))
+    }
+}
+
+fn combat_meta_group(
+    name: &str,
+    icon: &str,
+    schedule: Option<&CharacterTrainingSchedule>,
+    entries: &[(&str, &str, Skill, f32, f32, f32)],
+) -> Markup {
     let relevant: Vec<_> = entries.iter().filter(|entry| entry.5 > 0.0).collect();
     let rank = relevant
         .iter()
@@ -3119,25 +4376,26 @@ fn combat_skill_rows(
         .collect::<Vec<_>>()
         .join(", ");
     html! {
-        tr class="party-skill-row combat-primary-row" data-combat-primary {
+        tr class="party-skill-row combat-primary-row" data-combat-primary=(name.to_ascii_lowercase()) {
             th scope="row" class="party-skill-name party-skill-icon-cell" {
-                (stat_icon("Combat", "skills", "combat", false))
+                (stat_icon(name, "skills", icon, false))
             }
             td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
                 (skill_rank_bar(rank, effective_rank, &format!("Relevant skills: {included}"), skill_rail_bar_options()))
             }
             td class="religion-expand-cell" {
-                button type="button" class="religion-expand-button" data-combat-expand
-                    aria-expanded="false" aria-label="Expand Combat skills" title="Expand Combat" {
+                button type="button" class="religion-expand-button" data-combat-expand=(name.to_ascii_lowercase())
+                    aria-expanded="false" aria-label=(format!("Expand {name} skills")) title=(format!("Expand {name}")) {
                     span class="religion-expand-chevron" aria-hidden="true" { "›" }
                 }
             }
         }
-        @for (name, icon, skill, hours, health, weight) in entries {
-          @if hours > 0.0 {
-            tr class="party-skill-row combat-detail-row" data-combat-detail data-combat-weight=(weight) hidden {
+        @for &(leaf_name, leaf_icon, skill, hours, health, weight) in entries {
+            tr class="party-skill-row combat-detail-row" data-combat-detail=(name.to_ascii_lowercase()) data-combat-weight=(weight) hidden {
                 th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
-                    (stat_icon(name, "skills", icon, false))
+                    span title=[(skill == Skill::Knife).then_some("Knife means short weapons: knives, daggers, and short blades.")] {
+                        (stat_icon(leaf_name, "skills", leaf_icon, false))
+                    }
                 }
                 td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
                     @let sub_rank = skill.training_rank(hours);
@@ -3145,7 +4403,6 @@ fn combat_skill_rows(
                 }
                 td class="religion-expand-cell" {}
             }
-          }
         }
     }
 }
@@ -3172,6 +4429,7 @@ fn party_skill_row(
     hours: f32,
     health: f32,
     schedule_context: bool,
+    action: Option<SkillAction<'_>>,
 ) -> Markup {
     let rank = skill.training_rank(hours);
     let effective_rank = rank * health.clamp(0.0, 1.0);
@@ -3179,7 +4437,11 @@ fn party_skill_row(
     html! {
         tr class="party-skill-row" {
             th scope="row" class="party-skill-name party-skill-icon-cell" {
-                (stat_icon(name, "skills", icon, false))
+                @if let Some(action) = action {
+                    (skill_action_icon(name, icon, action, schedule_context))
+                } @else {
+                    (stat_icon(name, "skills", icon, false))
+                }
             }
             td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
                 (skill_rank_bar(rank, effective_rank, &format!("{invested_hours} hours invested"), skill_rail_bar_options()))
@@ -3258,6 +4520,8 @@ struct ActivityEffectRates {
     fatigue_per_hour: f32,
     prayer_morale: bool,
     prayer_morale_multiplier: f32,
+    morale_limit: f32,
+    morale_scale_minutes: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -3281,22 +4545,6 @@ fn core_daily_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
             .profession_service_id
             .as_deref()
             .and_then(adventuresim_core::profession::ProfessionId::from_service_id),
-        combat: schedule.combat_minutes,
-        combat_auto_train: schedule.combat_auto_train,
-        melee: schedule.melee_minutes,
-        dodge: schedule.dodge_minutes,
-        block: schedule.block_minutes,
-        ranged: schedule.ranged_minutes,
-        will: schedule.will_minutes,
-        charisma: schedule.charisma_minutes,
-        medicine: schedule.medicine_minutes,
-        religion: schedule.religion_minutes,
-        religion_auto_train: schedule.religion_auto_train,
-        religions: schedule.religion_minutes_by_tradition,
-        stealth: schedule.stealth_minutes,
-        balance: schedule.balance_minutes,
-        surgeon: schedule.surgeon_minutes,
-        smithing: schedule.smithing_minutes,
         labor: schedule.labor_minutes,
         prayer: schedule.prayer_minutes,
         thievery: schedule.thievery_minutes,
@@ -3328,6 +4576,8 @@ impl ActivityEffectRates {
             fatigue_per_hour: fatigue,
             prayer_morale: false,
             prayer_morale_multiplier: 1.0,
+            morale_limit: PRAYER_MORALE_LIMIT,
+            morale_scale_minutes: PRAYER_MORALE_SCALE_MINUTES,
         }
     }
 
@@ -3347,12 +4597,24 @@ impl ActivityEffectRates {
         }
     }
 
+    const fn carousing() -> Self {
+        Self {
+            gold_per_hour: 0.0,
+            virtue_per_hour: -0.125,
+            prayer_morale: true,
+            prayer_morale_multiplier: 1.0,
+            morale_limit: adventuresim_core::activity::CAROUSING_MORALE_LIMIT,
+            morale_scale_minutes: adventuresim_core::activity::CAROUSING_MORALE_SCALE_MINUTES,
+            ..Self::linear(0.0, 0.0, 0.0, 0.0)
+        }
+    }
+
     fn values(self, minutes: u16) -> [f32; 4] {
         let hours = f32::from(minutes) / 60.0;
         let morale = if self.prayer_morale {
             self.prayer_morale_multiplier
-                * PRAYER_MORALE_LIMIT
-                * (1.0 - (-f32::from(minutes) / PRAYER_MORALE_SCALE_MINUTES).exp())
+                * self.morale_limit
+                * (1.0 - (-f32::from(minutes) / self.morale_scale_minutes).exp())
         } else {
             self.morale_per_hour * hours
         };
@@ -3392,29 +4654,22 @@ fn activity_effect_cell(kind: &str, value: f32) -> Markup {
     }
 }
 
-fn activity_training_cell(label: &str, allocation_name: &str, minutes: u16) -> Markup {
+fn activity_training_cell(
+    label: &str,
+    allocation_name: &str,
+    minutes: u16,
+    profession: Option<&ProfessionActivityPreview>,
+) -> Markup {
     let hours = f32::from(minutes) / 60.0;
     let rates: Vec<(String, f32)> = match allocation_name {
-        "combat_training_minutes" => vec![
-            ("Combat".into(), 1.0),
-            ("Will".into(), 1.0),
-            ("Balance".into(), 1.0),
-        ],
-        "carousing_minutes" => vec![("Charisma".into(), 0.25)],
+        "combat_training_minutes" => vec![("Relevant combat skills".into(), 1.0)],
+        "carousing_minutes" => vec![("Humor".into(), 0.25)],
         "labor_minutes" => vec![("Will".into(), 0.25)],
         "thievery_minutes" => vec![("Stealth".into(), 0.25)],
-        "raiding_minutes" => vec![("Combat".into(), 0.25)],
+        "raiding_minutes" => vec![("Relevant combat skills".into(), 0.25)],
         "prayer_minutes" if label == "Prayer" => vec![("Religion".into(), 0.25)],
-        "apprenticeship_minutes" => adventuresim_core::profession::PROFESSIONS
-            .iter()
-            .find(|profession| label.contains(profession.label))
-            .map(|profession| {
-                profession
-                    .skills
-                    .iter()
-                    .map(|entry| (format!("{:?}", entry.skill), entry.weight))
-                    .collect()
-            })
+        "apprenticeship_minutes" | "profession_practice_minutes" => profession
+            .map(|preview| preview.training_rates.clone())
             .unwrap_or_default(),
         _ => Vec::new(),
     };
@@ -3447,14 +4702,21 @@ fn schedule_special_row(
     allocation_name: &str,
     allocation_minutes: u16,
     editable: bool,
+    actionable: bool,
     effects: ActivityEffectRates,
     leisure: Option<LeisurePreview>,
+    profession: Option<&ProfessionActivityPreview>,
     description: &str,
 ) -> Markup {
-    let values = leisure.map_or_else(
+    let mut values = leisure.map_or_else(
         || effects.values(allocation_minutes),
         |preview| [0.0, 0.0, preview.outcome.morale, preview.fatigue_display],
     );
+    if let Some(profession) = profession {
+        let reward = profession.reward_delta(allocation_name, allocation_minutes);
+        values[0] = reward[0];
+        values[1] = reward[1];
+    }
     html! {
         tr class="party-skill-row schedule-special-row" title=(description)
             data-activity-row data-activity-allocation=(allocation_name)
@@ -3463,9 +4725,14 @@ fn schedule_special_row(
             data-morale-rate=(effects.morale_per_hour)
             data-fatigue-rate=(effects.fatigue_per_hour)
             data-prayer-morale=[effects.prayer_morale.then_some("true")]
-            data-prayer-morale-limit=[effects.prayer_morale.then_some(PRAYER_MORALE_LIMIT)]
-            data-prayer-morale-scale=[effects.prayer_morale.then_some(PRAYER_MORALE_SCALE_MINUTES)]
+            data-prayer-morale-limit=[effects.prayer_morale.then_some(effects.morale_limit)]
+            data-prayer-morale-scale=[effects.prayer_morale.then_some(effects.morale_scale_minutes)]
             data-prayer-morale-multiplier=[effects.prayer_morale.then_some(effects.prayer_morale_multiplier)]
+            data-profession-accrued=[profession.map(|preview| if allocation_name == "apprenticeship_minutes" { preview.apprenticeship_accrued } else { preview.practice_accrued })]
+            data-profession-threshold=[profession.map(|preview| if allocation_name == "apprenticeship_minutes" { APPRENTICESHIP_REWARD_THRESHOLD } else { preview.practice_threshold })]
+            data-profession-reward=[profession.map(|preview| if allocation_name == "apprenticeship_minutes" { "gold" } else { preview.practice_reward })]
+            data-profession-sign=[profession.map(|_| if allocation_name == "apprenticeship_minutes" { -1 } else { 1 })]
+            data-profession-tier=[profession.map(|preview| preview.tier_label)]
             data-leisure-current-fatigue=[leisure.map(|preview| preview.current_fatigue)]
             data-leisure-baseline-fatigue=[leisure.map(|_| BASELINE_FATIGUE_PER_DAY)]
             data-leisure-labor-fatigue-rate=[leisure.map(|_| LABOR_FATIGUE_PER_HOUR)]
@@ -3474,14 +4741,14 @@ fn schedule_special_row(
             data-leisure-morale-scale=[leisure.map(|_| LEISURE_MORALE_SCALE_FATIGUE)]
             data-leisure-fatigue-preview-divisor=[leisure.map(|_| FATIGUE_RESERVOIR_PER_PREVIEW_POINT)] {
             th scope="row" class="party-skill-name party-skill-icon-cell" {
-                (schedule_icon(label, icon))
+                (schedule_icon(label, icon, actionable, allocation_name))
                 span class="sr-only" { (label) }
             }
             (activity_effect_cell("gold", values[0]))
             (activity_effect_cell("virtue", values[1]))
             (activity_effect_cell("morale", values[2]))
             (activity_effect_cell("fatigue", values[3]))
-            (activity_training_cell(label, allocation_name, allocation_minutes))
+            (activity_training_cell(label, allocation_name, allocation_minutes, profession))
             td class="religion-auto-toggle-cell" {}
             (schedule_allocation_cell(allocation_name, allocation_minutes, editable))
             td class="religion-expand-cell" {}
@@ -3517,13 +4784,70 @@ fn schedule_allocation_cell(name: &str, minutes: u16, editable: bool) -> Markup 
     }
 }
 
-fn schedule_icon(_label: &str, icon: &str) -> Markup {
+fn schedule_icon(label: &str, icon: &str, actionable: bool, activity: &str) -> Markup {
     html! {
-        span
-            class="stat-icon schedule-special-icon"
-            style=(format!("--stat-icon: url('/static/icons/game/{icon}.svg')"))
-            aria-hidden="true"
-        {}
+        @if actionable {
+            button type="button" class="schedule-activity-button" data-activity-open=(activity)
+                aria-label=(format!("Perform {label} now")) title=(format!("Perform {label} now"))
+                aria-haspopup="dialog" aria-expanded="false" {
+                span class="stat-icon schedule-special-icon"
+                    style=(format!("--stat-icon: url('/static/icons/game/{icon}.svg')"))
+                    aria-hidden="true" {}
+            }
+        } @else {
+            span class="stat-icon schedule-special-icon"
+                style=(format!("--stat-icon: url('/static/icons/game/{icon}.svg')"))
+                aria-hidden="true" {}
+        }
+    }
+}
+
+fn immediate_activity_dialog(action: &str) -> Markup {
+    html! {
+        div class="activity-modal" data-activity-modal hidden {
+            button type="button" class="activity-modal-backdrop" data-activity-close
+                aria-label="Close activity dialog" {}
+            form class="activity-modal-panel" action=(action) method="post" role="dialog"
+                aria-modal="true" aria-labelledby="activity-modal-title" tabindex="-1"
+                data-activity-form {
+                header class="activity-modal-header" {
+                    h3 id="activity-modal-title" data-activity-title { "Perform activity" }
+                    button type="button" class="activity-modal-close" data-activity-close
+                        aria-label="Close activity dialog" { "x" }
+                }
+                input type="hidden" name="activity" data-activity-kind;
+                input type="hidden" name="service_id" data-activity-service;
+                input type="hidden" name="requested_minutes" value="60" data-activity-minutes;
+                div class="activity-duration-control" {
+                    label for="immediate-activity-duration" { "Duration" }
+                    input id="immediate-activity-duration" type="range" min="1" max="24"
+                        step="1" value="1" data-activity-duration;
+                    p class="activity-duration-summary" aria-live="polite" data-activity-duration-summary {
+                        span data-activity-end { "Ends at --:--" }
+                        span aria-hidden="true" { " / " }
+                        span data-activity-hours { "1 h spent" }
+                    }
+                }
+                table class="party-skills-table activity-preview-table" aria-label="Activity result preview" {
+                    thead { tr {
+                        th scope="col" { "Activity" }
+                        th scope="col" { (schedule_header_icon("coins", "Currency")) }
+                        th scope="col" { (schedule_header_icon("scales", "Virtue")) }
+                        th scope="col" { (schedule_header_icon("sun", "Morale")) }
+                        th scope="col" { (schedule_header_icon("night-sleep", "Fatigue")) }
+                        th scope="col" { (schedule_header_icon("open-book", "Skill-hours")) }
+                    } }
+                    tbody { tr class="party-skill-row schedule-special-row" data-activity-preview-row {
+                        th scope="row" data-activity-preview-label { "Activity" }
+                        @for kind in ["gold", "virtue", "morale", "fatigue"] {
+                            td class="schedule-effect schedule-effect-neutral" data-activity-effect=(kind) { "0" }
+                        }
+                        td class="schedule-effect schedule-training-effect" data-activity-effect="training" { "--" }
+                    } }
+                }
+                button type="submit" class="activity-submit" data-activity-submit { "Spend 1 hour" }
+            }
+        }
     }
 }
 
@@ -3570,7 +4894,7 @@ pub(crate) fn character_stats_panel(
         (party_attributes_rail(&format!("{}'s attributes", character.name), attributes, limbs, medical, None, &[], &[]))
         (party_skills_rail(
             &format!("{}'s skills", character.name), skills, limbs, None, None, None,
-            false, 0.0, None, CombatTrainingProfile::default(),
+            false, 0.0, None, CombatTrainingProfile::default(), CharacterSkillActions::default(),
         ))
         (medical_rail(medical, "", 0, character.id, false))
     }
@@ -3644,7 +4968,8 @@ fn personality_tags(
     personality: &crate::spacetimedb::CharacterPersonality,
 ) -> Vec<(&'static str, &'static str)> {
     use crate::spacetimedb::{
-        Conscience::*, Conviction::*, Drive::*, Nerve::*, Outlook::*, SelfRegard::*, Sociability::*,
+        Conscience::*, Conviction::*, Drive::*, Hygiene::*, Nerve::*, Outlook::*, SelfRegard::*,
+        Sociability::*, Temperance::*,
     };
     let mut tags = Vec::new();
     match personality.nerve {
@@ -3701,6 +5026,25 @@ fn personality_tags(
         )),
         _ => {}
     }
+    match personality.hygiene {
+        Slovenly => tags.push(("Slovenly", "Filth morale penalty ×0.")),
+        Cleanly => tags.push((
+            "Cleanly",
+            "Filth morale penalty ×2.5; +2 morale while completely clean.",
+        )),
+        _ => {}
+    }
+    match personality.temperance {
+        Temperate => tags.push((
+            "Temperate",
+            "Automatic alcohol morale bonus +0; missed-drink morale penalty -0.",
+        )),
+        Drunkard => tags.push((
+            "Drunkard",
+            "Wants a heavy drink every evening: +5 morale when satisfied, -5 when missed.",
+        )),
+        _ => {}
+    }
     tags
 }
 
@@ -3720,6 +5064,8 @@ mod personality_tests {
             conscience: Conscience::Cruel,
             self_regard: SelfRegard::Neutral,
             conviction: Conviction::Neutral,
+            hygiene: Hygiene::Neutral,
+            temperance: Temperance::Neutral,
         };
         let tags = personality_tags(&personality);
         assert_eq!(
@@ -3740,6 +5086,8 @@ mod personality_tests {
                 conscience: Conscience::Compassionate,
                 self_regard: SelfRegard::Proud,
                 conviction: Conviction::Zealous,
+                hygiene: Hygiene::Cleanly,
+                temperance: Temperance::Temperate,
             },
             CharacterPersonality {
                 character_id: 2,
@@ -3750,6 +5098,8 @@ mod personality_tests {
                 conscience: Conscience::Callous,
                 self_regard: SelfRegard::Humble,
                 conviction: Conviction::Irreverent,
+                hygiene: Hygiene::Slovenly,
+                temperance: Temperance::Drunkard,
             },
             CharacterPersonality {
                 character_id: 3,
@@ -3760,14 +5110,18 @@ mod personality_tests {
                 conscience: Conscience::Cruel,
                 self_regard: SelfRegard::Neutral,
                 conviction: Conviction::Neutral,
+                hygiene: Hygiene::Neutral,
+                temperance: Temperance::Neutral,
             },
         ];
 
         for profile in &profiles {
             for (tag, description) in personality_tags(profile) {
                 assert!(
-                    description.contains('×'),
-                    "{tag} tooltip lacks a numeric multiplier: {description}"
+                    description
+                        .chars()
+                        .any(|character| character.is_ascii_digit()),
+                    "{tag} tooltip lacks a numeric morale effect: {description}"
                 );
             }
         }
@@ -3776,7 +5130,10 @@ mod personality_tests {
 
 fn strategic_condition_rail(
     condition: Option<&CharacterStrategicCondition>,
-    morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
+    _morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
+    filth: &[crate::spacetimedb::CharacterFilth],
+    social_href: &str,
+    social_open: bool,
 ) -> Markup {
     let Some(condition) = condition else {
         return html! {};
@@ -3816,7 +5173,7 @@ fn strategic_condition_rail(
     ];
     html! {
         (sidebar_section("Status", html! {
-            div class=(if condition.fear > 0.0 { "morale-meter is-fearful" } else { "morale-meter" }) tabindex="0" style=(meter_style) aria-label=(format!(
+            div class=(if condition.fear > 0.0 { "morale-meter is-fearful" } else { "morale-meter" }) style=(meter_style) role="meter" aria-valuemin="-5" aria-valuemax="5" aria-valuenow=(format!("{:.1}", condition.morale)) aria-label=(format!(
                 "Morale {:.1}; fear {}; inspiration {:.1}%",
                 condition.morale,
                 percent(condition.fear),
@@ -3824,7 +5181,13 @@ fn strategic_condition_rail(
             )) {
                 div class="morale-meter-heading" {
                     strong class="metric-label" { (decorative_game_icon("sun")) span { "Morale" } }
-                    span { (format!("{:+.1}", condition.morale)) }
+                    span class="morale-meter-value" { (format!("{:+.1}", condition.morale)) }
+                    a class=(if social_open { "character-menu-button is-open" } else { "character-menu-button" })
+                        href=(social_href) title="Open social menu" aria-label="Open social menu"
+                        aria-haspopup="dialog" aria-expanded=(social_open) {
+                        span class="stat-icon" style="--stat-icon: url('/static/icons/game/social.svg')" aria-hidden="true" {}
+                        @if social_open { span class="sr-only" { " (open)" } }
+                    }
                 }
                 div class="morale-meter-track" aria-hidden="true" {
                     span class="morale-meter-fear" {}
@@ -3835,21 +5198,6 @@ fn strategic_condition_rail(
                     span { "100% fear" }
                     span { "Neutral" }
                     span { (format!("{:.1}% inspiration", condition.morale_bonus * 100.0)) }
-                }
-                div class="morale-source-popup" role="tooltip" {
-                    strong { "Morale sources" }
-                    @if morale_sources.is_empty() {
-                        p { "No current morale effects." }
-                    } @else {
-                        ul {
-                            @for source in morale_sources {
-                                li class=(if source.magnitude >= 0.0 { "positive" } else { "negative" }) {
-                                    span { (&source.label) }
-                                    strong { (format!("{:+.1}", source.magnitude)) }
-                                }
-                            }
-                        }
-                    }
                 }
             }
             div class="fervor-meter" tabindex="0" style=(format!("--fervor: {:.0}%", condition.fervor.clamp(0.0, 1.0) * 100.0)) aria-label=(format!("Fervor {}", percent(condition.fervor))) {
@@ -3864,7 +5212,7 @@ fn strategic_condition_rail(
                     span { "Frenzy" }
                 }
                 p class="fervor-help" role="tooltip" {
-                    "Personality Conviction, a strong same-profession cohort, and surplus morale raise Fervor. Party Charisma restrains it. Characters without a professed religion have no Fervor."
+                    "Personality Conviction, a strong same-profession cohort, and surplus morale raise Fervor. Party Command restrains it. Characters without a professed religion have no Fervor."
                 }
             }
             div class="incapacitation-overview" tabindex="0" title=(format!("{} incapacitation", percent(condition.incapacitation))) {
@@ -3900,6 +5248,7 @@ fn strategic_condition_rail(
                 (need_balance_meter("Food", "meal", "Hunger", "Full", "hunger", condition.food_days, condition.hunger))
                 (need_balance_meter("Water", "water-drop", "Thirst", "Hydrated", "thirst", condition.water_days, condition.thirst))
             }
+            (filth_status_bar(filth))
         }))
     }
 }
@@ -3970,7 +5319,7 @@ fn medical_rail(
 
 fn medical_examination_popup(
     medical: &MedicalPresentation,
-    location_path: &str,
+    location: &LocationView,
     target_id: u64,
     limbs: Option<&CharacterLimbs>,
     injuries: &[LimbInjury],
@@ -3979,10 +5328,14 @@ fn medical_examination_popup(
     let Some(examination_id) = medical.examination_id else {
         return html! {};
     };
+    let dismiss_url = location.preserve_building(format!(
+        "{}/party/{target_id}/examination/{examination_id}/dismiss",
+        location.base_path()
+    ));
     html! {
         div class="medical-examination-overlay" role="dialog" aria-modal="true" aria-labelledby="medical-examination-title"
             data-medical-examination
-            data-dismiss-url=(format!("{location_path}/party/{target_id}/examination/{examination_id}/dismiss")) {
+            data-dismiss-url=(&dismiss_url) {
             section class="medical-examination-popup" {
                 header class="medical-examination-heading" {
                     div {
@@ -3991,7 +5344,7 @@ fn medical_examination_popup(
                             p class="text-muted small-copy" { "Observed at personal minute " (examined_at) "." }
                         }
                     }
-                    form method="post" action=(format!("{location_path}/party/{target_id}/examination/{examination_id}/dismiss")) {
+                    form method="post" action=(&dismiss_url) {
                         button type="submit" class="medical-examination-close" aria-label="Close examination findings" { "×" }
                     }
                 }
@@ -4060,7 +5413,7 @@ fn party_attributes_rail(
     attributes: Option<&CharacterAttributes>,
     limbs: Option<&CharacterLimbs>,
     medical: &MedicalPresentation,
-    surgery_base: Option<&str>,
+    surgery: Option<(&str, Option<&str>)>,
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
 ) -> Markup {
@@ -4077,35 +5430,35 @@ fn party_attributes_rail(
     html! {
         (sidebar_section(title, html! {
             div class="party-attributes-list" aria-label="Character attributes" {
-                (attribute_group("Head", "head", head_health, medical, 6, surgery_base, injuries, projectiles, &[
+                (attribute_group("Head", "head", head_health, medical, 6, surgery, injuries, projectiles, &[
                     ("Intelligence", "intelligence", attributes.intelligence),
                     ("Instinct", "instinct", attributes.instinct),
                     ("Eyesight", "eyesight", attributes.eyesight),
                     ("Hearing", "hearing", attributes.hearing),
                 ]))
-                (attribute_group("Chest", "chest", chest_health, medical, 4, surgery_base, injuries, projectiles, &[
+                (attribute_group("Chest", "chest", chest_health, medical, 4, surgery, injuries, projectiles, &[
                     ("Endurance", "endurance", attributes.endurance),
                 ]))
-                (attribute_group("Stomach", "stomach", stomach_health, medical, 5, surgery_base, injuries, projectiles, &[
+                (attribute_group("Stomach", "stomach", stomach_health, medical, 5, surgery, injuries, projectiles, &[
                     ("Immunity", "immunity", attributes.immunity),
                     ("Gut", "gut", attributes.gut),
                 ]))
                 div class="limb-attribute-pair" {
-                    (limb_attribute_column("Left arm", "left-arm", "limb-left", left_arm_health, medical, 0, surgery_base, injuries, projectiles, &[
+                    (limb_attribute_column("Left arm", "left-arm", "limb-left", left_arm_health, medical, 0, surgery, injuries, projectiles, &[
                         ("Strength", "strength-arm", attributes.left_arm_strength),
                         ("Agility", "agility-arm", attributes.left_arm_agility),
                     ]))
-                    (limb_attribute_column("Right arm", "right-arm", "limb-right", right_arm_health, medical, 1, surgery_base, injuries, projectiles, &[
+                    (limb_attribute_column("Right arm", "right-arm", "limb-right", right_arm_health, medical, 1, surgery, injuries, projectiles, &[
                         ("Strength", "strength-arm", attributes.right_arm_strength),
                         ("Agility", "agility-arm", attributes.right_arm_agility),
                     ]))
                 }
                 div class="limb-attribute-pair" {
-                    (limb_attribute_column("Left leg", "left-leg", "limb-left", left_leg_health, medical, 2, surgery_base, injuries, projectiles, &[
+                    (limb_attribute_column("Left leg", "left-leg", "limb-left", left_leg_health, medical, 2, surgery, injuries, projectiles, &[
                         ("Strength", "strength-leg", attributes.left_leg_strength),
                         ("Agility", "agility-leg", attributes.left_leg_agility),
                     ]))
-                    (limb_attribute_column("Right leg", "right-leg", "limb-right", right_leg_health, medical, 3, surgery_base, injuries, projectiles, &[
+                    (limb_attribute_column("Right leg", "right-leg", "limb-right", right_leg_health, medical, 3, surgery, injuries, projectiles, &[
                         ("Strength", "strength-leg", attributes.right_leg_strength),
                         ("Agility", "agility-leg", attributes.right_leg_agility),
                     ]))
@@ -4122,7 +5475,7 @@ fn limb_attribute_column(
     health: f32,
     medical: &MedicalPresentation,
     region: usize,
-    surgery_base: Option<&str>,
+    surgery: Option<(&str, Option<&str>)>,
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
     rows: &[(&str, &str, f32)],
@@ -4133,7 +5486,7 @@ fn limb_attribute_column(
         health,
         medical,
         region,
-        surgery_base,
+        surgery,
         injuries,
         projectiles,
         rows,
@@ -4148,7 +5501,7 @@ fn attribute_group(
     health: f32,
     medical: &MedicalPresentation,
     region: usize,
-    surgery_base: Option<&str>,
+    surgery: Option<(&str, Option<&str>)>,
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
     rows: &[(&str, &str, f32)],
@@ -4159,7 +5512,7 @@ fn attribute_group(
         health,
         medical,
         region,
-        surgery_base,
+        surgery,
         injuries,
         projectiles,
         rows,
@@ -4174,7 +5527,7 @@ fn attribute_group_with_labels(
     health: f32,
     medical: &MedicalPresentation,
     region: usize,
-    surgery_base: Option<&str>,
+    surgery: Option<(&str, Option<&str>)>,
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
     rows: &[(&str, &str, f32)],
@@ -4187,10 +5540,18 @@ fn attribute_group_with_labels(
             Some(side) => format!("attribute-group limb-attribute-column {side}"),
             None => "attribute-group".to_owned(),
         }) {
-            @if let Some(base) = surgery_base {
-                a class="limb-surgery-link" href=(format!("{base}/{slug}")) aria-label=(format!("Treat {name}")) {}
+            div class="attribute-group-heading" {
+                span { (name) }
+                @if let Some((path_template, open_limb)) = surgery {
+                    @let open = open_limb == Some(slug);
+                    a class=(if open { "character-menu-button limb-surgery-button is-open" } else { "character-menu-button limb-surgery-button" })
+                        href=(path_template.replace("__limb__", slug)) title=(format!("Treat {name}")) aria-label=(format!("Open surgery menu for {name}"))
+                        aria-haspopup="dialog" aria-expanded=(open) {
+                        span class="stat-icon" style="--stat-icon: url('/static/icons/game/scalpel.svg')" aria-hidden="true" {}
+                        @if open { span class="sr-only" { " (open)" } }
+                    }
+                }
             }
-            div class="attribute-group-heading" { (name) }
             (regional_health_bar(name, health, medical, region, injuries, projectiles))
             @for (attribute_name, icon, value) in rows {
                 (attribute_row(attribute_name, icon, *value, health, show_labels))
@@ -4441,17 +5802,6 @@ pub(crate) fn party_portrait_overlay(
                                         role="img" aria-label="Alchemy" {}
                                 }
                             }
-                            @if can_examine {
-                                form method="post" action=(format!("{}/party/{}/examine", location_path, member.id)) {
-                                    button type="submit" class="party-portrait-action party-medical-examine"
-                                        title=(format!("Examine {} (15 minutes)", member.name))
-                                        aria-label=(format!("Examine {} (15 minutes)", member.name)) {
-                                        span class="party-action-icon"
-                                            style="--party-action-icon: url('/static/icons/game/scalpel.svg')"
-                                            aria-hidden="true" {}
-                                    }
-                                }
-                            }
                             a href=(format!("{}/party/{}/inventory", location_path, member.id))
                                 class="party-portrait-action"
                                 title=(if is_active { "Open inventory and discard items".to_string() } else { format!("Compare inventory with {}", member.name) }) {
@@ -4531,6 +5881,7 @@ fn chat_area(
         section class="settlement-chat" aria-label="Settlement chat"
             data-service-quest-settlement=[service_context.map(|context| context.0)]
             data-service-quest-id=[service_context.map(|context| context.1)]
+            data-dialogue-catalog-revision=[service_context.map(|_| adventuresim_dialogue::CATALOG_DIGEST)]
             data-herbalist-exam-fee=[service_context
                 .filter(|context| context.1 == "herbalist")
                 .map(|_| adventuresim_core::strategic_economy::NPC_HERBALIST_EXAM_FEE)]
@@ -4541,41 +5892,54 @@ fn chat_area(
                 aria-valuenow="184" tabindex="0" title="Drag to resize chat" {
                 span aria-hidden="true" {}
             }
-            div class="settlement-chat-filters" role="group" aria-label="Visible chat channels" {
-                @for (channel, label, abbreviation) in [
-                    ("local", "Local", "L"),
-                    ("party", "Party", "P"),
-                    ("settlement", "Settlement", "S"),
-                    ("dm", "DMs", "D"),
-                    ("guild", "Guild", "G"),
-                    ("info", "Info", "I"),
-                ] {
-                    label class=(format!("chat-channel-filter chat-channel-filter-{channel}")) title=(label) {
-                        input type="checkbox" checked data-chat-filter=(channel)
-                            aria-label=(label) title=(label);
-                        span aria-hidden="true" { (abbreviation) }
+            div class="settlement-chat-layout" {
+                div class="settlement-chat-conversation" {
+                    div class="settlement-chat-filters" role="group" aria-label="Visible chat channels" {
+                        @for (channel, label, abbreviation) in [
+                            ("local", "Local", "L"),
+                            ("party", "Party", "P"),
+                            ("settlement", "Settlement", "S"),
+                            ("dm", "DMs", "D"),
+                            ("guild", "Guild", "G"),
+                            ("info", "Info", "I"),
+                        ] {
+                            label class=(format!("chat-channel-filter chat-channel-filter-{channel}")) title=(label) {
+                                input type="checkbox" checked data-chat-filter=(channel)
+                                    aria-label=(label) title=(label);
+                                span aria-hidden="true" { (abbreviation) }
+                            }
+                        }
+                    }
+                    div class="settlement-chat-messages" aria-live="polite" {
+                        @if local_context.is_none() { div class="chat-system-message" data-chat-channel="info" {
+                            span class="chat-timestamp" { "[--:--] " }
+                            " Select a local character or settlement service to begin talking."
+                        } }
+                        @for message in info_messages {
+                            div class="chat-system-message" data-chat-channel="info" {
+                                span class="chat-timestamp" { "[--:--] " }
+                                (message)
+                            }
+                        }
+                    }
+                    div class="settlement-chat-composer" {
+                        div class="settlement-chat-input-shell" {
+                            span class="settlement-chat-completion" data-dialogue-completion aria-hidden="true" {}
+                            input type="text" name="body" disabled[local_context.is_none()]
+                                aria-label="Local message"
+                                autocomplete="off"
+                                placeholder=(format!("Message {location} (Local)"));
+                        }
+                        button type="button" class="btn btn-primary btn-icon" disabled[local_context.is_none()]
+                            aria-label="Send message" {
+                            (decorative_game_icon("plain-arrow"))
+                        }
                     }
                 }
-            }
-            div class="settlement-chat-messages" aria-live="polite" {
-                @if local_context.is_none() { div class="chat-system-message" data-chat-channel="info" {
-                    span class="chat-timestamp" { "[--:--] " }
-                    " Select a local character or settlement service to begin talking."
-                } }
-                @for message in info_messages {
-                    div class="chat-system-message" data-chat-channel="info" {
-                        span class="chat-timestamp" { "[--:--] " }
-                        (message)
-                    }
-                }
-            }
-            div class="settlement-chat-composer" {
-                input type="text" name="body" disabled[local_context.is_none()]
-                    aria-label="Local message"
-                    placeholder=(format!("Message {location} (Local)"));
-                button type="button" class="btn btn-primary btn-icon" disabled[local_context.is_none()]
-                    aria-label="Send message" {
-                    (decorative_game_icon("plain-arrow"))
+                aside class="settlement-chat-topics" data-dialogue-topic-pane hidden
+                    aria-label="Dialogue topics" {
+                    h3 { "Topics" }
+                    ul data-dialogue-topic-list {}
                 }
             }
         }
@@ -4585,8 +5949,7 @@ fn chat_area(
 fn merchant_offers_rail(title: &str, unavailable_offers: &[&str]) -> Markup {
     html! {
         (sidebar_section(title, html! {
-            p class="small-copy" { "No stock is listed at present." }
-            ul class="service-offering-list" aria-label="Expected offerings" {
+            ul class="service-offering-list" aria-label="Expected offerings" title="No stock is listed at present" {
                 @for offer in unavailable_offers {
                     li { (decorative_game_icon("shop")) span { (offer) } }
                 }
@@ -4616,13 +5979,14 @@ fn inventory_rail(
                     tbody {
                     @for item in inventory {
                         @let definition = items.iter().find(|definition| definition.id == item.item_id);
+                        @let item_name = item_display_name(&item.item_id);
                         tr class=(if trade_action.is_some() { "trade-inventory-row" } else { "trade-inventory-row inventory-row-readonly" }) {
                             td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                             td class="inventory-item-name" {
                                 (item_name_with_quality(&item.item_id, definition))
                                 @if let Some((action, tooltip)) = trade_action {
                                 button type="button" class="trade-transfer trade-transfer-left" disabled
-                                    aria-label=(format!("{} {}", action, item.item_id))
+                                    aria-label=(format!("{action} {item_name}"))
                                     title=(tooltip) { "◀" }
                                 }
                             }
@@ -4647,6 +6011,7 @@ pub fn rest_result_page(
     logged_in_as: Option<&str>,
     at_inn: bool,
     summary: &RestSummary,
+    soap_preview: SoapRestPreview,
 ) -> Markup {
     service_page(
         settlement,
@@ -4661,6 +6026,7 @@ pub fn rest_result_page(
         logged_in_as,
         None,
         Some(summary),
+        soap_preview,
     )
 }
 
@@ -4670,14 +6036,16 @@ fn rest_service_menu(
     kind: &str,
     default_minutes: Option<u64>,
     summary: Option<&RestSummary>,
+    soap_preview: SoapRestPreview,
 ) -> Markup {
     html! {
-    section class="rest-service-menu" aria-label=(format!("{} rest service", location)) {
+    section class="rest-service-menu" aria-label=(format!("{} rest service", location))
+        title=(if kind == "inn" { "A bed costs 1 coin per day. Injuries are tended before downtime." } else { "Sanctuary is free. Injuries are tended before downtime." }) {
         div class="rest-service-heading" { strong { "Rest" } }
         @if kind == "inn" {
-            p class="rest-service-copy" { "A bed costs 1 coin per day. Injuries are tended before any downtime." }
+            p class="rest-service-copy" { "1 coin / day · treatment included" }
         } @else {
-            p class="rest-service-copy" { "Sanctuary is freely offered to those down on their luck. Injuries are tended before any downtime." }
+            p class="rest-service-copy" { "Free · treatment included" }
         }
         form action=(format!("/settlements/{settlement_id}/rest/{kind}")) method="post" {
                 @let minutes = default_minutes.unwrap_or(0);
@@ -4698,8 +6066,12 @@ fn rest_service_menu(
                         onclick=(format!("const input=this.parentElement.querySelector('input'); input.value={}; input.dispatchEvent(new Event('input', {{bubbles:true}}));", healing_days.unwrap_or(0))) { "Until healed" }
                 }
                 */
-                button type="submit" class="btn btn-primary btn-small btn-block" data-rest-submit disabled[unit == "hours"] { "Rest" }
+                button type="submit" class="btn btn-primary btn-small btn-block" data-rest-submit disabled[unit == "hours"] title="Rest for the selected duration" {
+                    (decorative_game_icon("night-sleep"))
+                    span class="sr-only" { "Rest" }
+                }
         }
+        (soap_wash_preview(soap_preview))
         @if let Some(summary) = summary {
             div class="rest-summary-overlay" role="dialog" aria-modal="true" aria-labelledby="rest-summary-title" {
                 section class="rest-summary" {
@@ -4818,7 +6190,7 @@ fn days_to_full_health(limbs: &CharacterLimbs) -> u16 {
     ((1.0 - lowest_health).max(0.0) / 0.05).ceil() as u16
 }
 
-fn rest_default_minutes(
+pub(crate) fn rest_default_minutes(
     limbs: Option<&CharacterLimbs>,
     stats: Option<&CharacterStats>,
     condition: Option<&CharacterCondition>,
@@ -4856,25 +6228,289 @@ fn blood_recovery_minutes(condition: &CharacterCondition) -> u64 {
 mod tests {
     use super::{
         Character, CharacterCondition, LocationKind, MerchantShop, encumbrance_inventory_rail,
-        encumbrance_meter, format_rest_duration, live_merchant_shop_page, need_balance_meter,
+        encumbrance_meter, filth_status_bar, format_rest_duration, live_merchant_shop_page,
+        merchant_inventory_sell_price, merchant_inventory_weight, need_balance_meter,
         repair_custody_panel, repair_submit_control, rest_default_minutes,
-        settlement_rest_duration_control,
+        settlement_rest_duration_control, strategic_condition_rail, strategic_encounter_panel,
     };
-    use crate::spacetimedb::ItemKind;
+    use crate::spacetimedb::{
+        CharacterFilth, CharacterStrategicCondition, FilthOrigin, FilthSubstance, FoodLot,
+        FoodPreparation, ItemKind, StrategicEncounter, StrategicEncounterLoss,
+    };
     use adventuresim_core::equipment::EncumbranceSummary;
 
     #[test]
+    fn encounter_panel_renders_only_authoritative_choices_and_exact_losses() {
+        let encounter = StrategicEncounter {
+            party_id: "party".into(),
+            encounter_id: "party:3".into(),
+            archetype: "bandits".into(),
+            enemy_count: 4,
+            roll_index: 3,
+            journey_movement_minute: 540,
+            journey_elapsed_minute: 700,
+            absolute_minute: 1_700,
+            longitude_e7: 1,
+            latitude_e7: 2,
+            terrain: "road".into(),
+            party_aware: false,
+            enemy_aware: true,
+            available_choices: vec!["attack".into(), "surrender".into()],
+            status: "awaiting_choice".into(),
+            selected_choice: None,
+            selection_explanation: "deterministic awareness".into(),
+            party_speed_m_per_minute: 60,
+            enemy_speed_m_per_minute: 80,
+            run_ineligibility: Some("too slow".into()),
+            penalty_minutes: 0,
+            loss_preview: vec![StrategicEncounterLoss {
+                owner_kind: "member".into(),
+                owner_id: 7,
+                inventory_id: 8,
+                item_id: "gold_coin".into(),
+                quantity: 12,
+                value_each: 1,
+            }],
+            outcome: None,
+        };
+        let rendered = strategic_encounter_panel(&encounter).into_string();
+        assert!(rendered.contains("The enemy surprised your party"));
+        assert!(rendered.contains("Cannot run: too slow"));
+        assert!(rendered.contains("12 × gold_coin"));
+        assert!(rendered.contains("value=\"attack\""));
+        assert!(rendered.contains("value=\"surrender\""));
+        assert!(!rendered.contains("value=\"run\""));
+        assert!(!rendered.contains("value=\"sneak\""));
+    }
+
+    #[test]
+    fn inferred_general_blacksmith_exposes_limited_weapon_and_armor_stock() {
+        let industries = adventuresim_world_schema::InferredIndustryProfile::new(vec![
+            adventuresim_world_schema::IndustryEvidence::Fallback(
+                adventuresim_world_schema::FallbackIndustry::CommonAggregate,
+            ),
+        ])
+        .unwrap();
+        let economy =
+            adventuresim_world_schema::infer_settlement_economy(2, 500, 1, false, &industries)
+                .unwrap();
+
+        assert!(adventuresim_core::settlement_economy::storefront_stocks(
+            &economy,
+            adventuresim_core::settlement_economy::Storefront::Weapons,
+            "club",
+            adventuresim_core::settlement_economy::CatalogKind::Weapon,
+        ));
+        assert!(adventuresim_core::settlement_economy::storefront_stocks(
+            &economy,
+            adventuresim_core::settlement_economy::Storefront::Armor,
+            "leather vest",
+            adventuresim_core::settlement_economy::CatalogKind::Armor,
+        ));
+        for category in [
+            adventuresim_world_schema::StockCategory::Weapons,
+            adventuresim_world_schema::StockCategory::Armor,
+        ] {
+            assert_eq!(
+                economy
+                    .stock
+                    .iter()
+                    .find(|stock| stock.category == category)
+                    .unwrap()
+                    .abundance,
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn merchant_food_quote_and_weight_follow_remaining_lot() {
+        let mut lot = FoodLot {
+            id: 1,
+            inventory_item_id: Some(9),
+            party_inventory_item_id: None,
+            display_name: "Cooked meal".into(),
+            preparation: FoodPreparation::Stewed,
+            ingredient_item_ids: vec!["raw_venison".into()],
+            ingredient_quantities: vec![1.0],
+            mass_kg: 25.0,
+            nutrition_kcal: 5_000.0,
+            total_value: 10.0,
+            created_at_minute: 1,
+        };
+        assert_eq!(merchant_inventory_weight(None, Some(&lot)), "25");
+        assert_eq!(merchant_inventory_sell_price(None, Some(&lot)), 8);
+        lot.mass_kg = 6.25;
+        lot.total_value = 2.5;
+        assert_eq!(merchant_inventory_weight(None, Some(&lot)), "6.25");
+        assert_eq!(merchant_inventory_sell_price(None, Some(&lot)), 2);
+        lot.total_value = 0.5;
+        let zero = merchant_inventory_sell_price(None, Some(&lot));
+        assert_eq!(zero, 0);
+        assert_eq!(
+            adventuresim_core::strategic_economy::language_adjusted_sell_price(zero, 0.0),
+            0
+        );
+    }
+
+    #[test]
+    fn public_filth_serialization_and_template_expose_only_aggregate_origin() {
+        let deposit = CharacterFilth {
+            id: 1,
+            character_id: 7,
+            substance: FilthSubstance::Blood,
+            origin: FilthOrigin::Foreign,
+            amount: 2,
+            deposited_at: 10,
+        };
+        let serialized = serde_json::to_value(&deposit).unwrap();
+        assert!(serialized.get("source_character_id").is_none());
+        assert_eq!(
+            serialized.get("origin").and_then(|value| value.as_str()),
+            Some("Foreign")
+        );
+        let markup = filth_status_bar(&[deposit]).into_string();
+        assert!(markup.contains("2 foreign"));
+        assert!(!markup.contains("source_character_id"));
+        assert!(!markup.contains("filth-legend"));
+        assert!(!markup.contains("/100 filth</span>"));
+        assert!(markup.contains("data-strategic-tooltip=\"Filth accumulates"));
+        assert!(markup.contains("data-strategic-tooltip=\"Blood\n2\""));
+    }
+
+    #[test]
+    fn status_rail_places_filth_after_water() {
+        let condition = CharacterStrategicCondition {
+            character_id: 7,
+            morale: 0.0,
+            morale_bonus: 0.0,
+            morale_bonus_cap: 0.0,
+            fervor: 0.0,
+            pain: 0.0,
+            blood_loss: 0.0,
+            fear: 0.0,
+            fatigue: 0.0,
+            hunger: 0.0,
+            thirst: 0.0,
+            food_days: 1.0,
+            water_days: 1.0,
+            water_capacity_ml: 2_000,
+            incapacitation: 0.0,
+            check_multiplier: 1.0,
+            status: "ready".into(),
+        };
+        let markup =
+            strategic_condition_rail(Some(&condition), &[], &[], "/social", false).into_string();
+        assert!(markup.contains("class=\"morale-meter\""));
+        assert!(markup.contains("href=\"/social\" title=\"Open social menu\""));
+        assert!(markup.contains("aria-haspopup=\"dialog\" aria-expanded=\"false\""));
+        let water = markup.find("Water").expect("water meter");
+        let filth = markup.find("Filth").expect("filth meter");
+        assert!(water < filth);
+    }
+
+    #[test]
+    fn social_catalog_labels_are_generic_grounded_and_accessible() {
+        use adventuresim_core::social::{SocialActionKind, SocialTopic};
+        let defeat = SocialActionKind::Commiserate.description(SocialTopic::Defeat, true);
+        assert_eq!(defeat, "Commiserate about the defeat");
+        assert!(!defeat.to_ascii_lowercase().contains("goblin"));
+        let actions = social_actions(false, SocialTopic::Defeat);
+        assert_eq!(actions.len(), 6);
+        assert!(
+            actions
+                .iter()
+                .any(|(_, action, _)| *action == SocialActionKind::Listen)
+        );
+        assert_eq!(
+            social_actions(true, SocialTopic::Defeat),
+            vec![("inner-self", SocialActionKind::Reflect, "reflect")]
+        );
+        assert_eq!(social_actions(false, SocialTopic::Hunger).len(), 3);
+        assert_eq!(social_actions(false, SocialTopic::Faith).len(), 4);
+        assert_eq!(SocialActionKind::Commiserate.skill_name(false), "Deception");
+        assert_eq!(
+            SocialActionKind::Flirt.description(SocialTopic::Injury, false),
+            "Tell them the scar makes them look striking"
+        );
+        assert_eq!(familiarity_label(0.0), "0 hours");
+        assert_eq!(familiarity_label(0.4), "<1 hours");
+        assert_eq!(familiarity_label(9.4), "9 hours");
+        let tooltip = belief_tooltip(&crate::spacetimedb::SocialBelief {
+            id: "belief".into(),
+            observer_id: 1,
+            subject_id: 2,
+            axis: "self_regard".into(),
+            perceived_value: 1,
+            confidence: 0.64,
+            observed_at_minute: 0,
+        });
+        assert!(tooltip.contains("Confidence: 64%"));
+        assert!(tooltip.contains("Injury is touchy"));
+    }
+
+    #[test]
+    fn social_skill_family_has_an_average_and_six_expandable_icon_rows() {
+        let skills = CharacterSkills {
+            character_id: 7,
+            insight_hours: 100.0,
+            self_awareness_hours: 80.0,
+            humor_hours: 60.0,
+            command_hours: 40.0,
+            deception_hours: 20.0,
+            seduction_hours: 10.0,
+            ..CharacterSkills::default()
+        };
+        let markup = social_skill_rows(&skills, 1.0, None).into_string();
+        assert!(markup.contains("data-social-primary"));
+        assert!(markup.contains("Average of all six Social skills"));
+        assert_eq!(markup.matches("data-social-detail").count(), 6);
+        for icon in [
+            "conversation.svg",
+            "awareness.svg",
+            "inner-self.svg",
+            "juggler.svg",
+            "crown.svg",
+            "rose.svg",
+        ] {
+            assert!(markup.contains(icon), "missing social icon {icon}");
+        }
+    }
+
+    #[test]
     fn herbalist_stock_template_includes_every_prepared_course_and_ingredients() {
-        assert!(MerchantShop::Herbalist.stocks(ItemKind::Ingredient));
-        assert!(MerchantShop::Herbalist.stocks(ItemKind::Medication));
+        let ingredient = crate::spacetimedb::ItemDefinition {
+            kind: ItemKind::Ingredient,
+            ..Default::default()
+        };
+        let medication = crate::spacetimedb::ItemDefinition {
+            kind: ItemKind::Medication,
+            ..Default::default()
+        };
+        assert!(MerchantShop::Herbalist.stocks(&ingredient));
+        assert!(MerchantShop::Herbalist.stocks(&medication));
+        let apple = crate::spacetimedb::ItemDefinition {
+            id: "apple".into(),
+            kind: ItemKind::Food,
+            ..Default::default()
+        };
+        let pan = crate::spacetimedb::ItemDefinition {
+            id: "cooking_pan".into(),
+            ..Default::default()
+        };
+        assert!(MerchantShop::Inn.stocks(&apple));
+        assert!(MerchantShop::Inn.stocks(&pan));
+        assert!(!MerchantShop::Inn.stocks(&medication));
         assert_eq!(adventuresim_core::disease::MEDICATION_RECIPES.len(), 8);
         let definition = crate::spacetimedb::ItemDefinition {
             id: "black_death_tonic".into(),
             kind: ItemKind::Medication,
             ..Default::default()
         };
-        let rendered = item_name_with_display("Black Death tonic", Some(&definition)).into_string();
-        assert!(rendered.contains("data-item-name=\"Black Death tonic\""));
+        let rendered =
+            item_name_with_display("black_death_tonic", "Black Death tonic", Some(&definition))
+                .into_string();
+        assert!(rendered.contains("data-item-name=\"black_death_tonic\""));
         assert!(rendered.contains("data-item-kind=\"medication\""));
         assert!(rendered.contains(">Black Death tonic</span>"));
     }
@@ -4979,17 +6615,21 @@ mod tests {
                 &[],
                 &[],
                 &[],
+                &[],
                 None,
                 &[],
                 &[],
                 &[],
                 shop,
+                1.0,
                 &[],
                 None,
                 &[],
                 0,
                 EncumbranceSummary::new(10.0, 100.0),
                 EncumbranceSummary::new(30.0, 200.0),
+                None,
+                SoapRestPreview::default(),
             )
             .into_string()
         };
@@ -5003,6 +6643,10 @@ mod tests {
         assert!(herbalist.contains(">10.0 / 100.0 kg<"));
         assert!(!herbalist.contains("data-inventory-pane=\"party\""));
         assert!(!herbalist.contains(">30.0 / 200.0 kg<"));
+
+        let inn = render(MerchantShop::Inn);
+        assert!(inn.contains("Cooking supplies"));
+        assert!(inn.contains("aria-label=\"Inn rest service\""));
     }
 
     #[test]
@@ -5034,6 +6678,27 @@ mod tests {
         assert!(markup.contains("aria-label=\"Wake time\""));
         assert!(markup.contains("aria-valuetext=\"08:00\""));
         assert!(markup.contains("name=\"requested_minutes\""));
+    }
+
+    #[test]
+    fn rest_supplies_are_icons_with_hover_only_details() {
+        let markup = soap_wash_preview(SoapRestPreview {
+            total_units: 1,
+            personal_units: 1,
+            available_units: 1,
+            alcohol_available: true,
+            alcohol_will_be_consumed: false,
+            ..SoapRestPreview::default()
+        })
+        .into_string();
+        assert!(markup.contains("aria-label=\"Soap\""));
+        assert!(markup.contains("aria-label=\"Alcohol\""));
+        assert!(markup.contains("water-drop.svg"));
+        assert!(markup.contains("beer-stein.svg"));
+        assert!(markup.contains("rest-consumable-indicator available"));
+        assert!(markup.contains("rest-consumable-indicator unavailable"));
+        assert!(!markup.contains("rest-soap-preview"));
+        assert!(markup.contains("Temperate characters do not drink"));
     }
 
     #[test]
@@ -5108,12 +6773,22 @@ mod tests {
             population_level: 4,
             population_estimate: 12_000,
             category: crate::spacetimedb::SettlementCategory::City,
+            languages: adventuresim_world_schema::SettlementLanguageProfile {
+                east_central_bp: 2_000,
+                west_central_bp: 2_000,
+                low_bp: 6_000,
+                yiddish_incidence_bp: 75,
+            },
             industries: adventuresim_world_schema::InferredIndustryProfile::new(vec![
                 adventuresim_world_schema::IndustryEvidence::Fallback(
                     adventuresim_world_schema::FallbackIndustry::CroplandGrain,
                 ),
             ])
             .unwrap(),
+            economy: adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder(),
+            religious_status: adventuresim_world_schema::SettlementReligiousStatus::Established {
+                religion: adventuresim_world_schema::OfficialReligion::RomanCatholic,
+            },
             scene_key: "hills".into(),
             religion_id: "western_church".into(),
             currency_id: "lubeck_mark".into(),
@@ -5140,6 +6815,23 @@ mod tests {
     }
 
     #[test]
+    fn tailor_repair_control_targets_the_clothing_service() {
+        let condition = crate::spacetimedb::ItemCondition {
+            inventory_item_id: 4,
+            tier_1: 0.25,
+            tier_2: 0.0,
+            tier_3: 0.0,
+            tier_4: 0.0,
+            tier_5: 0.0,
+        };
+        let rendered =
+            repair_submit_control(&settlement(), "clothing", 4, Some(&condition), 2).into_string();
+        assert!(rendered.contains("/clothing/repair"));
+        assert!(rendered.contains("row-repair-form"));
+        assert!(!rendered.contains("disabled"));
+    }
+
+    #[test]
     fn collapsed_currency_label_hides_the_historical_denomination() {
         let definition = crate::spacetimedb::ItemDefinition {
             id: "lubeck_mark".into(),
@@ -5155,6 +6847,20 @@ mod tests {
     }
 
     #[test]
+    fn alcohol_labels_expose_a_shared_inventory_group() {
+        let definition = crate::spacetimedb::ItemDefinition {
+            id: "small_beer".into(),
+            kind: crate::spacetimedb::ItemKind::Simple,
+            alcohol_serving_ml: 500,
+            ..Default::default()
+        };
+        let rendered = item_name_with_quality(&definition.id, Some(&definition)).into_string();
+        assert!(rendered.contains("data-item-name=\"small_beer\""));
+        assert!(rendered.contains("data-item-group=\"alcohol\""));
+        assert!(rendered.contains("data-group-name=\"Alcohol\""));
+    }
+
+    #[test]
     fn smith_player_actions_keep_sell_and_repair_in_one_hover_area() {
         let repair = repair_submit_control(&settlement(), "weapons", 4, None, 3);
         let rendered =
@@ -5164,8 +6870,8 @@ mod tests {
         assert_eq!(rendered.matches("data-merchant-sell=\"").count(), 1);
         assert!(rendered.contains("data-dynamic-transfer"));
         assert!(rendered.contains("data-default-transfer-mode=\"one\""));
-        assert!(rendered.contains("data-label-target=\"Sell surplus torch\""));
-        assert!(rendered.contains("data-label-all=\"Sell all torch\""));
+        assert!(rendered.contains("data-label-target=\"Sell surplus Torch\""));
+        assert!(rendered.contains("data-label-all=\"Sell all Torch\""));
         assert!(rendered.contains("row-repair-form"));
         assert_eq!(rendered.matches("smith-player-actions").count(), 1);
     }
@@ -5324,7 +7030,7 @@ mod tests {
     fn surgery_supplies_are_icon_counts_with_hover_labels() {
         let supply = surgery_supply("Bandages", "bandage-roll", 8).into_string();
         assert!(supply.contains("class=\"surgery-supply\""));
-        assert!(supply.contains("data-tooltip=\"Bandages: 8 available\""));
+        assert!(supply.contains("data-strategic-tooltip=\"Bandages: 8 available\""));
         assert!(supply.contains("bandage-roll.svg"));
         assert!(supply.contains(">x8</span>"));
         assert!(!supply.contains(">Bandages</span>"));
@@ -5334,18 +7040,18 @@ mod tests {
     fn surgery_item_icons_explain_consumed_reusable_and_equipped_supplies() {
         let bandage =
             surgery_item_requirement(SurgeryItemRequirement::BandageConsumed).into_string();
-        assert!(bandage.contains("data-tooltip=\"Expend one bandage\""));
+        assert!(bandage.contains("data-strategic-tooltip=\"Expend one bandage\""));
         assert!(bandage.contains(">x1</span>"));
 
         let kit =
             surgery_item_requirement(SurgeryItemRequirement::SurgeryKitReusable).into_string();
-        assert!(kit.contains("data-tooltip=\"Requires surgery kit\""));
+        assert!(kit.contains("data-strategic-tooltip=\"Requires surgery kit\""));
         assert!(kit.contains("aria-label=\"Requires surgery kit; reusable and not consumed\""));
         assert!(kit.contains("medical-pack.svg"));
         assert!(!kit.contains("surgery-item-overlay"));
 
         let splint = surgery_item_requirement(SurgeryItemRequirement::SplintEquipped).into_string();
-        assert!(splint.contains("data-tooltip=\"Equips 1 splint\""));
+        assert!(splint.contains("data-strategic-tooltip=\"Equips 1 splint\""));
         assert!(splint.contains("check-mark.svg"));
     }
 
@@ -5367,15 +7073,33 @@ mod tests {
         assert!(!meter.contains("skill-rank-value"));
         assert!(!meter.contains(">4.0<"));
         assert!(meter.contains(
-            "aria-label=\"Remove ball: requires 4.0 Surgery; current effective skill 2.0\""
+            "aria-label=\"Remove ball: requires 4.0 procedure skill; current effective skill 2.0\""
         ));
         let over_cap = surgery_difficulty_meter("Remove ball", 7.2, 5.0).into_string();
         assert!(over_cap.contains("surgery-difficulty-over-cap-marker"));
-        assert!(over_cap.contains("requires 7.2 Surgery; current effective skill 5.0"));
+        assert!(over_cap.contains("requires 7.2 procedure skill; current effective skill 5.0"));
         assert!(!adventuresim_core::surgery::extraction_requires_surgery_kit(1.0));
         assert!(adventuresim_core::surgery::extraction_requires_surgery_kit(
             1.01
         ));
+    }
+
+    #[test]
+    fn surgery_preview_uses_the_same_asymmetric_procedure_composition_as_reducers() {
+        let checks = [5.0, 5.0, 0.0];
+        let extraction = surgery_procedure_skill("extract", checks, false);
+        let stitching = surgery_procedure_skill("stitch", checks, false);
+        assert_eq!(
+            extraction,
+            adventuresim_core::surgery::procedure_skill("extract", 5.0, 5.0, 0.0, false)
+        );
+        assert_eq!(
+            stitching,
+            adventuresim_core::surgery::procedure_skill("stitch", 5.0, 5.0, 0.0, false)
+        );
+        assert!(extraction >= 4.0);
+        assert!(stitching < 4.0);
+        assert_eq!(surgery_procedure_skill("extract", checks, true), 2.5);
     }
 
     #[test]
@@ -5392,10 +7116,13 @@ mod tests {
             Some("No injury is present"),
             Some("No injury is present"),
             None,
+            true,
+            true,
+            None,
         )
         .into_string();
         assert!(row.contains("surgery-procedure-unavailable"));
-        assert!(row.contains("data-tooltip=\"No injury is present\""));
+        assert!(row.contains("data-strategic-tooltip=\"No injury is present\""));
         assert!(row.contains("aria-label=\"Stitch: No injury is present\" tabindex=\"0\""));
         assert!(row.contains("disabled title=\"No injury is present\""));
         assert!(row.contains(">Stitch</button>"));
@@ -5403,36 +7130,75 @@ mod tests {
     }
 
     #[test]
+    fn bloody_procedure_names_concrete_automatic_alcohol_without_risk_numbers() {
+        let row = surgery_procedure_row(
+            "/test",
+            "Bandage",
+            "bandage-roll",
+            "bandage",
+            &[],
+            10,
+            0.0,
+            1.0,
+            None,
+            None,
+            None,
+            false,
+            true,
+            Some("aqua_vitae"),
+        )
+        .into_string();
+        assert!(row.contains("Consumes 1 Aqua vitae"));
+        assert!(row.contains("beer-stein.svg"));
+        assert!(!row.contains("infection probability"));
+        assert!(!row.contains("use_alcohol"));
+    }
+
+    #[test]
     fn schedule_table_uses_compact_accessible_icon_headers() {
         let skills = CharacterSkills {
             character_id: 1,
-            melee_hours: 0.0,
+            polearm_hours: 0.0,
+            axe_hours: 0.0,
+            bludgeon_hours: 0.0,
+            sword_hours: 0.0,
+            knife_hours: 0.0,
             dodge_hours: 0.0,
             block_hours: 0.0,
-            ranged_hours: 0.0,
+            bow_hours: 0.0,
+            crossbow_hours: 0.0,
+            firearm_hours: 0.0,
+            throw_hours: 0.0,
             will_hours: 0.0,
-            charisma_hours: 0.0,
+            insight_hours: 0.0,
+            self_awareness_hours: 0.0,
+            humor_hours: 0.0,
+            command_hours: 0.0,
+            deception_hours: 0.0,
+            seduction_hours: 0.0,
             medicine_hours: 0.0,
+            cooking_hours: 0.0,
             religion_hours: adventuresim_world_schema::ReligionHours {
                 roman_catholic: 1_000.0,
                 ..Default::default()
             },
+            oral_languages: Default::default(),
+            written_languages: Default::default(),
             stealth_hours: 0.0,
             balance_hours: 0.0,
-            surgeon_hours: 0.0,
+            terrain_plains_hours: 0.0,
+            terrain_forest_hours: 0.0,
+            terrain_hills_hours: 0.0,
+            terrain_urban_hours: 0.0,
+            anatomy_hours: 0.0,
+            tailoring_hours: 0.0,
             smithing_hours: 0.0,
         };
         let schedule = CharacterTrainingSchedule {
             character_id: 1,
             downtime: crate::spacetimedb::ScheduleAllocation {
-                combat_minutes: 90,
-                combat_auto_train: true,
-                religion_minutes: 120,
-                religion_auto_train: true,
-                religion_minutes_by_tradition: adventuresim_world_schema::ReligionMinutes {
-                    judaism: 45,
-                    ..Default::default()
-                },
+                combat_training_minutes: 90,
+                prayer_minutes: 120,
                 ..Default::default()
             },
             travel: crate::spacetimedb::ScheduleAllocation::default(),
@@ -5449,6 +7215,8 @@ mod tests {
             0.0,
             Some(OfficialReligion::Judaism),
             CombatTrainingProfile::default(),
+            false,
+            CharacterSkillActions::default(),
         )
         .into_string();
 
@@ -5479,7 +7247,10 @@ mod tests {
         assert!(rendered.contains("title=\"Judaism\""));
         assert!(rendered.contains("/static/icons/religion/fontawesome-star-of-david.svg"));
         assert!(!rendered.contains("data-combat-auto-toggle"));
-        assert!(!rendered.contains("data-combat-detail"));
+        for group in ["melee", "ranged", "defense"] {
+            assert!(rendered.contains(&format!("data-combat-expand=\"{group}\"")));
+            assert!(rendered.contains(&format!("data-combat-detail=\"{group}\"")));
+        }
         assert!(!rendered.contains("aria-label=\"Religion details\""));
         assert!(rendered.contains("aria-label=\"Skill details\""));
         assert!(rendered.contains("Sparring and target practice"));
@@ -5495,8 +7266,7 @@ mod tests {
         let expand = rendered.find("data-religion-expand").unwrap();
         assert!(primary_icon < expand);
         assert!(rendered.contains("class=\"religion-expand-cell\"><button"));
-        assert!(!rendered.contains("aria-label=\"Will\""));
-        assert!(!rendered.contains(">Will</th>"));
+        assert!(rendered.contains("aria-label=\"Will\""));
         assert!(!rendered.contains("data-religion-auto-budget disabled"));
         assert!(!rendered.contains("data-religion-manual-budget disabled"));
         assert!(rendered.contains("/static/icons/game/coins.svg"));
@@ -5514,6 +7284,7 @@ mod tests {
             0.0,
             Some("judaism"),
             CombatTrainingProfile::default(),
+            CharacterSkillActions::default(),
         )
         .into_string();
         assert!(!rail.contains("class=\"sidebar-header\">Your skills"));
@@ -5521,8 +7292,99 @@ mod tests {
         assert!(rail.contains("data-schedule-save-status"));
         assert!(rail.contains("role=\"status\" aria-live=\"polite\" hidden"));
         assert!(rail.contains("data-schedule-retry>Retry</button>"));
+        assert!(!rail.contains("data-activity-modal"));
+        assert!(!rail.contains("data-activity-open"));
+        let settlement_rail = party_skills_rail(
+            "Your skills",
+            Some(&skills),
+            None,
+            Some(&schedule),
+            Some("/locations/settlement/lubeck/party/1/schedule"),
+            None,
+            false,
+            0.0,
+            Some("judaism"),
+            CombatTrainingProfile::default(),
+            CharacterSkillActions::default(),
+        )
+        .into_string();
+        assert!(settlement_rail.contains("data-activity-modal"));
+        assert!(settlement_rail.contains("data-activity-open"));
         assert!(!rail.contains(">⚙</span>"));
         assert!(!rail.contains("aria-label=\"Automatic training\""));
+    }
+
+    #[test]
+    fn defense_will_uses_head_health_for_its_injury_adjusted_rank() {
+        let skills = CharacterSkills {
+            will_hours: 5_000.0,
+            ..Default::default()
+        };
+        let rendered = combat_skill_rows(
+            &skills,
+            0.2,
+            0.8,
+            1.0,
+            None,
+            CombatTrainingProfile::default(),
+        )
+        .into_string();
+        let will = rendered.find("aria-label=\"Will\"").unwrap();
+        let start = rendered[..will].rfind("<tr").unwrap();
+        let end = will + rendered[will..].find("</tr>").unwrap() + "</tr>".len();
+        let will_row = &rendered[start..end];
+        let rank = Skill::Will.training_rank(5_000.0);
+        let expected = skill_rank_bar(
+            rank,
+            rank * 0.2,
+            "5000 hours invested",
+            skill_rail_bar_options(),
+        )
+        .into_string();
+        assert!(will_row.contains(&expected));
+    }
+
+    #[test]
+    fn language_families_are_expandable_accessible_and_color_coded() {
+        let skills = CharacterSkills {
+            oral_languages: adventuresim_world_schema::OralLanguageHours {
+                east_central: 5_000.0,
+                ..Default::default()
+            },
+            written_languages: adventuresim_world_schema::WrittenLanguageHours {
+                german: 1_000.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let rendered = language_skill_rows(&skills, false).into_string();
+        assert!(rendered.contains("Expand Oral languages"));
+        assert!(rendered.contains("Expand Written languages"));
+        assert!(rendered.contains("language-oral language-blackletter"));
+        assert!(rendered.contains("language-written language-blackletter"));
+        assert!(rendered.contains(
+            "5000.0 effective hours; 5000.0 directly studied hours across Oral languages"
+        ));
+        assert!(rendered.contains(
+            "1000.0 effective hours; 1000.0 directly studied hours across Written languages"
+        ));
+        assert!(rendered.contains("title=\"East-central — Ostmitteldeutsch\""));
+        assert!(rendered.contains("5000.0 effective hours; 5000.0 directly studied hours"));
+        assert!(rendered.contains("title=\"Latin — Latine\""));
+        assert!(!rendered.contains("title=\"Romani — Romani\""));
+        assert_eq!(rendered.matches("data-language-detail=\"oral\"").count(), 4);
+        assert_eq!(
+            rendered.matches("data-language-detail=\"written\"").count(),
+            3
+        );
+    }
+
+    #[test]
+    fn language_families_are_hidden_without_effective_hours() {
+        let rendered = language_skill_rows(&CharacterSkills::default(), false).into_string();
+        assert!(!rendered.contains("Expand Oral languages"));
+        assert!(!rendered.contains("Expand Written languages"));
+        assert!(!rendered.contains("data-language-detail"));
     }
 
     #[test]
@@ -5533,7 +7395,9 @@ mod tests {
             "thievery_minutes",
             120,
             true,
+            true,
             ActivityEffectRates::linear(2.0, -1.0, 0.0, 0.0),
+            None,
             None,
             "Test activity",
         )
@@ -5554,24 +7418,86 @@ mod tests {
     #[test]
     fn activity_training_column_totals_and_explains_effective_skill_hours() {
         let combat =
-            activity_training_cell("Combat Training", "combat_training_minutes", 120).into_string();
-        assert!(combat.contains(">+6.00h<"));
-        assert!(combat.contains("Combat: +2.00h; Will: +2.00h; Balance: +2.00h"));
-
-        let carousing = activity_training_cell("Carousing", "carousing_minutes", 120).into_string();
-        assert!(carousing.contains(">+0.50h<"));
-        assert!(carousing.contains("Charisma: +0.50h"));
-
-        let apprenticeship =
-            activity_training_cell("Apprenticeship — herbalist", "apprenticeship_minutes", 120)
+            activity_training_cell("Combat Training", "combat_training_minutes", 120, None)
                 .into_string();
+        assert!(combat.contains(">+2.00h<"));
+        assert!(combat.contains("Relevant combat skills: +2.00h"));
+
+        let carousing =
+            activity_training_cell("Carousing", "carousing_minutes", 120, None).into_string();
+        assert!(carousing.contains(">+0.50h<"));
+        assert!(carousing.contains("Humor: +0.50h"));
+
+        let profession = ProfessionActivityPreview {
+            training_rates: vec![
+                ("Medicine".into(), 0.5),
+                ("Anatomy".into(), 1.0 / 6.0),
+                ("Knife".into(), 1.0 / 6.0),
+                ("Tailoring".into(), 1.0 / 6.0),
+            ],
+            apprenticeship_accrued: 0,
+            practice_accrued: 0,
+            practice_threshold: 8 * 60 * PROFESSION_ACCRUAL_SCALE,
+            practice_reward: "gold",
+            tier_label: "apprentice",
+        };
+        let apprenticeship = activity_training_cell(
+            "Apprenticeship — herbalist",
+            "apprenticeship_minutes",
+            120,
+            Some(&profession),
+        )
+        .into_string();
         assert!(apprenticeship.contains(">+2.00h<"));
         assert!(apprenticeship.contains("Medicine: +1.00h"));
-        assert!(apprenticeship.contains("Surgeon: +1.00h"));
+        assert!(apprenticeship.contains("Anatomy: +0.33h"));
+        assert!(apprenticeship.contains("Knife: +0.33h"));
+        assert!(apprenticeship.contains("Tailoring: +0.33h"));
 
-        let leisure = activity_training_cell("Leisure", "leisure_minutes", 480).into_string();
+        let leisure = activity_training_cell("Leisure", "leisure_minutes", 480, None).into_string();
         assert!(leisure.contains(">—<"));
         assert!(leisure.contains("No skill training"));
+    }
+
+    #[test]
+    fn profession_preview_uses_accrual_tier_reward_and_training_distribution() {
+        let threshold = APPRENTICESHIP_REWARD_THRESHOLD;
+        let row = CharacterApprenticeship {
+            id: 1,
+            character_id: 7,
+            service_id: "weapons".into(),
+            religion_id: None,
+            started_minute: 0,
+            apprenticeship_minutes_accrued: threshold - 60 * PROFESSION_ACCRUAL_SCALE,
+            practice_minutes_accrued: 0,
+        };
+        let journeyman = CharacterSkills {
+            smithing_hours: 4_000.0,
+            ..Default::default()
+        };
+        let preview = ActivityPreviewRates::default()
+            .with_professions(Some(&journeyman), std::slice::from_ref(&row));
+        let smith = preview.profession.get("weapons").unwrap();
+        assert_eq!(smith.tier_label, "journeyman");
+        assert_eq!(smith.practice_threshold, 8 * 60 * PROFESSION_ACCRUAL_SCALE);
+        assert_eq!(
+            smith.reward_delta("apprenticeship_minutes", 60),
+            [-1.0, 0.0]
+        );
+        assert_eq!(smith.training_rates, vec![("Smithing".into(), 1.0)]);
+
+        let master = CharacterSkills {
+            smithing_hours: 25_000.0,
+            ..Default::default()
+        };
+        let preview = ActivityPreviewRates::default().with_professions(Some(&master), &[row]);
+        let smith = preview.profession.get("weapons").unwrap();
+        assert_eq!(smith.tier_label, "master");
+        assert_eq!(smith.practice_threshold, 2 * 60 * PROFESSION_ACCRUAL_SCALE);
+        assert_eq!(
+            smith.reward_delta("profession_practice_minutes", 240),
+            [2.0, 0.0]
+        );
     }
 
     #[test]
@@ -5600,7 +7526,7 @@ mod tests {
     fn leisure_and_labor_previews_decompose_the_shared_fatigue_outcome() {
         let schedule = ScheduleAllocation {
             labor_minutes: 240,
-            melee_minutes: 720,
+            combat_training_minutes: 720,
             ..Default::default()
         };
         let leisure = leisure_preview(&schedule, 0.0);
@@ -5624,8 +7550,10 @@ mod tests {
             "leisure_minutes",
             0,
             false,
+            false,
             ActivityEffectRates::default(),
             Some(leisure),
+            None,
             "Test leisure",
         )
         .into_string();
@@ -5934,6 +7862,9 @@ mod tests {
             turn_in_ready: false,
             open_quest_available: false,
             provision_forecast: None,
+            terrain_route: None,
+            return_terrain_route: None,
+            route_fallback: true,
         }
     }
 
@@ -6069,6 +8000,9 @@ mod tests {
         let destination = quest_destination();
         let markup = map_destination_detail(
             Some(&destination),
+            None,
+            None,
+            false,
             true,
             false,
             None,
@@ -6087,6 +8021,163 @@ mod tests {
     }
 
     #[test]
+    fn nonconnected_map_selection_has_detail_but_no_travel_form() {
+        let mut destination = settlement();
+        destination.id = "viabundus-99".into();
+        destination.name = "Distant town".into();
+        let markup = map_destination_detail(
+            None,
+            Some(&destination),
+            None,
+            false,
+            true,
+            true,
+            None,
+            None,
+            false,
+            None,
+            "/locations/settlement/viabundus-1/map",
+        )
+        .into_string();
+
+        assert!(markup.contains("Distant town"));
+        assert!(markup.contains("No direct route."));
+        assert!(!markup.contains("Begin journey"));
+        assert!(!markup.contains("data-travel-submit"));
+    }
+
+    #[test]
+    fn available_quest_selection_has_detail_but_no_travel_form() {
+        let quest = Quest {
+            id: "quest-bandits".into(),
+            title: "Drive off the bandits".into(),
+            description: "Bandits have occupied the old watchtower.".into(),
+            difficulty: 2,
+            gold_reward: 50,
+            xp_reward: 20,
+            settlement_id: "viabundus-1".into(),
+            status: crate::spacetimedb::QuestStatus::Available,
+            accepted_by: None,
+            enemy_type: "bandit".into(),
+            enemy_count: 4,
+            location_description: "An abandoned tower beyond the fields.".into(),
+            location_scene_key: "watchtower".into(),
+            location_coord_x: 10.2,
+            location_coord_y: 53.1,
+            coordinates_are_geographic: true,
+            distance_m: 8_000,
+        };
+        let markup = map_destination_detail(
+            None,
+            None,
+            Some(&quest),
+            false,
+            false,
+            false,
+            None,
+            None,
+            false,
+            None,
+            "/locations/settlement/viabundus-1/map",
+        )
+        .into_string();
+
+        assert!(markup.contains("Drive off the bandits"));
+        assert!(markup.contains("Bandits have occupied the old watchtower."));
+        assert!(markup.contains("An abandoned tower beyond the fields."));
+        assert!(markup.contains("Quest destination."));
+        assert!(!markup.contains("Begin journey"));
+        assert!(!markup.contains("data-travel-submit"));
+    }
+
+    #[test]
+    fn nontravelable_active_quest_selection_uses_its_actual_status() {
+        let mut quest = Quest {
+            id: "quest-bandits".into(),
+            title: "Drive off the bandits".into(),
+            description: "Bandits have occupied the old watchtower.".into(),
+            difficulty: 2,
+            gold_reward: 50,
+            xp_reward: 20,
+            settlement_id: "viabundus-1".into(),
+            status: QuestStatus::Accepted,
+            accepted_by: Some("party-1".into()),
+            enemy_type: "bandit".into(),
+            enemy_count: 4,
+            location_description: "An abandoned tower beyond the fields.".into(),
+            location_scene_key: "watchtower".into(),
+            location_coord_x: 10.2,
+            location_coord_y: 53.1,
+            coordinates_are_geographic: true,
+            distance_m: 8_000,
+        };
+
+        let accepted = map_destination_detail(
+            None,
+            None,
+            Some(&quest),
+            false,
+            false,
+            false,
+            None,
+            None,
+            false,
+            None,
+            "/locations/settlement/viabundus-1/map",
+        )
+        .into_string();
+        assert!(accepted.contains("Active quest destination."));
+        assert!(!accepted.contains("Accept and activate"));
+
+        quest.status = QuestStatus::Completed;
+        let completed = map_destination_detail(
+            None,
+            None,
+            Some(&quest),
+            false,
+            false,
+            false,
+            None,
+            None,
+            false,
+            None,
+            "/locations/settlement/viabundus-1/map",
+        )
+        .into_string();
+        assert!(completed.contains("Quest completed."));
+        assert!(completed.contains("Return to the issuing settlement"));
+        assert!(!completed.contains("Accept and activate"));
+    }
+
+    #[test]
+    fn connected_settlement_selection_keeps_existing_travel_action() {
+        let mut destination = quest_destination();
+        destination.id = "viabundus-2".into();
+        destination.name = "Connected town".into();
+        destination.quest_in_progress = false;
+        destination.travel_action = "/settlements/viabundus-2/travel".into();
+        let markup = map_destination_detail(
+            Some(&destination),
+            None,
+            None,
+            false,
+            true,
+            true,
+            None,
+            None,
+            false,
+            None,
+            "/locations/settlement/viabundus-1/map",
+        )
+        .into_string();
+
+        assert!(markup.contains("action=\"/settlements/viabundus-2/travel\""));
+        assert!(markup.contains("data-travel-submit"));
+        assert!(markup.contains("Begin journey"));
+        assert!(!markup.contains("No direct route"));
+    }
+
+    #[test]
     fn chat_uses_one_stream_with_all_channel_filters() {
         let markup = chat_area("Lubeck", None, None, None, &[]).into_string();
 
@@ -6099,6 +8190,11 @@ mod tests {
         }
         assert!(markup.contains("data-chat-channel=\"info\""));
         assert!(!markup.contains("chat-channel-badge"));
+        assert!(markup.contains("class=\"settlement-chat-layout\""));
+        assert!(markup.contains("data-dialogue-topic-pane"));
+        assert!(markup.contains("data-dialogue-topic-list"));
+        assert!(markup.contains("data-dialogue-completion"));
+        assert!(markup.contains("autocomplete=\"off\""));
         for label in ["Local", "Party", "Settlement", "DMs", "Guild", "Info"] {
             assert!(markup.contains(&format!("aria-label=\"{label}\" title=\"{label}\"")));
             assert!(!markup.contains(&format!(">{label}</")));
@@ -6352,6 +8448,7 @@ mod tests {
         let numeric = include_str!("../../static/numeric-editor.js");
         let equipment = include_str!("../../static/equipment-toggle.js");
         let live_regions = include_str!("../../static/live-regions.js");
+        let immediate_activity = include_str!("../../static/immediate-activity.js");
         let css = include_str!("../../static/css/strategic.css");
         assert!(schedule.contains("function parseClock(value)"));
         assert!(schedule.contains("window.StrategicNumericEditor.open"));
@@ -6366,6 +8463,8 @@ mod tests {
         assert!(schedule.contains("function calculateLeisurePreview"));
         assert!(schedule.contains("row.dataset.leisureFatiguePreviewDivisor"));
         assert!(schedule.contains("function mountSchedules(root = document)"));
+        assert!(schedule.contains("[data-social-expand]"));
+        assert!(schedule.contains(".social-detail-row"));
         assert!(schedule.contains("'strategic-live-regions-refreshed'"));
         assert!(schedule.contains("event.detail.regions.includes('left-sidebar')"));
         assert!(schedule.contains("function createLatestSaveQueue(send"));
@@ -6383,9 +8482,14 @@ mod tests {
         assert!(live_regions.contains("region.scrollTop = offsets.top"));
         assert!(live_regions.contains("replaced.includes(\"left-sidebar\")"));
         assert!(live_regions.contains("document.querySelector('.numeric-editor')"));
+        assert!(live_regions.contains("[data-activity-modal]:not([hidden])"));
         assert!(live_regions.contains("scheduleEditorIsPending"));
         assert!(live_regions.contains("const schedulePendingAtStart = scheduleEditorIsPending()"));
         assert!(live_regions.contains("!schedulePendingAtStart && !scheduleEditorIsPending()"));
+        assert!(immediate_activity.contains("typeof window === 'undefined'"));
+        assert!(immediate_activity.contains("input:not([type=\"hidden\"]):not(:disabled)"));
+        assert!(immediate_activity.contains("wrappedFocusTarget"));
+        assert!(immediate_activity.contains("strategic-editor-idle"));
         assert!(css.contains(".numeric-editor-input {"));
         assert!(css.contains("position: fixed;"));
         assert!(css.contains("z-index: 80;"));
@@ -6439,7 +8543,7 @@ mod tests {
     }
 
     #[test]
-    fn medicine_portrait_action_is_contextual_and_quotes_examination_time() {
+    fn medicine_action_moves_from_portrait_to_the_skill_icon() {
         let doctor = Character {
             id: 1,
             name: "Doctor".into(),
@@ -6453,16 +8557,32 @@ mod tests {
             alive: true,
             temporary: false,
         };
-        let hidden =
-            party_portrait_overlay(&[doctor.clone()], Some(&doctor), "/place", Some(1), false)
-                .into_string();
-        let visible =
-            party_portrait_overlay(&[doctor.clone()], Some(&doctor), "/place", Some(1), true)
-                .into_string();
-        assert!(!hidden.contains("/examine"));
-        assert!(visible.contains("/party/1/examine"));
-        assert!(visible.contains("Examine Doctor (15 minutes)"));
-        assert!(visible.contains("party-medical-examine"));
+        let portrait = party_portrait_overlay(
+            &[doctor.clone()],
+            Some(&doctor),
+            "/locations/settlement/willowmere",
+            Some(1),
+            true,
+        )
+        .into_string();
+        assert!(!portrait.contains("/examine"));
+        assert!(!portrait.contains("party-medical-examine"));
+        assert!(portrait.contains("party-alchemy-action"));
+
+        let skill = skill_action_icon(
+            "Medicine",
+            "medicine",
+            SkillAction::Post {
+                href: "/place/party/1/examine",
+                label: "Perform medical examination (15 minutes)",
+                open: false,
+            },
+            false,
+        )
+        .into_string();
+        assert!(skill.contains("/place/party/1/examine"));
+        assert!(skill.contains("Perform medical examination (15 minutes)"));
+        assert!(skill.contains("aria-haspopup=\"dialog\" aria-expanded=\"false\""));
     }
 
     #[test]
@@ -6487,8 +8607,16 @@ mod tests {
         assert!(!sidebar.contains("Possible ailments"));
         assert!(!sidebar.contains("Observed at personal minute"));
 
+        let location = LocationView {
+            kind: LocationKind::Quest,
+            id: "location".into(),
+            name: "Location".into(),
+            religion_id: None,
+            category: None,
+            active_building: Some("inn".into()),
+        };
         let popup =
-            medical_examination_popup(&presentation, "/location", 2, None, &[], &[]).into_string();
+            medical_examination_popup(&presentation, &location, 2, None, &[], &[]).into_string();
         assert!(popup.contains("medical-examination-overlay"));
         assert!(popup.contains("aria-modal=\"true\""));
         assert!(popup.contains("Possible ailments"));
@@ -6499,6 +8627,7 @@ mod tests {
         assert!(popup.contains('×'));
         assert!(!popup.contains("This result is discarded"));
         assert!(popup.contains("/examination/44/dismiss"));
+        assert!(popup.contains("?building=inn"));
         assert!(popup.contains("data-medical-examination"));
         let lifecycle = include_str!("../../static/medical-examination.js");
         assert!(lifecycle.contains("pagehide"));
@@ -6523,6 +8652,33 @@ mod tests {
         assert!(markup.contains("Phlegmatic"));
         assert!(markup.contains("role=\"meter\""));
         assert!(markup.contains("Chest:"));
+    }
+
+    #[test]
+    fn surgery_button_is_explicit_and_the_health_meter_is_not_clickable() {
+        let markup = attribute_group(
+            "Head",
+            "head",
+            0.75,
+            &crate::medical::MedicalPresentation::default(),
+            6,
+            Some(("/place/party/1/surgery", None)),
+            &[],
+            &[],
+            &[("Intelligence", "intelligence", 3.0)],
+        )
+        .into_string();
+
+        let link_start = markup.find("limb-surgery-button").unwrap();
+        let health_bar = markup.find("class=\"attribute-health-bar\"").unwrap();
+        let link_end = markup[link_start..].find("</a>").unwrap() + link_start;
+        let attribute_row = markup.find("class=\"party-attribute-row\"").unwrap();
+
+        assert!(link_start < link_end);
+        assert!(link_end < health_bar);
+        assert!(link_end < attribute_row);
+        assert!(markup.contains("aria-label=\"Open surgery menu for Head\""));
+        assert!(markup.contains("aria-haspopup=\"dialog\" aria-expanded=\"false\""));
     }
 
     #[test]

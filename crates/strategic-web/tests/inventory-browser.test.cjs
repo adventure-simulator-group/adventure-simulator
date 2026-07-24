@@ -63,6 +63,16 @@ test("currency rows use one aggregate parent and dedicated denomination componen
   assert.doesNotMatch(source, /No additional details[\s\S]*currency-component-row/);
 });
 
+test("alcohol rows use one aggregate parent and preserve concrete component actions", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
+  assert.match(source, /groupAlcoholRows\(browser\)/);
+  assert.match(source, /alcohol-parent-row/);
+  assert.match(source, /alcohol-component-row/);
+  assert.match(source, /data-alcohol-toggle/);
+  assert.match(source, /row\._alcoholComponents/);
+  assert.match(source, /not\(\.alcohol-component-row\)/);
+});
+
 test("rail measurement excludes projected action overflow", () => {
   const source = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
   assert.match(source, /table\?\.getBoundingClientRect\?\.\(\)\.width/);
@@ -117,4 +127,13 @@ test("numeric and text sorting is directional and keeps blanks stable at the end
   assert.ok(compareValues(2, 10, "desc") > 0);
   assert.ok(compareValues("", 2, "desc") > 0);
   assert.equal(compareValues("", "", "asc"), 0);
+});
+
+test("food lots use a disclosure parent without becoming fungible", () => {
+  assert.equal(typeof require("../static/inventory-browser.js").groupFoodRows, "function");
+  const source = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
+  assert.match(source, /data-item-kind=\\?"food/);
+  assert.match(source, /data-food-lot=\\?"true/);
+  assert.match(source, /food-component-row/);
+  assert.match(source, /Show food lots/);
 });

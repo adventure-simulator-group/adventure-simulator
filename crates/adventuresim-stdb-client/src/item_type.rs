@@ -6,6 +6,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::item_kind_type::ItemKind;
 use super::item_slot_type::ItemSlot;
+use super::weapon_skill_distribution_type::WeaponSkillDistribution;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -27,12 +28,19 @@ pub struct Item {
     pub balance: f32,
     pub melee: bool,
     pub ranged: bool,
+    pub weapon_skills: WeaponSkillDistribution,
     pub blunt: bool,
     pub slash: bool,
     pub pierce: bool,
     pub base_value: Option<u32>,
     pub nutrition_kcal: f32,
     pub water_capacity_ml: u32,
+    pub alcohol_serving_ml: u32,
+    pub alcohol_abv_basis_points: u16,
+    pub alcohol_net_hydration_ml: u32,
+    pub alcohol_disinfectant_effectiveness: u16,
+    pub alcohol_disinfectant_focused: bool,
+    pub alcohol_potable: bool,
     pub quality: u8,
     pub durability_yield: f32,
     pub durability_fracture: f32,
@@ -67,12 +75,19 @@ pub struct ItemCols {
     pub balance: __sdk::__query_builder::Col<Item, f32>,
     pub melee: __sdk::__query_builder::Col<Item, bool>,
     pub ranged: __sdk::__query_builder::Col<Item, bool>,
+    pub weapon_skills: __sdk::__query_builder::Col<Item, WeaponSkillDistribution>,
     pub blunt: __sdk::__query_builder::Col<Item, bool>,
     pub slash: __sdk::__query_builder::Col<Item, bool>,
     pub pierce: __sdk::__query_builder::Col<Item, bool>,
     pub base_value: __sdk::__query_builder::Col<Item, Option<u32>>,
     pub nutrition_kcal: __sdk::__query_builder::Col<Item, f32>,
     pub water_capacity_ml: __sdk::__query_builder::Col<Item, u32>,
+    pub alcohol_serving_ml: __sdk::__query_builder::Col<Item, u32>,
+    pub alcohol_abv_basis_points: __sdk::__query_builder::Col<Item, u16>,
+    pub alcohol_net_hydration_ml: __sdk::__query_builder::Col<Item, u32>,
+    pub alcohol_disinfectant_effectiveness: __sdk::__query_builder::Col<Item, u16>,
+    pub alcohol_disinfectant_focused: __sdk::__query_builder::Col<Item, bool>,
+    pub alcohol_potable: __sdk::__query_builder::Col<Item, bool>,
     pub quality: __sdk::__query_builder::Col<Item, u8>,
     pub durability_yield: __sdk::__query_builder::Col<Item, f32>,
     pub durability_fracture: __sdk::__query_builder::Col<Item, f32>,
@@ -103,12 +118,31 @@ impl __sdk::__query_builder::HasCols for Item {
             balance: __sdk::__query_builder::Col::new(table_name, "balance"),
             melee: __sdk::__query_builder::Col::new(table_name, "melee"),
             ranged: __sdk::__query_builder::Col::new(table_name, "ranged"),
+            weapon_skills: __sdk::__query_builder::Col::new(table_name, "weapon_skills"),
             blunt: __sdk::__query_builder::Col::new(table_name, "blunt"),
             slash: __sdk::__query_builder::Col::new(table_name, "slash"),
             pierce: __sdk::__query_builder::Col::new(table_name, "pierce"),
             base_value: __sdk::__query_builder::Col::new(table_name, "base_value"),
             nutrition_kcal: __sdk::__query_builder::Col::new(table_name, "nutrition_kcal"),
             water_capacity_ml: __sdk::__query_builder::Col::new(table_name, "water_capacity_ml"),
+            alcohol_serving_ml: __sdk::__query_builder::Col::new(table_name, "alcohol_serving_ml"),
+            alcohol_abv_basis_points: __sdk::__query_builder::Col::new(
+                table_name,
+                "alcohol_abv_basis_points",
+            ),
+            alcohol_net_hydration_ml: __sdk::__query_builder::Col::new(
+                table_name,
+                "alcohol_net_hydration_ml",
+            ),
+            alcohol_disinfectant_effectiveness: __sdk::__query_builder::Col::new(
+                table_name,
+                "alcohol_disinfectant_effectiveness",
+            ),
+            alcohol_disinfectant_focused: __sdk::__query_builder::Col::new(
+                table_name,
+                "alcohol_disinfectant_focused",
+            ),
+            alcohol_potable: __sdk::__query_builder::Col::new(table_name, "alcohol_potable"),
             quality: __sdk::__query_builder::Col::new(table_name, "quality"),
             durability_yield: __sdk::__query_builder::Col::new(table_name, "durability_yield"),
             durability_fracture: __sdk::__query_builder::Col::new(

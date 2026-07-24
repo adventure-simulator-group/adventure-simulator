@@ -1,11 +1,12 @@
 //! Pure settlement schedule progression shared by the authoritative module and tools.
 
+use crate::equipment::WeaponSkillDistribution;
 use crate::profession::ProfessionId;
 use crate::{activity::*, strategic_time::training_hours_increment};
-use adventuresim_world_schema::{OfficialReligion, ReligionHours, ReligionMinutes};
+use adventuresim_world_schema::{OfficialReligion, ReligionHours};
 
 /// Stable order used by reports and schedule arrays.
-pub const SKILL_COUNT: usize = 12;
+pub const SKILL_COUNT: usize = 26;
 /// Ordinary sleep pressure accumulated over a full day without tiring activity.
 pub const BASELINE_FATIGUE_PER_DAY: f32 = 600.0;
 /// Fatigue added by an hour of sustained ordinary labor.
@@ -22,34 +23,62 @@ pub const FATIGUE_RESERVOIR_PER_PREVIEW_POINT: f32 = 100.0;
 #[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SkillHours {
-    pub melee: f32,
+    pub polearm: f32,
+    pub axe: f32,
+    pub bludgeon: f32,
+    pub sword: f32,
+    pub knife: f32,
     pub dodge: f32,
     pub block: f32,
-    pub ranged: f32,
+    pub bow: f32,
+    pub crossbow: f32,
+    pub firearm: f32,
+    pub throw: f32,
     pub will: f32,
-    pub charisma: f32,
+    pub insight: f32,
+    pub self_awareness: f32,
+    pub humor: f32,
+    pub command: f32,
+    pub deception: f32,
+    pub seduction: f32,
     pub medicine: f32,
+    pub cooking: f32,
     pub religion: ReligionHours,
     pub stealth: f32,
     pub balance: f32,
-    pub surgeon: f32,
+    pub anatomy: f32,
+    pub tailoring: f32,
     pub smithing: f32,
 }
 
 impl SkillHours {
     pub fn values(self) -> [f32; SKILL_COUNT] {
         [
-            self.melee,
+            self.polearm,
+            self.axe,
+            self.bludgeon,
+            self.sword,
+            self.knife,
             self.dodge,
             self.block,
-            self.ranged,
+            self.bow,
+            self.crossbow,
+            self.firearm,
+            self.throw,
             self.will,
-            self.charisma,
+            self.insight,
+            self.self_awareness,
+            self.humor,
+            self.command,
+            self.deception,
+            self.seduction,
             self.medicine,
+            self.cooking,
             self.religion.total_direct(),
             self.stealth,
             self.balance,
-            self.surgeon,
+            self.anatomy,
+            self.tailoring,
             self.smithing,
         ]
     }
@@ -68,7 +97,7 @@ impl SkillHours {
 pub struct DailySchedule {
     /// Structured combat practice, including weapon drills, will, and balance.
     pub combat_training_minutes: u16,
-    /// Social recreation which trains Charisma at the activity rate.
+    /// Social recreation which trains Humor at the activity rate.
     pub carousing_minutes: u16,
     /// Supervised work in an unlocked profession.
     pub apprenticeship_minutes: u16,
@@ -76,26 +105,6 @@ pub struct DailySchedule {
     /// Independent paid professional work, available at Journeyman rank.
     pub profession_practice_minutes: u16,
     pub profession_service_id: Option<ProfessionId>,
-    /// Aggregate automatic Combat budget. Ignored when `combat_auto_train` is false.
-    pub combat: u16,
-    pub combat_auto_train: bool,
-    /// Explicit combat budgets used when automatic distribution is disabled.
-    pub melee: u16,
-    pub dodge: u16,
-    pub block: u16,
-    pub ranged: u16,
-    pub will: u16,
-    pub charisma: u16,
-    pub medicine: u16,
-    /// Aggregate automatic Religion budget. Ignored when `religion_auto_train` is false.
-    pub religion: u16,
-    pub religion_auto_train: bool,
-    /// Explicit per-tradition budgets used when auto-training is disabled.
-    pub religions: ReligionMinutes,
-    pub stealth: u16,
-    pub balance: u16,
-    pub surgeon: u16,
-    pub smithing: u16,
     pub labor: u16,
     pub prayer: u16,
     pub thievery: u16,
@@ -104,41 +113,19 @@ pub struct DailySchedule {
 
 impl DailySchedule {
     pub fn allocated_minutes(&self) -> u64 {
-        let combat = if self.combat_auto_train {
-            u64::from(self.combat)
-        } else {
-            [self.melee, self.dodge, self.block, self.ranged]
-                .into_iter()
-                .map(u64::from)
-                .sum()
-        };
-        let religion = if self.religion_auto_train {
-            u64::from(self.religion)
-        } else {
-            self.religions.total()
-        };
-        combat
-            + religion
-            + [
-                self.will,
-                self.charisma,
-                self.medicine,
-                self.stealth,
-                self.balance,
-                self.surgeon,
-                self.smithing,
-                self.labor,
-                self.prayer,
-                self.thievery,
-                self.raiding,
-                self.combat_training_minutes,
-                self.carousing_minutes,
-                self.apprenticeship_minutes,
-                self.profession_practice_minutes,
-            ]
-            .into_iter()
-            .map(u64::from)
-            .sum::<u64>()
+        [
+            self.labor,
+            self.prayer,
+            self.thievery,
+            self.raiding,
+            self.combat_training_minutes,
+            self.carousing_minutes,
+            self.apprenticeship_minutes,
+            self.profession_practice_minutes,
+        ]
+        .into_iter()
+        .map(u64::from)
+        .sum()
     }
 }
 
@@ -204,31 +191,32 @@ pub struct ActivityTrainingProfile {
     pub combat: CombatTrainingProfile,
 }
 
-/// Relative training demand for the four skills represented by Combat.
+/// Relative training demand for equipped weapon leaves and the four Defense leaves.
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CombatTrainingProfile {
-    pub melee: f32,
+    pub weapons: WeaponSkillDistribution,
     pub dodge: f32,
     pub block: f32,
-    pub ranged: f32,
+    pub balance: f32,
+    pub will: f32,
 }
 
 impl Default for CombatTrainingProfile {
     fn default() -> Self {
         Self {
-            melee: 0.0,
+            weapons: WeaponSkillDistribution::default(),
             dodge: 1.0,
             block: 0.0,
-            ranged: 0.0,
+            balance: 1.0,
+            will: 1.0,
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct EquippedCombatItem {
-    pub melee: bool,
-    pub ranged: bool,
+    pub weapons: WeaponSkillDistribution,
     pub shield: bool,
     pub balance: f32,
 }
@@ -238,12 +226,26 @@ impl CombatTrainingProfile {
         let mut result = Self::default();
         let mut best_melee_balance: Option<f32> = None;
         for item in hands {
-            result.melee = result.melee.max(if item.melee { 1.0 } else { 0.0 });
-            result.ranged = result.ranged.max(if item.ranged { 1.0 } else { 0.0 });
+            for (target, weight) in [
+                &mut result.weapons.polearm,
+                &mut result.weapons.axe,
+                &mut result.weapons.bludgeon,
+                &mut result.weapons.sword,
+                &mut result.weapons.knife,
+                &mut result.weapons.bow,
+                &mut result.weapons.crossbow,
+                &mut result.weapons.firearm,
+                &mut result.weapons.throw,
+            ]
+            .into_iter()
+            .zip(item.weapons.weights())
+            {
+                *target = target.max(weight);
+            }
             if item.shield {
                 result.block = 1.0;
             }
-            if item.melee && !item.ranged {
+            if item.weapons.melee_total() > 0.0 && item.weapons.ranged_total() == 0.0 {
                 let balance = if item.balance.is_finite() {
                     item.balance.clamp(0.0, 1.0)
                 } else {
@@ -259,8 +261,24 @@ impl CombatTrainingProfile {
         result
     }
 
-    pub fn weights(self) -> [f32; 4] {
-        [self.melee, self.dodge, self.block, self.ranged].map(|weight| {
+    pub fn weights(self) -> [f32; 13] {
+        let w = self.weapons.weights();
+        [
+            w[0],
+            w[1],
+            w[2],
+            w[3],
+            w[4],
+            w[5],
+            w[6],
+            w[7],
+            w[8],
+            self.dodge,
+            self.block,
+            self.balance,
+            self.will,
+        ]
+        .map(|weight| {
             if weight.is_finite() {
                 weight.clamp(0.0, 1.0)
             } else {
@@ -279,57 +297,36 @@ pub fn apply_schedule_training(
     profile: ActivityTrainingProfile,
 ) {
     let increment = |minutes| training_hours_increment(elapsed_minutes, minutes);
-    skills.will += increment(schedule.will);
-    skills.charisma += increment(schedule.charisma);
-    skills.medicine += increment(schedule.medicine);
-    skills.stealth += increment(schedule.stealth);
-    skills.balance += increment(schedule.balance);
-    skills.surgeon += increment(schedule.surgeon);
-    skills.smithing += increment(schedule.smithing);
-    skills.charisma += increment(schedule.carousing_minutes) * ACTIVITY_TRAINING_RATE;
+    skills.humor += increment(schedule.carousing_minutes) * ACTIVITY_TRAINING_RATE;
     skills.will += increment(schedule.labor) * ACTIVITY_TRAINING_RATE;
     skills.stealth += increment(schedule.thievery) * ACTIVITY_TRAINING_RATE;
-    let days = elapsed_minutes as f32 / crate::strategic_time::MINUTES_PER_DAY as f32;
-    let manual = if schedule.combat_auto_train {
-        [0.0; 4]
-    } else {
-        [
-            schedule.melee,
-            schedule.dodge,
-            schedule.block,
-            schedule.ranged,
-        ]
-        .map(|minutes| f32::from(minutes) / 60.0)
-    };
-    let adaptive_per_day = (if schedule.combat_auto_train {
-        f32::from(schedule.combat) / 60.0
-    } else {
-        0.0
-    }) + f32::from(schedule.raiding) / 60.0 * ACTIVITY_TRAINING_RATE;
-    let mut combat = [skills.melee, skills.dodge, skills.block, skills.ranged];
-    apply_adaptive_combat_training(&mut combat, profile.combat, manual, adaptive_per_day, days);
-    [skills.melee, skills.dodge, skills.block, skills.ranged] = combat;
-
-    // Combat training conserves its total training budget across the four
-    // equipment-relevant combat skills plus Will and Balance. Will and Balance
-    // always receive weight even when no weapon is equipped.
-    let combat_training_hours = increment(schedule.combat_training_minutes);
+    // Combat Training and Raiding conserve their activity training budget
+    // across equipped weapon leaves and all four Defense leaves.
+    let combat_training_hours = increment(schedule.combat_training_minutes)
+        + increment(schedule.raiding) * ACTIVITY_TRAINING_RATE;
     if combat_training_hours > 0.0 {
         let combat_weights = profile.combat.weights();
-        let total_weight = combat_weights.into_iter().sum::<f32>() + 2.0;
+        let total_weight = combat_weights.into_iter().sum::<f32>();
         for (hours, weight) in [
-            &mut skills.melee,
+            &mut skills.polearm,
+            &mut skills.axe,
+            &mut skills.bludgeon,
+            &mut skills.sword,
+            &mut skills.knife,
+            &mut skills.bow,
+            &mut skills.crossbow,
+            &mut skills.firearm,
+            &mut skills.throw,
             &mut skills.dodge,
             &mut skills.block,
-            &mut skills.ranged,
+            &mut skills.balance,
+            &mut skills.will,
         ]
         .into_iter()
         .zip(combat_weights)
         {
             *hours += combat_training_hours * weight / total_weight;
         }
-        skills.will += combat_training_hours / total_weight;
-        skills.balance += combat_training_hours / total_weight;
     }
 
     apply_profession_training(
@@ -350,118 +347,29 @@ fn apply_profession_training(
     hours: f32,
 ) {
     match service_id {
-        Some(ProfessionId::Merchant | ProfessionId::Innkeeper) => skills.charisma += hours,
-        Some(ProfessionId::Weaponsmith | ProfessionId::Armourer | ProfessionId::Tailor) => {
-            skills.smithing += hours
-        }
+        Some(ProfessionId::Merchant) => skills.command += hours,
+        Some(ProfessionId::Weaponsmith | ProfessionId::Armourer) => skills.smithing += hours,
+        Some(ProfessionId::Tailor) => skills.tailoring += hours,
         Some(ProfessionId::Herbalist) => {
             skills.medicine += hours * 0.5;
-            skills.surgeon += hours * 0.5;
+            skills.anatomy += hours / 6.0;
+            skills.knife += hours / 6.0;
+            skills.tailoring += hours / 6.0;
         }
+        Some(ProfessionId::Cook) => skills.cooking += hours,
         // Religion is tradition-specific and is applied by the authoritative
         // caller after resolving the settlement tradition.
         _ => {}
     }
 }
 
-/// Advance fixed combat study and adaptive Combat/Raiding training. Adaptive
-/// training always goes to the lowest normalized (`hours / relevance weight`)
-/// frontier. Crossings are solved exactly, so chunking an interval does not
-/// change the result beyond floating-point rounding.
-pub fn apply_adaptive_combat_training(
-    hours: &mut [f32; 4],
-    profile: CombatTrainingProfile,
-    base_hours_per_day: [f32; 4],
-    adaptive_hours_per_day: f32,
-    days: f32,
-) {
-    let weights = profile.weights();
-    let base = base_hours_per_day.map(|rate| if rate.is_finite() { rate.max(0.0) } else { 0.0 });
-    let adaptive = if adaptive_hours_per_day.is_finite() {
-        adaptive_hours_per_day.max(0.0)
-    } else {
-        0.0
-    };
-    let mut remaining = if days.is_finite() { days.max(0.0) } else { 0.0 };
-    const EPS: f32 = 1.0e-6;
-    while remaining > EPS {
-        let normalized = std::array::from_fn::<_, 4, _>(|i| {
-            if weights[i] > EPS {
-                hours[i] / weights[i]
-            } else {
-                f32::INFINITY
-            }
-        });
-        let low = normalized.into_iter().fold(f32::INFINITY, f32::min);
-        if !low.is_finite() || adaptive <= EPS {
-            for (hours, base) in hours.iter_mut().zip(base) {
-                *hours += base * remaining;
-            }
-            break;
-        }
-        let tied: Vec<usize> = (0..4)
-            .filter(|&i| weights[i] > EPS && normalized[i] <= low + EPS)
-            .collect();
-        let mut receiving = tied.clone();
-        loop {
-            let weight_sum: f32 = receiving.iter().map(|&i| weights[i]).sum();
-            let base_sum: f32 = receiving.iter().map(|&i| base[i]).sum();
-            let frontier_rate = (adaptive + base_sum) / weight_sum.max(EPS);
-            let before = receiving.len();
-            receiving.retain(|&i| base[i] / weights[i] < frontier_rate + EPS);
-            if receiving.len() == before || receiving.is_empty() {
-                break;
-            }
-        }
-        if receiving.is_empty() {
-            // Only possible at numerical limits; deterministically select the
-            // first lowest skill and preserve conservation.
-            receiving.push(tied[0]);
-        }
-        let weight_sum: f32 = receiving.iter().map(|&i| weights[i]).sum();
-        let base_sum: f32 = receiving.iter().map(|&i| base[i]).sum();
-        let frontier_rate = (adaptive + base_sum) / weight_sum.max(EPS);
-        let mut step = remaining;
-        for i in 0..4 {
-            if receiving.contains(&i) || weights[i] <= EPS {
-                continue;
-            }
-            let own_rate = base[i] / weights[i];
-            if frontier_rate > own_rate + EPS {
-                let gap = (normalized[i] - low).max(0.0);
-                if gap > EPS {
-                    step = step.min(gap / (frontier_rate - own_rate));
-                }
-            }
-        }
-        if step <= EPS {
-            step = remaining.min(EPS);
-        }
-        for i in 0..4 {
-            hours[i] += base[i] * step;
-            if receiving.contains(&i) {
-                hours[i] += (weights[i] * frontier_rate - base[i]).max(0.0) * step;
-            }
-        }
-        remaining -= step;
-    }
-}
-
-/// Apply direct Religion study after the caller has resolved automatic targets.
-/// Correlated knowledge is deliberately never written back into canonical hours.
+/// Apply prayer activity training after the caller resolves the settlement tradition.
 pub fn apply_religion_training(
     religion_hours: &mut ReligionHours,
-    allocations: ReligionMinutes,
     elapsed_minutes: u64,
     prayer_religion: Option<OfficialReligion>,
     prayer_minutes: u16,
 ) {
-    for religion in OfficialReligion::ALL {
-        religion_hours.add_direct(
-            religion,
-            training_hours_increment(elapsed_minutes, allocations.get(religion)),
-        );
-    }
     if let Some(religion) = prayer_religion {
         religion_hours.add_direct(
             religion,
@@ -555,22 +463,53 @@ mod tests {
             MINUTES_PER_DAY,
             ActivityTrainingProfile::default(),
         );
-        let combat_total = skills.melee
+        let combat_total = skills.polearm
+            + skills.axe
+            + skills.bludgeon
+            + skills.sword
+            + skills.knife
+            + skills.bow
+            + skills.crossbow
+            + skills.firearm
+            + skills.throw
             + skills.dodge
             + skills.block
-            + skills.ranged
             + skills.will
             + skills.balance;
-        assert!((combat_total - 6.0).abs() < 0.001);
-        assert!((skills.charisma - 1.0).abs() < 0.001);
+        // Knife also receives one sixth of the two-hour herbalist activity.
+        assert!((combat_total - skills.knife - 6.0).abs() < 0.001);
+        assert!((skills.humor - 1.0).abs() < 0.001);
         assert!((skills.medicine - 1.0).abs() < 0.001);
-        assert!((skills.surgeon - 1.0).abs() < 0.001);
+        assert!((skills.anatomy - 1.0 / 3.0).abs() < 0.001);
+        assert!((skills.knife - 1.0 / 3.0).abs() < 0.001);
+        assert!((skills.tailoring - 1.0 / 3.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn cooks_profession_trains_only_cooking() {
+        let mut skills = SkillHours::default();
+        let schedule = DailySchedule {
+            apprenticeship_minutes: 180,
+            apprenticeship_service_id: Some(ProfessionId::Cook),
+            ..Default::default()
+        };
+        apply_schedule_training(
+            &mut skills,
+            schedule,
+            MINUTES_PER_DAY,
+            ActivityTrainingProfile::default(),
+        );
+        assert!((skills.cooking - 3.0).abs() < 0.001);
+        assert_eq!(skills.command, 0.0);
     }
 
     fn item(melee: bool, ranged: bool, shield: bool, balance: f32) -> EquippedCombatItem {
         EquippedCombatItem {
-            melee,
-            ranged,
+            weapons: WeaponSkillDistribution {
+                sword: if melee { 1.0 } else { 0.0 },
+                bow: if ranged { 1.0 } else { 0.0 },
+                ..Default::default()
+            },
             shield,
             balance,
         }
@@ -584,11 +523,15 @@ mod tests {
         );
         assert_eq!(
             CombatTrainingProfile::from_equipped_hands([item(false, true, false, 0.1)]).weights(),
-            [0.0, 1.0, 0.0, 1.0]
+            [
+                0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0
+            ]
         );
         assert_eq!(
             CombatTrainingProfile::from_equipped_hands([item(true, true, false, 0.0)]).weights(),
-            [1.0, 1.0, 0.0, 1.0]
+            [
+                0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0
+            ]
         );
         assert_eq!(
             CombatTrainingProfile::from_equipped_hands([
@@ -596,7 +539,9 @@ mod tests {
                 item(true, false, false, 0.3)
             ])
             .weights(),
-            [1.0, 1.0, 0.7, 1.0]
+            [
+                0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.7, 1.0, 1.0
+            ]
         );
         assert_eq!(
             CombatTrainingProfile::from_equipped_hands([
@@ -621,44 +566,28 @@ mod tests {
     }
 
     #[test]
-    fn adaptive_combat_catches_up_then_respects_weights_and_conserves_hours() {
-        let profile = CombatTrainingProfile {
-            melee: 1.0,
-            dodge: 1.0,
-            block: 0.5,
-            ranged: 1.0,
-        };
-        let mut hours = [10.0, 10.0, 5.0, 0.0];
-        apply_adaptive_combat_training(&mut hours, profile, [0.0; 4], 30.0, 1.0);
-        assert!((hours.into_iter().sum::<f32>() - 55.0).abs() < 0.001);
-        let normalized = [hours[0], hours[1], hours[2] / 0.5, hours[3]];
-        assert!(
-            normalized
-                .into_iter()
-                .all(|value| (value - normalized[0]).abs() < 0.001)
-        );
-    }
-
-    #[test]
-    fn manual_combat_plus_raiding_is_bulk_chunk_equivalent() {
+    fn combat_training_plus_raiding_is_bulk_chunk_equivalent() {
         let schedule = DailySchedule {
-            combat_auto_train: false,
-            melee: 120,
-            ranged: 60,
+            combat_training_minutes: 180,
             raiding: 240,
             ..Default::default()
         };
         let profile = ActivityTrainingProfile {
             combat: CombatTrainingProfile {
-                melee: 1.0,
+                weapons: WeaponSkillDistribution {
+                    sword: 1.0,
+                    bow: 1.0,
+                    ..Default::default()
+                },
                 dodge: 1.0,
                 block: 0.6,
-                ranged: 1.0,
+                balance: 1.0,
+                will: 1.0,
             },
         };
         let mut bulk = SkillHours {
-            melee: 8.0,
-            ranged: 2.0,
+            sword: 8.0,
+            bow: 2.0,
             ..Default::default()
         };
         let mut chunked = bulk;
@@ -674,7 +603,7 @@ mod tests {
     #[test]
     fn chunked_and_daily_progression_agree() {
         let schedule = DailySchedule {
-            melee: 120,
+            combat_training_minutes: 120,
             labor: 480,
             thievery: 60,
             ..Default::default()
@@ -701,32 +630,20 @@ mod tests {
     }
 
     #[test]
-    fn religion_training_writes_only_direct_hours_and_prayer_requires_a_profession() {
+    fn religion_training_comes_only_from_prayer_activity() {
         let mut hours = ReligionHours::default();
-        let allocation = ReligionMinutes {
-            roman_catholic: 60,
-            ..Default::default()
-        };
         apply_religion_training(
             &mut hours,
-            allocation,
             MINUTES_PER_DAY,
             Some(OfficialReligion::Lutheran),
             60,
         );
-        assert_eq!(hours.roman_catholic, 1.0);
         assert_eq!(hours.lutheran, 0.25);
-        assert_eq!(hours.total_direct(), 1.25);
-        assert!(hours.effective(OfficialReligion::Lutheran) > hours.lutheran);
+        assert_eq!(hours.total_direct(), 0.25);
+        assert!(hours.effective(OfficialReligion::RomanCatholic) > 0.0);
 
         let mut meditation = ReligionHours::default();
-        apply_religion_training(
-            &mut meditation,
-            ReligionMinutes::default(),
-            MINUTES_PER_DAY,
-            None,
-            60,
-        );
+        apply_religion_training(&mut meditation, MINUTES_PER_DAY, None, 60);
         assert_eq!(meditation.total_direct(), 0.0);
     }
 
@@ -777,7 +694,7 @@ mod tests {
     #[test]
     fn six_hours_of_leisure_exactly_offsets_baseline_fatigue() {
         let six_hours = DailySchedule {
-            melee: 18 * 60,
+            combat_training_minutes: 18 * 60,
             ..Default::default()
         };
         assert_eq!(
@@ -785,7 +702,7 @@ mod tests {
             0.0
         );
         let five_hours = DailySchedule {
-            melee: 19 * 60,
+            combat_training_minutes: 19 * 60,
             ..Default::default()
         };
         assert_eq!(
@@ -798,7 +715,7 @@ mod tests {
     fn leisure_offsets_labor_before_granting_morale() {
         let exactly_offsets_labor = DailySchedule {
             labor: 4 * 60,
-            melee: 12 * 60,
+            combat_training_minutes: 12 * 60,
             ..Default::default()
         };
         let offset = settlement_leisure_outcome(exactly_offsets_labor, MINUTES_PER_DAY, 0.0);
@@ -808,7 +725,7 @@ mod tests {
 
         let surplus = settlement_leisure_outcome(
             DailySchedule {
-                melee: 15 * 60,
+                combat_training_minutes: 15 * 60,
                 ..Default::default()
             },
             MINUTES_PER_DAY,
@@ -822,7 +739,7 @@ mod tests {
     #[test]
     fn leisure_removes_carried_fatigue_before_morale() {
         let schedule = DailySchedule {
-            melee: 16 * 60,
+            combat_training_minutes: 16 * 60,
             ..Default::default()
         };
         let outcome = settlement_leisure_outcome(schedule, MINUTES_PER_DAY, 200.0);
@@ -837,7 +754,7 @@ mod tests {
     #[test]
     fn leisure_morale_is_proportional_to_elapsed_time() {
         let schedule = DailySchedule {
-            melee: 15 * 60,
+            combat_training_minutes: 15 * 60,
             ..Default::default()
         };
         let daily = settlement_leisure_outcome(schedule, MINUTES_PER_DAY, 0.0);
@@ -849,7 +766,7 @@ mod tests {
     #[test]
     fn leisure_morale_crossing_carried_fatigue_is_partition_independent() {
         let schedule = DailySchedule {
-            melee: 16 * 60,
+            combat_training_minutes: 16 * 60,
             ..Default::default()
         };
         let starting_fatigue = 350.0;
@@ -880,7 +797,7 @@ mod tests {
     fn leisure_fatigue_is_chunk_invariant() {
         let schedule = DailySchedule {
             labor: 4 * 60,
-            melee: 12 * 60,
+            combat_training_minutes: 12 * 60,
             ..Default::default()
         };
         let aggregate = settlement_leisure_outcome(schedule, 30 * MINUTES_PER_DAY, 500.0);

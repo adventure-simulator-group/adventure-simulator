@@ -84,6 +84,28 @@ class ProfileTests(unittest.TestCase):
 
 class WorkflowTests(unittest.TestCase):
     @mock.patch.object(dev_stack, "run_checked")
+    def test_authenticated_cli_token_is_forwarded_without_logging(self, run_checked):
+        token = "header.payload.signature"
+        run_checked.return_value = mock.Mock(
+            returncode=0,
+            stdout=f"You are logged in as identity\nAuth token: {token}\n",
+        )
+
+        self.assertEqual(dev_stack.spacetime_auth_token(), token)
+        self.assertEqual(
+            run_checked.call_args.args[0],
+            ["spacetime", "login", "show", "--token"],
+        )
+
+    @mock.patch.object(dev_stack, "run_checked")
+    def test_missing_authenticated_cli_token_is_redacted(self, run_checked):
+        run_checked.return_value = mock.Mock(returncode=0, stdout="unexpected secret output")
+
+        with self.assertRaisesRegex(RuntimeError, "exactly one") as error:
+            dev_stack.spacetime_auth_token()
+        self.assertNotIn("unexpected secret output", str(error.exception))
+
+    @mock.patch.object(dev_stack, "run_checked")
     def test_seed_propagates_reducer_failure(self, run_checked):
         run_checked.return_value = mock.Mock(returncode=7, stdout="reducer rejected\n")
         self.assertEqual(dev_stack.seed("http://localhost:1", "db", "a" * 64), 7)
@@ -248,8 +270,9 @@ class WorkflowTests(unittest.TestCase):
         lines = [line for line in source.splitlines() if "run-profile" in line]
         self.assertEqual(len(lines), 3)
         for line in lines:
-            self.assertIn("{{quote(profile)}}", line)
-            self.assertIn("{{quote(base_port)}}", line)
+            compact = line.replace(" ", "")
+            self.assertIn("{{quote(profile)}}", compact)
+            self.assertIn("{{quote(base_port)}}", compact)
             self.assertNotIn("'{{profile}}'", line)
 
     def test_write_and_remove_tactical_env_file(self):

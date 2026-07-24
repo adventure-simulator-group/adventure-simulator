@@ -122,34 +122,65 @@ impl PlayerBody for Limbs {
 #[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, PartialEq)]
 #[component(immutable)]
 pub struct Skills {
-    pub melee_hours: f32,
+    pub polearm_hours: f32,
+    pub axe_hours: f32,
+    pub bludgeon_hours: f32,
+    pub sword_hours: f32,
+    pub knife_hours: f32,
     pub dodge_hours: f32,
     pub block_hours: f32,
-    pub ranged_hours: f32,
+    pub bow_hours: f32,
+    pub crossbow_hours: f32,
+    pub firearm_hours: f32,
+    pub throw_hours: f32,
     pub will_hours: f32,
-    pub charisma_hours: f32,
+    pub insight_hours: f32,
+    pub self_awareness_hours: f32,
+    pub humor_hours: f32,
+    pub command_hours: f32,
+    pub deception_hours: f32,
+    pub seduction_hours: f32,
     pub medicine_hours: f32,
     pub religion_hours: f32,
     pub stealth_hours: f32,
     pub balance_hours: f32,
-    pub surgeon_hours: f32,
+    pub anatomy_hours: f32,
+    pub tailoring_hours: f32,
     pub smithing_hours: f32,
 }
 
 impl PlayerSkills for Skills {
     fn skill_hours_trained(&self, skill: Skill) -> f32 {
         match skill {
-            Skill::Melee => self.melee_hours,
+            Skill::Polearm => self.polearm_hours,
+            Skill::Axe => self.axe_hours,
+            Skill::Bludgeon => self.bludgeon_hours,
+            Skill::Sword => self.sword_hours,
+            Skill::Knife => self.knife_hours,
             Skill::Block => self.block_hours,
             Skill::Dodge => self.dodge_hours,
-            Skill::Ranged => self.ranged_hours,
+            Skill::Bow => self.bow_hours,
+            Skill::Crossbow => self.crossbow_hours,
+            Skill::Firearm => self.firearm_hours,
+            Skill::Throw => self.throw_hours,
             Skill::Will => self.will_hours,
-            Skill::Charisma => self.charisma_hours,
+            Skill::Insight => self.insight_hours,
+            Skill::SelfAwareness => self.self_awareness_hours,
+            Skill::Humor => self.humor_hours,
+            Skill::Command => self.command_hours,
+            Skill::Deception => self.deception_hours,
+            Skill::Seduction => self.seduction_hours,
             Skill::Medicine => self.medicine_hours,
+            Skill::Cooking => 0.0,
             Skill::Religion => self.religion_hours,
             Skill::Stealth => self.stealth_hours,
             Skill::Balance => self.balance_hours,
-            Skill::Surgeon => self.surgeon_hours,
+            Skill::TerrainPlains
+            | Skill::TerrainForest
+            | Skill::TerrainHills
+            | Skill::TerrainUrban => 0.0,
+            Skill::Anatomy => self.anatomy_hours,
+            Skill::Tailoring => self.tailoring_hours,
             Skill::Smithing => self.smithing_hours,
         }
     }

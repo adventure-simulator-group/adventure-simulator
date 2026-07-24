@@ -51,7 +51,7 @@
   display: inline-flex;
   align-items: center;
   padding: 0.4rem 1rem;
-  font-family: var(--font-display), serif;
+  font-family: var(--font-heading), serif;
   font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--text-secondary);
@@ -84,6 +84,61 @@
   flex-shrink: 0;
   min-width: 200px;
   justify-content: flex-end;
+}
+
+.developer-mode-toggle {
+  width: 2rem;
+  height: 2rem;
+  padding: 0.35rem;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 50%;
+  background: rgb(10 12 16 / 75%);
+  cursor: pointer;
+}
+
+.developer-mode-toggle[aria-pressed="true"] {
+  border-color: var(--accent-light);
+  background: rgb(90 64 24 / 88%);
+}
+
+.developer-mode-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: currentcolor;
+  mask: url("/static/icons/game/hammer-nails.svg") center / contain no-repeat;
+}
+
+.dialogue-source-link {
+  display: inline-grid;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin-inline-start: 0.35rem;
+  place-items: center;
+  vertical-align: -0.16rem;
+  border: 1px solid color-mix(in srgb, currentcolor 58%, transparent);
+  border-radius: 50%;
+  color: var(--accent-light);
+  text-decoration: none;
+}
+
+.dialogue-source-link[hidden] { display: none; }
+
+.dialogue-source-link:is(:hover, :focus-visible) {
+  border-color: currentcolor;
+  background: color-mix(in srgb, currentcolor 16%, transparent);
+}
+
+.dialogue-source-link:focus-visible {
+  outline: 2px solid currentcolor;
+  outline-offset: 2px;
+}
+
+.dialogue-source-icon {
+  width: 0.68rem;
+  height: 0.68rem;
+  background: currentcolor;
+  mask: url("/static/icons/game/hammer-nails.svg") center / contain no-repeat;
 }
 
 /* Settlement pages keep settlement identity and services visible at the top. */
@@ -220,7 +275,7 @@
   font-family: var(--font-display), serif;
   font-size: var(--font-size-sm);
   letter-spacing: 0.05em;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .settlement-location {
@@ -239,13 +294,13 @@
   align-items: flex-start;
   gap: 0;
   overflow: visible;
-  border: 1px solid color-mix(in srgb, var(--active-building-tint) 65%, white);
+  border: 1px solid color-mix(in srgb, var(--building-frame-tint) 72%, white);
   background: var(--building-surface);
   box-shadow: inset 0 1px 2px #fff2, inset 0 -2px 3px #0009, 0 1px 3px #0008;
 }
 
 .settlement-name {
-  font-family: var(--font-display), serif;
+  font-family: var(--font-heading), serif;
   font-size: var(--font-size-lg);
   font-weight: 700;
   color: var(--text-primary);
@@ -557,6 +612,8 @@
 }
 
 .settlement-services .nav-tab:hover { filter: brightness(1.12); }
+.service-tab-label { display: none; }
+.settlement-services .nav-tab:focus-visible { z-index: 5; outline: 2px solid var(--accent-light); outline-offset: 2px; }
 .settlement-services .nav-tab.active {
   color: var(--text-primary);
   background: color-mix(in srgb, var(--building-tint) var(--building-light, 78%), black);
@@ -667,7 +724,7 @@
   border-radius: 999px;
   background: #b4232c;
   color: #fff;
-  font: 700 0.68rem/1 sans-serif;
+  font: 700 0.68rem/1 var(--font-heading), serif;
 }
 
 .service-notification-badge[hidden] {
@@ -904,6 +961,14 @@ body:has(.settlement-top-bar) .main-grid {
   margin-bottom: 1.5rem;
 }
 
+/* Architectural textures belong to the exposed rail, never directly behind
+   copy, meters, or controls. Sections provide an opaque reading surface while
+   the building material remains visible in their surrounding gaps. */
+body:has(.settlement-top-bar[data-environment="settlement"])
+  :is(.left-sidebar, .right-sidebar) .sidebar-section {
+  background: var(--content-surface-recess);
+}
+
 .sidebar-section:last-child {
   margin-bottom: 0;
 }
@@ -912,8 +977,8 @@ body:has(.settlement-top-bar) .main-grid {
   font-family: var(--font-display), serif;
   font-size: var(--font-size-xs);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
+  text-transform: none;
+  letter-spacing: 0.05em;
   color: var(--text-muted);
   padding-bottom: 0.5rem;
   margin-bottom: 0.75rem;
@@ -942,12 +1007,52 @@ body:has(.settlement-top-bar) .main-grid {
   padding: var(--padding);
 }
 
+/* The selected building changes joinery, not the plaster. This lets semantic
+   reds, greens, and blues inside panels remain visually authoritative. */
+body:has(.nav-tab[data-service-id="map"].active) {
+  --architectural-edge: repeating-linear-gradient(0deg, transparent 0 1.15rem, rgb(222 215 196 / 4%) 1.15rem 1.22rem);
+}
+body:has(.nav-tab[data-service-id="merchants"].active) {
+  --architectural-edge: repeating-linear-gradient(135deg, transparent 0 2.5rem, rgb(230 207 169 / 3%) 2.5rem 2.62rem);
+}
+body:has(.nav-tab[data-service-id="weapons"].active) {
+  --architectural-edge: repeating-linear-gradient(45deg, transparent 0 1.4rem, rgb(236 211 174 / 3%) 1.4rem 1.5rem);
+}
+body:has(.nav-tab[data-service-id="armor"].active) {
+  --architectural-edge: radial-gradient(circle at .7rem .7rem, rgb(235 226 203 / 6%) 0 .1rem, transparent .12rem) 0 0 / 1.4rem 1.4rem;
+}
+body:has(.nav-tab[data-service-id="clothing"].active) {
+  --architectural-edge: repeating-linear-gradient(90deg, transparent 0 .62rem, rgb(242 220 187 / 3%) .62rem .68rem);
+}
+body:has(.nav-tab[data-service-id="herbalist"].active) {
+  --architectural-edge: repeating-radial-gradient(ellipse at 0 100%, transparent 0 .7rem, rgb(218 228 188 / 3%) .72rem .8rem, transparent .82rem 1.45rem);
+}
+body:has(.nav-tab[data-service-id="inn"].active) {
+  --architectural-edge: repeating-linear-gradient(0deg, transparent 0 2.1rem, rgb(237 204 153 / 4%) 2.1rem 2.25rem);
+}
+body:has(.nav-tab[data-service-id="religion"].active) {
+  --architectural-edge: repeating-linear-gradient(120deg, transparent 0 1.7rem, rgb(232 225 204 / 3%) 1.7rem 1.78rem);
+}
+
+body:has(.settlement-top-bar[data-environment="settlement"]) .center-content .panel {
+  border-color: color-mix(in srgb, var(--building-frame-tint) 52%, var(--panel-border));
+  box-shadow:
+    inset .18rem 0 color-mix(in srgb, var(--building-frame-tint) 62%, transparent),
+    inset -.18rem 0 color-mix(in srgb, var(--building-frame-tint) 62%, transparent),
+    var(--shadow-sm);
+}
+
+body:has(.settlement-top-bar[data-environment="settlement"]) .center-content .panel-header {
+  border-bottom-color: color-mix(in srgb, var(--building-frame-tint) 48%, var(--panel-border));
+  background-image: var(--architectural-edge, none);
+}
+
 /* Settlement rails resemble recessed wooden or stone wall panels. */
 body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, .right-sidebar) {
-  --building-frame: color-mix(in srgb, var(--building-surface) 88%, white);
+  --building-frame: color-mix(in srgb, var(--building-frame-tint) 88%, white);
   --building-frame-corner: color-mix(in srgb, var(--building-frame) 82%, white);
   --building-frame-corner-size: 1.35rem;
-  --building-panel-recess: color-mix(in srgb, var(--building-surface) 78%, black);
+  --building-panel-recess: var(--content-surface-recess);
   border: 0;
   position: relative;
   padding-block: var(--building-frame-corner-size);
@@ -960,10 +1065,10 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
     linear-gradient(var(--building-frame), var(--building-frame)) center top / 100% 0.55rem no-repeat local,
     linear-gradient(var(--building-frame), var(--building-frame)) center bottom / 100% 0.55rem no-repeat local,
     linear-gradient(var(--building-frame), var(--building-frame)) left center / 0.55rem 100% no-repeat local,
-    linear-gradient(var(--building-frame), var(--building-frame)) calc(100% + var(--left-rail-scrollbar-reserve, 0px)) center / 0.55rem 100% no-repeat local,
+    linear-gradient(var(--building-frame), var(--building-frame)) right center / 0.55rem 100% no-repeat local,
+    var(--architectural-edge, repeating-linear-gradient(135deg, transparent 0 2.6rem, rgb(255 255 255 / 2%) 2.6rem 2.7rem)),
     var(--building-panel-recess);
   box-shadow:
-    inset calc(-1 * var(--left-rail-scrollbar-reserve, 0px)) 0 0 var(--building-frame),
     inset 0 0 0 1px rgb(0 0 0 / 42%),
     inset 0 0 1.25rem rgb(0 0 0 / 22%);
 }
@@ -1023,7 +1128,7 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
   .main-grid:has(.inventory-browser) {
     grid-template-columns: 1fr;
   }
-  .main-grid {
+  body .app .main-grid {
     height: auto;
     min-height: 0;
     flex: 1;
@@ -1037,6 +1142,11 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
     max-height: none;
     overflow: visible;
   }
+  .service-left-stack,
+  .service-inventory-area {
+    flex: none;
+    min-height: 0;
+  }
   .right-sidebar {
     display: block;
     grid-area: right;
@@ -1046,7 +1156,11 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
     border-top: 1px solid var(--border-color);
     border-left: 0;
   }
-  .center-content { grid-area: main; min-height: 32rem; }
+  .center-content {
+    grid-area: main;
+    min-height: 32rem;
+    padding: 1rem;
+  }
   .top-bar {
     padding: 0 0.75rem;
   }
@@ -1055,6 +1169,16 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
     min-height: var(--header-height);
     flex-wrap: wrap;
     padding-block: 0.5rem;
+  }
+  .settlement-top-bar .settlement-location,
+  .settlement-top-bar .top-bar-right {
+    position: relative;
+    inset: auto;
+    order: 1;
+    margin-inline: 0.5rem;
+  }
+  .settlement-top-bar .top-bar-right {
+    margin-left: auto;
   }
   .top-bar-left {
     min-width: auto;
@@ -1081,14 +1205,15 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
     order: 3;
     width: 100%;
     gap: 0.62rem;
-    padding-top: 1.75rem;
+    padding: 0.75rem 0.5rem 0.65rem;
     overflow-x: auto;
     overflow-y: hidden;
     justify-content: flex-start;
-    padding-bottom: 0.35rem;
+    padding-bottom: 0.65rem;
     scrollbar-width: thin;
     mask-image: linear-gradient(to right, transparent, #000 0.75rem, #000 calc(100% - 0.75rem), transparent);
   }
+  .sidebar-section { margin-bottom: 1rem; }
   .settlement-top-bar[data-environment="settlement"] .settlement-services .nav-tab {
     --topbar-prop-baseline: -0.22rem;
     --topbar-prop-scale: 0.8855;
@@ -1126,4 +1251,27 @@ body:has(.settlement-top-bar[data-environment="settlement"]) :is(.left-sidebar, 
   .center-content { min-height: 27rem; }
   .left-sidebar,
   .right-sidebar { padding: 0.85rem; }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .service-tab-label {
+    position: absolute;
+    z-index: 5;
+    right: .12rem;
+    bottom: .28rem;
+    left: .12rem;
+    display: block;
+    overflow: hidden;
+    padding: .1rem .15rem .13rem;
+    border: 1px solid rgb(240 221 169 / 32%);
+    background: rgb(10 10 9 / 82%);
+    color: var(--text-primary);
+    font-size: .65rem;
+    font-weight: 700;
+    line-height: 1;
+    pointer-events: none;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }

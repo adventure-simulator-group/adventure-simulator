@@ -1,15 +1,16 @@
 use std::path::Path;
 
 use adventuresim_world_schema::{
-    CompiledWorld, SettlementAliasImport, SettlementDescriptionImport, SpatialGridSpec,
-    WorldBuildReport,
+    CompiledWorld, PLAYABLE_BOUNDS, SettlementAliasImport, SettlementDescriptionImport,
+    SpatialGridSpec, WorldBuildReport,
 };
 
 use crate::{
     Result,
     sources::{
-        drought, elevation, environment_synthesis, forest_cover, geology, hydrology, industries,
-        land_use, potential_vegetation, religion, route_terrain, soil, tree_species, viabundus,
+        drought, economies, elevation, environment_synthesis, forest_cover, geology, hydrology,
+        industries, land_use, potential_vegetation, religion, road_inference, route_terrain, soil,
+        tree_species, viabundus,
     },
     validation,
 };
@@ -18,6 +19,7 @@ use crate::{
 pub struct WorldBuilder {
     year: i32,
     spatial_grid: SpatialGridSpec,
+    bounds: Option<[f64; 4]>,
 }
 
 /// Viabundus-only enrichment output used to inspect source-boundary behavior
@@ -34,6 +36,7 @@ impl WorldBuilder {
         Self {
             year,
             spatial_grid: SpatialGridSpec::default(),
+            bounds: None,
         }
     }
 
@@ -42,8 +45,19 @@ impl WorldBuilder {
         self
     }
 
+    /// Restrict source topology and settlements before enrichment begins.
+    pub const fn with_bounds(mut self, bounds: [f64; 4]) -> Self {
+        self.bounds = Some(bounds);
+        self
+    }
+
+    /// Apply the repository's authoritative MVP playable boundary.
+    pub const fn with_playable_bounds(self) -> Self {
+        self.with_bounds(PLAYABLE_BOUNDS)
+    }
+
     pub fn build_from_viabundus(self, directory: &Path) -> Result<ViabundusEnrichment> {
-        let draft = viabundus::compile(directory, self.year, self.spatial_grid)?;
+        let draft = viabundus::compile(directory, self.year, self.spatial_grid, self.bounds)?;
         Ok(ViabundusEnrichment {
             settlement_aliases: draft.settlement_aliases,
             settlement_descriptions: draft.settlement_descriptions,
@@ -65,7 +79,78 @@ impl WorldBuilder {
         drought_netcdf: &Path,
         hydrology_directory: &Path,
     ) -> Result<CompiledWorld> {
-        let draft = viabundus::compile(viabundus_directory, self.year, self.spatial_grid)?;
+        self.build_from_sources_inner(
+            viabundus_directory,
+            elevation_directory,
+            land_use_directory,
+            forest_cover_directory,
+            potential_vegetation_directory,
+            tree_species_archive,
+            soilgrids_directory,
+            geology_geopackage,
+            religion_regions,
+            drought_netcdf,
+            hydrology_directory,
+            None,
+        )
+    }
+
+    /// Compile with terrain-aware road gap filling against an immutable base
+    /// pack containing documented Viabundus roads only.
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_from_sources_with_base_terrain(
+        self,
+        viabundus_directory: &Path,
+        elevation_directory: &Path,
+        land_use_directory: &Path,
+        forest_cover_directory: &Path,
+        potential_vegetation_directory: &Path,
+        tree_species_archive: &Path,
+        soilgrids_directory: &Path,
+        geology_geopackage: &Path,
+        religion_regions: &Path,
+        drought_netcdf: &Path,
+        hydrology_directory: &Path,
+        base_terrain: &adventuresim_terrain::TerrainPack,
+    ) -> Result<CompiledWorld> {
+        self.build_from_sources_inner(
+            viabundus_directory,
+            elevation_directory,
+            land_use_directory,
+            forest_cover_directory,
+            potential_vegetation_directory,
+            tree_species_archive,
+            soilgrids_directory,
+            geology_geopackage,
+            religion_regions,
+            drought_netcdf,
+            hydrology_directory,
+            Some(base_terrain),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build_from_sources_inner(
+        self,
+        viabundus_directory: &Path,
+        elevation_directory: &Path,
+        land_use_directory: &Path,
+        forest_cover_directory: &Path,
+        potential_vegetation_directory: &Path,
+        tree_species_archive: &Path,
+        soilgrids_directory: &Path,
+        geology_geopackage: &Path,
+        religion_regions: &Path,
+        drought_netcdf: &Path,
+        hydrology_directory: &Path,
+        base_terrain: Option<&adventuresim_terrain::TerrainPack>,
+    ) -> Result<CompiledWorld> {
+        let draft = viabundus::compile(
+            viabundus_directory,
+            self.year,
+            self.spatial_grid,
+            self.bounds,
+        )?;
         let draft = elevation::enrich(draft, elevation_directory)?;
         let draft = land_use::enrich(draft, land_use_directory)?;
         let draft = forest_cover::enrich(draft, forest_cover_directory)?;
@@ -78,8 +163,14 @@ impl WorldBuilder {
         let draft = hydrology::enrich(draft, hydrology_directory)?;
         let draft = soil::finalize(draft)?;
         let world = environment_synthesis::finalize(draft)?;
+        let world = if let Some(terrain) = base_terrain {
+            road_inference::enrich(world, terrain)?
+        } else {
+            world
+        };
         let world = route_terrain::enrich(world, elevation_directory)?;
         let world = industries::enrich(world)?;
+        let world = economies::enrich(world)?;
         validation::validate(&world)?;
         Ok(world)
     }

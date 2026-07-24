@@ -165,7 +165,7 @@ fn dedicated_precision_changes_thievery_outcome() {
 #[test]
 fn extreme_skill_hours_and_oversized_report_vectors_are_rejected() {
     let mut profile = generate_profile(1, 0);
-    profile.initial_skills.melee = MAX_INITIAL_SKILL_HOURS + 1.0;
+    profile.initial_skills.sword = MAX_INITIAL_SKILL_HOURS + 1.0;
     assert!(run_profiles(config(1, 1, 1), vec![profile]).is_err());
 
     let mut bounded = config(2, 1, 1);
@@ -189,38 +189,40 @@ fn individual_religion_fields_must_be_finite_and_bounded() {
 }
 
 #[test]
-fn simulator_requires_manual_religion_and_faithless_prayer_adds_no_study() {
-    let mut automatic = generate_profile(4, 0);
-    automatic.schedule.religion_auto_train = true;
-    automatic.schedule.religion = 60;
-    assert!(run_profiles(config(4, 1, 1), vec![automatic]).is_err());
-
+fn faithless_prayer_adds_no_religion_study() {
     let mut manual = generate_profile(4, 0);
     manual.schedule = adventuresim_core::strategic_schedule::DailySchedule {
-        religions: adventuresim_world_schema::ReligionMinutes {
-            judaism: 60,
-            ..Default::default()
-        },
         prayer: 60,
         ..Default::default()
     };
     let before = manual.initial_skills.religion;
     let report = run_profiles(config(4, 1, 1), vec![manual]).unwrap();
     let after = report.metrics[0].skill_hours.religion;
-    assert_eq!(after.judaism - before.judaism, 1.0);
-    assert_eq!(after.roman_catholic, before.roman_catholic);
+    assert_eq!(after, before);
 }
 
 #[test]
 fn bounded_skill_state_remains_finite_for_maximum_duration() {
     let mut profile = generate_profile(88, 0);
     profile.initial_skills = adventuresim_core::strategic_schedule::SkillHours {
-        melee: MAX_INITIAL_SKILL_HOURS,
+        polearm: MAX_INITIAL_SKILL_HOURS,
+        axe: MAX_INITIAL_SKILL_HOURS,
+        bludgeon: MAX_INITIAL_SKILL_HOURS,
+        sword: MAX_INITIAL_SKILL_HOURS,
+        knife: MAX_INITIAL_SKILL_HOURS,
         dodge: MAX_INITIAL_SKILL_HOURS,
         block: MAX_INITIAL_SKILL_HOURS,
-        ranged: MAX_INITIAL_SKILL_HOURS,
+        bow: MAX_INITIAL_SKILL_HOURS,
+        crossbow: MAX_INITIAL_SKILL_HOURS,
+        firearm: MAX_INITIAL_SKILL_HOURS,
+        throw: MAX_INITIAL_SKILL_HOURS,
         will: MAX_INITIAL_SKILL_HOURS,
-        charisma: MAX_INITIAL_SKILL_HOURS,
+        insight: MAX_INITIAL_SKILL_HOURS,
+        self_awareness: MAX_INITIAL_SKILL_HOURS,
+        humor: MAX_INITIAL_SKILL_HOURS,
+        command: MAX_INITIAL_SKILL_HOURS,
+        deception: MAX_INITIAL_SKILL_HOURS,
+        seduction: MAX_INITIAL_SKILL_HOURS,
         medicine: MAX_INITIAL_SKILL_HOURS,
         religion: adventuresim_world_schema::ReligionHours {
             roman_catholic: MAX_INITIAL_SKILL_HOURS,
@@ -228,8 +230,10 @@ fn bounded_skill_state_remains_finite_for_maximum_duration() {
         },
         stealth: MAX_INITIAL_SKILL_HOURS,
         balance: MAX_INITIAL_SKILL_HOURS,
-        surgeon: MAX_INITIAL_SKILL_HOURS,
+        anatomy: MAX_INITIAL_SKILL_HOURS,
+        tailoring: MAX_INITIAL_SKILL_HOURS,
         smithing: MAX_INITIAL_SKILL_HOURS,
+        cooking: MAX_INITIAL_SKILL_HOURS,
     };
     let report = run_profiles(config(88, 1, MAX_DAYS), vec![profile]).unwrap();
     assert!(report.metrics[0].skill_hours.is_finite());

@@ -11,7 +11,7 @@ const plannerHelpers = () => {
   let source = fs.readFileSync(plannerPath, "utf8");
   source = source.replace(
     "  initializeTravelPlanner();",
-    "  globalThis.__planner = { parseSegments, position, turnaroundElapsed, moonName, moonGeometry, calendarDate, provisionQuantities, fatigueBand, splitFatigueSegment, fatigueAtElapsed, timePeriodAt, formatClock, stepRangeValue };",
+    "  globalThis.__planner = { parseSegments, parseTerrain, terrainPieces, position, turnaroundElapsed, moonName, moonGeometry, calendarDate, provisionQuantities, fatigueBand, splitFatigueSegment, fatigueAtElapsed, timePeriodAt, formatClock, stepRangeValue };",
   );
   const context = { document: { addEventListener() {} } };
   vm.runInNewContext(source, context);
@@ -24,6 +24,47 @@ test("persisted quest segments place turnaround after outbound walking and inter
   assert.equal(helpers.turnaroundElapsed(segments, 720, 2040), 1320);
   assert.notEqual(helpers.turnaroundElapsed(segments, 720, 2040), 2040);
   assert.ok(helpers.position(1080, 2040) > helpers.position(480, 2040), "progress advances during rest");
+});
+
+test("water verdict includes but separately labels emergency alcohol", () => {
+  const source = fs.readFileSync(plannerPath, "utf8");
+  assert.match(source, /provisionOrdinaryWaterDays/);
+  assert.match(source, /provisionEmergencyAlcoholDays/);
+  assert.match(source, /ordinary water \+.*emergency alcohol/);
+});
+
+test("terrain rail preserves roads and woods around camps and reverses the return leg", () => {
+  const helpers = plannerHelpers();
+  const terrain = helpers.parseTerrain("road,0,30,2500,1000,0,0,0|open,30,20,2500,1000,0,0,0|sparse-woods,50,30,3000,800,200,0,0|deep-woods,80,20,3500,400,600,0,0");
+  const itinerary = helpers.parseSegments("w,0,100,0,50,0,.3,.3,0|f,100,60,50,0,.3,.1,.3,60|w,160,100,50,50,.1,.4,.4,0");
+  assert.deepEqual(Array.from(terrain, (span) => ({ ...span, weights: Array.from(span.weights) })), [
+    { kind: "road", start: 0, duration: 30, check: 2.5, weights: [1000, 0, 0, 0] },
+    { kind: "open", start: 30, duration: 20, check: 2.5, weights: [1000, 0, 0, 0] },
+    { kind: "sparse-woods", start: 50, duration: 30, check: 3, weights: [800, 200, 0, 0] },
+    { kind: "deep-woods", start: 80, duration: 20, check: 3.5, weights: [400, 600, 0, 0] },
+  ]);
+  assert.deepEqual(Array.from(helpers.terrainPieces(terrain, itinerary, 100, false), ({ kind, start, duration }) => ({ kind, start, duration })), [
+    { kind: "road", start: 0, duration: 60 },
+    { kind: "open", start: 60, duration: 40 },
+    { kind: "stopped", start: 100, duration: 60 },
+    { kind: "sparse-woods", start: 160, duration: 60 },
+    { kind: "deep-woods", start: 220, duration: 40 },
+  ]);
+  const returnPieces = helpers.terrainPieces(terrain, [{ kind: "w", start: 0, duration: 200, movementStart: 0, movementDuration: 200 }], 200, true);
+  assert.equal(returnPieces[0].kind, "road");
+  assert.equal(returnPieces.at(-1).kind, "road");
+  assert.ok(returnPieces.some((piece) => piece.kind === "deep-woods" && piece.start === 80));
+  assert.ok(returnPieces.some((piece) => piece.kind === "deep-woods" && piece.start === 100));
+});
+
+test("terrain parser rejects malformed, negative, zero-length, and discontinuous spans", () => {
+  const helpers = plannerHelpers();
+  assert.deepEqual(Array.from(helpers.parseTerrain("road,-1,5,0,1000,0,0,0")), []);
+  assert.deepEqual(Array.from(helpers.parseTerrain("road,0,0,0,1000,0,0,0")), []);
+  assert.deepEqual(Array.from(helpers.parseTerrain("road,0,5,0,1000,0,0,0|open,6,5,0,1000,0,0,0")), []);
+  assert.deepEqual(Array.from(helpers.parseTerrain("road,0,5,extra")), []);
+  assert.deepEqual(Array.from(helpers.parseTerrain("lava,0,5,0,1000,0,0,0")), []);
+  assert.deepEqual(Array.from(helpers.parseTerrain("road,0,5,0,999,0,0,0")), []);
 });
 
 test("provision target math supports positive and negative surplus", () => {
@@ -193,13 +234,13 @@ test("authoritative travel guards stale sync, bounded legacy vectors, and termin
   const personalNeeds = time.indexOf("apply_elapsed_needs(ctx, member_id, elapsed)?;");
   const personalTerminal = time.indexOf("if terminal.is_some()", personalNeeds);
   assert.ok(personalNeeds >= 0 && personalNeeds < personalTerminal, "personal camp sync consumes needs before terminal return");
-  const partyNeeds = time.indexOf("apply_elapsed_needs(ctx, member_id, elapsed)?;", personalNeeds + 1);
+  const partyNeeds = time.indexOf("apply_elapsed_needs(ctx, member_id, member_elapsed)?;", personalNeeds + 1);
   const partyTerminal = time.indexOf("if terminal.is_some()", partyNeeds);
   assert.ok(partyNeeds > personalNeeds && partyNeeds < partyTerminal, "party camp consumes needs before terminal return");
   assert.match(strategic, /plan_version == 0[\s\S]+reconstruct_legacy_journey_coordinates/);
   assert.match(
     strategic,
-    /prepare_party_waterskins\(ctx, &party_id, true\)[\s\S]+\.find\(&party_id\)[\s\S]+let leg_minutes/,
+    /prepare_party_waterskins\(ctx, &party_id, true\)[\s\S]+\.find\(&party_id\)[\s\S]+let\s+\((?:leg_minutes|requested_leg_minutes)/,
     "quest departure reloads the party after filling shared waterskins before writing camp state",
   );
   assert.match(
@@ -207,4 +248,22 @@ test("authoritative travel guards stale sync, bounded legacy vectors, and termin
     /prepare_party_waterskins\([\s\S]+departing_settlement[\s\S]+party = Some\([\s\S]+\.find\(&current_party\.id\)/,
     "settlement departure reloads the party after preparing shared waterskins",
   );
+});
+
+test("alcohol chronology, authority, and automatic surgery consumption stay reducer-authoritative", () => {
+  const moduleRoot = path.join(root, "..", "adventuresim-stdb-module", "src");
+  const alcohol = fs.readFileSync(path.join(moduleRoot, "alcohol.rs"), "utf8");
+  const condition = fs.readFileSync(path.join(moduleRoot, "condition.rs"), "utf8");
+  const surgery = fs.readFileSync(path.join(moduleRoot, "surgery.rs"), "utf8");
+  const time = fs.readFileSync(path.join(moduleRoot, "time.rs"), "utf8");
+  const settlements = fs.readFileSync(path.join(root, "src", "routes", "settlements.rs"), "utf8");
+  assert.match(alcohol, /rest_evenings\(start, end\)[\s\S]+nightly_morale_effect[\s\S]+upsert_refreshable_morale_event_at_without_refresh/);
+  assert.match(alcohol, /tavern_units_affordable[\s\S]+personal_currency_total/);
+  assert.match(condition, /travel_evening_segments[\s\S]+apply_elapsed_needs[\s\S]+consume_emergency_hydration/);
+  assert.match(time, /require_strategic_character_authority\(ctx, character_id\)[\s\S]+Settlement rest requires the character to be at a settlement/);
+  assert.match(time, /requested_minutes > MINUTES_PER_YEAR[\s\S]+Camp rest cannot exceed one year/);
+  assert.match(surgery, /require_strategic_character_authority\(ctx, actor_id\)[\s\S]+best_disinfectant[\s\S]+consume_inventory_row[\s\S]+surgery_control_bonus/);
+  assert.match(settlements, /itinerary_segments[\s\S]+ItinerarySegmentKind::Camp[\s\S]+rest_intervals/);
+  assert.match(settlements, /remaining_rest_intervals[\s\S]+completed_elapsed_minutes[\s\S]+forecast_camp_intervals/);
+  assert.match(settlements, /travelers\.sort_by_key[\s\S]+rest_evenings[\s\S]+expected_morale_demands\.push\(\(evening, traveler\.id, target\)\)[\s\S]+sort_by_key\(\|\(evening, character_id/);
 });

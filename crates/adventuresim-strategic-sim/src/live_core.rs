@@ -33,7 +33,6 @@ use adventuresim_stdb_client::{
     character_death_table::CharacterDeathTableAccess,
     character_equip_table::CharacterEquipTableAccess,
     character_illness_status_table::CharacterIllnessStatusTableAccess,
-    character_personality_table::CharacterPersonalityTableAccess,
     character_strategic_condition_table::CharacterStrategicConditionTableAccess,
     character_table::CharacterTableAccess, character_time_table::CharacterTimeTableAccess,
     character_training_schedule_table::CharacterTrainingScheduleTableAccess,
@@ -56,6 +55,7 @@ use adventuresim_stdb_client::{
     quest_status_type::QuestStatus, quest_table::QuestTableAccess,
     repair_order_table::RepairOrderTableAccess,
     request_general_party_join_reducer::request_general_party_join,
+    resolve_strategic_encounter_reducer::resolve_strategic_encounter,
     rest_at_camp_reducer::rest_at_camp, rest_at_settlement_hours_reducer::rest_at_settlement_hours,
     retrieve_repaired_item_reducer::retrieve_repaired_item,
     seed_simulation_disease_reducer::seed_simulation_disease,
@@ -63,6 +63,7 @@ use adventuresim_stdb_client::{
     seed_simulation_world_reducer::seed_simulation_world,
     settlement_smith_table::SettlementSmithTableAccess,
     simulation_run_table::SimulationRunTableAccess, store_battle_loot_reducer::store_battle_loot,
+    strategic_encounter_table::StrategicEncounterTableAccess,
     submit_item_for_repair_reducer::submit_item_for_repair,
     travel_to_quest_reducer::travel_to_quest, travel_to_settlement_reducer::travel_to_settlement,
     turn_in_quest_reducer::turn_in_quest,
@@ -199,6 +200,18 @@ pub struct CoreLoopMetrics {
     pub retries: u32,
     pub duplicate_semantic_events: u32,
     pub stuck_detections: u32,
+    pub encounters: u32,
+    pub encounter_sneaks: u32,
+    pub encounter_detours: u32,
+    pub encounter_attacks: u32,
+    pub encounter_runs: u32,
+    pub encounter_surrenders: u32,
+    pub encounter_escape_eligible: u32,
+    pub encounter_escape_ineligible: u32,
+    pub encounter_surrender_items_lost: u32,
+    pub encounter_surrender_value_lost: u64,
+    pub encounter_defeats: u32,
+    pub encounter_wipes: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -230,6 +243,7 @@ pub enum CoreLoopEventKind {
     QuestSuppressed,
     Death,
     Activity,
+    Encounter,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -324,13 +338,26 @@ fn live_skills(character_id: u64, profile: &AgentProfile) -> CharacterSkills {
     let s = profile.initial_skills;
     CharacterSkills {
         character_id,
-        melee_hours: s.melee,
+        polearm_hours: s.polearm,
+        axe_hours: s.axe,
+        bludgeon_hours: s.bludgeon,
+        sword_hours: s.sword,
+        knife_hours: s.knife,
         dodge_hours: s.dodge,
         block_hours: s.block,
-        ranged_hours: s.ranged,
+        bow_hours: s.bow,
+        crossbow_hours: s.crossbow,
+        firearm_hours: s.firearm,
+        throw_hours: s.throw,
         will_hours: s.will,
-        charisma_hours: s.charisma,
+        insight_hours: s.insight,
+        self_awareness_hours: s.self_awareness,
+        humor_hours: s.humor,
+        command_hours: s.command,
+        deception_hours: s.deception,
+        seduction_hours: s.seduction,
         medicine_hours: s.medicine,
+        cooking_hours: s.cooking,
         religion_hours: adventuresim_stdb_client::ReligionHours {
             roman_catholic: s.religion.roman_catholic,
             lutheran: s.religion.lutheran,
@@ -340,9 +367,33 @@ fn live_skills(character_id: u64, profile: &AgentProfile) -> CharacterSkills {
             islamic: s.religion.islamic,
             judaism: s.religion.judaism,
         },
+        oral_languages: adventuresim_stdb_client::OralLanguageHours {
+            east_central: 5_000.0,
+            west_central: 0.0,
+            low: 0.0,
+            yiddish: 0.0,
+            latin: 0.0,
+            romani: 0.0,
+            elven: 0.0,
+            dwarfish: 0.0,
+        },
+        written_languages: adventuresim_stdb_client::WrittenLanguageHours {
+            german: 1_000.0,
+            low: 0.0,
+            latin: 0.0,
+            hebrew: 0.0,
+            yiddish: 0.0,
+            elven: 0.0,
+            dwarfish: 0.0,
+        },
         stealth_hours: s.stealth,
         balance_hours: s.balance,
-        surgeon_hours: s.surgeon,
+        terrain_plains_hours: 0.0,
+        terrain_forest_hours: 0.0,
+        terrain_hills_hours: 0.0,
+        terrain_urban_hours: 0.0,
+        anatomy_hours: s.anatomy,
+        tailoring_hours: s.tailoring,
         smithing_hours: s.smithing,
     }
 }
@@ -350,30 +401,16 @@ fn live_skills(character_id: u64, profile: &AgentProfile) -> CharacterSkills {
 fn live_schedule(profile: &AgentProfile) -> ScheduleAllocation {
     let s = profile.schedule;
     ScheduleAllocation {
-        combat_minutes: s.combat,
-        combat_auto_train: s.combat_auto_train,
-        melee_minutes: s.melee,
-        dodge_minutes: s.dodge,
-        block_minutes: s.block,
-        ranged_minutes: s.ranged,
-        will_minutes: s.will,
-        charisma_minutes: s.charisma,
-        medicine_minutes: s.medicine,
-        religion_minutes: s.religion,
-        religion_auto_train: s.religion_auto_train,
-        religion_minutes_by_tradition: adventuresim_stdb_client::ReligionMinutes {
-            roman_catholic: s.religions.roman_catholic,
-            lutheran: s.religions.lutheran,
-            reformed: s.religions.reformed,
-            anglican: s.religions.anglican,
-            eastern_orthodox: s.religions.eastern_orthodox,
-            islamic: s.religions.islamic,
-            judaism: s.religions.judaism,
-        },
-        stealth_minutes: s.stealth,
-        balance_minutes: s.balance,
-        surgeon_minutes: s.surgeon,
-        smithing_minutes: s.smithing,
+        combat_training_minutes: s.combat_training_minutes,
+        carousing_minutes: s.carousing_minutes,
+        apprenticeship_minutes: s.apprenticeship_minutes,
+        apprenticeship_service_id: s
+            .apprenticeship_service_id
+            .map(|id| id.service_id().to_string()),
+        profession_practice_minutes: s.profession_practice_minutes,
+        profession_service_id: s
+            .profession_service_id
+            .map(|id| id.service_id().to_string()),
         labor_minutes: s.labor,
         prayer_minutes: s.prayer,
         thievery_minutes: s.thievery,
@@ -383,30 +420,12 @@ fn live_schedule(profile: &AgentProfile) -> ScheduleAllocation {
 
 fn medical_rest_schedule() -> ScheduleAllocation {
     ScheduleAllocation {
-        combat_minutes: 0,
-        combat_auto_train: true,
-        melee_minutes: 0,
-        dodge_minutes: 0,
-        block_minutes: 0,
-        ranged_minutes: 0,
-        will_minutes: 0,
-        charisma_minutes: 0,
-        medicine_minutes: 0,
-        religion_minutes: 0,
-        religion_auto_train: true,
-        religion_minutes_by_tradition: adventuresim_stdb_client::ReligionMinutes {
-            roman_catholic: 0,
-            lutheran: 0,
-            reformed: 0,
-            anglican: 0,
-            eastern_orthodox: 0,
-            islamic: 0,
-            judaism: 0,
-        },
-        stealth_minutes: 0,
-        balance_minutes: 0,
-        surgeon_minutes: 0,
-        smithing_minutes: 0,
+        combat_training_minutes: 0,
+        carousing_minutes: 0,
+        apprenticeship_minutes: 0,
+        apprenticeship_service_id: None,
+        profession_practice_minutes: 0,
+        profession_service_id: None,
         labor_minutes: 0,
         prayer_minutes: 0,
         thievery_minutes: 0,
@@ -452,6 +471,16 @@ fn live_personality(character_id: u64, p: &crate::Personality) -> CharacterPerso
             crate::Conviction::Neutral => adventuresim_stdb_client::Conviction::Neutral,
             crate::Conviction::Zealous => adventuresim_stdb_client::Conviction::Zealous,
             crate::Conviction::Irreverent => adventuresim_stdb_client::Conviction::Irreverent,
+        },
+        hygiene: match p.hygiene {
+            crate::Hygiene::Neutral => adventuresim_stdb_client::Hygiene::Neutral,
+            crate::Hygiene::Slovenly => adventuresim_stdb_client::Hygiene::Slovenly,
+            crate::Hygiene::Cleanly => adventuresim_stdb_client::Hygiene::Cleanly,
+        },
+        temperance: match p.temperance {
+            crate::Temperance::Neutral => adventuresim_stdb_client::Temperance::Neutral,
+            crate::Temperance::Temperate => adventuresim_stdb_client::Temperance::Temperate,
+            crate::Temperance::Drunkard => adventuresim_stdb_client::Temperance::Drunkard,
         },
     }
 }
@@ -601,6 +630,81 @@ impl LiveRunner {
                 self.observe_deaths();
                 return Ok(());
             };
+            let pending_encounter = {
+                let table = self.connection.db.strategic_encounter();
+                table
+                    .iter()
+                    .find(|row| row.party_id == party_id && row.status == "awaiting_choice")
+            };
+            if let Some(encounter) = pending_encounter {
+                self.metrics.encounters += 1;
+                if encounter.run_ineligibility.is_none() {
+                    self.metrics.encounter_escape_eligible += 1;
+                } else {
+                    self.metrics.encounter_escape_ineligible += 1;
+                }
+                let choice = encounter.available_choices
+                    [(encounter.roll_index as usize) % encounter.available_choices.len()]
+                .clone();
+                match choice.as_str() {
+                    "sneak" => self.metrics.encounter_sneaks += 1,
+                    "detour" => self.metrics.encounter_detours += 1,
+                    "attack" => self.metrics.encounter_attacks += 1,
+                    "run" => self.metrics.encounter_runs += 1,
+                    "surrender" => {
+                        self.metrics.encounter_surrenders += 1;
+                        self.metrics.encounter_surrender_items_lost =
+                            self.metrics.encounter_surrender_items_lost.saturating_add(
+                                encounter
+                                    .loss_preview
+                                    .iter()
+                                    .map(|loss| loss.quantity)
+                                    .sum(),
+                            );
+                        self.metrics.encounter_surrender_value_lost =
+                            self.metrics.encounter_surrender_value_lost.saturating_add(
+                                encounter
+                                    .loss_preview
+                                    .iter()
+                                    .map(|loss| {
+                                        u64::from(loss.quantity) * u64::from(loss.value_each)
+                                    })
+                                    .sum::<u64>(),
+                            );
+                    }
+                    _ => return Err("encounter exposed an unknown choice".into()),
+                }
+                let encounter_id = encounter.encounter_id.clone();
+                let result = reducer_call!(self, "resolve_strategic_encounter", |cb| self
+                    .connection
+                    .reducers
+                    .resolve_strategic_encounter_then(leader, choice.clone(), cb));
+                self.call(result)?;
+                self.observe_deaths();
+                let resolved_outcome = {
+                    let table = self.connection.db.strategic_encounter();
+                    table
+                        .iter()
+                        .find(|row| row.encounter_id == encounter_id)
+                        .ok_or("resolved encounter row disappeared")?
+                        .outcome
+                };
+                if resolved_outcome.as_deref() == Some("defeat") {
+                    self.metrics.encounter_defeats += 1;
+                    if self.current_leader(party_id).is_none() {
+                        self.metrics.encounter_wipes += 1;
+                    }
+                }
+                self.event(
+                    self.current_leader(party_id).map_or(0, |(_, agent)| agent),
+                    CoreLoopEventKind::Encounter,
+                    format!("id={encounter_id};choice={choice};outcome={resolved_outcome:?}"),
+                );
+                if self.current_leader(party_id).is_none() {
+                    return Ok(());
+                }
+                continue;
+            }
             let result = reducer_call!(self, "rest_at_camp", |cb| self
                 .connection
                 .reducers
@@ -1156,9 +1260,10 @@ impl LiveRunner {
                 else {
                     continue;
                 };
-                let skill = match definition.kind {
-                    ItemKind::Weapon | ItemKind::Shield => smith.weaponsmith_skill,
-                    ItemKind::Armor => smith.armourer_skill,
+                let (skill, service) = match definition.kind {
+                    ItemKind::Weapon | ItemKind::Shield => (smith.weaponsmith_skill, "weapons"),
+                    ItemKind::Armor => (smith.armourer_skill, "armor"),
+                    ItemKind::Clothing => (smith.tailor_skill, "clothing"),
                     _ => continue,
                 };
                 let Some(condition) = self
@@ -1196,6 +1301,7 @@ impl LiveRunner {
                         .submit_item_for_repair_then(
                             character_id,
                             settlement.clone(),
+                            service.to_string(),
                             owned.id,
                             cb
                         ));
@@ -2025,7 +2131,6 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
         .add_query(|query| query.from.character_death())
         .add_query(|query| query.from.character_equip())
         .add_query(|query| query.from.character_illness_status())
-        .add_query(|query| query.from.character_personality())
         .add_query(|query| query.from.character_strategic_condition())
         .add_query(|query| query.from.character_time())
         .add_query(|query| query.from.character_training_schedule())
@@ -2039,6 +2144,7 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
         .add_query(|query| query.from.party_member())
         .add_query(|query| query.from.party_stake())
         .add_query(|query| query.from.quest())
+        .add_query(|query| query.from.strategic_encounter())
         .add_query(|query| query.from.repair_order())
         .add_query(|query| query.from.settlement())
         .add_query(|query| query.from.settlement_smith())
@@ -2136,16 +2242,6 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
                 cb,
             ));
         runner.call(result)?;
-        let authoritative_personality = runner
-            .connection
-            .db
-            .character_personality()
-            .iter()
-            .find(|row| row.character_id == character_id)
-            .ok_or("configured character has no authoritative personality")?;
-        if authoritative_personality != personality {
-            return Err("authoritative personality does not match deterministic profile".into());
-        }
         let fixture_item = runner
             .connection
             .db
@@ -2546,18 +2642,10 @@ mod tests {
         let rest = medical_rest_schedule();
         assert_eq!(
             [
-                rest.melee_minutes,
-                rest.dodge_minutes,
-                rest.block_minutes,
-                rest.ranged_minutes,
-                rest.will_minutes,
-                rest.charisma_minutes,
-                rest.medicine_minutes,
-                rest.religion_minutes,
-                rest.stealth_minutes,
-                rest.balance_minutes,
-                rest.surgeon_minutes,
-                rest.smithing_minutes,
+                rest.combat_training_minutes,
+                rest.carousing_minutes,
+                rest.apprenticeship_minutes,
+                rest.profession_practice_minutes,
                 rest.labor_minutes,
                 rest.prayer_minutes,
                 rest.thievery_minutes,
@@ -2577,5 +2665,41 @@ mod tests {
         assert_eq!(quantize_smithing_condition(0.019_999_9), 20);
         assert_eq!(quantize_smithing_condition(f32::NAN), 0);
         assert_eq!(quantize_smithing_condition(f32::INFINITY), 1_000);
+    }
+
+    #[test]
+    fn report_metrics_expose_encounter_frequency_choices_losses_and_wipes() {
+        let metrics = CoreLoopMetrics {
+            encounters: 5,
+            encounter_sneaks: 1,
+            encounter_detours: 1,
+            encounter_attacks: 1,
+            encounter_runs: 1,
+            encounter_surrenders: 1,
+            encounter_escape_eligible: 3,
+            encounter_escape_ineligible: 2,
+            encounter_surrender_items_lost: 4,
+            encounter_surrender_value_lost: 90,
+            encounter_defeats: 2,
+            encounter_wipes: 1,
+            ..CoreLoopMetrics::default()
+        };
+        let value = serde_json::to_value(metrics).unwrap();
+        for field in [
+            "encounters",
+            "encounter_sneaks",
+            "encounter_detours",
+            "encounter_attacks",
+            "encounter_runs",
+            "encounter_surrenders",
+            "encounter_escape_eligible",
+            "encounter_escape_ineligible",
+            "encounter_surrender_items_lost",
+            "encounter_surrender_value_lost",
+            "encounter_defeats",
+            "encounter_wipes",
+        ] {
+            assert!(value.get(field).is_some(), "missing {field}");
+        }
     }
 }

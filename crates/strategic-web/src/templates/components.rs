@@ -35,6 +35,7 @@ pub fn item_icon_name(item_id: &str) -> &'static str {
         "splint" => "arm-bandage",
         "travel_ration" => "bread",
         "waterskin" => "waterskin",
+        "small_beer" | "table_wine" | "aqua_vitae" => "beer-stein",
         "linen_tunic" => "shirt",
         "club" => "wood-club",
         "walking_staff" => "bo",
@@ -95,8 +96,18 @@ pub fn item_icon_name(item_id: &str) -> &'static str {
 }
 
 pub fn item_type_icon(item_id: &str) -> Markup {
-    let readable = item_id.replace('_', " ");
+    let readable = item_display_name(item_id);
     game_icon(&format!("Item type: {readable}"), item_icon_name(item_id))
+}
+
+/// Turn a stable snake-case item identifier into player-facing copy without
+/// changing the identifier used by forms or client-side behavior.
+pub fn item_display_name(item_id: &str) -> String {
+    let mut readable = item_id.replace('_', " ");
+    if let Some(first) = readable.get_mut(0..1) {
+        first.make_ascii_uppercase();
+    }
+    readable
 }
 
 pub fn item_type_header() -> Markup {
@@ -110,17 +121,38 @@ pub fn item_type_header() -> Markup {
 pub fn stat_game_icon_name(icon: &str) -> &'static str {
     match icon {
         "will" => "inner-self",
-        "charisma" => "conversation",
+        "social" => "conversation",
+        "insight" => "awareness",
+        "self-awareness" => "inner-self",
+        "humor" => "juggler",
+        "command" => "crown",
+        "deception" => "conversation",
+        "seduction" => "rose",
         "medicine" => "medical-pack",
+        "cooking" => "meal",
         "faith" => "holy-symbol",
+        "religion" => "holy-symbol",
         "melee" => "sword-clash",
         "combat" => "crossed-swords",
+        "crossed-swords" => "crossed-swords",
+        "archery-target" => "bullseye",
         "ranged" => "bullseye",
+        "shield" => "shield",
+        "spear-hook" => "spear-hook",
+        "battle-axe" => "wood-axe",
+        "flanged-mace" => "flanged-mace",
+        "sword" => "sword-brandish",
+        "bowie-knife" => "bowie-knife",
+        "bow-arrow" => "bow-arrow",
+        "crossbow" => "crossbow",
+        "musket" => "musket",
+        "throwing-ball" => "plain-arrow",
         "dodge" => "acrobatic",
         "block" => "shield",
         "stealth" => "hood",
         "balance" => "tightrope",
         "surgeon" => "scalpel",
+        "sewing-needle" => "clothes",
         "smithing" => "anvil",
         "intelligence" => "brain",
         "instinct" => "awareness",
@@ -140,7 +172,9 @@ pub fn stat_game_icon_name(icon: &str) -> &'static str {
 /// Resolve the source used by a stat mask. The original limb and immunity
 /// artwork remains clearer at the compact sizes used by the attribute rail.
 pub fn stat_icon_path(category: &str, icon: &str) -> String {
-    if category == "attributes"
+    if category == "terrain" {
+        format!("/static/icons/stats/terrain/{icon}.png")
+    } else if category == "attributes"
         && matches!(
             icon,
             "strength-arm" | "strength-leg" | "agility-arm" | "agility-leg" | "immunity"
@@ -237,6 +271,16 @@ mod icon_tests {
     }
 
     #[test]
+    fn terrain_skill_family_uses_generated_local_masks() {
+        for icon in ["terrain", "plains", "forest", "hills", "urban"] {
+            assert_eq!(
+                stat_icon_path("terrain", icon),
+                format!("/static/icons/stats/terrain/{icon}.png")
+            );
+        }
+    }
+
+    #[test]
     fn requested_game_icon_replacements_and_faith_icons_are_exact() {
         assert_eq!(stat_game_icon_name("dodge"), "acrobatic");
         assert_eq!(stat_game_icon_name("combat"), "crossed-swords");
@@ -246,6 +290,18 @@ mod icon_tests {
             stat_game_icon_name("melee"),
             "the Combat aggregate needs a distinct icon from its Melee detail row"
         );
+        for (key, expected) in [
+            ("social", "conversation"),
+            ("insight", "awareness"),
+            ("self-awareness", "inner-self"),
+            ("humor", "juggler"),
+            ("command", "crown"),
+            ("deception", "conversation"),
+            ("seduction", "rose"),
+        ] {
+            assert_eq!(stat_game_icon_name(key), expected);
+            assert_ne!(stat_game_icon_name(key), "help");
+        }
         assert_eq!(
             religion_icon_path(Some("roman_catholic")),
             "/static/icons/religion/catholic-cross-bottony.png"
@@ -281,6 +337,29 @@ mod icon_tests {
     }
 
     #[test]
+    fn all_rendered_skill_and_party_check_icons_avoid_the_help_placeholder() {
+        for (key, expected) in [
+            ("sewing-needle", "clothes"),
+            ("crossed-swords", "crossed-swords"),
+            ("archery-target", "bullseye"),
+            ("shield", "shield"),
+            ("spear-hook", "spear-hook"),
+            ("battle-axe", "wood-axe"),
+            ("flanged-mace", "flanged-mace"),
+            ("sword", "sword-brandish"),
+            ("bowie-knife", "bowie-knife"),
+            ("bow-arrow", "bow-arrow"),
+            ("crossbow", "crossbow"),
+            ("musket", "musket"),
+            ("throwing-ball", "plain-arrow"),
+            ("religion", "holy-symbol"),
+        ] {
+            assert_eq!(stat_game_icon_name(key), expected, "{key}");
+            assert_ne!(stat_game_icon_name(key), "help", "{key}");
+        }
+    }
+
+    #[test]
     fn all_seeded_items_have_exact_icons_and_unknowns_fallback() {
         let mappings = [
             ("torch", "torch"),
@@ -294,6 +373,9 @@ mod icon_tests {
             ("bandage", "bandage-roll"),
             ("travel_ration", "bread"),
             ("waterskin", "waterskin"),
+            ("small_beer", "beer-stein"),
+            ("table_wine", "beer-stein"),
+            ("aqua_vitae", "beer-stein"),
             ("linen_tunic", "shirt"),
             ("club", "wood-club"),
             ("walking_staff", "bo"),
@@ -351,7 +433,7 @@ mod icon_tests {
             ("fauld", "belt-armor"),
             ("tassets", "pteruges"),
         ];
-        assert_eq!(mappings.len(), 67);
+        assert_eq!(mappings.len(), 70);
         for (item, icon) in mappings {
             assert_eq!(item_icon_name(item), icon, "{item}");
         }
@@ -362,13 +444,20 @@ mod icon_tests {
     fn icon_markup_is_local_accessible_and_header_is_compact() {
         let icon = item_type_icon("arming_sword").into_string();
         assert!(icon.contains("/static/icons/game/broadsword.svg"));
-        assert!(icon.contains("aria-label=\"Item type: arming sword\""));
+        assert!(icon.contains("aria-label=\"Item type: Arming sword\""));
         let header = item_type_header().into_string();
         assert!(header.contains("inventory-column-type"));
         assert!(header.contains("aria-label=\"Item type\""));
         let decorative = decorative_game_icon("sun").into_string();
         assert!(decorative.contains("aria-hidden=\"true\""));
         assert!(!decorative.contains("role=\"img\""));
+    }
+
+    #[test]
+    fn item_ids_are_humanized_for_display() {
+        assert_eq!(item_display_name("arming_sword"), "Arming sword");
+        assert_eq!(item_display_name("torch"), "Torch");
+        assert_eq!(item_display_name(""), "");
     }
 }
 

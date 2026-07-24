@@ -53,6 +53,85 @@ pub enum ItemKind {
     Currency,
     Ingredient,
     Medication,
+    Food,
+}
+
+pub(crate) const fn economy_catalog_kind(
+    kind: ItemKind,
+) -> adventuresim_core::settlement_economy::CatalogKind {
+    use adventuresim_core::settlement_economy::CatalogKind as C;
+    match kind {
+        ItemKind::Simple => C::Simple,
+        ItemKind::Weapon => C::Weapon,
+        ItemKind::Armor => C::Armor,
+        ItemKind::Shield => C::Shield,
+        ItemKind::Clothing => C::Clothing,
+        ItemKind::Currency => C::Currency,
+        ItemKind::Ingredient => C::Ingredient,
+        ItemKind::Medication => C::Medication,
+        ItemKind::Food => C::Food,
+    }
+}
+
+#[derive(SpacetimeType, Default, Clone, Copy, Debug, PartialEq)]
+pub struct WeaponSkillDistribution {
+    pub polearm: f32,
+    pub axe: f32,
+    pub bludgeon: f32,
+    pub sword: f32,
+    pub knife: f32,
+    pub bow: f32,
+    pub crossbow: f32,
+    pub firearm: f32,
+    pub throw_skill: f32,
+}
+
+impl WeaponSkillDistribution {
+    pub fn core(self) -> adventuresim_core::equipment::WeaponSkillDistribution {
+        adventuresim_core::equipment::WeaponSkillDistribution {
+            polearm: self.polearm,
+            axe: self.axe,
+            bludgeon: self.bludgeon,
+            sword: self.sword,
+            knife: self.knife,
+            bow: self.bow,
+            crossbow: self.crossbow,
+            firearm: self.firearm,
+            throw: self.throw_skill,
+        }
+    }
+}
+
+fn weapon_skills(id: &str) -> WeaponSkillDistribution {
+    let mut value = WeaponSkillDistribution::default();
+    let tags: &[&str] = match id {
+        "club" | "flanged_mace" | "war_hammer" | "walking_staff" => &["bludgeon"],
+        "hand_axe" => &["axe", "knife"],
+        "utility_knife" | "rondel_dagger" | "misericorde" => &["knife", "sword"],
+        "baselard" | "bauernwehr" | "katzbalger" => &["knife", "sword"],
+        "hunting_spear" | "military_pike" => &["polearm"],
+        "halberd" => &["polearm", "axe", "bludgeon"],
+        "self_bow" | "longbow" => &["bow"],
+        "light_crossbow" | "heavy_crossbow" => &["crossbow"],
+        "matchlock_arquebus" | "hooked_arquebus" => &["firearm"],
+        _ => &["sword"],
+    };
+    let weight = 1.0 / tags.len() as f32;
+    for tag in tags {
+        match *tag {
+            "polearm" => value.polearm = weight,
+            "axe" => value.axe = weight,
+            "bludgeon" => value.bludgeon = weight,
+            "sword" => value.sword = weight,
+            "knife" => value.knife = weight,
+            "bow" => value.bow = weight,
+            "crossbow" => value.crossbow = weight,
+            "firearm" => value.firearm = weight,
+            "throw" => value.throw_skill = weight,
+            _ => {}
+        }
+    }
+    value
 }
 
 #[derive(SpacetimeType, Default, Clone, Copy, Debug, PartialEq, EnumCount, VariantArray)]
@@ -98,6 +177,7 @@ pub struct Item {
     pub balance: f32,
     pub melee: bool,
     pub ranged: bool,
+    pub weapon_skills: WeaponSkillDistribution,
     pub blunt: bool,
     pub slash: bool,
     pub pierce: bool,
@@ -106,6 +186,17 @@ pub struct Item {
     pub nutrition_kcal: f32,
     /// Water capacity contributed while this item is in personal inventory.
     pub water_capacity_ml: u32,
+    /// Potable liquid in one discrete serving.
+    pub alcohol_serving_ml: u32,
+    /// Alcohol by volume in basis points (500 = 5%).
+    pub alcohol_abv_basis_points: u16,
+    /// Useful emergency hydration supplied by one unit while travelling.
+    pub alcohol_net_hydration_ml: u32,
+    /// Additive hidden infection-control value; zero means ineligible.
+    pub alcohol_disinfectant_effectiveness: u16,
+    /// Preserve for medical use during ordinary morale drinking.
+    pub alcohol_disinfectant_focused: bool,
+    pub alcohol_potable: bool,
     /// Craftsmanship and maintenance target, on the shared 1..5 skill scale.
     pub quality: u8,
     /// Explicit construction/material inputs; never inferred from market value.
@@ -866,13 +957,82 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
             ..Item::default()
         });
     }
+    for food in adventuresim_core::food::FOOD_CATALOG {
+        // Garlic and sage retain Ingredient semantics for the herbalist while
+        // also being accepted by the food-lot/cooking rules.
+        if matches!(food.id, "garlic" | "sage") {
+            continue;
+        }
+        ctx.db.item().insert(Item {
+            id: food.id.into(),
+            weight: food.mass_kg_per_unit,
+            base_value: Some(food.value_per_unit.ceil() as u32),
+            nutrition_kcal: food.kcal_per_unit,
+            kind: ItemKind::Food,
+            ..Item::default()
+        });
+    }
     ctx.db.item().insert(Item {
-        id: "travel_ration".into(),
-        weight: 1.0,
-        base_value: Some(3),
-        nutrition_kcal: 6_000.0,
+        id: "cooked_meal".into(),
+        kind: ItemKind::Food,
         ..Item::default()
     });
+    for item in [
+        Item {
+            id: "small_beer".into(),
+            weight: 0.52,
+            base_value: Some(1),
+            alcohol_serving_ml: 500,
+            alcohol_abv_basis_points: 300,
+            alcohol_net_hydration_ml: 425,
+            alcohol_disinfectant_effectiveness: 10,
+            alcohol_potable: true,
+            ..Item::default()
+        },
+        Item {
+            id: "table_wine".into(),
+            weight: 0.26,
+            base_value: Some(2),
+            alcohol_serving_ml: 250,
+            alcohol_abv_basis_points: 1_200,
+            alcohol_net_hydration_ml: 150,
+            alcohol_disinfectant_effectiveness: 30,
+            alcohol_potable: true,
+            ..Item::default()
+        },
+        Item {
+            id: "aqua_vitae".into(),
+            weight: 0.11,
+            base_value: Some(4),
+            alcohol_serving_ml: 100,
+            alcohol_abv_basis_points: 5_000,
+            alcohol_net_hydration_ml: 0,
+            alcohol_disinfectant_effectiveness: 100,
+            alcohol_disinfectant_focused: true,
+            alcohol_potable: true,
+            ..Item::default()
+        },
+    ] {
+        if !adventuresim_core::alcohol::properties_valid(crate::alcohol::properties(&item)) {
+            return Err(format!(
+                "Alcohol definition {} has invalid ABV or hydration metadata",
+                item.id
+            ));
+        }
+        ctx.db.item().insert(item);
+    }
+    for (id, weight, value) in [
+        ("cooking_pan", 1.2, 6),
+        ("cooking_pot", 2.2, 8),
+        ("portable_oven", 8.0, 25),
+    ] {
+        ctx.db.item().insert(Item {
+            id: id.into(),
+            weight,
+            base_value: Some(value),
+            ..Item::default()
+        });
+    }
     ctx.db.item().insert(Item {
         id: "waterskin".into(),
         weight: 0.5,
@@ -902,6 +1062,11 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
             balance: definition.balance,
             melee: definition.melee,
             ranged: definition.ranged,
+            weapon_skills: if definition.kind == ItemKind::Weapon {
+                weapon_skills(definition.id)
+            } else {
+                WeaponSkillDistribution::default()
+            },
             blunt: definition.blunt,
             slash: definition.slash,
             pierce: definition.pierce,
@@ -959,6 +1124,13 @@ pub(crate) fn upsert_surgery_items(ctx: &ReducerContext) {
             kind: ItemKind::Simple,
             ..Item::default()
         },
+        Item {
+            id: crate::filth::SOAP_ITEM_ID.into(),
+            weight: 0.25,
+            base_value: Some(3),
+            kind: ItemKind::Simple,
+            ..Item::default()
+        },
     ] {
         if ctx.db.item().id().find(definition.id.clone()).is_some() {
             ctx.db.item().id().update(definition);
@@ -1009,6 +1181,7 @@ pub fn backfill_item_values(ctx: &ReducerContext) {
             ItemKind::Currency => 1.0,
             ItemKind::Ingredient => 10.0,
             ItemKind::Medication => 1.0,
+            ItemKind::Food => 4.0,
         };
         item.base_value = Some((item.weight * multiplier).ceil() as u32);
         ctx.db.item().id().update(item);
@@ -1041,6 +1214,7 @@ pub fn define_weapon(
         precise,
         melee,
         ranged,
+        weapon_skills: weapon_skills(item_id),
         blunt,
         slash,
         pierce,
@@ -1079,6 +1253,12 @@ pub fn define_clothing(ctx: &ReducerContext, item_id: &str, weight: f32) {
         weight,
         base_value: Some((weight * 25.0).ceil() as u32),
         kind: ItemKind::Clothing,
+        quality: 1,
+        durability_yield: 12.0,
+        durability_fracture: 35.0,
+        durability_wear: 0.2,
+        durability_failure_share: 0.8,
+        handling_sensitivity: 0.5,
         ..Item::default()
     });
 }
@@ -1131,9 +1311,18 @@ pub fn add_inventory_item(
         .id()
         .find(item_id.to_owned())
         .map(|definition| definition.kind);
-    let durable = kind
-        .is_some_and(|kind| matches!(kind, ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield));
-    let individual = durable || kind == Some(ItemKind::Medication);
+    let durable = kind.is_some_and(|kind| {
+        matches!(
+            kind,
+            ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield | ItemKind::Clothing
+        )
+    });
+    let food =
+        kind == Some(ItemKind::Food) || adventuresim_core::food::definition(item_id).is_some();
+    // Every food unit is its own non-fungible batch. A partly consumed unit
+    // remains quantity one while its authoritative lot mass/value/provenance
+    // shrink, so it can never be merged back into fresh stock.
+    let individual = durable || kind == Some(ItemKind::Medication) || food;
     let count = if individual { quantity } else { 1 };
     let mut first = None;
     for _ in 0..count {
@@ -1146,7 +1335,20 @@ pub fn add_inventory_item(
         if durable {
             crate::repair::initialize_item_condition(ctx, &item);
         }
+        if food {
+            crate::food::create_personal_food_lot(
+                ctx,
+                character_id,
+                item.id,
+                item_id,
+                if individual { 1 } else { quantity },
+            )
+            .ok()?;
+        }
         first.get_or_insert(item.id);
+    }
+    if food {
+        let _ = crate::capability::refresh_character_capability(ctx, character_id);
     }
     first
 }
@@ -1278,7 +1480,7 @@ pub fn change_inventory_item(
         .is_some_and(|definition| {
             matches!(
                 definition.kind,
-                ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield
+                ItemKind::Weapon | ItemKind::Armor | ItemKind::Shield | ItemKind::Clothing
             )
         });
     if durable {
@@ -1334,6 +1536,48 @@ pub fn change_inventory_item(
         }
         return Ok(());
     }
+    let food = ctx
+        .db
+        .item()
+        .id()
+        .find(item_id.to_owned())
+        .is_some_and(|definition| definition.kind == ItemKind::Food)
+        || adventuresim_core::food::definition(item_id).is_some();
+    if food {
+        if by_quantity > 0 {
+            add_inventory_item(ctx, character_id, item_id, by_quantity as u32)
+                .ok_or("food definition not found")?;
+            return Ok(());
+        }
+        if by_quantity < 0 {
+            let mut remaining = by_quantity.unsigned_abs();
+            let mut items: Vec<_> = ctx
+                .db
+                .inventory_item()
+                .character_and_item_id()
+                .filter((character_id, item_id))
+                .collect();
+            items.sort_by_key(|row| row.id);
+            if items.iter().map(|row| row.quantity as u64).sum::<u64>() < remaining as u64 {
+                return Err("not enough inventory quantity to remove".into());
+            }
+            for mut row in items {
+                let take = row.quantity.min(remaining);
+                crate::food::remove_lot_quantity(ctx, row.id, take, row.quantity)?;
+                row.quantity -= take;
+                remaining -= take;
+                if row.quantity == 0 {
+                    ctx.db.inventory_item().id().delete(row.id);
+                } else {
+                    ctx.db.inventory_item().id().update(row);
+                }
+                if remaining == 0 {
+                    break;
+                }
+            }
+        }
+        return Ok(());
+    }
     let mut items = ctx
         .db
         .inventory_item()
@@ -1383,6 +1627,23 @@ pub fn change_inventory_item(
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    #[test]
+    fn catalog_weapon_skill_distributions_cover_hybrids_and_ranged_families() {
+        let halberd = weapon_skills("halberd").core();
+        assert_eq!(halberd.polearm, 1.0 / 3.0);
+        assert_eq!(halberd.axe, 1.0 / 3.0);
+        assert_eq!(halberd.bludgeon, 1.0 / 3.0);
+        assert!(halberd.validate(true, false));
+
+        let hand_axe = weapon_skills("hand_axe").core();
+        assert_eq!(hand_axe.axe, 0.5);
+        assert_eq!(hand_axe.knife, 0.5);
+
+        let crossbow = weapon_skills("heavy_crossbow").core();
+        assert_eq!(crossbow.crossbow, 1.0);
+        assert!(crossbow.validate(false, true));
+    }
 
     #[test]
     fn settlement_currency_assignment_is_stable_and_uses_the_fixed_catalog() {

@@ -23,6 +23,7 @@ from urllib.parse import urlparse
 
 
 PROFILE_RE = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
+JWT_RE = re.compile(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")
 ROOT = Path(__file__).resolve().parents[1]
 MODULE_DIR = ROOT / "crates" / "adventuresim-stdb-module"
 CLIENT_DIR = ROOT / "crates" / "adventuresim-stdb-client" / "src"
@@ -166,6 +167,22 @@ def seed(server: str, database: str, bootstrap_token: str, include_damaged_demo:
     if result.returncode:
         print("development bootstrap failed; refusing to hide the reducer error.", file=sys.stderr)
     return result.returncode
+
+
+def spacetime_auth_token() -> str:
+    """Return the CLI's authenticated token without printing or persisting it."""
+    result = run_checked(["spacetime", "login", "show", "--token"])
+    if result.returncode:
+        raise RuntimeError(
+            "SpacetimeDB login is required for the isolated strategic gateway; "
+            "run `spacetime login` and retry"
+        )
+    tokens = JWT_RE.findall(result.stdout)
+    if len(tokens) != 1:
+        raise RuntimeError(
+            "SpacetimeDB CLI did not return exactly one authenticated gateway token"
+        )
+    return tokens[0]
 
 
 def binding_differences(expected: Path, actual: Path) -> list[str]:
@@ -737,6 +754,7 @@ def run_profile(
                 print("Press Ctrl+C to stop the isolated database.")
                 return stdb.wait()
 
+            gateway_token = spacetime_auth_token()
             if mode is ProfileMode.STRATEGIC:
                 spawner_config = spawner_identity(
                     name,
@@ -752,6 +770,7 @@ def run_profile(
             environment = os.environ.copy()
             environment.update({
                 "SPACETIMEDB_HOST": server, "SPACETIMEDB_DATABASE": database,
+                "SPACETIMEDB_TOKEN": gateway_token,
                 "BIND_ADDRESS": f"127.0.0.1:{values['web_port']}",
                 "STATIC_DIR": str(ROOT / "crates" / "strategic-web" / "static"),
                 "TACTICAL_STATIC_DIR": str(ROOT / "crates" / "adventuresim-stdb-module" / "static"),

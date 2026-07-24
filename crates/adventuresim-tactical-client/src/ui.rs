@@ -166,9 +166,9 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                         children![
                             Text::new("Skills"),
                             (
-                                Name::new("melee"),
-                                Text::new("Melee hours:\n"),
-                                children![(SkillSpan(Skill::Melee), TextSpan::default())]
+                                Name::new("sword"),
+                                Text::new("Sword hours:\n"),
+                                children![(SkillSpan(Skill::Sword), TextSpan::default())]
                             ),
                             (
                                 Name::new("dodge"),
@@ -181,9 +181,9 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                                 children![(SkillSpan(Skill::Block), TextSpan::default())]
                             ),
                             (
-                                Name::new("ranged"),
-                                Text::new("Ranged hours:\n"),
-                                children![(SkillSpan(Skill::Ranged), TextSpan::default())]
+                                Name::new("bow"),
+                                Text::new("Bow hours:\n"),
+                                children![(SkillSpan(Skill::Bow), TextSpan::default())]
                             ),
                             (
                                 Name::new("will"),
@@ -191,9 +191,9 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                                 children![(SkillSpan(Skill::Will), TextSpan::default())]
                             ),
                             (
-                                Name::new("charisma"),
-                                Text::new("Charisma hours:\n"),
-                                children![(SkillSpan(Skill::Charisma), TextSpan::default())]
+                                Name::new("command"),
+                                Text::new("Command hours:\n"),
+                                children![(SkillSpan(Skill::Command), TextSpan::default())]
                             ),
                             (
                                 Name::new("medicine"),
@@ -216,9 +216,9 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                                 children![(SkillSpan(Skill::Balance), TextSpan::default())]
                             ),
                             (
-                                Name::new("surgeon"),
-                                Text::new("Surgeon hours:\n"),
-                                children![(SkillSpan(Skill::Surgeon), TextSpan::default())]
+                                Name::new("anatomy"),
+                                Text::new("Anatomy hours:\n"),
+                                children![(SkillSpan(Skill::Anatomy), TextSpan::default())]
                             ),
                         ]
                     ),
@@ -357,17 +357,36 @@ fn update_skills_ui(
 
     for (mut text, skill_span) in &mut spans {
         text.0 = match skill_span.0 {
-            Skill::Melee => format!("{:.2}", skills.melee_hours),
+            Skill::Polearm => format!("{:.2}", skills.polearm_hours),
+            Skill::Axe => format!("{:.2}", skills.axe_hours),
+            Skill::Bludgeon => format!("{:.2}", skills.bludgeon_hours),
+            Skill::Sword => format!("{:.2}", skills.sword_hours),
+            Skill::Knife => format!("{:.2}", skills.knife_hours),
             Skill::Dodge => format!("{:.2}", skills.dodge_hours),
             Skill::Block => format!("{:.2}", skills.block_hours),
-            Skill::Ranged => format!("{:.2}", skills.ranged_hours),
+            Skill::Bow => format!("{:.2}", skills.bow_hours),
+            Skill::Crossbow => format!("{:.2}", skills.crossbow_hours),
+            Skill::Firearm => format!("{:.2}", skills.firearm_hours),
+            Skill::Throw => format!("{:.2}", skills.throw_hours),
             Skill::Will => format!("{:.2}", skills.will_hours),
-            Skill::Charisma => format!("{:.2}", skills.charisma_hours),
+            Skill::Insight => format!("{:.2}", skills.insight_hours),
+            Skill::SelfAwareness => format!("{:.2}", skills.self_awareness_hours),
+            Skill::Humor => format!("{:.2}", skills.humor_hours),
+            Skill::Command => format!("{:.2}", skills.command_hours),
+            Skill::Deception => format!("{:.2}", skills.deception_hours),
+            Skill::Seduction => format!("{:.2}", skills.seduction_hours),
             Skill::Medicine => format!("{:.2}", skills.medicine_hours),
+            // Cooking is strategic-only and is not carried in tactical snapshots.
+            Skill::Cooking => "0.00".to_owned(),
             Skill::Religion => format!("{:.2}", skills.religion_hours),
             Skill::Stealth => format!("{:.2}", skills.stealth_hours),
             Skill::Balance => format!("{:.2}", skills.balance_hours),
-            Skill::Surgeon => format!("{:.2}", skills.surgeon_hours),
+            Skill::TerrainPlains
+            | Skill::TerrainForest
+            | Skill::TerrainHills
+            | Skill::TerrainUrban => "0.00".into(),
+            Skill::Anatomy => format!("{:.2}", skills.anatomy_hours),
+            Skill::Tailoring => format!("{:.2}", skills.tailoring_hours),
             Skill::Smithing => format!("{:.2}", skills.smithing_hours),
         };
     }

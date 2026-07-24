@@ -1,5 +1,10 @@
 > TODO: rewrite for HTML-based strategic interface
 
+Movement spends calories. On crossing zero, travel consumes useful calories
+from shared food lots first and personal lots second, oldest first, and stops
+exactly at zero. Arrival clears positive stomach fullness so dinner is possible.
+Provision previews sum calories across all food lots rather than ration counts.
+
 We technically have an open world, but its not really an open world game in the sense that most people consider it. If you've played the 1.0 version of Mount and Blade (before you could walk around in settlements), Battle Brothers, or early versions of Starsector you should have an idea of what to expect here.
 
 Essentially, the travel map is a minigame where each "party" (players or enemies) has three stats: speed, detection, and stealth.
@@ -30,7 +35,7 @@ Essentially, the travel map is a minigame where each "party" (players or enemies
 - The travel screen is a map that lets you place points to chart your planned journey
 - In any given region, you can view a list of what sorts of enemies are in an area along with an estimate of the size of a party of that enemy type from which you could not reliably evade. This is important for planning your journey. If a particular area has parties that are too powerful for you to beat in combat *or* evade (because they are elite warriors), you should find a different route or rethink your party.
 - Different sorts of terrain may also have different travel speed multipliers. Traveling on roads is very fast, fording a river is extremely slow. Your route will show the speed multiplier at any given point along its path.
-- This isn't necessary for the MVP, but a pathfinding algorithm should be used on the terrain map to find the optimal route between each point. The point of placing points should be more to plan around resources or route around areas with dangerous enemies, not a check to see whether your brain is capable of intuitively computing A*.
+- The current strategic implementation uses bounded deterministic A* over the installed 30 m terrain pack. Future route waypoints should be about planning around resources and threats, not manually approximating the shortest path.
 
 ## Viabundus road network
 
@@ -40,11 +45,21 @@ roads and ferries; intermediate junctions, bridges, and ferry endpoints remain
 in the graph so that a route is not incorrectly collapsed into a direct line
 between settlements. Selecting a settlement name opens its overview, which
 lists the next connected settlements on the road/ferry graph. Selecting a
-destination shows its route distance and an MVP journey-time estimate at an
-average walking pace of 5 km/h. Confirming advances the character's strategic
-time by that duration and moves them to the destination. Route cost, party
-speed, terrain, rest stops, and encounters are subsequent layers on this
-graph.
+destination asks the optional native terrain pack for the fastest bounded
+route. Road movement is 5 km/h; open ground, sparse woods, and deep woods use
+progressively slower base rates, and climbing adds a directional uphill
+penalty. Water blocks movement unless road infrastructure identifies a
+crossing. Each cell mixes Plains, Forest, and Hills from independent canopy and
+hill coverage. Urban expertise is available on characters but is not inferred
+from roads and has no route weight until built-up coverage is sourced.
+The bounded party Terrain check for that mixture provides a 1.0–1.5 speed
+multiplier and participates directly in A*, so different parties can prefer
+different paths. Confirming recomputes the route at execution time, uses its aggregate
+distance and terrain-weighted duration, and persists its package digest,
+bounded polyline, ordered terrain spans, skill mixture, check, and exposure
+discount for the active party journey.
+Missing or incomplete terrain data falls back to the former straight-line
+estimate and is explicitly labelled as such.
 
 Each edge retains canonical route terrain compiled from GLO-30 and EU-Hydro: a
 bounded elevation profile, directional grade, terrain class, landforms,
@@ -59,11 +74,11 @@ the infrastructure lies at the route's `from`, `to`, or both endpoints. This
 lets travel events deduplicate a shared node and generate an appropriate
 tactical scene without treating infrastructure as a settlement attribute.
 
-Quest travel is deliberately separate from this road graph. A generated quest
-stores an off-road point near its posting settlement. The trip to that point and
-trips from it to the five nearest settlements use straight-line distance, require
-no road connection, and advance strategic time at 1.25 km/h (one quarter of the
-MVP's normal walking speed). Both settlement and quest-destination travel use the
+Quest travel is deliberately separate from the settlement-connectivity rule. A generated quest
+stores an off-road point near its posting settlement. Terrain A* may follow a
+road initially, leave it across open ground, and pass through woods to reach
+that point; the return projection reverses the same terrain course. Both
+settlement and quest-destination travel use the
 shared Map tab. The leader configures walking time with a 0-24 hours-per-day
 slider (eight by default) and chooses whether the party travels by day or by night. Day
 travel centers the walking window on solar noon. Night travel centers its
@@ -73,22 +88,30 @@ this choice with the party and immediately recomputes the remaining forecast.
 These travel preferences remain available on the right side of the Map while
 the party is at a settlement, camp, or quest destination. Provision purchasing
 is shown only at settlements, where a market can actually fulfill it.
+
+Actual movement accrues exactly 8 dirt per 1,440 travel minutes. A private
+per-character remainder carries fractional progress across travel legs, and long
+advances split at each dirt boundary so wound risk changes at the same minute
+regardless of travel chunking. Camp/settlement rest, medical procedures, and
+medication crafting advance strategic time without adding travel dirt.
 Every minute outside the walking window is camp/downtime, so a full day's camp
 interval is 24 hours minus the configured walking hours. A
 member who cannot clear their fatigue in that interval carries it into the next
 day. The reducer and preview use the same itinerary function, including partial
 first and final walking days.
 
-The runner-track preview contains exactly four compact vertical rails: Food,
-Water, Fatigue, and Day/night. Camp brackets span elapsed rest time while their
+The runner-track preview contains exactly five compact vertical rails: Food,
+Water, Fatigue, Terrain, and Day/night. The Terrain rail appears between Fatigue
+and Day/night and shows road, open ground, sparse woods, deep woods, and stopped
+camp intervals in journey order. Camp brackets span elapsed rest time while their
 markers retain movement coordinates, and white progress advances through both
 walking and rest. The fatigue rail shows party average, range, highest member,
 and a warning at 100%. The Day/night rail follows absolute party time; midnight
 ticks protrude right and show accessible lunar phases from the canonical
 42,524-minute cycle, beginning with a new moon on Day 1. A journey longer than
 a walking window stops at a persisted camp. The strategic layer persists the journey's
-original endpoints, total duration, actual camp checkpoints, and the remaining
-forecast. SSE updates therefore keep every party member's tracker consistent
+original endpoints, total duration, actual camp checkpoints, remaining
+forecast, and the validated terrain route. SSE updates therefore keep every party member's tracker consistent
 across camp rests and page navigations. A shorter-than-recommended camp rest
 can legitimately add a future projected camp, but camps already reached never
 disappear. While camped, the left rail keeps the journey's settlement endpoints
@@ -109,6 +132,33 @@ conservatively reconstructed from the party's current synchronized minute minus
 its completed movement, then upgraded before travel continues. This may omit
 unknown historical rest from an old row, but it never silently renders the
 journey against Day 1 celestial chronology.
+
+### Random encounters
+
+Travel checks one deterministic encounter boundary every 180 movement minutes.
+The baseline chance is 180 basis points per check; open ground, sparse woods,
+deep woods, and night travel increase the documented weights. The party's
+accepted active quest contributes an archetype-specific influence that decays
+with remaining travel time and reaches zero at 120 movement minutes; an undead
+quest therefore strongly favors undead encounters near its destination. The
+private journey seed and canonical cursor make reducer retries and travel chunk sizes irrelevant. If
+neither side detects the other, movement continues without an interruption.
+
+An interruption occurs at its exact route coordinate and strategic time. The
+Map/camp panel shows enemy type/count, awareness, the selection explanation,
+and only legal actions. Detours always avoid combat but cost 30/45/60/90
+minutes on road/open/sparse/deep terrain. Running costs 20/30/45/60 minutes and
+is offered only when sustainable speed exceeds enemy speed. Sustainable speed
+includes the members' current fatigue after reaching the boundary, aggregate personal and party encumbrance, party-size
+logistics, and terrain; mounts are neutral until modeled. Unresolved rows block
+departure, redirection, rest continuation, and travel continuation.
+
+Bandit surrender removes every currency stack and every carried or equipped
+item worth at least 20, from the party pool and every living member. The UI
+shows the exact atomic loss set before commitment. If the authoritative set
+changes, surrender refreshes that preview without taking anything; after a
+successful surrender, remaining pooled value is reconciled across member stake
+claims and the party reserve.
 ### Rest Stops
 - A point may be made into a rest stop, at which you will rest for the day once you arrive.
 - Placing a rest stop at an inn allows you to fully rest faster (no watch schedule or tent pitching) increasing the amount of time available each day for traveling. The inn also has a cost, but this is trivially cheap unless you are an impoverished mendicant.
@@ -133,6 +183,13 @@ start of the configured walking window rather than adding a fixed interval to
 the camp's arrival time. If another system advances party time, the
 recommendation shrinks toward that same scheduled wake time. Continue travel is
 disabled outside the walking window and becomes available once it opens.
+
+Only actual movement trains Terrain. Every living participant receives the
+same conserved movement exposure divided across the persisted terrain mixture;
+camp time is excluded. Road movement trains the underlying terrain at 25% for
+open ground, 20% for sparse woods, or 15% for deep woods. Persisted span
+overlap makes the result identical across multi-day chunks and offline
+continuation.
 
 The en-route header keeps its single Camp tab and existing rest and continue
 actions. The raster scene combines a cut-paper tent with a small stone-and-log
@@ -189,3 +246,33 @@ locations do not refill water. Settlement arrival continues to clear hunger
 and thirst and refill personal containers. Foraging, intermediate freshwater
 stops, weather-based water use, spoilage, food quality, and manual eating or
 drinking remain future layers.
+
+# Emergency alcohol hydration
+
+Movement consumes pooled water and then personal carried water before touching
+alcohol. If a character still has a hydration deficit, travel may consume
+ordinary potable alcohol whose explicit net-hydration value is positive;
+medical-only/non-potable preparations and non-hydrating strong spirits are
+never used. Multi-day movement is split at absolute evening boundaries for
+needs processing, and each whole serving's ethanol is recorded in the nightly
+history where its hydration deficit arose. Long reducer intervals and bounded
+travel chunks therefore produce the same history. Generic waits do not invoke
+this fallback.
+
+The journey forecast uses the same item metadata and ordinary-alcohol
+eligibility rules. It first reserves the whole servings expected to satisfy
+Temperance-driven morale drinking only during projected camp intervals;
+movement-only elapsed time creates no drinking opportunity. New journeys use
+their calculated camp segments, while active journeys use persisted future
+camp intervals clipped to the remaining elapsed span. Concrete units are
+rounded separately and allocated in runtime order by absolute evening and then
+character ID before remaining net hydration is counted. The planner presents ordinary water
+and emergency alcohol separately, while its overall water-sufficiency verdict
+uses their sum. Provisioning still stages waterskins only; it does not disguise
+alcohol as water or automatically purchase it as a water container.
+World compilation may publish sparse inferred local roads after A* evaluates the
+complete alignment against an immutable documented-road base terrain pack.
+Candidates are spatially bounded, limited to eight evaluations and two accepted
+links per settlement, and capped at 12 km/six walking hours. Existing short graph
+routes suppress clique edges. The exact accepted polyline is shared by the
+runtime graph, final routing mask, quiet map styling, and artifact digest.

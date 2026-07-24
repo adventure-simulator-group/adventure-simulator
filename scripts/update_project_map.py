@@ -10,7 +10,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "docs" / "llm" / "PROJECT_MAP.md"
-EXCLUDED_PARTS = {".git", "target", "node_modules", ".direnv", "book", "__pycache__"}
+EXCLUDED_PARTS = {
+    ".git", "target", "node_modules", ".direnv", "book", "__pycache__", "downloads",
+}
 EXCLUDED_PATHS = {
     "crates/adventuresim-stdb-module/static/wasm",
     "crates/adventuresim-stdb-module/static/assets",
@@ -28,9 +30,13 @@ def tracked_files() -> list[str]:
     files = []
     for raw_path in result.stdout.splitlines():
         path = raw_path.replace("\\", "/")
+        if not (ROOT / path).is_file():
+            continue
         if any(part in EXCLUDED_PARTS for part in Path(path).parts):
             continue
         if path.endswith((".pyc", ".pyo")):
+            continue
+        if path.endswith((".log", ".zip")) or Path(path).parts[0].startswith("target-"):
             continue
         if path == OUTPUT.relative_to(ROOT).as_posix():
             continue

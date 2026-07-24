@@ -3,7 +3,9 @@ use std::{
     process::{Command, ExitCode},
 };
 
-use adventuresim_world_import::{Error, Result, WorldBuilder, derive_owda_profiles};
+use adventuresim_world_import::{
+    Error, Result, WorldBuilder, derive_owda_profiles, validate_world,
+};
 use adventuresim_world_schema::{
     AgriculturalLimitation, AvailableWaterCapacity, CationExchangeCapacity, CompiledWorld,
     CrossingTraversal, CrossingWatercourse, DerivedHistoricalVegetationCover,
@@ -58,12 +60,28 @@ struct Args {
     derive_owda_profiles: Option<PathBuf>,
     #[arg(long, default_value_os_t = default_hydrology_directory())]
     hydrology_dir: PathBuf,
+    #[arg(
+        long,
+        default_value = "target/strategic-map/terrain-routing-base-v2.json"
+    )]
+    base_terrain: PathBuf,
+    #[arg(
+        long,
+        default_value = "target/strategic-map/terrain-routing-base-v2.pack"
+    )]
+    base_terrain_pack: PathBuf,
     #[arg(long, default_value_t = WORLD_YEAR)]
     year: i32,
     #[arg(long, default_value_t = GridCellSizeMeters::default())]
     grid_cell_size_meters: GridCellSizeMeters,
     #[arg(long)]
     output: Option<PathBuf>,
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "validate and optionally load an existing compiled world artifact"
+    )]
+    input: Option<PathBuf>,
     #[arg(long)]
     load: bool,
     #[arg(long, default_value = "spacetime")]
@@ -74,11 +92,27 @@ struct Args {
     database: String,
     #[arg(long, default_value_t = 100)]
     batch_size: usize,
+    #[arg(long, num_args = 2, value_names = ["LONGITUDE", "LATITUDE"], help = "print the deterministic settlement language profile and exit")]
+    infer_languages: Option<Vec<f64>>,
 }
 
 fn main() -> ExitCode {
-    match run(Args::parse()) {
-        Ok(()) => ExitCode::SUCCESS,
+    let args = Args::parse();
+    let result = std::thread::Builder::new()
+        .name("world-import".into())
+        .stack_size(32 * 1024 * 1024)
+        .spawn(move || run(args))
+        .and_then(|thread| {
+            thread
+                .join()
+                .map_err(|_| std::io::Error::other("world importer worker thread panicked"))
+        });
+    match result {
+        Ok(Ok(())) => ExitCode::SUCCESS,
+        Ok(Err(error)) => {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        }
         Err(error) => {
             eprintln!("error: {error}");
             ExitCode::FAILURE
@@ -87,15 +121,45 @@ fn main() -> ExitCode {
 }
 
 fn run(args: Args) -> Result<()> {
+    if let Some(coordinates) = &args.infer_languages {
+        let profile = adventuresim_world_schema::infer_settlement_language_profile(
+            coordinates[0],
+            coordinates[1],
+        )
+        .map_err(|reason| Error::Validation(reason.into()))?;
+        println!("{}", serde_json::to_string_pretty(&profile)?);
+        return Ok(());
+    }
     if args.batch_size == 0 {
         return Err(Error::Validation("batch size must be positive".into()));
     }
     if let Some(output) = &args.derive_owda_profiles {
         return derive_owda_profiles(&args.viabundus_dir, &args.drought_netcdf, output, args.year);
     }
+    if let Some(input) = &args.input {
+        let mut artifact = std::fs::read(input)?;
+        if artifact.last() == Some(&b'\n') {
+            artifact.pop();
+        }
+        if artifact.last() == Some(&b'\r') {
+            artifact.pop();
+        }
+        let world: CompiledWorld = serde_json::from_slice(&artifact)?;
+        validate_world(&world)?;
+        let artifact_id = blake3::hash(&artifact).to_hex().to_string();
+        print_world_summary(&world);
+        println!("Read compiled world from {}", input.display());
+        if args.load {
+            load_world(&world, &artifact_id, &args)?;
+        }
+        return Ok(());
+    }
+    let base_terrain =
+        adventuresim_terrain::TerrainPack::load(&args.base_terrain, &args.base_terrain_pack)?;
     let world = WorldBuilder::new(args.year)
         .with_spatial_grid(SpatialGridSpec::new(args.grid_cell_size_meters))
-        .build_from_sources(
+        .with_playable_bounds()
+        .build_from_sources_with_base_terrain(
             &args.viabundus_dir,
             &args.elevation_dir,
             &args.land_use_dir,
@@ -107,6 +171,7 @@ fn run(args: Args) -> Result<()> {
             &args.religion_regions,
             &args.drought_netcdf,
             &args.hydrology_dir,
+            &base_terrain,
         )?;
     let output = args
         .output
@@ -119,7 +184,19 @@ fn run(args: Args) -> Result<()> {
     let artifact_id = blake3::hash(&artifact).to_hex().to_string();
     artifact.push(b'\n');
     std::fs::write(&output, artifact)?;
-    println!("{}", serde_json::to_string_pretty(&world.report)?);
+    print_world_summary(&world);
+    println!("Wrote compiled world to {}", output.display());
+    if args.load {
+        load_world(&world, &artifact_id, &args)?;
+    }
+    Ok(())
+}
+
+fn print_world_summary(world: &CompiledWorld) {
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&world.report).expect("world report serializes")
+    );
     println!(
         "Source manifest {} ({} distributions):",
         world.metadata.manifest_digest,
@@ -137,11 +214,6 @@ fn run(args: Args) -> Result<()> {
             }
         );
     }
-    println!("Wrote compiled world to {}", output.display());
-    if args.load {
-        load_world(&world, &artifact_id, &args)?;
-    }
-    Ok(())
 }
 
 fn load_world(world: &CompiledWorld, artifact_id: &str, args: &Args) -> Result<()> {
@@ -244,7 +316,10 @@ fn serialize_batches<T>(
     batch_size: usize,
     encode: fn(&T) -> Result<Value>,
 ) -> Result<Vec<Vec<Value>>> {
-    let rows = rows.iter().map(encode).collect::<Result<Vec<_>>>()?;
+    let rows = rows
+        .iter()
+        .map(|row| encode(row).map(normalize_variant_keys))
+        .collect::<Result<Vec<_>>>()?;
     let mut batches = Vec::new();
     let mut batch = Vec::new();
     let mut code_units = 2;
@@ -273,6 +348,33 @@ fn serialize_batches<T>(
         batches.push(batch);
     }
     Ok(batches)
+}
+
+fn normalize_variant_keys(value: Value) -> Value {
+    match value {
+        Value::Array(values) => {
+            Value::Array(values.into_iter().map(normalize_variant_keys).collect())
+        }
+        Value::Object(values) => Value::Object(
+            values
+                .into_iter()
+                .map(|(key, value)| {
+                    let key = key
+                        .chars()
+                        .next()
+                        .filter(|character| character.is_ascii_uppercase())
+                        .map(|first| {
+                            let mut normalized = first.to_ascii_lowercase().to_string();
+                            normalized.push_str(&key[first.len_utf8()..]);
+                            normalized
+                        })
+                        .unwrap_or(key);
+                    (key, normalize_variant_keys(value))
+                })
+                .collect(),
+        ),
+        scalar => scalar,
+    }
 }
 
 fn encode_world_node(node: &WorldNodeImport) -> Result<Value> {
@@ -313,6 +415,9 @@ fn encode_travel_edge(edge: &TravelEdgeImport) -> Result<Value> {
         "from_node_id": edge.from_node_id,
         "to_node_id": edge.to_node_id,
         "route": route,
+        "provenance": enum_unit(match edge.provenance { adventuresim_world_schema::TravelEdgeProvenance::DocumentedViabundus => "DocumentedViabundus", adventuresim_world_schema::TravelEdgeProvenance::InferredWalkingLink => "InferredWalkingLink" }),
+        // Canonical geometry is consumed only by offline validation and map
+        // generation; the reducer's TravelEdgeLoad DTO intentionally omits it.
         "toll": encode_endpoint(edge.toll),
         "length_m": edge.length_m,
         "slope_multiplier": edge.slope_multiplier,
@@ -409,12 +514,60 @@ fn encode_settlement(settlement: &SettlementImport) -> Result<Value> {
         "soil": encode_soil(&settlement.soil),
         "geology": encode_geology(&settlement.geology),
         "religious_status": encode_religious_status(settlement.religious_status),
+        "languages": settlement.languages,
         "drought": encode_drought(settlement.drought),
         "hydrology": encode_hydrology(settlement.hydrology),
         "industries": encode_industries(&settlement.industries),
+        "economy": encode_economy(&settlement.economy),
         "scene_key": settlement.scene_key,
         "sources": settlement.sources,
     }))
+}
+
+fn encode_economy(profile: &adventuresim_world_schema::SettlementEconomyProfile) -> Value {
+    use adventuresim_world_schema::{
+        ProfileFactProvenance as P, ProsperityTier as T, SettlementService as S, StockCategory as C,
+    };
+    let service = |v| {
+        enum_unit(match v {
+            S::GeneralStore => "GeneralStore",
+            S::Inn => "Inn",
+            S::GeneralBlacksmith => "GeneralBlacksmith",
+            S::Market => "Market",
+            S::Weaponsmith => "Weaponsmith",
+            S::Armorer => "Armorer",
+            S::Tailor => "Tailor",
+            S::Herbalist => "Herbalist",
+            S::Temple => "Temple",
+        })
+    };
+    let stock = |v| {
+        enum_unit(match v {
+            C::Grain => "Grain",
+            C::Dairy => "Dairy",
+            C::Meat => "Meat",
+            C::Fish => "Fish",
+            C::Cloth => "Cloth",
+            C::Hides => "Hides",
+            C::Timber => "Timber",
+            C::Fuel => "Fuel",
+            C::Stone => "Stone",
+            C::Pottery => "Pottery",
+            C::Salt => "Salt",
+            C::Metalwares => "Metalwares",
+            C::Weapons => "Weapons",
+            C::Armor => "Armor",
+            C::Herbs => "Herbs",
+            C::GeneralGoods => "GeneralGoods",
+        })
+    };
+    json!({
+        "rules_version": profile.rules_version, "prosperity_score": profile.prosperity_score,
+        "prosperity_tier": enum_unit(match profile.prosperity_tier { T::Subsistence=>"Subsistence",T::Modest=>"Modest",T::Comfortable=>"Comfortable",T::Prosperous=>"Prosperous",T::Wealthy=>"Wealthy" }),
+        "services": profile.services.iter().copied().map(service).collect::<Vec<_>>(),
+        "specializations": profile.specializations.iter().copied().map(stock).collect::<Vec<_>>(),
+        "stock": profile.stock.iter().map(|v| json!({"category":stock(v.category),"abundance":v.abundance,"provenance":enum_unit(match v.provenance { P::ImportedEvidence=>"ImportedEvidence",P::DerivedFromCanonicalEvidence=>"DerivedFromCanonicalEvidence",P::DeterministicGapFill=>"DeterministicGapFill" })})).collect::<Vec<_>>()
+    })
 }
 
 fn encode_industries(profile: &adventuresim_world_schema::InferredIndustryProfile) -> Value {
@@ -514,36 +667,36 @@ fn encode_religious_status(status: SettlementReligiousStatus) -> Value {
     };
     let arrangement = |value| match value {
         WesternChristianArrangement::CatholicLutheran { church } => json!({
-            "CatholicLutheran": { "church": enum_unit(match church {
+            "CatholicLutheran": enum_unit(match church {
                 adventuresim_world_schema::CatholicLutheranChurch::RomanCatholic => "RomanCatholic",
                 adventuresim_world_schema::CatholicLutheranChurch::Lutheran => "Lutheran",
-            }) }
+            })
         }),
         WesternChristianArrangement::CatholicReformed { church } => json!({
-            "CatholicReformed": { "church": enum_unit(match church {
+            "CatholicReformed": enum_unit(match church {
                 adventuresim_world_schema::CatholicReformedChurch::RomanCatholic => "RomanCatholic",
                 adventuresim_world_schema::CatholicReformedChurch::Reformed => "Reformed",
-            }) }
+            })
         }),
         WesternChristianArrangement::LutheranReformed { church } => json!({
-            "LutheranReformed": { "church": enum_unit(match church {
+            "LutheranReformed": enum_unit(match church {
                 adventuresim_world_schema::LutheranReformedChurch::Lutheran => "Lutheran",
                 adventuresim_world_schema::LutheranReformedChurch::Reformed => "Reformed",
-            }) }
+            })
         }),
     };
     match status {
         SettlementReligiousStatus::Established { religion: value } => {
-            json!({ "Established": { "religion": religion(value) } })
+            json!({ "Established": religion(value) })
         }
         SettlementReligiousStatus::Parity { arrangement: value } => {
-            json!({ "Parity": { "arrangement": arrangement(value) } })
+            json!({ "Parity": arrangement(value) })
         }
         SettlementReligiousStatus::MultiConfessional { arrangement: value } => {
-            json!({ "MultiConfessional": { "arrangement": arrangement(value) } })
+            json!({ "MultiConfessional": arrangement(value) })
         }
         SettlementReligiousStatus::LocallyDetermined { church } => {
-            json!({ "LocallyDetermined": { "church": religion(church) } })
+            json!({ "LocallyDetermined": religion(church) })
         }
     }
 }
@@ -1173,6 +1326,8 @@ mod tests {
                 bridge: Some(EdgeEndpoint::To),
                 water_crossings: Vec::new(),
             }),
+            provenance: adventuresim_world_schema::TravelEdgeProvenance::DocumentedViabundus,
+            geometry: Vec::new(),
             toll: Some(EdgeEndpoint::From),
             length_m: 4,
             slope_multiplier: 1.0,
@@ -1184,20 +1339,21 @@ mod tests {
         let batches = serialize_batches(&[edge], 100, encode_travel_edge).unwrap();
         assert_eq!(
             batches[0][0]["route"],
-            serde_json::json!({ "Land": { "bridge": { "some": { "To": [] } }, "water_crossings": [] } })
+            serde_json::json!({ "land": { "bridge": { "some": { "to": [] } }, "water_crossings": [] } })
         );
         assert_eq!(
             batches[0][0]["toll"],
-            serde_json::json!({ "some": { "From": [] } })
+            serde_json::json!({ "some": { "from": [] } })
         );
+        assert!(batches[0][0].get("geometry").is_none());
         assert_eq!(batches[0][0]["sources"], "- Test source.");
         assert_eq!(
             batches[0][0]["terrain"]["class"],
-            serde_json::json!({ "Flat": [] })
+            serde_json::json!({ "flat": [] })
         );
         assert_eq!(
             batches[0][0]["terrain"]["encounter_tags"][0],
-            serde_json::json!({ "Flat": [] })
+            serde_json::json!({ "flat": [] })
         );
     }
 
@@ -1334,7 +1490,7 @@ mod tests {
         assert_eq!(
             encode_settlement(&settlement).unwrap()["religious_status"],
             serde_json::json!({
-                "Established": { "religion": { "RomanCatholic": [] } }
+                "Established": { "RomanCatholic": [] }
             })
         );
         settlement.religious_status = SettlementReligiousStatus::MultiConfessional {
@@ -1346,9 +1502,7 @@ mod tests {
             encode_settlement(&settlement).unwrap()["religious_status"],
             serde_json::json!({
                 "MultiConfessional": {
-                    "arrangement": {
-                        "CatholicLutheran": { "church": { "Lutheran": [] } }
-                    }
+                    "CatholicLutheran": { "Lutheran": [] }
                 }
             })
         );
@@ -1455,6 +1609,7 @@ mod tests {
             religious_status: SettlementReligiousStatus::Established {
                 religion: OfficialReligion::RomanCatholic,
             },
+            languages: adventuresim_world_schema::infer_settlement_language_profile(10.0, 51.0).unwrap(),
             drought: DroughtProfile::Inferred(
                 DroughtHistory::new(
                     PalmerDroughtSeverityIndex::new(0).unwrap(),
@@ -1470,6 +1625,7 @@ mod tests {
                     adventuresim_world_schema::FallbackIndustry::CommonAggregate,
                 ),
             ]).unwrap(),
+            economy: adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder(),
             scene_key: "village".into(),
             sources: "- Test source.".into(),
         }

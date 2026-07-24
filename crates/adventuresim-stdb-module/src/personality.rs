@@ -43,6 +43,18 @@ pub enum Conviction {
     Zealous,
     Irreverent,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum Hygiene {
+    Neutral,
+    Slovenly,
+    Cleanly,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum Temperance {
+    Neutral,
+    Temperate,
+    Drunkard,
+}
 
 /// Immutable strategic temperament. Each field is one mutually-exclusive axis.
 #[derive(Clone, Debug)]
@@ -57,6 +69,8 @@ pub struct CharacterPersonality {
     pub conscience: Conscience,
     pub self_regard: SelfRegard,
     pub conviction: Conviction,
+    pub hygiene: Hygiene,
+    pub temperance: Temperance,
 }
 
 impl CharacterPersonality {
@@ -70,6 +84,8 @@ impl CharacterPersonality {
             conscience: Conscience::Neutral,
             self_regard: SelfRegard::Neutral,
             conviction: Conviction::Neutral,
+            hygiene: Hygiene::Neutral,
+            temperance: Temperance::Neutral,
         }
     }
 
@@ -81,6 +97,8 @@ impl CharacterPersonality {
             + usize::from(self.conscience != Conscience::Neutral)
             + usize::from(self.self_regard != SelfRegard::Neutral)
             + usize::from(self.conviction != Conviction::Neutral)
+            + usize::from(self.hygiene != Hygiene::Neutral)
+            + usize::from(self.temperance != Temperance::Neutral)
     }
 }
 
@@ -101,7 +119,7 @@ pub fn random_personality(
     mut random: impl FnMut() -> u64,
 ) -> CharacterPersonality {
     let mut result = CharacterPersonality::neutral(character_id);
-    let mut axes = [0_u8, 1, 2, 3, 4, 5, 6];
+    let mut axes = [0_u8, 1, 2, 3, 4, 5, 6, 7, 8];
     for index in (1..axes.len()).rev() {
         axes.swap(index, random() as usize % (index + 1));
     }
@@ -150,11 +168,25 @@ pub fn random_personality(
                     SelfRegard::Humble
                 }
             }
-            _ => {
+            6 => {
                 result.conviction = if random() % 2 == 0 {
                     Conviction::Zealous
                 } else {
                     Conviction::Irreverent
+                }
+            }
+            7 => {
+                result.hygiene = if random() % 2 == 0 {
+                    Hygiene::Slovenly
+                } else {
+                    Hygiene::Cleanly
+                }
+            }
+            _ => {
+                result.temperance = if random() % 2 == 0 {
+                    Temperance::Temperate
+                } else {
+                    Temperance::Drunkard
                 }
             }
         }
@@ -392,7 +424,7 @@ mod tests {
     }
 
     #[test]
-    fn sociability_is_separate_from_charisma_and_caps_can_apply_after_it() {
+    fn sociability_is_separate_from_command_and_caps_can_apply_after_it() {
         let mut p = CharacterPersonality::neutral(1);
         p.sociability = Sociability::Gregarious;
         let (multiplier, _) = ally_restoration_multiplier(&p);
