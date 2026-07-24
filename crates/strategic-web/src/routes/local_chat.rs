@@ -10,7 +10,7 @@ use serde_json::json;
 use super::{AppState, character_case_site_id};
 use crate::{
     session::Session,
-    spacetimedb::{Character, LocalChatMessage, sql_string_literal},
+    spacetimedb::{Character, CharacterTime, LocalChatMessage, sql_string_literal},
 };
 
 const MAX_CHAT_HISTORY: usize = 200;
@@ -33,6 +33,36 @@ struct LocalChatResponse {
 #[derive(Deserialize)]
 struct MessageForm {
     body: String,
+}
+
+#[derive(Deserialize)]
+struct LocalNpcRow {
+    id: String,
+    home_settlement_id: String,
+}
+
+#[derive(Deserialize)]
+struct LocalNpcPresenceRow {
+    npc_id: String,
+    settlement_id: String,
+    location_id: String,
+    start_minute: u16,
+    end_minute: u16,
+}
+
+fn npc_authority_matches(
+    settlement_id: &str,
+    npc: &LocalNpcRow,
+    presence: &LocalNpcPresenceRow,
+    minute: u64,
+) -> bool {
+    let minute = (minute % 1_440) as u16;
+    npc.id == presence.npc_id
+        && npc.home_settlement_id == settlement_id
+        && presence.settlement_id == settlement_id
+        && !presence.location_id.is_empty()
+        && presence.start_minute <= minute
+        && minute < presence.end_minute
 }
 
 async fn actor_and_key(
@@ -58,8 +88,38 @@ async fn actor_and_key(
                 .ok_or("NPC is not local")?;
             if subject_id.chars().count() > 160
                 || subject_id.chars().any(char::is_control)
-                || !subject_id.starts_with(&format!("{settlement}:"))
+                || subject_id.is_empty()
             {
+                return Err("NPC is not local".into());
+            }
+            let npc = state
+                .db
+                .query_one::<LocalNpcRow>(&format!(
+                    "SELECT * FROM settlement_npc WHERE id = {}",
+                    sql_string_literal(subject_id)
+                ))
+                .await
+                .map_err(|error| error.to_string())?
+                .ok_or("NPC is not local")?;
+            let presence = state
+                .db
+                .query_one::<LocalNpcPresenceRow>(&format!(
+                    "SELECT * FROM settlement_npc_presence WHERE npc_id = {}",
+                    sql_string_literal(subject_id)
+                ))
+                .await
+                .map_err(|error| error.to_string())?
+                .ok_or("NPC is not local")?;
+            let minute = state
+                .db
+                .query_one::<CharacterTime>(&format!(
+                    "SELECT * FROM character_time WHERE character_id = {}",
+                    actor.id
+                ))
+                .await
+                .map_err(|error| error.to_string())?
+                .map_or(720, |time| time.minutes);
+            if !npc_authority_matches(settlement, &npc, &presence, minute) {
                 return Err("NPC is not local".into());
             }
             format!("npc:{party_id}:{subject_id}")
@@ -225,4 +285,52 @@ async fn incoming(State(state): State<AppState>, session: Session) -> Json<Vec<I
             })
             .collect(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{LocalNpcPresenceRow, LocalNpcRow, npc_authority_matches};
+
+    #[test]
+    fn riverdale_inn_npc_chain_uses_authority_not_encoded_id_shape() {
+        let npc = LocalNpcRow {
+            id: "npc:riverdale:inn:0".into(),
+            home_settlement_id: "riverdale".into(),
+        };
+        let mut presence = LocalNpcPresenceRow {
+            npc_id: npc.id.clone(),
+            settlement_id: "riverdale".into(),
+            location_id: "inn".into(),
+            start_minute: 0,
+            end_minute: 1_440,
+        };
+        assert!(npc_authority_matches("riverdale", &npc, &presence, 720));
+
+        presence.settlement_id = "ironforge".into();
+        assert!(!npc_authority_matches("riverdale", &npc, &presence, 720));
+        presence.settlement_id = "riverdale".into();
+        presence.end_minute = 600;
+        assert!(!npc_authority_matches("riverdale", &npc, &presence, 720));
+    }
+
+    #[test]
+    fn npc_selection_waits_for_a_subject_and_preserves_reducer_diagnostics() {
+        let javascript = include_str!("../../static/local-chat.js");
+        assert!(javascript.contains("if (!kind || !subject) return null"));
+        assert!(javascript.matches("if (!endpoint) return;").count() >= 2);
+        assert!(!javascript.contains("/api/local-chat/${encodeURIComponent(node.dataset"));
+
+        let local_route = include_str!("local_chat.rs")
+            .split("async fn actor_and_key")
+            .nth(1)
+            .and_then(|tail| tail.split("async fn messages").next())
+            .expect("local chat authority handler");
+        assert!(local_route.contains("SELECT * FROM settlement_npc WHERE id = {}"));
+        assert!(local_route.contains("SELECT * FROM settlement_npc_presence WHERE npc_id = {}"));
+        assert!(!local_route.contains("subject_id.starts_with"));
+
+        let dialogue_route = include_str!("dialogue.rs");
+        assert!(dialogue_route.contains("start_dialogue reducer rejected an NPC encounter"));
+        assert!(dialogue_route.contains("StatusCode::CONFLICT"));
+    }
 }

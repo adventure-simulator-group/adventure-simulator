@@ -67,7 +67,12 @@
   };
 
   const appendInfo = (panel, content, options = {}) => appendChannelRow(panel, "info", content, options);
-  const localChatEndpoint = (node) => `/api/local-chat/${encodeURIComponent(node.dataset.localChatKind || "")}/${encodeURIComponent(node.dataset.localChatSubject || "")}`;
+  const localChatEndpoint = (node) => {
+    const kind = node.dataset.localChatKind || "";
+    const subject = node.dataset.localChatSubject || "";
+    if (!kind || !subject) return null;
+    return `/api/local-chat/${encodeURIComponent(kind)}/${encodeURIComponent(subject)}`;
+  };
 
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
@@ -133,6 +138,7 @@
 
   const refresh = async () => {
     const endpoint = localChatEndpoint(chat);
+    if (!endpoint) return;
     const response = await window.strategicBackgroundFetch(`local-chat:${endpoint}`, endpoint, {
       headers: { Accept: "application/json" },
     });
@@ -209,6 +215,7 @@
     if (!body) return;
     const form = new URLSearchParams({ body });
     const endpoint = localChatEndpoint(chat);
+    if (!endpoint) return;
     const response = await window.strategicFetch(endpoint, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form });
     if (response.ok) { input.value = ""; await refresh(); }
   };
