@@ -3968,6 +3968,7 @@ fn case_site_presentation_view(
                     facts,
                     party_id,
                 )
+                .is_some()
             });
     Some(CaseSitePresentationView {
         display_title: validated.manifest.consequence.public_summary,
