@@ -4601,6 +4601,7 @@ fn require_live_dialogue_presence(
     session: &DialogueSession,
     character_id: u64,
 ) -> Result<crate::settlement_population::SettlementNpc, String> {
+    require_navigable_npc_location(ctx, &session.settlement_id, &session.location_id)?;
     let character = ctx
         .db
         .character()
@@ -4655,6 +4656,32 @@ fn require_live_dialogue_presence(
     Ok(primary.expect("nonempty NPC participants"))
 }
 
+fn require_navigable_npc_location(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+    location_id: &str,
+) -> Result<(), String> {
+    let settlement = ctx
+        .db
+        .settlement()
+        .id()
+        .find(settlement_id)
+        .ok_or("Settlement not found")?;
+    let has_keep = matches!(
+        settlement.category,
+        SettlementCategory::Town | SettlementCategory::City | SettlementCategory::Capital
+    );
+    if adventuresim_core::settlement_economy::npc_location_is_navigable(
+        &settlement.economy,
+        has_keep,
+        location_id,
+    ) {
+        Ok(())
+    } else {
+        Err("NPC location is not available in this settlement".into())
+    }
+}
+
 #[reducer]
 pub fn start_dialogue(
     ctx: &ReducerContext,
@@ -4681,6 +4708,7 @@ pub fn start_dialogue(
     let settlement_id = character
         .current_settlement_id
         .ok_or("Dialogue requires a settlement")?;
+    require_navigable_npc_location(ctx, &settlement_id, &location_id)?;
     let npc = ctx
         .db
         .settlement_npc()
@@ -7100,6 +7128,7 @@ fn npc_conversation_party(
         .current_settlement_id
         .as_deref()
         .ok_or("NPC conversations require a settlement")?;
+    require_navigable_npc_location(ctx, settlement_id, location_id)?;
     if subject_id.is_empty()
         || subject_id.chars().count() > 160
         || subject_id.chars().any(char::is_control)

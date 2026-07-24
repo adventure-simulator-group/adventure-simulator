@@ -1,5 +1,5 @@
 use super::AppState;
-use crate::spacetimedb::HerbalistExaminationRow;
+use crate::spacetimedb::{HerbalistExaminationRow, Settlement, SettlementCategory};
 use crate::{session::Session, spacetimedb::sql_string_literal};
 use axum::{
     Json, Router,
@@ -196,6 +196,50 @@ fn edit_source(source: adventuresim_dialogue::SourceRef) -> Option<EditSource> {
         edit_url,
     })
 }
+
+fn npc_location_is_navigable(
+    profile: &adventuresim_world_schema::SettlementEconomyProfile,
+    category: &SettlementCategory,
+    location_id: &str,
+) -> bool {
+    let has_keep = matches!(
+        category,
+        SettlementCategory::Town | SettlementCategory::City | SettlementCategory::Capital
+    );
+    adventuresim_core::settlement_economy::npc_location_is_navigable(profile, has_keep, location_id)
+}
+
+#[cfg(test)]
+mod npc_navigation_tests {
+    use super::npc_location_is_navigable;
+    use crate::spacetimedb::SettlementCategory;
+
+    #[test]
+    fn templeless_settlement_cannot_enumerate_hidden_npcs() {
+        let profile = adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder();
+        assert!(npc_location_is_navigable(
+            &profile,
+            &SettlementCategory::Hamlet,
+            "inn"
+        ));
+        assert!(!npc_location_is_navigable(
+            &profile,
+            &SettlementCategory::Hamlet,
+            "church"
+        ));
+        assert!(!npc_location_is_navigable(
+            &profile,
+            &SettlementCategory::Hamlet,
+            "armoury"
+        ));
+        assert!(!npc_location_is_navigable(
+            &profile,
+            &SettlementCategory::Hamlet,
+            "keep"
+        ));
+    }
+}
+
 async fn location_npcs(
     State(state): State<AppState>,
     Path((settlement_id, location_id)): Path<(String, String)>,
@@ -212,6 +256,18 @@ async fn location_npcs(
         .ok_or(StatusCode::UNAUTHORIZED)?;
     if character.current_settlement_id.as_deref() != Some(settlement_id.as_str()) {
         return Err(StatusCode::FORBIDDEN);
+    }
+    let settlement = state
+        .db
+        .query_one::<Settlement>(&format!(
+            "SELECT * FROM settlement WHERE id = {}",
+            sql_string_literal(&settlement_id)
+        ))
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    if !npc_location_is_navigable(&settlement.economy, &settlement.category, &location_id) {
+        return Err(StatusCode::NOT_FOUND);
     }
     let npcs = state
         .db
@@ -545,6 +601,22 @@ async fn start(
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .ok_or(StatusCode::BAD_REQUEST)?;
+    let settlement = state
+        .db
+        .query_one::<Settlement>(&format!(
+            "SELECT * FROM settlement WHERE id = {}",
+            sql_string_literal(&npc.home_settlement_id)
+        ))
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    if !npc_location_is_navigable(
+        &settlement.economy,
+        &settlement.category,
+        &request.location_id,
+    ) {
+        return Err(StatusCode::NOT_FOUND);
+    }
     let conversation = npc.conversation_id;
     // Selecting an NPC starts a fresh encounter. Historical sessions remain
     // available for prior-interaction facts but never become an indefinite live view.

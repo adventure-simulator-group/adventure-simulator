@@ -1315,6 +1315,7 @@ pub fn rest_at_settlement(
     at_inn: bool,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
+    require_character_rest_service(ctx, character_id, at_inn)?;
     rest_for_minutes(
         ctx,
         character_id,
@@ -1335,6 +1336,7 @@ pub fn rest_at_settlement_hours(
     at_inn: bool,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
+    require_character_rest_service(ctx, character_id, at_inn)?;
     rest_for_minutes(ctx, character_id, requested_minutes, at_inn, true)
 }
 
@@ -1343,13 +1345,11 @@ fn require_settlement_rest_service(
     at_inn: bool,
 ) -> Result<(), String> {
     use adventuresim_core::settlement_economy::{
-        SettlementActionService, action_service_available,
+        SettlementDowntimeAccess, action_service_available, required_settlement_rest_service,
     };
-    let service = if at_inn {
-        SettlementActionService::Inn
-    } else {
-        SettlementActionService::Temple
-    };
+    let service =
+        required_settlement_rest_service(SettlementDowntimeAccess::PublicService { at_inn })
+            .expect("public settlement rest always names a service");
     if action_service_available(profile, service) {
         Ok(())
     } else {
@@ -1357,12 +1357,10 @@ fn require_settlement_rest_service(
     }
 }
 
-fn rest_for_minutes(
+fn require_character_rest_service(
     ctx: &ReducerContext,
     character_id: u64,
-    requested_minutes: u64,
     at_inn: bool,
-    explicit: bool,
 ) -> Result<(), String> {
     let character = crate::character::require_living_character(ctx, character_id)?;
     let settlement_id = character
@@ -1375,7 +1373,20 @@ fn rest_for_minutes(
         .id()
         .find(settlement_id)
         .ok_or("Character's settlement not found")?;
-    require_settlement_rest_service(&settlement.economy, at_inn)?;
+    require_settlement_rest_service(&settlement.economy, at_inn)
+}
+
+fn rest_for_minutes(
+    ctx: &ReducerContext,
+    character_id: u64,
+    requested_minutes: u64,
+    at_inn: bool,
+    explicit: bool,
+) -> Result<(), String> {
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    if character.current_settlement_id.is_none() {
+        return Err("Settlement downtime requires the character to be at a settlement".into());
+    }
     ensure_character_time(ctx, character_id)?;
     let _ = refresh_clock(ctx)?;
     let mut character_time = ctx
@@ -1531,6 +1542,24 @@ fn rest_for_minutes(
     Ok(())
 }
 
+/// Venue-neutral private downtime for system-owned clock synchronization,
+/// convalescence, and private holy-day observance. Public service reducers
+/// must authorize an Inn or Temple before entering `rest_for_minutes`.
+pub(crate) fn spend_private_settlement_downtime(
+    ctx: &ReducerContext,
+    character_id: u64,
+    requested_minutes: u64,
+    explicit: bool,
+) -> Result<(), String> {
+    debug_assert_eq!(
+        adventuresim_core::settlement_economy::required_settlement_rest_service(
+            adventuresim_core::settlement_economy::SettlementDowntimeAccess::PrivateSystem,
+        ),
+        None
+    );
+    rest_for_minutes(ctx, character_id, requested_minutes, false, explicit)
+}
+
 /// Move living party clocks forward to their latest member without ever
 /// rewinding chronology. Lagging members receive ordinary location-appropriate
 /// downtime. A one-year cap rejects corrupt/pathological party skew.
@@ -1576,7 +1605,7 @@ pub(crate) fn synchronize_party_departure_time(
             .find(member_id)
             .is_some_and(|character| character.current_settlement_id.is_some());
         if at_settlement {
-            rest_for_minutes(ctx, member_id, elapsed, false, false)?;
+            spend_private_settlement_downtime(ctx, member_id, elapsed, false)?;
         } else {
             advance_personal_camp_time(ctx, member_id, elapsed)?;
         }
@@ -1701,7 +1730,7 @@ pub(crate) fn rest_temporary_party_member_until_healed_at_settlement(
     let recovery_minutes =
         convalescence_minutes(ctx, character_id, party_medicine_check(ctx, character_id)?);
     if recovery_minutes > 0 {
-        rest_for_minutes(ctx, character_id, recovery_minutes, false, false)?;
+        spend_private_settlement_downtime(ctx, character_id, recovery_minutes, false)?;
     }
     Ok(())
 }
