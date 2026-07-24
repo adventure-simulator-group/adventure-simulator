@@ -780,6 +780,7 @@ fn lead_is_live_contact_referral(
         && lead.corrected_by.is_empty()
 }
 
+#[cfg(test)]
 fn generated_pattern_evidence_id(outputs_json: &str) -> Result<Option<String>, &'static str> {
     let outputs = serde_json::from_str::<
         Vec<adventuresim_core::quest_generation::GeneratedActionOutput>,
@@ -792,6 +793,139 @@ fn generated_pattern_evidence_id(outputs_json: &str) -> Result<Option<String>, &
         } => Some(evidence_id.0),
         _ => None,
     }))
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum GeneratedPatternAuthority {
+    Manual,
+    GeneratedWithoutPattern,
+    Pattern {
+        evidence_id: String,
+        condition: adventuresim_core::quest_generation::GeneratedPatternCondition,
+    },
+    Invalid,
+}
+
+fn generated_pattern_authority(
+    capability: &InvestigationActionCapability,
+    authority: Option<(&str, &str)>,
+    persisted_outputs_json: Option<&str>,
+) -> GeneratedPatternAuthority {
+    let Some((manifest_json, context_json)) = authority else {
+        return if persisted_outputs_json.is_some() {
+            GeneratedPatternAuthority::Invalid
+        } else {
+            GeneratedPatternAuthority::Manual
+        };
+    };
+    let Ok(manifest) =
+        serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(manifest_json)
+    else {
+        return GeneratedPatternAuthority::Invalid;
+    };
+    let Ok(context) = serde_json::from_str::<adventuresim_core::quest_generation::GenerationContext>(
+        context_json,
+    ) else {
+        return GeneratedPatternAuthority::Invalid;
+    };
+    if capability.case_id != manifest.canonical_case_id
+        && capability.case_id != manifest.public_case_id
+    {
+        return GeneratedPatternAuthority::Invalid;
+    }
+    let generated = manifest.actions.iter().find(|action| {
+        adventuresim_core::quest_generation::observer_scoped_id(
+            &context,
+            "capability",
+            &format!("{}:{}", capability.owner_character_id, action.id.0),
+        ) == capability.id
+    });
+    let Some(generated) = generated else {
+        return if persisted_outputs_json.is_some() {
+            GeneratedPatternAuthority::Invalid
+        } else {
+            GeneratedPatternAuthority::Manual
+        };
+    };
+    let Some(persisted_outputs_json) = persisted_outputs_json else {
+        return GeneratedPatternAuthority::Invalid;
+    };
+    let Ok(persisted_outputs) = serde_json::from_str::<
+        Vec<adventuresim_core::quest_generation::GeneratedActionOutput>,
+    >(persisted_outputs_json) else {
+        return GeneratedPatternAuthority::Invalid;
+    };
+    if persisted_outputs != generated.outputs {
+        return GeneratedPatternAuthority::Invalid;
+    }
+    generated
+        .outputs
+        .iter()
+        .find_map(|output| match output {
+            adventuresim_core::quest_generation::GeneratedActionOutput::PatternCondition {
+                evidence_id,
+                condition,
+            } => Some(GeneratedPatternAuthority::Pattern {
+                evidence_id: evidence_id.0.clone(),
+                condition: condition.clone(),
+            }),
+            _ => None,
+        })
+        .unwrap_or(GeneratedPatternAuthority::GeneratedWithoutPattern)
+}
+
+fn generated_authority_view(
+    ctx: &ViewContext,
+    capability: &InvestigationActionCapability,
+) -> Option<(String, String)> {
+    if let Some(authority) = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&capability.case_id)
+    {
+        return Some((authority.manifest_json, authority.context_snapshot_json));
+    }
+    ctx.db
+        .quest_generation_authority()
+        .iter()
+        .find_map(|authority| {
+            let manifest =
+                serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(
+                    &authority.manifest_json,
+                )
+                .ok()?;
+            (capability.case_id == manifest.canonical_case_id
+                || capability.case_id == manifest.public_case_id)
+                .then(|| (authority.manifest_json, authority.context_snapshot_json))
+        })
+}
+
+fn generated_authority_reducer(
+    ctx: &ReducerContext,
+    capability: &InvestigationActionCapability,
+) -> Option<(String, String)> {
+    if let Some(authority) = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&capability.case_id)
+    {
+        return Some((authority.manifest_json, authority.context_snapshot_json));
+    }
+    ctx.db
+        .quest_generation_authority()
+        .iter()
+        .find_map(|authority| {
+            let manifest =
+                serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(
+                    &authority.manifest_json,
+                )
+                .ok()?;
+            (capability.case_id == manifest.canonical_case_id
+                || capability.case_id == manifest.public_case_id)
+                .then(|| (authority.manifest_json, authority.context_snapshot_json))
+        })
 }
 
 fn observer_pattern_route_has_live_corroborated_clue(
@@ -811,18 +945,24 @@ fn capability_has_live_pattern_support_view(
     ctx: &ViewContext,
     capability: &InvestigationActionCapability,
 ) -> bool {
-    let Some(output) = ctx
+    let output = ctx
         .db
         .investigation_generated_action_output()
         .capability_id()
-        .find(&capability.id)
-    else {
-        return true;
-    };
-    let evidence_id = match generated_pattern_evidence_id(&output.outputs_json) {
-        Ok(Some(evidence_id)) => evidence_id,
-        Ok(None) => return true,
-        Err(_) => return false,
+        .find(&capability.id);
+    let authority = generated_authority_view(ctx, capability);
+    let evidence_id = match generated_pattern_authority(
+        capability,
+        authority
+            .as_ref()
+            .map(|(manifest, context)| (manifest.as_str(), context.as_str())),
+        output.as_ref().map(|output| output.outputs_json.as_str()),
+    ) {
+        GeneratedPatternAuthority::Manual | GeneratedPatternAuthority::GeneratedWithoutPattern => {
+            return true;
+        }
+        GeneratedPatternAuthority::Pattern { evidence_id, .. } => evidence_id,
+        GeneratedPatternAuthority::Invalid => return false,
     };
     observer_pattern_route_has_live_corroborated_clue(
         capability.owner_character_id,
@@ -1510,18 +1650,24 @@ fn capability_has_live_pattern_support_reducer(
     ctx: &ReducerContext,
     capability: &InvestigationActionCapability,
 ) -> bool {
-    let Some(output) = ctx
+    let output = ctx
         .db
         .investigation_generated_action_output()
         .capability_id()
-        .find(&capability.id)
-    else {
-        return true;
-    };
-    let evidence_id = match generated_pattern_evidence_id(&output.outputs_json) {
-        Ok(Some(evidence_id)) => evidence_id,
-        Ok(None) => return true,
-        Err(_) => return false,
+        .find(&capability.id);
+    let authority = generated_authority_reducer(ctx, capability);
+    let evidence_id = match generated_pattern_authority(
+        capability,
+        authority
+            .as_ref()
+            .map(|(manifest, context)| (manifest.as_str(), context.as_str())),
+        output.as_ref().map(|output| output.outputs_json.as_str()),
+    ) {
+        GeneratedPatternAuthority::Manual | GeneratedPatternAuthority::GeneratedWithoutPattern => {
+            return true;
+        }
+        GeneratedPatternAuthority::Pattern { evidence_id, .. } => evidence_id,
+        GeneratedPatternAuthority::Invalid => return false,
     };
     observer_pattern_route_has_live_corroborated_clue(
         capability.owner_character_id,
@@ -2442,34 +2588,34 @@ fn validate_generated_pattern_condition(
     kind: action::InvestigationActionKind,
     started_at: u64,
 ) -> Result<(), String> {
-    let Some(outputs) = ctx
+    let output = ctx
         .db
         .investigation_generated_action_output()
         .capability_id()
-        .find(&capability.id)
-        .map(|row| {
-            serde_json::from_str::<Vec<adventuresim_core::quest_generation::GeneratedActionOutput>>(
-                &row.outputs_json,
-            )
-            .map_err(|_| "Generated action output authority is invalid")
-        })
-        .transpose()?
-    else {
-        return Ok(());
-    };
-    let Some((evidence_id, condition)) = outputs.iter().find_map(|output| match output {
-        adventuresim_core::quest_generation::GeneratedActionOutput::PatternCondition {
+        .find(&capability.id);
+    let authority = generated_authority_reducer(ctx, capability);
+    let (evidence_id, condition) = match generated_pattern_authority(
+        capability,
+        authority
+            .as_ref()
+            .map(|(manifest, context)| (manifest.as_str(), context.as_str())),
+        output.as_ref().map(|output| output.outputs_json.as_str()),
+    ) {
+        GeneratedPatternAuthority::Manual | GeneratedPatternAuthority::GeneratedWithoutPattern => {
+            return Ok(());
+        }
+        GeneratedPatternAuthority::Pattern {
             evidence_id,
             condition,
-        } => Some((&evidence_id.0, condition)),
-        _ => None,
-    }) else {
-        return Ok(());
+        } => (evidence_id, condition),
+        GeneratedPatternAuthority::Invalid => {
+            return Err("Generated action output authority is invalid".into());
+        }
     };
     if !observer_pattern_route_has_live_corroborated_clue(
         capability.owner_character_id,
         &capability.case_id,
-        evidence_id,
+        &evidence_id,
         ctx.db
             .investigation_evidence_knowledge()
             .owner_character_id()
@@ -2478,7 +2624,7 @@ fn validate_generated_pattern_condition(
         return Err("The selected pattern has not been corroborated yet".into());
     }
     use adventuresim_core::quest_generation::GeneratedPatternCondition as C;
-    match condition {
+    match &condition {
         C::NightWindow if started_at % 1_440 >= 360 && started_at % 1_440 < 1_200 => {
             Err("The learned pattern requires acting during the nighttime window".into())
         }
@@ -5162,6 +5308,129 @@ mod tests {
                     .find("capability_has_live_pattern_support_reducer")
                     .unwrap()
         );
+    }
+
+    #[test]
+    fn generated_pattern_authority_fails_closed_and_manual_actions_remain_permissive() {
+        use adventuresim_core::{
+            local_problem::Scope,
+            quest_generation::{
+                GeneratedActionOutput, GenerationContext, TemplateFamily, generate,
+                observer_scoped_id, test_witnesses,
+            },
+        };
+        let context = GenerationContext {
+            seed: 7,
+            observer_entropy_hi: 11,
+            observer_entropy_lo: 13,
+            settlement_id: "lubeck".into(),
+            settlement_name: "Lubeck".into(),
+            scope: Scope::Settlement {
+                settlement_id: "lubeck".into(),
+            },
+            ordinal: 0,
+            now_minute: 50_000,
+            requested_family: Some(TemplateFamily::RecurringDepredation),
+            witness_candidates: test_witnesses(),
+        };
+        let manifest = generate(&context).unwrap();
+        let generated = manifest
+            .actions
+            .iter()
+            .find(|action| {
+                action
+                    .outputs
+                    .iter()
+                    .any(|output| matches!(output, GeneratedActionOutput::PatternCondition { .. }))
+            })
+            .unwrap();
+        let capability = InvestigationActionCapability {
+            id: observer_scoped_id(&context, "capability", &format!("7:{}", generated.id.0)),
+            owner_character_id: 7,
+            case_id: manifest.public_case_id.clone(),
+            method: format!("{:?}", generated.kind),
+            version: 0,
+            target_kind: generated.target_kind.clone(),
+            target_id: generated.target_id.clone(),
+            target_terrain: String::new(),
+            seed: 1,
+            evidence_age_origin_minute: 0,
+            uncertainty_bps: 0,
+            safe_summary: generated.safe_summary.clone(),
+            known_prerequisites: String::new(),
+            safe_result_on_success: String::new(),
+            consequence_json: String::new(),
+            required_action_id: String::new(),
+            alternate_route_action_id: String::new(),
+            active: true,
+        };
+        let manifest_json = serde_json::to_string(&manifest).unwrap();
+        let context_json = serde_json::to_string(&context).unwrap();
+        let authority = Some((manifest_json.as_str(), context_json.as_str()));
+        let exact_outputs = serde_json::to_string(&generated.outputs).unwrap();
+        assert!(matches!(
+            generated_pattern_authority(&capability, authority, Some(&exact_outputs)),
+            GeneratedPatternAuthority::Pattern { .. }
+        ));
+        assert_eq!(
+            generated_pattern_authority(&capability, authority, None),
+            GeneratedPatternAuthority::Invalid
+        );
+        let mismatched = serde_json::to_string(&vec![GeneratedActionOutput::AmbushReady]).unwrap();
+        assert_eq!(
+            generated_pattern_authority(&capability, authority, Some(&mismatched)),
+            GeneratedPatternAuthority::Invalid
+        );
+        let mut wrong_evidence_outputs = generated.outputs.clone();
+        let pattern = wrong_evidence_outputs
+            .iter_mut()
+            .find_map(|output| match output {
+                GeneratedActionOutput::PatternCondition { evidence_id, .. } => Some(evidence_id),
+                _ => None,
+            })
+            .unwrap();
+        pattern.0 = "wrong-evidence".into();
+        let wrong_evidence = serde_json::to_string(&wrong_evidence_outputs).unwrap();
+        assert_eq!(
+            generated_pattern_authority(&capability, authority, Some(&wrong_evidence)),
+            GeneratedPatternAuthority::Invalid
+        );
+        assert_eq!(
+            generated_pattern_authority(&capability, authority, Some("not-json")),
+            GeneratedPatternAuthority::Invalid
+        );
+
+        let mut wrong_observer = capability.clone();
+        wrong_observer.owner_character_id = 8;
+        assert_eq!(
+            generated_pattern_authority(&wrong_observer, authority, Some(&exact_outputs)),
+            GeneratedPatternAuthority::Invalid
+        );
+        let mut wrong_case = capability.clone();
+        wrong_case.case_id = "another-case".into();
+        assert_eq!(
+            generated_pattern_authority(&wrong_case, authority, Some(&exact_outputs)),
+            GeneratedPatternAuthority::Invalid
+        );
+        let manual = InvestigationActionCapability {
+            id: "manual".into(),
+            case_id: "manual-case".into(),
+            ..capability
+        };
+        assert_eq!(
+            generated_pattern_authority(&manual, None, None),
+            GeneratedPatternAuthority::Manual
+        );
+
+        let source = include_str!("investigation.rs");
+        for boundary in [
+            "fn capability_has_live_pattern_support_view",
+            "fn capability_has_live_pattern_support_reducer",
+            "fn validate_generated_pattern_condition",
+        ] {
+            let body = source.split(boundary).nth(1).unwrap();
+            assert!(body.contains("generated_pattern_authority"));
+        }
     }
 
     #[test]
