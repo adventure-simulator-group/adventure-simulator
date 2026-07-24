@@ -2835,7 +2835,7 @@ pub fn receive_local_problem_rumor(
     let contact = ctx.db.settlement_npc().id().find(&receipt.contact_npc_id);
     let visible_description = contact.as_ref().map_or_else(String::new, |npc| {
         format!(
-            "{}, {}, {}, with {} hair; {}",
+            "{}, {}, {}, with {}; {}",
             npc.height, npc.build, npc.complexion, npc.hair, npc.visible_features
         )
     });
@@ -2901,6 +2901,13 @@ pub fn receive_local_problem_rumor(
 /// Trusted authority seam for #184/generation. `pipeline_json` is private
 /// server-authored material and must never originate in or be projected to a
 /// browser; only the registered SSR gateway can invoke this temporary seam.
+fn process_investigation_pipeline(
+    pipeline: inv::PipelineInput,
+) -> Result<(inv::Observation, inv::Recollection, Option<inv::Claim>), String> {
+    inv::process_report(pipeline)
+        .map_err(|error| format!("Invalid investigation pipeline at report processing: {error:?}"))
+}
+
 pub(crate) fn stage_investigation_claim(
     ctx: &ReducerContext,
     character_id: u64,
@@ -2920,12 +2927,10 @@ pub(crate) fn stage_investigation_claim(
     if pipeline_json.len() > 8_192 {
         return Err("Pipeline payload is too large".into());
     }
-    let pipeline: inv::PipelineInput =
-        serde_json::from_str(&pipeline_json).map_err(|_| "Invalid investigation pipeline")?;
+    let pipeline: inv::PipelineInput = serde_json::from_str(&pipeline_json)
+        .map_err(|_| "Invalid investigation pipeline at payload decoding")?;
     let proposition = pipeline.proposition.clone();
-    let public_claim_id = pipeline.receipt_identity.clone();
-    let (observation, recollection, claim) =
-        inv::process_report(pipeline).map_err(|_| "Invalid investigation pipeline")?;
+    let (observation, recollection, claim) = process_investigation_pipeline(pipeline)?;
     let claim = claim.ok_or("An omitted proposition cannot create a receivable claim")?;
     if ctx
         .db
@@ -3040,7 +3045,6 @@ pub(crate) fn stage_investigation_claim(
             correction_of_belief_id,
             consumed_by: String::new(),
         });
-    let _ = public_claim_id;
     Ok(())
 }
 
@@ -3050,21 +3054,31 @@ pub(crate) fn persist_generated_testimony(
     generated: &adventuresim_core::quest_generation::GeneratedCase,
     witness: &adventuresim_core::quest_generation::WitnessBinding,
 ) -> Result<(), String> {
-    use adventuresim_core::investigation::{
-        AtomicProposition, CaseId, DisclosureMode, EventId, MemoryCondition, PerceptionCondition,
-        PipelineInput, PropositionId, TransmissionCondition,
-    };
     use adventuresim_core::quest_generation::Reliability;
     if witness.testimony.is_empty() {
         return Err("Generated witness has no proposition testimony".into());
     }
+    let authority = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&generated.canonical_case_id)
+        .ok_or("Generated testimony case authority is missing")?;
+    let generation_context = serde_json::from_str::<
+        adventuresim_core::quest_generation::GenerationContext,
+    >(&authority.context_snapshot_json)
+    .map_err(|_| "Generated testimony observer-id authority is invalid")?;
     for (index, draft) in witness.testimony.iter().enumerate() {
-        let receipt_id = inv::compound_id(&[
-            "generated-testimony",
-            &character_id.to_string(),
-            &witness.id.0,
-            &index.to_string(),
-        ]);
+        let (receipt_id, pipeline) =
+            adventuresim_core::quest_generation::generated_testimony_pipeline(
+                &generation_context,
+                character_id,
+                generated,
+                witness,
+                index,
+                official_minute(ctx),
+            )
+            .map_err(|error| format!("Invalid generated testimony pipeline: {error:?}"))?;
         if ctx
             .db
             .investigation_safe_claim_receipt()
@@ -3074,49 +3088,6 @@ pub(crate) fn persist_generated_testimony(
         {
             continue;
         }
-        let proposition_id =
-            PropositionId::new(draft.proposition_id.clone()).map_err(|_| "Invalid proposition")?;
-        let pipeline = PipelineInput {
-            case_id: CaseId::new(&generated.canonical_case_id)
-                .map_err(|_| "Invalid canonical generated case ID")?,
-            event_id: EventId::new(inv::compound_id(&[
-                "event",
-                &witness.id.0,
-                &index.to_string(),
-            ]))
-            .map_err(|_| "Invalid generated testimony event ID")?,
-            proposition: AtomicProposition::new(
-                proposition_id,
-                &witness.npc_id,
-                "reported",
-                &draft.truthful_text,
-            )
-            .map_err(|_| "Invalid generated testimony proposition")?,
-            observer_ref: witness.npc_id.clone(),
-            speaker_ref: witness.npc_id.clone(),
-            receipt_identity: receipt_id.clone(),
-            recollection_revision: 1,
-            perceived_text: draft.truthful_text.clone(),
-            recalled_text: match draft.reliability {
-                Reliability::Truthful | Reliability::PartlyTruthful => draft.truthful_text.clone(),
-                _ => draft.spoken_text.clone(),
-            },
-            disclosed_text: Some(draft.spoken_text.clone()),
-            transmitted_text: draft.spoken_text.clone(),
-            perception: PerceptionCondition::Clear,
-            memory: if draft.reliability == Reliability::Mistaken {
-                MemoryCondition::Confused
-            } else {
-                MemoryCondition::Accurate
-            },
-            disclosure: match draft.reliability {
-                Reliability::Deceptive => DisclosureMode::Distort,
-                Reliability::Evasive => DisclosureMode::Conceal,
-                _ => DisclosureMode::Disclose,
-            },
-            transmission: TransmissionCondition::Clear,
-            received_at: official_minute(ctx),
-        };
         let correction_belief_id = draft
             .corrects_proposition_id
             .as_ref()
@@ -3845,6 +3816,101 @@ mod tests {
                 saw_successor,
                 "{family:?} did not generate a successor action"
             );
+        }
+    }
+
+    #[test]
+    fn root_rumor_then_every_referred_witness_pipeline_is_valid_in_both_families() {
+        use adventuresim_core::{
+            investigation::ValidationError,
+            local_problem::Scope,
+            quest_generation::{
+                GenerationContext, TemplateFamily, generate, test_witnesses, validate,
+            },
+        };
+
+        for (seed, family) in [
+            (7, TemplateFamily::RecurringDepredation),
+            (11, TemplateFamily::DisappearanceOrLoss),
+        ] {
+            let mut context = GenerationContext {
+                seed,
+                observer_entropy_hi: seed ^ 0x6f62_7365_7276_6572,
+                observer_entropy_lo: seed.rotate_left(23) ^ 0x7175_6573_742d_7631,
+                settlement_id: "lubeck".into(),
+                settlement_name: "Lubeck".into(),
+                scope: Scope::Settlement {
+                    settlement_id: "lubeck".into(),
+                },
+                ordinal: 0,
+                now_minute: 50_000,
+                requested_family: Some(family),
+                witness_candidates: test_witnesses(),
+            };
+            for (index, witness) in context.witness_candidates.iter_mut().enumerate() {
+                witness.npc_id = format!("npc:riverdale:residences:{index}");
+            }
+            let generated = generate(&context).expect("root rumor should materialize a case");
+            validate(&generated).expect("generated action graph should remain valid");
+            assert_ne!(generated.canonical_case_id, generated.public_case_id);
+            assert!(
+                generated.witnesses.len() >= 2,
+                "the referral transition needs another authored local account"
+            );
+
+            let character_id = 17_849_106_825_763_413_937;
+            let mut authored_claims = 0;
+            for witness in &generated.witnesses {
+                for index in 0..witness.testimony.len() {
+                    let (receipt_id, pipeline) =
+                        adventuresim_core::quest_generation::generated_testimony_pipeline(
+                            &context,
+                            character_id,
+                            &generated,
+                            witness,
+                            index,
+                            50_000,
+                        )
+                        .expect("referred witness should produce a pipeline");
+                    assert!(receipt_id.starts_with("testimony:"));
+                    assert!(receipt_id.len() <= 256);
+                    let (observation, recollection, claim) =
+                        process_investigation_pipeline(pipeline.clone())
+                            .expect("every authored witness claim should persist");
+                    let claim = claim.expect("generated testimony is never omitted");
+                    for id in [
+                        observation.id.as_str(),
+                        recollection.id.as_str(),
+                        claim.id.as_str(),
+                    ] {
+                        assert!(id.len() <= 256, "pipeline id exceeds stable-id budget");
+                        assert!(id.bytes().all(|byte| {
+                            byte.is_ascii_alphanumeric()
+                                || matches!(byte, b'-' | b'_' | b':' | b'.')
+                        }));
+                    }
+                    authored_claims += 1;
+
+                    if authored_claims == 1 {
+                        let mut invalid = pipeline;
+                        invalid.receipt_identity = inv::compound_id(&[
+                            "generated-testimony",
+                            &character_id.to_string(),
+                            &witness.id.0,
+                            &index.to_string(),
+                        ]);
+                        assert_eq!(
+                            inv::process_report(invalid.clone()).unwrap_err(),
+                            ValidationError::InvalidId
+                        );
+                        assert_eq!(
+                            process_investigation_pipeline(invalid).unwrap_err(),
+                            "Invalid investigation pipeline at report processing: InvalidId"
+                        );
+                    }
+                }
+            }
+            assert!(authored_claims >= generated.witnesses.len());
         }
     }
 
