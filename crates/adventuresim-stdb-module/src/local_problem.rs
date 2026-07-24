@@ -1070,7 +1070,7 @@ mod tests {
         assert!(receive.contains("&live_npc.id"));
         assert!(receive.contains("&session.settlement_id"));
         assert!(receive.contains("&session.location_id"));
-        assert!(receive.contains(".find(|witness| witness.npc_id == live_npc.id)"));
+        assert!(!receive.contains("manifest.witnesses"));
         assert!(receive.contains("persist_generated_testimony("));
         assert!(!start.contains("accept_contract("));
     }
