@@ -194,7 +194,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/service-quests.js?v=apprentice-system-1" defer {}
                     script src="/static/dialogue-client.js?v=authoritative-dialogue-3" defer {}
                     script src="/static/chat-resize.js?v=floating-chat-3" defer {}
-                    script src="/static/local-chat.js?v=herbalist-private-1" defer {}
+                    script src="/static/local-chat.js?v=local-chat-location-authority-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}
                     script src="/static/building-state.js?v=village-building-tabs-1" defer {}
                     script src="/static/travel-planner.js?v=travel-rails-1" defer {}
@@ -631,12 +631,19 @@ pub fn sidebar_section(title: &str, content: Markup) -> Markup {
 #[cfg(test)]
 mod tests {
     use super::{
-        HorizonVariant, WildernessVariant, building_tier, building_tint, entry_layout,
-        horizon_variant, quest_location_top_bar, religion_icon_path,
+        HorizonVariant, ScriptProfile, WildernessVariant, building_tier, building_tint,
+        entry_layout, horizon_variant, page_shell, quest_location_top_bar, religion_icon_path,
         settlement_layout_with_session, settlement_top_bar, wilderness_variant,
     };
     use crate::spacetimedb::SettlementCategory;
     use maud::html;
+
+    #[test]
+    fn strategic_shell_cache_busts_exact_location_chat_authority() {
+        let markup = page_shell("Chat", html! {}, html! {}, ScriptProfile::Strategic).into_string();
+        assert!(markup.contains("/static/local-chat.js?v=local-chat-location-authority-1"));
+        assert!(!markup.contains("local-chat.js?v=herbalist-private-1"));
+    }
 
     #[test]
     fn building_tints_are_stable_distinct_and_material_bounded() {
