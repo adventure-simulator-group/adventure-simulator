@@ -420,7 +420,12 @@ pub(crate) fn ensure_generated_incidents(
         let Some(validated) = validated_problem_generation(ctx, &problem, settlement_id) else {
             continue;
         };
-        let due = lp::due_incident_count(problem.starts_at, minute);
+        let due = lp::due_incident_count_configured(
+            problem.starts_at,
+            minute,
+            validated.manifest.incident_interval_minutes,
+            validated.manifest.maximum_incidents,
+        );
         if due <= problem.incident_count {
             continue;
         }
@@ -461,7 +466,8 @@ pub(crate) fn ensure_generated_incidents(
             let proposition_id = format!("{id}:proposition");
             let evidence_id = format!("{id}:evidence");
             let occurred_at = problem.starts_at.saturating_add(
-                u64::from(ordinal.saturating_sub(1)).saturating_mul(lp::INCIDENT_INTERVAL_MINUTES),
+                u64::from(ordinal.saturating_sub(1))
+                    .saturating_mul(validated.manifest.incident_interval_minutes),
             );
             let public_summary = follow_up_summary(&problem.symptom).to_owned();
             let witness_account = format!(

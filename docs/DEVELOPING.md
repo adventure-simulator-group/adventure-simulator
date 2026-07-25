@@ -9,9 +9,13 @@ strict JSON-compatible YAML convention as dialogue. Validate it with:
 cargo run -p adventuresim-core --bin questgen-check -- validate
 ```
 
-The build reports the source file and offending ID or relation for duplicate
-IDs, dangling bridge/monster references, unknown mechanics, invalid evidence
-DC ranges, and zero weights without a hard-zero reason.
+The build, runtime startup, and checker share one strict catalog validator. It
+reports the source file and structural path for unknown fields, duplicate or
+overlong IDs, dangling references, incomplete relation coverage, ambiguous
+witness-demographic predicates, unknown closed mechanics, invalid evidence DC
+ranges, unsupported template graphs, and zero weights without a hard-zero
+reason. Catalog IDs are at most 63 ASCII identifier bytes. Production embeds
+the validated files; it never reads loose quest YAML.
 
 Local workflow for running the Adventure Simulator demo.
 

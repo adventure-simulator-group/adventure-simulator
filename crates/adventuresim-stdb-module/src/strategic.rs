@@ -18026,25 +18026,13 @@ fn generated_witness_candidates(
 pub(crate) fn generated_npc_demographic(
     npc: &crate::settlement_population::SettlementNpc,
 ) -> adventuresim_core::quest_generation::WitnessDemographic {
-    use adventuresim_core::quest_generation::WitnessDemographic;
-    match npc.age_band {
-        crate::settlement_population::NpcAgeBand::Child
-        | crate::settlement_population::NpcAgeBand::Adolescent => WitnessDemographic::Child,
-        crate::settlement_population::NpcAgeBand::Adult
-        | crate::settlement_population::NpcAgeBand::Elder => {
-            if npc.profession.contains("merchant") {
-                WitnessDemographic::Merchant
-            } else if npc.profession.contains("cleric") {
-                WitnessDemographic::Cleric
-            } else if npc.profession.contains("guard") || npc.local_role.contains("retainer") {
-                WitnessDemographic::Guard
-            } else if npc.local_role.contains("lord") {
-                WitnessDemographic::Noble
-            } else {
-                WitnessDemographic::Laborer
-            }
-        }
-    }
+    let age_band = format!("{:?}", npc.age_band).to_ascii_lowercase();
+    let sex = format!("{:?}", npc.sex).to_ascii_lowercase();
+    let authored = adventuresim_core::quest_catalog::catalog()
+        .witness_demographic_for(&age_band, &sex, &npc.profession, &npc.local_role)
+        .expect("validated demographic catalog has one fallback");
+    adventuresim_core::quest_generation::WitnessDemographic::try_new(&authored.id)
+        .expect("validated open demographic ID")
 }
 
 pub(crate) fn generated_npc_presence_version(

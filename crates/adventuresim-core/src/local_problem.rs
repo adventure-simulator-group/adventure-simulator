@@ -17,13 +17,28 @@ pub const INCIDENT_INTERVAL_MINUTES: u64 = 2 * 1_440;
 pub const INCIDENT_SEVERITY_STEP_BPS: u32 = 2_500;
 
 pub fn due_incident_count(starts_at: u64, minute: u64) -> u16 {
+    due_incident_count_configured(
+        starts_at,
+        minute,
+        INCIDENT_INTERVAL_MINUTES,
+        MAX_INCIDENTS_PER_PROBLEM,
+    )
+}
+
+pub fn due_incident_count_configured(
+    starts_at: u64,
+    minute: u64,
+    interval_minutes: u64,
+    maximum_incidents: u16,
+) -> u16 {
     if minute < starts_at {
         return 0;
     }
-    let follow_ups = minute.saturating_sub(starts_at) / INCIDENT_INTERVAL_MINUTES;
+    assert!(interval_minutes > 0 && maximum_incidents > 0);
+    let follow_ups = minute.saturating_sub(starts_at) / interval_minutes;
     u16::try_from(follow_ups.saturating_add(1))
         .unwrap_or(u16::MAX)
-        .min(MAX_INCIDENTS_PER_PROBLEM)
+        .min(maximum_incidents)
 }
 
 pub fn incident_severity_bps(incident_count: u16) -> u32 {

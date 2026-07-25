@@ -698,6 +698,11 @@ pub struct GeneratedDialogueProducer {
 pub struct GeneratedCase {
     pub catalog_revision: String,
     pub generation_seed: u64,
+    pub template_id: String,
+    pub configured_routes: Vec<String>,
+    pub configured_objectives: Vec<String>,
+    pub incident_interval_minutes: u64,
+    pub maximum_incidents: u16,
     pub family: TemplateFamily,
     pub canonical_case_id: String,
     pub public_case_id: String,
@@ -1613,13 +1618,7 @@ fn site_candidates(cause: CanonicalCause) -> Vec<Candidate<SiteKind>> {
             let impossible = relation
                 .and_then(|item| item.hard_zero_reason.as_deref())
                 .map(|_| "catalog-authored hard zero");
-            let bridge = relation
-                .and_then(|item| item.required_bridge.as_deref())
-                .map(|id| match id {
-                    "skeletons_occupied_house" => "bridge.skeletons_occupied_house",
-                    "child_at_adult_venue" => "bridge.child_at_adult_venue",
-                    _ => unreachable!("validated bridge adapter"),
-                });
+            let bridge = relation.and_then(|item| item.required_bridge.as_deref());
             Candidate {
                 id: authored_site.id.as_str(),
                 value: site,
@@ -1690,12 +1689,7 @@ fn circumstance_candidates(demo: WitnessDemographic) -> Vec<Candidate<Circumstan
             let impossible = relation_candidate
                 .and_then(|item| item.hard_zero_reason.as_deref())
                 .map(|_| "catalog-authored hard zero");
-            let bridge = relation_candidate
-                .and_then(|item| item.required_bridge.as_deref())
-                .map(|id| match id {
-                    "child_at_adult_venue" => "bridge.child_at_adult_venue",
-                    _ => unreachable!("validated bridge adapter"),
-                });
+            let bridge = relation_candidate.and_then(|item| item.required_bridge.as_deref());
             Candidate {
                 id: authored.id.as_str(),
                 value: circ,
@@ -1811,49 +1805,32 @@ fn report_catalog_id(report: ReportDescription) -> &'static str {
 }
 
 fn bridge(id: &str, prefix: &str, family: TemplateFamily, _now: u64) -> CausalBridge {
-    let action_name = match (id, family) {
-        ("bridge.skeletons_occupied_house", TemplateFamily::RecurringDepredation) => "search",
-        ("bridge.skeletons_occupied_house", TemplateFamily::DisappearanceOrLoss) => {
-            "inspect_last_known"
-        }
-        ("bridge.child_at_adult_venue", TemplateFamily::RecurringDepredation) => "watch",
-        ("bridge.child_at_adult_venue", TemplateFamily::DisappearanceOrLoss) => "locate_contact",
-        (_, _) => "approach",
-    };
-    let action_id = ActionId::new(scoped_id(prefix, "action", action_name));
-    match id {
-        "bridge.skeletons_occupied_house" => CausalBridge {
-            id: BridgeId::new(id),
-            explanation: "A graverobber moved animated remains into a shuttered house.".into(),
-            event_id: scoped_id(prefix, "event", "bridge:skeleton_house"),
-            evidence_id: EvidenceId::new(scoped_id(prefix, "evidence", "grave_clay")),
-            action_id,
-            lead_summary: "Grave clay and cart ruts connect the house to the crypt.".into(),
-        },
-        "bridge.child_at_adult_venue" => CausalBridge {
-            id: BridgeId::new(id),
-            explanation: "The child was fetching an adult relative from outside the venue.".into(),
-            event_id: scoped_id(prefix, "event", "bridge:child_venue"),
-            evidence_id: EvidenceId::new(scoped_id(prefix, "evidence", "errand_token")),
-            action_id,
-            lead_summary: "An errand token corroborates why the child waited outside.".into(),
-        },
-        _ => CausalBridge {
-            id: BridgeId::new(id),
-            explanation: "A rare causal link makes the combination possible.".into(),
-            event_id: scoped_id(prefix, "event", "bridge"),
-            evidence_id: EvidenceId::new(scoped_id(prefix, "evidence", "bridge")),
-            action_id,
-            lead_summary: "A corroborating clue explains the unusual combination.".into(),
-        },
-    }
-}
-
-fn consequence(cause: CanonicalCause, family: TemplateFamily) -> ConsequenceProfile {
+    let catalog_id = id.trim_start_matches("bridge.");
+    let authored = crate::quest_catalog::catalog()
+        .bridge(catalog_id)
+        .expect("validated bridge reference");
     let family_id = match family {
         TemplateFamily::RecurringDepredation => "recurring_depredation",
         TemplateFamily::DisappearanceOrLoss => "disappearance_or_loss",
     };
+    let action_id = authored
+        .action_ids
+        .get(family_id)
+        .expect("validated bridge action coverage");
+    CausalBridge {
+        id: BridgeId::new(id),
+        explanation: authored.explanation.clone(),
+        event_id: scoped_id(prefix, "event", &authored.event_suffix),
+        evidence_id: EvidenceId::new(scoped_id(prefix, "evidence", &authored.evidence_id)),
+        action_id: ActionId::new(scoped_id(prefix, "action", action_id)),
+        lead_summary: authored.lead_summary.clone(),
+    }
+}
+
+fn consequence(
+    cause: CanonicalCause,
+    template: &crate::quest_catalog::TemplateDefinition,
+) -> ConsequenceProfile {
     let cause_id = match cause {
         CanonicalCause::Hostile(threat) => threat.as_str().to_owned(),
         CanonicalCause::VoluntaryDisappearance => "voluntary_disappearance".into(),
@@ -1862,7 +1839,7 @@ fn consequence(cause: CanonicalCause, family: TemplateFamily) -> ConsequenceProf
         CanonicalCause::FabricatedClaim => "fabricated".into(),
     };
     let authored = crate::quest_catalog::catalog()
-        .consequence(family_id, &cause_id)
+        .consequence(&template.consequence_profile, &cause_id)
         .expect("validated consequence coverage");
     ConsequenceProfile {
         symptom: match authored.symptom.as_str() {
@@ -2835,7 +2812,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         predicate: "caused".into(),
         object: format!(
             "{attack_pattern:?}:{:?}",
-            consequence(cause, family).symptom
+            consequence(cause, template).symptom
         ),
         occurred_at: context.now_minute.saturating_sub(180),
     }]
@@ -2866,13 +2843,18 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     let manifest = GeneratedCase {
         catalog_revision: CATALOG_REVISION.into(),
         generation_seed: context.seed,
+        template_id: template.id.clone(),
+        configured_routes: template.routes.clone(),
+        configured_objectives: template.objectives.clone(),
+        incident_interval_minutes: template.incident_interval_minutes,
+        maximum_incidents: u16::from(template.maximum_incidents),
         family,
         canonical_case_id,
         public_case_id,
         problem_id,
         cause,
         canonical_events,
-        consequence: consequence(cause, family),
+        consequence: consequence(cause, template),
         sites,
         areas: vec![GeneratedArea {
             id: area_id,
@@ -4373,7 +4355,7 @@ mod tests {
         assert_eq!(house.plausibility, 3);
         assert_eq!(
             house.required_bridge.as_ref().unwrap().0,
-            "bridge.skeletons_occupied_house"
+            "skeletons_occupied_house"
         );
         let wolf_crypt = site_candidates(CanonicalCause::Hostile(ThreatId::Wolf))
             .into_iter()
@@ -4389,7 +4371,7 @@ mod tests {
             .find(|c| c.value == Circumstance::AdultVenue)
             .unwrap();
         assert_eq!(adult.weight.plausibility, 2);
-        assert_eq!(adult.bridge, Some("bridge.child_at_adult_venue"));
+        assert_eq!(adult.bridge, Some("child_at_adult_venue"));
     }
     #[test]
     fn graph_keeps_both_routes_reachable_from_authored_entries() {

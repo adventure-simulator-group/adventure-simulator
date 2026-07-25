@@ -22,6 +22,10 @@ temperament, encounter scaling, and loot. Investigation covers
 habitat/activity/victims, tracks,
 wounds, disturbances, sounds, silhouettes, odors, mistaken identities,
 distinguishing evidence, visibility, and preparation advice.
+Track, wound, disturbance, odor, and distinguishing-evidence IDs are bounded
+open catalog strings. New physical trace identities therefore do not require a
+Rust enum edit; code changes only when a new executable interpretation is
+needed.
 
 The strategic autoresolver consumes identity, loadout, protection, speed,
 loot, perception/stealth, morale, encounter scaling, and innate protection.
@@ -52,8 +56,8 @@ Zero means impossible and is never raised by curation. A low positive weight
 means rare. The public habitat-selection API validates improbable combinations
 and requires a typed `CausalBridge` with evidence outputs. For
 example, skeletons in an occupied house require a cellar crypt, graveyard
-tunnel, or resident controller. Witness demographics belong to the future case
-model, not this threat-focused catalog.
+tunnel, or resident controller. Causal bridge identities and their event,
+evidence, and action outputs are authored as bounded open IDs.
 
 The MVP northern-Germany regional prior is a small typed authoring context,
 separate from curation; it is not yet derived from imported world geography.

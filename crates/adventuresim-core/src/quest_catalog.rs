@@ -12,6 +12,7 @@ use std::{
 include!(concat!(env!("OUT_DIR"), "/quest_catalog.rs"));
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct CatalogDocument {
     #[serde(default)]
     pub monsters: Vec<Monster>,
@@ -36,6 +37,7 @@ pub struct CatalogDocument {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Monster {
     pub id: String,
     pub name: String,
@@ -51,6 +53,7 @@ pub struct Monster {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct MonsterCombat {
     pub rig: String,
     pub speed_m_per_minute: u32,
@@ -73,6 +76,7 @@ pub struct MonsterCombat {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct MonsterInvestigation {
     pub habitats: Vec<String>,
     pub activity: String,
@@ -93,6 +97,7 @@ pub struct MonsterInvestigation {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct EvidenceDefinition {
     pub id: String,
     pub portrait_label: String,
@@ -102,6 +107,7 @@ pub struct EvidenceDefinition {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct EvidenceTopicDefinition {
     pub id: String,
     pub label: String,
@@ -110,6 +116,7 @@ pub struct EvidenceTopicDefinition {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct EvidenceCheckDefinition {
     pub stat: String,
     pub difficulty_min_milli: u16,
@@ -119,18 +126,37 @@ pub struct EvidenceCheckDefinition {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct WitnessDemographicDefinition {
     pub id: String,
     pub label: String,
+    pub match_rules: Vec<WitnessMatchRule>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct WitnessMatchRule {
+    pub priority: i32,
+    #[serde(default)]
+    pub age_bands: Vec<String>,
+    #[serde(default)]
+    pub sexes: Vec<String>,
+    #[serde(default)]
+    pub professions: Vec<String>,
+    #[serde(default)]
+    pub local_roles: Vec<String>,
+    #[serde(default)]
+    pub fallback: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct CircumstanceDefinition {
     pub id: String,
     pub statement: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct SiteDefinition {
     pub id: String,
     pub label: String,
@@ -139,12 +165,14 @@ pub struct SiteDefinition {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct DescriptionDefinition {
     pub id: String,
     pub text: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct TemplateDefinition {
     pub id: String,
     pub label: String,
@@ -157,6 +185,7 @@ pub struct TemplateDefinition {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ConsequenceDefinition {
     pub id: String,
     pub family: String,
@@ -171,12 +200,14 @@ pub struct ConsequenceDefinition {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct WeightedRelation {
     pub id: String,
     pub candidates: Vec<WeightedCandidate>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct WeightedCandidate {
     pub id: String,
     pub plausibility: u32,
@@ -188,10 +219,14 @@ pub struct WeightedCandidate {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct BridgeDefinition {
     pub id: String,
     pub explanation: String,
     pub lead_summary: String,
+    pub event_suffix: String,
+    pub evidence_id: String,
+    pub action_ids: BTreeMap<String, String>,
 }
 
 #[derive(Debug)]
@@ -259,6 +294,39 @@ impl Catalog {
                 {
                     return Err(format!(
                         "template {} has invalid cause/finale coverage",
+                        item.id
+                    ));
+                }
+                if item.incident_interval_minutes == 0 || item.maximum_incidents == 0 {
+                    return Err(format!(
+                        "template {} has invalid incident scheduling",
+                        item.id
+                    ));
+                }
+                let (supported_routes, supported_objectives): (&[&str], &[&str]) = match item
+                    .id
+                    .as_str()
+                {
+                    "recurring_depredation" => (
+                        &["physical_trail", "pattern_surveillance", "social_inquiry"],
+                        &["defeat", "drive_off"],
+                    ),
+                    "disappearance_or_loss" => (
+                        &["physical_trail", "social_inquiry"],
+                        &["rescue", "retrieve_return", "expose"],
+                    ),
+                    _ => return Err(format!("template {} has no typed graph assembler", item.id)),
+                };
+                if item.routes.iter().map(String::as_str).collect::<Vec<_>>() != supported_routes
+                    || item
+                        .objectives
+                        .iter()
+                        .map(String::as_str)
+                        .collect::<Vec<_>>()
+                        != supported_objectives
+                {
+                    return Err(format!(
+                        "template {} requests an unsupported typed route/objective graph",
                         item.id
                     ));
                 }
@@ -373,6 +441,41 @@ impl Catalog {
             .flat_map(|document| &document.circumstances)
             .find(|item| item.id == id)
     }
+    pub fn witness_demographic_for(
+        &self,
+        age_band: &str,
+        sex: &str,
+        profession: &str,
+        local_role: &str,
+    ) -> Option<&WitnessDemographicDefinition> {
+        self.documents
+            .iter()
+            .flat_map(|document| &document.witness_demographics)
+            .flat_map(|demographic| {
+                demographic
+                    .match_rules
+                    .iter()
+                    .map(move |rule| (demographic, rule))
+            })
+            .filter(|(_, rule)| {
+                rule.fallback
+                    || (rule.age_bands.is_empty()
+                        || rule.age_bands.iter().any(|value| value == age_band))
+                        && (rule.sexes.is_empty() || rule.sexes.iter().any(|value| value == sex))
+                        && (rule.professions.is_empty()
+                            || rule
+                                .professions
+                                .iter()
+                                .any(|value| profession.contains(value)))
+                        && (rule.local_roles.is_empty()
+                            || rule
+                                .local_roles
+                                .iter()
+                                .any(|value| local_role.contains(value)))
+            })
+            .max_by_key(|(_, rule)| rule.priority)
+            .map(|(demographic, _)| demographic)
+    }
     pub fn site(&self, id: &str) -> Option<&SiteDefinition> {
         self.sites.get(id)
     }
@@ -384,6 +487,12 @@ impl Catalog {
     }
     pub fn relation(&self, id: &str) -> Option<&WeightedRelation> {
         self.relations.get(id)
+    }
+    pub fn bridge(&self, id: &str) -> Option<&BridgeDefinition> {
+        self.documents
+            .iter()
+            .flat_map(|document| &document.bridges)
+            .find(|bridge| bridge.id == id)
     }
     pub fn consequence(&self, family: &str, cause: &str) -> Option<&ConsequenceDefinition> {
         self.documents
@@ -488,8 +597,19 @@ fn validate_evidence(evidence: &EvidenceDefinition) -> Result<(), String> {
 pub fn catalog() -> &'static Catalog {
     static CATALOG: OnceLock<Catalog> = OnceLock::new();
     CATALOG.get_or_init(|| {
-        let documents: Vec<CatalogDocument> =
+        let raw_documents: Vec<serde_json::Value> =
             serde_json::from_str(QUEST_CATALOG_JSON).expect("validated embedded quest catalog");
+        let sources = raw_documents
+            .iter()
+            .enumerate()
+            .map(|(index, _)| format!("embedded.catalog[{index}]"))
+            .collect::<Vec<_>>();
+        crate::quest_catalog_validation::validate_documents(&raw_documents, &sources)
+            .expect("build-validated embedded quest catalog");
+        let documents: Vec<CatalogDocument> = raw_documents
+            .into_iter()
+            .map(|value| serde_json::from_value(value).expect("strict validated catalog schema"))
+            .collect();
         Catalog::compile(documents).expect("validated quest catalog references")
     })
 }
@@ -517,5 +637,221 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn raw_catalog() -> (Vec<serde_json::Value>, Vec<String>) {
+        let documents: Vec<serde_json::Value> = serde_json::from_str(QUEST_CATALOG_JSON).unwrap();
+        let files = (0..documents.len())
+            .map(|index| format!("fixture[{index}]"))
+            .collect();
+        (documents, files)
+    }
+
+    #[test]
+    fn shared_validator_rejects_unknown_fields_oversized_ids_and_layering() {
+        let (documents, files) = raw_catalog();
+        let mut unknown = documents.clone();
+        unknown[0]["monsters"][0]["typo_field"] = serde_json::json!(true);
+        assert!(
+            crate::quest_catalog_validation::validate_documents(&unknown, &files)
+                .unwrap_err()
+                .contains("unknown field")
+        );
+        let mut oversized = documents.clone();
+        oversized[0]["monsters"][0]["id"] = serde_json::json!("x".repeat(64));
+        assert!(
+            crate::quest_catalog_validation::validate_documents(&oversized, &files)
+                .unwrap_err()
+                .contains("bounded catalog ID")
+        );
+        let mut layered = documents;
+        let monster = &mut layered[0]["monsters"][0];
+        monster["combat"]["protection"] = serde_json::json!("armored");
+        monster["combat"]["padding_joules"] = serde_json::json!(1);
+        assert!(
+            crate::quest_catalog_validation::validate_documents(&layered, &files)
+                .unwrap_err()
+                .contains("cannot compose")
+        );
+    }
+
+    #[test]
+    fn shared_validator_rejects_dangling_bridge_and_missing_demographic_fallback() {
+        let (documents, files) = raw_catalog();
+        let mut dangling = documents.clone();
+        let relation_document = dangling
+            .iter_mut()
+            .find(|document| document["relations"].is_array())
+            .unwrap();
+        relation_document["relations"][0]["candidates"][0]["required_bridge"] =
+            serde_json::json!("missing_bridge");
+        assert!(
+            crate::quest_catalog_validation::validate_documents(&dangling, &files)
+                .unwrap_err()
+                .contains("dangling bridge")
+        );
+        let mut no_fallback = documents;
+        let demographic_document = no_fallback
+            .iter_mut()
+            .find(|document| document["witness_demographics"].is_array())
+            .unwrap();
+        for demographic in demographic_document["witness_demographics"]
+            .as_array_mut()
+            .unwrap()
+        {
+            for rule in demographic["match_rules"].as_array_mut().unwrap() {
+                if rule["fallback"] == serde_json::json!(true) {
+                    rule["fallback"] = serde_json::json!(false);
+                    rule["age_bands"] = serde_json::json!(["adult"]);
+                }
+            }
+        }
+        assert!(
+            crate::quest_catalog_validation::validate_documents(&no_fallback, &files)
+                .unwrap_err()
+                .contains("exactly one fallback")
+        );
+    }
+
+    #[test]
+    fn shared_validator_rejects_bad_dcs_graphs_relations_and_demographic_ties() {
+        let (documents, files) = raw_catalog();
+        let mut bad_dc = documents.clone();
+        let investigation = bad_dc
+            .iter_mut()
+            .find(|document| document["evidence"].is_array())
+            .unwrap();
+        investigation["evidence"][0]["topics"][1]["check"]["difficulty_min_milli"] =
+            serde_json::json!(9000);
+        investigation["evidence"][0]["topics"][1]["check"]["difficulty_max_milli"] =
+            serde_json::json!(1000);
+        assert!(
+            crate::quest_catalog_validation::validate_documents(&bad_dc, &files)
+                .unwrap_err()
+                .contains("invalid DC range")
+        );
+
+        let mut bad_graph = documents.clone();
+        let generation = bad_graph
+            .iter_mut()
+            .find(|document| document["templates"].is_array())
+            .unwrap();
+        generation["templates"][0]["routes"] = serde_json::json!(["social_inquiry"]);
+        assert!(
+            crate::quest_catalog_validation::validate_documents(&bad_graph, &files)
+                .unwrap_err()
+                .contains("unsupported route/objective graph")
+        );
+
+        let mut dangling_candidate = documents.clone();
+        let generation = dangling_candidate
+            .iter_mut()
+            .find(|document| document["relations"].is_array())
+            .unwrap();
+        let description = generation["relations"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|relation| relation["id"] == "description.armed_people")
+            .unwrap();
+        description["candidates"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "id":"missing_monster","plausibility":10,"curation":10,
+                "hard_zero_reason":null,"required_bridge":null
+            }));
+        assert!(
+            crate::quest_catalog_validation::validate_documents(&dangling_candidate, &files)
+                .unwrap_err()
+                .contains("dangling candidate")
+        );
+
+        let mut tied_demographics = documents;
+        let investigation = tied_demographics
+            .iter_mut()
+            .find(|document| document["witness_demographics"].is_array())
+            .unwrap();
+        investigation["witness_demographics"][2]["match_rules"][0]["professions"] =
+            serde_json::json!(["cleric"]);
+        assert!(
+            crate::quest_catalog_validation::validate_documents(&tied_demographics, &files)
+                .unwrap_err()
+                .contains("equal-priority demographic rules")
+        );
+    }
+
+    #[test]
+    fn yaml_only_open_ids_validate_without_rust_identity_edits() {
+        let (mut documents, files) = raw_catalog();
+        let monster_document = documents
+            .iter_mut()
+            .find(|document| document["monsters"].is_array())
+            .unwrap();
+        let mut monster = monster_document["monsters"][0].clone();
+        monster["id"] = serde_json::json!("fixture_new_monster");
+        monster["name"] = serde_json::json!("Fixture monster");
+        monster["singular"] = serde_json::json!("Fixture monster");
+        monster["plural"] = serde_json::json!("Fixture monsters");
+        monster["investigation"]["mistaken_for"] = serde_json::json!(["bandit"]);
+        monster_document["monsters"]
+            .as_array_mut()
+            .unwrap()
+            .push(monster);
+        let investigation_document = documents
+            .iter_mut()
+            .find(|document| document["evidence"].is_array())
+            .unwrap();
+        let mut evidence = investigation_document["evidence"][0].clone();
+        evidence["id"] = serde_json::json!("fixture_new_evidence");
+        investigation_document["evidence"]
+            .as_array_mut()
+            .unwrap()
+            .push(evidence);
+        let mut bridge = investigation_document["bridges"][0].clone();
+        bridge["id"] = serde_json::json!("fixture_new_bridge");
+        investigation_document["bridges"]
+            .as_array_mut()
+            .unwrap()
+            .push(bridge);
+        let mut demographic = investigation_document["witness_demographics"][0].clone();
+        demographic["id"] = serde_json::json!("fixture_new_demographic");
+        demographic["match_rules"][0]["age_bands"] = serde_json::json!(["elder"]);
+        demographic["match_rules"][0]["priority"] = serde_json::json!(101);
+        investigation_document["witness_demographics"]
+            .as_array_mut()
+            .unwrap()
+            .push(demographic);
+        let relation_document = documents
+            .iter_mut()
+            .find(|document| document["relations"].is_array())
+            .unwrap();
+        let description_relation = relation_document["relations"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|relation| relation["id"] == "description.armed_people")
+            .unwrap();
+        description_relation["candidates"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "id":"fixture_new_monster","plausibility":60,"curation":100,
+                "hard_zero_reason":null,"required_bridge":"fixture_new_bridge"
+            }));
+        let evidence_relation = relation_document["relations"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|relation| relation["id"] == "evidence.baseline")
+            .unwrap();
+        evidence_relation["candidates"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "id":"fixture_new_evidence","plausibility":20,"curation":20,
+                "hard_zero_reason":null,"required_bridge":null
+            }));
+        crate::quest_catalog_validation::validate_documents(&documents, &files).unwrap();
     }
 }

@@ -9,7 +9,12 @@
     {"id":"ledger_entry","portrait_label":"Ledger","portrait_icon":"open-book","base_description":"A ledger lies open to a page of terse entries.","topics":[{"id":"totals","label":"column totals","inspection_description":"The sums are routine and mostly balanced.","check":null},{"id":"correction","label":"corrected entry","inspection_description":"One line has been scraped and rewritten.","check":{"stat":"intelligence","difficulty_min_milli":1200,"difficulty_max_milli":4000,"success_description":"You reconstruct an original entry that contradicts the public account.","reveals_clue":true}}]}
   ],
   "witness_demographics": [
-    {"id":"child","label":"child"},{"id":"laborer","label":"laborer"},{"id":"merchant","label":"merchant"},{"id":"cleric","label":"cleric"},{"id":"guard","label":"guard"},{"id":"noble","label":"noble"}
+    {"id":"child","label":"child","match_rules":[{"priority":100,"age_bands":["child","adolescent"],"sexes":[],"professions":[],"local_roles":[],"fallback":false}]},
+    {"id":"laborer","label":"laborer","match_rules":[{"priority":0,"age_bands":[],"sexes":[],"professions":[],"local_roles":[],"fallback":true}]},
+    {"id":"merchant","label":"merchant","match_rules":[{"priority":80,"age_bands":[],"sexes":[],"professions":["merchant","innkeeper"],"local_roles":[],"fallback":false}]},
+    {"id":"cleric","label":"cleric","match_rules":[{"priority":80,"age_bands":[],"sexes":[],"professions":["cleric"],"local_roles":[],"fallback":false}]},
+    {"id":"guard","label":"guard","match_rules":[{"priority":80,"age_bands":[],"sexes":[],"professions":["guard","soldier"],"local_roles":[],"fallback":false},{"priority":90,"age_bands":[],"sexes":[],"professions":[],"local_roles":["retainer"],"fallback":false}]},
+    {"id":"noble","label":"noble","match_rules":[{"priority":80,"age_bands":[],"sexes":[],"professions":["noble"],"local_roles":[],"fallback":false},{"priority":90,"age_bands":[],"sexes":[],"professions":[],"local_roles":["lord"],"fallback":false}]}
   ],
   "circumstances": [
     {"id":"night_window","statement":"looking from a window after dark"},{"id":"secret_riverside","statement":"at a secluded riverside meeting"},{"id":"adult_venue","statement":"near an adult venue"},{"id":"road","statement":"while traveling the road"},{"id":"grave_duty","statement":"while attending the graves"},{"id":"livestock_watch","statement":"while watching livestock"}
@@ -28,7 +33,7 @@
     {"id":"armed_people","text":"a group of armed figures"},{"id":"small_upright_figures","text":"several small figures moving upright"},{"id":"large_upright_beast","text":"a large shape that seemed to stand upright"},{"id":"gaunt_human","text":"a gaunt, human-shaped figure"},{"id":"walking_dead","text":"a person moving with a stiff, shambling gait"},{"id":"large_animal","text":"the silhouette of a large animal"},{"id":"doglike_beast","text":"a low, dog-shaped beast"},{"id":"unseen_night_visitor","text":"something hidden in the darkness"}
   ],
   "bridges": [
-    {"id":"skeletons_occupied_house","explanation":"A grave robber moved animated remains into a shuttered house.","lead_summary":"Grave clay and cart ruts connect the house to the crypt."},
-    {"id":"child_at_adult_venue","explanation":"The child was fetching an adult relative from outside the venue.","lead_summary":"An errand token corroborates why the child waited outside."}
+    {"id":"skeletons_occupied_house","explanation":"A grave robber moved animated remains into a shuttered house.","lead_summary":"Grave clay and cart ruts connect the house to the crypt.","event_suffix":"bridge:skeleton_house","evidence_id":"grave_clay","action_ids":{"recurring_depredation":"search","disappearance_or_loss":"inspect_last_known"}},
+    {"id":"child_at_adult_venue","explanation":"The child was fetching an adult relative from outside the venue.","lead_summary":"An errand token corroborates why the child waited outside.","event_suffix":"bridge:child_venue","evidence_id":"errand_token","action_ids":{"recurring_depredation":"watch","disappearance_or_loss":"locate_contact"}}
   ]
 }
