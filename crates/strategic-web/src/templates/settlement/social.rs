@@ -18,7 +18,14 @@ pub struct SocialPresentation {
     pub shared_concerns: Vec<adventuresim_core::social::SocialTopic>,
     pub addressed_source_ids: Vec<String>,
     pub automatic_chat_enabled: bool,
+    pub feedback: Option<SocialFeedback>,
     pub unavailable: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct SocialFeedback {
+    pub message: &'static str,
+    pub is_error: bool,
 }
 
 fn social_actions(
@@ -165,6 +172,12 @@ pub fn party_social_dialog(
                     a class="character-action-dialog-close" href=(&close_href) aria-label="Close social dialog" { "×" }
                 }
                 div class="social-rail" data-social-panel data-target-id=(selected.id) {
+            @if let Some(feedback) = &social.feedback {
+                p class=(if feedback.is_error { "social-feedback social-feedback-error" } else { "social-feedback social-feedback-result" })
+                    role=(if feedback.is_error { "alert" } else { "status" }) {
+                    (feedback.message)
+                }
+            }
             @if !is_self {
                 form class="automatic-social-chat" method="post" action=(&automatic_href) {
                     label {
@@ -231,7 +244,7 @@ pub fn party_social_dialog(
                                     p { "No specific personality trait is known to govern this concern." }
                                 }
                             }
-                            @if source.magnitude < 0.0 {
+                            @if source.magnitude < 0.0 && !addressed {
                                 @if let Some(topic) = topic {
                                   div class="social-actions" aria-label=(format!("Actions for {}", source.label)) {
                                     @let shares_concern = social.shared_concerns.contains(&topic);
@@ -517,6 +530,20 @@ mod tests {
         assert!(!markup.contains("Use low-risk listening"));
         assert!(markup.contains("social-source-addressed"));
         assert!(markup.contains("Addressed by you"));
+        assert!(!markup.contains("class=\"social-actions\""));
+
+        let feedback_social = SocialPresentation {
+            feedback: Some(SocialFeedback {
+                message: "That approach needs time before it can be tried again.",
+                is_error: true,
+            }),
+            ..social
+        };
+        let feedback_markup =
+            party_social_dialog(&location, &target, &actor, &[], &feedback_social).into_string();
+        assert!(feedback_markup.contains("class=\"social-feedback social-feedback-error\""));
+        assert!(feedback_markup.contains("role=\"alert\""));
+        assert!(feedback_markup.contains("That approach needs time"));
     }
 
     #[test]

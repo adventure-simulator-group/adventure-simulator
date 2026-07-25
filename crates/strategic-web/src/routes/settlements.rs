@@ -42,6 +42,7 @@ const BUILDINGS: &[&str] = &[
 struct BuildingQuery {
     building: Option<String>,
     cook: Option<bool>,
+    social_feedback: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -4246,6 +4247,7 @@ async fn party_social(
         shared_concerns,
         addressed_source_ids,
         automatic_chat_enabled,
+        feedback: social_feedback(building.social_feedback.as_deref()),
         unavailable: !beliefs_available || !affinity_available || !familiarity_available,
     };
     let dialog = party_social_dialog(&location, &selected, &active, &sources, &social);
@@ -4328,7 +4330,7 @@ async fn perform_social_action(
         return (StatusCode::UNAUTHORIZED, "Choose a character first").into_response();
     };
     // The actor is derived exclusively from the signed session, never form input.
-    if let Err(error) = state
+    let result = state
         .db
         .call(
             "perform_social_action",
@@ -4339,12 +4341,75 @@ async fn perform_social_action(
                 json!(form.action_kind),
             ],
         )
-        .await
+        .await;
+    let feedback = match result {
+        Ok(()) => {
+            let address_id = format!("{actor_id}:{target_id}:{}", form.source_id);
+            match state
+                .db
+                .query_one::<SocialAddress>(&format!(
+                    "SELECT * FROM backend_social_addresses WHERE id = {}",
+                    sql_string_literal(&address_id)
+                ))
+                .await
+            {
+                Ok(Some(_)) => "addressed",
+                Ok(None) => "not_addressed",
+                Err(error) => {
+                    tracing::warn!(%error, actor_id, target_id, "social action result unavailable");
+                    "unavailable"
+                }
+            }
+        }
+        Err(error) => {
+            tracing::warn!(%error, actor_id, target_id, "social action rejected");
+            social_action_error_feedback(&error.to_string())
+        }
+    };
+    Redirect::to(&building.append_to(format!(
+        "/locations/{kind}/{id}/party/{target_id}/social?social_feedback={feedback}"
+    )))
+    .into_response()
+}
+
+fn social_action_error_feedback(error: &str) -> &'static str {
+    if error.contains("needs time before it can be tried again") {
+        "cooldown"
+    } else if error.contains("Morale source is stale")
+        || error.contains("Only current, negative, recognized morale sources")
+        || error.contains("Morale source is not actionable")
     {
-        tracing::warn!(%error, actor_id, target_id, "social action rejected");
+        "stale"
+    } else {
+        "unavailable"
     }
-    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party/{target_id}/social")))
-        .into_response()
+}
+
+fn social_feedback(value: Option<&str>) -> Option<crate::templates::settlement::SocialFeedback> {
+    use crate::templates::settlement::SocialFeedback;
+    match value {
+        Some("addressed") => Some(SocialFeedback {
+            message: "This concern is addressed.",
+            is_error: false,
+        }),
+        Some("not_addressed") => Some(SocialFeedback {
+            message: "This concern remains unresolved.",
+            is_error: false,
+        }),
+        Some("cooldown") => Some(SocialFeedback {
+            message: "That approach needs time before it can be tried again.",
+            is_error: true,
+        }),
+        Some("stale") => Some(SocialFeedback {
+            message: "That morale concern has changed. Choose a current concern.",
+            is_error: true,
+        }),
+        Some("unavailable") => Some(SocialFeedback {
+            message: "The social action could not be completed right now.",
+            is_error: true,
+        }),
+        _ => None,
+    }
 }
 
 #[derive(Deserialize)]
@@ -6326,6 +6391,27 @@ pub(crate) async fn get_active_party_members(
 
 #[cfg(test)]
 mod social_notification_query_tests {
+    use super::{social_action_error_feedback, social_feedback};
+
+    #[test]
+    fn social_action_feedback_is_allowlisted_and_describes_cooldowns_and_results() {
+        assert_eq!(
+            social_action_error_feedback(
+                "SpacetimeDB error: That approach needs time before it can be tried again"
+            ),
+            "cooldown"
+        );
+        assert_eq!(
+            social_action_error_feedback("transport details that must not reach the browser"),
+            "unavailable"
+        );
+        assert_eq!(
+            social_feedback(Some("addressed")).unwrap().message,
+            "This concern is addressed."
+        );
+        assert!(social_feedback(Some("made-up")).is_none());
+    }
+
     #[test]
     fn party_rail_queries_current_party_sources_and_compact_addresses_only() {
         let source = include_str!("settlements.rs");

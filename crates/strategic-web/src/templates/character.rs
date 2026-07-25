@@ -146,6 +146,7 @@ pub fn character_candidates_page(
             href: format!("/characters/candidates?version={version}&seed={seed}&selected={slot}"),
             title: format!("Inspect {}", candidate.character.name),
             aria_label: format!("Inspect {}", candidate.character.name),
+            decoration: None,
             badge: None,
             actions: None,
         })
@@ -230,6 +231,8 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
             age_years: spec.age_years,
             alive: true,
             temporary: false,
+            social_notification_count: 0,
+            automatic_social_chat_enabled: false,
         };
         let attributes = CharacterAttributes {
             character_id: spec.id,

@@ -294,6 +294,7 @@ pub(crate) struct CharacterPortraitView<'a> {
     pub href: String,
     pub title: String,
     pub aria_label: String,
+    pub decoration: Option<Markup>,
     pub badge: Option<Markup>,
     pub actions: Option<Markup>,
 }
@@ -320,6 +321,9 @@ pub(crate) fn character_portrait_overlay(
                                 href=(&member.href)
                                 title=(&member.title)
                                 aria-label=(&member.aria_label) {
+                                @if let Some(decoration) = &member.decoration {
+                                    (decoration)
+                                }
                                 span class="party-portrait-initial" {
                                     span class="party-portrait-face" { (member.name.chars().next().unwrap_or('?')) }
                                     span class="party-portrait-name" { (member.name) @if !member.alive { " (dead)" } }
@@ -431,6 +435,13 @@ pub(crate) fn party_portrait_overlay(
                 href: inspection_href,
                 title: format!("Inspect {}", member.name),
                 aria_label: format!("Inspect {}", member.name),
+                decoration: Some(html! {
+                    span class="incapacitation-wheel"
+                        data-strategic-condition-wheel=(member.id)
+                        role="img"
+                        aria-label="Loading strategic condition"
+                        title="Loading strategic condition" {}
+                }),
                 badge: None,
                 actions,
             }
@@ -482,6 +493,8 @@ mod tests {
         assert!(markup.contains("class=\"party-social-notification\""));
         assert!(markup.contains("2 unaddressed morale concerns"));
         assert!(markup.contains("/static/icons/game/conversation.svg"));
+        assert!(markup.contains("class=\"incapacitation-wheel\""));
+        assert!(markup.contains("data-strategic-condition-wheel=\"12\""));
 
         let mut quiet = member;
         quiet.social_notification_count = 0;

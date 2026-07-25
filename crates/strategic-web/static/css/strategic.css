@@ -1701,6 +1701,17 @@ body.character-action-dialog-open { overflow: hidden; }
 }
 .automatic-social-chat label { display: flex; align-items: center; gap: 0.6rem; cursor: pointer; }
 .automatic-social-chat input { width: 1.15rem; height: 1.15rem; margin: 0; accent-color: var(--accent); }
+.social-feedback {
+  margin: 0 0 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--info) 12%, var(--panel-bg));
+}
+.social-feedback-error {
+  border-color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, var(--panel-bg));
+}
 .surgery-dialog { width: min(48rem, 100%); }
 
 .character-menu-button-form { display: inline; margin: 0; }
@@ -3823,6 +3834,7 @@ button.party-portrait-action {
   z-index: 1;
   inset: 0;
   border-radius: 50%;
+  pointer-events: none;
   background: transparent;
   -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 0.27rem), #000 calc(100% - 0.22rem));
   mask: radial-gradient(farthest-side, transparent calc(100% - 0.27rem), #000 calc(100% - 0.22rem));
