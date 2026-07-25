@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (1198)
+## Files (1207)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -147,6 +147,10 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/backend_npc_case_interventions_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_npc_intervention_candidate_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/backend_npc_intervention_candidates_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/backend_physical_evidence_inspection_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/backend_physical_evidence_inspections_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/backend_physical_evidence_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/backend_physical_evidence_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/backend_social_beliefs_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backfill_character_deaths_and_leadership_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/backfill_equipment_condition_and_smiths_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -363,6 +367,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/inferred_tree_species_profile_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/inland_water_access_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/inland_water_size_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/inspect_physical_evidence_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/inventory_item_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/inventory_item_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/inventory_quantity_target_table.rs` — Generated SpacetimeDB table interface.
@@ -498,6 +503,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/perform_immediate_activity_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/perform_investigation_action_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/perform_social_action_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/physical_evidence_inspection_attempt_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/potential_vegetation_class_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/potential_vegetation_posterior_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/potential_vegetation_type.rs` — Generated SpacetimeDB data type.
@@ -824,6 +830,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/src/routes/characters.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/data.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/dialogue.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/evidence.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/home.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/inventory_forms.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/investigation.rs` — Strategic web HTTP route handler.
@@ -1046,6 +1053,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/party-notifications.js` — Repository support file.
 - `crates/strategic-web/static/party-recruitment.js` — Repository support file.
 - `crates/strategic-web/static/party-trade.js` — Repository support file.
+- `crates/strategic-web/static/physical-evidence.js` — Repository support file.
 - `crates/strategic-web/static/rest-duration.js` — Repository support file.
 - `crates/strategic-web/static/service-quests.js` — Repository support file.
 - `crates/strategic-web/static/strategic-condition.js` — Repository support file.
@@ -1111,6 +1119,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/tests/local-chat.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/numeric-editor.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/party-action-contract.test.cjs` — Repository support file.
+- `crates/strategic-web/tests/physical-evidence.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/quest-web-eval.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/rest-duration.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/service-quests.test.cjs` — Repository support file.
