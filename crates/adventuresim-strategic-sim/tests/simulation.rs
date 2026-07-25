@@ -223,7 +223,7 @@ fn bounded_skill_state_remains_finite_for_maximum_duration() {
         command: MAX_INITIAL_SKILL_HOURS,
         deception: MAX_INITIAL_SKILL_HOURS,
         seduction: MAX_INITIAL_SKILL_HOURS,
-        medicine: MAX_INITIAL_SKILL_HOURS,
+        physiology: MAX_INITIAL_SKILL_HOURS,
         religion: adventuresim_world_schema::ReligionHours {
             roman_catholic: MAX_INITIAL_SKILL_HOURS,
             ..Default::default()

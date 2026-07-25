@@ -274,7 +274,7 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
         command: initial(&mut rng),
         deception: initial(&mut rng),
         seduction: initial(&mut rng),
-        medicine: initial(&mut rng),
+        physiology: initial(&mut rng),
         cooking: initial(&mut rng),
         religion: ReligionHours {
             roman_catholic: initial(&mut rng),
@@ -285,7 +285,7 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
             human: initial(&mut rng),
             ..Default::default()
         },
-        surgery: initial(&mut rng),
+        anatomy: initial(&mut rng),
         stealth: initial(&mut rng),
         balance: initial(&mut rng),
         tailoring: initial(&mut rng),
@@ -303,9 +303,10 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
             initial_skills.knife = specialty * 0.7;
         }
         BuildRole::Healer => {
-            initial_skills.medicine = specialty;
-            initial_skills.bestiary.human = specialty * 0.7;
-            initial_skills.surgery = specialty * 0.7;
+            initial_skills.physiology = specialty;
+            initial_skills.anatomy = specialty * 0.7;
+            initial_skills.knife = specialty * 0.7;
+            initial_skills.tailoring = specialty * 0.7;
         }
         BuildRole::Devout => initial_skills.religion.roman_catholic = specialty,
         BuildRole::Civilian => {}
@@ -489,7 +490,7 @@ pub fn derive_build(p: &Personality, a: &Attributes) -> AgentBuild {
     } else if p.conscience == Conscience::Compassionate && a.intelligence >= 2.5 {
         (
             BuildRole::Healer,
-            "compassion and intelligence support medicine",
+            "compassion and intelligence support physiology",
         )
     } else if p.conviction == Conviction::Zealous {
         (

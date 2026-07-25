@@ -12,6 +12,7 @@ pub mod local_chat;
 pub mod missions;
 pub mod parties;
 mod party_actions;
+pub mod physiology;
 pub mod quests;
 pub mod settlements;
 pub(crate) mod travel;
@@ -644,7 +645,7 @@ mod readiness_tests {
             camp_destination: None,
             camp_remaining_minutes: 0,
             pooled_water_ml: 0.0,
-            medicine_target: 0.0,
+            physiology_target: 0.0,
             command_target: 0.0,
             religion_target: 0.0,
         }
@@ -742,6 +743,7 @@ pub fn build_router(state: AppState) -> Router {
                 .merge(local_chat::routes())
                 .merge(settlements::routes())
                 .merge(parties::routes())
+                .merge(physiology::routes())
                 .merge(quests::routes())
                 .merge(missions::routes())
                 .merge(crate::live::routes())

@@ -22,6 +22,14 @@
           { "id": "weaponsmith-profession", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "service", "role": "professional" }, "equals": "weapons" }, "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Welcome! A weaponsmith learns to forge, fit, and maintain the tools a fighting company depends upon. Ask if you wish to become an " }, { "kind": "topic", "topic": "apprenticeship", "label": "apprentice" }] }], "effects": [{ "kind": "learn_topic", "topic": "apprenticeship" }], "prompt": null },
           { "id": "armourer-profession", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "service", "role": "professional" }, "equals": "armor" }, "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Welcome! An armourer shapes and repairs protection that must move with its wearer and endure hard blows. Ask if you wish to become an " }, { "kind": "topic", "topic": "apprenticeship", "label": "apprentice" }] }], "effects": [{ "kind": "learn_topic", "topic": "apprenticeship" }], "prompt": null },
           { "id": "tailor-profession", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "service", "role": "professional" }, "equals": "clothing" }, "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Welcome! A tailor turns cloth into durable, well-fitted garments and learns the trade of the needle. Ask if you wish to become an " }, { "kind": "topic", "topic": "apprenticeship", "label": "apprentice" }] }], "effects": [{ "kind": "learn_topic", "topic": "apprenticeship" }], "prompt": null },
+          { "id": "physician-profession", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "service", "role": "professional" }, "equals": "herbalist" }, "turns": [
+            { "speaker": "player", "fragments": [{ "kind": "period_claim", "value": "An excess of one humour must reveal which illness afflicts the patient." }] },
+            { "speaker": "professional", "fragments": [
+              { "kind": "authoritative_explanation", "reference": "physiology/humours", "value": "No. Humours are lossy regional sums: several hidden functional losses can make the same reading. A physician records repeated readings, symptoms, known interventions, and gaps without inventing a diagnosis." },
+              { "kind": "text", "value": " Ask if you wish to become an " },
+              { "kind": "topic", "topic": "apprenticeship", "label": "apprentice" }
+            ] }
+          ], "effects": [{ "kind": "learn_topic", "topic": "apprenticeship" }], "prompt": null },
           { "id": "innkeeper-profession", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "service", "role": "professional" }, "equals": "inn" }, "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "Welcome! An innkeeper makes a living through hospitality, good judgment, and knowing how to speak with every sort of traveler. Ask if you wish to become an " }, { "kind": "topic", "topic": "apprenticeship", "label": "apprentice" }] }], "effects": [{ "kind": "learn_topic", "topic": "apprenticeship" }], "prompt": null },
           { "id": "explain-profession", "priority": 0,
             "turns": [
@@ -85,16 +93,14 @@
       ]
     },
     { "id": "herbalist-examination", "roles": { "patient": { "kind": "player" }, "herbalist": { "kind": "npc" } },
-      "on_start": [{ "id": "herbalist-greeting", "priority": 0, "turns": [{ "speaker": "herbalist", "fragments": [{ "kind": "text", "value": "Welcome. If you are unwell, I can offer an " }, { "kind": "topic", "topic": "examination", "label": "examination" }, { "kind": "text", "value": "." }] }], "effects": [], "prompt": null }],
-      "topics": [{ "id": "examination", "label": "Examination", "initially_known": true,
-        "responses": [{ "id": "examine", "priority": 0,
-          "turns": [{ "speaker": "herbalist", "fragments": [{ "kind": "text", "value": "Let me examine you and see what treatment is needed." }] }],
-          "effects": [],
-          "prompt": { "id": "request-examination", "respondent": "patient", "mode": "yes_no",
-            "choices": [
-              { "id": "yes", "label": "Please examine me.", "effects": [{ "kind": "examine_disease" }], "result_turns": [{ "speaker": "herbalist", "fragments": [{ "kind": "text", "value": "The examination is complete. I have recorded what I found; the treatments I can prepare are available here." }] }] },
-              { "id": "no", "label": "Not now.", "result_turns": [{ "speaker": "herbalist", "fragments": [{ "kind": "text", "value": "As you wish. Come back if your condition worsens." }] }] }
-            ] }
+      "on_start": [{ "id": "physician-greeting", "priority": 0, "turns": [{ "speaker": "herbalist", "fragments": [{ "kind": "text", "value": "Welcome. I can explain how a physician keeps a " }, { "kind": "topic", "topic": "notebook", "label": "notebook" }, { "kind": "text", "value": "." }] }], "effects": [], "prompt": null }],
+      "topics": [{ "id": "notebook", "label": "Physician notebook", "initially_known": true,
+        "responses": [{ "id": "explain-notebook", "priority": 0,
+          "turns": [
+            { "speaker": "patient", "fragments": [{ "kind": "period_claim", "value": "Surely one careful examination tells you the disease and its remedy." }] },
+            { "speaker": "herbalist", "fragments": [{ "kind": "authoritative_explanation", "reference": "physiology/observation", "value": "A careful notebook records only what shared time permits: quantized humour readings, symptoms, known interventions, and explicit gaps. It neither diagnoses nor recommends treatment." }] }
+          ],
+          "effects": [], "prompt": null
         }] },
         { "id": "referred-testimony", "label": "What I saw", "initially_known": true,
           "conditions": { "op": "fact", "key": { "kind": "participant_referral_contact", "role": "herbalist" }, "equals": true },

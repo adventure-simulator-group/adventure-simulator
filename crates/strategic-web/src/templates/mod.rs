@@ -7,6 +7,7 @@ mod layout;
 pub mod character;
 pub mod investigation;
 pub mod mission;
+pub mod physiology;
 pub mod quest;
 pub mod recruitment;
 pub mod settlement;

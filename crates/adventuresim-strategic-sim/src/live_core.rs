@@ -28,12 +28,12 @@ use url::Url;
 use adventuresim_stdb_client::{
     abandon_contract_reducer::abandon_contract, accept_contract_reducer::accept_contract,
     accept_party_join_request_reducer::accept_party_join_request,
+    administer_preparation_reducer::administer_preparation,
     advance_simulation_world_time_reducer::advance_simulation_world_time,
     autoresolve_mission_reducer::autoresolve_mission,
     autoresolve_report_table::AutoresolveReportTableAccess,
     backend_case_site_pins_table::BackendCaseSitePinsTableAccess,
     backend_contract_type::BackendContract, backend_contracts_table::BackendContractsTableAccess,
-    backend_herbalist_examinations_table::BackendHerbalistExaminationsTableAccess,
     backend_npc_case_intervention_type::BackendNpcCaseIntervention,
     backend_npc_case_interventions_table::BackendNpcCaseInterventionsTableAccess,
     battle_loot_item_table::BattleLootItemTableAccess,
@@ -49,13 +49,9 @@ use adventuresim_stdb_client::{
     configure_simulation_character_reducer::configure_simulation_character,
     continue_camp_travel_reducer::continue_camp_travel,
     contract_interaction_stage_type::ContractInteractionStage,
-    contract_status_type::ContractStatus, craft_medication_reducer::craft_medication,
+    contract_status_type::ContractStatus,
     create_named_character_with_id_reducer::create_named_character_with_id,
-    dismiss_herbalist_examination_reducer::dismiss_herbalist_examination,
     ensure_settlement_activity_reducer::ensure_settlement_activity, equip_item_reducer::equip_item,
-    equip_medication_reducer::equip_medication,
-    equipped_medication_table::EquippedMedicationTableAccess,
-    examine_by_herbalist_reducer::examine_by_herbalist,
     finalize_merchant_trade_reducer::finalize_merchant_trade,
     inventory_item_table::InventoryItemTableAccess, item_condition_table::ItemConditionTableAccess,
     item_table::ItemTableAccess, liquidate_party_inventory_reducer::liquidate_party_inventory,
@@ -90,7 +86,7 @@ const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
 /// a long quest leg to require many daily camps.
 const MAX_CAMPS_PER_LEG: u32 = 512;
 const MAX_DEFEAT_RETRIES: u32 = 2;
-/// Natural recovery is one percent per day without medicine, so a character
+/// Natural recovery is one percent per day without physiology, so a character
 /// reduced to zero may legitimately need roughly one hundred days.
 const MAX_RECOVERY_ACTIONS: u32 = 128;
 const MAX_CORE_LOOP_WORK: u64 = 100_000;
@@ -198,11 +194,8 @@ pub struct CoreLoopMetrics {
     pub repair_submissions: u32,
     pub repair_retrievals: u32,
     pub repair_wait_minutes: u64,
-    pub diagnoses_attempted: u32,
-    pub diagnoses_confirmed: u32,
-    pub medications_crafted: u32,
-    pub medications_purchased: u32,
-    pub medications_equipped: u32,
+    pub preparations_purchased: u32,
+    pub interventions_administered: u32,
     pub treatment_gold_spent: u64,
     pub treatment_rest_minutes: u64,
     pub illness_recoveries: u32,
@@ -249,10 +242,8 @@ pub enum CoreLoopEventKind {
     SubmitRepair,
     RetrieveRepair,
     WaitForRepair,
-    Diagnose,
-    CraftMedication,
     BuyMedication,
-    EquipMedication,
+    AdministerPreparation,
     IllnessRecovered,
     QuestSuppressed,
     Death,
@@ -281,7 +272,6 @@ pub struct FinalAgentState {
     pub worst_equipment_condition: f32,
     pub outstanding_repair_orders: u32,
     pub alive: bool,
-    pub equipped_medication_courses: u32,
     pub elapsed_minutes: u64,
     pub personal_gold_coin: u64,
     pub party_treasury: u64,
@@ -399,7 +389,7 @@ fn live_skills(character_id: u64, profile: &AgentProfile) -> CharacterSkills {
         command_hours: s.command,
         deception_hours: s.deception,
         seduction_hours: s.seduction,
-        medicine_hours: s.medicine,
+        physiology_hours: s.physiology,
         cooking_hours: s.cooking,
         religion_hours: adventuresim_stdb_client::ReligionHours {
             roman_catholic: s.religion.roman_catholic,
@@ -425,7 +415,7 @@ fn live_skills(character_id: u64, profile: &AgentProfile) -> CharacterSkills {
             construct: s.bestiary.construct,
             wildmen: s.bestiary.wildmen,
         },
-        surgery_hours: s.surgery,
+        anatomy_hours: s.anatomy,
         oral_languages: adventuresim_stdb_client::OralLanguageHours {
             east_central: 5_000.0,
             west_central: 0.0,
@@ -1039,12 +1029,6 @@ impl LiveRunner {
                 .iter()
                 .find(|row| row.character_id == character_id)
                 .ok_or("missing medical condition")?;
-            let treatment_active = self
-                .connection
-                .db
-                .equipped_medication()
-                .iter()
-                .any(|row| row.character_id == character_id);
             let symptomatic = self
                 .connection
                 .db
@@ -1052,7 +1036,7 @@ impl LiveRunner {
                 .iter()
                 .find(|row| row.character_id == character_id)
                 .is_some_and(|row| row.symptomatic);
-            if condition.status == "ready" && !treatment_active && !symptomatic {
+            if condition.status == "ready" && !symptomatic {
                 self.restore_profile_schedule(agent)?;
                 return Ok(true);
             }
@@ -1065,64 +1049,6 @@ impl LiveRunner {
                 );
                 return Ok(false);
             };
-
-            if treatment_active {
-                self.set_medical_rest_schedule(agent)?;
-                let at_inn = self.settlement_rest_at_inn(character_id)?;
-                let result = reducer_call!(self, "ongoing_treatment_rest", |cb| self
-                    .connection
-                    .reducers
-                    .rest_at_settlement_hours_then(character_id, 1_440, at_inn, cb));
-                self.call(result)?;
-                self.metrics.treatment_rest_minutes += 1_440;
-                self.metrics.recovery_rests += 1;
-                self.event(
-                    agent,
-                    CoreLoopEventKind::Recover,
-                    "ongoing_treatment_minutes=1440",
-                );
-                let alive = self
-                    .connection
-                    .db
-                    .character()
-                    .iter()
-                    .find(|row| row.id == character_id)
-                    .is_some_and(|row| row.alive);
-                if !alive {
-                    continue;
-                }
-                let ready = self
-                    .connection
-                    .db
-                    .character_strategic_condition()
-                    .iter()
-                    .find(|row| row.character_id == character_id)
-                    .is_some_and(|row| row.status == "ready");
-                let still_treated = self
-                    .connection
-                    .db
-                    .equipped_medication()
-                    .iter()
-                    .any(|row| row.character_id == character_id);
-                let still_symptomatic = self
-                    .connection
-                    .db
-                    .character_illness_status()
-                    .iter()
-                    .find(|row| row.character_id == character_id)
-                    .is_some_and(|row| row.symptomatic);
-                if ready && !still_treated && !still_symptomatic {
-                    self.restore_profile_schedule(agent)?;
-                    self.metrics.illness_recoveries += 1;
-                    self.event(
-                        agent,
-                        CoreLoopEventKind::IllnessRecovered,
-                        "status=ready;treatment=complete",
-                    );
-                    return Ok(true);
-                }
-                continue;
-            }
 
             let herbalist_available = self
                 .connection
@@ -1149,126 +1075,50 @@ impl LiveRunner {
                 continue;
             }
 
+            // NPCs react only to the public illness status. They may purchase a
+            // pre-existing preparation and administer its versioned profile;
+            // Physiology never diagnoses or crafts it.
             let gold_before = self.personal_gold(character_id);
-            let result = reducer_call!(self, "examine_by_herbalist", |cb| self
+            let preparation_id = "oral_rehydration_draught";
+            let result = reducer_call!(self, "purchase_from_herbalist", |cb| self
                 .connection
                 .reducers
-                .examine_by_herbalist_then(character_id, settlement.clone(), cb));
+                .purchase_from_herbalist_then(
+                    character_id,
+                    settlement.clone(),
+                    vec![preparation_id.into()],
+                    vec![1],
+                    cb
+                ));
             self.call(result)?;
-            self.metrics.diagnoses_attempted += 1;
-            let examination = self
+            self.metrics.preparations_purchased += 1;
+            let preparation = self
                 .connection
                 .db
-                .backend_herbalist_examinations()
+                .inventory_item()
                 .iter()
-                .find(|row| row.patient_id == character_id)
-                .ok_or("herbalist examination reducer returned no patient-filtered result")?;
-            self.event(
-                agent,
-                CoreLoopEventKind::Diagnose,
-                format!(
-                    "possibilities={};confirmed={}",
-                    examination.disease_names.len(),
-                    examination.medication_names.len()
-                ),
-            );
-            if !examination.medication_names.is_empty() {
-                self.metrics.diagnoses_confirmed += 1;
-            }
-            for medication_name in examination.medication_names.clone() {
-                let recipe = adventuresim_core::disease::MEDICATION_RECIPES
-                    .iter()
-                    .find(|recipe| recipe.name == medication_name)
-                    .ok_or_else(|| {
-                        format!("herbalist returned unknown medication {medication_name}")
-                    })?;
-                let capability = self
-                    .connection
-                    .db
-                    .character_capability()
-                    .iter()
-                    .find(|row| row.character_id == character_id)
-                    .ok_or("missing medicine capability")?;
-                let has_ingredients = recipe.ingredients.iter().all(|ingredient| {
-                    self.connection
-                        .db
-                        .inventory_item()
-                        .iter()
-                        .filter(|row| {
-                            row.character_id == character_id && row.item_id == ingredient.item_id
-                        })
-                        .map(|row| row.quantity)
-                        .sum::<u32>()
-                        >= ingredient.quantity
-                });
-                if adventuresim_core::disease::can_prepare_medication(capability.medicine, recipe)
-                    && has_ingredients
-                {
-                    let disease_id = format!("{:?}", recipe.disease_id).to_ascii_lowercase();
-                    let result = reducer_call!(self, "craft_medication", |cb| self
-                        .connection
-                        .reducers
-                        .craft_medication_then(character_id, disease_id.clone(), false, cb));
-                    self.call(result)?;
-                    self.metrics.medications_crafted += 1;
-                    self.event(
-                        agent,
-                        CoreLoopEventKind::CraftMedication,
-                        format!("item={}", recipe.item_id),
-                    );
-                } else {
-                    let result = reducer_call!(self, "purchase_from_herbalist", |cb| self
-                        .connection
-                        .reducers
-                        .purchase_from_herbalist_then(
-                            character_id,
-                            settlement.clone(),
-                            vec![recipe.item_id.into()],
-                            vec![1],
-                            cb
-                        ));
-                    self.call(result)?;
-                    self.metrics.medications_purchased += 1;
-                    self.event(
-                        agent,
-                        CoreLoopEventKind::BuyMedication,
-                        format!("item={}", recipe.item_id),
-                    );
-                }
-                let course = self
-                    .connection
-                    .db
-                    .inventory_item()
-                    .iter()
-                    .find(|row| row.character_id == character_id && row.item_id == recipe.item_id)
-                    .ok_or("medication acquisition produced no course")?;
-                let course_id = course.id;
-                let result = reducer_call!(self, "equip_medication", |cb| self
-                    .connection
-                    .reducers
-                    .equip_medication_then(character_id, course_id, cb));
-                self.call(result)?;
-                if !self.connection.db.equipped_medication().iter().any(|row| {
-                    row.character_id == character_id && row.inventory_item_id == course_id
-                }) {
-                    return Err(
-                        "medication equip completed without authoritative equipped row".into(),
-                    );
-                }
-                self.metrics.medications_equipped += 1;
-                self.event(
-                    agent,
-                    CoreLoopEventKind::EquipMedication,
-                    format!("item={}", recipe.item_id),
-                );
-            }
-            self.set_medical_rest_schedule(agent)?;
-            let examination_id = examination.id;
-            let result = reducer_call!(self, "dismiss_herbalist_examination", |cb| self
+                .find(|row| row.character_id == character_id && row.item_id == preparation_id)
+                .ok_or("preparation purchase produced no concrete item")?;
+            let result = reducer_call!(self, "administer_preparation", |cb| self
                 .connection
                 .reducers
-                .dismiss_herbalist_examination_then(character_id, examination_id, cb));
+                .administer_preparation_then(
+                    character_id,
+                    character_id,
+                    preparation.id,
+                    1,
+                    "oral".into(),
+                    1_000,
+                    None,
+                    cb
+                ));
             self.call(result)?;
+            self.metrics.interventions_administered += 1;
+            self.event(
+                agent,
+                CoreLoopEventKind::AdministerPreparation,
+                format!("administered={preparation_id};profile=1;route=oral"),
+            );
             self.metrics.treatment_gold_spent +=
                 gold_before.saturating_sub(self.personal_gold(character_id));
 
@@ -1303,13 +1153,7 @@ impl LiveRunner {
                 .find(|row| row.character_id == character_id)
                 .ok_or("missing condition after medical rest")?
                 .status;
-            let treatment_active = self
-                .connection
-                .db
-                .equipped_medication()
-                .iter()
-                .any(|row| row.character_id == character_id);
-            if status == "ready" && !treatment_active {
+            if status == "ready" {
                 let symptomatic = self
                     .connection
                     .db
@@ -2401,7 +2245,6 @@ pub fn run_core_loop_with_npc_policy(
         // cuts, or full medical examinations into the simulator process.
         .add_query(|query| query.from.autoresolve_report())
         .add_query(|query| query.from.backend_case_site_pins())
-        .add_query(|query| query.from.backend_herbalist_examinations())
         .add_query(|query| query.from.backend_npc_case_interventions())
         .add_query(|query| query.from.backend_npc_intervention_candidates())
         .add_query(|query| query.from.battle_loot_item())
@@ -2414,7 +2257,6 @@ pub fn run_core_loop_with_npc_policy(
         .add_query(|query| query.from.character_strategic_condition())
         .add_query(|query| query.from.character_time())
         .add_query(|query| query.from.character_training_schedule())
-        .add_query(|query| query.from.equipped_medication())
         .add_query(|query| query.from.inventory_item())
         .add_query(|query| query.from.item())
         .add_query(|query| query.from.item_condition())
@@ -2502,7 +2344,6 @@ pub fn run_core_loop_with_npc_policy(
             let _ = gateway_subscription_error_tx.send(Err(error.to_string()));
         })
         .add_query(|query| query.from.backend_case_site_pins())
-        .add_query(|query| query.from.backend_herbalist_examinations())
         .add_query(|query| query.from.backend_npc_case_interventions())
         .add_query(|query| query.from.backend_npc_intervention_candidates())
         .add_query(|query| query.from.party())
@@ -2823,13 +2664,6 @@ pub fn run_core_loop_with_npc_policy(
                 .iter()
                 .filter(|row| row.owner_character_id == *character_id)
                 .count() as u32;
-            let equipped_medication_courses = runner
-                .connection
-                .db
-                .equipped_medication()
-                .iter()
-                .filter(|row| row.character_id == *character_id)
-                .count() as u32;
             let party_id = character.party_id.clone().ok_or("missing final party")?;
             let party_treasury = runner
                 .connection
@@ -2863,7 +2697,6 @@ pub fn run_core_loop_with_npc_policy(
                 worst_equipment_condition,
                 outstanding_repair_orders,
                 alive: character.alive,
-                equipped_medication_courses,
                 elapsed_minutes,
                 personal_gold_coin,
                 party_treasury,
@@ -3022,23 +2855,6 @@ mod tests {
         assert!(!leader_is_actionable("party", 7, 7, false, Some("party")));
         assert!(!leader_is_actionable("party", 8, 7, true, Some("party")));
         assert!(!leader_is_actionable("party", 7, 7, true, Some("other")));
-    }
-
-    #[test]
-    fn crafting_uses_authoritative_medicine_boundary() {
-        let recipe = &adventuresim_core::disease::MEDICATION_RECIPES[0];
-        let dc = f32::from(recipe.medicine_dc);
-        assert!(!adventuresim_core::disease::can_prepare_medication(
-            dc - 0.51,
-            recipe
-        ));
-        assert!(adventuresim_core::disease::can_prepare_medication(
-            dc - 0.49,
-            recipe
-        ));
-        assert!(adventuresim_core::disease::can_prepare_medication(
-            dc, recipe
-        ));
     }
 
     #[test]

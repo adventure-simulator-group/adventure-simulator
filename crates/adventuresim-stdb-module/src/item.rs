@@ -912,6 +912,7 @@ fn equipment_quality(item_id: &str) -> u8 {
 #[reducer(init)]
 fn init_items(ctx: &ReducerContext) -> Result<(), String> {
     crate::time::initialize_time(ctx);
+    crate::disease::initialize_physiology_key(ctx);
     log::info!("Populating items...");
 
     define_item(ctx, "torch", 0.5);
@@ -948,11 +949,11 @@ fn init_items(ctx: &ReducerContext) -> Result<(), String> {
             ..Item::default()
         });
     }
-    for recipe in adventuresim_core::disease::MEDICATION_RECIPES {
+    for profile in adventuresim_core::physiology::INTERVENTION_PROFILES {
         ctx.db.item().insert(Item {
-            id: recipe.item_id.into(),
+            id: profile.preparation_id.into(),
             weight: 0.25,
-            base_value: Some(1),
+            base_value: Some(6),
             kind: ItemKind::Medication,
             ..Item::default()
         });

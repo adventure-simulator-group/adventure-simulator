@@ -112,17 +112,15 @@ fn authoritative_core_loop_is_isolated_and_branch_tolerant() {
             .all(|agent| !agent.equipment_item_ids.is_empty()),
         "living NPCs must retain equipped items after smith retrieval"
     );
-    assert!(report.metrics.diagnoses_attempted > 0);
-    assert!(report.metrics.diagnoses_confirmed > 0);
-    assert!(report.metrics.medications_crafted + report.metrics.medications_purchased > 0);
-    assert!(report.metrics.medications_equipped > 0);
+    assert!(report.metrics.preparations_purchased > 0);
+    assert!(report.metrics.interventions_administered > 0);
     assert!(report.metrics.treatment_rest_minutes > 0);
     assert_ordered_subsequence(
         &report,
         &[
-            CoreLoopEventKind::Diagnose,
+            CoreLoopEventKind::AdministerPreparation,
             CoreLoopEventKind::BuyMedication,
-            CoreLoopEventKind::EquipMedication,
+            CoreLoopEventKind::AdministerPreparation,
             CoreLoopEventKind::Recover,
             CoreLoopEventKind::IllnessRecovered,
         ],

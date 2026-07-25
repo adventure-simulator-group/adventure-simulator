@@ -81,6 +81,18 @@ pub enum Fragment {
         topic: String,
         label: String,
     },
+    /// A character's period-facing account. This is explicitly distinct from
+    /// authoritative rules text and may be incomplete or culturally framed.
+    PeriodClaim {
+        value: String,
+    },
+    /// Canonical educational text, keyed to a reusable public reference
+    /// section. Herbalism and Alchemy can reuse this convention without
+    /// presenting authored claims as simulation truth.
+    AuthoritativeExplanation {
+        reference: String,
+        value: String,
+    },
     /// A typed placeholder authored in the catalog and resolved by the
     /// strategic server. Runtime data is never interpreted as dialogue code.
     Runtime {
@@ -200,7 +212,6 @@ pub enum Effect {
     AcceptContract { contract: String },
     ReportContract { contract: String },
     BeginApprenticeship { profession: String },
-    ExamineDisease,
     SetFlag { flag: String, value: bool },
     ReceiveReferredTestimony,
     InvestigationAction { action: InvestigationAction },

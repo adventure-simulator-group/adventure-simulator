@@ -6,49 +6,49 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct ExaminePatientArgs {
-    pub doctor_id: u64,
-    pub target_id: u64,
+pub(super) struct StopPreparationArgs {
+    pub actor_id: u64,
+    pub administration_id: u64,
 }
 
-impl From<ExaminePatientArgs> for super::Reducer {
-    fn from(args: ExaminePatientArgs) -> Self {
-        Self::ExaminePatient {
-            doctor_id: args.doctor_id,
-            target_id: args.target_id,
+impl From<StopPreparationArgs> for super::Reducer {
+    fn from(args: StopPreparationArgs) -> Self {
+        Self::StopPreparation {
+            actor_id: args.actor_id,
+            administration_id: args.administration_id,
         }
     }
 }
 
-impl __sdk::InModule for ExaminePatientArgs {
+impl __sdk::InModule for StopPreparationArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `examine_patient`.
+/// Extension trait for access to the reducer `stop_preparation`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait examine_patient {
-    /// Request that the remote module invoke the reducer `examine_patient` to run as soon as possible.
+pub trait stop_preparation {
+    /// Request that the remote module invoke the reducer `stop_preparation` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`examine_patient:examine_patient_then`] to run a callback after the reducer completes.
-    fn examine_patient(&self, doctor_id: u64, target_id: u64) -> __sdk::Result<()> {
-        self.examine_patient_then(doctor_id, target_id, |_, _| {})
+    /// /// Use [`stop_preparation:stop_preparation_then`] to run a callback after the reducer completes.
+    fn stop_preparation(&self, actor_id: u64, administration_id: u64) -> __sdk::Result<()> {
+        self.stop_preparation_then(actor_id, administration_id, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `examine_patient` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `stop_preparation` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn examine_patient_then(
+    fn stop_preparation_then(
         &self,
-        doctor_id: u64,
-        target_id: u64,
+        actor_id: u64,
+        administration_id: u64,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -58,11 +58,11 @@ pub trait examine_patient {
     ) -> __sdk::Result<()>;
 }
 
-impl examine_patient for super::RemoteReducers {
-    fn examine_patient_then(
+impl stop_preparation for super::RemoteReducers {
+    fn stop_preparation_then(
         &self,
-        doctor_id: u64,
-        target_id: u64,
+        actor_id: u64,
+        administration_id: u64,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -71,9 +71,9 @@ impl examine_patient for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
-            ExaminePatientArgs {
-                doctor_id,
-                target_id,
+            StopPreparationArgs {
+                actor_id,
+                administration_id,
             },
             callback,
         )

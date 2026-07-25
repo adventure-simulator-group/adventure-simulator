@@ -1,5 +1,5 @@
 use super::AppState;
-use crate::spacetimedb::{HerbalistExaminationRow, Settlement, SettlementCategory};
+use crate::spacetimedb::{Settlement, SettlementCategory};
 use crate::{session::Session, spacetimedb::sql_string_literal};
 use axum::{
     Json, Router,
@@ -130,7 +130,6 @@ struct ConversationView {
     events: Vec<EventView>,
     topics: Vec<TopicView>,
     open_prompt: Option<PromptView>,
-    examination: Option<ExaminationView>,
 }
 #[derive(Serialize)]
 struct EventView {
@@ -164,16 +163,6 @@ struct ChoiceView {
     id: String,
     label: String,
     source: Option<EditSource>,
-}
-#[derive(Serialize)]
-struct ExaminationView {
-    diagnoses: Vec<DiagnosisView>,
-    message: String,
-}
-#[derive(Serialize)]
-struct DiagnosisView {
-    disease_name: String,
-    medication_name: String,
 }
 #[derive(Serialize)]
 struct EditSource {
@@ -523,65 +512,6 @@ async fn build_view(
         events,
         topics,
         open_prompt,
-        examination: None,
-    })
-}
-
-async fn consume_herbalist_examination(
-    state: &AppState,
-    character_id: u64,
-    view: &ConversationView,
-) -> Option<ExaminationView> {
-    let actor = view
-        .participants
-        .iter()
-        .find(|participant| participant.actor_id.contains(":herbalist:"))?;
-    let npc = state
-        .db
-        .query_one::<SettlementNpcRow>(&format!(
-            "SELECT * FROM settlement_npc WHERE id = {}",
-            sql_string_literal(&actor.actor_id)
-        ))
-        .await
-        .ok()
-        .flatten()?;
-    let settlement_id = npc.home_settlement_id;
-    let result = state
-        .db
-        .query::<HerbalistExaminationRow>(&format!(
-            "SELECT * FROM backend_herbalist_examinations WHERE patient_id = {character_id}"
-        ))
-        .await
-        .ok()?
-        .into_iter()
-        .filter(|row| row.settlement_id == settlement_id)
-        .max_by_key(|row| row.id)?;
-    let diagnoses = result
-        .disease_names
-        .iter()
-        .zip(&result.medication_names)
-        .map(|(disease_name, medication_name)| DiagnosisView {
-            disease_name: disease_name.clone(),
-            medication_name: medication_name.clone(),
-        })
-        .collect::<Vec<_>>();
-    if let Err(error) = state
-        .db
-        .call(
-            "dismiss_herbalist_examination",
-            &[json!(character_id), json!(result.id)],
-        )
-        .await
-    {
-        tracing::warn!(%error, character_id, "dialogue herbalist result was not dismissed");
-    }
-    Some(ExaminationView {
-        message: if diagnoses.is_empty() {
-            "I am sorry, but I cannot name your illness with confidence. Seek a more skilled physician.".into()
-        } else {
-            String::new()
-        },
-        diagnoses,
     })
 }
 
@@ -730,15 +660,9 @@ async fn answer(
         )
         .await
         .map_err(|_| StatusCode::CONFLICT)?;
-    let mut view = build_view(&state, character_id, &request.session_id).await?;
-    if request
-        .prompt_row_id
-        .contains(":prompt:request-examination:")
-        && request.choice_ids == ["yes"]
-    {
-        view.examination = consume_herbalist_examination(&state, character_id, &view).await;
-    }
-    Ok(Json(view))
+    Ok(Json(
+        build_view(&state, character_id, &request.session_id).await?,
+    ))
 }
 #[derive(Deserialize)]
 struct JoinRequest {

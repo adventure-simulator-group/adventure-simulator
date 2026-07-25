@@ -3,7 +3,7 @@ use maud::{Markup, html};
 
 use super::{
     character_health::{
-        medical_examination_popup, medical_rail, party_attributes_rail, strategic_condition_rail,
+        party_attributes_rail, physiology_controls, physiology_dialog, strategic_condition_rail,
     },
     character_skills::{ActivityPreviewRates, CharacterSheetActions, party_skills_rail},
     chrome::{party_portrait_overlay, visual_stage},
@@ -46,12 +46,22 @@ pub(crate) fn character_stats_panel(
 ) -> Markup {
     html! {
         (character_summary_rail(capability))
-        (party_attributes_rail(&format!("{}'s attributes", character.name), attributes, limbs, medical, None, &[], &[]))
+        (party_attributes_rail(
+            &format!("{}'s attributes", character.name),
+            attributes,
+            limbs,
+            medical,
+            Some("physiology-chart-dialog"),
+            None,
+            &[],
+            &[],
+        ))
         (party_skills_rail(
             &format!("{}'s skills", character.name), skills, limbs, None, None, None,
-            false, 0.0, None, CombatTrainingProfile::default(), CharacterSheetActions::default(),
+            false, 0.0, None, CombatTrainingProfile::default(),
+            CharacterSheetActions::default(),
         ))
-        (medical_rail(medical, "", 0, character.id, false))
+        (physiology_dialog(medical, "physiology-chart-dialog", &character.name))
     }
 }
 
@@ -71,6 +81,7 @@ pub(crate) struct CharacterSheetView<'a> {
     pub skills_title: &'a str,
     pub description: &'a str,
     pub can_renounce: bool,
+    pub physiology_dialog_id: Option<&'a str>,
     pub surgery: Option<(&'a str, Option<&'a str>)>,
     pub injuries: &'a [LimbInjury],
     pub projectiles: &'a [RetainedProjectile],
@@ -101,6 +112,7 @@ pub(crate) fn character_sheet_markup(view: CharacterSheetView<'_>) -> Markup {
                 view.attributes,
                 view.limbs,
                 view.medical,
+                view.physiology_dialog_id,
                 view.surgery,
                 view.injuries,
                 view.projectiles,
@@ -166,7 +178,7 @@ pub fn party_personal_page(
     notoriety: f32,
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
     medical: &MedicalPresentation,
-    can_examine: bool,
+    _can_examine: bool,
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
     filth: &[crate::spacetimedb::CharacterFilth],
@@ -183,45 +195,43 @@ pub fn party_personal_page(
         location.base_path(),
         active_character.id
     ));
-    let examination_action = location.preserve_building(format!(
-        "{}/party/{}/examine",
-        location.base_path(),
-        active_character.id
-    ));
-    let cooking_open = cooking && medical.examination_id.is_none();
+    let cooking_open = cooking;
     let surgery_path_template = location.preserve_building(format!(
         "{}/party/{}/surgery/__limb__",
         location.base_path(),
         active_character.id
     ));
     let location_path = location.base_path();
+    let schedule_action = format!("{location_path}/party/{}/schedule", active_character.id);
     let social_path = location.preserve_building(format!(
         "{location_path}/party/{}/social",
         active_character.id
     ));
-    let schedule_action = format!("{location_path}/party/{}/schedule", active_character.id);
     let left_after = html! {
-            (strategic_condition_rail(condition, morale_sources, filth, &social_path, social_open))
-            (medical_rail(medical, &location_path, active_character.id, active_character.id, true))
-            @if let Some(demand) = religious_demand {
-                (religious_demand_rail(demand, &location_path, active_character.id))
-            }
+        (strategic_condition_rail(condition, morale_sources, filth, &social_path, social_open))
+        (physiology_controls(
+            medical,
+            &format!("{location_path}/party/{}", active_character.id),
+            inventory,
+            item_definitions,
+        ))
+        @if let Some(demand) = religious_demand {
+            (religious_demand_rail(demand, &location_path, active_character.id))
+        }
     };
     let portraits = party_portrait_overlay(
         party_members,
         Some(active_character),
         &location_path,
         Some(active_character.id),
-        can_examine,
+        false,
     );
-    let center_after = html! {
-            (settlement_chat_area(&active_character.name, Some(active_character)))
-            (medical_examination_popup(medical, location, active_character.id, limbs, injuries, projectiles))
-    };
+    let center_after = settlement_chat_area(&active_character.name, Some(active_character));
     let after = html! {
+        (physiology_dialog(medical, "physiology-chart-dialog", &active_character.name))
         @if cooking_open {
             (cooking_activity_dialog(location, active_character, inventory, food_lots, item_definitions))
-        } @else if medical.examination_id.is_none() {
+        } @else {
             @if let Some(dialog) = character_action_dialog { (dialog) }
         }
     };
@@ -241,6 +251,7 @@ pub fn party_personal_page(
         skills_title: "Your skills",
         description: "Your identity, condition, and capabilities",
         can_renounce: true,
+        physiology_dialog_id: Some("physiology-chart-dialog"),
         surgery: Some((&surgery_path_template, surgery_open)),
         injuries,
         projectiles,
@@ -252,8 +263,6 @@ pub fn party_personal_page(
         skill_actions: CharacterSheetActions {
             cooking_href: Some(&cooking_href),
             cooking_open,
-            examination_action: can_examine.then_some(examination_action.as_str()),
-            examination_open: medical.examination_id.is_some(),
         },
         location_path: &location_path,
         center_before: html! {},
@@ -284,7 +293,7 @@ pub fn party_stats_page(
     notoriety: f32,
     personality: Option<&crate::spacetimedb::CharacterPersonality>,
     medical: &MedicalPresentation,
-    can_examine: bool,
+    _can_examine: bool,
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
     filth: &[crate::spacetimedb::CharacterFilth],
@@ -294,11 +303,6 @@ pub fn party_stats_page(
 ) -> Markup {
     let selected_attributes_title = format!("{}'s attributes", selected.name);
     let selected_skills_title = format!("{}'s skills", selected.name);
-    let examination_action = location.preserve_building(format!(
-        "{}/party/{}/examine",
-        location.base_path(),
-        selected.id
-    ));
     let surgery_path_template = location.preserve_building(format!(
         "{}/party/{}/surgery/__limb__",
         location.base_path(),
@@ -307,23 +311,18 @@ pub fn party_stats_page(
     let location_path = location.base_path();
     let social_path =
         location.preserve_building(format!("{location_path}/party/{}/social", selected.id));
-    let left_after = html! {
-            (strategic_condition_rail(condition, morale_sources, filth, &social_path, social_open))
-            (medical_rail(medical, &location_path, active_character.id, selected.id, true))
-    };
+    let left_after =
+        strategic_condition_rail(condition, morale_sources, filth, &social_path, social_open);
     let portraits = party_portrait_overlay(
         party_members,
         Some(active_character),
         &location_path,
         Some(selected.id),
-        can_examine,
+        false,
     );
-    let center_after = html! {
-            (player_chat_area(selected, active_character))
-            (medical_examination_popup(medical, location, selected.id, selected_limbs, injuries, projectiles))
-    };
+    let center_after = player_chat_area(selected, active_character);
     let right_after = html! {
-            @if selected.id != active_character.id {
+        @if selected.id != active_character.id {
                 @if active_character.party_id == selected.party_id {
                     @if active_party.is_some_and(|party| party.leader_id == selected.id) {
                         (sidebar_section("Party", html! {
@@ -352,9 +351,8 @@ pub fn party_stats_page(
             }
     };
     let after = html! {
-        @if medical.examination_id.is_none() {
-            @if let Some(dialog) = character_action_dialog { (dialog) }
-        }
+        @if let Some(dialog) = character_action_dialog { (dialog) }
+        (physiology_dialog(medical, "physiology-chart-dialog", &selected.name))
     };
     let content = character_sheet_markup(CharacterSheetView {
         character: selected,
@@ -372,6 +370,7 @@ pub fn party_stats_page(
         skills_title: &selected_skills_title,
         description: "Party member identity and capabilities",
         can_renounce: selected.id == active_character.id,
+        physiology_dialog_id: Some("physiology-chart-dialog"),
         surgery: Some((&surgery_path_template, surgery_open)),
         injuries,
         projectiles,
@@ -380,11 +379,7 @@ pub fn party_stats_page(
         activity_preview: None,
         professes_religion: religion_id.is_some(),
         prayer_religion_check: 0.0,
-        skill_actions: CharacterSheetActions {
-            examination_action: can_examine.then_some(examination_action.as_str()),
-            examination_open: medical.examination_id.is_some(),
-            ..Default::default()
-        },
+        skill_actions: CharacterSheetActions::default(),
         location_path: &location_path,
         center_before: html! {},
         portraits,

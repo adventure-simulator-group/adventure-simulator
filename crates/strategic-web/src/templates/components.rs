@@ -128,7 +128,7 @@ pub fn stat_game_icon_name(icon: &str) -> &'static str {
         "command" => "crown",
         "deception" => "conversation",
         "seduction" => "rose",
-        "medicine" => "medical-pack",
+        "physiology" => "medical-pack",
         "cooking" => "meal",
         "faith" => "holy-symbol",
         "religion" => "holy-symbol",

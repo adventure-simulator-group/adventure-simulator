@@ -586,7 +586,7 @@ pub struct Party {
     pub camp_destination: Option<JourneyEndpoint>,
     pub camp_remaining_minutes: u64,
     pub pooled_water_ml: f32,
-    pub medicine_target: f32,
+    pub physiology_target: f32,
     pub command_target: f32,
     pub religion_target: f32,
 }
@@ -893,7 +893,7 @@ pub struct RecruitmentRequirements {
     pub pierce: bool,
     pub athletics: u8,
     pub endurance: u8,
-    pub medicine: u8,
+    pub physiology: u8,
     pub surgery: u8,
     pub command: u8,
     pub religion: u8,
@@ -957,8 +957,8 @@ pub struct CharacterCapability {
     pub pierce: bool,
     pub athletics: f32,
     pub endurance: f32,
-    pub medicine: f32,
-    pub human_lore: f32,
+    pub physiology: f32,
+    pub anatomy: f32,
     pub knife: f32,
     pub tailoring: f32,
     pub surgery: f32,
@@ -996,7 +996,7 @@ impl CharacterCapability {
         for (value, label) in [
             (self.athletics, "Athletics"),
             (self.endurance, "Endurance"),
-            (self.medicine, "Medicine"),
+            (self.physiology, "Physiology"),
             (self.surgery, "Surgery"),
             (self.command, "Command"),
             (self.religion, "Religion"),
@@ -1066,15 +1066,6 @@ pub struct CharacterEquip {
     pub head_armor_id: Option<u64>,
     pub chest_armor_id: Option<u64>,
     pub stomach_armor_id: Option<u64>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[allow(dead_code)]
-pub struct EquippedMedication {
-    pub inventory_item_id: u64,
-    pub character_id: u64,
-    pub disease_id: String,
-    pub equipped_at: u64,
 }
 
 #[allow(dead_code)]
@@ -1387,11 +1378,10 @@ pub struct CharacterSkills {
     pub command_hours: f32,
     pub deception_hours: f32,
     pub seduction_hours: f32,
-    pub medicine_hours: f32,
+    pub physiology_hours: f32,
     pub cooking_hours: f32,
     pub religion_hours: adventuresim_world_schema::ReligionHours,
     pub bestiary_hours: adventuresim_world_schema::BestiaryHours,
-    pub surgery_hours: f32,
     pub oral_languages: adventuresim_world_schema::OralLanguageHours,
     pub written_languages: adventuresim_world_schema::WrittenLanguageHours,
     pub stealth_hours: f32,
@@ -1400,6 +1390,7 @@ pub struct CharacterSkills {
     pub terrain_forest_hours: f32,
     pub terrain_hills_hours: f32,
     pub terrain_urban_hours: f32,
+    pub anatomy_hours: f32,
     pub tailoring_hours: f32,
     pub smithing_hours: f32,
 }
@@ -1430,47 +1421,44 @@ pub struct AlcoholConsumption {
     pub morale_evaluated: bool,
 }
 
-/// Queried only by strategic-web and immediately sanitized. Browser responses
-/// never serialize this private disease row.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InfectionEpisodeRow {
-    pub id: u64,
-    pub character_id: u64,
+pub struct BackendPhysiologyDifferential {
     pub disease_id: String,
-    pub contracted_at: u64,
-    pub treated_at: Option<u64>,
-}
-/// Queried only by strategic-web and filtered to the authenticated examining
-/// character before any medical knowledge is rendered.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MedicalExaminationRow {
-    pub id: u64,
-    pub doctor_id: u64,
-    pub target_id: u64,
-    pub examined_at: u64,
-    pub findings: Vec<String>,
-    pub reveals_vitals: bool,
-    pub sanguine: f32,
-    pub phlegmatic: f32,
-    pub choleric: f32,
-    pub melancholic: f32,
-    pub possible_disease_ids: Vec<String>,
-    pub confirmed_infection_ids: Vec<u64>,
-    pub confirmed_disease_ids: Vec<String>,
-    pub confirmed_stages: Vec<String>,
+    pub label: String,
+    pub likelihood_bps: u16,
 }
 
-/// Queried only by strategic-web long enough to deliver the authenticated
-/// patient's name-only NPC result, then dismissed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HerbalistExaminationRow {
+pub struct BackendPhysiologyChart {
+    pub id: String,
+    pub observer_id: u64,
+    pub patient_id: u64,
+    pub observed_at: u64,
+    pub physiology_band: u8,
+    pub observation_minutes: u64,
+    pub sanguine_bps: Vec<i16>,
+    pub phlegmatic_bps: Vec<i16>,
+    pub choleric_bps: Vec<i16>,
+    pub melancholic_bps: Vec<i16>,
+    pub possible_diseases: Vec<BackendPhysiologyDifferential>,
+    pub known_interventions: Vec<String>,
+    pub confidence_bps: u16,
+    pub gap_from: Option<u64>,
+    pub gap_to: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendPhysiologyAdministration {
     pub id: u64,
     pub patient_id: u64,
-    pub settlement_id: String,
-    pub disease_names: Vec<String>,
-    pub medication_names: Vec<String>,
+    pub preparation_id: String,
+    pub profile_version: u16,
+    pub route: String,
+    pub amount_milliunits: u32,
+    pub region: Option<String>,
+    pub administered_at: u64,
+    pub stopped_at: Option<u64>,
 }
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterStats {
     pub character_id: u64,
@@ -1813,7 +1801,7 @@ mod tests {
             "camp_destination": null,
             "camp_remaining_minutes": 0,
             "pooled_water_ml": 0.0,
-            "medicine_target": 0.0,
+            "physiology_target": 0.0,
             "command_target": 0.0,
             "religion_target": 0.0
         });

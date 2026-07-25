@@ -293,7 +293,7 @@ explicitly approved and a verified recovery copy exists.
 
 `bootstrap_development_world` is itself idempotent: it inserts only missing demo rows. The local
 seed workflow then resets `Sick Demo` and its party of staggered patients plus a
-high-Medicine physician so symptoms, diagnosis, and treatment can be tested
+high-Physiology physician so symptoms, diagnosis, and treatment can be tested
 immediately. It propagates every reducer failure
 instead of treating arbitrary errors as evidence that seeding already happened.
 
@@ -600,7 +600,7 @@ SpacetimeDB. The tactical WASM page remains under
 Character-sheet action menus follow one interaction contract. Raised,
 old-school beveled icon buttons open modal dialogs; flat skill icons and meters
 are informational. Surgery buttons sit beside limb headings, Social sits beside
-Morale, and Medicine and Cooking use their skill icons. Activity icons use the
+Morale, and Physiology and Cooking use their skill icons. Activity icons use the
 same raised treatment. An inset button means its dialog is open. Dialogs retain
 the underlying rails, lock page scrolling, trap focus, close with Escape, and
 return focus to their launcher. Portrait hover controls remain reserved for
@@ -675,6 +675,14 @@ network panel. Requests abandoned by a navigating browser are logged as
 canceled rather than silently disappearing. Set
 `RUST_LOG=strategic_web=info` if a shell-level log filter suppresses these
 diagnostics.
+
+## Physiology key material
+
+The strategic database initializes versioned private Physiology key material
+from authoritative runtime randomness. There is no build-time or environment
+fallback to configure. Pre-launch schema recreation creates a new population;
+causal infection and administration rows pin the versions needed for replay.
+See [`docs/PHYSIOLOGY.md`](PHYSIOLOGY.md) for the privacy contract.
 # Social panel demo
 
 Start the isolated strategic stack with the guarded visual fixtures:

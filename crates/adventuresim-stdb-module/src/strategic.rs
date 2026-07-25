@@ -2760,7 +2760,6 @@ pub fn import_settlements(
         }
         ensure_settlement_activity_inner(ctx, &settlement_id)?;
         crate::repair::ensure_settlement_smith(ctx, &settlement_id);
-        crate::disease::ensure_settlement_herbalist(ctx, &settlement_id);
     }
     Ok(())
 }
@@ -3658,7 +3657,7 @@ pub struct Party {
     #[default(0.0)]
     pub pooled_water_ml: f32,
     #[default(0.0)]
-    pub medicine_target: f32,
+    pub physiology_target: f32,
     #[default(0.0)]
     pub command_target: f32,
     #[default(0.0)]
@@ -4434,7 +4433,7 @@ pub struct RecruitmentRequirements {
     pub pierce: bool,
     pub athletics: u8,
     pub endurance: u8,
-    pub medicine: u8,
+    pub physiology: u8,
     pub surgery: u8,
     pub command: u8,
     pub religion: u8,
@@ -4458,7 +4457,7 @@ impl From<RecruitmentRequirements> for adventuresim_core::capability::RoleRequir
             full_armor: value.full_armor,
             athletics: value.athletics,
             endurance: value.endurance,
-            medicine: value.medicine,
+            physiology: value.physiology,
             surgery: value.surgery,
             command: value.command,
             religion: value.religion,
@@ -4600,7 +4599,7 @@ enum ApprovedPartyAction {
         mission_id: String,
     },
     UpdatePartyCheckTargets {
-        medicine: f32,
+        physiology: f32,
         command: f32,
         religion: f32,
     },
@@ -4710,10 +4709,10 @@ impl ApprovedPartyAction {
                 autoresolve_mission(ctx, leader_id, mission_id)
             }
             Self::UpdatePartyCheckTargets {
-                medicine,
+                physiology,
                 command,
                 religion,
-            } => update_party_check_targets(ctx, leader_id, medicine, command, religion),
+            } => update_party_check_targets(ctx, leader_id, physiology, command, religion),
             Self::SetInventoryQuantityTarget { item_id, quantity } => {
                 set_inventory_quantity_target(ctx, leader_id, true, item_id, quantity)
             }
@@ -5493,6 +5492,8 @@ pub fn start_dialogue(
                     let field = match authored {
                         adventuresim_dialogue::Fragment::Text { .. } => "value",
                         adventuresim_dialogue::Fragment::Topic { .. } => "label",
+                        adventuresim_dialogue::Fragment::PeriodClaim { .. } => "value",
+                        adventuresim_dialogue::Fragment::AuthoritativeExplanation { .. } => "value",
                         adventuresim_dialogue::Fragment::Runtime { .. } => "slot",
                     };
                     adventuresim_dialogue::source_for_start_fragment(
@@ -7010,6 +7011,8 @@ pub fn choose_dialogue_topic(
                 let field = match authored {
                     adventuresim_dialogue::Fragment::Text { .. } => "value",
                     adventuresim_dialogue::Fragment::Topic { .. } => "label",
+                    adventuresim_dialogue::Fragment::PeriodClaim { .. } => "value",
+                    adventuresim_dialogue::Fragment::AuthoritativeExplanation { .. } => "value",
                     adventuresim_dialogue::Fragment::Runtime { .. } => "slot",
                 };
                 adventuresim_dialogue::source_for_fragment(
@@ -7275,6 +7278,10 @@ pub fn answer_dialogue_prompt(
                         let field = match fragment {
                             adventuresim_dialogue::Fragment::Text { .. } => "value",
                             adventuresim_dialogue::Fragment::Topic { .. } => "label",
+                            adventuresim_dialogue::Fragment::PeriodClaim { .. } => "value",
+                            adventuresim_dialogue::Fragment::AuthoritativeExplanation {
+                                ..
+                            } => "value",
                             adventuresim_dialogue::Fragment::Runtime { .. } => "slot",
                         };
                         adventuresim_dialogue::source_for_choice_fragment(
@@ -7371,9 +7378,6 @@ fn apply_dialogue_effect(
                 profession.clone()
             };
             crate::time::begin_apprenticeship(ctx, character_id, &service)
-        }
-        adventuresim_dialogue::Effect::ExamineDisease => {
-            crate::disease::examine_by_herbalist(ctx, character_id, session.settlement_id.clone())
         }
         adventuresim_dialogue::Effect::ReceiveReferredTestimony => {
             receive_referred_testimony(ctx, character_id, session, &live_npc, action_id)
@@ -8259,7 +8263,7 @@ pub(crate) fn create_solo_party_for_character(
             camp_destination: None,
             camp_remaining_minutes: 0,
             pooled_water_ml: 0.0,
-            medicine_target: 0.0,
+            physiology_target: 0.0,
             command_target: 0.0,
             religion_target: 0.0,
         });
@@ -8541,7 +8545,7 @@ pub fn create_recruitment_role(
     if [
         requirements.athletics,
         requirements.endurance,
-        requirements.medicine,
+        requirements.physiology,
         requirements.surgery,
         requirements.command,
         requirements.religion,
@@ -8803,13 +8807,13 @@ fn validate_recruitment_requirements(
 pub fn update_party_check_targets(
     ctx: &ReducerContext,
     leader_id: u64,
-    medicine: f32,
+    physiology: f32,
     command: f32,
     religion: f32,
 ) -> Result<(), String> {
     require_strategic_character_authority(ctx, leader_id)?;
     crate::character::require_living_character(ctx, leader_id)?;
-    if [medicine, command, religion]
+    if [physiology, command, religion]
         .into_iter()
         .any(|value| !value.is_finite() || !(0.0..=5.0).contains(&value) || value.fract() != 0.0)
     {
@@ -8831,7 +8835,7 @@ pub fn update_party_check_targets(
     if party.leader_id != leader_id {
         return Err("Only the party leader can configure party checks".into());
     }
-    party.medicine_target = medicine;
+    party.physiology_target = physiology;
     party.command_target = command;
     party.religion_target = religion;
     ctx.db.party_authority().id().update(party);
@@ -8872,7 +8876,7 @@ fn role_requirements(
 ) -> adventuresim_core::capability::RoleRequirements {
     let mut requirements = adventuresim_core::capability::RoleRequirements::from(role.requirements);
     requirements.weapon_precision = requirements.weapon_precision.max(role.weapon_precision);
-    requirements.medicine = 0;
+    requirements.physiology = 0;
     requirements.surgery = 0;
     requirements.command = 0;
     requirements.religion = 0;
@@ -11358,6 +11362,8 @@ pub fn remove_party_member(
         ctx.db.party_member().id().delete(membership.id);
     }
 
+    crate::social::settle_shared_party_time(ctx, member_character_id);
+    crate::social::close_physiology_presence(ctx, member_character_id);
     character.party_id = None;
     ctx.db.character().id().update(character);
     for vote in ctx
@@ -11472,6 +11478,8 @@ pub fn disband_party(ctx: &ReducerContext, leader_id: u64, party_id: String) -> 
     let member_ids: Vec<_> = members.iter().map(|member| member.character_id).collect();
     for member in members {
         if let Some(mut character) = ctx.db.character().id().find(member.character_id) {
+            crate::social::settle_shared_party_time(ctx, member.character_id);
+            crate::social::close_physiology_presence(ctx, member.character_id);
             character.party_id = None;
             ctx.db.character().id().update(character);
         }
@@ -14750,7 +14758,7 @@ mod departure_invariant_tests {
             })),
             camp_remaining_minutes: 30,
             pooled_water_ml: 0.0,
-            medicine_target: 0.0,
+            physiology_target: 0.0,
             command_target: 0.0,
             religion_target: 0.0,
         };
@@ -17766,7 +17774,6 @@ pub(crate) fn seed_world(ctx: &ReducerContext) -> Result<(), String> {
     for settlement_id in settlement_ids {
         ensure_settlement_activity_inner(ctx, &settlement_id)?;
         crate::repair::ensure_settlement_smith(ctx, &settlement_id);
-        crate::disease::ensure_settlement_herbalist(ctx, &settlement_id);
     }
 
     Ok(())
@@ -17925,7 +17932,7 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
         let mut party = ctx.db.party_authority().id().find(&party_id).unwrap();
         party.name = format!("{}'s company", leader_name);
         party.current_settlement_id = Some(settlement_id.to_string());
-        party.medicine_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
+        party.physiology_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
         party.command_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
         party.religion_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
         ctx.db.party_authority().id().update(party);

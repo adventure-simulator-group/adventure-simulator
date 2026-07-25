@@ -42,8 +42,7 @@ use adventuresim_stdb_client::{
     character_strategic_condition_table::CharacterStrategicConditionTableAccess,
     character_table::CharacterTableAccess,
     character_training_schedule_table::CharacterTrainingScheduleTableAccess,
-    equipped_medication_table::EquippedMedicationTableAccess, food_lot_table::FoodLotTableAccess,
-    inventory_item_table::InventoryItemTableAccess,
+    food_lot_table::FoodLotTableAccess, inventory_item_table::InventoryItemTableAccess,
     inventory_quantity_target_table::InventoryQuantityTargetTableAccess,
     item_condition_table::ItemConditionTableAccess, limb_injury_table::LimbInjuryTableAccess,
     morale_event_table::MoraleEventTableAccess,
@@ -124,7 +123,6 @@ pub const STRATEGIC_CACHE_SUBSCRIPTIONS: &[&str] = &[
     "party_stake",
     "character_equip",
     "character_filth",
-    "equipped_medication",
     "character_capability",
     "character_condition",
     "character_needs",
@@ -295,7 +293,6 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.party_stake());
         invalidate_on_changes!(state.0._connection.db.character_equip());
         invalidate_on_changes!(state.0._connection.db.character_filth());
-        invalidate_on_changes!(state.0._connection.db.equipped_medication());
         invalidate_on_changes!(state.0._connection.db.character_capability());
         invalidate_on_changes!(state.0._connection.db.character_condition());
         invalidate_on_changes!(state.0._connection.db.character_needs());
@@ -364,7 +361,6 @@ impl LiveState {
             .add_query(|query| query.from.character_condition())
             .add_query(|query| query.from.character_equip())
             .add_query(|query| query.from.character_filth())
-            .add_query(|query| query.from.equipped_medication())
             .add_query(|query| query.from.character_limbs())
             .add_query(|query| query.from.limb_injury())
             .add_query(|query| query.from.retained_projectile())
@@ -664,7 +660,6 @@ mod tests {
             );
         }
         assert!(STRATEGIC_CACHE_SUBSCRIPTIONS.contains(&"party_journey_itinerary"));
-        assert!(STRATEGIC_CACHE_SUBSCRIPTIONS.contains(&"equipped_medication"));
         // Private projections may be subscribed for live invalidation, but no
         // renderer-facing cache accessor may expose their rows.
         assert!(source.contains("backend_local_chat_messages"));

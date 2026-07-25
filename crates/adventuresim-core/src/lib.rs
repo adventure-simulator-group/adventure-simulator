@@ -24,6 +24,7 @@ pub mod local_problem;
 pub mod mission;
 pub mod morale;
 pub mod npc_adventurer;
+pub mod physiology;
 pub mod profession;
 pub mod provisioning;
 pub mod quest_catalog;

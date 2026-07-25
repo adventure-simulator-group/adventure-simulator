@@ -41,13 +41,13 @@ pub struct SkillHours {
     pub command: f32,
     pub deception: f32,
     pub seduction: f32,
-    pub medicine: f32,
+    pub physiology: f32,
     pub cooking: f32,
     pub religion: ReligionHours,
     pub bestiary: BestiaryHours,
-    pub surgery: f32,
     pub stealth: f32,
     pub balance: f32,
+    pub anatomy: f32,
     pub tailoring: f32,
     pub smithing: f32,
 }
@@ -73,13 +73,13 @@ impl SkillHours {
             self.command,
             self.deception,
             self.seduction,
-            self.medicine,
+            self.physiology,
             self.cooking,
             self.religion.total_direct(),
             self.bestiary.total_direct(),
-            self.surgery,
             self.stealth,
             self.balance,
+            self.anatomy,
             self.tailoring,
             self.smithing,
         ]
@@ -357,9 +357,10 @@ fn apply_profession_training(
         Some(ProfessionId::Weaponsmith | ProfessionId::Armourer) => skills.smithing += hours,
         Some(ProfessionId::Tailor) => skills.tailoring += hours,
         Some(ProfessionId::Herbalist) => {
-            skills.medicine += hours * 0.5;
-            skills.bestiary.human += hours / 6.0;
-            skills.surgery += hours / 3.0;
+            skills.physiology += hours * 0.5;
+            skills.anatomy += hours / 6.0;
+            skills.knife += hours / 6.0;
+            skills.tailoring += hours / 6.0;
         }
         Some(ProfessionId::Cook) => skills.cooking += hours,
         // Religion is tradition-specific and is applied by the authoritative
@@ -483,11 +484,10 @@ mod tests {
             + skills.balance;
         assert!((combat_total - 6.0).abs() < 0.001);
         assert!((skills.humor - 1.0).abs() < 0.001);
-        assert!((skills.medicine - 1.0).abs() < 0.001);
-        assert!((skills.bestiary.human - 1.0 / 3.0).abs() < 0.001);
-        assert!((skills.surgery - 2.0 / 3.0).abs() < 0.001);
-        assert_eq!(skills.knife, 0.0);
-        assert_eq!(skills.tailoring, 0.0);
+        assert!((skills.physiology - 1.0).abs() < 0.001);
+        assert!((skills.anatomy - 1.0 / 3.0).abs() < 0.001);
+        assert!((skills.knife - 1.0 / 3.0).abs() < 0.001);
+        assert!((skills.tailoring - 1.0 / 3.0).abs() < 0.001);
     }
 
     #[test]

@@ -20,7 +20,7 @@ pub struct RecruitmentRequirements {
     pub pierce: bool,
     pub athletics: u8,
     pub endurance: u8,
-    pub medicine: u8,
+    pub physiology: u8,
     pub surgery: u8,
     pub command: u8,
     pub religion: u8,

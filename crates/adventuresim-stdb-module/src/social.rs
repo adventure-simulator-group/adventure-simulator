@@ -13,7 +13,8 @@ use crate::character::{character, character__view};
 use crate::condition::{character_morale_source__view, morale_event};
 use crate::strategic::strategic_gateway_authority__view;
 use crate::{
-    character_morale_source, character_personality, character_strategic_condition, character_time,
+    character_capability, character_morale_source, character_personality,
+    character_strategic_condition, character_time,
 };
 
 pub const MAX_AUTOMATIC_SOCIAL_ATTEMPTS_PER_DOWNTIME: usize = 3;
@@ -44,6 +45,26 @@ pub struct CharacterFamiliarity {
     pub shared_minutes: u64,
     /// Last minimum personal clock observed while this pair shared a party.
     pub joint_minute_anchor: u64,
+}
+
+/// Canonical pair-presence history. Unlike familiarity this retains every
+/// join/rejoin span and the historical observation capability of both people.
+#[derive(Clone, Debug)]
+#[table(
+    accessor = physiology_presence_span,
+    index(accessor = presence_low_id, btree(columns = [low_id])),
+    index(accessor = presence_high_id, btree(columns = [high_id]))
+)]
+pub struct PhysiologyPresenceSpan {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub low_id: u64,
+    pub high_id: u64,
+    pub started_at: u64,
+    pub ended_at: Option<u64>,
+    pub low_observer_band: u8,
+    pub high_observer_band: u8,
 }
 
 /// Observer-specific diagnosis. This table is intentionally private: the SSR
@@ -438,6 +459,34 @@ pub fn reset_familiarity_after_join(ctx: &ReducerContext, character_id: u64) {
                 .map_or(0, |v| v.minutes),
         );
         let id = pair_id(low_id, high_id);
+        let already_open = ctx
+            .db
+            .physiology_presence_span()
+            .presence_low_id()
+            .filter(low_id)
+            .any(|span| span.high_id == high_id && span.ended_at.is_none());
+        if !already_open {
+            let band = |id| {
+                ctx.db
+                    .character_capability()
+                    .character_id()
+                    .find(id)
+                    .map_or(0, |capability| {
+                        capability.physiology.round().clamp(0.0, 5.0) as u8
+                    })
+            };
+            ctx.db
+                .physiology_presence_span()
+                .insert(PhysiologyPresenceSpan {
+                    id: 0,
+                    low_id,
+                    high_id,
+                    started_at: joint,
+                    ended_at: None,
+                    low_observer_band: band(low_id),
+                    high_observer_band: band(high_id),
+                });
+        }
         if let Some(mut row) = ctx.db.character_familiarity().id().find(&id) {
             row.joint_minute_anchor = joint;
             ctx.db.character_familiarity().id().update(row);
@@ -450,6 +499,34 @@ pub fn reset_familiarity_after_join(ctx: &ReducerContext, character_id: u64) {
                 joint_minute_anchor: joint,
             });
         }
+    }
+}
+
+/// Close every open span before leave, party change, death or disband. Taking
+/// the minimum personal clock preserves asymmetric-clock and chunk invariance.
+pub fn close_physiology_presence(ctx: &ReducerContext, character_id: u64) {
+    let clock = |id| {
+        ctx.db
+            .character_time()
+            .character_id()
+            .find(id)
+            .map_or(0, |time| time.minutes)
+    };
+    let spans = ctx
+        .db
+        .physiology_presence_span()
+        .iter()
+        .filter(|span| {
+            span.ended_at.is_none() && (span.low_id == character_id || span.high_id == character_id)
+        })
+        .collect::<Vec<_>>();
+    for mut span in spans {
+        span.ended_at = Some(
+            clock(span.low_id)
+                .min(clock(span.high_id))
+                .max(span.started_at),
+        );
+        ctx.db.physiology_presence_span().id().update(span);
     }
 }
 

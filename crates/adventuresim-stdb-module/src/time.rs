@@ -23,9 +23,9 @@ use std::collections::BTreeMap;
 /// Natural recovery without useful medical support while taking full
 /// settlement downtime.
 pub const BASE_HEALTH_RECOVERED_PER_DAY: f32 = 0.01;
-/// Additional daily recovery supplied by each point of the party Medicine
+/// Additional daily recovery supplied by each point of the party Physiology
 /// check. Checks are capped at the five-point scale used by the strategic UI.
-pub const HEALTH_RECOVERED_PER_MEDICINE_CHECK_PER_DAY: f32 = 0.01;
+pub const HEALTH_RECOVERED_PER_PHYSIOLOGY_CHECK_PER_DAY: f32 = 0.01;
 pub const INN_GOLD_PER_DAY: u32 = adventuresim_core::strategic_economy::INN_FULL_BOARD_GOLD_PER_DAY;
 const MIN_SETTLEMENT_REST_MINUTES: u64 = 60;
 const MAX_SETTLEMENT_REST_MINUTES: u64 = MINUTES_PER_YEAR;
@@ -500,12 +500,12 @@ fn profession_training_hours(
         Skill::Deception => skills.deception_hours,
         Skill::Seduction => skills.seduction_hours,
         Skill::Smithing => skills.smithing_hours,
-        Skill::Medicine => skills.medicine_hours,
+        Skill::Physiology => skills.physiology_hours,
         Skill::Cooking => skills.cooking_hours,
         Skill::Bestiary => skills
             .bestiary_hours
             .direct(adventuresim_world_schema::BestiaryCategory::Human),
-        Skill::Surgery => skills.surgery_hours,
+        Skill::Anatomy => skills.anatomy_hours,
         Skill::Knife => skills.knife_hours,
         Skill::Tailoring => skills.tailoring_hours,
         Skill::Religion => apprenticeship
@@ -689,11 +689,11 @@ fn apply_training(
         command: skills.command_hours,
         deception: skills.deception_hours,
         seduction: skills.seduction_hours,
-        medicine: skills.medicine_hours,
+        physiology: skills.physiology_hours,
         cooking: skills.cooking_hours,
         religion: skills.religion_hours,
         bestiary: skills.bestiary_hours,
-        surgery: skills.surgery_hours,
+        anatomy: skills.anatomy_hours,
         stealth: skills.stealth_hours,
         balance: skills.balance_hours,
         tailoring: skills.tailoring_hours,
@@ -825,11 +825,11 @@ fn apply_training(
     skills.command_hours = hours.command;
     skills.deception_hours = hours.deception;
     skills.seduction_hours = hours.seduction;
-    skills.medicine_hours = hours.medicine;
+    skills.physiology_hours = hours.physiology;
     skills.cooking_hours = hours.cooking;
     skills.religion_hours = hours.religion;
     skills.bestiary_hours = hours.bestiary;
-    skills.surgery_hours = hours.surgery;
+    skills.anatomy_hours = hours.anatomy;
     skills.stealth_hours = hours.stealth;
     skills.balance_hours = hours.balance;
     skills.tailoring_hours = hours.tailoring;
@@ -1279,12 +1279,15 @@ fn apply_profession_outcomes(
     Ok(())
 }
 
-pub(crate) fn health_recovered_per_day(medicine_check: f32) -> f32 {
+pub(crate) fn health_recovered_per_day(physiology_check: f32) -> f32 {
     BASE_HEALTH_RECOVERED_PER_DAY
-        + medicine_check.clamp(0.0, 5.0) * HEALTH_RECOVERED_PER_MEDICINE_CHECK_PER_DAY
+        + physiology_check.clamp(0.0, 5.0) * HEALTH_RECOVERED_PER_PHYSIOLOGY_CHECK_PER_DAY
 }
 
-pub(crate) fn party_medicine_check(ctx: &ReducerContext, character_id: u64) -> Result<f32, String> {
+pub(crate) fn party_physiology_check(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<f32, String> {
     let character = ctx
         .db
         .character()
@@ -1300,14 +1303,14 @@ pub(crate) fn party_medicine_check(ctx: &ReducerContext, character_id: u64) -> R
         .into_iter()
         .map(|member_id| {
             crate::capability::evaluate_character(ctx, member_id)
-                .map(|capabilities| capabilities.medicine)
+                .map(|capabilities| capabilities.physiology)
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(aggregate_bounded_party_check(checks))
 }
 
-fn convalescence_minutes(ctx: &ReducerContext, character_id: u64, medicine_check: f32) -> u64 {
-    crate::surgery::convalescence_minutes(ctx, character_id, medicine_check)
+fn convalescence_minutes(ctx: &ReducerContext, character_id: u64, physiology_check: f32) -> u64 {
+    crate::surgery::convalescence_minutes(ctx, character_id, physiology_check)
 }
 
 /// Spend completed game days at a settlement. Injuries receive all selected
@@ -1438,8 +1441,8 @@ fn rest_for_minutes(
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested_minutes, true)?;
     let (elapsed, terminal) =
         crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, true)?;
-    let medicine_check = party_medicine_check(ctx, character_id)?;
-    let convalescing = convalescence_minutes(ctx, character_id, medicine_check).min(elapsed);
+    let physiology_check = party_physiology_check(ctx, character_id)?;
+    let convalescing = convalescence_minutes(ctx, character_id, physiology_check).min(elapsed);
     let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, true)?;
     let elapsed = settled.elapsed;
     let starting_minute = character_time.minutes;
@@ -1677,7 +1680,7 @@ fn advance_personal_camp_time(
     let (elapsed, terminal) =
         crate::disease::clip_elapsed_for_disease(ctx, member_id, injury_limit, true)?;
     let convalescing =
-        convalescence_minutes(ctx, member_id, party_medicine_check(ctx, member_id)?).min(elapsed);
+        convalescence_minutes(ctx, member_id, party_physiology_check(ctx, member_id)?).min(elapsed);
     let settled = crate::surgery::settle_injuries(ctx, member_id, elapsed, true)?;
     let elapsed = settled.elapsed;
     time.minutes = time.minutes.saturating_add(elapsed);
@@ -1769,8 +1772,11 @@ pub(crate) fn rest_temporary_party_member_until_healed_at_settlement(
         return Ok(());
     }
 
-    let recovery_minutes =
-        convalescence_minutes(ctx, character_id, party_medicine_check(ctx, character_id)?);
+    let recovery_minutes = convalescence_minutes(
+        ctx,
+        character_id,
+        party_physiology_check(ctx, character_id)?,
+    );
     if recovery_minutes > 0 {
         spend_private_settlement_downtime(ctx, character_id, recovery_minutes, false)?;
     }
@@ -1861,8 +1867,8 @@ pub fn rest_at_camp(
             .character_id()
             .find(member_id)
             .map_or(0.0, |stats| stats.calories_used.max(0.0));
-        let medicine_check = party_medicine_check(ctx, member_id)?;
-        let convalescing = convalescence_minutes(ctx, member_id, medicine_check).min(elapsed);
+        let physiology_check = party_physiology_check(ctx, member_id)?;
+        let convalescing = convalescence_minutes(ctx, member_id, physiology_check).min(elapsed);
         let (_, terminal) =
             crate::disease::clip_elapsed_for_disease(ctx, member_id, elapsed, true)?;
         let settled = crate::surgery::settle_injuries(ctx, member_id, elapsed, true)?;
@@ -2042,9 +2048,12 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, requested_elapsed, true)?;
     let (elapsed, terminal) =
         crate::disease::clip_elapsed_for_disease(ctx, character_id, injury_limit, true)?;
-    let convalescing =
-        convalescence_minutes(ctx, character_id, party_medicine_check(ctx, character_id)?)
-            .min(elapsed);
+    let convalescing = convalescence_minutes(
+        ctx,
+        character_id,
+        party_physiology_check(ctx, character_id)?,
+    )
+    .min(elapsed);
     let settled = crate::surgery::settle_injuries(ctx, character_id, elapsed, true)?;
     let elapsed = settled.elapsed;
     character_time.minutes = character_time.minutes.saturating_add(elapsed);
@@ -2299,7 +2308,7 @@ mod tests {
     }
 
     #[test]
-    fn medicine_check_sets_the_daily_healing_rate() {
+    fn physiology_check_sets_the_daily_healing_rate() {
         assert!((health_recovered_per_day(0.0) - 0.01).abs() < f32::EPSILON);
         assert!((health_recovered_per_day(2.5) - 0.035).abs() < f32::EPSILON);
         assert!((health_recovered_per_day(5.0) - 0.06).abs() < f32::EPSILON);

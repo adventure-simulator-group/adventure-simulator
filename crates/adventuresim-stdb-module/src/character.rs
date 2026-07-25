@@ -14,8 +14,8 @@ use crate::{
         character_strategic_condition, morale_event, religious_demand,
     },
     disease::{
-        character_illness_status, committed_cut, disease_notice, equipped_medication,
-        herbalist_examination, infection_episode, medical_examination,
+        character_illness_status, committed_cut, disease_notice, infection_episode,
+        physiology_administration,
     },
     enter_mission, inventory_item,
     item::item,
@@ -149,6 +149,8 @@ pub fn transition_character_to_dead(
         source_id,
         strategic_minute,
     });
+    crate::social::settle_shared_party_time(ctx, character_id);
+    crate::social::close_physiology_presence(ctx, character_id);
     character.alive = false;
     // Keep an active tactical assignment until that server commits or removes
     // the character. This lets mission teardown find and cascade temporary
@@ -252,11 +254,10 @@ pub struct CharacterSkills {
     pub command_hours: f32,
     pub deception_hours: f32,
     pub seduction_hours: f32,
-    pub medicine_hours: f32,
+    pub physiology_hours: f32,
     pub cooking_hours: f32,
     pub religion_hours: adventuresim_world_schema::ReligionHours,
     pub bestiary_hours: adventuresim_world_schema::BestiaryHours,
-    pub surgery_hours: f32,
     pub oral_languages: adventuresim_world_schema::OralLanguageHours,
     pub written_languages: adventuresim_world_schema::WrittenLanguageHours,
     pub stealth_hours: f32,
@@ -265,6 +266,7 @@ pub struct CharacterSkills {
     pub terrain_forest_hours: f32,
     pub terrain_hills_hours: f32,
     pub terrain_urban_hours: f32,
+    pub anatomy_hours: f32,
     pub tailoring_hours: f32,
     pub smithing_hours: f32,
 }
@@ -422,18 +424,6 @@ pub(crate) fn delete_temporary_character(
         {
             ctx.db.item_condition().inventory_item_id().delete(row.id);
         }
-        if ctx
-            .db
-            .equipped_medication()
-            .inventory_item_id()
-            .find(row.id)
-            .is_some()
-        {
-            ctx.db
-                .equipped_medication()
-                .inventory_item_id()
-                .delete(row.id);
-        }
         for repair in ctx
             .db
             .repair_order()
@@ -445,6 +435,15 @@ pub(crate) fn delete_temporary_character(
         }
         ctx.db.inventory_item().id().delete(row.id);
         crate::food::delete_personal_food_lot(ctx, row.id);
+    }
+    for row in ctx
+        .db
+        .physiology_administration()
+        .administration_patient_id()
+        .filter(character.id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.physiology_administration().id().delete(row.id);
     }
 
     for row in ctx
@@ -473,24 +472,6 @@ pub(crate) fn delete_temporary_character(
         .collect::<Vec<_>>()
     {
         ctx.db.disease_notice().id().delete(&row.id);
-    }
-    for row in ctx
-        .db
-        .medical_examination()
-        .iter()
-        .filter(|row| row.doctor_id == character.id || row.target_id == character.id)
-        .collect::<Vec<_>>()
-    {
-        ctx.db.medical_examination().id().delete(row.id);
-    }
-    for row in ctx
-        .db
-        .herbalist_examination()
-        .patient_id()
-        .filter(character.id)
-        .collect::<Vec<_>>()
-    {
-        ctx.db.herbalist_examination().id().delete(row.id);
     }
     for row in ctx
         .db
@@ -808,8 +789,9 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
             .character_id()
             .find(id)
             .ok_or("Surgery demo character is missing skills")?;
-        skills.bestiary_hours.human = procedure_hours;
-        skills.surgery_hours = procedure_hours;
+        skills.anatomy_hours = procedure_hours;
+        skills.knife_hours = procedure_hours;
+        skills.tailoring_hours = procedure_hours;
         ctx.db.character_skills().character_id().update(skills);
         let mut time = ctx
             .db
@@ -1160,18 +1142,20 @@ fn insert_character_with_origin(
         command_hours: generated_skills.map_or(1000.0, |s| s.command),
         deception_hours: 1000.0,
         seduction_hours: 1000.0,
-        medicine_hours: generated_skills.map_or(1000.0, |s| s.medicine),
+        physiology_hours: generated_skills.map_or(1000.0, |s| s.physiology),
         cooking_hours: generated_skills.map_or(0.0, |s| s.cooking),
         religion_hours: adventuresim_world_schema::ReligionHours {
             roman_catholic: 1000.0,
             ..Default::default()
         },
-        bestiary_hours: adventuresim_world_schema::BestiaryHours {
-            beast: 1000.0,
-            human: 1000.0,
-            ..Default::default()
-        },
-        surgery_hours: 1000.0,
+        bestiary_hours: generated_skills.map_or(
+            adventuresim_world_schema::BestiaryHours {
+                beast: 1000.0,
+                human: 1000.0,
+                ..Default::default()
+            },
+            |s| s.bestiary,
+        ),
         oral_languages,
         written_languages,
         stealth_hours: generated_skills.map_or(1000.0, |s| s.stealth),
@@ -1180,6 +1164,7 @@ fn insert_character_with_origin(
         terrain_forest_hours: 0.0,
         terrain_hills_hours: 0.0,
         terrain_urban_hours: 0.0,
+        anatomy_hours: generated_skills.map_or(1000.0, |s| s.anatomy),
         tailoring_hours: 1000.0,
         smithing_hours: 1000.0,
     });

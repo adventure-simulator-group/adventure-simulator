@@ -267,7 +267,7 @@ pub fn configure_simulation_character(
         skills.command_hours,
         skills.deception_hours,
         skills.seduction_hours,
-        skills.medicine_hours,
+        skills.physiology_hours,
         skills.stealth_hours,
         skills.balance_hours,
         skills.tailoring_hours,
@@ -384,7 +384,8 @@ pub fn seed_simulation_disease(
             character_id,
             disease_id: "influenza".into(),
             contracted_at: 0,
-            treated_at: None,
+            ruleset_version: adventuresim_core::physiology::PHYSIOLOGY_RULESET_VERSION,
+            phenotype_key_version: adventuresim_core::physiology::PHENOTYPE_KEY_VERSION,
         });
     let requested =
         adventuresim_core::disease::definition(adventuresim_core::disease::DiseaseId::Influenza)

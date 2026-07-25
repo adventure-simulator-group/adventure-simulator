@@ -92,7 +92,10 @@ fn predicted_wound_routes(
     allow_healing: bool,
 ) -> Result<Vec<filth::TimedCutRoute>, String> {
     let natural = if allow_healing {
-        crate::time::health_recovered_per_day(crate::time::party_medicine_check(ctx, character_id)?)
+        crate::time::health_recovered_per_day(crate::time::party_physiology_check(
+            ctx,
+            character_id,
+        )?)
     } else {
         0.0
     };
@@ -232,7 +235,8 @@ pub fn blood_episodes_through(
                     character_id,
                     disease_id,
                     contracted_at: minute,
-                    treated_at: None,
+                    ruleset_version: adventuresim_core::physiology::PHYSIOLOGY_RULESET_VERSION,
+                    phenotype_key_version: adventuresim_core::physiology::PHENOTYPE_KEY_VERSION,
                 });
                 break;
             }
@@ -369,7 +373,8 @@ pub fn deposit(
                                 character_id: source,
                                 disease_id,
                                 contracted_at: episode.contracted_at,
-                                treated_at: episode.treated_at,
+                                ruleset_version: episode.ruleset_version,
+                                phenotype_key_version: episode.phenotype_key_version,
                             },
                             at,
                             immunity,
