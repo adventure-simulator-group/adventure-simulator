@@ -70,7 +70,8 @@ whole alphanumeric token in that fact; arbitrary substrings never match.
 Selectors must match the finite NPC fact vocabulary known at startup. Higher
 priority wins. Exactly one selector-free fallback is required, and
 equal-priority rules belonging to different demographics may not overlap under
-the same matching function used at runtime.
+the same matching function used at runtime. Fallback priority is ignored: the
+fallback is consulted only when no non-fallback rule matches.
 
 Generated quests are deterministic typed case manifests assembled from shared
 modules rather than scripts with substituted nouns. The initial catalog has

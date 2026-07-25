@@ -448,35 +448,43 @@ impl Catalog {
         profession: &str,
         local_role: &str,
     ) -> Option<&WitnessDemographicDefinition> {
-        self.documents
-            .iter()
-            .flat_map(|document| &document.witness_demographics)
-            .flat_map(|demographic| {
-                demographic
-                    .match_rules
-                    .iter()
-                    .map(move |rule| (demographic, rule))
-            })
+        let rules = || {
+            self.documents
+                .iter()
+                .flat_map(|document| &document.witness_demographics)
+                .flat_map(|demographic| {
+                    demographic
+                        .match_rules
+                        .iter()
+                        .map(move |rule| (demographic, rule))
+                })
+        };
+        rules()
             .filter(|(_, rule)| {
-                rule.fallback
-                    || (rule.age_bands.is_empty()
+                !rule.fallback
+                    && (rule.age_bands.is_empty()
                         || rule.age_bands.iter().any(|value| value == age_band))
-                        && (rule.sexes.is_empty() || rule.sexes.iter().any(|value| value == sex))
-                        && (rule.professions.is_empty()
-                            || rule.professions.iter().any(|value| {
-                                crate::quest_catalog_validation::selector_matches_fact(
-                                    value, profession,
-                                )
-                            }))
-                        && (rule.local_roles.is_empty()
-                            || rule.local_roles.iter().any(|value| {
-                                crate::quest_catalog_validation::selector_matches_fact(
-                                    value, local_role,
-                                )
-                            }))
+                    && (rule.sexes.is_empty() || rule.sexes.iter().any(|value| value == sex))
+                    && (rule.professions.is_empty()
+                        || rule.professions.iter().any(|value| {
+                            crate::quest_catalog_validation::selector_matches_fact(
+                                value, profession,
+                            )
+                        }))
+                    && (rule.local_roles.is_empty()
+                        || rule.local_roles.iter().any(|value| {
+                            crate::quest_catalog_validation::selector_matches_fact(
+                                value, local_role,
+                            )
+                        }))
             })
             .max_by_key(|(_, rule)| rule.priority)
             .map(|(demographic, _)| demographic)
+            .or_else(|| {
+                rules()
+                    .find(|(_, rule)| rule.fallback)
+                    .map(|(demographic, _)| demographic)
+            })
     }
     pub fn site(&self, id: &str) -> Option<&SiteDefinition> {
         self.sites.get(id)
@@ -917,6 +925,56 @@ mod tests {
                 .unwrap_err()
                 .contains("matches no authoritative NPC profession")
         );
+    }
+
+    #[test]
+    fn demographic_fallback_never_competes_with_specific_rules() {
+        for fallback_priority in [200, 100, 80] {
+            let (mut raw, files) = raw_catalog();
+            let investigation = raw
+                .iter_mut()
+                .find(|document| document["witness_demographics"].is_array())
+                .unwrap();
+            for demographic in investigation["witness_demographics"]
+                .as_array_mut()
+                .unwrap()
+            {
+                for rule in demographic["match_rules"].as_array_mut().unwrap() {
+                    if rule["fallback"] == serde_json::json!(true) {
+                        rule["priority"] = serde_json::json!(fallback_priority);
+                    }
+                }
+            }
+            crate::quest_catalog_validation::validate_documents(&raw, &files).unwrap();
+            let documents = raw
+                .into_iter()
+                .map(serde_json::from_value)
+                .collect::<Result<Vec<CatalogDocument>, _>>()
+                .unwrap();
+            let catalog = Catalog::compile(documents).unwrap();
+
+            assert_eq!(
+                catalog
+                    .witness_demographic_for("child", "female", "laborer", "resident")
+                    .unwrap()
+                    .id,
+                "child"
+            );
+            assert_eq!(
+                catalog
+                    .witness_demographic_for("adult", "male", "merchant", "market steward")
+                    .unwrap()
+                    .id,
+                "merchant"
+            );
+            assert_eq!(
+                catalog
+                    .witness_demographic_for("adult", "male", "artisan", "resident")
+                    .unwrap()
+                    .id,
+                "laborer"
+            );
+        }
     }
 
     #[test]
