@@ -77,8 +77,9 @@ Environment variables:
 
 ### Characters
 - `GET /characters` - List characters
-- `GET /characters/new` - Create character form
-- `POST /characters` - Create character
+- `GET /characters/candidates` - Bootstrap or render five preview-only first-character candidates
+- `POST /characters/candidates` - Confirm and authoritatively create one generated candidate
+- `GET /characters/new` - Redirect to generated candidate onboarding
 - `GET /characters/:id` - Character sheet
 - `POST /characters/:id` - Update character
 

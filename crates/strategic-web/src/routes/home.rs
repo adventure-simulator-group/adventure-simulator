@@ -8,7 +8,8 @@ use axum::{
 };
 
 use super::AppState;
-use crate::session::Session;
+use crate::session::{Session, clear_character_cookie};
+use crate::spacetimedb::Character;
 
 pub fn routes() -> Router<AppState> {
     Router::new().route("/", get(home))
@@ -38,11 +39,17 @@ fn home_path(character: &crate::spacetimedb::Character, party_is_camping: bool) 
 
 async fn home(State(state): State<AppState>, session: Session) -> Response {
     let Some(character_id) = session.character_id_u64() else {
-        return Redirect::to("/characters").into_response();
+        return Redirect::to("/characters/candidates").into_response();
     };
     let character = match super::data::character(&state, character_id).await {
         Ok(Some(character)) => character,
-        Ok(None) => return Redirect::to("/characters").into_response(),
+        Ok(None) => {
+            let destination = match state.db.query::<Character>("SELECT * FROM character").await {
+                Ok(characters) if characters.is_empty() => "/characters/candidates",
+                _ => "/characters",
+            };
+            return clear_character_cookie(destination);
+        }
         Err(error) => {
             tracing::error!(%error, "failed to load home character");
             return (

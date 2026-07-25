@@ -1,3 +1,6 @@
+use adventuresim_core::starting_character::{
+    StartingCharacterSpec, StartingPersonalityTrait, StartingSlot,
+};
 use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use strum::VariantArray;
@@ -46,6 +49,19 @@ pub struct Character {
     /// future death system, but parties already use this to govern succession.
     #[default(true)]
     pub alive: bool,
+}
+
+/// Durable receipt for an idempotent first-character confirmation.
+#[derive(Clone, Debug)]
+#[table(accessor = starting_character_claim, public)]
+pub struct StartingCharacterClaim {
+    #[primary_key]
+    pub request_key: String,
+    #[unique]
+    pub character_id: u64,
+    pub generator_version: u16,
+    pub seed: String,
+    pub slot: u8,
 }
 
 #[derive(Clone, Debug, SpacetimeType)]
@@ -616,6 +632,51 @@ pub fn create_named_character_with_id(
     insert_new_character(ctx, name, id, false)
 }
 
+/// Materialize one previewed candidate. The request coordinates, never browser-posted
+/// character data, are the sole authority for the resulting rows.
+#[reducer]
+pub fn create_starting_character(
+    ctx: &ReducerContext,
+    generator_version: u16,
+    seed: String,
+    slot: u8,
+) -> Result<(), String> {
+    let spec = adventuresim_core::starting_character::generate(generator_version, &seed, slot)
+        .map_err(str::to_owned)?;
+    let request_key = format!("{generator_version}:{seed}:{slot}");
+    if let Some(claim) = ctx
+        .db
+        .starting_character_claim()
+        .request_key()
+        .find(&request_key)
+    {
+        let existing = ctx
+            .db
+            .character()
+            .id()
+            .find(claim.character_id)
+            .ok_or("candidate claim exists without its character")?;
+        if existing.id == spec.id && existing.name == spec.name {
+            return Ok(());
+        }
+        return Err("candidate claim does not match regenerated character".into());
+    }
+    if ctx.db.character().id().find(spec.id).is_some() {
+        return Err("generated character ID collides with unrelated data".into());
+    }
+    insert_starting_character(ctx, &spec)?;
+    ctx.db
+        .starting_character_claim()
+        .insert(StartingCharacterClaim {
+            request_key,
+            character_id: spec.id,
+            generator_version,
+            seed,
+            slot,
+        });
+    Ok(())
+}
+
 /// Seed an injured character for local UI development and visual verification.
 pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String> {
     const DAMAGED_CHARACTER_ID: u64 = 9_999_999_999_999_999;
@@ -927,7 +988,7 @@ pub(crate) fn insert_new_character(
     id: u64,
     temporary: bool,
 ) -> Result<(), String> {
-    insert_character_with_origin(ctx, name, id, temporary, temporary)
+    insert_character_with_origin(ctx, name, id, temporary, temporary, None)
 }
 
 pub(crate) fn insert_new_npc_character(
@@ -936,7 +997,14 @@ pub(crate) fn insert_new_npc_character(
     id: u64,
     temporary: bool,
 ) -> Result<(), String> {
-    insert_character_with_origin(ctx, name, id, temporary, true)
+    insert_character_with_origin(ctx, name, id, temporary, true, None)
+}
+
+fn insert_starting_character(
+    ctx: &ReducerContext,
+    spec: &StartingCharacterSpec,
+) -> Result<(), String> {
+    insert_character_with_origin(ctx, spec.name.clone(), spec.id, false, false, Some(spec))
 }
 
 pub(crate) fn set_character_languages_for_settlement(
@@ -989,6 +1057,7 @@ fn insert_character_with_origin(
     id: u64,
     temporary: bool,
     npc: bool,
+    starting: Option<&StartingCharacterSpec>,
 ) -> Result<(), String> {
     log::info!("New character created: {name} (ID: {id})");
 
@@ -996,7 +1065,10 @@ fn insert_character_with_origin(
     if settlements.is_empty() {
         return Err("Cannot create a character before at least one settlement is loaded".into());
     }
-    let start_settlement = &settlements[ctx.random::<u64>() as usize % settlements.len()];
+    let mut settlements = settlements;
+    settlements.sort_by(|left, right| left.id.cmp(&right.id));
+    let selector = starting.map_or_else(|| ctx.random::<u64>(), |spec| spec.settlement_selector);
+    let start_settlement = &settlements[selector as usize % settlements.len()];
 
     let character = ctx.db.character().insert(Character {
         id,
@@ -1011,7 +1083,7 @@ fn insert_character_with_origin(
         server: Identity::ZERO,
         in_server: false,
         temporary,
-        age_years: 25,
+        age_years: starting.map_or(25, |spec| spec.age_years),
         alive: true,
     });
     let _character_stats = ctx.db.character_stats().insert(CharacterStats {
@@ -1021,36 +1093,37 @@ fn insert_character_with_origin(
     });
     let (oral_languages, written_languages) =
         adventuresim_world_schema::initial_character_languages(start_settlement.languages, id, npc);
+    let generated_skills = starting.map(|spec| &spec.skills);
     let _character_skills = ctx.db.character_skills().insert(CharacterSkills {
         character_id: id,
-        polearm_hours: 2000.0,
-        axe_hours: 2000.0,
-        bludgeon_hours: 2000.0,
-        sword_hours: 2000.0,
-        knife_hours: 2000.0,
-        dodge_hours: 1000.0,
-        block_hours: 1000.0,
-        bow_hours: 1000.0,
-        crossbow_hours: 1000.0,
+        polearm_hours: generated_skills.map_or(2000.0, |s| s.polearm),
+        axe_hours: generated_skills.map_or(2000.0, |s| s.axe),
+        bludgeon_hours: generated_skills.map_or(2000.0, |s| s.bludgeon),
+        sword_hours: generated_skills.map_or(2000.0, |s| s.sword),
+        knife_hours: generated_skills.map_or(2000.0, |s| s.knife),
+        dodge_hours: generated_skills.map_or(1000.0, |s| s.dodge),
+        block_hours: generated_skills.map_or(1000.0, |s| s.block),
+        bow_hours: generated_skills.map_or(1000.0, |s| s.bow),
+        crossbow_hours: generated_skills.map_or(1000.0, |s| s.crossbow),
         firearm_hours: 1000.0,
-        throw_hours: 1000.0,
-        will_hours: 1000.0,
-        insight_hours: 1000.0,
+        throw_hours: generated_skills.map_or(1000.0, |s| s.throw),
+        will_hours: generated_skills.map_or(1000.0, |s| s.will),
+        insight_hours: generated_skills.map_or(1000.0, |s| s.insight),
         self_awareness_hours: 1000.0,
         humor_hours: 1000.0,
-        command_hours: 1000.0,
+        command_hours: generated_skills.map_or(1000.0, |s| s.command),
         deception_hours: 1000.0,
         seduction_hours: 1000.0,
-        medicine_hours: 1000.0,
-        cooking_hours: 0.0,
+        medicine_hours: generated_skills.map_or(1000.0, |s| s.medicine),
+        cooking_hours: generated_skills.map_or(0.0, |s| s.cooking),
         religion_hours: adventuresim_world_schema::ReligionHours {
             roman_catholic: 1000.0,
             ..Default::default()
         },
         oral_languages,
         written_languages,
-        stealth_hours: 1000.0,
-        balance_hours: 1000.0,
+        stealth_hours: generated_skills.map_or(1000.0, |s| s.stealth),
+        balance_hours: generated_skills.map_or(1000.0, |s| s.balance),
         terrain_plains_hours: 0.0,
         terrain_forest_hours: 0.0,
         terrain_hills_hours: 0.0,
@@ -1082,42 +1155,116 @@ fn insert_character_with_origin(
         chest_armor_id: None,
         stomach_armor_id: None,
     });
+    let generated_attributes = starting.map(|spec| &spec.attributes);
     let _character_attrs = ctx.db.character_attributes().insert(CharacterAttributes {
         character_id: id,
-        endurance: 2.0,
-        immunity: 2.0,
-        gut: 2.0,
-        precision: 2.0,
-        intelligence: 2.0,
-        instinct: 2.0,
-        eyesight: 2.0,
-        hearing: 2.0,
-        left_arm_strength: 3.0,
-        right_arm_strength: 3.0,
-        left_leg_strength: 3.0,
-        right_leg_strength: 3.0,
-        left_arm_agility: 3.0,
-        right_arm_agility: 3.0,
-        left_leg_agility: 3.0,
-        right_leg_agility: 3.0,
+        endurance: generated_attributes.map_or(2.0, |a| a.endurance),
+        immunity: generated_attributes.map_or(2.0, |a| a.immunity),
+        gut: generated_attributes.map_or(2.0, |a| a.gut),
+        precision: generated_attributes.map_or(2.0, |a| a.precision),
+        intelligence: generated_attributes.map_or(2.0, |a| a.intelligence),
+        instinct: generated_attributes.map_or(2.0, |a| a.instinct),
+        eyesight: generated_attributes.map_or(2.0, |a| a.eyesight),
+        hearing: generated_attributes.map_or(2.0, |a| a.hearing),
+        left_arm_strength: generated_attributes.map_or(3.0, |a| a.strength),
+        right_arm_strength: generated_attributes.map_or(3.0, |a| a.strength),
+        left_leg_strength: generated_attributes.map_or(3.0, |a| a.strength),
+        right_leg_strength: generated_attributes.map_or(3.0, |a| a.strength),
+        left_arm_agility: generated_attributes.map_or(3.0, |a| a.agility),
+        right_arm_agility: generated_attributes.map_or(3.0, |a| a.agility),
+        left_leg_agility: generated_attributes.map_or(3.0, |a| a.agility),
+        right_leg_agility: generated_attributes.map_or(3.0, |a| a.agility),
     });
-    crate::personality::initialize_personality(ctx, id, npc);
+    if starting.is_some() {
+        let mut personality = crate::personality::CharacterPersonality::neutral(id);
+        for personality_trait in &starting.expect("checked above").personality.traits {
+            use crate::personality::{
+                Conscience, Conviction, Drive, Hygiene, Nerve, Outlook, SelfRegard, Sociability,
+                Temperance,
+            };
+            match personality_trait {
+                StartingPersonalityTrait::Brave => personality.nerve = Nerve::Brave,
+                StartingPersonalityTrait::Fearful => personality.nerve = Nerve::Fearful,
+                StartingPersonalityTrait::Ambitious => personality.drive = Drive::Ambitious,
+                StartingPersonalityTrait::Content => personality.drive = Drive::Content,
+                StartingPersonalityTrait::Sanguine => personality.outlook = Outlook::Sanguine,
+                StartingPersonalityTrait::Brooding => personality.outlook = Outlook::Brooding,
+                StartingPersonalityTrait::Gregarious => {
+                    personality.sociability = Sociability::Gregarious
+                }
+                StartingPersonalityTrait::Solitary => {
+                    personality.sociability = Sociability::Solitary
+                }
+                StartingPersonalityTrait::Compassionate => {
+                    personality.conscience = Conscience::Compassionate
+                }
+                StartingPersonalityTrait::Callous => personality.conscience = Conscience::Callous,
+                StartingPersonalityTrait::Cruel => personality.conscience = Conscience::Cruel,
+                StartingPersonalityTrait::Proud => personality.self_regard = SelfRegard::Proud,
+                StartingPersonalityTrait::Humble => personality.self_regard = SelfRegard::Humble,
+                StartingPersonalityTrait::Zealous => personality.conviction = Conviction::Zealous,
+                StartingPersonalityTrait::Irreverent => {
+                    personality.conviction = Conviction::Irreverent
+                }
+                StartingPersonalityTrait::Slovenly => personality.hygiene = Hygiene::Slovenly,
+                StartingPersonalityTrait::Cleanly => personality.hygiene = Hygiene::Cleanly,
+                StartingPersonalityTrait::Temperate => {
+                    personality.temperance = Temperance::Temperate
+                }
+                StartingPersonalityTrait::Drunkard => personality.temperance = Temperance::Drunkard,
+            }
+        }
+        ctx.db.character_personality().insert(personality);
+    } else {
+        crate::personality::initialize_personality(ctx, id, npc);
+    }
 
     // Starter items
-    crate::item::credit_personal_currency(ctx, character.id, &start_settlement.id, 100)?;
-    add_inventory_item(ctx, character.id, "torch", 1);
-    add_inventory_item(ctx, character.id, "bandage", 3);
-
-    // Starter equip
-    add_and_equip_item(ctx, character.id, "buckler", ItemSlot::LeftHolding)?;
-    add_and_equip_item(ctx, character.id, "katzbalger", ItemSlot::RightHolding)?;
-    add_and_equip_item(ctx, character.id, "quilted_sleeve", ItemSlot::LeftArm)?;
-    add_and_equip_item(ctx, character.id, "quilted_sleeve", ItemSlot::RightArm)?;
-    add_and_equip_item(ctx, character.id, "arming_cap", ItemSlot::Head)?;
-    add_and_equip_item(ctx, character.id, "arming_doublet", ItemSlot::Chest)?;
-    add_and_equip_item(ctx, character.id, "padded_skirt", ItemSlot::Stomach)?;
-    add_and_equip_item(ctx, character.id, "padded_chausses", ItemSlot::LeftLeg)?;
-    add_and_equip_item(ctx, character.id, "padded_chausses", ItemSlot::RightLeg)?;
+    crate::item::credit_personal_currency(
+        ctx,
+        character.id,
+        &start_settlement.id,
+        starting.map_or(100, |s| s.currency),
+    )?;
+    if let Some(spec) = starting {
+        for item in &spec.inventory {
+            if let Some(slot) = item.equipped {
+                let destination = match slot {
+                    StartingSlot::LeftHand => ItemSlot::LeftHolding,
+                    StartingSlot::RightHand => ItemSlot::RightHolding,
+                    StartingSlot::LeftArm => ItemSlot::LeftArm,
+                    StartingSlot::RightArm => ItemSlot::RightArm,
+                    StartingSlot::LeftLeg => ItemSlot::LeftLeg,
+                    StartingSlot::RightLeg => ItemSlot::RightLeg,
+                    StartingSlot::Head => ItemSlot::Head,
+                    StartingSlot::Chest => ItemSlot::Chest,
+                    StartingSlot::Stomach => ItemSlot::Stomach,
+                };
+                add_and_equip_item(ctx, character.id, &item.item_id, destination)?;
+                if item.quantity > 1 {
+                    add_inventory_item(ctx, character.id, &item.item_id, item.quantity - 1);
+                }
+            } else {
+                add_inventory_item(ctx, character.id, &item.item_id, item.quantity);
+            }
+        }
+    } else {
+        add_inventory_item(ctx, character.id, "torch", 1);
+        add_inventory_item(ctx, character.id, "bandage", 3);
+        for (item, slot) in [
+            ("buckler", ItemSlot::LeftHolding),
+            ("katzbalger", ItemSlot::RightHolding),
+            ("quilted_sleeve", ItemSlot::LeftArm),
+            ("quilted_sleeve", ItemSlot::RightArm),
+            ("arming_cap", ItemSlot::Head),
+            ("arming_doublet", ItemSlot::Chest),
+            ("padded_skirt", ItemSlot::Stomach),
+            ("padded_chausses", ItemSlot::LeftLeg),
+            ("padded_chausses", ItemSlot::RightLeg),
+        ] {
+            add_and_equip_item(ctx, character.id, item, slot)?;
+        }
+    }
 
     crate::strategic::create_solo_party_for_character(ctx, character.id)?;
     crate::capability::refresh_character_capability(ctx, character.id)?;

@@ -5,7 +5,7 @@ You aren't exactly spawning a character into the world; ostensibly, you are obta
 
 ## Personality
 
-Characters have an immutable sparse personality drawn from eight discrete axes. Generated NPCs receive two to four randomly selected non-neutral axes; the current direct player-character creation path remains neutral. Personality changes raw morale reactions rather than replacing Will, Social skills, or Religion knowledge. The hygiene axis is Slovenly/Cleanly: Slovenly characters ignore filth morale, while Cleanly characters strongly dislike filth and appreciate being completely clean. Other characters never see these authoritative tags directly.
+Characters have an immutable sparse personality drawn from discrete axes. Generated NPCs receive two to four randomly selected non-neutral axes; first-character candidates preview and persist the same exact generated axes. Personality changes raw morale reactions rather than replacing Will, Social skills, or Religion knowledge. The hygiene axis is Slovenly/Cleanly: Slovenly characters ignore filth morale, while Cleanly characters strongly dislike filth and appreciate being completely clean. Other characters never see these authoritative tags directly.
 
 Authoritative personality is private. Other characters instead keep durable,
 observer-specific beliefs with confidence and observation time. Beliefs may be
@@ -48,7 +48,7 @@ same time. Action labels remain grounded in facts the simulation actually knows.
 The character sheet groups the six skills beneath an expandable **Social** row,
 whose displayed value is their average.
 
-When mortal creation is reworked, players should choose among several generated whole characters with different personality tags. Players will not customize individual tags: personality is part of choosing an existing mortal person rather than assembling one stat by stat.
+First-time players choose among five generated whole characters with different backgrounds, attributes, combat training, equipment, and personality presentations. They cannot customize individual fields: personality and tradeoffs are part of choosing an existing mortal person rather than assembling one stat by stat. The roster is reproduced from a private random seed stored for the browser tab, but nothing is stored on the server until a candidate is confirmed.
 
 ## Mortal
 

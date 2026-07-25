@@ -732,9 +732,9 @@ pub fn build_router(state: AppState) -> Router {
             get(crate::strategic_map::world_tile),
         )
         .merge(characters::routes())
+        .merge(home::routes())
         .merge(
             Router::new()
-                .merge(home::routes())
                 .merge(investigation::routes())
                 .merge(dialogue::routes())
                 .merge(developer_quests::routes())
@@ -818,4 +818,18 @@ async fn require_active_character(request: Request, next: Next) -> Response {
         return Redirect::to("/characters").into_response();
     }
     next.run(request).await
+}
+
+#[cfg(test)]
+mod onboarding_route_tests {
+    #[test]
+    fn home_route_is_merged_before_the_active_character_guard() {
+        let source = include_str!("mod.rs");
+        let home = source.find(".merge(home::routes())").unwrap();
+        let protected = source.find(".merge(dialogue::routes())").unwrap();
+        let guard = source
+            .find(".layer(middleware::from_fn(require_active_character))")
+            .unwrap();
+        assert!(home < protected && protected < guard);
+    }
 }

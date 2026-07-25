@@ -4122,6 +4122,10 @@ body.chat-resizing {
   white-space: normal;
 }
 
+.prototype-disclaimer { margin: 0 0 1rem; padding: .8rem 1rem; border: 2px solid #d7aa48; background: #342b19; color: #fff2c9; font-weight: 700; text-align: center; }
+.candidate-stage { position: relative; }
+.candidate-play-action { display: flex; justify-content: center; margin: 1rem auto; }
+
 .strategic-notice-main { display: grid; min-height: 28rem; place-items: center; background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 55%); }
 .strategic-notice { width: min(32rem, 100%); padding: 2rem; border: 1px solid var(--border-accent); background: var(--panel-bg); box-shadow: var(--shadow-lg); text-align: center; }
 .strategic-notice h2 { margin: 0.75rem 0 0.5rem; font-family: var(--font-display), serif; }

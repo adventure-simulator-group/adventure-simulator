@@ -224,27 +224,6 @@ pub fn panel(title: &str, content: Markup) -> Markup {
     }
 }
 
-/// A form input field
-pub fn input_field(
-    name: &str,
-    label: &str,
-    input_type: &str,
-    required: bool,
-    value: Option<&str>,
-) -> Markup {
-    html! {
-        div class="form-group" {
-            label for=(name) class="form-label" { (label) }
-            input
-                type=(input_type)
-                id=(name)
-                name=(name)
-                required[required]
-                value=[value];
-        }
-    }
-}
-
 #[cfg(test)]
 mod icon_tests {
     use super::*;
