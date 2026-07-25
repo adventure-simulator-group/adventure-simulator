@@ -7,9 +7,8 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct BattleResult {
-    pub quest_id: String,
+    pub battle_id: String,
     pub party_id: String,
-    pub mission_id: String,
 }
 
 impl __sdk::InModule for BattleResult {
@@ -20,18 +19,16 @@ impl __sdk::InModule for BattleResult {
 ///
 /// Provides typed access to columns for query building.
 pub struct BattleResultCols {
-    pub quest_id: __sdk::__query_builder::Col<BattleResult, String>,
+    pub battle_id: __sdk::__query_builder::Col<BattleResult, String>,
     pub party_id: __sdk::__query_builder::Col<BattleResult, String>,
-    pub mission_id: __sdk::__query_builder::Col<BattleResult, String>,
 }
 
 impl __sdk::__query_builder::HasCols for BattleResult {
     type Cols = BattleResultCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         BattleResultCols {
-            quest_id: __sdk::__query_builder::Col::new(table_name, "quest_id"),
+            battle_id: __sdk::__query_builder::Col::new(table_name, "battle_id"),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
-            mission_id: __sdk::__query_builder::Col::new(table_name, "mission_id"),
         }
     }
 }
@@ -40,16 +37,16 @@ impl __sdk::__query_builder::HasCols for BattleResult {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct BattleResultIxCols {
+    pub battle_id: __sdk::__query_builder::IxCol<BattleResult, String>,
     pub party_id: __sdk::__query_builder::IxCol<BattleResult, String>,
-    pub quest_id: __sdk::__query_builder::IxCol<BattleResult, String>,
 }
 
 impl __sdk::__query_builder::HasIxCols for BattleResult {
     type IxCols = BattleResultIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         BattleResultIxCols {
+            battle_id: __sdk::__query_builder::IxCol::new(table_name, "battle_id"),
             party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
-            quest_id: __sdk::__query_builder::IxCol::new(table_name, "quest_id"),
         }
     }
 }

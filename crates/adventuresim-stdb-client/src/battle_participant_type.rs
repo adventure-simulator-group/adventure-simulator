@@ -8,7 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct BattleParticipant {
     pub id: u64,
-    pub quest_id: String,
+    pub participant_battle_id: String,
     pub character_id: u64,
 }
 
@@ -21,7 +21,7 @@ impl __sdk::InModule for BattleParticipant {
 /// Provides typed access to columns for query building.
 pub struct BattleParticipantCols {
     pub id: __sdk::__query_builder::Col<BattleParticipant, u64>,
-    pub quest_id: __sdk::__query_builder::Col<BattleParticipant, String>,
+    pub participant_battle_id: __sdk::__query_builder::Col<BattleParticipant, String>,
     pub character_id: __sdk::__query_builder::Col<BattleParticipant, u64>,
 }
 
@@ -30,7 +30,10 @@ impl __sdk::__query_builder::HasCols for BattleParticipant {
     fn cols(table_name: &'static str) -> Self::Cols {
         BattleParticipantCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
-            quest_id: __sdk::__query_builder::Col::new(table_name, "quest_id"),
+            participant_battle_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "participant_battle_id",
+            ),
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
         }
     }
@@ -41,7 +44,7 @@ impl __sdk::__query_builder::HasCols for BattleParticipant {
 /// Provides typed access to indexed columns for query building.
 pub struct BattleParticipantIxCols {
     pub id: __sdk::__query_builder::IxCol<BattleParticipant, u64>,
-    pub quest_id: __sdk::__query_builder::IxCol<BattleParticipant, String>,
+    pub participant_battle_id: __sdk::__query_builder::IxCol<BattleParticipant, String>,
 }
 
 impl __sdk::__query_builder::HasIxCols for BattleParticipant {
@@ -49,7 +52,10 @@ impl __sdk::__query_builder::HasIxCols for BattleParticipant {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         BattleParticipantIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-            quest_id: __sdk::__query_builder::IxCol::new(table_name, "quest_id"),
+            participant_battle_id: __sdk::__query_builder::IxCol::new(
+                table_name,
+                "participant_battle_id",
+            ),
         }
     }
 }

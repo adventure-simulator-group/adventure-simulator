@@ -17,7 +17,8 @@ pub mod alcohol_consumption_type;
 pub mod answer_dialogue_prompt_reducer;
 pub mod approve_party_action_request_planned_reducer;
 pub mod approve_party_action_request_reducer;
-pub mod autoresolve_quest_reducer;
+pub mod authorize_tactical_server_claim_reducer;
+pub mod autoresolve_mission_reducer;
 pub mod autoresolve_report_table;
 pub mod autoresolve_report_type;
 pub mod available_water_capacity_type;
@@ -219,6 +220,7 @@ pub mod herbalist_examination_type;
 pub mod historical_vegetation_type;
 pub mod historical_wetland_type;
 pub mod historical_woodland_type;
+pub mod hostile_group_authority_type;
 pub mod hygiene_type;
 pub mod igneous_rock_type;
 pub mod immediate_activity_type;
@@ -298,6 +300,7 @@ pub mod mined_commodity_type;
 pub mod mineral_soil_texture_type;
 pub mod mineral_soil_type;
 pub mod mining_industry_type;
+pub mod mission_authority_type;
 pub mod mixed_lithology_type;
 pub mod modeled_tree_species_profile_type;
 pub mod modeled_tree_species_type;
@@ -311,6 +314,7 @@ pub mod official_religion_type;
 pub mod oral_language_hours_type;
 pub mod organic_soil_type;
 pub mod other_non_textured_soil_type;
+pub mod outcome_source_authority_type;
 pub mod outlook_type;
 pub mod palmer_drought_severity_index_type;
 pub mod party_action_request_table;
@@ -391,6 +395,7 @@ pub mod retained_projectile_table;
 pub mod retained_projectile_type;
 pub mod retrieve_repaired_item_reducer;
 pub mod retrieve_repaired_items_reducer;
+pub mod revoke_tactical_server_claim_reducer;
 pub mod river_access_type;
 pub mod river_and_canal_access_type;
 pub mod river_watercourse_type;
@@ -494,6 +499,7 @@ pub mod suitability_basis_points_type;
 pub mod surface_geology_type;
 pub mod surface_lithology_type;
 pub mod synchronize_character_time_reducer;
+pub mod tactical_server_claim_type;
 pub mod tactical_server_request_table;
 pub mod tactical_server_request_type;
 pub mod tactical_server_table;
@@ -551,7 +557,8 @@ pub use alcohol_consumption_type::AlcoholConsumption;
 pub use answer_dialogue_prompt_reducer::answer_dialogue_prompt;
 pub use approve_party_action_request_planned_reducer::approve_party_action_request_planned;
 pub use approve_party_action_request_reducer::approve_party_action_request;
-pub use autoresolve_quest_reducer::autoresolve_quest;
+pub use authorize_tactical_server_claim_reducer::authorize_tactical_server_claim;
+pub use autoresolve_mission_reducer::autoresolve_mission;
 pub use autoresolve_report_table::*;
 pub use autoresolve_report_type::AutoresolveReport;
 pub use available_water_capacity_type::AvailableWaterCapacity;
@@ -753,6 +760,7 @@ pub use herbalist_examination_type::HerbalistExamination;
 pub use historical_vegetation_type::HistoricalVegetation;
 pub use historical_wetland_type::HistoricalWetland;
 pub use historical_woodland_type::HistoricalWoodland;
+pub use hostile_group_authority_type::HostileGroupAuthority;
 pub use hygiene_type::Hygiene;
 pub use igneous_rock_type::IgneousRock;
 pub use immediate_activity_type::ImmediateActivity;
@@ -832,6 +840,7 @@ pub use mined_commodity_type::MinedCommodity;
 pub use mineral_soil_texture_type::MineralSoilTexture;
 pub use mineral_soil_type::MineralSoil;
 pub use mining_industry_type::MiningIndustry;
+pub use mission_authority_type::MissionAuthority;
 pub use mixed_lithology_type::MixedLithology;
 pub use modeled_tree_species_profile_type::ModeledTreeSpeciesProfile;
 pub use modeled_tree_species_type::ModeledTreeSpecies;
@@ -845,6 +854,7 @@ pub use official_religion_type::OfficialReligion;
 pub use oral_language_hours_type::OralLanguageHours;
 pub use organic_soil_type::OrganicSoil;
 pub use other_non_textured_soil_type::OtherNonTexturedSoil;
+pub use outcome_source_authority_type::OutcomeSourceAuthority;
 pub use outlook_type::Outlook;
 pub use palmer_drought_severity_index_type::PalmerDroughtSeverityIndex;
 pub use party_action_request_table::*;
@@ -925,6 +935,7 @@ pub use retained_projectile_table::*;
 pub use retained_projectile_type::RetainedProjectile;
 pub use retrieve_repaired_item_reducer::retrieve_repaired_item;
 pub use retrieve_repaired_items_reducer::retrieve_repaired_items;
+pub use revoke_tactical_server_claim_reducer::revoke_tactical_server_claim;
 pub use river_access_type::RiverAccess;
 pub use river_and_canal_access_type::RiverAndCanalAccess;
 pub use river_watercourse_type::RiverWatercourse;
@@ -1028,6 +1039,7 @@ pub use suitability_basis_points_type::SuitabilityBasisPoints;
 pub use surface_geology_type::SurfaceGeology;
 pub use surface_lithology_type::SurfaceLithology;
 pub use synchronize_character_time_reducer::synchronize_character_time;
+pub use tactical_server_claim_type::TacticalServerClaim;
 pub use tactical_server_request_table::*;
 pub use tactical_server_request_type::TacticalServerRequest;
 pub use tactical_server_table::*;
@@ -1111,9 +1123,13 @@ pub enum Reducer {
         request_id: u64,
         route: JourneyRoutePlan,
     },
-    AutoresolveQuest {
+    AuthorizeTacticalServerClaim {
+        mission_id: String,
+        claim_hash: Vec<u8>,
+    },
+    AutoresolveMission {
         character_id: u64,
-        quest_id: String,
+        mission_id: String,
     },
     BackfillCharacterDeathsAndLeadership,
     BackfillEquipmentConditionAndSmiths,
@@ -1201,6 +1217,7 @@ pub enum Reducer {
     },
     CreateTacticalServerForRequest {
         mission_id: String,
+        claim: String,
         addr: String,
         cert_digest: String,
     },
@@ -1443,6 +1460,9 @@ pub enum Reducer {
         item_id: Option<String>,
         limit: u32,
     },
+    RevokeTacticalServerClaim {
+        mission_id: String,
+    },
     SaveRecruitmentRole {
         owner_id: u64,
         name: String,
@@ -1541,7 +1561,7 @@ pub enum Reducer {
     },
     StoreBattleLoot {
         character_id: u64,
-        quest_id: String,
+        battle_id: String,
         loot_item_ids: Vec<u64>,
         quantities: Vec<u32>,
     },
@@ -1653,7 +1673,8 @@ impl __sdk::Reducer for Reducer {
             Reducer::ApprovePartyActionRequestPlanned { .. } => {
                 "approve_party_action_request_planned"
             }
-            Reducer::AutoresolveQuest { .. } => "autoresolve_quest",
+            Reducer::AuthorizeTacticalServerClaim { .. } => "authorize_tactical_server_claim",
+            Reducer::AutoresolveMission { .. } => "autoresolve_mission",
             Reducer::BackfillCharacterDeathsAndLeadership => {
                 "backfill_character_deaths_and_leadership"
             }
@@ -1734,6 +1755,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::RestAtSettlementHours { .. } => "rest_at_settlement_hours",
             Reducer::RetrieveRepairedItem { .. } => "retrieve_repaired_item",
             Reducer::RetrieveRepairedItems { .. } => "retrieve_repaired_items",
+            Reducer::RevokeTacticalServerClaim { .. } => "revoke_tactical_server_claim",
             Reducer::SaveRecruitmentRole { .. } => "save_recruitment_role",
             Reducer::SeedSimulationDisease { .. } => "seed_simulation_disease",
             Reducer::SeedSimulationEquipmentDamage { .. } => "seed_simulation_equipment_damage",
@@ -1827,12 +1849,19 @@ impl __sdk::Reducer for Reducer {
                 request_id: request_id.clone(),
                 route: route.clone(),
 }),
-            Reducer::AutoresolveQuest{
+            Reducer::AuthorizeTacticalServerClaim{
+                mission_id,
+                claim_hash,
+}             => __sats::bsatn::to_vec(&authorize_tactical_server_claim_reducer::AuthorizeTacticalServerClaimArgs {
+                mission_id: mission_id.clone(),
+                claim_hash: claim_hash.clone(),
+}),
+            Reducer::AutoresolveMission{
                 character_id,
-                quest_id,
-}             => __sats::bsatn::to_vec(&autoresolve_quest_reducer::AutoresolveQuestArgs {
+                mission_id,
+}             => __sats::bsatn::to_vec(&autoresolve_mission_reducer::AutoresolveMissionArgs {
                 character_id: character_id.clone(),
-                quest_id: quest_id.clone(),
+                mission_id: mission_id.clone(),
 }),
             Reducer::BackfillCharacterDeathsAndLeadership => __sats::bsatn::to_vec(&backfill_character_deaths_and_leadership_reducer::BackfillCharacterDeathsAndLeadershipArgs {
                 }),
@@ -1989,10 +2018,12 @@ Reducer::CancelMissionRequest{
 }),
             Reducer::CreateTacticalServerForRequest{
                 mission_id,
+                claim,
                 addr,
                 cert_digest,
 }             => __sats::bsatn::to_vec(&create_tactical_server_for_request_reducer::CreateTacticalServerForRequestArgs {
                 mission_id: mission_id.clone(),
+                claim: claim.clone(),
                 addr: addr.clone(),
                 cert_digest: cert_digest.clone(),
 }),
@@ -2420,6 +2451,11 @@ Reducer::CancelMissionRequest{
                 item_id: item_id.clone(),
                 limit: limit.clone(),
 }),
+            Reducer::RevokeTacticalServerClaim{
+                mission_id,
+}             => __sats::bsatn::to_vec(&revoke_tactical_server_claim_reducer::RevokeTacticalServerClaimArgs {
+                mission_id: mission_id.clone(),
+}),
             Reducer::SaveRecruitmentRole{
                 owner_id,
                 name,
@@ -2599,12 +2635,12 @@ Reducer::CancelMissionRequest{
 }),
             Reducer::StoreBattleLoot{
                 character_id,
-                quest_id,
+                battle_id,
                 loot_item_ids,
                 quantities,
 }             => __sats::bsatn::to_vec(&store_battle_loot_reducer::StoreBattleLootArgs {
                 character_id: character_id.clone(),
-                quest_id: quest_id.clone(),
+                battle_id: battle_id.clone(),
                 loot_item_ids: loot_item_ids.clone(),
                 quantities: quantities.clone(),
 }),
@@ -3202,7 +3238,7 @@ impl __sdk::DbUpdate for DbUpdate {
                 "autoresolve_report",
                 &self.autoresolve_report,
             )
-            .with_updates_by_pk(|row| &row.quest_id);
+            .with_updates_by_pk(|row| &row.battle_id);
         diff.battle_loot_item = cache
             .apply_diff_to_table::<BattleLootItem>("battle_loot_item", &self.battle_loot_item)
             .with_updates_by_pk(|row| &row.id);
@@ -3214,7 +3250,7 @@ impl __sdk::DbUpdate for DbUpdate {
             .with_updates_by_pk(|row| &row.id);
         diff.battle_result = cache
             .apply_diff_to_table::<BattleResult>("battle_result", &self.battle_result)
-            .with_updates_by_pk(|row| &row.quest_id);
+            .with_updates_by_pk(|row| &row.battle_id);
         diff.character = cache
             .apply_diff_to_table::<Character>("character", &self.character)
             .with_updates_by_pk(|row| &row.id);
@@ -3488,15 +3524,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.strategic_incident,
             )
             .with_updates_by_pk(|row| &row.quest_id);
-        diff.tactical_server = cache
-            .apply_diff_to_table::<TacticalServer>("tactical_server", &self.tactical_server)
-            .with_updates_by_pk(|row| &row.identity);
-        diff.tactical_server_request = cache
-            .apply_diff_to_table::<TacticalServerRequest>(
-                "tactical_server_request",
-                &self.tactical_server_request,
-            )
-            .with_updates_by_pk(|row| &row.mission_id);
         diff.travel_edge = cache
             .apply_diff_to_table::<TravelEdge>("travel_edge", &self.travel_edge)
             .with_updates_by_pk(|row| &row.id);
@@ -3576,6 +3603,12 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.party_journey_route = cache.apply_diff_to_table::<PartyJourneyRoute>(
             "party_journey_route",
             &self.party_journey_route,
+        );
+        diff.tactical_server =
+            cache.apply_diff_to_table::<TacticalServer>("tactical_server", &self.tactical_server);
+        diff.tactical_server_request = cache.apply_diff_to_table::<TacticalServerRequest>(
+            "tactical_server_request",
+            &self.tactical_server_request,
         );
 
         diff

@@ -7,7 +7,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct AutoresolveReport {
-    pub quest_id: String,
+    pub battle_id: String,
     pub party_id: String,
     pub seed: u64,
     pub victor: String,
@@ -24,7 +24,7 @@ impl __sdk::InModule for AutoresolveReport {
 ///
 /// Provides typed access to columns for query building.
 pub struct AutoresolveReportCols {
-    pub quest_id: __sdk::__query_builder::Col<AutoresolveReport, String>,
+    pub battle_id: __sdk::__query_builder::Col<AutoresolveReport, String>,
     pub party_id: __sdk::__query_builder::Col<AutoresolveReport, String>,
     pub seed: __sdk::__query_builder::Col<AutoresolveReport, u64>,
     pub victor: __sdk::__query_builder::Col<AutoresolveReport, String>,
@@ -37,7 +37,7 @@ impl __sdk::__query_builder::HasCols for AutoresolveReport {
     type Cols = AutoresolveReportCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         AutoresolveReportCols {
-            quest_id: __sdk::__query_builder::Col::new(table_name, "quest_id"),
+            battle_id: __sdk::__query_builder::Col::new(table_name, "battle_id"),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             seed: __sdk::__query_builder::Col::new(table_name, "seed"),
             victor: __sdk::__query_builder::Col::new(table_name, "victor"),
@@ -52,16 +52,16 @@ impl __sdk::__query_builder::HasCols for AutoresolveReport {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct AutoresolveReportIxCols {
+    pub battle_id: __sdk::__query_builder::IxCol<AutoresolveReport, String>,
     pub party_id: __sdk::__query_builder::IxCol<AutoresolveReport, String>,
-    pub quest_id: __sdk::__query_builder::IxCol<AutoresolveReport, String>,
 }
 
 impl __sdk::__query_builder::HasIxCols for AutoresolveReport {
     type IxCols = AutoresolveReportIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         AutoresolveReportIxCols {
+            battle_id: __sdk::__query_builder::IxCol::new(table_name, "battle_id"),
             party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
-            quest_id: __sdk::__query_builder::IxCol::new(table_name, "quest_id"),
         }
     }
 }

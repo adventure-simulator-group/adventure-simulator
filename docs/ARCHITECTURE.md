@@ -222,7 +222,7 @@ The database stores ONLY:
 
 When a mission ends, the tactical server sends the **results** (XP gained, items earned) to SpacetimeDB via the `commit_mission` reducer.
 
-Finalized loot is strategic state. The tactical server derives drops from the temporary enemies' equipped inventory and records only the resulting item identifiers and quantities. The strategic layer owns the post-battle result, shared party inventory, and per-character value stakes; no enemy, damage, position, or other tactical tick state is persisted.
+Finalized loot is strategic state. The tactical server derives drops from the temporary enemies' equipped inventory and records only the resulting item identifiers and quantities. The strategic layer owns the post-battle result, shared party inventory, and per-character value stakes; no enemy, damage, position, or other tactical tick state is persisted. Mission, battle, hostile-group, and outcome-source identity are explicitly separate from contract/quest identity; see [MISSION_AUTHORITY.md](MISSION_AUTHORITY.md).
 
 ## Architecture
 
@@ -357,8 +357,12 @@ never include raw investigation tables. See
 | `character_death` | Immutable first death cause/source and personal strategic minute, keyed by character |
 | `local_chat_message` | Party-scoped NPC and face-to-face player conversation history |
 | `character_capability` | Cached automatic equipment, attribute, skill, and mobility tags |
-| `mission` | Active and completed missions |
-| `mission_commit` | Idempotent mission result tracking |
+| private `mission_authority` | Party, scene, optional case-site, and optional hostile-group binding for one combat opportunity |
+| private `hostile_group_authority` | Persistent case-site occupant and its defeated state |
+| private `outcome_source_authority` | Authenticated, idempotent source receipt for one victorious strategic outcome |
+| private `tactical_server_claim` | One-use SHA-256 dispatcher claim bound to one mission request |
+| `battle_result` | Battle/source attribution, never keyed by quest |
+| `battle_loot_item` / `battle_participant` | Battle-keyed loot and eligible participants |
 | `quest` | Settlement-owned generated postings, opposition, reward, and acceptance state; it is not destination authority |
 | private `case_site_authority` | Stable case-site identity, origin, scene, distance, and physical coordinates |
 | private `party_case_site_tracking` | Per-party presentation/navigation selection; it grants no knowledge, acceptance, objective progress, or reward |

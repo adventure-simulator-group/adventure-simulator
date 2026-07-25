@@ -10,9 +10,11 @@ path = "src/main.rs"
 [dependencies]
 # SpacetimeDB SDK
 adventuresim-stdb-client = { path = "../adventuresim-stdb-client" }
+rand.workspace = true
+sha2.workspace = true
 
 # CLI
-clap = { workspace = true }
+clap = { workspace = true, features = ["env"] }
 
 # Logging
 tracing = { workspace = true }

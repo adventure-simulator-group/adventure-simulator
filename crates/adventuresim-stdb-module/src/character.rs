@@ -20,7 +20,7 @@ use crate::{
     repair::{item_condition, repair_order},
     strategic::{inventory_quantity_target, party_authority, party_member, settlement},
     surgery::{limb_injury, retained_projectile},
-    tactical::tactical_server,
+    tactical::tactical_server_authority,
     time::{character_notoriety, character_time, character_training_schedule},
 };
 
@@ -314,7 +314,14 @@ impl CharacterEquip {
 pub fn create_temporary_character(ctx: &ReducerContext, server: Identity) -> Result<(), String> {
     use petname::Generator;
 
-    if ctx.sender() != server || ctx.db.tactical_server().identity().find(server).is_none() {
+    if ctx.sender() != server
+        || ctx
+            .db
+            .tactical_server_authority()
+            .identity()
+            .find(server)
+            .is_none()
+    {
         return Err("Only a registered tactical server can create its temporary characters".into());
     }
 

@@ -8,7 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub(super) struct StoreBattleLootArgs {
     pub character_id: u64,
-    pub quest_id: String,
+    pub battle_id: String,
     pub loot_item_ids: Vec<u64>,
     pub quantities: Vec<u32>,
 }
@@ -17,7 +17,7 @@ impl From<StoreBattleLootArgs> for super::Reducer {
     fn from(args: StoreBattleLootArgs) -> Self {
         Self::StoreBattleLoot {
             character_id: args.character_id,
-            quest_id: args.quest_id,
+            battle_id: args.battle_id,
             loot_item_ids: args.loot_item_ids,
             quantities: args.quantities,
         }
@@ -42,11 +42,17 @@ pub trait store_battle_loot {
     fn store_battle_loot(
         &self,
         character_id: u64,
-        quest_id: String,
+        battle_id: String,
         loot_item_ids: Vec<u64>,
         quantities: Vec<u32>,
     ) -> __sdk::Result<()> {
-        self.store_battle_loot_then(character_id, quest_id, loot_item_ids, quantities, |_, _| {})
+        self.store_battle_loot_then(
+            character_id,
+            battle_id,
+            loot_item_ids,
+            quantities,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `store_battle_loot` to run as soon as possible,
@@ -58,7 +64,7 @@ pub trait store_battle_loot {
     fn store_battle_loot_then(
         &self,
         character_id: u64,
-        quest_id: String,
+        battle_id: String,
         loot_item_ids: Vec<u64>,
         quantities: Vec<u32>,
 
@@ -74,7 +80,7 @@ impl store_battle_loot for super::RemoteReducers {
     fn store_battle_loot_then(
         &self,
         character_id: u64,
-        quest_id: String,
+        battle_id: String,
         loot_item_ids: Vec<u64>,
         quantities: Vec<u32>,
 
@@ -87,7 +93,7 @@ impl store_battle_loot for super::RemoteReducers {
         self.imp.invoke_reducer_with_callback(
             StoreBattleLootArgs {
                 character_id,
-                quest_id,
+                battle_id,
                 loot_item_ids,
                 quantities,
             },

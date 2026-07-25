@@ -207,8 +207,8 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.autoresolve_report());
         invalidate_on_changes!(state.0._connection.db.battle_loot_item());
         invalidate_on_changes!(state.0._connection.db.battle_participant());
-        invalidate_on_changes!(state.0._connection.db.tactical_server_request());
-        invalidate_on_changes!(state.0._connection.db.tactical_server());
+        invalidate_on_view_changes!(state.0._connection.db.tactical_server_request());
+        invalidate_on_view_changes!(state.0._connection.db.tactical_server());
         invalidate_on_changes!(state.0._connection.db.settlement_outbreak());
 
         state
