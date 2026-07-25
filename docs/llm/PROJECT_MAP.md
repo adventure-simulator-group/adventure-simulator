@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (1207)
+## Files (1213)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -33,12 +33,16 @@ development, or wiki document before changing a subsystem.
 - `book.toml` — Tooling or build configuration.
 - `content/dialogue/examples.yaml` — Repository support file.
 - `content/dialogue/services.yaml` — Repository support file.
+- `content/quests/bestiary.yaml` — Repository support file.
+- `content/quests/generation.yaml` — Repository support file.
+- `content/quests/investigation.yaml` — Repository support file.
 - `crates/adventuresim-character-creator/Cargo.lock` — Locked Rust dependency versions.
 - `crates/adventuresim-character-creator/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-character-creator/README.md` — Component overview and usage notes.
 - `crates/adventuresim-character-creator/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-character-creator/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-core/Cargo.toml` — Cargo package/workspace manifest.
+- `crates/adventuresim-core/build.rs` — Rust source module.
 - `crates/adventuresim-core/src/activity.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/alcohol.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/attribute.rs` — Rust source module for this component.
@@ -68,6 +72,8 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/npc_adventurer.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/profession.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/provisioning.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/quest_catalog.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/quest_catalog_validation.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/quest_generation.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/settlement_economy.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/settlement_population.rs` — Rust source module for this component.
