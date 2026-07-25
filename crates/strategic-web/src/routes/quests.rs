@@ -1223,6 +1223,8 @@ mod quest_route_tests {
             age_years: 25,
             alive: true,
             temporary: false,
+            social_notification_count: 0,
+            automatic_social_chat_enabled: false,
         }
     }
 

@@ -16,8 +16,17 @@
   };
   const dialogOwnsBodyLock = (hasCharacterDialog, hasExamination) => hasCharacterDialog || hasExamination;
   const openerIdentity = (opener) => opener?.dataset?.dialogOpener || opener?.getAttribute?.("aria-label") || null;
+  const submitAutomaticChatToggle = (input) => {
+    if (!input?.matches?.("[data-automatic-social-chat]") || !input.form?.requestSubmit) return false;
+    input.form.requestSubmit();
+    return true;
+  };
 
-  if (typeof module !== "undefined") module.exports = { wrappedFocusIndex, dialogOwnsBodyLock, openerIdentity };
+  if (typeof module !== "undefined") {
+    module.exports = {
+      wrappedFocusIndex, dialogOwnsBodyLock, openerIdentity, submitAutomaticChatToggle,
+    };
+  }
   if (typeof document === "undefined") return;
 
   const restoreKey = "adventuresim-character-dialog-opener";
@@ -29,6 +38,9 @@
     if (event.target.closest?.(".character-action-dialog-close, .character-action-backdrop, .medical-examination-close")) {
       sessionStorage.setItem(`${restoreKey}-pending`, "true");
     }
+  });
+  document.addEventListener("change", (event) => {
+    submitAutomaticChatToggle(event.target);
   });
 
   const overlays = [...document.querySelectorAll("[data-character-action-dialog]")];

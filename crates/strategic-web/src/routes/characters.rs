@@ -1,8 +1,9 @@
 //! Character route handlers
 
 use axum::{
-    Form, Router,
+    Form, Json, Router,
     extract::{Path, Query, State},
+    http::StatusCode,
     response::{Html, IntoResponse, Response},
     routing::{get, post},
 };
@@ -11,7 +12,7 @@ use serde_json::json;
 
 use super::AppState;
 use crate::session::{Session, clear_character_cookie, set_character_cookie};
-use crate::spacetimedb::Character;
+use crate::spacetimedb::{Character, CharacterStrategicCondition};
 use crate::templates::character::{
     character_candidates_bootstrap_page, character_candidates_page, characters_list_page,
 };
@@ -26,6 +27,7 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/characters/new", get(redirect_to_candidates))
         .route("/characters/{id}/select", post(select_character))
+        .route("/api/characters/{id}/condition", get(character_condition))
         .route("/characters/switch", post(switch_character))
 }
 
@@ -34,6 +36,41 @@ struct CandidateQuery {
     version: Option<u16>,
     seed: Option<String>,
     selected: Option<u8>,
+}
+
+async fn character_condition(
+    State(state): State<AppState>,
+    Path(id): Path<u64>,
+    session: Session,
+) -> Response {
+    let Some(viewer_id) = session.character_id_u64() else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let (viewer, subject) = tokio::join!(
+        super::data::character(&state, viewer_id),
+        super::data::character(&state, id),
+    );
+    let (Ok(Some(viewer)), Ok(Some(subject))) = (viewer, subject) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let same_party = viewer.id == subject.id
+        || (viewer.party_id.is_some() && viewer.party_id == subject.party_id);
+    let colocated = viewer.current_settlement_id == subject.current_settlement_id
+        && viewer.current_case_site_id == subject.current_case_site_id;
+    if !same_party || !colocated {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    Json(
+        state
+            .db
+            .query_one::<CharacterStrategicCondition>(&format!(
+                "SELECT * FROM character_strategic_condition WHERE character_id = {id}"
+            ))
+            .await
+            .ok()
+            .flatten(),
+    )
+    .into_response()
 }
 
 #[derive(Deserialize)]

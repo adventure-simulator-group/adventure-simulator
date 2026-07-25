@@ -19,10 +19,12 @@ pub mod answer_dialogue_prompt_reducer;
 pub mod approve_party_action_request_planned_reducer;
 pub mod approve_party_action_request_reducer;
 pub mod authorize_tactical_server_claim_reducer;
+pub mod automatic_social_chat_type;
 pub mod autoresolve_mission_reducer;
 pub mod autoresolve_report_table;
 pub mod autoresolve_report_type;
 pub mod available_water_capacity_type;
+pub mod backend_automatic_social_chats_table;
 pub mod backend_case_battle_type;
 pub mod backend_case_battles_table;
 pub mod backend_case_site_pin_type;
@@ -71,6 +73,7 @@ pub mod backend_physical_evidence_inspection_type;
 pub mod backend_physical_evidence_inspections_table;
 pub mod backend_physical_evidence_table;
 pub mod backend_physical_evidence_type;
+pub mod backend_social_addresses_table;
 pub mod backend_social_beliefs_table;
 pub mod backfill_character_deaths_and_leadership_reducer;
 pub mod backfill_equipment_condition_and_smiths_reducer;
@@ -505,6 +508,7 @@ pub mod seed_simulation_world_reducer;
 pub mod seed_standalone_tactical_mission_reducer;
 pub mod self_regard_type;
 pub mod send_local_chat_message_reducer;
+pub mod set_automatic_social_chat_reducer;
 pub mod set_character_religion_reducer;
 pub mod set_inventory_quantity_target_reducer;
 pub mod set_party_camp_fatigue_percent_reducer;
@@ -546,6 +550,7 @@ pub mod simulation_run_table;
 pub mod simulation_run_type;
 pub mod sociability_type;
 pub mod social_action_cooldown_type;
+pub mod social_address_type;
 pub mod social_belief_type;
 pub mod social_interaction_type;
 pub mod soil_acidity_type;
@@ -638,10 +643,12 @@ pub use answer_dialogue_prompt_reducer::answer_dialogue_prompt;
 pub use approve_party_action_request_planned_reducer::approve_party_action_request_planned;
 pub use approve_party_action_request_reducer::approve_party_action_request;
 pub use authorize_tactical_server_claim_reducer::authorize_tactical_server_claim;
+pub use automatic_social_chat_type::AutomaticSocialChat;
 pub use autoresolve_mission_reducer::autoresolve_mission;
 pub use autoresolve_report_table::*;
 pub use autoresolve_report_type::AutoresolveReport;
 pub use available_water_capacity_type::AvailableWaterCapacity;
+pub use backend_automatic_social_chats_table::*;
 pub use backend_case_battle_type::BackendCaseBattle;
 pub use backend_case_battles_table::*;
 pub use backend_case_site_pin_type::BackendCaseSitePin;
@@ -690,6 +697,7 @@ pub use backend_physical_evidence_inspection_type::BackendPhysicalEvidenceInspec
 pub use backend_physical_evidence_inspections_table::*;
 pub use backend_physical_evidence_table::*;
 pub use backend_physical_evidence_type::BackendPhysicalEvidence;
+pub use backend_social_addresses_table::*;
 pub use backend_social_beliefs_table::*;
 pub use backfill_character_deaths_and_leadership_reducer::backfill_character_deaths_and_leadership;
 pub use backfill_equipment_condition_and_smiths_reducer::backfill_equipment_condition_and_smiths;
@@ -1124,6 +1132,7 @@ pub use seed_simulation_world_reducer::seed_simulation_world;
 pub use seed_standalone_tactical_mission_reducer::seed_standalone_tactical_mission;
 pub use self_regard_type::SelfRegard;
 pub use send_local_chat_message_reducer::send_local_chat_message;
+pub use set_automatic_social_chat_reducer::set_automatic_social_chat;
 pub use set_character_religion_reducer::set_character_religion;
 pub use set_inventory_quantity_target_reducer::set_inventory_quantity_target;
 pub use set_party_camp_fatigue_percent_reducer::set_party_camp_fatigue_percent;
@@ -1165,6 +1174,7 @@ pub use simulation_run_table::*;
 pub use simulation_run_type::SimulationRun;
 pub use sociability_type::Sociability;
 pub use social_action_cooldown_type::SocialActionCooldown;
+pub use social_address_type::SocialAddress;
 pub use social_belief_type::SocialBelief;
 pub use social_interaction_type::SocialInteraction;
 pub use soil_acidity_type::SoilAcidity;
@@ -1689,6 +1699,11 @@ pub enum Reducer {
         location_id: String,
         body: String,
     },
+    SetAutomaticSocialChat {
+        actor_id: u64,
+        target_id: u64,
+        enabled: bool,
+    },
     SetCharacterReligion {
         character_id: u64,
         religion_id: String,
@@ -1965,6 +1980,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::SeedSimulationWorld { .. } => "seed_simulation_world",
             Reducer::SeedStandaloneTacticalMission { .. } => "seed_standalone_tactical_mission",
             Reducer::SendLocalChatMessage { .. } => "send_local_chat_message",
+            Reducer::SetAutomaticSocialChat { .. } => "set_automatic_social_chat",
             Reducer::SetCharacterReligion { .. } => "set_character_religion",
             Reducer::SetInventoryQuantityTarget { .. } => "set_inventory_quantity_target",
             Reducer::SetPartyCampFatiguePercent { .. } => "set_party_camp_fatigue_percent",
@@ -2788,6 +2804,15 @@ Reducer::CancelMissionRequest{
                 location_id: location_id.clone(),
                 body: body.clone(),
 }),
+            Reducer::SetAutomaticSocialChat{
+                actor_id,
+                target_id,
+                enabled,
+}             => __sats::bsatn::to_vec(&set_automatic_social_chat_reducer::SetAutomaticSocialChatArgs {
+                actor_id: actor_id.clone(),
+                target_id: target_id.clone(),
+                enabled: enabled.clone(),
+}),
             Reducer::SetCharacterReligion{
                 character_id,
                 religion_id,
@@ -3098,6 +3123,7 @@ Reducer::VoteForPartyLeader{
 pub struct DbUpdate {
     alcohol_consumption: __sdk::TableUpdate<AlcoholConsumption>,
     autoresolve_report: __sdk::TableUpdate<AutoresolveReport>,
+    backend_automatic_social_chats: __sdk::TableUpdate<AutomaticSocialChat>,
     backend_case_battles: __sdk::TableUpdate<BackendCaseBattle>,
     backend_case_site_pins: __sdk::TableUpdate<BackendCaseSitePin>,
     backend_character_affinities: __sdk::TableUpdate<CharacterAffinity>,
@@ -3125,6 +3151,7 @@ pub struct DbUpdate {
     backend_npc_intervention_candidates: __sdk::TableUpdate<BackendNpcInterventionCandidate>,
     backend_physical_evidence: __sdk::TableUpdate<BackendPhysicalEvidence>,
     backend_physical_evidence_inspections: __sdk::TableUpdate<BackendPhysicalEvidenceInspection>,
+    backend_social_addresses: __sdk::TableUpdate<SocialAddress>,
     backend_social_beliefs: __sdk::TableUpdate<SocialBelief>,
     battle_loot_item: __sdk::TableUpdate<BattleLootItem>,
     battle_participant: __sdk::TableUpdate<BattleParticipant>,
@@ -3209,6 +3236,11 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "autoresolve_report" => db_update
                     .autoresolve_report
                     .append(autoresolve_report_table::parse_table_update(table_update)?),
+                "backend_automatic_social_chats" => {
+                    db_update.backend_automatic_social_chats.append(
+                        backend_automatic_social_chats_table::parse_table_update(table_update)?,
+                    )
+                }
                 "backend_case_battles" => db_update.backend_case_battles.append(
                     backend_case_battles_table::parse_table_update(table_update)?,
                 ),
@@ -3318,6 +3350,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                         )?,
                     )
                 }
+                "backend_social_addresses" => db_update.backend_social_addresses.append(
+                    backend_social_addresses_table::parse_table_update(table_update)?,
+                ),
                 "backend_social_beliefs" => db_update.backend_social_beliefs.append(
                     backend_social_beliefs_table::parse_table_update(table_update)?,
                 ),
@@ -3836,6 +3871,10 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.world_node = cache
             .apply_diff_to_table::<WorldNode>("world_node", &self.world_node)
             .with_updates_by_pk(|row| &row.id);
+        diff.backend_automatic_social_chats = cache.apply_diff_to_table::<AutomaticSocialChat>(
+            "backend_automatic_social_chats",
+            &self.backend_automatic_social_chats,
+        );
         diff.backend_case_battles = cache.apply_diff_to_table::<BackendCaseBattle>(
             "backend_case_battles",
             &self.backend_case_battles,
@@ -3953,6 +3992,10 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_physical_evidence_inspections",
                 &self.backend_physical_evidence_inspections,
             );
+        diff.backend_social_addresses = cache.apply_diff_to_table::<SocialAddress>(
+            "backend_social_addresses",
+            &self.backend_social_addresses,
+        );
         diff.backend_social_beliefs = cache.apply_diff_to_table::<SocialBelief>(
             "backend_social_beliefs",
             &self.backend_social_beliefs,
@@ -3988,6 +4031,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "autoresolve_report" => db_update
                     .autoresolve_report
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_automatic_social_chats" => db_update
+                    .backend_automatic_social_chats
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_case_battles" => db_update
                     .backend_case_battles
@@ -4069,6 +4115,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_physical_evidence_inspections" => db_update
                     .backend_physical_evidence_inspections
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_social_addresses" => db_update
+                    .backend_social_addresses
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_social_beliefs" => db_update
                     .backend_social_beliefs
@@ -4299,6 +4348,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "autoresolve_report" => db_update
                     .autoresolve_report
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_automatic_social_chats" => db_update
+                    .backend_automatic_social_chats
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_case_battles" => db_update
                     .backend_case_battles
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -4379,6 +4431,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_physical_evidence_inspections" => db_update
                     .backend_physical_evidence_inspections
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_social_addresses" => db_update
+                    .backend_social_addresses
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_social_beliefs" => db_update
                     .backend_social_beliefs
@@ -4607,6 +4662,7 @@ impl __sdk::DbUpdate for DbUpdate {
 pub struct AppliedDiff<'r> {
     alcohol_consumption: __sdk::TableAppliedDiff<'r, AlcoholConsumption>,
     autoresolve_report: __sdk::TableAppliedDiff<'r, AutoresolveReport>,
+    backend_automatic_social_chats: __sdk::TableAppliedDiff<'r, AutomaticSocialChat>,
     backend_case_battles: __sdk::TableAppliedDiff<'r, BackendCaseBattle>,
     backend_case_site_pins: __sdk::TableAppliedDiff<'r, BackendCaseSitePin>,
     backend_character_affinities: __sdk::TableAppliedDiff<'r, CharacterAffinity>,
@@ -4639,6 +4695,7 @@ pub struct AppliedDiff<'r> {
     backend_physical_evidence: __sdk::TableAppliedDiff<'r, BackendPhysicalEvidence>,
     backend_physical_evidence_inspections:
         __sdk::TableAppliedDiff<'r, BackendPhysicalEvidenceInspection>,
+    backend_social_addresses: __sdk::TableAppliedDiff<'r, SocialAddress>,
     backend_social_beliefs: __sdk::TableAppliedDiff<'r, SocialBelief>,
     battle_loot_item: __sdk::TableAppliedDiff<'r, BattleLootItem>,
     battle_participant: __sdk::TableAppliedDiff<'r, BattleParticipant>,
@@ -4730,6 +4787,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<AutoresolveReport>(
             "autoresolve_report",
             &self.autoresolve_report,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<AutomaticSocialChat>(
+            "backend_automatic_social_chats",
+            &self.backend_automatic_social_chats,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendCaseBattle>(
@@ -4865,6 +4927,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendPhysicalEvidenceInspection>(
             "backend_physical_evidence_inspections",
             &self.backend_physical_evidence_inspections,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<SocialAddress>(
+            "backend_social_addresses",
+            &self.backend_social_addresses,
             event,
         );
         callbacks.invoke_table_row_callbacks::<SocialBelief>(
@@ -5839,6 +5906,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         alcohol_consumption_table::register_table(client_cache);
         autoresolve_report_table::register_table(client_cache);
+        backend_automatic_social_chats_table::register_table(client_cache);
         backend_case_battles_table::register_table(client_cache);
         backend_case_site_pins_table::register_table(client_cache);
         backend_character_affinities_table::register_table(client_cache);
@@ -5866,6 +5934,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_npc_intervention_candidates_table::register_table(client_cache);
         backend_physical_evidence_table::register_table(client_cache);
         backend_physical_evidence_inspections_table::register_table(client_cache);
+        backend_social_addresses_table::register_table(client_cache);
         backend_social_beliefs_table::register_table(client_cache);
         battle_loot_item_table::register_table(client_cache);
         battle_participant_table::register_table(client_cache);
@@ -5940,6 +6009,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
     const ALL_TABLE_NAMES: &'static [&'static str] = &[
         "alcohol_consumption",
         "autoresolve_report",
+        "backend_automatic_social_chats",
         "backend_case_battles",
         "backend_case_site_pins",
         "backend_character_affinities",
@@ -5967,6 +6037,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_npc_intervention_candidates",
         "backend_physical_evidence",
         "backend_physical_evidence_inspections",
+        "backend_social_addresses",
         "backend_social_beliefs",
         "battle_loot_item",
         "battle_participant",

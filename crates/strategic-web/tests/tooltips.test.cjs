@@ -1,8 +1,11 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const fs = require('node:fs');
+const path = require('node:path');
 const { parseHTML } = require('linkedom');
 
 const { createTooltipSystem } = require('../static/tooltips.js');
+const styles = fs.readFileSync(path.join(__dirname, '../static/css/strategic.css'), 'utf8');
 
 function fixture(markup = '<button title="Open inventory">Bag</button>') {
   const { window, document } = parseHTML(`<html><body>${markup}</body></html>`);
@@ -124,4 +127,13 @@ test('nested meter segments show their own multiline value tooltip', () => {
 
   assert.equal(system.activeTarget, segment);
   assert.equal(system.tooltip.textContent, 'Blood\n24');
+});
+
+test('shared tooltips render above every popup overlay', () => {
+  const tooltipZ = Number(styles.match(/#strategic-tooltip,[\s\S]*?z-index:\s*(\d+)/)[1]);
+  const characterDialogZ = Number(styles.match(/\.character-action-overlay\s*\{[\s\S]*?z-index:\s*(\d+)/)[1]);
+  const medicalDialogZ = Number(styles.match(/\.medical-examination-overlay\s*\{[\s\S]*?z-index:\s*(\d+)/)[1]);
+
+  assert.ok(tooltipZ > characterDialogZ);
+  assert.ok(tooltipZ > medicalDialogZ);
 });

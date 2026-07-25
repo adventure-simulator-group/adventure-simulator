@@ -331,7 +331,9 @@
 #strategic-tooltip,
 .strategic-tooltip {
   position: fixed;
-  z-index: 1000;
+  /* The shared tooltip is appended to body, so it must clear every modal
+     overlay, including medical examination (1100). */
+  z-index: 1200;
   width: max-content;
   max-width: min(20rem, calc(100vw - 1rem));
   padding: .42rem .58rem .48rem;
@@ -1687,6 +1689,29 @@ body.character-action-dialog-open { overflow: hidden; }
 .cooking-dialog { width: min(76rem, 100%); padding: 0; }
 .cooking-dialog > .character-action-dialog-header { padding: 1rem 1rem 0; }
 .social-dialog { width: min(52rem, 100%); }
+.automatic-social-chat {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  padding: 0.7rem;
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 9%, var(--panel-bg));
+}
+.automatic-social-chat label { display: flex; align-items: center; gap: 0.6rem; cursor: pointer; }
+.automatic-social-chat input { width: 1.15rem; height: 1.15rem; margin: 0; accent-color: var(--accent); }
+.social-feedback {
+  margin: 0 0 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--info) 12%, var(--panel-bg));
+}
+.social-feedback-error {
+  border-color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, var(--panel-bg));
+}
 .surgery-dialog { width: min(48rem, 100%); }
 
 .character-menu-button-form { display: inline; margin: 0; }
@@ -2784,25 +2809,35 @@ body.character-action-dialog-open { overflow: hidden; }
   display: flex;
   gap: 0.25rem;
   padding-top: 0.2rem;
-  opacity: 0;
+  opacity: 1;
   pointer-events: none;
-  transform: translateX(-50%) translateY(-0.15rem);
-  transition: opacity 120ms ease, transform 120ms ease;
+  transform: translateX(-50%);
 }
 
-.party-portrait:hover .party-portrait-actions,
-.party-portrait:focus-within .party-portrait-actions {
+.party-portrait:hover .party-portrait-action,
+.party-portrait:focus-within .party-portrait-action {
   opacity: 1;
   pointer-events: auto;
-  transform: translateX(-50%) translateY(0);
+  transform: translateY(0);
 }
 
 .party-portrait-action {
+  position: relative;
   display: grid;
   width: 1.35rem;
   height: 1.35rem;
   place-items: center;
   color: var(--icon-default, var(--text-primary));
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-0.15rem);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.party-portrait-action.party-social-notified {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
 }
 
 button.party-portrait-action {
@@ -2894,10 +2929,25 @@ button.party-portrait-action {
 }
 
 .morale-meter-fear {
+  position: relative;
   background: linear-gradient(
     to left,
     var(--incap-fear) 0 var(--morale-fear),
     transparent var(--morale-fear) 100%
+  );
+}
+
+.morale-meter-resolved {
+  position: absolute;
+  top: 0;
+  right: var(--morale-fear);
+  bottom: 0;
+  width: var(--morale-resolved);
+  background-color: #8b6fc7;
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgb(255 255 255 / 0.28) 0 3px,
+    transparent 3px 7px
   );
 }
 
@@ -2986,6 +3036,15 @@ button.party-portrait-action {
 .social-source { overflow: hidden; border: 1px solid var(--border-color); border-radius: 0.4rem; background: var(--panel-bg); }
 .social-source-negative { border-left: 3px solid var(--danger); }
 .social-source-positive { border-left: 3px solid var(--success); }
+.social-source-addressed {
+  border-left-color: #8b6fc7;
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgb(139 111 199 / 0.08) 0 4px,
+    transparent 4px 9px
+  );
+}
+.social-addressed-status { color: #a995dd !important; font-weight: 700; }
 .social-source-context { padding: 0.55rem 0.65rem; }
 .social-source-context > div { display: flex; justify-content: space-between; gap: 0.75rem; }
 .social-source-context p { margin: 0.3rem 0 0; color: var(--text-muted); font-size: var(--font-size-xs); }
@@ -3750,11 +3809,32 @@ button.party-portrait-action {
   white-space: nowrap;
 }
 
+.party-social-notification {
+  position: absolute;
+  z-index: 3;
+  top: -0.42rem;
+  right: -0.52rem;
+  display: grid;
+  min-width: 0.9rem;
+  height: 0.9rem;
+  padding: 0 0.18rem;
+  place-items: center;
+  border: 1px solid var(--panel-bg);
+  border-radius: 999px;
+  background: var(--danger);
+  color: white;
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.55rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
 .incapacitation-wheel {
   position: absolute;
   z-index: 1;
   inset: 0;
   border-radius: 50%;
+  pointer-events: none;
   background: transparent;
   -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 0.27rem), #000 calc(100% - 0.22rem));
   mask: radial-gradient(farthest-side, transparent calc(100% - 0.27rem), #000 calc(100% - 0.22rem));
@@ -4146,6 +4226,7 @@ body.chat-resizing {
   .party-portrait-actions,
   .character-religion-action { opacity: 1; pointer-events: auto; transform: none; }
   .party-portrait-actions { gap: 0.2rem; transform: translateX(-50%); }
+  .party-portrait-actions .party-portrait-action { opacity: 1; pointer-events: auto; transform: none; }
   .party-portrait-action,
   button.party-portrait-action { width: 2.75rem; height: 2.75rem; min-width: 2.75rem; min-height: 2.75rem; }
   .party-portrait-overlay { padding-bottom: 3.2rem; }

@@ -312,6 +312,8 @@ mod tests {
             age_years: 18,
             alive: true,
             temporary: false,
+            social_notification_count: 0,
+            automatic_social_chat_enabled: false,
         }
     }
 

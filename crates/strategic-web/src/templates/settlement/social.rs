@@ -16,7 +16,16 @@ pub struct SocialPresentation {
     pub virtue: f32,
     pub beliefs: Vec<crate::spacetimedb::SocialBelief>,
     pub shared_concerns: Vec<adventuresim_core::social::SocialTopic>,
+    pub addressed_source_ids: Vec<String>,
+    pub automatic_chat_enabled: bool,
+    pub feedback: Option<SocialFeedback>,
     pub unavailable: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct SocialFeedback {
+    pub message: &'static str,
+    pub is_error: bool,
 }
 
 fn social_actions(
@@ -129,6 +138,11 @@ pub fn party_social_dialog(
         location.base_path(),
         selected.id
     ));
+    let automatic_href = location.preserve_building(format!(
+        "{}/party/{}/social/automatic",
+        location.base_path(),
+        selected.id
+    ));
     let affinity_label = match social.affinity {
         value if value >= 50.0 => "Devoted",
         value if value >= 15.0 => "Warm",
@@ -158,6 +172,26 @@ pub fn party_social_dialog(
                     a class="character-action-dialog-close" href=(&close_href) aria-label="Close social dialog" { "×" }
                 }
                 div class="social-rail" data-social-panel data-target-id=(selected.id) {
+            @if let Some(feedback) = &social.feedback {
+                p class=(if feedback.is_error { "social-feedback social-feedback-error" } else { "social-feedback social-feedback-result" })
+                    role=(if feedback.is_error { "alert" } else { "status" }) {
+                    (feedback.message)
+                }
+            }
+            @if !is_self {
+                form class="automatic-social-chat" method="post" action=(&automatic_href) {
+                    label {
+                        input type="checkbox" name="enabled" value="true"
+                            checked[social.automatic_chat_enabled]
+                            data-automatic-social-chat
+                            aria-label="Automatic chats during downtime"
+                            data-strategic-tooltip="During downtime, you choose an approach from your available social actions according to your personality and relevant skills. Normal risks, cooldowns, and outcomes apply.";
+                        span {
+                            strong { "Automatic chats during downtime" }
+                        }
+                    }
+                }
+            }
             (sidebar_section("What you believe", html! {
                 dl class="social-biography" {
                     div { dt { "Age" } dd { (selected.age_years) } }
@@ -189,9 +223,13 @@ pub fn party_social_dialog(
                 div class="social-source-list" {
                     @for source in morale_sources {
                         @let topic = adventuresim_core::social::topic_for_source_kind(&source.kind);
-                        article class=(if source.magnitude < 0.0 { "social-source social-source-negative" } else { "social-source social-source-positive" }) {
+                        @let addressed = source.magnitude < 0.0 && social.addressed_source_ids.contains(&source.id);
+                        article class=(if addressed { "social-source social-source-negative social-source-addressed" } else if source.magnitude < 0.0 { "social-source social-source-negative" } else { "social-source social-source-positive" }) {
                             div class="social-source-context" {
                                 div { strong { (&source.label) } span { (format!("{:+.1}", source.magnitude)) } }
+                                @if addressed {
+                                    p class="social-addressed-status" { "Addressed by you" }
+                                }
                                 @if let Some(axis) = topic.and_then(adventuresim_core::social::axis_for_topic) {
                                     @if let Some(belief) = social.beliefs.iter().find(|belief| belief.axis == axis.slug()) {
                                         @let (axis_name, value) = perceived_trait(&belief.axis, belief.perceived_value);
@@ -206,7 +244,7 @@ pub fn party_social_dialog(
                                     p { "No specific personality trait is known to govern this concern." }
                                 }
                             }
-                            @if source.magnitude < 0.0 {
+                            @if source.magnitude < 0.0 && !addressed {
                                 @if let Some(topic) = topic {
                                   div class="social-actions" aria-label=(format!("Actions for {}", source.label)) {
                                     @let shares_concern = social.shared_concerns.contains(&topic);
@@ -443,6 +481,72 @@ mod tests {
     use crate::templates::settlement::test_support::*;
 
     #[test]
+    fn companion_social_dialog_has_persisted_accessible_automation_control() {
+        let character = |id: u64, name: &str| Character {
+            id,
+            name: name.into(),
+            xp: 0,
+            level: 1,
+            gold: 0,
+            current_settlement_id: Some("lubeck".into()),
+            current_case_site_id: None,
+            party_id: Some("party".into()),
+            age_years: 20,
+            alive: true,
+            temporary: false,
+            social_notification_count: 0,
+            automatic_social_chat_enabled: false,
+        };
+        let actor = character(1, "Ada");
+        let target = character(2, "Greta");
+        let location = LocationView {
+            kind: super::super::LocationKind::Settlement,
+            id: "lubeck".into(),
+            name: "Lubeck".into(),
+            religion_id: None,
+            category: None,
+            active_building: Some("inn".into()),
+        };
+        let social = SocialPresentation {
+            automatic_chat_enabled: true,
+            addressed_source_ids: vec!["concern".into()],
+            ..Default::default()
+        };
+        let source = crate::spacetimedb::CharacterMoraleSource {
+            id: "concern".into(),
+            character_id: target.id,
+            kind: "defeat".into(),
+            label: "Recent defeat".into(),
+            magnitude: -2.0,
+        };
+        let markup =
+            party_social_dialog(&location, &target, &actor, &[source], &social).into_string();
+        assert!(markup.contains("Automatic chats during downtime"));
+        assert!(markup.contains("name=\"enabled\" value=\"true\" checked"));
+        assert!(markup.contains("/party/2/social/automatic?building=inn"));
+        assert!(markup.contains("data-automatic-social-chat"));
+        assert!(markup.contains("according to your personality and relevant skills"));
+        assert!(!markup.contains(">Save</button>"));
+        assert!(!markup.contains("Use low-risk listening"));
+        assert!(markup.contains("social-source-addressed"));
+        assert!(markup.contains("Addressed by you"));
+        assert!(!markup.contains("class=\"social-actions\""));
+
+        let feedback_social = SocialPresentation {
+            feedback: Some(SocialFeedback {
+                message: "That approach needs time before it can be tried again.",
+                is_error: true,
+            }),
+            ..social
+        };
+        let feedback_markup =
+            party_social_dialog(&location, &target, &actor, &[], &feedback_social).into_string();
+        assert!(feedback_markup.contains("class=\"social-feedback social-feedback-error\""));
+        assert!(feedback_markup.contains("role=\"alert\""));
+        assert!(feedback_markup.contains("That approach needs time"));
+    }
+
+    #[test]
     fn social_catalog_labels_are_generic_grounded_and_accessible() {
         use adventuresim_core::social::{SocialActionKind, SocialTopic};
         let defeat = SocialActionKind::Commiserate.description(SocialTopic::Defeat, true);
@@ -534,6 +638,8 @@ mod tests {
             age_years: 20,
             alive: true,
             temporary: false,
+            social_notification_count: 0,
+            automatic_social_chat_enabled: false,
         };
         for location in ["residences", "keep"] {
             let markup = settlement_npc_location_page(

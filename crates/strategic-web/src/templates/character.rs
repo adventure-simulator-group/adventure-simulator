@@ -93,6 +93,8 @@ mod tests {
             age_years: 30,
             alive: false,
             temporary: false,
+            social_notification_count: 0,
+            automatic_social_chat_enabled: false,
         };
 
         let markup = characters_list_page(&[character], Some(7)).into_string();
@@ -142,6 +144,10 @@ pub fn character_candidates_page(
             active: false,
             selected: selected == Some(slot as u8),
             href: format!("/characters/candidates?version={version}&seed={seed}&selected={slot}"),
+            title: format!("Inspect {}", candidate.character.name),
+            aria_label: format!("Inspect {}", candidate.character.name),
+            decoration: None,
+            badge: None,
             actions: None,
         })
         .collect::<Vec<_>>();
@@ -225,6 +231,8 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
             age_years: spec.age_years,
             alive: true,
             temporary: false,
+            social_notification_count: 0,
+            automatic_social_chat_enabled: false,
         };
         let attributes = CharacterAttributes {
             character_id: spec.id,

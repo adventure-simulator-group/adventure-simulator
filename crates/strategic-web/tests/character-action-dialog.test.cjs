@@ -4,9 +4,13 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const {
-  wrappedFocusIndex, dialogOwnsBodyLock, openerIdentity,
+  wrappedFocusIndex, dialogOwnsBodyLock, openerIdentity, submitAutomaticChatToggle,
 } = require("../static/character-action-dialog.js");
-const template = fs.readFileSync(path.join(__dirname, "../src/templates/settlement.rs"), "utf8");
+const socialTemplate = fs.readFileSync(path.join(__dirname, "../src/templates/settlement/social.rs"), "utf8");
+const healthTemplate = fs.readFileSync(path.join(__dirname, "../src/templates/settlement/character_health.rs"), "utf8");
+const tradeTemplate = fs.readFileSync(path.join(__dirname, "../src/templates/settlement/trade.rs"), "utf8");
+const chromeTemplate = fs.readFileSync(path.join(__dirname, "../src/templates/settlement/chrome.rs"), "utf8");
+const template = [socialTemplate, healthTemplate, tradeTemplate, chromeTemplate].join("\n");
 const styles = fs.readFileSync(path.join(__dirname, "../static/css/strategic.css"), "utf8");
 const routes = fs.readFileSync(path.join(__dirname, "../src/routes/settlements.rs"), "utf8");
 
@@ -26,6 +30,17 @@ test("medical findings retain body lock and stable cross-document opener identit
   assert.match(lifecycle, /restoreKey}-pending/);
 });
 
+test("automatic social preference submits immediately when the checkbox changes", () => {
+  let submissions = 0;
+  const input = {
+    matches: (selector) => selector === "[data-automatic-social-chat]",
+    form: { requestSubmit: () => { submissions += 1; } },
+  };
+  assert.equal(submitAutomaticChatToggle(input), true);
+  assert.equal(submissions, 1);
+  assert.equal(submitAutomaticChatToggle({ matches: () => false }), false);
+});
+
 test("character actions use one dialog and raised-button contract", () => {
   assert.match(template, /data-character-action-dialog/);
   assert.match(template, /aria-haspopup="dialog" aria-expanded=\(open\)/);
@@ -41,8 +56,12 @@ test("character actions use one dialog and raised-button contract", () => {
 test("social and surgery inject overlays into the ordinary character renderers", () => {
   assert.match(routes, /render_party_personal\([\s\S]*Some\(dialog\)/);
   assert.match(routes, /render_party_stats\([\s\S]*Some\(dialog\)/);
-  const socialDialog = template.slice(template.indexOf("pub fn party_social_dialog"), template.indexOf("fn surgery_limb_name"));
-  const surgeryDialog = template.slice(template.indexOf("pub fn surgery_dialog"), template.indexOf("fn service_page"));
+  const socialStart = socialTemplate.indexOf("pub fn party_social_dialog");
+  const socialEnd = socialTemplate.indexOf("pub(crate) fn settlement_chat_area", socialStart);
+  const socialDialog = socialTemplate.slice(socialStart, socialEnd);
+  const surgeryStart = healthTemplate.indexOf("pub fn surgery_dialog");
+  const surgeryEnd = healthTemplate.indexOf("pub(super) fn strategic_condition_rail", surgeryStart);
+  const surgeryDialog = healthTemplate.slice(surgeryStart, surgeryEnd);
   assert.doesNotMatch(socialDialog, /left-sidebar|right-sidebar|render_layout/);
   assert.doesNotMatch(surgeryDialog, /left-sidebar|right-sidebar|render_layout/);
   assert.match(socialDialog, /preserve_building/);
@@ -50,9 +69,8 @@ test("social and surgery inject overlays into the ordinary character renderers",
 });
 
 test("portrait tray keeps unrelated actions but drops cooking and examination launchers", () => {
-  const start = template.indexOf("pub(crate) fn party_portrait_overlay");
-  const end = template.indexOf("pub(crate) fn settlement_chat_area", start);
-  const portrait = template.slice(start, end);
+  const start = chromeTemplate.indexOf("pub(crate) fn party_portrait_overlay");
+  const portrait = chromeTemplate.slice(start);
   assert.doesNotMatch(portrait, /party-cooking-action/);
   assert.doesNotMatch(portrait, /party-medical-examine/);
   assert.match(portrait, /party-alchemy-action/);

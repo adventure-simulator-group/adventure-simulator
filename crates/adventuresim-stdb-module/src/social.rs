@@ -4,17 +4,19 @@ use adventuresim_core::skill::Skill;
 use adventuresim_core::social::{
     AFFINITY_MAX, AFFINITY_MIN, PersonalityAxis, SOCIAL_COOLDOWN_MINUTES, SocialActionKind,
     SocialAttempt, SocialTopic, affinity_gain, axis_for_topic, canonical_cooldown_id,
-    canonical_pair, diagnosed_axis, diagnosis_for_axis, resolve_social_attempt, settle_affinity,
-    social_source_eligible, topic_for_source_kind,
+    canonical_pair, choose_automatic_social_action, diagnosed_axis, diagnosis_for_axis,
+    resolve_social_attempt, settle_affinity, social_source_eligible, topic_for_source_kind,
 };
 use spacetimedb::{ReducerContext, Table, ViewContext, reducer, table, view};
 
-use crate::character::character;
-use crate::condition::morale_event;
+use crate::character::{character, character__view};
+use crate::condition::{character_morale_source__view, morale_event};
 use crate::strategic::strategic_gateway_authority__view;
 use crate::{
     character_morale_source, character_personality, character_strategic_condition, character_time,
 };
+
+pub const MAX_AUTOMATIC_SOCIAL_ATTEMPTS_PER_DOWNTIME: usize = 3;
 
 #[derive(Clone, Debug)]
 #[table(accessor = character_affinity)]
@@ -126,6 +128,77 @@ pub struct SocialInteraction {
 }
 
 #[derive(Clone, Debug)]
+#[table(accessor = social_address)]
+pub struct SocialAddress {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub actor_id: u64,
+    #[index(btree)]
+    pub target_id: u64,
+    pub source_id: String,
+    pub addressed_at_minute: u64,
+}
+
+/// Compact current success projection. Durable attempts remain in
+/// `social_interaction`; routine pages never replay that lifetime history.
+#[view(accessor = backend_social_addresses, public)]
+pub fn backend_social_addresses(ctx: &ViewContext) -> Vec<SocialAddress> {
+    if !is_strategic_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .social_address()
+        .actor_id()
+        .filter(0u64..)
+        .filter(|row| {
+            ctx.db
+                .character_morale_source()
+                .id()
+                .find(&row.source_id)
+                .is_some_and(|source| source.character_id == row.target_id)
+        })
+        .collect()
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = automatic_social_chat)]
+pub struct AutomaticSocialChat {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub actor_id: u64,
+    #[index(btree)]
+    pub target_id: u64,
+    pub enabled: bool,
+}
+
+#[view(accessor = backend_automatic_social_chats, public)]
+pub fn backend_automatic_social_chats(ctx: &ViewContext) -> Vec<AutomaticSocialChat> {
+    if !is_strategic_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .automatic_social_chat()
+        .actor_id()
+        .filter(0u64..)
+        .filter(|row| row.enabled)
+        .filter(|row| {
+            let Some(actor) = ctx.db.character().id().find(row.actor_id) else {
+                return false;
+            };
+            let Some(target) = ctx.db.character().id().find(row.target_id) else {
+                return false;
+            };
+            actor.alive
+                && target.alive
+                && actor.party_id.is_some()
+                && actor.party_id == target.party_id
+        })
+        .collect()
+}
+
+#[derive(Clone, Debug)]
 #[table(accessor = social_action_cooldown)]
 pub struct SocialActionCooldown {
     #[primary_key]
@@ -142,6 +215,103 @@ fn affinity_id(subject_id: u64, actor_id: u64) -> String {
 }
 fn pair_id(low_id: u64, high_id: u64) -> String {
     format!("{low_id}:{high_id}")
+}
+
+fn automatic_chat_id(actor_id: u64, target_id: u64) -> String {
+    format!("{actor_id}:{target_id}")
+}
+
+fn social_address_id(actor_id: u64, target_id: u64, source_id: &str) -> String {
+    format!("{actor_id}:{target_id}:{source_id}")
+}
+
+fn source_addressed(ctx: &ReducerContext, actor_id: u64, target_id: u64, source_id: &str) -> bool {
+    ctx.db
+        .social_address()
+        .id()
+        .find(&social_address_id(actor_id, target_id, source_id))
+        .is_some()
+}
+
+#[reducer]
+pub fn set_automatic_social_chat(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    target_id: u64,
+    enabled: bool,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_gateway(ctx)?;
+    if actor_id == target_id {
+        return Err("Automatic chats require a companion".into());
+    }
+    let actor = ctx
+        .db
+        .character()
+        .id()
+        .find(actor_id)
+        .ok_or("Actor not found")?;
+    let target = ctx
+        .db
+        .character()
+        .id()
+        .find(target_id)
+        .ok_or("Target not found")?;
+    if !actor.alive || !target.alive {
+        return Err("Both characters must be living".into());
+    }
+    if actor.party_id.is_none() || actor.party_id != target.party_id {
+        return Err("Automatic chats require the same party".into());
+    }
+    let id = automatic_chat_id(actor_id, target_id);
+    if !enabled {
+        ctx.db.automatic_social_chat().id().delete(&id);
+        return Ok(());
+    }
+    let row = AutomaticSocialChat {
+        id: id.clone(),
+        actor_id,
+        target_id,
+        enabled: true,
+    };
+    if ctx.db.automatic_social_chat().id().find(&id).is_some() {
+        ctx.db.automatic_social_chat().id().update(row);
+    } else {
+        ctx.db.automatic_social_chat().insert(row);
+    }
+    Ok(())
+}
+
+/// Remove pair preferences that can no longer run. This is called from the
+/// infrequent party/death lifecycle paths so the trusted view remains bounded
+/// to current, living party relationships.
+pub(crate) fn prune_invalid_automatic_social_chats(ctx: &ReducerContext) {
+    for row in ctx
+        .db
+        .automatic_social_chat()
+        .actor_id()
+        .filter(0u64..)
+        .collect::<Vec<_>>()
+    {
+        let valid = row.enabled
+            && ctx
+                .db
+                .character()
+                .id()
+                .find(row.actor_id)
+                .is_some_and(|actor| {
+                    actor.alive
+                        && actor.party_id.is_some()
+                        && ctx
+                            .db
+                            .character()
+                            .id()
+                            .find(row.target_id)
+                            .is_some_and(|target| target.alive && actor.party_id == target.party_id)
+                });
+        if !valid {
+            ctx.db.automatic_social_chat().id().delete(&row.id);
+        }
+    }
 }
 
 pub fn current_affinity(ctx: &ReducerContext, subject_id: u64, actor_id: u64) -> f32 {
@@ -296,6 +466,186 @@ fn parse_action(value: &str) -> Result<SocialActionKind, String> {
     }
 }
 
+fn social_action_skill(action: SocialActionKind, shares_concern: bool) -> Skill {
+    match action {
+        SocialActionKind::Reflect => Skill::SelfAwareness,
+        SocialActionKind::Listen => Skill::Insight,
+        SocialActionKind::Commiserate if shares_concern => Skill::Insight,
+        SocialActionKind::Commiserate => Skill::Deception,
+        SocialActionKind::LightenMood => Skill::Humor,
+        SocialActionKind::Rally => Skill::Command,
+        SocialActionKind::Reframe => Skill::Deception,
+        SocialActionKind::Flirt => Skill::Seduction,
+    }
+}
+
+fn automatic_personality_fit(
+    personality: &crate::personality::CharacterPersonality,
+    action: SocialActionKind,
+    topic: SocialTopic,
+) -> f32 {
+    use crate::personality::{
+        Conscience, Conviction, Drive, Nerve, Outlook, SelfRegard, Sociability,
+    };
+
+    let mut fit = 0.0;
+    match personality.conscience {
+        Conscience::Compassionate
+            if matches!(
+                action,
+                SocialActionKind::Listen | SocialActionKind::Commiserate
+            ) =>
+        {
+            fit += 1.0;
+        }
+        Conscience::Callous | Conscience::Cruel if action == SocialActionKind::Reframe => {
+            fit += 0.75;
+        }
+        Conscience::Callous | Conscience::Cruel
+            if matches!(
+                action,
+                SocialActionKind::Listen | SocialActionKind::Commiserate
+            ) =>
+        {
+            fit -= 0.75;
+        }
+        _ => {}
+    }
+    match personality.sociability {
+        Sociability::Gregarious
+            if matches!(
+                action,
+                SocialActionKind::Commiserate
+                    | SocialActionKind::LightenMood
+                    | SocialActionKind::Flirt
+            ) =>
+        {
+            fit += 0.75;
+        }
+        Sociability::Solitary if action == SocialActionKind::Listen => fit += 0.5,
+        Sociability::Solitary
+            if matches!(
+                action,
+                SocialActionKind::LightenMood | SocialActionKind::Flirt
+            ) =>
+        {
+            fit -= 0.75;
+        }
+        _ => {}
+    }
+    match personality.outlook {
+        Outlook::Sanguine if action == SocialActionKind::LightenMood => fit += 1.0,
+        Outlook::Brooding
+            if matches!(action, SocialActionKind::Listen | SocialActionKind::Reframe) =>
+        {
+            fit += 0.5;
+        }
+        Outlook::Brooding if action == SocialActionKind::LightenMood => fit -= 0.5,
+        _ => {}
+    }
+    match personality.drive {
+        Drive::Ambitious if action == SocialActionKind::Rally => fit += 1.0,
+        Drive::Content
+            if matches!(
+                action,
+                SocialActionKind::Listen | SocialActionKind::Commiserate
+            ) =>
+        {
+            fit += 0.5;
+        }
+        Drive::Content if action == SocialActionKind::Rally => fit -= 0.5,
+        _ => {}
+    }
+    match personality.nerve {
+        Nerve::Brave if action == SocialActionKind::Rally => fit += 0.75,
+        Nerve::Fearful if action == SocialActionKind::Listen => fit += 0.5,
+        Nerve::Fearful if action == SocialActionKind::Rally => fit -= 0.5,
+        _ => {}
+    }
+    match personality.self_regard {
+        SelfRegard::Proud
+            if matches!(action, SocialActionKind::Rally | SocialActionKind::Flirt) =>
+        {
+            fit += 0.5;
+        }
+        SelfRegard::Humble
+            if matches!(
+                action,
+                SocialActionKind::Listen | SocialActionKind::Commiserate
+            ) =>
+        {
+            fit += 0.5;
+        }
+        SelfRegard::Humble if action == SocialActionKind::Flirt => fit -= 0.25,
+        _ => {}
+    }
+    if topic == SocialTopic::Faith {
+        match personality.conviction {
+            Conviction::Zealous if action == SocialActionKind::Rally => fit += 0.75,
+            Conviction::Irreverent if action == SocialActionKind::Reframe => fit += 0.75,
+            _ => {}
+        }
+    }
+    fit
+}
+
+fn automatic_social_action(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    target_id: u64,
+    topic: SocialTopic,
+) -> Result<Option<SocialActionKind>, String> {
+    const ACTIONS: [SocialActionKind; 6] = [
+        SocialActionKind::Listen,
+        SocialActionKind::Commiserate,
+        SocialActionKind::LightenMood,
+        SocialActionKind::Rally,
+        SocialActionKind::Reframe,
+        SocialActionKind::Flirt,
+    ];
+
+    let shares_concern = shares_concern(ctx, actor_id, topic);
+    let personality = crate::personality::personality_or_neutral(ctx, actor_id);
+    let now = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(target_id)
+        .map_or(0, |row| row.minutes);
+    let language = crate::character::shared_language_coefficient(ctx, actor_id, target_id);
+    let mut candidates = Vec::with_capacity(ACTIONS.len());
+    for action in ACTIONS
+        .into_iter()
+        .filter(|action| action.available_for(topic))
+    {
+        let action_kind = action.reducer_value();
+        let cooldown_id = canonical_cooldown_id(actor_id, target_id, topic, action_kind);
+        if ctx
+            .db
+            .social_action_cooldown()
+            .id()
+            .find(&cooldown_id)
+            .is_some_and(|cooldown| now < cooldown.available_at_minute)
+        {
+            continue;
+        }
+        let skill_check = adventuresim_world_schema::language_scaled_effect(
+            crate::condition::mental_check(
+                ctx,
+                actor_id,
+                social_action_skill(action, shares_concern),
+            )?,
+            language,
+        );
+        candidates.push((
+            action,
+            skill_check,
+            automatic_personality_fit(&personality, action, topic),
+        ));
+    }
+    Ok(choose_automatic_social_action(topic, candidates))
+}
+
 fn sensitivity(ctx: &ReducerContext, target_id: u64, topic: SocialTopic) -> f32 {
     let Some(p) = ctx
         .db
@@ -379,6 +729,28 @@ fn personality_truth(ctx: &ReducerContext, target_id: u64, axis: PersonalityAxis
     })
 }
 
+fn validate_social_pair(
+    ctx: &ReducerContext,
+    actor: &crate::character::Character,
+    target: &crate::character::Character,
+    is_self: bool,
+) -> Result<(), String> {
+    if !actor.alive || !target.alive {
+        return Err("Both characters must be living".into());
+    }
+    if !is_self && (actor.party_id.is_none() || actor.party_id != target.party_id) {
+        return Err("Social actions require the same party".into());
+    }
+    if !is_self
+        && (actor.current_settlement_id != target.current_settlement_id
+            || crate::investigation::character_case_site_id(ctx, actor.id)
+                != crate::investigation::character_case_site_id(ctx, target.id))
+    {
+        return Err("Characters must be co-located".into());
+    }
+    Ok(())
+}
+
 #[reducer]
 pub fn perform_social_action(
     ctx: &ReducerContext,
@@ -388,6 +760,16 @@ pub fn perform_social_action(
     action_kind: String,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_gateway(ctx)?;
+    perform_social_action_authoritative(ctx, actor_id, target_id, source_id, action_kind)
+}
+
+fn perform_social_action_authoritative(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    target_id: u64,
+    source_id: String,
+    action_kind: String,
+) -> Result<(), String> {
     let action = parse_action(&action_kind)?;
     let is_self = actor_id == target_id;
     if is_self != (action == SocialActionKind::Reflect) {
@@ -405,19 +787,7 @@ pub fn perform_social_action(
         .id()
         .find(target_id)
         .ok_or("Target not found")?;
-    if !actor.alive || !target.alive {
-        return Err("Both characters must be living".into());
-    }
-    if !is_self && (actor.party_id.is_none() || actor.party_id != target.party_id) {
-        return Err("Social actions require the same party".into());
-    }
-    if !is_self
-        && (actor.current_settlement_id != target.current_settlement_id
-            || crate::investigation::character_case_site_id(ctx, actor.id)
-                != crate::investigation::character_case_site_id(ctx, target.id))
-    {
-        return Err("Characters must be co-located".into());
-    }
+    validate_social_pair(ctx, &actor, &target, is_self)?;
     let source = ctx
         .db
         .character_morale_source()
@@ -451,9 +821,6 @@ pub fn perform_social_action(
         return Err("That approach needs time before it can be tried again".into());
     }
 
-    if !is_self {
-        settle_shared_party_time(ctx, actor_id);
-    }
     let familiarity = canonical_pair(actor_id, target_id)
         .and_then(|(l, h)| ctx.db.character_familiarity().id().find(&pair_id(l, h)))
         .map_or(0.0, |v| v.shared_minutes as f32 / 60.0);
@@ -463,16 +830,7 @@ pub fn perform_social_action(
         current_affinity(ctx, target_id, actor_id)
     };
     let actor_shares_concern = shares_concern(ctx, actor_id, topic);
-    let skill = match action {
-        SocialActionKind::Reflect => Skill::SelfAwareness,
-        SocialActionKind::Listen => Skill::Insight,
-        SocialActionKind::Commiserate if actor_shares_concern => Skill::Insight,
-        SocialActionKind::Commiserate => Skill::Deception,
-        SocialActionKind::LightenMood => Skill::Humor,
-        SocialActionKind::Rally => Skill::Command,
-        SocialActionKind::Reframe => Skill::Deception,
-        SocialActionKind::Flirt => Skill::Seduction,
-    };
+    let skill = social_action_skill(action, actor_shares_concern);
     let mut skill_check = crate::condition::mental_check(ctx, actor_id, skill)?;
     if !is_self {
         skill_check = adventuresim_world_schema::language_scaled_effect(
@@ -525,6 +883,9 @@ pub fn perform_social_action(
             outcome.morale_delta,
             Some(event_source),
         )?;
+        // This is the first non-event mutation. Every fallible automatic call
+        // propagates the error above so SpacetimeDB rolls the transaction back.
+        settle_shared_party_time(ctx, actor_id);
     }
     let after = ctx
         .db
@@ -556,6 +917,21 @@ pub fn perform_social_action(
         morale_delta: if is_self { 0.0 } else { outcome.morale_delta },
         occurred_at_minute: now,
     });
+    if outcome.succeeded {
+        let id = social_address_id(actor_id, target_id, &source_id);
+        let address = SocialAddress {
+            id: id.clone(),
+            actor_id,
+            target_id,
+            source_id: source_id.clone(),
+            addressed_at_minute: now,
+        };
+        if ctx.db.social_address().id().find(&id).is_some() {
+            ctx.db.social_address().id().update(address);
+        } else {
+            ctx.db.social_address().insert(address);
+        }
+    }
     let cooldown = SocialActionCooldown {
         id: cooldown_id.clone(),
         actor_id,
@@ -597,6 +973,108 @@ pub fn perform_social_action(
         }
     }
     Ok(())
+}
+
+/// Run bounded, opt-in social care after real discretionary downtime. Targets
+/// and source rows use stable ID ordering. Each pair receives at most one
+/// personality- and skill-selected attempt per interval, with the ordinary
+/// action reducer enforcing every co-location, life, source, skill, and outcome
+/// rule.
+pub(crate) fn apply_automatic_social_chats(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    discretionary_minutes: u64,
+) -> Result<(), String> {
+    let preferences: Vec<_> = ctx
+        .db
+        .automatic_social_chat()
+        .actor_id()
+        .filter(actor_id)
+        .collect();
+    let candidates: Vec<_> = preferences
+        .iter()
+        .map(|preference| {
+            let pair_available = ctx
+                .db
+                .character()
+                .id()
+                .find(actor_id)
+                .zip(ctx.db.character().id().find(preference.target_id))
+                .is_some_and(|(actor, target)| {
+                    validate_social_pair(ctx, &actor, &target, false).is_ok()
+                });
+            let mut sources: Vec<_> = ctx
+                .db
+                .character_morale_source()
+                .character_id()
+                .filter(preference.target_id)
+                .filter(|source| social_source_eligible(&source.kind, source.magnitude))
+                .filter(|source| !source_addressed(ctx, actor_id, preference.target_id, &source.id))
+                .collect();
+            sources.sort_by(|left, right| left.id.cmp(&right.id));
+            (
+                preference.target_id,
+                preference.enabled && pair_available,
+                sources.first().map(|source| source.id.clone()),
+            )
+        })
+        .collect();
+    let targets = adventuresim_core::social::automatic_social_targets(
+        discretionary_minutes,
+        candidates
+            .iter()
+            .map(|(target_id, enabled, source)| (*target_id, *enabled, source.is_some())),
+        MAX_AUTOMATIC_SOCIAL_ATTEMPTS_PER_DOWNTIME,
+    );
+
+    for target_id in targets {
+        let source_id = candidates
+            .iter()
+            .find_map(|(candidate_id, _, source)| {
+                (*candidate_id == target_id)
+                    .then(|| source.clone())
+                    .flatten()
+            })
+            .expect("automatic target planner only returns actionable candidates");
+        let topic = ctx
+            .db
+            .character_morale_source()
+            .id()
+            .find(&source_id)
+            .and_then(|source| topic_for_source_kind(&source.kind))
+            .expect("automatic target planner only returns actionable sources");
+        let Some(action) = automatic_social_action(ctx, actor_id, target_id, topic)? else {
+            continue;
+        };
+        perform_social_action_authoritative(
+            ctx,
+            actor_id,
+            target_id,
+            source_id,
+            action.reducer_value().into(),
+        )?;
+    }
+    Ok(())
+}
+
+/// Keep compact address state aligned with the refreshable source projection.
+pub(crate) fn prune_social_addresses(ctx: &ReducerContext, target_id: u64) {
+    for row in ctx
+        .db
+        .social_address()
+        .target_id()
+        .filter(target_id)
+        .filter(|row| {
+            ctx.db
+                .character_morale_source()
+                .id()
+                .find(&row.source_id)
+                .is_none()
+        })
+        .collect::<Vec<_>>()
+    {
+        ctx.db.social_address().id().delete(&row.id);
+    }
 }
 
 pub fn cleanup_character_social(ctx: &ReducerContext, character_id: u64) {
@@ -644,6 +1122,24 @@ pub fn cleanup_character_social(ctx: &ReducerContext, character_id: u64) {
         .collect::<Vec<_>>()
     {
         ctx.db.social_action_cooldown().id().delete(&row.id);
+    }
+    for row in ctx
+        .db
+        .social_address()
+        .iter()
+        .filter(|r| r.actor_id == character_id || r.target_id == character_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.social_address().id().delete(&row.id);
+    }
+    for row in ctx
+        .db
+        .automatic_social_chat()
+        .iter()
+        .filter(|r| r.actor_id == character_id || r.target_id == character_id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.automatic_social_chat().id().delete(&row.id);
     }
 }
 
@@ -737,4 +1233,119 @@ pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
         ctx.db.social_belief().insert(belief);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod contract_tests {
+    use super::*;
+
+    #[test]
+    fn automatic_personality_fit_changes_the_preferred_style() {
+        let mut sanguine = crate::personality::CharacterPersonality::neutral(1);
+        sanguine.outlook = crate::personality::Outlook::Sanguine;
+        sanguine.sociability = crate::personality::Sociability::Gregarious;
+        assert!(
+            automatic_personality_fit(
+                &sanguine,
+                SocialActionKind::LightenMood,
+                SocialTopic::Defeat,
+            ) > automatic_personality_fit(&sanguine, SocialActionKind::Listen, SocialTopic::Defeat,)
+        );
+
+        let mut ambitious = crate::personality::CharacterPersonality::neutral(2);
+        ambitious.drive = crate::personality::Drive::Ambitious;
+        ambitious.nerve = crate::personality::Nerve::Brave;
+        assert!(
+            automatic_personality_fit(&ambitious, SocialActionKind::Rally, SocialTopic::Defeat,)
+                > automatic_personality_fit(
+                    &ambitious,
+                    SocialActionKind::Commiserate,
+                    SocialTopic::Defeat,
+                )
+        );
+    }
+
+    #[test]
+    fn automatic_selection_uses_the_same_target_clock_as_execution() {
+        let source = include_str!("social.rs");
+        let automatic = source
+            .split("fn automatic_social_action")
+            .nth(1)
+            .expect("automatic selector")
+            .split("fn sensitivity")
+            .next()
+            .expect("selector boundary");
+        assert!(automatic.contains(".find(target_id)"));
+        assert!(!automatic.contains(".find(actor_id)"));
+    }
+
+    #[test]
+    fn disabled_automatic_preferences_are_not_retained_in_the_projection() {
+        let source = include_str!("social.rs");
+        let setter = source
+            .split("pub fn set_automatic_social_chat")
+            .nth(1)
+            .expect("automatic preference setter")
+            .split("pub fn current_affinity")
+            .next()
+            .expect("setter boundary");
+        assert!(setter.contains("if !enabled"));
+        assert!(setter.contains(".delete(&id)"));
+
+        let view = source
+            .split("pub fn backend_automatic_social_chats")
+            .nth(1)
+            .expect("automatic preference view")
+            .split("pub struct SocialActionCooldown")
+            .next()
+            .expect("view boundary");
+        assert!(view.contains(".filter(|row| row.enabled)"));
+        assert!(view.contains("actor.party_id == target.party_id"));
+        assert!(source.contains("pub(crate) fn prune_invalid_automatic_social_chats"));
+    }
+
+    #[test]
+    fn automatic_failures_propagate_and_no_fallible_work_follows_first_auxiliary_write() {
+        let source = include_str!("social.rs");
+        let automatic = source
+            .split("pub(crate) fn apply_automatic_social_chats")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(crate) fn prune_social_addresses").next())
+            .expect("automatic social implementation");
+        assert!(!automatic.contains("let _ = perform_social_action_authoritative"));
+        assert!(automatic.contains("perform_social_action_authoritative("));
+        assert!(automatic.contains(")?;"));
+        assert!(!automatic.contains("\"listen\".into()"));
+
+        let action = source
+            .split("fn perform_social_action_authoritative")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("pub(crate) fn apply_automatic_social_chats")
+                    .next()
+            })
+            .expect("shared authoritative social action");
+        let event = action
+            .find("record_morale_event")
+            .expect("fallible morale write");
+        let familiarity = action
+            .find("settle_shared_party_time")
+            .expect("familiarity mutation");
+        assert!(event < familiarity);
+        assert!(action[event..].contains(")?;"));
+    }
+
+    #[test]
+    fn routine_gateway_projection_is_compact_current_address_state() {
+        let source = include_str!("social.rs");
+        let view = source
+            .split("pub fn backend_social_addresses")
+            .nth(1)
+            .and_then(|tail| tail.split("pub struct AutomaticSocialChat").next())
+            .expect("compact social address view");
+        assert!(view.contains("social_address()"));
+        assert!(view.contains("character_morale_source()"));
+        assert!(!view.contains("social_interaction()"));
+        assert!(source.contains("pub(crate) fn prune_social_addresses"));
+    }
 }

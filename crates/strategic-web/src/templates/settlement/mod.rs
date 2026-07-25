@@ -35,7 +35,7 @@ pub use context::{LocationKind, LocationView};
 pub use rest::{RestSummary, SoapRestPreview, rest_result_page};
 pub(crate) use rest::{party_rest_menu, rest_default_minutes};
 pub(crate) use social::settlement_chat_area_with_info;
-pub use social::{SocialPresentation, party_social_dialog};
+pub use social::{SocialFeedback, SocialPresentation, party_social_dialog};
 pub use trade::{
     MerchantShop, alchemy_page, live_merchant_shop_page, merchants_page, party_discard_page,
     party_inventory_page, party_pool_page, religion_page,
