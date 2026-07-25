@@ -159,6 +159,7 @@ pub struct CombatSkills {
     pub stealth_hours: f32,
     pub balance_hours: f32,
     pub bestiary_hours: BestiaryHours,
+    pub surgery_hours: f32,
     pub tailoring_hours: f32,
     pub smithing_hours: f32,
 }
@@ -188,7 +189,7 @@ impl PlayerSkills for CombatSkills {
             Skill::Cooking => 0.0,
             Skill::Religion => self.religion_hours,
             Skill::Bestiary => self.bestiary_hours.aggregate_effective(),
-            Skill::Surgery => 0.0,
+            Skill::Surgery => self.surgery_hours,
             Skill::Stealth => self.stealth_hours,
             Skill::Balance => self.balance_hours,
             Skill::TerrainPlains

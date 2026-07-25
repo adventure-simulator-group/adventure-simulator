@@ -169,6 +169,7 @@ pub struct Skills {
     pub bestiary_draconid_hours: f32,
     pub bestiary_construct_hours: f32,
     pub bestiary_wildmen_hours: f32,
+    pub surgery_hours: f32,
     pub stealth_hours: f32,
     pub balance_hours: f32,
     pub tailoring_hours: f32,
@@ -220,7 +221,7 @@ impl PlayerSkills for Skills {
             Skill::Cooking => 0.0,
             Skill::Religion => self.religion_hours,
             Skill::Bestiary => self.bestiary_hours().aggregate_effective(),
-            Skill::Surgery => 0.0,
+            Skill::Surgery => self.surgery_hours,
             Skill::Stealth => self.stealth_hours,
             Skill::Balance => self.balance_hours,
             Skill::TerrainPlains

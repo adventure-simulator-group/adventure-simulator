@@ -316,6 +316,16 @@ pub fn evaluate_capabilities(
             LimbWeights::both_arms(),
         )
         .clamp(0.0, 5.0);
+    let surgery = skills
+        .skill_check_by_parts(
+            Skill::Surgery,
+            attributes,
+            body,
+            essentials,
+            equipment,
+            LimbWeights::both_arms(),
+        )
+        .clamp(0.0, 5.0);
 
     CharacterCapabilities {
         melee: equipment.weapon_is_melee(),
@@ -342,7 +352,7 @@ pub fn evaluate_capabilities(
         human_lore,
         knife,
         tailoring,
-        surgery: (human_lore + knife + tailoring) / 3.0,
+        surgery,
         command: skills
             .skill_check_by_parts(
                 Skill::Command,

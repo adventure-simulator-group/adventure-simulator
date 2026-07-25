@@ -490,16 +490,11 @@ async fn surgery(
             .map(|item| item.qty)
             .sum()
     };
-    let procedure_checks =
-        get_character_capability(&state, actor_id)
-            .await
-            .map_or([0.0; 3], |capability| {
-                [
-                    capability.human_lore,
-                    capability.knife,
-                    capability.tailoring,
-                ]
-            });
+    let procedure_checks = get_character_capability(&state, actor_id)
+        .await
+        .map_or([0.0; 2], |capability| {
+            [capability.surgery, capability.human_lore]
+        });
     let available_splints = inventory
         .iter()
         .filter(|item| {
@@ -5111,6 +5106,7 @@ fn skill_deltas(before: &CharacterSkills, after: &CharacterSkills) -> Vec<(Strin
             before.religion_hours.total_direct(),
             after.religion_hours.total_direct(),
         ),
+        ("Surgery", before.surgery_hours, after.surgery_hours),
         ("Stealth", before.stealth_hours, after.stealth_hours),
         ("Balance", before.balance_hours, after.balance_hours),
         ("Tailoring", before.tailoring_hours, after.tailoring_hours),
@@ -5122,6 +5118,25 @@ fn skill_deltas(before: &CharacterSkills, after: &CharacterSkills) -> Vec<(Strin
         (delta > 0.001).then(|| (name.to_string(), delta))
     })
     .collect()
+}
+
+#[cfg(test)]
+mod surgery_skill_delta_tests {
+    use super::skill_deltas;
+    use crate::spacetimedb::CharacterSkills;
+
+    #[test]
+    fn direct_surgery_training_is_reported_as_a_leaf_skill_delta() {
+        let before = CharacterSkills {
+            surgery_hours: 12.0,
+            ..Default::default()
+        };
+        let after = CharacterSkills {
+            surgery_hours: 13.5,
+            ..Default::default()
+        };
+        assert_eq!(skill_deltas(&before, &after), vec![("Surgery".into(), 1.5)]);
+    }
 }
 
 async fn travel(

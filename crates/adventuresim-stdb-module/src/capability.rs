@@ -241,7 +241,7 @@ impl PlayerSkills for CharacterSkills {
             // tradition. Authoritative religious morale always selects a tradition.
             Skill::Religion => self.religion_hours.maximum_effective(),
             Skill::Bestiary => self.bestiary_hours.aggregate_effective(),
-            Skill::Surgery => 0.0,
+            Skill::Surgery => self.surgery_hours,
             Skill::Stealth => self.stealth_hours,
             Skill::Balance => self.balance_hours,
             Skill::TerrainPlains => self.terrain_plains_hours,
@@ -703,6 +703,7 @@ pub(crate) fn load_combatant(
             stealth_hours: skills.stealth_hours,
             balance_hours: skills.balance_hours,
             bestiary_hours: skills.bestiary_hours,
+            surgery_hours: skills.surgery_hours,
             tailoring_hours: skills.tailoring_hours,
             smithing_hours: skills.smithing_hours,
         },

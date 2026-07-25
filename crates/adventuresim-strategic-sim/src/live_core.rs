@@ -425,6 +425,7 @@ fn live_skills(character_id: u64, profile: &AgentProfile) -> CharacterSkills {
             construct: s.bestiary.construct,
             wildmen: s.bestiary.wildmen,
         },
+        surgery_hours: s.surgery,
         oral_languages: adventuresim_stdb_client::OralLanguageHours {
             east_central: 5_000.0,
             west_central: 0.0,

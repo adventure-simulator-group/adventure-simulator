@@ -232,6 +232,7 @@ fn bounded_skill_state_remains_finite_for_maximum_duration() {
             human: adventuresim_world_schema::BESTIARY_MASTERY_HOURS,
             ..Default::default()
         },
+        surgery: MAX_INITIAL_SKILL_HOURS,
         stealth: MAX_INITIAL_SKILL_HOURS,
         balance: MAX_INITIAL_SKILL_HOURS,
         tailoring: MAX_INITIAL_SKILL_HOURS,

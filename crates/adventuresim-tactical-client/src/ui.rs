@@ -375,7 +375,7 @@ fn update_skills_ui(
             Skill::Cooking => "0.00".to_owned(),
             Skill::Religion => format!("{:.2}", skills.religion_hours),
             Skill::Bestiary => "0.00".to_string(),
-            Skill::Surgery => "0.00".to_string(),
+            Skill::Surgery => format!("{:.2}", skills.surgery_hours_effective()),
             Skill::Stealth => format!("{:.2}", skills.stealth_hours),
             Skill::Balance => format!("{:.2}", skills.balance_hours),
             Skill::TerrainPlains

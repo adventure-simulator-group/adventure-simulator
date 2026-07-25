@@ -50,8 +50,8 @@ pub enum Skill {
     /// Mental. Trained. Meta-skill for knowledge of creature categories. (5000h each)
     #[assoc(max_hours = 5000.0, kind = SkillKind::Mental, is_trained = true)]
     Bestiary,
-    /// Derived meta-skill combining Human Bestiary lore, Knife, and Tailoring.
-    #[assoc(max_hours = 5000.0, kind = SkillKind::Mental, is_trained = true)]
+    /// Physical. Trained. Operative wound treatment, aided by Knife and Tailoring. (5000h)
+    #[assoc(max_hours = 5000.0, kind = SkillKind::Physical, is_trained = true)]
     Surgery,
     /// Physical. Intuitive. Long hafted weapons. (8000h)
     #[assoc(max_hours = 8000.0, kind = SkillKind::Physical, is_trained = false)]
@@ -114,14 +114,86 @@ pub enum Skill {
 
 #[cfg(test)]
 mod tests {
-    use super::Skill;
+    use super::{PlayerSkills, Skill};
+    use crate::{
+        body::{BodyPart, BodySide, LimbWeights, PlayerBody},
+        stub::{StubAttributes, StubEquipment, StubEssentials},
+    };
+
+    struct SurgerySkills;
+
+    impl PlayerSkills for SurgerySkills {
+        fn skill_hours_trained(&self, skill: Skill) -> f32 {
+            match skill {
+                Skill::Surgery => 5_000.0,
+                _ => 0.0,
+            }
+        }
+    }
+
+    struct ArmHealthBody(f32);
+
+    impl PlayerBody for ArmHealthBody {
+        fn body_part_health(&self, part: BodyPart) -> f32 {
+            if matches!(part, BodyPart::LeftArm | BodyPart::RightArm) {
+                self.0
+            } else {
+                1.0
+            }
+        }
+
+        fn body_weight(&self) -> f32 {
+            70.0
+        }
+
+        fn primary_side(&self) -> BodySide {
+            BodySide::Right
+        }
+    }
 
     #[test]
-    fn religion_and_bestiary_are_meta_skills() {
+    fn only_family_skills_are_meta_skills() {
         assert!(Skill::Religion.is_meta_skill());
         assert!(Skill::Bestiary.is_meta_skill());
-        assert!(Skill::Surgery.is_meta_skill());
+        assert!(!Skill::Surgery.is_meta_skill());
         assert!(!Skill::Medicine.is_meta_skill());
+    }
+
+    #[test]
+    fn surgery_is_an_upper_body_physical_skill_with_a_separate_species_cap() {
+        assert!(Skill::Surgery.is_trained());
+        assert!(Skill::Surgery.is_physical());
+        assert!(Skill::Surgery.is_upper_body());
+        assert!(Skill::Bestiary.is_mental());
+        assert!(!Skill::Bestiary.is_upper_body());
+
+        let healthy_check = SurgerySkills.skill_check_by_parts(
+            Skill::Surgery,
+            &StubAttributes,
+            &ArmHealthBody(1.0),
+            &StubEssentials,
+            &StubEquipment,
+            LimbWeights::both_arms(),
+        );
+        let impaired_check = SurgerySkills.skill_check_by_parts(
+            Skill::Surgery,
+            &StubAttributes,
+            &ArmHealthBody(0.25),
+            &StubEssentials,
+            &StubEquipment,
+            LimbWeights::both_arms(),
+        );
+        assert!(impaired_check < healthy_check);
+
+        let species_cap = 0.1;
+        assert_eq!(
+            crate::surgery::procedure_skill(healthy_check, species_cap, false),
+            species_cap
+        );
+        assert_eq!(
+            crate::surgery::procedure_skill(impaired_check, species_cap, false),
+            species_cap
+        );
     }
 
     #[test]
@@ -159,7 +231,7 @@ impl Skill {
     /// Whether this value names a family whose trained hours live on separate,
     /// correlated subskills rather than on the parent itself.
     pub const fn is_meta_skill(&self) -> bool {
-        matches!(self, Skill::Religion | Skill::Bestiary | Skill::Surgery)
+        matches!(self, Skill::Religion | Skill::Bestiary)
     }
 
     pub const fn is_upper_body(&self) -> bool {
@@ -176,6 +248,7 @@ impl Skill {
                 | Skill::Throw
                 | Skill::Block
                 | Skill::Stealth
+                | Skill::Surgery
                 | Skill::Tailoring
                 | Skill::Smithing
         )
@@ -197,6 +270,20 @@ pub enum SkillKind {
 pub trait PlayerSkills {
     fn skill_hours_trained(&self, skill: Skill) -> f32;
 
+    /// Directly trained Surgery hours, before adjacent-skill transfer.
+    fn surgery_hours_direct(&self) -> f32 {
+        self.skill_hours_trained(Skill::Surgery)
+    }
+
+    /// One-pass Surgery knowledge from direct study plus Knife and Tailoring.
+    fn surgery_hours_effective(&self) -> f32 {
+        crate::surgery::effective_surgery_hours(
+            self.surgery_hours_direct(),
+            self.skill_hours_trained(Skill::Knife),
+            self.skill_hours_trained(Skill::Tailoring),
+        )
+    }
+
     fn bestiary_hours_for(&self, _category: adventuresim_world_schema::BestiaryCategory) -> f32 {
         self.skill_hours_trained(Skill::Bestiary)
     }
@@ -210,7 +297,11 @@ pub trait PlayerSkills {
         equipment: &impl PlayerEquipment,
         weights: LimbWeights,
     ) -> f32 {
-        let hours_trained = self.skill_hours_trained(skill);
+        let hours_trained = if skill == Skill::Surgery {
+            self.surgery_hours_effective()
+        } else {
+            self.skill_hours_trained(skill)
+        };
         let training = skill.training_rank(hours_trained);
 
         let (reflex, focus) = match skill.kind() {

@@ -63,6 +63,15 @@ related fields cannot add beyond the skill's authored mastery range. Correlation
 knowledge, not merely that two tags can coexist. Wildmen transfer strongly
 with Human (`0.65`) and more modestly with Fey (`0.30`).
 
+Surgery is a separate trained leaf skill. Its effective hours are direct
+Surgery plus 25% of direct Knife and 25% of direct Tailoring in one
+nonrecursive pass, capped at 5,000 hours. Surgery is an upper-body physical
+check, so arm impairment and the normal physical penalties affect it. Every
+operative procedure then caps that check by the treating character's separate
+effective Bestiary knowledge for the patient's species. All current characters
+resolve to Human through a dedicated category boundary that can adopt persisted
+species later.
+
 Procedural physical-evidence topics may author atomic Bestiary implications.
 Each implication names exactly one category, a fixed support value from 0 to
 10,000 basis points, a hidden category-specific lore threshold, and safe

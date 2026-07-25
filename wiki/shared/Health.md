@@ -105,7 +105,7 @@ accelerates the remaining course while mitigating symptoms; it never instantly
 cures disease. Unequipping discards the course, and medication records are also
 removed automatically when their matching disease resolves. Immunity resists acquisition and attenuates severity; resolved episodes can
 confer disease-specific acquired immunity. Open cuts may introduce wound disease
-with the treating character's relevant Human-Bestiary-based procedure check reducing residual risk; blunt damage does not.
+with the treating character's species-capped Surgery check reducing residual risk; blunt damage does not.
 
 Outbreak acquisition hashes each actual minute of presence. This keeps late
 arrival, departure and re-entry exact and makes one long stay identical to the
@@ -141,9 +141,10 @@ Procedures show supplies, time, and difficulty but keep infection odds hidden.
 The treating character and patient must share a location, party, and personal
 character time; the lagging participant waits to the later clock, then only
 those participants advance by the procedure duration. Self-treatment applies a
-2.5-point penalty to the resulting procedure check. Bandaging and splinting use
-Human Bestiary knowledge. Stitching averages Human knowledge and Tailoring and requires a reusable
-surgery kit; its quality accelerates healing. A splint's exact inventory row
+2.5-point penalty to the resulting procedure check. Every procedure uses the
+same effective Surgery check, capped by Bestiary knowledge of the patient's
+species. Current patients are Human. Stitching requires a reusable surgery kit;
+its quality accelerates healing. A splint's exact inventory row
 moves into a separate limb-applied slot while retaining its weight and owner,
 never displaces armor, and returns automatically when the fracture heals;
 anyone may remove it.
@@ -157,10 +158,11 @@ reduces that exposure and stitch quality reduces it further; a diseased treating
 also worsens contamination exposure during a procedure. Retained projectiles do
 not add a separate recurring complication roll.
 
-Retained arrowheads and balls appear inside the affected limb bar. Extraction DC combines the individual hit's damage with a seeded depth component and is deliberately uncapped: shallow projectiles need little training while difficult positions may exceed DC 5. A procedure cannot be attempted until the treating character's relevant composite check meets its requirement. The procedure meter shows met skill brightly, unmet required skill darkly, and ranks beyond the requirement as empty. Retention imposes only a flat 40% healing-rate penalty. Successful extraction adds cut damage and bleeding, but it does not carry an additional recurring projectile complication. Projectile kind is an explicit extension point for later DC multipliers such as barbed arrows.
+Retained arrowheads and balls appear inside the affected limb bar. Extraction DC combines the individual hit's damage with a seeded depth component and is deliberately uncapped: shallow projectiles need little training while difficult positions may exceed DC 5. A procedure cannot be attempted until the treating character's species-capped Surgery check meets its requirement. The procedure meter shows met skill brightly, unmet required skill darkly, and ranks beyond the requirement as empty. Retention imposes only a flat 40% healing-rate penalty. Successful extraction adds cut damage and bleeding, but it does not carry an additional recurring projectile complication. Projectile kind is an explicit extension point for later DC multipliers such as barbed arrows.
 
-Projectile extraction averages Human Bestiary knowledge and Knife; procedures above DC 1 require a reusable surgery kit. Shallower
-projectiles remain removable without one.
+Projectile extraction uses the same Surgery check as every other procedure;
+procedures above DC 1 require a reusable surgery kit. Shallower projectiles
+remain removable without one.
 
 Characters also persist current and maximum blood volume. Maximum volume currently assumes a 70 kg body at 70 ml/kg. Autoresolve commits immediate blood loss alongside final body-part injuries, open cuts continue draining blood on every authoritative personal-time path, and settlement rest recovers 1% of maximum blood volume per day. Losing 30% of maximum blood volume contributes 100% strategic incapacitation.
 

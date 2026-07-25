@@ -285,6 +285,7 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
             human: initial(&mut rng),
             ..Default::default()
         },
+        surgery: initial(&mut rng),
         stealth: initial(&mut rng),
         balance: initial(&mut rng),
         tailoring: initial(&mut rng),
@@ -304,8 +305,7 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
         BuildRole::Healer => {
             initial_skills.medicine = specialty;
             initial_skills.bestiary.human = specialty * 0.7;
-            initial_skills.knife = specialty * 0.7;
-            initial_skills.tailoring = specialty * 0.7;
+            initial_skills.surgery = specialty * 0.7;
         }
         BuildRole::Devout => initial_skills.religion.roman_catholic = specialty,
         BuildRole::Civilian => {}

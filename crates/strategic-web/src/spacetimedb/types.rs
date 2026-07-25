@@ -1391,6 +1391,7 @@ pub struct CharacterSkills {
     pub cooking_hours: f32,
     pub religion_hours: adventuresim_world_schema::ReligionHours,
     pub bestiary_hours: adventuresim_world_schema::BestiaryHours,
+    pub surgery_hours: f32,
     pub oral_languages: adventuresim_world_schema::OralLanguageHours,
     pub written_languages: adventuresim_world_schema::WrittenLanguageHours,
     pub stealth_hours: f32,

@@ -256,6 +256,7 @@ pub struct CharacterSkills {
     pub cooking_hours: f32,
     pub religion_hours: adventuresim_world_schema::ReligionHours,
     pub bestiary_hours: adventuresim_world_schema::BestiaryHours,
+    pub surgery_hours: f32,
     pub oral_languages: adventuresim_world_schema::OralLanguageHours,
     pub written_languages: adventuresim_world_schema::WrittenLanguageHours,
     pub stealth_hours: f32,
@@ -808,8 +809,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
             .find(id)
             .ok_or("Surgery demo character is missing skills")?;
         skills.bestiary_hours.human = procedure_hours;
-        skills.knife_hours = procedure_hours;
-        skills.tailoring_hours = procedure_hours;
+        skills.surgery_hours = procedure_hours;
         ctx.db.character_skills().character_id().update(skills);
         let mut time = ctx
             .db
@@ -1171,6 +1171,7 @@ fn insert_character_with_origin(
             human: 1000.0,
             ..Default::default()
         },
+        surgery_hours: 1000.0,
         oral_languages,
         written_languages,
         stealth_hours: generated_skills.map_or(1000.0, |s| s.stealth),
