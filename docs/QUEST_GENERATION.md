@@ -1,5 +1,78 @@
 # Quest generation
 
+## Authoring catalog
+
+Modular quest and bestiary content is authored in the strict JSON-compatible
+subset of YAML under `content/quests/`. Files are read in sorted path order,
+validated during the `adventuresim-core` build, embedded in the executable,
+and parsed into an immutable catalog once at process startup. Production does
+not read loose YAML. The SHA-256 digest of filenames and exact source bytes is
+the generated-case catalog revision, so changing authored content creates a
+new deterministic replay boundary.
+
+`bestiary.yaml` owns current monster names, aliases, combat values,
+loot/loadout identifier, innate resistance and padding, behavior, habitats,
+descriptions, clues, ambiguity links, and preparation text.
+`investigation.yaml` owns evidence portraits, inspection topics and
+creation-time DC ranges, witness demographics and circumstances, descriptions,
+sites, and rare bridges. `generation.yaml` owns templates and separate
+plausibility/curation weights, including explicit hard zeros.
+
+Run `cargo run -p adventuresim-core --bin questgen-check -- validate` after an
+edit. Build-time embedding, process startup, and the authoring checker use the
+same exhaustive validator. It rejects unknown fields, duplicate or overlong
+IDs, dangling references, incomplete relation coverage, ambiguous witness
+rules, invalid closed-mechanic names, malformed evidence DCs and weights, and
+unsupported template graphs. Diagnostics include the source file and
+structural path. Open catalog IDs are limited to 63 ASCII identifier bytes.
+
+### Current typed adapter boundary
+
+Threat, site, witness-demographic, circumstance, ambiguous-description,
+physical-evidence, bestiary-trace, and causal-bridge identities are bounded
+open string IDs. A new value using existing mechanics therefore requires YAML
+only. Closed Rust enums remain only
+where the engine must execute a finite mechanic: rig topology, attack style,
+protection, temperament, activity period, terrain, evidence check attribute,
+reliability behavior, route/action and objective operation, settlement symptom,
+and encounter archetype. Adding a new value to one of those finite mechanic
+vocabularies requires Rust.
+`shattering_blow` is a preparation hypothesis backed by the existing physical
+resistance/padding model; it does not introduce a damage multiplier.
+
+Typed investigation lists, aliases, regional priors and loadout IDs are
+embedded. Tactical materialization currently consumes only one loot item ID;
+it does not support multi-item authored loadouts, ability scripts, bespoke AI
+state machines, or new rig/animation topologies. Behavior currently reaches
+combat through temperament, perception, stealth, morale, movement, attack,
+ranged precision, encounter scale, and physically based innate resistance and
+padding. These are the factual incomplete bestiary surfaces for this change.
+
+The first catalog boundary does not yet interpret arbitrary authored graph
+programs. Reliability semantics (truthful, mistaken, evasive, deceptive),
+account-style behavior, route/action execution, finale/objective execution,
+symptom-to-settlement-effect calculation, and incident construction remain
+closed engine mechanics. Their available IDs and primary selection weights are
+declared in YAML, but adding a new executable semantic requires Rust. Likewise,
+template declarations select the route/objective set, cause-to-finale mapping,
+consequence profile, incident interval, and incident ceiling persisted in each
+generated manifest. The two supported route/objective graph shapes still have
+typed Rust assemblers, and startup rejects any other shape. This prevents
+content from becoming executable server code and is the principal incomplete
+quest surface of this PR.
+
+Witness demographic selection is also authored. A match rule may constrain
+the NPC facts `age_band`, `sex`, `profession`, and `local_role`; empty lists are
+wildcards. Age bands are `child`, `adolescent`, `adult`, and `elder`, and sex is
+`female` or `male`. Profession and local-role selectors are lowercase
+identifiers matched against either the complete generated NPC fact or one
+whole alphanumeric token in that fact; arbitrary substrings never match.
+Selectors must match the finite NPC fact vocabulary known at startup. Higher
+priority wins. Exactly one selector-free fallback is required, and
+equal-priority rules belonging to different demographics may not overlap under
+the same matching function used at runtime. Fallback priority is ignored: the
+fallback is consulted only when no non-fallback rule matches.
+
 Generated quests are deterministic typed case manifests assembled from shared
 modules rather than scripts with substituted nouns. The initial catalog has
 two families:
@@ -22,7 +95,14 @@ curation weights. Authoritative selection uses bounded integer arithmetic,
 stable candidate IDs, and deterministic domain-separated entropy. Zero means
 impossible. Low positive weights remain possible, but sufficiently unusual
 combinations must name a typed causal bridge. A selected bridge materializes a
-canonical event, discoverable evidence, and a playable lead.
+canonical event, discoverable evidence, and a playable lead. Each bridge
+authors the existing action that emits its evidence separately for both
+supported template families; startup rejects missing families or action names
+that their typed assembler does not emit. A selected bridge from any
+generation relation is carried through to this materialization step. Evidence
+relations are the one explicit exception: startup rejects bridges there
+because the follow-up evidence selector has no case-graph materialization
+context.
 
 The solver uses deterministic weighted candidate order, forward rejection,
 and backtracking under a hard node budget. Its private trace records factors,
@@ -71,14 +151,15 @@ undiscovered evidence, true/decoy status, or hidden coordinates.
 
 The initial manifest remains immutable, but an unresolved generated problem
 may acquire append-only follow-up incidents as authoritative world time
-advances. Every two days, settlement activity materializes the next due
+advances. At the template's authored interval, settlement activity materializes the next due
 incident with a stable `(case, ordinal)` identity, occurrence time, persistent
 NPC witness and victim binding, circumstance, existing case site, canonical
 event, and new physical-evidence authority. Delayed refreshes deterministically
 catch up every missed incident. Fresh evidence is selected through the same
 cause-and-site likelihood table and hard zeros as initial evidence rather than
-an incident-only inverse lookup. The original offence plus four follow-ups is
-the current safety ceiling. Before that ceiling can leave a neglected case
+an incident-only inverse lookup. The template's authored maximum incident
+count is the current safety ceiling (five in both initial templates). Before
+that ceiling can leave a neglected case
 permanently stalled, an available resident NPC adventuring company may
 intervene after the case has aged and accumulated incidents. Recent player
 investigation or physical presence at a case site grants a grace period so the
@@ -108,9 +189,9 @@ and only the first successful discovery records the clue in the journal.
 Each accumulated incident increases the unresolved problem's trade,
 encounter, and disease consequences by 25 percent of their initial values,
 before the existing global safety caps and mitigation are applied. At the
-temporary five-incident ceiling, consequences are twice their initial
-severity. Resolving or fully mitigating the linked problem still suppresses
-all of those effects.
+currently authored five-incident ceiling, consequences are twice their initial
+severity. Resolving or fully mitigating the linked problem still suppresses all
+of those effects.
 
 NPC interventions are deterministic strategic outcomes; they do not create
 tactical tick state. A company chooses a route supported by the case's generated

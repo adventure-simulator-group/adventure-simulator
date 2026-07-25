@@ -71,18 +71,31 @@ fn quest_encounter_archetype(
     enemy_type: &str,
 ) -> Option<adventuresim_core::encounter::EncounterArchetype> {
     use adventuresim_core::{bestiary::ThreatId, encounter::EncounterArchetype};
-    match parse_threat(enemy_type).ok()? {
-        ThreatId::Goblin | ThreatId::Kobold => Some(EncounterArchetype::Goblins),
-        ThreatId::Skeleton | ThreatId::Ghoul | ThreatId::Revenant | ThreatId::Nachzehrer => {
-            Some(EncounterArchetype::Undead)
-        }
-        ThreatId::Bandit
-        | ThreatId::Deserter
-        | ThreatId::Poacher
-        | ThreatId::Smuggler
-        | ThreatId::Cultist
-        | ThreatId::GraveRobber => Some(EncounterArchetype::Bandits),
-        _ => None,
+    let threat = parse_threat(enemy_type).ok()?;
+    if [ThreatId::Goblin, ThreatId::Kobold].contains(&threat) {
+        Some(EncounterArchetype::Goblins)
+    } else if [
+        ThreatId::Skeleton,
+        ThreatId::Ghoul,
+        ThreatId::Revenant,
+        ThreatId::Nachzehrer,
+    ]
+    .contains(&threat)
+    {
+        Some(EncounterArchetype::Undead)
+    } else if [
+        ThreatId::Bandit,
+        ThreatId::Deserter,
+        ThreatId::Poacher,
+        ThreatId::Smuggler,
+        ThreatId::Cultist,
+        ThreatId::GraveRobber,
+    ]
+    .contains(&threat)
+    {
+        Some(EncounterArchetype::Bandits)
+    } else {
+        None
     }
 }
 
@@ -18013,25 +18026,13 @@ fn generated_witness_candidates(
 pub(crate) fn generated_npc_demographic(
     npc: &crate::settlement_population::SettlementNpc,
 ) -> adventuresim_core::quest_generation::WitnessDemographic {
-    use adventuresim_core::quest_generation::WitnessDemographic;
-    match npc.age_band {
-        crate::settlement_population::NpcAgeBand::Child
-        | crate::settlement_population::NpcAgeBand::Adolescent => WitnessDemographic::Child,
-        crate::settlement_population::NpcAgeBand::Adult
-        | crate::settlement_population::NpcAgeBand::Elder => {
-            if npc.profession.contains("merchant") {
-                WitnessDemographic::Merchant
-            } else if npc.profession.contains("cleric") {
-                WitnessDemographic::Cleric
-            } else if npc.profession.contains("guard") || npc.local_role.contains("retainer") {
-                WitnessDemographic::Guard
-            } else if npc.local_role.contains("lord") {
-                WitnessDemographic::Noble
-            } else {
-                WitnessDemographic::Laborer
-            }
-        }
-    }
+    let age_band = format!("{:?}", npc.age_band).to_ascii_lowercase();
+    let sex = format!("{:?}", npc.sex).to_ascii_lowercase();
+    let authored = adventuresim_core::quest_catalog::catalog()
+        .witness_demographic_for(&age_band, &sex, &npc.profession, &npc.local_role)
+        .expect("validated demographic catalog has one fallback");
+    adventuresim_core::quest_generation::WitnessDemographic::try_new(&authored.id)
+        .expect("validated open demographic ID")
 }
 
 pub(crate) fn generated_npc_presence_version(
@@ -18053,12 +18054,15 @@ pub(crate) fn generated_npc_presence_version(
 }
 
 fn generated_scene_key(kind: adventuresim_core::quest_generation::SiteKind) -> &'static str {
-    use adventuresim_core::quest_generation::SiteKind;
-    match kind {
-        SiteKind::Cave | SiteKind::Crypt => "cave",
-        SiteKind::ForestCamp | SiteKind::AbandonedFarm => "woods",
-        SiteKind::OccupiedHouse | SiteKind::Graveyard => "ruins",
-        SiteKind::Riverside | SiteKind::Roadside => "camp",
+    let site = adventuresim_core::quest_catalog::catalog()
+        .site(kind.as_str())
+        .expect("generated site exists in startup catalog");
+    match site.terrain.as_str() {
+        "underground" => "cave",
+        "forest" => "woods",
+        "settlement" => "ruins",
+        "road" => "camp",
+        _ => unreachable!("catalog validation rejects unknown terrain mechanics"),
     }
 }
 

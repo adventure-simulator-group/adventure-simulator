@@ -1,5 +1,23 @@
 # Development Workflow
 
+## Quest content
+
+Quest and bestiary content lives in `content/quests/*.yaml` using the same
+strict JSON-compatible YAML convention as dialogue. Validate it with:
+
+```powershell
+cargo run -p adventuresim-core --bin questgen-check -- validate
+```
+
+The build, runtime startup, and checker share one strict catalog validator. It
+reports the source file and structural path for unknown fields, duplicate or
+overlong IDs, dangling references, incomplete relation coverage, ambiguous
+witness-demographic predicates, unknown closed mechanics, invalid evidence DC
+ranges, runtime numeric overflows, malformed nullable values, unsupported
+template graphs, and zero weights without a hard-zero reason. It also enforces
+bow/ranged consistency. Catalog IDs are at most 63 ASCII identifier bytes.
+Production embeds the validated files; it never reads loose quest YAML.
+
 Local workflow for running the Adventure Simulator demo.
 
 For deterministic multi-year NPC balance experiments and replay commands, see

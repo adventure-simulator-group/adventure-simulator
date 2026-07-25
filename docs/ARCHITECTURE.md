@@ -1,5 +1,12 @@
 # Architecture MVP - Adventure Simulator
 
+Repository-authored dialogue and quest content share a deployment boundary:
+sorted YAML sources are validated and compiled into their crate, then
+deserialized once at startup. Services never interpret loose deployment files.
+Generated quest authority persists the content digest used to create it.
+Canonical truth, hard-zero diagnostics, hidden evidence DCs and factor traces
+remain private; catalog authoring does not broaden observer-safe projections.
+
 Persistent local problems and their privacy boundary are specified in
 [LOCAL_PROBLEMS.md](LOCAL_PROBLEMS.md). Their strategic authority is stored in
 SpacetimeDB; generation and consequence evaluation are pure shared-core logic.

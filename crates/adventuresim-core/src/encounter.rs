@@ -59,7 +59,7 @@ impl EncounterArchetype {
         }
     }
 
-    pub const fn enemy_speed_m_per_minute(self) -> u32 {
+    pub fn enemy_speed_m_per_minute(self) -> u32 {
         self.threat_id().profile().combat.speed_m_per_minute
     }
 }
@@ -118,7 +118,7 @@ pub const fn penalty_minutes(terrain: EncounterTerrain, choice: EncounterChoice)
     }
 }
 
-pub const fn run_is_eligible(party_speed: u32, archetype: EncounterArchetype) -> bool {
+pub fn run_is_eligible(party_speed: u32, archetype: EncounterArchetype) -> bool {
     party_speed > archetype.enemy_speed_m_per_minute()
 }
 

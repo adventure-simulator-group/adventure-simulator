@@ -1,0 +1,39 @@
+{
+  "evidence": [
+    {"id":"footprints","portrait_label":"Footprints","portrait_icon":"wingfoot","base_description":"You see a trail of footprints pressed into the ground.","topics":[{"id":"spacing","label":"spacing between the prints","inspection_description":"The stride is uneven where the ground rises.","check":null},{"id":"edges","label":"edges of the prints","inspection_description":"The edges are easy to overlook among loose soil.","check":{"stat":"eyesight","difficulty_min_milli":1200,"difficulty_max_milli":4000,"success_description":"You notice the freshest prints continue away from the apparent trail.","reveals_clue":true}}]},
+    {"id":"cloth_scrap","portrait_label":"Torn cloth","portrait_icon":"clothes","base_description":"A scrap of cloth hangs from a rough edge.","topics":[{"id":"weave","label":"weave of the cloth","inspection_description":"It is ordinary, coarse cloth.","check":null},{"id":"snag","label":"place where it snagged","inspection_description":"The fibers are badly frayed.","check":{"stat":"eyesight","difficulty_min_milli":1200,"difficulty_max_milli":4000,"success_description":"You see that the cloth caught while its wearer moved toward a concealed path.","reveals_clue":true}}]},
+    {"id":"bone_dust","portrait_label":"Bone dust","portrait_icon":"death-skull","base_description":"Pale fragments and dust lie scattered over the surface.","topics":[{"id":"fragments","label":"larger fragments","inspection_description":"They are dry and brittle.","check":null},{"id":"residue","label":"fine residue","inspection_description":"The powder resembles old bone.","check":{"stat":"intelligence","difficulty_min_milli":1200,"difficulty_max_milli":4000,"success_description":"You distinguish worked grave material from ordinary animal remains.","reveals_clue":true}}]},
+    {"id":"bloodless_corpse","portrait_label":"Bloodless corpse","portrait_icon":"bleeding-wound","base_description":"A body lies here with remarkably little blood around it.","topics":[{"id":"clothing","label":"clothing","inspection_description":"The clothing is disordered but otherwise unremarkable.","check":null},{"id":"wounds","label":"wounds","inspection_description":"The marks are small and difficult to read.","check":{"stat":"intelligence","difficulty_min_milli":1200,"difficulty_max_milli":4000,"success_description":"You determine that the lack of blood cannot be explained by the visible wounds alone.","reveals_clue":true}}]},
+    {"id":"dropped_token","portrait_label":"Dropped token","portrait_icon":"coins","base_description":"A small personal token lies where someone dropped it.","topics":[{"id":"face","label":"worn face","inspection_description":"Handling has smoothed most of its detail.","check":null},{"id":"edge","label":"marked edge","inspection_description":"Faint scratches run around the edge.","check":{"stat":"eyesight","difficulty_min_milli":1200,"difficulty_max_milli":4000,"success_description":"You recognize a deliberate ownership mark associated with a local group.","reveals_clue":true}}]},
+    {"id":"drag_marks","portrait_label":"Drag marks","portrait_icon":"eye-target","base_description":"Long disturbances score the dirt and crushed vegetation.","topics":[{"id":"furrows","label":"deepest furrows","inspection_description":"Something heavy passed over this ground.","check":null},{"id":"interruptions","label":"interruptions in the marks","inspection_description":"The trail is confused where the surface hardens.","check":{"stat":"instinct","difficulty_min_milli":1200,"difficulty_max_milli":4000,"success_description":"You recover the direction of travel from repeated disturbances beyond the hard ground.","reveals_clue":true}}]},
+    {"id":"ledger_entry","portrait_label":"Ledger","portrait_icon":"open-book","base_description":"A ledger lies open to a page of terse entries.","topics":[{"id":"totals","label":"column totals","inspection_description":"The sums are routine and mostly balanced.","check":null},{"id":"correction","label":"corrected entry","inspection_description":"One line has been scraped and rewritten.","check":{"stat":"intelligence","difficulty_min_milli":1200,"difficulty_max_milli":4000,"success_description":"You reconstruct an original entry that contradicts the public account.","reveals_clue":true}}]}
+  ],
+  "witness_demographics": [
+    {"id":"child","label":"child","match_rules":[{"priority":100,"age_bands":["child","adolescent"],"sexes":[],"professions":[],"local_roles":[],"fallback":false}]},
+    {"id":"laborer","label":"laborer","match_rules":[{"priority":0,"age_bands":[],"sexes":[],"professions":[],"local_roles":[],"fallback":true}]},
+    {"id":"merchant","label":"merchant","match_rules":[{"priority":80,"age_bands":[],"sexes":[],"professions":["merchant","innkeeper"],"local_roles":[],"fallback":false}]},
+    {"id":"cleric","label":"cleric","match_rules":[{"priority":80,"age_bands":[],"sexes":[],"professions":["cleric"],"local_roles":[],"fallback":false}]},
+    {"id":"guard","label":"guard","match_rules":[{"priority":80,"age_bands":[],"sexes":[],"professions":["guard","soldier"],"local_roles":[],"fallback":false},{"priority":90,"age_bands":[],"sexes":[],"professions":[],"local_roles":["retainer"],"fallback":false}]},
+    {"id":"noble","label":"noble","match_rules":[{"priority":80,"age_bands":[],"sexes":[],"professions":["noble"],"local_roles":[],"fallback":false}]}
+  ],
+  "circumstances": [
+    {"id":"night_window","statement":"looking from a window after dark"},{"id":"secret_riverside","statement":"at a secluded riverside meeting"},{"id":"adult_venue","statement":"near an adult venue"},{"id":"road","statement":"while traveling the road"},{"id":"grave_duty","statement":"while attending the graves"},{"id":"livestock_watch","statement":"while watching livestock"}
+  ],
+  "sites": [
+    {"id":"cave","label":"a cave beyond the fields","terrain":"underground","habitat":"cave"},
+    {"id":"crypt","label":"the old crypt","terrain":"underground","habitat":"crypt"},
+    {"id":"forest_camp","label":"a camp in the woods","terrain":"forest","habitat":"camp"},
+    {"id":"occupied_house","label":"an occupied house","terrain":"settlement","habitat":"occupied_house"},
+    {"id":"riverside","label":"a secluded bend in the river","terrain":"road","habitat":"open"},
+    {"id":"graveyard","label":"the old graveyard","terrain":"settlement","habitat":"graveyard"},
+    {"id":"roadside","label":"a lonely stretch of road","terrain":"road","habitat":"road"},
+    {"id":"abandoned_farm","label":"an abandoned farm","terrain":"forest","habitat":"ruin"}
+  ],
+  "descriptions": [
+    {"id":"armed_people","text":"a group of armed figures"},{"id":"small_upright_figures","text":"several small figures moving upright"},{"id":"large_upright_beast","text":"a large shape that seemed to stand upright"},{"id":"gaunt_human","text":"a gaunt, human-shaped figure"},{"id":"walking_dead","text":"a person moving with a stiff, shambling gait"},{"id":"large_animal","text":"the silhouette of a large animal"},{"id":"doglike_beast","text":"a low, dog-shaped beast"},{"id":"unseen_night_visitor","text":"something hidden in the darkness"}
+  ],
+  "bridges": [
+    {"id":"skeletons_occupied_house","explanation":"A grave robber moved animated remains into a shuttered house.","lead_summary":"Grave clay and cart ruts connect the house to the crypt.","event_suffix":"bridge:skeleton_house","evidence_id":"grave_clay","action_ids":{"recurring_depredation":"search","disappearance_or_loss":"inspect_last_known"}},
+    {"id":"child_at_adult_venue","explanation":"The child was fetching an adult relative from outside the venue.","lead_summary":"An errand token corroborates why the child waited outside.","event_suffix":"bridge:child_venue","evidence_id":"errand_token","action_ids":{"recurring_depredation":"watch","disappearance_or_loss":"locate_contact"}}
+  ]
+}

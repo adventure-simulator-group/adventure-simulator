@@ -11,6 +11,11 @@ hostile group, a separate contract, and an independently known case site.
 Combat contributes an authenticated outcome fact; the objective evaluator,
 not tactical code, decides whether the case is resolved.
 
+Quest templates, witnesses, evidence, sites, descriptions, threats and their
+weighted relationships are repository-authored YAML. Its content digest is
+recorded on newly generated cases; existing authority is never silently
+reinterpreted against different content.
+
 A party leader may request one of an NPC company's open roles while both parties occupy the same location and the company's typed recruitment offer remains open and unexpired. The company and offer are generated independently from quests. Acceptance merges the applying party into the destination party: the destination leader retains command, the applying leader fills the selected role, and every other source member becomes an ordinary member. Source recruitment roles and pending applications close, while party-inventory items, reserve value, and each character's absolute stake transfer intact. Generated NPC leaders auto-approve these requests in local development so the complete merge flow can be previewed.
 
 Recruiting NPC companies are discovered at the inn rather than through quest ownership or a global party browser. Their service presentation reveals the company leader and each open role. Role links show exact recommendations on hover and are colored blue for unrestricted roles, green when a member of the viewer's party meets every recommendation, yellow when a member meets some, and red when no member meets any. Selecting a role replaces the side panels with its detailed recommendations, party context, and the request-to-join action.
