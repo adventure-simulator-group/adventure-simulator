@@ -1607,6 +1607,14 @@ pub fn compile(
 /// the web client. Closed mechanics are declared here in one core-owned list.
 pub fn schema_json(witness_candidates: &[qg::WitnessCandidate]) -> Value {
     let catalog = crate::quest_catalog::catalog();
+    let configured_routes = catalog
+        .templates()
+        .flat_map(|template| template.routes.iter().cloned())
+        .collect::<BTreeSet<_>>();
+    let configured_objectives = catalog
+        .templates()
+        .flat_map(|template| template.objectives.iter().cloned())
+        .collect::<BTreeSet<_>>();
     let demographics = catalog
         .documents
         .iter()
@@ -1634,7 +1642,22 @@ pub fn schema_json(witness_candidates: &[qg::WitnessCandidate]) -> Value {
             "total_items": MAX_DEVELOPER_TOTAL_ITEMS
         },
         "options": {
-            "templates": options(catalog.templates().map(|x| (x.id.clone(), x.label.clone())).collect()),
+            "templates": catalog.templates().map(|template| json!({
+                "value": template.id,
+                "label": template.label,
+                "binding": {
+                    "routes": template.routes,
+                    "objectives": template.objectives,
+                }
+            })).collect::<Vec<_>>(),
+            "configured_routes": options(configured_routes.into_iter().map(|id| {
+                let label = id.replace('_', " ");
+                (id, label)
+            }).collect()),
+            "configured_objectives": options(configured_objectives.into_iter().map(|id| {
+                let label = id.replace('_', " ");
+                (id, label)
+            }).collect()),
             "threats": options(catalog.monsters().map(|x| (x.id.clone(), x.name.clone())).collect()),
             "sites": options(catalog.sites().map(|x| (x.id.clone(), x.label.clone())).collect()),
             "evidence": options(catalog.evidence_definitions().map(|x| (x.id.clone(), x.portrait_label.clone())).collect()),
@@ -1773,6 +1796,18 @@ mod tests {
         let schema = schema_json(&context().witness_candidates);
         assert_eq!(schema["catalog_revision"], qg::CATALOG_REVISION);
         assert!(schema["options"]["threats"].as_array().unwrap().len() > 10);
+        assert!(
+            !schema["options"]["configured_routes"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            !schema["options"]["configured_objectives"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
         assert_eq!(
             schema["limits"]["collection_items"],
             MAX_DEVELOPER_COLLECTION_ITEMS

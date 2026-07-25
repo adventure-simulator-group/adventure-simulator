@@ -35,8 +35,33 @@
     });
     return target;
   };
+  const schemaRepeaterDefault = (schema, key, templateId = schema.definition?.template_id) => {
+    const template = schema.options?.templates?.find((option) => option.value === templateId);
+    if ((key === "configured_routes" || key === "action_route")
+      && template?.binding?.routes?.length) {
+      return template.binding.routes[0];
+    }
+    if (key === "configured_objectives" && template?.binding?.objectives?.length) {
+      return template.binding.objectives[0];
+    }
+    const groups = {
+      configured_routes: "configured_routes",
+      configured_objectives: "configured_objectives",
+      site_kind: "sites",
+      evidence_kind: "evidence",
+      threat: "threats",
+      finale_kind: "finale_kinds",
+    };
+    const option = schema.options?.[groups[key]]?.[0];
+    return typeof option === "string" ? option : option?.value || "";
+  };
   if (typeof module !== "undefined") {
-    module.exports = { replaceAtPath, hydrateWitnessBinding, hydratePatternBinding };
+    module.exports = {
+      replaceAtPath,
+      hydrateWitnessBinding,
+      hydratePatternBinding,
+      schemaRepeaterDefault,
+    };
   }
   if (typeof document === "undefined") return;
   const dialog = document.querySelector("[data-developer-quest-dialog]");
@@ -65,6 +90,8 @@
 
   const optionGroup = (path) => {
     if (path === "template_id") return "templates";
+    if (/^configured_routes\.\d+$/.test(path)) return "configured_routes";
+    if (/^configured_objectives\.\d+$/.test(path)) return "configured_objectives";
     if (path === "cause.hostile" || /^hostile_groups\.\d+\.2$/.test(path)) return "threats";
     if (/^sites\.\d+\.kind$/.test(path)) return "sites";
     if (/^evidence\.\d+\.kind$/.test(path)) return "evidence";
@@ -104,10 +131,10 @@
     witnesses: { id: "witness:new", npc_id: "", display_name: "", demographic: null, circumstance: null, description: null, expected_location: "", expected_location_label: "", visible_description: "", testimony: [] },
     pattern_targets: { cohort_id: "cohort:new", npc_id: "", demographic: null, age_band: "adult", sex: "female", profession: "", expected_settlement_id: "", expected_location: "", expected_location_label: "", presence_version: 0 },
     evidence: { id: "evidence:new", kind: null, proposition_id: "proposition:new", site_id: "site:new", portrait_label: "Physical evidence", portrait_icon: "footprint", base_description: "You inspect the evidence.", inspection_topics: [], safe_description: "Physical evidence", corrects_proposition_id: null },
-    actions: { id: "action:new", kind: "inspect_site", route: "physical_trail", target_kind: "site", target_id: "site:new", prerequisite: null, alternate: "action:new", active_initially: false, safe_summary: "Inspect the site", outputs: [] },
+    actions: { id: "action:new", kind: "inspect_site", route: null, target_kind: "site", target_id: "site:new", prerequisite: null, alternate: "action:new", active_initially: false, safe_summary: "Inspect the site", outputs: [] },
     custody: ["asset:new", "site:new"],
     hostile_groups: ["group:new", "site:new", null, 1],
-    finales: { id: "finale:new", kind: "defeat", site_id: "site:new", hostile_group_id: "group:new", subject_id: null, asset_id: null, strategic_outcome_compatible: true },
+    finales: { id: "finale:new", kind: null, site_id: "site:new", hostile_group_id: "group:new", subject_id: null, asset_id: null, strategic_outcome_compatible: true },
     dialogue_producers: { action: "expose", objective_id: "objective:new", recipient_npc_id: "", subject_ref: null, asset_id: null },
     bridges: { id: "bridge:new", explanation: "", event_id: "event:new", evidence_id: "evidence:new", action_id: "action:new", lead_summary: "" },
     testimony: { proposition_id: "proposition:new", reliability: "truthful", truthful_text: "", spoken_text: "", destination_stage: "unknown", site_id: null, corrects_proposition_id: null, referred_witness_ids: [] },
@@ -115,8 +142,8 @@
     outputs: { kind: "destination", stage: "unknown", site_id: null },
     contains_site_ids: "site:new",
     referred_witness_ids: "witness:new",
-    configured_routes: "physical_trail",
-    configured_objectives: "defeat",
+    configured_routes: null,
+    configured_objectives: null,
     alternatives: { objectives: [] },
     objectives: { id: "objective:new", requirement: { Defeat: { hostile_group_id: "group:new", count: 1 } } },
   };
@@ -129,9 +156,14 @@
     }
     const key = splitPath(path).at(-1);
     const clone = structuredClone(emptyDefaults[key] ?? "");
-    if (key === "sites") clone.kind = schema.options.sites[0]?.value || "";
-    if (key === "evidence") clone.kind = schema.options.evidence[0]?.value || "";
-    if (key === "hostile_groups") clone[2] = schema.options.threats[0]?.value || "";
+    if (key === "configured_routes" || key === "configured_objectives") {
+      return schemaRepeaterDefault(schema, key, draft.template_id);
+    }
+    if (key === "sites") clone.kind = schemaRepeaterDefault(schema, "site_kind");
+    if (key === "evidence") clone.kind = schemaRepeaterDefault(schema, "evidence_kind");
+    if (key === "hostile_groups") clone[2] = schemaRepeaterDefault(schema, "threat");
+    if (key === "actions") clone.route = schemaRepeaterDefault(schema, "action_route", draft.template_id);
+    if (key === "finales") clone.kind = schemaRepeaterDefault(schema, "finale_kind");
     if (key === "witnesses") {
       const binding = schema.options.witnesses[0]?.binding;
       if (binding) Object.assign(clone, binding, { circumstance: binding.allowed_circumstances[0], description: schema.options.descriptions[0]?.value || "" });

@@ -11,6 +11,7 @@ const {
   replaceAtPath,
   hydrateWitnessBinding,
   hydratePatternBinding,
+  schemaRepeaterDefault,
 } = require(path.join(root, "static", "developer-quest-editor.js"));
 
 test("quest editor is settlement-only and gated by the existing browser-local developer mode", () => {
@@ -109,7 +110,48 @@ test("open YAML content IDs are supplied by schema rather than JavaScript", () =
   for (const openId of ["cave", "crypt", "footprints", "cloth_scrap", "wolf", "goblin", "laborer", "night_window"]) {
     assert.doesNotMatch(script, new RegExp(`["']${openId}["']`));
   }
-  assert.match(script, /schema\.options\.sites/);
-  assert.match(script, /schema\.options\.evidence/);
-  assert.match(script, /schema\.options\.threats/);
+  assert.match(script, /site_kind:\s*"sites"/);
+  assert.match(script, /evidence_kind:\s*"evidence"/);
+  assert.match(script, /threat:\s*"threats"/);
+});
+
+test("repeater defaults follow renamed catalog identities after old first entries are removed", () => {
+  const schema = {
+    definition: { template_id: "renamed_template" },
+    options: {
+      templates: [{
+        value: "renamed_template",
+        binding: {
+          routes: ["removed_route", "renamed_route"],
+          objectives: ["removed_objective", "renamed_objective"],
+        },
+      }],
+      configured_routes: [{ value: "removed_route" }, { value: "renamed_route" }],
+      configured_objectives: [{ value: "removed_objective" }, { value: "renamed_objective" }],
+      sites: [{ value: "removed_site" }, { value: "renamed_site" }],
+      evidence: [{ value: "removed_evidence" }, { value: "renamed_evidence" }],
+      threats: [{ value: "removed_threat" }, { value: "renamed_threat" }],
+      finale_kinds: ["removed_finale", "renamed_finale"],
+    },
+  };
+  for (const options of Object.values(schema.options)) options.shift();
+  schema.options.templates = [{
+    value: "renamed_template",
+    binding: {
+      routes: ["renamed_route"],
+      objectives: ["renamed_objective"],
+    },
+  }];
+
+  assert.equal(schemaRepeaterDefault(schema, "configured_routes"), "renamed_route");
+  assert.equal(schemaRepeaterDefault(schema, "action_route"), "renamed_route");
+  assert.equal(schemaRepeaterDefault(schema, "configured_objectives"), "renamed_objective");
+  assert.equal(schemaRepeaterDefault(schema, "site_kind"), "renamed_site");
+  assert.equal(schemaRepeaterDefault(schema, "evidence_kind"), "renamed_evidence");
+  assert.equal(schemaRepeaterDefault(schema, "threat"), "renamed_threat");
+  assert.equal(schemaRepeaterDefault(schema, "finale_kind"), "renamed_finale");
+  assert.doesNotMatch(script, /configured_routes:\s*["']physical_trail["']/);
+  assert.doesNotMatch(script, /configured_objectives:\s*["']defeat["']/);
+  assert.doesNotMatch(script, /actions:\s*\{[^}]*route:\s*["']physical_trail["']/);
+  assert.doesNotMatch(script, /finales:\s*\{[^}]*kind:\s*["']defeat["']/);
 });
