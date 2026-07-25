@@ -640,7 +640,8 @@ fn bestiary_skill_rows(skills: &CharacterSkills, health: f32, schedule_context: 
     let primary_effective = skills.bestiary_hours.effective(primary);
     let primary_direct = skills.bestiary_hours.direct(primary);
     html! {
-        tr class="party-skill-row bestiary-primary-row" data-bestiary-primary {
+        tr class="party-skill-row skill-family-primary-row bestiary-primary-row"
+            data-skill-family="bestiary" data-bestiary-primary {
             th scope="row" class="party-skill-name party-skill-icon-cell" {
                 (stat_icon("Bestiary", "skills", "open-book", false))
             }
@@ -1846,6 +1847,7 @@ mod tests {
             ..Default::default()
         };
         let rendered = bestiary_skill_rows(&skills, 1.0, false).into_string();
+        assert!(rendered.contains("data-skill-family=\"bestiary\""));
         assert!(rendered.contains("data-bestiary-expand"));
         assert!(rendered.contains("Expand Bestiary skills"));
         assert!(rendered.contains("Wildmen"));

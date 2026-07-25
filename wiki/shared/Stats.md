@@ -269,7 +269,8 @@ Conviction lives on the personality axis instead: Zealous contributes 5.0 pressu
 
 ### Bestiary (trained, 5000 hours per category)
 
-Bestiary represents learned physical knowledge of Beast, Undead, Human,
+Bestiary is a meta-skill, following the Religion model, whose leaf skills
+represent learned physical knowledge of Beast, Undead, Human,
 Werekin, Elf, Dwarf, Fey, Spirit, Greenskin, Insectoid, Draconid, Construct,
 and Wildmen creatures. A creature may belong to several categories, but one
 evidence result always evaluates exactly one category. Transformed animal

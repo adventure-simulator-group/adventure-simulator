@@ -44,10 +44,10 @@ pub enum Skill {
     /// Mental. Trained. Food preparation, safety, and kitchen technique. (10000h)
     #[assoc(max_hours = 10000.0, kind = SkillKind::Mental, is_trained = true)]
     Cooking,
-    /// Mental. Trained. Knowledge of a specific religious tradition. (5000h)
+    /// Mental. Trained. Meta-skill for knowledge of religious traditions. (5000h each)
     #[assoc(max_hours = 5000.0, kind = SkillKind::Mental, is_trained = true)]
     Religion,
-    /// Mental. Trained. Knowledge of a specific creature category. (5000h)
+    /// Mental. Trained. Meta-skill for knowledge of creature categories. (5000h each)
     #[assoc(max_hours = 5000.0, kind = SkillKind::Mental, is_trained = true)]
     Bestiary,
     /// Physical. Intuitive. Long hafted weapons. (8000h)
@@ -117,6 +117,13 @@ mod tests {
     use super::Skill;
 
     #[test]
+    fn religion_and_bestiary_are_meta_skills() {
+        assert!(Skill::Religion.is_meta_skill());
+        assert!(Skill::Bestiary.is_meta_skill());
+        assert!(!Skill::Medicine.is_meta_skill());
+    }
+
+    #[test]
     fn smithing_uses_its_documented_shared_training_curve() {
         assert!((Skill::Smithing.training_rank(5_000.0) - 2.5).abs() < 0.001);
         assert_eq!(Skill::Smithing.training_rank(f32::NAN), 0.0);
@@ -146,6 +153,12 @@ impl Skill {
 
     pub const fn is_physical(&self) -> bool {
         matches!(self.kind(), SkillKind::Physical)
+    }
+
+    /// Whether this value names a family whose trained hours live on separate,
+    /// correlated subskills rather than on the parent itself.
+    pub const fn is_meta_skill(&self) -> bool {
+        matches!(self, Skill::Religion | Skill::Bestiary)
     }
 
     pub const fn is_upper_body(&self) -> bool {
