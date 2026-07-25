@@ -4227,6 +4227,11 @@ body.chat-resizing {
 .stat-icon-hills,
 .stat-icon-urban { --stat-icon-color: var(--icon-mental); }
 
+.bestiary-primary-row .stat-icon,
+.bestiary-detail-row .stat-icon {
+  --stat-icon-color: var(--info);
+}
+
 .character-select-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));

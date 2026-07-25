@@ -172,7 +172,9 @@ pub fn stat_game_icon_name(icon: &str) -> &'static str {
 /// Resolve the source used by a stat mask. The original limb and immunity
 /// artwork remains clearer at the compact sizes used by the attribute rail.
 pub fn stat_icon_path(category: &str, icon: &str) -> String {
-    if category == "terrain" {
+    if category == "bestiary" {
+        format!("/static/icons/stats/bestiary/{icon}.png")
+    } else if category == "terrain" {
         format!("/static/icons/stats/terrain/{icon}.png")
     } else if category == "attributes"
         && matches!(
@@ -255,6 +257,31 @@ mod icon_tests {
             assert_eq!(
                 stat_icon_path("terrain", icon),
                 format!("/static/icons/stats/terrain/{icon}.png")
+            );
+        }
+    }
+
+    #[test]
+    fn bestiary_skill_family_uses_generated_local_masks() {
+        for icon in [
+            "bestiary",
+            "beast",
+            "undead",
+            "human",
+            "werekin",
+            "elf",
+            "dwarf",
+            "fey",
+            "spirit",
+            "greenskin",
+            "insectoid",
+            "draconid",
+            "construct",
+            "wildmen",
+        ] {
+            assert_eq!(
+                stat_icon_path("bestiary", icon),
+                format!("/static/icons/stats/bestiary/{icon}.png")
             );
         }
     }

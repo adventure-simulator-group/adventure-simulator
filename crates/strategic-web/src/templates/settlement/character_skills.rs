@@ -643,7 +643,7 @@ fn bestiary_skill_rows(skills: &CharacterSkills, health: f32, schedule_context: 
         tr class="party-skill-row skill-family-primary-row bestiary-primary-row"
             data-skill-family="bestiary" data-bestiary-primary {
             th scope="row" class="party-skill-name party-skill-icon-cell" {
-                (stat_icon("Bestiary", "skills", "open-book", false))
+                (stat_icon("Bestiary", "bestiary", "bestiary", false))
             }
             td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
                 (skill_rank_bar(
@@ -669,7 +669,8 @@ fn bestiary_skill_rows(skills: &CharacterSkills, health: f32, schedule_context: 
                     th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
                         span data-strategic-tooltip=(&lore) tabindex="0"
                             aria-label=(format!("{} Bestiary lore. {}", category.label(), lore)) {
-                            (category.label())
+                            (stat_icon(category.label(), "bestiary", category.id(), true))
+                            span class="sr-only" { (category.label()) }
                         }
                     }
                     td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
@@ -1838,6 +1839,7 @@ mod tests {
 
     #[test]
     fn bestiary_skill_family_lists_correlated_categories_and_accessible_lore() {
+        let css = include_str!("../../../static/css/strategic.css");
         let skills = CharacterSkills {
             bestiary_hours: adventuresim_world_schema::BestiaryHours {
                 human: 1_000.0,
@@ -1848,6 +1850,8 @@ mod tests {
         };
         let rendered = bestiary_skill_rows(&skills, 1.0, false).into_string();
         assert!(rendered.contains("data-skill-family=\"bestiary\""));
+        assert!(rendered.contains("/static/icons/stats/bestiary/bestiary.png"));
+        assert!(rendered.contains("/static/icons/stats/bestiary/wildmen.png"));
         assert!(rendered.contains("data-bestiary-expand"));
         assert!(rendered.contains("Expand Bestiary skills"));
         assert!(rendered.contains("Wildmen"));
@@ -1856,5 +1860,7 @@ mod tests {
         assert!(rendered.contains("Folklore / unimplemented hypotheses"));
         assert!(rendered.contains("data-strategic-tooltip"));
         assert_eq!(rendered.matches("data-bestiary-detail").count(), 13);
+        assert!(css.contains(".bestiary-primary-row .stat-icon,"));
+        assert!(css.contains("--stat-icon-color: var(--info);"));
     }
 }

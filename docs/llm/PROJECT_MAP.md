@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (1231)
+## Files (1237)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -1060,6 +1060,21 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/stats/attributes/immunity.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/attributes/strength-arm.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/attributes/strength-leg.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/ATTRIBUTION.md` — Project documentation.
+- `crates/strategic-web/static/icons/stats/bestiary/beast.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/bestiary.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/construct.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/draconid.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/dwarf.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/elf.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/fey.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/greenskin.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/human.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/insectoid.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/spirit.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/undead.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/werekin.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/wildmen.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/terrain/forest.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/terrain/hills.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/terrain/plains.png` — Binary game or UI asset.
