@@ -89,11 +89,105 @@ use crate::{
     },
 };
 
+/// Tables subscribed by the strategic read cache. Keep this list explicit:
+/// large immutable world/import tables and item definitions are read on demand.
+pub const STRATEGIC_CACHE_SUBSCRIPTIONS: &[&str] = &[
+    "character",
+    "backend_character_case_site_locations",
+    "character_attributes",
+    "character_stats",
+    "character_skills",
+    "character_limbs",
+    "limb_injury",
+    "retained_projectile",
+    "character_training_schedule",
+    "party",
+    "party_journey",
+    "party_journey_itinerary",
+    "party_member",
+    "party_action_request",
+    "party_join_request",
+    "party_leader_vote",
+    "party_recruitment_role",
+    "saved_recruitment_role",
+    "settlement_alias",
+    "settlement_description",
+    "inventory_item",
+    "food_lot",
+    "item_condition",
+    "repair_order",
+    "settlement_smith",
+    "character_time",
+    "inventory_quantity_target",
+    "party_inventory_item",
+    "party_inventory_state",
+    "party_stake",
+    "character_equip",
+    "character_filth",
+    "equipped_medication",
+    "character_capability",
+    "character_condition",
+    "character_needs",
+    "character_strategic_condition",
+    "character_morale_source",
+    "character_notoriety",
+    "morale_event",
+    "religious_demand",
+    "recruitment_offer",
+    "strategic_encounter",
+    "backend_contracts",
+    "backend_local_chat_messages",
+    "backend_dialogue_sessions",
+    "backend_dialogue_participants",
+    "backend_dialogue_events",
+    "backend_dialogue_prompts",
+    "backend_dialogue_topic_options",
+    "battle_result",
+    "backend_case_battles",
+    "autoresolve_report",
+    "battle_loot_item",
+    "battle_participant",
+    "tactical_server_request",
+    "tactical_server",
+    "settlement_outbreak",
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CacheStatus {
+    pub ready: bool,
+    pub rows: u64,
+}
+
+#[derive(Default)]
+struct CacheLifecycle {
+    ready: AtomicBool,
+}
+
+impl CacheLifecycle {
+    fn connected(&self) {
+        self.ready.store(false, Ordering::Release);
+    }
+
+    fn applied(&self) {
+        self.ready.store(true, Ordering::Release);
+    }
+
+    fn failed(&self) {
+        self.ready.store(false, Ordering::Release);
+    }
+
+    fn is_ready(&self) -> bool {
+        self.ready.load(Ordering::Acquire)
+    }
+}
+
 struct LiveInner {
     revision: AtomicU64,
     invalidation_pending: AtomicBool,
     changes: broadcast::Sender<u64>,
     runtime: tokio::runtime::Handle,
+    cache_lifecycle: Arc<CacheLifecycle>,
+    cache_rows: AtomicU64,
     // Keeping the connection alive also keeps its WebSocket subscription alive.
     _connection: DbConnection,
 }
@@ -104,17 +198,31 @@ pub struct LiveState(Arc<LiveInner>);
 impl LiveState {
     pub fn connect(host: &str, database: &str, token: Option<String>) -> anyhow::Result<Self> {
         let (changes, _) = broadcast::channel(64);
+        tracing::debug!(tables = ?STRATEGIC_CACHE_SUBSCRIPTIONS, "strategic cache subscription inventory");
+        let cache_lifecycle = Arc::new(CacheLifecycle::default());
+        let disconnect_lifecycle = cache_lifecycle.clone();
         let connection = DbConnection::builder()
             .with_uri(host)
             .with_database_name(database)
             .with_token(token)
-            .on_connect(move |_ctx, identity, _| {
-                tracing::info!(%identity, "live SpacetimeDB subscription connected");
+            .on_connect({
+                let lifecycle = cache_lifecycle.clone();
+                move |_ctx, identity, _| {
+                    // A reconnect invalidates completeness until the
+                    // subscription is applied again.
+                    lifecycle.connected();
+                    tracing::info!(%identity, "live SpacetimeDB subscription connected");
+                }
             })
-            .on_connect_error(
-                |_ctx, error| tracing::error!(%error, "live SpacetimeDB connection failed"),
-            )
-            .on_disconnect(|_ctx, error| {
+            .on_connect_error({
+                let lifecycle = cache_lifecycle.clone();
+                move |_ctx, error| {
+                    lifecycle.failed();
+                    tracing::error!(%error, "live SpacetimeDB connection failed");
+                }
+            })
+            .on_disconnect(move |_ctx, error| {
+                disconnect_lifecycle.failed();
                 tracing::warn!(?error, "live SpacetimeDB subscription disconnected")
             })
             .build()?;
@@ -124,6 +232,8 @@ impl LiveState {
             invalidation_pending: AtomicBool::new(false),
             changes,
             runtime: tokio::runtime::Handle::current(),
+            cache_lifecycle,
+            cache_rows: AtomicU64::new(0),
             _connection: connection,
         }));
 
@@ -218,12 +328,29 @@ impl LiveState {
             .subscription_builder()
             .on_applied({
                 let live = state.clone();
-                move |_| {
+                move |ctx| {
+                    let rows = [
+                        ctx.db().character().count(),
+                        ctx.db().backend_character_case_site_locations().count(),
+                        ctx.db().party().count(),
+                        ctx.db().party_member().count(),
+                        ctx.db().party_journey().count(),
+                    ]
+                    .into_iter()
+                    .sum();
+                    live.0.cache_rows.store(rows, Ordering::Release);
+                    live.0.cache_lifecycle.applied();
                     tracing::info!("live SpacetimeDB subscription applied");
                     live.invalidate();
                 }
             })
-            .on_error(|_, error| tracing::error!(%error, "live SpacetimeDB subscription error"))
+            .on_error({
+                let live = state.clone();
+                move |_, error| {
+                    live.0.cache_lifecycle.failed();
+                    tracing::error!(%error, "live SpacetimeDB subscription error");
+                }
+            })
             .add_query(|query| query.from.battle_loot_item())
             .add_query(|query| query.from.battle_participant())
             .add_query(|query| query.from.battle_result())
@@ -231,11 +358,13 @@ impl LiveState {
             .add_query(|query| query.from.autoresolve_report())
             .add_query(|query| query.from.strategic_encounter())
             .add_query(|query| query.from.character())
+            .add_query(|query| query.from.backend_character_case_site_locations())
             .add_query(|query| query.from.character_attributes())
             .add_query(|query| query.from.character_capability())
             .add_query(|query| query.from.character_condition())
             .add_query(|query| query.from.character_equip())
             .add_query(|query| query.from.character_filth())
+            .add_query(|query| query.from.equipped_medication())
             .add_query(|query| query.from.character_limbs())
             .add_query(|query| query.from.limb_injury())
             .add_query(|query| query.from.retained_projectile())
@@ -247,11 +376,11 @@ impl LiveState {
             .add_query(|query| query.from.character_strategic_condition())
             .add_query(|query| query.from.character_time())
             .add_query(|query| query.from.character_training_schedule())
-            .add_query(|query| query.from.connected_players())
+            .add_query(|query| query.from.party_journey())
+            .add_query(|query| query.from.party_journey_itinerary())
             .add_query(|query| query.from.inventory_item())
             .add_query(|query| query.from.food_lot())
             .add_query(|query| query.from.inventory_quantity_target())
-            .add_query(|query| query.from.item())
             .add_query(|query| query.from.item_condition())
             .add_query(|query| query.from.backend_local_chat_messages())
             .add_query(|query| query.from.backend_dialogue_sessions())
@@ -274,17 +403,12 @@ impl LiveState {
             .add_query(|query| query.from.religious_demand())
             .add_query(|query| query.from.repair_order())
             .add_query(|query| query.from.saved_recruitment_role())
-            .add_query(|query| query.from.settlement())
             .add_query(|query| query.from.settlement_alias())
             .add_query(|query| query.from.settlement_description())
             .add_query(|query| query.from.settlement_smith())
             .add_query(|query| query.from.settlement_outbreak())
             .add_query(|query| query.from.tactical_server())
             .add_query(|query| query.from.tactical_server_request())
-            .add_query(|query| query.from.travel_edge())
-            .add_query(|query| query.from.world_clock())
-            .add_query(|query| query.from.world_data_import())
-            .add_query(|query| query.from.world_node())
             .subscribe();
         state.0._connection.run_threaded();
         Ok(state)
@@ -309,6 +433,66 @@ impl LiveState {
 
     fn revision(&self) -> u64 {
         self.0.revision.load(Ordering::Relaxed)
+    }
+
+    pub fn cache_status(&self) -> CacheStatus {
+        CacheStatus {
+            ready: self.0.cache_lifecycle.is_ready(),
+            rows: self.0.cache_rows.load(Ordering::Acquire),
+        }
+    }
+
+    /// Public character rows are safe to read from the shared cache. Private
+    /// owner projections intentionally do not have a cache facade.
+    pub fn cached_characters(&self) -> Option<Vec<crate::spacetimedb::Character>> {
+        self.cache_status().ready.then(|| {
+            self.0
+                ._connection
+                .db
+                .character()
+                .iter()
+                .map(character_from_sdk)
+                .collect()
+        })
+    }
+
+    pub fn cached_character(&self, id: u64) -> Option<Option<crate::spacetimedb::Character>> {
+        self.cache_status().ready.then(|| {
+            self.0
+                ._connection
+                .db
+                .character()
+                .id()
+                .find(&id)
+                .map(character_from_sdk)
+        })
+    }
+
+    pub fn cached_party_has_camp(&self, id: &str) -> Option<bool> {
+        self.cache_status().ready.then(|| {
+            self.0
+                ._connection
+                .db
+                .party()
+                .iter()
+                .any(|party| party.id == id && party.camp_destination.is_some())
+        })
+    }
+}
+
+fn character_from_sdk(value: adventuresim_stdb_client::Character) -> crate::spacetimedb::Character {
+    crate::spacetimedb::Character {
+        id: value.id,
+        name: value.name,
+        xp: value.xp,
+        level: value.level,
+        gold: value.gold,
+        current_settlement_id: value.current_settlement_id,
+        current_case_site_id: None,
+        party_id: value.party_id,
+        age_years: value.age_years,
+        alive: value.alive,
+        temporary: value.temporary,
     }
 }
 
@@ -436,4 +620,69 @@ async fn navigation(State(state): State<AppState>, session: Session) -> Json<Nav
         id: None,
         path: "/characters".into(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CacheLifecycle, STRATEGIC_CACHE_SUBSCRIPTIONS};
+
+    #[test]
+    fn cache_is_unavailable_until_applied_and_after_reconnect_failure() {
+        let lifecycle = CacheLifecycle::default();
+        assert!(!lifecycle.is_ready());
+        lifecycle.applied();
+        assert!(lifecycle.is_ready());
+        lifecycle.connected();
+        assert!(!lifecycle.is_ready());
+        lifecycle.applied();
+        lifecycle.failed();
+        assert!(!lifecycle.is_ready());
+    }
+
+    #[test]
+    fn subscription_inventory_is_the_explicit_add_query_inventory() {
+        let source = include_str!("live.rs");
+        for table in STRATEGIC_CACHE_SUBSCRIPTIONS {
+            assert!(
+                source.contains(&format!("from.{table}()")),
+                "{table} is documented but not added to the subscription"
+            );
+        }
+        for excluded in [
+            "item",
+            "settlement",
+            "travel_edge",
+            "world_clock",
+            "world_data_import",
+            "world_node",
+        ] {
+            assert!(
+                !source.contains(&format!("add_query(|query| query.from.{excluded}())")),
+                "static table {excluded} must remain on demand"
+            );
+        }
+        assert!(STRATEGIC_CACHE_SUBSCRIPTIONS.contains(&"party_journey_itinerary"));
+        assert!(STRATEGIC_CACHE_SUBSCRIPTIONS.contains(&"equipped_medication"));
+        // Private projections may be subscribed for live invalidation, but no
+        // renderer-facing cache accessor may expose their rows.
+        assert!(source.contains("backend_local_chat_messages"));
+        assert!(source.contains("backend_dialogue_sessions"));
+    }
+
+    #[test]
+    fn public_cache_facade_does_not_offer_private_projection_reads() {
+        let source = include_str!("live.rs");
+        for private_table in [
+            "backend_local_chat_messages",
+            "backend_dialogue_sessions",
+            "backend_case_battles",
+            "settlement_outbreak",
+            "backend_investigation_cases",
+        ] {
+            assert!(
+                !source.contains(&format!("cached_{private_table}")),
+                "private projection {private_table} must not have a cache accessor"
+            );
+        }
+    }
 }

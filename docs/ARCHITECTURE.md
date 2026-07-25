@@ -157,6 +157,13 @@ batches cannot mutate an already-loaded world.
 
 ## Strategic browser updates
 
+The bounded SDK-cache read path and its route classification, authorization
+rule, subscription inventory, and measurement procedure are recorded in
+[`STRATEGIC_READ_CACHE.md`](STRATEGIC_READ_CACHE.md). In particular, the
+shared cache is not an authorization boundary: only typed public character and
+party-camp reads use it, while private projections remain authenticated SQL
+reads.
+
 The strategic browser is server-authoritative. Browsers submit discrete commands
 to `strategic-web` and never connect to SpacetimeDB directly. The current web
 process is explicitly an anonymous, loopback-only, single-user development

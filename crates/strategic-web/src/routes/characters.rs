@@ -31,15 +31,19 @@ struct CreateCharacterForm {
 }
 
 async fn list_characters(State(state): State<AppState>, session: Session) -> Response {
-    let characters: Vec<Character> = match state.db.query("SELECT * FROM character").await {
-        Ok(characters) => characters,
-        Err(error) => {
-            tracing::error!(%error, "failed to list characters");
-            return (
-                axum::http::StatusCode::SERVICE_UNAVAILABLE,
-                "Strategic data is unavailable",
-            )
-                .into_response();
+    let characters: Vec<Character> = if let Some(characters) = state.live.cached_characters() {
+        characters
+    } else {
+        match state.db.query("SELECT * FROM character").await {
+            Ok(characters) => characters,
+            Err(error) => {
+                tracing::error!(%error, "failed to list characters");
+                return (
+                    axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                    "Strategic data is unavailable",
+                )
+                    .into_response();
+            }
         }
     };
 

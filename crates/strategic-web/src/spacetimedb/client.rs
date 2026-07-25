@@ -4,7 +4,13 @@ use reqwest::Client;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use serde_json::json;
-use std::time::{Duration, Instant};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::{Duration, Instant},
+};
 
 use super::types::{AlgebraicType, QueryResponse};
 
@@ -187,6 +193,27 @@ pub enum SpacetimeError {
 
 pub type Result<T> = std::result::Result<T, SpacetimeError>;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct QueryMetricsSnapshot {
+    pub requests: u64,
+    pub elapsed_micros: u64,
+}
+
+impl QueryMetricsSnapshot {
+    pub fn delta(self, before: Self) -> Self {
+        Self {
+            requests: self.requests.saturating_sub(before.requests),
+            elapsed_micros: self.elapsed_micros.saturating_sub(before.elapsed_micros),
+        }
+    }
+}
+
+#[derive(Default)]
+struct QueryMetrics {
+    requests: AtomicU64,
+    elapsed_micros: AtomicU64,
+}
+
 /// HTTP client for SpacetimeDB
 #[derive(Clone)]
 pub struct SpacetimeClient {
@@ -194,6 +221,7 @@ pub struct SpacetimeClient {
     base_url: String,
     database: String,
     token: Option<String>,
+    metrics: Arc<QueryMetrics>,
 }
 
 impl SpacetimeClient {
@@ -208,6 +236,7 @@ impl SpacetimeClient {
             base_url: base_url.into(),
             database: database.into(),
             token: None,
+            metrics: Arc::new(QueryMetrics::default()),
         }
     }
 
@@ -223,8 +252,20 @@ impl SpacetimeClient {
         base.contains("localhost") || base.contains("127.0.0.1") || base.contains("[::1]")
     }
 
+    /// Return monotonic SQL counters. Take a snapshot before and after one
+    /// controlled request, then call `after.delta(before)`. This is safe for
+    /// concurrent requests; it deliberately does not destructively reset a
+    /// process-global counter.
+    pub fn query_metrics(&self) -> QueryMetricsSnapshot {
+        QueryMetricsSnapshot {
+            requests: self.metrics.requests.load(Ordering::Acquire),
+            elapsed_micros: self.metrics.elapsed_micros.load(Ordering::Acquire),
+        }
+    }
+
     /// Run a SQL query and return typed rows
     pub async fn query<T: DeserializeOwned>(&self, sql: &str) -> Result<Vec<T>> {
+        self.metrics.requests.fetch_add(1, Ordering::Relaxed);
         let url = format!("{}/v1/database/{}/sql", self.base_url, self.database);
 
         let mut request = self.http.post(&url).body(sql.to_string());
@@ -250,7 +291,7 @@ impl SpacetimeClient {
         let query_response: QueryResponse = serde_json::from_str(&text)?;
 
         // Extract rows from the first result set
-        if let Some(first) = query_response.first() {
+        let result = if let Some(first) = query_response.first() {
             // Get column metadata from schema
             let columns: Vec<(&str, &AlgebraicType)> = first
                 .schema
@@ -287,7 +328,11 @@ impl SpacetimeClient {
             rows
         } else {
             Ok(vec![])
-        }
+        };
+        self.metrics
+            .elapsed_micros
+            .fetch_add(started.elapsed().as_micros() as u64, Ordering::Relaxed);
+        result
     }
 
     /// Run a query that should return at most one row without conflating an
@@ -348,6 +393,55 @@ mod tests {
         assert_eq!(
             convert_spacetime_value(&json!([true, 3]), &ty),
             json!({ "melee": true, "endurance": 3 })
+        );
+    }
+
+    #[test]
+    fn query_metrics_are_resettable_and_clone_safe() {
+        let client = SpacetimeClient::new("http://localhost:3000", "test");
+        client.metrics.requests.store(3, Ordering::Relaxed);
+        client.metrics.elapsed_micros.store(125, Ordering::Relaxed);
+        assert_eq!(
+            client.query_metrics(),
+            QueryMetricsSnapshot {
+                requests: 3,
+                elapsed_micros: 125
+            }
+        );
+        assert_eq!(
+            client.query_metrics().delta(QueryMetricsSnapshot {
+                requests: 3,
+                elapsed_micros: 125
+            }),
+            QueryMetricsSnapshot::default()
+        );
+        let clone = client.clone();
+        clone.metrics.requests.fetch_add(1, Ordering::Relaxed);
+        assert_eq!(
+            client
+                .query_metrics()
+                .delta(QueryMetricsSnapshot {
+                    requests: 3,
+                    elapsed_micros: 125
+                })
+                .requests,
+            1
+        );
+    }
+
+    #[test]
+    fn injected_latency_measurement_delta_is_deterministic() {
+        let before = QueryMetricsSnapshot::default();
+        let after = QueryMetricsSnapshot {
+            requests: 3,
+            elapsed_micros: 425_000,
+        };
+        assert_eq!(
+            after.delta(before),
+            QueryMetricsSnapshot {
+                requests: 3,
+                elapsed_micros: 425_000
+            }
         );
     }
 
