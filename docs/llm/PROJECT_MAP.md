@@ -9,11 +9,12 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (1219)
+## Files (1220)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
 - `.codex/hooks/prevent_early_stop.js` — Repository support file.
+- `.codex/skills/orchestrate/SKILL.md` — Project documentation.
 - `.envrc` — Repository support file.
 - `.gitattributes` — Repository support file.
 - `.github/workflows/gh-pages.yml` — Repository support file.
