@@ -92,10 +92,14 @@ twice their starting severity.
 
 Old cases with multiple incidents become eligible for a resident NPC
 adventuring company. The company waits while a player has investigated
-recently or occupies one of the case sites. Otherwise it can resolve the case,
-reduce its effects, fail, or defer and retry later. This is a strategic result,
-not a simulated tactical battle. Anyone who had already heard about the
-problem may later receive a dry journal notice about the result.
+recently or occupies one of the case sites. Otherwise it follows a physical,
+pattern, or social route that is actually present in the generated testimony
+and investigation-action graph. A failed route produces a specific setback and
+a later attempt tries another supported route when possible. Once the
+investigation reaches the finale, the company can resolve the case, reduce its
+effects, fail, or defer and retry later. This is a strategic result, not a
+simulated tactical battle. Anyone who had already heard about the problem may
+later receive a dry journal notice about the result.
 
 ## Planning
 
@@ -106,7 +110,8 @@ the real NPC adventuring companies described above. Scripted decisions are the
 default; an optional LLM can choose only among observer-safe strategies offered
 by the server, while the server remains the sole outcome authority. Every run
 writes a Markdown anthology of the problem discovery, exact dialogue, actions,
-and outcome as the NPC company experienced them.
+preparation, route-specific setbacks or finale, and outcome as the NPC company
+experienced them.
 
 The separate end-to-end browser evaluator is LLM-only. It sees a screenshot,
 text inside the visible viewport, and opaque handles for visible controls, then

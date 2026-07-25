@@ -18,8 +18,10 @@ use crate::{
 use adventuresim_core::{
     case::{ObjectiveRequirement, OutcomeFactKind},
     npc_adventurer::{
-        NpcCaseSnapshot, NpcInterventionDecision, NpcInterventionOutcome, NpcInterventionStrategy,
-        NpcPartySnapshot, case_is_eligible, decide, scripted_strategy, select_party,
+        NpcApproachResolution, NpcCaseSnapshot, NpcInterventionDecision, NpcInterventionOutcome,
+        NpcInterventionStrategy, NpcInvestigationApproach, NpcPartySnapshot, case_is_eligible,
+        decide_after_supported_approach, resolve_investigation_approach, scripted_strategy,
+        select_investigation_approach_after, select_party, supported_investigation_approaches,
     },
     quest_generation::GeneratedCase,
     settlement_population::stable_hash,
@@ -55,6 +57,10 @@ pub struct NpcCaseIntervention {
     pub started_at: u64,
     pub completed_at: u64,
     pub strategy: String,
+    pub route: String,
+    pub lead_summary: String,
+    pub preparation_summary: String,
+    pub action_plan_json: String,
     pub outcome: String,
     pub mitigation_bps: u16,
     pub next_retry_at: u64,
@@ -81,6 +87,9 @@ pub struct BackendNpcCaseIntervention {
     pub started_at: u64,
     pub completed_at: u64,
     pub strategy: String,
+    pub route: String,
+    pub lead_summary: String,
+    pub preparation_summary: String,
     pub outcome: String,
     pub safe_summary: String,
     pub public_story_markdown: String,
@@ -231,6 +240,9 @@ pub fn backend_npc_case_interventions(ctx: &ViewContext) -> Vec<BackendNpcCaseIn
                 started_at: row.started_at,
                 completed_at: row.completed_at,
                 strategy: row.strategy,
+                route: row.route,
+                lead_summary: row.lead_summary,
+                preparation_summary: row.preparation_summary,
                 outcome: row.outcome,
                 safe_summary: row.safe_summary,
                 public_story_markdown: row.public_story_markdown,
@@ -347,7 +359,9 @@ pub(crate) fn ensure_npc_case_interventions(
         let Some(party) = select_party(&snapshot, now, &parties) else {
             continue;
         };
-        let attempt = last_attempt.map_or(1, |row| row.attempt.saturating_add(1));
+        let attempt = last_attempt
+            .as_ref()
+            .map_or(1, |row| row.attempt.saturating_add(1));
         let strategy = ctx
             .db
             .npc_intervention_strategy_override()
@@ -356,8 +370,44 @@ pub(crate) fn ensure_npc_case_interventions(
             .map(|row| parse_strategy(&row.strategy))
             .transpose()?
             .unwrap_or_else(|| scripted_strategy(&snapshot, party));
-        let decision = decide(&snapshot, party, strategy, attempt, now);
-        let story_started_at = public_story_started_at(&validated.manifest, now);
+        let approaches = supported_investigation_approaches(&validated.manifest);
+        let previous_route = last_attempt.as_ref().and_then(|row| {
+            approaches
+                .iter()
+                .find(|approach| approach.route_label == row.route)
+                .map(|approach| approach.route)
+        });
+        let approach =
+            select_investigation_approach_after(&approaches, strategy, attempt, previous_route);
+        let approach_resolution = approach
+            .map(|plan| resolve_investigation_approach(&snapshot, party, plan, attempt, now));
+        let next_approach = select_investigation_approach_after(
+            &approaches,
+            strategy,
+            attempt.saturating_add(1),
+            approach.map(|current| current.route),
+        );
+        let decision = decide_after_supported_approach(
+            &snapshot,
+            party,
+            strategy,
+            attempt,
+            now,
+            approach
+                .zip(approach_resolution.as_ref())
+                .map(|(plan, result)| {
+                    (
+                        plan,
+                        result,
+                        next_approach.map(|next| next.route_label.as_str()),
+                    )
+                }),
+        );
+        let story_started_at = public_story_started_at(
+            &validated.manifest,
+            approach.map_or(0, |plan| plan.step_summaries.len()),
+            now,
+        );
         let intervention_id = format!("npc-intervention:{}:{attempt}", case.id);
         if ctx
             .db
@@ -378,6 +428,19 @@ pub(crate) fn ensure_npc_case_interventions(
             started_at: story_started_at,
             completed_at: now,
             strategy: format!("{strategy:?}"),
+            route: approach.map_or_else(|| "deferred".into(), |plan| plan.route_label.clone()),
+            lead_summary: approach.map_or_else(
+                || "No lead was pursued.".into(),
+                |plan| format!("{}: {}", plan.lead_source, plan.lead_quote),
+            ),
+            preparation_summary: approach.map_or_else(
+                || "No preparation was undertaken.".into(),
+                |plan| plan.preparation_summary.clone(),
+            ),
+            action_plan_json: serde_json::to_string(
+                &approach.map_or_else(Vec::new, |plan| plan.step_summaries.clone()),
+            )
+            .map_err(|_| "Could not encode NPC investigation action plan")?,
             outcome: format!("{:?}", decision.outcome),
             mitigation_bps: decision.mitigation_bps,
             next_retry_at: decision.next_available_at,
@@ -388,6 +451,9 @@ pub(crate) fn ensure_npc_case_interventions(
                 attempt,
                 strategy,
                 &decision,
+                approach,
+                approach_resolution.as_ref(),
+                next_approach,
                 story_started_at,
                 now,
             ),
@@ -458,6 +524,9 @@ fn render_public_story(
     attempt: u16,
     strategy: NpcInterventionStrategy,
     decision: &NpcInterventionDecision,
+    approach: Option<&NpcInvestigationApproach>,
+    approach_resolution: Option<&NpcApproachResolution>,
+    next_approach: Option<&NpcInvestigationApproach>,
     started_at: u64,
     completed_at: u64,
 ) -> String {
@@ -510,10 +579,69 @@ fn render_public_story(
         }
         event_at = event_at.saturating_add(20);
     }
-    writeln!(story).unwrap();
-    writeln!(story, "### World minute {event_at}: approach").unwrap();
-    writeln!(story).unwrap();
-    writeln!(story, "{party_name} chose {strategy:?}.").unwrap();
+    if let Some(approach) = approach {
+        writeln!(story).unwrap();
+        writeln!(story, "### World minute {event_at}: chosen lead").unwrap();
+        writeln!(story).unwrap();
+        writeln!(
+            story,
+            "{party_name} chose to test {} through {}.",
+            approach.lead_source, approach.route_label
+        )
+        .unwrap();
+        writeln!(story).unwrap();
+        writeln!(
+            story,
+            "> **{}:** {}",
+            approach.lead_source, approach.lead_quote
+        )
+        .unwrap();
+        event_at = event_at.saturating_add(15);
+        writeln!(story).unwrap();
+        writeln!(story, "### World minute {event_at}: preparation").unwrap();
+        writeln!(story).unwrap();
+        writeln!(story, "{}", approach.preparation_summary).unwrap();
+        for step in &approach.step_summaries {
+            event_at = event_at.saturating_add(15);
+            writeln!(story).unwrap();
+            writeln!(story, "- World minute {event_at}: {step}").unwrap();
+        }
+        writeln!(story).unwrap();
+        writeln!(story, "### World minute {event_at}: route result").unwrap();
+        writeln!(story).unwrap();
+        if approach_resolution.is_some_and(|result| result.succeeded) {
+            writeln!(
+                story,
+                "The company completed the supported route and reached {}.",
+                approach.destination_label
+            )
+            .unwrap();
+        } else if let Some(result) = approach_resolution {
+            writeln!(
+                story,
+                "{}",
+                result
+                    .failure_summary
+                    .as_deref()
+                    .unwrap_or("The route produced no conclusive result.")
+            )
+            .unwrap();
+            if let Some(next) = next_approach {
+                writeln!(story).unwrap();
+                writeln!(
+                    story,
+                    "After regrouping, the company intends to try {}.",
+                    next.route_label
+                )
+                .unwrap();
+            }
+        }
+    } else {
+        writeln!(story).unwrap();
+        writeln!(story, "### World minute {event_at}: approach").unwrap();
+        writeln!(story).unwrap();
+        writeln!(story, "{party_name} chose {strategy:?}.").unwrap();
+    }
     writeln!(story).unwrap();
     writeln!(story, "### World minute {completed_at}: result").unwrap();
     writeln!(story).unwrap();
@@ -521,9 +649,15 @@ fn render_public_story(
     story
 }
 
-fn public_story_started_at(generated: &GeneratedCase, completed_at: u64) -> u64 {
+fn public_story_started_at(
+    generated: &GeneratedCase,
+    planned_steps: usize,
+    completed_at: u64,
+) -> u64 {
     let duration = 15u64
         .saturating_add((generated.witnesses.len() as u64).saturating_mul(20))
+        .saturating_add((planned_steps as u64).saturating_mul(15))
+        .saturating_add(15)
         .saturating_add(30);
     completed_at.saturating_sub(duration)
 }
@@ -792,7 +926,7 @@ mod tests {
         assert!(reducer.contains("crate::simulation::owned_run(ctx, &run_nonce)?"));
         assert!(!reducer.contains("apply_outcome("));
         assert!(!reducer.contains("resolve_generated_case("));
-        assert!(source.contains("let decision = decide(&snapshot, party, strategy"));
+        assert!(source.contains("let decision = decide_after_supported_approach("));
     }
 
     #[test]
@@ -817,6 +951,10 @@ mod tests {
         let quote = renderer.find("> **{}:** {}").unwrap();
         assert!(interview < quote);
         assert!(renderer.contains("event_at = event_at.saturating_add(20)"));
+        assert!(renderer.contains("chosen lead"));
+        assert!(renderer.contains("preparation"));
+        assert!(renderer.contains("route result"));
+        assert!(renderer.contains("intends to try"));
         assert!(renderer.contains("World minute {completed_at}: result"));
         for private_term in [
             "canonical_case_id",

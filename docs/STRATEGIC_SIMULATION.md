@@ -183,14 +183,20 @@ The default policy is deterministic and credential-free. An optional LLM may
 choose only one of the strategies advertised by a gateway-only candidate view:
 investigate carefully, protect locals, confront directly, or defer. The model
 does not receive canonical cause/site/reliability/weight data and cannot apply
-an outcome; a simulation-capability-owned reducer validates its opaque choice,
-then the server performs the deterministic roll and mutation.
+an outcome; a simulation-capability-owned reducer validates its opaque choice.
+The server then selects an evidence-supported physical, pattern, or social
+route from the generated action graph. Retries rotate to a different route when
+the case supplies one. The decisive action uses the same investigation resolver
+as player actions before any strategic finale result is applied.
 
 Every core-loop run writes `npc-adventurer-stories.md` by default. Each entry is
 server-authored in the same transaction as its outcome and records the problem
 being learned, timestamped witness interviews, exact spoken lines, the chosen
-approach, and the result. It contains no hidden quest truth. The JSON report
-also carries the same Markdown for archival purposes.
+lead, route-specific preparation, the generated action chain, and the result.
+Failed attempts state the concrete setback and the alternate route intended for
+the retry instead of reporting a content-free failure. It contains no hidden
+quest truth. The JSON report also carries the same Markdown for archival
+purposes.
 
 Because the production world clock is tied to elapsed wall time, a claimed
 disposable simulation has one additional bounded reducer that advances that

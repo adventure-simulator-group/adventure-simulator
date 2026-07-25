@@ -98,13 +98,18 @@ severity. Resolving or fully mitigating the linked problem still suppresses
 all of those effects.
 
 NPC interventions are deterministic strategic outcomes; they do not create
-tactical tick state. A successful company applies the generated objective
-through the same hostile, custody, outcome-fact, case, and local-problem
-authority used by player results. Partial success mitigates the settlement
-penalty, while failure or deferral schedules a bounded retry. Intervention IDs,
-attempt numbers, party availability, and retry times make repeated settlement
-refreshes idempotent. Characters who already know the problem receive only a
-dry result notice in their journal.
+tactical tick state. A company chooses a route supported by the case's generated
+testimony and investigation-action graph, records the quoted lead, prepares for
+that route, and resolves its decisive action with the ordinary investigation
+mechanics. A route can fail for a concrete reason, such as an unreadable trail
+or an empty ambush; the next attempt rotates to another supported route when one
+exists. After a successful investigation route, a company applies the generated
+objective through the same hostile, custody, outcome-fact, case, and
+local-problem authority used by player results. Partial success mitigates the
+settlement penalty, while failure or deferral schedules a bounded retry.
+Intervention IDs, attempt numbers, party availability, and retry times make
+repeated settlement refreshes idempotent. Characters who already know the
+problem receive only a dry result notice in their journal.
 
 The private authority also stores a domain-separated SHA-256 commitment to the
 exact serialized generation context, including observer-ID entropy. Every
