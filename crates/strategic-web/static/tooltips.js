@@ -27,8 +27,9 @@
     let activeTarget = null;
     let descriptionWasLinked = false;
     let suppressFocusUntil = 0;
+    let pinnedTarget = null;
 
-    const appendBestiarySection = (heading, lines, itemClass) => {
+    const appendBestiarySection = (container, heading, lines, itemClass) => {
       const section = documentRoot.createElement('section');
       section.className = 'strategic-tooltip-section';
       const title = documentRoot.createElement('strong');
@@ -43,32 +44,84 @@
         list.append(item);
       }
       section.append(title, list);
-      tooltip.append(section);
+      container.append(section);
     };
 
-    const renderTooltip = (target) => {
-      const strengths = (target.getAttribute('data-bestiary-strengths') || '')
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean);
-      const weaknesses = (target.getAttribute('data-bestiary-weaknesses') || '')
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean);
-      if (!strengths.length && !weaknesses.length) {
-        tooltip.textContent = target.getAttribute(TOOLTIP_ATTRIBUTE);
-        return;
+    const renderEnemyDetails = (enemy, container) => {
+      container.textContent = '';
+      const title = documentRoot.createElement('strong');
+      title.className = 'strategic-tooltip-enemy-title';
+      title.textContent = enemy.name;
+      container.append(title);
+      if (enemy.strengths?.length) {
+        appendBestiarySection(container, 'Strengths', enemy.strengths, 'strategic-tooltip-strength');
       }
+      if (enemy.weaknesses?.length) {
+        appendBestiarySection(container, 'Weaknesses', enemy.weaknesses, 'strategic-tooltip-weakness');
+      }
+    };
+
+    const renderBestiaryEnemies = (target) => {
+      if (!target.hasAttribute('data-bestiary-enemies')) return false;
+      tooltip.classList.add('strategic-tooltip-interactive');
+      tooltip.setAttribute('role', 'dialog');
+      tooltip.setAttribute('aria-modal', 'false');
+      let enemies = [];
+      try {
+        const parsed = JSON.parse(target.getAttribute('data-bestiary-enemies') || '[]');
+        if (Array.isArray(parsed)) enemies = parsed;
+      } catch {
+        enemies = [];
+      }
+
       tooltip.textContent = '';
       const name = (target.getAttribute('data-bestiary-name') || '').trim();
+      if (name) tooltip.setAttribute('aria-label', name);
+      else tooltip.removeAttribute('aria-label');
       if (name) {
         const title = documentRoot.createElement('strong');
         title.className = 'strategic-tooltip-title';
         title.textContent = name;
         tooltip.append(title);
       }
-      appendBestiarySection('Strengths', strengths, 'strategic-tooltip-strength');
-      appendBestiarySection('Weaknesses', weaknesses, 'strategic-tooltip-weakness');
+      if (!enemies.length) {
+        const empty = documentRoot.createElement('span');
+        empty.className = 'strategic-tooltip-empty';
+        empty.textContent = 'No current enemy types';
+        tooltip.append(empty);
+        return true;
+      }
+
+      const list = documentRoot.createElement('div');
+      list.className = 'strategic-tooltip-enemy-list';
+      const details = documentRoot.createElement('section');
+      details.className = 'strategic-tooltip-enemy-details';
+      details.hidden = true;
+      for (const enemy of enemies) {
+        const item = documentRoot.createElement('button');
+        item.type = 'button';
+        item.className = 'strategic-tooltip-enemy';
+        item.textContent = enemy.name;
+        const showDetails = () => {
+          details.hidden = false;
+          renderEnemyDetails(enemy, details);
+          position();
+        };
+        item.addEventListener('pointerover', showDetails);
+        item.addEventListener('focus', showDetails);
+        list.append(item);
+      }
+      tooltip.append(list, details);
+      return true;
+    };
+
+    const renderTooltip = (target) => {
+      if (renderBestiaryEnemies(target)) return;
+      tooltip.classList.remove('strategic-tooltip-interactive');
+      tooltip.setAttribute('role', 'tooltip');
+      tooltip.removeAttribute('aria-modal');
+      tooltip.removeAttribute('aria-label');
+      tooltip.textContent = target.getAttribute(TOOLTIP_ATTRIBUTE);
     };
 
     const enhance = (target) => {
@@ -96,7 +149,16 @@
       else activeTarget.removeAttribute('aria-describedby');
     };
 
-    const hide = () => {
+    const setPinned = (target) => {
+      if (pinnedTarget && pinnedTarget !== target) {
+        pinnedTarget.setAttribute('aria-pressed', 'false');
+      }
+      pinnedTarget = target;
+      if (pinnedTarget) pinnedTarget.setAttribute('aria-pressed', 'true');
+    };
+
+    const hide = (force = false) => {
+      if (pinnedTarget && force !== true) return;
       activeTarget?.removeEventListener('pointerleave', hide);
       activeTarget?.removeEventListener('blur', hide);
       unlinkDescription();
@@ -108,7 +170,10 @@
 
     const position = () => {
       if (!activeTarget || tooltip.hidden || !activeTarget.isConnected) {
-        if (activeTarget && !activeTarget.isConnected) hide();
+        if (activeTarget && !activeTarget.isConnected) {
+          setPinned(null);
+          hide(true);
+        }
         return;
       }
 
@@ -138,8 +203,9 @@
     const show = (target) => {
       target = enhance(target);
       if (!target) return;
+      if (pinnedTarget && pinnedTarget !== target) return;
       if (activeTarget !== target) {
-        hide();
+        hide(true);
         activeTarget = target;
         target.addEventListener('pointerleave', hide);
         target.addEventListener('blur', hide);
@@ -155,6 +221,18 @@
       position();
     };
 
+    const togglePinned = (target, focusInside = false) => {
+      if (pinnedTarget === target) {
+        setPinned(null);
+        hide(true);
+        return;
+      }
+      setPinned(null);
+      show(target);
+      setPinned(target);
+      if (focusInside) tooltip.querySelector('.strategic-tooltip-enemy')?.focus();
+    };
+
     const tooltipTarget = (eventTarget) => eventTarget?.closest?.(`[title], [${TOOLTIP_ATTRIBUTE}]`);
 
     documentRoot.addEventListener('pointerover', (event) => {
@@ -163,6 +241,7 @@
     });
     documentRoot.addEventListener('pointerout', (event) => {
       if (!activeTarget || activeTarget.contains(event.relatedTarget)) return;
+      if (tooltip.contains(event.relatedTarget)) return;
       if (activeTarget.contains(event.target)) hide();
     });
     documentRoot.addEventListener('focusin', (event) => {
@@ -175,15 +254,50 @@
     documentRoot.addEventListener('pointerdown', (event) => {
       if (event.pointerType !== 'touch') return;
       suppressFocusUntil = Date.now() + 800;
-      hide();
+      setPinned(null);
+      hide(true);
+    });
+    documentRoot.addEventListener('click', (event) => {
+      const target = event.target?.closest?.('[data-tooltip-pinnable]');
+      if (target) {
+        togglePinned(target);
+        return;
+      }
+      if (pinnedTarget && !tooltip.contains(event.target)) {
+        setPinned(null);
+        hide(true);
+      }
     });
     documentRoot.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') hide();
+      const target = event.target?.closest?.('[data-tooltip-pinnable]');
+      if (target && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault();
+        togglePinned(target, true);
+        return;
+      }
+      if (event.key === 'Escape') {
+        const returnTarget = pinnedTarget;
+        setPinned(null);
+        hide(true);
+        if (returnTarget?.isConnected) {
+          suppressFocusUntil = Date.now() + 100;
+          returnTarget.focus();
+        }
+      }
     });
+    tooltip.addEventListener('pointerleave', () => hide());
     windowRoot.addEventListener('resize', position);
     windowRoot.addEventListener('scroll', position, true);
 
-    return { tooltip, enhance, show, hide, position, get activeTarget() { return activeTarget; } };
+    return {
+      tooltip,
+      enhance,
+      show,
+      hide,
+      position,
+      get activeTarget() { return activeTarget; },
+      get pinnedTarget() { return pinnedTarget; },
+    };
   };
 
   if (typeof module !== 'undefined' && module.exports) {

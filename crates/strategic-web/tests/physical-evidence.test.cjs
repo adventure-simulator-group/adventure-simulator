@@ -30,13 +30,15 @@ test("Bestiary results use exact accessible red yellow green anchors", () => {
   assert.match(source, /Bestiary check\(s\) succeeded:/);
   assert.match(source, /chip\.tabIndex = 0/);
   assert.match(source, /chip\.setAttribute\("aria-label", accessible\)/);
-  assert.match(source, /chip\.dataset\.strategicTooltip = bestiaryTooltip\(result\)/);
+  assert.match(source, /chip\.dataset\.strategicTooltip = result\.label/);
+  assert.match(source, /chip\.dataset\.bestiaryEnemies = JSON\.stringify\(result\.enemies \|\| \[\]\)/);
+  assert.match(source, /chip\.dataset\.tooltipPinnable = ""/);
+  assert.match(source, /chip\.setAttribute\("aria-pressed", "false"\)/);
   assert.doesNotMatch(source, /bestiary-result-tooltip/);
   assert.match(source, /bounded <= 5000/);
   assert.match(source, /255 \* bounded \/ 5000/);
   assert.match(source, /255 \* \(10000 - bounded\) \/ 5000/);
-  assert.match(source, /Confirmed combat mechanics/);
-  assert.match(source, /Folklore \/ unimplemented hypotheses/);
+  assert.doesNotMatch(source, /Typical signs|Common strengths|Confirmed combat mechanics|Folklore/);
 
   const colorFunction = source.match(
     /const bestiaryColor = \(supportBps\) => \{[\s\S]*?^  \};/m,

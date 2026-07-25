@@ -213,126 +213,6 @@ impl BestiaryCategory {
         ];
         C[self.index()][other.index()]
     }
-
-    pub const fn strengths(self) -> &'static [&'static str] {
-        match self {
-            Self::Beast => &[
-                "Speed and keen senses",
-                "Natural weapons",
-                "Pack coordination",
-            ],
-            Self::Undead => &[
-                "Unaffected by pain",
-                "Resistant to fatigue and fear",
-                "Difficult to incapacitate",
-            ],
-            Self::Human => &[
-                "Adaptable tactics",
-                "Tools and equipment",
-                "Clear coordination",
-            ],
-            Self::Werekin => &[
-                "Exceptional speed and strength",
-                "Keen animal senses",
-                "Unpredictable transformation",
-            ],
-            Self::Elf => &["Keen senses", "High mobility", "Precise attacks"],
-            Self::Dwarf => &["Sturdy build", "Heavy armour", "Disciplined formations"],
-            Self::Fey => &[
-                "Deception and concealment",
-                "Supernatural abilities",
-                "Ancient cunning",
-            ],
-            Self::Spirit => &[
-                "Difficult to restrain physically",
-                "Supernatural protection",
-                "Fear-inducing presence",
-            ],
-            Self::Greenskin => &["Ambush tactics", "Strength in numbers", "Rugged equipment"],
-            Self::Insectoid => &["Armoured shell", "Unusual senses", "Colony coordination"],
-            Self::Draconid => &["Protective scales", "Long reach", "Elemental hazards"],
-            Self::Construct => &[
-                "Unaffected by pain and fear",
-                "Does not tire",
-                "Durable artificial body",
-            ],
-            Self::Wildmen => &[
-                "Great strength and endurance",
-                "Woodland concealment",
-                "Expert tracking",
-            ],
-        }
-    }
-
-    pub const fn weaknesses(self) -> &'static [&'static str] {
-        match self {
-            Self::Beast => &[
-                "Predictable instincts",
-                "Limited tools and reach",
-                "Vulnerable when isolated",
-            ],
-            Self::Undead => &[
-                "Damaged or brittle bodies",
-                "Reliant on intact joints",
-                "Often slow or rigid",
-            ],
-            Self::Human => &[
-                "Affected by pain and fatigue",
-                "Reliant on equipment",
-                "Morale can break",
-            ],
-            Self::Werekin => &[
-                "Animal instincts can be provoked",
-                "Large transformed profile",
-                "Transformation leaves conflicting traces",
-            ],
-            Self::Elf => &[
-                "Lighter build",
-                "Less effective when pinned",
-                "Reliant on space to manoeuvre",
-            ],
-            Self::Dwarf => &[
-                "Shorter reach",
-                "Limited sprint speed",
-                "Less mobile in open terrain",
-            ],
-            Self::Fey => &[
-                "Bound by bargains and customs",
-                "Often tied to a place",
-                "Patterns can be learned",
-            ],
-            Self::Spirit => &[
-                "May be bound by thresholds",
-                "Manifestation can be disrupted",
-                "Often tied to a person or place",
-            ],
-            Self::Greenskin => &[
-                "Coordination breaks without leaders",
-                "Equipment is often inconsistent",
-                "Prone to infighting",
-            ],
-            Self::Insectoid => &[
-                "Exposed joints between plates",
-                "Specialized anatomy",
-                "Disrupted when separated from the colony",
-            ],
-            Self::Draconid => &[
-                "Eyes and joints lack full scale cover",
-                "Large size limits movement",
-                "Difficult to conceal",
-            ],
-            Self::Construct => &[
-                "Vulnerable joints",
-                "Predictable instructions",
-                "Dependent on a control mechanism",
-            ],
-            Self::Wildmen => &[
-                "Limited armour",
-                "Exposed in open terrain",
-                "Woodland tactics weaken away from cover",
-            ],
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -4855,10 +4735,6 @@ mod tests {
     fn bestiary_correlations_are_symmetric_nonrecursive_and_capped() {
         for left in BestiaryCategory::ALL {
             assert_eq!(left.correlation(left), 1.0);
-            assert!(left.strengths().len() >= 2);
-            assert!(left.weaknesses().len() >= 2);
-            assert!(left.strengths().iter().all(|line| !line.trim().is_empty()));
-            assert!(left.weaknesses().iter().all(|line| !line.trim().is_empty()));
             for right in BestiaryCategory::ALL {
                 assert_eq!(left.correlation(right), right.correlation(left));
             }

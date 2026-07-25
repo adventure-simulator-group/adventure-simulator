@@ -283,10 +283,13 @@ nonrecursive correlation pass and are capped at the Bestiary skill's
 more modestly with Fey knowledge. The expandable skill rail shows effective
 and directly studied hours for every category with transferred knowledge.
 The parent Bestiary value is the mean effective coverage across every category,
-not the character's single best category. Category hover/focus lore names the
-category and then contains only two compact sections: Strengths and
-Weaknesses. Every strength appears on its own green line and every weakness on
-its own red line.
+not the character's single best category. A question-mark cursor marks category
+icons as inspectable. Their hover/focus tooltips list the current enemy types
+covered by that category, and clicking pins the tooltip. Hovering or focusing
+an enemy type then shows only strengths and weaknesses derived from mechanics
+currently consumed by combat. Each strength appears on its own green line and
+each weakness on its own red line; no category-wide generalizations or
+unimplemented folklore are shown.
 
 Against a creature, the attacker averages the Bestiary checks for every
 category on that creature. Excess-accuracy damage is capped at 2× plus that

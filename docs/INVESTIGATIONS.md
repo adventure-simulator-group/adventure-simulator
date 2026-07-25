@@ -78,9 +78,11 @@ the color. The same structured successes are copied into the single durable
 investigation-journal notice and remain visible after leaving the evidence
 site. Each result is keyboard focusable. Pointer hover and keyboard focus use
 the document-level strategic tooltip layer, with viewport collision handling
-and `aria-describedby`, to reveal category-level signs, strengths,
-considerations, exceptions, confirmed combat mechanics, and explicitly
-unimplemented folklore.
+and `aria-describedby`, to list the current enemy types covered by that
+category. Clicking a result pins the tooltip. Hovering or focusing an enemy
+type within it reveals only strengths and weaknesses derived from mechanics
+consumed by current combat; category-level generalizations and unimplemented
+folklore are omitted.
 
 The SpacetimeDB module currently sets `test = false`, so ordinary Cargo tests
 cannot instantiate a reducer database harness. Narrow pure tests cover action

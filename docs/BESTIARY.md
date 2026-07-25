@@ -74,9 +74,11 @@ Successful results are persisted on one canonical inspection record. Revisits
 keep the physical observation stable while current knowledge may add newly
 successful categories; existing results are never removed or duplicated. The
 same safe structured results persist in the investigation journal. Category
-lore describes tendencies, considerations, and exceptions. It distinguishes
-confirmed combat mechanics from folklore: fire, silver, daylight, and ritual
-courage remain unimplemented hypotheses.
+lore lists the current authored enemy types to which that category applies.
+Enemy-specific hover details include only facts derived from fields consumed by
+current combat, such as a skeleton's edge resistance and lack of innate
+padding. Unimplemented folklore such as fire, silver, daylight, and ritual
+courage is not presented as gameplay knowledge.
 
 ## Weighted context and inference
 

@@ -208,6 +208,8 @@ mod tests {
 
         assert!(serialized.contains("\"support_bps\":5000"));
         assert!(serialized.contains("\"support_label\":\"inconclusive\""));
+        assert!(serialized.contains("\"enemies\":["));
+        assert!(serialized.contains("\"name\":\"Spectral hound\""));
         assert!(serialized.contains("\"strengths\":["));
         assert!(serialized.contains("\"weaknesses\":["));
         assert!(!serialized.contains("confirmed_mechanics"));

@@ -618,12 +618,20 @@ fn religion_skill_rows(
     }
 }
 
-fn bestiary_category_lore(category: BestiaryCategory) -> String {
-    format!(
-        "{}\nStrengths\n{}\nWeaknesses\n{}",
-        category.label(),
-        category.strengths().join("\n"),
-        category.weaknesses().join("\n"),
+fn bestiary_category_enemies(category: BestiaryCategory) -> (String, String) {
+    let enemies = crate::spacetimedb::bestiary_enemy_lore(category);
+    let names = enemies
+        .iter()
+        .map(|enemy| enemy.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    (
+        serde_json::to_string(&enemies).expect("Bestiary enemy lore serializes"),
+        if names.is_empty() {
+            "No current enemy types".into()
+        } else {
+            format!("Applies to: {names}")
+        },
     )
 }
 
@@ -661,16 +669,14 @@ fn bestiary_skill_rows(skills: &CharacterSkills, health: f32, schedule_context: 
             @let effective = skills.bestiary_hours.effective(category);
             @let direct = skills.bestiary_hours.direct(category);
             @if effective.is_finite() && effective > 0.0 {
-                @let lore = bestiary_category_lore(category);
-                @let strengths = category.strengths().join("\n");
-                @let weaknesses = category.weaknesses().join("\n");
+                @let (enemies, applies_to) = bestiary_category_enemies(category);
                 tr class="party-skill-row bestiary-detail-row" data-bestiary-detail hidden {
                     th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
-                        span data-strategic-tooltip=(&lore) tabindex="0"
+                        span class="bestiary-lore-trigger" data-strategic-tooltip=(category.label())
+                            data-tooltip-pinnable data-bestiary-enemies=(&enemies)
+                            tabindex="0" role="button" aria-pressed="false"
                             data-bestiary-name=(category.label())
-                            data-bestiary-strengths=(&strengths)
-                            data-bestiary-weaknesses=(&weaknesses)
-                            aria-label=(format!("{} Bestiary lore. {}", category.label(), lore)) {
+                            aria-label=(format!("{} knowledge. {}", category.label(), applies_to)) {
                             (stat_icon(category.label(), "bestiary", category.id(), true))
                             span class="sr-only" { (category.label()) }
                         }
@@ -708,9 +714,7 @@ fn surgery_skill_rows(
         + knife_rank * upper_health.clamp(0.0, 1.0)
         + tailoring_rank * upper_health.clamp(0.0, 1.0))
         / 3.0;
-    let human_lore = bestiary_category_lore(BestiaryCategory::Human);
-    let human_strengths = BestiaryCategory::Human.strengths().join("\n");
-    let human_weaknesses = BestiaryCategory::Human.weaknesses().join("\n");
+    let (human_enemies, human_applies_to) = bestiary_category_enemies(BestiaryCategory::Human);
     let entries = [
         (
             "Human knowledge",
@@ -762,11 +766,11 @@ fn surgery_skill_rows(
             tr class="party-skill-row surgery-detail-row" data-surgery-detail hidden {
                 th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
                     @if label == "Human knowledge" {
-                        span data-strategic-tooltip=(&human_lore) tabindex="0"
+                        span class="bestiary-lore-trigger" data-strategic-tooltip="Human knowledge"
+                            data-tooltip-pinnable data-bestiary-enemies=(&human_enemies)
+                            tabindex="0" role="button" aria-pressed="false"
                             data-bestiary-name="Human knowledge"
-                            data-bestiary-strengths=(&human_strengths)
-                            data-bestiary-weaknesses=(&human_weaknesses)
-                            aria-label=(format!("Human knowledge. {human_lore}")) {
+                            aria-label=(format!("Human knowledge. {human_applies_to}")) {
                             (stat_icon(label, family, icon, true))
                             span class="sr-only" { (label) }
                         }
@@ -1950,18 +1954,20 @@ mod tests {
         assert!(rendered.contains("Expand Bestiary skills"));
         assert!(rendered.contains("Wildmen"));
         assert!(rendered.contains("directly studied hours"));
-        assert!(rendered.contains("data-bestiary-strengths"));
-        assert!(rendered.contains("data-bestiary-weaknesses"));
-        assert!(rendered.contains("Strengths"));
-        assert!(rendered.contains("Weaknesses"));
-        assert!(rendered.contains("Great strength and endurance"));
-        assert!(rendered.contains("Limited armour"));
+        assert!(rendered.contains("data-bestiary-enemies"));
+        assert!(rendered.contains("data-tooltip-pinnable"));
+        assert!(rendered.contains("Wild man"));
+        assert!(!rendered.contains("data-bestiary-strengths"));
+        assert!(!rendered.contains("data-bestiary-weaknesses"));
+        assert!(!rendered.contains("Great strength and endurance"));
+        assert!(!rendered.contains("Limited armour"));
         assert!(!rendered.contains("combat modifier"));
         assert!(!rendered.contains("no effect"));
         assert!(rendered.contains("data-strategic-tooltip"));
         assert_eq!(rendered.matches("data-bestiary-detail").count(), 13);
         assert!(css.contains(".bestiary-primary-row .stat-icon,"));
         assert!(css.contains("--stat-icon-color: var(--info);"));
+        assert!(css.contains("cursor: help;"));
     }
 
     #[test]

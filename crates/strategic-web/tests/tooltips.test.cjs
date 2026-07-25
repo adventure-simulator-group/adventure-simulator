@@ -138,25 +138,100 @@ test('shared tooltips render above every popup overlay', () => {
   assert.ok(tooltipZ > medicalDialogZ);
 });
 
-test('Bestiary tooltips render strengths and weaknesses as colored line items', () => {
+test('Bestiary tooltips list enemy types, pin on click, and show enemy-specific facts', () => {
   const { window, document, system } = fixture(
-    '<span tabindex="0" aria-label="Beast lore" data-strategic-tooltip="Beast\nStrengths\nSpeed\nWeaknesses\nLimited reach" data-bestiary-name="Beast" data-bestiary-strengths="Speed\nKeen senses" data-bestiary-weaknesses="Limited reach\nPredictable instincts"></span>',
+    '<span tabindex="0" role="button" aria-pressed="false" aria-label="Undead knowledge" data-tooltip-pinnable data-strategic-tooltip="Undead" data-bestiary-name="Undead"></span>',
   );
   const skill = document.querySelector('span');
+  skill.setAttribute('data-bestiary-enemies', JSON.stringify([
+    {
+      id: 'skeleton',
+      name: 'Skeleton',
+      strengths: ['150 J innate resistance reduces edged force'],
+      weaknesses: ['No innate padding against blunt force'],
+    },
+    {
+      id: 'ghoul',
+      name: 'Ghoul',
+      strengths: ['15 J innate padding absorbs blunt force'],
+      weaknesses: ['No implemented resistance against edged force'],
+    },
+  ]));
 
   dispatch(window, skill, 'focusin');
 
-  assert.equal(system.tooltip.querySelector('.strategic-tooltip-title').textContent, 'Beast');
-  assert.equal(system.tooltip.querySelectorAll('.strategic-tooltip-section').length, 2);
+  assert.equal(system.tooltip.querySelector('.strategic-tooltip-title').textContent, 'Undead');
+  assert.equal(system.tooltip.getAttribute('role'), 'dialog');
+  assert.equal(system.tooltip.getAttribute('aria-modal'), 'false');
+  assert.equal(system.tooltip.getAttribute('aria-label'), 'Undead');
+  assert.deepEqual(
+    [...system.tooltip.querySelectorAll('.strategic-tooltip-enemy')].map((item) => item.textContent),
+    ['Skeleton', 'Ghoul'],
+  );
+  assert.equal(system.tooltip.querySelectorAll('.strategic-tooltip-section').length, 0);
+
+  dispatch(window, skill, 'click');
+  dispatch(window, skill, 'pointerout', { pointerType: 'mouse', relatedTarget: document.body });
+  assert.equal(system.pinnedTarget, skill);
+  assert.equal(skill.getAttribute('aria-pressed'), 'true');
+  assert.equal(system.tooltip.hidden, false);
+
+  const skeleton = system.tooltip.querySelector('.strategic-tooltip-enemy');
+  dispatch(window, skeleton, 'pointerover', { pointerType: 'mouse' });
   assert.deepEqual(
     [...system.tooltip.querySelectorAll('.strategic-tooltip-strength')].map((item) => item.textContent),
-    ['Speed', 'Keen senses'],
+    ['150 J innate resistance reduces edged force'],
   );
   assert.deepEqual(
     [...system.tooltip.querySelectorAll('.strategic-tooltip-weakness')].map((item) => item.textContent),
-    ['Limited reach', 'Predictable instincts'],
+    ['No innate padding against blunt force'],
   );
-  assert.equal(system.tooltip.textContent.includes('combat'), false);
+
+  dispatch(window, skill, 'click');
+  assert.equal(system.pinnedTarget, null);
+  assert.equal(skill.getAttribute('aria-pressed'), 'false');
+  assert.equal(system.tooltip.hidden, true);
+});
+
+test('keyboard pinning enters enemy lore, Escape restores focus, and removed pins clear', () => {
+  const { window, document, system } = fixture(`
+    <span tabindex="0" role="button" aria-pressed="false"
+      data-tooltip-pinnable data-strategic-tooltip="Undead" data-bestiary-name="Undead"
+      data-bestiary-enemies='[{"id":"skeleton","name":"Skeleton","strengths":[],"weaknesses":[]}]'>
+      Undead
+    </span>
+  `);
+  const skill = document.querySelector('[data-tooltip-pinnable]');
+  skill.getBoundingClientRect = () => ({
+    left: 120, right: 160, top: 80, bottom: 100, width: 40, height: 20,
+  });
+  dispatch(window, skill, 'focusin');
+  let enteredEnemyLore = false;
+  let restoredTriggerFocus = false;
+  window.HTMLElement.prototype.focus = function focus() {
+    if (this.classList?.contains('strategic-tooltip-enemy')) enteredEnemyLore = true;
+    if (this === skill) {
+      restoredTriggerFocus = true;
+      dispatch(window, skill, 'focusin');
+    }
+  };
+
+  dispatch(window, skill, 'keydown', { key: 'Enter' });
+
+  assert.equal(system.pinnedTarget, skill);
+  assert.equal(enteredEnemyLore, true);
+
+  const enemy = system.tooltip.querySelector('.strategic-tooltip-enemy');
+  dispatch(window, enemy, 'keydown', { key: 'Escape' });
+  assert.equal(system.pinnedTarget, null);
+  assert.equal(system.tooltip.hidden, true);
+  assert.equal(restoredTriggerFocus, true);
+
+  dispatch(window, skill, 'click');
+  skill.remove();
+  system.position();
+  assert.equal(system.pinnedTarget, null);
+  assert.equal(system.tooltip.hidden, true);
 });
 
 test('dynamic Bestiary chips use the viewport tooltip and accessible description', () => {
@@ -164,7 +239,11 @@ test('dynamic Bestiary chips use the viewport tooltip and accessible description
   const chip = document.createElement('span');
   chip.tabIndex = 0;
   chip.setAttribute('aria-label', 'Werekin Bestiary result: 65%, supports.');
-  chip.dataset.strategicTooltip = 'Typical signs: transformed tracks\nCommon strengths: speed';
+  chip.dataset.strategicTooltip = 'Werekin';
+  chip.dataset.bestiaryName = 'Werekin';
+  chip.dataset.bestiaryEnemies = JSON.stringify([
+    { id: 'werewolf', name: 'Werewolf', strengths: [], weaknesses: [] },
+  ]);
   chip.textContent = 'Werekin — supports (65%)';
   chip.getBoundingClientRect = () => ({
     left: 280,
@@ -182,5 +261,5 @@ test('dynamic Bestiary chips use the viewport tooltip and accessible description
   assert.equal(chip.getAttribute('aria-describedby'), 'strategic-tooltip');
   assert.equal(system.tooltip.dataset.placement, 'bottom');
   assert.equal(system.tooltip.style.left, '212px');
-  assert.equal(system.tooltip.textContent, chip.dataset.strategicTooltip);
+  assert.equal(system.tooltip.querySelector('.strategic-tooltip-enemy').textContent, 'Werewolf');
 });

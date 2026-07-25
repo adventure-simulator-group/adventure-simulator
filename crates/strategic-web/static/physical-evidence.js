@@ -55,15 +55,6 @@
     return `rgb(${Math.round(255 * (10000 - bounded) / 5000)} 255 0)`;
   };
 
-  const bestiaryTooltip = (result) => [
-    ["Typical signs", result.tendency],
-    ["Common strengths", result.strengths],
-    ["Considerations", result.considerations],
-    ["Exceptions", result.exceptions],
-    ["Confirmed combat mechanics", result.confirmed_mechanics],
-    ["Folklore / unimplemented hypotheses", result.folklore],
-  ].map(([label, value]) => `${label}: ${value}`).join("\n");
-
   const bestiaryResultsRow = (results) => {
     const row = narrationRow(document.createTextNode(""), "bestiary-check-results");
     const narration = row.querySelector("em");
@@ -85,13 +76,17 @@
       const chip = document.createElement("span");
       chip.className = "bestiary-result-chip";
       chip.tabIndex = 0;
-      chip.setAttribute("role", "note");
+      chip.setAttribute("role", "button");
+      chip.setAttribute("aria-pressed", "false");
       chip.dataset.bestiaryCategory = result.category;
+      chip.dataset.bestiaryName = result.label;
+      chip.dataset.bestiaryEnemies = JSON.stringify(result.enemies || []);
+      chip.dataset.tooltipPinnable = "";
       chip.style.backgroundColor = bestiaryColor(result.support_bps);
       chip.textContent = `${result.label} — ${result.support_label} (${percent}%)`;
       const accessible = `${result.label} Bestiary result: ${percent}%, ${result.support_label}.`;
       chip.setAttribute("aria-label", accessible);
-      chip.dataset.strategicTooltip = bestiaryTooltip(result);
+      chip.dataset.strategicTooltip = result.label;
       chips.append(chip);
     });
     narration.append(chips);

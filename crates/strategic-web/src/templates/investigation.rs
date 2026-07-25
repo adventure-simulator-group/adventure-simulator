@@ -16,15 +16,6 @@ struct JournalRecord {
     bestiary_results: Vec<BestiaryResultView>,
 }
 
-fn bestiary_tooltip(result: &BestiaryResultView) -> String {
-    format!(
-        "{}\nStrengths\n{}\nWeaknesses\n{}",
-        result.label,
-        result.strengths.join("\n"),
-        result.weaknesses.join("\n"),
-    )
-}
-
 fn bestiary_journal_results(results: &[BestiaryResultView]) -> Markup {
     let mut interpretations = BTreeSet::new();
     html! {
@@ -39,18 +30,18 @@ fn bestiary_journal_results(results: &[BestiaryResultView]) -> Markup {
                 span class="bestiary-result-list" {
                     @for result in results {
                         @let percent = f32::from(result.support_bps) / 100.0;
-                        @let strengths = result.strengths.join("\n");
-                        @let weaknesses = result.weaknesses.join("\n");
+                        @let enemies = serde_json::to_string(&result.enemies)
+                            .expect("Bestiary enemy lore serializes");
                         @let accessible = format!(
                             "{} Bestiary result: {}%, {}.",
                             result.label, percent, result.support_label,
                         );
-                        span class="bestiary-result-chip" tabindex="0" role="note"
+                        span class="bestiary-result-chip" tabindex="0" role="button"
+                            aria-pressed="false"
                             data-bestiary-category=(result.category.as_str())
                             data-bestiary-name=(&result.label)
-                            data-strategic-tooltip=(bestiary_tooltip(result))
-                            data-bestiary-strengths=(&strengths)
-                            data-bestiary-weaknesses=(&weaknesses)
+                            data-strategic-tooltip=(&result.label)
+                            data-tooltip-pinnable data-bestiary-enemies=(&enemies)
                             aria-label=(accessible)
                             style=(format!(
                                 "background-color: {}",
@@ -322,8 +313,12 @@ mod tests {
             support_bps: 6_500,
             support_label: "supports",
             interpretation: "The print could have been made by a transformed werekin.".into(),
-            strengths: vec!["Speed", "Strength"],
-            weaknesses: vec!["Animal instincts", "Large transformed profile"],
+            enemies: vec![crate::spacetimedb::BestiaryEnemyLoreView {
+                id: "werewolf".into(),
+                name: "Werewolf".into(),
+                strengths: vec!["Innate padding absorbs the first 35 J of impact".into()],
+                weaknesses: vec!["Must close to melee before attacking".into()],
+            }],
         }];
 
         let markup = bestiary_journal_results(&results).into_string();
@@ -332,13 +327,16 @@ mod tests {
         assert!(markup.contains("Werekin — supports (65%)"));
         assert!(markup.contains("background-color: rgb(179 255 0)"));
         assert!(markup.contains("tabindex=\"0\""));
+        assert!(markup.contains("role=\"button\""));
+        assert!(markup.contains("aria-pressed=\"false\""));
         assert!(markup.contains("data-strategic-tooltip"));
-        assert!(markup.contains("data-bestiary-strengths"));
-        assert!(markup.contains("data-bestiary-weaknesses"));
-        assert!(markup.contains("Speed"));
-        assert!(markup.contains("Strength"));
-        assert!(markup.contains("Animal instincts"));
-        assert!(markup.contains("Large transformed profile"));
+        assert!(markup.contains("data-bestiary-enemies"));
+        assert!(markup.contains("data-tooltip-pinnable"));
+        assert!(markup.contains("Werewolf"));
+        assert!(markup.contains("Innate padding absorbs the first 35 J of impact"));
+        assert!(markup.contains("Must close to melee before attacking"));
+        assert!(!markup.contains("data-bestiary-strengths"));
+        assert!(!markup.contains("data-bestiary-weaknesses"));
         assert!(!markup.contains("combat modifier"));
         assert!(!markup.contains("unimplemented"));
         assert!(markup.contains("aria-label=\"Werekin Bestiary result: 65%, supports.\""));

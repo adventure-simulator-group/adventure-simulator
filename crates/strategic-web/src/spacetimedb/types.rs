@@ -9,14 +9,38 @@ pub struct StoredBestiaryResult {
 }
 
 #[derive(Clone, Debug, Serialize)]
+pub struct BestiaryEnemyLoreView {
+    pub id: String,
+    pub name: String,
+    pub strengths: Vec<String>,
+    pub weaknesses: Vec<String>,
+}
+
+pub fn bestiary_enemy_lore(
+    category: adventuresim_world_schema::BestiaryCategory,
+) -> Vec<BestiaryEnemyLoreView> {
+    adventuresim_core::bestiary::profiles_for_category(category)
+        .into_iter()
+        .map(|profile| {
+            let lore = adventuresim_core::bestiary::implemented_combat_lore(profile);
+            BestiaryEnemyLoreView {
+                id: profile.id.as_str().into(),
+                name: profile.display_name.into(),
+                strengths: lore.strengths,
+                weaknesses: lore.weaknesses,
+            }
+        })
+        .collect()
+}
+
+#[derive(Clone, Debug, Serialize)]
 pub struct BestiaryResultView {
     pub category: String,
     pub label: String,
     pub support_bps: u16,
     pub support_label: &'static str,
     pub interpretation: String,
-    pub strengths: Vec<&'static str>,
-    pub weaknesses: Vec<&'static str>,
+    pub enemies: Vec<BestiaryEnemyLoreView>,
 }
 
 pub fn bestiary_support_label(support_bps: u16) -> &'static str {
@@ -52,8 +76,7 @@ impl From<StoredBestiaryResult> for BestiaryResultView {
             support_bps: result.support_bps,
             support_label: bestiary_support_label(result.support_bps),
             interpretation: result.interpretation,
-            strengths: category.strengths().to_vec(),
-            weaknesses: category.weaknesses().to_vec(),
+            enemies: bestiary_enemy_lore(category),
         }
     }
 }
