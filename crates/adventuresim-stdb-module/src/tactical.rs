@@ -705,11 +705,9 @@ fn end_tactical_server_by_instance(
                     drops,
                     true,
                 )?;
-                // Quest completion is currently the contract-side projection
-                // of a defeated bound group. #203 replaces that projection
-                // with generalized case objectives.
                 if committed
                     && let Some(group_id) = mission.hostile_group_id.as_deref()
+                    && !crate::strategic::finish_incident_for_hostile_group(ctx, group_id)?
                     && let Some(group) = ctx
                         .db
                         .hostile_group_authority()
@@ -767,6 +765,23 @@ mod authority_tests {
             assert!(!body.contains("hostile_group_id"));
             assert!(!body.contains("case_site_id"));
         }
+    }
+
+    #[test]
+    fn incident_outcomes_are_consumed_before_legacy_quest_projection() {
+        let source = include_str!("tactical.rs");
+        let completion = source
+            .split("fn end_tactical_server_by_instance")
+            .nth(1)
+            .and_then(|tail| tail.split("#[cfg(test)]").next())
+            .expect("tactical completion");
+        let incident = completion
+            .find("finish_incident_for_hostile_group")
+            .expect("typed incident completion");
+        let quest = completion
+            .find("complete_quest")
+            .expect("legacy quest projection");
+        assert!(incident < quest);
     }
 
     #[test]

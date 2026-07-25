@@ -134,9 +134,10 @@ use crate::spacetimedb::{
     InventoryQuantityTarget, ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury,
     LimbRegion, MedicalExaminationRow, Party, PartyInventoryItem, PartyJourney,
     PartyJourneyItinerary, PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, Quest,
-    QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
-    RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription,
-    SettlementSmith, SocialBelief, StrategicEncounter, TravelEdge,
+    QuestIssuer, QuestStatus, RecruitmentOffer, RecruitmentOfferStatus, RecruitmentRequirements,
+    ReligiousDemand, RepairOrder, RetainedProjectile, ScheduleAllocation, Settlement,
+    SettlementAlias, SettlementDescription, SettlementSmith, SocialBelief, StrategicEncounter,
+    TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
@@ -2031,7 +2032,12 @@ struct ServiceQuestOffer {
     turn_in_response: String,
     can_accept: bool,
     can_turn_in: bool,
-    recruitment: Option<ServiceQuestRecruitment>,
+}
+
+#[derive(Serialize)]
+struct ServiceActivityResponse {
+    quests: Vec<ServiceQuestOffer>,
+    recruitment: Vec<ServiceQuestRecruitment>,
 }
 
 #[derive(Serialize)]
@@ -2101,6 +2107,9 @@ async fn begin_service_apprenticeship(
 
 #[derive(Serialize)]
 struct ServiceQuestRecruitment {
+    offer_id: String,
+    service_id: &'static str,
+    location_id: String,
     party_name: String,
     leader_id: String,
     leader_name: String,
@@ -2124,7 +2133,7 @@ async fn service_quest_offers(
     State(state): State<AppState>,
     Path(id): Path<String>,
     session: Session,
-) -> Json<Vec<ServiceQuestOffer>> {
+) -> Json<ServiceActivityResponse> {
     if state.db.is_local() {
         let _ = state
             .db
@@ -2137,7 +2146,10 @@ async fn service_quest_offers(
         .await
         .unwrap_or_default();
     let Some(settlement) = settlements.iter().find(|settlement| settlement.id == id) else {
-        return Json(Vec::new());
+        return Json(ServiceActivityResponse {
+            quests: Vec::new(),
+            recruitment: Vec::new(),
+        });
     };
     let issuers: Vec<QuestIssuer> = state
         .db
@@ -2206,6 +2218,14 @@ async fn service_quest_offers(
         .query("SELECT * FROM party_recruitment_role")
         .await
         .unwrap_or_default();
+    let recruitment_offers: Vec<RecruitmentOffer> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM recruitment_offer WHERE settlement_id = {}",
+            sql_string_literal(&id)
+        ))
+        .await
+        .unwrap_or_default();
     let characters: Vec<Character> = state
         .db
         .query("SELECT * FROM character")
@@ -2241,8 +2261,79 @@ async fn service_quest_offers(
         }
     }
 
-    Json(
-        issuers
+    let recruiting_companies = recruitment_offers
+        .iter()
+        .filter(|offer| {
+            offer.status == RecruitmentOfferStatus::Open
+                && viewer_party_id != Some(offer.recruiting_party_id.as_str())
+        })
+        .filter_map(|offer| {
+            let party = parties
+                .iter()
+                .find(|party| party.id == offer.recruiting_party_id)?;
+            let leader = characters
+                .iter()
+                .find(|character| character.id == offer.leader_id)?;
+            if party.current_settlement_id.as_deref() != Some(id.as_str())
+                || party.leader_id != leader.id
+            {
+                return None;
+            }
+            let roles = recruitment_roles
+                .iter()
+                .filter(|role| role.party_id == party.id)
+                .filter_map(|role| {
+                    let filled = party_memberships
+                        .iter()
+                        .filter(|member| member.recruitment_role_id == Some(role.id))
+                        .count() as u32;
+                    let remaining = role.quantity.saturating_sub(filled);
+                    if remaining == 0 {
+                        return None;
+                    }
+                    let requirements = role_requirement_labels(role);
+                    let (match_level, match_summary) = party_role_match(&viewer_capabilities, role);
+                    let (left_html, right_html) =
+                        crate::templates::recruitment::service_role_inspection(
+                            &role.name,
+                            &requirements,
+                            &party.name,
+                            &leader.name,
+                            remaining,
+                            match_level,
+                            &match_summary,
+                            &format!("/party-roles/{}/join", role.id),
+                            can_accept,
+                        );
+                    Some(ServiceQuestRole {
+                        id: role.id,
+                        name: role.name.clone(),
+                        remaining,
+                        requirements_summary: if requirements.is_empty() {
+                            "No minimum recommendations".to_string()
+                        } else {
+                            requirements.join(" · ")
+                        },
+                        requirements,
+                        match_level,
+                        match_summary,
+                        left_html,
+                        right_html,
+                    })
+                })
+                .collect::<Vec<_>>();
+            (!roles.is_empty()).then(|| ServiceQuestRecruitment {
+                offer_id: offer.id_key.clone(),
+                service_id: "inn",
+                location_id: offer.location_id.clone(),
+                party_name: party.name.clone(),
+                leader_id: leader.id.to_string(),
+                leader_name: leader.name.clone(),
+                roles,
+            })
+        })
+        .collect();
+    let quest_offers = issuers
             .into_iter()
             .filter_map(|issuer| {
                 let quest = quests.iter().find(|quest| quest.id == issuer.quest_id)?;
@@ -2250,73 +2341,12 @@ async fn service_quest_offers(
                     party.active_quest_id.as_deref() == Some(quest.id.as_str())
                         && quest.accepted_by.as_deref() == Some(party.id.as_str())
                 });
-                let recruitment = quest.accepted_by.as_deref().and_then(|party_id| {
-                    if viewer_party_id == Some(party_id) {
-                        return None;
-                    }
-                    let party = parties.iter().find(|party| party.id == party_id)?;
-                    if party.current_settlement_id.as_deref() != Some(id.as_str()) {
-                        return None;
-                    }
-                    let leader = characters.iter().find(|character| character.id == party.leader_id)?;
-                    let roles = recruitment_roles
-                        .iter()
-                        .filter(|role| role.party_id == party.id)
-                        .filter_map(|role| {
-                            let filled = party_memberships
-                                .iter()
-                                .filter(|member| member.recruitment_role_id == Some(role.id))
-                                .count() as u32;
-                            let remaining = role.quantity.saturating_sub(filled);
-                            if remaining == 0 {
-                                return None;
-                            }
-                            let requirements = role_requirement_labels(role);
-                            let (match_level, match_summary) =
-                                party_role_match(&viewer_capabilities, role);
-                            let (left_html, right_html) = crate::templates::recruitment::service_role_inspection(
-                                &role.name,
-                                &requirements,
-                                &party.name,
-                                &leader.name,
-                                remaining,
-                                match_level,
-                                &match_summary,
-                                &format!("/party-roles/{}/join", role.id),
-                                can_accept,
-                            );
-                            Some(ServiceQuestRole {
-                                id: role.id,
-                                name: role.name.clone(),
-                                remaining,
-                                requirements_summary: if requirements.is_empty() {
-                                    "No minimum recommendations".to_string()
-                                } else {
-                                    requirements.join(" · ")
-                                },
-                                requirements,
-                                match_level,
-                                match_summary,
-                                left_html,
-                                right_html,
-                            })
-                        })
-                        .collect::<Vec<_>>();
-                    Some(ServiceQuestRecruitment {
-                        party_name: party.name.clone(),
-                        leader_id: leader.id.to_string(),
-                        leader_name: leader.name.clone(),
-                        roles,
-                    })
-                });
                 let state = if quest.status == QuestStatus::Available {
                     "available"
                 } else if is_current && quest.status == QuestStatus::Completed {
                     "ready"
                 } else if is_current {
                     "underway"
-                } else if recruitment.is_some() {
-                    "recruiting"
                 } else {
                     return None;
                 };
@@ -2350,11 +2380,13 @@ async fn service_quest_offers(
                     ),
                     can_accept,
                     can_turn_in: can_turn_in && state == "ready",
-                    recruitment,
                 })
             })
-            .collect(),
-    )
+            .collect();
+    Json(ServiceActivityResponse {
+        quests: quest_offers,
+        recruitment: recruiting_companies,
+    })
 }
 
 fn service_quest_greeting(service_id: &str) -> (&'static str, &'static str) {

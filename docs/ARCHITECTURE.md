@@ -224,6 +224,13 @@ When a mission ends, the tactical server sends the **results** (XP gained, items
 
 Finalized loot is strategic state. The tactical server derives drops from the temporary enemies' equipped inventory and records only the resulting item identifiers and quantities. The strategic layer owns the post-battle result, shared party inventory, and per-character value stakes; no enemy, damage, position, or other tactical tick state is persisted. Mission, battle, hostile-group, and outcome-source identity are explicitly separate from contract/quest identity; see [MISSION_AUTHORITY.md](MISSION_AUTHORITY.md).
 
+NPC recruitment and strategic interruptions likewise have dedicated strategic
+authority. Recruitment offers own company discoverability, expiry, and
+eligibility without accepting a quest. Incidents own typed source, site,
+hostile-group, and lifecycle identity without creating a quest or replacing a
+party's active contract. See
+[RECRUITMENT_AND_INCIDENT_AUTHORITY.md](RECRUITMENT_AND_INCIDENT_AUTHORITY.md).
+
 ## Architecture
 
 ```

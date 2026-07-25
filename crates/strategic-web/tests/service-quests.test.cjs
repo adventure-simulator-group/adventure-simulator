@@ -15,12 +15,14 @@ test("service quest script owns notification state and trusted recruitment inspe
   assert.match(source, /data-service-recruitment/);
   assert.match(source, /role\.left_html/);
   assert.match(source, /role\.right_html/);
-  assert.match(source, /recruiting\.recruitment\.leader_id/);
+  assert.match(source, /activity\.recruitment/);
+  assert.match(source, /recruiting\.leader_id/);
+  assert.doesNotMatch(source, /quest\.recruitment/);
 });
 
 test("service tab state is appended only for actionable quest states", () => {
-  assert.equal(serviceQuestTabState([{ state: "ready" }]), "quest ready to report");
-  assert.equal(serviceQuestTabState([{ state: "available" }]), "quest available");
-  assert.equal(serviceQuestTabState([{ state: "recruiting" }]), "recruitment available");
-  assert.equal(serviceQuestTabState([{ state: "underway" }]), null);
+  assert.equal(serviceQuestTabState({ quests: [{ state: "ready" }], recruitment: [] }), "quest ready to report");
+  assert.equal(serviceQuestTabState({ quests: [{ state: "available" }], recruitment: [] }), "quest available");
+  assert.equal(serviceQuestTabState({ quests: [], recruitment: [{ offer_id: "offer:1" }] }), "recruitment available");
+  assert.equal(serviceQuestTabState({ quests: [{ state: "underway" }], recruitment: [] }), null);
 });

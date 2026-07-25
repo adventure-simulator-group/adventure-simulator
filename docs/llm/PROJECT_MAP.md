@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (1100)
+## Files (1111)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -304,6 +304,10 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/import_settlements_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/import_travel_edges_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/import_world_nodes_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/incident_id_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/incident_kind_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/incident_source_id_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/incident_status_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/industry_evidence_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/infection_episode_row_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/inferred_geologic_setting_type.rs` — Generated SpacetimeDB data type.
@@ -445,7 +449,12 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/quest_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/receive_investigation_claim_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/receive_local_problem_rumor_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/recruitment_offer_id_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/recruitment_offer_status_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/recruitment_offer_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/recruitment_offer_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/recruitment_requirements_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/recruitment_source_id_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/refresh_capabilities_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/refresh_strategic_condition_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/register_strategic_gateway_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -568,7 +577,6 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/strategic_encounter_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/strategic_gateway_authority_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/strategic_gateway_authority_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/strategic_incident_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/strategic_incident_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/submit_all_repairable_items_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/submit_item_for_repair_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -1041,6 +1049,7 @@ development, or wiki document before changing a subsystem.
 - `docs/LOCAL_PROBLEMS.md` — Project documentation.
 - `docs/MISSION_AUTHORITY.md` — Project documentation.
 - `docs/POTENTIAL_VEGETATION.md` — Project documentation.
+- `docs/RECRUITMENT_AND_INCIDENT_AUTHORITY.md` — Project documentation.
 - `docs/RELIGION.md` — Project documentation.
 - `docs/ROUTE_TERRAIN.md` — Project documentation.
 - `docs/SOIL.md` — Project documentation.
@@ -1102,6 +1111,8 @@ development, or wiki document before changing a subsystem.
 - `wiki/shared/StrataMap.md` — Project documentation.
 - `wiki/shared/Terrain.md` — Project documentation.
 - `wiki/strategic/Character.md` — Project documentation.
+- `wiki/strategic/Quests.md` — Project documentation.
+- `wiki/strategic/Quests.md` — Project documentation.
 - `wiki/strategic/Quests.md` — Project documentation.
 - `wiki/strategic/Settlement.md` — Project documentation.
 - `wiki/strategic/Time.md` — Project documentation.

@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::tactical_server_request_type::TacticalServerRequest;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `tactical_server_request`.
 ///
@@ -36,7 +31,9 @@ pub trait TacticalServerRequestTableAccess {
 impl TacticalServerRequestTableAccess for super::RemoteTables {
     fn tactical_server_request(&self) -> TacticalServerRequestTableHandle<'_> {
         TacticalServerRequestTableHandle {
-            imp: self.imp.get_table::<TacticalServerRequest>("tactical_server_request"),
+            imp: self
+                .imp
+                .get_table::<TacticalServerRequest>("tactical_server_request"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -49,8 +46,12 @@ impl<'ctx> __sdk::Table for TacticalServerRequestTableHandle<'ctx> {
     type Row = TacticalServerRequest;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = TacticalServerRequest> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = TacticalServerRequest> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = TacticalServerRequestInsertCallbackId;
 
@@ -81,8 +82,7 @@ impl<'ctx> __sdk::Table for TacticalServerRequestTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<TacticalServerRequest>("tactical_server_request");
+    let _table = client_cache.get_or_make_table::<TacticalServerRequest>("tactical_server_request");
 }
 
 #[doc(hidden)]
@@ -90,26 +90,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<TacticalServerRequest>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<TacticalServerRequest>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<TacticalServerRequest>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `TacticalServerRequest`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait tactical_server_requestQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `TacticalServerRequest`.
-            fn tactical_server_request(&self) -> __sdk::__query_builder::Table<TacticalServerRequest>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `TacticalServerRequest`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait tactical_server_requestQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `TacticalServerRequest`.
+    fn tactical_server_request(&self) -> __sdk::__query_builder::Table<TacticalServerRequest>;
+}
 
-        impl tactical_server_requestQueryTableAccess for __sdk::QueryTableAccessor {
-            fn tactical_server_request(&self) -> __sdk::__query_builder::Table<TacticalServerRequest> {
-                __sdk::__query_builder::Table::new("tactical_server_request")
-            }
-        }
-
+impl tactical_server_requestQueryTableAccess for __sdk::QueryTableAccessor {
+    fn tactical_server_request(&self) -> __sdk::__query_builder::Table<TacticalServerRequest> {
+        __sdk::__query_builder::Table::new("tactical_server_request")
+    }
+}
