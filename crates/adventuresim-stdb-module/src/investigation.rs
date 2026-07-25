@@ -1,7 +1,7 @@
 //! Private investigation authority and observer-safe gateway projections.
 
 use crate::{
-    character::{character, character__view, character_skills},
+    character::{character, character__view, character_attributes, character_skills},
     condition::character_strategic_condition__view,
     local_problem::local_problem_receipt,
     settlement_population::{settlement_npc, settlement_npc_presence},
@@ -181,6 +181,22 @@ pub struct InvestigationEvidenceKnowledge {
     pub learned_at: u64,
 }
 
+#[derive(Clone, Debug)]
+#[table(accessor = physical_evidence_inspection_attempt)]
+pub struct PhysicalEvidenceInspectionAttempt {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub owner_character_id: u64,
+    #[index(btree)]
+    pub evidence_id: String,
+    pub topic_id: String,
+    pub stat_label: String,
+    pub passed: bool,
+    pub narration: String,
+    pub attempted_at: u64,
+}
+
 #[allow(dead_code)] // Owning investigation actions call this as evidence types are added.
 pub(crate) fn record_evidence_knowledge(
     ctx: &ReducerContext,
@@ -221,6 +237,164 @@ pub(crate) fn record_evidence_knowledge(
             source_id: source_id.into(),
             learned_at: official_minute(ctx),
         });
+    Ok(())
+}
+
+fn inspection_stat_milli(value: f32) -> Result<u16, String> {
+    if !value.is_finite() || value < 0.0 {
+        return Err("Inspection stat is invalid".into());
+    }
+    Ok((value * 1_000.0).round().clamp(0.0, f32::from(u16::MAX)) as u16)
+}
+
+#[reducer]
+pub fn inspect_physical_evidence(
+    ctx: &ReducerContext,
+    character_id: u64,
+    evidence_id: String,
+    topic_id: String,
+    action_id: String,
+) -> Result<(), String> {
+    require_strategic_character_authority(ctx, character_id)?;
+    if action_id.is_empty()
+        || action_id.len() > 160
+        || evidence_id.is_empty()
+        || evidence_id.len() > 256
+        || topic_id.is_empty()
+        || topic_id.len() > 128
+    {
+        return Err("Physical-evidence inspection identifiers are invalid".into());
+    }
+    if let Some(existing) = ctx
+        .db
+        .physical_evidence_inspection_attempt()
+        .id()
+        .find(&action_id)
+    {
+        return if existing.owner_character_id == character_id
+            && existing.evidence_id == evidence_id
+            && existing.topic_id == topic_id
+        {
+            Ok(())
+        } else {
+            Err("Physical-evidence inspection action ID was reused".into())
+        };
+    }
+    let actor = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .filter(|character| character.alive)
+        .ok_or("Inspecting character does not exist or is dead")?;
+    let authority = ctx
+        .db
+        .investigation_evidence_authority()
+        .id()
+        .find(&evidence_id)
+        .filter(|row| row.presentation_kind == EvidencePresentationKind::Physical)
+        .ok_or("Physical evidence does not exist")?;
+    let generated = serde_json::from_str::<adventuresim_core::quest_generation::GeneratedEvidence>(
+        &authority.authority_json,
+    )
+    .map_err(|_| "Physical evidence authority is invalid")?;
+    if generated.id.0 != authority.id || generated.proposition_id != authority.proposition_id {
+        return Err("Physical evidence authority does not match its generated manifest".into());
+    }
+    if character_case_site_id(ctx, actor.id).as_deref() != Some(generated.site_id.0.as_str()) {
+        return Err("The party must occupy the evidence's authoritative site".into());
+    }
+    let topic = generated
+        .inspection_topics
+        .iter()
+        .find(|topic| topic.id == topic_id)
+        .ok_or("Unknown physical-evidence inspection topic")?;
+    let (stat_label, passed, narration) = match &topic.check {
+        None => (String::new(), true, topic.inspection_description.clone()),
+        Some(check) => {
+            use adventuresim_core::quest_generation::EvidenceCheckStat;
+            let attributes = ctx
+                .db
+                .character_attributes()
+                .character_id()
+                .find(character_id)
+                .ok_or("Inspecting character has no attributes")?;
+            let value = match check.stat {
+                EvidenceCheckStat::Eyesight => attributes.eyesight,
+                EvidenceCheckStat::Intelligence => attributes.intelligence,
+                EvidenceCheckStat::Instinct => attributes.instinct,
+            };
+            let passed = adventuresim_core::quest_generation::evidence_check_passes(
+                inspection_stat_milli(value)?,
+                check.difficulty_milli,
+            );
+            let narration = if passed {
+                format!(
+                    "{} check passed: {}",
+                    check.stat.label(),
+                    check.success_description
+                )
+            } else {
+                format!(
+                    "{} check failed: You cannot make out anything more.",
+                    check.stat.label()
+                )
+            };
+            (check.stat.label().into(), passed, narration)
+        }
+    };
+    let attempted_at = official_minute(ctx);
+    ctx.db
+        .physical_evidence_inspection_attempt()
+        .insert(PhysicalEvidenceInspectionAttempt {
+            id: action_id,
+            owner_character_id: character_id,
+            evidence_id: evidence_id.clone(),
+            topic_id: topic_id.clone(),
+            stat_label,
+            passed,
+            narration: narration.clone(),
+            attempted_at,
+        });
+    if passed && topic.check.as_ref().is_some_and(|check| check.reveals_clue) {
+        let source_id = format!("evidence-inspection:{evidence_id}:{topic_id}");
+        let knowledge_id = inv::compound_id(&[
+            "evidence-knowledge",
+            &character_id.to_string(),
+            &authority.case_id,
+            &evidence_id,
+        ]);
+        let newly_learned = ctx
+            .db
+            .investigation_evidence_knowledge()
+            .id()
+            .find(&knowledge_id)
+            .is_none();
+        record_evidence_knowledge(
+            ctx,
+            character_id,
+            &authority.case_id,
+            &evidence_id,
+            &source_id,
+        )?;
+        if newly_learned {
+            let public_case_id = ctx
+                .db
+                .quest_generation_authority()
+                .case_id()
+                .find(&authority.case_id)
+                .map_or_else(|| authority.case_id.clone(), |row| row.public_case_id);
+            record_journal_notice(
+                ctx,
+                character_id,
+                &public_case_id,
+                &source_id,
+                &narration,
+                &format!("physical evidence: {}", generated.portrait_label),
+                attempted_at,
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -864,12 +1038,147 @@ pub struct BackendCharacterCaseSiteLocation {
     pub case_site_id: CaseSiteId,
 }
 
+#[derive(Clone, Debug, SpacetimeType)]
+pub struct BackendPhysicalEvidence {
+    pub owner_character_id: u64,
+    pub evidence_id: String,
+    pub case_id: String,
+    pub case_site_id: String,
+    pub label: String,
+    pub portrait_icon: String,
+    pub description: String,
+    /// Observer-safe topic IDs and labels only. Check stats and fixed
+    /// difficulties remain private authority.
+    pub topics_json: String,
+}
+
+#[derive(Clone, Debug, SpacetimeType)]
+pub struct BackendPhysicalEvidenceInspection {
+    pub attempt_id: String,
+    pub owner_character_id: u64,
+    pub evidence_id: String,
+    pub topic_id: String,
+    pub stat_label: String,
+    pub passed: bool,
+    pub narration: String,
+    pub attempted_at: u64,
+}
+
 fn is_gateway(ctx: &ViewContext) -> bool {
     ctx.db
         .strategic_gateway_authority()
         .id()
         .find(0)
         .is_some_and(|row| row.identity == ctx.sender())
+}
+
+#[view(accessor = backend_physical_evidence, public)]
+pub fn backend_physical_evidence(ctx: &ViewContext) -> Vec<BackendPhysicalEvidence> {
+    if !is_gateway(ctx) {
+        return Vec::new();
+    }
+    let pins = backend_case_site_pins(ctx);
+    let mut rows = Vec::new();
+    for pin in pins {
+        let mut authorities = ctx
+            .db
+            .quest_generation_authority()
+            .public_case_id()
+            .filter(&pin.case_id)
+            .filter_map(|authority| validate_quest_generation_authority(&authority).ok())
+            .collect::<Vec<_>>();
+        authorities.sort_by(|left, right| {
+            left.manifest
+                .canonical_case_id
+                .cmp(&right.manifest.canonical_case_id)
+        });
+        authorities.dedup_by(|left, right| {
+            left.manifest.canonical_case_id == right.manifest.canonical_case_id
+        });
+        let [validated] = authorities.as_slice() else {
+            continue;
+        };
+        for generated in &validated.manifest.evidence {
+            if generated.site_id.0 != pin.case_site_id {
+                continue;
+            }
+            let Some(authority) = ctx
+                .db
+                .investigation_evidence_authority()
+                .id()
+                .find(&generated.id.0)
+                .filter(|row| {
+                    row.case_id == validated.manifest.canonical_case_id
+                        && row.presentation_kind == EvidencePresentationKind::Physical
+                })
+            else {
+                continue;
+            };
+            let topics = generated
+                .inspection_topics
+                .iter()
+                .map(|topic| {
+                    serde_json::json!({
+                        "id": topic.id,
+                        "label": topic.label,
+                    })
+                })
+                .collect::<Vec<_>>();
+            let Ok(topics_json) = serde_json::to_string(&topics) else {
+                continue;
+            };
+            rows.push(BackendPhysicalEvidence {
+                owner_character_id: pin.owner_character_id,
+                evidence_id: authority.id,
+                case_id: pin.case_id.clone(),
+                case_site_id: pin.case_site_id.clone(),
+                label: generated.portrait_label.clone(),
+                portrait_icon: generated.portrait_icon.clone(),
+                description: generated.base_description.clone(),
+                topics_json,
+            });
+        }
+    }
+    rows.sort_by(|left, right| {
+        (
+            left.owner_character_id,
+            &left.case_site_id,
+            &left.evidence_id,
+        )
+            .cmp(&(
+                right.owner_character_id,
+                &right.case_site_id,
+                &right.evidence_id,
+            ))
+    });
+    rows
+}
+
+#[view(accessor = backend_physical_evidence_inspections, public)]
+pub fn backend_physical_evidence_inspections(
+    ctx: &ViewContext,
+) -> Vec<BackendPhysicalEvidenceInspection> {
+    if !is_gateway(ctx) {
+        return Vec::new();
+    }
+    let mut rows = ctx
+        .db
+        .physical_evidence_inspection_attempt()
+        .owner_character_id()
+        .filter(0u64..)
+        .map(|attempt| BackendPhysicalEvidenceInspection {
+            attempt_id: attempt.id,
+            owner_character_id: attempt.owner_character_id,
+            evidence_id: attempt.evidence_id,
+            topic_id: attempt.topic_id,
+            stat_label: attempt.stat_label,
+            passed: attempt.passed,
+            narration: attempt.narration,
+            attempted_at: attempt.attempted_at,
+        })
+        .collect::<Vec<_>>();
+    rows.sort_by_key(|row| (row.attempted_at, row.attempt_id.clone()));
+    rows
 }
 
 #[view(accessor = backend_investigation_journal, public)]

@@ -107,6 +107,30 @@ pub struct BackendCaseSitePin {
     pub case_resolved: bool,
     pub combat_available: bool,
 }
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BackendPhysicalEvidence {
+    pub owner_character_id: u64,
+    pub evidence_id: String,
+    pub case_id: String,
+    pub case_site_id: String,
+    pub label: String,
+    pub portrait_icon: String,
+    pub description: String,
+    pub topics_json: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BackendPhysicalEvidenceInspection {
+    pub attempt_id: String,
+    pub owner_character_id: u64,
+    pub evidence_id: String,
+    pub topic_id: String,
+    pub stat_label: String,
+    pub passed: bool,
+    pub narration: String,
+    pub attempted_at: u64,
+}
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use serde_json::Value;
 

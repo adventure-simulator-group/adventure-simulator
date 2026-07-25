@@ -13,7 +13,7 @@ use crate::{
     spacetimedb::Character,
     templates::settlement::{
         map_destination_detail, map_destination_list_with_rest, party_portrait_overlay,
-        party_rest_menu, settlement_chat_area_with_info, travel_preferences_form, visual_stage,
+        party_rest_menu, settlement_chat_area_with_info, travel_preferences_form,
     },
 };
 
@@ -174,8 +174,19 @@ fn quest_location_center(
                 None,
                 false,
             ))
+            nav class="settlement-npc-strip physical-evidence-strip"
+                aria-label="Physical evidence here"
+                data-evidence-strip
+                data-evidence-case-site=(&site.case_site_id) {
+                span class="text-muted" data-evidence-loading { "Looking over the scene…" }
+            }
             div class="quest-visual-wrap" {
-                (visual_stage("quest", &site.name, &site.description))
+                section class="visual-stage npc-description-stage evidence-description-stage"
+                    data-evidence-description aria-live="polite" {
+                    div class="visual-stage-placeholder" aria-hidden="true" { "?" }
+                    h2 { (&site.name) }
+                    p { (&site.description) }
+                }
                 @if show_combat_actions
                     && (can_fight
                         || (presentation.allow_tactical_combat && !resolved)

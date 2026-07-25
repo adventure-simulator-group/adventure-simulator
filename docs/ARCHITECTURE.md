@@ -368,6 +368,16 @@ new capability versions. Surveillance and ambush preparation
 remain strategic and never persist tactical positions, damage, HP, enemies, or
 fabricated hostile dispositions. Drive-off and capture require the
 authoritative tactical producer tracked in #207.
+
+Physical-evidence inspection follows the same observer boundary. The immutable
+generated evidence authority owns the inspection topics, checked attribute,
+and creation-time fixed difficulty. Gateway views expose an object only while
+the observer has exact knowledge of and occupies its case site, and serialize
+only its safe presentation, topic IDs and labels, and completed narration.
+The reducer revalidates location and compares the authoritative character
+attribute directly with the hidden threshold; there is no inspection-time
+randomness and no tactical state.
+
 Action graphs retain private predecessor and alternate-route edges. The
 authority validates those edges within one observer and case, synchronizes the
 co-located party's strategic clocks, then uses the leader/party minute for

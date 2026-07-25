@@ -137,6 +137,19 @@ or recovery, the site shows a plain completion notice and removes its
 pre-finale rest controls without exposing private cause or manifest data.
 Legacy direct bounties continue to require their accepted active contract.
 
+Physical evidence at the occupied site appears alongside the other
+counterparties as circular portraits. Selecting one replaces the central
+description with an italic observation. Its highlighted topic phrases inspect
+specific parts of the object, such as glass shards or a damaged frame. Some
+parts are mundane; others require a named eyesight, intelligence, or instinct
+check before their clue is recorded.
+
+These checks do not roll dice when clicked. Their hidden difficulty was fixed
+when the threat created the evidence, so the same character can retry freely
+but will get the same result until the relevant attribute changes. Neither the
+difficulty nor the character's numerical value is shown. The journal records a
+successful observation as a dry fact and does not explain what it implies.
+
 Location headers do not contain a quest tracker. The Map building tab carries a red exclamation while the party has an active quest. Map destination rows use a gold exclamation for available quests and a red exclamation for the party's active quest route or destination. Resolving the objective does not change the active marker to gold: it remains red while guiding the party back to the issuing settlement, until turn-in removes the active quest. The generated-case completion notice is ordinary page content rather than a marker over the center visual.
 
 So that new players don't naively accept difficult quests since they have no frame of reference for estimating their own/enemies power level, the quest should display recommended power level and their current value before they head out.
