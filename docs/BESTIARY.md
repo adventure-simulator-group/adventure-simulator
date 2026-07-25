@@ -1,10 +1,17 @@
 # Bestiary authority
 
+Canonical authoring records live in `content/quests/bestiary.yaml`. They are
+sorted, validated, embedded and content-hashed at build time; see
+[Quest generation](QUEST_GENERATION.md). Combat weaknesses use the ordinary
+physical resistance/padding model. Skeleton bone, for example, has edge
+resistance and no innate padding rather than a flat cut/blunt multiplier.
+
 `adventuresim-core::bestiary` is the shared authority for strategic threat
 identity. Persisted `Quest.enemy_type` and `StrategicEncounter.archetype`
-strings are stable `ThreatId` values such as `skeleton` and `grave_robber`.
-Display names and aliases never select behavior, and unknown IDs are rejected
-at strategic combat and loot boundaries instead of becoming a generic enemy.
+strings are bounded, open `ThreatId` values such as `skeleton` and
+`grave_robber`. Display names and aliases never select behavior, and IDs absent
+from the startup catalog are rejected at strategic combat and loot boundaries
+instead of becoming a generic enemy.
 
 ## Profiles and current consumers
 

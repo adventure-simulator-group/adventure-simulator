@@ -1,5 +1,18 @@
 # Development Workflow
 
+## Quest content
+
+Quest and bestiary content lives in `content/quests/*.yaml` using the same
+strict JSON-compatible YAML convention as dialogue. Validate it with:
+
+```powershell
+cargo run -p adventuresim-core --bin questgen-check -- validate
+```
+
+The build reports the source file and offending ID or relation for duplicate
+IDs, dangling bridge/monster references, unknown mechanics, invalid evidence
+DC ranges, and zero weights without a hard-zero reason.
+
 Local workflow for running the Adventure Simulator demo.
 
 For deterministic multi-year NPC balance experiments and replay commands, see

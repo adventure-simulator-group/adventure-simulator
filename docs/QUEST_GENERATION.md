@@ -1,5 +1,57 @@
 # Quest generation
 
+## Authoring catalog
+
+Modular quest and bestiary content is authored in the strict JSON-compatible
+subset of YAML under `content/quests/`. Files are read in sorted path order,
+validated during the `adventuresim-core` build, embedded in the executable,
+and parsed into an immutable catalog once at process startup. Production does
+not read loose YAML. The SHA-256 digest of filenames and exact source bytes is
+the generated-case catalog revision, so changing authored content creates a
+new deterministic replay boundary.
+
+`bestiary.yaml` owns current monster names, aliases, combat values,
+loot/loadout identifier, innate resistance and padding, behavior, habitats,
+descriptions, clues, ambiguity links, and preparation text.
+`investigation.yaml` owns evidence portraits, inspection topics and
+creation-time DC ranges, witness demographics and circumstances, descriptions,
+sites, and rare bridges. `generation.yaml` owns templates and separate
+plausibility/curation weights, including explicit hard zeros.
+
+Run `cargo run -p adventuresim-core --bin questgen-check -- validate` after an
+edit. The build rejects duplicate IDs, dangling references, invalid mechanics
+names and malformed weights before the server can start.
+
+### Current typed adapter boundary
+
+Threat, site, witness-demographic, circumstance, ambiguous-description, and
+physical-evidence identities are bounded open string IDs. A new value using
+existing mechanics therefore requires YAML only. Closed Rust enums remain only
+where the engine must execute a finite mechanic: rig topology, attack style,
+protection, temperament, activity period, terrain, evidence check attribute,
+reliability behavior, route/action and objective operation, settlement symptom,
+and encounter archetype. Adding a new value to one of those finite mechanic
+vocabularies requires Rust.
+
+Typed investigation lists, aliases, regional priors and loadout IDs are
+embedded. Tactical materialization currently consumes only one loot item ID;
+it does not support multi-item authored loadouts, ability scripts, bespoke AI
+state machines, or new rig/animation topologies. Behavior currently reaches
+combat through temperament, perception, stealth, morale, movement, attack,
+ranged precision, encounter scale, and physically based innate resistance and
+padding. These are the factual incomplete bestiary surfaces for this change.
+
+The first catalog boundary does not yet interpret arbitrary authored graph
+programs. Reliability semantics (truthful, mistaken, evasive, deceptive),
+account-style behavior, route/action execution, finale/objective execution,
+symptom-to-settlement-effect calculation, and incident construction remain
+closed engine mechanics. Their available IDs and primary selection weights are
+declared in YAML, but adding a new executable semantic requires Rust. Likewise,
+template declarations expose route/objective sets and scheduling metadata for
+authoring and the debug editor, while the two current graph assemblers remain
+typed Rust implementations. This prevents content from becoming executable
+server code and is the principal incomplete quest surface of this PR.
+
 Generated quests are deterministic typed case manifests assembled from shared
 modules rather than scripts with substituted nouns. The initial catalog has
 two families:

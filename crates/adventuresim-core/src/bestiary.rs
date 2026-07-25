@@ -3,35 +3,12 @@
 
 use core::str::FromStr;
 use serde::{Deserialize, Serialize};
+use std::{collections::BTreeMap, sync::OnceLock};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ThreatId {
-    Bandit,
-    Deserter,
-    Poacher,
-    Smuggler,
-    Cultist,
-    GraveRobber,
-    TownWatch,
-    ArmedRetainer,
-    AngryMob,
-    Wolf,
-    Boar,
-    Bear,
-    FeralDog,
-    TrainedDog,
-    Goblin,
-    Orc,
-    Skeleton,
-    Ghoul,
-    Revenant,
-    Werewolf,
-    Alp,
-    Kobold,
-    WildMan,
-    SpectralHound,
-    Nachzehrer,
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ThreatId {
+    len: u8,
+    bytes: [u8; 63],
 }
 
 pub const ALL_THREATS: &[ThreatId] = &[
@@ -62,38 +39,101 @@ pub const ALL_THREATS: &[ThreatId] = &[
     ThreatId::Nachzehrer,
 ];
 
+fn catalog_threats() -> Vec<ThreatId> {
+    crate::quest_catalog::catalog()
+        .monsters()
+        .map(|monster| ThreatId::try_new(&monster.id).expect("validated monster ID"))
+        .collect()
+}
+
 impl ThreatId {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Bandit => "bandit",
-            Self::Deserter => "deserter",
-            Self::Poacher => "poacher",
-            Self::Smuggler => "smuggler",
-            Self::Cultist => "cultist",
-            Self::GraveRobber => "grave_robber",
-            Self::TownWatch => "town_watch",
-            Self::ArmedRetainer => "armed_retainer",
-            Self::AngryMob => "angry_mob",
-            Self::Wolf => "wolf",
-            Self::Boar => "boar",
-            Self::Bear => "bear",
-            Self::FeralDog => "feral_dog",
-            Self::TrainedDog => "trained_dog",
-            Self::Goblin => "goblin",
-            Self::Orc => "orc",
-            Self::Skeleton => "skeleton",
-            Self::Ghoul => "ghoul",
-            Self::Revenant => "revenant",
-            Self::Werewolf => "werewolf",
-            Self::Alp => "alp",
-            Self::Kobold => "kobold",
-            Self::WildMan => "wild_man",
-            Self::SpectralHound => "spectral_hound",
-            Self::Nachzehrer => "nachzehrer",
+    const fn from_static(value: &str) -> Self {
+        let source = value.as_bytes();
+        let mut bytes = [0; 63];
+        let mut index = 0;
+        while index < source.len() {
+            bytes[index] = source[index];
+            index += 1;
+        }
+        Self {
+            len: source.len() as u8,
+            bytes,
         }
     }
+    pub fn try_new(value: &str) -> Result<Self, UnknownThreatId> {
+        if value.is_empty()
+            || value.len() > 63
+            || !value.bytes().all(|byte| {
+                byte.is_ascii_lowercase()
+                    || byte.is_ascii_digit()
+                    || matches!(byte, b'_' | b'-' | b'.' | b':')
+            })
+        {
+            return Err(UnknownThreatId);
+        }
+        let mut bytes = [0; 63];
+        bytes[..value.len()].copy_from_slice(value.as_bytes());
+        Ok(Self {
+            len: value.len() as u8,
+            bytes,
+        })
+    }
+    pub fn as_str(&self) -> &str {
+        core::str::from_utf8(&self.bytes[..usize::from(self.len)]).expect("validated ASCII ID")
+    }
 
-    pub const fn profile(self) -> ThreatProfile {
+    #[allow(non_upper_case_globals)]
+    pub const Bandit: Self = Self::from_static("bandit");
+    #[allow(non_upper_case_globals)]
+    pub const Deserter: Self = Self::from_static("deserter");
+    #[allow(non_upper_case_globals)]
+    pub const Poacher: Self = Self::from_static("poacher");
+    #[allow(non_upper_case_globals)]
+    pub const Smuggler: Self = Self::from_static("smuggler");
+    #[allow(non_upper_case_globals)]
+    pub const Cultist: Self = Self::from_static("cultist");
+    #[allow(non_upper_case_globals)]
+    pub const GraveRobber: Self = Self::from_static("grave_robber");
+    #[allow(non_upper_case_globals)]
+    pub const TownWatch: Self = Self::from_static("town_watch");
+    #[allow(non_upper_case_globals)]
+    pub const ArmedRetainer: Self = Self::from_static("armed_retainer");
+    #[allow(non_upper_case_globals)]
+    pub const AngryMob: Self = Self::from_static("angry_mob");
+    #[allow(non_upper_case_globals)]
+    pub const Wolf: Self = Self::from_static("wolf");
+    #[allow(non_upper_case_globals)]
+    pub const Boar: Self = Self::from_static("boar");
+    #[allow(non_upper_case_globals)]
+    pub const Bear: Self = Self::from_static("bear");
+    #[allow(non_upper_case_globals)]
+    pub const FeralDog: Self = Self::from_static("feral_dog");
+    #[allow(non_upper_case_globals)]
+    pub const TrainedDog: Self = Self::from_static("trained_dog");
+    #[allow(non_upper_case_globals)]
+    pub const Goblin: Self = Self::from_static("goblin");
+    #[allow(non_upper_case_globals)]
+    pub const Orc: Self = Self::from_static("orc");
+    #[allow(non_upper_case_globals)]
+    pub const Skeleton: Self = Self::from_static("skeleton");
+    #[allow(non_upper_case_globals)]
+    pub const Ghoul: Self = Self::from_static("ghoul");
+    #[allow(non_upper_case_globals)]
+    pub const Revenant: Self = Self::from_static("revenant");
+    #[allow(non_upper_case_globals)]
+    pub const Werewolf: Self = Self::from_static("werewolf");
+    #[allow(non_upper_case_globals)]
+    pub const Alp: Self = Self::from_static("alp");
+    #[allow(non_upper_case_globals)]
+    pub const Kobold: Self = Self::from_static("kobold");
+    #[allow(non_upper_case_globals)]
+    pub const WildMan: Self = Self::from_static("wild_man");
+    #[allow(non_upper_case_globals)]
+    pub const SpectralHound: Self = Self::from_static("spectral_hound");
+    #[allow(non_upper_case_globals)]
+    pub const Nachzehrer: Self = Self::from_static("nachzehrer");
+
+    pub fn profile(self) -> ThreatProfile {
         profile(self)
     }
 
@@ -111,11 +151,30 @@ impl ThreatId {
 impl FromStr for ThreatId {
     type Err = UnknownThreatId;
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        ALL_THREATS
-            .iter()
-            .copied()
-            .find(|id| id.as_str() == value)
+        let id = Self::try_new(value)?;
+        crate::quest_catalog::catalog()
+            .monster(value)
+            .map(|_| id)
             .ok_or(UnknownThreatId)
+    }
+}
+
+impl core::fmt::Debug for ThreatId {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+impl Serialize for ThreatId {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+impl<'de> Deserialize<'de> for ThreatId {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        value
+            .parse()
+            .map_err(|_| serde::de::Error::custom("unknown threat ID"))
     }
 }
 
@@ -193,17 +252,47 @@ pub enum WitnessCapability {
     Ordinary,
     Trained,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ReportDescription {
-    ArmedPeople,
-    SmallUprightFigures,
-    LargeUprightBeast,
-    GauntHuman,
-    WalkingDead,
-    LargeAnimal,
-    DoglikeBeast,
-    UnseenNightVisitor,
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ReportDescription(ThreatId);
+impl ReportDescription {
+    #[allow(non_upper_case_globals)]
+    pub const ArmedPeople: Self = Self(ThreatId::from_static("armed_people"));
+    #[allow(non_upper_case_globals)]
+    pub const SmallUprightFigures: Self = Self(ThreatId::from_static("small_upright_figures"));
+    #[allow(non_upper_case_globals)]
+    pub const LargeUprightBeast: Self = Self(ThreatId::from_static("large_upright_beast"));
+    #[allow(non_upper_case_globals)]
+    pub const GauntHuman: Self = Self(ThreatId::from_static("gaunt_human"));
+    #[allow(non_upper_case_globals)]
+    pub const WalkingDead: Self = Self(ThreatId::from_static("walking_dead"));
+    #[allow(non_upper_case_globals)]
+    pub const LargeAnimal: Self = Self(ThreatId::from_static("large_animal"));
+    #[allow(non_upper_case_globals)]
+    pub const DoglikeBeast: Self = Self(ThreatId::from_static("doglike_beast"));
+    #[allow(non_upper_case_globals)]
+    pub const UnseenNightVisitor: Self = Self(ThreatId::from_static("unseen_night_visitor"));
+    pub fn try_new(value: &str) -> Result<Self, UnknownThreatId> {
+        ThreatId::try_new(value).map(Self)
+    }
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+impl core::fmt::Debug for ReportDescription {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl Serialize for ReportDescription {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+impl<'de> Deserialize<'de> for ReportDescription {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_new(&String::deserialize(deserializer)?)
+            .map_err(|_| serde::de::Error::custom("invalid description ID"))
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum EvidenceKind {
@@ -432,13 +521,28 @@ const fn investigation(
     }
 }
 
-pub const fn profile(id: ThreatId) -> ThreatProfile {
+fn legacy_profile(id: ThreatId) -> ThreatProfile {
     use ActivityTime::*;
     use AttackStyle::*;
     use CatalogCountermeasure::*;
     use Habitat::*;
     use Protection::*;
-    use ReportDescription::*;
+    #[allow(non_upper_case_globals)]
+    const ArmedPeople: ReportDescription = ReportDescription::ArmedPeople;
+    #[allow(non_upper_case_globals)]
+    const SmallUprightFigures: ReportDescription = ReportDescription::SmallUprightFigures;
+    #[allow(non_upper_case_globals)]
+    const LargeUprightBeast: ReportDescription = ReportDescription::LargeUprightBeast;
+    #[allow(non_upper_case_globals)]
+    const GauntHuman: ReportDescription = ReportDescription::GauntHuman;
+    #[allow(non_upper_case_globals)]
+    const WalkingDead: ReportDescription = ReportDescription::WalkingDead;
+    #[allow(non_upper_case_globals)]
+    const LargeAnimal: ReportDescription = ReportDescription::LargeAnimal;
+    #[allow(non_upper_case_globals)]
+    const DoglikeBeast: ReportDescription = ReportDescription::DoglikeBeast;
+    #[allow(non_upper_case_globals)]
+    const UnseenNightVisitor: ReportDescription = ReportDescription::UnseenNightVisitor;
     use RigTopology::*;
     use Temperament::*;
     let (name, aliases, base, curate, mut c, mut i): (
@@ -1026,6 +1130,7 @@ pub const fn profile(id: ThreatId) -> ThreatProfile {
                 "Locate and contain the corpse. Fire is an unverified lead, not an autoresolve modifier.",
             ),
         ),
+        _ => return legacy_profile(ThreatId::Bandit),
     };
     if matches!(id, ThreatId::Ghoul | ThreatId::Nachzehrer) {
         c.disease_risk = 70;
@@ -1188,6 +1293,241 @@ pub const fn profile(id: ThreatId) -> ThreatProfile {
     }
 }
 
+/// Returns mechanics from the startup-compiled authoring catalog. The legacy
+/// typed profile supplies the closed enum arrays still consumed by tactical
+/// code; scalar combat values and player-facing identity are authoritative in
+/// YAML and use ordinary resistance/padding rather than damage multipliers.
+pub fn profile(id: ThreatId) -> ThreatProfile {
+    static PROFILES: OnceLock<BTreeMap<ThreatId, ThreatProfile>> = OnceLock::new();
+    *PROFILES
+        .get_or_init(|| {
+            crate::quest_catalog::catalog()
+                .monsters()
+                .map(|monster| {
+                    let id = ThreatId::try_new(&monster.id).expect("validated monster ID");
+                    (id, compile_profile(id, monster))
+                })
+                .collect()
+        })
+        .get(&id)
+        .expect("threat ID was validated against startup catalog")
+}
+
+fn compile_profile(
+    id: ThreatId,
+    authored: &'static crate::quest_catalog::Monster,
+) -> ThreatProfile {
+    let mut profile = legacy_profile(id);
+    profile.display_name = authored.name.as_str();
+    profile.singular_name = authored.singular.as_str();
+    profile.plural_name = authored.plural.as_str();
+    profile.id = id;
+    profile.aliases = Box::leak(
+        authored
+            .aliases
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+    );
+    profile.base_weight = authored.base_weight;
+    profile.curation_weight = authored.curation_weight;
+    profile.combat.rig = match authored.combat.rig.as_str() {
+        "humanoid" => RigTopology::Humanoid,
+        "quadruped" => RigTopology::Quadruped,
+        _ => unreachable!("validated combat rig"),
+    };
+    profile.combat.speed_m_per_minute = authored.combat.speed_m_per_minute;
+    profile.combat.weight_kg = authored.combat.weight_kg;
+    profile.combat.attack = match authored.combat.attack.as_str() {
+        "blade" => AttackStyle::Blade,
+        "blunt" | "tusk" => AttackStyle::Blunt,
+        "knife" => AttackStyle::Knife,
+        "spear" => AttackStyle::Spear,
+        "bow" => AttackStyle::Bow,
+        "bite" => AttackStyle::Bite,
+        "claw" => AttackStyle::Claw,
+        _ => unreachable!("validated attack style"),
+    };
+    profile.combat.ranged = authored.combat.ranged;
+    profile.combat.precision_bonus = authored.combat.precision_bonus_milli as f32 / 1_000.0;
+    profile.combat.training_multiplier =
+        f32::from(authored.combat.training_multiplier_milli) / 1_000.0;
+    profile.combat.perception = authored.combat.perception;
+    profile.combat.stealth = authored.combat.stealth;
+    profile.combat.morale = authored.combat.morale;
+    profile.combat.protection = match authored.combat.protection.as_str() {
+        "unarmored" => Protection::Unarmored,
+        "hide" => Protection::Hide,
+        "shielded" => Protection::Shielded,
+        "armored" => Protection::Armored,
+        "bone" => Protection::Bone,
+        "supernatural" => Protection::Supernatural,
+        _ => unreachable!("validated protection"),
+    };
+    profile.combat.innate_protection = InnateProtection {
+        resistance_joules: authored.combat.resistance_joules as f32,
+        padding_joules: authored.combat.padding_joules as f32,
+    };
+    profile.combat.disease_risk = authored.combat.disease_risk;
+    profile.combat.fear = authored.combat.fear;
+    profile.combat.temperament = match authored.combat.temperament.as_str() {
+        "cowardly" => Temperament::Cowardly,
+        "cautious" => Temperament::Cautious,
+        "disciplined" => Temperament::Disciplined,
+        "aggressive" => Temperament::Aggressive,
+        "relentless" => Temperament::Relentless,
+        "elusive" => Temperament::Elusive,
+        _ => unreachable!("validated temperament"),
+    };
+    profile.combat.encounter_scale_basis_points = authored.combat.encounter_scale_basis_points;
+    profile.combat.loot_item_id = authored.combat.loot_item_id.as_deref();
+    profile.investigation.preparation_advice = authored.investigation.preparation_advice.as_str();
+    profile.investigation.habitats = Box::leak(
+        authored
+            .investigation
+            .habitats
+            .iter()
+            .map(|value| catalog_habitat(value))
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+    );
+    profile.investigation.activity = match authored.investigation.activity.as_str() {
+        "day" => ActivityTime::Day,
+        "night" => ActivityTime::Night,
+        "any" => ActivityTime::Any,
+        _ => unreachable!("validated activity"),
+    };
+    profile.investigation.victim_tags = Box::leak(
+        authored
+            .investigation
+            .victim_tags
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+    );
+    profile.investigation.tracks = leak_evidence(&authored.investigation.tracks);
+    profile.investigation.wounds = leak_evidence(&authored.investigation.wounds);
+    profile.investigation.disturbances = leak_evidence(&authored.investigation.disturbances);
+    profile.investigation.odors = leak_evidence(&authored.investigation.odors);
+    profile.investigation.sounds = Box::leak(
+        authored
+            .investigation
+            .sounds
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+    );
+    profile.investigation.silhouettes = Box::leak(
+        authored
+            .investigation
+            .silhouettes
+            .iter()
+            .map(|value| catalog_report(value))
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+    );
+    profile.investigation.mistaken_for = Box::leak(
+        authored
+            .investigation
+            .mistaken_for
+            .iter()
+            .map(|value| ThreatId::try_new(value).expect("validated monster reference"))
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+    );
+    profile.investigation.distinguishing_clues =
+        leak_evidence(&authored.investigation.distinguishing_clues);
+    profile.investigation.countermeasure_hypotheses = Box::leak(
+        authored
+            .investigation
+            .countermeasure_hypotheses
+            .iter()
+            .filter_map(|value| match value.as_str() {
+                "fire" => Some(CountermeasureHypothesis::Fire),
+                "silver" => Some(CountermeasureHypothesis::Silver),
+                "daylight" => Some(CountermeasureHypothesis::Daylight),
+                "courage" => Some(CountermeasureHypothesis::Courage),
+                "shattering_blow" => None,
+                _ => unreachable!("validated countermeasure"),
+            })
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+    );
+    profile.investigation.evidence_visibility = authored.investigation.evidence_visibility;
+    profile.investigation.identification_challenge =
+        authored.investigation.identification_challenge;
+    profile.investigation.location_challenge = authored.investigation.location_challenge;
+    profile
+}
+
+fn catalog_habitat(value: &str) -> Habitat {
+    match value {
+        "road" => Habitat::Road,
+        "open" => Habitat::Open,
+        "sparse_woods" => Habitat::SparseWoods,
+        "deep_woods" => Habitat::DeepWoods,
+        "cave" => Habitat::Cave,
+        "crypt" => Habitat::Crypt,
+        "ruin" => Habitat::Ruin,
+        "camp" => Habitat::Camp,
+        "mine" => Habitat::Mine,
+        "graveyard" => Habitat::Graveyard,
+        "occupied_house" => Habitat::OccupiedHouse,
+        _ => unreachable!("validated habitat"),
+    }
+}
+
+fn catalog_evidence(value: &str) -> EvidenceKind {
+    match value {
+        "boot_prints" | "large_boot_prints" | "bare_tracks" | "large_bare_tracks" => {
+            EvidenceKind::BootPrints
+        }
+        "small_bare_tracks" => EvidenceKind::SmallBareTracks,
+        "hoofprints" => EvidenceKind::Hoofprints,
+        "pawprints" | "large_pawprints" | "pack_tracks" | "changing_tracks" => {
+            EvidenceKind::Pawprints
+        }
+        "claw_marks" => EvidenceKind::ClawMarks,
+        "gnawed_bones" | "bone_dust" => EvidenceKind::GnawedBones,
+        "grave_soil" | "opened_graves" => EvidenceKind::GraveSoil,
+        "no_breath" => EvidenceKind::NoBreath,
+        "weapon_cuts" | "knife_wounds" | "heavy_weapon_cuts" | "tusk_wounds" => {
+            EvidenceKind::WeaponCuts
+        }
+        "arrow_shafts" => EvidenceKind::ArrowShafts,
+        "corpse_odor" => EvidenceKind::CorpseOdor,
+        "sulfur_odor" => EvidenceKind::SulfurOdor,
+        "cold_patch" => EvidenceKind::ColdPatch,
+        "missing_blood" => EvidenceKind::MissingBlood,
+        "disturbed_goods" | "camp_debris" | "snares" | "contraband" | "ritual_marks"
+        | "tool_marks" | "official_seals" | "heraldry" | "broken_goods" | "rooted_soil"
+        | "human_refuse" | "collar_marks" | "military_kit" | "local_slogans"
+        | "personal_grudge" | "disturbed_bedding" | "moved_goods" | "helpful_mischief"
+        | "woven_branches" | "damaged_shroud" | "eaten_shroud" => EvidenceKind::DisturbedGoods,
+        "human_speech" => EvidenceKind::HumanSpeech,
+        "animal_odor" | "woodsmoke" | "smoke" => EvidenceKind::AnimalOdor,
+        "broken_foliage" => EvidenceKind::BrokenFoliage,
+        "bite_wounds" => EvidenceKind::BiteWounds,
+        "blunt_damage" => EvidenceKind::BluntDamage,
+        _ => EvidenceKind::DisturbedGoods,
+    }
+}
+fn leak_evidence(values: &[String]) -> &'static [EvidenceKind] {
+    Box::leak(
+        values
+            .iter()
+            .map(|value| catalog_evidence(value))
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+    )
+}
+fn catalog_report(value: &str) -> ReportDescription {
+    ReportDescription::try_new(value).expect("validated report description ID")
+}
+
 const fn display_forms(id: ThreatId, fallback: &'static str) -> (&'static str, &'static str) {
     match id {
         ThreatId::TownWatch => ("Town watch", "Town watch"),
@@ -1224,7 +1564,7 @@ const fn display_forms(id: ThreatId, fallback: &'static str) -> (&'static str, &
     }
 }
 
-pub(crate) const fn habitat_weight(id: ThreatId, habitat: Habitat) -> u16 {
+pub(crate) fn habitat_weight(id: ThreatId, habitat: Habitat) -> u16 {
     let p = profile(id);
     if !contains_habitat(p.investigation.habitats, habitat) {
         return 0;
@@ -1356,59 +1696,25 @@ pub fn report_likelihood(
 }
 
 pub fn description_likelihood(id: ThreatId, report: ReportDescription) -> u32 {
-    use ReportDescription::*;
-    match (id, report) {
-        (ThreatId::Werewolf, LargeUprightBeast) => 95,
-        (ThreatId::WildMan, LargeUprightBeast) => 85,
-        (ThreatId::Orc, LargeUprightBeast) => 70,
-        (ThreatId::Bear, LargeUprightBeast) => 45,
-        (ThreatId::SpectralHound, DoglikeBeast) => 65,
-        (ThreatId::Wolf, DoglikeBeast) => 100,
-        (ThreatId::FeralDog | ThreatId::TrainedDog, DoglikeBeast) => 85,
-        (ThreatId::Werewolf, DoglikeBeast) => 35,
-        (ThreatId::Alp, UnseenNightVisitor) => 100,
-        (ThreatId::Nachzehrer, UnseenNightVisitor) => 45,
-        (ThreatId::Kobold, UnseenNightVisitor) => 55,
-        (ThreatId::Skeleton, WalkingDead) => 100,
-        (ThreatId::Ghoul | ThreatId::Revenant | ThreatId::Nachzehrer, WalkingDead) => 80,
-        (ThreatId::Goblin, SmallUprightFigures) => 100,
-        (ThreatId::Kobold, SmallUprightFigures) => 80,
-        _ if profile(id).investigation.silhouettes.contains(&report) => 60,
-        _ => 0,
-    }
+    crate::quest_catalog::catalog()
+        .relation(&format!("description.{}", report.as_str()))
+        .and_then(|relation| {
+            relation
+                .candidates
+                .iter()
+                .find(|candidate| candidate.id == id.as_str())
+        })
+        .map_or(0, |candidate| candidate.plausibility)
 }
 
-pub const fn regional_prior(id: ThreatId, region: RegionalContext) -> u16 {
+pub fn regional_prior(id: ThreatId, region: RegionalContext) -> u16 {
     if matches!(region, RegionalContext::GenericFantasy) {
         return 100;
     }
-    match id {
-        ThreatId::Bandit
-        | ThreatId::Deserter
-        | ThreatId::Poacher
-        | ThreatId::Smuggler
-        | ThreatId::GraveRobber
-        | ThreatId::TownWatch
-        | ThreatId::ArmedRetainer
-        | ThreatId::AngryMob => 130,
-        ThreatId::Wolf
-        | ThreatId::Boar
-        | ThreatId::Bear
-        | ThreatId::FeralDog
-        | ThreatId::TrainedDog => 140,
-        ThreatId::Alp
-        | ThreatId::Kobold
-        | ThreatId::WildMan
-        | ThreatId::SpectralHound
-        | ThreatId::Nachzehrer => 115,
-        ThreatId::Goblin
-        | ThreatId::Orc
-        | ThreatId::Skeleton
-        | ThreatId::Ghoul
-        | ThreatId::Revenant
-        | ThreatId::Werewolf
-        | ThreatId::Cultist => 70,
-    }
+    crate::quest_catalog::catalog()
+        .monster(id.as_str())
+        .expect("validated threat identity")
+        .northern_germany_prior
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1451,9 +1757,8 @@ pub fn rank_candidates_in_region(
             break;
         }
     }
-    let mut ranked: Vec<_> = ALL_THREATS
-        .iter()
-        .copied()
+    let mut ranked: Vec<_> = catalog_threats()
+        .into_iter()
         .filter_map(|id| {
             let likelihood = report_likelihood(id, report, visibility, distance, capability);
             if likelihood == 0 {
@@ -1509,17 +1814,16 @@ const ALL_HABITATS: &[Habitat] = &[
 ];
 
 pub fn ambiguous_description_cardinality(report: ReportDescription) -> usize {
-    ALL_THREATS
-        .iter()
-        .filter(|id| description_likelihood(**id, report) > 0)
+    catalog_threats()
+        .into_iter()
+        .filter(|id| description_likelihood(*id, report) > 0)
         .count()
 }
 
 pub fn distinguishing_clue_set_count(report: ReportDescription) -> usize {
     let mut sets: Vec<&'static [EvidenceKind]> = Vec::new();
-    for id in ALL_THREATS
-        .iter()
-        .copied()
+    for id in catalog_threats()
+        .into_iter()
         .filter(|id| description_likelihood(*id, report) > 0)
     {
         let clues = profile(id).investigation.distinguishing_clues;
@@ -1585,12 +1889,13 @@ pub struct CatalogDiagnostic {
 
 pub fn validate_catalog() -> Vec<CatalogDiagnostic> {
     let mut errors = Vec::new();
-    if has_duplicates(ALL_THREATS) {
+    let threats = catalog_threats();
+    if has_duplicates(&threats) {
         errors.push(CatalogDiagnostic {
             message: "duplicate stable threat ID".into(),
         });
     }
-    for id in ALL_THREATS {
+    for id in &threats {
         let p = profile(*id);
         if id.as_str().parse::<ThreatId>() != Ok(*id) {
             errors.push(CatalogDiagnostic {

@@ -372,30 +372,21 @@ pub(crate) fn materialize_generated_problem(
 fn incident_circumstance_label(
     value: adventuresim_core::quest_generation::Circumstance,
 ) -> &'static str {
-    use adventuresim_core::quest_generation::Circumstance;
-    match value {
-        Circumstance::NightWindow => "looking out after dark",
-        Circumstance::SecretRiversideMeeting => "being near the river at night",
-        Circumstance::AdultVenue => "leaving a public house late",
-        Circumstance::RoadJourney => "travelling on the road",
-        Circumstance::GraveDuty => "working near the graves",
-        Circumstance::LivestockWatch => "watching the livestock",
-    }
+    adventuresim_core::quest_catalog::catalog()
+        .circumstance(value.as_str())
+        .expect("generated circumstance exists in startup catalog")
+        .statement
+        .as_str()
 }
 
 fn incident_evidence_description(
     kind: adventuresim_core::quest_generation::EvidenceKind,
 ) -> &'static str {
-    use adventuresim_core::quest_generation::EvidenceKind;
-    match kind {
-        EvidenceKind::Footprints => "a fresh trail of footprints",
-        EvidenceKind::ClothScrap => "a torn scrap of cloth",
-        EvidenceKind::BoneDust => "unusual dust and bone fragments",
-        EvidenceKind::BloodlessCorpse => "a body bearing no obvious wound",
-        EvidenceKind::DroppedToken => "a token dropped during the incident",
-        EvidenceKind::DragMarks => "fresh drag marks",
-        EvidenceKind::LedgerEntry => "a newly relevant ledger entry",
-    }
+    adventuresim_core::quest_catalog::catalog()
+        .evidence(kind.as_str())
+        .expect("generated evidence exists in startup catalog")
+        .base_description
+        .as_str()
 }
 
 fn follow_up_summary(symptom: &str) -> &'static str {

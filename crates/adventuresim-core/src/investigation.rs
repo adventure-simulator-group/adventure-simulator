@@ -490,9 +490,10 @@ pub fn infer_threats(mut input: InferenceInput) -> Result<SafeInference, Validat
 mod tests {
     use super::*;
     use crate::bestiary::{
-        ObservationDistance::Medium, ObservationVisibility::Dark,
-        ReportDescription::LargeUprightBeast, WitnessCapability::Ordinary,
+        ObservationDistance::Medium, ObservationVisibility::Dark, ReportDescription,
+        WitnessCapability::Ordinary,
     };
+    const LARGE_UPRIGHT_BEAST: ReportDescription = ReportDescription::LargeUprightBeast;
 
     fn id<T>(make: impl FnOnce(String) -> Result<T, ValidationError>, value: &str) -> T {
         make(value.into()).unwrap()
@@ -711,7 +712,7 @@ mod tests {
     fn inference_has_only_visible_inputs_and_safe_provenance() {
         let base = InferenceInput {
             report: VisibleReport {
-                description: LargeUprightBeast,
+                description: LARGE_UPRIGHT_BEAST,
                 visibility: Dark,
                 distance: Medium,
                 capability: Ordinary,

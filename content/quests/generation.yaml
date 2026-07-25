@@ -1,0 +1,144 @@
+{
+  "templates": [
+    {"id":"recurring_depredation","label":"Recurring depredation","routes":["physical_trail","pattern_surveillance","social_inquiry"],"objectives":["defeat","drive_off"],"cause_finales":{"*":["defeat","drive_off"]},"consequence_profile":"recurring_depredation","incident_interval_minutes":2880,"maximum_incidents":5},
+    {"id":"disappearance_or_loss","label":"Disappearance or loss","routes":["physical_trail","social_inquiry"],"objectives":["rescue","retrieve_return","expose"],"cause_finales":{"hostile":["rescue"],"concealment":["rescue"],"incidental_loss":["retrieve_return"],"fabricated":["expose"]},"consequence_profile":"disappearance_or_loss","incident_interval_minutes":2880,"maximum_incidents":5}
+  ],
+  "consequences": [
+    {"id":"recurring_undead","family":"recurring_depredation","causes":["ghoul","werewolf"],"symptom":"night_screams","buy_bps":400,"sell_penalty_bps":200,"encounter_frequency_bps":700,"encounter_archetype":"undead","disease_intensity":180,"public_summary":"Locals report troubling sounds and disappearances after dark."},
+    {"id":"recurring_livestock","family":"recurring_depredation","causes":["wolf","goblin"],"symptom":"vanished_livestock","buy_bps":700,"sell_penalty_bps":300,"encounter_frequency_bps":1000,"encounter_archetype":"goblins","disease_intensity":0,"public_summary":"Livestock have been disappearing from nearby holdings."},
+    {"id":"recurring_default","family":"recurring_depredation","causes":["*"],"symptom":"missing_caravans","buy_bps":1200,"sell_penalty_bps":500,"encounter_frequency_bps":1500,"encounter_archetype":"bandits","disease_intensity":0,"public_summary":"Several expected caravans have not arrived."},
+    {"id":"loss_default","family":"disappearance_or_loss","causes":["*"],"symptom":"empty_stalls","buy_bps":900,"sell_penalty_bps":400,"encounter_frequency_bps":500,"encounter_archetype":null,"disease_intensity":0,"public_summary":"A disappearance has disrupted work and trade, but nobody agrees on the cause."}
+  ],
+  "relations": [
+    {"id":"family","candidates":[
+      {"id":"recurring_depredation","plausibility":100,"curation":100,"hard_zero_reason":null,"required_bridge":null,"factors":["family_rotation"]},
+      {"id":"disappearance_or_loss","plausibility":100,"curation":100,"hard_zero_reason":null,"required_bridge":null,"factors":["family_rotation"]}
+    ]},
+    {"id":"cause.recurring_depredation","candidates":[
+      {"id":"bandit","plausibility":75,"curation":80,"hard_zero_reason":null,"required_bridge":null,"factors":["bestiary"]},
+      {"id":"goblin","plausibility":70,"curation":75,"hard_zero_reason":null,"required_bridge":null,"factors":["bestiary"]},
+      {"id":"ghoul","plausibility":40,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["bestiary"]},
+      {"id":"skeleton","plausibility":35,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["bestiary"]},
+      {"id":"werewolf","plausibility":45,"curation":60,"hard_zero_reason":null,"required_bridge":null,"factors":["bestiary"]},
+      {"id":"smuggler","plausibility":25,"curation":65,"hard_zero_reason":null,"required_bridge":null,"factors":["bestiary"]},
+      {"id":"wolf","plausibility":65,"curation":65,"hard_zero_reason":null,"required_bridge":null,"factors":["bestiary"]}
+    ]},
+    {"id":"cause.disappearance_or_loss","candidates":[
+      {"id":"bandit","plausibility":75,"curation":80,"hard_zero_reason":null,"required_bridge":null,"factors":["bestiary"]},
+      {"id":"goblin","plausibility":30,"curation":75,"hard_zero_reason":null,"required_bridge":null,"factors":["bestiary"]},
+      {"id":"ghoul","plausibility":40,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["bestiary"]},
+      {"id":"skeleton","plausibility":35,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["bestiary"]},
+      {"id":"werewolf","plausibility":25,"curation":60,"hard_zero_reason":null,"required_bridge":null,"factors":["bestiary"]},
+      {"id":"smuggler","plausibility":60,"curation":65,"hard_zero_reason":null,"required_bridge":null,"factors":["bestiary"]},
+      {"id":"wolf","plausibility":20,"curation":65,"hard_zero_reason":null,"required_bridge":null,"factors":["bestiary"]},
+      {"id":"concealment","plausibility":35,"curation":75,"hard_zero_reason":null,"required_bridge":null,"factors":["nonhostile"]},
+      {"id":"incidental_loss","plausibility":40,"curation":65,"hard_zero_reason":null,"required_bridge":null,"factors":["nonhostile"]},
+      {"id":"fabricated","plausibility":20,"curation":55,"hard_zero_reason":null,"required_bridge":null,"factors":["nonhostile"]}
+    ]},
+    {"id":"site.skeleton","candidates":[
+      {"id":"crypt","plausibility":95,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["natural_habitat"]},
+      {"id":"occupied_house","plausibility":3,"curation":70,"hard_zero_reason":null,"required_bridge":"skeletons_occupied_house","factors":["rare_bridge"]}
+    ]},
+    {"id":"site.wolf","candidates":[
+      {"id":"abandoned_farm","plausibility":80,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["common"]},
+      {"id":"crypt","plausibility":0,"curation":0,"hard_zero_reason":"A quadruped pack cannot maintain a sealed crypt.","required_bridge":null,"factors":["impossible"]}
+    ]},
+    {"id":"circumstance.child","candidates":[
+      {"id":"night_window","plausibility":90,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["household"]},
+      {"id":"adult_venue","plausibility":2,"curation":70,"hard_zero_reason":null,"required_bridge":"child_at_adult_venue","factors":["rare_venue"]},
+      {"id":"road","plausibility":55,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["travel"]}
+    ]},
+    {"id":"circumstance.cleric","candidates":[
+      {"id":"grave_duty","plausibility":70,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["vocation"]},
+      {"id":"adult_venue","plausibility":0,"curation":0,"hard_zero_reason":"The assigned cleric witness is not present in the adult venue.","required_bridge":null,"factors":["impossible_venue"]}
+    ]},
+    {"id":"reliability.baseline","candidates":[
+      {"id":"truthful","plausibility":65,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["baseline"]},
+      {"id":"mistaken","plausibility":25,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["possible"]},
+      {"id":"evasive","plausibility":25,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["possible"]},
+      {"id":"deceptive","plausibility":25,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["possible"]},
+      {"id":"partly_truthful","plausibility":45,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["partial"]}
+    ]},
+    {"id":"reliability.child","candidates":[
+      {"id":"truthful","plausibility":65,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["baseline"]},
+      {"id":"mistaken","plausibility":70,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["darkness"]},
+      {"id":"deceptive","plausibility":0,"curation":0,"hard_zero_reason":"The initial child account is not authored as deliberate fabrication.","required_bridge":null,"factors":["child_hard_zero"]}
+    ]},
+    {"id":"reliability.embarrassing_context","candidates":[
+      {"id":"evasive","plausibility":75,"curation":70,"hard_zero_reason":null,"required_bridge":null}
+    ]},
+    {"id":"reliability.fabricated_claim","candidates":[
+      {"id":"deceptive","plausibility":80,"curation":70,"hard_zero_reason":null,"required_bridge":null}
+    ]},
+    {"id":"reliability.night_window","candidates":[
+      {"id":"mistaken","plausibility":70,"curation":70,"hard_zero_reason":null,"required_bridge":null}
+    ]},
+    {"id":"account.baseline","candidates":[
+      {"id":"visual","plausibility":60,"curation":70,"hard_zero_reason":null,"required_bridge":null},{"id":"heard","plausibility":30,"curation":70,"hard_zero_reason":null,"required_bridge":null},{"id":"tracks","plausibility":45,"curation":70,"hard_zero_reason":null,"required_bridge":null}
+    ]},
+    {"id":"account.night_window","candidates":[
+      {"id":"visual","plausibility":60,"curation":70,"hard_zero_reason":null,"required_bridge":null},{"id":"heard","plausibility":80,"curation":70,"hard_zero_reason":null,"required_bridge":null},{"id":"tracks","plausibility":45,"curation":70,"hard_zero_reason":null,"required_bridge":null}
+    ]},
+    {"id":"account.mistaken","candidates":[
+      {"id":"visual","plausibility":60,"curation":70,"hard_zero_reason":null,"required_bridge":null},{"id":"heard","plausibility":30,"curation":70,"hard_zero_reason":null,"required_bridge":null},{"id":"tracks","plausibility":0,"curation":0,"hard_zero_reason":"A mistaken eyewitness does not provide the precise track account.","required_bridge":null}
+    ]},
+    {"id":"route.recurring_depredation","candidates":[
+      {"id":"direct","plausibility":70,"curation":70,"hard_zero_reason":null,"required_bridge":null},{"id":"cautious","plausibility":45,"curation":70,"hard_zero_reason":null,"required_bridge":null}
+    ]},
+    {"id":"route.disappearance_or_loss","candidates":[
+      {"id":"direct","plausibility":55,"curation":70,"hard_zero_reason":null,"required_bridge":null},{"id":"cautious","plausibility":75,"curation":70,"hard_zero_reason":null,"required_bridge":null}
+    ]},
+    {"id":"pattern.recurring_depredation","candidates":[
+      {"id":"nightly","plausibility":60,"curation":70,"hard_zero_reason":null,"required_bridge":null},{"id":"roadside","plausibility":55,"curation":70,"hard_zero_reason":null,"required_bridge":null},{"id":"victim_specific","plausibility":30,"curation":65,"hard_zero_reason":null,"required_bridge":null},{"id":"irregular","plausibility":35,"curation":55,"hard_zero_reason":null,"required_bridge":null}
+    ]},
+    {"id":"pattern.disappearance_or_loss","candidates":[
+      {"id":"nightly","plausibility":60,"curation":70,"hard_zero_reason":null,"required_bridge":null},{"id":"roadside","plausibility":55,"curation":70,"hard_zero_reason":null,"required_bridge":null},{"id":"victim_specific","plausibility":70,"curation":65,"hard_zero_reason":null,"required_bridge":null},{"id":"irregular","plausibility":35,"curation":55,"hard_zero_reason":null,"required_bridge":null}
+    ]},
+    {"id":"evidence.baseline","candidates":[
+      {"id":"footprints","plausibility":45,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["possible"]},
+      {"id":"cloth_scrap","plausibility":45,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["portable"]},
+      {"id":"bone_dust","plausibility":25,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["possible"]},
+      {"id":"bloodless_corpse","plausibility":25,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["possible"]},
+      {"id":"dropped_token","plausibility":45,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["portable"]},
+      {"id":"drag_marks","plausibility":25,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["possible"]},
+      {"id":"ledger_entry","plausibility":25,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["possible"]}
+    ]},
+    {"id":"evidence.fabricated_claim","candidates":[
+      {"id":"bloodless_corpse","plausibility":0,"curation":0,"hard_zero_reason":"A fabricated loss cannot create a canonical corpse clue.","required_bridge":null,"factors":["fabrication_hard_zero"]},
+      {"id":"ledger_entry","plausibility":80,"curation":70,"hard_zero_reason":null,"required_bridge":null,"factors":["record"]}
+    ]},
+    {"id":"evidence.skeleton","candidates":[
+      {"id":"bone_dust","plausibility":90,"curation":70,"hard_zero_reason":null,"required_bridge":null}
+    ]},
+    {"id":"evidence.incidental_loss","candidates":[
+      {"id":"ledger_entry","plausibility":70,"curation":70,"hard_zero_reason":null,"required_bridge":null}
+    ]},
+    {"id":"evidence.trackable_ground","candidates":[
+      {"id":"footprints","plausibility":75,"curation":70,"hard_zero_reason":null,"required_bridge":null}
+    ]},
+    {"id":"description.armed_people","candidates":[
+      {"id":"bandit","plausibility":60,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"deserter","plausibility":60,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"poacher","plausibility":60,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"smuggler","plausibility":60,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"cultist","plausibility":60,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"grave_robber","plausibility":60,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"town_watch","plausibility":60,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"armed_retainer","plausibility":60,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"angry_mob","plausibility":60,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"orc","plausibility":60,"curation":100,"hard_zero_reason":null,"required_bridge":null}
+    ]},
+    {"id":"description.small_upright_figures","candidates":[
+      {"id":"goblin","plausibility":100,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"kobold","plausibility":80,"curation":100,"hard_zero_reason":null,"required_bridge":null}
+    ]},
+    {"id":"description.large_upright_beast","candidates":[
+      {"id":"werewolf","plausibility":95,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"wild_man","plausibility":85,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"orc","plausibility":70,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"bear","plausibility":45,"curation":100,"hard_zero_reason":null,"required_bridge":null}
+    ]},
+    {"id":"description.gaunt_human","candidates":[
+      {"id":"ghoul","plausibility":60,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"revenant","plausibility":60,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"wild_man","plausibility":60,"curation":100,"hard_zero_reason":null,"required_bridge":null}
+    ]},
+    {"id":"description.walking_dead","candidates":[
+      {"id":"skeleton","plausibility":100,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"ghoul","plausibility":80,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"revenant","plausibility":80,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"nachzehrer","plausibility":80,"curation":100,"hard_zero_reason":null,"required_bridge":null}
+    ]},
+    {"id":"description.large_animal","candidates":[
+      {"id":"boar","plausibility":60,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"bear","plausibility":60,"curation":100,"hard_zero_reason":null,"required_bridge":null}
+    ]},
+    {"id":"description.doglike_beast","candidates":[
+      {"id":"spectral_hound","plausibility":65,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"wolf","plausibility":100,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"feral_dog","plausibility":85,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"trained_dog","plausibility":85,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"werewolf","plausibility":35,"curation":100,"hard_zero_reason":null,"required_bridge":null}
+    ]},
+    {"id":"description.unseen_night_visitor","candidates":[
+      {"id":"alp","plausibility":100,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"nachzehrer","plausibility":45,"curation":100,"hard_zero_reason":null,"required_bridge":null},{"id":"kobold","plausibility":55,"curation":100,"hard_zero_reason":null,"required_bridge":null}
+    ]}
+  ]
+}

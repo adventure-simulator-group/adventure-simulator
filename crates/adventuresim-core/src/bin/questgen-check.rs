@@ -1,5 +1,6 @@
 use adventuresim_core::{
     local_problem::Scope,
+    quest_catalog::{QUEST_CATALOG_DIGEST, catalog},
     quest_generation::{CATALOG_REVISION, GenerationContext, audit, generate, test_witnesses},
 };
 
@@ -29,10 +30,16 @@ fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.first().map(String::as_str) {
         Some("validate") => {
+            let catalog = catalog();
             for ordinal in 0..2 {
                 generate(&context(0x187, ordinal)).unwrap_or_else(|e| panic!("{e:?}"));
             }
-            println!("catalog {CATALOG_REVISION}: valid");
+            println!(
+                "catalog {CATALOG_REVISION}: valid ({} monsters, {} documents, digest {})",
+                catalog.monsters().count(),
+                catalog.documents.len(),
+                QUEST_CATALOG_DIGEST
+            );
         }
         Some("explain") => {
             let seed = args

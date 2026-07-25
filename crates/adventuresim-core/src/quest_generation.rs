@@ -6,7 +6,7 @@
 //! remain private to strategic authority and developer tools.
 
 use crate::{
-    bestiary::{ALL_REPORTS, ReportDescription, ThreatId, description_likelihood},
+    bestiary::{ReportDescription, ThreatId, description_likelihood},
     case::{
         AssetId, Objective, ObjectiveExpression, ObjectiveId, ObjectivePath, ObjectiveRequirement,
         SubjectId,
@@ -18,7 +18,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const CATALOG_REVISION: &str = "questgen-2026-07-24.4";
+/// Content-addressed revision of the sorted startup-compiled YAML catalog.
+pub const CATALOG_REVISION: &str = crate::quest_catalog::QUEST_CATALOG_DIGEST;
 pub const MAX_SOLVER_CANDIDATES: usize = 4_096;
 pub const MAX_SOLVER_VISITED_NODES: usize = 16_384;
 pub const MAX_FACTOR_TRACE_RECORDS: usize = 32_768;
@@ -74,18 +75,64 @@ pub enum CanonicalCause {
     FabricatedClaim,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SiteKind {
-    Cave,
-    Crypt,
-    ForestCamp,
-    OccupiedHouse,
-    Riverside,
-    Graveyard,
-    Roadside,
-    AbandonedFarm,
+macro_rules! open_catalog_id {
+    ($name:ident { $($constant:ident => $value:literal),+ $(,)? }) => {
+        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub struct $name { len: u8, bytes: [u8; 63] }
+        impl $name {
+            $(#[allow(non_upper_case_globals)]
+            pub const $constant: Self = Self::from_static($value);)+
+            pub const fn from_static(value: &str) -> Self {
+                let source = value.as_bytes();
+                assert!(!source.is_empty() && source.len() <= 63);
+                let mut bytes = [0; 63];
+                let mut index = 0;
+                while index < source.len() {
+                    bytes[index] = source[index];
+                    index += 1;
+                }
+                Self { len: source.len() as u8, bytes }
+            }
+            pub fn try_new(value: &str) -> Result<Self, &'static str> {
+                if value.is_empty() || value.len() > 63 || !value.bytes().all(|byte|
+                    byte.is_ascii_lowercase() || byte.is_ascii_digit()
+                        || matches!(byte, b'_' | b'-' | b'.' | b':'))
+                {
+                    return Err("invalid open catalog ID");
+                }
+                let mut bytes = [0; 63];
+                bytes[..value.len()].copy_from_slice(value.as_bytes());
+                Ok(Self { len: value.len() as u8, bytes })
+            }
+            pub fn as_str(&self) -> &str {
+                core::str::from_utf8(&self.bytes[..usize::from(self.len)])
+                    .expect("catalog IDs are validated ASCII")
+            }
+        }
+        impl core::fmt::Debug for $name {
+            fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                formatter.write_str(self.as_str())
+            }
+        }
+        impl Serialize for $name {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                serializer.serialize_str(self.as_str())
+            }
+        }
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                let value = String::deserialize(deserializer)?;
+                Self::try_new(&value).map_err(serde::de::Error::custom)
+            }
+        }
+    };
 }
+
+open_catalog_id!(SiteKind {
+    Cave => "cave", Crypt => "crypt", ForestCamp => "forest_camp",
+    OccupiedHouse => "occupied_house", Riverside => "riverside",
+    Graveyard => "graveyard", Roadside => "roadside", AbandonedFarm => "abandoned_farm"
+});
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -96,27 +143,16 @@ pub enum SiteRole {
     LastKnown,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WitnessDemographic {
-    Child,
-    Laborer,
-    Merchant,
-    Cleric,
-    Guard,
-    Noble,
-}
+open_catalog_id!(WitnessDemographic {
+    Child => "child", Laborer => "laborer", Merchant => "merchant",
+    Cleric => "cleric", Guard => "guard", Noble => "noble"
+});
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Circumstance {
-    NightWindow,
-    SecretRiversideMeeting,
-    AdultVenue,
-    RoadJourney,
-    GraveDuty,
-    LivestockWatch,
-}
+open_catalog_id!(Circumstance {
+    NightWindow => "night_window", SecretRiversideMeeting => "secret_riverside",
+    AdultVenue => "adult_venue", RoadJourney => "road",
+    GraveDuty => "grave_duty", LivestockWatch => "livestock_watch"
+});
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -128,17 +164,11 @@ pub enum Reliability {
     PartlyTruthful,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum EvidenceKind {
-    Footprints,
-    ClothScrap,
-    BoneDust,
-    BloodlessCorpse,
-    DroppedToken,
-    DragMarks,
-    LedgerEntry,
-}
+open_catalog_id!(EvidenceKind {
+    Footprints => "footprints", ClothScrap => "cloth_scrap", BoneDust => "bone_dust",
+    BloodlessCorpse => "bloodless_corpse", DroppedToken => "dropped_token",
+    DragMarks => "drag_marks", LedgerEntry => "ledger_entry"
+});
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -882,270 +912,161 @@ fn reliability_candidates(
     circumstance: Circumstance,
     cause: CanonicalCause,
 ) -> Vec<Candidate<Reliability>> {
-    [
-        Reliability::Truthful,
-        Reliability::Mistaken,
-        Reliability::Evasive,
-        Reliability::Deceptive,
-        Reliability::PartlyTruthful,
-    ]
-    .into_iter()
-    .map(|value| {
-        let (p, impossible, factor) = match (demographic, circumstance, cause, value) {
-            (WitnessDemographic::Child, _, _, Reliability::Deceptive) => (
-                0,
-                Some("the initial child account is not authored as deliberate fabrication"),
-                "factor.reliability.child_hard_zero",
-            ),
-            (
-                _,
-                Circumstance::SecretRiversideMeeting | Circumstance::AdultVenue,
-                _,
-                Reliability::Evasive,
-            ) => (75, None, "factor.reliability.embarrassing_context"),
-            (_, _, CanonicalCause::FabricatedClaim, Reliability::Deceptive) => {
-                (80, None, "factor.reliability.fabricated_claim")
+    let catalog = crate::quest_catalog::catalog();
+    let baseline = catalog.relation("reliability.baseline").unwrap();
+    baseline
+        .candidates
+        .iter()
+        .map(|base| {
+            let value = match base.id.as_str() {
+                "truthful" => Reliability::Truthful,
+                "mistaken" => Reliability::Mistaken,
+                "evasive" => Reliability::Evasive,
+                "deceptive" => Reliability::Deceptive,
+                "partly_truthful" => Reliability::PartlyTruthful,
+                _ => unreachable!("validated reliability mechanic"),
+            };
+            let contextual = [
+                (
+                    demographic == WitnessDemographic::Child,
+                    "reliability.child",
+                ),
+                (
+                    matches!(
+                        circumstance,
+                        Circumstance::SecretRiversideMeeting | Circumstance::AdultVenue
+                    ),
+                    "reliability.embarrassing_context",
+                ),
+                (
+                    cause == CanonicalCause::FabricatedClaim,
+                    "reliability.fabricated_claim",
+                ),
+                (
+                    circumstance == Circumstance::NightWindow,
+                    "reliability.night_window",
+                ),
+            ]
+            .into_iter()
+            .filter(|(applies, _)| *applies)
+            .filter_map(|(_, id)| catalog.relation(id))
+            .find_map(|relation| relation.candidates.iter().find(|item| item.id == base.id));
+            let authored = contextual.unwrap_or(base);
+            Candidate {
+                id: base.id.as_str(),
+                value,
+                weight: Weight::new(authored.plausibility, authored.curation),
+                bridge: None,
+                impossible: authored
+                    .hard_zero_reason
+                    .as_deref()
+                    .map(|_| "catalog-authored hard zero"),
+                factors: vec!["factor.reliability.catalog"],
             }
-            (_, Circumstance::NightWindow, _, Reliability::Mistaken) => {
-                (70, None, "factor.reliability.darkness")
-            }
-            (_, _, _, Reliability::Truthful) => (65, None, "factor.reliability.baseline"),
-            (_, _, _, Reliability::PartlyTruthful) => (45, None, "factor.reliability.partial"),
-            _ => (25, None, "factor.reliability.possible"),
-        };
-        Candidate {
-            id: match value {
-                Reliability::Truthful => "reliability.truthful",
-                Reliability::Mistaken => "reliability.mistaken",
-                Reliability::Evasive => "reliability.evasive",
-                Reliability::Deceptive => "reliability.deceptive",
-                Reliability::PartlyTruthful => "reliability.partly_truthful",
-            },
-            value,
-            weight: Weight::new(p, 70),
-            bridge: None,
-            impossible,
-            factors: vec![factor],
-        }
-    })
-    .collect()
+        })
+        .collect()
 }
 
 fn evidence_candidates(cause: CanonicalCause, site: SiteKind) -> Vec<Candidate<EvidenceKind>> {
-    [
-        EvidenceKind::Footprints,
-        EvidenceKind::ClothScrap,
-        EvidenceKind::BoneDust,
-        EvidenceKind::BloodlessCorpse,
-        EvidenceKind::DroppedToken,
-        EvidenceKind::DragMarks,
-        EvidenceKind::LedgerEntry,
-    ]
-    .into_iter()
-    .map(|value| {
-        let (p, impossible, factor) = match (cause, site, value) {
-            (CanonicalCause::Hostile(ThreatId::Skeleton), _, EvidenceKind::BoneDust) => {
-                (90, None, "factor.evidence.skeleton")
+    let baseline = crate::quest_catalog::catalog()
+        .relation("evidence.baseline")
+        .expect("validated evidence relation");
+    baseline
+        .candidates
+        .iter()
+        .map(|authored| {
+            let value = evidence_kind_from_catalog(&authored.id);
+            let catalog = crate::quest_catalog::catalog();
+            let relation_ids = [
+                matches!(cause, CanonicalCause::Hostile(threat) if threat == ThreatId::Skeleton)
+                    .then_some("evidence.skeleton"),
+                (cause == CanonicalCause::IncidentalLoss).then_some("evidence.incidental_loss"),
+                (cause == CanonicalCause::FabricatedClaim).then_some("evidence.fabricated_claim"),
+                matches!(site, SiteKind::Roadside | SiteKind::Riverside)
+                    .then_some("evidence.trackable_ground"),
+            ];
+            let selected = relation_ids
+                .into_iter()
+                .flatten()
+                .filter_map(|id| catalog.relation(id))
+                .find_map(|relation| {
+                    relation
+                        .candidates
+                        .iter()
+                        .find(|item| item.id == authored.id)
+                })
+                .unwrap_or(authored);
+            Candidate {
+                id: authored.id.as_str(),
+                value,
+                weight: Weight::new(selected.plausibility, selected.curation),
+                bridge: None,
+                impossible: selected
+                    .hard_zero_reason
+                    .as_deref()
+                    .map(|_| "catalog-authored hard zero"),
+                factors: vec!["factor.evidence.catalog"],
             }
-            (CanonicalCause::IncidentalLoss, _, EvidenceKind::LedgerEntry) => {
-                (70, None, "factor.evidence.asset_record")
-            }
-            (CanonicalCause::FabricatedClaim, _, EvidenceKind::BloodlessCorpse) => (
-                0,
-                Some("a fabricated loss cannot create a canonical corpse clue"),
-                "factor.evidence.fabrication_hard_zero",
-            ),
-            (_, SiteKind::Roadside | SiteKind::Riverside, EvidenceKind::Footprints) => {
-                (75, None, "factor.evidence.trackable_ground")
-            }
-            (_, _, EvidenceKind::DroppedToken | EvidenceKind::ClothScrap) => {
-                (45, None, "factor.evidence.portable")
-            }
-            _ => (25, None, "factor.evidence.possible"),
-        };
-        Candidate {
-            id: match value {
-                EvidenceKind::Footprints => "evidence.footprints",
-                EvidenceKind::ClothScrap => "evidence.cloth",
-                EvidenceKind::BoneDust => "evidence.bone_dust",
-                EvidenceKind::BloodlessCorpse => "evidence.bloodless_corpse",
-                EvidenceKind::DroppedToken => "evidence.token",
-                EvidenceKind::DragMarks => "evidence.drag_marks",
-                EvidenceKind::LedgerEntry => "evidence.ledger",
-            },
-            value,
-            weight: Weight::new(p, 70),
-            bridge: None,
-            impossible,
-            factors: vec![factor],
-        }
-    })
-    .collect()
+        })
+        .collect()
+}
+
+fn evidence_kind_from_catalog(id: &str) -> EvidenceKind {
+    EvidenceKind::try_new(id).expect("validated open evidence ID")
 }
 
 fn evidence_presentation(
     kind: EvidenceKind,
     evidence_id: &EvidenceId,
 ) -> (String, String, String, Vec<EvidenceInspectionTopic>) {
-    let difficulty_milli =
-        1_200 + (crate::settlement_population::stable_hash(&evidence_id.0) % 2_801) as u16;
-    let checked = |id: &str,
-                   label: &str,
-                   inspection_description: &str,
-                   stat: EvidenceCheckStat,
-                   success_description: &str| EvidenceInspectionTopic {
-        id: id.into(),
-        label: label.into(),
-        inspection_description: inspection_description.into(),
-        check: Some(EvidenceInspectionCheck {
-            stat,
-            difficulty_milli,
-            success_description: success_description.into(),
-            reveals_clue: true,
-        }),
-    };
-    let plain = |id: &str, label: &str, description: &str| EvidenceInspectionTopic {
-        id: id.into(),
-        label: label.into(),
-        inspection_description: description.into(),
-        check: None,
-    };
-    match kind {
-        EvidenceKind::Footprints => (
-            "Footprints".into(),
-            "wingfoot".into(),
-            "You see several overlapping footprints impressed into the ground.".into(),
-            vec![
-                plain(
-                    "surrounding-ground",
-                    "surrounding ground",
-                    "The nearby ground is churned by ordinary traffic and weather.",
-                ),
-                checked(
-                    "deepest-impressions",
-                    "deepest impressions",
-                    "You compare the depth, spacing, and edges of the clearest prints.",
-                    EvidenceCheckStat::Eyesight,
-                    "A repeated set of impressions has a distinctive gait and continues away from the others.",
-                ),
-            ],
-        ),
-        EvidenceKind::ClothScrap => (
-            "Torn cloth".into(),
-            "clothes".into(),
-            "You see a torn scrap of cloth caught against a rough edge.".into(),
-            vec![
-                plain(
-                    "dirt",
-                    "dirt on the cloth",
-                    "The dirt is common local soil and says little by itself.",
-                ),
-                checked(
-                    "torn-edge",
-                    "torn edge",
-                    "You study the fibers along the torn edge.",
-                    EvidenceCheckStat::Eyesight,
-                    "Several fibers are cut cleanly while others were pulled apart, suggesting the cloth snagged during a struggle.",
-                ),
-            ],
-        ),
-        EvidenceKind::BoneDust => (
-            "Bone dust".into(),
-            "death-skull".into(),
-            "You see pale dust and small fragments scattered across the surface.".into(),
-            vec![
-                plain(
-                    "loose-fragments",
-                    "loose fragments",
-                    "Most fragments are too damaged to identify.",
-                ),
-                checked(
-                    "dust-pattern",
-                    "pattern of dust",
-                    "You examine where the pale dust has settled and where it is absent.",
-                    EvidenceCheckStat::Intelligence,
-                    "The distribution is too regular for ordinary decay; something repeatedly crossed or disturbed this spot.",
-                ),
-            ],
-        ),
-        EvidenceKind::BloodlessCorpse => (
-            "Bloodless corpse".into(),
-            "bleeding-wound".into(),
-            "You see a corpse whose pallor and lack of visible blood are immediately striking."
-                .into(),
-            vec![
-                plain(
-                    "clothing",
-                    "clothing",
-                    "The clothing is disordered but carries no unique identifying mark.",
-                ),
-                checked(
-                    "wounds",
-                    "wounds",
-                    "You inspect the wounds without disturbing the body further.",
-                    EvidenceCheckStat::Eyesight,
-                    "The smallest wounds account poorly for the amount of blood missing from the body.",
-                ),
-            ],
-        ),
-        EvidenceKind::DroppedToken => (
-            "Dropped token".into(),
-            "coins".into(),
-            "You see a small token lying where it appears to have been dropped.".into(),
-            vec![
-                plain(
-                    "material",
-                    "material",
-                    "It is made from an inexpensive material common in the region.",
-                ),
-                checked(
-                    "worn-markings",
-                    "worn markings",
-                    "You turn the token under the light and compare its worn markings.",
-                    EvidenceCheckStat::Eyesight,
-                    "A partly worn device links the token to a particular trade or household, though not necessarily to the culprit.",
-                ),
-            ],
-        ),
-        EvidenceKind::DragMarks => (
-            "Drag marks".into(),
-            "eye-target".into(),
-            "You see long disturbances where something was pulled across the ground.".into(),
-            vec![
-                plain(
-                    "loose-debris",
-                    "loose debris",
-                    "The loose debris has been disturbed too broadly to preserve a useful shape.",
-                ),
-                checked(
-                    "groove-edges",
-                    "edges of the grooves",
-                    "You compare the interruptions along the edges of the grooves.",
-                    EvidenceCheckStat::Instinct,
-                    "The interruptions show where the burden was lifted briefly, revealing the direction in which it was taken.",
-                ),
-            ],
-        ),
-        EvidenceKind::LedgerEntry => (
-            "Ledger".into(),
-            "open-book".into(),
-            "You see a ledger open near a cluster of recent entries.".into(),
-            vec![
-                plain(
-                    "older-pages",
-                    "older pages",
-                    "The older pages contain routine accounts with no obvious bearing on the trouble.",
-                ),
-                checked(
-                    "recent-entries",
-                    "recent entries",
-                    "You compare the dates, hands, and totals in the recent entries.",
-                    EvidenceCheckStat::Intelligence,
-                    "One entry breaks the surrounding pattern and corroborates when and where the incidents recur.",
-                ),
-            ],
-        ),
-    }
+    let definition = crate::quest_catalog::catalog()
+        .evidence(evidence_catalog_id(kind))
+        .expect("validated evidence catalog covers closed mechanics adapter");
+    let topics = definition
+        .topics
+        .iter()
+        .map(|topic| {
+            let check = topic.check.as_ref().map(|check| {
+                let stat = match check.stat.as_str() {
+                    "eyesight" => EvidenceCheckStat::Eyesight,
+                    "intelligence" => EvidenceCheckStat::Intelligence,
+                    "instinct" => EvidenceCheckStat::Instinct,
+                    _ => unreachable!("startup validation rejects unknown evidence stats"),
+                };
+                let width = u64::from(check.difficulty_max_milli - check.difficulty_min_milli) + 1;
+                EvidenceInspectionCheck {
+                    stat,
+                    difficulty_milli: check.difficulty_min_milli
+                        + (crate::settlement_population::stable_hash(&format!(
+                            "{}:{}",
+                            evidence_id.0, topic.id
+                        )) % width) as u16,
+                    success_description: check.success_description.clone(),
+                    reveals_clue: check.reveals_clue,
+                }
+            });
+            EvidenceInspectionTopic {
+                id: topic.id.clone(),
+                label: topic.label.clone(),
+                inspection_description: topic.inspection_description.clone(),
+                check,
+            }
+        })
+        .collect();
+    (
+        definition.portrait_label.clone(),
+        definition.portrait_icon.clone(),
+        definition.base_description.clone(),
+        topics,
+    )
+}
+
+fn evidence_catalog_id(kind: EvidenceKind) -> &'static str {
+    crate::quest_catalog::catalog()
+        .evidence(kind.as_str())
+        .expect("generated evidence identity exists in catalog")
+        .id
+        .as_str()
 }
 
 fn evidence_reference(kind: EvidenceKind) -> &'static str {
@@ -1157,6 +1078,11 @@ fn evidence_reference(kind: EvidenceKind) -> &'static str {
         EvidenceKind::DroppedToken => "a dropped token",
         EvidenceKind::DragMarks => "some drag marks",
         EvidenceKind::LedgerEntry => "a ledger",
+        _ => crate::quest_catalog::catalog()
+            .evidence(kind.as_str())
+            .expect("generated evidence exists")
+            .portrait_label
+            .as_str(),
     }
 }
 
@@ -1218,55 +1144,61 @@ fn account_style_candidates(
     reliability: Reliability,
     circumstance: Circumstance,
 ) -> Vec<Candidate<AccountStyle>> {
-    [
-        AccountStyle::VisualClaim,
-        AccountStyle::HeardOnly,
-        AccountStyle::TracksAndMovement,
-    ]
-    .into_iter()
-    .map(|value| {
-        let (p, impossible, factor) = match (circumstance, reliability, value) {
-            (Circumstance::NightWindow, _, AccountStyle::HeardOnly) => {
-                (80, None, "factor.account.darkness")
+    let relation = crate::quest_catalog::catalog()
+        .relation(if reliability == Reliability::Mistaken {
+            "account.mistaken"
+        } else if circumstance == Circumstance::NightWindow {
+            "account.night_window"
+        } else {
+            "account.baseline"
+        })
+        .unwrap();
+    relation
+        .candidates
+        .iter()
+        .map(|authored| {
+            let value = match authored.id.as_str() {
+                "visual" => AccountStyle::VisualClaim,
+                "heard" => AccountStyle::HeardOnly,
+                "tracks" => AccountStyle::TracksAndMovement,
+                _ => unreachable!("validated account mechanic"),
+            };
+            Candidate {
+                id: authored.id.as_str(),
+                value,
+                weight: Weight::new(authored.plausibility, authored.curation),
+                bridge: None,
+                impossible: authored
+                    .hard_zero_reason
+                    .as_deref()
+                    .map(|_| "catalog-authored hard zero"),
+                factors: vec!["factor.account.catalog"],
             }
-            (_, Reliability::Mistaken, AccountStyle::TracksAndMovement) => (
-                0,
-                Some("a mistaken eyewitness does not provide the precise track account"),
-                "factor.account.mistaken_hard_zero",
-            ),
-            (_, _, AccountStyle::VisualClaim) => (60, None, "factor.account.visual"),
-            (_, _, AccountStyle::TracksAndMovement) => (45, None, "factor.account.tracks"),
-            _ => (30, None, "factor.account.possible"),
-        };
-        Candidate {
-            id: match value {
-                AccountStyle::VisualClaim => "account.visual",
-                AccountStyle::HeardOnly => "account.heard",
-                AccountStyle::TracksAndMovement => "account.tracks",
-            },
-            value,
-            weight: Weight::new(p, 70),
-            bridge: None,
-            impossible,
-            factors: vec![factor],
-        }
-    })
-    .collect()
+        })
+        .collect()
 }
 
 fn route_variant_candidates(family: TemplateFamily) -> [Candidate<RouteVariant>; 2] {
+    let relation = crate::quest_catalog::catalog()
+        .relation(match family {
+            TemplateFamily::RecurringDepredation => "route.recurring_depredation",
+            TemplateFamily::DisappearanceOrLoss => "route.disappearance_or_loss",
+        })
+        .expect("validated route relation");
+    let authored = |id: &str| {
+        relation
+            .candidates
+            .iter()
+            .find(|item| item.id == id)
+            .unwrap()
+    };
+    let direct = authored("direct");
+    let cautious = authored("cautious");
     [
         Candidate {
             id: "route.direct",
             value: RouteVariant::Direct,
-            weight: Weight::new(
-                if family == TemplateFamily::RecurringDepredation {
-                    70
-                } else {
-                    55
-                },
-                70,
-            ),
+            weight: Weight::new(direct.plausibility, direct.curation),
             bridge: None,
             impossible: None,
             factors: vec!["factor.route.direct"],
@@ -1274,14 +1206,7 @@ fn route_variant_candidates(family: TemplateFamily) -> [Candidate<RouteVariant>;
         Candidate {
             id: "route.cautious",
             value: RouteVariant::Cautious,
-            weight: Weight::new(
-                if family == TemplateFamily::RecurringDepredation {
-                    45
-                } else {
-                    75
-                },
-                70,
-            ),
+            weight: Weight::new(cautious.plausibility, cautious.curation),
             bridge: None,
             impossible: None,
             factors: vec!["factor.route.cautious"],
@@ -1293,11 +1218,28 @@ fn attack_pattern_candidates(
     family: TemplateFamily,
     has_victim_target: bool,
 ) -> [Candidate<AttackPattern>; 4] {
+    let relation = crate::quest_catalog::catalog()
+        .relation(match family {
+            TemplateFamily::RecurringDepredation => "pattern.recurring_depredation",
+            TemplateFamily::DisappearanceOrLoss => "pattern.disappearance_or_loss",
+        })
+        .expect("validated pattern relation");
+    let authored = |id: &str| {
+        relation
+            .candidates
+            .iter()
+            .find(|item| item.id == id)
+            .unwrap()
+    };
+    let nightly = authored("nightly");
+    let roadside = authored("roadside");
+    let victim = authored("victim_specific");
+    let irregular = authored("irregular");
     [
         Candidate {
             id: "pattern.nightly",
             value: AttackPattern::Nightly,
-            weight: Weight::new(60, 70),
+            weight: Weight::new(nightly.plausibility, nightly.curation),
             bridge: None,
             impossible: None,
             factors: vec!["factor.pattern.nightly"],
@@ -1305,7 +1247,7 @@ fn attack_pattern_candidates(
         Candidate {
             id: "pattern.roadside",
             value: AttackPattern::Roadside,
-            weight: Weight::new(55, 70),
+            weight: Weight::new(roadside.plausibility, roadside.curation),
             bridge: None,
             impossible: None,
             factors: vec!["factor.pattern.roadside"],
@@ -1316,12 +1258,10 @@ fn attack_pattern_candidates(
             weight: Weight::new(
                 if !has_victim_target {
                     0
-                } else if family == TemplateFamily::DisappearanceOrLoss {
-                    70
                 } else {
-                    30
+                    victim.plausibility
                 },
-                65,
+                victim.curation,
             ),
             bridge: None,
             impossible: (!has_victim_target)
@@ -1331,7 +1271,7 @@ fn attack_pattern_candidates(
         Candidate {
             id: "pattern.irregular",
             value: AttackPattern::Irregular,
-            weight: Weight::new(35, 55),
+            weight: Weight::new(irregular.plausibility, irregular.curation),
             bridge: None,
             impossible: None,
             factors: vec!["factor.pattern.irregular"],
@@ -1569,143 +1509,133 @@ fn solve_variables(
     })
 }
 
-fn family_candidates() -> [Candidate<TemplateFamily>; 2] {
-    [
-        Candidate {
-            id: "family.recurring_depredation",
-            value: TemplateFamily::RecurringDepredation,
-            weight: Weight::new(100, 100),
+fn family_candidates() -> Vec<Candidate<TemplateFamily>> {
+    crate::quest_catalog::catalog()
+        .relation("family")
+        .expect("validated catalog family relation")
+        .candidates
+        .iter()
+        .map(|candidate| Candidate {
+            id: match candidate.id.as_str() {
+                "recurring_depredation" => "family.recurring_depredation",
+                "disappearance_or_loss" => "family.disappearance_or_loss",
+                _ => unreachable!("startup validation rejects unknown family"),
+            },
+            value: match candidate.id.as_str() {
+                "recurring_depredation" => TemplateFamily::RecurringDepredation,
+                "disappearance_or_loss" => TemplateFamily::DisappearanceOrLoss,
+                _ => unreachable!("startup validation rejects unknown family"),
+            },
+            weight: Weight::new(candidate.plausibility, candidate.curation),
             bridge: None,
-            impossible: None,
+            impossible: candidate
+                .hard_zero_reason
+                .as_deref()
+                .map(|_| "catalog-authored hard zero"),
             factors: vec!["factor.family.rotation"],
-        },
-        Candidate {
-            id: "family.disappearance_or_loss",
-            value: TemplateFamily::DisappearanceOrLoss,
-            weight: Weight::new(100, 100),
-            bridge: None,
-            impossible: None,
-            factors: vec!["factor.family.rotation"],
-        },
-    ]
+        })
+        .collect()
 }
 
 fn cause_candidates(family: TemplateFamily) -> Vec<Candidate<CanonicalCause>> {
-    let loss = family == TemplateFamily::DisappearanceOrLoss;
-    let mut values = vec![
-        (ThreatId::Bandit, 75, 80),
-        (ThreatId::Goblin, if loss { 30 } else { 70 }, 75),
-        (ThreatId::Ghoul, 40, 70),
-        (ThreatId::Skeleton, 35, 70),
-        (ThreatId::Werewolf, if loss { 25 } else { 45 }, 60),
-        (ThreatId::Smuggler, if loss { 60 } else { 25 }, 65),
-        (ThreatId::Wolf, if loss { 20 } else { 65 }, 65),
-    ]
-    .into_iter()
-    .map(|(threat, p, c)| Candidate {
-        id: threat.as_str(),
-        value: CanonicalCause::Hostile(threat),
-        weight: Weight::new(p, c),
-        bridge: None,
-        impossible: None,
-        factors: vec!["factor.cause.bestiary"],
-    })
-    .collect::<Vec<_>>();
-    if loss {
-        values.extend([
+    let relation = match family {
+        TemplateFamily::RecurringDepredation => "cause.recurring_depredation",
+        TemplateFamily::DisappearanceOrLoss => "cause.disappearance_or_loss",
+    };
+    crate::quest_catalog::catalog()
+        .relation(relation)
+        .expect("validated catalog cause relation")
+        .candidates
+        .iter()
+        .map(|candidate| {
+            let value = match candidate.id.as_str() {
+                "concealment" => CanonicalCause::ConcealmentByWitness,
+                "incidental_loss" => CanonicalCause::IncidentalLoss,
+                "fabricated" => CanonicalCause::FabricatedClaim,
+                threat => CanonicalCause::Hostile(
+                    threat
+                        .parse()
+                        .expect("catalog monster has a supported mechanics adapter"),
+                ),
+            };
             Candidate {
-                id: "cause.concealment",
-                value: CanonicalCause::ConcealmentByWitness,
-                weight: Weight::new(35, 75),
+                id: candidate.id.as_str(),
+                value,
+                weight: Weight::new(candidate.plausibility, candidate.curation),
                 bridge: None,
-                impossible: None,
-                factors: vec!["factor.cause.nonhostile"],
-            },
-            Candidate {
-                id: "cause.incidental_loss",
-                value: CanonicalCause::IncidentalLoss,
-                weight: Weight::new(40, 65),
-                bridge: None,
-                impossible: None,
-                factors: vec!["factor.cause.nonhostile"],
-            },
-            Candidate {
-                id: "cause.fabricated",
-                value: CanonicalCause::FabricatedClaim,
-                weight: Weight::new(20, 55),
-                bridge: None,
-                impossible: None,
-                factors: vec!["factor.cause.nonhostile"],
-            },
-        ]);
-    }
-    values
+                impossible: candidate
+                    .hard_zero_reason
+                    .as_deref()
+                    .map(|_| "catalog-authored hard zero"),
+                factors: vec![if matches!(value, CanonicalCause::Hostile(_)) {
+                    "factor.cause.bestiary"
+                } else {
+                    "factor.cause.nonhostile"
+                }],
+            }
+        })
+        .collect()
 }
 
 fn site_candidates(cause: CanonicalCause) -> Vec<Candidate<SiteKind>> {
-    use SiteKind as S;
-    [
-        S::Cave,
-        S::Crypt,
-        S::ForestCamp,
-        S::OccupiedHouse,
-        S::Riverside,
-        S::Graveyard,
-        S::Roadside,
-        S::AbandonedFarm,
-    ]
-    .into_iter()
-    .map(|site| {
-        let (p, bridge, impossible, factor) = match (cause, site) {
-            (CanonicalCause::Hostile(ThreatId::Skeleton), S::Crypt)
-            | (CanonicalCause::Hostile(ThreatId::Ghoul), S::Graveyard) => {
-                (95, None, None, "factor.site.natural_habitat")
+    crate::quest_catalog::catalog()
+        .documents
+        .iter()
+        .flat_map(|document| &document.sites)
+        .map(|authored_site| {
+            let site = SiteKind::try_new(&authored_site.id).expect("validated open site ID");
+            let relation_id = match cause {
+                CanonicalCause::Hostile(threat) => Some(format!("site.{}", threat.as_str())),
+                _ => None,
+            };
+            let relation = relation_id
+                .as_deref()
+                .and_then(|id| crate::quest_catalog::catalog().relation(id))
+                .and_then(|relation| {
+                    relation
+                        .candidates
+                        .iter()
+                        .find(|item| item.id == authored_site.id)
+                });
+            let natural = match cause {
+                CanonicalCause::Hostile(threat) => crate::quest_catalog::catalog()
+                    .monster(threat.as_str())
+                    .is_some_and(|monster| {
+                        monster
+                            .investigation
+                            .habitats
+                            .contains(&authored_site.habitat)
+                    }),
+                _ => false,
+            };
+            let p = relation.map_or(if natural { 80 } else { 20 }, |item| item.plausibility);
+            let curation = relation.map_or(70, |item| item.curation);
+            let impossible = relation
+                .and_then(|item| item.hard_zero_reason.as_deref())
+                .map(|_| "catalog-authored hard zero");
+            let bridge = relation
+                .and_then(|item| item.required_bridge.as_deref())
+                .map(|id| match id {
+                    "skeletons_occupied_house" => "bridge.skeletons_occupied_house",
+                    "child_at_adult_venue" => "bridge.child_at_adult_venue",
+                    _ => unreachable!("validated bridge adapter"),
+                });
+            Candidate {
+                id: authored_site.id.as_str(),
+                value: site,
+                weight: Weight::new(p, curation),
+                bridge,
+                impossible,
+                factors: vec![if relation.is_some() {
+                    "factor.site.catalog_relation"
+                } else if natural {
+                    "factor.site.catalog_habitat"
+                } else {
+                    "factor.site.catalog_baseline"
+                }],
             }
-            (CanonicalCause::Hostile(ThreatId::Bandit), S::ForestCamp)
-            | (CanonicalCause::Hostile(ThreatId::Goblin), S::Cave)
-            | (CanonicalCause::Hostile(ThreatId::Wolf), S::AbandonedFarm) => {
-                (80, None, None, "factor.site.common")
-            }
-            (CanonicalCause::Hostile(ThreatId::Werewolf), S::OccupiedHouse)
-            | (CanonicalCause::Hostile(ThreatId::Smuggler), S::Riverside) => {
-                (90, None, None, "factor.site.concealment")
-            }
-            (CanonicalCause::Hostile(ThreatId::Skeleton), S::OccupiedHouse) => (
-                3,
-                Some("bridge.skeletons_occupied_house"),
-                None,
-                "factor.site.rare_bridge",
-            ),
-            (CanonicalCause::Hostile(ThreatId::Wolf), S::Crypt) => (
-                0,
-                None,
-                Some("quadruped pack cannot maintain a sealed crypt"),
-                "factor.site.impossible",
-            ),
-            (
-                CanonicalCause::VoluntaryDisappearance | CanonicalCause::ConcealmentByWitness,
-                S::OccupiedHouse | S::Riverside,
-            ) => (85, None, None, "factor.site.social"),
-            (CanonicalCause::IncidentalLoss, S::Roadside | S::Riverside) => {
-                (80, None, None, "factor.site.accident")
-            }
-            (CanonicalCause::FabricatedClaim, S::OccupiedHouse) => {
-                (80, None, None, "factor.site.fabrication")
-            }
-            (_, S::OccupiedHouse) => (12, None, None, "factor.site.unusual"),
-            (_, S::Roadside) => (25, None, None, "factor.site.transit"),
-            _ => (20, None, None, "factor.site.possible"),
-        };
-        Candidate {
-            id: site_id(site),
-            value: site,
-            weight: Weight::new(p, 70),
-            bridge,
-            impossible,
-            factors: vec![factor],
-        }
-    })
-    .collect()
+        })
+        .collect()
 }
 
 fn secondary_site_candidates(cause: CanonicalCause, primary: SiteKind) -> Vec<Candidate<SiteKind>> {
@@ -1745,54 +1675,47 @@ fn secondary_circumstance_candidates(
 }
 
 fn circumstance_candidates(demo: WitnessDemographic) -> Vec<Candidate<Circumstance>> {
-    use Circumstance as C;
-    [
-        C::NightWindow,
-        C::SecretRiversideMeeting,
-        C::AdultVenue,
-        C::RoadJourney,
-        C::GraveDuty,
-        C::LivestockWatch,
-    ]
-    .into_iter()
-    .map(|circ| {
-        let (p, bridge, impossible, factor) = match (demo, circ) {
-            (WitnessDemographic::Child, C::AdultVenue) => (
-                2,
-                Some("bridge.child_at_adult_venue"),
-                None,
-                "factor.witness.rare_venue",
-            ),
-            (WitnessDemographic::Cleric, C::AdultVenue) => (
-                0,
-                None,
-                Some("assigned cleric witness is not present in the adult venue"),
-                "factor.witness.impossible_venue",
-            ),
-            (WitnessDemographic::Child, C::NightWindow) => {
-                (90, None, None, "factor.witness.household")
+    let relation_id = format!("circumstance.{}", demo.as_str());
+    let relation = crate::quest_catalog::catalog().relation(&relation_id);
+    crate::quest_catalog::catalog()
+        .documents
+        .iter()
+        .flat_map(|document| &document.circumstances)
+        .map(|authored| {
+            let circ = Circumstance::try_new(&authored.id).expect("validated open circumstance ID");
+            let relation_candidate = relation
+                .and_then(|items| items.candidates.iter().find(|item| item.id == authored.id));
+            let p = relation_candidate.map_or(35, |item| item.plausibility);
+            let curation = relation_candidate.map_or(70, |item| item.curation);
+            let impossible = relation_candidate
+                .and_then(|item| item.hard_zero_reason.as_deref())
+                .map(|_| "catalog-authored hard zero");
+            let bridge = relation_candidate
+                .and_then(|item| item.required_bridge.as_deref())
+                .map(|id| match id {
+                    "child_at_adult_venue" => "bridge.child_at_adult_venue",
+                    _ => unreachable!("validated bridge adapter"),
+                });
+            Candidate {
+                id: authored.id.as_str(),
+                value: circ,
+                weight: Weight::new(p, curation),
+                bridge,
+                impossible,
+                factors: vec!["factor.witness.catalog"],
             }
-            (_, C::RoadJourney) => (55, None, None, "factor.witness.travel"),
-            (_, C::SecretRiversideMeeting) => (25, None, None, "factor.witness.private"),
-            _ => (35, None, None, "factor.witness.general"),
-        };
-        Candidate {
-            id: circumstance_id(circ),
-            value: circ,
-            weight: Weight::new(p, 70),
-            bridge,
-            impossible,
-            factors: vec![factor],
-        }
-    })
-    .collect()
+        })
+        .collect()
 }
 
 fn description_candidates(cause: CanonicalCause) -> Vec<Candidate<ReportDescription>> {
-    ALL_REPORTS
+    crate::quest_catalog::catalog()
+        .documents
         .iter()
-        .copied()
-        .map(|report| {
+        .flat_map(|document| &document.descriptions)
+        .map(|authored| {
+            let report =
+                ReportDescription::try_new(&authored.id).expect("validated open description ID");
             let p = match cause {
                 CanonicalCause::Hostile(threat) => description_likelihood(threat, report),
                 CanonicalCause::VoluntaryDisappearance
@@ -1816,7 +1739,7 @@ fn description_candidates(cause: CanonicalCause) -> Vec<Candidate<ReportDescript
                 }
             };
             Candidate {
-                id: report_id(report),
+                id: authored.id.as_str(),
                 value: report,
                 weight: Weight::new(p, 80),
                 bridge: None,
@@ -1827,52 +1750,23 @@ fn description_candidates(cause: CanonicalCause) -> Vec<Candidate<ReportDescript
         .collect()
 }
 
-fn site_id(site: SiteKind) -> &'static str {
-    match site {
-        SiteKind::Cave => "site.cave",
-        SiteKind::Crypt => "site.crypt",
-        SiteKind::ForestCamp => "site.forest_camp",
-        SiteKind::OccupiedHouse => "site.occupied_house",
-        SiteKind::Riverside => "site.riverside",
-        SiteKind::Graveyard => "site.graveyard",
-        SiteKind::Roadside => "site.roadside",
-        SiteKind::AbandonedFarm => "site.abandoned_farm",
-    }
-}
-fn circumstance_id(v: Circumstance) -> &'static str {
-    match v {
-        Circumstance::NightWindow => "circumstance.night_window",
-        Circumstance::SecretRiversideMeeting => "circumstance.secret_riverside",
-        Circumstance::AdultVenue => "circumstance.adult_venue",
-        Circumstance::RoadJourney => "circumstance.road",
-        Circumstance::GraveDuty => "circumstance.grave_duty",
-        Circumstance::LivestockWatch => "circumstance.livestock_watch",
-    }
-}
 fn report_id(v: ReportDescription) -> &'static str {
-    match v {
-        ReportDescription::ArmedPeople => "description.armed_people",
-        ReportDescription::SmallUprightFigures => "description.small_upright",
-        ReportDescription::LargeUprightBeast => "description.large_upright",
-        ReportDescription::GauntHuman => "description.gaunt_human",
-        ReportDescription::WalkingDead => "description.walking_dead",
-        ReportDescription::LargeAnimal => "description.large_animal",
-        ReportDescription::DoglikeBeast => "description.doglike",
-        ReportDescription::UnseenNightVisitor => "description.unseen",
-    }
+    crate::quest_catalog::catalog()
+        .documents
+        .iter()
+        .flat_map(|document| &document.descriptions)
+        .find(|item| item.id == v.as_str())
+        .expect("generated description exists")
+        .id
+        .as_str()
 }
 
 fn ambiguous_report_description(v: ReportDescription) -> &'static str {
-    match v {
-        ReportDescription::ArmedPeople => "a group of armed figures",
-        ReportDescription::SmallUprightFigures => "several small figures moving upright",
-        ReportDescription::LargeUprightBeast => "a large shape that seemed to stand upright",
-        ReportDescription::GauntHuman => "a gaunt, human-shaped figure",
-        ReportDescription::WalkingDead => "a person moving with a stiff, shambling gait",
-        ReportDescription::LargeAnimal => "the silhouette of a large animal",
-        ReportDescription::DoglikeBeast => "a low, dog-shaped beast",
-        ReportDescription::UnseenNightVisitor => "something hidden in the darkness",
-    }
+    crate::quest_catalog::catalog()
+        .description(report_catalog_id(v))
+        .expect("validated description catalog covers closed mechanics adapter")
+        .text
+        .as_str()
 }
 
 fn ambiguous_visual_claim(v: ReportDescription, place: &str) -> String {
@@ -1883,24 +1777,37 @@ fn ambiguous_visual_claim(v: ReportDescription, place: &str) -> String {
 }
 
 fn terrain(site: SiteKind) -> Terrain {
-    match site {
-        SiteKind::Cave | SiteKind::Crypt => Terrain::Underground,
-        SiteKind::ForestCamp | SiteKind::AbandonedFarm => Terrain::Forest,
-        SiteKind::OccupiedHouse | SiteKind::Graveyard => Terrain::Settlement,
-        SiteKind::Riverside | SiteKind::Roadside => Terrain::Road,
+    match crate::quest_catalog::catalog()
+        .site(site_catalog_id(site))
+        .expect("validated site catalog covers closed mechanics adapter")
+        .terrain
+        .as_str()
+    {
+        "underground" => Terrain::Underground,
+        "forest" => Terrain::Forest,
+        "settlement" => Terrain::Settlement,
+        "road" => Terrain::Road,
+        _ => unreachable!("startup validation rejects unknown terrain"),
     }
 }
 fn label(site: SiteKind) -> &'static str {
-    match site {
-        SiteKind::Cave => "a cave beyond the fields",
-        SiteKind::Crypt => "the old crypt",
-        SiteKind::ForestCamp => "a camp in the woods",
-        SiteKind::OccupiedHouse => "an occupied house",
-        SiteKind::Riverside => "a secluded bend in the river",
-        SiteKind::Graveyard => "the old graveyard",
-        SiteKind::Roadside => "a lonely stretch of road",
-        SiteKind::AbandonedFarm => "an abandoned farm",
-    }
+    crate::quest_catalog::catalog()
+        .site(site_catalog_id(site))
+        .expect("validated site catalog covers closed mechanics adapter")
+        .label
+        .as_str()
+}
+
+fn site_catalog_id(site: SiteKind) -> &'static str {
+    crate::quest_catalog::catalog()
+        .site(site.as_str())
+        .expect("generated site identity exists in catalog")
+        .id
+        .as_str()
+}
+
+fn report_catalog_id(report: ReportDescription) -> &'static str {
+    report_id(report)
 }
 
 fn bridge(id: &str, prefix: &str, family: TemplateFamily, _now: u64) -> CausalBridge {
@@ -1943,62 +1850,41 @@ fn bridge(id: &str, prefix: &str, family: TemplateFamily, _now: u64) -> CausalBr
 }
 
 fn consequence(cause: CanonicalCause, family: TemplateFamily) -> ConsequenceProfile {
-    let (symptom, effects, summary) = match (family, cause) {
-        (
-            TemplateFamily::RecurringDepredation,
-            CanonicalCause::Hostile(ThreatId::Ghoul | ThreatId::Werewolf),
-        ) => (
-            Symptom::NightScreams,
-            Effects {
-                buy_bps: 400,
-                sell_penalty_bps: 200,
-                encounter_frequency_bps: 700,
-                encounter_archetype: Some(EncounterArchetype::Undead),
-                disease_intensity: 180,
-            },
-            "Locals report troubling sounds and disappearances after dark.",
-        ),
-        (
-            TemplateFamily::RecurringDepredation,
-            CanonicalCause::Hostile(ThreatId::Wolf | ThreatId::Goblin),
-        ) => (
-            Symptom::VanishedLivestock,
-            Effects {
-                buy_bps: 700,
-                sell_penalty_bps: 300,
-                encounter_frequency_bps: 1000,
-                encounter_archetype: Some(EncounterArchetype::Goblins),
-                disease_intensity: 0,
-            },
-            "Livestock have been disappearing from nearby holdings.",
-        ),
-        (TemplateFamily::RecurringDepredation, _) => (
-            Symptom::MissingCaravans,
-            Effects {
-                buy_bps: 1200,
-                sell_penalty_bps: 500,
-                encounter_frequency_bps: 1500,
-                encounter_archetype: Some(EncounterArchetype::Bandits),
-                disease_intensity: 0,
-            },
-            "Several expected caravans have not arrived.",
-        ),
-        (TemplateFamily::DisappearanceOrLoss, _) => (
-            Symptom::EmptyStalls,
-            Effects {
-                buy_bps: 900,
-                sell_penalty_bps: 400,
-                encounter_frequency_bps: 500,
-                encounter_archetype: None,
-                disease_intensity: 0,
-            },
-            "A disappearance has disrupted work and trade, but nobody agrees on the cause.",
-        ),
+    let family_id = match family {
+        TemplateFamily::RecurringDepredation => "recurring_depredation",
+        TemplateFamily::DisappearanceOrLoss => "disappearance_or_loss",
     };
+    let cause_id = match cause {
+        CanonicalCause::Hostile(threat) => threat.as_str().to_owned(),
+        CanonicalCause::VoluntaryDisappearance => "voluntary_disappearance".into(),
+        CanonicalCause::ConcealmentByWitness => "concealment".into(),
+        CanonicalCause::IncidentalLoss => "incidental_loss".into(),
+        CanonicalCause::FabricatedClaim => "fabricated".into(),
+    };
+    let authored = crate::quest_catalog::catalog()
+        .consequence(family_id, &cause_id)
+        .expect("validated consequence coverage");
     ConsequenceProfile {
-        symptom,
-        effects,
-        public_summary: summary.into(),
+        symptom: match authored.symptom.as_str() {
+            "night_screams" => Symptom::NightScreams,
+            "vanished_livestock" => Symptom::VanishedLivestock,
+            "missing_caravans" => Symptom::MissingCaravans,
+            "empty_stalls" => Symptom::EmptyStalls,
+            _ => unreachable!("validated consequence symptom"),
+        },
+        effects: Effects {
+            buy_bps: authored.buy_bps,
+            sell_penalty_bps: authored.sell_penalty_bps,
+            encounter_frequency_bps: authored.encounter_frequency_bps,
+            encounter_archetype: authored.encounter_archetype.as_deref().map(|id| match id {
+                "undead" => EncounterArchetype::Undead,
+                "goblins" => EncounterArchetype::Goblins,
+                "bandits" => EncounterArchetype::Bandits,
+                _ => unreachable!("validated encounter archetype"),
+            }),
+            disease_intensity: authored.disease_intensity,
+        },
+        public_summary: authored.public_summary.clone(),
     }
 }
 
@@ -2861,6 +2747,41 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             ),
         },
     };
+    let template_id = match family {
+        TemplateFamily::RecurringDepredation => "recurring_depredation",
+        TemplateFamily::DisappearanceOrLoss => "disappearance_or_loss",
+    };
+    let cause_key = match cause {
+        CanonicalCause::Hostile(_) => "hostile",
+        CanonicalCause::ConcealmentByWitness => "concealment",
+        CanonicalCause::IncidentalLoss => "incidental_loss",
+        CanonicalCause::FabricatedClaim => "fabricated",
+        CanonicalCause::VoluntaryDisappearance => "voluntary_disappearance",
+    };
+    let template = crate::quest_catalog::catalog()
+        .template(template_id)
+        .unwrap();
+    let configured_finales = template
+        .cause_finales
+        .get(cause_key)
+        .or_else(|| template.cause_finales.get("*"))
+        .expect("validated template cause/finale coverage");
+    assert_eq!(
+        finales
+            .iter()
+            .map(|finale| match finale.kind {
+                FinaleKind::Defeat => "defeat",
+                FinaleKind::DriveOff => "drive_off",
+                FinaleKind::Capture => "capture",
+                FinaleKind::Rescue => "rescue",
+                FinaleKind::RetrieveReturn => "retrieve_return",
+                FinaleKind::Expose => "expose",
+                FinaleKind::Negotiate => "negotiate",
+            })
+            .collect::<Vec<_>>(),
+        *configured_finales,
+        "typed objective assembler must implement the YAML finale plan"
+    );
     let mut bridges = Vec::new();
     for key in [
         site_bridge,
@@ -3604,10 +3525,16 @@ mod tests {
 
     #[test]
     fn every_report_description_has_ambiguous_natural_testimony() {
-        assert_eq!(ALL_REPORTS.len(), 8);
-        for report in ALL_REPORTS {
-            let prose = ambiguous_report_description(*report);
-            let claim = ambiguous_visual_claim(*report, "the old bridge");
+        let reports = crate::quest_catalog::catalog()
+            .documents
+            .iter()
+            .flat_map(|document| &document.descriptions)
+            .map(|description| ReportDescription::try_new(&description.id).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(reports.len(), 8);
+        for report in reports {
+            let prose = ambiguous_report_description(report);
+            let claim = ambiguous_visual_claim(report, "the old bridge");
             assert!(!prose.is_empty());
             assert!(
                 !claim.contains(&format!("{report:?}")),
@@ -4441,7 +4368,7 @@ mod tests {
         .unwrap();
         let house = trace
             .iter()
-            .find(|t| t.candidate_id == "site.occupied_house")
+            .find(|t| t.candidate_id == "occupied_house")
             .unwrap();
         assert_eq!(house.plausibility, 3);
         assert_eq!(
@@ -4450,7 +4377,7 @@ mod tests {
         );
         let wolf_crypt = site_candidates(CanonicalCause::Hostile(ThreatId::Wolf))
             .into_iter()
-            .find(|c| c.id == "site.crypt")
+            .find(|c| c.id == "crypt")
             .unwrap();
         assert_eq!(wolf_crypt.weight.plausibility, 0);
         assert!(wolf_crypt.impossible.is_some());
