@@ -272,10 +272,12 @@ Conviction lives on the personality axis instead: Zealous contributes 5.0 pressu
 Bestiary is a meta-skill, following the Religion model, whose leaf skills
 represent learned physical knowledge of Beast, Undead, Human,
 Werekin, Elf, Dwarf, Fey, Spirit, Greenskin, Insectoid, Draconid, Construct,
-and Wildmen creatures. A creature may belong to several categories, but one
-evidence result always evaluates exactly one category. Transformed animal
-tracks can support Werekin without identifying whether the host is Human, Elf,
-or Dwarf.
+and Wildmen creatures. A creature has one main type and may have several
+secondary types. Skeletons and ghouls are primarily Undead with Human as a
+secondary anatomical type; werewolves are primarily Werekin with Human and
+Beast secondary types. One evidence result always evaluates exactly one
+category. Transformed animal tracks can support Werekin without identifying
+whether the host is Human, Elf, or Dwarf.
 
 Direct category hours are canonical. Effective hours use one symmetric,
 nonrecursive correlation pass and are capped at the Bestiary skill's
@@ -284,12 +286,13 @@ more modestly with Fey knowledge. The expandable skill rail shows effective
 and directly studied hours for every category with transferred knowledge.
 The parent Bestiary value is the mean effective coverage across every category,
 not the character's single best category. A question-mark cursor marks category
-icons as inspectable. Their hover/focus tooltips list the current enemy types
-covered by that category, and clicking pins the tooltip. Hovering or focusing
-an enemy type then shows only strengths and weaknesses derived from mechanics
-currently consumed by combat. Each strength appears on its own green line and
-each weakness on its own red line; no category-wide generalizations or
-unimplemented folklore are shown.
+icons as inspectable. Their hover/focus tooltips separate creatures for which
+the category is the main type from creatures for which it is a secondary type,
+and clicking pins the tooltip. Hovering or focusing an enemy type then shows
+only strengths and weaknesses derived from mechanics currently consumed by
+combat. Each strength appears on its own green line and each weakness on its
+own red line; no category-wide generalizations or unimplemented folklore are
+shown.
 
 Against a creature, the attacker averages the Bestiary checks for every
 category on that creature. Excess-accuracy damage is capped at 2× plus that

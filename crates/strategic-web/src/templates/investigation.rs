@@ -316,6 +316,7 @@ mod tests {
             enemies: vec![crate::spacetimedb::BestiaryEnemyLoreView {
                 id: "werewolf".into(),
                 name: "Werewolf".into(),
+                is_primary: true,
                 strengths: vec!["Innate padding absorbs the first 35 J of impact".into()],
                 weaknesses: vec!["Must close to melee before attacking".into()],
             }],

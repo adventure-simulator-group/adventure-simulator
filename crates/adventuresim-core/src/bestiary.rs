@@ -437,9 +437,16 @@ pub struct ThreatProfile {
     pub aliases: &'static [&'static str],
     pub base_weight: u16,
     pub curation_weight: u16,
-    pub categories: &'static [BestiaryCategory],
+    pub primary_category: BestiaryCategory,
+    pub secondary_categories: &'static [BestiaryCategory],
     pub combat: CombatProfile,
     pub investigation: InvestigationProfile,
+}
+
+impl ThreatProfile {
+    pub fn categories(self) -> impl Iterator<Item = BestiaryCategory> {
+        std::iter::once(self.primary_category).chain(self.secondary_categories.iter().copied())
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -516,14 +523,23 @@ pub fn implemented_combat_lore(profile: ThreatProfile) -> ImplementedCombatLore 
     lore
 }
 
-pub fn profiles_for_category(category: BestiaryCategory) -> Vec<ThreatProfile> {
+#[derive(Clone, Copy, Debug)]
+pub struct CategorizedThreatProfile {
+    pub profile: ThreatProfile,
+    pub is_primary: bool,
+}
+
+pub fn profiles_for_category(category: BestiaryCategory) -> Vec<CategorizedThreatProfile> {
     crate::quest_catalog::catalog()
         .monsters()
-        .filter(|monster| monster.categories.contains(&category))
-        .map(|monster| {
-            ThreatId::try_new(&monster.id)
+        .filter(|monster| {
+            monster.primary_category == category || monster.secondary_categories.contains(&category)
+        })
+        .map(|monster| CategorizedThreatProfile {
+            profile: ThreatId::try_new(&monster.id)
                 .expect("validated threat ID")
-                .profile()
+                .profile(),
+            is_primary: monster.primary_category == category,
         })
         .collect()
 }
@@ -557,7 +573,8 @@ fn compile_profile(
         aliases: &[],
         base_weight: authored.base_weight,
         curation_weight: authored.curation_weight,
-        categories: &[],
+        primary_category: authored.primary_category,
+        secondary_categories: &[],
         combat: CombatProfile {
             rig: RigTopology::Humanoid,
             speed_m_per_minute: 1,
@@ -610,7 +627,9 @@ fn compile_profile(
     );
     profile.base_weight = authored.base_weight;
     profile.curation_weight = authored.curation_weight;
-    profile.categories = Box::leak(authored.categories.clone().into_boxed_slice());
+    profile.primary_category = authored.primary_category;
+    profile.secondary_categories =
+        Box::leak(authored.secondary_categories.clone().into_boxed_slice());
     profile.combat.rig = match authored.combat.rig.as_str() {
         "humanoid" => RigTopology::Humanoid,
         "quadruped" => RigTopology::Quadruped,
@@ -1509,22 +1528,38 @@ mod tests {
     }
 
     #[test]
-    fn authored_creature_categories_compile_as_overlapping_profile_facets() {
+    fn authored_creature_categories_distinguish_primary_and_secondary_facets() {
+        let wild_man = profile(ThreatId::WildMan);
+        assert_eq!(wild_man.primary_category, BestiaryCategory::Wildmen);
+        assert!(wild_man.secondary_categories.is_empty());
+
+        let spectral_hound = profile(ThreatId::SpectralHound);
+        assert_eq!(spectral_hound.primary_category, BestiaryCategory::Spirit);
         assert_eq!(
-            profile(ThreatId::WildMan).categories,
-            &[BestiaryCategory::Wildmen]
+            spectral_hound.secondary_categories,
+            &[BestiaryCategory::Beast]
+        );
+
+        let werewolf = profile(ThreatId::Werewolf);
+        assert_eq!(werewolf.primary_category, BestiaryCategory::Werekin);
+        assert_eq!(
+            werewolf.secondary_categories,
+            &[BestiaryCategory::Human, BestiaryCategory::Beast]
         );
         assert_eq!(
-            profile(ThreatId::SpectralHound).categories,
-            &[BestiaryCategory::Beast, BestiaryCategory::Spirit]
-        );
-        assert_eq!(
-            profile(ThreatId::Werewolf).categories,
-            &[
+            werewolf.categories().collect::<Vec<_>>(),
+            vec![
+                BestiaryCategory::Werekin,
                 BestiaryCategory::Human,
                 BestiaryCategory::Beast,
-                BestiaryCategory::Werekin,
             ]
+        );
+
+        let skeleton = profile(ThreatId::Skeleton);
+        assert_eq!(skeleton.primary_category, BestiaryCategory::Undead);
+        assert_eq!(
+            skeleton.categories().collect::<Vec<_>>(),
+            vec![BestiaryCategory::Undead, BestiaryCategory::Human]
         );
     }
 

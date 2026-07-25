@@ -93,23 +93,38 @@
       }
 
       const list = documentRoot.createElement('div');
-      list.className = 'strategic-tooltip-enemy-list';
+      list.className = 'strategic-tooltip-enemy-groups';
       const details = documentRoot.createElement('section');
       details.className = 'strategic-tooltip-enemy-details';
       details.hidden = true;
-      for (const enemy of enemies) {
-        const item = documentRoot.createElement('button');
-        item.type = 'button';
-        item.className = 'strategic-tooltip-enemy';
-        item.textContent = enemy.name;
-        const showDetails = () => {
-          details.hidden = false;
-          renderEnemyDetails(enemy, details);
-          position();
-        };
-        item.addEventListener('pointerover', showDetails);
-        item.addEventListener('focus', showDetails);
-        list.append(item);
+      for (const [heading, primary] of [['Main type', true], ['Secondary type', false]]) {
+        const groupEnemies = enemies.filter((enemy) => Boolean(enemy.is_primary) === primary);
+        if (!groupEnemies.length) continue;
+        const group = documentRoot.createElement('section');
+        group.className = `strategic-tooltip-enemy-group ${primary ? 'is-primary' : 'is-secondary'}`;
+        group.setAttribute('role', 'group');
+        group.setAttribute('aria-label', heading);
+        const groupHeading = documentRoot.createElement('strong');
+        groupHeading.className = 'strategic-tooltip-enemy-group-heading';
+        groupHeading.textContent = heading;
+        const groupList = documentRoot.createElement('div');
+        groupList.className = 'strategic-tooltip-enemy-list';
+        for (const enemy of groupEnemies) {
+          const item = documentRoot.createElement('button');
+          item.type = 'button';
+          item.className = 'strategic-tooltip-enemy';
+          item.textContent = enemy.name;
+          const showDetails = () => {
+            details.hidden = false;
+            renderEnemyDetails(enemy, details);
+            position();
+          };
+          item.addEventListener('pointerover', showDetails);
+          item.addEventListener('focus', showDetails);
+          groupList.append(item);
+        }
+        group.append(groupHeading, groupList);
+        list.append(group);
       }
       tooltip.append(list, details);
       return true;

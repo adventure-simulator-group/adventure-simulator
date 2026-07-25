@@ -105,7 +105,7 @@ fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Result<Comba
     let threat_profile = parse_threat(enemy_type)?.profile();
     let profile = threat_profile.combat;
     let mut combatant = Combatant::new(id);
-    combatant.bestiary_categories = threat_profile.categories.to_vec();
+    combatant.bestiary_categories = threat_profile.categories().collect();
     combatant.attributes = CombatAttributes {
         endurance: rating,
         immunity: rating,

@@ -620,17 +620,31 @@ fn religion_skill_rows(
 
 fn bestiary_category_enemies(category: BestiaryCategory) -> (String, String) {
     let enemies = crate::spacetimedb::bestiary_enemy_lore(category);
-    let names = enemies
+    let primary_names = enemies
         .iter()
+        .filter(|enemy| enemy.is_primary)
         .map(|enemy| enemy.name.as_str())
         .collect::<Vec<_>>()
         .join(", ");
+    let secondary_names = enemies
+        .iter()
+        .filter(|enemy| !enemy.is_primary)
+        .map(|enemy| enemy.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut relationships = Vec::new();
+    if !primary_names.is_empty() {
+        relationships.push(format!("Main type for: {primary_names}."));
+    }
+    if !secondary_names.is_empty() {
+        relationships.push(format!("Secondary type for: {secondary_names}."));
+    }
     (
         serde_json::to_string(&enemies).expect("Bestiary enemy lore serializes"),
-        if names.is_empty() {
+        if relationships.is_empty() {
             "No current enemy types".into()
         } else {
-            format!("Applies to: {names}")
+            relationships.join(" ")
         },
     )
 }
@@ -1957,6 +1971,8 @@ mod tests {
         assert!(rendered.contains("data-bestiary-enemies"));
         assert!(rendered.contains("data-tooltip-pinnable"));
         assert!(rendered.contains("Wild man"));
+        assert!(rendered.contains("Main type for:"));
+        assert!(rendered.contains("Secondary type for:"));
         assert!(!rendered.contains("data-bestiary-strengths"));
         assert!(!rendered.contains("data-bestiary-weaknesses"));
         assert!(!rendered.contains("Great strength and endurance"));

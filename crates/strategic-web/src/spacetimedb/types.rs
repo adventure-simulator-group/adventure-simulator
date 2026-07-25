@@ -12,6 +12,7 @@ pub struct StoredBestiaryResult {
 pub struct BestiaryEnemyLoreView {
     pub id: String,
     pub name: String,
+    pub is_primary: bool,
     pub strengths: Vec<String>,
     pub weaknesses: Vec<String>,
 }
@@ -21,11 +22,13 @@ pub fn bestiary_enemy_lore(
 ) -> Vec<BestiaryEnemyLoreView> {
     adventuresim_core::bestiary::profiles_for_category(category)
         .into_iter()
-        .map(|profile| {
+        .map(|categorized| {
+            let profile = categorized.profile;
             let lore = adventuresim_core::bestiary::implemented_combat_lore(profile);
             BestiaryEnemyLoreView {
                 id: profile.id.as_str().into(),
                 name: profile.display_name.into(),
+                is_primary: categorized.is_primary,
                 strengths: lore.strengths,
                 weaknesses: lore.weaknesses,
             }

@@ -400,6 +400,24 @@
   pointer-events: auto;
 }
 
+.strategic-tooltip-enemy-groups {
+  display: grid;
+  gap: .45rem;
+}
+
+.strategic-tooltip-enemy-group-heading {
+  display: block;
+  margin-bottom: .2rem;
+  color: var(--text-secondary);
+  font-size: .75rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.strategic-tooltip-enemy-group.is-secondary .strategic-tooltip-enemy {
+  color: var(--text-secondary);
+}
+
 .strategic-tooltip-enemy-list {
   display: flex;
   flex-wrap: wrap;

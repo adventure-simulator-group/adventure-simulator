@@ -49,9 +49,12 @@ overwriting either layer.
 
 Every threat profile carries one or more typed physical-knowledge facets:
 Beast, Undead, Human, Werekin, Elf, Dwarf, Fey, Spirit, Greenskin,
-Insectoid, Draconid, Construct, and Wildmen. These are overlapping tags rather
-than an exclusive taxonomy. A werewolf is Human + Beast + Werekin, while a
-spectral hound is Beast + Spirit. Wildmen are their own category.
+Insectoid, Draconid, Construct, and Wildmen. One facet is authored as the
+creature's primary type; any others are secondary physical traits. These remain
+overlapping rather than exclusive: a werewolf is primarily Werekin with Human
+and Beast traits, while a spectral hound is primarily Spirit with a secondary
+Beast trait. Skeletons and ghouls are primarily Undead and only secondarily
+Human. Wildmen are their own primary category.
 
 `BestiaryHours` stores only direct study by category. Effective knowledge is a
 single, nonrecursive pass through a symmetric diagnostic-correlation matrix,
@@ -74,11 +77,11 @@ Successful results are persisted on one canonical inspection record. Revisits
 keep the physical observation stable while current knowledge may add newly
 successful categories; existing results are never removed or duplicated. The
 same safe structured results persist in the investigation journal. Category
-lore lists the current authored enemy types to which that category applies.
-Enemy-specific hover details include only facts derived from fields consumed by
-current combat, such as a skeleton's edge resistance and lack of innate
-padding. Unimplemented folklore such as fire, silver, daylight, and ritual
-courage is not presented as gameplay knowledge.
+lore separates enemies for which that category is the main type from enemies
+for which it is a secondary type. Enemy-specific hover details include only
+facts derived from fields consumed by current combat, such as a skeleton's edge
+resistance and lack of innate padding. Unimplemented folklore such as fire,
+silver, daylight, and ritual courage is not presented as gameplay knowledge.
 
 ## Weighted context and inference
 

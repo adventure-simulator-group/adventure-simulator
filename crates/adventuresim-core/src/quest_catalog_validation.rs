@@ -27,7 +27,8 @@ const MONSTER_KEYS: &[&str] = &[
     "base_weight",
     "curation_weight",
     "northern_germany_prior",
-    "categories",
+    "primary_category",
+    "secondary_categories",
     "combat",
     "investigation",
 ];
@@ -431,20 +432,25 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                         unsigned(item, "base_weight", 1, u16::MAX.into(), &at)?;
                         unsigned(item, "curation_weight", 1, u16::MAX.into(), &at)?;
                         unsigned(item, "northern_germany_prior", 1, u16::MAX.into(), &at)?;
-                        let categories = list_strings(item, "categories", &at)?;
-                        if categories.is_empty() {
-                            return Err(format!("{at}.categories: must not be empty"));
-                        }
+                        let primary_category = string(item, "primary_category", &at)?;
+                        enum_value(
+                            primary_category,
+                            BESTIARY_CATEGORY_IDS,
+                            &format!("{at}.primary_category"),
+                        )?;
+                        let categories = list_strings(item, "secondary_categories", &at)?;
                         let mut unique_categories = BTreeSet::new();
                         for category in categories {
                             enum_value(
                                 &category,
                                 BESTIARY_CATEGORY_IDS,
-                                &format!("{at}.categories"),
+                                &format!("{at}.secondary_categories"),
                             )?;
-                            if !unique_categories.insert(category.clone()) {
+                            if category == primary_category
+                                || !unique_categories.insert(category.clone())
+                            {
                                 return Err(format!(
-                                    "{at}.categories: duplicate Bestiary category {category}"
+                                    "{at}: duplicate Bestiary category {category}"
                                 ));
                             }
                         }

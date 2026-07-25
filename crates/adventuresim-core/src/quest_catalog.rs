@@ -51,9 +51,16 @@ pub struct Monster {
     pub base_weight: u16,
     pub curation_weight: u16,
     pub northern_germany_prior: u16,
-    pub categories: Vec<BestiaryCategory>,
+    pub primary_category: BestiaryCategory,
+    pub secondary_categories: Vec<BestiaryCategory>,
     pub combat: MonsterCombat,
     pub investigation: MonsterInvestigation,
+}
+
+impl Monster {
+    pub fn categories(&self) -> impl Iterator<Item = BestiaryCategory> + '_ {
+        std::iter::once(self.primary_category).chain(self.secondary_categories.iter().copied())
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -556,8 +563,18 @@ fn validate_monster(monster: &Monster) -> Result<(), String> {
             monster.id
         ));
     }
-    if monster.categories.is_empty()
-        || monster.investigation.habitats.is_empty()
+    let mut categories = BTreeSet::from([monster.primary_category]);
+    if !monster
+        .secondary_categories
+        .iter()
+        .all(|category| categories.insert(*category))
+    {
+        return Err(format!(
+            "monster {} has duplicate Bestiary categories",
+            monster.id
+        ));
+    }
+    if monster.investigation.habitats.is_empty()
         || monster.investigation.silhouettes.is_empty()
         || monster.investigation.distinguishing_clues.is_empty()
     {
@@ -728,7 +745,8 @@ mod tests {
     fn shared_validator_rejects_invalid_bestiary_tags_and_implications() {
         let (documents, files) = raw_catalog();
         let mut unknown_category = documents.clone();
-        unknown_category[0]["monsters"][0]["categories"] = serde_json::json!(["not_a_category"]);
+        unknown_category[0]["monsters"][0]["primary_category"] =
+            serde_json::json!("not_a_category");
         assert!(
             crate::quest_catalog_validation::validate_documents(&unknown_category, &files)
                 .unwrap_err()
@@ -736,7 +754,7 @@ mod tests {
         );
 
         let mut duplicate_category = documents.clone();
-        duplicate_category[0]["monsters"][0]["categories"] = serde_json::json!(["human", "human"]);
+        duplicate_category[0]["monsters"][0]["secondary_categories"] = serde_json::json!(["human"]);
         assert!(
             crate::quest_catalog_validation::validate_documents(&duplicate_category, &files)
                 .unwrap_err()
