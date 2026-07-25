@@ -4,17 +4,19 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::tactical_mission_resolution_type::TacticalMissionResolution;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct EndTacticalServerArgs {
-    pub success: bool,
+    pub resolution: TacticalMissionResolution,
     pub reported_xp_gained: i32,
 }
 
 impl From<EndTacticalServerArgs> for super::Reducer {
     fn from(args: EndTacticalServerArgs) -> Self {
         Self::EndTacticalServer {
-            success: args.success,
+            resolution: args.resolution,
             reported_xp_gained: args.reported_xp_gained,
         }
     }
@@ -35,8 +37,12 @@ pub trait end_tactical_server {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`end_tactical_server:end_tactical_server_then`] to run a callback after the reducer completes.
-    fn end_tactical_server(&self, success: bool, reported_xp_gained: i32) -> __sdk::Result<()> {
-        self.end_tactical_server_then(success, reported_xp_gained, |_, _| {})
+    fn end_tactical_server(
+        &self,
+        resolution: TacticalMissionResolution,
+        reported_xp_gained: i32,
+    ) -> __sdk::Result<()> {
+        self.end_tactical_server_then(resolution, reported_xp_gained, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `end_tactical_server` to run as soon as possible,
@@ -47,7 +53,7 @@ pub trait end_tactical_server {
     ///  and its status can be observed with the `callback`.
     fn end_tactical_server_then(
         &self,
-        success: bool,
+        resolution: TacticalMissionResolution,
         reported_xp_gained: i32,
 
         callback: impl FnOnce(
@@ -61,7 +67,7 @@ pub trait end_tactical_server {
 impl end_tactical_server for super::RemoteReducers {
     fn end_tactical_server_then(
         &self,
-        success: bool,
+        resolution: TacticalMissionResolution,
         reported_xp_gained: i32,
 
         callback: impl FnOnce(
@@ -72,7 +78,7 @@ impl end_tactical_server for super::RemoteReducers {
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
             EndTacticalServerArgs {
-                success,
+                resolution,
                 reported_xp_gained,
             },
             callback,

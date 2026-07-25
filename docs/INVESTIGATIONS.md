@@ -87,3 +87,57 @@ and visible regional priors. It delegates forward likelihoods and zero/rare
 semantics to `bestiary::rank_candidates_in_region`; it has no inverse table and
 cannot accept hidden `ThreatId` or case truth. Provenance names only inputs
 already known to the observer.
+
+## Strategic investigation actions
+
+Investigation opportunities are private, versioned capabilities issued by the
+strategic authority. The browser receives only an opaque action ID, method,
+version, safe description, prerequisites, costs, uncertainty, and contribution
+labels. Hidden case truth, target IDs, exact coordinates, deterministic seeds,
+success thresholds, and weights never enter browser state.
+
+The initial action vocabulary is inspect site, search area, follow or reacquire
+tracks, locate a contact, watch, patrol, lay an ambush, and approach a lead.
+Rumors materialize all nine as two linked routes: witness-led search and
+observation-led interception. Only the two roots begin active; successful
+actions unlock their successors and failed actions reactivate a validated
+same-owner, same-case alternate. Approximate areas are private strategic
+geometry, not client-authored destinations.
+Resolution uses authoritative terrain, time of day, evidence age, relevant
+skills, bounded party assistance, and observer familiarity. Weather is
+explicitly unavailable until the strategic layer owns authoritative weather;
+clients must not infer or invent it.
+
+Every attempt is idempotent and consumes strenuous strategic time, including a
+failed attempt. Failure may increase risk or uncertainty, but it does not
+silently invalidate alternate investigation routes. Approximate discoveries
+remain directions or areas. An exact map pin is disclosed only when an
+authoritative result supports exact observer knowledge. Watches, patrols, and
+ambush preparation remain strategic actions; they do not persist tactical tick
+state and cannot fabricate a combat result.
+Before spending time the reducer revalidates party readiness, co-location,
+journey and camp state, unresolved encounters, predecessor knowledge,
+position, and typed prerequisites. Party clocks synchronize first, with night
+defined as before 06:00 or from 20:00 onward. Browser estimates are broad
+method-derived duration ranges; exact terrain, needs, fatigue, success, and
+risk remain authoritative.
+
+Location is revalidated at execution, not merely at issuance. Contact actions
+use the referred NPC's current settlement and presence window (or the same
+settlement as a bound ask-around action). Track actions remain bound to the
+materialized predecessor area until they disclose the site; occupying another
+site from the same case counts only when its valid coordinates fall
+within that area's meter radius. Areas bind the origin settlement's coordinate
+mode: imported geographic worlds use great-circle meters, while abstract maps
+use the strategic-travel convention of Euclidean coordinate units as
+kilometers. Site and area modes must agree. Later
+site-targeting actions require actual site occupancy. Traveling elsewhere
+invalidates the attempt before time is spent or a lead is written.
+
+Retrieve and rescue consequences re-read current custody and require the case objective,
+object kind, site holder, occupied site, and next version to agree. A purely
+stale version reissues the capability without spending time; a holder, site,
+or case mismatch fails closed. Investigation can discover, track, position, and
+prepare an ambush, but it never creates a mission, battle receipt, hostile
+disposition, drive-off fact, or capture fact. Authoritative non-kill tactical
+resolution is tracked separately in #207.

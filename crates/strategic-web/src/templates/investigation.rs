@@ -1,9 +1,14 @@
-use crate::spacetimedb::{BackendInvestigationJournalEntry, BackendInvestigationLead};
+use crate::spacetimedb::{
+    BackendInvestigationAction, BackendInvestigationActionOutcome,
+    BackendInvestigationJournalEntry, BackendInvestigationLead,
+};
 use maud::{Markup, html};
 
 pub fn journal_page(
     entries: &[BackendInvestigationJournalEntry],
     leads: &[BackendInvestigationLead],
+    actions: &[BackendInvestigationAction],
+    outcomes: &[BackendInvestigationActionOutcome],
     character_name: &str,
 ) -> Markup {
     let content = html! {
@@ -22,6 +27,44 @@ pub fn journal_page(
             }
             @if entries.is_empty() && leads.is_empty() {
                 section class="strategic-notice" { p { "No problems or leads have reached you yet." } }
+            }
+            @if !outcomes.is_empty() {
+                section class="journal-actions-outcomes" {
+                    h2 { "Recent investigation results" }
+                    @for outcome in outcomes.iter().rev().take(5) {
+                        article class="journal-card journal-action-outcome" {
+                            p { (&outcome.wording) }
+                        }
+                    }
+                }
+            }
+            @if !actions.is_empty() {
+                section class="journal-actions" {
+                    h2 { "Ways to investigate" }
+                    @for action in actions {
+                        article class="journal-card journal-action" data-action-id=(&action.action_id) {
+                            h3 { (&action.summary) }
+                            p { (&action.known_prerequisites) }
+                            p class="journal-action-cost" {
+                                "Estimated duration: " (action.duration_min_minutes) "–"
+                                (action.duration_max_minutes) " minutes. Needs and fatigue are settled authoritatively when the action is performed."
+                            }
+                            p class="journal-action-skills" {
+                                "Relevant contributions: " (&action.skill_contributions)
+                                ". Current uncertainty: " (action.uncertainty_bps / 100) "%."
+                            }
+                            @if !action.weather_available {
+                                p class="text-muted" { "Weather effects are unavailable and are not estimated." }
+                            }
+                            form method="post" action="/journal/actions" {
+                                input type="hidden" name="action_id" value=(&action.action_id);
+                                input type="hidden" name="method" value=(&action.method);
+                                input type="hidden" name="expected_version" value=(action.expected_version);
+                                button type="submit" { "Attempt " (action.method.replace('_', " ")) }
+                            }
+                        }
+                    }
+                }
             }
             @for lead in leads {
                 article class="journal-card journal-lead" data-case-id=(&lead.case_id) data-lead-id=(&lead.lead_id) {
@@ -111,7 +154,7 @@ mod tests {
             corrected_by: String::new(),
             recorded_at: 1,
         };
-        let markup = journal_page(&[], &[lead], "Ada").into_string();
+        let markup = journal_page(&[], &[lead], &[], &[], "Ada").into_string();
         assert!(markup.contains("Source: the innkeeper"));
         assert!(markup.contains("confidence 55%"));
         assert!(markup.contains("Conflicts with another account"));

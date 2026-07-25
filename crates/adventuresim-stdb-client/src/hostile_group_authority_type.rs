@@ -5,6 +5,7 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::case_site_id_type::CaseSiteId;
+use super::hostile_group_disposition_type::HostileGroupDisposition;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,7 +17,7 @@ pub struct HostileGroupAuthority {
     pub difficulty: i32,
     pub drop_item_id: Option<String>,
     pub drop_quantity: u32,
-    pub defeated: bool,
+    pub disposition: HostileGroupDisposition,
 }
 
 impl __sdk::InModule for HostileGroupAuthority {
@@ -34,7 +35,7 @@ pub struct HostileGroupAuthorityCols {
     pub difficulty: __sdk::__query_builder::Col<HostileGroupAuthority, i32>,
     pub drop_item_id: __sdk::__query_builder::Col<HostileGroupAuthority, Option<String>>,
     pub drop_quantity: __sdk::__query_builder::Col<HostileGroupAuthority, u32>,
-    pub defeated: __sdk::__query_builder::Col<HostileGroupAuthority, bool>,
+    pub disposition: __sdk::__query_builder::Col<HostileGroupAuthority, HostileGroupDisposition>,
 }
 
 impl __sdk::__query_builder::HasCols for HostileGroupAuthority {
@@ -48,7 +49,7 @@ impl __sdk::__query_builder::HasCols for HostileGroupAuthority {
             difficulty: __sdk::__query_builder::Col::new(table_name, "difficulty"),
             drop_item_id: __sdk::__query_builder::Col::new(table_name, "drop_item_id"),
             drop_quantity: __sdk::__query_builder::Col::new(table_name, "drop_quantity"),
-            defeated: __sdk::__query_builder::Col::new(table_name, "defeated"),
+            disposition: __sdk::__query_builder::Col::new(table_name, "disposition"),
         }
     }
 }

@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::hostile_resolution_kind_type::HostileResolutionKind;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct OutcomeSourceAuthority {
@@ -11,6 +13,7 @@ pub struct OutcomeSourceAuthority {
     pub battle_id: String,
     pub mission_id: Option<String>,
     pub hostile_group_id: Option<String>,
+    pub resolution: HostileResolutionKind,
     pub party_id: String,
 }
 
@@ -26,6 +29,7 @@ pub struct OutcomeSourceAuthorityCols {
     pub battle_id: __sdk::__query_builder::Col<OutcomeSourceAuthority, String>,
     pub mission_id: __sdk::__query_builder::Col<OutcomeSourceAuthority, Option<String>>,
     pub hostile_group_id: __sdk::__query_builder::Col<OutcomeSourceAuthority, Option<String>>,
+    pub resolution: __sdk::__query_builder::Col<OutcomeSourceAuthority, HostileResolutionKind>,
     pub party_id: __sdk::__query_builder::Col<OutcomeSourceAuthority, String>,
 }
 
@@ -37,6 +41,7 @@ impl __sdk::__query_builder::HasCols for OutcomeSourceAuthority {
             battle_id: __sdk::__query_builder::Col::new(table_name, "battle_id"),
             mission_id: __sdk::__query_builder::Col::new(table_name, "mission_id"),
             hostile_group_id: __sdk::__query_builder::Col::new(table_name, "hostile_group_id"),
+            resolution: __sdk::__query_builder::Col::new(table_name, "resolution"),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
         }
     }

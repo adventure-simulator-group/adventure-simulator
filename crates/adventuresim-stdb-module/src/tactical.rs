@@ -13,11 +13,40 @@ use crate::{
     investigation::case_site_authority,
     item__view, party_authority,
     strategic::{
-        autoresolve_report, commit_victorious_battle, ensure_bound_mission_authority,
-        hostile_group_authority, mission_authority, outcome_source_authority,
-        strategic_gateway_authority__view,
+        HostileGroupDisposition, HostileResolutionKind, autoresolve_report,
+        commit_hostile_battle_resolution, ensure_bound_mission_authority, hostile_group_authority,
+        mission_authority, outcome_source_authority, strategic_gateway_authority__view,
     },
 };
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum TacticalMissionResolution {
+    Failed,
+    Defeated,
+    DrivenOff,
+    Captured,
+    CaptureTargetKilled,
+}
+
+fn validate_tactical_report(
+    server_expected: HostileResolutionKind,
+    mission_expected: HostileResolutionKind,
+    reported: TacticalMissionResolution,
+) -> Result<Option<HostileResolutionKind>, String> {
+    let reported = match reported {
+        TacticalMissionResolution::Failed => return Ok(None),
+        TacticalMissionResolution::Defeated => HostileResolutionKind::Defeated,
+        TacticalMissionResolution::DrivenOff => HostileResolutionKind::DrivenOff,
+        TacticalMissionResolution::Captured => HostileResolutionKind::Captured,
+        TacticalMissionResolution::CaptureTargetKilled => {
+            return Err("A killed capture target cannot complete a tactical mission".into());
+        }
+    };
+    if reported != mission_expected || mission_expected != server_expected {
+        return Err("Tactical result does not match the server-bound mission objective".into());
+    }
+    Ok(Some(reported))
+}
 
 /// Request to start a new [`TacticalServer`]
 #[derive(Clone, Debug)]
@@ -32,6 +61,7 @@ pub struct TacticalServerRequest {
     pub party_id: String,
     pub requested_by: u64,
     pub required_enemy_kills: u32,
+    pub expected_resolution: HostileResolutionKind,
 }
 
 /// Active tactical server instance
@@ -50,6 +80,7 @@ pub struct TacticalServer {
     pub addr: String,
     pub cert_digest: String,
     pub required_enemy_kills: u32,
+    pub expected_resolution: HostileResolutionKind,
 }
 
 #[view(accessor = tactical_server_request, public)]
@@ -428,8 +459,14 @@ pub fn request_tactical_server(
     if case_site.scene_key != scene_key {
         return Err("Tactical scene does not match the occupied case site".into());
     }
-    let mission =
-        ensure_bound_mission_authority(ctx, &mission_id, &party_id, &case_site, &scene_key)?;
+    let mission = ensure_bound_mission_authority(
+        ctx,
+        &mission_id,
+        &party_id,
+        &case_site,
+        &scene_key,
+        HostileResolutionKind::Defeated,
+    )?;
     let hostile_group_id = mission
         .hostile_group_id
         .clone()
@@ -440,8 +477,8 @@ pub fn request_tactical_server(
         .id()
         .find(&hostile_group_id)
         .ok_or("Hostile group not found")?;
-    if group.defeated {
-        return Err("Hostile group is already defeated".into());
+    if group.disposition != crate::strategic::HostileGroupDisposition::Active {
+        return Err("Hostile group is already resolved".into());
     }
     let battle_id = format!("battle:{mission_id}");
     let outcome_source_id = format!("outcome:{mission_id}");
@@ -507,6 +544,7 @@ pub fn request_tactical_server(
             party_id,
             requested_by: character_id,
             required_enemy_kills: group.enemy_count,
+            expected_resolution: mission.expected_resolution,
         });
 
     Ok(())
@@ -568,6 +606,7 @@ pub fn create_tactical_server_for_request(
         request.scene_key,
         request.party_id,
         request.required_enemy_kills,
+        request.expected_resolution,
         addr,
         cert_digest,
     )
@@ -583,6 +622,7 @@ fn insert_tactical_server(
     scene_key: String,
     party_id: String,
     required_enemy_kills: u32,
+    expected_resolution: HostileResolutionKind,
     addr: String,
     cert_digest: String,
 ) -> Result<(), String> {
@@ -617,6 +657,7 @@ fn insert_tactical_server(
         addr,
         cert_digest,
         required_enemy_kills,
+        expected_resolution,
     };
     ctx.db.tactical_server_authority().insert(server);
     Ok(())
@@ -626,7 +667,7 @@ fn insert_tactical_server(
 #[reducer]
 pub fn end_tactical_server(
     ctx: &ReducerContext,
-    success: bool,
+    resolution: TacticalMissionResolution,
     _reported_xp_gained: i32,
 ) -> Result<(), String> {
     let Some(server) = ctx
@@ -643,14 +684,14 @@ pub fn end_tactical_server(
 
     // Persistent progression is derived from the authoritative quest reward
     // in complete_quest. Tactical processes cannot mint arbitrary XP.
-    end_tactical_server_by_instance(ctx, server, success)
+    end_tactical_server_by_instance(ctx, server, resolution)
 }
 
 /// End a [`TacticallServer`].
 fn end_tactical_server_by_instance(
     ctx: &ReducerContext,
     server: TacticalServer,
-    success: bool,
+    resolution: TacticalMissionResolution,
 ) -> Result<(), String> {
     if ctx
         .db
@@ -671,7 +712,7 @@ fn end_tactical_server_by_instance(
         .server()
         .filter(server.identity)
         .collect();
-    if success {
+    if resolution != TacticalMissionResolution::Failed {
         let mission = ctx
             .db
             .mission_authority()
@@ -681,6 +722,12 @@ fn end_tactical_server_by_instance(
         if mission.party_id != server.party_id {
             return Err("Mission authority changed before completion".into());
         }
+        let reported = validate_tactical_report(
+            server.expected_resolution,
+            mission.expected_resolution,
+            resolution,
+        )?
+        .ok_or("Successful tactical branch reported failure")?;
         if let Some(adventurer) = connected.iter().find(|character| !character.temporary) {
             if adventurer.party_id.as_deref() == Some(server.party_id.as_str()) {
                 let group = mission
@@ -688,22 +735,31 @@ fn end_tactical_server_by_instance(
                     .as_ref()
                     .and_then(|id| ctx.db.hostile_group_authority().id().find(id))
                     .ok_or("Bound mission hostile group no longer exists")?;
-                let drops = group
-                    .drop_item_id
-                    .clone()
-                    .map(|item| vec![(item, group.drop_quantity)])
-                    .unwrap_or_default();
+                if group.disposition != HostileGroupDisposition::Active {
+                    return Err("Bound hostile group is already resolved".into());
+                }
+                let drops = if reported == HostileResolutionKind::Defeated {
+                    group
+                        .drop_item_id
+                        .clone()
+                        .map(|item| vec![(item, group.drop_quantity)])
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
                 let battle_id = format!("battle:{}", server.mission_id);
                 let outcome_source_id = format!("outcome:{}", server.mission_id);
-                let committed = commit_victorious_battle(
+                let committed = commit_hostile_battle_resolution(
                     ctx,
                     &outcome_source_id,
                     &battle_id,
                     &server.party_id,
                     Some(&server.mission_id),
                     mission.hostile_group_id.as_deref(),
+                    reported,
+                    mission.capture_subject_id.as_deref(),
                     drops,
-                    true,
+                    reported == HostileResolutionKind::Defeated,
                 )?;
                 if committed && let Some(group_id) = mission.hostile_group_id.as_deref() {
                     crate::strategic::finish_incident_for_hostile_group(ctx, group_id)?;
@@ -723,8 +779,8 @@ fn end_tactical_server_by_instance(
         .delete(server.identity);
 
     log::info!(
-        "Tactical server for mission '{}' ended: success={success}",
-        server.mission_id
+        "Tactical server for mission '{}' ended: resolution={resolution:?}",
+        server.mission_id,
     );
     Ok(())
 }
@@ -747,33 +803,30 @@ mod authority_tests {
     }
 
     #[test]
-    fn incident_outcomes_are_consumed_before_legacy_quest_projection() {
-        let source = include_str!("tactical.rs");
-        let completion = source
-            .split("fn end_tactical_server_by_instance")
-            .nth(1)
-            .and_then(|tail| tail.split("#[cfg(test)]").next())
-            .expect("tactical completion");
-        let incident = completion
-            .find("finish_incident_for_hostile_group")
-            .expect("typed incident completion");
-        let quest = completion
-            .find("complete_quest")
-            .expect("legacy quest projection");
-        assert!(incident < quest);
-    }
-
-    #[test]
-    fn only_success_routes_through_the_shared_victory_commit() {
-        let source = include_str!("tactical.rs");
-        let end = source
-            .split("fn end_tactical_server_by_instance")
-            .nth(1)
-            .expect("tactical end path");
-        let success = end.split("if success").nth(1).expect("success branch");
-        assert!(success.contains("commit_victorious_battle("));
-        assert!(success.contains("mission_authority()"));
-        assert!(!source.contains("record_battle_result("));
+    fn tactical_reports_are_mission_bound_and_killed_capture_targets_fail_closed() {
+        use super::{HostileResolutionKind as H, TacticalMissionResolution as T};
+        assert_eq!(
+            super::validate_tactical_report(H::Defeated, H::Defeated, T::Failed),
+            Ok(None)
+        );
+        assert_eq!(
+            super::validate_tactical_report(H::Defeated, H::Defeated, T::Defeated),
+            Ok(Some(H::Defeated))
+        );
+        assert_eq!(
+            super::validate_tactical_report(H::DrivenOff, H::DrivenOff, T::DrivenOff),
+            Ok(Some(H::DrivenOff))
+        );
+        assert_eq!(
+            super::validate_tactical_report(H::Captured, H::Captured, T::Captured),
+            Ok(Some(H::Captured))
+        );
+        assert!(
+            super::validate_tactical_report(H::Captured, H::Captured, T::CaptureTargetKilled)
+                .is_err()
+        );
+        assert!(super::validate_tactical_report(H::Defeated, H::Captured, T::Defeated).is_err());
+        assert!(super::validate_tactical_report(H::Captured, H::Captured, T::Defeated).is_err());
     }
 
     #[test]
