@@ -9,7 +9,7 @@ use adventuresim_core::social::{
 };
 use spacetimedb::{ReducerContext, Table, ViewContext, reducer, table, view};
 
-use crate::character::character;
+use crate::character::{character, character__view};
 use crate::condition::{character_morale_source__view, morale_event};
 use crate::strategic::strategic_gateway_authority__view;
 use crate::{
@@ -182,6 +182,19 @@ pub fn backend_automatic_social_chats(ctx: &ViewContext) -> Vec<AutomaticSocialC
         .automatic_social_chat()
         .actor_id()
         .filter(0u64..)
+        .filter(|row| row.enabled)
+        .filter(|row| {
+            let Some(actor) = ctx.db.character().id().find(row.actor_id) else {
+                return false;
+            };
+            let Some(target) = ctx.db.character().id().find(row.target_id) else {
+                return false;
+            };
+            actor.alive
+                && target.alive
+                && actor.party_id.is_some()
+                && actor.party_id == target.party_id
+        })
         .collect()
 }
 
@@ -250,11 +263,15 @@ pub fn set_automatic_social_chat(
         return Err("Automatic chats require the same party".into());
     }
     let id = automatic_chat_id(actor_id, target_id);
+    if !enabled {
+        ctx.db.automatic_social_chat().id().delete(&id);
+        return Ok(());
+    }
     let row = AutomaticSocialChat {
         id: id.clone(),
         actor_id,
         target_id,
-        enabled,
+        enabled: true,
     };
     if ctx.db.automatic_social_chat().id().find(&id).is_some() {
         ctx.db.automatic_social_chat().id().update(row);
@@ -262,6 +279,39 @@ pub fn set_automatic_social_chat(
         ctx.db.automatic_social_chat().insert(row);
     }
     Ok(())
+}
+
+/// Remove pair preferences that can no longer run. This is called from the
+/// infrequent party/death lifecycle paths so the trusted view remains bounded
+/// to current, living party relationships.
+pub(crate) fn prune_invalid_automatic_social_chats(ctx: &ReducerContext) {
+    for row in ctx
+        .db
+        .automatic_social_chat()
+        .actor_id()
+        .filter(0u64..)
+        .collect::<Vec<_>>()
+    {
+        let valid = row.enabled
+            && ctx
+                .db
+                .character()
+                .id()
+                .find(row.actor_id)
+                .is_some_and(|actor| {
+                    actor.alive
+                        && actor.party_id.is_some()
+                        && ctx
+                            .db
+                            .character()
+                            .id()
+                            .find(row.target_id)
+                            .is_some_and(|target| target.alive && actor.party_id == target.party_id)
+                });
+        if !valid {
+            ctx.db.automatic_social_chat().id().delete(&row.id);
+        }
+    }
 }
 
 pub fn current_affinity(ctx: &ReducerContext, subject_id: u64, actor_id: u64) -> f32 {
@@ -1227,6 +1277,31 @@ mod contract_tests {
             .expect("selector boundary");
         assert!(automatic.contains(".find(target_id)"));
         assert!(!automatic.contains(".find(actor_id)"));
+    }
+
+    #[test]
+    fn disabled_automatic_preferences_are_not_retained_in_the_projection() {
+        let source = include_str!("social.rs");
+        let setter = source
+            .split("pub fn set_automatic_social_chat")
+            .nth(1)
+            .expect("automatic preference setter")
+            .split("pub fn current_affinity")
+            .next()
+            .expect("setter boundary");
+        assert!(setter.contains("if !enabled"));
+        assert!(setter.contains(".delete(&id)"));
+
+        let view = source
+            .split("pub fn backend_automatic_social_chats")
+            .nth(1)
+            .expect("automatic preference view")
+            .split("pub struct SocialActionCooldown")
+            .next()
+            .expect("view boundary");
+        assert!(view.contains(".filter(|row| row.enabled)"));
+        assert!(view.contains("actor.party_id == target.party_id"));
+        assert!(source.contains("pub(crate) fn prune_invalid_automatic_social_chats"));
     }
 
     #[test]

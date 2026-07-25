@@ -24,6 +24,7 @@ use futures_util::{
 use maud::Markup;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::HashSet;
 
 const BUILDINGS: &[&str] = &[
     "residences",
@@ -3089,6 +3090,7 @@ mod party_religion_knowledge_tests {
             alive,
             temporary: false,
             social_notification_count: 0,
+            automatic_social_chat_enabled: false,
         }
     }
 
@@ -6264,6 +6266,10 @@ pub(crate) async fn get_active_party_members(
             "SELECT * FROM backend_social_addresses WHERE actor_id = {}",
             actor.id
         );
+        let automatic_sql = format!(
+            "SELECT * FROM backend_automatic_social_chats WHERE actor_id = {}",
+            actor.id
+        );
         let source_lookups = members.iter().map(|member| async move {
             state
                 .db
@@ -6274,12 +6280,19 @@ pub(crate) async fn get_active_party_members(
                 .await
                 .unwrap_or_default()
         });
-        let (source_groups, addresses) = tokio::join!(
+        let (source_groups, addresses, automatic_chats) = tokio::join!(
             join_all(source_lookups),
             state.db.query::<SocialAddress>(&addresses_sql),
+            state.db.query::<AutomaticSocialChat>(&automatic_sql),
         );
         let sources: Vec<_> = source_groups.into_iter().flatten().collect();
         let successful = addresses.unwrap_or_default();
+        let automatic_targets: HashSet<u64> = automatic_chats
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|preference| preference.enabled && preference.actor_id == actor.id)
+            .map(|preference| preference.target_id)
+            .collect();
         for member in &mut members {
             let colocated = member.id == actor.id
                 || (member.current_settlement_id == actor.current_settlement_id
@@ -6304,6 +6317,7 @@ pub(crate) async fn get_active_party_members(
                         )
                     }),
                 );
+            member.automatic_social_chat_enabled = automatic_targets.contains(&member.id);
         }
     }
     members.sort_by_key(|member| (Some(member.id) != leader_id, member.id));
@@ -6327,6 +6341,9 @@ mod social_notification_query_tests {
             )
         );
         assert!(loader.contains("SELECT * FROM backend_social_addresses WHERE actor_id = {}"));
+        assert!(
+            loader.contains("SELECT * FROM backend_automatic_social_chats WHERE actor_id = {}")
+        );
         assert!(!loader.contains("backend_social_interactions"));
     }
 }
@@ -6526,6 +6543,7 @@ mod rest_form_tests {
             alive: true,
             temporary: false,
             social_notification_count: 0,
+            automatic_social_chat_enabled: false,
         }
     }
 
@@ -6771,6 +6789,7 @@ mod herbalist_tests {
             alive,
             temporary: false,
             social_notification_count: 0,
+            automatic_social_chat_enabled: false,
         }
     }
 
@@ -6861,6 +6880,7 @@ mod encumbrance_tests {
             alive,
             temporary: false,
             social_notification_count: 0,
+            automatic_social_chat_enabled: false,
         }
     }
 

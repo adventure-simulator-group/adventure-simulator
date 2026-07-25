@@ -185,6 +185,9 @@ pub struct Character {
     /// SSR-only observer-specific count, populated after database decoding.
     #[serde(default, skip_serializing)]
     pub social_notification_count: usize,
+    /// SSR-only actor/target preference used to decide portrait-action visibility.
+    #[serde(default, skip_serializing)]
+    pub automatic_social_chat_enabled: bool,
 }
 
 macro_rules! personality_axis {

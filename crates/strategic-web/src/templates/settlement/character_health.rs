@@ -1202,6 +1202,7 @@ mod tests {
             alive: true,
             temporary: false,
             social_notification_count: 0,
+            automatic_social_chat_enabled: false,
         };
         let portrait = party_portrait_overlay(
             &[doctor.clone()],

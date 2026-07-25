@@ -94,6 +94,7 @@ mod tests {
             alive: false,
             temporary: false,
             social_notification_count: 0,
+            automatic_social_chat_enabled: false,
         };
 
         let markup = characters_list_page(&[character], Some(7)).into_string();

@@ -494,6 +494,7 @@ fn character_from_sdk(value: adventuresim_stdb_client::Character) -> crate::spac
         alive: value.alive,
         temporary: value.temporary,
         social_notification_count: 0,
+        automatic_social_chat_enabled: false,
     }
 }
 

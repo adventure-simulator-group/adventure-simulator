@@ -368,6 +368,7 @@ pub(crate) fn party_portrait_overlay(
             let is_active = active_character.is_some_and(|character| character.id == member.id);
             let can_remove = Some(member.id) != leader_id;
             let notified = member.alive && member.social_notification_count > 0;
+            let persistently_notified = notified && !member.automatic_social_chat_enabled;
             let inspection_href = if is_active {
                 format!("{}/party/{}", location_path, member.id)
             } else {
@@ -379,7 +380,7 @@ pub(crate) fn party_portrait_overlay(
                 html! {
                     span class="party-portrait-actions" aria-label=(format!("Actions for {}", member.name)) {
                             a href=(format!("{}/party/{}/social", location_path, member.id))
-                                class=(format!("party-portrait-action party-social-action{}", if notified { " party-social-notified" } else { "" }))
+                                class=(format!("party-portrait-action party-social-action{}", if persistently_notified { " party-social-notified" } else { "" }))
                                 title=(if notified { format!("Talk to {} about {} morale concerns", member.name, member.social_notification_count) } else { format!("Talk to {}", member.name) })
                                 aria-label=(if notified { format!("Talk to {} about {} unaddressed morale concerns", member.name, member.social_notification_count) } else { format!("Talk to {}", member.name) })
                                 aria-haspopup="dialog" {
@@ -459,6 +460,7 @@ mod tests {
             alive: true,
             temporary: false,
             social_notification_count: 2,
+            automatic_social_chat_enabled: false,
         };
         let markup = party_portrait_overlay(
             &[member.clone()],
@@ -495,6 +497,21 @@ mod tests {
         assert!(quiet_markup.contains("class=\"party-portrait-action party-social-action\""));
         assert!(quiet_markup.contains("/party/12/social"));
         assert!(quiet_markup.contains("aria-label=\"Talk to Greta\""));
+
+        let mut automatic = quiet;
+        automatic.social_notification_count = 2;
+        automatic.automatic_social_chat_enabled = true;
+        let automatic_markup = party_portrait_overlay(
+            &[automatic.clone()],
+            Some(&automatic),
+            "/locations/settlement/lubeck",
+            None,
+            false,
+        )
+        .into_string();
+        assert!(automatic_markup.contains("class=\"party-social-notification\""));
+        assert!(automatic_markup.contains("2 unaddressed morale concerns"));
+        assert!(!automatic_markup.contains("party-social-notified"));
     }
 
     #[test]
@@ -636,6 +653,7 @@ mod tests {
             alive: true,
             temporary: false,
             social_notification_count: 0,
+            automatic_social_chat_enabled: false,
         };
         let residences = settlement_npc_location_page(
             &settlement,

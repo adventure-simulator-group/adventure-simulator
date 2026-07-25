@@ -482,6 +482,7 @@ mod tests {
             alive: true,
             temporary: false,
             social_notification_count: 0,
+            automatic_social_chat_enabled: false,
         };
         let actor = character(1, "Ada");
         let target = character(2, "Greta");
@@ -611,6 +612,7 @@ mod tests {
             alive: true,
             temporary: false,
             social_notification_count: 0,
+            automatic_social_chat_enabled: false,
         };
         for location in ["residences", "keep"] {
             let markup = settlement_npc_location_page(

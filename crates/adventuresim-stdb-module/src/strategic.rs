@@ -11371,6 +11371,7 @@ pub fn remove_party_member(
     }
     normalize_and_elect_party_leader(ctx, &party_id)?;
     create_solo_party_for_character(ctx, member_character_id)?;
+    crate::social::prune_invalid_automatic_social_chats(ctx);
     Ok(())
 }
 
@@ -11505,6 +11506,7 @@ pub fn disband_party(ctx: &ReducerContext, leader_id: u64, party_id: String) -> 
     for character_id in member_ids {
         create_solo_party_for_character(ctx, character_id)?;
     }
+    crate::social::prune_invalid_automatic_social_chats(ctx);
     Ok(())
 }
 

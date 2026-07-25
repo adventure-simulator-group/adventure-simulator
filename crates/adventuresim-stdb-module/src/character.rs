@@ -155,6 +155,7 @@ pub fn transition_character_to_dead(
     // combatants that died in transient tactical state.
     let party_id = character.party_id.clone();
     ctx.db.character().id().update(character);
+    crate::social::prune_invalid_automatic_social_chats(ctx);
     if let Some(party_id) = party_id {
         crate::strategic::normalize_and_elect_party_leader(ctx, &party_id)?;
     }
