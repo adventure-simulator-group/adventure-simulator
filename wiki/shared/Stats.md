@@ -282,8 +282,9 @@ nonrecursive correlation pass and are capped at the Bestiary skill's
 5,000-hour mastery calibration. Wildmen knowledge correlates strongly with Human knowledge and
 more modestly with Fey knowledge. The expandable skill rail shows effective
 and directly studied hours for every category with transferred knowledge.
-Category hover/focus lore describes tendencies and exceptions, and separates
-confirmed combat mechanics from folklore or unimplemented hypotheses.
+Category hover/focus lore contains only two compact sections: Strengths and
+Weaknesses. Every strength appears on its own green line and every weakness on
+its own red line.
 
 Physical evidence first requires its ordinary inspection check. The inspecting
 character then makes hidden category-specific Bestiary checks for relevant

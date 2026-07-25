@@ -358,6 +358,32 @@
 #strategic-tooltip[hidden],
 .strategic-tooltip[hidden] { display: none; }
 
+.strategic-tooltip-section + .strategic-tooltip-section {
+  margin-top: .42rem;
+}
+
+.strategic-tooltip-heading {
+  display: block;
+  margin-bottom: .12rem;
+  color: var(--text-primary);
+}
+
+.strategic-tooltip-list {
+  display: grid;
+  gap: .08rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.strategic-tooltip-strength {
+  color: var(--success);
+}
+
+.strategic-tooltip-weakness {
+  color: var(--danger);
+}
+
 #strategic-tooltip::after,
 .strategic-tooltip::after {
   position: absolute;

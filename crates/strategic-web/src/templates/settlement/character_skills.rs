@@ -611,13 +611,9 @@ fn religion_skill_rows(
 
 fn bestiary_category_lore(category: BestiaryCategory) -> String {
     format!(
-        "Typical signs: {} Common strengths: {} Considerations: {} Exceptions: {} Confirmed combat mechanics: {} Folklore / unimplemented hypotheses: {}",
-        category.tendency(),
-        category.strengths(),
-        category.considerations(),
-        category.exceptions(),
-        category.confirmed_mechanics(),
-        category.folklore(),
+        "Strengths\n{}\nWeaknesses\n{}",
+        category.strengths().join("\n"),
+        category.weaknesses().join("\n"),
     )
 }
 
@@ -665,9 +661,13 @@ fn bestiary_skill_rows(skills: &CharacterSkills, health: f32, schedule_context: 
             @let direct = skills.bestiary_hours.direct(category);
             @if effective.is_finite() && effective > 0.0 {
                 @let lore = bestiary_category_lore(category);
+                @let strengths = category.strengths().join("\n");
+                @let weaknesses = category.weaknesses().join("\n");
                 tr class="party-skill-row bestiary-detail-row" data-bestiary-detail hidden {
                     th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
                         span data-strategic-tooltip=(&lore) tabindex="0"
+                            data-bestiary-strengths=(&strengths)
+                            data-bestiary-weaknesses=(&weaknesses)
                             aria-label=(format!("{} Bestiary lore. {}", category.label(), lore)) {
                             (stat_icon(category.label(), "bestiary", category.id(), true))
                             span class="sr-only" { (category.label()) }
@@ -1856,8 +1856,14 @@ mod tests {
         assert!(rendered.contains("Expand Bestiary skills"));
         assert!(rendered.contains("Wildmen"));
         assert!(rendered.contains("directly studied hours"));
-        assert!(rendered.contains("Confirmed combat mechanics"));
-        assert!(rendered.contains("Folklore / unimplemented hypotheses"));
+        assert!(rendered.contains("data-bestiary-strengths"));
+        assert!(rendered.contains("data-bestiary-weaknesses"));
+        assert!(rendered.contains("Strengths"));
+        assert!(rendered.contains("Weaknesses"));
+        assert!(rendered.contains("Great strength and endurance"));
+        assert!(rendered.contains("Limited armour"));
+        assert!(!rendered.contains("combat modifier"));
+        assert!(!rendered.contains("no effect"));
         assert!(rendered.contains("data-strategic-tooltip"));
         assert_eq!(rendered.matches("data-bestiary-detail").count(), 13);
         assert!(css.contains(".bestiary-primary-row .stat-icon,"));

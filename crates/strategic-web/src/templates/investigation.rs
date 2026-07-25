@@ -18,13 +18,9 @@ struct JournalRecord {
 
 fn bestiary_tooltip(result: &BestiaryResultView) -> String {
     format!(
-        "Typical signs: {}\nCommon strengths: {}\nConsiderations: {}\nExceptions: {}\nConfirmed combat mechanics: {}\nFolklore / unimplemented hypotheses: {}",
-        result.tendency,
-        result.strengths,
-        result.considerations,
-        result.exceptions,
-        result.confirmed_mechanics,
-        result.folklore,
+        "Strengths\n{}\nWeaknesses\n{}",
+        result.strengths.join("\n"),
+        result.weaknesses.join("\n"),
     )
 }
 
@@ -42,6 +38,8 @@ fn bestiary_journal_results(results: &[BestiaryResultView]) -> Markup {
                 span class="bestiary-result-list" {
                     @for result in results {
                         @let percent = f32::from(result.support_bps) / 100.0;
+                        @let strengths = result.strengths.join("\n");
+                        @let weaknesses = result.weaknesses.join("\n");
                         @let accessible = format!(
                             "{} Bestiary result: {}%, {}.",
                             result.label, percent, result.support_label,
@@ -49,6 +47,8 @@ fn bestiary_journal_results(results: &[BestiaryResultView]) -> Markup {
                         span class="bestiary-result-chip" tabindex="0" role="note"
                             data-bestiary-category=(result.category.as_str())
                             data-strategic-tooltip=(bestiary_tooltip(result))
+                            data-bestiary-strengths=(&strengths)
+                            data-bestiary-weaknesses=(&weaknesses)
                             aria-label=(accessible)
                             style=(format!(
                                 "background-color: {}",
@@ -320,12 +320,8 @@ mod tests {
             support_bps: 6_500,
             support_label: "supports",
             interpretation: "The print could have been made by a transformed werekin.".into(),
-            tendency: "Transformation signs.",
-            strengths: "Speed and strength.",
-            considerations: "Compare transformed and humanoid traces.",
-            exceptions: "Category lore describes tendencies only.",
-            confirmed_mechanics: "No category-wide combat modifier is implemented.",
-            folklore: "Silver is an unimplemented hypothesis.",
+            strengths: vec!["Speed", "Strength"],
+            weaknesses: vec!["Animal instincts", "Large transformed profile"],
         }];
 
         let markup = bestiary_journal_results(&results).into_string();
@@ -335,6 +331,14 @@ mod tests {
         assert!(markup.contains("background-color: rgb(179 255 0)"));
         assert!(markup.contains("tabindex=\"0\""));
         assert!(markup.contains("data-strategic-tooltip"));
+        assert!(markup.contains("data-bestiary-strengths"));
+        assert!(markup.contains("data-bestiary-weaknesses"));
+        assert!(markup.contains("Speed"));
+        assert!(markup.contains("Strength"));
+        assert!(markup.contains("Animal instincts"));
+        assert!(markup.contains("Large transformed profile"));
+        assert!(!markup.contains("combat modifier"));
+        assert!(!markup.contains("unimplemented"));
         assert!(markup.contains("aria-label=\"Werekin Bestiary result: 65%, supports.\""));
         assert!(!markup.contains("difficulty"));
         assert!(!markup.contains("threshold"));

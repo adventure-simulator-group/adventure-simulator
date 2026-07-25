@@ -15,12 +15,8 @@ pub struct BestiaryResultView {
     pub support_bps: u16,
     pub support_label: &'static str,
     pub interpretation: String,
-    pub tendency: &'static str,
-    pub strengths: &'static str,
-    pub considerations: &'static str,
-    pub exceptions: &'static str,
-    pub confirmed_mechanics: &'static str,
-    pub folklore: &'static str,
+    pub strengths: Vec<&'static str>,
+    pub weaknesses: Vec<&'static str>,
 }
 
 pub fn bestiary_support_label(support_bps: u16) -> &'static str {
@@ -56,12 +52,8 @@ impl From<StoredBestiaryResult> for BestiaryResultView {
             support_bps: result.support_bps,
             support_label: bestiary_support_label(result.support_bps),
             interpretation: result.interpretation,
-            tendency: category.tendency(),
-            strengths: category.strengths(),
-            considerations: category.considerations(),
-            exceptions: category.exceptions(),
-            confirmed_mechanics: category.confirmed_mechanics(),
-            folklore: category.folklore(),
+            strengths: category.strengths().to_vec(),
+            weaknesses: category.weaknesses().to_vec(),
         }
     }
 }

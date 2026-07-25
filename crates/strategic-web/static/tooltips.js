@@ -28,6 +28,42 @@
     let descriptionWasLinked = false;
     let suppressFocusUntil = 0;
 
+    const appendBestiarySection = (heading, lines, itemClass) => {
+      const section = documentRoot.createElement('section');
+      section.className = 'strategic-tooltip-section';
+      const title = documentRoot.createElement('strong');
+      title.className = 'strategic-tooltip-heading';
+      title.textContent = heading;
+      const list = documentRoot.createElement('ul');
+      list.className = 'strategic-tooltip-list';
+      for (const line of lines) {
+        const item = documentRoot.createElement('li');
+        item.className = itemClass;
+        item.textContent = line;
+        list.append(item);
+      }
+      section.append(title, list);
+      tooltip.append(section);
+    };
+
+    const renderTooltip = (target) => {
+      const strengths = (target.getAttribute('data-bestiary-strengths') || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const weaknesses = (target.getAttribute('data-bestiary-weaknesses') || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (!strengths.length && !weaknesses.length) {
+        tooltip.textContent = target.getAttribute(TOOLTIP_ATTRIBUTE);
+        return;
+      }
+      tooltip.textContent = '';
+      appendBestiarySection('Strengths', strengths, 'strategic-tooltip-strength');
+      appendBestiarySection('Weaknesses', weaknesses, 'strategic-tooltip-weakness');
+    };
+
     const enhance = (target) => {
       if (!target?.getAttribute) return null;
       const title = target.getAttribute('title');
@@ -106,7 +142,7 @@
         descriptionWasLinked = describedBy.includes(TOOLTIP_ID) || repeatsAccessibleName;
         if (!descriptionWasLinked) target.setAttribute('aria-describedby', [...describedBy, TOOLTIP_ID].join(' '));
       }
-      tooltip.textContent = target.getAttribute(TOOLTIP_ATTRIBUTE);
+      renderTooltip(target);
       tooltip.hidden = false;
       tooltip.setAttribute('aria-hidden', 'false');
       position();

@@ -208,8 +208,11 @@ mod tests {
 
         assert!(serialized.contains("\"support_bps\":5000"));
         assert!(serialized.contains("\"support_label\":\"inconclusive\""));
-        assert!(serialized.contains("\"confirmed_mechanics\""));
-        assert!(serialized.contains("\"folklore\""));
+        assert!(serialized.contains("\"strengths\":["));
+        assert!(serialized.contains("\"weaknesses\":["));
+        assert!(!serialized.contains("confirmed_mechanics"));
+        assert!(!serialized.contains("folklore"));
+        assert!(!serialized.contains("combat modifier"));
         assert!(!serialized.contains("difficulty"));
         assert!(!serialized.contains("threat"));
         assert!(!serialized.contains("canonical"));

@@ -214,118 +214,123 @@ impl BestiaryCategory {
         C[self.index()][other.index()]
     }
 
-    pub const fn tendency(self) -> &'static str {
+    pub const fn strengths(self) -> &'static [&'static str] {
         match self {
-            Self::Beast => {
-                "Animal anatomy, tracks, scent, feeding, and pack or territorial behavior."
-            }
-            Self::Undead => "Bodies or remains animated beyond ordinary life processes.",
-            Self::Human => "Human gait, manufacture, language, tactics, and ordinary physiology.",
-            Self::Werekin => "Transformation signs that mix humanoid and animal morphology.",
-            Self::Elf => "Elven anatomy, workmanship, movement, and cultural traces.",
-            Self::Dwarf => "Dwarven build, craft traditions, subterranean habits, and equipment.",
-            Self::Fey => "Supernatural beings tied to place, custom, bargains, or old folklore.",
-            Self::Spirit => "Manifestations that may lack a consistently physical body.",
-            Self::Greenskin => "Goblin and orc anatomy, tracks, camps, tools, and group behavior.",
-            Self::Insectoid => "Segmented bodies, molts, colonies, and non-mammalian traces.",
-            Self::Draconid => "Scaled, clawed, or draconic anatomy and its environmental traces.",
-            Self::Construct => {
-                "Built bodies, artificial joints, makers' marks, and programmed behavior."
-            }
-            Self::Wildmen => {
-                "Woodwose anatomy, woodland craft, calls, and human-adjacent behavior."
-            }
+            Self::Beast => &[
+                "Speed and keen senses",
+                "Natural weapons",
+                "Pack coordination",
+            ],
+            Self::Undead => &[
+                "Unaffected by pain",
+                "Resistant to fatigue and fear",
+                "Difficult to incapacitate",
+            ],
+            Self::Human => &[
+                "Adaptable tactics",
+                "Tools and equipment",
+                "Clear coordination",
+            ],
+            Self::Werekin => &[
+                "Exceptional speed and strength",
+                "Keen animal senses",
+                "Unpredictable transformation",
+            ],
+            Self::Elf => &["Keen senses", "High mobility", "Precise attacks"],
+            Self::Dwarf => &["Sturdy build", "Heavy armour", "Disciplined formations"],
+            Self::Fey => &[
+                "Deception and concealment",
+                "Supernatural abilities",
+                "Ancient cunning",
+            ],
+            Self::Spirit => &[
+                "Difficult to restrain physically",
+                "Supernatural protection",
+                "Fear-inducing presence",
+            ],
+            Self::Greenskin => &["Ambush tactics", "Strength in numbers", "Rugged equipment"],
+            Self::Insectoid => &["Armoured shell", "Unusual senses", "Colony coordination"],
+            Self::Draconid => &["Protective scales", "Long reach", "Elemental hazards"],
+            Self::Construct => &[
+                "Unaffected by pain and fear",
+                "Does not tire",
+                "Durable artificial body",
+            ],
+            Self::Wildmen => &[
+                "Great strength and endurance",
+                "Woodland concealment",
+                "Expert tracking",
+            ],
         }
     }
 
-    pub const fn strengths(self) -> &'static str {
+    pub const fn weaknesses(self) -> &'static [&'static str] {
         match self {
-            Self::Beast => "Natural speed, senses, hides, and coordinated packs are common.",
-            Self::Undead => {
-                "Pain, fatigue, and morale may not limit them as they limit living foes."
-            }
-            Self::Human => "Equipment, planning, communication, and adaptable tactics are common.",
-            Self::Werekin => {
-                "Transformed bodies are often fast, strong, and difficult to track consistently."
-            }
-            Self::Elf => {
-                "Fine senses, mobility, and precision are common traditions, not guarantees."
-            }
-            Self::Dwarf => "Sturdy builds, armor, and disciplined craft are common traditions.",
-            Self::Fey => "Deception, concealment, and unfamiliar supernatural rules are common.",
-            Self::Spirit => "Some manifestations resist ordinary physical pursuit or restraint.",
-            Self::Greenskin => "Numbers, ambushes, rugged equipment, or raw strength may be used.",
-            Self::Insectoid => {
-                "Armor-like shells, unusual senses, and coordinated groups may occur."
-            }
-            Self::Draconid => "Scales, reach, mobility, and elemental hazards may occur.",
-            Self::Construct => "Fear, pain, fatigue, and persuasion may have little effect.",
-            Self::Wildmen => "Strength, woodland concealment, tracking, and endurance are common.",
-        }
-    }
-
-    pub const fn considerations(self) -> &'static str {
-        match self {
-            Self::Beast => "Formation, reach, scent, and the animal's escape routes often matter.",
-            Self::Undead => {
-                "Identify the bodily condition before choosing weapons or disease precautions."
-            }
-            Self::Human => {
-                "Their equipment, training, loyalties, and numbers matter more than ancestry alone."
-            }
-            Self::Werekin => {
-                "Compare transformed tracks with humanoid traces without assuming host ancestry."
-            }
-            Self::Elf => "Do not infer allegiance or exact capabilities from ancestry alone.",
-            Self::Dwarf => {
-                "Expect variation between civilians, craftspeople, and trained fighters."
-            }
-            Self::Fey => {
-                "Learn the individual custom or manifestation; broad folklore is unreliable."
-            }
-            Self::Spirit => {
-                "Establish whether it can touch, be touched, cross thresholds, or endure light."
-            }
-            Self::Greenskin => "Distinguish goblins, orcs, and their equipment before planning.",
-            Self::Insectoid => "Protect against venom, swarms, and unfamiliar vulnerable anatomy.",
-            Self::Draconid => "Determine scale coverage, breath or venom hazards, and mobility.",
-            Self::Construct => {
-                "Look for joints, control mechanisms, material limits, and its maker's intent."
-            }
-            Self::Wildmen => {
-                "Consider negotiation and woodland escape routes before assuming mindless aggression."
-            }
-        }
-    }
-
-    pub const fn exceptions(self) -> &'static str {
-        "Category lore describes tendencies only; a particular creature may be an exception or carry several categories."
-    }
-
-    pub const fn confirmed_mechanics(self) -> &'static str {
-        match self {
-            Self::Undead => {
-                "Confirmed examples differ: skeleton bone resists edges, while ghouls carry disease risk."
-            }
-            Self::Spirit => {
-                "Confirmed spectral hounds have supernatural protection and cause fear."
-            }
-            _ => "No category-wide combat modifier is implemented.",
-        }
-    }
-
-    pub const fn folklore(self) -> &'static str {
-        match self {
-            Self::Werekin => {
-                "Silver is an investigative hypothesis; it is not an implemented damage multiplier."
-            }
-            Self::Undead => {
-                "Fire and daylight are hypotheses for some undead, not universal implemented weaknesses."
-            }
-            Self::Spirit => {
-                "Daylight and ritual courage are hypotheses, not implemented universal weaknesses."
-            }
-            _ => "No category-wide folklore currently grants a combat effect.",
+            Self::Beast => &[
+                "Predictable instincts",
+                "Limited tools and reach",
+                "Vulnerable when isolated",
+            ],
+            Self::Undead => &[
+                "Damaged or brittle bodies",
+                "Reliant on intact joints",
+                "Often slow or rigid",
+            ],
+            Self::Human => &[
+                "Affected by pain and fatigue",
+                "Reliant on equipment",
+                "Morale can break",
+            ],
+            Self::Werekin => &[
+                "Animal instincts can be provoked",
+                "Large transformed profile",
+                "Transformation leaves conflicting traces",
+            ],
+            Self::Elf => &[
+                "Lighter build",
+                "Less effective when pinned",
+                "Reliant on space to manoeuvre",
+            ],
+            Self::Dwarf => &[
+                "Shorter reach",
+                "Limited sprint speed",
+                "Less mobile in open terrain",
+            ],
+            Self::Fey => &[
+                "Bound by bargains and customs",
+                "Often tied to a place",
+                "Patterns can be learned",
+            ],
+            Self::Spirit => &[
+                "May be bound by thresholds",
+                "Manifestation can be disrupted",
+                "Often tied to a person or place",
+            ],
+            Self::Greenskin => &[
+                "Coordination breaks without leaders",
+                "Equipment is often inconsistent",
+                "Prone to infighting",
+            ],
+            Self::Insectoid => &[
+                "Exposed joints between plates",
+                "Specialized anatomy",
+                "Disrupted when separated from the colony",
+            ],
+            Self::Draconid => &[
+                "Eyes and joints lack full scale cover",
+                "Large size limits movement",
+                "Difficult to conceal",
+            ],
+            Self::Construct => &[
+                "Vulnerable joints",
+                "Predictable instructions",
+                "Dependent on a control mechanism",
+            ],
+            Self::Wildmen => &[
+                "Limited armour",
+                "Exposed in open terrain",
+                "Woodland tactics weaken away from cover",
+            ],
         }
     }
 }
@@ -4841,6 +4846,10 @@ mod tests {
     fn bestiary_correlations_are_symmetric_nonrecursive_and_capped() {
         for left in BestiaryCategory::ALL {
             assert_eq!(left.correlation(left), 1.0);
+            assert!(left.strengths().len() >= 2);
+            assert!(left.weaknesses().len() >= 2);
+            assert!(left.strengths().iter().all(|line| !line.trim().is_empty()));
+            assert!(left.weaknesses().iter().all(|line| !line.trim().is_empty()));
             for right in BestiaryCategory::ALL {
                 assert_eq!(left.correlation(right), right.correlation(left));
             }
