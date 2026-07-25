@@ -22,6 +22,7 @@ pub mod leadership;
 pub mod local_problem;
 pub mod mission;
 pub mod morale;
+pub mod npc_adventurer;
 pub mod profession;
 pub mod provisioning;
 pub mod quest_generation;
@@ -55,6 +56,7 @@ pub mod prelude {
     pub use crate::investigation_action::*;
     pub use crate::mission::*;
     pub use crate::morale::*;
+    pub use crate::npc_adventurer::*;
     pub use crate::profession::*;
     pub use crate::provisioning::*;
     pub use crate::skill::*;

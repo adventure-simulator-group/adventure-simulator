@@ -328,6 +328,11 @@ strategic-sim seed="42" population="100" days="1095":
 test-strategic-sim:
     @cargo test -p adventuresim-strategic-sim
 
+# LLM-only, end-to-end browser evaluator. output_dir must be new because the
+# screenshot record never overwrites an earlier run.
+quest-web-eval output_dir base_url="http://127.0.0.1:24301" start_path="/characters" api_key_env="OPENAI_API_KEY" model="gpt-4.1-mini":
+    @node scripts/quest_web_eval.mjs --base-url {{base_url}} --start-path {{start_path}} --output-dir {{output_dir}} --api-key-env {{api_key_env}} --model {{model}} --allow-network
+
 # Own one nonce-named local database for the duration of the command. There is
 # intentionally no database or server override.
 strategic-sim-core-loop seed="42" population="4" cycles="100" duration_days="365" party_size="2": spacetime-version-check spacetime-start

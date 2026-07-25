@@ -88,10 +88,36 @@ Each incident increases the problem's settlement penalties by 25 percent of
 the initial amount, affecting applicable prices, encounter pressure, and
 disease exposure before the ordinary safety caps. The current temporary limit
 is five incidents including the original offence, at which point penalties are
-twice their starting severity. A follow-up system will allow NPC adventuring
-parties to resolve long-neglected cases and replace this safety cap.
+twice their starting severity.
+
+Old cases with multiple incidents become eligible for a resident NPC
+adventuring company. The company waits while a player has investigated
+recently or occupies one of the case sites. Otherwise it follows a physical,
+pattern, or social route that is actually present in the generated testimony
+and investigation-action graph. A failed route produces a specific setback and
+a later attempt tries another supported route when possible. Once the
+investigation reaches the finale, the company can resolve the case, reduce its
+effects, fail, or defer and retry later. This is a strategic result, not a
+simulated tactical battle. Anyone who had already heard about the problem may
+later receive a dry journal notice about the result.
 
 ## Planning
+
+### Automated investigation evaluation
+
+There are two evaluation paths. The server-side strategic simulator exercises
+the real NPC adventuring companies described above. Scripted decisions are the
+default; an optional LLM can choose only among observer-safe strategies offered
+by the server, while the server remains the sole outcome authority. Every run
+writes a Markdown anthology of the problem discovery, exact dialogue, actions,
+preparation, route-specific setbacks or finale, and outcome as the NPC company
+experienced them.
+
+The separate end-to-end browser evaluator is LLM-only. It sees a screenshot,
+text inside the visible viewport, and opaque handles for visible controls, then
+plays through the same web interface as a person. It produces a screenshot
+timeline rather than a Markdown story. It receives no canonical cause, true
+destination, generation weights, reducer names, or hidden case identifiers.
 Since you know what enemies you will face at the destination and can estimate what enemies you'll possibly face on the journey, you should plan a party in advance to account for this. For now this is mainly a question of whether you expect to encounter armored enemies (and therefore need hammers/rondels), hordes of weak enemies (therefore want a cleaving sword/axe/hammer and heavy armor), large enemies (therefore want a polearm), and enemies with projectiles (therefore want armor/full-plate). You will also want to account for difficult terrain or the need for stealth/detection during [travel](Travel.md) in your party composition, the latter is important if you're traveling through an area with enemies that are too dangerous for your party to fight against.
 ### Mixed-Level
 Quests are not balanced around the assumption that all members of a party have a similar power level, in fact its generally the case that you *want* a mixed-strength party. When you set out to clear out a vampire crypt, you need a very skilled armored duelist or two to fight the vampire. But you'll also be encountering plenty of zombies and skeletons, which can be efficiently dealt with by a small group of decent semi-armored combatants with clubs and axes. 

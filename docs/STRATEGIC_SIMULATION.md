@@ -165,6 +165,95 @@ cargo run -p adventuresim-strategic-sim -- matched --seed 42 --days 365
 just strategic-sim-core-loop 42 8 20 30 2
 ```
 
+## Quest evaluators
+
+There are two evaluator surfaces, with deliberately different boundaries.
+
+### Server-simulated NPC adventurers
+
+The reducer-backed core loop is also the NPC-adventurer evaluator. These are the
+same resident NPC companies that may intervene in old, escalating generated
+cases during normal strategic settlement activity. Eligibility considers case
+age, incident count, prior retry time, company availability, and recent player
+activity. SpacetimeDB selects the company, applies the bounded result through
+the existing case/objective/custody/local-problem authority, and persists an
+idempotent intervention record.
+
+The default policy is deterministic and credential-free. An optional LLM may
+choose only one of the strategies advertised by a gateway-only candidate view:
+investigate carefully, protect locals, confront directly, or defer. The model
+does not receive canonical cause/site/reliability/weight data and cannot apply
+an outcome; a simulation-capability-owned reducer validates its opaque choice.
+The server then selects an evidence-supported physical, pattern, or social
+route from the generated action graph. Retries rotate to a different route when
+the case supplies one. The decisive action uses the same investigation resolver
+as player actions before any strategic finale result is applied.
+
+Every core-loop run writes `npc-adventurer-stories.md` by default. Each entry is
+server-authored in the same transaction as its outcome and records the problem
+being learned, timestamped witness interviews, exact spoken lines, the chosen
+lead, route-specific preparation, the generated action chain, and the result.
+Failed attempts state the concrete setback and the alternate route intended for
+the retry instead of reporting a content-free failure. It contains no hidden
+quest truth. The JSON report also carries the same Markdown for archival
+purposes.
+
+Because the production world clock is tied to elapsed wall time, a claimed
+disposable simulation has one additional bounded reducer that advances that
+same authoritative clock by a requested number of game minutes. The core loop
+uses it once per active simulated day, then invokes ordinary settlement
+activity so follow-up incidents, escalating penalties, eligibility, and NPC
+interventions all occur through the production systems. The capability is
+absent from normal module builds. Simulation characters receive a small
+starting purse so an inn-only seed settlement cannot deadlock before its first
+labor day; all accommodation and food costs still use ordinary currency rules.
+
+Use the normal isolated recipe for the scripted policy:
+
+```powershell
+just strategic-sim-core-loop 42 8 20 30 2
+```
+
+Direct expert invocation can opt into an OpenAI-compatible strategy policy:
+
+```powershell
+cargo run -p adventuresim-strategic-sim -- core-loop `
+  --host http://127.0.0.1:3000 --database adventuresim-sim-UNIQUE `
+  --run-nonce UNIQUE-NONCE --npc-strategy-policy openai `
+  --npc-allow-network --npc-api-key-env OPENAI_API_KEY `
+  --npc-stories-output npc-adventurer-stories.md
+```
+
+Provider mode requires explicit network consent and reads the credential only
+from the named environment variable. HTTPS is required except for loopback test
+fixtures. The candidate list and strategy override are gateway/simulation
+capability surfaces, not general player APIs.
+
+### End-to-end browser quest evaluator
+
+The browser evaluator is deliberately separate from the strategic NPC
+evaluator. It always uses an LLM and interacts with the running local game only
+through visible web controls. The model receives the current screenshot,
+visible page text, and opaque handles for visible enabled controls. It cannot
+name a reducer, use a quest authority ID, invent an action, or navigate directly
+to a guessed route.
+
+Each run writes an immutable screenshot log: `index.html`, `manifest.json`, and
+one viewport PNG for the initial state and every subsequent action. The log
+therefore shows exactly what was on screen when the model made each decision.
+Use a new output directory for every run:
+
+```powershell
+just quest-web-eval quest-browser-run-001 `
+  http://127.0.0.1:24301 /characters OPENAI_API_KEY gpt-4.1-mini
+```
+
+Network use must be explicit, the game URL must be loopback, and provider
+endpoints must use HTTPS unless they are loopback test fixtures. The command
+fails closed when the named API-key variable is absent. CI exercises the strict
+decision protocol and a loopback model fixture; it does not make paid model
+requests.
+
 Direct `core-loop` invocation is intentionally an expert-only path: its process
 must inherit the same `ADVENTURESIM_SIM_BOOTSTRAP_TOKEN` used to compile and
 publish that disposable module. There is no token CLI option. Prefer the recipe,

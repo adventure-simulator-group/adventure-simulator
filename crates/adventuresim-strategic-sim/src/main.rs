@@ -1,5 +1,5 @@
 use adventuresim_strategic_sim::*;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::{
     fs,
     io::Read,
@@ -66,11 +66,32 @@ enum Command {
         run_nonce: String,
         #[arg(long)]
         output: Option<PathBuf>,
+        /// Markdown anthology persisted from authoritative server intervention rows.
+        #[arg(long, default_value = "npc-adventurer-stories.md")]
+        npc_stories_output: PathBuf,
+        /// The server-scripted policy is deterministic and requires no model.
+        #[arg(long, value_enum, default_value_t = NpcStrategyPolicyArg::ServerScripted)]
+        npc_strategy_policy: NpcStrategyPolicyArg,
+        #[arg(long)]
+        npc_endpoint: Option<String>,
+        #[arg(long, default_value = "gpt-4.1-nano")]
+        npc_model: String,
+        #[arg(long, default_value = "OPENAI_API_KEY")]
+        npc_api_key_env: String,
+        #[arg(long, default_value_t = false)]
+        npc_allow_network: bool,
     },
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum NpcStrategyPolicyArg {
+    ServerScripted,
+    Openai,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
+    let command = cli.command;
     if let Command::CoreLoop {
         host,
         database,
@@ -81,18 +102,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         party_size,
         run_nonce,
         output,
-    } = cli.command
+        npc_stories_output,
+        npc_strategy_policy,
+        npc_endpoint,
+        npc_model,
+        npc_api_key_env,
+        npc_allow_network,
+    } = command
     {
-        let report = run_core_loop(CoreLoopConfig {
-            host,
-            database,
-            seed,
-            population,
-            cycles,
-            duration_days,
-            party_size,
-            run_nonce,
-        })?;
+        if let Some(json_output) = &output {
+            validate_distinct_output_paths(&[json_output, &npc_stories_output])?;
+        }
+        let policy: Option<Box<dyn QuestPolicy>> = match npc_strategy_policy {
+            NpcStrategyPolicyArg::ServerScripted => None,
+            NpcStrategyPolicyArg::Openai => {
+                Some(Box::new(OpenAiCompatiblePolicy::new(ProviderConfig {
+                    endpoint: npc_endpoint.unwrap_or_else(|| ProviderConfig::default().endpoint),
+                    model: npc_model,
+                    api_key_env: npc_api_key_env,
+                    allow_network: npc_allow_network,
+                    ..ProviderConfig::default()
+                })?))
+            }
+        };
+        let report = run_core_loop_with_npc_policy(
+            CoreLoopConfig {
+                host,
+                database,
+                seed,
+                population,
+                cycles,
+                duration_days,
+                party_size,
+                run_nonce,
+            },
+            policy,
+        )?;
+        fs::write(
+            &npc_stories_output,
+            report.npc_intervention_stories_markdown.as_bytes(),
+        )?;
         let json = serde_json::to_vec_pretty(&report)?;
         if let Some(path) = output {
             fs::write(path, json)?;
@@ -110,9 +159,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             report.metrics.camp_stops,
             report.metrics.equipment_upgrades,
         );
+        eprintln!("NPC intervention stories: {}", npc_stories_output.display());
         return Ok(());
     }
-    let report = match cli.command {
+    let report = match command {
         Command::Run {
             config,
             output,
@@ -177,6 +227,60 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn validate_distinct_output_paths(paths: &[&Path]) -> Result<(), Box<dyn std::error::Error>> {
+    let normalize = |path: &Path| -> Result<PathBuf, Box<dyn std::error::Error>> {
+        let absolute = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            std::env::current_dir()?.join(path)
+        };
+        // `canonicalize` cannot normalize a not-yet-created output. Collapse
+        // `.` and `..` lexically first, then resolve existing aliases/symlinks.
+        let lexical = lexical_normalize(&absolute);
+        if lexical.exists() {
+            Ok(lexical_normalize(&fs::canonicalize(lexical)?))
+        } else {
+            Ok(lexical)
+        }
+    };
+    let normalized = paths
+        .iter()
+        .map(|path| normalize(path))
+        .collect::<Result<Vec<_>, _>>()?;
+    for (index, left) in normalized.iter().enumerate() {
+        for right in normalized.iter().skip(index + 1) {
+            let same = if cfg!(windows) {
+                left.to_string_lossy()
+                    .eq_ignore_ascii_case(&right.to_string_lossy())
+            } else {
+                left == right
+            };
+            if same {
+                return Err("evaluation outputs must use distinct paths".into());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn lexical_normalize(path: &Path) -> PathBuf {
+    use std::path::Component;
+
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::Normal(segment) => normalized.push(segment),
+        }
+    }
+    normalized
+}
+
 fn read_bounded(path: &Path) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let mut bytes = Vec::new();
     fs::File::open(path)?
@@ -197,4 +301,32 @@ fn emit(
         println!("{}", String::from_utf8(json)?);
     }
     Ok(report)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn duplicate_outputs_must_differ() {
+        let path = PathBuf::from("simulation-output.json");
+        assert!(validate_distinct_output_paths(&[&path, &path]).is_err());
+    }
+
+    #[test]
+    fn nonexistent_lexical_aliases_are_rejected() {
+        let canonical = PathBuf::from("simulation-output.json");
+        let alias = PathBuf::from("new-output-directory")
+            .join("..")
+            .join("simulation-output.json");
+        assert!(validate_distinct_output_paths(&[&canonical, &alias]).is_err());
+    }
+
+    #[test]
+    fn core_report_and_npc_stories_must_differ() {
+        let report = PathBuf::from("core-loop-report.json");
+        let stories = PathBuf::from("npc-adventurer-stories.md");
+        assert!(validate_distinct_output_paths(&[&report, &stories]).is_ok());
+        assert!(validate_distinct_output_paths(&[&stories, &stories]).is_err());
+    }
 }

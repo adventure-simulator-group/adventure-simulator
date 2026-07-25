@@ -4,7 +4,11 @@
 //! SpacetimeDB database and deliberately delegates every game rule to the
 //! normal strategic reducers.
 
-use crate::{AgentProfile, EquipmentStyle, generate_profile};
+use crate::{
+    AgentProfile, ChoiceArguments, ChoiceKind, DecisionArguments, DiscoveryView,
+    EVAL_FORMAT_VERSION, EquipmentStyle, JournalView, LegalChoice, PartyView, PlayerFrame,
+    QuestPolicy, generate_profile,
+};
 use adventuresim_core::simulation_security::{
     SIM_BOOTSTRAP_TOKEN_ENV as BOOTSTRAP_TOKEN_ENV,
     SIM_BOOTSTRAP_TOKEN_HEX_LEN as BOOTSTRAP_TOKEN_HEX_LEN,
@@ -24,11 +28,14 @@ use url::Url;
 use adventuresim_stdb_client::{
     abandon_contract_reducer::abandon_contract, accept_contract_reducer::accept_contract,
     accept_party_join_request_reducer::accept_party_join_request,
+    advance_simulation_world_time_reducer::advance_simulation_world_time,
     autoresolve_mission_reducer::autoresolve_mission,
     autoresolve_report_table::AutoresolveReportTableAccess,
     backend_case_site_pins_table::BackendCaseSitePinsTableAccess,
     backend_contract_type::BackendContract, backend_contracts_table::BackendContractsTableAccess,
     backend_herbalist_examinations_table::BackendHerbalistExaminationsTableAccess,
+    backend_npc_case_intervention_type::BackendNpcCaseIntervention,
+    backend_npc_case_interventions_table::BackendNpcCaseInterventionsTableAccess,
     battle_loot_item_table::BattleLootItemTableAccess,
     battle_result_table::BattleResultTableAccess,
     character_capability_table::CharacterCapabilityTableAccess,
@@ -65,6 +72,7 @@ use adventuresim_stdb_client::{
     seed_simulation_disease_reducer::seed_simulation_disease,
     seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage,
     seed_simulation_world_reducer::seed_simulation_world,
+    set_simulation_npc_intervention_strategy_reducer::set_simulation_npc_intervention_strategy,
     settlement_service_type::SettlementService, settlement_smith_table::SettlementSmithTableAccess,
     settlement_table::SettlementTableAccess,
     simulate_contract_issuer_interaction_reducer::simulate_contract_issuer_interaction,
@@ -297,6 +305,33 @@ pub struct CoreLoopReport {
     pub final_agents: Vec<FinalAgentState>,
     pub elapsed_game_minutes: u64,
     pub policy_seed_note: String,
+    /// Concatenated server-authored stories from the authoritative NPC
+    /// intervention transactions observed by this live disposable run.
+    pub npc_intervention_stories_markdown: String,
+}
+
+pub fn render_npc_intervention_stories(
+    rows: impl IntoIterator<Item = BackendNpcCaseIntervention>,
+) -> String {
+    let mut rows = rows.into_iter().collect::<Vec<_>>();
+    rows.sort_by_key(|row| (row.started_at, row.intervention_id.clone()));
+    let mut output = String::from(
+        "# Authoritative NPC adventurer quest stories\n\n\
+         Each entry below was persisted by the SpacetimeDB intervention \
+         transaction that applied its strategic outcome. It contains only \
+         observer-safe events and exact dialogue spoken during that simulation.\n\n",
+    );
+    if rows.is_empty() {
+        output.push_str("_No NPC intervention became eligible during this run._\n");
+    } else {
+        for row in rows {
+            output.push_str(&row.public_story_markdown);
+            if !output.ends_with("\n\n") {
+                output.push('\n');
+            }
+        }
+    }
+    output
 }
 
 struct LiveRunner {
@@ -309,6 +344,8 @@ struct LiveRunner {
     last_semantic_event: Option<String>,
     recorded_deaths: HashSet<u64>,
     medically_paused_schedules: HashSet<u64>,
+    npc_strategy_policy: Option<Box<dyn QuestPolicy>>,
+    simulation_run_nonce: String,
 }
 
 const SMITHING_DECISION_SCALE: f32 = 1_000.0;
@@ -406,21 +443,28 @@ fn live_skills(character_id: u64, profile: &AgentProfile) -> CharacterSkills {
 
 fn live_schedule(profile: &AgentProfile) -> ScheduleAllocation {
     let s = profile.schedule;
+    // The live reducer accepts quarter-hour allocations. Native profiles are
+    // intentionally more granular, so use the conservative lower notch and
+    // leave the remainder as leisure instead of failing after medical rest.
+    let quarter_hour = |minutes: u16| minutes / 15 * 15;
     ScheduleAllocation {
-        combat_training_minutes: s.combat_training_minutes,
-        carousing_minutes: s.carousing_minutes,
-        apprenticeship_minutes: s.apprenticeship_minutes,
-        apprenticeship_service_id: s
-            .apprenticeship_service_id
-            .map(|id| id.service_id().to_string()),
-        profession_practice_minutes: s.profession_practice_minutes,
-        profession_service_id: s
-            .profession_service_id
-            .map(|id| id.service_id().to_string()),
-        labor_minutes: s.labor,
-        prayer_minutes: s.prayer,
-        thievery_minutes: s.thievery,
-        raiding_minutes: s.raiding,
+        combat_training_minutes: quarter_hour(s.combat_training_minutes),
+        carousing_minutes: quarter_hour(s.carousing_minutes),
+        // Simulation profiles may express future profession preferences that
+        // the disposable character has not learned yet. Do not submit those
+        // locked activities to the authoritative schedule reducer.
+        apprenticeship_minutes: 0,
+        apprenticeship_service_id: None,
+        profession_practice_minutes: 0,
+        profession_service_id: None,
+        labor_minutes: quarter_hour(s.labor),
+        prayer_minutes: quarter_hour(s.prayer),
+        // Crime activities can open a tactical incident and move the party to
+        // its case site. This authoritative evaluator deliberately leaves the
+        // tactical layer untouched, so do not schedule work that would strand
+        // the strategic loop waiting for a tactical session.
+        thievery_minutes: 0,
+        raiding_minutes: 0,
     }
 }
 
@@ -515,6 +559,85 @@ macro_rules! reducer_call {
 }
 
 impl LiveRunner {
+    fn choose_pending_npc_strategies(&mut self) -> Result<(), String> {
+        let Some(policy) = self.npc_strategy_policy.as_mut() else {
+            return Ok(());
+        };
+        let candidates = self
+            .connection
+            .db
+            .backend_npc_intervention_candidates()
+            .iter()
+            .filter(|candidate| !candidate.strategy_already_selected)
+            .collect::<Vec<_>>();
+        for candidate in candidates {
+            let strategies: Vec<String> = serde_json::from_str(&candidate.legal_strategies_json)
+                .map_err(|_| "server advertised malformed NPC strategy choices")?;
+            let legal_choices = strategies
+                .iter()
+                .map(|strategy| LegalChoice {
+                    choice_id: format!("choice:npc-strategy:{strategy}"),
+                    kind: ChoiceKind::Conclude,
+                    label: strategy.replace('_', " "),
+                    typed_arguments: ChoiceArguments::default(),
+                })
+                .collect::<Vec<_>>();
+            let frame = PlayerFrame {
+                version: EVAL_FORMAT_VERSION,
+                case_id: candidate.public_case_id.clone(),
+                step: 0,
+                game_minute: candidate.earliest_intervention_minute,
+                discovery: DiscoveryView {
+                    problem_summary: candidate.problem_summary.clone(),
+                    consequence_summary: String::new(),
+                    learned_at: "local reports".into(),
+                    referrals: Vec::new(),
+                },
+                journal: JournalView::default(),
+                party: PartyView {
+                    members: 3,
+                    terrain_skill: 0,
+                    insight: 0,
+                    perception: 0,
+                    combat_readiness: candidate.party_capability.min(u16::from(u8::MAX)) as u8,
+                    supplies: 0,
+                    equipment_tags: Vec::new(),
+                },
+                legal_choices,
+            };
+            let decision = policy.decide(&frame)?;
+            if decision.version != EVAL_FORMAT_VERSION
+                || decision.arguments != DecisionArguments::default()
+            {
+                return Err("NPC strategy policy returned an unsupported decision".into());
+            }
+            let strategy = decision
+                .choice_id
+                .strip_prefix("choice:npc-strategy:")
+                .filter(|choice| strategies.iter().any(|legal| legal == choice))
+                .ok_or("NPC strategy policy selected a forged or stale choice")?
+                .to_owned();
+            let (tx, rx) = mpsc::sync_channel(1);
+            self.connection
+                .reducers
+                .set_simulation_npc_intervention_strategy_then(
+                    self.simulation_run_nonce.clone(),
+                    candidate.case_id,
+                    strategy,
+                    move |_, result| {
+                        let _ = tx.send(
+                            result
+                                .map_err(|error| error.to_string())
+                                .and_then(|result| result),
+                        );
+                    },
+                )
+                .map_err(|error| error.to_string())?;
+            rx.recv_timeout(ACTION_TIMEOUT)
+                .map_err(|_| "NPC strategy reducer timed out".to_string())??;
+        }
+        Ok(())
+    }
     fn event(&mut self, agent_id: u32, kind: CoreLoopEventKind, detail: impl Into<String>) {
         self.sequence += 1;
         let detail = detail.into();
@@ -986,6 +1109,31 @@ impl LiveRunner {
                 continue;
             }
 
+            let herbalist_available = self
+                .connection
+                .db
+                .settlement()
+                .iter()
+                .find(|row| row.id == settlement)
+                .is_some_and(|row| row.economy.services.contains(&SettlementService::Herbalist));
+            if !herbalist_available {
+                self.set_medical_rest_schedule(agent)?;
+                let at_inn = self.settlement_rest_at_inn(character_id)?;
+                let result = reducer_call!(self, "natural_illness_recovery_rest", |cb| self
+                    .connection
+                    .reducers
+                    .rest_at_settlement_hours_then(character_id, 1_440, at_inn, cb));
+                self.call(result)?;
+                self.metrics.treatment_rest_minutes += 1_440;
+                self.metrics.recovery_rests += 1;
+                self.event(
+                    agent,
+                    CoreLoopEventKind::Recover,
+                    "natural_recovery_minutes=1440;herbalist=unavailable",
+                );
+                continue;
+            }
+
             let gold_before = self.personal_gold(character_id);
             let result = reducer_call!(self, "examine_by_herbalist", |cb| self
                 .connection
@@ -1210,6 +1358,26 @@ impl LiveRunner {
             return Ok(());
         };
         if !character.alive {
+            return Ok(());
+        }
+        let repair_service_available = self
+            .connection
+            .db
+            .settlement()
+            .iter()
+            .find(|row| row.id == settlement)
+            .is_some_and(|row| {
+                row.economy.services.iter().any(|service| {
+                    matches!(
+                        service,
+                        SettlementService::GeneralBlacksmith
+                            | SettlementService::Weaponsmith
+                            | SettlementService::Armorer
+                            | SettlementService::Tailor
+                    )
+                })
+            });
+        if !repair_service_available {
             return Ok(());
         }
         let equipped = self
@@ -2180,6 +2348,13 @@ fn equipped_at(equip: &CharacterEquip, slot: ItemSlot, inventory_id: u64) -> boo
 }
 
 pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
+    run_core_loop_with_npc_policy(config, None)
+}
+
+pub fn run_core_loop_with_npc_policy(
+    config: CoreLoopConfig,
+    npc_strategy_policy: Option<Box<dyn QuestPolicy>>,
+) -> Result<CoreLoopReport, String> {
     config.validate()?;
     let bootstrap_token =
         bootstrap_token_from_environment(std::env::var(BOOTSTRAP_TOKEN_ENV).ok())?;
@@ -2212,6 +2387,8 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
         .add_query(|query| query.from.autoresolve_report())
         .add_query(|query| query.from.backend_case_site_pins())
         .add_query(|query| query.from.backend_herbalist_examinations())
+        .add_query(|query| query.from.backend_npc_case_interventions())
+        .add_query(|query| query.from.backend_npc_intervention_candidates())
         .add_query(|query| query.from.battle_loot_item())
         .add_query(|query| query.from.battle_result())
         .add_query(|query| query.from.character())
@@ -2263,6 +2440,8 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
         last_semantic_event: None,
         recorded_deaths: HashSet::new(),
         medically_paused_schedules: HashSet::new(),
+        npc_strategy_policy,
+        simulation_run_nonce: config.run_nonce.clone(),
     };
     if runner
         .connection
@@ -2309,6 +2488,8 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
         })
         .add_query(|query| query.from.backend_case_site_pins())
         .add_query(|query| query.from.backend_herbalist_examinations())
+        .add_query(|query| query.from.backend_npc_case_interventions())
+        .add_query(|query| query.from.backend_npc_intervention_candidates())
         .add_query(|query| query.from.party())
         .subscribe();
     gateway_subscription_rx
@@ -2452,6 +2633,7 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
         .reducers
         .ensure_settlement_activity_then(settlement.clone(), cb));
     runner.call(result)?;
+    runner.choose_pending_npc_strategies()?;
 
     let duration_minutes = u64::from(config.duration_days) * 1_440;
     for cycle in 0..config.cycles {
@@ -2493,6 +2675,24 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
                 .reducers
                 .ensure_settlement_activity_then(settlement.clone(), cb));
             runner.call(result)?;
+            runner.choose_pending_npc_strategies()?;
+        }
+        if active {
+            let result = reducer_call!(runner, "advance_simulation_world_time", |cb| runner
+                .connection
+                .reducers
+                .advance_simulation_world_time_then(
+                    config.run_nonce.clone(),
+                    adventuresim_core::strategic_time::MINUTES_PER_DAY,
+                    cb,
+                ));
+            runner.call(result)?;
+            let result = reducer_call!(runner, "ensure_settlement_activity", |cb| runner
+                .connection
+                .reducers
+                .ensure_settlement_activity_then(settlement.clone(), cb));
+            runner.call(result)?;
+            runner.choose_pending_npc_strategies()?;
         }
         if !active {
             break;
@@ -2663,6 +2863,9 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
         .unwrap_or(0);
     let total_event_count = runner.sequence;
     let trace_truncated = total_event_count > runner.trace.len() as u64;
+    let npc_intervention_stories_markdown = render_npc_intervention_stories(
+        runner.connection.db.backend_npc_case_interventions().iter(),
+    );
     Ok(CoreLoopReport {
         backend_kind: "spacetimedb_authoritative_core_loop".into(),
         seed: config.seed,
@@ -2678,6 +2881,7 @@ pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
         final_agents,
         elapsed_game_minutes,
         policy_seed_note: "seed controls profiles and policy choices only; authoritative autoresolve seeds are server RNG values recorded in the trace".into(),
+        npc_intervention_stories_markdown,
     })
 }
 
@@ -2695,6 +2899,65 @@ mod tests {
             .expect("post-registration gateway subscription");
         let seed = source.find("\"seed_simulation_world\"").unwrap();
         assert!(claim < register && register < resubscribe && resubscribe < seed);
+    }
+
+    #[test]
+    fn live_schedule_is_authoritative_and_does_not_open_tactical_crime_incidents() {
+        let mut profile = generate_profile(42, 0);
+        profile.schedule.combat_training_minutes = 17;
+        profile.schedule.apprenticeship_minutes = 60;
+        profile.schedule.profession_practice_minutes = 60;
+        profile.schedule.thievery = 60;
+        profile.schedule.raiding = 60;
+        let schedule = live_schedule(&profile);
+        assert_eq!(schedule.combat_training_minutes, 15);
+        assert_eq!(schedule.apprenticeship_minutes, 0);
+        assert_eq!(schedule.profession_practice_minutes, 0);
+        assert_eq!(schedule.thievery_minutes, 0);
+        assert_eq!(schedule.raiding_minutes, 0);
+    }
+
+    #[test]
+    fn each_active_cycle_advances_world_time_before_refreshing_npc_activity() {
+        let source = include_str!("live_core.rs");
+        let loop_start = source
+            .find("for cycle in 0..config.cycles")
+            .expect("core-loop cycle");
+        let loop_end = source[loop_start..]
+            .find("// Bounded final settlement cleanup")
+            .map(|offset| loop_start + offset)
+            .expect("core-loop cleanup");
+        let active_block = &source[loop_start..loop_end];
+        let advance = active_block
+            .find("\"advance_simulation_world_time\"")
+            .expect("simulation clock advance");
+        assert!(
+            active_block[advance..].contains("\"ensure_settlement_activity\""),
+            "settlement activity must refresh after the simulation clock advances"
+        );
+    }
+
+    #[test]
+    fn authoritative_npc_story_renderer_preserves_server_markdown() {
+        let exact = "> **Marta:** I heard the cart after midnight.\n";
+        let story = render_npc_intervention_stories([BackendNpcCaseIntervention {
+            intervention_id: "npc-intervention:case:1:1".into(),
+            public_case_id: "journal:one".into(),
+            party_name: "Marta's Company".into(),
+            attempt: 1,
+            started_at: 12,
+            completed_at: 12,
+            strategy: "InvestigateCarefully".into(),
+            route: "Physical trail".into(),
+            lead_summary: "Marta heard a cart after midnight.".into(),
+            preparation_summary: "The company brought lanterns and rope.".into(),
+            outcome: "Resolved".into(),
+            safe_summary: "The incidents ended.".into(),
+            public_story_markdown: format!("## Story\n\n{exact}"),
+        }]);
+        assert!(story.contains(exact));
+        assert!(story.contains("persisted by the SpacetimeDB intervention transaction"));
+        assert!(!story.contains("canonical"));
     }
 
     #[test]

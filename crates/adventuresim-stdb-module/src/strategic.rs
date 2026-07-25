@@ -3226,6 +3226,7 @@ pub struct QuestGenerationAuthority {
     pub public_case_id: String,
     pub settlement_id: String,
     pub settlement_name: String,
+    #[index(btree)]
     pub seed: u64,
     pub catalog_revision: String,
     pub context_snapshot_json: String,
@@ -17814,6 +17815,7 @@ fn ensure_settlement_activity_inner(
         generate_quest_for_settlement(ctx, settlement_id)?;
     }
     crate::local_problem::ensure_generated_incidents(ctx, settlement_id, official_minute)?;
+    crate::npc_adventurer::ensure_npc_case_interventions(ctx, settlement_id, official_minute)?;
     ensure_npc_recruiting_parties(ctx, settlement_id)?;
     Ok(())
 }
