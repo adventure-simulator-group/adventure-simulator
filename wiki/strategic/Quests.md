@@ -1,14 +1,15 @@
 # Quests
 
-## Current prototype
+## Current architecture
 
-The current prototype uses bounty quests rather than a completed world-state-driven case system. Each settlement generates three to five quests and assigns each one to an NPC service relevant to its premise. Merchants report caravan bandits, priests report restless dead, and the innkeeper, armorer, weaponsmith, and clothier each have one corresponding prototype archetype. One or two quests are initially taken by generated NPC parties; the others can be discovered by visiting their issuing NPC. A legacy quest currently owns a terse off-road destination, target, distance, difficulty, and proportional reward. The prototype quests are bounties to defeat parties of enemies.
-
-## Direction
-
-The bounty model is being replaced, not extended. A persistent local problem/case must exist independently of an NPC contract; player-visible symptoms, testimony, evidence, leads, and observer knowledge must not reveal private truth. Contracts then request typed, composable outcomes and can be satisfied through combat or noncombat finales. Destination/tracking, recruitment, strategic incidents, tactical missions, battle receipts, and loot must use their own typed authority rather than a legacy quest ID.
-
-The intended investigative loop is: discover a local problem, learn from ordinary locals and uncertain testimony, inspect evidence or pursue leads through more than one valid route, prepare under uncertainty, then resolve and report the case. The active work is tracked by [#182](https://github.com/adventure-simulator-group/adventure-simulator/issues/182) through [#189](https://github.com/adventure-simulator-group/adventure-simulator/issues/189), [#199](https://github.com/adventure-simulator-group/adventure-simulator/issues/199) through [#201](https://github.com/adventure-simulator-group/adventure-simulator/issues/201), and [#207](https://github.com/adventure-simulator-group/adventure-simulator/issues/207). Until that stack lands, the remaining sections document prototype behavior rather than the final quest architecture.
+Cases are persistent world problems with private investigation truth and a
+typed AND/OR resolution graph. Contracts are separate agreements offered by
+NPCs concerning those cases. Accepting or abandoning a contract never creates
+or deletes its case. The current direct-bounty generator remains the first
+golden path: it creates a case, a defeat objective bound to one materialized
+hostile group, a separate contract, and an independently known case site.
+Combat contributes an authenticated outcome fact; the objective evaluator,
+not tactical code, decides whether the case is resolved.
 
 A party leader may request one of an NPC company's open roles while both parties occupy the same location and the company's typed recruitment offer remains open and unexpired. The company and offer are generated independently from quests. Acceptance merges the applying party into the destination party: the destination leader retains command, the applying leader fills the selected role, and every other source member becomes an ordinary member. Source recruitment roles and pending applications close, while party-inventory items, reserve value, and each character's absolute stake transfer intact. Generated NPC leaders auto-approve these requests in local development so the complete merge flow can be previewed.
 

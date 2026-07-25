@@ -12,8 +12,8 @@ use serde::Deserialize;
 use super::{AppState, PartyAction, PartyActionOutcome, execute_or_request_party_action};
 use crate::session::Session;
 use crate::spacetimedb::{
-    BackendCaseSitePin, BattleResult, Character, Party, TacticalServer, TacticalServerRequest,
-    sql_string_literal,
+    BackendCaseSitePin, BattleResult, Character, ContractPresentation, Party, TacticalServer,
+    TacticalServerRequest, sql_string_literal,
 };
 use crate::templates::mission::{mission_status_fragment, mission_status_page};
 
@@ -61,7 +61,19 @@ async fn enter_mission(State(state): State<AppState>, session: Session) -> Redir
         return Redirect::to("/");
     };
 
-    let Some(quest_id) = &party.active_quest_id else {
+    let Some(quest_id) = &party.active_contract_id else {
+        return Redirect::to("/");
+    };
+    let contract = state
+        .db
+        .query_one::<ContractPresentation>(&format!(
+            "SELECT * FROM backend_contracts WHERE id = {}",
+            sql_string_literal(quest_id)
+        ))
+        .await
+        .ok()
+        .flatten();
+    let Some(contract) = contract else {
         return Redirect::to("/");
     };
     let Some(case_site_id) = character.current_case_site_id.as_deref() else {
@@ -76,7 +88,7 @@ async fn enter_mission(State(state): State<AppState>, session: Session) -> Redir
         .await
         .ok()
         .flatten();
-    let Some(site) = site.filter(|site| site.case_id == *quest_id) else {
+    let Some(site) = site.filter(|site| site.case_id == contract.case_id) else {
         return Redirect::to("/");
     };
     let scene_key = site.scene_key;

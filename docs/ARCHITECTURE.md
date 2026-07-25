@@ -370,7 +370,10 @@ never include raw investigation tables. See
 | private `tactical_server_claim` | One-use SHA-256 dispatcher claim bound to one mission request |
 | `battle_result` | Battle/source attribution, never keyed by quest |
 | `battle_loot_item` / `battle_participant` | Battle-keyed loot and eligible participants |
-| `quest` | Settlement-owned generated postings, opposition, reward, and acceptance state; it is not destination authority |
+| private `case_authority` / `case_outcome_fact` / `case_outcome` | World resolution authority, typed source-idempotent facts, and one final outcome; separate from investigation truth and tactical ticks |
+| private `contract_authority` | Offered, accepted, reported, and paid agreements concerning a case; acceptance never creates or deletes the case |
+| private `case_custody` | One versioned current holder per case asset or subject |
+| `backend_contracts` view | Trusted-gateway contract projection; browsers receive only server-selected observer-safe presentation |
 | private `case_site_authority` | Stable case-site identity, origin, scene, distance, and physical coordinates |
 | private `party_case_site_tracking` | Per-party presentation/navigation selection; it grants no knowledge, acceptance, objective progress, or reward |
 | gateway-only `backend_case_site_pins` | Observer-owned exact site projection, emitted only from unrevised exact/visited investigation knowledge |
@@ -421,7 +424,7 @@ migration, dual-read path, or preservation of disposable characters.
 | `start_mission` | Allocate port, record mission |
 | **`commit_mission`** | **Apply mission results (XP, items) - idempotent** |
 | `cancel_mission` | Cancel active mission |
-| `accept_quest` / `complete_quest` | Legacy bounty-contract management; direct bounties explicitly disclose their seeded case site on acceptance |
+| `accept_contract` / `abandon_contract` / `report_contract` | Separate contract lifecycle; direct bounties disclose their seeded case site on acceptance and pay exactly once after case resolution |
 | `track_case_site` | Select an already-known exact site for party navigation without accepting a contract, moving, progressing an objective, or paying a reward |
 | `travel_to_case_site` | Authorize through observer-safe exact knowledge, advance strategic time, and move a party to the typed off-road case site |
 | `autoresolve_quest` | Run the bounded shared-core melee/ranged simulation, commit per-hit cut/blunt/projectile facts into manual limb injuries, blood loss, and spent ammunition, retain a seeded summary and expandable combat log, and complete or retain the quest according to the outcome |

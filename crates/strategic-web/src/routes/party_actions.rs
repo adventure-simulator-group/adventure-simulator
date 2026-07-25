@@ -40,14 +40,14 @@ pub(crate) enum PartyAction {
     RejectJoinRequest {
         request_id: u64,
     },
-    AcceptQuest {
-        quest_id: String,
+    AcceptContract {
+        contract_id: String,
     },
-    AbandonQuest {
-        quest_id: String,
+    AbandonContract {
+        contract_id: String,
     },
-    TurnInQuest {
-        quest_id: String,
+    ReportContract {
+        contract_id: String,
     },
     AutoresolveMission {
         mission_id: String,
@@ -92,9 +92,9 @@ impl PartyAction {
             Self::DeleteRecruitmentRole { .. } => "delete_role".into(),
             Self::AcceptJoinRequest { .. } => "accept_join".into(),
             Self::RejectJoinRequest { .. } => "reject_join".into(),
-            Self::AcceptQuest { .. } => "accept_quest".into(),
-            Self::AbandonQuest { .. } => "abandon_quest".into(),
-            Self::TurnInQuest { .. } => "turn_in_quest".into(),
+            Self::AcceptContract { .. } => "accept_contract".into(),
+            Self::AbandonContract { .. } => "abandon_contract".into(),
+            Self::ReportContract { .. } => "report_contract".into(),
             Self::AutoresolveMission { .. } => "autoresolve".into(),
             Self::UpdatePartyCheckTargets { .. } => "party_checks".into(),
             Self::SetInventoryQuantityTarget { .. } => "party_inventory".into(),
@@ -122,9 +122,9 @@ impl PartyAction {
             Self::DeleteRecruitmentRole { .. } => "Delete a recruitment role".into(),
             Self::AcceptJoinRequest { request_id } => format!("Accept join request {request_id}"),
             Self::RejectJoinRequest { request_id } => format!("Reject join request {request_id}"),
-            Self::AcceptQuest { quest_id } => format!("Accept quest {quest_id}"),
-            Self::AbandonQuest { quest_id } => format!("Abandon quest {quest_id}"),
-            Self::TurnInQuest { quest_id } => format!("Turn in quest {quest_id}"),
+            Self::AcceptContract { contract_id } => format!("Accept contract {contract_id}"),
+            Self::AbandonContract { contract_id } => format!("Abandon contract {contract_id}"),
+            Self::ReportContract { contract_id } => format!("Report contract {contract_id}"),
             Self::AutoresolveMission { mission_id } => {
                 format!("Autoresolve mission {mission_id}")
             }
@@ -196,14 +196,15 @@ impl PartyAction {
                 "reject_party_join_request",
                 vec![json!(actor_id), json!(request_id)],
             ),
-            Self::AcceptQuest { quest_id } => {
-                ("accept_quest", vec![json!(actor_id), json!(quest_id)])
+            Self::AcceptContract { contract_id } => {
+                ("accept_contract", vec![json!(actor_id), json!(contract_id)])
             }
-            Self::AbandonQuest { quest_id } => {
-                ("abandon_quest", vec![json!(actor_id), json!(quest_id)])
-            }
-            Self::TurnInQuest { quest_id } => {
-                ("turn_in_quest", vec![json!(actor_id), json!(quest_id)])
+            Self::AbandonContract { contract_id } => (
+                "abandon_contract",
+                vec![json!(actor_id), json!(contract_id)],
+            ),
+            Self::ReportContract { contract_id } => {
+                ("report_contract", vec![json!(actor_id), json!(contract_id)])
             }
             Self::AutoresolveMission { mission_id } => (
                 "autoresolve_mission",

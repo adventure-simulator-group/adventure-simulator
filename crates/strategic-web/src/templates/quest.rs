@@ -6,8 +6,8 @@ use super::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use super::{empty_state, item_display_name, item_type_icon, sidebar_section};
 use crate::routes::travel::TravelDestination;
 use crate::spacetimedb::{
-    AutoresolveReport, BackendCaseSitePin, BattleLootItem, InventoryQuantityTarget, ItemDefinition,
-    PartyInventoryItem, Quest,
+    AutoresolveReport, BackendCaseSitePin, BattleLootItem, ContractPresentation,
+    InventoryQuantityTarget, ItemDefinition, PartyInventoryItem,
 };
 use crate::{
     spacetimedb::Character,
@@ -18,7 +18,7 @@ use crate::{
 };
 
 pub fn quest_location_map_page(
-    quest: &Quest,
+    quest: &ContractPresentation,
     site: &BackendCaseSitePin,
     nearby: &[TravelDestination],
     selected_id: Option<&str>,
@@ -89,7 +89,7 @@ pub fn quest_location_map_page(
 }
 
 fn quest_location_center(
-    quest: &Quest,
+    quest: &ContractPresentation,
     site: &BackendCaseSitePin,
     active_character: Option<&Character>,
     party_members: &[Character],
@@ -149,7 +149,7 @@ fn autoresolve_info_messages(report: Option<&AutoresolveReport>) -> Vec<String> 
 
 /// Enemy encounter and, once resolved, its loot at an off-road quest location.
 pub fn quest_location_enemy_page(
-    quest: &Quest,
+    quest: &ContractPresentation,
     site: &BackendCaseSitePin,
     active_character: Option<&Character>,
     party_members: &[Character],
@@ -303,7 +303,7 @@ mod tests {
     #[test]
     fn autoresolve_report_becomes_complete_info_stream_rows() {
         let report = AutoresolveReport {
-            quest_id: "quest-1".into(),
+            battle_id: "battle:quest-1".into(),
             party_id: "party-1".into(),
             seed: 42,
             victor: "players".into(),

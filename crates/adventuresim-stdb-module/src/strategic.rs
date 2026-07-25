@@ -32,8 +32,8 @@ use crate::{
     condition::character_condition,
     investigation::{
         CaseSiteAuthority, CaseSiteId, PartyCaseSiteTracking, case_site_authority,
-        disclose_exact_case_site, exact_case_site_for_observer, mark_case_site_visited,
-        party_case_site_tracking,
+        disclose_exact_case_site, exact_case_site_for_observer, investigation_case_authority,
+        mark_case_site_visited, party_case_site_tracking,
     },
     item::{InventoryItem, inventory_item, item},
     repair::item_condition,
@@ -46,7 +46,7 @@ use crate::{
         preview_travel_time, settle_travel_boundary,
     },
 };
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet};
 
 const WALKING_SPEED_KM_PER_HOUR: u64 = 5;
 const QUEST_TRAVEL_SPEED_DIVISOR: u64 = 4;
@@ -368,7 +368,10 @@ mod healing_tests {
                 "remove_party_member",
                 "require_character_no_unresolved_encounter",
             ),
-            ("abandon_quest", "require_character_no_unresolved_encounter"),
+            (
+                "abandon_contract",
+                "require_character_no_unresolved_encounter",
+            ),
         ] {
             let body = source
                 .split(&format!("pub fn {function}"))
@@ -393,13 +396,13 @@ mod healing_tests {
     }
 
     #[test]
-    fn quest_schema_has_no_destination_or_tracking_authority() {
+    fn contract_schema_has_no_destination_or_tracking_authority() {
         let source = include_str!("strategic.rs");
         let schema = source
-            .split("pub struct Quest {")
+            .split("pub struct Contract {")
             .nth(1)
-            .and_then(|tail| tail.split("pub struct QuestIssuer").next())
-            .expect("quest schema");
+            .and_then(|tail| tail.split("pub struct CaseOutcome").next())
+            .expect("contract schema");
         for forbidden in [
             "location_description",
             "location_scene_key",
@@ -409,7 +412,10 @@ mod healing_tests {
             "distance_m",
             "tracked",
         ] {
-            assert!(!schema.contains(forbidden), "Quest still owns {forbidden}");
+            assert!(
+                !schema.contains(forbidden),
+                "Contract still owns {forbidden}"
+            );
         }
     }
 
@@ -621,11 +627,11 @@ mod healing_tests {
         let tracking = source
             .split("pub fn track_case_site")
             .nth(1)
-            .and_then(|tail| tail.split("pub fn abandon_quest").next())
+            .and_then(|tail| tail.split("pub fn abandon_contract").next())
             .expect("tracking reducer");
         assert!(tracking.contains("exact_case_site_for_observer"));
         assert!(tracking.contains("party_case_site_tracking"));
-        assert!(!tracking.contains("accept_quest("));
+        assert!(!tracking.contains("accept_contract("));
         assert!(!tracking.contains("active_quest_id"));
         assert!(!tracking.contains("gold_reward"));
 
@@ -637,6 +643,143 @@ mod healing_tests {
         assert_eq!(travel.matches("exact_case_site_for_observer").count(), 2);
         assert!(travel.contains("\"case_site\""));
         assert!(!travel.contains("ctx.db.quest().id().find(&case_site_id)"));
+    }
+
+    #[test]
+    fn case_contract_and_tactical_authority_are_separated() {
+        let source = include_str!("strategic.rs");
+        let accept = source
+            .split("pub fn accept_contract")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("accept contract reducer");
+        assert!(accept.contains("contract_authority()"));
+        assert!(!accept.contains("case_authority().insert"));
+        assert!(!accept.contains("case_authority().delete"));
+        assert!(!accept.contains("gold_reward.max"));
+
+        let battle = source
+            .split("pub(crate) fn commit_victorious_battle")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("battle commit");
+        assert!(battle.contains("ingest_hostile_group_defeat_fact"));
+        assert!(!battle.contains("report_contract("));
+        assert!(!battle.contains("credit_party_currency("));
+    }
+
+    #[test]
+    fn reporting_is_ready_only_and_paid_once() {
+        let source = include_str!("strategic.rs");
+        let report = source
+            .split("pub fn report_contract")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("report contract reducer");
+        assert!(report.contains("ContractStatus::ReadyToReport"));
+        assert!(report.contains("paid_at_minute.is_some()"));
+        assert!(report.contains("ContractStatus::Paid"));
+        assert!(report.contains("paid_at_minute = Some"));
+    }
+
+    #[test]
+    fn private_objective_authority_has_only_a_gateway_projection() {
+        let source = include_str!("strategic.rs");
+        for schema in [
+            "case_authority",
+            "case_outcome",
+            "case_outcome_fact",
+            "case_custody",
+            "contract_authority",
+        ] {
+            assert!(
+                source.contains(&format!("#[table(accessor = {schema})]")),
+                "{schema} must remain private"
+            );
+            assert!(
+                !source.contains(&format!("#[table(accessor = {schema}, public)]")),
+                "{schema} leaked as public"
+            );
+        }
+        assert!(source.contains("#[view(accessor = backend_contracts, public)]"));
+        assert!(source.contains("strategic_view_is_gateway(ctx)"));
+    }
+
+    #[test]
+    fn case_blocker_authority_paths_remain_reachable_and_private() {
+        let source = include_str!("strategic.rs");
+        assert!(source.contains("#[table(accessor = backend_case_battle_authority)]"));
+        assert!(source.contains("#[view(accessor = backend_case_battles, public)]"));
+        assert!(!source.contains("#[table(accessor = backend_case_battle, public)]"));
+        assert!(!source.contains("pub fn interact_with_contract_issuer("));
+        let simulated_interaction = source
+            .split("pub fn simulate_contract_issuer_interaction")
+            .nth(1)
+            .and_then(|tail| tail.split("fn consume_contract_interaction").next())
+            .unwrap();
+        assert!(
+            simulated_interaction.contains("sender_owns_simulation_character(ctx, character_id)")
+        );
+        let dialogue_effect = source
+            .split("fn apply_dialogue_effect")
+            .nth(1)
+            .and_then(|tail| tail.split("fn dialogue_service_id").next())
+            .unwrap();
+        assert!(dialogue_effect.contains("record_dialogue_contract_issuer_interaction"));
+        let receipt = source
+            .split("pub struct ContractIssuerInteractionReceipt")
+            .nth(1)
+            .and_then(|tail| tail.split("pub enum IncidentKind").next())
+            .unwrap();
+        assert!(receipt.contains("pub dialogue_session_id: String"));
+        assert!(receipt.contains("pub dialogue_action_id: String"));
+        assert!(receipt.contains("pub dialogue_revision: u64"));
+        assert!(receipt.contains("pub location_id: String"));
+
+        let accept = source
+            .split("pub fn accept_contract")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .unwrap();
+        let report = source
+            .split("pub fn report_contract")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .unwrap();
+        assert!(accept.contains("ContractInteractionStage::Accept"));
+        assert!(report.contains("ContractInteractionStage::Report"));
+        assert!(report.contains("xp_reward"));
+
+        let action = source
+            .split("pub(crate) fn apply_authoritative_case_objective")
+            .nth(1)
+            .and_then(|tail| tail.split("/// Sole trusted fact ingestion").next())
+            .unwrap();
+        for family in [
+            "HostilesDrivenOff",
+            "SubjectCaptured",
+            "WindowSurvived",
+            "SubjectEscorted",
+            "Located",
+            "Identified",
+            "Exposed",
+            "ProofPresented",
+            "TestimonyPresented",
+            "SubjectProtected",
+            "Negotiated",
+            "Reported",
+            "ObjectiveImpossible",
+        ] {
+            assert!(
+                action.contains(family),
+                "missing reachable {family} producer"
+            );
+        }
+        assert!(action.contains("record_asset_retrieved"));
+        assert!(action.contains("record_asset_returned_or_exchanged"));
+        assert!(action.contains("record_subject_rescued_or_released"));
+        assert!(action.contains("transition_case_custody"));
+        assert!(action.contains("Defeat facts require trusted tactical outcomes"));
     }
 }
 
@@ -671,10 +814,49 @@ fn require_party_ready(ctx: &ReducerContext, party_id: &str) -> Result<(), Strin
 }
 
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum QuestStatus {
-    Available,
+pub enum ContractStatus {
+    Offered,
     Accepted,
-    Completed,
+    ReadyToReport,
+    Paid,
+    Withdrawn,
+}
+
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CaseResolutionStatus {
+    Open,
+    Resolved,
+    Failed,
+}
+
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FinaleStatus {
+    Available,
+    Selected,
+    Executed,
+    Ineligible,
+}
+
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FinaleKind {
+    RecordResolution,
+    ResolveLocalProblem,
+}
+
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CustodyObjectKind {
+    Asset,
+    Subject,
+}
+
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CustodyHolderKind {
+    Site,
+    Party,
+    Character,
+    Npc,
+    Destroyed,
+    Released,
 }
 
 /// Stable gameplay/UI classification derived from the best population data on
@@ -1734,11 +1916,34 @@ pub fn import_settlement_descriptions(
     Ok(())
 }
 
+/// Private world-state and objective authority. Presentation and rewards live
+/// on a separate contract, and investigation truth remains in
+/// `investigation_case_authority`.
 #[derive(Clone, Debug)]
-#[table(accessor = quest, public)]
-pub struct Quest {
+#[table(accessor = case_authority)]
+pub struct CaseAuthority {
     #[primary_key]
     pub id: String,
+    #[unique]
+    pub investigation_case_id: String,
+    pub local_problem_id: Option<String>,
+    pub objective_expression_json: String,
+    pub resolution_status: CaseResolutionStatus,
+    pub resolved_by_party_id: Option<String>,
+}
+
+/// A separately accepted agreement concerning a case. This row is private:
+/// the web gateway builds observer-safe disclosures rather than subscribing
+/// clients to undiscovered postings or acceptance state.
+#[derive(Clone, Debug)]
+#[table(accessor = contract_authority)]
+pub struct Contract {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub gateway_bucket: u8,
+    #[index(btree)]
+    pub case_id: String,
     pub title: String,
     pub description: String,
     pub difficulty: i32,
@@ -1746,21 +1951,160 @@ pub struct Quest {
     pub xp_reward: i32,
     #[index(btree)]
     pub settlement_id: String,
-    pub status: QuestStatus,
+    #[index(btree)]
+    pub service_id: String,
+    pub issuer_npc_id: String,
+    pub status: ContractStatus,
     pub accepted_by: Option<String>,
     pub enemy_type: String,
     pub enemy_count: i32,
+    pub accepted_at_minute: Option<u64>,
+    pub paid_at_minute: Option<u64>,
+}
+
+/// Trusted-gateway projection. This is not a direct player subscription; web
+/// handlers still select only locally surfaced or party-accepted contracts.
+#[derive(Clone, Debug, SpacetimeType)]
+pub struct BackendContract {
+    pub id: String,
+    pub case_id: String,
+    pub title: String,
+    pub description: String,
+    pub difficulty: i32,
+    pub gold_reward: i32,
+    pub xp_reward: i32,
+    pub settlement_id: String,
+    pub service_id: String,
+    pub issuer_npc_id: String,
+    pub status: ContractStatus,
+    pub accepted_by: Option<String>,
+    pub enemy_type: String,
+    pub enemy_count: i32,
+    pub accepted_at_minute: Option<u64>,
+    pub paid_at_minute: Option<u64>,
+}
+
+#[view(accessor = backend_contracts, public)]
+pub fn backend_contracts(ctx: &ViewContext) -> Vec<BackendContract> {
+    if !strategic_view_is_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .contract_authority()
+        .gateway_bucket()
+        .filter(0u8)
+        .map(|row| BackendContract {
+            id: row.id,
+            case_id: row.case_id,
+            title: row.title,
+            description: row.description,
+            difficulty: row.difficulty,
+            gold_reward: row.gold_reward,
+            xp_reward: row.xp_reward,
+            settlement_id: row.settlement_id,
+            service_id: row.service_id,
+            issuer_npc_id: row.issuer_npc_id,
+            status: row.status,
+            accepted_by: row.accepted_by,
+            enemy_type: row.enemy_type,
+            enemy_count: row.enemy_count,
+            accepted_at_minute: row.accepted_at_minute,
+            paid_at_minute: row.paid_at_minute,
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug)]
-#[table(accessor = quest_issuer, public)]
-pub struct QuestIssuer {
+#[table(accessor = case_outcome)]
+pub struct CaseOutcome {
     #[primary_key]
-    pub quest_id: String,
+    pub case_id: String,
+    pub party_id: String,
+    pub status: CaseResolutionStatus,
+    pub winning_path_index: Option<u16>,
+    pub resolved_at_minute: u64,
+    pub selected_finale_id: String,
+    pub finale_executed: bool,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = case_outcome_fact)]
+pub struct CaseOutcomeFact {
+    #[primary_key]
+    pub id: String,
     #[index(btree)]
-    pub settlement_id: String,
+    pub case_id: String,
     #[index(btree)]
-    pub service_id: String,
+    pub party_id: String,
+    #[unique]
+    pub source_id: String,
+    pub fact_json: String,
+    pub happened_at_minute: u64,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = case_custody)]
+pub struct CaseCustody {
+    #[primary_key]
+    pub object_id: String,
+    #[index(btree)]
+    pub case_id: String,
+    pub object_kind: CustodyObjectKind,
+    pub holder_kind: CustodyHolderKind,
+    pub holder_id: String,
+    pub version: u32,
+    #[unique]
+    pub source_id: String,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = case_finale_authority)]
+pub struct CaseFinaleAuthority {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub case_id: String,
+    pub kind: FinaleKind,
+    pub resolution_status: CaseResolutionStatus,
+    pub eligible_path_index: Option<u16>,
+    pub priority: u16,
+    pub status: FinaleStatus,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = case_finale_execution)]
+pub struct CaseFinaleExecution {
+    #[primary_key]
+    pub finale_id: String,
+    #[unique]
+    pub source_id: String,
+    pub case_id: String,
+    pub party_id: String,
+    pub executed_at_minute: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum ContractInteractionStage {
+    Accept,
+    Report,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = contract_issuer_interaction_receipt)]
+pub struct ContractIssuerInteractionReceipt {
+    #[primary_key]
+    pub id: String,
+    pub contract_id: String,
+    pub party_id: String,
+    pub stage: ContractInteractionStage,
+    pub issuer_npc_id: String,
+    pub interacting_character_id: u64,
+    pub interacted_at_minute: u64,
+    pub dialogue_session_id: String,
+    pub dialogue_action_id: String,
+    pub dialogue_revision: u64,
+    pub location_id: String,
+    pub consumed: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, SpacetimeType)]
@@ -1861,7 +2205,7 @@ pub struct Party {
     pub leader_id: u64,
     pub current_settlement_id: Option<String>,
     pub current_case_site_id: Option<CaseSiteId>,
-    pub active_quest_id: Option<String>,
+    pub active_contract_id: Option<String>,
     pub is_solo: bool,
     /// The fatigue level at which the first tiring party member makes camp.
     #[default(50u8)]
@@ -2429,6 +2773,30 @@ pub struct BattleParticipant {
     pub character_id: u64,
 }
 
+#[derive(Clone, Debug)]
+#[table(accessor = backend_case_battle_authority)]
+pub struct BackendCaseBattle {
+    #[index(btree)]
+    pub gateway_bucket: u8,
+    pub case_id: String,
+    pub party_id: String,
+    #[primary_key]
+    pub battle_id: String,
+    pub mission_id: String,
+}
+
+#[view(accessor = backend_case_battles, public)]
+pub fn backend_case_battles(ctx: &ViewContext) -> Vec<BackendCaseBattle> {
+    if !strategic_view_is_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .backend_case_battle_authority()
+        .gateway_bucket()
+        .filter(0u8)
+        .collect()
+}
+
 /// Persistent strategic identity for a specific combat opportunity. A mission
 /// may be unbound (random encounter) or bound to both a known case site and a
 /// specific hostile group. Enemy similarity never creates a binding.
@@ -2666,14 +3034,14 @@ enum ApprovedPartyAction {
     RejectJoinRequest {
         request_id: u64,
     },
-    AcceptQuest {
-        quest_id: String,
+    AcceptContract {
+        contract_id: String,
     },
-    AbandonQuest {
-        quest_id: String,
+    AbandonContract {
+        contract_id: String,
     },
-    TurnInQuest {
-        quest_id: String,
+    ReportContract {
+        contract_id: String,
     },
     AutoresolveMission {
         mission_id: String,
@@ -2709,9 +3077,9 @@ impl ApprovedPartyAction {
             Self::DeleteRecruitmentRole { .. } => "delete_role",
             Self::AcceptJoinRequest { .. } => "accept_join",
             Self::RejectJoinRequest { .. } => "reject_join",
-            Self::AcceptQuest { .. } => "accept_quest",
-            Self::AbandonQuest { .. } => "abandon_quest",
-            Self::TurnInQuest { .. } => "turn_in_quest",
+            Self::AcceptContract { .. } => "accept_contract",
+            Self::AbandonContract { .. } => "abandon_contract",
+            Self::ReportContract { .. } => "report_contract",
             Self::AutoresolveMission { .. } => "autoresolve",
             Self::UpdatePartyCheckTargets { .. } => "party_checks",
             Self::SetInventoryQuantityTarget { .. } => "party_inventory",
@@ -2771,9 +3139,9 @@ impl ApprovedPartyAction {
             Self::RejectJoinRequest { request_id } => {
                 reject_party_join_request(ctx, leader_id, request_id)
             }
-            Self::AcceptQuest { quest_id } => accept_quest(ctx, leader_id, quest_id),
-            Self::AbandonQuest { quest_id } => abandon_quest(ctx, leader_id, quest_id),
-            Self::TurnInQuest { quest_id } => turn_in_quest(ctx, leader_id, quest_id),
+            Self::AcceptContract { contract_id } => accept_contract(ctx, leader_id, contract_id),
+            Self::AbandonContract { contract_id } => abandon_contract(ctx, leader_id, contract_id),
+            Self::ReportContract { contract_id } => report_contract(ctx, leader_id, contract_id),
             Self::AutoresolveMission { mission_id } => {
                 autoresolve_mission(ctx, leader_id, mission_id)
             }
@@ -3170,7 +3538,14 @@ pub fn start_dialogue(
             });
         }
         for effect in &response.effects {
-            apply_dialogue_effect(ctx, character_id, &session, effect)?;
+            apply_dialogue_effect(
+                ctx,
+                character_id,
+                &session,
+                "start",
+                session.revision,
+                effect,
+            )?;
         }
     }
     refresh_dialogue_topic_options(ctx, &session, character_id)?;
@@ -3559,21 +3934,19 @@ fn dialogue_fact_context(
     }
     let service = dialogue_service_id(ctx, session)?;
     if !service.is_empty() {
-        if let Some(issuer) = ctx
+        if let Some(contract) = ctx
             .db
-            .quest_issuer()
+            .contract_authority()
             .service_id()
             .filter(&service)
-            .find(|issuer| issuer.settlement_id == session.settlement_id)
+            .find(|contract| contract.settlement_id == session.settlement_id)
         {
-            if let Some(quest) = ctx.db.quest().id().find(&issuer.quest_id) {
-                result.facts.insert(
-                    FactKey::QuestState {
-                        quest: "selected-service-quest".into(),
-                    },
-                    FactValue::Text(format!("{:?}", quest.status).to_lowercase()),
-                );
-            }
+            result.facts.insert(
+                FactKey::ContractState {
+                    contract: "selected-service-contract".into(),
+                },
+                FactValue::Text(format!("{:?}", contract.status).to_lowercase()),
+            );
         }
     }
     Ok(result)
@@ -3712,7 +4085,14 @@ pub fn choose_dialogue_topic(
         });
     }
     for effect in &response.effects {
-        apply_dialogue_effect(ctx, character_id, &session, effect)?;
+        apply_dialogue_effect(
+            ctx,
+            character_id,
+            &session,
+            &action_id,
+            session.revision.saturating_add(1),
+            effect,
+        )?;
     }
     if let Some(prompt) = &response.prompt {
         let id = format!("{session_id}:prompt:{}:{action_id}", prompt.id);
@@ -3885,7 +4265,14 @@ pub fn answer_dialogue_prompt(
     if let Some(winning) = winning {
         for choice in allowed.iter().filter(|choice| winning.contains(&choice.id)) {
             for effect in &choice.effects {
-                apply_dialogue_effect(ctx, character_id, &session, effect)?;
+                apply_dialogue_effect(
+                    ctx,
+                    character_id,
+                    &session,
+                    &action_id,
+                    session.revision.saturating_add(1),
+                    effect,
+                )?;
             }
             let topic = adventuresim_dialogue::find_conversation(&session.conversation_id)
                 .and_then(|conversation| {
@@ -3973,9 +4360,11 @@ fn apply_dialogue_effect(
     ctx: &ReducerContext,
     character_id: u64,
     session: &DialogueSession,
+    action_id: &str,
+    resulting_revision: u64,
     effect: &adventuresim_dialogue::Effect,
 ) -> Result<(), String> {
-    require_live_dialogue_presence(ctx, session, character_id)?;
+    let live_npc = require_live_dialogue_presence(ctx, session, character_id)?;
     match effect {
         adventuresim_dialogue::Effect::LearnTopic { topic } => {
             let id = format!("{character_id}:{}:{topic}", session.conversation_id);
@@ -3992,15 +4381,33 @@ fn apply_dialogue_effect(
             }
             Ok(())
         }
-        adventuresim_dialogue::Effect::AcceptQuest { quest }
-            if quest != "selected-service-quest" =>
+        adventuresim_dialogue::Effect::AcceptContract { contract }
+            if contract != "selected-service-contract" =>
         {
-            accept_quest(ctx, character_id, quest.clone())
+            record_dialogue_contract_issuer_interaction(
+                ctx,
+                character_id,
+                contract.clone(),
+                ContractInteractionStage::Accept,
+                session,
+                action_id,
+                resulting_revision,
+            )?;
+            accept_contract(ctx, character_id, contract.clone())
         }
-        adventuresim_dialogue::Effect::TurnInQuest { quest }
-            if quest != "selected-service-quest" =>
+        adventuresim_dialogue::Effect::ReportContract { contract }
+            if contract != "selected-service-contract" =>
         {
-            turn_in_quest(ctx, character_id, quest.clone())
+            record_dialogue_contract_issuer_interaction(
+                ctx,
+                character_id,
+                contract.clone(),
+                ContractInteractionStage::Report,
+                session,
+                action_id,
+                resulting_revision,
+            )?;
+            report_contract(ctx, character_id, contract.clone())
         }
         adventuresim_dialogue::Effect::BeginApprenticeship { profession } => {
             let service = if profession == "selected-service" {
@@ -4013,27 +4420,32 @@ fn apply_dialogue_effect(
         adventuresim_dialogue::Effect::ExamineDisease => {
             crate::disease::examine_by_herbalist(ctx, character_id, session.settlement_id.clone())
         }
-        adventuresim_dialogue::Effect::AcceptQuest { .. } => {
+        adventuresim_dialogue::Effect::AcceptContract { .. } => {
             let service = dialogue_service_id(ctx, session)?;
-            let quest_id = ctx
+            let contract_id = ctx
                 .db
-                .quest_issuer()
+                .contract_authority()
                 .service_id()
                 .filter(&service)
-                .find(|issuer| {
-                    issuer.settlement_id == session.settlement_id
-                        && ctx
-                            .db
-                            .quest()
-                            .id()
-                            .find(&issuer.quest_id)
-                            .is_some_and(|quest| quest.status == QuestStatus::Available)
+                .find(|contract| {
+                    contract.settlement_id == session.settlement_id
+                        && contract.issuer_npc_id == live_npc.id
+                        && contract.status == ContractStatus::Offered
                 })
-                .map(|issuer| issuer.quest_id)
-                .ok_or("This service has no available quest")?;
-            accept_quest(ctx, character_id, quest_id)
+                .map(|contract| contract.id)
+                .ok_or("This issuer has no available contract")?;
+            record_dialogue_contract_issuer_interaction(
+                ctx,
+                character_id,
+                contract_id.clone(),
+                ContractInteractionStage::Accept,
+                session,
+                action_id,
+                resulting_revision,
+            )?;
+            accept_contract(ctx, character_id, contract_id)
         }
-        adventuresim_dialogue::Effect::TurnInQuest { .. } => {
+        adventuresim_dialogue::Effect::ReportContract { .. } => {
             let character = ctx
                 .db
                 .character()
@@ -4041,26 +4453,37 @@ fn apply_dialogue_effect(
                 .find(character_id)
                 .ok_or("Character not found")?;
             let party_id = character.party_id.ok_or("Character has no party")?;
-            let quest_id = ctx
+            let contract_id = ctx
                 .db
                 .party_authority()
                 .id()
                 .find(&party_id)
-                .and_then(|party| party.active_quest_id)
-                .ok_or("Party has no active quest")?;
+                .and_then(|party| party.active_contract_id)
+                .ok_or("Party has no active contract")?;
             let service = dialogue_service_id(ctx, session)?;
             let local_issuer = ctx
                 .db
-                .quest_issuer()
-                .quest_id()
-                .find(&quest_id)
-                .is_some_and(|issuer| {
-                    issuer.service_id == service && issuer.settlement_id == session.settlement_id
+                .contract_authority()
+                .id()
+                .find(&contract_id)
+                .is_some_and(|contract| {
+                    contract.service_id == service
+                        && contract.settlement_id == session.settlement_id
+                        && contract.issuer_npc_id == live_npc.id
                 });
             if !local_issuer {
-                return Err("This service did not issue the active quest".into());
+                return Err("This NPC did not issue the active contract".into());
             }
-            turn_in_quest(ctx, character_id, quest_id)
+            record_dialogue_contract_issuer_interaction(
+                ctx,
+                character_id,
+                contract_id.clone(),
+                ContractInteractionStage::Report,
+                session,
+                action_id,
+                resulting_revision,
+            )?;
+            report_contract(ctx, character_id, contract_id)
         }
         adventuresim_dialogue::Effect::SetFlag { flag, value } if flag == "profess-local-faith" => {
             let religion_id = if *value {
@@ -4216,9 +4639,9 @@ pub fn request_party_action(
         "delete_role",
         "accept_join",
         "reject_join",
-        "accept_quest",
-        "abandon_quest",
-        "turn_in_quest",
+        "accept_contract",
+        "abandon_contract",
+        "report_contract",
         "autoresolve",
         "party_checks",
         "party_inventory",
@@ -4543,7 +4966,7 @@ pub(crate) fn create_solo_party_for_character(
             current_settlement_id: character.current_settlement_id.clone(),
             current_case_site_id: crate::investigation::character_case_site_id(ctx, character_id)
                 .map(CaseSiteId::from),
-            active_quest_id: None,
+            active_contract_id: None,
             is_solo: true,
             camp_fatigue_percent: 50,
             walking_minutes_per_day: DEFAULT_WALKING_MINUTES_PER_DAY,
@@ -5268,7 +5691,7 @@ pub fn request_to_join_party(
     if current_party.leader_id != character_id {
         return Err("Only a party leader may request a party merge".into());
     }
-    if current_party.active_quest_id.is_some() {
+    if current_party.active_contract_id.is_some() {
         return Err("Abandon the current quest before joining another party".into());
     }
     let role = ctx
@@ -5392,7 +5815,7 @@ pub fn accept_party_join_request(
     if !crate::simulation::same_simulation_scope(ctx, request.character_id, leader_id) {
         return Err("Simulation and ordinary parties cannot merge".into());
     }
-    if source_party.active_quest_id.is_some() {
+    if source_party.active_contract_id.is_some() {
         return Err("Applicant's party must abandon its current quest first".into());
     }
     if source_party.current_settlement_id != party.current_settlement_id
@@ -5978,6 +6401,31 @@ pub(crate) fn commit_victorious_battle(
         battle_id: battle_id.to_string(),
         party_id: party_id.to_string(),
     });
+    if let Some(mission_id) = mission_id {
+        let mission = ctx
+            .db
+            .mission_authority()
+            .id()
+            .find(&mission_id.to_string())
+            .ok_or("Mission authority not found")?;
+        if let Some(site_id) = mission.case_site_id {
+            let site = ctx
+                .db
+                .case_site_authority()
+                .id_key()
+                .find(&site_id.value)
+                .ok_or("Case site authority not found")?;
+            ctx.db
+                .backend_case_battle_authority()
+                .insert(BackendCaseBattle {
+                    gateway_bucket: 0,
+                    case_id: site.case_id,
+                    party_id: party_id.to_string(),
+                    battle_id: battle_id.to_string(),
+                    mission_id: mission_id.to_string(),
+                });
+        }
+    }
     let difficulty = group.as_ref().map_or(1, |group| group.difficulty);
     for member_id in living_party_member_ids(ctx, party_id) {
         ctx.db.battle_participant().insert(BattleParticipant {
@@ -6032,7 +6480,14 @@ pub(crate) fn commit_victorious_battle(
     }
     if let Some(mut group) = group {
         group.defeated = true;
-        ctx.db.hostile_group_authority().id().update(group);
+        ctx.db.hostile_group_authority().id().update(group.clone());
+        ingest_hostile_group_defeat_fact(
+            ctx,
+            outcome_source_id,
+            party_id,
+            &group,
+            group.enemy_count,
+        )?;
     }
     Ok(true)
 }
@@ -7242,8 +7697,11 @@ pub fn disband_party(ctx: &ReducerContext, leader_id: u64, party_id: String) -> 
         ctx.db.party_recruitment_role().id().delete(role.id);
     }
 
-    if let Some(quest_id) = party.active_quest_id {
-        ctx.db.quest().id().delete(&quest_id);
+    if let Some(contract_id) = party.active_contract_id
+        && let Some(mut contract) = ctx.db.contract_authority().id().find(&contract_id)
+    {
+        contract.status = ContractStatus::Withdrawn;
+        ctx.db.contract_authority().id().update(contract);
     }
 
     ctx.db.party_authority().id().delete(&party_id);
@@ -7253,12 +7711,218 @@ pub fn disband_party(ctx: &ReducerContext, leader_id: u64, party_id: String) -> 
     Ok(())
 }
 
-#[reducer]
-pub fn accept_quest(
+fn contract_interaction_receipt_id(
+    contract_id: &str,
+    party_id: &str,
+    stage: ContractInteractionStage,
+) -> String {
+    format!("interaction:{contract_id}:{party_id}:{stage:?}").to_lowercase()
+}
+
+fn record_contract_issuer_interaction(
     ctx: &ReducerContext,
     character_id: u64,
-    quest_id: String,
+    contract_id: String,
+    stage: ContractInteractionStage,
+    dialogue_session_id: String,
+    dialogue_action_id: String,
+    dialogue_revision: u64,
+    location_id: String,
 ) -> Result<(), String> {
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    let party_id = character.party_id.ok_or("Must be in a party")?;
+    let party = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != character_id {
+        return Err("Only the party leader can interact for a contract".into());
+    }
+    let contract = ctx
+        .db
+        .contract_authority()
+        .id()
+        .find(&contract_id)
+        .ok_or("Contract not found")?;
+    let expected = match stage {
+        ContractInteractionStage::Accept => ContractStatus::Offered,
+        ContractInteractionStage::Report => ContractStatus::ReadyToReport,
+    };
+    if contract.status != expected
+        || (stage == ContractInteractionStage::Report
+            && contract.accepted_by.as_deref() != Some(&party_id))
+    {
+        return Err("Contract is not at the requested interaction stage".into());
+    }
+    if character.current_settlement_id.as_deref() != Some(&contract.settlement_id) {
+        return Err("Contract issuer interaction requires their settlement".into());
+    }
+    let issuer = ctx
+        .db
+        .settlement_npc()
+        .id()
+        .find(&contract.issuer_npc_id)
+        .ok_or("Contract issuer is not persistent")?;
+    let presence = ctx
+        .db
+        .settlement_npc_presence()
+        .npc_id()
+        .find(&issuer.id)
+        .ok_or("Contract issuer has no presence")?;
+    let minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(720, |time| time.minutes);
+    if issuer.home_settlement_id != contract.settlement_id
+        || issuer.service_id != contract.service_id
+        || presence.settlement_id != contract.settlement_id
+        || presence.location_id != location_id
+        || !crate::settlement_population::npc_is_present(&presence, minute)
+    {
+        return Err("Contract issuer is not available for interaction".into());
+    }
+    let id = contract_interaction_receipt_id(&contract_id, &party_id, stage);
+    let row = ContractIssuerInteractionReceipt {
+        id: id.clone(),
+        contract_id,
+        party_id,
+        stage,
+        issuer_npc_id: issuer.id,
+        interacting_character_id: character_id,
+        interacted_at_minute: crate::time::refresh_clock(ctx)?,
+        dialogue_session_id,
+        dialogue_action_id,
+        dialogue_revision,
+        location_id,
+        consumed: false,
+    };
+    if ctx
+        .db
+        .contract_issuer_interaction_receipt()
+        .id()
+        .find(&id)
+        .is_some()
+    {
+        ctx.db
+            .contract_issuer_interaction_receipt()
+            .id()
+            .update(row);
+    } else {
+        ctx.db.contract_issuer_interaction_receipt().insert(row);
+    }
+    Ok(())
+}
+
+fn record_dialogue_contract_issuer_interaction(
+    ctx: &ReducerContext,
+    character_id: u64,
+    contract_id: String,
+    stage: ContractInteractionStage,
+    session: &DialogueSession,
+    action_id: &str,
+    resulting_revision: u64,
+) -> Result<(), String> {
+    if action_id == "start" {
+        return Err("Contract interaction requires an explicit dialogue action".into());
+    }
+    let issuer = require_live_dialogue_presence(ctx, session, character_id)?;
+    let contract = ctx
+        .db
+        .contract_authority()
+        .id()
+        .find(&contract_id)
+        .ok_or("Contract not found")?;
+    if issuer.id != contract.issuer_npc_id
+        || issuer.service_id != contract.service_id
+        || session.settlement_id != contract.settlement_id
+    {
+        return Err("This dialogue is not with the contract issuer".into());
+    }
+    record_contract_issuer_interaction(
+        ctx,
+        character_id,
+        contract_id,
+        stage,
+        session.id.clone(),
+        action_id.to_string(),
+        resulting_revision,
+        session.location_id.clone(),
+    )
+}
+
+/// Disposable simulations cannot use the gateway-owned dialogue reducers.
+/// This is the sole alternate producer and is restricted to the identity that
+/// owns the simulation character; ordinary players and the web gateway cannot
+/// mint an interaction receipt through it.
+#[reducer]
+pub fn simulate_contract_issuer_interaction(
+    ctx: &ReducerContext,
+    character_id: u64,
+    contract_id: String,
+    stage: ContractInteractionStage,
+) -> Result<(), String> {
+    if !crate::simulation::sender_owns_simulation_character(ctx, character_id) {
+        return Err("Only an owned disposable simulation may simulate NPC interaction".into());
+    }
+    let contract = ctx
+        .db
+        .contract_authority()
+        .id()
+        .find(&contract_id)
+        .ok_or("Contract not found")?;
+    let presence = ctx
+        .db
+        .settlement_npc_presence()
+        .npc_id()
+        .find(&contract.issuer_npc_id)
+        .ok_or("Contract issuer has no presence")?;
+    record_contract_issuer_interaction(
+        ctx,
+        character_id,
+        contract_id,
+        stage,
+        format!("simulation:{character_id}"),
+        format!("simulation:{stage:?}").to_lowercase(),
+        0,
+        presence.location_id,
+    )
+}
+
+fn consume_contract_interaction(
+    ctx: &ReducerContext,
+    contract_id: &str,
+    party_id: &str,
+    stage: ContractInteractionStage,
+) -> Result<(), String> {
+    let id = contract_interaction_receipt_id(contract_id, party_id, stage);
+    let mut receipt = ctx
+        .db
+        .contract_issuer_interaction_receipt()
+        .id()
+        .find(&id)
+        .ok_or("Interact with the contract issuer first")?;
+    if receipt.consumed || receipt.stage != stage {
+        return Err("Contract issuer interaction receipt is unavailable".into());
+    }
+    receipt.consumed = true;
+    ctx.db
+        .contract_issuer_interaction_receipt()
+        .id()
+        .update(receipt);
+    Ok(())
+}
+
+#[reducer]
+pub fn accept_contract(
+    ctx: &ReducerContext,
+    character_id: u64,
+    contract_id: String,
+) -> Result<(), String> {
+    require_strategic_character_authority(ctx, character_id)?;
     crate::character::require_living_character(ctx, character_id)?;
     let Some(character) = ctx.db.character().id().find(character_id) else {
         return Err("Character not found".into());
@@ -7276,36 +7940,54 @@ pub fn accept_quest(
         return Err("Only the party leader can accept quests".into());
     }
 
-    if party.active_quest_id.is_some() {
+    if party.active_contract_id.is_some() {
         return Err("Party already has an active quest".into());
     }
 
-    let Some(mut quest) = ctx.db.quest().id().find(&quest_id) else {
+    let Some(mut quest) = ctx.db.contract_authority().id().find(&contract_id) else {
         return Err("Quest not found".into());
     };
 
-    if quest.status != QuestStatus::Available {
+    if quest.status != ContractStatus::Offered {
         return Err("Quest is not available".into());
+    }
+    let case = ctx
+        .db
+        .case_authority()
+        .id()
+        .find(&quest.case_id)
+        .ok_or("Contract case not found")?;
+    if case.resolution_status != CaseResolutionStatus::Open {
+        return Err("This case is no longer open".into());
     }
 
     if character.current_settlement_id.as_ref() != Some(&quest.settlement_id) {
         return Err("Must be at the quest's settlement to accept it".into());
     }
+    consume_contract_interaction(
+        ctx,
+        &contract_id,
+        &party_id,
+        ContractInteractionStage::Accept,
+    )?;
 
-    quest.status = QuestStatus::Accepted;
+    quest.status = ContractStatus::Accepted;
     quest.accepted_by = Some(party_id.clone());
-    ctx.db.quest().id().update(quest);
+    quest.accepted_at_minute = Some(crate::time::refresh_clock(ctx)?);
+    let case_id = quest.case_id.clone();
+    let contract_id = quest.id.clone();
+    ctx.db.contract_authority().id().update(quest);
 
     let site = ctx
         .db
         .case_site_authority()
         .case_id()
-        .filter(&quest_id)
+        .filter(&case_id)
         .next()
         .ok_or("Quest destination is not configured")?;
-    disclose_exact_case_site(ctx, character_id, &quest_id, &site, "the contract issuer")?;
+    disclose_exact_case_site(ctx, character_id, &case_id, &site, "the contract issuer")?;
 
-    party.active_quest_id = Some(quest_id);
+    party.active_contract_id = Some(contract_id);
     ctx.db.party_authority().id().update(party);
     Ok(())
 }
@@ -7355,11 +8037,12 @@ pub fn track_case_site(
 }
 
 #[reducer]
-pub fn abandon_quest(
+pub fn abandon_contract(
     ctx: &ReducerContext,
     character_id: u64,
-    quest_id: String,
+    contract_id: String,
 ) -> Result<(), String> {
+    require_strategic_character_authority(ctx, character_id)?;
     require_character_no_unresolved_encounter(ctx, character_id)?;
     crate::character::require_living_character(ctx, character_id)?;
     let Some(character) = ctx.db.character().id().find(character_id) else {
@@ -7381,20 +8064,21 @@ pub fn abandon_quest(
         return Err("Travel to a settlement before abandoning the quest".into());
     }
 
-    let Some(quest) = ctx.db.quest().id().find(&quest_id) else {
+    let Some(mut quest) = ctx.db.contract_authority().id().find(&contract_id) else {
         return Err("Quest not found".into());
     };
 
     if quest.accepted_by.as_ref() != Some(&party_id) {
         return Err("This quest is not accepted by your party".into());
     }
-    if quest.status == QuestStatus::Completed {
+    if quest.status == ContractStatus::ReadyToReport {
         return Err("A completed quest must be returned to its questgiver".into());
     }
 
-    ctx.db.quest().id().delete(&quest.id);
+    quest.status = ContractStatus::Withdrawn;
+    ctx.db.contract_authority().id().update(quest);
 
-    party.active_quest_id = None;
+    party.active_contract_id = None;
     ctx.db.party_authority().id().update(party);
     Ok(())
 }
@@ -8944,22 +9628,21 @@ fn maybe_interrupt_travel(
         .party_journey_route_authority()
         .party_id()
         .find(&party_id.to_string());
-    let active_quest_archetype = ctx
+    let active_contract_archetype = ctx
         .db
         .party_authority()
         .id()
         .find(&party_id.to_string())
-        .and_then(|party| party.active_quest_id)
-        .filter(|_| journey.destination.case_site_id().is_some())
-        .filter(|quest_id| {
+        .and_then(|party| party.active_contract_id)
+        .and_then(|contract_id| ctx.db.contract_authority().id().find(&contract_id))
+        .filter(|contract| {
             ctx.db
                 .case_site_authority()
                 .id_key()
                 .find(&journey.destination.case_site_id().unwrap().to_string())
-                .is_some_and(|site| site.case_id == *quest_id)
+                .is_some_and(|site| site.case_id == contract.case_id)
         })
-        .and_then(|quest_id| ctx.db.quest().id().find(&quest_id))
-        .and_then(|quest| quest_encounter_archetype(&quest.enemy_type));
+        .and_then(|contract| quest_encounter_archetype(&contract.enemy_type));
     let member_ids = living_party_member_ids(ctx, party_id);
     let capable = member_ids
         .iter()
@@ -8984,7 +9667,7 @@ fn maybe_interrupt_travel(
             adventuresim_core::encounter::EncounterContext {
                 terrain,
                 night,
-                accepted_active_quest: active_quest_archetype.map(|archetype| {
+                accepted_active_quest: active_contract_archetype.map(|archetype| {
                     adventuresim_core::encounter::AcceptedQuestInfluence {
                         archetype,
                         distance_minutes: journey.total_minutes.saturating_sub(minute),
@@ -9860,7 +10543,7 @@ fn revalidate_party_after_departure_sync(
     leader_id: u64,
     expected_settlement_id: Option<&str>,
     expected_quest_location_id: Option<&str>,
-    expected_active_quest_id: Option<&str>,
+    expected_active_contract_id: Option<&str>,
 ) -> Result<Party, String> {
     let party = ctx
         .db
@@ -9872,7 +10555,8 @@ fn revalidate_party_after_departure_sync(
         && party.camp_destination.is_none()
         && party.current_settlement_id.as_deref() == expected_settlement_id
         && party.current_case_site_id.as_deref() == expected_quest_location_id
-        && !expected_active_quest_id.is_some_and(|id| party.active_quest_id.as_deref() != Some(id));
+        && !expected_active_contract_id
+            .is_some_and(|id| party.active_contract_id.as_deref() != Some(id));
     let pending_incident_sites: Vec<_> = ctx
         .db
         .strategic_incident()
@@ -10160,7 +10844,7 @@ mod departure_invariant_tests {
             leader_id: 2,
             current_settlement_id: None,
             current_case_site_id: None,
-            active_quest_id: None,
+            active_contract_id: None,
             is_solo: true,
             camp_fatigue_percent: 50,
             walking_minutes_per_day: 480,
@@ -10930,39 +11614,855 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
     Ok(())
 }
 
-pub fn complete_quest(ctx: &ReducerContext, quest_id: String) -> Result<(), String> {
-    let Some(mut quest) = ctx.db.quest().id().find(&quest_id) else {
-        return Err("Quest not found".into());
+/// Converts a trusted mission outcome into a typed strategic fact. This is the
+/// only battle-to-case seam: tactical code cannot resolve a case or pay a
+/// contract directly.
+fn ingest_hostile_group_defeat_fact(
+    ctx: &ReducerContext,
+    outcome_source_id: &str,
+    party_id: &str,
+    group: &HostileGroupAuthority,
+    count: u32,
+) -> Result<(), String> {
+    let site = ctx
+        .db
+        .case_site_authority()
+        .id_key()
+        .find(&group.case_site_id.value)
+        .ok_or("Hostile group has no case site")?;
+    let Some(_) = ctx.db.case_authority().id().find(&site.case_id) else {
+        // Incidents and random encounters intentionally have no case.
+        return Ok(());
     };
+    ingest_case_outcome_fact(
+        ctx,
+        outcome_source_id,
+        &site.case_id,
+        party_id,
+        adventuresim_core::case::OutcomeFactKind::HostilesDefeated {
+            hostile_group_id: group.id.clone(),
+            count,
+        },
+    )
+}
 
-    if quest.status != QuestStatus::Accepted {
-        return Err("Quest is not in accepted state".into());
+fn custody_object(
+    kind: CustodyObjectKind,
+    object_id: &str,
+) -> Result<adventuresim_core::case::CustodyObject, String> {
+    match kind {
+        CustodyObjectKind::Asset => adventuresim_core::case::AssetId::new(object_id)
+            .map(adventuresim_core::case::CustodyObject::Asset)
+            .map_err(|_| "Custody asset ID is invalid".into()),
+        CustodyObjectKind::Subject => adventuresim_core::case::SubjectId::new(object_id)
+            .map(adventuresim_core::case::CustodyObject::Subject)
+            .map_err(|_| "Custody subject ID is invalid".into()),
     }
+}
 
-    let Some(party_id) = quest.accepted_by.clone() else {
-        return Err("Quest has no party assigned".into());
-    };
-
-    let Some(party) = ctx.db.party_authority().id().find(&party_id) else {
-        return Err("Party not found".into());
-    };
-    if party.active_quest_id.as_deref() != Some(&quest_id) {
-        return Err("This is not the party's active quest".into());
+fn custody_holder(
+    kind: CustodyHolderKind,
+    holder_id: &str,
+) -> Result<adventuresim_core::case::CustodyHolder, String> {
+    if holder_id.len() > 160 {
+        return Err("Custody holder ID is too long".into());
     }
+    match kind {
+        CustodyHolderKind::Site if !holder_id.is_empty() => Ok(
+            adventuresim_core::case::CustodyHolder::Site(holder_id.into()),
+        ),
+        CustodyHolderKind::Party if !holder_id.is_empty() => Ok(
+            adventuresim_core::case::CustodyHolder::Party(holder_id.into()),
+        ),
+        CustodyHolderKind::Character => holder_id
+            .parse()
+            .map(adventuresim_core::case::CustodyHolder::Character)
+            .map_err(|_| "Custody character ID is invalid".into()),
+        CustodyHolderKind::Npc if !holder_id.is_empty() => Ok(
+            adventuresim_core::case::CustodyHolder::Npc(holder_id.into()),
+        ),
+        CustodyHolderKind::Destroyed if holder_id.is_empty() => {
+            Ok(adventuresim_core::case::CustodyHolder::Destroyed)
+        }
+        CustodyHolderKind::Released if holder_id.is_empty() => {
+            Ok(adventuresim_core::case::CustodyHolder::Released)
+        }
+        _ => Err("Custody holder ID does not match its typed holder".into()),
+    }
+}
 
-    let members = living_party_member_ids(ctx, &party_id);
-    let xp_per_member = quest.xp_reward.max(0) as u32 / members.len().max(1) as u32;
+/// Sole typed custody transition. Domain adapters provide the corresponding
+/// outcome fact only after the core custody state machine accepts the move.
+fn transition_case_custody(
+    ctx: &ReducerContext,
+    source_id: &str,
+    case_id: &str,
+    party_id: &str,
+    object_kind: CustodyObjectKind,
+    object_id: &str,
+    holder_kind: CustodyHolderKind,
+    holder_id: &str,
+    version: u32,
+    fact: Option<adventuresim_core::case::OutcomeFactKind>,
+) -> Result<bool, String> {
+    let object = custody_object(object_kind, object_id)?;
+    let next = adventuresim_core::case::CustodyRecord {
+        case_id: adventuresim_core::case::CaseId::new(case_id)
+            .map_err(|_| "Custody case ID is invalid")?,
+        object: object.clone(),
+        holder: custody_holder(holder_kind, holder_id)?,
+        version,
+        source_id: source_id.to_string(),
+    };
+    if let Some(existing) = ctx
+        .db
+        .case_custody()
+        .source_id()
+        .find(&source_id.to_string())
+    {
+        return if existing.case_id == case_id
+            && existing.object_id == object_id
+            && existing.object_kind == object_kind
+            && existing.holder_kind == holder_kind
+            && existing.holder_id == holder_id
+            && existing.version == version
+        {
+            Ok(false)
+        } else {
+            Err("Conflicting retry for custody source".into())
+        };
+    }
+    let mut records = BTreeMap::new();
+    if let Some(current) = ctx
+        .db
+        .case_custody()
+        .object_id()
+        .find(&object_id.to_string())
+    {
+        records.insert(
+            custody_object(current.object_kind, &current.object_id)?,
+            adventuresim_core::case::CustodyRecord {
+                case_id: adventuresim_core::case::CaseId::new(current.case_id)
+                    .map_err(|_| "Stored custody case ID is invalid")?,
+                object: object.clone(),
+                holder: custody_holder(current.holder_kind, &current.holder_id)?,
+                version: current.version,
+                source_id: current.source_id,
+            },
+        );
+    }
+    if !adventuresim_core::case::apply_custody(&mut records, next).map_err(str::to_string)? {
+        return Ok(false);
+    }
+    let row = CaseCustody {
+        object_id: object_id.to_string(),
+        case_id: case_id.to_string(),
+        object_kind,
+        holder_kind,
+        holder_id: holder_id.to_string(),
+        version,
+        source_id: source_id.to_string(),
+    };
+    if ctx
+        .db
+        .case_custody()
+        .object_id()
+        .find(&row.object_id)
+        .is_some()
+    {
+        ctx.db.case_custody().object_id().update(row);
+    } else {
+        ctx.db.case_custody().insert(row);
+    }
+    if let Some(fact) = fact {
+        ingest_case_outcome_fact(
+            ctx,
+            &format!("custody:{source_id}"),
+            case_id,
+            party_id,
+            fact,
+        )?;
+    }
+    Ok(true)
+}
 
-    for member_id in members {
-        if let Some(mut character) = ctx.db.character().id().find(member_id) {
-            character.xp = character.xp.saturating_add(xp_per_member);
-            character.level = 1 + character.xp / 100;
-            ctx.db.character().id().update(character);
+fn seed_case_custody(
+    ctx: &ReducerContext,
+    case_id: &str,
+    site_id: &str,
+    expression: &adventuresim_core::case::ObjectiveExpression,
+) -> Result<(), String> {
+    use adventuresim_core::case::ObjectiveRequirement as R;
+    for requirement in expression
+        .alternatives
+        .iter()
+        .flat_map(|path| &path.objectives)
+        .map(|objective| &objective.requirement)
+    {
+        let (kind, object_id) = match requirement {
+            R::Retrieve { asset_id }
+            | R::Return { asset_id, .. }
+            | R::Exchange { asset_id, .. } => (CustodyObjectKind::Asset, asset_id.as_str()),
+            R::Capture { subject_id }
+            | R::Rescue { subject_id }
+            | R::EscortTo { subject_id, .. }
+            | R::Protect { subject_id, .. }
+            | R::Release { subject_id } => (CustodyObjectKind::Subject, subject_id.as_str()),
+            _ => continue,
+        };
+        if ctx
+            .db
+            .case_custody()
+            .object_id()
+            .find(&object_id.to_string())
+            .is_none()
+        {
+            transition_case_custody(
+                ctx,
+                &format!("spawn:{case_id}:{object_id}"),
+                case_id,
+                "",
+                kind,
+                object_id,
+                CustodyHolderKind::Site,
+                site_id,
+                0,
+                None,
+            )?;
         }
     }
+    Ok(())
+}
 
-    quest.status = QuestStatus::Completed;
-    ctx.db.quest().id().update(quest);
+pub(crate) fn record_asset_retrieved(
+    ctx: &ReducerContext,
+    source_id: &str,
+    case_id: &str,
+    party_id: &str,
+    asset_id: &str,
+    version: u32,
+) -> Result<bool, String> {
+    let asset = adventuresim_core::case::AssetId::new(asset_id)
+        .map_err(|_| "Custody asset ID is invalid")?;
+    transition_case_custody(
+        ctx,
+        source_id,
+        case_id,
+        party_id,
+        CustodyObjectKind::Asset,
+        asset_id,
+        CustodyHolderKind::Party,
+        party_id,
+        version,
+        Some(adventuresim_core::case::OutcomeFactKind::AssetRetrieved { asset_id: asset }),
+    )
+}
+
+pub(crate) fn record_asset_returned_or_exchanged(
+    ctx: &ReducerContext,
+    source_id: &str,
+    case_id: &str,
+    party_id: &str,
+    asset_id: &str,
+    recipient_id: &str,
+    version: u32,
+    exchange: bool,
+) -> Result<bool, String> {
+    let asset = adventuresim_core::case::AssetId::new(asset_id)
+        .map_err(|_| "Custody asset ID is invalid")?;
+    let fact = if exchange {
+        adventuresim_core::case::OutcomeFactKind::AssetExchanged {
+            asset_id: asset,
+            recipient_id: recipient_id.into(),
+        }
+    } else {
+        adventuresim_core::case::OutcomeFactKind::AssetReturned {
+            asset_id: asset,
+            custodian_id: recipient_id.into(),
+        }
+    };
+    transition_case_custody(
+        ctx,
+        source_id,
+        case_id,
+        party_id,
+        CustodyObjectKind::Asset,
+        asset_id,
+        CustodyHolderKind::Npc,
+        recipient_id,
+        version,
+        Some(fact),
+    )
+}
+
+pub(crate) fn record_subject_rescued_or_released(
+    ctx: &ReducerContext,
+    source_id: &str,
+    case_id: &str,
+    party_id: &str,
+    subject_id: &str,
+    version: u32,
+    release: bool,
+) -> Result<bool, String> {
+    let subject = adventuresim_core::case::SubjectId::new(subject_id)
+        .map_err(|_| "Custody subject ID is invalid")?;
+    let fact = if release {
+        adventuresim_core::case::OutcomeFactKind::SubjectReleased {
+            subject_id: subject,
+        }
+    } else {
+        adventuresim_core::case::OutcomeFactKind::SubjectRescued {
+            subject_id: subject,
+        }
+    };
+    transition_case_custody(
+        ctx,
+        source_id,
+        case_id,
+        party_id,
+        CustodyObjectKind::Subject,
+        subject_id,
+        if release {
+            CustodyHolderKind::Released
+        } else {
+            CustodyHolderKind::Party
+        },
+        if release { "" } else { party_id },
+        version,
+        Some(fact),
+    )
+}
+
+/// Authenticated objective-family action seam. The caller selects only an
+/// objective ID; the authoritative case expression determines the fact type
+/// and identifiers, preventing arbitrary fact forgery.
+#[allow(dead_code)]
+pub(crate) fn apply_authoritative_case_objective(
+    ctx: &ReducerContext,
+    character_id: u64,
+    case_id: String,
+    objective_id: String,
+) -> Result<(), String> {
+    require_strategic_character_authority(ctx, character_id)?;
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    let party_id = character.party_id.ok_or("Must be in a party")?;
+    let party = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != character_id {
+        return Err("Only the party leader can perform case objectives".into());
+    }
+    let case = ctx
+        .db
+        .case_authority()
+        .id()
+        .find(&case_id)
+        .ok_or("Case not found")?;
+    if case.resolution_status != CaseResolutionStatus::Open {
+        return Err("Case is no longer open".into());
+    }
+    let authorized = party
+        .active_contract_id
+        .as_ref()
+        .and_then(|id| ctx.db.contract_authority().id().find(id))
+        .is_some_and(|contract| contract.case_id == case_id)
+        || party
+            .current_case_site_id
+            .as_ref()
+            .and_then(|id| ctx.db.case_site_authority().id_key().find(&id.value))
+            .is_some_and(|site| site.case_id == case_id);
+    if !authorized {
+        return Err("Party has no authoritative access to this case".into());
+    }
+    let expression: adventuresim_core::case::ObjectiveExpression =
+        serde_json::from_str(&case.objective_expression_json)
+            .map_err(|_| "Case objective authority is invalid")?;
+    let objective = expression
+        .alternatives
+        .iter()
+        .flat_map(|path| &path.objectives)
+        .find(|objective| objective.id.as_str() == objective_id)
+        .ok_or("Objective is not part of this case")?;
+    use adventuresim_core::case::{ObjectiveRequirement as R, OutcomeFactKind as F};
+    let minute = crate::time::refresh_clock(ctx)?;
+    let source_id = format!("case-action:{case_id}:{objective_id}:{party_id}:{minute}");
+    let current_site = party
+        .current_case_site_id
+        .as_ref()
+        .map(|id| id.value.as_str());
+    let impossible_object = match &objective.requirement {
+        R::Retrieve { asset_id } | R::Return { asset_id, .. } | R::Exchange { asset_id, .. } => {
+            Some(asset_id.as_str())
+        }
+        R::Capture { subject_id } | R::Rescue { subject_id } => Some(subject_id.as_str()),
+        _ => None,
+    };
+    if impossible_object
+        .and_then(|id| ctx.db.case_custody().object_id().find(&id.to_string()))
+        .is_some_and(|row| {
+            row.holder_kind == CustodyHolderKind::Destroyed
+                || row.holder_kind == CustodyHolderKind::Released
+        })
+    {
+        return ingest_case_outcome_fact(
+            ctx,
+            &source_id,
+            &case_id,
+            &party_id,
+            F::ObjectiveImpossible {
+                objective_id: objective.id.clone(),
+            },
+        );
+    }
+    let fact = match &objective.requirement {
+        R::Defeat { .. } => return Err("Defeat facts require trusted tactical outcomes".into()),
+        R::DriveOff { hostile_group_id }
+            if current_site.is_some_and(|site_id| {
+                ctx.db
+                    .hostile_group_authority()
+                    .id()
+                    .find(hostile_group_id)
+                    .is_some_and(|group| group.case_site_id.value == site_id)
+            }) =>
+        {
+            F::HostilesDrivenOff {
+                hostile_group_id: hostile_group_id.clone(),
+            }
+        }
+        R::Capture { subject_id } => {
+            let version = ctx
+                .db
+                .case_custody()
+                .object_id()
+                .find(&subject_id.as_str().to_string())
+                .ok_or("Subject has no authoritative custody")?
+                .version
+                .saturating_add(1);
+            transition_case_custody(
+                ctx,
+                &source_id,
+                &case_id,
+                &party_id,
+                CustodyObjectKind::Subject,
+                subject_id.as_str(),
+                CustodyHolderKind::Party,
+                &party_id,
+                version,
+                Some(F::SubjectCaptured {
+                    subject_id: subject_id.clone(),
+                }),
+            )?;
+            return Ok(());
+        }
+        R::SurviveWindow {
+            site_id,
+            through_minute,
+        } if current_site == Some(site_id) && minute >= *through_minute => F::WindowSurvived {
+            site_id: site_id.clone(),
+            through_minute: minute,
+        },
+        R::Rescue { subject_id } => {
+            let version = ctx
+                .db
+                .case_custody()
+                .object_id()
+                .find(&subject_id.as_str().to_string())
+                .ok_or("Subject has no authoritative custody")?
+                .version
+                .saturating_add(1);
+            record_subject_rescued_or_released(
+                ctx,
+                &source_id,
+                &case_id,
+                &party_id,
+                subject_id.as_str(),
+                version,
+                false,
+            )?;
+            return Ok(());
+        }
+        R::EscortTo {
+            subject_id,
+            site_id,
+        } if current_site == Some(site_id) => F::SubjectEscorted {
+            subject_id: subject_id.clone(),
+            site_id: site_id.clone(),
+        },
+        R::Retrieve { asset_id } => {
+            let current = ctx
+                .db
+                .case_custody()
+                .object_id()
+                .find(&asset_id.as_str().to_string())
+                .ok_or("Asset has no authoritative custody")?;
+            if current.holder_kind != CustodyHolderKind::Site
+                || current_site != Some(current.holder_id.as_str())
+            {
+                return Err("Asset is not at the party's current site".into());
+            }
+            record_asset_retrieved(
+                ctx,
+                &source_id,
+                &case_id,
+                &party_id,
+                asset_id.as_str(),
+                current.version.saturating_add(1),
+            )?;
+            return Ok(());
+        }
+        R::Return {
+            asset_id,
+            custodian_id,
+        } => {
+            let current = ctx
+                .db
+                .case_custody()
+                .object_id()
+                .find(&asset_id.as_str().to_string())
+                .ok_or("Asset has no authoritative custody")?;
+            if current.holder_kind != CustodyHolderKind::Party || current.holder_id != party_id {
+                return Err("Party does not hold the asset".into());
+            }
+            record_asset_returned_or_exchanged(
+                ctx,
+                &source_id,
+                &case_id,
+                &party_id,
+                asset_id.as_str(),
+                custodian_id,
+                current.version.saturating_add(1),
+                false,
+            )?;
+            return Ok(());
+        }
+        R::Locate { subject_ref } => F::Located {
+            subject_ref: subject_ref.clone(),
+        },
+        R::Identify { subject_ref } => F::Identified {
+            subject_ref: subject_ref.clone(),
+        },
+        R::Expose { subject_ref } => F::Exposed {
+            subject_ref: subject_ref.clone(),
+        },
+        R::PresentProof {
+            evidence_id,
+            recipient_id,
+        } => F::ProofPresented {
+            evidence_id: evidence_id.clone(),
+            recipient_id: recipient_id.clone(),
+        },
+        R::PresentTestimony {
+            witness_id,
+            recipient_id,
+        } => F::TestimonyPresented {
+            witness_id: witness_id.clone(),
+            recipient_id: recipient_id.clone(),
+        },
+        R::Protect {
+            subject_id,
+            through_minute,
+        } if minute >= *through_minute => F::SubjectProtected {
+            subject_id: subject_id.clone(),
+            through_minute: minute,
+        },
+        R::Negotiate { subject_ref } => F::Negotiated {
+            subject_ref: subject_ref.clone(),
+        },
+        R::Release { subject_id } => {
+            let version = ctx
+                .db
+                .case_custody()
+                .object_id()
+                .find(&subject_id.as_str().to_string())
+                .ok_or("Subject has no authoritative custody")?
+                .version
+                .saturating_add(1);
+            record_subject_rescued_or_released(
+                ctx,
+                &source_id,
+                &case_id,
+                &party_id,
+                subject_id.as_str(),
+                version,
+                true,
+            )?;
+            return Ok(());
+        }
+        R::Exchange {
+            asset_id,
+            recipient_id,
+        } => {
+            let current = ctx
+                .db
+                .case_custody()
+                .object_id()
+                .find(&asset_id.as_str().to_string())
+                .ok_or("Asset has no authoritative custody")?;
+            if current.holder_kind != CustodyHolderKind::Party || current.holder_id != party_id {
+                return Err("Party does not hold the asset".into());
+            }
+            record_asset_returned_or_exchanged(
+                ctx,
+                &source_id,
+                &case_id,
+                &party_id,
+                asset_id.as_str(),
+                recipient_id,
+                current.version.saturating_add(1),
+                true,
+            )?;
+            return Ok(());
+        }
+        R::ReportToIssuer { issuer_id } => F::Reported {
+            issuer_id: issuer_id.clone(),
+        },
+        _ => return Err("Objective domain conditions are not satisfied".into()),
+    };
+    ingest_case_outcome_fact(ctx, &source_id, &case_id, &party_id, fact)
+}
+
+/// Sole trusted fact ingestion and evaluation seam. Callers must already have
+/// authenticated their strategic authority and bind `source_id` to a durable
+/// domain receipt; no public reducer exposes this function.
+pub(crate) fn ingest_case_outcome_fact(
+    ctx: &ReducerContext,
+    source_id: &str,
+    case_id: &str,
+    party_id: &str,
+    kind: adventuresim_core::case::OutcomeFactKind,
+) -> Result<(), String> {
+    let mut case = ctx
+        .db
+        .case_authority()
+        .id()
+        .find(&case_id.to_string())
+        .ok_or("Case not found")?;
+    let fact_id = format!(
+        "fact:{}",
+        source_id.strip_prefix("outcome:").unwrap_or(source_id)
+    );
+    let fact = adventuresim_core::case::OutcomeFact {
+        id: adventuresim_core::case::OutcomeFactId::new(fact_id.clone())
+            .map_err(|_| "Outcome fact ID is invalid")?,
+        case_id: adventuresim_core::case::CaseId::new(case.id.clone())
+            .map_err(|_| "Case ID is invalid")?,
+        party_id: party_id.to_string(),
+        source_id: source_id.to_string(),
+        happened_at: crate::time::refresh_clock(ctx)?,
+        kind,
+    };
+    let encoded = serde_json::to_string(&fact).map_err(|_| "Could not encode outcome fact")?;
+    if let Some(existing) = ctx
+        .db
+        .case_outcome_fact()
+        .source_id()
+        .find(&source_id.to_string())
+    {
+        return if existing.case_id == case.id
+            && existing.party_id == party_id
+            && existing.fact_json == encoded
+        {
+            Ok(())
+        } else {
+            Err("Conflicting retry for case outcome source".into())
+        };
+    }
+    if case.resolution_status != CaseResolutionStatus::Open {
+        return Err("Case is no longer open".into());
+    }
+    ctx.db.case_outcome_fact().insert(CaseOutcomeFact {
+        id: fact_id,
+        case_id: case.id.clone(),
+        party_id: party_id.to_string(),
+        source_id: source_id.to_string(),
+        fact_json: encoded,
+        happened_at_minute: fact.happened_at,
+    });
+
+    let expression: adventuresim_core::case::ObjectiveExpression =
+        serde_json::from_str(&case.objective_expression_json)
+            .map_err(|_| "Case objective authority is invalid")?;
+    let facts = ctx
+        .db
+        .case_outcome_fact()
+        .case_id()
+        .filter(&case.id)
+        .map(|row| {
+            serde_json::from_str::<adventuresim_core::case::OutcomeFact>(&row.fact_json)
+                .map_err(|_| "Stored outcome fact is invalid".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let core_case_id =
+        adventuresim_core::case::CaseId::new(case.id.clone()).map_err(|_| "Case ID is invalid")?;
+    let evaluation = expression.evaluate(&core_case_id, party_id, &facts);
+    if evaluation.state == adventuresim_core::case::EvaluationState::Pending {
+        return Ok(());
+    }
+
+    let now = crate::time::refresh_clock(ctx)?;
+    let winning_path_index = (evaluation.state
+        == adventuresim_core::case::EvaluationState::Satisfied)
+        .then(|| {
+            evaluation.alternatives.iter().position(|path| {
+                path.iter().all(|progress| {
+                    progress.state == adventuresim_core::case::EvaluationState::Satisfied
+                })
+            })
+        })
+        .flatten()
+        .and_then(|index| u16::try_from(index).ok());
+    case.resolution_status =
+        if evaluation.state == adventuresim_core::case::EvaluationState::Satisfied {
+            CaseResolutionStatus::Resolved
+        } else {
+            CaseResolutionStatus::Failed
+        };
+    case.resolved_by_party_id = Some(party_id.to_string());
+    ctx.db.case_authority().id().update(case.clone());
+
+    for mut contract in ctx
+        .db
+        .contract_authority()
+        .case_id()
+        .filter(&case.id)
+        .collect::<Vec<_>>()
+    {
+        if case.resolution_status == CaseResolutionStatus::Resolved
+            && contract.status == ContractStatus::Accepted
+            && contract.accepted_by.as_deref() == Some(party_id)
+        {
+            contract.status = ContractStatus::ReadyToReport;
+        } else if matches!(
+            contract.status,
+            ContractStatus::Offered | ContractStatus::Accepted
+        ) {
+            contract.status = ContractStatus::Withdrawn;
+        }
+        ctx.db.contract_authority().id().update(contract);
+    }
+
+    let selected_finale_id =
+        select_case_finale(ctx, &case.id, case.resolution_status, winning_path_index)?
+            .unwrap_or_default();
+    ctx.db.case_outcome().insert(CaseOutcome {
+        case_id: case.id.clone(),
+        party_id: party_id.to_string(),
+        status: case.resolution_status,
+        winning_path_index,
+        resolved_at_minute: now,
+        selected_finale_id: selected_finale_id.clone(),
+        finale_executed: false,
+    });
+    if !selected_finale_id.is_empty() {
+        execute_case_finale(
+            ctx,
+            &selected_finale_id,
+            &format!("finale:{source_id}"),
+            party_id,
+        )?;
+    }
+    Ok(())
+}
+
+fn select_case_finale(
+    ctx: &ReducerContext,
+    case_id: &str,
+    resolution_status: CaseResolutionStatus,
+    winning_path_index: Option<u16>,
+) -> Result<Option<String>, String> {
+    let mut finales = ctx
+        .db
+        .case_finale_authority()
+        .case_id()
+        .filter(&case_id.to_string())
+        .collect::<Vec<_>>();
+    finales.sort_by_key(|finale| (finale.priority, finale.id.clone()));
+    let selected = finales
+        .iter()
+        .find(|finale| {
+            finale.status == FinaleStatus::Available
+                && finale.resolution_status == resolution_status
+                && finale
+                    .eligible_path_index
+                    .is_none_or(|path| Some(path) == winning_path_index)
+        })
+        .map(|finale| finale.id.clone());
+    for mut finale in finales {
+        finale.status = if selected.as_deref() == Some(&finale.id) {
+            FinaleStatus::Selected
+        } else {
+            FinaleStatus::Ineligible
+        };
+        ctx.db.case_finale_authority().id().update(finale);
+    }
+    Ok(selected)
+}
+
+fn execute_case_finale(
+    ctx: &ReducerContext,
+    finale_id: &str,
+    source_id: &str,
+    party_id: &str,
+) -> Result<(), String> {
+    if let Some(existing) = ctx
+        .db
+        .case_finale_execution()
+        .finale_id()
+        .find(&finale_id.to_string())
+    {
+        return if existing.source_id == source_id && existing.party_id == party_id {
+            Ok(())
+        } else {
+            Err("Finale already executed by different authority".into())
+        };
+    }
+    let mut finale = ctx
+        .db
+        .case_finale_authority()
+        .id()
+        .find(&finale_id.to_string())
+        .ok_or("Finale not found")?;
+    if finale.status != FinaleStatus::Selected {
+        return Err("Finale is not selected".into());
+    }
+    let case = ctx
+        .db
+        .case_authority()
+        .id()
+        .find(&finale.case_id)
+        .ok_or("Finale case not found")?;
+    let now = crate::time::refresh_clock(ctx)?;
+    if finale.kind == FinaleKind::ResolveLocalProblem
+        && case.resolution_status == CaseResolutionStatus::Resolved
+        && let Some(problem_id) = case.local_problem_id
+    {
+        crate::local_problem::apply_outcome(
+            ctx,
+            &problem_id,
+            &crate::local_problem::LocalProblemOutcomeInput {
+                source_outcome_id: source_id.to_string(),
+                at_minute: now,
+                mitigation_bps: 10_000,
+                resolve: true,
+            },
+        )?;
+    }
+    finale.status = FinaleStatus::Executed;
+    ctx.db.case_finale_authority().id().update(finale.clone());
+    ctx.db.case_finale_execution().insert(CaseFinaleExecution {
+        finale_id: finale.id.clone(),
+        source_id: source_id.to_string(),
+        case_id: finale.case_id,
+        party_id: party_id.to_string(),
+        executed_at_minute: now,
+    });
+    if let Some(mut outcome) = ctx.db.case_outcome().case_id().find(&case.id) {
+        outcome.finale_executed = true;
+        ctx.db.case_outcome().case_id().update(outcome);
+    }
     Ok(())
 }
 
@@ -11007,11 +12507,12 @@ pub(crate) fn ensure_bound_mission_authority(
 }
 
 #[reducer]
-pub fn turn_in_quest(
+pub fn report_contract(
     ctx: &ReducerContext,
     character_id: u64,
-    quest_id: String,
+    contract_id: String,
 ) -> Result<(), String> {
+    require_strategic_character_authority(ctx, character_id)?;
     crate::character::require_living_character(ctx, character_id)?;
     let character = ctx
         .db
@@ -11026,21 +12527,33 @@ pub fn turn_in_quest(
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
-    if party.active_quest_id.as_deref() != Some(&quest_id) {
+    if party.active_contract_id.as_deref() != Some(&contract_id) {
         return Err("This is not the party's active quest".into());
     }
-    let quest = ctx
+    let mut quest = ctx
         .db
-        .quest()
+        .contract_authority()
         .id()
-        .find(&quest_id)
+        .find(&contract_id)
         .ok_or("Quest not found")?;
-    if quest.status != QuestStatus::Completed || quest.accepted_by.as_ref() != Some(&party_id) {
+    if quest.status != ContractStatus::ReadyToReport
+        || quest.accepted_by.as_ref() != Some(&party_id)
+    {
         return Err("The quest has not been completed by this party".into());
+    }
+    if quest.paid_at_minute.is_some() {
+        return Err("This contract has already been paid".into());
     }
     if character.current_settlement_id.as_ref() != Some(&quest.settlement_id) {
         return Err("Return to the questgiver's settlement to claim the reward".into());
     }
+    consume_contract_interaction(
+        ctx,
+        &contract_id,
+        &party_id,
+        ContractInteractionStage::Report,
+    )?;
+    let reported_at_minute = crate::time::refresh_clock(ctx)?;
 
     let reward = quest.gold_reward.max(0) as u64;
     if reward > 0 {
@@ -11053,15 +12566,28 @@ pub fn turn_in_quest(
         }
         credit_party_reserve(ctx, &party_id, reward % recipient_count)?;
     }
+    let total_xp = quest.xp_reward.max(0) as u32;
+    let members = living_party_member_ids(ctx, &party_id);
+    let xp_per_member = total_xp / members.len().max(1) as u32;
+    for member_id in members {
+        if let Some(mut member) = ctx.db.character().id().find(member_id) {
+            member.xp = member.xp.saturating_add(xp_per_member);
+            member.level = 1 + member.xp / 100;
+            ctx.db.character().id().update(member);
+        }
+    }
+    quest.status = ContractStatus::Paid;
+    quest.paid_at_minute = Some(reported_at_minute);
+    ctx.db.contract_authority().id().update(quest.clone());
 
-    party.active_quest_id = None;
+    party.active_contract_id = None;
     ctx.db.party_authority().id().update(party);
     let obsolete_requests: Vec<u64> = ctx
         .db
         .party_action_request_authority()
         .party_id()
         .filter(&party_id)
-        .filter(|request| request.action_kind == "turn_in_quest")
+        .filter(|request| request.action_kind == "report_contract")
         .map(|request| request.id)
         .collect();
     for request_id in obsolete_requests {
@@ -11214,11 +12740,7 @@ pub fn autoresolve_mission(
     if committed && finish_incident_for_hostile_group(ctx, hostile_group_id)? {
         return Ok(());
     }
-    if committed && party.active_quest_id.as_deref() == Some(&case_site.case_id) {
-        complete_quest(ctx, case_site.case_id)
-    } else {
-        Ok(())
-    }
+    Ok(())
 }
 
 #[reducer]
@@ -11395,7 +12917,6 @@ pub fn seed_standalone_tactical_mission(
         .ok_or("Party not found")?;
     party.current_settlement_id = None;
     party.current_case_site_id = Some(case_site.id.clone());
-    party.active_quest_id = None;
     ctx.db.party_authority().id().update(party);
     crate::investigation::set_character_case_site(
         ctx,
@@ -11647,62 +13168,51 @@ fn ensure_settlement_activity_inner(
 ) -> Result<(), String> {
     crate::settlement_population::ensure_settlement_population(ctx, settlement_id)?;
     crate::local_problem::ensure_settlement_problems(ctx, settlement_id)?;
+    for mut contract in ctx
+        .db
+        .contract_authority()
+        .settlement_id()
+        .filter(&settlement_id.to_string())
+        .filter(|contract| {
+            matches!(
+                contract.status,
+                ContractStatus::Offered | ContractStatus::Accepted
+            ) && ctx
+                .db
+                .case_authority()
+                .id()
+                .find(&contract.case_id)
+                .is_some_and(|case| case.resolution_status != CaseResolutionStatus::Open)
+        })
+        .collect::<Vec<_>>()
+    {
+        contract.status = ContractStatus::Withdrawn;
+        ctx.db.contract_authority().id().update(contract);
+    }
     let tracked_quests: HashSet<String> = ctx
         .db
         .party_authority()
         .iter()
-        .filter_map(|party| party.active_quest_id)
+        .filter_map(|party| party.active_contract_id)
         .collect();
     let active = ctx
         .db
-        .quest()
+        .contract_authority()
         .settlement_id()
         .filter(&settlement_id.to_string())
         .filter(|quest| {
-            quest.status != QuestStatus::Completed || tracked_quests.contains(&quest.id)
+            matches!(
+                quest.status,
+                ContractStatus::Offered | ContractStatus::Accepted
+            ) || (quest.status == ContractStatus::ReadyToReport
+                && tracked_quests.contains(&quest.id))
         })
         .count();
     for _ in active..settlement_activity_target(settlement_id) {
         generate_quest_for_settlement(ctx, settlement_id)?;
     }
-    ensure_quest_issuers(ctx, settlement_id);
     ensure_npc_recruiting_parties(ctx, settlement_id)?;
     Ok(())
-}
-
-fn ensure_quest_issuers(ctx: &ReducerContext, settlement_id: &str) {
-    for quest in ctx
-        .db
-        .quest()
-        .settlement_id()
-        .filter(&settlement_id.to_string())
-    {
-        if ctx.db.quest_issuer().quest_id().find(&quest.id).is_none() {
-            ctx.db.quest_issuer().insert(QuestIssuer {
-                quest_id: quest.id,
-                settlement_id: settlement_id.to_string(),
-                service_id: quest_service_for_title(&quest.title).to_string(),
-            });
-        }
-    }
-}
-
-fn quest_service_for_title(title: &str) -> &'static str {
-    if title.starts_with("Break Up the Bandit Camp") {
-        "merchants"
-    } else if title.starts_with("Recover the Stolen Ore")
-        || title.starts_with("Recover the Stolen Arms")
-    {
-        "weapons"
-    } else if title.starts_with("Purge the Old Mine") {
-        "armor"
-    } else if title.starts_with("Hunt the Wolf Pack") {
-        "clothing"
-    } else if title.starts_with("Quiet the Restless Dead") {
-        "religion"
-    } else {
-        "inn"
-    }
 }
 
 fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> Result<(), String> {
@@ -11952,15 +13462,19 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         .db
         .party_authority()
         .iter()
-        .filter_map(|party| party.active_quest_id)
+        .filter_map(|party| party.active_contract_id)
         .collect();
     let occupied: HashSet<String> = ctx
         .db
-        .quest()
+        .contract_authority()
         .settlement_id()
         .filter(&settlement.id)
         .filter(|quest| {
-            quest.status != QuestStatus::Completed || tracked_quests.contains(&quest.id)
+            matches!(
+                quest.status,
+                ContractStatus::Offered | ContractStatus::Accepted
+            ) || (quest.status == ContractStatus::ReadyToReport
+                && tracked_quests.contains(&quest.id))
         })
         .map(|quest| quest.title)
         .collect();
@@ -11990,23 +13504,97 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
     let enemy_count = difficulty * 2 + (ctx.random::<u64>() % 4) as i32;
     let nonce = ctx.random::<u64>();
     let quest_id = format!("{}-{nonce:016x}", settlement.id);
-    ctx.db.quest().insert(Quest {
-        id: quest_id.clone(),
+    let contract_id = format!("contract:{quest_id}");
+    let case_id = format!("case:{quest_id}");
+    let hostile_group_id = format!("hostile-group:case-site:{case_id}");
+    let issuer = ctx
+        .db
+        .settlement_npc()
+        .home_settlement_id()
+        .filter(&settlement.id)
+        .filter(|npc| npc.service_id == service_id)
+        .min_by(|left, right| left.id.cmp(&right.id))
+        .ok_or_else(|| format!("Settlement has no persistent {service_id} service provider"))?;
+    let objective = adventuresim_core::case::ObjectiveExpression::new(vec![
+        adventuresim_core::case::ObjectivePath {
+            objectives: vec![adventuresim_core::case::Objective {
+                id: adventuresim_core::case::ObjectiveId::new(format!(
+                    "objective:defeat-{nonce:016x}"
+                ))
+                .map_err(|_| "Generated objective ID is invalid")?,
+                requirement: adventuresim_core::case::ObjectiveRequirement::Defeat {
+                    hostile_group_id,
+                    count: enemy_count as u32,
+                },
+            }],
+        },
+    ])
+    .map_err(|_| "Generated objective expression is invalid")?;
+    ctx.db.case_authority().insert(CaseAuthority {
+        id: case_id.clone(),
+        investigation_case_id: case_id.clone(),
+        local_problem_id: None,
+        objective_expression_json: serde_json::to_string(&objective)
+            .map_err(|_| "Could not encode case objectives")?,
+        resolution_status: CaseResolutionStatus::Open,
+        resolved_by_party_id: None,
+    });
+    ctx.db.case_finale_authority().insert(CaseFinaleAuthority {
+        id: format!("finale:{case_id}:record"),
+        case_id: case_id.clone(),
+        kind: FinaleKind::RecordResolution,
+        resolution_status: CaseResolutionStatus::Resolved,
+        eligible_path_index: Some(0),
+        priority: 100,
+        status: FinaleStatus::Available,
+    });
+    if ctx
+        .db
+        .investigation_case_authority()
+        .id()
+        .find(&case_id)
+        .is_none()
+    {
+        ctx.db.investigation_case_authority().insert(
+            crate::investigation::InvestigationCaseAuthority {
+                id: case_id.clone(),
+                problem_id: String::new(),
+                hidden_target_json: serde_json::json!({
+                    "threat_id": enemy,
+                    "hostile_group_id": format!("hostile-group:case-site:{case_id}")
+                })
+                .to_string(),
+                generation_explanation_json: serde_json::json!({
+                    "template": "direct-bounty",
+                    "nonce": nonce
+                })
+                .to_string(),
+            },
+        );
+    }
+    ctx.db.contract_authority().insert(Contract {
+        id: contract_id.clone(),
+        gateway_bucket: 0,
+        case_id: case_id.clone(),
         title: format!("{title} near {}", settlement.name),
         description: description.into(),
         difficulty,
         gold_reward: difficulty * 35 + distance_m.div_ceil(1_000) as i32 * 2,
         xp_reward: difficulty * 20,
         settlement_id: settlement.id.clone(),
-        status: QuestStatus::Available,
+        service_id: service_id.into(),
+        issuer_npc_id: issuer.id,
+        status: ContractStatus::Offered,
         accepted_by: None,
         enemy_type: enemy.into(),
         enemy_count,
+        accepted_at_minute: None,
+        paid_at_minute: None,
     });
     let site = CaseSiteAuthority {
-        id_key: format!("case-site:{quest_id}"),
-        id: CaseSiteId::from(format!("case-site:{quest_id}")),
-        case_id: quest_id.clone(),
+        id_key: format!("case-site:{case_id}"),
+        id: CaseSiteId::from(format!("case-site:{case_id}")),
+        case_id: case_id.clone(),
         origin_settlement_id: settlement.id.clone(),
         name: format!("{title} near {}", settlement.name),
         description: arrival.into(),
@@ -12017,11 +13605,7 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         distance_m,
     };
     ctx.db.case_site_authority().insert(site.clone());
+    seed_case_custody(ctx, &case_id, &site.id.value, &objective)?;
     materialize_hostile_group(ctx, &site, enemy.into(), enemy_count as u32, difficulty)?;
-    ctx.db.quest_issuer().insert(QuestIssuer {
-        quest_id,
-        settlement_id: settlement.id,
-        service_id: service_id.into(),
-    });
     Ok(())
 }

@@ -47,6 +47,14 @@ pub struct BackendInvestigationLead {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BackendCaseBattle {
+    pub case_id: String,
+    pub party_id: String,
+    pub battle_id: String,
+    pub mission_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BackendCaseSitePin {
     pub owner_character_id: u64,
     pub case_id: String,
@@ -335,35 +343,30 @@ pub struct TravelEdge {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Quest {
+pub struct ContractPresentation {
     pub id: String,
+    pub case_id: String,
     pub title: String,
     pub description: String,
     pub difficulty: i32,
     pub gold_reward: i32,
     pub xp_reward: i32,
     pub settlement_id: String,
-    pub status: QuestStatus,
+    pub service_id: String,
+    pub issuer_npc_id: String,
+    pub status: ContractPresentationStatus,
     pub accepted_by: Option<String>,
     pub enemy_type: String,
     pub enemy_count: i32,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum QuestStatus {
-    #[serde(alias = "available")]
-    Available,
-    #[serde(alias = "accepted")]
+pub enum ContractPresentationStatus {
+    Offered,
     Accepted,
-    #[serde(alias = "completed")]
-    Completed,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QuestIssuer {
-    pub quest_id: String,
-    pub settlement_id: String,
-    pub service_id: String,
+    ReadyToReport,
+    Paid,
+    Withdrawn,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -405,7 +408,7 @@ pub struct Party {
     pub leader_id: u64,
     pub current_settlement_id: Option<String>,
     pub current_case_site_id: Option<String>,
-    pub active_quest_id: Option<String>,
+    pub active_contract_id: Option<String>,
     pub is_solo: bool,
     pub camp_fatigue_percent: u8,
     pub walking_minutes_per_day: u16,
@@ -1562,10 +1565,11 @@ mod tests {
     #[test]
     fn strategic_statuses_reject_unknown_values() {
         assert_eq!(
-            serde_json::from_str::<QuestStatus>("\"accepted\"").unwrap(),
-            QuestStatus::Accepted
+            serde_json::from_str::<ContractPresentationStatus>("\"Accepted\"").unwrap(),
+            ContractPresentationStatus::Accepted
         );
-        assert!(serde_json::from_str::<QuestStatus>("\"mystery\"").is_err());
+        assert!(serde_json::from_str::<ContractPresentationStatus>("\"accepted\"").is_err());
+        assert!(serde_json::from_str::<ContractPresentationStatus>("\"mystery\"").is_err());
         assert_eq!(
             serde_json::from_str::<MissionStatus>("\"Starting\"").unwrap(),
             MissionStatus::Pending

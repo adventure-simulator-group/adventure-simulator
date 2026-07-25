@@ -15,7 +15,8 @@ use serde::Deserialize;
 
 use crate::spacetimedb::{
     CampDurationMode, CharacterAttributes, CharacterLimbs, CharacterStats, CharacterTime,
-    CharacterTrainingSchedule, Party, Quest, ScheduleAllocation, Settlement, TravelEdge,
+    CharacterTrainingSchedule, ContractPresentation, Party, ScheduleAllocation, Settlement,
+    TravelEdge,
 };
 
 const WALKING_SPEED_KM_PER_HOUR: u64 = 5;
@@ -124,17 +125,21 @@ impl TerrainPlanner {
     }
 }
 
-pub(crate) fn active_quest_summary(quest: &Quest) -> String {
-    let name = quest
+pub(crate) fn active_contract_summary(contract: &ContractPresentation) -> String {
+    let name = contract
         .enemy_type
         .parse::<ThreatId>()
-        .map(|id| id.display_name(quest.enemy_count.max(0) as u32))
+        .map(|id| id.display_name(contract.enemy_count.max(0) as u32))
         .unwrap_or_else(|_| "Unknown threat".to_string());
-    format!("Active quest · {} {name}", quest.enemy_count)
+    format!("Active quest · {} {name}", contract.enemy_count)
 }
 
-pub(crate) fn active_quest_tooltip(quest: &Quest) -> String {
-    format!("{}\n{}", quest.description, active_quest_summary(quest))
+pub(crate) fn active_contract_tooltip(contract: &ContractPresentation) -> String {
+    format!(
+        "{}\n{}",
+        contract.description,
+        active_contract_summary(contract)
+    )
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -459,7 +464,7 @@ fn journey_minutes(distance_m: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spacetimedb::QuestStatus;
+    use crate::spacetimedb::ContractPresentationStatus;
     use adventuresim_world_schema::{FallbackIndustry, IndustryEvidence, InferredIndustryProfile};
 
     fn settlement(id: &str, node: u64) -> Settlement {
@@ -492,15 +497,22 @@ mod tests {
         }
     }
 
-    fn quest(id: &str, settlement_id: &str, status: QuestStatus) -> Quest {
-        Quest {
+    fn quest(
+        id: &str,
+        settlement_id: &str,
+        status: ContractPresentationStatus,
+    ) -> ContractPresentation {
+        ContractPresentation {
             id: id.to_string(),
+            case_id: format!("case:{id}"),
             title: id.to_string(),
             description: String::new(),
             difficulty: 1,
             gold_reward: 1,
             xp_reward: 1,
             settlement_id: settlement_id.to_string(),
+            service_id: "inn".into(),
+            issuer_npc_id: String::new(),
             status,
             accepted_by: None,
             enemy_type: String::new(),
@@ -516,13 +528,13 @@ mod tests {
 
     #[test]
     fn active_quest_tooltip_includes_encounter_summary() {
-        let mut quest = quest("crypt", "riverdale", QuestStatus::Accepted);
+        let mut quest = quest("crypt", "riverdale", ContractPresentationStatus::Accepted);
         quest.description = "A necromancer has raised the dead.".into();
         quest.enemy_count = 11;
         quest.enemy_type = "skeleton".into();
 
         assert_eq!(
-            active_quest_tooltip(&quest),
+            active_contract_tooltip(&quest),
             "A necromancer has raised the dead.\nActive quest · 11 Skeletons"
         );
     }

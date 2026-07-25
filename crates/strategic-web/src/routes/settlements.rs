@@ -119,7 +119,7 @@ use super::inventory_forms::{
 };
 use super::redirect_to_local;
 use super::travel::{
-    TravelDestination, TravelForm, TravelProvisionForecast, active_quest_tooltip,
+    TravelDestination, TravelForm, TravelProvisionForecast, active_contract_tooltip,
     connected_destinations, populate_itinerary_forecasts,
 };
 use crate::session::Session;
@@ -130,14 +130,14 @@ use crate::spacetimedb::{
     CharacterEquip, CharacterFamiliarity, CharacterFilth, CharacterLimbs, CharacterMoraleSource,
     CharacterNeeds, CharacterNotoriety, CharacterPersonality, CharacterSkills, CharacterStats,
     CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, CharacterVirtue,
-    EquippedMedication, FoodLot, HerbalistExaminationRow, InfectionEpisodeRow, InventoryItem,
-    InventoryQuantityTarget, ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury,
-    LimbRegion, MedicalExaminationRow, Party, PartyInventoryItem, PartyJourney,
-    PartyJourneyItinerary, PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, Quest,
-    QuestIssuer, QuestStatus, RecruitmentOffer, RecruitmentOfferStatus, RecruitmentRequirements,
-    ReligiousDemand, RepairOrder, RetainedProjectile, ScheduleAllocation, Settlement,
-    SettlementAlias, SettlementDescription, SettlementSmith, SocialBelief, StrategicEncounter,
-    TravelEdge,
+    ContractPresentation, ContractPresentationStatus, EquippedMedication, FoodLot,
+    HerbalistExaminationRow, InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget,
+    ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury, LimbRegion,
+    MedicalExaminationRow, Party, PartyInventoryItem, PartyJourney, PartyJourneyItinerary,
+    PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, RecruitmentOffer,
+    RecruitmentOfferStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
+    RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription,
+    SettlementSmith, SocialBelief, StrategicEncounter, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
@@ -1046,9 +1046,9 @@ async fn settlement_map(
     } else {
         Vec::new()
     };
-    let quests: Vec<Quest> = state
+    let quests: Vec<ContractPresentation> = state
         .db
-        .query("SELECT * FROM quest")
+        .query("SELECT * FROM backend_contracts")
         .await
         .unwrap_or_default();
     let active_character = get_active_character(&state, session.character_id_u64()).await;
@@ -1069,10 +1069,11 @@ async fn settlement_map(
     } else {
         None
     };
-    let active_quest_id = active_party
+    let active_contract_id = active_party
         .as_ref()
-        .and_then(|party| party.active_quest_id.as_deref());
-    let active_quest = active_quest_id.and_then(|id| quests.iter().find(|quest| quest.id == id));
+        .and_then(|party| party.active_contract_id.as_deref());
+    let active_contract =
+        active_contract_id.and_then(|id| quests.iter().find(|contract| contract.id == id));
     let case_sites = if let Some(character_id) = session.character_id_u64() {
         state
             .db
@@ -1256,9 +1257,9 @@ async fn settlement_map(
             can_travel,
             provision_forecast,
             is_current_settlement,
-            active_quest.filter(|quest| {
-                can_abandon_active_quest(
-                    quest,
+            active_contract.filter(|contract| {
+                can_abandon_active_contract(
+                    contract,
                     active_character
                         .as_ref()
                         .and_then(|(character, _)| character.current_case_site_id.as_deref()),
@@ -1272,23 +1273,29 @@ async fn settlement_map(
     )
 }
 
-fn can_abandon_active_quest(quest: &Quest, current_case_site_id: Option<&str>) -> bool {
-    quest.status == QuestStatus::Accepted && current_case_site_id.is_none()
+fn can_abandon_active_contract(
+    contract: &ContractPresentation,
+    current_case_site_id: Option<&str>,
+) -> bool {
+    contract.status == ContractPresentationStatus::Accepted && current_case_site_id.is_none()
 }
 
 #[cfg(test)]
 mod map_quest_tests {
     use super::*;
 
-    fn quest(status: QuestStatus) -> Quest {
-        Quest {
+    fn quest(status: ContractPresentationStatus) -> ContractPresentation {
+        ContractPresentation {
             id: "active".into(),
+            case_id: "case:active".into(),
             title: "Active quest".into(),
             description: String::new(),
             difficulty: 1,
             gold_reward: 1,
             xp_reward: 1,
             settlement_id: "issuer".into(),
+            service_id: "inn".into(),
+            issuer_npc_id: String::new(),
             status,
             accepted_by: Some("party".into()),
             enemy_type: String::new(),
@@ -1298,16 +1305,16 @@ mod map_quest_tests {
 
     #[test]
     fn accepted_active_quest_can_only_be_abandoned_before_reaching_its_location() {
-        assert!(can_abandon_active_quest(
-            &quest(QuestStatus::Accepted),
+        assert!(can_abandon_active_contract(
+            &quest(ContractPresentationStatus::Accepted),
             None
         ));
-        assert!(!can_abandon_active_quest(
-            &quest(QuestStatus::Accepted),
+        assert!(!can_abandon_active_contract(
+            &quest(ContractPresentationStatus::Accepted),
             Some("active")
         ));
-        assert!(!can_abandon_active_quest(
-            &quest(QuestStatus::Completed),
+        assert!(!can_abandon_active_contract(
+            &quest(ContractPresentationStatus::ReadyToReport),
             None
         ));
     }
@@ -2151,18 +2158,10 @@ async fn service_quest_offers(
             recruitment: Vec::new(),
         });
     };
-    let issuers: Vec<QuestIssuer> = state
+    let quests: Vec<ContractPresentation> = state
         .db
         .query(&format!(
-            "SELECT * FROM quest_issuer WHERE settlement_id = {}",
-            sql_string_literal(&id)
-        ))
-        .await
-        .unwrap_or_default();
-    let quests: Vec<Quest> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM quest WHERE settlement_id = {}",
+            "SELECT * FROM backend_contracts WHERE settlement_id = {}",
             sql_string_literal(&id)
         ))
         .await
@@ -2198,7 +2197,7 @@ async fn service_quest_offers(
         character.current_settlement_id.as_deref() == Some(id.as_str())
             && active_party
                 .as_ref()
-                .is_some_and(|party| party.active_quest_id.is_none())
+                .is_some_and(|party| party.active_contract_id.is_none())
     });
     let can_turn_in = active_character.as_ref().is_some_and(|(character, _)| {
         character.current_settlement_id.as_deref() == Some(id.as_str()) && active_party.is_some()
@@ -2333,17 +2332,18 @@ async fn service_quest_offers(
             })
         })
         .collect();
-    let quest_offers = issuers
-            .into_iter()
-            .filter_map(|issuer| {
-                let quest = quests.iter().find(|quest| quest.id == issuer.quest_id)?;
+    let quest_offers = quests
+            .iter()
+            .filter_map(|quest| {
                 let is_current = active_party.as_ref().is_some_and(|party| {
-                    party.active_quest_id.as_deref() == Some(quest.id.as_str())
+                    party.active_contract_id.as_deref() == Some(quest.id.as_str())
                         && quest.accepted_by.as_deref() == Some(party.id.as_str())
                 });
-                let state = if quest.status == QuestStatus::Available {
+                let state = if quest.status == ContractPresentationStatus::Offered {
                     "available"
-                } else if is_current && quest.status == QuestStatus::Completed {
+                } else if is_current
+                    && quest.status == ContractPresentationStatus::ReadyToReport
+                {
                     "ready"
                 } else if is_current {
                     "underway"
@@ -2353,18 +2353,18 @@ async fn service_quest_offers(
                 let problem = quest.description.trim_end_matches('.').to_lowercase();
                 let low = (quest.enemy_count - 2).max(1);
                 let high = quest.enemy_count + 2;
-                let (npc_name, greeting) = service_quest_greeting(&issuer.service_id);
+                let (npc_name, greeting) = service_quest_greeting(&quest.service_id);
                 Some(ServiceQuestOffer {
                     id: quest.id.clone(),
                     title: quest.title.clone(),
-                    description: active_quest_tooltip(quest),
-                    service_id: issuer.service_id.clone(),
+                    description: active_contract_tooltip(quest),
+                    service_id: quest.service_id.clone(),
                     npc_name,
                     greeting: greeting.to_string(),
                     follow_up: format!("{problem}?"),
                     problem,
                     details: service_quest_details(
-                        &issuer.service_id,
+                        &quest.service_id,
                         quest,
                         &settlement.name,
                         &neighboring_name,
@@ -2417,7 +2417,7 @@ fn service_quest_greeting(service_id: &str) -> (&'static str, &'static str) {
 
 fn service_quest_details(
     _service_id: &str,
-    quest: &Quest,
+    quest: &ContractPresentation,
     _settlement_name: &str,
     _neighboring_name: &str,
     low: i32,
@@ -2443,16 +2443,19 @@ fn service_quest_details(
 mod bestiary_quest_presentation_tests {
     use super::*;
 
-    fn quest(enemy_type: &str, description: &str) -> Quest {
-        Quest {
+    fn quest(enemy_type: &str, description: &str) -> ContractPresentation {
+        ContractPresentation {
             id: "q".into(),
+            case_id: "case:q".into(),
             title: "Problem".into(),
             description: description.into(),
             difficulty: 2,
             gold_reward: 40,
             xp_reward: 20,
             settlement_id: "s".into(),
-            status: QuestStatus::Available,
+            service_id: "inn".into(),
+            issuer_npc_id: String::new(),
+            status: ContractPresentationStatus::Offered,
             accepted_by: None,
             enemy_type: enemy_type.into(),
             enemy_count: 3,
@@ -2603,8 +2606,8 @@ async fn resolve_location(state: &AppState, kind: &str, id: &str) -> LocationLoo
             }),
         LocationKind::Quest => state
             .db
-            .query_one::<Quest>(&format!(
-                "SELECT * FROM quest WHERE id = {}",
+            .query_one::<ContractPresentation>(&format!(
+                "SELECT * FROM backend_contracts WHERE id = {}",
                 sql_string_literal(id)
             ))
             .await
