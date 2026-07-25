@@ -101,7 +101,27 @@
         { "id": "local-artisan", "priority": 10, "conditions": { "op": "fact", "key": { "kind": "participant_profession", "role": "local" }, "equals": "artisan" }, "turns": [{ "speaker": "local", "fragments": [{ "kind": "text", "value": "Greetings. I work a trade here, so I hear much from customers and neighboring workshops." }] }], "effects": [], "prompt": null },
         { "id": "local-default", "priority": 0, "turns": [{ "speaker": "local", "fragments": [{ "kind": "text", "value": "Good day, traveler. What brings you among the people here?" }] }], "effects": [], "prompt": null }
       ],
-      "topics": [{ "id": "introduction", "label": "Introduction", "initially_known": true, "responses": [{ "id": "local-introduction", "priority": 0, "turns": [{ "speaker": "player", "fragments": [{ "kind": "text", "value": "Tell me about yourself." }] }, { "speaker": "local", "fragments": [{ "kind": "text", "value": "My household and work are here. I know the ordinary comings and goings of this place." }] }], "effects": [], "prompt": null }] }]
+      "topics": [
+        { "id": "introduction", "label": "Introduction", "initially_known": true, "responses": [{ "id": "local-introduction", "priority": 0, "turns": [{ "speaker": "player", "fragments": [{ "kind": "text", "value": "Tell me about yourself." }] }, { "speaker": "local", "fragments": [{ "kind": "text", "value": "My household and work are here. I know the ordinary comings and goings of this place." }] }], "effects": [], "prompt": null }] },
+        { "id": "local-problem", "label": "Local trouble", "initially_known": true,
+          "conditions": { "op": "fact", "key": { "kind": "participant_rumor_case", "role": "local" }, "equals": true },
+          "responses": [{ "id": "problem-referral", "priority": 0,
+            "turns": [{ "speaker": "local", "fragments": [
+              { "kind": "text", "value": "People here have noticed " },
+              { "kind": "runtime", "slot": "symptom" },
+              { "kind": "text", "value": ". Ask " },
+              { "kind": "runtime", "slot": "referral_name" },
+              { "kind": "text", "value": ", " },
+              { "kind": "runtime", "slot": "referral_description" },
+              { "kind": "text", "value": ", who works as " },
+              { "kind": "runtime", "slot": "referral_role" },
+              { "kind": "text", "value": ". They are usually at " },
+              { "kind": "runtime", "slot": "referral_location" },
+              { "kind": "text", "value": ". That is only what people are saying; judge the account for yourself." }
+            ] }],
+            "effects": [], "prompt": null }]
+        }
+      ]
     },
     { "id": "recruitment", "roles": { "player": { "kind": "player" }, "employer": { "kind": "npc" } },
       "on_start": [{ "id": "recruitment-greeting", "priority": 0, "turns": [{ "speaker": "employer", "fragments": [{ "kind": "text", "value": "Welcome. Ask about the " }, { "kind": "topic", "topic": "open-roles", "label": "open roles" }, { "kind": "text", "value": " if you seek a place in a company." }] }], "effects": [], "prompt": null }],

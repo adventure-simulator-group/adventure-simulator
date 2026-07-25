@@ -93,6 +93,9 @@ pub struct LocalProblemRumorDelivery {
     pub settlement_id: String,
     #[index(btree)]
     pub session_id: String,
+    /// The private observer receipt consumed by investigation authority.
+    /// This is intentionally not derived from the delivery row ID.
+    pub receipt_id: String,
     pub delivery_text: String,
 }
 
@@ -240,7 +243,7 @@ pub fn backend_local_problem_rumors(ctx: &ViewContext) -> Vec<BackendLocalProble
         .character_id()
         .filter(0u64..)
         .map(|r| BackendLocalProblemRumor {
-            receipt_id: r.id,
+            receipt_id: r.receipt_id,
             character_id: r.character_id,
             settlement_id: r.settlement_id,
             session_id: r.session_id,
@@ -606,6 +609,7 @@ pub fn surface_problem(
                     character_id,
                     settlement_id,
                     session_id: session_id.into(),
+                    receipt_id: receipt.id,
                     delivery_text: referral_text(
                         &receipt.safe_summary,
                         &contact,
@@ -665,8 +669,9 @@ pub fn surface_problem(
         .find(&problem.id)
         .ok_or("Problem symptom projection missing")?;
     let text = referral_text(&symptom.public_summary, &contact, &presence.location_id);
+    let receipt_id = format!("{character_id}:{}", problem.id);
     ctx.db.local_problem_receipt().insert(LocalProblemReceipt {
-        id: format!("{character_id}:{}", problem.id),
+        id: receipt_id.clone(),
         character_id,
         settlement_id: settlement_id.clone(),
         problem_id: problem.id,
@@ -684,6 +689,7 @@ pub fn surface_problem(
             character_id,
             settlement_id,
             session_id: session_id.into(),
+            receipt_id,
             delivery_text: text,
         });
     Ok(())

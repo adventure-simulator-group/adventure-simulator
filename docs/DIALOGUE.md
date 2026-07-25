@@ -46,7 +46,13 @@ one start response exactly once when it creates a session; use it for greetings
 instead of making the browser select a topic implicitly. Topics have
 stable IDs, labels, knowledge/eligibility conditions, and explicitly prioritized
 responses. A response contains attributed turns composed of text and inline
-topic fragments. Prompts support `yes_no`, `single`, and `multi` choices and
+topic fragments. It may also contain an allowlisted typed runtime slot for a
+speaker's visible identity, place, symptom, claim, uncertainty, referral,
+evidence, testimony, or contract terms. Authored literals and runtime slots
+remain distinct in the compiled catalog and source map. The server resolves
+slots from authoritative strategic rows and persists only bounded inert text;
+generated values are never scripts, conditions, effects, or canonical truth.
+Prompts support `yes_no`, `single`, and `multi` choices and
 `first_response`, `unanimous`, `majority`, or `all_respondents` resolution.
 Choices may contain `result_turns`; these are appended to the durable transcript
 only after the prompt resolves and its effects succeed.
@@ -59,6 +65,14 @@ client-trusted effects in content. Effects are likewise a closed enum. A client
 sends catalog revision and stable topic/choice IDs; the authoritative reducer
 resolves turns and effects from the embedded catalog.
 
+Investigation dialogue uses generic facts and effects rather than per-case
+content IDs. A local-problem referral records the character-owned safe rumor
+receipt immediately when the tavern/overview conversation starts, without
+accepting a contract. Referral turns name a known contact or describe them,
+give their occupation/relationship and expected location, and retain explicit
+uncertainty. Truthfulness, private motives, hidden causes, and undiscovered
+evidence never participate in topic eligibility.
+
 Run `just dialogue-check` before review. Use
 `cargo run -p adventuresim-dialogue --bin dialogue-check -- explain <id>` to
 inspect response priorities. Equal highest priorities at runtime are rejected
@@ -68,15 +82,18 @@ as ambiguous instead of depending on file order.
 
 SpacetimeDB stores dialogue sessions, named participants, attributed events,
 open prompts, idempotent action receipts, per-character answers, and
-per-character topic knowledge. Answer and knowledge rows are private; the web
-gateway exposes only a participant-authorized conversation view and never sends
-the authored condition/effect catalog to browsers. Reducers verify gateway
-authority, membership, shared settlement, role cardinality, catalog and session
-revisions, topic eligibility, and stable choice IDs. Every mutation revalidates the
-character's settlement and the persistent NPC's exact session location and current
-schedule. Selecting an NPC creates a fresh encounter so contextual and prior-interaction
-facts are reevaluated; old sessions remain history rather than an indefinitely reusable
-active view. Free-form `local_chat_message` remains an independent stream.
+per-character topic knowledge. All raw dialogue rows are private; fail-closed
+gateway views are the only subscription surface, and the trusted web process
+additionally filters them to the selected character. Each player participant
+receives a projection row; nonparticipants receive none. The authored
+condition/effect catalog is never sent to browsers. Reducers verify gateway
+authority, same-party membership, shared settlement, role cardinality, catalog
+and session revisions, topic eligibility, and stable choice IDs. Every NPC role
+is bound to a real persistent NPC, and every mutation revalidates each NPC's
+exact session location and current schedule. Selecting an NPC creates a fresh
+encounter so contextual and prior-interaction facts are reevaluated; old
+sessions remain history rather than an indefinitely reusable active view.
+Free-form `local_chat_message` remains an independent stream.
 
 The web conversation surface keeps known eligible topics in a pane on the
 right side of the chat itself. The transcript and shared composer occupy the

@@ -38,3 +38,17 @@ investigation truth are private strategic authority. The web process
 subscribes to a trusted `backend_contracts` projection and combines it with
 observer-specific investigation knowledge. Browsers never subscribe directly
 to objective or hidden-truth tables.
+
+Noncombat objective facts have owning-subsystem producers. Dialogue producers
+revalidate the selected character, party leadership, active session revision,
+persistent NPC presence, intended recipient, and observer knowledge. Locate,
+identify, expose, proof, testimony, and negotiation may advance a known case
+without accepting a contract; report-to-issuer additionally requires the
+session-bound active contract and exact issuer. Before exposing an eligible
+response, the server derives one exact case from session-relevant observer
+provenance and pre-issues a private session/case/objective binding. Effects
+only revalidate and consume that binding after the owning producer succeeds;
+they never search the character's other known cases. Each fact source includes the dialogue
+session, stable action ID, and objective ID, so retries are idempotent and
+distinct actions in the same minute cannot alias. There is no public generic
+fact or complete-objective reducer.

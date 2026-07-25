@@ -21,6 +21,11 @@ pub mod backend_case_battle_type;
 pub mod backend_case_site_pin_type;
 pub mod backend_character_case_site_location_type;
 pub mod backend_contract_type;
+pub mod backend_dialogue_event_type;
+pub mod backend_dialogue_participant_type;
+pub mod backend_dialogue_prompt_type;
+pub mod backend_dialogue_session_type;
+pub mod backend_dialogue_topic_option_type;
 pub mod backend_investigation_journal_entry_type;
 pub mod backend_investigation_lead_type;
 pub mod backend_local_problem_rumor_type;
@@ -96,6 +101,7 @@ pub mod derived_industry_type;
 pub mod dialogue_action_type;
 pub mod dialogue_answer_type;
 pub mod dialogue_event_type;
+pub mod dialogue_investigation_binding_type;
 pub mod dialogue_participant_type;
 pub mod dialogue_prompt_type;
 pub mod dialogue_session_type;
@@ -113,6 +119,7 @@ pub mod edge_endpoint_type;
 pub mod edge_progress_permille_type;
 pub mod elevation_meters_type;
 pub mod equipped_medication_type;
+pub mod evidence_presentation_kind_type;
 pub mod fallback_historical_vegetation_type;
 pub mod fallback_historical_vegetation_cover_type;
 pub mod fallback_historical_vegetation_method_type;
@@ -169,12 +176,15 @@ pub mod investigation_case_authority_type;
 pub mod investigation_claim_type;
 pub mod investigation_event_authority_type;
 pub mod investigation_evidence_authority_type;
+pub mod investigation_evidence_knowledge_type;
 pub mod investigation_lead_type;
 pub mod investigation_observation_type;
+pub mod investigation_received_testimony_type;
 pub mod investigation_recollection_type;
 pub mod investigation_safe_claim_receipt_type;
 pub mod investigation_safe_lead_receipt_type;
 pub mod investigation_sharing_receipt_type;
+pub mod investigation_testimony_bundle_type;
 pub mod item_type;
 pub mod item_condition_type;
 pub mod item_kind_type;
@@ -460,7 +470,6 @@ pub mod set_party_travel_itinerary_reducer;
 pub mod share_investigation_belief_reducer;
 pub mod share_investigation_lead_reducer;
 pub mod simulate_contract_issuer_interaction_reducer;
-pub mod stage_investigation_claim_reducer;
 pub mod stage_investigation_lead_reducer;
 pub mod start_dialogue_reducer;
 pub mod store_battle_loot_reducer;
@@ -507,11 +516,6 @@ pub mod character_strategic_condition_table;
 pub mod character_time_table;
 pub mod character_training_schedule_table;
 pub mod character_virtue_table;
-pub mod dialogue_event_table;
-pub mod dialogue_participant_table;
-pub mod dialogue_prompt_table;
-pub mod dialogue_session_table;
-pub mod dialogue_topic_option_table;
 pub mod equipped_medication_table;
 pub mod food_lot_table;
 pub mod inventory_item_table;
@@ -558,6 +562,11 @@ pub mod backend_character_case_site_locations_table;
 pub mod backend_character_familiarities_table;
 pub mod backend_committed_cuts_table;
 pub mod backend_contracts_table;
+pub mod backend_dialogue_events_table;
+pub mod backend_dialogue_participants_table;
+pub mod backend_dialogue_prompts_table;
+pub mod backend_dialogue_sessions_table;
+pub mod backend_dialogue_topic_options_table;
 pub mod backend_herbalist_examinations_table;
 pub mod backend_infection_episodes_table;
 pub mod backend_investigation_journal_table;
@@ -584,6 +593,11 @@ pub use backend_case_battle_type::BackendCaseBattle;
 pub use backend_case_site_pin_type::BackendCaseSitePin;
 pub use backend_character_case_site_location_type::BackendCharacterCaseSiteLocation;
 pub use backend_contract_type::BackendContract;
+pub use backend_dialogue_event_type::BackendDialogueEvent;
+pub use backend_dialogue_participant_type::BackendDialogueParticipant;
+pub use backend_dialogue_prompt_type::BackendDialoguePrompt;
+pub use backend_dialogue_session_type::BackendDialogueSession;
+pub use backend_dialogue_topic_option_type::BackendDialogueTopicOption;
 pub use backend_investigation_journal_entry_type::BackendInvestigationJournalEntry;
 pub use backend_investigation_lead_type::BackendInvestigationLead;
 pub use backend_local_problem_rumor_type::BackendLocalProblemRumor;
@@ -659,6 +673,7 @@ pub use derived_industry_type::DerivedIndustry;
 pub use dialogue_action_type::DialogueAction;
 pub use dialogue_answer_type::DialogueAnswer;
 pub use dialogue_event_type::DialogueEvent;
+pub use dialogue_investigation_binding_type::DialogueInvestigationBinding;
 pub use dialogue_participant_type::DialogueParticipant;
 pub use dialogue_prompt_type::DialoguePrompt;
 pub use dialogue_session_type::DialogueSession;
@@ -676,6 +691,7 @@ pub use edge_endpoint_type::EdgeEndpoint;
 pub use edge_progress_permille_type::EdgeProgressPermille;
 pub use elevation_meters_type::ElevationMeters;
 pub use equipped_medication_type::EquippedMedication;
+pub use evidence_presentation_kind_type::EvidencePresentationKind;
 pub use fallback_historical_vegetation_type::FallbackHistoricalVegetation;
 pub use fallback_historical_vegetation_cover_type::FallbackHistoricalVegetationCover;
 pub use fallback_historical_vegetation_method_type::FallbackHistoricalVegetationMethod;
@@ -732,12 +748,15 @@ pub use investigation_case_authority_type::InvestigationCaseAuthority;
 pub use investigation_claim_type::InvestigationClaim;
 pub use investigation_event_authority_type::InvestigationEventAuthority;
 pub use investigation_evidence_authority_type::InvestigationEvidenceAuthority;
+pub use investigation_evidence_knowledge_type::InvestigationEvidenceKnowledge;
 pub use investigation_lead_type::InvestigationLead;
 pub use investigation_observation_type::InvestigationObservation;
+pub use investigation_received_testimony_type::InvestigationReceivedTestimony;
 pub use investigation_recollection_type::InvestigationRecollection;
 pub use investigation_safe_claim_receipt_type::InvestigationSafeClaimReceipt;
 pub use investigation_safe_lead_receipt_type::InvestigationSafeLeadReceipt;
 pub use investigation_sharing_receipt_type::InvestigationSharingReceipt;
+pub use investigation_testimony_bundle_type::InvestigationTestimonyBundle;
 pub use item_type::Item;
 pub use item_condition_type::ItemCondition;
 pub use item_kind_type::ItemKind;
@@ -933,6 +952,11 @@ pub use backend_character_case_site_locations_table::*;
 pub use backend_character_familiarities_table::*;
 pub use backend_committed_cuts_table::*;
 pub use backend_contracts_table::*;
+pub use backend_dialogue_events_table::*;
+pub use backend_dialogue_participants_table::*;
+pub use backend_dialogue_prompts_table::*;
+pub use backend_dialogue_sessions_table::*;
+pub use backend_dialogue_topic_options_table::*;
 pub use backend_herbalist_examinations_table::*;
 pub use backend_infection_episodes_table::*;
 pub use backend_investigation_journal_table::*;
@@ -965,11 +989,6 @@ pub use character_time_table::*;
 pub use character_training_schedule_table::*;
 pub use character_virtue_table::*;
 pub use connected_players_table::*;
-pub use dialogue_event_table::*;
-pub use dialogue_participant_table::*;
-pub use dialogue_prompt_table::*;
-pub use dialogue_session_table::*;
-pub use dialogue_topic_option_table::*;
 pub use equipped_medication_table::*;
 pub use food_lot_table::*;
 pub use inventory_item_table::*;
@@ -1114,7 +1133,6 @@ pub use set_party_travel_itinerary_reducer::set_party_travel_itinerary;
 pub use share_investigation_belief_reducer::share_investigation_belief;
 pub use share_investigation_lead_reducer::share_investigation_lead;
 pub use simulate_contract_issuer_interaction_reducer::simulate_contract_issuer_interaction;
-pub use stage_investigation_claim_reducer::stage_investigation_claim;
 pub use stage_investigation_lead_reducer::stage_investigation_lead;
 pub use start_dialogue_reducer::start_dialogue;
 pub use store_battle_loot_reducer::store_battle_loot;
@@ -1587,15 +1605,6 @@ pub enum Reducer {
         contract_id: String,
         stage: ContractInteractionStage,
 }    ,
-    StageInvestigationClaim {
-        character_id: u64,
-        receipt_id: String,
-        pipeline_json: String,
-        public_case_id: String,
-        safe_source_label: String,
-        conflict_group: String,
-        correction_of_belief_id: String,
-}    ,
     StageInvestigationLead {
         character_id: u64,
         receipt_id: String,
@@ -1821,7 +1830,6 @@ impl __sdk::Reducer for Reducer {
             Reducer::ShareInvestigationBelief { .. } => "share_investigation_belief",
             Reducer::ShareInvestigationLead { .. } => "share_investigation_lead",
             Reducer::SimulateContractIssuerInteraction { .. } => "simulate_contract_issuer_interaction",
-            Reducer::StageInvestigationClaim { .. } => "stage_investigation_claim",
             Reducer::StageInvestigationLead { .. } => "stage_investigation_lead",
             Reducer::StartDialogue { .. } => "start_dialogue",
             Reducer::StoreBattleLoot { .. } => "store_battle_loot",
@@ -2640,23 +2648,6 @@ Reducer::CancelMissionRequest{
                 contract_id: contract_id.clone(),
                 stage: stage.clone(),
 }),
-            Reducer::StageInvestigationClaim{
-                character_id,
-                receipt_id,
-                pipeline_json,
-                public_case_id,
-                safe_source_label,
-                conflict_group,
-                correction_of_belief_id,
-}             => __sats::bsatn::to_vec(&stage_investigation_claim_reducer::StageInvestigationClaimArgs {
-                character_id: character_id.clone(),
-                receipt_id: receipt_id.clone(),
-                pipeline_json: pipeline_json.clone(),
-                public_case_id: public_case_id.clone(),
-                safe_source_label: safe_source_label.clone(),
-                conflict_group: conflict_group.clone(),
-                correction_of_belief_id: correction_of_belief_id.clone(),
-}),
             Reducer::StageInvestigationLead{
                 character_id,
                 receipt_id,
@@ -2887,6 +2878,11 @@ pub struct DbUpdate {
     backend_character_familiarities: __sdk::TableUpdate<CharacterFamiliarity>,
     backend_committed_cuts: __sdk::TableUpdate<CommittedCut>,
     backend_contracts: __sdk::TableUpdate<BackendContract>,
+    backend_dialogue_events: __sdk::TableUpdate<BackendDialogueEvent>,
+    backend_dialogue_participants: __sdk::TableUpdate<BackendDialogueParticipant>,
+    backend_dialogue_prompts: __sdk::TableUpdate<BackendDialoguePrompt>,
+    backend_dialogue_sessions: __sdk::TableUpdate<BackendDialogueSession>,
+    backend_dialogue_topic_options: __sdk::TableUpdate<BackendDialogueTopicOption>,
     backend_herbalist_examinations: __sdk::TableUpdate<HerbalistExamination>,
     backend_infection_episodes: __sdk::TableUpdate<InfectionEpisodeRow>,
     backend_investigation_journal: __sdk::TableUpdate<BackendInvestigationJournalEntry>,
@@ -2919,11 +2915,6 @@ pub struct DbUpdate {
     character_training_schedule: __sdk::TableUpdate<CharacterTrainingSchedule>,
     character_virtue: __sdk::TableUpdate<CharacterVirtue>,
     connected_players: __sdk::TableUpdate<ConnectedPlayer>,
-    dialogue_event: __sdk::TableUpdate<DialogueEvent>,
-    dialogue_participant: __sdk::TableUpdate<DialogueParticipant>,
-    dialogue_prompt: __sdk::TableUpdate<DialoguePrompt>,
-    dialogue_session: __sdk::TableUpdate<DialogueSession>,
-    dialogue_topic_option: __sdk::TableUpdate<DialogueTopicOption>,
     equipped_medication: __sdk::TableUpdate<EquippedMedication>,
     food_lot: __sdk::TableUpdate<FoodLot>,
     inventory_item: __sdk::TableUpdate<InventoryItem>,
@@ -2988,6 +2979,11 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
     "backend_character_familiarities" => db_update.backend_character_familiarities.append(backend_character_familiarities_table::parse_table_update(table_update)?),
     "backend_committed_cuts" => db_update.backend_committed_cuts.append(backend_committed_cuts_table::parse_table_update(table_update)?),
     "backend_contracts" => db_update.backend_contracts.append(backend_contracts_table::parse_table_update(table_update)?),
+    "backend_dialogue_events" => db_update.backend_dialogue_events.append(backend_dialogue_events_table::parse_table_update(table_update)?),
+    "backend_dialogue_participants" => db_update.backend_dialogue_participants.append(backend_dialogue_participants_table::parse_table_update(table_update)?),
+    "backend_dialogue_prompts" => db_update.backend_dialogue_prompts.append(backend_dialogue_prompts_table::parse_table_update(table_update)?),
+    "backend_dialogue_sessions" => db_update.backend_dialogue_sessions.append(backend_dialogue_sessions_table::parse_table_update(table_update)?),
+    "backend_dialogue_topic_options" => db_update.backend_dialogue_topic_options.append(backend_dialogue_topic_options_table::parse_table_update(table_update)?),
     "backend_herbalist_examinations" => db_update.backend_herbalist_examinations.append(backend_herbalist_examinations_table::parse_table_update(table_update)?),
     "backend_infection_episodes" => db_update.backend_infection_episodes.append(backend_infection_episodes_table::parse_table_update(table_update)?),
     "backend_investigation_journal" => db_update.backend_investigation_journal.append(backend_investigation_journal_table::parse_table_update(table_update)?),
@@ -3020,11 +3016,6 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
     "character_training_schedule" => db_update.character_training_schedule.append(character_training_schedule_table::parse_table_update(table_update)?),
     "character_virtue" => db_update.character_virtue.append(character_virtue_table::parse_table_update(table_update)?),
     "connected_players" => db_update.connected_players.append(connected_players_table::parse_table_update(table_update)?),
-    "dialogue_event" => db_update.dialogue_event.append(dialogue_event_table::parse_table_update(table_update)?),
-    "dialogue_participant" => db_update.dialogue_participant.append(dialogue_participant_table::parse_table_update(table_update)?),
-    "dialogue_prompt" => db_update.dialogue_prompt.append(dialogue_prompt_table::parse_table_update(table_update)?),
-    "dialogue_session" => db_update.dialogue_session.append(dialogue_session_table::parse_table_update(table_update)?),
-    "dialogue_topic_option" => db_update.dialogue_topic_option.append(dialogue_topic_option_table::parse_table_update(table_update)?),
     "equipped_medication" => db_update.equipped_medication.append(equipped_medication_table::parse_table_update(table_update)?),
     "food_lot" => db_update.food_lot.append(food_lot_table::parse_table_update(table_update)?),
     "inventory_item" => db_update.inventory_item.append(inventory_item_table::parse_table_update(table_update)?),
@@ -3117,11 +3108,6 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.character_time = cache.apply_diff_to_table::<CharacterTime>("character_time", &self.character_time).with_updates_by_pk(|row| &row.character_id);
         diff.character_training_schedule = cache.apply_diff_to_table::<CharacterTrainingSchedule>("character_training_schedule", &self.character_training_schedule).with_updates_by_pk(|row| &row.character_id);
         diff.character_virtue = cache.apply_diff_to_table::<CharacterVirtue>("character_virtue", &self.character_virtue).with_updates_by_pk(|row| &row.character_id);
-        diff.dialogue_event = cache.apply_diff_to_table::<DialogueEvent>("dialogue_event", &self.dialogue_event).with_updates_by_pk(|row| &row.id);
-        diff.dialogue_participant = cache.apply_diff_to_table::<DialogueParticipant>("dialogue_participant", &self.dialogue_participant).with_updates_by_pk(|row| &row.id);
-        diff.dialogue_prompt = cache.apply_diff_to_table::<DialoguePrompt>("dialogue_prompt", &self.dialogue_prompt).with_updates_by_pk(|row| &row.id);
-        diff.dialogue_session = cache.apply_diff_to_table::<DialogueSession>("dialogue_session", &self.dialogue_session).with_updates_by_pk(|row| &row.id);
-        diff.dialogue_topic_option = cache.apply_diff_to_table::<DialogueTopicOption>("dialogue_topic_option", &self.dialogue_topic_option).with_updates_by_pk(|row| &row.id);
         diff.equipped_medication = cache.apply_diff_to_table::<EquippedMedication>("equipped_medication", &self.equipped_medication).with_updates_by_pk(|row| &row.inventory_item_id);
         diff.food_lot = cache.apply_diff_to_table::<FoodLot>("food_lot", &self.food_lot).with_updates_by_pk(|row| &row.id);
         diff.inventory_item = cache.apply_diff_to_table::<InventoryItem>("inventory_item", &self.inventory_item).with_updates_by_pk(|row| &row.id);
@@ -3168,6 +3154,11 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.backend_character_familiarities = cache.apply_diff_to_table::<CharacterFamiliarity>("backend_character_familiarities", &self.backend_character_familiarities);
         diff.backend_committed_cuts = cache.apply_diff_to_table::<CommittedCut>("backend_committed_cuts", &self.backend_committed_cuts);
         diff.backend_contracts = cache.apply_diff_to_table::<BackendContract>("backend_contracts", &self.backend_contracts);
+        diff.backend_dialogue_events = cache.apply_diff_to_table::<BackendDialogueEvent>("backend_dialogue_events", &self.backend_dialogue_events);
+        diff.backend_dialogue_participants = cache.apply_diff_to_table::<BackendDialogueParticipant>("backend_dialogue_participants", &self.backend_dialogue_participants);
+        diff.backend_dialogue_prompts = cache.apply_diff_to_table::<BackendDialoguePrompt>("backend_dialogue_prompts", &self.backend_dialogue_prompts);
+        diff.backend_dialogue_sessions = cache.apply_diff_to_table::<BackendDialogueSession>("backend_dialogue_sessions", &self.backend_dialogue_sessions);
+        diff.backend_dialogue_topic_options = cache.apply_diff_to_table::<BackendDialogueTopicOption>("backend_dialogue_topic_options", &self.backend_dialogue_topic_options);
         diff.backend_herbalist_examinations = cache.apply_diff_to_table::<HerbalistExamination>("backend_herbalist_examinations", &self.backend_herbalist_examinations);
         diff.backend_infection_episodes = cache.apply_diff_to_table::<InfectionEpisodeRow>("backend_infection_episodes", &self.backend_infection_episodes);
         diff.backend_investigation_journal = cache.apply_diff_to_table::<BackendInvestigationJournalEntry>("backend_investigation_journal", &self.backend_investigation_journal);
@@ -3199,6 +3190,11 @@ for table_rows in raw.tables {
                 "backend_character_familiarities" => db_update.backend_character_familiarities.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_committed_cuts" => db_update.backend_committed_cuts.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_contracts" => db_update.backend_contracts.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_dialogue_events" => db_update.backend_dialogue_events.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_dialogue_participants" => db_update.backend_dialogue_participants.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_dialogue_prompts" => db_update.backend_dialogue_prompts.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_dialogue_sessions" => db_update.backend_dialogue_sessions.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_dialogue_topic_options" => db_update.backend_dialogue_topic_options.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_herbalist_examinations" => db_update.backend_herbalist_examinations.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_infection_episodes" => db_update.backend_infection_episodes.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_investigation_journal" => db_update.backend_investigation_journal.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -3231,11 +3227,6 @@ for table_rows in raw.tables {
                 "character_training_schedule" => db_update.character_training_schedule.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_virtue" => db_update.character_virtue.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "connected_players" => db_update.connected_players.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "dialogue_event" => db_update.dialogue_event.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "dialogue_participant" => db_update.dialogue_participant.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "dialogue_prompt" => db_update.dialogue_prompt.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "dialogue_session" => db_update.dialogue_session.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "dialogue_topic_option" => db_update.dialogue_topic_option.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "equipped_medication" => db_update.equipped_medication.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "food_lot" => db_update.food_lot.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "inventory_item" => db_update.inventory_item.append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -3297,6 +3288,11 @@ for table_rows in raw.tables {
                 "backend_character_familiarities" => db_update.backend_character_familiarities.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_committed_cuts" => db_update.backend_committed_cuts.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_contracts" => db_update.backend_contracts.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_dialogue_events" => db_update.backend_dialogue_events.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_dialogue_participants" => db_update.backend_dialogue_participants.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_dialogue_prompts" => db_update.backend_dialogue_prompts.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_dialogue_sessions" => db_update.backend_dialogue_sessions.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_dialogue_topic_options" => db_update.backend_dialogue_topic_options.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_herbalist_examinations" => db_update.backend_herbalist_examinations.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_infection_episodes" => db_update.backend_infection_episodes.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_investigation_journal" => db_update.backend_investigation_journal.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -3329,11 +3325,6 @@ for table_rows in raw.tables {
                 "character_training_schedule" => db_update.character_training_schedule.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_virtue" => db_update.character_virtue.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "connected_players" => db_update.connected_players.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "dialogue_event" => db_update.dialogue_event.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "dialogue_participant" => db_update.dialogue_participant.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "dialogue_prompt" => db_update.dialogue_prompt.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "dialogue_session" => db_update.dialogue_session.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "dialogue_topic_option" => db_update.dialogue_topic_option.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "equipped_medication" => db_update.equipped_medication.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "food_lot" => db_update.food_lot.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "inventory_item" => db_update.inventory_item.append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -3397,6 +3388,11 @@ pub struct AppliedDiff<'r> {
     backend_character_familiarities: __sdk::TableAppliedDiff<'r, CharacterFamiliarity>,
     backend_committed_cuts: __sdk::TableAppliedDiff<'r, CommittedCut>,
     backend_contracts: __sdk::TableAppliedDiff<'r, BackendContract>,
+    backend_dialogue_events: __sdk::TableAppliedDiff<'r, BackendDialogueEvent>,
+    backend_dialogue_participants: __sdk::TableAppliedDiff<'r, BackendDialogueParticipant>,
+    backend_dialogue_prompts: __sdk::TableAppliedDiff<'r, BackendDialoguePrompt>,
+    backend_dialogue_sessions: __sdk::TableAppliedDiff<'r, BackendDialogueSession>,
+    backend_dialogue_topic_options: __sdk::TableAppliedDiff<'r, BackendDialogueTopicOption>,
     backend_herbalist_examinations: __sdk::TableAppliedDiff<'r, HerbalistExamination>,
     backend_infection_episodes: __sdk::TableAppliedDiff<'r, InfectionEpisodeRow>,
     backend_investigation_journal: __sdk::TableAppliedDiff<'r, BackendInvestigationJournalEntry>,
@@ -3429,11 +3425,6 @@ pub struct AppliedDiff<'r> {
     character_training_schedule: __sdk::TableAppliedDiff<'r, CharacterTrainingSchedule>,
     character_virtue: __sdk::TableAppliedDiff<'r, CharacterVirtue>,
     connected_players: __sdk::TableAppliedDiff<'r, ConnectedPlayer>,
-    dialogue_event: __sdk::TableAppliedDiff<'r, DialogueEvent>,
-    dialogue_participant: __sdk::TableAppliedDiff<'r, DialogueParticipant>,
-    dialogue_prompt: __sdk::TableAppliedDiff<'r, DialoguePrompt>,
-    dialogue_session: __sdk::TableAppliedDiff<'r, DialogueSession>,
-    dialogue_topic_option: __sdk::TableAppliedDiff<'r, DialogueTopicOption>,
     equipped_medication: __sdk::TableAppliedDiff<'r, EquippedMedication>,
     food_lot: __sdk::TableAppliedDiff<'r, FoodLot>,
     inventory_item: __sdk::TableAppliedDiff<'r, InventoryItem>,
@@ -3498,6 +3489,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<CharacterFamiliarity>("backend_character_familiarities", &self.backend_character_familiarities, event);
         callbacks.invoke_table_row_callbacks::<CommittedCut>("backend_committed_cuts", &self.backend_committed_cuts, event);
         callbacks.invoke_table_row_callbacks::<BackendContract>("backend_contracts", &self.backend_contracts, event);
+        callbacks.invoke_table_row_callbacks::<BackendDialogueEvent>("backend_dialogue_events", &self.backend_dialogue_events, event);
+        callbacks.invoke_table_row_callbacks::<BackendDialogueParticipant>("backend_dialogue_participants", &self.backend_dialogue_participants, event);
+        callbacks.invoke_table_row_callbacks::<BackendDialoguePrompt>("backend_dialogue_prompts", &self.backend_dialogue_prompts, event);
+        callbacks.invoke_table_row_callbacks::<BackendDialogueSession>("backend_dialogue_sessions", &self.backend_dialogue_sessions, event);
+        callbacks.invoke_table_row_callbacks::<BackendDialogueTopicOption>("backend_dialogue_topic_options", &self.backend_dialogue_topic_options, event);
         callbacks.invoke_table_row_callbacks::<HerbalistExamination>("backend_herbalist_examinations", &self.backend_herbalist_examinations, event);
         callbacks.invoke_table_row_callbacks::<InfectionEpisodeRow>("backend_infection_episodes", &self.backend_infection_episodes, event);
         callbacks.invoke_table_row_callbacks::<BackendInvestigationJournalEntry>("backend_investigation_journal", &self.backend_investigation_journal, event);
@@ -3530,11 +3526,6 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<CharacterTrainingSchedule>("character_training_schedule", &self.character_training_schedule, event);
         callbacks.invoke_table_row_callbacks::<CharacterVirtue>("character_virtue", &self.character_virtue, event);
         callbacks.invoke_table_row_callbacks::<ConnectedPlayer>("connected_players", &self.connected_players, event);
-        callbacks.invoke_table_row_callbacks::<DialogueEvent>("dialogue_event", &self.dialogue_event, event);
-        callbacks.invoke_table_row_callbacks::<DialogueParticipant>("dialogue_participant", &self.dialogue_participant, event);
-        callbacks.invoke_table_row_callbacks::<DialoguePrompt>("dialogue_prompt", &self.dialogue_prompt, event);
-        callbacks.invoke_table_row_callbacks::<DialogueSession>("dialogue_session", &self.dialogue_session, event);
-        callbacks.invoke_table_row_callbacks::<DialogueTopicOption>("dialogue_topic_option", &self.dialogue_topic_option, event);
         callbacks.invoke_table_row_callbacks::<EquippedMedication>("equipped_medication", &self.equipped_medication, event);
         callbacks.invoke_table_row_callbacks::<FoodLot>("food_lot", &self.food_lot, event);
         callbacks.invoke_table_row_callbacks::<InventoryItem>("inventory_item", &self.inventory_item, event);
@@ -4240,6 +4231,11 @@ fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         backend_character_familiarities_table::register_table(client_cache);
         backend_committed_cuts_table::register_table(client_cache);
         backend_contracts_table::register_table(client_cache);
+        backend_dialogue_events_table::register_table(client_cache);
+        backend_dialogue_participants_table::register_table(client_cache);
+        backend_dialogue_prompts_table::register_table(client_cache);
+        backend_dialogue_sessions_table::register_table(client_cache);
+        backend_dialogue_topic_options_table::register_table(client_cache);
         backend_herbalist_examinations_table::register_table(client_cache);
         backend_infection_episodes_table::register_table(client_cache);
         backend_investigation_journal_table::register_table(client_cache);
@@ -4272,11 +4268,6 @@ fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         character_training_schedule_table::register_table(client_cache);
         character_virtue_table::register_table(client_cache);
         connected_players_table::register_table(client_cache);
-        dialogue_event_table::register_table(client_cache);
-        dialogue_participant_table::register_table(client_cache);
-        dialogue_prompt_table::register_table(client_cache);
-        dialogue_session_table::register_table(client_cache);
-        dialogue_topic_option_table::register_table(client_cache);
         equipped_medication_table::register_table(client_cache);
         food_lot_table::register_table(client_cache);
         inventory_item_table::register_table(client_cache);
@@ -4333,6 +4324,11 @@ const ALL_TABLE_NAMES: &'static [&'static str] = &[
         "backend_character_familiarities",
         "backend_committed_cuts",
         "backend_contracts",
+        "backend_dialogue_events",
+        "backend_dialogue_participants",
+        "backend_dialogue_prompts",
+        "backend_dialogue_sessions",
+        "backend_dialogue_topic_options",
         "backend_herbalist_examinations",
         "backend_infection_episodes",
         "backend_investigation_journal",
@@ -4365,11 +4361,6 @@ const ALL_TABLE_NAMES: &'static [&'static str] = &[
         "character_training_schedule",
         "character_virtue",
         "connected_players",
-        "dialogue_event",
-        "dialogue_participant",
-        "dialogue_prompt",
-        "dialogue_session",
-        "dialogue_topic_option",
         "equipped_medication",
         "food_lot",
         "inventory_item",
