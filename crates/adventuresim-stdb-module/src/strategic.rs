@@ -17413,6 +17413,8 @@ pub fn seed_standalone_tactical_mission(
         };
         ctx.db.case_authority().insert(CaseAuthority {
             id: case_id.clone(),
+            provenance_kind: "manual".into(),
+            generated_case_id: String::new(),
             investigation_case_id: format!("investigation:standalone:{mission_id}"),
             local_problem_id: None,
             objective_expression_json: serde_json::to_string(&expression)

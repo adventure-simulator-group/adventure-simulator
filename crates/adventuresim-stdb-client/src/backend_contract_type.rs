@@ -21,8 +21,8 @@ pub struct BackendContract {
     pub issuer_npc_id: String,
     pub status: ContractStatus,
     pub accepted_by: Option<String>,
-    pub enemy_type: String,
-    pub enemy_count: i32,
+    pub opposition_wording: String,
+    pub opposition_count_wording: String,
     pub accepted_at_minute: Option<u64>,
     pub paid_at_minute: Option<u64>,
 }
@@ -47,8 +47,8 @@ pub struct BackendContractCols {
     pub issuer_npc_id: __sdk::__query_builder::Col<BackendContract, String>,
     pub status: __sdk::__query_builder::Col<BackendContract, ContractStatus>,
     pub accepted_by: __sdk::__query_builder::Col<BackendContract, Option<String>>,
-    pub enemy_type: __sdk::__query_builder::Col<BackendContract, String>,
-    pub enemy_count: __sdk::__query_builder::Col<BackendContract, i32>,
+    pub opposition_wording: __sdk::__query_builder::Col<BackendContract, String>,
+    pub opposition_count_wording: __sdk::__query_builder::Col<BackendContract, String>,
     pub accepted_at_minute: __sdk::__query_builder::Col<BackendContract, Option<u64>>,
     pub paid_at_minute: __sdk::__query_builder::Col<BackendContract, Option<u64>>,
 }
@@ -69,8 +69,11 @@ impl __sdk::__query_builder::HasCols for BackendContract {
             issuer_npc_id: __sdk::__query_builder::Col::new(table_name, "issuer_npc_id"),
             status: __sdk::__query_builder::Col::new(table_name, "status"),
             accepted_by: __sdk::__query_builder::Col::new(table_name, "accepted_by"),
-            enemy_type: __sdk::__query_builder::Col::new(table_name, "enemy_type"),
-            enemy_count: __sdk::__query_builder::Col::new(table_name, "enemy_count"),
+            opposition_wording: __sdk::__query_builder::Col::new(table_name, "opposition_wording"),
+            opposition_count_wording: __sdk::__query_builder::Col::new(
+                table_name,
+                "opposition_count_wording",
+            ),
             accepted_at_minute: __sdk::__query_builder::Col::new(table_name, "accepted_at_minute"),
             paid_at_minute: __sdk::__query_builder::Col::new(table_name, "paid_at_minute"),
         }
