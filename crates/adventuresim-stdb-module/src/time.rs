@@ -502,7 +502,9 @@ fn profession_training_hours(
         Skill::Smithing => skills.smithing_hours,
         Skill::Medicine => skills.medicine_hours,
         Skill::Cooking => skills.cooking_hours,
-        Skill::Anatomy => skills.anatomy_hours,
+        Skill::Bestiary => skills
+            .bestiary_hours
+            .direct(adventuresim_world_schema::BestiaryCategory::Human),
         Skill::Knife => skills.knife_hours,
         Skill::Tailoring => skills.tailoring_hours,
         Skill::Religion => apprenticeship
@@ -692,7 +694,6 @@ fn apply_training(
         bestiary: skills.bestiary_hours,
         stealth: skills.stealth_hours,
         balance: skills.balance_hours,
-        anatomy: skills.anatomy_hours,
         tailoring: skills.tailoring_hours,
         smithing: skills.smithing_hours,
     };
@@ -828,7 +829,6 @@ fn apply_training(
     skills.bestiary_hours = hours.bestiary;
     skills.stealth_hours = hours.stealth;
     skills.balance_hours = hours.balance;
-    skills.anatomy_hours = hours.anatomy;
     skills.tailoring_hours = hours.tailoring;
     skills.smithing_hours = hours.smithing;
 }

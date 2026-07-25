@@ -450,7 +450,6 @@ fn live_skills(character_id: u64, profile: &AgentProfile) -> CharacterSkills {
         terrain_forest_hours: 0.0,
         terrain_hills_hours: 0.0,
         terrain_urban_hours: 0.0,
-        anatomy_hours: s.anatomy,
         tailoring_hours: s.tailoring,
         smithing_hours: s.smithing,
     }

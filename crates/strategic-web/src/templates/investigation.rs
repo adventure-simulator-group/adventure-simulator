@@ -18,7 +18,8 @@ struct JournalRecord {
 
 fn bestiary_tooltip(result: &BestiaryResultView) -> String {
     format!(
-        "Strengths\n{}\nWeaknesses\n{}",
+        "{}\nStrengths\n{}\nWeaknesses\n{}",
+        result.label,
         result.strengths.join("\n"),
         result.weaknesses.join("\n"),
     )
@@ -46,6 +47,7 @@ fn bestiary_journal_results(results: &[BestiaryResultView]) -> Markup {
                         );
                         span class="bestiary-result-chip" tabindex="0" role="note"
                             data-bestiary-category=(result.category.as_str())
+                            data-bestiary-name=(&result.label)
                             data-strategic-tooltip=(bestiary_tooltip(result))
                             data-bestiary-strengths=(&strengths)
                             data-bestiary-weaknesses=(&weaknesses)

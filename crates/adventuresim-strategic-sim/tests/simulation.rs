@@ -234,7 +234,6 @@ fn bounded_skill_state_remains_finite_for_maximum_duration() {
         },
         stealth: MAX_INITIAL_SKILL_HOURS,
         balance: MAX_INITIAL_SKILL_HOURS,
-        anatomy: MAX_INITIAL_SKILL_HOURS,
         tailoring: MAX_INITIAL_SKILL_HOURS,
         smithing: MAX_INITIAL_SKILL_HOURS,
         cooking: MAX_INITIAL_SKILL_HOURS,

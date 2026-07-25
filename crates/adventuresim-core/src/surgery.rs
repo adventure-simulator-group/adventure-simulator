@@ -29,15 +29,15 @@ pub fn effective_skill(skill: f32, self_treatment: bool) -> f32 {
 /// Compose the procedure's complete leaf checks and apply self-treatment once.
 pub fn procedure_skill(
     procedure: &str,
-    anatomy: f32,
+    anatomical_lore: f32,
     knife: f32,
     tailoring: f32,
     self_treatment: bool,
 ) -> f32 {
     let composite = match procedure {
-        "extract" => (anatomy + knife) * 0.5,
-        "stitch" => (anatomy + tailoring) * 0.5,
-        _ => anatomy,
+        "extract" => (anatomical_lore + knife) * 0.5,
+        "stitch" => (anatomical_lore + tailoring) * 0.5,
+        _ => anatomical_lore,
     };
     effective_skill(composite, self_treatment)
 }

@@ -704,9 +704,18 @@ fn procedure_check(
             LimbWeights::both_arms(),
         )
     };
+    let human_lore = adventuresim_core::capability::bestiary_knowledge_check(
+        skills
+            .bestiary_hours
+            .effective(adventuresim_world_schema::BestiaryCategory::Human),
+        attributes.instinct,
+        attributes.intelligence,
+        essentials.focus,
+        body.head_health,
+    );
     Ok(adventuresim_core::surgery::procedure_skill(
         procedure,
-        check(Skill::Anatomy),
+        human_lore,
         check(Skill::Knife),
         check(Skill::Tailoring),
         actor_id == patient_id,

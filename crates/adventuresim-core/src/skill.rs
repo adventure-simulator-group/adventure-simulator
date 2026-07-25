@@ -50,6 +50,9 @@ pub enum Skill {
     /// Mental. Trained. Meta-skill for knowledge of creature categories. (5000h each)
     #[assoc(max_hours = 5000.0, kind = SkillKind::Mental, is_trained = true)]
     Bestiary,
+    /// Derived meta-skill combining Human Bestiary lore, Knife, and Tailoring.
+    #[assoc(max_hours = 5000.0, kind = SkillKind::Mental, is_trained = true)]
+    Surgery,
     /// Physical. Intuitive. Long hafted weapons. (8000h)
     #[assoc(max_hours = 8000.0, kind = SkillKind::Physical, is_trained = false)]
     Polearm,
@@ -101,9 +104,6 @@ pub enum Skill {
     /// Mental. Intuitive. Movement through built-up ground. (30000h)
     #[assoc(max_hours = 30000.0, kind = SkillKind::Mental, is_trained = false)]
     TerrainUrban,
-    /// Mental. Trained. Knowledge of bodies and wounds. (10000h)
-    #[assoc(max_hours = 10000.0, kind = SkillKind::Mental, is_trained = true)]
-    Anatomy,
     /// Physical. Trained. Sewing, clothing repair, and wound stitching. (10000h)
     #[assoc(max_hours = 10000.0, kind = SkillKind::Physical, is_trained = true)]
     Tailoring,
@@ -120,6 +120,7 @@ mod tests {
     fn religion_and_bestiary_are_meta_skills() {
         assert!(Skill::Religion.is_meta_skill());
         assert!(Skill::Bestiary.is_meta_skill());
+        assert!(Skill::Surgery.is_meta_skill());
         assert!(!Skill::Medicine.is_meta_skill());
     }
 
@@ -158,7 +159,7 @@ impl Skill {
     /// Whether this value names a family whose trained hours live on separate,
     /// correlated subskills rather than on the parent itself.
     pub const fn is_meta_skill(&self) -> bool {
-        matches!(self, Skill::Religion | Skill::Bestiary)
+        matches!(self, Skill::Religion | Skill::Bestiary | Skill::Surgery)
     }
 
     pub const fn is_upper_body(&self) -> bool {
@@ -195,6 +196,10 @@ pub enum SkillKind {
 #[ambassador::delegatable_trait]
 pub trait PlayerSkills {
     fn skill_hours_trained(&self, skill: Skill) -> f32;
+
+    fn bestiary_hours_for(&self, _category: adventuresim_world_schema::BestiaryCategory) -> f32 {
+        self.skill_hours_trained(Skill::Bestiary)
+    }
 
     fn skill_check_by_parts(
         &self,

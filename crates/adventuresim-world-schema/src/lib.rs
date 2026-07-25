@@ -426,6 +426,15 @@ impl BestiaryHours {
             .fold(0.0, f32::max)
     }
 
+    /// Average correlated coverage across the complete Bestiary family.
+    pub fn aggregate_effective(self) -> f32 {
+        BestiaryCategory::ALL
+            .into_iter()
+            .map(|category| self.effective(category))
+            .sum::<f32>()
+            / BestiaryCategory::ALL.len() as f32
+    }
+
     pub fn total_direct(self) -> f32 {
         self.direct_values()
             .map(|(_, hours)| {
@@ -4864,6 +4873,8 @@ mod tests {
         };
         assert_eq!(hours.effective(BestiaryCategory::Wildmen), 650.0);
         assert_eq!(hours.effective(BestiaryCategory::Human), 1_000.0);
+        assert!(hours.aggregate_effective() > 0.0);
+        assert!(hours.aggregate_effective() < hours.maximum_effective());
 
         let mastered = BestiaryHours {
             beast: super::BESTIARY_MASTERY_HOURS,

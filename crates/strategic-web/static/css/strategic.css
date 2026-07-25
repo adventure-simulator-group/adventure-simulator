@@ -368,6 +368,13 @@
   color: var(--text-primary);
 }
 
+.strategic-tooltip-title {
+  display: block;
+  margin-bottom: .45rem;
+  color: var(--text-primary);
+  font-size: 1.05em;
+}
+
 .strategic-tooltip-list {
   display: grid;
   gap: .08rem;

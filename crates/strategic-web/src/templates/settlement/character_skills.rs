@@ -158,7 +158,7 @@ impl ActivityPreviewRates {
                 Skill::Smithing => skills.smithing_hours,
                 Skill::Tailoring => skills.tailoring_hours,
                 Skill::Medicine => skills.medicine_hours,
-                Skill::Anatomy => skills.anatomy_hours,
+                Skill::Bestiary => skills.bestiary_hours.direct(BestiaryCategory::Human),
                 Skill::Knife => skills.knife_hours,
                 Skill::Cooking => skills.cooking_hours,
                 Skill::Religion => row
@@ -183,7 +183,16 @@ impl ActivityPreviewRates {
                     training_rates: definition
                         .skills
                         .iter()
-                        .map(|entry| (format!("{:?}", entry.skill), entry.weight))
+                        .map(|entry| {
+                            (
+                                if entry.skill == Skill::Bestiary {
+                                    "Human knowledge".into()
+                                } else {
+                                    format!("{:?}", entry.skill)
+                                },
+                                entry.weight,
+                            )
+                        })
                         .collect(),
                     apprenticeship_accrued: row.apprenticeship_minutes_accrued,
                     practice_accrued: row.practice_minutes_accrued,
@@ -374,11 +383,11 @@ fn skills_table(
                     (party_skill_row("Cooking", "cooking", Skill::Cooking, skills.cooking_hours, head_health, schedule.is_some(), actions.cooking_href.map(|href| SkillAction::Get { href, label: "Open cooking menu", open: actions.cooking_open })))
                     (religion_skill_rows(skills, head_health, schedule, training_religion))
                     (bestiary_skill_rows(skills, head_health, schedule.is_some()))
+                    (surgery_skill_rows(skills, head_health, upper_health, schedule.is_some()))
                     (language_skill_rows(skills, schedule.is_some()))
                     (combat_skill_rows(skills, head_health, upper_health, lower_health, schedule, combat_profile))
                     @if skills.stealth_hours > 0.0 { (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, upper_health, schedule.is_some(), None)) }
                     (terrain_skill_rows(skills, schedule.is_some()))
-                    @if skills.anatomy_hours > 0.0 { (party_skill_row("Anatomy", "surgeon", Skill::Anatomy, skills.anatomy_hours, head_health, schedule.is_some(), None)) }
                     @if skills.tailoring_hours > 0.0 { (party_skill_row("Tailoring", "sewing-needle", Skill::Tailoring, skills.tailoring_hours, upper_health, schedule.is_some(), None)) }
                     @if skills.smithing_hours > 0.0 { (party_skill_row("Smithing", "smithing", Skill::Smithing, skills.smithing_hours, upper_health, schedule.is_some(), None)) }
                     @if let Some(schedule) = schedule {
@@ -611,7 +620,8 @@ fn religion_skill_rows(
 
 fn bestiary_category_lore(category: BestiaryCategory) -> String {
     format!(
-        "Strengths\n{}\nWeaknesses\n{}",
+        "{}\nStrengths\n{}\nWeaknesses\n{}",
+        category.label(),
         category.strengths().join("\n"),
         category.weaknesses().join("\n"),
     )
@@ -624,17 +634,8 @@ fn bestiary_skill_rows(skills: &CharacterSkills, health: f32, schedule_context: 
     {
         return html! {};
     }
-    let primary = BestiaryCategory::ALL
-        .into_iter()
-        .max_by(|left, right| {
-            skills
-                .bestiary_hours
-                .effective(*left)
-                .total_cmp(&skills.bestiary_hours.effective(*right))
-        })
-        .unwrap_or(BestiaryCategory::Human);
-    let primary_effective = skills.bestiary_hours.effective(primary);
-    let primary_direct = skills.bestiary_hours.direct(primary);
+    let aggregate_effective = skills.bestiary_hours.aggregate_effective();
+    let total_direct = skills.bestiary_hours.total_direct();
     html! {
         tr class="party-skill-row skill-family-primary-row bestiary-primary-row"
             data-skill-family="bestiary" data-bestiary-primary {
@@ -643,9 +644,9 @@ fn bestiary_skill_rows(skills: &CharacterSkills, health: f32, schedule_context: 
             }
             td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
                 (skill_rank_bar(
-                    Skill::Bestiary.training_rank(primary_effective),
-                    Skill::Bestiary.training_rank(primary_effective) * health.clamp(0.0, 1.0),
-                    &format!("Best-covered category: {}; {primary_effective:.1} effective hours; {primary_direct:.1} directly studied hours", primary.label()),
+                    Skill::Bestiary.training_rank(aggregate_effective),
+                    Skill::Bestiary.training_rank(aggregate_effective) * health.clamp(0.0, 1.0),
+                    &format!("{aggregate_effective:.1} average effective hours across all Bestiary categories; {total_direct:.1} total directly studied hours"),
                     skill_rail_bar_options(),
                 ))
             }
@@ -666,6 +667,7 @@ fn bestiary_skill_rows(skills: &CharacterSkills, health: f32, schedule_context: 
                 tr class="party-skill-row bestiary-detail-row" data-bestiary-detail hidden {
                     th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
                         span data-strategic-tooltip=(&lore) tabindex="0"
+                            data-bestiary-name=(category.label())
                             data-bestiary-strengths=(&strengths)
                             data-bestiary-weaknesses=(&weaknesses)
                             aria-label=(format!("{} Bestiary lore. {}", category.label(), lore)) {
@@ -683,6 +685,99 @@ fn bestiary_skill_rows(skills: &CharacterSkills, health: f32, schedule_context: 
                     }
                     td class="religion-expand-cell" {}
                 }
+            }
+        }
+    }
+}
+
+fn surgery_skill_rows(
+    skills: &CharacterSkills,
+    head_health: f32,
+    upper_health: f32,
+    schedule_context: bool,
+) -> Markup {
+    let human_hours = skills.bestiary_hours.effective(BestiaryCategory::Human);
+    if human_hours <= 0.0 && skills.knife_hours <= 0.0 && skills.tailoring_hours <= 0.0 {
+        return html! {};
+    }
+    let human_rank = Skill::Bestiary.training_rank(human_hours);
+    let knife_rank = Skill::Knife.training_rank(skills.knife_hours);
+    let tailoring_rank = Skill::Tailoring.training_rank(skills.tailoring_hours);
+    let rank = (human_rank + knife_rank + tailoring_rank) / 3.0;
+    let effective_rank = (human_rank * head_health.clamp(0.0, 1.0)
+        + knife_rank * upper_health.clamp(0.0, 1.0)
+        + tailoring_rank * upper_health.clamp(0.0, 1.0))
+        / 3.0;
+    let human_lore = bestiary_category_lore(BestiaryCategory::Human);
+    let human_strengths = BestiaryCategory::Human.strengths().join("\n");
+    let human_weaknesses = BestiaryCategory::Human.weaknesses().join("\n");
+    let entries = [
+        (
+            "Human knowledge",
+            "bestiary",
+            "human",
+            human_rank,
+            human_rank * head_health.clamp(0.0, 1.0),
+            format!("{human_hours:.1} effective Human Bestiary hours"),
+        ),
+        (
+            "Knife",
+            "combat",
+            "bowie-knife",
+            knife_rank,
+            knife_rank * upper_health.clamp(0.0, 1.0),
+            format!("{:.1} trained hours", skills.knife_hours),
+        ),
+        (
+            "Tailoring",
+            "skills",
+            "sewing-needle",
+            tailoring_rank,
+            tailoring_rank * upper_health.clamp(0.0, 1.0),
+            format!("{:.1} trained hours", skills.tailoring_hours),
+        ),
+    ];
+    html! {
+        tr class="party-skill-row skill-family-primary-row surgery-primary-row"
+            data-skill-family="surgery" {
+            th scope="row" class="party-skill-name party-skill-icon-cell" {
+                (stat_icon("Surgery", "skills", "surgeon", false))
+            }
+            td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
+                (skill_rank_bar(
+                    rank,
+                    effective_rank,
+                    "Composite of Human knowledge, Knife, and Tailoring",
+                    skill_rail_bar_options(),
+                ))
+            }
+            td class="religion-expand-cell" {
+                button type="button" class="religion-expand-button" data-surgery-expand
+                    aria-expanded="false" aria-label="Expand Surgery skills" title="Expand Surgery" {
+                    span class="religion-expand-chevron" aria-hidden="true" { "›" }
+                }
+            }
+        }
+        @for (label, family, icon, training, effective, tooltip) in entries {
+            tr class="party-skill-row surgery-detail-row" data-surgery-detail hidden {
+                th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
+                    @if label == "Human knowledge" {
+                        span data-strategic-tooltip=(&human_lore) tabindex="0"
+                            data-bestiary-name="Human knowledge"
+                            data-bestiary-strengths=(&human_strengths)
+                            data-bestiary-weaknesses=(&human_weaknesses)
+                            aria-label=(format!("Human knowledge. {human_lore}")) {
+                            (stat_icon(label, family, icon, true))
+                            span class="sr-only" { (label) }
+                        }
+                    } @else {
+                        (stat_icon(label, family, icon, true))
+                    }
+                }
+                td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
+                    (skill_rank_bar(training, effective, &tooltip, skill_rail_bar_options()))
+                }
+                td class="religion-expand-cell" {}
             }
         }
     }
@@ -1388,7 +1483,6 @@ mod tests {
             terrain_forest_hours: 0.0,
             terrain_hills_hours: 0.0,
             terrain_urban_hours: 0.0,
-            anatomy_hours: 0.0,
             tailoring_hours: 0.0,
             smithing_hours: 0.0,
         };
@@ -1629,7 +1723,7 @@ mod tests {
         let profession = ProfessionActivityPreview {
             training_rates: vec![
                 ("Medicine".into(), 0.5),
-                ("Anatomy".into(), 1.0 / 6.0),
+                ("Human knowledge".into(), 1.0 / 6.0),
                 ("Knife".into(), 1.0 / 6.0),
                 ("Tailoring".into(), 1.0 / 6.0),
             ],
@@ -1648,7 +1742,7 @@ mod tests {
         .into_string();
         assert!(apprenticeship.contains(">+2.00h<"));
         assert!(apprenticeship.contains("Medicine: +1.00h"));
-        assert!(apprenticeship.contains("Anatomy: +0.33h"));
+        assert!(apprenticeship.contains("Human knowledge: +0.33h"));
         assert!(apprenticeship.contains("Knife: +0.33h"));
         assert!(apprenticeship.contains("Tailoring: +0.33h"));
 
@@ -1868,5 +1962,26 @@ mod tests {
         assert_eq!(rendered.matches("data-bestiary-detail").count(), 13);
         assert!(css.contains(".bestiary-primary-row .stat-icon,"));
         assert!(css.contains("--stat-icon-color: var(--info);"));
+    }
+
+    #[test]
+    fn surgery_meta_skill_reuses_human_knowledge_knife_and_tailoring() {
+        let skills = CharacterSkills {
+            bestiary_hours: adventuresim_world_schema::BestiaryHours {
+                human: 500.0,
+                ..Default::default()
+            },
+            knife_hours: 750.0,
+            tailoring_hours: 250.0,
+            ..Default::default()
+        };
+        let rendered = surgery_skill_rows(&skills, 1.0, 1.0, false).into_string();
+        assert!(rendered.contains("data-skill-family=\"surgery\""));
+        assert!(rendered.contains("data-surgery-expand"));
+        assert_eq!(rendered.matches("data-surgery-detail").count(), 3);
+        assert!(rendered.contains("Human knowledge"));
+        assert!(rendered.contains("Knife"));
+        assert!(rendered.contains("Tailoring"));
+        assert!(rendered.contains("data-bestiary-name=\"Human knowledge\""));
     }
 }

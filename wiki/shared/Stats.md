@@ -115,7 +115,7 @@ Skills are divided into two categories: mental and physical. The former is gover
 ## Training
 Skills increase on a much longer timescale than is conventional for RPGs. They are not increased via an abstract XP/leveling system, and very little of their value comes from using them during tactical play. Instead they are trained through activities in the character's off-screen settlement-downtime schedule. Individual skill-study allocations are not available.
 
-Combat Training practices the leaf skills relevant to the equipped weapons plus Dodge, Block, Balance, and Will; it includes both sparring and target practice. Carousing trains Humor, improves Morale, and carries a small Virtue penalty. Prayer, Labor, Thievery, and Raiding retain their related training and strategic results. Profession activities cover Medicine, Anatomy, Knife, Tailoring, Smithing, Command, and knowledge of the settlement church's religious tradition. An activity conserves its training time when it covers several skills rather than awarding the full allocation to every skill. Travel never performs scheduled settlement activities. Activity rows preview the signed Gold, Virtue, Morale, and Fatigue generated per day by the current allocation; notoriety-producing activities display that cost as negative Virtue. Leisure is the unallocated remainder and includes sleep.
+Combat Training practices the leaf skills relevant to the equipped weapons plus Dodge, Block, Balance, and Will; it includes both sparring and target practice. Carousing trains Humor, improves Morale, and carries a small Virtue penalty. Prayer, Labor, Thievery, and Raiding retain their related training and strategic results. Profession activities cover Medicine, Human Bestiary knowledge, Knife, Tailoring, Smithing, Command, and knowledge of the settlement church's religious tradition. An activity conserves its training time when it covers several skills rather than awarding the full allocation to every skill. Travel never performs scheduled settlement activities. Activity rows preview the signed Gold, Virtue, Morale, and Fatigue generated per day by the current allocation; notoriety-producing activities display that cost as negative Virtue. Leisure is the unallocated remainder and includes sleep.
 
 Selecting an explicit activity icon previews and performs one continuous one-to-24-hour interval using the same training and outcome rules. Its preview is based on the chosen duration; Prayer/Meditation and Carousing are nonlinear, so increasing their duration has diminishing Morale returns. Immediate activity never includes implicit Leisure or modifies the recurring allocation.
 
@@ -282,9 +282,16 @@ nonrecursive correlation pass and are capped at the Bestiary skill's
 5,000-hour mastery calibration. Wildmen knowledge correlates strongly with Human knowledge and
 more modestly with Fey knowledge. The expandable skill rail shows effective
 and directly studied hours for every category with transferred knowledge.
-Category hover/focus lore contains only two compact sections: Strengths and
+The parent Bestiary value is the mean effective coverage across every category,
+not the character's single best category. Category hover/focus lore names the
+category and then contains only two compact sections: Strengths and
 Weaknesses. Every strength appears on its own green line and every weakness on
 its own red line.
+
+Against a creature, the attacker averages the Bestiary checks for every
+category on that creature. Excess-accuracy damage is capped at 2× plus that
+average check (up to 7×); even an untrained character retains the ordinary 2×
+head-and-throat cap.
 
 Physical evidence first requires its ordinary inspection check. The inspecting
 character then makes hidden category-specific Bestiary checks for relevant
@@ -354,8 +361,13 @@ separate Terrain meta-skill and does not stack with Balance.
 4. Skilled gymnast or martial artist, can walk a tightrope
 5. Graceful elf
 
-### Anatomy (trained, 10000 hours)
-Anatomy is the medical knowledge that turns ordinary craft and weapon skills into treatment skills. Bandaging and splinting use Anatomy; projectile extraction uses Anatomy plus Knife; stitching uses Anatomy plus Tailoring. Procedures are strictly individual and self-treatment applies a penalty.
+### Surgery (computed meta-skill)
+Surgery stores no hours of its own. Its expandable constituents are Human
+Bestiary knowledge, Knife, and Tailoring, even though those leaves also appear
+in Bestiary and the ordinary skill list. Bandaging and splinting use Human
+knowledge; projectile extraction averages Human knowledge and Knife; stitching
+averages Human knowledge and Tailoring. Procedures are strictly individual and
+self-treatment applies a penalty.
 
 ### Terrain (computed meta-skill; intuitive subskills, 30000 hours each)
 
@@ -369,7 +381,7 @@ underlying terrain rather than Urban and reduce training in proportion to the
 time they save.
 
 ### Tailoring (trained, 10000 hours)
-Tailoring makes and repairs cloth goods. Settlement tailors and field maintenance use it for clothing durability, while wound stitching combines it with Anatomy.
+Tailoring makes and repairs cloth goods. Settlement tailors and field maintenance use it for clothing durability, while wound stitching combines it with Human Bestiary knowledge.
 
 ### Smithing (trained, 10000 hours)
 Smithing makes and repairs weapons, armor, and shields. It does not repair clothing.

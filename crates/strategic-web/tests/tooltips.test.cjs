@@ -140,12 +140,13 @@ test('shared tooltips render above every popup overlay', () => {
 
 test('Bestiary tooltips render strengths and weaknesses as colored line items', () => {
   const { window, document, system } = fixture(
-    '<span tabindex="0" aria-label="Beast lore" data-strategic-tooltip="Strengths\nSpeed\nWeaknesses\nLimited reach" data-bestiary-strengths="Speed\nKeen senses" data-bestiary-weaknesses="Limited reach\nPredictable instincts"></span>',
+    '<span tabindex="0" aria-label="Beast lore" data-strategic-tooltip="Beast\nStrengths\nSpeed\nWeaknesses\nLimited reach" data-bestiary-name="Beast" data-bestiary-strengths="Speed\nKeen senses" data-bestiary-weaknesses="Limited reach\nPredictable instincts"></span>',
   );
   const skill = document.querySelector('span');
 
   dispatch(window, skill, 'focusin');
 
+  assert.equal(system.tooltip.querySelector('.strategic-tooltip-title').textContent, 'Beast');
   assert.equal(system.tooltip.querySelectorAll('.strategic-tooltip-section').length, 2);
   assert.deepEqual(
     [...system.tooltip.querySelectorAll('.strategic-tooltip-strength')].map((item) => item.textContent),

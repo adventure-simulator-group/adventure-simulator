@@ -487,7 +487,7 @@ migration, dual-read path, or preservation of disposable characters.
 | internal `transition_character_to_dead` | Idempotently commit a durable death outcome and trigger leadership reevaluation |
 | `create_recruitment_role` / `update_recruitment_role` / `delete_recruitment_role` | Create, resize, edit, and remove grouped party recruitment slots |
 | `save_recruitment_role` / `delete_saved_recruitment_role` | Manage reusable role presets |
-| `update_party_check_targets` | Configure non-filtering Medicine, Command, and Religion aggregate goals; surgical capability is an individual Anatomy/Knife/Tailoring composite |
+| `update_party_check_targets` | Configure non-filtering Medicine, Command, and Religion aggregate goals; surgical capability is an individual Human-Bestiary/Knife/Tailoring composite |
 | `upgrade_manual_surgery` | Idempotently adopt legacy limb deficits into injury rows and upsert surgery item definitions |
 | `treat_limb` | Perform one individual bandage, stitch, splint, splint removal, or projectile extraction with participant-local time |
 | `request_to_join_party` / `accept_party_join_request` / `reject_party_join_request` | Role recruitment and atomic party merging; destination leadership remains intact while source members, pooled assets, and stakes transfer |
@@ -505,7 +505,7 @@ migration, dual-read path, or preservation of disposable characters.
 | `track_case_site` | Select an already-known exact site for party navigation without accepting a contract, moving, progressing an objective, or paying a reward |
 | `travel_to_case_site` | Authorize through observer-safe exact knowledge, advance strategic time, and move a party to the typed off-road case site |
 | `autoresolve_quest` | Run the bounded shared-core melee/ranged simulation, commit per-hit cut/blunt/projectile facts into manual limb injuries, blood loss, and spent ammunition, retain a seeded summary and expandable combat log, and complete or retain the quest according to the outcome |
-| `treat_limb` | Align one treating character and patient on their personal clocks, advance only those participants, and perform one validated Anatomy-based projectile-removal, bandage, stitch, or splint procedure |
+| `treat_limb` | Align one treating character and patient on their personal clocks, advance only those participants, and perform one validated Human-Bestiary-based projectile-removal, bandage, stitch, or splint procedure |
 
 The current strategic module does not yet persist a player-identity-to-character ownership mapping.
 Most strategic reducers therefore rely on the authenticated strategic gateway and simulator's

@@ -31,7 +31,7 @@ pub struct CharacterCapability {
     pub athletics: f32,
     pub endurance: f32,
     pub medicine: f32,
-    pub anatomy: f32,
+    pub human_lore: f32,
     pub knife: f32,
     pub tailoring: f32,
     pub surgery: f32,
@@ -60,7 +60,7 @@ impl From<(u64, CharacterCapabilities)> for CharacterCapability {
             athletics: value.athletics,
             endurance: value.endurance,
             medicine: value.medicine,
-            anatomy: value.anatomy,
+            human_lore: value.human_lore,
             knife: value.knife,
             tailoring: value.tailoring,
             surgery: value.surgery,
@@ -240,17 +240,21 @@ impl PlayerSkills for CharacterSkills {
             // Generic recruitment/tactical summaries use the character's best-covered
             // tradition. Authoritative religious morale always selects a tradition.
             Skill::Religion => self.religion_hours.maximum_effective(),
-            Skill::Bestiary => self.bestiary_hours.maximum_effective(),
+            Skill::Bestiary => self.bestiary_hours.aggregate_effective(),
+            Skill::Surgery => 0.0,
             Skill::Stealth => self.stealth_hours,
             Skill::Balance => self.balance_hours,
             Skill::TerrainPlains => self.terrain_plains_hours,
             Skill::TerrainForest => self.terrain_forest_hours,
             Skill::TerrainHills => self.terrain_hills_hours,
             Skill::TerrainUrban => self.terrain_urban_hours,
-            Skill::Anatomy => self.anatomy_hours,
             Skill::Tailoring => self.tailoring_hours,
             Skill::Smithing => self.smithing_hours,
         }
+    }
+
+    fn bestiary_hours_for(&self, category: adventuresim_world_schema::BestiaryCategory) -> f32 {
+        self.bestiary_hours.effective(category)
     }
 }
 
@@ -698,7 +702,7 @@ pub(crate) fn load_combatant(
             religion_hours: skills.religion_hours.total_direct(),
             stealth_hours: skills.stealth_hours,
             balance_hours: skills.balance_hours,
-            anatomy_hours: skills.anatomy_hours,
+            bestiary_hours: skills.bestiary_hours,
             tailoring_hours: skills.tailoring_hours,
             smithing_hours: skills.smithing_hours,
         },

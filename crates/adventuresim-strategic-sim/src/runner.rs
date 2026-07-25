@@ -503,7 +503,7 @@ fn quantize_skills(skills: &mut SkillHours) {
     }
     skills.stealth = q32(skills.stealth);
     skills.balance = q32(skills.balance);
-    skills.anatomy = q32(skills.anatomy);
+    skills.bestiary.human = q32(skills.bestiary.human);
     skills.tailoring = q32(skills.tailoring);
 }
 
@@ -787,17 +787,21 @@ impl PlayerSkills for SimSkills {
             Skill::Medicine => self.0.medicine,
             Skill::Cooking => self.0.cooking,
             Skill::Religion => self.0.religion.maximum_effective(),
-            Skill::Bestiary => self.0.bestiary.maximum_effective(),
+            Skill::Bestiary => self.0.bestiary.aggregate_effective(),
+            Skill::Surgery => 0.0,
             Skill::Stealth => self.0.stealth,
             Skill::Balance => self.0.balance,
             Skill::TerrainPlains
             | Skill::TerrainForest
             | Skill::TerrainHills
             | Skill::TerrainUrban => 0.0,
-            Skill::Anatomy => self.0.anatomy,
             Skill::Tailoring => self.0.tailoring,
             Skill::Smithing => self.0.smithing,
         }
+    }
+
+    fn bestiary_hours_for(&self, category: adventuresim_world_schema::BestiaryCategory) -> f32 {
+        self.0.bestiary.effective(category)
     }
 }
 

@@ -34,6 +34,8 @@ test("skill family controls include Bestiary expansion", () => {
   );
   assert.match(source, /\[data-bestiary-expand\]/);
   assert.match(source, /\.bestiary-detail-row/);
+  assert.match(source, /\[data-surgery-expand\]/);
+  assert.match(source, /\.surgery-detail-row/);
   assert.match(source, /aria-expanded/);
 });
 

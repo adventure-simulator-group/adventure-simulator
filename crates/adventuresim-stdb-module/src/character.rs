@@ -264,7 +264,6 @@ pub struct CharacterSkills {
     pub terrain_forest_hours: f32,
     pub terrain_hills_hours: f32,
     pub terrain_urban_hours: f32,
-    pub anatomy_hours: f32,
     pub tailoring_hours: f32,
     pub smithing_hours: f32,
 }
@@ -808,7 +807,7 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
             .character_id()
             .find(id)
             .ok_or("Surgery demo character is missing skills")?;
-        skills.anatomy_hours = procedure_hours;
+        skills.bestiary_hours.human = procedure_hours;
         skills.knife_hours = procedure_hours;
         skills.tailoring_hours = procedure_hours;
         ctx.db.character_skills().character_id().update(skills);
@@ -1180,7 +1179,6 @@ fn insert_character_with_origin(
         terrain_forest_hours: 0.0,
         terrain_hills_hours: 0.0,
         terrain_urban_hours: 0.0,
-        anatomy_hours: 1000.0,
         tailoring_hours: 1000.0,
         smithing_hours: 1000.0,
     });

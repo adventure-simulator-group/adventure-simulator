@@ -270,7 +270,6 @@ pub fn configure_simulation_character(
         skills.medicine_hours,
         skills.stealth_hours,
         skills.balance_hours,
-        skills.anatomy_hours,
         skills.tailoring_hours,
     ]
     .into_iter()

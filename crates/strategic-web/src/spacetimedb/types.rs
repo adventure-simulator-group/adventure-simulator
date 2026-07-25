@@ -932,7 +932,7 @@ pub struct CharacterCapability {
     pub athletics: f32,
     pub endurance: f32,
     pub medicine: f32,
-    pub anatomy: f32,
+    pub human_lore: f32,
     pub knife: f32,
     pub tailoring: f32,
     pub surgery: f32,
@@ -1373,7 +1373,6 @@ pub struct CharacterSkills {
     pub terrain_forest_hours: f32,
     pub terrain_hills_hours: f32,
     pub terrain_urban_hours: f32,
-    pub anatomy_hours: f32,
     pub tailoring_hours: f32,
     pub smithing_hours: f32,
 }

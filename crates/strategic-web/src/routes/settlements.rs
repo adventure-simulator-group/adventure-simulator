@@ -490,11 +490,16 @@ async fn surgery(
             .map(|item| item.qty)
             .sum()
     };
-    let procedure_checks = get_character_capability(&state, actor_id)
-        .await
-        .map_or([0.0; 3], |capability| {
-            [capability.anatomy, capability.knife, capability.tailoring]
-        });
+    let procedure_checks =
+        get_character_capability(&state, actor_id)
+            .await
+            .map_or([0.0; 3], |capability| {
+                [
+                    capability.human_lore,
+                    capability.knife,
+                    capability.tailoring,
+                ]
+            });
     let available_splints = inventory
         .iter()
         .filter(|item| {
@@ -5108,7 +5113,6 @@ fn skill_deltas(before: &CharacterSkills, after: &CharacterSkills) -> Vec<(Strin
         ),
         ("Stealth", before.stealth_hours, after.stealth_hours),
         ("Balance", before.balance_hours, after.balance_hours),
-        ("Anatomy", before.anatomy_hours, after.anatomy_hours),
         ("Tailoring", before.tailoring_hours, after.tailoring_hours),
         ("Smithing", before.smithing_hours, after.smithing_hours),
     ]

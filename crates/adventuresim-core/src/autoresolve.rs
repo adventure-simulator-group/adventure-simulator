@@ -1,6 +1,7 @@
 //! Framework-neutral, deterministic combat simulation for strategic autoresolve.
 
 use crate::prelude::*;
+use adventuresim_world_schema::{BestiaryCategory, BestiaryHours};
 
 const MAX_COMBAT_ROUNDS: usize = 256;
 const MAX_RANGED_ATTACKS_PER_PHASE: usize = 64;
@@ -157,7 +158,7 @@ pub struct CombatSkills {
     pub religion_hours: f32,
     pub stealth_hours: f32,
     pub balance_hours: f32,
-    pub anatomy_hours: f32,
+    pub bestiary_hours: BestiaryHours,
     pub tailoring_hours: f32,
     pub smithing_hours: f32,
 }
@@ -186,17 +187,21 @@ impl PlayerSkills for CombatSkills {
             Skill::Medicine => self.medicine_hours,
             Skill::Cooking => 0.0,
             Skill::Religion => self.religion_hours,
-            Skill::Bestiary => 0.0,
+            Skill::Bestiary => self.bestiary_hours.aggregate_effective(),
+            Skill::Surgery => 0.0,
             Skill::Stealth => self.stealth_hours,
             Skill::Balance => self.balance_hours,
             Skill::TerrainPlains
             | Skill::TerrainForest
             | Skill::TerrainHills
             | Skill::TerrainUrban => 0.0,
-            Skill::Anatomy => self.anatomy_hours,
             Skill::Tailoring => self.tailoring_hours,
             Skill::Smithing => self.smithing_hours,
         }
+    }
+
+    fn bestiary_hours_for(&self, category: BestiaryCategory) -> f32 {
+        self.bestiary_hours.effective(category)
     }
 }
 
@@ -384,6 +389,8 @@ pub struct Combatant {
     pub essentials: CombatEssentials,
     pub equipment: CombatEquipment,
     pub skills: CombatSkills,
+    /// Physical creature facets used to select the attacker's anatomical lore.
+    pub bestiary_categories: Vec<BestiaryCategory>,
     /// Incapacitation from strategic factors not recomputed inside the battle,
     /// such as fear, hunger, and thirst.
     pub starting_incapacitation: f32,
@@ -413,6 +420,7 @@ impl Combatant {
             },
             equipment: CombatEquipment::default(),
             skills: CombatSkills::default(),
+            bestiary_categories: vec![BestiaryCategory::Human],
             starting_incapacitation: 0.0,
             starting_blood_fraction: 1.0,
             imbalance: 0.0,
@@ -421,6 +429,29 @@ impl Combatant {
             initial_ammunition: 0,
             ranged_attack_progress: 0.0,
         }
+    }
+
+    fn precision_damage_multiplier_cap_against(&self, defender: &Self) -> f32 {
+        let fallback = [BestiaryCategory::Human];
+        let categories = if defender.bestiary_categories.is_empty() {
+            &fallback
+        } else {
+            defender.bestiary_categories.as_slice()
+        };
+        let check = categories
+            .iter()
+            .map(|category| {
+                crate::capability::bestiary_knowledge_check(
+                    self.skills.bestiary_hours.effective(*category),
+                    self.attributes.instinct,
+                    self.attributes.intelligence,
+                    self.essentials.focus_level,
+                    self.body.body_part_health(BodyPart::Head),
+                )
+            })
+            .sum::<f32>()
+            / categories.len() as f32;
+        2.0 + check.clamp(0.0, 5.0)
     }
 
     pub fn incapacitation(&self) -> f32 {
@@ -1278,6 +1309,7 @@ fn melee_exchange(
         &attacker_equipment,
         attacker.equipment.holding_side,
         precision,
+        attacker.precision_damage_multiplier_cap_against(defender),
         flanking,
         part,
         response,
@@ -1305,6 +1337,7 @@ fn ranged_exchange(
         &attacker.essentials,
         &attacker_equipment,
         precision,
+        attacker.precision_damage_multiplier_cap_against(defender),
         flanking,
         part,
         response,
@@ -1510,6 +1543,22 @@ mod tests {
             fighter.equipment.melee_weapon = Some(weapon);
         }
         fighter
+    }
+
+    #[test]
+    fn precision_cap_averages_every_target_bestiary_category() {
+        let mut attacker = fighter(1, 4.0, false);
+        attacker.skills.bestiary_hours.human = adventuresim_world_schema::BESTIARY_MASTERY_HOURS;
+        let mut human = fighter(2, 1.0, false);
+        human.bestiary_categories = vec![BestiaryCategory::Human];
+        let human_cap = attacker.precision_damage_multiplier_cap_against(&human);
+
+        human.bestiary_categories = vec![BestiaryCategory::Human, BestiaryCategory::Draconid];
+        let combined_cap = attacker.precision_damage_multiplier_cap_against(&human);
+
+        assert!(human_cap > 2.0);
+        assert!(combined_cap > 2.0);
+        assert!(combined_cap < human_cap);
     }
 
     fn resolved_melee_health_damage(mut weapon: CombatWeapon, protection: CombatArmor) -> f32 {

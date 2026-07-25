@@ -398,6 +398,14 @@
       root.querySelectorAll('.bestiary-detail-row').forEach((row) => { row.hidden = !expanded; });
       return;
     }
+    const surgeryExpand = event.target.closest?.('[data-surgery-expand]');
+    if (surgeryExpand) {
+      const root = surgeryExpand.closest('[data-skill-schedule]') || surgeryExpand.closest('table');
+      const expanded = surgeryExpand.getAttribute('aria-expanded') !== 'true';
+      surgeryExpand.setAttribute('aria-expanded', String(expanded));
+      root.querySelectorAll('.surgery-detail-row').forEach((row) => { row.hidden = !expanded; });
+      return;
+    }
     const combatExpand = event.target.closest?.('[data-combat-expand]');
     if (combatExpand) {
       const root = combatExpand.closest('[data-skill-schedule]') || combatExpand.closest('table');

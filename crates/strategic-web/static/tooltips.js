@@ -60,6 +60,13 @@
         return;
       }
       tooltip.textContent = '';
+      const name = (target.getAttribute('data-bestiary-name') || '').trim();
+      if (name) {
+        const title = documentRoot.createElement('strong');
+        title.className = 'strategic-tooltip-title';
+        title.textContent = name;
+        tooltip.append(title);
+      }
       appendBestiarySection('Strengths', strengths, 'strategic-tooltip-strength');
       appendBestiarySection('Weaknesses', weaknesses, 'strategic-tooltip-weakness');
     };

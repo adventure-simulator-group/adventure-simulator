@@ -1,7 +1,7 @@
 //! Shared, deterministic authority for threat identity, combat profiles, and
 //! investigation-facing evidence. Stable IDs, never display text, drive rules.
 
-use adventuresim_world_schema::BestiaryCategory;
+pub use adventuresim_world_schema::{BestiaryCategory, BestiaryHours};
 use core::str::FromStr;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, sync::OnceLock};
