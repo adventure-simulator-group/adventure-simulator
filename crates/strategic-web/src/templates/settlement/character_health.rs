@@ -291,7 +291,7 @@ pub fn surgery_dialog(
 
 pub(super) fn strategic_condition_rail(
     condition: Option<&CharacterStrategicCondition>,
-    _morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
+    morale_sources: &[crate::spacetimedb::CharacterMoraleSource],
     filth: &[crate::spacetimedb::CharacterFilth],
     social_href: &str,
     social_open: bool,
@@ -307,7 +307,15 @@ pub(super) fn strategic_condition_rail(
         0.0
     }
     .round();
-    let meter_style = format!("--morale-fear: {fear_fill}%; --morale-bonus: {bonus_fill}%");
+    let resolved_morale = adventuresim_core::social::resolved_social_morale(
+        morale_sources
+            .iter()
+            .map(|source| (source.kind.as_str(), source.magnitude)),
+    );
+    let resolved_fill = resolved_morale.clamp(0.0, 100.0).round();
+    let meter_style = format!(
+        "--morale-fear: {fear_fill}%; --morale-resolved: {resolved_fill}%; --morale-bonus: {bonus_fill}%"
+    );
     let incapacitation_segments = [
         ("Pain", "broken-heart", "pain", condition.pain),
         (
@@ -334,10 +342,11 @@ pub(super) fn strategic_condition_rail(
     ];
     html! {
         (sidebar_section("Status", html! {
-            div class=(if condition.fear > 0.0 { "morale-meter is-fearful" } else { "morale-meter" }) style=(meter_style) role="meter" aria-valuemin="-5" aria-valuemax="5" aria-valuenow=(format!("{:.1}", condition.morale)) aria-label=(format!(
-                "Morale {:.1}; fear {}; inspiration {:.1}%",
+            div class=(if condition.fear > 0.0 { "morale-meter is-fearful" } else { "morale-meter" }) style=(meter_style) role="meter" aria-valuemin="-100" aria-valuemax="100" aria-valuenow=(format!("{:.1}", condition.morale)) title=(format!("{resolved_morale:.1} morale from successful social support currently offsets actionable concerns")) aria-label=(format!(
+                "Morale {:.1}; fear {}; {:.1} morale resolved by successful social support; inspiration {:.1}%",
                 condition.morale,
                 percent(condition.fear),
+                resolved_morale,
                 condition.morale_bonus * 100.0,
             )) {
                 div class="morale-meter-heading" {
@@ -346,12 +355,12 @@ pub(super) fn strategic_condition_rail(
                     a class=(if social_open { "character-menu-button is-open" } else { "character-menu-button" })
                         href=(social_href) title="Open social menu" aria-label="Open social menu"
                         aria-haspopup="dialog" aria-expanded=(social_open) {
-                        span class="stat-icon" style="--stat-icon: url('/static/icons/game/social.svg')" aria-hidden="true" {}
+                        span class="stat-icon" style="--stat-icon: url('/static/icons/game/conversation.svg')" aria-hidden="true" {}
                         @if social_open { span class="sr-only" { " (open)" } }
                     }
                 }
                 div class="morale-meter-track" aria-hidden="true" {
-                    span class="morale-meter-fear" {}
+                    span class="morale-meter-fear" { span class="morale-meter-resolved" {} }
                     span class="morale-meter-neutral" {}
                     span class="morale-meter-bonus" {}
                 }
@@ -939,10 +948,55 @@ mod tests {
             strategic_condition_rail(Some(&condition), &[], &[], "/social", false).into_string();
         assert!(markup.contains("class=\"morale-meter\""));
         assert!(markup.contains("href=\"/social\" title=\"Open social menu\""));
+        assert!(markup.contains("/static/icons/game/conversation.svg"));
         assert!(markup.contains("aria-haspopup=\"dialog\" aria-expanded=\"false\""));
         let water = markup.find("Water").expect("water meter");
         let filth = markup.find("Filth").expect("filth meter");
         assert!(water < filth);
+    }
+
+    #[test]
+    fn morale_meter_renders_capped_patterned_social_resolution_with_accessible_meaning() {
+        let condition = CharacterStrategicCondition {
+            character_id: 7,
+            morale: -3.0,
+            morale_bonus: 0.0,
+            morale_bonus_cap: 0.0,
+            fervor: 0.0,
+            pain: 0.0,
+            blood_loss: 0.0,
+            fear: 0.03,
+            fatigue: 0.0,
+            hunger: 0.0,
+            thirst: 0.0,
+            food_days: 1.0,
+            water_days: 1.0,
+            water_capacity_ml: 2_000,
+            incapacitation: 0.03,
+            check_multiplier: 1.0,
+            status: "ready".into(),
+        };
+        let sources = [
+            CharacterMoraleSource {
+                id: "loss".into(),
+                character_id: 7,
+                kind: "defeat".into(),
+                label: "Recent defeat".into(),
+                magnitude: -5.0,
+            },
+            CharacterMoraleSource {
+                id: "support".into(),
+                character_id: 7,
+                kind: "social_interaction".into(),
+                label: "social interaction".into(),
+                magnitude: 8.0,
+            },
+        ];
+        let markup = strategic_condition_rail(Some(&condition), &sources, &[], "/social", false)
+            .into_string();
+        assert!(markup.contains("--morale-resolved: 5%"));
+        assert!(markup.contains("class=\"morale-meter-resolved\""));
+        assert!(markup.contains("5.0 morale resolved by successful social support"));
     }
 
     #[test]
@@ -1147,6 +1201,7 @@ mod tests {
             age_years: 30,
             alive: true,
             temporary: false,
+            social_notification_count: 0,
         };
         let portrait = party_portrait_overlay(
             &[doctor.clone()],

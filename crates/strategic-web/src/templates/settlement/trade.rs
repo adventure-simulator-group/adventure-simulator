@@ -1808,6 +1808,7 @@ mod tests {
             age_years: 20,
             alive: true,
             temporary: false,
+            social_notification_count: 0,
         };
         let render = |shop| {
             live_merchant_shop_page(
@@ -1868,6 +1869,7 @@ mod tests {
             age_years: 20,
             alive: true,
             temporary: false,
+            social_notification_count: 0,
         };
         let ration = ItemDefinition {
             id: "travel_ration".into(),

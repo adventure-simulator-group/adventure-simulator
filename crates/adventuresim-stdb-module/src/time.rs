@@ -1322,7 +1322,9 @@ pub fn rest_at_settlement(
         u64::from(requested_days) * MINUTES_PER_DAY,
         at_inn,
         true,
+        true,
     )
+    .map(|_| ())
 }
 
 /// Spend an exact number of settlement minutes. This intentionally keeps
@@ -1337,7 +1339,7 @@ pub fn rest_at_settlement_hours(
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
     require_character_rest_service(ctx, character_id, at_inn)?;
-    rest_for_minutes(ctx, character_id, requested_minutes, at_inn, true)
+    rest_for_minutes(ctx, character_id, requested_minutes, at_inn, true, true).map(|_| ())
 }
 
 fn require_settlement_rest_service(
@@ -1382,7 +1384,8 @@ fn rest_for_minutes(
     requested_minutes: u64,
     at_inn: bool,
     explicit: bool,
-) -> Result<(), String> {
+    automatic_social: bool,
+) -> Result<u64, String> {
     let character = crate::character::require_living_character(ctx, character_id)?;
     if character.current_settlement_id.is_none() {
         return Err("Settlement downtime requires the character to be at a settlement".into());
@@ -1396,7 +1399,7 @@ fn rest_for_minutes(
         .find(character_id)
         .ok_or_else(|| "Character time record not found".to_string())?;
     if requested_minutes == 0 {
-        return Ok(());
+        return Ok(0);
     }
     let conversation_choice = character.party_id.as_ref().and_then(|party_id| {
         let snapshot: Vec<_> = crate::strategic::living_party_member_ids(ctx, party_id)
@@ -1447,7 +1450,7 @@ fn rest_for_minutes(
     crate::condition::apply_settlement_rest_elapsed_needs(ctx, character_id, elapsed, at_inn)?;
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
     if terminal.is_some() || !settled.alive {
-        return Ok(());
+        return Ok(0);
     }
     crate::alcohol::process_rest_evenings(
         ctx,
@@ -1533,7 +1536,10 @@ fn rest_for_minutes(
     crate::condition::apply_rest_condition(ctx, character_id, elapsed)?;
     crate::food::clear_stomach_fullness(ctx, character_id);
     crate::capability::refresh_character_capability(ctx, character_id)?;
-    Ok(())
+    if automatic_social && training_elapsed > 0 {
+        crate::social::apply_automatic_social_chats(ctx, character_id, training_elapsed)?;
+    }
+    Ok(training_elapsed)
 }
 
 fn inn_stay_cost(requested_minutes: u64) -> Result<u64, String> {
@@ -1564,7 +1570,15 @@ pub(crate) fn spend_private_settlement_downtime(
         ),
         None
     );
-    rest_for_minutes(ctx, character_id, requested_minutes, false, explicit)
+    rest_for_minutes(ctx, character_id, requested_minutes, false, explicit, true).map(|_| ())
+}
+
+fn spend_private_settlement_downtime_deferred_social(
+    ctx: &ReducerContext,
+    character_id: u64,
+    requested_minutes: u64,
+) -> Result<u64, String> {
+    rest_for_minutes(ctx, character_id, requested_minutes, false, false, false)
 }
 
 /// Move living party clocks forward to their latest member without ever
@@ -1600,6 +1614,7 @@ pub(crate) fn synchronize_party_departure_time(
     if departure.saturating_sub(earliest) > MINUTES_PER_YEAR {
         return Err("Party clocks differ by more than one strategic year".into());
     }
+    let mut automatic_chat_downtime = Vec::new();
     for (member_id, minute) in times {
         let elapsed = departure.saturating_sub(minute);
         if elapsed == 0 {
@@ -1612,10 +1627,21 @@ pub(crate) fn synchronize_party_departure_time(
             .find(member_id)
             .is_some_and(|character| character.current_settlement_id.is_some());
         if at_settlement {
-            spend_private_settlement_downtime(ctx, member_id, elapsed, false)?;
+            let downtime =
+                spend_private_settlement_downtime_deferred_social(ctx, member_id, elapsed)?;
+            if downtime > 0 {
+                automatic_chat_downtime.push((member_id, downtime));
+            }
         } else {
-            advance_personal_camp_time(ctx, member_id, elapsed)?;
+            let downtime = advance_personal_camp_time(ctx, member_id, elapsed, false)?;
+            if downtime > 0 {
+                automatic_chat_downtime.push((member_id, downtime));
+            }
         }
+    }
+    automatic_chat_downtime.sort_by_key(|(member_id, _)| *member_id);
+    for (member_id, downtime) in automatic_chat_downtime {
+        crate::social::apply_automatic_social_chats(ctx, member_id, downtime)?;
     }
     Ok(departure)
 }
@@ -1632,7 +1658,8 @@ fn advance_personal_camp_time(
     ctx: &ReducerContext,
     member_id: u64,
     elapsed: u64,
-) -> Result<(), String> {
+    automatic_social: bool,
+) -> Result<u64, String> {
     ensure_character_time(ctx, member_id)?;
     let mut time = ctx
         .db
@@ -1654,7 +1681,7 @@ fn advance_personal_camp_time(
     crate::condition::apply_elapsed_needs(ctx, member_id, elapsed)?;
     crate::disease::finish_disease_interval(ctx, member_id, terminal)?;
     if terminal.is_some() || !settled.alive {
-        return Ok(());
+        return Ok(0);
     }
     crate::alcohol::process_rest_evenings(
         ctx,
@@ -1698,9 +1725,12 @@ fn advance_personal_camp_time(
             downtime,
             starting_minute.saturating_add(elapsed),
         )?;
+        if automatic_social {
+            crate::social::apply_automatic_social_chats(ctx, member_id, downtime)?;
+        }
     }
     crate::capability::refresh_character_capability(ctx, member_id)?;
-    Ok(())
+    Ok(downtime)
 }
 
 /// Companions generated by the strategic layer do not wait for a player to
@@ -1811,6 +1841,7 @@ pub fn rest_at_camp(
             .into_iter()
             .map(|(id, language, coefficient)| (id, (language, coefficient)))
             .collect();
+    let mut automatic_chat_downtime = Vec::new();
     for member_id in members {
         ensure_character_time(ctx, member_id)?;
         let mut time = ctx
@@ -1906,8 +1937,15 @@ pub fn rest_at_camp(
                 downtime,
                 interval_end_minute,
             )?;
+            automatic_chat_downtime.push((member_id, downtime));
         }
         crate::capability::refresh_character_capability(ctx, member_id)?;
+    }
+    // Resolve chats after every member's clock has reached the end of the
+    // shared interval so target-clock cooldowns receive the full cadence.
+    automatic_chat_downtime.sort_by_key(|(member_id, _)| *member_id);
+    for (member_id, downtime) in automatic_chat_downtime {
+        crate::social::apply_automatic_social_chats(ctx, member_id, downtime)?;
     }
     let living_after = crate::strategic::living_party_member_ids(ctx, &party_id);
     let fatigue_after = party_fatigue_summary(ctx, &living_after)?;
@@ -1966,13 +2004,13 @@ fn party_fatigue_summary(ctx: &ReducerContext, members: &[u64]) -> Result<(f32, 
 /// catch up from more than a year behind; callers should skip their action.
 pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<bool, String> {
     ensure_character_time(ctx, character_id)?;
-    if ctx
+    let character = ctx
         .db
         .character()
         .id()
         .find(character_id)
-        .is_some_and(|character| !character.alive)
-    {
+        .ok_or("Character not found")?;
+    if !character.alive {
         // A corpse's strategic minute remains the death minute. Lazy reads must
         // not train, recover, consume provisions, or advance it.
         return Ok(false);
@@ -2045,13 +2083,11 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         target_minutes,
     )?;
     crate::strategic::maybe_trigger_activity_incident(ctx, character_id, risks)?;
-    if ctx
-        .db
-        .character()
-        .id()
-        .find(character_id)
-        .is_some_and(|character| character.current_settlement_id.is_some())
-    {
+    let at_settlement = character.current_settlement_id.is_some();
+    if at_settlement && training_elapsed > 0 {
+        crate::social::apply_automatic_social_chats(ctx, character_id, training_elapsed)?;
+    }
+    if at_settlement {
         crate::condition::replenish_needs_at_settlement(ctx, character_id)?;
         crate::capability::refresh_character_capability(ctx, character_id)?;
     }
@@ -2149,6 +2185,67 @@ mod tests {
         assert!(
             rest.find("terminal.is_some()").unwrap() < rest.find("clear_stomach_fullness").unwrap()
         );
+    }
+
+    #[test]
+    fn automatic_social_chats_run_only_after_positive_discretionary_downtime() {
+        let source = include_str!("time.rs");
+        let rest = source
+            .split("fn rest_for_minutes")
+            .nth(1)
+            .and_then(|tail| tail.split("fn inn_stay_cost").next())
+            .expect("settlement rest implementation");
+        assert!(rest.contains("if training_elapsed > 0"));
+        assert!(rest.contains("apply_automatic_social_chats(ctx, character_id,"));
+
+        let camp = source
+            .split("fn advance_personal_camp_time")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("rest_temporary_party_member_until_healed_at_settlement")
+                    .next()
+            })
+            .expect("camp downtime implementation");
+        assert!(camp.contains("if downtime > 0"));
+        assert!(camp.contains("apply_automatic_social_chats(ctx, member_id,"));
+
+        for (start, end) in [
+            (
+                "pub fn advance_travel_time",
+                "pub fn advance_character_wait_time",
+            ),
+            ("pub fn advance_character_wait_time", "fn default_schedule"),
+        ] {
+            let ordinary = source
+                .split(start)
+                .nth(1)
+                .and_then(|tail| tail.split(end).next())
+                .expect("non-downtime interval");
+            assert!(!ordinary.contains("apply_automatic_social_chats"));
+        }
+    }
+
+    #[test]
+    fn departure_synchronization_defers_social_until_all_clocks_advance() {
+        let source = include_str!("time.rs");
+        let synchronization = source
+            .split("pub(crate) fn synchronize_party_departure_time")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(crate) fn allowed_camp_schedule").next())
+            .expect("party departure synchronization");
+        let loop_end = synchronization
+            .find("automatic_chat_downtime.sort_by_key")
+            .expect("deferred stable automatic pass");
+        assert!(
+            synchronization[..loop_end]
+                .contains("spend_private_settlement_downtime_deferred_social")
+        );
+        assert!(synchronization[..loop_end].contains("advance_personal_camp_time"));
+        assert!(
+            synchronization[loop_end..]
+                .contains("apply_automatic_social_chats(ctx, member_id, downtime)?")
+        );
+        assert!(!synchronization.contains("spend_private_settlement_downtime(ctx, member_id"));
     }
 
     #[test]

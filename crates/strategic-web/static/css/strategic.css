@@ -1687,6 +1687,21 @@ body.character-action-dialog-open { overflow: hidden; }
 .cooking-dialog { width: min(76rem, 100%); padding: 0; }
 .cooking-dialog > .character-action-dialog-header { padding: 1rem 1rem 0; }
 .social-dialog { width: min(52rem, 100%); }
+.automatic-social-chat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  padding: 0.7rem;
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 9%, var(--panel-bg));
+}
+.automatic-social-chat label { display: flex; align-items: flex-start; gap: 0.6rem; cursor: pointer; }
+.automatic-social-chat input { width: 1.15rem; height: 1.15rem; margin-top: 0.1rem; accent-color: var(--accent); }
+.automatic-social-chat span { display: grid; gap: 0.15rem; }
+.automatic-social-chat small { color: var(--text-muted); }
 .surgery-dialog { width: min(48rem, 100%); }
 
 .character-menu-button-form { display: inline; margin: 0; }
@@ -2894,10 +2909,25 @@ button.party-portrait-action {
 }
 
 .morale-meter-fear {
+  position: relative;
   background: linear-gradient(
     to left,
     var(--incap-fear) 0 var(--morale-fear),
     transparent var(--morale-fear) 100%
+  );
+}
+
+.morale-meter-resolved {
+  position: absolute;
+  top: 0;
+  right: var(--morale-fear);
+  bottom: 0;
+  width: var(--morale-resolved);
+  background-color: #8b6fc7;
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgb(255 255 255 / 0.28) 0 3px,
+    transparent 3px 7px
   );
 }
 
@@ -2986,6 +3016,15 @@ button.party-portrait-action {
 .social-source { overflow: hidden; border: 1px solid var(--border-color); border-radius: 0.4rem; background: var(--panel-bg); }
 .social-source-negative { border-left: 3px solid var(--danger); }
 .social-source-positive { border-left: 3px solid var(--success); }
+.social-source-addressed {
+  border-left-color: #8b6fc7;
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgb(139 111 199 / 0.08) 0 4px,
+    transparent 4px 9px
+  );
+}
+.social-addressed-status { color: #a995dd !important; font-weight: 700; }
 .social-source-context { padding: 0.55rem 0.65rem; }
 .social-source-context > div { display: flex; justify-content: space-between; gap: 0.75rem; }
 .social-source-context p { margin: 0.3rem 0 0; color: var(--text-muted); font-size: var(--font-size-xs); }
@@ -3748,6 +3787,26 @@ button.party-portrait-action {
     1px 1px 0 var(--panel-bg);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.party-social-notification {
+  position: absolute;
+  z-index: 3;
+  top: 0.12rem;
+  right: 0.12rem;
+  display: grid;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.25rem;
+  place-items: center;
+  border: 1px solid var(--panel-bg);
+  border-radius: 999px;
+  background: var(--danger);
+  color: white;
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.65rem;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .incapacitation-wheel {

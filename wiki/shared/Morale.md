@@ -7,6 +7,19 @@ character rail. The icon remains inset while that dialog is open; the privacy
 boundary remains the active observer's beliefs rather than authoritative
 personality state.
 
+Living, co-located companions show an observer-specific Party Rail badge for
+each current actionable negative source row that this character has not yet
+successfully addressed. Separate sources count separately even when they share
+a topic. Failed attempts, another actor's successes, and successes for another
+target do not clear the badge. Selecting a notified portrait or its badge opens
+that companion's Social dialog directly; the hover actions retain personal
+inspection.
+
+Successful addresses are kept as a compact actor-target-source projection only
+while that exact morale source remains current. The durable interaction log
+still retains both successes and failures for history, but routine Party Rail
+reads never replay that append-only history.
+
 # Morale sources
 
 Every current morale effect is retained as a named signed source for the UI. Positive and negative sources are ranked separately by absolute magnitude. The strongest source on each side contributes fully, the second contributes one half, the third one third, and so on. Will mitigates only the ranked negative contributions:
@@ -83,6 +96,14 @@ Ten aggregated surplus morale reaches about 63% of the party's limit, 20 reaches
 The party budget is divided among positive-morale members in proportion to their individual surplus, allowing the UI to show who is doing the encouraging without applying the party bonus more than once. All surplus values are calculated before receiving help from allies. This makes the relationship acyclic: two high-morale characters cannot recursively increase one another's output. If support would restore more than the listener's entire deficit, the named contributions are reduced proportionally. Ally support can lift a character only to zero and can never create surplus morale.
 
 # Fear and the morale meter
+
+Within the negative half, successful `social_interaction` morale is shown as a
+separate purple striped segment beside the remaining fear. Its size is computed
+from the same current, ranked morale-source projection shown in the Social
+dialogue, and is capped by the gross current actionable negative contribution.
+It is therefore an explanation of the current net morale, like a treated
+injury segment, rather than extra morale. Color, striping, and meter text all
+identify the segment.
 
 Each negative morale point produces one percentage point of fear incapacitation, so -100 morale is the meaningful left endpoint of the meter. The center represents neutral morale. The right side shows the character's allocated share of the party's current ally-restoration percentage relative to the party's present `5% × aggregate Command` limit. Selecting the meter opens the dedicated social panel and source actions.
 

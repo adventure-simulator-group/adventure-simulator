@@ -16,6 +16,19 @@ Each character has their own absolute minute. Character time advances lazily whe
 
 Every character saves one 24-hour settlement-downtime plan with integer-minute allocations for activities; individual skill-study allocations are replaced by activities. Its unallocated Leisure remainder includes sleep. Walking advances personal time and travel condition but never trains skills or performs scheduled activities. Camp time first clears each member's fatigue; the remainder applies only activities safe and meaningful in camp, including Prayer and Leisure, while masking settlement work and crime. The pure training and settlement-activity calculations are shared with the native strategic simulation harness; the harness uses repeated one-day actions as its canonical cadence. A live bulk rest evaluates one aggregate outcome and at most one incident interruption, so rounded activity income and incidents can differ from an otherwise equivalent sequence of one-day rests; bulk-rest strategy parity remains follow-up work.
 
+The Social dialog can persist automatic chats for an exact actor/companion
+pair. When that actor receives positive discretionary downtime after
+convalescence, maintenance, and fatigue recovery, the server considers enabled
+companions in stable character-ID order and uses the universally available,
+low-risk **Listen** action on the first stable unaddressed source. The ordinary
+authoritative social action path still decides life, party, co-location, topic,
+cooldown, skill, and outcome rules. At most three companion attempts occur per
+downtime interval, and at most one attempt is made for each pair; the normal
+action cooldown supplies the cadence across intervals. Disabling the option
+blocks future automatic attempts without affecting manual actions or erasing
+history. Travel, generic waits, and intervals consumed entirely by required
+recovery or maintenance do not trigger automatic chats.
+
 At a settlement, every explicit activity in that plan can also be performed immediately by selecting its icon. The activity dialog chooses one to 24 whole hours, beginning at the character's current personal minute and showing the resulting end time. This advances personal time and applies that activity's training, economy, Morale, Virtue, Fatigue, and incident risk without changing the saved plan. Immediate activity is not rest: it does not heal, wash, repair equipment, provide inn service, or apply the plan's Leisure remainder. Prayer/Meditation and Carousing use their saturating morale curves over the selected interval rather than pretending their effects are linear.
 
 Activities combine reduced-rate training with another strategic result:

@@ -160,8 +160,8 @@ use super::travel::{
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    AlcoholConsumption, BackendCaseSitePin, BackendLocalProblemTradeEffect, Character,
-    CharacterAffinity, CharacterAttributes, CharacterCapability, CharacterCondition,
+    AlcoholConsumption, AutomaticSocialChat, BackendCaseSitePin, BackendLocalProblemTradeEffect,
+    Character, CharacterAffinity, CharacterAttributes, CharacterCapability, CharacterCondition,
     CharacterEquip, CharacterFamiliarity, CharacterFilth, CharacterLimbs, CharacterMoraleSource,
     CharacterNeeds, CharacterNotoriety, CharacterPersonality, CharacterSkills, CharacterStats,
     CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, CharacterVirtue,
@@ -172,7 +172,7 @@ use crate::spacetimedb::{
     PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, RecruitmentOffer,
     RecruitmentOfferStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
     RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription,
-    SettlementSmith, SocialBelief, StrategicEncounter, TravelEdge,
+    SettlementSmith, SocialAddress, SocialBelief, StrategicEncounter, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
@@ -287,6 +287,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/locations/{kind}/{id}/party/{character_id}/social",
             get(party_social).post(perform_social_action),
+        )
+        .route(
+            "/locations/{kind}/{id}/party/{character_id}/social/automatic",
+            post(set_automatic_social_chat),
         )
         .route(
             "/locations/{kind}/{id}/party/{character_id}/surgery/{limb}",
@@ -3084,6 +3088,7 @@ mod party_religion_knowledge_tests {
             age_years: 20,
             alive,
             temporary: false,
+            social_notification_count: 0,
         }
     }
 
@@ -4200,6 +4205,32 @@ async fn party_social(
             Vec::new()
         }
     };
+    let addressed_source_ids = state
+        .db
+        .query::<SocialAddress>(&format!(
+            "SELECT * FROM backend_social_addresses WHERE actor_id = {}",
+            active.id
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|row| row.target_id == target_id)
+        .map(|row| row.source_id)
+        .collect();
+    let automatic_chat_enabled = if target_id == active.id {
+        false
+    } else {
+        state
+            .db
+            .query_one::<AutomaticSocialChat>(&format!(
+                "SELECT * FROM backend_automatic_social_chats WHERE id = {}",
+                sql_string_literal(&format!("{}:{target_id}", active.id))
+            ))
+            .await
+            .ok()
+            .flatten()
+            .is_some_and(|row| row.enabled)
+    };
     let social = SocialPresentation {
         affinity,
         familiarity_hours: adventuresim_core::social::effective_familiarity_hours(
@@ -4211,6 +4242,8 @@ async fn party_social(
         virtue,
         beliefs,
         shared_concerns,
+        addressed_source_ids,
+        automatic_chat_enabled,
         unavailable: !beliefs_available || !affinity_available || !familiarity_available,
     };
     let dialog = party_social_dialog(&location, &selected, &active, &sources, &social);
@@ -4247,6 +4280,39 @@ async fn party_social(
 struct SocialActionForm {
     source_id: String,
     action_kind: String,
+}
+
+#[derive(Deserialize)]
+struct AutomaticSocialChatForm {
+    enabled: Option<String>,
+}
+
+async fn set_automatic_social_chat(
+    State(state): State<AppState>,
+    Path((kind, id, target_id)): Path<(String, String, u64)>,
+    Query(building): Query<BuildingQuery>,
+    session: Session,
+    Form(form): Form<AutomaticSocialChatForm>,
+) -> Response {
+    let Some(actor_id) = session.character_id_u64() else {
+        return (StatusCode::UNAUTHORIZED, "Choose a character first").into_response();
+    };
+    if let Err(error) = state
+        .db
+        .call(
+            "set_automatic_social_chat",
+            &[
+                json!(actor_id),
+                json!(target_id),
+                json!(form.enabled.is_some()),
+            ],
+        )
+        .await
+    {
+        tracing::warn!(%error, actor_id, target_id, "automatic social chat preference rejected");
+    }
+    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party/{target_id}/social")))
+        .into_response()
 }
 
 async fn perform_social_action(
@@ -6193,8 +6259,76 @@ pub(crate) async fn get_active_party_members(
             .next()
     });
     let mut members: Vec<Character> = join_all(lookups).await.into_iter().flatten().collect();
+    if let Some(actor) = active_character {
+        let addresses_sql = format!(
+            "SELECT * FROM backend_social_addresses WHERE actor_id = {}",
+            actor.id
+        );
+        let source_lookups = members.iter().map(|member| async move {
+            state
+                .db
+                .query::<CharacterMoraleSource>(&format!(
+                    "SELECT * FROM character_morale_source WHERE character_id = {}",
+                    member.id
+                ))
+                .await
+                .unwrap_or_default()
+        });
+        let (source_groups, addresses) = tokio::join!(
+            join_all(source_lookups),
+            state.db.query::<SocialAddress>(&addresses_sql),
+        );
+        let sources: Vec<_> = source_groups.into_iter().flatten().collect();
+        let successful = addresses.unwrap_or_default();
+        for member in &mut members {
+            let colocated = member.id == actor.id
+                || (member.current_settlement_id == actor.current_settlement_id
+                    && member.current_case_site_id == actor.current_case_site_id);
+            if !member.alive || !actor.alive || !colocated {
+                continue;
+            }
+            member.social_notification_count =
+                adventuresim_core::social::unaddressed_social_source_count(
+                    actor.id,
+                    member.id,
+                    sources
+                        .iter()
+                        .filter(|source| source.character_id == member.id)
+                        .map(|source| (source.id.as_str(), source.kind.as_str(), source.magnitude)),
+                    successful.iter().map(|address| {
+                        (
+                            address.actor_id,
+                            address.target_id,
+                            address.source_id.as_str(),
+                            true,
+                        )
+                    }),
+                );
+        }
+    }
     members.sort_by_key(|member| (Some(member.id) != leader_id, member.id));
     members
+}
+
+#[cfg(test)]
+mod social_notification_query_tests {
+    #[test]
+    fn party_rail_queries_current_party_sources_and_compact_addresses_only() {
+        let source = include_str!("settlements.rs");
+        let loader = source
+            .split("pub(crate) async fn get_active_party_members")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(crate) async fn soap_rest_preview").next())
+            .expect("party member loader");
+        assert!(loader.contains("SELECT * FROM character_morale_source WHERE character_id = {}"));
+        assert!(
+            !loader.contains(
+                "query::<CharacterMoraleSource>(\"SELECT * FROM character_morale_source\")"
+            )
+        );
+        assert!(loader.contains("SELECT * FROM backend_social_addresses WHERE actor_id = {}"));
+        assert!(!loader.contains("backend_social_interactions"));
+    }
 }
 
 pub(crate) async fn soap_rest_preview(
@@ -6391,6 +6525,7 @@ mod rest_form_tests {
             age_years: 30,
             alive: true,
             temporary: false,
+            social_notification_count: 0,
         }
     }
 
@@ -6635,6 +6770,7 @@ mod herbalist_tests {
             age_years: 20,
             alive,
             temporary: false,
+            social_notification_count: 0,
         }
     }
 
@@ -6724,6 +6860,7 @@ mod encumbrance_tests {
             age_years: 20,
             alive,
             temporary: false,
+            social_notification_count: 0,
         }
     }
 

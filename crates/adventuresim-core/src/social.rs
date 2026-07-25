@@ -4,6 +4,8 @@
 //! familiarity. Presentation code must use the closed topic/action catalogue;
 //! free-form morale labels are never parsed into actions.
 
+use std::collections::HashSet;
+
 pub const AFFINITY_MIN: f32 = -100.0;
 pub const AFFINITY_MAX: f32 = 100.0;
 pub const AFFINITY_HALF_LIFE_MINUTES: u64 = 30 * 24 * 60;
@@ -54,6 +56,65 @@ pub fn topic_for_source_kind(kind: &str) -> Option<SocialTopic> {
 
 pub fn social_source_eligible(kind: &str, magnitude: f32) -> bool {
     magnitude.is_finite() && magnitude < 0.0 && topic_for_source_kind(kind).is_some()
+}
+
+/// Counts projected source rows, rather than topics, which the exact observer
+/// has not successfully addressed for the exact target and durable source ID.
+pub fn unaddressed_social_source_count<'a>(
+    actor_id: u64,
+    target_id: u64,
+    sources: impl IntoIterator<Item = (&'a str, &'a str, f32)>,
+    interactions: impl IntoIterator<Item = (u64, u64, &'a str, bool)>,
+) -> usize {
+    let addressed: HashSet<&str> = interactions
+        .into_iter()
+        .filter_map(|(actor, target, source_id, succeeded)| {
+            (succeeded && actor == actor_id && target == target_id).then_some(source_id)
+        })
+        .collect();
+    sources
+        .into_iter()
+        .filter(|(source_id, kind, magnitude)| {
+            social_source_eligible(kind, *magnitude) && !addressed.contains(source_id)
+        })
+        .count()
+}
+
+/// Current ranked projection inputs are already personality- and Will-adjusted.
+/// Social restoration is visually capped by the gross actionable loss.
+pub fn resolved_social_morale<'a>(sources: impl IntoIterator<Item = (&'a str, f32)>) -> f32 {
+    let sources: Vec<_> = sources.into_iter().collect();
+    let gross_actionable = sources
+        .iter()
+        .filter(|(kind, magnitude)| social_source_eligible(kind, *magnitude))
+        .map(|(_, magnitude)| -*magnitude)
+        .sum::<f32>()
+        .max(0.0);
+    let restoration = sources
+        .iter()
+        .filter(|(kind, magnitude)| *kind == "social_interaction" && *magnitude > 0.0)
+        .map(|(_, magnitude)| *magnitude)
+        .sum::<f32>();
+    restoration.min(gross_actionable)
+}
+
+/// Deterministic bounded target plan for an opt-in automatic downtime pass.
+pub fn automatic_social_targets(
+    discretionary_minutes: u64,
+    preferences: impl IntoIterator<Item = (u64, bool, bool)>,
+    maximum_attempts: usize,
+) -> Vec<u64> {
+    if discretionary_minutes == 0 || maximum_attempts == 0 {
+        return Vec::new();
+    }
+    let mut targets: Vec<_> = preferences
+        .into_iter()
+        .filter_map(|(target_id, enabled, actionable)| (enabled && actionable).then_some(target_id))
+        .collect();
+    targets.sort_unstable();
+    targets.dedup();
+    targets.truncate(maximum_attempts);
+    targets
 }
 
 pub const fn axis_for_topic(topic: SocialTopic) -> Option<PersonalityAxis> {
@@ -404,6 +465,78 @@ mod tests {
         assert!(social_source_eligible("defeat", -1.0));
         assert!(!social_source_eligible("defeat", 1.0));
         assert!(!social_source_eligible("social_interaction", -1.0));
+    }
+
+    #[test]
+    fn notification_count_is_per_source_actor_target_and_success() {
+        let sources = [
+            ("loss-a", "defeat", -3.0),
+            ("loss-b", "defeat", -1.0),
+            ("good", "victory", 2.0),
+        ];
+        let interactions = [
+            (7, 9, "loss-a", false),
+            (8, 9, "loss-a", true),
+            (7, 10, "loss-b", true),
+        ];
+        assert_eq!(
+            unaddressed_social_source_count(7, 9, sources, interactions),
+            2
+        );
+        assert_eq!(
+            unaddressed_social_source_count(
+                7,
+                9,
+                sources,
+                [(7, 9, "loss-a", true), (7, 9, "loss-b", true)]
+            ),
+            0
+        );
+    }
+
+    #[test]
+    fn resolved_segment_uses_projected_values_and_caps_at_actionable_loss() {
+        assert_eq!(
+            resolved_social_morale([
+                ("defeat", -4.0),
+                ("injury", -2.0),
+                ("social_interaction", 3.0),
+            ]),
+            3.0
+        );
+        assert_eq!(
+            resolved_social_morale([("defeat", -2.0), ("social_interaction", 8.0)]),
+            2.0
+        );
+        assert_eq!(
+            resolved_social_morale([("made_up", -9.0), ("social_interaction", 4.0)]),
+            0.0
+        );
+    }
+
+    #[test]
+    fn automatic_target_plan_requires_downtime_and_is_enabled_stable_and_bounded() {
+        let preferences = [
+            (9, true, true),
+            (4, false, true),
+            (7, true, true),
+            (3, true, true),
+            (7, true, true),
+        ];
+        assert!(automatic_social_targets(0, preferences, 3).is_empty());
+        assert_eq!(automatic_social_targets(15, preferences, 2), vec![3, 7]);
+        assert!(automatic_social_targets(15, preferences, 0).is_empty());
+    }
+
+    #[test]
+    fn quiet_low_ids_do_not_starve_an_actionable_higher_target() {
+        let preferences = [
+            (1, true, false),
+            (2, true, false),
+            (3, true, false),
+            (4, true, true),
+        ];
+        assert_eq!(automatic_social_targets(60, preferences, 3), vec![4]);
     }
 
     #[test]

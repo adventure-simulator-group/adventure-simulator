@@ -1120,6 +1120,7 @@ fn refresh_one_strategic_condition(
                 magnitude: source.magnitude,
             });
     }
+    crate::social::prune_social_addresses(ctx, character_id);
     Ok(row)
 }
 

@@ -51,6 +51,7 @@ mod tests {
             age_years: 20,
             alive: true,
             temporary: false,
+            social_notification_count: 0,
         }
     }
 

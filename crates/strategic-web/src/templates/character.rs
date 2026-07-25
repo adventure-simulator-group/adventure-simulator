@@ -93,6 +93,7 @@ mod tests {
             age_years: 30,
             alive: false,
             temporary: false,
+            social_notification_count: 0,
         };
 
         let markup = characters_list_page(&[character], Some(7)).into_string();
@@ -142,6 +143,9 @@ pub fn character_candidates_page(
             active: false,
             selected: selected == Some(slot as u8),
             href: format!("/characters/candidates?version={version}&seed={seed}&selected={slot}"),
+            title: format!("Inspect {}", candidate.character.name),
+            aria_label: format!("Inspect {}", candidate.character.name),
+            badge: None,
             actions: None,
         })
         .collect::<Vec<_>>();

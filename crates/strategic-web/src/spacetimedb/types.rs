@@ -182,6 +182,9 @@ pub struct Character {
     pub age_years: u16,
     pub alive: bool,
     pub temporary: bool,
+    /// SSR-only observer-specific count, populated after database decoding.
+    #[serde(default, skip_serializing)]
+    pub social_notification_count: usize,
 }
 
 macro_rules! personality_axis {
@@ -1536,6 +1539,23 @@ pub struct SocialBelief {
     pub perceived_value: i8,
     pub confidence: f32,
     pub observed_at_minute: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialAddress {
+    pub id: String,
+    pub actor_id: u64,
+    pub target_id: u64,
+    pub source_id: String,
+    pub addressed_at_minute: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutomaticSocialChat {
+    pub id: String,
+    pub actor_id: u64,
+    pub target_id: u64,
+    pub enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
