@@ -63,6 +63,13 @@ async fn main() -> anyhow::Result<()> {
     // Create SpacetimeDB client
     let db = SpacetimeClient::new(&config.spacetimedb_host, &config.spacetimedb_database)
         .with_token(config.spacetimedb_token.clone());
+    let measurement_baseline = db.query_metrics();
+    let measurement_delta = measurement_baseline.delta(measurement_baseline);
+    tracing::debug!(
+        ?measurement_baseline,
+        ?measurement_delta,
+        "strategic SQL measurement baseline"
+    );
     if config
         .spacetimedb_token
         .as_deref()

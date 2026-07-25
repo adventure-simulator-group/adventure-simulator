@@ -575,6 +575,13 @@ locally; unit tests use bounded synthetic evidence and make no coverage claim.
 
 ## Strategic UI
 
+The issue #63 cache slice is documented in
+[`STRATEGIC_READ_CACHE.md`](STRATEGIC_READ_CACHE.md), including the explicit
+mutable subscription inventory, static/on-demand exclusions, route read
+classification, and a deterministic measurement procedure. The procedure
+reports unavailable values rather than inventing latency or subscription-byte
+measurements when the disposable database fixture is not running.
+
 The strategic UI is server-rendered by `crates/strategic-web`. Browser clients
 receive live state through the web server rather than connecting directly to
 SpacetimeDB. The tactical WASM page remains under

@@ -1501,6 +1501,9 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
     let Some(party) = party else {
         return Redirect::to("/").into_response();
     };
+    if camp_entry_redirect(true, party.camp_destination.is_some()).is_some() {
+        return Redirect::to("/").into_response();
+    }
     let Some(destination) = party.camp_destination.as_ref() else {
         return Redirect::to("/").into_response();
     };
@@ -6069,16 +6072,30 @@ async fn get_active_character(
     character_id: Option<u64>,
 ) -> Option<(Character, Vec<InventoryItem>)> {
     let character_id = character_id?;
-    let character_sql = format!("SELECT * FROM character WHERE id = {character_id}");
     let inventory_sql = format!("SELECT * FROM inventory_item WHERE character_id = {character_id}");
-    let (characters, inventory) = tokio::join!(
-        state.db.query::<Character>(&character_sql),
+    let (character, inventory) = tokio::join!(
+        super::data::character(state, character_id),
         state.db.query::<InventoryItem>(&inventory_sql),
     );
-    let characters = characters.unwrap_or_default();
-    let character = characters.into_iter().next()?;
+    let character = character.ok().flatten()?;
     let inventory = inventory.unwrap_or_default();
     Some((character, inventory))
+}
+
+fn camp_entry_redirect(has_party: bool, has_camp: bool) -> Option<&'static str> {
+    (!has_party || !has_camp).then_some("/")
+}
+
+#[cfg(test)]
+mod camp_page_model_tests {
+    use super::camp_entry_redirect;
+
+    #[test]
+    fn camp_page_model_requires_selected_party_and_camp_projection() {
+        assert_eq!(camp_entry_redirect(false, false), Some("/"));
+        assert_eq!(camp_entry_redirect(true, false), Some("/"));
+        assert_eq!(camp_entry_redirect(true, true), None);
+    }
 }
 
 async fn get_character_capability(
