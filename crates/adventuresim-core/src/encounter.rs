@@ -4,6 +4,8 @@
 //! retries cannot change which journey/seed encounters a party. Mount support
 //! is intentionally represented as a speed input; absent mounts are neutral.
 
+use crate::bestiary::{ActivityTime, Habitat, ThreatId, select_habitat_relation};
+
 pub const ENCOUNTER_ROLL_INTERVAL_MINUTES: u64 = 180;
 pub const BASE_ENCOUNTER_BASIS_POINTS: u32 = 180;
 pub const QUEST_PROXIMITY_MINUTES: u64 = 120;
@@ -42,13 +44,23 @@ pub struct AcceptedQuestInfluence {
     pub distance_minutes: u64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LocalProblemInfluence {
+    pub frequency_bonus_basis_points: u16,
+    pub archetype: Option<EncounterArchetype>,
+}
+
 impl EncounterArchetype {
-    pub const fn enemy_speed_m_per_minute(self) -> u32 {
+    pub const fn threat_id(self) -> ThreatId {
         match self {
-            Self::Bandits => 80,
-            Self::Goblins => 88,
-            Self::Undead => 58,
+            Self::Bandits => ThreatId::Bandit,
+            Self::Goblins => ThreatId::Goblin,
+            Self::Undead => ThreatId::Skeleton,
         }
+    }
+
+    pub const fn enemy_speed_m_per_minute(self) -> u32 {
+        self.threat_id().profile().combat.speed_m_per_minute
     }
 }
 
@@ -176,14 +188,27 @@ pub fn first_encounter(
     seed: u64,
     completed: u64,
     requested: u64,
+    context_at: impl FnMut(u64) -> EncounterContext,
+) -> Option<EncounterSelection> {
+    first_encounter_with_problem(seed, completed, requested, context_at, |_| None)
+}
+
+/// As [`first_encounter`], with a private influence sampled at the same
+/// canonical boundary. Existing entropy domains and boundary traversal remain
+/// unchanged, preserving retry and chunk invariance.
+pub fn first_encounter_with_problem(
+    seed: u64,
+    completed: u64,
+    requested: u64,
     mut context_at: impl FnMut(u64) -> EncounterContext,
+    mut problem_at: impl FnMut(u64) -> Option<LocalProblemInfluence>,
 ) -> Option<EncounterSelection> {
     let end = completed.saturating_add(requested);
     let first_index = completed / ENCOUNTER_ROLL_INTERVAL_MINUTES + 1;
     let last_index = end / ENCOUNTER_ROLL_INTERVAL_MINUTES;
     (first_index..=last_index).find_map(|index| {
         let minute = index * ENCOUNTER_ROLL_INTERVAL_MINUTES;
-        select_at(seed, index, minute, context_at(minute))
+        select_at_with_problem(seed, index, minute, context_at(minute), problem_at(minute))
     })
 }
 
@@ -192,6 +217,16 @@ pub fn select_at(
     index: u64,
     minute: u64,
     context: EncounterContext,
+) -> Option<EncounterSelection> {
+    select_at_with_problem(seed, index, minute, context, None)
+}
+
+fn select_at_with_problem(
+    seed: u64,
+    index: u64,
+    minute: u64,
+    context: EncounterContext,
+    problem: Option<LocalProblemInfluence>,
 ) -> Option<EncounterSelection> {
     let quest_strength = context.accepted_active_quest.map_or(0, |quest| {
         QUEST_PROXIMITY_MINUTES.saturating_sub(quest.distance_minutes.min(QUEST_PROXIMITY_MINUTES))
@@ -206,21 +241,25 @@ pub fn select_at(
             EncounterTerrain::DeepWoods => 130,
         }
         + if context.night { 90 } else { 0 }
-        + quest_frequency_bonus as u32;
+        + quest_frequency_bonus as u32
+        + problem.map_or(0, |value| u32::from(value.frequency_bonus_basis_points));
     if domain_roll(seed, index, 0) % 10_000 >= u64::from(frequency) {
         return None;
     }
 
-    let mut weights = match context.terrain {
-        EncounterTerrain::Road => [65_u32, 25, 10],
-        EncounterTerrain::Open => [45, 40, 15],
-        EncounterTerrain::SparseWoods => [30, 55, 15],
-        EncounterTerrain::DeepWoods => [20, 55, 25],
+    let habitat = match context.terrain {
+        EncounterTerrain::Road => Habitat::Road,
+        EncounterTerrain::Open => Habitat::Open,
+        EncounterTerrain::SparseWoods => Habitat::SparseWoods,
+        EncounterTerrain::DeepWoods => Habitat::DeepWoods,
     };
-    if context.night {
-        weights[2] += 45;
-        weights[0] = weights[0].saturating_sub(10);
-    }
+    // Profiles own the forward context likelihood and keep ecological prior
+    // separate from curation pressure. The roll domains below are unchanged.
+    let mut weights = [
+        encounter_weight(ThreatId::Bandit, habitat, context.night),
+        encounter_weight(ThreatId::Goblin, habitat, context.night),
+        encounter_weight(ThreatId::Skeleton, habitat, context.night),
+    ];
     if let Some(quest) = context.accepted_active_quest {
         let bonus = (u64::from(QUEST_ARCHETYPE_WEIGHT_BONUS) * quest_strength
             / QUEST_PROXIMITY_MINUTES) as u32;
@@ -229,20 +268,40 @@ pub fn select_at(
             EncounterArchetype::Goblins => 1,
             EncounterArchetype::Undead => 2,
         };
-        weights[slot] += bonus;
+        if weights[slot] > 0 {
+            weights[slot] = weights[slot].saturating_add(bonus);
+        }
     }
-    let pick = domain_roll(seed, index, 1) % u64::from(weights.iter().sum::<u32>());
-    let archetype = if pick < u64::from(weights[0]) {
-        EncounterArchetype::Bandits
-    } else if pick < u64::from(weights[0] + weights[1]) {
-        EncounterArchetype::Goblins
-    } else {
-        EncounterArchetype::Undead
-    };
-    let count = enemy_count(seed, index, context.combat_capable_members);
+    if let Some(problem) = problem
+        && let Some(archetype) = problem.archetype
+    {
+        let slot = match archetype {
+            EncounterArchetype::Bandits => 0,
+            EncounterArchetype::Goblins => 1,
+            EncounterArchetype::Undead => 2,
+        };
+        if weights[slot] > 0 {
+            weights[slot] =
+                weights[slot].saturating_add(u32::from(problem.frequency_bonus_basis_points));
+        }
+    }
+    let archetype = select_archetype_from_weights(domain_roll(seed, index, 1), weights)?;
+    let count = scale_enemy_count(
+        enemy_count(seed, index, context.combat_capable_members),
+        archetype,
+    );
     let party_roll = (domain_roll(seed, index, 3) % 1000) as u16;
     let enemy_roll = (domain_roll(seed, index, 4) % 1000) as u16;
-    let awareness = awareness_from_rolls(party_roll, enemy_roll, context);
+    let awareness = awareness_from_rolls(
+        party_roll,
+        enemy_roll,
+        EncounterContext {
+            enemy_awareness: context
+                .enemy_awareness
+                .saturating_add(u16::from(archetype.threat_id().profile().combat.perception)),
+            ..context
+        },
+    );
     (awareness != Awareness::Neither).then_some(EncounterSelection {
         boundary_minute: minute,
         roll_index: index,
@@ -254,6 +313,35 @@ pub fn select_at(
     })
 }
 
+fn select_archetype_from_weights(roll: u64, weights: [u32; 3]) -> Option<EncounterArchetype> {
+    let total = weights.iter().copied().fold(0_u32, u32::saturating_add);
+    if total == 0 {
+        return None;
+    }
+    let pick = roll % u64::from(total);
+    Some(if pick < u64::from(weights[0]) {
+        EncounterArchetype::Bandits
+    } else if pick < u64::from(weights[0] + weights[1]) {
+        EncounterArchetype::Goblins
+    } else {
+        EncounterArchetype::Undead
+    })
+}
+
+fn encounter_weight(id: ThreatId, habitat: Habitat, night: bool) -> u32 {
+    let profile = id.profile();
+    let Ok(relation) = select_habitat_relation(id, habitat, None) else {
+        return 0;
+    };
+    let habitat = u32::from(relation.weight);
+    let activity = match (profile.investigation.activity, night) {
+        (ActivityTime::Night, true) | (ActivityTime::Day, false) | (ActivityTime::Any, _) => 100,
+        _ => 20,
+    };
+    (u32::from(profile.base_weight) * habitat * activity / 10_000)
+        .saturating_add(u32::from(profile.curation_weight) / 10)
+}
+
 /// Returns the deterministic enemy count for an encounter roll.
 ///
 /// This is exposed separately so a strategic interruption can recompute the
@@ -262,6 +350,19 @@ pub fn enemy_count(seed: u64, index: u64, combat_capable_members: u16) -> u16 {
     let capable = combat_capable_members.max(1);
     let spread = (capable / 2).max(1);
     capable.saturating_add((domain_roll(seed, index, 2) % u64::from(spread + 1)) as u16)
+}
+
+pub fn scale_enemy_count(count: u16, archetype: EncounterArchetype) -> u16 {
+    let basis_points = u32::from(
+        archetype
+            .threat_id()
+            .profile()
+            .combat
+            .encounter_scale_basis_points,
+    );
+    ((u32::from(count) * basis_points).div_ceil(10_000))
+        .max(1)
+        .min(u32::from(u16::MAX)) as u16
 }
 
 pub const fn awareness_from_rolls(
@@ -398,6 +499,7 @@ mod tests {
         let archetype_counts = |accepted_active_quest| {
             let c = EncounterContext {
                 accepted_active_quest,
+                terrain: EncounterTerrain::DeepWoods,
                 ..context()
             };
             let mut counts = [0_usize; 3];
@@ -418,7 +520,7 @@ mod tests {
 
         assert!(
             undead_quest[EncounterArchetype::Undead as usize] * baseline_total
-                > baseline[EncounterArchetype::Undead as usize] * quest_total * 4,
+                > baseline[EncounterArchetype::Undead as usize] * quest_total * 2,
             "baseline={baseline:?}, undead quest={undead_quest:?}"
         );
     }
@@ -501,6 +603,68 @@ mod tests {
         assert!(sustainable_speed_m_per_minute(0, 10_000, 6, EncounterTerrain::Road) < baseline);
         assert!(
             sustainable_speed_m_per_minute(0, 10_000, 1, EncounterTerrain::DeepWoods) < baseline
+        );
+    }
+
+    #[test]
+    fn impossible_habitats_remain_hard_zero_despite_curation() {
+        assert_eq!(encounter_weight(ThreatId::Skeleton, Habitat::Road, true), 0);
+        assert_eq!(
+            encounter_weight(ThreatId::Bandit, Habitat::DeepWoods, false),
+            0
+        );
+        let occupied_total = [ThreatId::Bandit, ThreatId::Goblin, ThreatId::Skeleton]
+            .into_iter()
+            .map(|id| encounter_weight(id, Habitat::OccupiedHouse, true))
+            .sum::<u32>();
+        // Skeletons need a causal bridge here, which random encounter selection cannot supply.
+        assert_eq!(occupied_total, 0);
+        assert_eq!(select_archetype_from_weights(7, [0, 0, 0]), None);
+        let road_with_undead_quest = EncounterContext {
+            accepted_active_quest: Some(AcceptedQuestInfluence {
+                archetype: EncounterArchetype::Undead,
+                distance_minutes: 0,
+            }),
+            ..context()
+        };
+        assert!(
+            (0..50_000)
+                .filter_map(|seed| select_at(seed, 1, 180, road_with_undead_quest))
+                .all(|selection| selection.archetype != EncounterArchetype::Undead)
+        );
+    }
+
+    #[test]
+    fn absent_problem_preserves_roll_domains_and_problem_scan_is_chunk_invariant() {
+        for seed in 0..2_000 {
+            assert_eq!(
+                select_at(seed, 1, 180, context()),
+                select_at_with_problem(seed, 1, 180, context(), None)
+            );
+        }
+        let influence = |_| {
+            Some(LocalProblemInfluence {
+                frequency_bonus_basis_points: 2_000,
+                archetype: Some(EncounterArchetype::Bandits),
+            })
+        };
+        let whole = first_encounter_with_problem(42, 0, 720, |_| context(), influence);
+        let first = first_encounter_with_problem(42, 0, 360, |_| context(), influence);
+        let split =
+            first.or_else(|| first_encounter_with_problem(42, 360, 360, |_| context(), influence));
+        assert_eq!(whole, split);
+    }
+
+    #[test]
+    fn problem_influence_cannot_revive_an_impossible_archetype() {
+        let influence = Some(LocalProblemInfluence {
+            frequency_bonus_basis_points: 2_000,
+            archetype: Some(EncounterArchetype::Undead),
+        });
+        assert!(
+            (0..20_000)
+                .filter_map(|seed| select_at_with_problem(seed, 1, 180, context(), influence))
+                .all(|selection| selection.archetype != EncounterArchetype::Undead)
         );
     }
 }

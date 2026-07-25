@@ -1,6 +1,7 @@
 //! Settlement route handlers
 
 use adventuresim_core::{
+    bestiary::ThreatId,
     equipment::{EncumbranceSummary, encumbrance_capacity_kg},
     prelude::{
         PartyProvisioningInputs, STANDARD_TRAVEL_RATION_ID, STANDARD_WATERSKIN_ID,
@@ -125,31 +126,35 @@ use super::travel::{
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    AlcoholConsumption, Character, CharacterAffinity, CharacterAttributes, CharacterCapability,
-    CharacterCondition, CharacterEquip, CharacterFamiliarity, CharacterFilth, CharacterLimbs,
-    CharacterMoraleSource, CharacterNeeds, CharacterNotoriety, CharacterPersonality,
-    CharacterSkills, CharacterStats, CharacterStrategicCondition, CharacterTime,
-    CharacterTrainingSchedule, CharacterVirtue, EquippedMedication, FoodLot,
-    HerbalistExaminationRow, InfectionEpisodeRow, InventoryItem, InventoryQuantityTarget,
-    ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury, LimbRegion,
-    MedicalExaminationRow, Party, PartyInventoryItem, PartyJourney, PartyJourneyItinerary,
-    PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, Quest, QuestIssuer,
-    QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder, RetainedProjectile,
-    ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription, SettlementSmith,
-    SocialBelief, StrategicEncounter, TravelEdge,
+    AlcoholConsumption, BackendLocalProblemTradeEffect, Character, CharacterAffinity,
+    CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
+    CharacterFamiliarity, CharacterFilth, CharacterLimbs, CharacterMoraleSource, CharacterNeeds,
+    CharacterNotoriety, CharacterPersonality, CharacterSkills, CharacterStats,
+    CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, CharacterVirtue,
+    EquippedMedication, FoodLot, HerbalistExaminationRow, InfectionEpisodeRow, InventoryItem,
+    InventoryQuantityTarget, ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury,
+    LimbRegion, MedicalExaminationRow, Party, PartyInventoryItem, PartyJourney,
+    PartyJourneyItinerary, PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake, Quest,
+    QuestIssuer, QuestStatus, RecruitmentRequirements, ReligiousDemand, RepairOrder,
+    RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias, SettlementDescription,
+    SettlementSmith, SocialBelief, StrategicEncounter, TravelEdge,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
     RestSummary, SoapRestPreview, SocialPresentation, alchemy_page, camp_page,
     live_merchant_shop_page, merchants_page, party_discard_page, party_inventory_page,
     party_personal_page, party_pool_page, party_social_dialog, party_stats_page, religion_page,
-    rest_default_minutes, rest_result_page, settlement_map_page, settlement_overview_page,
-    surgery_dialog,
+    rest_default_minutes, rest_result_page, settlement_map_page, settlement_npc_location_page,
+    settlement_overview_page, surgery_dialog,
 };
 
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/settlements/{id}", get(show_settlement))
+        .route(
+            "/settlements/{id}/places/{place}",
+            get(settlement_npc_place),
+        )
         .route("/locations/settlement/{id}", get(show_settlement_location))
         .route("/locations/settlement/{id}/map", get(settlement_map))
         .route("/locations/settlement/{id}/alchemy", get(alchemy))
@@ -894,6 +899,56 @@ async fn retrieve_repairs(
 
 async fn show_settlement(Path(id): Path<String>) -> Redirect {
     Redirect::to(&format!("/locations/settlement/{id}"))
+}
+
+async fn settlement_npc_place(
+    State(state): State<AppState>,
+    Path((id, place)): Path<(String, String)>,
+    session: Session,
+) -> Html<String> {
+    if !matches!(place.as_str(), "overview" | "residences" | "keep") {
+        return Html("<h1>Settlement place not found</h1>".into());
+    }
+    let settlement = state
+        .db
+        .query_one::<Settlement>(&format!(
+            "SELECT * FROM settlement WHERE id = {}",
+            sql_string_literal(&id)
+        ))
+        .await
+        .ok()
+        .flatten();
+    let Some(settlement) = settlement else {
+        return Html("<h1>Settlement not found</h1>".into());
+    };
+    let active = get_active_character(&state, session.character_id_u64()).await;
+    let Some((character, _)) = active.as_ref() else {
+        return Html("<h1>Choose a character first</h1>".into());
+    };
+    if character.current_settlement_id.as_deref() != Some(id.as_str()) {
+        return Html("<h1>You are not in this settlement</h1>".into());
+    }
+    if place == "keep"
+        && !matches!(
+            settlement.category,
+            crate::spacetimedb::SettlementCategory::Town
+                | crate::spacetimedb::SettlementCategory::City
+                | crate::spacetimedb::SettlementCategory::Capital
+        )
+    {
+        return Html("<h1>This settlement has no keep</h1>".into());
+    }
+    let party_members = get_active_party_members(&state, Some(character)).await;
+    Html(
+        settlement_npc_location_page(
+            &settlement,
+            character,
+            &party_members,
+            &place,
+            Some(&character.name),
+        )
+        .into_string(),
+    )
 }
 
 async fn show_settlement_location(
@@ -2424,37 +2479,73 @@ fn service_quest_greeting(service_id: &str) -> (&'static str, &'static str) {
 }
 
 fn service_quest_details(
-    service_id: &str,
+    _service_id: &str,
     quest: &Quest,
-    settlement_name: &str,
-    neighboring_name: &str,
+    _settlement_name: &str,
+    _neighboring_name: &str,
     low: i32,
     high: i32,
 ) -> String {
-    let situation = match service_id {
-        "weapons" => format!(
-            "the thieves are hiding with the stolen arms near the road between {settlement_name} and {neighboring_name}"
-        ),
-        "armor" => format!(
-            "the old mine between {settlement_name} and {neighboring_name} is choked with giant spiders, and no miner will go near it"
-        ),
-        "clothing" => format!(
-            "the wolves are ranging through the grazing land between {settlement_name} and {neighboring_name}, where our shepherds cannot avoid them"
-        ),
-        "inn" => format!(
-            "the goblins are lairing in a cave near the road between {settlement_name} and {neighboring_name} and attacking travelers after dark"
-        ),
-        "religion" => format!(
-            "a necromancer has occupied an old crypt outside {settlement_name} and raised its dead"
-        ),
-        _ => format!(
-            "a handful of bandits are camped in the forest near the road between {settlement_name} and {neighboring_name} and have been laying ambushes for my caravans"
-        ),
-    };
+    let threat = quest.enemy_type.parse::<ThreatId>().ok();
+    let threat_name = threat
+        .map(|id| id.display_name(high.max(0) as u32).to_lowercase())
+        .unwrap_or_else(|| "unknown threats".to_string());
+    let preparation = threat
+        .map(|id| id.profile().investigation.preparation_advice)
+        .unwrap_or("Learn more before committing to a fight.");
+    // The generated quest is authoritative. Service identifies the speaker,
+    // never the threat or location; several templates intentionally share it.
+    let situation = format!("{} {}", quest.description, quest.location_description);
     format!(
-        "Yes, {situation}. I believe there are about {low} or {high} {}, give or take. I'd offer {} coin to anyone who clears them out. Are you",
-        quest.enemy_type, quest.gold_reward,
+        "Yes, {situation}. I believe there are about {low} or {high} {threat_name}, give or take. I'd offer {} coin to anyone who clears them out. Preparation: {preparation} Are you",
+        quest.gold_reward,
     )
+}
+
+#[cfg(test)]
+mod bestiary_quest_presentation_tests {
+    use super::*;
+
+    fn quest(enemy_type: &str, description: &str, location: &str) -> Quest {
+        Quest {
+            id: "q".into(),
+            title: "Problem".into(),
+            description: description.into(),
+            difficulty: 2,
+            gold_reward: 40,
+            xp_reward: 20,
+            settlement_id: "s".into(),
+            status: QuestStatus::Available,
+            accepted_by: None,
+            enemy_type: enemy_type.into(),
+            enemy_count: 3,
+            location_description: location.into(),
+            location_scene_key: "ruins".into(),
+            location_coord_x: 0.0,
+            location_coord_y: 0.0,
+            coordinates_are_geographic: false,
+            distance_m: 1000,
+        }
+    }
+
+    #[test]
+    fn shared_service_never_substitutes_its_old_fixed_threat_or_location() {
+        let alp = quest(
+            "alp",
+            "Sleepers report an unseen visitor.",
+            "An abandoned house.",
+        );
+        let hound = quest(
+            "spectral_hound",
+            "A black hound haunts the road.",
+            "The graveyard road.",
+        );
+        let alp_details = service_quest_details("inn", &alp, "A", "B", 2, 3);
+        let hound_details = service_quest_details("inn", &hound, "A", "B", 2, 3);
+        assert!(alp_details.contains("unseen visitor") && alp_details.contains("abandoned house"));
+        assert!(hound_details.contains("black hound") && hound_details.contains("graveyard road"));
+        assert!(!alp_details.contains("goblin") && !hound_details.contains("goblin"));
+    }
 }
 
 fn role_requirement_labels(role: &PartyRecruitmentRole) -> Vec<String> {
@@ -5179,7 +5270,22 @@ async fn merchant_shop(
         "SELECT * FROM character_time WHERE character_id = {}",
         character.id
     );
-    let (party_members, items, food_lots, equip, trade_context, conditions, smiths, orders, times) = tokio::join!(
+    let consequence_sql = format!(
+        "SELECT * FROM backend_local_problem_trade_effects WHERE character_id = {}",
+        character.id
+    );
+    let (
+        party_members,
+        items,
+        food_lots,
+        equip,
+        trade_context,
+        conditions,
+        smiths,
+        orders,
+        times,
+        consequences,
+    ) = tokio::join!(
         get_active_party_members(&state, Some(character)),
         state.db.query::<ItemDefinition>("SELECT * FROM item"),
         state.db.query::<FoodLot>("SELECT * FROM food_lot"),
@@ -5189,6 +5295,9 @@ async fn merchant_shop(
         state.db.query::<SettlementSmith>(&smith_sql),
         state.db.query::<RepairOrder>(&order_sql),
         state.db.query::<CharacterTime>(&time_sql),
+        state
+            .db
+            .query::<BackendLocalProblemTradeEffect>(&consequence_sql),
     );
     let items = items.unwrap_or_default();
     let equip = equip.unwrap_or_default();
@@ -5238,6 +5347,21 @@ async fn merchant_shop(
         adventuresim_world_schema::ORAL_FLUENCY_HOURS;
     let (_, shared_language) =
         adventuresim_world_schema::best_common_oral_language(speaker, merchant_languages);
+    let now_minutes = times
+        .as_ref()
+        .ok()
+        .and_then(|rows| rows.first())
+        .map_or(0, |time| time.minutes);
+    let problem_effects = consequences
+        .unwrap_or_default()
+        .into_iter()
+        .find(|row| row.character_id == character.id && row.settlement_id == id)
+        .unwrap_or(BackendLocalProblemTradeEffect {
+            character_id: character.id,
+            settlement_id: id.clone(),
+            buy_bps: 0,
+            sell_penalty_bps: 0,
+        });
     Html(
         live_merchant_shop_page(
             settlement,
@@ -5252,13 +5376,12 @@ async fn merchant_shop(
             &pooled,
             shop,
             shared_language,
+            problem_effects.buy_bps,
+            problem_effects.sell_penalty_bps,
             &conditions.unwrap_or_default(),
             smiths.unwrap_or_default().first(),
             &orders.unwrap_or_default(),
-            times
-                .unwrap_or_default()
-                .first()
-                .map_or(0, |time| time.minutes),
+            now_minutes,
             encumbrance.personal,
             encumbrance.party,
             inn_rest_default,

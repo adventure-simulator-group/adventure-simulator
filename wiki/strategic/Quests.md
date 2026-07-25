@@ -48,3 +48,12 @@ acceptance, provisioned travel and camps, autoresolve, loot storage, return,
 turn-in, liquidation, and equipment purchase/equip. Its defeat policy retreats
 and heals at a settlement before a bounded retry, so it also detects loops that
 would otherwise repeatedly autoresolve an incapacitated party.
+
+## Bestiary identity
+
+Quest opposition is stored as a stable shared-bestiary ID rather than free-form
+display text. Current direct bounties reveal that identity and preparation
+advice; future investigations will use evidence-limited ranking so hidden truth
+is not leaked. Combat, loot, fear, movement speed, habitat, and activity data
+come from `docs/BESTIARY.md`.
+Local problems are learned from NPCs rather than new quest-giver markers. A rumor is not contract acceptance and cannot change active quest state. Exact destination markers require later knowledge of an exact location.
