@@ -718,8 +718,6 @@ pub fn settlement_map_page(
     can_travel: bool,
     provision_forecast: Option<&TravelProvisionForecast>,
     is_current_settlement: bool,
-    current_open_quest_available: bool,
-    current_turn_in_ready: bool,
     abandonable_quest: Option<&Quest>,
     logged_in_as: Option<&str>,
 ) -> Markup {
@@ -740,8 +738,6 @@ pub fn settlement_map_page(
             &base_path,
             is_current_settlement.then_some(MapCurrentLocation {
                 name: &settlement.name,
-                open_quest_available: current_open_quest_available,
-                turn_in_ready: current_turn_in_ready,
             }),
             abandonable_quest.map(|quest| MapAbandonableQuest {
                 id: &quest.id,
@@ -811,8 +807,6 @@ pub fn settlement_map_page(
 #[derive(Clone, Copy)]
 struct MapCurrentLocation<'a> {
     name: &'a str,
-    open_quest_available: bool,
-    turn_in_ready: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -867,13 +861,6 @@ fn map_destination_list_with_context(
                                 aria-current="location" {
                                 strong { (current.name) }
                                 span class="text-muted small-copy current-location-label" { "Current" }
-                                @if current.turn_in_ready {
-                                    span class="destination-quest-badge" title="Active quest ready to turn in here"
-                                        aria-label="Active quest ready to turn in here" { "!" }
-                                } @else if current.open_quest_available {
-                                    span class="destination-open-quest-badge" title="Open quest available here"
-                                        aria-label="Open quest available here" { "!" }
-                                }
                             }
                         }
                         @for destination in destinations {
@@ -903,15 +890,6 @@ fn map_destination_list_with_context(
                                 @if destination.quest_in_progress {
                                     span class="destination-quest-badge" title=(destination_tooltip.as_deref().unwrap_or("Active quest destination"))
                                         aria-label="Active quest destination" { "!" }
-                                } @else if destination.active_quest_route {
-                                    span class="destination-quest-badge" title="Next settlement toward active quest"
-                                        aria-label="Next settlement toward active quest" { "!" }
-                                } @else if destination.turn_in_ready {
-                                    span class="destination-quest-badge" title="Active quest ready to turn in here"
-                                        aria-label="Active quest ready to turn in here" { "!" }
-                                } @else if destination.open_quest_available {
-                                    span class="destination-open-quest-badge" title="Open quest available here"
-                                        aria-label="Open quest available here" { "!" }
                                 }
                                 span class="text-muted small-copy" { (format_distance(destination.distance_m)) }
                             }
@@ -7959,9 +7937,6 @@ mod tests {
             itinerary_total_elapsed_minutes: 96,
             itinerary_segments: Vec::new(),
             quest_in_progress: true,
-            active_quest_route: false,
-            turn_in_ready: false,
-            open_quest_available: false,
             provision_forecast: None,
             terrain_route: None,
             return_terrain_route: None,
@@ -7983,46 +7958,12 @@ mod tests {
     }
 
     #[test]
-    fn available_quest_destination_has_gold_status_badge() {
-        let mut destination = quest_destination();
-        destination.quest_in_progress = false;
-        destination.open_quest_available = true;
-
-        let markup = map_destination_list(&[destination], None, "/locations/settlement/test/map")
-            .into_string();
-
-        assert!(markup.contains("destination-open-quest-badge"));
-        assert!(markup.contains("Open quest available here"));
-        assert!(!markup.contains("destination-quest-badge"));
-    }
-
-    #[test]
-    fn completed_active_quest_destination_remains_red() {
-        let mut destination = quest_destination();
-        destination.quest_in_progress = false;
-        destination.turn_in_ready = true;
-        destination.open_quest_available = true;
-
-        let markup = map_destination_list(&[destination], None, "/locations/settlement/test/map")
-            .into_string();
-
-        assert!(markup.contains("destination-quest-badge"));
-        assert!(markup.contains("Active quest ready to turn in here"));
-        assert!(!markup.contains("destination-open-quest-badge"));
-        assert!(!markup.contains("destination-turn-in-badge"));
-    }
-
-    #[test]
-    fn current_settlement_with_open_quest_has_non_traveling_gold_marker() {
+    fn current_settlement_has_no_conventional_quest_marker() {
         let markup = map_destination_list_with_context(
             &[],
             None,
             "/locations/settlement/market/map",
-            Some(MapCurrentLocation {
-                name: "Market",
-                open_quest_available: true,
-                turn_in_ready: false,
-            }),
+            Some(MapCurrentLocation { name: "Market" }),
             None,
             None,
         )
@@ -8030,29 +7971,9 @@ mod tests {
 
         assert!(markup.contains("current-location-row"));
         assert!(markup.contains("aria-current=\"location\""));
-        assert!(markup.contains("destination-open-quest-badge"));
-        assert!(!markup.contains("href="));
-    }
-
-    #[test]
-    fn completed_active_quest_at_current_issuer_is_red_even_when_open_quest_exists() {
-        let markup = map_destination_list_with_context(
-            &[],
-            None,
-            "/locations/settlement/issuer/map",
-            Some(MapCurrentLocation {
-                name: "Issuer",
-                open_quest_available: true,
-                turn_in_ready: true,
-            }),
-            None,
-            None,
-        )
-        .into_string();
-
-        assert!(markup.contains("destination-quest-badge"));
-        assert!(markup.contains("Active quest ready to turn in here"));
         assert!(!markup.contains("destination-open-quest-badge"));
+        assert!(!markup.contains("destination-quest-badge"));
+        assert!(!markup.contains("href="));
     }
 
     #[test]
@@ -8061,11 +7982,7 @@ mod tests {
             &[],
             None,
             "/locations/settlement/issuer/map",
-            Some(MapCurrentLocation {
-                name: "Issuer",
-                open_quest_available: false,
-                turn_in_ready: false,
-            }),
+            Some(MapCurrentLocation { name: "Issuer" }),
             Some(MapAbandonableQuest {
                 id: "active",
                 title: "Drive off the bandits",

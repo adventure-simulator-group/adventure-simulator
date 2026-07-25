@@ -5,6 +5,7 @@ mod data;
 pub mod dialogue;
 pub mod home;
 mod inventory_forms;
+pub mod investigation;
 pub mod local_chat;
 pub mod missions;
 pub mod parties;
@@ -627,6 +628,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(
             Router::new()
                 .merge(home::routes())
+                .merge(investigation::routes())
                 .merge(dialogue::routes())
                 .merge(local_chat::routes())
                 .merge(settlements::routes())

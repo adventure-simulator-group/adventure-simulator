@@ -120,16 +120,15 @@ use super::inventory_forms::{
 use super::redirect_to_local;
 use super::travel::{
     QuestMapMarkers, TravelDestination, TravelForm, TravelProvisionForecast, active_quest_summary,
-    active_quest_tooltip, connected_destinations, next_settlement_toward,
-    populate_itinerary_forecasts,
+    active_quest_tooltip, connected_destinations, populate_itinerary_forecasts,
 };
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    AlcoholConsumption, BackendLocalProblemTradeEffect, Character, CharacterAffinity,
-    CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquip,
-    CharacterFamiliarity, CharacterFilth, CharacterLimbs, CharacterMoraleSource, CharacterNeeds,
-    CharacterNotoriety, CharacterPersonality, CharacterSkills, CharacterStats,
+    AlcoholConsumption, BackendInvestigationLead, BackendLocalProblemTradeEffect, Character,
+    CharacterAffinity, CharacterAttributes, CharacterCapability, CharacterCondition,
+    CharacterEquip, CharacterFamiliarity, CharacterFilth, CharacterLimbs, CharacterMoraleSource,
+    CharacterNeeds, CharacterNotoriety, CharacterPersonality, CharacterSkills, CharacterStats,
     CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, CharacterVirtue,
     EquippedMedication, FoodLot, HerbalistExaminationRow, InfectionEpisodeRow, InventoryItem,
     InventoryQuantityTarget, ItemCondition, ItemDefinition, ItemKind, ItemSlot, LimbInjury,
@@ -1073,9 +1072,16 @@ async fn settlement_map(
         .as_ref()
         .and_then(|party| party.active_quest_id.as_deref());
     let markers = QuestMapMarkers::new(&quests, active_quest_id);
-    let map_quests = map_quests_for_settlement(&quests, &settlement.id, active_quest_id);
-    for destination in &mut destinations {
-        markers.decorate_settlement(destination);
+    let mut map_quests = map_quests_for_settlement(&quests, &settlement.id, active_quest_id);
+    if let Some(character_id) = session.character_id_u64() {
+        let safe_leads = state
+            .db
+            .query::<BackendInvestigationLead>(&format!(
+                "SELECT * FROM backend_investigation_leads WHERE owner_character_id = {character_id}"
+            ))
+            .await
+            .unwrap_or_default();
+        map_quests.extend(knowledge_quest_pins(&safe_leads, &settlement.id));
     }
     let active_quest = markers.active_quest();
     let is_current_settlement = active_character.as_ref().is_some_and(|(character, _)| {
@@ -1102,42 +1108,11 @@ async fn settlement_map(
                 .saturating_mul(2),
                 itinerary_segments: Vec::new(),
                 quest_in_progress: true,
-                active_quest_route: false,
-                turn_in_ready: false,
-                open_quest_available: false,
                 provision_forecast: None,
                 terrain_route: None,
                 return_terrain_route: None,
                 route_fallback: true,
             });
-        } else if can_travel {
-            if let Some(next_settlement_id) =
-                next_settlement_toward(settlement, &quest.settlement_id, &settlements, &edges)
-            {
-                if let Some(destination) = destinations
-                    .iter_mut()
-                    .find(|destination| destination.id == next_settlement_id)
-                {
-                    destination.active_quest_route = true;
-                }
-            }
-        }
-    }
-    if let Some(quest) = active_quest.filter(|quest| quest.status == QuestStatus::Completed) {
-        for destination in &mut destinations {
-            destination.turn_in_ready = destination.id == quest.settlement_id;
-        }
-        if can_travel && settlement.id != quest.settlement_id {
-            if let Some(next_settlement_id) =
-                next_settlement_toward(settlement, &quest.settlement_id, &settlements, &edges)
-            {
-                if let Some(destination) = destinations
-                    .iter_mut()
-                    .find(|destination| destination.id == next_settlement_id)
-                {
-                    destination.active_quest_route = true;
-                }
-            }
         }
     }
     if let Some(selected_id) = query.destination.as_deref()
@@ -1273,8 +1248,6 @@ async fn settlement_map(
             can_travel,
             provision_forecast,
             is_current_settlement,
-            markers.has_open_quest_at(&settlement.id),
-            markers.completed_quest_turn_in_at(&settlement.id),
             active_quest.filter(|quest| {
                 can_abandon_active_quest(
                     quest,
@@ -1303,12 +1276,43 @@ fn map_quests_for_settlement(
     quests
         .iter()
         .filter(|quest| {
-            quest.settlement_id == settlement_id
-                && (quest.status == QuestStatus::Available
-                    || (quest.status == QuestStatus::Accepted
-                        && active_quest_id == Some(quest.id.as_str())))
+            quest.status == QuestStatus::Accepted
+                && active_quest_id == Some(quest.id.as_str())
+                && quest.settlement_id == settlement_id
         })
         .cloned()
+        .collect()
+}
+
+fn knowledge_quest_pins(leads: &[BackendInvestigationLead], settlement_id: &str) -> Vec<Quest> {
+    leads
+        .iter()
+        .filter(|lead| {
+            matches!(
+                lead.destination_stage.as_str(),
+                "exact_believed" | "visited"
+            ) && !lead.exact_location_id.is_empty()
+                && lead.corrected_by.is_empty()
+        })
+        .map(|lead| Quest {
+            id: format!("knowledge:{}", lead.lead_id),
+            title: lead.summary.clone(),
+            description: format!("Believed location, according to {}", lead.source_label),
+            difficulty: 0,
+            gold_reward: 0,
+            xp_reward: 0,
+            settlement_id: settlement_id.into(),
+            status: QuestStatus::Accepted,
+            accepted_by: None,
+            enemy_type: String::new(),
+            enemy_count: 0,
+            location_description: lead.directions.clone(),
+            location_scene_key: String::new(),
+            location_coord_x: f64::from(lead.longitude_e7) / 10_000_000.0,
+            location_coord_y: f64::from(lead.latitude_e7) / 10_000_000.0,
+            coordinates_are_geographic: true,
+            distance_m: 0,
+        })
         .collect()
 }
 
@@ -1355,7 +1359,7 @@ mod map_quest_tests {
     }
 
     #[test]
-    fn map_quest_pins_are_bounded_to_the_local_issuer_and_active_destination() {
+    fn map_quest_pins_include_only_the_known_active_destination() {
         let mut local_available = quest(QuestStatus::Available);
         local_available.id = "local-available".into();
         local_available.accepted_by = None;
@@ -1385,7 +1389,43 @@ mod map_quest_tests {
             .map(|quest| quest.id.as_str())
             .collect::<Vec<_>>();
 
-        assert_eq!(ids, ["local-available", "local-active"]);
+        assert_eq!(ids, ["local-active"]);
+    }
+
+    #[test]
+    fn knowledge_pins_require_exact_unrevised_observer_leads() {
+        let lead = BackendInvestigationLead {
+            owner_character_id: 7,
+            case_id: "case".into(),
+            lead_id: "mistaken".into(),
+            summary: "The wrong cave".into(),
+            source_label: "a witness".into(),
+            confidence_bps: 6000,
+            destination_stage: "approximate_area".into(),
+            directions: "north".into(),
+            exact_location_id: String::new(),
+            latitude_e7: 0,
+            longitude_e7: 0,
+            witness_name: String::new(),
+            witness_description: String::new(),
+            witness_occupation_or_relationship: String::new(),
+            expected_location: String::new(),
+            current_learned_location: String::new(),
+            contradiction_group: String::new(),
+            corrected_by: String::new(),
+            recorded_at: 1,
+        };
+        assert!(knowledge_quest_pins(&[lead.clone()], "town").is_empty());
+        let exact = BackendInvestigationLead {
+            destination_stage: "exact_believed".into(),
+            exact_location_id: "wrong-cave".into(),
+            latitude_e7: 532_000_000,
+            longitude_e7: 101_000_000,
+            ..lead
+        };
+        let pins = knowledge_quest_pins(&[exact], "town");
+        assert_eq!(pins.len(), 1);
+        assert_eq!(pins[0].location_coord_x, 10.1);
     }
 }
 

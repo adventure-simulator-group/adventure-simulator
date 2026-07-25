@@ -15,8 +15,7 @@ use serde::Deserialize;
 
 use crate::spacetimedb::{
     CampDurationMode, CharacterAttributes, CharacterLimbs, CharacterStats, CharacterTime,
-    CharacterTrainingSchedule, Party, Quest, QuestStatus, ScheduleAllocation, Settlement,
-    TravelEdge,
+    CharacterTrainingSchedule, Party, Quest, ScheduleAllocation, Settlement, TravelEdge,
 };
 
 const WALKING_SPEED_KM_PER_HOUR: u64 = 5;
@@ -182,34 +181,21 @@ pub struct TravelDestination {
     pub itinerary_total_elapsed_minutes: u64,
     pub itinerary_segments: Vec<ItinerarySegment>,
     pub quest_in_progress: bool,
-    /// This settlement is the next leg on the shortest road route to the
-    /// posting settlement of the party's active quest.
-    pub active_quest_route: bool,
-    pub turn_in_ready: bool,
-    /// At least one unaccepted quest is posted at this settlement.
-    pub open_quest_available: bool,
     pub provision_forecast: Option<TravelProvisionForecast>,
     pub terrain_route: Option<adventuresim_terrain::RoutePlan>,
     pub return_terrain_route: Option<adventuresim_terrain::RoutePlan>,
     pub route_fallback: bool,
 }
 
-/// Quest markers shared by settlement and off-road Map views. Available
-/// settlements are indexed once so decorating destination lists remains
-/// linear even as the quest history grows.
+/// Active accepted destination lookup. Conventional available, issuer-route,
+/// and turn-in quest markers are intentionally absent.
 pub(crate) struct QuestMapMarkers<'a> {
-    available_settlement_ids: HashSet<&'a str>,
     active_quest: Option<&'a Quest>,
 }
 
 impl<'a> QuestMapMarkers<'a> {
     pub(crate) fn new(quests: &'a [Quest], active_quest_id: Option<&str>) -> Self {
         Self {
-            available_settlement_ids: quests
-                .iter()
-                .filter(|quest| quest.status == QuestStatus::Available)
-                .map(|quest| quest.settlement_id.as_str())
-                .collect(),
             active_quest: active_quest_id
                 .and_then(|quest_id| quests.iter().find(|quest| quest.id == quest_id)),
         }
@@ -217,21 +203,6 @@ impl<'a> QuestMapMarkers<'a> {
 
     pub(crate) fn active_quest(&self) -> Option<&'a Quest> {
         self.active_quest
-    }
-
-    pub(crate) fn has_open_quest_at(&self, settlement_id: &str) -> bool {
-        self.available_settlement_ids.contains(settlement_id)
-    }
-
-    pub(crate) fn completed_quest_turn_in_at(&self, settlement_id: &str) -> bool {
-        self.active_quest.is_some_and(|quest| {
-            quest.status == QuestStatus::Completed && quest.settlement_id == settlement_id
-        })
-    }
-
-    pub(crate) fn decorate_settlement(&self, destination: &mut TravelDestination) {
-        destination.open_quest_available = self.has_open_quest_at(&destination.id);
-        destination.turn_in_ready = self.completed_quest_turn_in_at(&destination.id);
     }
 }
 
@@ -277,9 +248,6 @@ pub(crate) fn settlement_destination(
         itinerary_total_elapsed_minutes: journey_minutes,
         itinerary_segments: Vec::new(),
         quest_in_progress: false,
-        active_quest_route: false,
-        turn_in_ready: false,
-        open_quest_available: false,
         provision_forecast: None,
         terrain_route: None,
         return_terrain_route: None,
@@ -422,89 +390,6 @@ pub(crate) fn populate_itinerary_forecasts(
     }
 }
 
-/// Finds the first settlement reached when following the shortest road route
-/// from `origin` to `destination_id`.
-///
-/// The regular destination list intentionally stops at the next settlement,
-/// so this traversal must continue through settlement nodes to provide an
-/// actionable quest-direction marker for a more distant quest giver.
-pub(crate) fn next_settlement_toward(
-    origin: &Settlement,
-    destination_id: &str,
-    settlements: &[Settlement],
-    edges: &[TravelEdge],
-) -> Option<String> {
-    let destination = settlements
-        .iter()
-        .find(|settlement| settlement.id == destination_id)?;
-    let (Some(origin_node), Some(destination_node)) =
-        (origin.source_node_id, destination.source_node_id)
-    else {
-        // Imported worlds without road-node data expose every settlement as a
-        // direct destination, so the quest giver is the actionable choice.
-        return (origin.id != destination.id).then(|| destination.id.clone());
-    };
-    if origin_node == destination_node {
-        return None;
-    }
-
-    let settlements_by_node: HashMap<u64, &Settlement> = settlements
-        .iter()
-        .filter_map(|settlement| settlement.source_node_id.map(|node| (node, settlement)))
-        .collect();
-    let mut adjacency: HashMap<u64, Vec<(u64, u32)>> = HashMap::new();
-    for edge in edges {
-        adjacency
-            .entry(edge.from_node_id)
-            .or_default()
-            .push((edge.to_node_id, edge.length_m));
-        adjacency
-            .entry(edge.to_node_id)
-            .or_default()
-            .push((edge.from_node_id, edge.length_m));
-    }
-
-    let mut distances = HashMap::from([(origin_node, 0_u64)]);
-    let mut previous = HashMap::new();
-    let mut pending = BinaryHeap::from([std::cmp::Reverse((0_u64, origin_node))]);
-    while let Some(std::cmp::Reverse((distance_m, node))) = pending.pop() {
-        if distances
-            .get(&node)
-            .is_some_and(|known| *known != distance_m)
-        {
-            continue;
-        }
-        if node == destination_node {
-            break;
-        }
-        for (neighbor, edge_length_m) in adjacency.get(&node).into_iter().flatten() {
-            let next_distance = distance_m.saturating_add(u64::from(*edge_length_m));
-            if distances
-                .get(neighbor)
-                .is_none_or(|known| next_distance < *known)
-            {
-                distances.insert(*neighbor, next_distance);
-                previous.insert(*neighbor, node);
-                pending.push(std::cmp::Reverse((next_distance, *neighbor)));
-            }
-        }
-    }
-    if !distances.contains_key(&destination_node) {
-        return None;
-    }
-
-    let mut route = vec![destination_node];
-    while route.last().copied()? != origin_node {
-        route.push(*previous.get(route.last()?)?);
-    }
-    route.reverse();
-    route.into_iter().skip(1).find_map(|node| {
-        settlements_by_node
-            .get(&node)
-            .map(|settlement| settlement.id.clone())
-    })
-}
-
 pub(crate) fn connected_destinations(
     origin: &Settlement,
     settlements: &[Settlement],
@@ -589,6 +474,7 @@ fn journey_minutes(distance_m: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::spacetimedb::QuestStatus;
     use adventuresim_world_schema::{
         FallbackIndustry, IndustryEvidence, InferredIndustryProfile, LandRoute, RouteTerrain,
         TravelRoute,
@@ -727,23 +613,7 @@ mod tests {
     }
 
     #[test]
-    fn quest_direction_uses_the_first_settlement_on_the_shortest_route() {
-        let settlements = vec![
-            settlement("origin", 1),
-            settlement("next", 2),
-            settlement("quest-giver", 3),
-            settlement("long-way", 4),
-        ];
-        let edges = vec![edge(1, 1, 2), edge(2, 2, 3), edge(3, 1, 4), edge(4, 4, 3)];
-
-        assert_eq!(
-            next_settlement_toward(&settlements[0], "quest-giver", &settlements, &edges),
-            Some("next".to_string())
-        );
-    }
-
-    #[test]
-    fn quest_markers_index_open_settlements_and_completed_active_issuer() {
+    fn quest_marker_lookup_only_retains_the_selected_active_destination() {
         let quests = vec![
             quest("open", "market", QuestStatus::Available),
             quest("active", "chapel", QuestStatus::Completed),
@@ -751,9 +621,9 @@ mod tests {
         ];
         let markers = QuestMapMarkers::new(&quests, Some("active"));
 
-        assert!(markers.has_open_quest_at("market"));
-        assert!(!markers.has_open_quest_at("chapel"));
-        assert!(markers.completed_quest_turn_in_at("chapel"));
-        assert!(!markers.completed_quest_turn_in_at("market"));
+        assert_eq!(
+            markers.active_quest().map(|quest| quest.id.as_str()),
+            Some("active")
+        );
     }
 }
