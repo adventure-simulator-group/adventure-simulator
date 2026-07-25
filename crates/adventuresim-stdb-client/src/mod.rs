@@ -49,6 +49,8 @@ pub mod backend_investigation_action_outcome_type;
 pub mod backend_investigation_action_outcomes_table;
 pub mod backend_investigation_action_type;
 pub mod backend_investigation_actions_table;
+pub mod backend_investigation_case_summary_type;
+pub mod backend_investigation_cases_table;
 pub mod backend_investigation_journal_entry_type;
 pub mod backend_investigation_journal_table;
 pub mod backend_investigation_lead_type;
@@ -243,6 +245,7 @@ pub mod food_preparation_type;
 pub mod forest_commodity_type;
 pub mod forest_cover_type;
 pub mod forestry_industry_type;
+pub mod generated_problem_incident_type;
 pub mod geologic_age_evidence_type;
 pub mod geologic_era_type;
 pub mod geologic_lithology_evidence_type;
@@ -333,6 +336,7 @@ pub mod liquidate_party_inventory_reducer;
 pub mod local_chat_message_type;
 pub mod local_problem_authority_type;
 pub mod local_problem_generation_explanation_type;
+pub mod local_problem_incident_receipt_type;
 pub mod local_problem_outcome_receipt_type;
 pub mod local_problem_receipt_type;
 pub mod local_problem_rumor_delivery_type;
@@ -644,6 +648,8 @@ pub use backend_investigation_action_outcome_type::BackendInvestigationActionOut
 pub use backend_investigation_action_outcomes_table::*;
 pub use backend_investigation_action_type::BackendInvestigationAction;
 pub use backend_investigation_actions_table::*;
+pub use backend_investigation_case_summary_type::BackendInvestigationCaseSummary;
+pub use backend_investigation_cases_table::*;
 pub use backend_investigation_journal_entry_type::BackendInvestigationJournalEntry;
 pub use backend_investigation_journal_table::*;
 pub use backend_investigation_lead_type::BackendInvestigationLead;
@@ -838,6 +844,7 @@ pub use food_preparation_type::FoodPreparation;
 pub use forest_commodity_type::ForestCommodity;
 pub use forest_cover_type::ForestCover;
 pub use forestry_industry_type::ForestryIndustry;
+pub use generated_problem_incident_type::GeneratedProblemIncident;
 pub use geologic_age_evidence_type::GeologicAgeEvidence;
 pub use geologic_era_type::GeologicEra;
 pub use geologic_lithology_evidence_type::GeologicLithologyEvidence;
@@ -928,6 +935,7 @@ pub use liquidate_party_inventory_reducer::liquidate_party_inventory;
 pub use local_chat_message_type::LocalChatMessage;
 pub use local_problem_authority_type::LocalProblemAuthority;
 pub use local_problem_generation_explanation_type::LocalProblemGenerationExplanation;
+pub use local_problem_incident_receipt_type::LocalProblemIncidentReceipt;
 pub use local_problem_outcome_receipt_type::LocalProblemOutcomeReceipt;
 pub use local_problem_receipt_type::LocalProblemReceipt;
 pub use local_problem_rumor_delivery_type::LocalProblemRumorDelivery;
@@ -2989,6 +2997,7 @@ pub struct DbUpdate {
     backend_infection_episodes: __sdk::TableUpdate<InfectionEpisodeRow>,
     backend_investigation_action_outcomes: __sdk::TableUpdate<BackendInvestigationActionOutcome>,
     backend_investigation_actions: __sdk::TableUpdate<BackendInvestigationAction>,
+    backend_investigation_cases: __sdk::TableUpdate<BackendInvestigationCaseSummary>,
     backend_investigation_journal: __sdk::TableUpdate<BackendInvestigationJournalEntry>,
     backend_investigation_leads: __sdk::TableUpdate<BackendInvestigationLead>,
     backend_local_chat_messages: __sdk::TableUpdate<BackendLocalChatMessage>,
@@ -3139,6 +3148,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 }
                 "backend_investigation_actions" => db_update.backend_investigation_actions.append(
                     backend_investigation_actions_table::parse_table_update(table_update)?,
+                ),
+                "backend_investigation_cases" => db_update.backend_investigation_cases.append(
+                    backend_investigation_cases_table::parse_table_update(table_update)?,
                 ),
                 "backend_investigation_journal" => db_update.backend_investigation_journal.append(
                     backend_investigation_journal_table::parse_table_update(table_update)?,
@@ -3738,6 +3750,11 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_investigation_actions",
                 &self.backend_investigation_actions,
             );
+        diff.backend_investigation_cases = cache
+            .apply_diff_to_table::<BackendInvestigationCaseSummary>(
+                "backend_investigation_cases",
+                &self.backend_investigation_cases,
+            );
         diff.backend_investigation_journal = cache
             .apply_diff_to_table::<BackendInvestigationJournalEntry>(
                 "backend_investigation_journal",
@@ -3847,6 +3864,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_investigation_actions" => db_update
                     .backend_investigation_actions
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_investigation_cases" => db_update
+                    .backend_investigation_cases
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_investigation_journal" => db_update
                     .backend_investigation_journal
@@ -4140,6 +4160,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_investigation_actions" => db_update
                     .backend_investigation_actions
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_investigation_cases" => db_update
+                    .backend_investigation_cases
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_investigation_journal" => db_update
                     .backend_investigation_journal
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -4400,6 +4423,7 @@ pub struct AppliedDiff<'r> {
     backend_investigation_action_outcomes:
         __sdk::TableAppliedDiff<'r, BackendInvestigationActionOutcome>,
     backend_investigation_actions: __sdk::TableAppliedDiff<'r, BackendInvestigationAction>,
+    backend_investigation_cases: __sdk::TableAppliedDiff<'r, BackendInvestigationCaseSummary>,
     backend_investigation_journal: __sdk::TableAppliedDiff<'r, BackendInvestigationJournalEntry>,
     backend_investigation_leads: __sdk::TableAppliedDiff<'r, BackendInvestigationLead>,
     backend_local_chat_messages: __sdk::TableAppliedDiff<'r, BackendLocalChatMessage>,
@@ -4577,6 +4601,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendInvestigationAction>(
             "backend_investigation_actions",
             &self.backend_investigation_actions,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendInvestigationCaseSummary>(
+            "backend_investigation_cases",
+            &self.backend_investigation_cases,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendInvestigationJournalEntry>(
@@ -5592,6 +5621,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_infection_episodes_table::register_table(client_cache);
         backend_investigation_action_outcomes_table::register_table(client_cache);
         backend_investigation_actions_table::register_table(client_cache);
+        backend_investigation_cases_table::register_table(client_cache);
         backend_investigation_journal_table::register_table(client_cache);
         backend_investigation_leads_table::register_table(client_cache);
         backend_local_chat_messages_table::register_table(client_cache);
@@ -5687,6 +5717,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_infection_episodes",
         "backend_investigation_action_outcomes",
         "backend_investigation_actions",
+        "backend_investigation_cases",
         "backend_investigation_journal",
         "backend_investigation_leads",
         "backend_local_chat_messages",

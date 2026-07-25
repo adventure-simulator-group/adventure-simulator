@@ -8,14 +8,32 @@ inn is the discovery funnel; a settlement without an available inn uses overview
 Every seeded or imported settlement has persistent local NPC identities in addition to
 its service providers. The overview/public area and service locations contain multiple
 people; towns and larger settlements also populate a keep. A horizontal, keyboard-
-navigable portrait strip selects whom the active character addresses. Service pages
+navigable circular portrait strip selects whom the active character addresses. It is
+attached just above the resizable chat panel, opposite the party portrait strip, and
+moves with the chat's top edge. The selected NPC's description is centered in the
+remaining stage between the two strips. Service pages
 initially select the service provider, while other locations select a deterministic
 local. Selecting someone else keeps the party in place and updates the visible physical
-description, greeting, and eligible topics.
+description and greeting. Dialogue subjects appear as highlighted phrases in
+what NPCs actually say rather than in a separate topic list.
+Names are not globally or settlement-locally unique. When one NPC refers the player
+to a different local who has the same displayed name, the dialogue explicitly says
+that it means "the other" person and repeats the contact's profession, appearance,
+and usual location.
+When the speaker is the contact, they identify themselves in the first person
+and make their testimony subject clickable in that line.
 
-The settlement overview links to residential areas and, for towns and larger settlements,
-the keep. These non-service places use the same authoritative portrait, description, and
-chat surface; villages and hamlets cannot enter a keep that their population does not have.
+The book button immediately to the right of the settlement identity and official time
+toggles the character's journal without leaving the current location. Journal mode
+replaces the settlement's left rail with a recency-sorted quest list and its right rail
+with the selected quest's dry log; toggling it again or pressing Escape restores the
+location rails.
+
+Public squares, residential areas, and, for towns and larger settlements, the keep appear
+as selectable building tabs alongside services in the settlement header. Until bespoke
+building art is available, non-service tabs reuse neutral building art and house/castle
+icons. These places use the same authoritative portrait, description, and chat surface;
+villages and hamlets cannot enter a keep that their population does not have.
 
 NPC presences and daily time windows are strategic database state, not tactical
 positions or tick state. The player view exposes physical presentation, occupation,

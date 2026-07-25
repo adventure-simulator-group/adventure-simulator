@@ -69,6 +69,31 @@ has no public table accessor. Gateway projections expose only symptoms and
 observer-owned knowledge; browsers never receive canonical causes, traces,
 undiscovered evidence, true/decoy status, or hidden coordinates.
 
+The initial manifest remains immutable, but an unresolved generated problem
+may acquire append-only follow-up incidents as authoritative world time
+advances. Every two days, settlement activity materializes the next due
+incident with a stable `(case, ordinal)` identity, occurrence time, persistent
+NPC witness and victim binding, circumstance, existing case site, canonical
+event, and new physical-evidence authority. Delayed refreshes deterministically
+catch up every missed incident. Fresh evidence is selected through the same
+cause-and-site likelihood table and hard zeros as initial evidence rather than
+an incident-only inverse lookup. The original offence plus four follow-ups is
+the temporary maximum; this cap is intended to be replaced by NPC adventurer
+resolution of neglected cases.
+
+Incident authority is private. A character who already knows the problem can
+receive a dry local report when rumor circulation next reaches them; an
+uninformed character receives no incident history, witness identity, evidence,
+or location. Follow-up evidence remains undiscovered merely because its hidden
+authority exists.
+
+Each accumulated incident increases the unresolved problem's trade,
+encounter, and disease consequences by 25 percent of their initial values,
+before the existing global safety caps and mitigation are applied. At the
+temporary five-incident ceiling, consequences are twice their initial
+severity. Resolving or fully mitigating the linked problem still suppresses
+all of those effects.
+
 The private authority also stores a domain-separated SHA-256 commitment to the
 exact serialized generation context, including observer-ID entropy. Every
 authoritative consumer validates that commitment, row identities, seed,
@@ -105,8 +130,9 @@ dialogue producer to remain intact.
 ## Discovery and resolution
 
 Entering an inn guarantees symptom discovery when an available unknown
-**validated generated quest problem** exists. This records a markerless journal
-referral; it does not accept a contract or disclose testimony. Legacy/manual
+**validated generated quest problem** exists. This records the rumor in the
+player's dry journal and grants a private referral authority; it does not
+accept a contract or disclose testimony. Legacy/manual
 seeded `LocalProblemAuthority` rows currently drive settlement simulation
 modifiers and effects only and are intentionally non-discoverable; retiring
 that producer is separate work. Any local can repeat a validated generated
@@ -119,8 +145,9 @@ Witness discovery is an explicit authored graph, not permission inferred from
 private manifest membership. The initial rumor grants an observer-bound
 referral to the primary witness. Individual testimony drafts may refer to exact
 subsequent witnesses; only processing that account grants the next private
-referral and projects the persistent NPC's safe name, physical description,
-profession, and location-tab label into the journal. Referral execution
+referral. The journal intentionally does not project that referral, its
+location, or any suggested next action; those details remain in the dialogue
+the player actually heard. Referral execution
 revalidates observer, canonical/public case authority, NPC, settlement,
 location, catalog revision, dialogue session, and live presence. Private
 referral authority records whether it came from the exact initial rumor receipt
@@ -131,8 +158,11 @@ validation. Secondary testimony with no authored contact action changes no
 route, while the primary contact still uniquely unlocks its successors.
 
 Only an authoritative typed exact destination output can create an exact pin.
-The raw site ID remains navigation authority; player-facing journal text and
-the matching map pin use the site's generated safe name.
+The raw site ID remains navigation authority; the matching map pin uses the
+site's generated safe name. Witness-described sites use a neutral attribution
+such as `Place Anna Weber described`; labels never comment on whether the
+account is plausible or confirmed. The journal does not interpret or restate
+the pin as a destination.
 Discovery actions execute at a known contact, settlement, area, or predecessor
 route and may reveal travel-capable knowledge. They never also resolve custody.
 After travel establishes authoritative occupancy, a separate `InspectSite` or

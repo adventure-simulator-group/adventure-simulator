@@ -26,6 +26,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 const BUILDINGS: &[&str] = &[
+    "residences",
+    "keep",
     "map",
     "merchants",
     "weapons",
@@ -98,6 +100,14 @@ mod building_query_tests {
         assert_eq!(
             valid.append_to("/locations/settlement/x/party/1?cook=true".into()),
             "/locations/settlement/x/party/1?cook=true&building=inn"
+        );
+        let non_service = BuildingQuery {
+            building: Some("keep".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            non_service.append_to("/locations/settlement/x/party/1".into()),
+            "/locations/settlement/x/party/1?building=keep"
         );
         let invalid = BuildingQuery {
             building: Some("../religion".into()),

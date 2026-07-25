@@ -2,7 +2,9 @@
   const STORAGE_KEY = "adventuresim.chat-height";
   const DESKTOP_MIN_HEIGHT = 128;
   const MOBILE_MIN_HEIGHT = 160;
-  const MIN_STAGE_HEIGHT = 128;
+  // Preserve room for the party tray, centered counterparty description, and
+  // the counterparty tray attached to the moving top edge of the chat.
+  const MIN_STAGE_HEIGHT = 260;
   const CHAT_BOTTOM_GAP = 5;
   const KEYBOARD_STEP = 24;
 

@@ -1,6 +1,11 @@
 //! Private local-problem authority and safe discovery/consequence projections.
 use crate::{
     character::{character, character__view},
+    investigation::{
+        EvidencePresentationKind, InvestigationEventAuthority, InvestigationEvidenceAuthority,
+        InvestigationLead, investigation_event_authority, investigation_evidence_authority,
+        investigation_lead,
+    },
     settlement_population::{settlement_npc, settlement_npc_presence},
     strategic::{
         ValidatedQuestGenerationAuthority, quest_generation_authority, settlement,
@@ -34,8 +39,36 @@ pub struct LocalProblemAuthority {
     pub starts_at: u64,
     pub ends_at: u64,
     pub mitigation_bps: u16,
+    /// Includes the original offence represented by the generated case.
+    pub incident_count: u16,
     pub resolved_at: Option<u64>,
     pub opaque_case_ref: String,
+}
+
+/// An immutable follow-up offence appended to a generated case after creation.
+/// This remains private authority until an observer discovers its account or
+/// physical evidence.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[table(accessor = generated_problem_incident)]
+pub struct GeneratedProblemIncident {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub case_id: String,
+    #[index(btree)]
+    pub problem_id: String,
+    pub ordinal: u16,
+    pub occurred_at: u64,
+    pub event_id: String,
+    pub proposition_id: String,
+    pub witness_npc_id: String,
+    pub victim_npc_id: String,
+    pub circumstance: String,
+    pub site_id: String,
+    pub evidence_id: String,
+    pub evidence_kind: String,
+    pub public_summary: String,
+    pub witness_account: String,
 }
 
 #[derive(Clone, Debug)]
@@ -102,7 +135,19 @@ pub struct LocalProblemRumorDelivery {
     /// The private observer receipt consumed by investigation authority.
     /// This is intentionally not derived from the delivery row ID.
     pub receipt_id: String,
-    pub delivery_text: String,
+    pub fragments_json: String,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = local_problem_incident_receipt)]
+pub struct LocalProblemIncidentReceipt {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub character_id: u64,
+    pub problem_id: String,
+    pub incident_id: String,
+    pub learned_at: u64,
 }
 
 #[derive(Clone, Debug, SpacetimeType)]
@@ -111,7 +156,7 @@ pub struct BackendLocalProblemRumor {
     pub character_id: u64,
     pub settlement_id: String,
     pub session_id: String,
-    pub delivery_text: String,
+    pub fragments_json: String,
 }
 
 #[derive(Clone, Debug)]
@@ -224,6 +269,7 @@ pub fn backend_local_problem_trade_effects(
                     starts_at: r.starts_at,
                     ends_at: r.ends_at,
                     mitigation_bps: r.mitigation_bps,
+                    incident_count: r.incident_count,
                     resolved_at: r.resolved_at,
                 })
                 .collect();
@@ -252,7 +298,7 @@ pub fn backend_local_problem_rumors(ctx: &ViewContext) -> Vec<BackendLocalProble
             character_id: r.character_id,
             settlement_id: r.settlement_id,
             session_id: r.session_id,
-            delivery_text: r.delivery_text,
+            fragments_json: r.fragments_json,
         })
         .collect()
 }
@@ -308,6 +354,7 @@ pub(crate) fn materialize_generated_problem(
             starts_at,
             ends_at,
             mitigation_bps: 0,
+            incident_count: 1,
             resolved_at: None,
             opaque_case_ref: case.canonical_case_id.clone(),
         });
@@ -319,6 +366,180 @@ pub(crate) fn materialize_generated_problem(
         active_from: starts_at,
         active_until: ends_at,
     });
+    Ok(())
+}
+
+fn incident_circumstance_label(
+    value: adventuresim_core::quest_generation::Circumstance,
+) -> &'static str {
+    use adventuresim_core::quest_generation::Circumstance;
+    match value {
+        Circumstance::NightWindow => "looking out after dark",
+        Circumstance::SecretRiversideMeeting => "being near the river at night",
+        Circumstance::AdultVenue => "leaving a public house late",
+        Circumstance::RoadJourney => "travelling on the road",
+        Circumstance::GraveDuty => "working near the graves",
+        Circumstance::LivestockWatch => "watching the livestock",
+    }
+}
+
+fn incident_evidence_description(
+    kind: adventuresim_core::quest_generation::EvidenceKind,
+) -> &'static str {
+    use adventuresim_core::quest_generation::EvidenceKind;
+    match kind {
+        EvidenceKind::Footprints => "a fresh trail of footprints",
+        EvidenceKind::ClothScrap => "a torn scrap of cloth",
+        EvidenceKind::BoneDust => "unusual dust and bone fragments",
+        EvidenceKind::BloodlessCorpse => "a body bearing no obvious wound",
+        EvidenceKind::DroppedToken => "a token dropped during the incident",
+        EvidenceKind::DragMarks => "fresh drag marks",
+        EvidenceKind::LedgerEntry => "a newly relevant ledger entry",
+    }
+}
+
+fn follow_up_summary(symptom: &str) -> &'static str {
+    match symptom {
+        "missing_caravans" => "Another expected caravan has failed to arrive.",
+        "night_screams" => "More troubling sounds were reported after dark.",
+        "sick_locals" => "More local people have fallen ill.",
+        "empty_stalls" => "Further shortages have left more market stalls empty.",
+        "vanished_livestock" => "More livestock have disappeared from nearby holdings.",
+        _ => "A further incident affecting local people was reported.",
+    }
+}
+
+/// Append every follow-up incident that is due for an unresolved generated
+/// problem. IDs and modular choices derive from immutable generation inputs,
+/// so retries and delayed refreshes materialize the same bounded history.
+pub(crate) fn ensure_generated_incidents(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+    minute: u64,
+) -> Result<(), String> {
+    let scope = format!("settlement:{settlement_id}");
+    let problems: Vec<_> = ctx
+        .db
+        .local_problem_authority()
+        .scope_key()
+        .filter(&scope)
+        .filter(|problem| is_active(problem, minute))
+        .collect();
+    for mut problem in problems {
+        let Some(validated) = validated_problem_generation(ctx, &problem, settlement_id) else {
+            continue;
+        };
+        let due = lp::due_incident_count(problem.starts_at, minute);
+        if due <= problem.incident_count {
+            continue;
+        }
+        let candidates = &validated.context.witness_candidates;
+        let sites = &validated.manifest.sites;
+        if candidates.is_empty() || sites.is_empty() {
+            return Err("Generated incident has no persistent witness or case site".into());
+        }
+        for ordinal in problem.incident_count.saturating_add(1)..=due {
+            let choice = adventuresim_core::settlement_population::stable_hash(&format!(
+                "generated-incident-v1:{}:{ordinal}",
+                validated.manifest.canonical_case_id
+            ));
+            let witness = &candidates[choice as usize % candidates.len()];
+            let victim = &candidates[(choice.rotate_left(17) as usize) % candidates.len()];
+            let site = &sites[(choice.rotate_left(31) as usize) % sites.len()];
+            let circumstances: Vec<_> = witness.allowed_circumstances.iter().copied().collect();
+            if circumstances.is_empty() {
+                return Err("Generated incident witness has no valid circumstance".into());
+            }
+            let circumstance =
+                circumstances[(choice.rotate_left(7) as usize) % circumstances.len()];
+            let evidence_kind = adventuresim_core::quest_generation::select_follow_up_evidence(
+                validated.manifest.cause,
+                site.kind,
+                choice.rotate_left(43),
+            )
+            .ok_or("Generated incident has no valid evidence relation")?;
+            let evidence_description = incident_evidence_description(evidence_kind);
+            let id = format!(
+                "incident:{:016x}",
+                adventuresim_core::settlement_population::stable_hash(&format!(
+                    "{}:{ordinal}:incident",
+                    validated.manifest.canonical_case_id
+                ))
+            );
+            let event_id = format!("{id}:event");
+            let proposition_id = format!("{id}:proposition");
+            let evidence_id = format!("{id}:evidence");
+            let occurred_at = problem.starts_at.saturating_add(
+                u64::from(ordinal.saturating_sub(1)).saturating_mul(lp::INCIDENT_INTERVAL_MINUTES),
+            );
+            let public_summary = follow_up_summary(&problem.symptom).to_owned();
+            let witness_account = format!(
+                "{} reported seeing signs near {} while {}.",
+                witness.display_name,
+                site.safe_label,
+                incident_circumstance_label(circumstance)
+            );
+            let incident = GeneratedProblemIncident {
+                id: id.clone(),
+                case_id: validated.manifest.canonical_case_id.clone(),
+                problem_id: problem.id.clone(),
+                ordinal,
+                occurred_at,
+                event_id: event_id.clone(),
+                proposition_id: proposition_id.clone(),
+                witness_npc_id: witness.npc_id.clone(),
+                victim_npc_id: victim.npc_id.clone(),
+                circumstance: format!("{circumstance:?}").to_ascii_lowercase(),
+                site_id: site.id.0.clone(),
+                evidence_id: evidence_id.clone(),
+                evidence_kind: format!("{evidence_kind:?}").to_ascii_lowercase(),
+                public_summary,
+                witness_account,
+            };
+            if let Some(existing) = ctx.db.generated_problem_incident().id().find(&id) {
+                if existing.ordinal != ordinal
+                    || existing.case_id != incident.case_id
+                    || existing.problem_id != incident.problem_id
+                {
+                    return Err("Generated incident identity conflicts with authority".into());
+                }
+                continue;
+            }
+            ctx.db
+                .investigation_event_authority()
+                .insert(InvestigationEventAuthority {
+                    id: event_id,
+                    case_id: incident.case_id.clone(),
+                    canonical_propositions_json: serde_json::to_string(&[serde_json::json!({
+                        "id": proposition_id,
+                        "subject": victim.npc_id,
+                        "predicate": "was affected by a further incident near",
+                        "object": site.id.0,
+                    })])
+                    .map_err(|_| "Could not encode generated incident event")?,
+                    occurred_at,
+                });
+            ctx.db
+                .investigation_evidence_authority()
+                .insert(InvestigationEvidenceAuthority {
+                    id: evidence_id,
+                    case_id: incident.case_id.clone(),
+                    proposition_id: incident.proposition_id.clone(),
+                    presentation_kind: EvidencePresentationKind::Physical,
+                    authority_json: serde_json::to_string(&serde_json::json!({
+                        "kind": incident.evidence_kind,
+                        "safe_description": evidence_description,
+                        "incident_id": incident.id,
+                    }))
+                    .map_err(|_| "Could not encode generated incident evidence")?,
+                    hidden_coordinates_json: serde_json::to_string(&incident.site_id)
+                        .map_err(|_| "Could not encode generated incident evidence site")?,
+                });
+            ctx.db.generated_problem_incident().insert(incident);
+        }
+        problem.incident_count = due;
+        ctx.db.local_problem_authority().id().update(problem);
+    }
     Ok(())
 }
 
@@ -370,6 +591,7 @@ pub fn ensure_settlement_problems(ctx: &ReducerContext, settlement_id: &str) -> 
             starts_at: problem.starts_at,
             ends_at: problem.ends_at,
             mitigation_bps: 0,
+            incident_count: 1,
             resolved_at: None,
             opaque_case_ref: format!("case:opaque:{}", problem.id.0),
         });
@@ -439,6 +661,7 @@ pub fn ensure_route_problem(
             starts_at: problem.starts_at,
             ends_at: problem.ends_at,
             mitigation_bps: 0,
+            incident_count: 1,
             resolved_at: None,
             opaque_case_ref: format!("case:opaque:{}", problem.id.0),
         });
@@ -484,6 +707,7 @@ pub fn settlement_effects(
             starts_at: r.starts_at,
             ends_at: r.ends_at,
             mitigation_bps: r.mitigation_bps,
+            incident_count: r.incident_count,
             resolved_at: r.resolved_at,
         })
         .collect();
@@ -607,23 +831,6 @@ pub(crate) fn apply_outcome(
     Ok(())
 }
 
-/// Surface at most one unknown active problem. Inns are preferred by callers;
-/// overview dialogue is the fallback. The return is safe authored text only.
-fn referral_text(
-    summary: &str,
-    contact: &crate::settlement_population::SettlementNpc,
-    tab: &str,
-) -> String {
-    let description = format!(
-        "{}, {}, with {}",
-        contact.height, contact.build, contact.hair
-    );
-    format!(
-        "{summary} Ask {}—the {}, {}, usually found at the {tab}.",
-        contact.name, contact.profession, description
-    )
-}
-
 fn validated_problem_generation(
     ctx: &ReducerContext,
     problem: &LocalProblemAuthority,
@@ -699,6 +906,8 @@ fn stable_eligible_candidates<T, K: Ord>(
     eligible_candidates
 }
 
+/// Surface at most one unknown active problem. Inns are preferred by callers;
+/// overview dialogue is the fallback. The return is safe authored text only.
 pub fn surface_problem(
     ctx: &ReducerContext,
     character_id: u64,
@@ -715,6 +924,12 @@ pub fn surface_problem(
     let settlement_id = character
         .current_settlement_id
         .ok_or("Problem discovery requires a settlement")?;
+    let source_npc = ctx
+        .db
+        .settlement_npc()
+        .id()
+        .find(&source_npc_id.to_owned())
+        .filter(|npc| npc.home_settlement_id == settlement_id);
     let minute = ctx
         .db
         .character_time()
@@ -744,6 +959,75 @@ pub fn surface_problem(
         if receipt.character_id != character_id || receipt.settlement_id != settlement_id {
             continue;
         }
+        let Some(validated) = validated_problem_generation(ctx, problem, &settlement_id) else {
+            continue;
+        };
+        let mut pending_incidents: Vec<_> = ctx
+            .db
+            .generated_problem_incident()
+            .problem_id()
+            .filter(&problem.id)
+            .filter(|incident| {
+                ctx.db
+                    .local_problem_incident_receipt()
+                    .id()
+                    .find(&format!("{character_id}:{}", incident.id))
+                    .is_none()
+            })
+            .collect();
+        pending_incidents.sort_by_key(|incident| (incident.ordinal, incident.id.clone()));
+        if let Some(incident) = pending_incidents.first() {
+            let incident_receipt_id = format!("{character_id}:{}", incident.id);
+            ctx.db
+                .local_problem_incident_receipt()
+                .insert(LocalProblemIncidentReceipt {
+                    id: incident_receipt_id.clone(),
+                    character_id,
+                    problem_id: problem.id.clone(),
+                    incident_id: incident.id.clone(),
+                    learned_at: minute,
+                });
+            ctx.db.investigation_lead().insert(InvestigationLead {
+                id: format!("lead:{incident_receipt_id}"),
+                owner_character_id: character_id,
+                case_id: validated.manifest.public_case_id,
+                proposition_id: incident.proposition_id.clone(),
+                summary: incident.public_summary.clone(),
+                source_label: "local report".into(),
+                confidence_bps: 5_000,
+                destination_stage: "unknown".into(),
+                directions: String::new(),
+                exact_location_id: String::new(),
+                latitude_e7: 0,
+                longitude_e7: 0,
+                witness_name: String::new(),
+                witness_description: String::new(),
+                witness_occupation_or_relationship: String::new(),
+                expected_location: String::new(),
+                current_learned_location: String::new(),
+                contradiction_group: format!("incident:{}", incident.id),
+                corrected_by: String::new(),
+                recorded_at: minute,
+            });
+            ctx.db
+                .local_problem_rumor_delivery()
+                .insert(LocalProblemRumorDelivery {
+                    id: format!("{session_id}:rumor"),
+                    character_id,
+                    settlement_id,
+                    session_id: session_id.into(),
+                    receipt_id: receipt.id,
+                    fragments_json: serde_json::to_string(&vec![
+                        adventuresim_dialogue::Fragment::Text {
+                            value: incident.public_summary.clone(),
+                        },
+                    ])
+                    .map_err(|error| {
+                        format!("failed to serialize follow-up incident dialogue: {error}")
+                    })?,
+                });
+            return Ok(());
+        }
         let Some(contact) = ctx.db.settlement_npc().id().find(&receipt.contact_npc_id) else {
             continue;
         };
@@ -770,7 +1054,19 @@ pub fn surface_problem(
                 settlement_id,
                 session_id: session_id.into(),
                 receipt_id: receipt.id,
-                delivery_text: referral_text(&receipt.safe_summary, &contact, &location_label),
+                fragments_json: referral_fragments_json(lp::referral_presentation(
+                    &receipt.safe_summary,
+                    source_npc
+                        .as_ref()
+                        .map(|npc| (npc.id.as_str(), npc.name.as_str())),
+                    &contact.id,
+                    &contact.name,
+                    &contact.profession,
+                    &contact.height,
+                    &contact.build,
+                    &contact.hair,
+                    &location_label,
+                ))?,
             });
         return Ok(());
     }
@@ -839,7 +1135,19 @@ pub fn surface_problem(
         if location_label.is_empty() {
             continue;
         }
-        let text = referral_text(&symptom.public_summary, &contact, location_label);
+        let presentation = lp::referral_presentation(
+            &symptom.public_summary,
+            source_npc
+                .as_ref()
+                .map(|npc| (npc.id.as_str(), npc.name.as_str())),
+            &contact.id,
+            &contact.name,
+            &contact.profession,
+            &contact.height,
+            &contact.build,
+            &contact.hair,
+            location_label,
+        );
         let receipt_id = format!("{character_id}:{}", problem.id);
         ctx.db.local_problem_receipt().insert(LocalProblemReceipt {
             id: receipt_id.clone(),
@@ -862,16 +1170,57 @@ pub fn surface_problem(
                 settlement_id,
                 session_id: session_id.into(),
                 receipt_id,
-                delivery_text: text,
+                fragments_json: referral_fragments_json(presentation)?,
             });
         return Ok(());
     }
     Ok(())
 }
 
+fn referral_fragments_json(presentation: lp::ReferralPresentation) -> Result<String, String> {
+    let mut fragments = vec![adventuresim_dialogue::Fragment::Text {
+        value: presentation.lead,
+    }];
+    if let Some((label, topic)) = presentation.topic {
+        fragments.push(adventuresim_dialogue::Fragment::Topic { topic, label });
+    }
+    if !presentation.trailing.is_empty() {
+        fragments.push(adventuresim_dialogue::Fragment::Text {
+            value: presentation.trailing,
+        });
+    }
+    serde_json::to_string(&fragments)
+        .map_err(|error| format!("failed to serialize referral dialogue: {error}"))
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::local_problem::stable_eligible_candidates;
+    use crate::local_problem::{referral_fragments_json, stable_eligible_candidates};
+
+    #[test]
+    fn self_referral_serializes_an_inline_testimony_topic() {
+        let json =
+            referral_fragments_json(adventuresim_core::local_problem::ReferralPresentation {
+                lead: "I am the witness. Ask me about ".into(),
+                topic: Some(("what I saw".into(), "referred-testimony".into())),
+                trailing: ".".into(),
+            })
+            .unwrap();
+        let fragments: Vec<adventuresim_dialogue::Fragment> = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            fragments,
+            vec![
+                adventuresim_dialogue::Fragment::Text {
+                    value: "I am the witness. Ask me about ".into()
+                },
+                adventuresim_dialogue::Fragment::Topic {
+                    topic: "referred-testimony".into(),
+                    label: "what I saw".into()
+                },
+                adventuresim_dialogue::Fragment::Text { value: ".".into() }
+            ]
+        );
+    }
 
     #[test]
     fn deterministic_rumor_selection_skips_unbacked_or_invalid_candidates() {

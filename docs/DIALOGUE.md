@@ -72,6 +72,9 @@ accepting a contract. Referral turns name a known contact or describe them,
 give their occupation/relationship and expected location, and retain explicit
 uncertainty. Truthfulness, private motives, hidden causes, and undiscovered
 evidence never participate in topic eligibility.
+When the addressed NPC is the named contact, the referral switches to
+first-person wording and presents the testimony subject as an inline clickable
+phrase. A different same-named NPC is still explicitly disambiguated.
 
 Generated return and exposure finales reuse compiled generic topics in both
 service and resident conversations. A topic is projected only when the server
@@ -101,15 +104,12 @@ encounter so contextual and prior-interaction facts are reevaluated; old
 sessions remain history rather than an indefinitely reusable active view.
 Free-form `local_chat_message` remains an independent stream.
 
-The web conversation surface keeps known eligible topics in a pane on the
-right side of the chat itself. The transcript and shared composer occupy the
-left side. Clicking an inline or listed topic remains supported; keyboard users
-can instead type a topic label and press Enter. A unique label prefix appears
-as grey inline completion and Tab accepts it. While a prompt is open, the same
-composer matches its choices instead of topics. Multi-select answers use
-comma-separated choice labels. Text that does not exactly match the active
-dialogue topics or choices continues through the independent free-form chat
-stream.
+The web conversation surface exposes topics only as highlighted phrases in
+NPC dialogue. Clicking one asks about that subject; there is no separate list
+of generic or undiscovered topics. While a prompt is open, the shared composer
+matches its choices, shows a unique prefix as grey inline completion, and lets
+Tab accept it. Multi-select answers use comma-separated choice labels. Other
+text continues through the independent free-form chat stream.
 
 ## Developer mode and source editing
 

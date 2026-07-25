@@ -11,8 +11,8 @@ use super::{AppState, PartyAction, execute_or_request_party_action};
 use crate::{
     session::Session,
     spacetimedb::{
-        BackendInvestigationAction, BackendInvestigationActionOutcome,
-        BackendInvestigationJournalEntry, BackendInvestigationLead, Character,
+        BackendInvestigationCaseSummary, BackendInvestigationJournalEntry,
+        BackendInvestigationLead, Character,
     },
     templates::investigation::journal_page,
 };
@@ -59,48 +59,31 @@ async fn journal_response(
     let leads_sql = format!(
         "SELECT * FROM backend_investigation_leads WHERE owner_character_id = {character_id}"
     );
-    let actions_sql = format!(
-        "SELECT * FROM backend_investigation_actions WHERE owner_character_id = {character_id}"
+    let cases_sql = format!(
+        "SELECT * FROM backend_investigation_cases WHERE owner_character_id = {character_id}"
     );
-    let outcomes_sql = format!(
-        "SELECT * FROM backend_investigation_action_outcomes WHERE owner_character_id = {character_id}"
-    );
-    let (entries, leads, actions, outcomes) = tokio::join!(
+    let (entries, leads, cases) = tokio::join!(
         state
             .db
             .query::<BackendInvestigationJournalEntry>(&entries_sql),
         state.db.query::<BackendInvestigationLead>(&leads_sql),
-        state.db.query::<BackendInvestigationAction>(&actions_sql),
         state
             .db
-            .query::<BackendInvestigationActionOutcome>(&outcomes_sql)
+            .query::<BackendInvestigationCaseSummary>(&cases_sql)
     );
-    match (entries, leads, actions, outcomes) {
-        (Ok(mut entries), Ok(mut leads), Ok(mut actions), Ok(mut outcomes)) => {
+    match (entries, leads, cases) {
+        (Ok(mut entries), Ok(mut leads), Ok(cases)) => {
             entries.sort_by_key(|row| (row.case_id.clone(), row.recorded_at));
             leads.sort_by_key(|row| (row.case_id.clone(), row.recorded_at));
-            actions.sort_by_key(|row| (row.summary.clone(), row.action_id.clone()));
-            outcomes.sort_by_key(|row| row.recorded_at);
             (
                 status,
                 Html(
-                    journal_page(
-                        &entries,
-                        &leads,
-                        &actions,
-                        &outcomes,
-                        &character.name,
-                        feedback,
-                    )
-                    .into_string(),
+                    journal_page(&entries, &leads, &cases, &character.name, feedback).into_string(),
                 ),
             )
                 .into_response()
         }
-        (Err(error), _, _, _)
-        | (_, Err(error), _, _)
-        | (_, _, Err(error), _)
-        | (_, _, _, Err(error)) => {
+        (Err(error), _, _) | (_, Err(error), _) | (_, _, Err(error)) => {
             tracing::error!(%error, character_id, "sanitized investigation projection failed");
             StatusCode::SERVICE_UNAVAILABLE.into_response()
         }
@@ -198,7 +181,7 @@ mod tests {
     }
 
     #[test]
-    fn route_filters_both_safe_views_to_the_session_observer() {
+    fn route_filters_all_safe_views_to_the_session_observer() {
         let source = include_str!("investigation.rs");
         let production = source
             .split("#[cfg(test)]")
@@ -214,9 +197,8 @@ mod tests {
                 .contains("backend_investigation_leads WHERE owner_character_id = {character_id}")
         );
         assert!(
-            production.contains(
-                "backend_investigation_actions WHERE owner_character_id = {character_id}"
-            )
+            production
+                .contains("backend_investigation_cases WHERE owner_character_id = {character_id}")
         );
         assert!(!production.contains("target_id"));
         assert!(!production.contains("seed"));

@@ -35,7 +35,7 @@ pub fn mission_layout(title: &str, content: Markup, logged_in_as: Option<&str>) 
 
 pub fn journal_layout(content: Markup, logged_in_as: Option<&str>) -> Markup {
     page_shell(
-        "Investigation journal",
+        "Journal",
         entry_top_bar_with_session(logged_in_as),
         content,
         ScriptProfile::Live,
@@ -167,9 +167,9 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/base.css?v=environment-14";
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=strategic-ux-review-2";
+                link rel="stylesheet" href="/static/css/layout.css?v=journal-tab-1";
                 link rel="stylesheet" href="/static/css/components.css?v=lowercase-display-type-1";
-                link rel="stylesheet" href="/static/css/strategic.css?v=map-tiles-2";
+                link rel="stylesheet" href="/static/css/strategic.css?v=journal-tab-1";
                 link rel="stylesheet" href="/static/css/utilities.css?v=strategic-ui-overhaul-1";
 
                 // Datastar
@@ -184,6 +184,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/live-regions.js?v=persistent-rest-refresh-2" defer {}
                 }
                 @if scripts == ScriptProfile::Strategic {
+                    script src="/static/journal-tab.js?v=journal-tab-1" defer {}
                     script src="/static/numeric-editor.js?v=shared-numeric-editor-2" defer {}
                     script src="/static/inventory-browser.js?v=coin-currencies-3-alcohol-targets-1-food-lots-4-infinite-catalog" defer {}
                     script src="/static/party-trade.js?v=provision-party-food-1" defer {}
@@ -192,11 +193,11 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}
                     script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
                     script src="/static/service-quests.js?v=apprentice-system-1" defer {}
-                    script src="/static/dialogue-client.js?v=authoritative-dialogue-4" defer {}
-                    script src="/static/chat-resize.js?v=floating-chat-3" defer {}
+                    script src="/static/dialogue-client.js?v=counterparty-portraits-1" defer {}
+                    script src="/static/chat-resize.js?v=counterparty-portraits-1" defer {}
                     script src="/static/local-chat.js?v=local-chat-location-authority-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}
-                    script src="/static/building-state.js?v=village-building-tabs-1" defer {}
+                    script src="/static/building-state.js?v=non-service-building-tabs-2" defer {}
                     script src="/static/travel-planner.js?v=travel-rails-1" defer {}
                     script src="/static/strategic-map.js?v=population-culling-3" defer {}
                     script src="/static/rest-duration.js?v=wake-time-3" defer {}
@@ -242,6 +243,9 @@ fn settlement_top_bar(
     logged_in_as: Option<&str>,
 ) -> Markup {
     let services = [
+        ("", "Public square", "house"),
+        ("residences", "Residences", "house"),
+        ("keep", "Keep", "castle"),
         ("map", "Map", "map"),
         ("merchants", "General Market", "market"),
         ("weapons", "Weapons", "weapons"),
@@ -270,17 +274,24 @@ fn settlement_top_bar(
                     "1st of First Seed · 08:00"
                 }
                 }
+                (journal_button())
             }
 
             nav class="top-bar-center settlement-services" aria-label="Settlement services"
                 data-settlement-id=(settlement_id) {
                 @for (path, label, icon) in services {
-                    @let available = economy.is_none_or(|profile| service_tab_available(profile, path));
+                    @let available = match path {
+                        "" | "residences" => true,
+                        "keep" => settlement_has_keep(category),
+                        _ => economy.is_none_or(|profile| service_tab_available(profile, path)),
+                    };
                     @if available {
                     @let href = if path == "map" {
                         format!("/locations/settlement/{}/map", settlement_id)
                     } else if path.is_empty() {
                         format!("/locations/settlement/{}", settlement_id)
+                    } else if matches!(path, "residences" | "keep") {
+                        format!("/settlements/{}/places/{}", settlement_id, path)
                     } else {
                         format!("/settlements/{}/{}", settlement_id, path)
                     };
@@ -319,6 +330,13 @@ fn settlement_top_bar(
         }
         script src="/static/strategic-time.js?v=continuous-environment-1" {}
     }
+}
+
+fn settlement_has_keep(category: &SettlementCategory) -> bool {
+    matches!(
+        category,
+        SettlementCategory::Town | SettlementCategory::City | SettlementCategory::Capital
+    )
 }
 
 fn service_tab_available(
@@ -368,6 +386,7 @@ fn quest_location_top_bar(
                     }
                     span class="settlement-time" data-player-time { "1st of First Seed · 08:00" }
                 }
+                (journal_button())
             }
             nav class="top-bar-center settlement-services" aria-label="Location views" {
                 @if active_tab == "camp" {
@@ -607,11 +626,20 @@ fn character_switcher(name: &str) -> Markup {
                 }
             }
             div class="character-switcher-menu" {
-                a href="/quests" class="btn btn-small" { "Investigation journal" }
                 form action="/characters/switch" method="post" {
                     button type="submit" class="btn btn-small" { "Character select" }
                 }
             }
+        }
+    }
+}
+
+fn journal_button() -> Markup {
+    html! {
+        a href="/quests" class="journal-button" data-journal-tab
+            aria-label="Open journal" aria-pressed="false"
+            title="Journal" data-strategic-tooltip="Journal" {
+            span class="journal-button-icon" aria-hidden="true" {}
         }
     }
 }
@@ -751,7 +779,7 @@ mod tests {
     }
 
     #[test]
-    fn settlement_tabs_layer_village_buildings_beneath_accessible_service_icons() {
+    fn settlement_tabs_include_public_and_non_service_buildings() {
         let markup = settlement_top_bar(
             "Smallville",
             "s",
@@ -762,8 +790,13 @@ mod tests {
             None,
         )
         .into_string();
-        assert_eq!(markup.matches("class=\"service-tab-building\"").count(), 8);
-        assert_eq!(markup.matches("class=\"service-tab-icon ").count(), 8);
+        assert_eq!(markup.matches("class=\"service-tab-building\"").count(), 10);
+        assert_eq!(markup.matches("class=\"service-tab-icon ").count(), 10);
+        assert!(markup.contains("aria-label=\"Public square\""));
+        assert!(markup.contains("href=\"/locations/settlement/s\""));
+        assert!(markup.contains("aria-label=\"Residences\""));
+        assert!(markup.contains("href=\"/settlements/s/places/residences\""));
+        assert!(!markup.contains("aria-label=\"Keep\""));
         assert!(markup.contains("aria-label=\"Church\""));
         assert!(markup.contains("aria-current=\"page\""));
         assert!(markup.contains("--service-tab-icon: url("));
@@ -786,6 +819,21 @@ mod tests {
         }
         assert!(css.contains("--service-building-image"));
         assert!(css.contains("data-building-tier"));
+
+        let town = settlement_top_bar(
+            "Larger Place",
+            "t",
+            &SettlementCategory::Town,
+            "keep",
+            None,
+            None,
+            None,
+        )
+        .into_string();
+        assert_eq!(town.matches("class=\"service-tab-building\"").count(), 11);
+        assert!(town.contains("aria-label=\"Keep\""));
+        assert!(town.contains("href=\"/settlements/t/places/keep\" class=\"nav-tab active\""));
+        assert!(town.contains("service-tab-icon-castle"));
     }
 
     #[test]
@@ -871,12 +919,41 @@ mod tests {
         );
         assert!(markup.contains("aria-label=\"Enable developer mode\""));
         assert!(markup.contains("aria-pressed=\"false\""));
+        assert!(markup.contains("class=\"journal-button\""));
+        assert!(markup.contains("aria-label=\"Open journal\""));
+        assert!(markup.contains("data-journal-tab"));
+        assert!(markup.contains("aria-pressed=\"false\""));
+        assert!(!markup.contains("aria-haspopup=\"dialog\""));
+        assert!(!markup.contains(">Investigation journal<"));
         let wilderness =
             quest_location_top_bar("Ruins", "q", "map", false, Some("Ada")).into_string();
+        assert!(wilderness.contains("class=\"journal-button\""));
         assert!(
             wilderness.find("data-developer-mode-toggle").unwrap()
                 < wilderness.find("class=\"character-switcher\"").unwrap()
         );
+    }
+
+    #[test]
+    fn strategic_shell_loads_the_location_preserving_journal_tab() {
+        let markup = page_shell(
+            "Test",
+            settlement_top_bar(
+                "Smallville",
+                "s",
+                &SettlementCategory::Village,
+                "map",
+                None,
+                None,
+                Some("Ada"),
+            ),
+            html! {},
+            ScriptProfile::Strategic,
+        )
+        .into_string();
+        assert!(markup.contains("/static/journal-tab.js"));
+        assert!(!markup.contains("data-journal-dialog"));
+        assert!(!markup.contains("<dialog"));
     }
 
     #[test]
@@ -903,7 +980,8 @@ mod tests {
             None,
         )
         .into_string();
-        assert!(!overview.contains("aria-current=\"page\""));
+        assert!(overview.contains("href=\"/locations/settlement/s\" class=\"nav-tab active\""));
+        assert!(overview.contains("aria-label=\"Public square\""));
 
         let map = quest_location_top_bar("Ruins", "q", "map", false, None).into_string();
         assert!(map.contains("aria-label=\"Map\""));
@@ -975,7 +1053,7 @@ mod tests {
         .into_string();
         assert_eq!(markup.matches("building-chimney-smoke").count(), 1);
         assert!(markup.contains("aria-hidden=\"true\""));
-        assert_eq!(markup.matches("class=\"nav-tab").count(), 8);
+        assert_eq!(markup.matches("class=\"nav-tab").count(), 10);
     }
 
     #[test]

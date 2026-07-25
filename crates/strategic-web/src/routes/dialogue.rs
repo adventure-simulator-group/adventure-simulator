@@ -61,7 +61,7 @@ struct BackendProblemRumorRow {
     _receipt_id: String,
     character_id: u64,
     session_id: String,
-    delivery_text: String,
+    fragments_json: String,
 }
 #[derive(Deserialize)]
 struct PromptRow {
@@ -450,12 +450,16 @@ async fn build_view(
                 .unwrap_or_else(|| "Local resident".into()),
             speaker_is_player: false,
             speaker_role,
-            fragments: vec![FragmentView {
-                fragment: adventuresim_dialogue::Fragment::Text {
-                    value: rumor.delivery_text,
-                },
+            fragments: serde_json::from_str::<Vec<adventuresim_dialogue::Fragment>>(
+                &rumor.fragments_json,
+            )
+            .unwrap_or_default()
+            .into_iter()
+            .map(|fragment| FragmentView {
+                fragment,
                 source: None,
-            }],
+            })
+            .collect(),
         });
     }
     let mut topics = state

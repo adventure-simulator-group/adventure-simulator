@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (1162)
+## Files (1178)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -128,6 +128,8 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/backend_investigation_action_outcomes_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_investigation_action_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/backend_investigation_actions_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/backend_investigation_case_summary_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/backend_investigation_cases_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_investigation_journal_entry_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/backend_investigation_journal_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_investigation_lead_type.rs` — Generated SpacetimeDB data type.
@@ -322,6 +324,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/forest_commodity_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/forest_cover_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/forestry_industry_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/generated_problem_incident_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/geologic_age_evidence_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/geologic_era_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/geologic_lithology_evidence_type.rs` — Generated SpacetimeDB data type.
@@ -413,6 +416,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/local_chat_message_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/local_problem_authority_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/local_problem_generation_explanation_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/local_problem_incident_receipt_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/local_problem_outcome_receipt_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/local_problem_receipt_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/local_problem_rumor_delivery_type.rs` — Generated SpacetimeDB data type.
@@ -827,7 +831,16 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/src/templates/mod.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/quest.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/src/templates/recruitment.rs` — Strategic web server-rendered template.
-- `crates/strategic-web/src/templates/settlement.rs` — Strategic web server-rendered template.
+- `crates/strategic-web/src/templates/settlement/character_details.rs` — Strategic web server-rendered template.
+- `crates/strategic-web/src/templates/settlement/character_health.rs` — Strategic web server-rendered template.
+- `crates/strategic-web/src/templates/settlement/character_skills.rs` — Strategic web server-rendered template.
+- `crates/strategic-web/src/templates/settlement/chrome.rs` — Strategic web server-rendered template.
+- `crates/strategic-web/src/templates/settlement/context.rs` — Strategic web server-rendered template.
+- `crates/strategic-web/src/templates/settlement/mod.rs` — Strategic web server-rendered template.
+- `crates/strategic-web/src/templates/settlement/rest.rs` — Strategic web server-rendered template.
+- `crates/strategic-web/src/templates/settlement/social.rs` — Strategic web server-rendered template.
+- `crates/strategic-web/src/templates/settlement/trade.rs` — Strategic web server-rendered template.
+- `crates/strategic-web/src/templates/settlement/travel.rs` — Strategic web server-rendered template.
 - `crates/strategic-web/static/background-fetch.js` — Repository support file.
 - `crates/strategic-web/static/building-state.js` — Repository support file.
 - `crates/strategic-web/static/character-action-dialog.js` — Repository support file.
@@ -1006,6 +1019,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/stats/terrain/urban.png` — Binary game or UI asset.
 - `crates/strategic-web/static/immediate-activity.js` — Repository support file.
 - `crates/strategic-web/static/inventory-browser.js` — Repository support file.
+- `crates/strategic-web/static/journal-tab.js` — Repository support file.
 - `crates/strategic-web/static/live-regions.js` — Repository support file.
 - `crates/strategic-web/static/live-state.js` — Repository support file.
 - `crates/strategic-web/static/local-chat.js` — Repository support file.
@@ -1061,6 +1075,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/training-schedule.js` — Repository support file.
 - `crates/strategic-web/static/travel-planner.js` — Repository support file.
 - `crates/strategic-web/tests/building-assets.test.cjs` — Repository support file.
+- `crates/strategic-web/tests/building-state.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/character-action-dialog.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/cooking.dom.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/cooking.test.cjs` — Repository support file.
@@ -1073,6 +1088,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/tests/immediate-activity.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/inventory-browser.dom.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/inventory-browser.test.cjs` — Repository support file.
+- `crates/strategic-web/tests/journal-tab.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/live-refresh.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/local-chat.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/numeric-editor.test.cjs` — Repository support file.

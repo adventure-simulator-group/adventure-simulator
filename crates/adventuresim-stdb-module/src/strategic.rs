@@ -17747,6 +17747,7 @@ fn ensure_settlement_activity_inner(
     settlement_id: &str,
 ) -> Result<(), String> {
     crate::settlement_population::ensure_settlement_population(ctx, settlement_id)?;
+    let official_minute = crate::time::refresh_clock(ctx)?;
     for mut contract in ctx
         .db
         .contract_authority()
@@ -17812,6 +17813,7 @@ fn ensure_settlement_activity_inner(
     for _ in active..settlement_activity_target(settlement_id) {
         generate_quest_for_settlement(ctx, settlement_id)?;
     }
+    crate::local_problem::ensure_generated_incidents(ctx, settlement_id, official_minute)?;
     ensure_npc_recruiting_parties(ctx, settlement_id)?;
     Ok(())
 }
@@ -17983,6 +17985,7 @@ fn generated_witness_candidates(
             let presence_version = generated_npc_presence_version(&npc, &presence);
             Some(WitnessCandidate {
                 npc_id: npc.id,
+                display_name: npc.name,
                 demographic,
                 age_band,
                 sex,

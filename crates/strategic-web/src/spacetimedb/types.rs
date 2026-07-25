@@ -68,12 +68,12 @@ pub struct BackendInvestigationAction {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct BackendInvestigationActionOutcome {
+pub struct BackendInvestigationCaseSummary {
     pub owner_character_id: u64,
-    pub outcome_id: String,
-    pub action_id: String,
-    pub wording: String,
-    pub recorded_at: u64,
+    pub case_id: String,
+    pub title: String,
+    pub status: String,
+    pub latest_update_at: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -1700,13 +1700,15 @@ mod tests {
             "tracked": true,
             "display_title": "Something preys on travellers",
             "generated_case": true,
-            "combat_available": true
+            "combat_available": true,
+            "case_resolved": false
         });
         let decoded: BackendCaseSitePin = serde_json::from_value(pin).unwrap();
         assert_eq!(decoded.latitude_e7, 521_234_567);
         assert_eq!(decoded.longitude_e7, 134_567_890);
         assert!(decoded.generated_case);
         assert!(decoded.combat_available);
+        assert!(!decoded.case_resolved);
     }
 
     #[test]

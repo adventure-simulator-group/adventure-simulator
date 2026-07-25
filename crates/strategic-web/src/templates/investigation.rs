@@ -1,150 +1,105 @@
 use crate::spacetimedb::{
-    BackendInvestigationAction, BackendInvestigationActionOutcome,
-    BackendInvestigationJournalEntry, BackendInvestigationLead,
+    BackendInvestigationCaseSummary, BackendInvestigationJournalEntry, BackendInvestigationLead,
 };
 use maud::{Markup, html};
+use std::{cmp::Reverse, collections::BTreeMap};
 
 pub fn journal_page(
     entries: &[BackendInvestigationJournalEntry],
     leads: &[BackendInvestigationLead],
-    actions: &[BackendInvestigationAction],
-    outcomes: &[BackendInvestigationActionOutcome],
+    cases: &[BackendInvestigationCaseSummary],
     character_name: &str,
     feedback: Option<&str>,
 ) -> Markup {
+    let mut ordered_cases = cases.to_vec();
+    ordered_cases.sort_by_key(|case| {
+        (
+            case.status != "open",
+            Reverse(case.latest_update_at),
+            case.case_id.clone(),
+        )
+    });
+    let mut records: BTreeMap<String, Vec<(u64, String, String)>> = BTreeMap::new();
+    for entry in entries {
+        records.entry(entry.case_id.clone()).or_default().push((
+            entry.recorded_at,
+            entry.summary.clone(),
+            entry.source_label.clone(),
+        ));
+    }
+    for lead in leads
+        .iter()
+        .filter(|lead| lead.source_label != "witness referral")
+    {
+        records.entry(lead.case_id.clone()).or_default().push((
+            lead.recorded_at,
+            lead.summary.clone(),
+            lead.source_label.clone(),
+        ));
+    }
+    for rows in records.values_mut() {
+        rows.sort_by_key(|(recorded_at, summary, source)| {
+            (*recorded_at, summary.clone(), source.clone())
+        });
+    }
+
     let content = html! {
-        aside class="left-sidebar" {
-            section class="sidebar-section" {
-                h3 class="sidebar-header" { "How this journal works" }
-                p class="small-copy" {
-                    "It records what " (character_name) " has learned, including uncertain and conflicting accounts. It does not reveal objective truth."
+        aside class="left-sidebar journal-case-index" data-journal-case-index {
+            header class="journal-rail-header" {
+                h2 { "Journal" }
+                p class="text-muted" { "Problems known to " (character_name) }
+            }
+            @if ordered_cases.is_empty() {
+                p class="text-muted" { "No problems have reached you yet." }
+            } @else {
+                nav class="journal-case-tabs" role="tablist" aria-label="Known quests" {
+                    @for (index, case) in ordered_cases.iter().enumerate() {
+                        button type="button"
+                            class=(if index == 0 { "journal-case-tab active" } else { "journal-case-tab" })
+                            role="tab" aria-selected=(index == 0)
+                            aria-controls=(format!("journal-case-panel-{index}"))
+                            data-journal-case-select=(case.case_id.as_str()) {
+                            span class="journal-case-title" { (&case.title) }
+                            span class=(format!("journal-case-status journal-case-status-{}", case.status)) {
+                                (status_label(&case.status))
+                            }
+                        }
+                    }
                 }
             }
         }
         main class="center-content investigation-journal" data-investigation-journal {
-            header {
-                h1 { "Investigation journal" }
-                p class="text-muted" { "Claims, evidence, referrals, and places known to this character." }
-            }
-            @if let Some(feedback) = feedback {
-                section class="strategic-notice journal-feedback" role="alert" {
-                    p { (feedback) }
-                }
-            }
-            @if entries.is_empty() && leads.is_empty() {
-                section class="strategic-notice" { p { "No problems or leads have reached you yet." } }
-            }
-            @if !outcomes.is_empty() {
-                section class="journal-actions-outcomes" {
-                    h2 { "Recent investigation results" }
-                    @for outcome in outcomes.iter().rev().take(5) {
-                        article class="journal-card journal-action-outcome" {
-                            p { (&outcome.wording) }
-                        }
-                    }
-                }
-            }
-            @if !actions.is_empty() {
-                section class="journal-actions" {
-                    h2 { "Ways to investigate" }
-                    @for action in actions {
-                        article class="journal-card journal-action" {
-                            h3 { (&action.summary) }
-                            p { (&action.known_prerequisites) }
-                            p class="journal-action-cost" {
-                                "Estimated duration: " (action.duration_min_minutes) "–"
-                                (action.duration_max_minutes) " minutes. Needs and fatigue are settled authoritatively when the action is performed."
-                            }
-                            p class="journal-action-skills" {
-                                "Relevant contributions: " (&action.skill_contributions)
-                                ". Current uncertainty: " (action.uncertainty_bps / 100) "%."
-                            }
-                            @if !action.weather_available {
-                                p class="text-muted" { "Weather effects are unavailable and are not estimated." }
-                            }
-                            @if action.available {
-                                form method="post" action="/quests/actions" {
-                                    input type="hidden" name="action_id" value=(&action.action_id);
-                                    input type="hidden" name="method" value=(&action.method);
-                                    input type="hidden" name="expected_version" value=(action.expected_version);
-                                    button type="submit" { "Attempt " (action.method.replace('_', " ")) }
-                                }
-                            } @else {
-                                p class="journal-action-unavailable" role="status" {
-                                    (&action.unavailable_reason)
-                                }
-                                button type="button" disabled {
-                                    "Attempt " (action.method.replace('_', " "))
-                                }
-                                @if action.can_travel_to_required_site {
-                                    form method="post" action=(format!("/case-sites/{}/travel", action.required_case_site_id)) {
-                                        button type="submit" { "Travel to investigation site" }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            @for lead in leads {
-                article class="journal-card journal-lead" {
-                    h2 { (&lead.summary) }
-                    p class="journal-source" { "Source: " (&lead.source_label) " / confidence " (lead.confidence_bps / 100) "%" }
-                    @if !lead.contradiction_group.is_empty() {
-                        p class="journal-contradiction" { "Conflicts with another account." }
-                    }
-                    @if !lead.corrected_by.is_empty() {
-                        p class="journal-correction" { "A later account from " (&lead.corrected_by) " revises this account." }
-                    }
-                    @if !lead.witness_name.is_empty() || !lead.witness_description.is_empty() {
-                        section class="journal-referral" {
-                            h3 { "Person to ask" }
-                            @if !lead.witness_name.is_empty() { p { strong { (&lead.witness_name) } } }
-                            @if !lead.witness_description.is_empty() { p { (&lead.witness_description) } }
-                            @if !lead.witness_occupation_or_relationship.is_empty() {
-                                p { "Known as: " (&lead.witness_occupation_or_relationship) }
-                            }
-                            @if !lead.expected_location.is_empty() {
-                                p { "Expected at: " (&lead.expected_location) }
-                            }
-                            @if !lead.current_learned_location.is_empty() {
-                                p { "Last learned location: " (&lead.current_learned_location) }
-                            }
-                        }
-                    }
-                    @match lead.destination_stage.as_str() {
-                        "textual" | "landmark" | "approximate_area" | "route_segment" => {
-                            p class="journal-directions" { "Directions: " (&lead.directions) }
-                        },
-                        "exact_believed" | "visited" => {
-                            p class="journal-destination" {
-                                "Believed exact destination: "
-                                @if lead.current_learned_location.is_empty() {
-                                    "Known investigation site"
-                                } @else {
-                                    (&lead.current_learned_location)
-                                }
-                            }
-                        },
-                        _ => {}
-                    }
-                }
-            }
-            @for entry in entries {
-                article class="journal-card journal-revision" {
-                    p { (&entry.summary) }
-                    p class="journal-source" { "Source: " (&entry.source_label) " / confidence " (entry.confidence_bps / 100) "%" }
-                    @if !entry.supersedes.is_empty() {
-                        p class="journal-correction" { "This account revises " (&entry.supersedes) "." }
-                    }
-                }
-            }
+            h1 { "Journal" }
+            p class="text-muted" { "Select the journal tab from any strategic location." }
         }
-        aside class="right-sidebar" {
-            section class="sidebar-section" {
-                h3 class="sidebar-header" { "Navigation" }
-                p class="small-copy" {
-                    "Only an exact believed location creates a destination pin. Directions and search areas remain descriptive."
+        aside class="right-sidebar journal-case-log" data-journal-case-log {
+            @if let Some(feedback) = feedback {
+                section class="strategic-notice journal-feedback" role="alert" { p { (feedback) } }
+            }
+            @if ordered_cases.is_empty() {
+                p class="text-muted" { "The journal is empty." }
+            }
+            @for (index, case) in ordered_cases.iter().enumerate() {
+                section id=(format!("journal-case-panel-{index}"))
+                    class="journal-case-panel" role="tabpanel"
+                    data-journal-case-panel=(case.case_id.as_str())
+                    hidden[index != 0] {
+                    header class="journal-log-header" {
+                        h2 { (&case.title) }
+                        span class=(format!("journal-case-status journal-case-status-{}", case.status)) {
+                            (status_label(&case.status))
+                        }
+                    }
+                    @if let Some(case_records) = records.get(&case.case_id) {
+                        @for (_recorded_at, summary, source) in case_records {
+                            article class="journal-record" {
+                                p { (summary) }
+                                p class="journal-source" { "Source: " (source) }
+                            }
+                        }
+                    } @else {
+                        p class="text-muted" { "No recorded reports." }
+                    }
                 }
             }
         }
@@ -152,18 +107,46 @@ pub fn journal_page(
     super::journal_layout(content, Some(character_name))
 }
 
+fn status_label(status: &str) -> &'static str {
+    match status {
+        "completed" => "Completed",
+        "failed" => "Failed",
+        _ => "Open",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn journal_shows_referral_uncertainty_and_only_exact_destination_data() {
-        let lead = BackendInvestigationLead {
+    fn case(
+        case_id: &str,
+        title: &str,
+        status: &str,
+        latest_update_at: u64,
+    ) -> BackendInvestigationCaseSummary {
+        BackendInvestigationCaseSummary {
             owner_character_id: 1,
-            case_id: "case".into(),
-            lead_id: "lead".into(),
-            summary: "Screams after dark".into(),
-            source_label: "the innkeeper".into(),
+            case_id: case_id.into(),
+            title: title.into(),
+            status: status.into(),
+            latest_update_at,
+        }
+    }
+
+    fn lead(
+        case_id: &str,
+        lead_id: &str,
+        summary: &str,
+        source_label: &str,
+        recorded_at: u64,
+    ) -> BackendInvestigationLead {
+        BackendInvestigationLead {
+            owner_character_id: 1,
+            case_id: case_id.into(),
+            lead_id: lead_id.into(),
+            summary: summary.into(),
+            source_label: source_label.into(),
             confidence_bps: 5500,
             destination_stage: "textual".into(),
             directions: "beyond the mill".into(),
@@ -177,134 +160,110 @@ mod tests {
             current_learned_location: String::new(),
             contradiction_group: "shape".into(),
             corrected_by: String::new(),
-            recorded_at: 1,
-        };
-        let markup = journal_page(&[], &[lead], &[], &[], "Ada", None).into_string();
+            recorded_at,
+        }
+    }
+
+    #[test]
+    fn journal_orders_open_cases_by_recency_before_closed_cases() {
+        let cases = [
+            case("old-open", "Old open problem", "open", 10),
+            case("completed", "Recently completed", "completed", 100),
+            case("new-open", "New open problem", "open", 20),
+            case("failed", "Recently failed", "failed", 200),
+        ];
+
+        let markup = journal_page(&[], &[], &cases, "Ada", None).into_string();
+        let new_open = markup.find("New open problem").unwrap();
+        let old_open = markup.find("Old open problem").unwrap();
+        let failed = markup.find("Recently failed").unwrap();
+        let completed = markup.find("Recently completed").unwrap();
+
+        assert!(new_open < old_open);
+        assert!(old_open < failed);
+        assert!(failed < completed);
+        assert!(
+            markup
+                .contains("class=\"journal-case-tab active\" role=\"tab\" aria-selected=\"true\"")
+        );
+        assert!(markup.contains("data-journal-case-panel=\"new-open\""));
+    }
+
+    #[test]
+    fn journal_groups_dry_records_by_case() {
+        let cases = [
+            case("missing-cart", "The missing cart", "open", 4),
+            case("graveyard", "Trouble at the graveyard", "open", 3),
+        ];
+        let leads = [
+            lead(
+                "missing-cart",
+                "cart-tracks",
+                "A cart left the road by the alder trees.",
+                "tracks beside the north road",
+                2,
+            ),
+            lead(
+                "graveyard",
+                "night-noise",
+                "Scraping was heard after midnight.",
+                "the gravedigger",
+                1,
+            ),
+        ];
+
+        let markup = journal_page(&[], &leads, &cases, "Ada", None).into_string();
+        assert!(markup.contains("data-journal-case-index"));
+        assert!(markup.contains("data-journal-case-log"));
+        assert!(markup.contains("data-journal-case-panel=\"missing-cart\""));
+        assert!(markup.contains("data-journal-case-panel=\"graveyard\""));
+        assert!(markup.contains("A cart left the road by the alder trees."));
+        assert!(markup.contains("Source: tracks beside the north road"));
+        assert!(markup.contains("Scraping was heard after midnight."));
+        assert!(markup.contains("Source: the gravedigger"));
+    }
+
+    #[test]
+    fn journal_records_only_the_report_and_its_source() {
+        let report = lead("case", "lead", "Screams after dark", "the innkeeper", 1);
+        let cases = [case("case", "Night screams", "open", 1)];
+        let markup = journal_page(&[], &[report], &cases, "Ada", None).into_string();
+
+        assert!(markup.contains("Screams after dark"));
         assert!(markup.contains("Source: the innkeeper"));
-        assert!(markup.contains("confidence 55%"));
-        assert!(markup.contains("Conflicts with another account"));
-        assert!(markup.contains("tall, red-haired cooper"));
-        assert!(markup.contains("Expected at: workshops"));
-        assert!(markup.contains("Directions: beyond the mill"));
+        assert!(!markup.contains("confidence"));
+        assert!(!markup.contains("55%"));
+        assert!(!markup.contains("Conflicts with another account"));
+        assert!(!markup.contains("tall, red-haired cooper"));
+        assert!(!markup.contains("Expected at: workshops"));
+        assert!(!markup.contains("Directions: beyond the mill"));
         assert!(!markup.contains("data-exact-destination"));
     }
 
     #[test]
-    fn journal_uses_safe_site_label_while_retaining_opaque_authority_id() {
-        let lead = BackendInvestigationLead {
-            owner_character_id: 1,
-            case_id: "case".into(),
-            lead_id: "lead".into(),
-            summary: "The trail ends at an old croft.".into(),
-            source_label: "your party's investigation".into(),
-            confidence_bps: 8_000,
-            destination_stage: "exact_believed".into(),
-            directions: String::new(),
-            exact_location_id: "site:private-hash".into(),
-            latitude_e7: 0,
-            longitude_e7: 0,
-            witness_name: String::new(),
-            witness_description: String::new(),
-            witness_occupation_or_relationship: String::new(),
-            expected_location: String::new(),
-            current_learned_location: "The abandoned croft".into(),
-            contradiction_group: String::new(),
-            corrected_by: String::new(),
-            recorded_at: 1,
-        };
-        let markup = journal_page(&[], &[lead], &[], &[], "Ada", None).into_string();
-        assert!(markup.contains("Believed exact destination: The abandoned croft"));
-        assert!(!markup.contains("data-exact-destination"));
-        assert!(!markup.contains("site:private-hash"));
-        assert!(!markup.contains("Believed exact destination: site:private-hash"));
-    }
+    fn journal_omits_referrals_and_actionable_metadata() {
+        let referral = lead(
+            "case",
+            "referral",
+            "Ask Marta at the mill.",
+            "witness referral",
+            1,
+        );
+        let ordinary = lead(
+            "case",
+            "heard",
+            "Screams were heard after dark.",
+            "the innkeeper",
+            2,
+        );
+        let cases = [case("case", "Night screams", "open", 2)];
+        let markup = journal_page(&[], &[referral, ordinary], &cases, "Ada", None).into_string();
 
-    #[test]
-    fn journal_disables_off_site_inspection_and_offers_safe_travel() {
-        let action = BackendInvestigationAction {
-            owner_character_id: 1,
-            action_id: "inspect".into(),
-            method: "inspect_site".into(),
-            expected_version: 2,
-            summary: "Inspect the abandoned croft.".into(),
-            known_prerequisites: "Reach the croft.".into(),
-            duration_min_minutes: 30,
-            duration_max_minutes: 90,
-            uncertainty_bps: 2_000,
-            skill_contributions: "awareness".into(),
-            weather_available: false,
-            required_case_site_id: "site-public".into(),
-            available: false,
-            can_travel_to_required_site: true,
-            unavailable_reason: "Travel to the known investigation site before inspecting it."
-                .into(),
-        };
-        let markup = journal_page(
-            &[],
-            &[],
-            &[action],
-            &[],
-            "Ada",
-            Some("That investigation route is no longer available."),
-        )
-        .into_string();
-        assert!(markup.contains("role=\"alert\""));
-        assert!(markup.contains("That investigation route is no longer available."));
-        assert!(markup.contains("Travel to the known investigation site"));
-        assert!(markup.contains("action=\"/case-sites/site-public/travel\""));
-        assert!(markup.contains("disabled"));
-        assert!(!markup.contains("action=\"/quests/actions\""));
-    }
-
-    #[test]
-    fn journal_enables_authoritatively_available_site_action() {
-        let action = BackendInvestigationAction {
-            owner_character_id: 1,
-            action_id: "inspect".into(),
-            method: "inspect_site".into(),
-            expected_version: 2,
-            summary: "Inspect the abandoned croft.".into(),
-            known_prerequisites: "Reach the croft.".into(),
-            duration_min_minutes: 30,
-            duration_max_minutes: 90,
-            uncertainty_bps: 2_000,
-            skill_contributions: "awareness".into(),
-            weather_available: false,
-            required_case_site_id: "site-public".into(),
-            available: true,
-            can_travel_to_required_site: false,
-            unavailable_reason: String::new(),
-        };
-        let markup = journal_page(&[], &[], &[action], &[], "Ada", None).into_string();
-        assert!(markup.contains("action=\"/quests/actions\""));
-        assert!(!markup.contains("journal-action-unavailable"));
-    }
-
-    #[test]
-    fn journal_never_offers_travel_to_an_incapacitated_party() {
-        let action = BackendInvestigationAction {
-            owner_character_id: 1,
-            action_id: "inspect".into(),
-            method: "inspect_site".into(),
-            expected_version: 2,
-            summary: "Inspect the abandoned croft.".into(),
-            known_prerequisites: "Reach the croft.".into(),
-            duration_min_minutes: 30,
-            duration_max_minutes: 90,
-            uncertainty_bps: 2_000,
-            skill_contributions: "awareness".into(),
-            weather_available: false,
-            required_case_site_id: "site-public".into(),
-            available: false,
-            can_travel_to_required_site: false,
-            unavailable_reason:
-                "An incapacitated party member must recover before the party can investigate."
-                    .into(),
-        };
-        let markup = journal_page(&[], &[], &[action], &[], "Ada", None).into_string();
-        assert!(markup.contains("incapacitated party member"));
-        assert!(!markup.contains("Travel to investigation site"));
-        assert!(!markup.contains("action=\"/case-sites/site-public/travel\""));
-        assert!(!markup.contains("action=\"/quests/actions\""));
+        assert!(markup.contains("Screams were heard after dark."));
+        assert!(!markup.contains("Ask Marta"));
+        assert!(!markup.contains("55%"));
+        assert!(!markup.contains("beyond the mill"));
+        assert!(!markup.contains("tall, red-haired cooper"));
+        assert!(!markup.contains("workshops"));
     }
 }

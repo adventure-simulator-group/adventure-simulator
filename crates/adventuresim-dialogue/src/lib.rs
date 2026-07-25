@@ -949,6 +949,7 @@ mod tests {
                 FactValue::Bool(true),
             );
             assert!(topic.initially_known);
+            assert_eq!(topic.label, "What I saw");
             assert!(facts.matches(&topic.conditions));
             assert!(
                 topic.responses[0]
@@ -958,25 +959,12 @@ mod tests {
         }
 
         let resident = find_conversation("local-resident").unwrap();
-        let generic_referral = resident
-            .topics
-            .iter()
-            .find(|topic| topic.id == "local-problem")
-            .unwrap();
-        let mut exact_witness = FactContext::default();
-        exact_witness.facts.insert(
-            FactKey::ParticipantRumorCase {
-                role: "local".into(),
-            },
-            FactValue::Bool(true),
+        assert!(
+            resident
+                .topics
+                .iter()
+                .all(|topic| topic.id != "introduction" && topic.id != "local-problem")
         );
-        exact_witness.facts.insert(
-            FactKey::ParticipantReferralContact {
-                role: "local".into(),
-            },
-            FactValue::Bool(true),
-        );
-        assert!(!exact_witness.matches(&generic_referral.conditions));
     }
     #[test]
     fn multi_party_and_prompt_are_first_class() {

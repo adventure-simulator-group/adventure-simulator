@@ -15,9 +15,9 @@ A party leader may request one of an NPC company's open roles while both parties
 
 Recruiting NPC companies are discovered at the inn rather than through quest ownership or a global party browser. Their service presentation reveals the company leader and each open role. Role links show exact recommendations on hover and are colored blue for unrestricted roles, green when a member of the viewer's party meets every recommendation, yellow when a member meets some, and red when no member meets any. Selecting a role replaces the side panels with its detailed recommendations, party context, and the request-to-join action.
 
-Strategic incidents are also independent from quests. They own typed source,
-site, hostile-group, and lifecycle identity; entering or resolving one never
-replaces the party's active quest or changes an objective.
+Standalone strategic encounter incidents are also independent from quests.
+They own typed source, site, hostile-group, and lifecycle identity; entering or
+resolving one never replaces the party's active quest or changes an objective.
 
 For local development, creating a recruitment role seeds capable temporary NPCs at the party's current location and immediately fills its requested slots. This is a testing aid; ordinary player recruitment continues to use applications and the leader's approval.
 
@@ -33,9 +33,16 @@ Completing the objective does not immediately close the quest or pay its promise
 ## Diegetic discovery and navigation
 
 Quest problems are discovered through local rumors and NPC testimony, not
-exclamation markers. The journal records only what the active character knows:
-sources, uncertainty, contradictions, corrections, witness descriptions, and
-learned expected locations.
+exclamation markers. A book button beside the current location and time toggles
+a location-preserving journal tab: the left rail becomes the quest list and the
+right rail becomes the selected quest's log while the current location remains
+in the center. Open quests appear first, newest update first, followed by
+completed and failed quests in the same recency order; the first quest is
+selected by default. The journal is deliberately a dry record of reports and
+observations with their stated sources. It does not score confidence, identify
+contradictions or corrections, expose probabilities, interpret implications,
+list referrals or destinations, suggest investigation methods, or provide
+action and travel controls.
 
 Available-quest, quest-giver/service, route-to-issuer, and turn-in markers have
 been removed. Textual directions, landmarks, approximate areas, and route
@@ -65,6 +72,24 @@ disappearance/loss cases retain independent physical and witness starts.
 A route first reveals travel-capable exact knowledge; only after the
 party travels to and occupies that site can a separate inspection, ambush,
 retrieval, or rescue action resolve it.
+
+### Continuing incidents
+
+An unresolved generated problem does not remain frozen at the moment the case
+is created. Every two days of authoritative world time it may produce another
+append-only incident: a new occurrence with its own persistent witness, victim,
+circumstance, site binding, event, and physical evidence. These additions do
+not rewrite the original case manifest or invalidate earlier testimony.
+Characters who already know the problem can hear a dry report of the new
+occurrence when rumors next reach them; the report does not disclose hidden
+evidence, interpret its implications, or recommend an action.
+
+Each incident increases the problem's settlement penalties by 25 percent of
+the initial amount, affecting applicable prices, encounter pressure, and
+disease exposure before the ordinary safety caps. The current temporary limit
+is five incidents including the original offence, at which point penalties are
+twice their starting severity. A follow-up system will allow NPC adventuring
+parties to resolve long-neglected cases and replace this safety cap.
 
 ## Planning
 Since you know what enemies you will face at the destination and can estimate what enemies you'll possibly face on the journey, you should plan a party in advance to account for this. For now this is mainly a question of whether you expect to encounter armored enemies (and therefore need hammers/rondels), hordes of weak enemies (therefore want a cleaving sword/axe/hammer and heavy armor), large enemies (therefore want a polearm), and enemies with projectiles (therefore want armor/full-plate). You will also want to account for difficult terrain or the need for stealth/detection during [travel](Travel.md) in your party composition, the latter is important if you're traveling through an area with enemies that are too dangerous for your party to fight against.
