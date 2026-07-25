@@ -17983,6 +17983,7 @@ fn generated_witness_candidates(
             let presence_version = generated_npc_presence_version(&npc, &presence);
             Some(WitnessCandidate {
                 npc_id: npc.id,
+                display_name: npc.name,
                 demographic,
                 age_band,
                 sex,

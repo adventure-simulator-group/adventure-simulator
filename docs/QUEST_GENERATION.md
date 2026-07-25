@@ -134,8 +134,10 @@ route, while the primary contact still uniquely unlocks its successors.
 
 Only an authoritative typed exact destination output can create an exact pin.
 The raw site ID remains navigation authority; the matching map pin uses the
-site's generated safe name. The journal does not interpret or restate the pin
-as a destination.
+site's generated safe name. Witness-described sites use a neutral attribution
+such as `Place Anna Weber described`; labels never comment on whether the
+account is plausible or confirmed. The journal does not interpret or restate
+the pin as a destination.
 Discovery actions execute at a known contact, settlement, area, or predecessor
 route and may reveal travel-capable knowledge. They never also resolve custody.
 After travel establishes authoritative occupancy, a separate `InspectSite` or

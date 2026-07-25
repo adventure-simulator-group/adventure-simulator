@@ -202,6 +202,7 @@ pub struct GenerationContext {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WitnessCandidate {
     pub npc_id: String,
+    pub display_name: String,
     pub demographic: WitnessDemographic,
     pub age_band: String,
     pub sex: String,
@@ -349,6 +350,7 @@ pub struct TestimonyDraft {
 pub struct WitnessBinding {
     pub id: WitnessId,
     pub npc_id: String,
+    pub display_name: String,
     pub demographic: WitnessDemographic,
     pub circumstance: Circumstance,
     pub description: ReportDescription,
@@ -2263,10 +2265,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             kind: secondary_site_kind,
             role: SiteRole::Decoy,
             terrain: terrain(secondary_site_kind),
-            safe_label: format!(
-                "a plausible but unconfirmed place near {}",
-                label(secondary_site_kind)
-            ),
+            safe_label: format!("Place {} described", primary.display_name),
             exact_location_initially_known: false,
             is_true_location: false,
         },
@@ -2275,6 +2274,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         WitnessBinding {
             id: witness1.clone(),
             npc_id: npc1,
+            display_name: primary.display_name.clone(),
             demographic,
             circumstance,
             description,
@@ -2320,6 +2320,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         WitnessBinding {
             id: witness2.clone(),
             npc_id: npc2,
+            display_name: secondary.display_name.clone(),
             demographic: secondary.demographic,
             circumstance: secondary_circumstance,
             description,
@@ -3263,6 +3264,7 @@ pub fn test_witnesses() -> Vec<WitnessCandidate> {
     vec![
         WitnessCandidate {
             npc_id: "npc:a".into(),
+            display_name: "Anna Weber".into(),
             demographic: WitnessDemographic::Child,
             age_band: "child".into(),
             sex: "female".into(),
@@ -3278,6 +3280,7 @@ pub fn test_witnesses() -> Vec<WitnessCandidate> {
         },
         WitnessCandidate {
             npc_id: "npc:b".into(),
+            display_name: "Berthold Fischer".into(),
             demographic: WitnessDemographic::Guard,
             age_band: "adult".into(),
             sex: "male".into(),
@@ -3293,6 +3296,7 @@ pub fn test_witnesses() -> Vec<WitnessCandidate> {
         },
         WitnessCandidate {
             npc_id: "npc:c".into(),
+            display_name: "Clara Hoffmann".into(),
             demographic: WitnessDemographic::Merchant,
             age_band: "elder".into(),
             sex: "female".into(),
@@ -3367,6 +3371,30 @@ mod tests {
             now_minute: 50_000,
             requested_family: Some(family),
             witness_candidates: test_witnesses(),
+        }
+    }
+
+    #[test]
+    fn witness_described_places_are_neutral_and_attributed() {
+        for family in [
+            TemplateFamily::RecurringDepredation,
+            TemplateFamily::DisappearanceOrLoss,
+        ] {
+            let generated = generate(&context(17, family)).unwrap();
+            let primary = &generated.witnesses[0];
+            let described_place = generated
+                .sites
+                .iter()
+                .find(|site| site.role == SiteRole::Decoy)
+                .unwrap();
+
+            assert_eq!(
+                described_place.safe_label,
+                format!("Place {} described", primary.display_name)
+            );
+            let lower = described_place.safe_label.to_ascii_lowercase();
+            assert!(!lower.contains("plausible"));
+            assert!(!lower.contains("confirmed"));
         }
     }
 

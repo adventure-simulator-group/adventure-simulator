@@ -3167,6 +3167,7 @@ fn validate_generated_pattern_condition(
             };
             let current = adventuresim_core::quest_generation::WitnessCandidate {
                 npc_id: npc.id.clone(),
+                display_name: npc.name.clone(),
                 demographic: current_demographic,
                 age_band: format!("{:?}", npc.age_band).to_ascii_lowercase(),
                 sex: format!("{:?}", npc.sex).to_ascii_lowercase(),
