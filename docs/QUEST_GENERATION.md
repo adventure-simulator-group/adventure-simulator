@@ -78,8 +78,11 @@ event, and new physical-evidence authority. Delayed refreshes deterministically
 catch up every missed incident. Fresh evidence is selected through the same
 cause-and-site likelihood table and hard zeros as initial evidence rather than
 an incident-only inverse lookup. The original offence plus four follow-ups is
-the temporary maximum; this cap is intended to be replaced by NPC adventurer
-resolution of neglected cases.
+the current safety ceiling. Before that ceiling can leave a neglected case
+permanently stalled, an available resident NPC adventuring company may
+intervene after the case has aged and accumulated incidents. Recent player
+investigation or physical presence at a case site grants a grace period so the
+server does not resolve a case out from under an active party.
 
 Incident authority is private. A character who already knows the problem can
 receive a dry local report when rumor circulation next reaches them; an
@@ -93,6 +96,15 @@ before the existing global safety caps and mitigation are applied. At the
 temporary five-incident ceiling, consequences are twice their initial
 severity. Resolving or fully mitigating the linked problem still suppresses
 all of those effects.
+
+NPC interventions are deterministic strategic outcomes; they do not create
+tactical tick state. A successful company applies the generated objective
+through the same hostile, custody, outcome-fact, case, and local-problem
+authority used by player results. Partial success mitigates the settlement
+penalty, while failure or deferral schedules a bounded retry. Intervention IDs,
+attempt numbers, party availability, and retry times make repeated settlement
+refreshes idempotent. Characters who already know the problem receive only a
+dry result notice in their journal.
 
 The private authority also stores a domain-separated SHA-256 commitment to the
 exact serialized generation context, including observer-ID entropy. Every

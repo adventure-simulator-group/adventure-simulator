@@ -88,31 +88,31 @@ Each incident increases the problem's settlement penalties by 25 percent of
 the initial amount, affecting applicable prices, encounter pressure, and
 disease exposure before the ordinary safety caps. The current temporary limit
 is five incidents including the original offence, at which point penalties are
-twice their starting severity. A follow-up system will allow NPC adventuring
-parties to resolve long-neglected cases and replace this safety cap.
+twice their starting severity.
+
+Old cases with multiple incidents become eligible for a resident NPC
+adventuring company. The company waits while a player has investigated
+recently or occupies one of the case sites. Otherwise it can resolve the case,
+reduce its effects, fail, or defer and retry later. This is a strategic result,
+not a simulated tactical battle. Anyone who had already heard about the
+problem may later receive a dry journal notice about the result.
 
 ## Planning
 
 ### Automated investigation evaluation
 
-The strategic simulator includes an offline player-agent harness for modular
-cases. Its observation boundary mirrors what a player may learn: tavern rumors,
-NPC names, physical descriptions, expected building/tab locations, spoken claims,
-evidence provenance, corrected beliefs, learned location precision, party
-preparation, and currently legal actions. Actions return as opaque capability
-IDs and are executed only if still legal.
+There are two evaluation paths. The server-side strategic simulator exercises
+the real NPC adventuring companies described above. Scripted decisions are the
+default; an optional LLM can choose only among observer-safe strategies offered
+by the server, while the server remains the sole outcome authority. Every run
+writes a Markdown anthology of the problem discovery, exact dialogue, actions,
+and outcome as the NPC company experienced them.
 
-An absent referred witness is a normal schedule outcome. The evaluator exposes
-a bounded wait/rest choice with an explicit time/resource cost instead of
-misclassifying absence as a failed dialogue or API pipeline.
-
-Scripted and deterministic mock-LLM policies cover markerless tavern discovery
-and both template families without credentials. A separately enabled
-OpenAI-compatible policy is a content evaluator, never quest authority.
-Canonical cause, true destination, generation factors, and causal bridges stay
-in a separate post-run developer artifact. The harness operates on the actual
-generated evidence/route graph but does not invent a parallel combat model;
-dimensions unavailable outside the live runtime are reported as not measured.
+The separate end-to-end browser evaluator is LLM-only. It sees a screenshot,
+text inside the visible viewport, and opaque handles for visible controls, then
+plays through the same web interface as a person. It produces a screenshot
+timeline rather than a Markdown story. It receives no canonical cause, true
+destination, generation weights, reducer names, or hidden case identifiers.
 Since you know what enemies you will face at the destination and can estimate what enemies you'll possibly face on the journey, you should plan a party in advance to account for this. For now this is mainly a question of whether you expect to encounter armored enemies (and therefore need hammers/rondels), hordes of weak enemies (therefore want a cleaving sword/axe/hammer and heavy armor), large enemies (therefore want a polearm), and enemies with projectiles (therefore want armor/full-plate). You will also want to account for difficult terrain or the need for stealth/detection during [travel](Travel.md) in your party composition, the latter is important if you're traveling through an area with enemies that are too dangerous for your party to fight against.
 ### Mixed-Level
 Quests are not balanced around the assumption that all members of a party have a similar power level, in fact its generally the case that you *want* a mixed-strength party. When you set out to clear out a vampire crypt, you need a very skilled armored duelist or two to fight the vampire. But you'll also be encountering plenty of zombies and skeletons, which can be efficiently dealt with by a small group of decent semi-armored combatants with clubs and axes. 

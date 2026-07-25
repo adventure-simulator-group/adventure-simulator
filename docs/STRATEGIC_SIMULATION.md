@@ -163,80 +163,90 @@ cargo run -p adventuresim-strategic-sim -- replay --report report.json
 cargo run -p adventuresim-strategic-sim -- matched --seed 42 --days 365
 # Safe disposable integration run (requires local SpacetimeDB 2.6.1):
 just strategic-sim-core-loop 42 8 20 30 2
-just quest-eval 41 4
-just quest-eval-mock 41 4
 ```
 
-## Investigation quest evaluator
+## Quest evaluators
 
-`quest-eval` tests both modular investigation templates without a database or
-API credential. It enters the tavern, learns the problem and witness referrals,
-interviews visible NPCs by generated name, physical description, and expected
-building/tab location, follows
-advertised evidence/actions, travels only after an exact destination is learned,
-prepares, and attempts an earned finale. The scripted and mock-LLM policies are
-deterministic and fully offline. The mock policy still round-trips through the
-same strict JSON decision schema used by a provider.
+There are two evaluator surfaces, with deliberately different boundaries.
 
-Witness availability is deliberately normal scheduling state: a referral can
-say that an NPC is elsewhere and offer a bounded wait/rest action that costs
-game time and supplies. This is distinct from policy, provider, or reducer
-errors, and is recorded in the public trace.
+### Server-simulated NPC adventurers
 
-This is a deterministic case-evaluation environment over the real quest
-generator and its evidence/action graph. It does not claim to be a live
-SpacetimeDB client and does not duplicate combat. A policy receives only a
-serializable player frame: visible dialogue, source-attributed claims, evidence,
-casebook locations, party capabilities/resources, and opaque IDs for currently
-legal typed choices. Arbitrary reducer names or object IDs are never accepted.
+The reducer-backed core loop is also the NPC-adventurer evaluator. These are the
+same resident NPC companies that may intervene in old, escalating generated
+cases during normal strategic settlement activity. Eligibility considers case
+age, incident count, prior retry time, company availability, and recent player
+activity. SpacetimeDB selects the company, applies the bounded result through
+the existing case/objective/custody/local-problem authority, and persists an
+idempotent intervention record.
 
-Each run writes three distinct artifacts: machine-readable public traces, a
-Markdown anthology of the same events from the player's perspective, and
-developer truth. The stories preserve the exact dialogue emitted by the
-evaluator together with the visible action, place, time, discoveries, outcome,
-and resource cost of every step. They are intended for reading quest runs as
-complete chronological narratives without exposing probabilities, canonical
-causes, true sites, or other hidden generator authority.
+The default policy is deterministic and credential-free. An optional LLM may
+choose only one of the strategies advertised by a gateway-only candidate view:
+investigate carefully, protect locals, confront directly, or defer. The model
+does not receive canonical cause/site/reliability/weight data and cannot apply
+an outcome; a simulation-capability-owned reducer validates its opaque choice,
+then the server performs the deterministic roll and mutation.
+
+Every core-loop run writes `npc-adventurer-stories.md` by default. Each entry is
+server-authored in the same transaction as its outcome and records the problem
+being learned, timestamped witness interviews, exact spoken lines, the chosen
+approach, and the result. It contains no hidden quest truth. The JSON report
+also carries the same Markdown for archival purposes.
+
+Because the production world clock is tied to elapsed wall time, a claimed
+disposable simulation has one additional bounded reducer that advances that
+same authoritative clock by a requested number of game minutes. The core loop
+uses it once per active simulated day, then invokes ordinary settlement
+activity so follow-up incidents, escalating penalties, eligibility, and NPC
+interventions all occur through the production systems. The capability is
+absent from normal module builds. Simulation characters receive a small
+starting purse so an inn-only seed settlement cannot deadlock before its first
+labor day; all accommodation and food costs still use ordinary currency rules.
+
+Use the normal isolated recipe for the scripted policy:
 
 ```powershell
-cargo run -p adventuresim-strategic-sim -- quest-eval `
-  --policy mock --seed 41 --cases-per-template 8 `
-  --public-output quest-eval-public.json `
-  --stories-output quest-eval-stories.md `
-  --developer-output quest-eval-developer.json
+just strategic-sim-core-loop 42 8 20 30 2
 ```
 
-The developer artifact contains canonical cause/site, generator manifest
-digest, factor weights, bridges, catalog revision, and marginal audits. It is
-joined to the public run only afterward through the public report digest. Never
-give it to a policy or publish it as a player trace. Metrics unavailable in the
-offline runtime are tagged `not_measured` with a reason.
-
-An inexpensive OpenAI-compatible provider can be enabled explicitly. The
-command accepts only the name of an API-key environment variable:
+Direct expert invocation can opt into an OpenAI-compatible strategy policy:
 
 ```powershell
-cargo run -p adventuresim-strategic-sim -- quest-eval `
-  --policy openai --allow-network --api-key-env OPENAI_API_KEY `
-  --public-output quest-eval-public.json `
-  --stories-output quest-eval-stories.md `
-  --developer-output quest-eval-developer.json
+cargo run -p adventuresim-strategic-sim -- core-loop `
+  --host http://127.0.0.1:3000 --database adventuresim-sim-UNIQUE `
+  --run-nonce UNIQUE-NONCE --npc-strategy-policy openai `
+  --npc-allow-network --npc-api-key-env OPENAI_API_KEY `
+  --npc-stories-output npc-adventurer-stories.md
 ```
 
-Provider mode requires HTTPS except for loopback fixtures, rejects URL
-credentials/query/fragment, disables redirects, and bounds cases, steps,
-requests, tokens, bytes, wall time, retries, and estimated cost. It performs at
-most one schema-repair request. Missing opt-in or key fails before case
-generation or network work. Game text is delimited as untrusted prompt data.
-Live paid execution is intentionally absent from CI.
+Provider mode requires explicit network consent and reads the credential only
+from the named environment variable. HTTPS is required except for loopback test
+fixtures. The candidate list and strategy override are gateway/simulation
+capability surfaces, not general player APIs.
 
-Replay means replaying recorded validated opaque actions against the same
-deterministic fixture; it does not claim that a live model is reproducible:
+### End-to-end browser quest evaluator
+
+The browser evaluator is deliberately separate from the strategic NPC
+evaluator. It always uses an LLM and interacts with the running local game only
+through visible web controls. The model receives the current screenshot,
+visible page text, and opaque handles for visible enabled controls. It cannot
+name a reducer, use a quest authority ID, invent an action, or navigate directly
+to a guessed route.
+
+Each run writes an immutable screenshot log: `index.html`, `manifest.json`, and
+one viewport PNG for the initial state and every subsequent action. The log
+therefore shows exactly what was on screen when the model made each decision.
+Use a new output directory for every run:
 
 ```powershell
-cargo run -p adventuresim-strategic-sim -- quest-eval-replay `
-  --fixture regression-case.json --output replayed-trace.json
+just quest-web-eval quest-browser-run-001 `
+  http://127.0.0.1:24301 /characters OPENAI_API_KEY gpt-4.1-mini
 ```
+
+Network use must be explicit, the game URL must be loopback, and provider
+endpoints must use HTTPS unless they are loopback test fixtures. The command
+fails closed when the named API-key variable is absent. CI exercises the strict
+decision protocol and a loopback model fixture; it does not make paid model
+requests.
 
 Direct `core-loop` invocation is intentionally an expert-only path: its process
 must inherit the same `ADVENTURESIM_SIM_BOOTSTRAP_TOKEN` used to compile and

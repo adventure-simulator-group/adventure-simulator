@@ -4,13 +4,18 @@ Local workflow for running the Adventure Simulator demo.
 
 For deterministic multi-year NPC balance experiments and replay commands, see
 [`STRATEGIC_SIMULATION.md`](STRATEGIC_SIMULATION.md), `just strategic-sim`, and
-`just test-strategic-sim`. Credential-free generated-investigation regression
-coverage is available through `just quest-eval` and `just quest-eval-mock`;
-these write a readable player-perspective story anthology alongside separate
-player-visible JSON and developer-only reports. Provider-backed
-runs require explicit `--allow-network` and read a key only from the named
+`just test-strategic-sim`. The isolated `just strategic-sim-core-loop` command
+also evaluates the authoritative server-side NPC adventurer system and writes a
+Markdown quest-story log. Its default policy is scripted; optional provider
+mode requires explicit network consent and reads a key only from the named
 environment variable. See
-[`STRATEGIC_SIMULATION.md`](STRATEGIC_SIMULATION.md#investigation-quest-evaluator).
+[`STRATEGIC_SIMULATION.md`](STRATEGIC_SIMULATION.md#quest-evaluators).
+The separate end-to-end web evaluator is LLM-only and drives the same visible
+controls as a player. With a local strategic server running, invoke
+`just quest-web-eval quest-browser-run-001`. It saves `index.html`,
+`manifest.json`, and a chronological PNG after every action. It requires
+Playwright's Chromium browser (`npx playwright install chromium`) and reads the
+model credential from `OPENAI_API_KEY` by default.
 The opt-in authoritative integration driver is
 `just strategic-sim-core-loop`; the recipe creates, claims, and deletes its own
   nonce-named loopback database, compiles a one-run bootstrap capability in

@@ -9,6 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub mod abandon_contract_reducer;
 pub mod accept_contract_reducer;
 pub mod accept_party_join_request_reducer;
+pub mod advance_simulation_world_time_reducer;
 pub mod agricultural_commodity_type;
 pub mod agricultural_limitation_type;
 pub mod agriculture_industry_type;
@@ -62,6 +63,10 @@ pub mod backend_local_problem_rumors_table;
 pub mod backend_local_problem_trade_effect_type;
 pub mod backend_local_problem_trade_effects_table;
 pub mod backend_medical_examinations_table;
+pub mod backend_npc_case_intervention_type;
+pub mod backend_npc_case_interventions_table;
+pub mod backend_npc_intervention_candidate_type;
+pub mod backend_npc_intervention_candidates_table;
 pub mod backend_social_beliefs_table;
 pub mod backfill_character_deaths_and_leadership_reducer;
 pub mod backfill_equipment_condition_and_smiths_reducer;
@@ -295,6 +300,7 @@ pub mod investigation_event_authority_type;
 pub mod investigation_evidence_authority_type;
 pub mod investigation_evidence_knowledge_type;
 pub mod investigation_generated_action_output_type;
+pub mod investigation_journal_notice_type;
 pub mod investigation_lead_type;
 pub mod investigation_observation_type;
 pub mod investigation_pattern_target_authority_type;
@@ -363,7 +369,10 @@ pub mod morale_event_table;
 pub mod morale_event_type;
 pub mod native_range_evidence_type;
 pub mod nerve_type;
+pub mod npc_adventuring_party_authority_type;
 pub mod npc_age_band_type;
+pub mod npc_case_intervention_type;
+pub mod npc_intervention_strategy_override_type;
 pub mod npc_sex_type;
 pub mod objective_continuity_guard_type;
 pub mod objective_continuity_kind_type;
@@ -493,6 +502,7 @@ pub mod set_character_religion_reducer;
 pub mod set_inventory_quantity_target_reducer;
 pub mod set_party_camp_fatigue_percent_reducer;
 pub mod set_party_travel_itinerary_reducer;
+pub mod set_simulation_npc_intervention_strategy_reducer;
 pub mod settlement_alias_batch_row_type;
 pub mod settlement_alias_table;
 pub mod settlement_alias_type;
@@ -608,6 +618,7 @@ pub mod written_language_hours_type;
 pub use abandon_contract_reducer::abandon_contract;
 pub use accept_contract_reducer::accept_contract;
 pub use accept_party_join_request_reducer::accept_party_join_request;
+pub use advance_simulation_world_time_reducer::advance_simulation_world_time;
 pub use agricultural_commodity_type::AgriculturalCommodity;
 pub use agricultural_limitation_type::AgriculturalLimitation;
 pub use agriculture_industry_type::AgricultureIndustry;
@@ -661,6 +672,10 @@ pub use backend_local_problem_rumors_table::*;
 pub use backend_local_problem_trade_effect_type::BackendLocalProblemTradeEffect;
 pub use backend_local_problem_trade_effects_table::*;
 pub use backend_medical_examinations_table::*;
+pub use backend_npc_case_intervention_type::BackendNpcCaseIntervention;
+pub use backend_npc_case_interventions_table::*;
+pub use backend_npc_intervention_candidate_type::BackendNpcInterventionCandidate;
+pub use backend_npc_intervention_candidates_table::*;
 pub use backend_social_beliefs_table::*;
 pub use backfill_character_deaths_and_leadership_reducer::backfill_character_deaths_and_leadership;
 pub use backfill_equipment_condition_and_smiths_reducer::backfill_equipment_condition_and_smiths;
@@ -894,6 +909,7 @@ pub use investigation_event_authority_type::InvestigationEventAuthority;
 pub use investigation_evidence_authority_type::InvestigationEvidenceAuthority;
 pub use investigation_evidence_knowledge_type::InvestigationEvidenceKnowledge;
 pub use investigation_generated_action_output_type::InvestigationGeneratedActionOutput;
+pub use investigation_journal_notice_type::InvestigationJournalNotice;
 pub use investigation_lead_type::InvestigationLead;
 pub use investigation_observation_type::InvestigationObservation;
 pub use investigation_pattern_target_authority_type::InvestigationPatternTargetAuthority;
@@ -962,7 +978,10 @@ pub use morale_event_table::*;
 pub use morale_event_type::MoraleEvent;
 pub use native_range_evidence_type::NativeRangeEvidence;
 pub use nerve_type::Nerve;
+pub use npc_adventuring_party_authority_type::NpcAdventuringPartyAuthority;
 pub use npc_age_band_type::NpcAgeBand;
+pub use npc_case_intervention_type::NpcCaseIntervention;
+pub use npc_intervention_strategy_override_type::NpcInterventionStrategyOverride;
 pub use npc_sex_type::NpcSex;
 pub use objective_continuity_guard_type::ObjectiveContinuityGuard;
 pub use objective_continuity_kind_type::ObjectiveContinuityKind;
@@ -1092,6 +1111,7 @@ pub use set_character_religion_reducer::set_character_religion;
 pub use set_inventory_quantity_target_reducer::set_inventory_quantity_target;
 pub use set_party_camp_fatigue_percent_reducer::set_party_camp_fatigue_percent;
 pub use set_party_travel_itinerary_reducer::set_party_travel_itinerary;
+pub use set_simulation_npc_intervention_strategy_reducer::set_simulation_npc_intervention_strategy;
 pub use settlement_alias_batch_row_type::SettlementAliasBatchRow;
 pub use settlement_alias_table::*;
 pub use settlement_alias_type::SettlementAlias;
@@ -1223,6 +1243,10 @@ pub enum Reducer {
     AcceptPartyJoinRequest {
         leader_id: u64,
         request_id: u64,
+    },
+    AdvanceSimulationWorldTime {
+        nonce: String,
+        delta_minutes: u64,
     },
     AnswerDialoguePrompt {
         character_id: u64,
@@ -1655,6 +1679,11 @@ pub enum Reducer {
         automatic_camp_duration: bool,
         fixed_camp_minutes: u16,
     },
+    SetSimulationNpcInterventionStrategy {
+        run_nonce: String,
+        case_id: String,
+        strategy: String,
+    },
     ShareInvestigationBelief {
         sender_id: u64,
         recipient_id: u64,
@@ -1800,6 +1829,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::AbandonContract { .. } => "abandon_contract",
             Reducer::AcceptContract { .. } => "accept_contract",
             Reducer::AcceptPartyJoinRequest { .. } => "accept_party_join_request",
+            Reducer::AdvanceSimulationWorldTime { .. } => "advance_simulation_world_time",
             Reducer::AnswerDialoguePrompt { .. } => "answer_dialogue_prompt",
             Reducer::ApprovePartyActionRequest { .. } => "approve_party_action_request",
             Reducer::ApprovePartyActionRequestPlanned { .. } => {
@@ -1901,6 +1931,9 @@ impl __sdk::Reducer for Reducer {
             Reducer::SetInventoryQuantityTarget { .. } => "set_inventory_quantity_target",
             Reducer::SetPartyCampFatiguePercent { .. } => "set_party_camp_fatigue_percent",
             Reducer::SetPartyTravelItinerary { .. } => "set_party_travel_itinerary",
+            Reducer::SetSimulationNpcInterventionStrategy { .. } => {
+                "set_simulation_npc_intervention_strategy"
+            }
             Reducer::ShareInvestigationBelief { .. } => "share_investigation_belief",
             Reducer::ShareInvestigationLead { .. } => "share_investigation_lead",
             Reducer::SimulateContractIssuerInteraction { .. } => {
@@ -1953,6 +1986,13 @@ impl __sdk::Reducer for Reducer {
 }             => __sats::bsatn::to_vec(&accept_party_join_request_reducer::AcceptPartyJoinRequestArgs {
                 leader_id: leader_id.clone(),
                 request_id: request_id.clone(),
+}),
+            Reducer::AdvanceSimulationWorldTime{
+                nonce,
+                delta_minutes,
+}             => __sats::bsatn::to_vec(&advance_simulation_world_time_reducer::AdvanceSimulationWorldTimeArgs {
+                nonce: nonce.clone(),
+                delta_minutes: delta_minutes.clone(),
 }),
             Reducer::AnswerDialoguePrompt{
                 character_id,
@@ -2727,6 +2767,15 @@ Reducer::CancelMissionRequest{
                 automatic_camp_duration: automatic_camp_duration.clone(),
                 fixed_camp_minutes: fixed_camp_minutes.clone(),
 }),
+            Reducer::SetSimulationNpcInterventionStrategy{
+                run_nonce,
+                case_id,
+                strategy,
+}             => __sats::bsatn::to_vec(&set_simulation_npc_intervention_strategy_reducer::SetSimulationNpcInterventionStrategyArgs {
+                run_nonce: run_nonce.clone(),
+                case_id: case_id.clone(),
+                strategy: strategy.clone(),
+}),
             Reducer::ShareInvestigationBelief{
                 sender_id,
                 recipient_id,
@@ -3004,6 +3053,8 @@ pub struct DbUpdate {
     backend_local_problem_rumors: __sdk::TableUpdate<BackendLocalProblemRumor>,
     backend_local_problem_trade_effects: __sdk::TableUpdate<BackendLocalProblemTradeEffect>,
     backend_medical_examinations: __sdk::TableUpdate<MedicalExamination>,
+    backend_npc_case_interventions: __sdk::TableUpdate<BackendNpcCaseIntervention>,
+    backend_npc_intervention_candidates: __sdk::TableUpdate<BackendNpcInterventionCandidate>,
     backend_social_beliefs: __sdk::TableUpdate<SocialBelief>,
     battle_loot_item: __sdk::TableUpdate<BattleLootItem>,
     battle_participant: __sdk::TableUpdate<BattleParticipant>,
@@ -3174,6 +3225,18 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "backend_medical_examinations" => db_update.backend_medical_examinations.append(
                     backend_medical_examinations_table::parse_table_update(table_update)?,
                 ),
+                "backend_npc_case_interventions" => {
+                    db_update.backend_npc_case_interventions.append(
+                        backend_npc_case_interventions_table::parse_table_update(table_update)?,
+                    )
+                }
+                "backend_npc_intervention_candidates" => {
+                    db_update.backend_npc_intervention_candidates.append(
+                        backend_npc_intervention_candidates_table::parse_table_update(
+                            table_update,
+                        )?,
+                    )
+                }
                 "backend_social_beliefs" => db_update.backend_social_beliefs.append(
                     backend_social_beliefs_table::parse_table_update(table_update)?,
                 ),
@@ -3781,6 +3844,16 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_medical_examinations",
             &self.backend_medical_examinations,
         );
+        diff.backend_npc_case_interventions = cache
+            .apply_diff_to_table::<BackendNpcCaseIntervention>(
+                "backend_npc_case_interventions",
+                &self.backend_npc_case_interventions,
+            );
+        diff.backend_npc_intervention_candidates = cache
+            .apply_diff_to_table::<BackendNpcInterventionCandidate>(
+                "backend_npc_intervention_candidates",
+                &self.backend_npc_intervention_candidates,
+            );
         diff.backend_social_beliefs = cache.apply_diff_to_table::<SocialBelief>(
             "backend_social_beliefs",
             &self.backend_social_beliefs,
@@ -3885,6 +3958,12 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_medical_examinations" => db_update
                     .backend_medical_examinations
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_npc_case_interventions" => db_update
+                    .backend_npc_case_interventions
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_npc_intervention_candidates" => db_update
+                    .backend_npc_intervention_candidates
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_social_beliefs" => db_update
                     .backend_social_beliefs
@@ -4181,6 +4260,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_medical_examinations" => db_update
                     .backend_medical_examinations
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_npc_case_interventions" => db_update
+                    .backend_npc_case_interventions
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_npc_intervention_candidates" => db_update
+                    .backend_npc_intervention_candidates
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_social_beliefs" => db_update
                     .backend_social_beliefs
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -4431,6 +4516,9 @@ pub struct AppliedDiff<'r> {
     backend_local_problem_trade_effects:
         __sdk::TableAppliedDiff<'r, BackendLocalProblemTradeEffect>,
     backend_medical_examinations: __sdk::TableAppliedDiff<'r, MedicalExamination>,
+    backend_npc_case_interventions: __sdk::TableAppliedDiff<'r, BackendNpcCaseIntervention>,
+    backend_npc_intervention_candidates:
+        __sdk::TableAppliedDiff<'r, BackendNpcInterventionCandidate>,
     backend_social_beliefs: __sdk::TableAppliedDiff<'r, SocialBelief>,
     battle_loot_item: __sdk::TableAppliedDiff<'r, BattleLootItem>,
     battle_participant: __sdk::TableAppliedDiff<'r, BattleParticipant>,
@@ -4636,6 +4724,16 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<MedicalExamination>(
             "backend_medical_examinations",
             &self.backend_medical_examinations,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendNpcCaseIntervention>(
+            "backend_npc_case_interventions",
+            &self.backend_npc_case_interventions,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendNpcInterventionCandidate>(
+            "backend_npc_intervention_candidates",
+            &self.backend_npc_intervention_candidates,
             event,
         );
         callbacks.invoke_table_row_callbacks::<SocialBelief>(
@@ -5628,6 +5726,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_local_problem_rumors_table::register_table(client_cache);
         backend_local_problem_trade_effects_table::register_table(client_cache);
         backend_medical_examinations_table::register_table(client_cache);
+        backend_npc_case_interventions_table::register_table(client_cache);
+        backend_npc_intervention_candidates_table::register_table(client_cache);
         backend_social_beliefs_table::register_table(client_cache);
         battle_loot_item_table::register_table(client_cache);
         battle_participant_table::register_table(client_cache);
@@ -5724,6 +5824,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_local_problem_rumors",
         "backend_local_problem_trade_effects",
         "backend_medical_examinations",
+        "backend_npc_case_interventions",
+        "backend_npc_intervention_candidates",
         "backend_social_beliefs",
         "battle_loot_item",
         "battle_participant",

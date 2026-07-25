@@ -104,7 +104,9 @@ pub fn parse_provider_decision(bytes: &[u8]) -> Result<PolicyDecision, String> {
 
 pub fn policy_prompt(frame: &PlayerFrame) -> Result<String, String> {
     let payload = serde_json::json!({
-        "instruction": "Select exactly one currently legal opaque choice_id. Return only strict JSON {\"version\":1,\"choice_id\":\"choice:...\",\"arguments\":{\"selection\":null}}.",
+        "instruction": format!(
+            "Select exactly one currently legal opaque choice_id. Return only strict JSON {{\"version\":{EVAL_FORMAT_VERSION},\"choice_id\":\"choice:...\",\"arguments\":{{\"selection\":null}}}}."
+        ),
         "untrusted_player_frame": frame,
     });
     serde_json::to_string(&payload).map_err(|error| error.to_string())

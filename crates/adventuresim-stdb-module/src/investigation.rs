@@ -591,6 +591,71 @@ pub struct InvestigationSafeLeadReceipt {
     pub consumed_by: String,
 }
 
+/// Dry observer-safe news about a case the character already knew. These rows
+/// contain no inferred cause, probability, or suggested next action.
+#[derive(Clone, Debug)]
+#[table(accessor = investigation_journal_notice)]
+pub struct InvestigationJournalNotice {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub owner_character_id: u64,
+    pub public_case_id: String,
+    pub source_id: String,
+    pub summary: String,
+    pub source_label: String,
+    pub recorded_at: u64,
+}
+
+pub(crate) fn record_journal_notice(
+    ctx: &ReducerContext,
+    owner_character_id: u64,
+    public_case_id: &str,
+    source_id: &str,
+    summary: &str,
+    source_label: &str,
+    recorded_at: u64,
+) -> Result<(), String> {
+    if public_case_id.is_empty()
+        || source_id.is_empty()
+        || summary.is_empty()
+        || summary.len() > 1_024
+        || source_label.is_empty()
+        || source_label.len() > 160
+    {
+        return Err("Investigation journal notice is invalid".into());
+    }
+    let id = format!(
+        "journal-notice:{owner_character_id}:{}",
+        adventuresim_core::settlement_population::stable_hash(source_id)
+    );
+    if let Some(existing) = ctx.db.investigation_journal_notice().id().find(&id) {
+        return if existing.owner_character_id == owner_character_id
+            && existing.public_case_id == public_case_id
+            && existing.source_id == source_id
+            && existing.summary == summary
+            && existing.source_label == source_label
+            && existing.recorded_at == recorded_at
+        {
+            Ok(())
+        } else {
+            Err("Conflicting retry for investigation journal notice".into())
+        };
+    }
+    ctx.db
+        .investigation_journal_notice()
+        .insert(InvestigationJournalNotice {
+            id,
+            owner_character_id,
+            public_case_id: public_case_id.into(),
+            source_id: source_id.into(),
+            summary: summary.into(),
+            source_label: source_label.into(),
+            recorded_at,
+        });
+    Ok(())
+}
+
 /// Sanitized journal row. It contains no hidden threat, sincerity, coordinates
 /// below exact knowledge, private NPC identifiers, likelihoods, or bridges.
 #[derive(Clone, Debug, SpacetimeType)]
@@ -848,6 +913,25 @@ pub fn backend_investigation_journal(ctx: &ViewContext) -> Vec<BackendInvestigat
                     supersedes,
                     recorded_at: r.recorded_at,
                 })
+            }),
+    );
+    rows.extend(
+        ctx.db
+            .investigation_journal_notice()
+            .owner_character_id()
+            .filter(0u64..)
+            .map(|notice| BackendInvestigationJournalEntry {
+                owner_character_id: notice.owner_character_id,
+                case_id: notice.public_case_id,
+                record_id: notice.id,
+                kind: "news".into(),
+                summary: notice.summary,
+                source_label: notice.source_label,
+                confidence_bps: 10_000,
+                contradiction_group: String::new(),
+                corrected_by: String::new(),
+                supersedes: String::new(),
+                recorded_at: notice.recorded_at,
             }),
     );
     rows.sort_by_key(|row| {

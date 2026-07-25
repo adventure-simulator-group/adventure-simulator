@@ -328,13 +328,10 @@ strategic-sim seed="42" population="100" days="1095":
 test-strategic-sim:
     @cargo test -p adventuresim-strategic-sim
 
-# Credential-free investigation evaluator. The readable stories contain only
-# public information; developer truth remains a deliberately separate artifact.
-quest-eval seed="41" cases_per_template="4":
-    @cargo run -p adventuresim-strategic-sim -- quest-eval --policy scripted --seed {{seed}} --cases-per-template {{cases_per_template}} --public-output quest-eval-public.json --stories-output quest-eval-stories.md --developer-output quest-eval-developer.json
-
-quest-eval-mock seed="41" cases_per_template="4":
-    @cargo run -p adventuresim-strategic-sim -- quest-eval --policy mock --seed {{seed}} --cases-per-template {{cases_per_template}} --public-output quest-eval-public.json --stories-output quest-eval-stories.md --developer-output quest-eval-developer.json
+# LLM-only, end-to-end browser evaluator. output_dir must be new because the
+# screenshot record never overwrites an earlier run.
+quest-web-eval output_dir base_url="http://127.0.0.1:24301" start_path="/characters" api_key_env="OPENAI_API_KEY" model="gpt-4.1-mini":
+    @node scripts/quest_web_eval.mjs --base-url {{base_url}} --start-path {{start_path}} --output-dir {{output_dir}} --api-key-env {{api_key_env}} --model {{model}} --allow-network
 
 # Own one nonce-named local database for the duration of the command. There is
 # intentionally no database or server override.

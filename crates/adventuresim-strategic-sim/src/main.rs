@@ -15,41 +15,6 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Evaluate generated investigation quests through an observer-safe player agent.
-    QuestEval {
-        #[arg(long, value_enum, default_value_t = EvalPolicyArg::Scripted)]
-        policy: EvalPolicyArg,
-        #[arg(long, default_value_t = 41)]
-        seed: u64,
-        #[arg(long, default_value_t = 4)]
-        cases_per_template: u32,
-        /// Public player-visible trace and aggregate metrics.
-        #[arg(long)]
-        public_output: PathBuf,
-        /// Readable player-perspective quest stories with exact dialogue.
-        #[arg(long)]
-        stories_output: PathBuf,
-        /// Separate developer-only generator truth and factor audit.
-        #[arg(long)]
-        developer_output: PathBuf,
-        #[arg(long)]
-        endpoint: Option<String>,
-        #[arg(long, default_value = "gpt-4.1-nano")]
-        model: String,
-        /// Name of the environment variable containing the key; never the key itself.
-        #[arg(long, default_value = "OPENAI_API_KEY")]
-        api_key_env: String,
-        /// Required before any paid/provider network request.
-        #[arg(long, default_value_t = false)]
-        allow_network: bool,
-    },
-    /// Replay previously validated opaque actions for one deterministic fixture.
-    QuestEvalReplay {
-        #[arg(long)]
-        fixture: PathBuf,
-        #[arg(long)]
-        output: Option<PathBuf>,
-    },
     /// Generate profiles and run canonical settlement downtime.
     Run {
         #[arg(long)]
@@ -101,87 +66,32 @@ enum Command {
         run_nonce: String,
         #[arg(long)]
         output: Option<PathBuf>,
+        /// Markdown anthology persisted from authoritative server intervention rows.
+        #[arg(long, default_value = "npc-adventurer-stories.md")]
+        npc_stories_output: PathBuf,
+        /// The server-scripted policy is deterministic and requires no model.
+        #[arg(long, value_enum, default_value_t = NpcStrategyPolicyArg::ServerScripted)]
+        npc_strategy_policy: NpcStrategyPolicyArg,
+        #[arg(long)]
+        npc_endpoint: Option<String>,
+        #[arg(long, default_value = "gpt-4.1-nano")]
+        npc_model: String,
+        #[arg(long, default_value = "OPENAI_API_KEY")]
+        npc_api_key_env: String,
+        #[arg(long, default_value_t = false)]
+        npc_allow_network: bool,
     },
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
-enum EvalPolicyArg {
-    Scripted,
-    Mock,
+enum NpcStrategyPolicyArg {
+    ServerScripted,
     Openai,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
-    let command = match cli.command {
-        Command::QuestEval {
-            policy,
-            seed,
-            cases_per_template,
-            public_output,
-            stories_output,
-            developer_output,
-            endpoint,
-            model,
-            api_key_env,
-            allow_network,
-        } => {
-            if !(1..=500).contains(&cases_per_template) {
-                return Err("cases_per_template must be 1..=500".into());
-            }
-            validate_distinct_output_paths(&[&public_output, &stories_output, &developer_output])?;
-            let configs = golden_suite(seed, cases_per_template);
-            let limits = EvalLimits {
-                max_cases: cases_per_template
-                    .checked_mul(2)
-                    .ok_or("case count overflow")?,
-                ..EvalLimits::default()
-            };
-            let mut policy: Box<dyn QuestPolicy> = match policy {
-                EvalPolicyArg::Scripted => Box::new(ScriptedPolicy::default()),
-                EvalPolicyArg::Mock => Box::new(MockLlmPolicy),
-                EvalPolicyArg::Openai => {
-                    let config = ProviderConfig {
-                        endpoint: endpoint.unwrap_or_else(|| ProviderConfig::default().endpoint),
-                        model,
-                        api_key_env,
-                        allow_network,
-                        ..ProviderConfig::default()
-                    };
-                    // Construction validates opt-in and credential before case generation.
-                    Box::new(OpenAiCompatiblePolicy::new(config)?)
-                }
-            };
-            let bundle = evaluate_cases(&configs, policy.as_mut(), &limits)?;
-            fs::write(&public_output, serde_json::to_vec_pretty(&bundle.public)?)?;
-            fs::write(&stories_output, render_markdown_stories(&bundle.public))?;
-            fs::write(
-                &developer_output,
-                serde_json::to_vec_pretty(&bundle.developer)?,
-            )?;
-            eprintln!(
-                "quest evaluation: {}/{} solved; public={} stories={} developer={}",
-                bundle.public.metrics.solved,
-                bundle.public.metrics.cases,
-                public_output.display(),
-                stories_output.display(),
-                developer_output.display()
-            );
-            return Ok(());
-        }
-        Command::QuestEvalReplay { fixture, output } => {
-            let recorded: ReplayCase = serde_json::from_slice(&read_bounded(&fixture)?)?;
-            let trace = replay_case(&recorded)?;
-            let json = serde_json::to_vec_pretty(&trace)?;
-            if let Some(path) = output {
-                fs::write(path, json)?;
-            } else {
-                println!("{}", String::from_utf8(json)?);
-            }
-            return Ok(());
-        }
-        command => command,
-    };
+    let command = cli.command;
     if let Command::CoreLoop {
         host,
         database,
@@ -192,18 +102,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         party_size,
         run_nonce,
         output,
+        npc_stories_output,
+        npc_strategy_policy,
+        npc_endpoint,
+        npc_model,
+        npc_api_key_env,
+        npc_allow_network,
     } = command
     {
-        let report = run_core_loop(CoreLoopConfig {
-            host,
-            database,
-            seed,
-            population,
-            cycles,
-            duration_days,
-            party_size,
-            run_nonce,
-        })?;
+        if let Some(json_output) = &output {
+            validate_distinct_output_paths(&[json_output, &npc_stories_output])?;
+        }
+        let policy: Option<Box<dyn QuestPolicy>> = match npc_strategy_policy {
+            NpcStrategyPolicyArg::ServerScripted => None,
+            NpcStrategyPolicyArg::Openai => {
+                Some(Box::new(OpenAiCompatiblePolicy::new(ProviderConfig {
+                    endpoint: npc_endpoint.unwrap_or_else(|| ProviderConfig::default().endpoint),
+                    model: npc_model,
+                    api_key_env: npc_api_key_env,
+                    allow_network: npc_allow_network,
+                    ..ProviderConfig::default()
+                })?))
+            }
+        };
+        let report = run_core_loop_with_npc_policy(
+            CoreLoopConfig {
+                host,
+                database,
+                seed,
+                population,
+                cycles,
+                duration_days,
+                party_size,
+                run_nonce,
+            },
+            policy,
+        )?;
+        fs::write(
+            &npc_stories_output,
+            report.npc_intervention_stories_markdown.as_bytes(),
+        )?;
         let json = serde_json::to_vec_pretty(&report)?;
         if let Some(path) = output {
             fs::write(path, json)?;
@@ -221,6 +159,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             report.metrics.camp_stops,
             report.metrics.equipment_upgrades,
         );
+        eprintln!("NPC intervention stories: {}", npc_stories_output.display());
         return Ok(());
     }
     let report = match command {
@@ -282,9 +221,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             emit(run_profiles(config, vec![a, b])?, output)?
         }
-        Command::CoreLoop { .. } | Command::QuestEval { .. } | Command::QuestEvalReplay { .. } => {
-            unreachable!()
-        }
+        Command::CoreLoop { .. } => unreachable!(),
     };
     eprintln!("{}", human_summary(&report));
     Ok(())
@@ -371,26 +308,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn public_and_developer_outputs_must_differ() {
-        let path = PathBuf::from("quest-eval-same-output.json");
+    fn duplicate_outputs_must_differ() {
+        let path = PathBuf::from("simulation-output.json");
         assert!(validate_distinct_output_paths(&[&path, &path]).is_err());
     }
 
     #[test]
     fn nonexistent_lexical_aliases_are_rejected() {
-        let canonical = PathBuf::from("quest-eval-alias.json");
+        let canonical = PathBuf::from("simulation-output.json");
         let alias = PathBuf::from("new-output-directory")
             .join("..")
-            .join("quest-eval-alias.json");
+            .join("simulation-output.json");
         assert!(validate_distinct_output_paths(&[&canonical, &alias]).is_err());
     }
 
     #[test]
-    fn all_evaluation_outputs_must_differ() {
-        let public = PathBuf::from("quest-eval-public.json");
-        let stories = PathBuf::from("quest-eval-stories.md");
-        let developer = PathBuf::from("quest-eval-developer.json");
-        assert!(validate_distinct_output_paths(&[&public, &stories, &developer]).is_ok());
-        assert!(validate_distinct_output_paths(&[&public, &stories, &stories]).is_err());
+    fn core_report_and_npc_stories_must_differ() {
+        let report = PathBuf::from("core-loop-report.json");
+        let stories = PathBuf::from("npc-adventurer-stories.md");
+        assert!(validate_distinct_output_paths(&[&report, &stories]).is_ok());
+        assert!(validate_distinct_output_paths(&[&stories, &stories]).is_err());
     }
 }

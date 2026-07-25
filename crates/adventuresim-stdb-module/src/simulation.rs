@@ -4,7 +4,7 @@ use spacetimedb::{Identity, ReducerContext, Table, reducer, table};
 
 use crate::character::character;
 use crate::personality::character_personality;
-use crate::time::character_time;
+use crate::time::{character_time, world_clock};
 use crate::{
     CharacterAttributes, CharacterSkills, CharacterTrainingSchedule, DeathCause, DeathSource,
     ScheduleAllocation, character_attributes, character_skills, character_training_schedule,
@@ -15,6 +15,16 @@ use crate::{
 /// disposable launcher supplies this only to the one module build it owns.
 const COMPILED_BOOTSTRAP_TOKEN: Option<&str> = option_env!("ADVENTURESIM_SIM_BOOTSTRAP_TOKEN");
 const MAX_INITIAL_SKILL_HOURS: f32 = 1_000_000.0;
+const MAX_SIMULATION_CLOCK_ADVANCE_MINUTES: u64 = 100 * 365 * 1_440;
+const SIMULATION_STARTING_COIN: u32 = 100;
+
+fn valid_simulation_clock_advance(delta_minutes: u64) -> bool {
+    (1..=MAX_SIMULATION_CLOCK_ADVANCE_MINUTES).contains(&delta_minutes)
+}
+
+fn simulation_epoch_shift_micros(delta_minutes: u64) -> Option<i64> {
+    i64::try_from((u128::from(delta_minutes) * 84_000_000_u128).div_ceil(73)).ok()
+}
 
 fn simulation_religion_hours_valid(hours: adventuresim_world_schema::ReligionHours) -> bool {
     hours.direct_fields_valid(MAX_INITIAL_SKILL_HOURS)
@@ -118,6 +128,39 @@ pub(crate) fn sender_owns_simulation_character(ctx: &ReducerContext, character_i
 pub fn seed_simulation_world(ctx: &ReducerContext, nonce: String) -> Result<(), String> {
     owned_run(ctx, &nonce)?;
     crate::strategic::seed_world(ctx)
+}
+
+/// Advance authoritative world time only in a capability-owned disposable
+/// simulation. Production time remains derived exclusively from wall time.
+#[reducer]
+pub fn advance_simulation_world_time(
+    ctx: &ReducerContext,
+    nonce: String,
+    delta_minutes: u64,
+) -> Result<(), String> {
+    owned_run(ctx, &nonce)?;
+    if !valid_simulation_clock_advance(delta_minutes) {
+        return Err("Simulation world-time advance is outside the bounded range".into());
+    }
+    crate::time::refresh_clock(ctx)?;
+    let mut clock = ctx
+        .db
+        .world_clock()
+        .id()
+        .find(0)
+        .ok_or("Simulation world clock is not initialized")?;
+    // The authoritative clock runs at one real week per 365-day game year:
+    // 84/73 real seconds per official minute. Move its epoch by the inverse
+    // transform, rounding up so every requested official minute is observed.
+    let delta_micros = simulation_epoch_shift_micros(delta_minutes)
+        .ok_or("Simulation world-time advance overflow")?;
+    clock.epoch_micros = clock
+        .epoch_micros
+        .checked_sub(delta_micros)
+        .ok_or("Simulation world epoch underflow")?;
+    clock.official_minutes = clock.official_minutes.saturating_add(delta_minutes);
+    ctx.db.world_clock().id().update(clock);
+    Ok(())
 }
 
 /// Deterministic death path available only in a capability-owned disposable
@@ -257,7 +300,7 @@ pub fn configure_simulation_character(
     character.current_settlement_id = Some(settlement_id.clone());
     crate::investigation::set_character_case_site(ctx, character.id, None);
     ctx.db.character().id().update(character);
-    solo_party.current_settlement_id = Some(settlement_id);
+    solo_party.current_settlement_id = Some(settlement_id.clone());
     solo_party.current_case_site_id = None;
     ctx.db.party_authority().id().update(solo_party);
     ctx.db
@@ -285,6 +328,16 @@ pub fn configure_simulation_character(
         .character_personality()
         .character_id()
         .update(personality);
+    // A configured evaluation adventurer needs a small working purse so an
+    // inn-only seed settlement does not deadlock before its first scheduled
+    // labor day can be applied. All ordinary costs still go through the same
+    // currency reducers used by players.
+    crate::item::credit_personal_currency(
+        ctx,
+        character_id,
+        &settlement_id,
+        SIMULATION_STARTING_COIN,
+    )?;
     crate::capability::refresh_character_capability(ctx, character_id)?;
     crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     Ok(())
@@ -370,7 +423,10 @@ pub(crate) fn same_simulation_scope(ctx: &ReducerContext, left: u64, right: u64)
 
 #[cfg(test)]
 mod tests {
-    use super::simulation_religion_hours_valid;
+    use super::{
+        MAX_SIMULATION_CLOCK_ADVANCE_MINUTES, simulation_epoch_shift_micros,
+        simulation_religion_hours_valid, valid_simulation_clock_advance,
+    };
     use adventuresim_world_schema::ReligionHours;
 
     #[test]
@@ -382,5 +438,22 @@ mod tests {
                 ..Default::default()
             }));
         }
+    }
+
+    #[test]
+    fn simulation_world_time_advance_is_positive_and_bounded() {
+        assert!(!valid_simulation_clock_advance(0));
+        assert!(valid_simulation_clock_advance(1_440));
+        assert!(valid_simulation_clock_advance(
+            MAX_SIMULATION_CLOCK_ADVANCE_MINUTES
+        ));
+        assert!(!valid_simulation_clock_advance(
+            MAX_SIMULATION_CLOCK_ADVANCE_MINUTES + 1
+        ));
+        let shift = simulation_epoch_shift_micros(1_440).unwrap();
+        assert_eq!(
+            adventuresim_core::strategic_time::elapsed_official_minutes(-shift, 0),
+            1_440
+        );
     }
 }

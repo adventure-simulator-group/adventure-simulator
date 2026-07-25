@@ -4,6 +4,7 @@
     "test": "cd ../.. && node --test crates/strategic-web/tests/*.test.cjs"
   },
   "devDependencies": {
-    "linkedom": "0.18.12"
+    "linkedom": "0.18.12",
+    "playwright": "1.61.1"
   }
 }
