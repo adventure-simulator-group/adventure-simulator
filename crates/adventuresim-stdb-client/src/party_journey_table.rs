@@ -3,6 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::camp_duration_mode_type::CampDurationMode;
+use super::journey_endpoint_type::JourneyEndpoint;
 use super::party_journey_type::PartyJourney;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
@@ -79,57 +80,9 @@ impl<'ctx> __sdk::Table for PartyJourneyTableHandle<'ctx> {
     }
 }
 
-pub struct PartyJourneyUpdateCallbackId(__sdk::CallbackId);
-
-impl<'ctx> __sdk::TableWithPrimaryKey for PartyJourneyTableHandle<'ctx> {
-    type UpdateCallbackId = PartyJourneyUpdateCallbackId;
-
-    fn on_update(
-        &self,
-        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
-    ) -> PartyJourneyUpdateCallbackId {
-        PartyJourneyUpdateCallbackId(self.imp.on_update(Box::new(callback)))
-    }
-
-    fn remove_on_update(&self, callback: PartyJourneyUpdateCallbackId) {
-        self.imp.remove_on_update(callback.0)
-    }
-}
-
-/// Access to the `party_id` unique index on the table `party_journey`,
-/// which allows point queries on the field of the same name
-/// via the [`PartyJourneyPartyIdUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.party_journey().party_id().find(...)`.
-pub struct PartyJourneyPartyIdUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<PartyJourney, String>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> PartyJourneyTableHandle<'ctx> {
-    /// Get a handle on the `party_id` unique index on the table `party_journey`.
-    pub fn party_id(&self) -> PartyJourneyPartyIdUnique<'ctx> {
-        PartyJourneyPartyIdUnique {
-            imp: self.imp.get_unique_constraint::<String>("party_id"),
-            phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<'ctx> PartyJourneyPartyIdUnique<'ctx> {
-    /// Find the subscribed row whose `party_id` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &String) -> Option<PartyJourney> {
-        self.imp.find(col_val)
-    }
-}
-
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<PartyJourney>("party_journey");
-    _table.add_unique_constraint::<String>("party_id", |row| &row.party_id);
 }
 
 #[doc(hidden)]

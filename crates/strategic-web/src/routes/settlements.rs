@@ -119,13 +119,13 @@ use super::inventory_forms::{
 };
 use super::redirect_to_local;
 use super::travel::{
-    QuestMapMarkers, TravelDestination, TravelForm, TravelProvisionForecast, active_quest_summary,
-    active_quest_tooltip, connected_destinations, populate_itinerary_forecasts,
+    TravelDestination, TravelForm, TravelProvisionForecast, active_quest_tooltip,
+    connected_destinations, populate_itinerary_forecasts,
 };
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    AlcoholConsumption, BackendInvestigationLead, BackendLocalProblemTradeEffect, Character,
+    AlcoholConsumption, BackendCaseSitePin, BackendLocalProblemTradeEffect, Character,
     CharacterAffinity, CharacterAttributes, CharacterCapability, CharacterCondition,
     CharacterEquip, CharacterFamiliarity, CharacterFilth, CharacterLimbs, CharacterMoraleSource,
     CharacterNeeds, CharacterNotoriety, CharacterPersonality, CharacterSkills, CharacterStats,
@@ -170,7 +170,7 @@ pub fn routes() -> Router<AppState> {
             post(rest_at_settlement_map),
         )
         .route(
-            "/locations/quest/{id}/map/travel-configuration",
+            "/locations/case-site/{id}/map/travel-configuration",
             post(update_travel_configuration),
         )
         .route("/camp", get(camp))
@@ -1071,32 +1071,36 @@ async fn settlement_map(
     let active_quest_id = active_party
         .as_ref()
         .and_then(|party| party.active_quest_id.as_deref());
-    let markers = QuestMapMarkers::new(&quests, active_quest_id);
-    let mut map_quests = map_quests_for_settlement(&quests, &settlement.id, active_quest_id);
-    if let Some(character_id) = session.character_id_u64() {
-        let safe_leads = state
+    let active_quest = active_quest_id.and_then(|id| quests.iter().find(|quest| quest.id == id));
+    let case_sites = if let Some(character_id) = session.character_id_u64() {
+        state
             .db
-            .query::<BackendInvestigationLead>(&format!(
-                "SELECT * FROM backend_investigation_leads WHERE owner_character_id = {character_id}"
+            .query::<BackendCaseSitePin>(&format!(
+                "SELECT * FROM backend_case_site_pins WHERE owner_character_id = {character_id}"
             ))
             .await
-            .unwrap_or_default();
-        map_quests.extend(knowledge_quest_pins(&safe_leads, &settlement.id));
-    }
-    let active_quest = markers.active_quest();
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
     let is_current_settlement = active_character.as_ref().is_some_and(|(character, _)| {
         character.current_settlement_id.as_deref() == Some(&settlement.id)
     });
     let can_travel = map_data_initialized && is_current_settlement && active_party.is_some();
-    if let Some(quest) = active_quest.filter(|quest| quest.status == QuestStatus::Accepted) {
-        if can_travel && settlement.id == quest.settlement_id {
-            let distance_m = crate::routes::quests::straight_line_distance_m(quest, settlement);
+    if can_travel {
+        for site in case_sites
+            .iter()
+            .filter(|site| site.origin_settlement_id == settlement.id)
+        {
+            let distance_m = site.distance_m;
             destinations.push(TravelDestination {
-                id: quest.id.clone(),
-                name: quest.title.clone(),
-                description: quest.description.clone(),
-                summary: Some(active_quest_summary(quest)),
-                travel_action: format!("/quests/{}/travel", quest.id),
+                id: site.case_site_id.clone(),
+                name: site.name.clone(),
+                description: site.description.clone(),
+                summary: Some(format!("Exact {} destination", site.knowledge_stage)),
+                travel_action: format!("/case-sites/{}/travel", site.case_site_id),
+                track_action: Some(format!("/case-sites/{}/track", site.case_site_id)),
+                tracked: site.tracked,
                 distance_m,
                 journey_minutes: crate::routes::quests::offroad_journey_minutes(distance_m),
                 camp_stop_minutes: Vec::new(),
@@ -1120,11 +1124,14 @@ async fn settlement_map(
             .iter_mut()
             .find(|destination| destination.id == selected_id)
     {
-        let goal = if destination.quest_in_progress {
-            map_quests
-                .iter()
-                .find(|quest| quest.id == destination.id)
-                .map(|quest| (quest.location_coord_y, quest.location_coord_x))
+        let goal = if let Some(site) = case_sites
+            .iter()
+            .find(|site| site.case_site_id == destination.id)
+        {
+            Some((
+                f64::from(site.latitude_e7) / 10_000_000.0,
+                f64::from(site.longitude_e7) / 10_000_000.0,
+            ))
         } else {
             settlements
                 .iter()
@@ -1236,7 +1243,7 @@ async fn settlement_map(
         settlement_map_page(
             settlement,
             &settlements,
-            &map_quests,
+            &case_sites,
             state.strategic_map.as_deref(),
             &destinations,
             query.destination.as_deref(),
@@ -1253,7 +1260,7 @@ async fn settlement_map(
                     quest,
                     active_character
                         .as_ref()
-                        .and_then(|(character, _)| character.current_quest_location_id.as_deref()),
+                        .and_then(|(character, _)| character.current_case_site_id.as_deref()),
                 )
             }),
             active_character
@@ -1264,56 +1271,8 @@ async fn settlement_map(
     )
 }
 
-fn can_abandon_active_quest(quest: &Quest, current_quest_location_id: Option<&str>) -> bool {
-    quest.status == QuestStatus::Accepted && current_quest_location_id.is_none()
-}
-
-fn map_quests_for_settlement(
-    quests: &[Quest],
-    settlement_id: &str,
-    active_quest_id: Option<&str>,
-) -> Vec<Quest> {
-    quests
-        .iter()
-        .filter(|quest| {
-            quest.status == QuestStatus::Accepted
-                && active_quest_id == Some(quest.id.as_str())
-                && quest.settlement_id == settlement_id
-        })
-        .cloned()
-        .collect()
-}
-
-fn knowledge_quest_pins(leads: &[BackendInvestigationLead], settlement_id: &str) -> Vec<Quest> {
-    leads
-        .iter()
-        .filter(|lead| {
-            matches!(
-                lead.destination_stage.as_str(),
-                "exact_believed" | "visited"
-            ) && !lead.exact_location_id.is_empty()
-                && lead.corrected_by.is_empty()
-        })
-        .map(|lead| Quest {
-            id: format!("knowledge:{}", lead.lead_id),
-            title: lead.summary.clone(),
-            description: format!("Believed location, according to {}", lead.source_label),
-            difficulty: 0,
-            gold_reward: 0,
-            xp_reward: 0,
-            settlement_id: settlement_id.into(),
-            status: QuestStatus::Accepted,
-            accepted_by: None,
-            enemy_type: String::new(),
-            enemy_count: 0,
-            location_description: lead.directions.clone(),
-            location_scene_key: String::new(),
-            location_coord_x: f64::from(lead.longitude_e7) / 10_000_000.0,
-            location_coord_y: f64::from(lead.latitude_e7) / 10_000_000.0,
-            coordinates_are_geographic: true,
-            distance_m: 0,
-        })
-        .collect()
+fn can_abandon_active_quest(quest: &Quest, current_case_site_id: Option<&str>) -> bool {
+    quest.status == QuestStatus::Accepted && current_case_site_id.is_none()
 }
 
 #[cfg(test)]
@@ -1333,12 +1292,6 @@ mod map_quest_tests {
             accepted_by: Some("party".into()),
             enemy_type: String::new(),
             enemy_count: 1,
-            location_description: String::new(),
-            location_scene_key: String::new(),
-            location_coord_x: 0.0,
-            location_coord_y: 0.0,
-            coordinates_are_geographic: false,
-            distance_m: 1_000,
         }
     }
 
@@ -1356,76 +1309,6 @@ mod map_quest_tests {
             &quest(QuestStatus::Completed),
             None
         ));
-    }
-
-    #[test]
-    fn map_quest_pins_include_only_the_known_active_destination() {
-        let mut local_available = quest(QuestStatus::Available);
-        local_available.id = "local-available".into();
-        local_available.accepted_by = None;
-        let mut remote_available = local_available.clone();
-        remote_available.id = "remote-available".into();
-        remote_available.settlement_id = "elsewhere".into();
-        let mut local_active = quest(QuestStatus::Accepted);
-        local_active.id = "local-active".into();
-        let mut local_inactive = local_active.clone();
-        local_inactive.id = "other-party-active".into();
-        let mut completed = quest(QuestStatus::Completed);
-        completed.id = "local-completed".into();
-
-        let visible = map_quests_for_settlement(
-            &[
-                local_available,
-                remote_available,
-                local_active,
-                local_inactive,
-                completed,
-            ],
-            "issuer",
-            Some("local-active"),
-        );
-        let ids = visible
-            .iter()
-            .map(|quest| quest.id.as_str())
-            .collect::<Vec<_>>();
-
-        assert_eq!(ids, ["local-active"]);
-    }
-
-    #[test]
-    fn knowledge_pins_require_exact_unrevised_observer_leads() {
-        let lead = BackendInvestigationLead {
-            owner_character_id: 7,
-            case_id: "case".into(),
-            lead_id: "mistaken".into(),
-            summary: "The wrong cave".into(),
-            source_label: "a witness".into(),
-            confidence_bps: 6000,
-            destination_stage: "approximate_area".into(),
-            directions: "north".into(),
-            exact_location_id: String::new(),
-            latitude_e7: 0,
-            longitude_e7: 0,
-            witness_name: String::new(),
-            witness_description: String::new(),
-            witness_occupation_or_relationship: String::new(),
-            expected_location: String::new(),
-            current_learned_location: String::new(),
-            contradiction_group: String::new(),
-            corrected_by: String::new(),
-            recorded_at: 1,
-        };
-        assert!(knowledge_quest_pins(&[lead.clone()], "town").is_empty());
-        let exact = BackendInvestigationLead {
-            destination_stage: "exact_believed".into(),
-            exact_location_id: "wrong-cave".into(),
-            latitude_e7: 532_000_000,
-            longitude_e7: 101_000_000,
-            ..lead
-        };
-        let pins = knowledge_quest_pins(&[exact], "town");
-        assert_eq!(pins.len(), 1);
-        assert_eq!(pins[0].location_coord_x, 10.1);
     }
 }
 
@@ -1506,7 +1389,7 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
             .flatten();
         if party
             .as_ref()
-            .is_some_and(|party| party.camp_destination_id.is_some())
+            .is_some_and(|party| party.camp_destination.is_some())
         {
             break;
         }
@@ -1517,33 +1400,10 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
     let Some(party) = party else {
         return Redirect::to("/").into_response();
     };
-    let Some(destination_id) = party.camp_destination_id.as_deref() else {
+    let Some(destination) = party.camp_destination.as_ref() else {
         return Redirect::to("/").into_response();
     };
-    let destination_name = match party.camp_destination_kind.as_deref() {
-        Some("settlement") => state
-            .db
-            .query_one::<Settlement>(&format!(
-                "SELECT * FROM settlement WHERE id = {}",
-                sql_string_literal(destination_id)
-            ))
-            .await
-            .ok()
-            .flatten()
-            .map(|item| item.name),
-        Some("quest") => state
-            .db
-            .query_one::<Quest>(&format!(
-                "SELECT * FROM quest WHERE id = {}",
-                sql_string_literal(destination_id)
-            ))
-            .await
-            .ok()
-            .flatten()
-            .map(|item| item.title),
-        _ => None,
-    }
-    .unwrap_or_else(|| "Unknown destination".into());
+    let destination_name = destination.name().to_string();
     // The party and journey rows are committed atomically, but the SQL view
     // can observe the camp row a fraction before the journey projection.
     // Retry briefly so the first camp render retains the original start.
@@ -1583,7 +1443,7 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
         legacy.completed_elapsed_minutes = legacy.completed_minutes;
         legacy.departure_minute =
             current_party_minute.saturating_sub(legacy.completed_elapsed_minutes);
-        legacy.total_elapsed_minutes = if legacy.destination_kind == "quest" {
+        legacy.total_elapsed_minutes = if legacy.destination.case_site_id().is_some() {
             legacy.total_minutes.saturating_mul(2)
         } else {
             legacy.total_minutes
@@ -1746,12 +1606,14 @@ async fn camp_settlement_destinations(
         return Vec::new();
     };
     let mut endpoints = Vec::new();
-    if journey.origin_kind == "settlement" && journey.completed_minutes > 0 {
-        endpoints.push((journey.origin_id.as_str(), journey.completed_minutes));
+    if let Some(origin_id) = journey.origin.settlement_id()
+        && journey.completed_minutes > 0
+    {
+        endpoints.push((origin_id, journey.completed_minutes));
     }
-    if journey.destination_kind == "settlement" {
+    if let Some(destination_id) = journey.destination.settlement_id() {
         endpoints.push((
-            journey.destination_id.as_str(),
+            destination_id,
             journey
                 .total_minutes
                 .saturating_sub(journey.completed_minutes),
@@ -1777,8 +1639,11 @@ async fn camp_settlement_destinations(
             .flatten();
         if let Some(settlement) = settlement {
             destinations.push(CampTravelDestination {
-                current: party.camp_destination_kind.as_deref() == Some("settlement")
-                    && party.camp_destination_id.as_deref() == Some(id),
+                current: party
+                    .camp_destination
+                    .as_ref()
+                    .and_then(|destination| destination.settlement_id())
+                    == Some(id),
                 id: settlement.id,
                 name: settlement.name,
                 journey_minutes,
@@ -2535,7 +2400,7 @@ fn service_quest_details(
         .unwrap_or("Learn more before committing to a fight.");
     // The generated quest is authoritative. Service identifies the speaker,
     // never the threat or location; several templates intentionally share it.
-    let situation = format!("{} {}", quest.description, quest.location_description);
+    let situation = &quest.description;
     format!(
         "Yes, {situation}. I believe there are about {low} or {high} {threat_name}, give or take. I'd offer {} coin to anyone who clears them out. Preparation: {preparation} Are you",
         quest.gold_reward,
@@ -2546,7 +2411,7 @@ fn service_quest_details(
 mod bestiary_quest_presentation_tests {
     use super::*;
 
-    fn quest(enemy_type: &str, description: &str, location: &str) -> Quest {
+    fn quest(enemy_type: &str, description: &str) -> Quest {
         Quest {
             id: "q".into(),
             title: "Problem".into(),
@@ -2559,31 +2424,17 @@ mod bestiary_quest_presentation_tests {
             accepted_by: None,
             enemy_type: enemy_type.into(),
             enemy_count: 3,
-            location_description: location.into(),
-            location_scene_key: "ruins".into(),
-            location_coord_x: 0.0,
-            location_coord_y: 0.0,
-            coordinates_are_geographic: false,
-            distance_m: 1000,
         }
     }
 
     #[test]
     fn shared_service_never_substitutes_its_old_fixed_threat_or_location() {
-        let alp = quest(
-            "alp",
-            "Sleepers report an unseen visitor.",
-            "An abandoned house.",
-        );
-        let hound = quest(
-            "spectral_hound",
-            "A black hound haunts the road.",
-            "The graveyard road.",
-        );
+        let alp = quest("alp", "Sleepers report an unseen visitor.");
+        let hound = quest("spectral_hound", "A black hound haunts the road.");
         let alp_details = service_quest_details("inn", &alp, "A", "B", 2, 3);
         let hound_details = service_quest_details("inn", &hound, "A", "B", 2, 3);
-        assert!(alp_details.contains("unseen visitor") && alp_details.contains("abandoned house"));
-        assert!(hound_details.contains("black hound") && hound_details.contains("graveyard road"));
+        assert!(alp_details.contains("unseen visitor"));
+        assert!(hound_details.contains("black hound"));
         assert!(!alp_details.contains("goblin") && !hound_details.contains("goblin"));
     }
 }
@@ -2751,7 +2602,7 @@ fn character_is_at_location(character: &Character, location: &LocationView) -> b
             character.current_settlement_id.as_deref() == Some(location.id.as_str())
         }
         LocationKind::Quest => {
-            character.current_quest_location_id.as_deref() == Some(location.id.as_str())
+            character.current_case_site_id.as_deref() == Some(location.id.as_str())
         }
     }
 }
@@ -3082,7 +2933,7 @@ mod party_religion_knowledge_tests {
             level: 1,
             gold: 0,
             current_settlement_id: None,
-            current_quest_location_id: None,
+            current_case_site_id: None,
             party_id: Some("party".into()),
             age_years: 20,
             alive,
@@ -3270,9 +3121,10 @@ async fn perform_immediate_activity(
     {
         Ok(()) => {
             if let Some((character, _)) = get_active_character(&state, Some(character_id)).await
-                && let Some(quest_id) = character.current_quest_location_id
+                && let Some(case_site_id) = character.current_case_site_id
             {
-                return Redirect::to(&format!("/locations/quest/{quest_id}")).into_response();
+                return Redirect::to(&format!("/locations/case-site/{case_site_id}"))
+                    .into_response();
             }
             Redirect::to(
                 &building.append_to(format!("/locations/{kind}/{id}/party/{character_id}")),
@@ -3324,7 +3176,7 @@ async fn party_member(
         }
     };
     if selected.current_settlement_id != active_character.current_settlement_id
-        || selected.current_quest_location_id != active_character.current_quest_location_id
+        || selected.current_case_site_id != active_character.current_case_site_id
     {
         return Html("<h1>Character is not at this location</h1>".to_string());
     }
@@ -3834,7 +3686,7 @@ async fn render_party_stats(
         }
     };
     if selected.current_settlement_id != active_character.current_settlement_id
-        || selected.current_quest_location_id != active_character.current_quest_location_id
+        || selected.current_case_site_id != active_character.current_case_site_id
     {
         return Html("<h1>Character is not at this location</h1>".to_string());
     }
@@ -4125,7 +3977,7 @@ async fn party_social(
     let same_party = target_id == active.id
         || (active.party_id.is_some() && active.party_id == selected.party_id);
     let colocated = active.current_settlement_id == selected.current_settlement_id
-        && active.current_quest_location_id == selected.current_quest_location_id;
+        && active.current_case_site_id == selected.current_case_site_id;
     if !same_party
         || !colocated
         || !active.alive
@@ -4652,11 +4504,11 @@ async fn rest(
         return Html("<h1>Settlement not found</h1>".to_string()).into_response();
     };
     let active_character = get_active_character(&state, Some(character_id)).await;
-    if let Some(quest_id) = active_character
+    if let Some(case_site_id) = active_character
         .as_ref()
-        .and_then(|(character, _)| character.current_quest_location_id.as_deref())
+        .and_then(|(character, _)| character.current_case_site_id.as_deref())
     {
-        return Redirect::to(&format!("/locations/quest/{quest_id}")).into_response();
+        return Redirect::to(&format!("/locations/case-site/{case_site_id}")).into_response();
     }
     let party_members = get_active_party_members(
         &state,
@@ -6143,7 +5995,7 @@ mod rest_form_tests {
             level: 1,
             gold: 0,
             current_settlement_id: None,
-            current_quest_location_id: None,
+            current_case_site_id: None,
             party_id: Some("party".into()),
             age_years: 30,
             alive: true,
@@ -6347,7 +6199,7 @@ mod herbalist_tests {
             level: 1,
             gold: 0,
             current_settlement_id: None,
-            current_quest_location_id: None,
+            current_case_site_id: None,
             party_id: Some("party".into()),
             age_years: 20,
             alive,
@@ -6436,7 +6288,7 @@ mod encumbrance_tests {
             level: 1,
             gold: 0,
             current_settlement_id: None,
-            current_quest_location_id: None,
+            current_case_site_id: None,
             party_id: Some("party".into()),
             age_years: 20,
             alive,

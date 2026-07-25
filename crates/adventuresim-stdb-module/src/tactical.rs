@@ -7,8 +7,8 @@ use crate::{
     Character, CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, Item,
     ItemSlot, character::character, character__view, character_attributes__view, character_equip,
     character_equip__view, character_limbs__view, character_skills__view, character_stats__view,
-    complete_quest, inventory_item, inventory_item__view, item__view, party, record_battle_result,
-    strategic::quest,
+    complete_quest, inventory_item, inventory_item__view, investigation::case_site_authority,
+    item__view, party_authority, record_battle_result, strategic::quest,
 };
 use std::collections::{HashMap, HashSet};
 use strum::VariantArray;
@@ -201,7 +201,7 @@ pub fn enter_mission(
         }
         let party = ctx
             .db
-            .party()
+            .party_authority()
             .id()
             .find(&server.party_id)
             .ok_or("Mission party no longer exists")?;
@@ -290,7 +290,7 @@ pub fn request_tactical_server(
     let party_id = character.party_id.ok_or("Character has no party")?;
     let party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
@@ -301,7 +301,13 @@ pub fn request_tactical_server(
         .active_quest_id
         .clone()
         .ok_or("Party has no active quest")?;
-    if party.current_quest_location_id.as_deref() != Some(quest_id.as_str()) {
+    let case_site = party
+        .current_case_site_id
+        .as_ref()
+        .and_then(|site_id| ctx.db.case_site_authority().id_key().find(&site_id.value))
+        .filter(|site| site.case_id == quest_id)
+        .ok_or("Party must be at its active quest site")?;
+    if party.current_case_site_id.as_deref() != Some(case_site.id.as_str()) {
         return Err("Party must be at its active quest location".into());
     }
     let quest = ctx
@@ -310,7 +316,7 @@ pub fn request_tactical_server(
         .id()
         .find(&quest_id)
         .ok_or("Quest not found")?;
-    if quest.accepted_by.as_deref() != Some(&party_id) || quest.location_scene_key != scene_key {
+    if quest.accepted_by.as_deref() != Some(&party_id) || case_site.scene_key != scene_key {
         return Err("Tactical scene does not match the party's active quest".into());
     }
     if let Some(server) = ctx.db.tactical_server().mission_id().find(&mission_id) {
@@ -481,7 +487,7 @@ fn end_tactical_server_by_instance(
     if success {
         let party = ctx
             .db
-            .party()
+            .party_authority()
             .id()
             .find(&server.party_id)
             .ok_or("Mission party no longer exists")?;

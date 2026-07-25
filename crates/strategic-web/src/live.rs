@@ -82,7 +82,10 @@ use tokio::sync::broadcast;
 use crate::{
     routes::AppState,
     session::Session,
-    spacetimedb::{Character, Party, sql_string_literal},
+    spacetimedb::{
+        BackendCharacterCaseSiteLocation as HttpBackendCharacterCaseSiteLocation, Character, Party,
+        sql_string_literal,
+    },
 };
 
 struct LiveInner {
@@ -133,9 +136,24 @@ impl LiveState {
                 $table.on_delete(move |_, _| live.invalidate());
             }};
         }
+        macro_rules! invalidate_on_view_changes {
+            ($table:expr) => {{
+                let live = state.clone();
+                $table.on_insert(move |_, _| live.invalidate());
+                let live = state.clone();
+                $table.on_delete(move |_, _| live.invalidate());
+            }};
+        }
         // These tables cover location/navigation, party state and requests,
         // recruitment, quest state, local conversations, and mission readiness.
         invalidate_on_changes!(state.0._connection.db.character());
+        invalidate_on_view_changes!(
+            state
+                .0
+                ._connection
+                .db
+                .backend_character_case_site_locations()
+        );
         invalidate_on_changes!(state.0._connection.db.character_attributes());
         invalidate_on_changes!(state.0._connection.db.character_stats());
         invalidate_on_changes!(state.0._connection.db.character_skills());
@@ -143,11 +161,11 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.limb_injury());
         invalidate_on_changes!(state.0._connection.db.retained_projectile());
         invalidate_on_changes!(state.0._connection.db.character_training_schedule());
-        invalidate_on_changes!(state.0._connection.db.party());
-        invalidate_on_changes!(state.0._connection.db.party_journey());
+        invalidate_on_view_changes!(state.0._connection.db.party());
+        invalidate_on_view_changes!(state.0._connection.db.party_journey());
         invalidate_on_changes!(state.0._connection.db.party_journey_itinerary());
         invalidate_on_changes!(state.0._connection.db.party_member());
-        invalidate_on_changes!(state.0._connection.db.party_action_request());
+        invalidate_on_view_changes!(state.0._connection.db.party_action_request());
         invalidate_on_changes!(state.0._connection.db.party_join_request());
         invalidate_on_changes!(state.0._connection.db.party_leader_vote());
         invalidate_on_changes!(state.0._connection.db.party_recruitment_role());
@@ -377,7 +395,7 @@ async fn navigation(State(state): State<AppState>, session: Session) -> Json<Nav
                 .await
                 .ok()
                 .flatten()
-                .is_some_and(|party| party.camp_destination_id.is_some())
+                .is_some_and(|party| party.camp_destination.is_some())
         {
             return Json(NavigationState {
                 kind: Some("camp"),
@@ -385,10 +403,19 @@ async fn navigation(State(state): State<AppState>, session: Session) -> Json<Nav
                 id: None,
             });
         }
-        if let Some(id) = character.current_quest_location_id {
+        let current_case_site_id = state
+            .db
+            .query_one::<HttpBackendCharacterCaseSiteLocation>(&format!(
+                "SELECT * FROM backend_character_case_site_locations WHERE character_id = {character_id}"
+            ))
+            .await
+            .ok()
+            .flatten()
+            .map(|row| row.case_site_id.value);
+        if let Some(id) = current_case_site_id {
             return Json(NavigationState {
-                kind: Some("quest"),
-                path: format!("/locations/quest/{id}"),
+                kind: Some("case_site"),
+                path: format!("/locations/case-site/{id}"),
                 id: Some(id),
             });
         }

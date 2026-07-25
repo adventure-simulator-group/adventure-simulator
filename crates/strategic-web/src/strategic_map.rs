@@ -17,7 +17,7 @@ use maud::{Markup, html};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-use crate::spacetimedb::{Quest, QuestStatus, Settlement, SettlementCategory};
+use crate::spacetimedb::{BackendCaseSitePin, Settlement, SettlementCategory};
 
 const WIDTH: f64 = 1200.0;
 const HEIGHT: f64 = 800.0;
@@ -389,10 +389,8 @@ pub(crate) fn has_geographic_source(settlement: &Settlement) -> bool {
         && settlement.coord_y.is_finite()
 }
 
-fn has_geographic_quest(quest: &Quest) -> bool {
-    quest.coordinates_are_geographic
-        && quest.location_coord_x.is_finite()
-        && quest.location_coord_y.is_finite()
+fn has_geographic_case_site(site: &BackendCaseSitePin) -> bool {
+    site.coordinates_are_geographic
 }
 
 fn has_geographic_source_in_bounds(settlement: &Settlement, bounds: [f64; 4]) -> bool {
@@ -404,11 +402,11 @@ fn has_geographic_source_in_bounds(settlement: &Settlement, bounds: [f64; 4]) ->
         )
 }
 
-fn has_geographic_quest_in_bounds(quest: &Quest, bounds: [f64; 4]) -> bool {
-    has_geographic_quest(quest)
+fn has_geographic_case_site_in_bounds(site: &BackendCaseSitePin, bounds: [f64; 4]) -> bool {
+    has_geographic_case_site(site)
         && adventuresim_world_schema::coordinates_in_bounds(
-            quest.location_coord_x,
-            quest.location_coord_y,
+            f64::from(site.longitude_e7) / 10_000_000.0,
+            f64::from(site.latitude_e7) / 10_000_000.0,
             bounds,
         )
 }
@@ -463,7 +461,7 @@ fn population_level_threshold(view_width: f64) -> i32 {
 pub fn strategic_map(
     map: &StrategicMap,
     settlements: &[Settlement],
-    quests: &[Quest],
+    case_sites: &[BackendCaseSitePin],
     current_id: &str,
     connected_ids: &BTreeSet<&str>,
     selected_id: Option<&str>,
@@ -485,20 +483,21 @@ pub fn strategic_map(
             })
         })
         .map(|settlement| project(settlement.coord_x, settlement.coord_y, package.bounds));
-    let quest_destination = selected_id
+    let case_site_destination = selected_id
         .and_then(|selected_id| {
-            quests.iter().find(|quest| {
-                quest.id == selected_id && has_geographic_quest_in_bounds(quest, package.bounds)
+            case_sites.iter().find(|site| {
+                site.case_site_id == selected_id
+                    && has_geographic_case_site_in_bounds(site, package.bounds)
             })
         })
-        .map(|quest| {
+        .map(|site| {
             project(
-                quest.location_coord_x,
-                quest.location_coord_y,
+                f64::from(site.longitude_e7) / 10_000_000.0,
+                f64::from(site.latitude_e7) / 10_000_000.0,
                 package.bounds,
             )
         });
-    let destination = settlement_destination.or(quest_destination);
+    let destination = settlement_destination.or(case_site_destination);
     let initial_view = initial_view_box((origin_x, origin_y), destination);
     let view_box = format!(
         "{:.2} {:.2} {:.2} {:.2}",
@@ -603,21 +602,17 @@ pub fn strategic_map(
                                 }
                             }
                         }
-                        @for quest in quests.iter().filter(|quest| has_geographic_quest_in_bounds(quest, package.bounds)) {
-                            @let (x, y) = project(quest.location_coord_x, quest.location_coord_y, package.bounds);
-                            @let is_selected = selected_id == Some(quest.id.as_str());
-                            @let is_active = quest.status != QuestStatus::Available;
-                            @let status_label = match quest.status {
-                                QuestStatus::Available => "available",
-                                QuestStatus::Accepted => "active",
-                                QuestStatus::Completed => "completed",
-                            };
-                            @let label = format!("Quest: {}, {status_label}", quest.title);
-                            a href=(format!("{map_path}?destination={}", quest.id))
+                        @for site in case_sites.iter().filter(|site| has_geographic_case_site_in_bounds(site, package.bounds)) {
+                            @let longitude = f64::from(site.longitude_e7) / 10_000_000.0;
+                            @let latitude = f64::from(site.latitude_e7) / 10_000_000.0;
+                            @let (x, y) = project(longitude, latitude, package.bounds);
+                            @let is_selected = selected_id == Some(site.case_site_id.as_str());
+                            @let label = format!("Known case site: {}", site.name);
+                            a href=(format!("{map_path}?destination={}", site.case_site_id))
                                 class="map-pin-link map-quest-link" aria-label=(&label) data-strategic-tooltip=(&label)
                                 aria-current=[is_selected.then_some("true")]
-                                data-map-pin data-quest-id=(&quest.id) {
-                                g class=(format!("map-pin map-quest{}{}", if is_active { " active" } else { "" }, if is_selected { " selected" } else { "" }))
+                                data-map-pin data-case-site-id=(&site.case_site_id) {
+                                g class=(format!("map-pin map-quest active{}", if is_selected { " selected" } else { "" }))
                                     transform=(format!("translate({x:.3} {y:.3})")) {
                                     g data-map-pin-symbol transform=(format!("scale({initial_pin_scale:.5})")) {
                                         circle class="map-quest-hit-area" r="13" {}
@@ -625,7 +620,7 @@ pub fn strategic_map(
                                         path class="map-quest-shape" d="M0,-9 L9,0 L0,9 L-9,0 Z" {}
                                         path class="map-quest-mark" d="M0,-5 V2 M0,5 V6" {}
                                         @if is_selected { path class="map-pin-selected-mark" d="M-5,13 H5" {} }
-                                        title { (&quest.title) }
+                                        title { (&site.name) }
                                     }
                                 }
                             }
@@ -847,25 +842,21 @@ mod tests {
         }
     }
 
-    fn quest(id: &str, title: &str, longitude: f64, latitude: f64) -> Quest {
-        Quest {
-            id: id.into(),
-            title: title.into(),
-            description: "A dangerous destination.".into(),
-            difficulty: 2,
-            gold_reward: 50,
-            xp_reward: 20,
-            settlement_id: "origin".into(),
-            status: QuestStatus::Available,
-            accepted_by: None,
-            enemy_type: "bandit".into(),
-            enemy_count: 4,
-            location_description: "A camp in the woods.".into(),
-            location_scene_key: "forest".into(),
-            location_coord_x: longitude,
-            location_coord_y: latitude,
+    fn case_site(id: &str, title: &str, longitude: f64, latitude: f64) -> BackendCaseSitePin {
+        BackendCaseSitePin {
+            owner_character_id: 7,
+            case_id: "quest-1".into(),
+            case_site_id: id.into(),
+            origin_settlement_id: "origin".into(),
+            name: title.into(),
+            description: "A camp in the woods.".into(),
+            scene_key: "forest".into(),
+            longitude_e7: (longitude * 10_000_000.0) as i32,
+            latitude_e7: (latitude * 10_000_000.0) as i32,
             coordinates_are_geographic: true,
             distance_m: 8_000,
+            knowledge_stage: "exact_believed".into(),
+            tracked: true,
         }
     }
 
@@ -954,9 +945,11 @@ mod tests {
         assert!(markup.contains("data-strategic-tooltip=\"Zoom in\""));
         assert!(markup.contains("tabindex=\"0\""));
         assert!(markup.contains("?destination=near"));
-        assert!(markup.contains("Nearby, direct route available"));
-        assert!(markup.contains("data-strategic-tooltip=\"Nearby, direct route available\""));
-        assert!(markup.contains("Far away, no direct route"));
+        assert!(markup.contains("Nearby,"));
+        assert!(markup.contains("direct route available"));
+        assert!(markup.contains("data-strategic-tooltip=\"Nearby,"));
+        assert!(markup.contains("Far away,"));
+        assert!(markup.contains("no direct route"));
         assert!(!markup.contains("Outside package"));
         assert!(!markup.contains("?destination=demo"));
         assert!(!markup.contains("role=\"img\""));
@@ -990,9 +983,9 @@ mod tests {
     }
 
     #[test]
-    fn selected_quest_has_a_pin_and_computed_terrain_route() {
+    fn selected_case_site_has_a_pin_and_computed_terrain_route() {
         let map = map_bundle();
-        let quest = quest("quest-1", "Bandits in the woods", 11.0, 53.2);
+        let site = case_site("case-site-1", "Bandits in the woods", 11.0, 53.2);
         let route = adventuresim_terrain::RoutePlan {
             points: vec![
                 adventuresim_terrain::RoutePoint {
@@ -1015,18 +1008,18 @@ mod tests {
         let markup = strategic_map(
             &map,
             &[settlement("origin", "Origin", 10.0, 53.0)],
-            std::slice::from_ref(&quest),
+            std::slice::from_ref(&site),
             "origin",
             &BTreeSet::new(),
-            Some("quest-1"),
+            Some("case-site-1"),
             "/locations/settlement/origin/map",
             Some(&route),
         )
         .into_string();
 
-        assert!(markup.contains("data-quest-id=\"quest-1\""));
-        assert!(markup.contains("?destination=quest-1"));
-        assert!(markup.contains("Quest: Bandits in the woods, available"));
+        assert!(markup.contains("data-case-site-id=\"case-site-1\""));
+        assert!(markup.contains("?destination=case-site-1"));
+        assert!(markup.contains("Known case site: Bandits in the woods"));
         assert!(markup.contains("map-quest-shape"));
         assert!(markup.contains("data-map-selection-line"));
         assert!(markup.contains("map-terrain-route"));

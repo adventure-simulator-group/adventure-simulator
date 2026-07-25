@@ -5,15 +5,18 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::camp_duration_mode_type::CampDurationMode;
+use super::case_site_id_type::CaseSiteId;
+use super::journey_endpoint_type::JourneyEndpoint;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct Party {
     pub id: String,
+    pub gateway_bucket: u8,
     pub name: String,
     pub leader_id: u64,
     pub current_settlement_id: Option<String>,
-    pub current_quest_location_id: Option<String>,
+    pub current_case_site_id: Option<CaseSiteId>,
     pub active_quest_id: Option<String>,
     pub is_solo: bool,
     pub camp_fatigue_percent: u8,
@@ -21,8 +24,7 @@ pub struct Party {
     pub travel_at_night: bool,
     pub camp_duration_mode: CampDurationMode,
     pub fixed_camp_minutes: u16,
-    pub camp_destination_id: Option<String>,
-    pub camp_destination_kind: Option<String>,
+    pub camp_destination: Option<JourneyEndpoint>,
     pub camp_remaining_minutes: u64,
     pub pooled_water_ml: f32,
     pub medicine_target: f32,
@@ -39,10 +41,11 @@ impl __sdk::InModule for Party {
 /// Provides typed access to columns for query building.
 pub struct PartyCols {
     pub id: __sdk::__query_builder::Col<Party, String>,
+    pub gateway_bucket: __sdk::__query_builder::Col<Party, u8>,
     pub name: __sdk::__query_builder::Col<Party, String>,
     pub leader_id: __sdk::__query_builder::Col<Party, u64>,
     pub current_settlement_id: __sdk::__query_builder::Col<Party, Option<String>>,
-    pub current_quest_location_id: __sdk::__query_builder::Col<Party, Option<String>>,
+    pub current_case_site_id: __sdk::__query_builder::Col<Party, Option<CaseSiteId>>,
     pub active_quest_id: __sdk::__query_builder::Col<Party, Option<String>>,
     pub is_solo: __sdk::__query_builder::Col<Party, bool>,
     pub camp_fatigue_percent: __sdk::__query_builder::Col<Party, u8>,
@@ -50,8 +53,7 @@ pub struct PartyCols {
     pub travel_at_night: __sdk::__query_builder::Col<Party, bool>,
     pub camp_duration_mode: __sdk::__query_builder::Col<Party, CampDurationMode>,
     pub fixed_camp_minutes: __sdk::__query_builder::Col<Party, u16>,
-    pub camp_destination_id: __sdk::__query_builder::Col<Party, Option<String>>,
-    pub camp_destination_kind: __sdk::__query_builder::Col<Party, Option<String>>,
+    pub camp_destination: __sdk::__query_builder::Col<Party, Option<JourneyEndpoint>>,
     pub camp_remaining_minutes: __sdk::__query_builder::Col<Party, u64>,
     pub pooled_water_ml: __sdk::__query_builder::Col<Party, f32>,
     pub medicine_target: __sdk::__query_builder::Col<Party, f32>,
@@ -64,15 +66,16 @@ impl __sdk::__query_builder::HasCols for Party {
     fn cols(table_name: &'static str) -> Self::Cols {
         PartyCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
+            gateway_bucket: __sdk::__query_builder::Col::new(table_name, "gateway_bucket"),
             name: __sdk::__query_builder::Col::new(table_name, "name"),
             leader_id: __sdk::__query_builder::Col::new(table_name, "leader_id"),
             current_settlement_id: __sdk::__query_builder::Col::new(
                 table_name,
                 "current_settlement_id",
             ),
-            current_quest_location_id: __sdk::__query_builder::Col::new(
+            current_case_site_id: __sdk::__query_builder::Col::new(
                 table_name,
-                "current_quest_location_id",
+                "current_case_site_id",
             ),
             active_quest_id: __sdk::__query_builder::Col::new(table_name, "active_quest_id"),
             is_solo: __sdk::__query_builder::Col::new(table_name, "is_solo"),
@@ -87,14 +90,7 @@ impl __sdk::__query_builder::HasCols for Party {
             travel_at_night: __sdk::__query_builder::Col::new(table_name, "travel_at_night"),
             camp_duration_mode: __sdk::__query_builder::Col::new(table_name, "camp_duration_mode"),
             fixed_camp_minutes: __sdk::__query_builder::Col::new(table_name, "fixed_camp_minutes"),
-            camp_destination_id: __sdk::__query_builder::Col::new(
-                table_name,
-                "camp_destination_id",
-            ),
-            camp_destination_kind: __sdk::__query_builder::Col::new(
-                table_name,
-                "camp_destination_kind",
-            ),
+            camp_destination: __sdk::__query_builder::Col::new(table_name, "camp_destination"),
             camp_remaining_minutes: __sdk::__query_builder::Col::new(
                 table_name,
                 "camp_remaining_minutes",
@@ -111,6 +107,7 @@ impl __sdk::__query_builder::HasCols for Party {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct PartyIxCols {
+    pub gateway_bucket: __sdk::__query_builder::IxCol<Party, u8>,
     pub id: __sdk::__query_builder::IxCol<Party, String>,
 }
 
@@ -118,6 +115,7 @@ impl __sdk::__query_builder::HasIxCols for Party {
     type IxCols = PartyIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         PartyIxCols {
+            gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
         }
     }

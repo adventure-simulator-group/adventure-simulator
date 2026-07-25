@@ -13,7 +13,6 @@ pub struct Character {
     pub level: u32,
     pub gold: u32,
     pub current_settlement_id: Option<String>,
-    pub current_quest_location_id: Option<String>,
     pub party_id: Option<String>,
     pub server: __sdk::Identity,
     pub in_server: bool,
@@ -36,7 +35,6 @@ pub struct CharacterCols {
     pub level: __sdk::__query_builder::Col<Character, u32>,
     pub gold: __sdk::__query_builder::Col<Character, u32>,
     pub current_settlement_id: __sdk::__query_builder::Col<Character, Option<String>>,
-    pub current_quest_location_id: __sdk::__query_builder::Col<Character, Option<String>>,
     pub party_id: __sdk::__query_builder::Col<Character, Option<String>>,
     pub server: __sdk::__query_builder::Col<Character, __sdk::Identity>,
     pub in_server: __sdk::__query_builder::Col<Character, bool>,
@@ -57,10 +55,6 @@ impl __sdk::__query_builder::HasCols for Character {
             current_settlement_id: __sdk::__query_builder::Col::new(
                 table_name,
                 "current_settlement_id",
-            ),
-            current_quest_location_id: __sdk::__query_builder::Col::new(
-                table_name,
-                "current_quest_location_id",
             ),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             server: __sdk::__query_builder::Col::new(table_name, "server"),

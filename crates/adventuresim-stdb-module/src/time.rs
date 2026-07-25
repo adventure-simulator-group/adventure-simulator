@@ -12,7 +12,7 @@ use spacetimedb::{ReducerContext, ScheduleAt, SpacetimeType, Table, reducer, tab
 use crate::capability::StrategicEquipment;
 use crate::character::character;
 use crate::condition::character_condition as _;
-use crate::strategic::party;
+use crate::strategic::party_authority;
 use crate::{
     CharacterAttributes, CharacterSkills, CharacterStats, character_attributes, character_equip,
     character_limbs, character_skills, character_stats, settlement,
@@ -1584,7 +1584,7 @@ pub(crate) fn rest_temporary_party_member_until_healed_at_settlement(
     };
     if ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(party_id)
         .is_some_and(|party| party.leader_id == character_id)
@@ -1627,7 +1627,7 @@ pub fn rest_at_camp(
     let party_id = character.party_id.ok_or("Must be in a party to camp")?;
     let party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
@@ -1635,8 +1635,8 @@ pub fn rest_at_camp(
         return Err("Only the party leader can rest the party at camp".into());
     }
     if party.current_settlement_id.is_none()
-        && party.camp_destination_id.is_none()
-        && party.current_quest_location_id.is_none()
+        && party.camp_destination.is_none()
+        && party.current_case_site_id.is_none()
     {
         return Err("The party is not at a field rest location".into());
     }

@@ -10,7 +10,7 @@ use spacetimedb::{ReducerContext, Table, table};
 use crate::character::character;
 use crate::condition::character_strategic_condition;
 use crate::item::item;
-use crate::{inventory_item, inventory_quantity_target, party, party_inventory_item};
+use crate::{inventory_item, inventory_quantity_target, party_authority, party_inventory_item};
 
 pub const TAVERN_DRINK_ITEM_ID: &str = "table_wine";
 #[derive(Clone, Debug)]
@@ -90,7 +90,7 @@ fn available_stacks(
     };
     let mut rows = Vec::new();
     if let Some(party_id) = character.party_id.as_ref()
-        && let Some(party) = ctx.db.party().id().find(party_id)
+        && let Some(party) = ctx.db.party_authority().id().find(party_id)
     {
         for stack in ctx.db.party_inventory_item().party_id().filter(party_id) {
             if let Some(def) = ctx.db.item().id().find(&stack.item_id) {

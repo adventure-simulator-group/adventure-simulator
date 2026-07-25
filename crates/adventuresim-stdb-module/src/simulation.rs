@@ -8,7 +8,7 @@ use crate::time::character_time;
 use crate::{
     CharacterAttributes, CharacterSkills, CharacterTrainingSchedule, DeathCause, DeathSource,
     ScheduleAllocation, character_attributes, character_skills, character_training_schedule,
-    infection_episode, party, settlement,
+    infection_episode, party_authority, settlement,
 };
 
 /// Ordinary module builds deliberately contain no simulation capability. The
@@ -72,7 +72,7 @@ pub fn claim_simulation_run(
         return Err("Simulation database has already been claimed".into());
     }
     if ctx.db.character().iter().next().is_some()
-        || ctx.db.party().iter().next().is_some()
+        || ctx.db.party_authority().iter().next().is_some()
         || ctx.db.settlement().iter().next().is_some()
     {
         return Err("Simulation claim requires a freshly published empty database".into());
@@ -247,7 +247,7 @@ pub fn configure_simulation_character(
         .ok_or("Simulation character has no party")?;
     let mut solo_party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id)
         .ok_or("Simulation party not found")?;
@@ -255,11 +255,11 @@ pub fn configure_simulation_character(
         return Err("Simulation character must still lead its fresh solo party".into());
     }
     character.current_settlement_id = Some(settlement_id.clone());
-    character.current_quest_location_id = None;
+    crate::investigation::set_character_case_site(ctx, character.id, None);
     ctx.db.character().id().update(character);
     solo_party.current_settlement_id = Some(settlement_id);
-    solo_party.current_quest_location_id = None;
-    ctx.db.party().id().update(solo_party);
+    solo_party.current_case_site_id = None;
+    ctx.db.party_authority().id().update(solo_party);
     ctx.db
         .character_attributes()
         .character_id()

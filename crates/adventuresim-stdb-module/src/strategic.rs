@@ -19,7 +19,9 @@ use adventuresim_world_schema::{
     historical_vegetation_matches_context, industry_profile_is_canonical,
     valid_bounded_source_text, valid_sources_markdown,
 };
-use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
+use spacetimedb::{
+    Identity, ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view,
+};
 
 use crate::{
     capability::character_capability,
@@ -28,6 +30,11 @@ use crate::{
         character_stats,
     },
     condition::character_condition,
+    investigation::{
+        CaseSiteAuthority, CaseSiteId, PartyCaseSiteTracking, case_site_authority,
+        disclose_exact_case_site, exact_case_site_for_observer, mark_case_site_visited,
+        party_case_site_tracking,
+    },
     item::{InventoryItem, inventory_item, item},
     repair::item_condition,
     settlement_population::{settlement_npc, settlement_npc_presence},
@@ -378,6 +385,51 @@ mod healing_tests {
         assert!(body.contains("commit_autoresolve_outcome("));
         assert!(!body.contains("record_autoresolve_report("));
         assert!(!body.contains("consume_autoresolve_ammunition("));
+    }
+
+    #[test]
+    fn quest_schema_has_no_destination_or_tracking_authority() {
+        let source = include_str!("strategic.rs");
+        let schema = source
+            .split("pub struct Quest {")
+            .nth(1)
+            .and_then(|tail| tail.split("pub struct QuestIssuer").next())
+            .expect("quest schema");
+        for forbidden in [
+            "location_description",
+            "location_scene_key",
+            "location_coord_x",
+            "location_coord_y",
+            "coordinates_are_geographic",
+            "distance_m",
+            "tracked",
+        ] {
+            assert!(!schema.contains(forbidden), "Quest still owns {forbidden}");
+        }
+    }
+
+    #[test]
+    fn tracking_is_presentation_only_and_travel_revalidates_exact_knowledge() {
+        let source = include_str!("strategic.rs");
+        let tracking = source
+            .split("pub fn track_case_site")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn abandon_quest").next())
+            .expect("tracking reducer");
+        assert!(tracking.contains("exact_case_site_for_observer"));
+        assert!(tracking.contains("party_case_site_tracking"));
+        assert!(!tracking.contains("accept_quest("));
+        assert!(!tracking.contains("active_quest_id"));
+        assert!(!tracking.contains("gold_reward"));
+
+        let travel = source
+            .split("fn travel_to_case_site_impl")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn travel_to_settlement").next())
+            .expect("case-site travel implementation");
+        assert_eq!(travel.matches("exact_case_site_for_observer").count(), 2);
+        assert!(travel.contains("\"case_site\""));
+        assert!(!travel.contains("ctx.db.quest().id().find(&case_site_id)"));
     }
 }
 
@@ -1491,12 +1543,6 @@ pub struct Quest {
     pub accepted_by: Option<String>,
     pub enemy_type: String,
     pub enemy_count: i32,
-    pub location_description: String,
-    pub location_scene_key: String,
-    pub location_coord_x: f64,
-    pub location_coord_y: f64,
-    pub coordinates_are_geographic: bool,
-    pub distance_m: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -1527,14 +1573,16 @@ pub struct StrategicIncident {
 }
 
 #[derive(Clone, Debug)]
-#[table(accessor = party, public)]
+#[table(accessor = party_authority)]
 pub struct Party {
     #[primary_key]
     pub id: String,
+    #[index(btree)]
+    pub gateway_bucket: u8,
     pub name: String,
     pub leader_id: u64,
     pub current_settlement_id: Option<String>,
-    pub current_quest_location_id: Option<String>,
+    pub current_case_site_id: Option<CaseSiteId>,
     pub active_quest_id: Option<String>,
     pub is_solo: bool,
     /// The fatigue level at which the first tiring party member makes camp.
@@ -1554,10 +1602,8 @@ pub struct Party {
     #[default(0u16)]
     pub fixed_camp_minutes: u16,
     /// A non-empty destination means the party is currently camped en route.
-    #[default(None::<String>)]
-    pub camp_destination_id: Option<String>,
-    #[default(None::<String>)]
-    pub camp_destination_kind: Option<String>,
+    #[default(None::<JourneyEndpoint>)]
+    pub camp_destination: Option<JourneyEndpoint>,
     #[default(0u64)]
     pub camp_remaining_minutes: u64,
     /// Water currently held in shared party-inventory waterskins.
@@ -1578,6 +1624,20 @@ pub enum CampDurationMode {
     Fixed,
 }
 
+/// Party movement and case-site occupancy are visible only through the trusted
+/// gateway; direct subscribers cannot enumerate secret destinations.
+#[view(accessor = party, public)]
+pub fn party(ctx: &ViewContext) -> Vec<Party> {
+    if !strategic_view_is_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .party_authority()
+        .gateway_bucket()
+        .filter(0u8)
+        .collect()
+}
+
 #[derive(Clone, Debug, Default, PartialEq, SpacetimeType)]
 pub struct JourneyCampInterval {
     pub movement_minute: u64,
@@ -1588,20 +1648,53 @@ pub struct JourneyCampInterval {
     pub maximum_fatigue_end: f32,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, SpacetimeType)]
+pub struct JourneySettlementEndpoint {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, SpacetimeType)]
+pub struct JourneyCaseSiteEndpoint {
+    pub id: CaseSiteId,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum JourneyEndpoint {
+    Settlement(JourneySettlementEndpoint),
+    CaseSite(JourneyCaseSiteEndpoint),
+    Camp(String),
+}
+
+impl JourneyEndpoint {
+    fn settlement_id(&self) -> Option<&str> {
+        match self {
+            Self::Settlement(endpoint) => Some(&endpoint.id),
+            _ => None,
+        }
+    }
+
+    fn case_site_id(&self) -> Option<&str> {
+        match self {
+            Self::CaseSite(endpoint) => Some(&endpoint.id.value),
+            _ => None,
+        }
+    }
+}
+
 /// The durable strategic record behind the travel tracker. Party location
 /// answers where the party is right now; this record retains the journey's
 /// original endpoints, completed camp stops, and authoritative forecast.
 #[derive(Clone, Debug)]
-#[table(accessor = party_journey, public)]
+#[table(accessor = party_journey_authority)]
 pub struct PartyJourney {
     #[primary_key]
     pub party_id: String,
-    pub origin_kind: String,
-    pub origin_id: String,
-    pub origin_name: String,
-    pub destination_kind: String,
-    pub destination_id: String,
-    pub destination_name: String,
+    #[index(btree)]
+    pub gateway_bucket: u8,
+    pub origin: JourneyEndpoint,
+    pub destination: JourneyEndpoint,
     pub total_minutes: u64,
     pub completed_minutes: u64,
     /// Cumulative journey minutes for camps the party has actually reached.
@@ -1746,16 +1839,53 @@ pub struct JourneyRoutePlan {
 }
 
 #[derive(Clone, Debug)]
-#[table(accessor = party_journey_route, public)]
+#[table(accessor = party_journey_route_authority)]
 pub struct PartyJourneyRoute {
     #[primary_key]
     pub party_id: String,
+    #[index(btree)]
+    pub gateway_bucket: u8,
     pub package_digest: String,
     pub distance_m: u64,
     pub minutes: u64,
     pub points: Vec<JourneyRoutePoint>,
     pub spans: Vec<JourneyTerrainSpan>,
     pub return_route: Option<JourneyRouteLeg>,
+}
+
+fn strategic_view_is_gateway(ctx: &ViewContext) -> bool {
+    ctx.db
+        .strategic_gateway_authority()
+        .id()
+        .find(0)
+        .is_some_and(|row| row.identity == ctx.sender())
+}
+
+/// Gateway-only projection of journey endpoints and progress. Case-site names
+/// and identifiers never reside in a globally subscribable table.
+#[view(accessor = party_journey, public)]
+pub fn party_journey(ctx: &ViewContext) -> Vec<PartyJourney> {
+    if !strategic_view_is_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .party_journey_authority()
+        .gateway_bucket()
+        .filter(0u8)
+        .collect()
+}
+
+/// Gateway-only projection of exact route geometry.
+#[view(accessor = party_journey_route, public)]
+pub fn party_journey_route(ctx: &ViewContext) -> Vec<PartyJourneyRoute> {
+    if !strategic_view_is_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .party_journey_route_authority()
+        .gateway_bucket()
+        .filter(0u8)
+        .collect()
 }
 
 /// The authenticated strategic-web identity trusted to submit server-planned
@@ -1922,7 +2052,7 @@ pub fn set_inventory_quantity_target(
         let party_id = character.party_id.ok_or("Character has no party")?;
         let party = ctx
             .db
-            .party()
+            .party_authority()
             .id()
             .find(&party_id)
             .ok_or("Party not found")?;
@@ -2116,11 +2246,13 @@ pub struct PartyJoinRequest {
 /// A party member's proposed use of authority normally reserved for the leader.
 /// `payload` is JSON so approval can replay the original typed reducer call.
 #[derive(Clone, Debug)]
-#[table(accessor = party_action_request, public)]
+#[table(accessor = party_action_request_authority)]
 pub struct PartyActionRequest {
     #[primary_key]
     #[auto_inc]
     pub id: u64,
+    #[index(btree)]
+    pub gateway_bucket: u8,
     #[index(btree)]
     pub party_id: String,
     #[index(btree)]
@@ -2128,6 +2260,20 @@ pub struct PartyActionRequest {
     pub action_kind: String,
     pub summary: String,
     pub payload: String,
+}
+
+/// Gateway-only projection: proposed case-site travel contains observer-secret
+/// identifiers and must never be visible to ordinary subscribers.
+#[view(accessor = party_action_request, public)]
+pub fn party_action_request(ctx: &ViewContext) -> Vec<PartyActionRequest> {
+    if !strategic_view_is_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .party_action_request_authority()
+        .gateway_bucket()
+        .filter(0u8)
+        .collect()
 }
 
 #[derive(Clone, Debug)]
@@ -2145,8 +2291,8 @@ enum ApprovedPartyAction {
     TravelToSettlement {
         settlement_id: String,
     },
-    TravelToQuest {
-        quest_id: String,
+    TravelToCaseSite {
+        case_site_id: String,
     },
     RemovePartyMember {
         character_id: u64,
@@ -2210,7 +2356,7 @@ enum ApprovedPartyAction {
 impl ApprovedPartyAction {
     fn kind(&self) -> &'static str {
         match self {
-            Self::TravelToSettlement { .. } | Self::TravelToQuest { .. } => "travel",
+            Self::TravelToSettlement { .. } | Self::TravelToCaseSite { .. } => "travel",
             Self::RemovePartyMember { .. } => "kick",
             Self::CreateRecruitmentRole { .. } => "add_role",
             Self::UpdateRecruitmentRole { .. } => "edit_role",
@@ -2234,7 +2380,9 @@ impl ApprovedPartyAction {
             Self::TravelToSettlement { settlement_id } => {
                 travel_to_settlement(ctx, leader_id, settlement_id)
             }
-            Self::TravelToQuest { quest_id } => travel_to_quest(ctx, leader_id, quest_id),
+            Self::TravelToCaseSite { case_site_id } => {
+                travel_to_case_site(ctx, leader_id, CaseSiteId::from(case_site_id))
+            }
             Self::RemovePartyMember { character_id } => {
                 remove_party_member(ctx, leader_id, character_id)
             }
@@ -2936,7 +3084,7 @@ fn dialogue_fact_context(
                 if let Some(party_id) = character.party_id.as_ref() {
                     let leader = ctx
                         .db
-                        .party()
+                        .party_authority()
                         .id()
                         .find(party_id)
                         .is_some_and(|party| party.leader_id == id);
@@ -3547,7 +3695,7 @@ fn apply_dialogue_effect(
             let party_id = character.party_id.ok_or("Character has no party")?;
             let quest_id = ctx
                 .db
-                .party()
+                .party_authority()
                 .id()
                 .find(&party_id)
                 .and_then(|party| party.active_quest_id)
@@ -3604,10 +3752,12 @@ fn dialogue_service_id(ctx: &ReducerContext, session: &DialogueSession) -> Resul
         .ok_or("Dialogue has no service actor".into())
 }
 
-fn same_location(left: &crate::Character, right: &crate::Character) -> bool {
+fn same_location(ctx: &ReducerContext, left: &crate::Character, right: &crate::Character) -> bool {
+    let left_site = crate::investigation::character_case_site_id(ctx, left.id);
+    let right_site = crate::investigation::character_case_site_id(ctx, right.id);
     left.current_settlement_id == right.current_settlement_id
-        && left.current_quest_location_id == right.current_quest_location_id
-        && (left.current_settlement_id.is_some() || left.current_quest_location_id.is_some())
+        && left_site == right_site
+        && (left.current_settlement_id.is_some() || left_site.is_some())
 }
 
 fn player_conversation_key(
@@ -3621,7 +3771,7 @@ fn player_conversation_key(
         .id()
         .find(subject_id)
         .ok_or("Conversation subject not found")?;
-    if !same_location(sender, &subject) {
+    if !same_location(ctx, sender, &subject) {
         return Err("Local conversations require a shared location".into());
     }
     let sender_party = sender.party_id.as_deref().ok_or("Sender has no party")?;
@@ -3703,7 +3853,7 @@ pub fn request_party_action(
     let party_id = requester.party_id.ok_or("Character has no party")?;
     let party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
@@ -3736,24 +3886,27 @@ pub fn request_party_action(
     if action_kind == "travel" || action_kind == "party_inventory" {
         let old: Vec<_> = ctx
             .db
-            .party_action_request()
+            .party_action_request_authority()
             .requester_id()
             .filter(requester_id)
             .filter(|request| request.party_id == party_id && request.action_kind == action_kind)
             .map(|request| request.id)
             .collect();
         for id in old {
-            ctx.db.party_action_request().id().delete(id);
+            ctx.db.party_action_request_authority().id().delete(id);
         }
     }
-    ctx.db.party_action_request().insert(PartyActionRequest {
-        id: 0,
-        party_id,
-        requester_id,
-        action_kind,
-        summary: summary.trim().to_string(),
-        payload,
-    });
+    ctx.db
+        .party_action_request_authority()
+        .insert(PartyActionRequest {
+            id: 0,
+            gateway_bucket: 0,
+            party_id,
+            requester_id,
+            action_kind,
+            summary: summary.trim().to_string(),
+            payload,
+        });
     Ok(())
 }
 
@@ -3766,20 +3919,23 @@ pub fn dismiss_party_action_request(
     crate::character::require_living_character(ctx, leader_id)?;
     let request = ctx
         .db
-        .party_action_request()
+        .party_action_request_authority()
         .id()
         .find(request_id)
         .ok_or("Request not found")?;
     let party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&request.party_id)
         .ok_or("Party not found")?;
     if party.leader_id != leader_id {
         return Err("Only the party leader can resolve requests".into());
     }
-    ctx.db.party_action_request().id().delete(request_id);
+    ctx.db
+        .party_action_request_authority()
+        .id()
+        .delete(request_id);
     Ok(())
 }
 
@@ -3802,13 +3958,13 @@ pub fn approve_party_action_request(
     }
     let request = ctx
         .db
-        .party_action_request()
+        .party_action_request_authority()
         .id()
         .find(request_id)
         .ok_or("Request not found")?;
     let party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&request.party_id)
         .ok_or("Party not found")?;
@@ -3826,7 +3982,10 @@ pub fn approve_party_action_request(
         party_id: request.party_id,
         approved_by: leader_id,
     });
-    ctx.db.party_action_request().id().delete(request_id);
+    ctx.db
+        .party_action_request_authority()
+        .id()
+        .delete(request_id);
     Ok(())
 }
 
@@ -3847,13 +4006,13 @@ pub fn approve_party_action_request_planned(
     }
     let request = ctx
         .db
-        .party_action_request()
+        .party_action_request_authority()
         .id()
         .find(request_id)
         .ok_or("Request not found")?;
     let party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&request.party_id)
         .ok_or("Party not found")?;
@@ -3869,8 +4028,8 @@ pub fn approve_party_action_request_planned(
         ApprovedPartyAction::TravelToSettlement { settlement_id } => {
             travel_to_settlement_impl(ctx, leader_id, settlement_id, Some(route))?
         }
-        ApprovedPartyAction::TravelToQuest { quest_id } => {
-            travel_to_quest_impl(ctx, leader_id, quest_id, Some(route))?
+        ApprovedPartyAction::TravelToCaseSite { case_site_id } => {
+            travel_to_case_site_impl(ctx, leader_id, case_site_id, Some(route))?
         }
         _ => return Err("A planned approval is only valid for travel".into()),
     }
@@ -3879,7 +4038,10 @@ pub fn approve_party_action_request_planned(
         party_id: request.party_id,
         approved_by: leader_id,
     });
-    ctx.db.party_action_request().id().delete(request_id);
+    ctx.db
+        .party_action_request_authority()
+        .id()
+        .delete(request_id);
     Ok(())
 }
 
@@ -3901,7 +4063,7 @@ pub fn vote_for_party_leader(
     let party_id = voter.party_id.ok_or("Voter has no party")?;
     require_no_unresolved_encounter(ctx, &party_id)?;
     ctx.db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
@@ -3954,7 +4116,7 @@ pub(crate) fn normalize_and_elect_party_leader(
 ) -> Result<(), String> {
     let mut party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id.to_string())
         .ok_or("Party not found")?;
@@ -3999,7 +4161,7 @@ pub(crate) fn normalize_and_elect_party_leader(
     ) {
         party.leader_id = next;
         party.is_solo = living.len() == 1;
-        ctx.db.party().id().update(party);
+        ctx.db.party_authority().id().update(party);
     }
     Ok(())
 }
@@ -4024,13 +4186,15 @@ pub(crate) fn create_solo_party_for_character(
         return Err("Character not found".into());
     };
     let party_id = format!("solo-{character_id}");
-    if ctx.db.party().id().find(&party_id).is_none() {
-        ctx.db.party().insert(Party {
+    if ctx.db.party_authority().id().find(&party_id).is_none() {
+        ctx.db.party_authority().insert(Party {
             id: party_id.clone(),
+            gateway_bucket: 0,
             name: format!("{}'s party", character.name),
             leader_id: character_id,
             current_settlement_id: character.current_settlement_id.clone(),
-            current_quest_location_id: character.current_quest_location_id.clone(),
+            current_case_site_id: crate::investigation::character_case_site_id(ctx, character_id)
+                .map(CaseSiteId::from),
             active_quest_id: None,
             is_solo: true,
             camp_fatigue_percent: 50,
@@ -4038,8 +4202,7 @@ pub(crate) fn create_solo_party_for_character(
             travel_at_night: false,
             camp_duration_mode: CampDurationMode::Auto,
             fixed_camp_minutes: 0,
-            camp_destination_id: None,
-            camp_destination_kind: None,
+            camp_destination: None,
             camp_remaining_minutes: 0,
             pooled_water_ml: 0.0,
             medicine_target: 0.0,
@@ -4127,17 +4290,29 @@ pub(crate) fn delete_temporary_character_party(
     {
         ctx.db.party_inventory_state().party_id().delete(&party_key);
     }
-    if ctx.db.party_journey().party_id().find(&party_key).is_some() {
-        ctx.db.party_journey().party_id().delete(&party_key);
-    }
     if ctx
         .db
-        .party_journey_route()
+        .party_journey_authority()
         .party_id()
         .find(&party_key)
         .is_some()
     {
-        ctx.db.party_journey_route().party_id().delete(&party_key);
+        ctx.db
+            .party_journey_authority()
+            .party_id()
+            .delete(&party_key);
+    }
+    if ctx
+        .db
+        .party_journey_route_authority()
+        .party_id()
+        .find(&party_key)
+        .is_some()
+    {
+        ctx.db
+            .party_journey_route_authority()
+            .party_id()
+            .delete(&party_key);
     }
     if ctx
         .db
@@ -4153,12 +4328,12 @@ pub(crate) fn delete_temporary_character_party(
     }
     for row in ctx
         .db
-        .party_action_request()
+        .party_action_request_authority()
         .party_id()
         .filter(party_id)
         .collect::<Vec<_>>()
     {
-        ctx.db.party_action_request().id().delete(row.id);
+        ctx.db.party_action_request_authority().id().delete(row.id);
     }
     for row in ctx
         .db
@@ -4178,7 +4353,7 @@ pub(crate) fn delete_temporary_character_party(
     {
         ctx.db.party_recruitment_role().id().delete(row.id);
     }
-    ctx.db.party().id().delete(&party_key);
+    ctx.db.party_authority().id().delete(&party_key);
     Ok(())
 }
 
@@ -4246,13 +4421,17 @@ pub(crate) fn attach_seeded_party_member(
         {
             ctx.db.party_leader_vote().id().delete(&vote.id);
         }
-        ctx.db.party().id().delete(&source_party_id);
+        ctx.db.party_authority().id().delete(&source_party_id);
     }
 
     member.party_id = Some(party_id.clone());
     member.current_settlement_id = leader.current_settlement_id.clone();
-    member.current_quest_location_id = leader.current_quest_location_id.clone();
     ctx.db.character().id().update(member);
+    crate::investigation::set_character_case_site(
+        ctx,
+        member_id,
+        crate::investigation::character_case_site_id(ctx, leader_id),
+    );
     crate::social::reset_familiarity_after_join(ctx, member_id);
     ctx.db.party_member().insert(PartyMember {
         id: 0,
@@ -4262,9 +4441,9 @@ pub(crate) fn attach_seeded_party_member(
         recruitment_role_id: None,
     });
     put_leader_vote(ctx, &party_id, member_id, leader_id);
-    if let Some(mut party) = ctx.db.party().id().find(&party_id) {
+    if let Some(mut party) = ctx.db.party_authority().id().find(&party_id) {
         party.is_solo = false;
-        ctx.db.party().id().update(party);
+        ctx.db.party_authority().id().update(party);
     }
     normalize_and_elect_party_leader(ctx, &party_id)?;
     Ok(())
@@ -4326,7 +4505,7 @@ pub fn create_recruitment_role(
     let party_id = leader.party_id.ok_or("Leader has no party")?;
     let party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
@@ -4389,7 +4568,7 @@ pub fn update_recruitment_role(
     let party_id = leader.party_id.ok_or("Leader has no party")?;
     let party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
@@ -4448,7 +4627,7 @@ pub fn delete_recruitment_role(
     let party_id = leader.party_id.ok_or("Leader has no party")?;
     let party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
@@ -4585,7 +4764,7 @@ pub fn update_party_check_targets(
     let party_id = leader.party_id.ok_or("Leader has no party")?;
     let mut party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
@@ -4595,7 +4774,7 @@ pub fn update_party_check_targets(
     party.medicine_target = medicine;
     party.command_target = command;
     party.religion_target = religion;
-    ctx.db.party().id().update(party);
+    ctx.db.party_authority().id().update(party);
     Ok(())
 }
 
@@ -4652,7 +4831,7 @@ pub fn request_to_join_party(
     let current_party_id = character.party_id.clone().ok_or("Character has no party")?;
     let current_party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&current_party_id)
         .ok_or("Current party not found")?;
@@ -4669,7 +4848,7 @@ pub fn request_to_join_party(
         .find(recruitment_role_id)
         .ok_or("Recruitment role not found")?;
     let party_id = role.party_id.clone();
-    let Some(party) = ctx.db.party().id().find(&party_id) else {
+    let Some(party) = ctx.db.party_authority().id().find(&party_id) else {
         return Err("Party not found".into());
     };
     if current_party_id == party_id {
@@ -4679,7 +4858,7 @@ pub fn request_to_join_party(
         return Err("Simulation and ordinary parties cannot merge".into());
     }
     if current_party.current_settlement_id != party.current_settlement_id
-        || current_party.current_quest_location_id != party.current_quest_location_id
+        || current_party.current_case_site_id != party.current_case_site_id
     {
         return Err("Parties must be in the same location to merge".into());
     }
@@ -4743,7 +4922,7 @@ pub fn accept_party_join_request(
     let Some(request) = ctx.db.party_join_request().id().find(request_id) else {
         return Err("Join request not found".into());
     };
-    let Some(party) = ctx.db.party().id().find(&request.party_id) else {
+    let Some(party) = ctx.db.party_authority().id().find(&request.party_id) else {
         return Err("Party not found".into());
     };
     require_no_unresolved_encounter(ctx, &request.party_id)?;
@@ -4769,7 +4948,7 @@ pub fn accept_party_join_request(
     require_no_unresolved_encounter(ctx, &source_party_id)?;
     let source_party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&source_party_id)
         .ok_or("Applicant party not found")?;
@@ -4783,7 +4962,7 @@ pub fn accept_party_join_request(
         return Err("Applicant's party must abandon its current quest first".into());
     }
     if source_party.current_settlement_id != party.current_settlement_id
-        || source_party.current_quest_location_id != party.current_quest_location_id
+        || source_party.current_case_site_id != party.current_case_site_id
     {
         return Err("Parties must be in the same location to merge".into());
     }
@@ -4864,8 +5043,12 @@ pub fn accept_party_join_request(
         if let Some(mut source_character) = ctx.db.character().id().find(member.character_id) {
             source_character.party_id = Some(request.party_id.clone());
             source_character.current_settlement_id = party.current_settlement_id.clone();
-            source_character.current_quest_location_id = party.current_quest_location_id.clone();
             ctx.db.character().id().update(source_character);
+            crate::investigation::set_character_case_site(
+                ctx,
+                member.character_id,
+                party.current_case_site_id.clone().map(|id| id.value),
+            );
             crate::social::reset_familiarity_after_join(ctx, member.character_id);
         }
     }
@@ -4901,7 +5084,7 @@ pub fn accept_party_join_request(
             ctx.db.party_join_request().id().delete(pending.id);
         }
     }
-    ctx.db.party().id().delete(&source_party_id);
+    ctx.db.party_authority().id().delete(&source_party_id);
     for old_vote in ctx
         .db
         .party_leader_vote()
@@ -4917,7 +5100,7 @@ pub fn accept_party_join_request(
     if party.is_solo {
         let mut party = party;
         party.is_solo = false;
-        ctx.db.party().id().update(party);
+        ctx.db.party_authority().id().update(party);
     }
     let requests: Vec<_> = ctx
         .db
@@ -4953,7 +5136,7 @@ pub fn reject_party_join_request(
     let Some(request) = ctx.db.party_join_request().id().find(request_id) else {
         return Err("Join request not found".into());
     };
-    let Some(party) = ctx.db.party().id().find(&request.party_id) else {
+    let Some(party) = ctx.db.party_authority().id().find(&request.party_id) else {
         return Err("Party not found".into());
     };
     if party.leader_id != leader_id {
@@ -5167,7 +5350,7 @@ pub(crate) fn add_to_party_inventory(
     {
         let minute = ctx
             .db
-            .party()
+            .party_authority()
             .id()
             .find(&party_id.to_string())
             .and_then(|party| ctx.db.character_time().character_id().find(party.leader_id))
@@ -6376,7 +6559,7 @@ pub fn remove_party_member(
         return Err("Character is not in a party".into());
     };
 
-    let Some(party) = ctx.db.party().id().find(&party_id) else {
+    let Some(party) = ctx.db.party_authority().id().find(&party_id) else {
         return Err("Party not found".into());
     };
 
@@ -6455,13 +6638,13 @@ fn settle_temporary_member_stake(
 pub fn disband_party(ctx: &ReducerContext, leader_id: u64, party_id: String) -> Result<(), String> {
     require_no_unresolved_encounter(ctx, &party_id)?;
     crate::character::require_living_character(ctx, leader_id)?;
-    let Some(party) = ctx.db.party().id().find(&party_id) else {
+    let Some(party) = ctx.db.party_authority().id().find(&party_id) else {
         return Err("Party not found".into());
     };
     if party.leader_id != leader_id {
         return Err("Only the party leader can disband the party".into());
     }
-    if party.current_quest_location_id.is_some() {
+    if party.current_case_site_id.is_some() {
         return Err("Travel to a settlement before disbanding the party".into());
     }
     if ctx
@@ -6554,7 +6737,7 @@ pub fn disband_party(ctx: &ReducerContext, leader_id: u64, party_id: String) -> 
         ctx.db.quest().id().delete(&quest_id);
     }
 
-    ctx.db.party().id().delete(&party_id);
+    ctx.db.party_authority().id().delete(&party_id);
     for character_id in member_ids {
         create_solo_party_for_character(ctx, character_id)?;
     }
@@ -6576,7 +6759,7 @@ pub fn accept_quest(
         return Err("Must be in a party to accept quests".into());
     };
 
-    let Some(mut party) = ctx.db.party().id().find(&party_id) else {
+    let Some(mut party) = ctx.db.party_authority().id().find(&party_id) else {
         return Err("Party not found".into());
     };
 
@@ -6604,8 +6787,61 @@ pub fn accept_quest(
     quest.accepted_by = Some(party_id.clone());
     ctx.db.quest().id().update(quest);
 
+    let site = ctx
+        .db
+        .case_site_authority()
+        .case_id()
+        .filter(&quest_id)
+        .next()
+        .ok_or("Quest destination is not configured")?;
+    disclose_exact_case_site(ctx, character_id, &quest_id, &site, "the contract issuer")?;
+
     party.active_quest_id = Some(quest_id);
-    ctx.db.party().id().update(party);
+    ctx.db.party_authority().id().update(party);
+    Ok(())
+}
+
+/// Selects an already-known exact site for presentation. This reducer has no
+/// quest, contract, objective, reward, movement, or knowledge side effects.
+#[reducer]
+pub fn track_case_site(
+    ctx: &ReducerContext,
+    character_id: u64,
+    case_site_id: CaseSiteId,
+) -> Result<(), String> {
+    require_strategic_gateway(ctx)?;
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    let party_id = character
+        .party_id
+        .ok_or("Must be in a party to track a case site")?;
+    let party = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != character_id {
+        return Err("Only the party leader can change the tracked site".into());
+    }
+    exact_case_site_for_observer(ctx, character_id, case_site_id.as_str())
+        .ok_or("That exact site has not been disclosed to this observer")?;
+    let row = PartyCaseSiteTracking {
+        party_id: party_id.clone(),
+        observer_character_id: character_id,
+        case_site_id,
+        tracked_at: crate::time::refresh_clock(ctx)?,
+    };
+    if ctx
+        .db
+        .party_case_site_tracking()
+        .party_id()
+        .find(&party_id)
+        .is_some()
+    {
+        ctx.db.party_case_site_tracking().party_id().update(row);
+    } else {
+        ctx.db.party_case_site_tracking().insert(row);
+    }
     Ok(())
 }
 
@@ -6625,14 +6861,14 @@ pub fn abandon_quest(
         return Err("Not in a party".into());
     };
 
-    let Some(mut party) = ctx.db.party().id().find(&party_id) else {
+    let Some(mut party) = ctx.db.party_authority().id().find(&party_id) else {
         return Err("Party not found".into());
     };
 
     if party.leader_id != character_id {
         return Err("Only the party leader can abandon quests".into());
     }
-    if character.current_quest_location_id.is_some() {
+    if crate::investigation::character_case_site_id(ctx, character_id).is_some() {
         return Err("Travel to a settlement before abandoning the quest".into());
     }
 
@@ -6650,7 +6886,7 @@ pub fn abandon_quest(
     ctx.db.quest().id().delete(&quest.id);
 
     party.active_quest_id = None;
-    ctx.db.party().id().update(party);
+    ctx.db.party_authority().id().update(party);
     Ok(())
 }
 
@@ -6886,7 +7122,7 @@ fn create_strategic_incident(
     spec: IncidentSpec<'_>,
 ) -> Result<Option<String>, String> {
     parse_threat(spec.enemy_type)?;
-    let Some(mut party) = ctx.db.party().id().find(&party_id.to_string()) else {
+    let Some(mut party) = ctx.db.party_authority().id().find(&party_id.to_string()) else {
         return Ok(None);
     };
     if party.current_settlement_id.as_deref() != Some(&settlement.id) {
@@ -6901,6 +7137,7 @@ fn create_strategic_incident(
     {
         return Ok(None);
     }
+    let case_site_id = format!("case-site:{quest_id}");
     ctx.db.quest().insert(Quest {
         id: quest_id.clone(),
         title: spec.title.into(),
@@ -6913,13 +7150,22 @@ fn create_strategic_incident(
         accepted_by: Some(party_id.into()),
         enemy_type: spec.enemy_type.into(),
         enemy_count: living_party_member_ids(ctx, party_id).len().max(2) as i32,
-        location_description: spec.description,
-        location_scene_key: settlement.scene_key.clone(),
-        location_coord_x: settlement.coord_x,
-        location_coord_y: settlement.coord_y,
+    });
+    let site = CaseSiteAuthority {
+        id_key: case_site_id.clone(),
+        id: CaseSiteId::from(case_site_id.clone()),
+        case_id: quest_id.clone(),
+        origin_settlement_id: settlement.id.clone(),
+        name: spec.title.into(),
+        description: spec.description,
+        scene_key: settlement.scene_key.clone(),
+        longitude_e7: (settlement.coord_x * 10_000_000.0).round() as i32,
+        latitude_e7: (settlement.coord_y * 10_000_000.0).round() as i32,
         coordinates_are_geographic: settlement.source_node_id.is_some(),
         distance_m: 0,
-    });
+    };
+    ctx.db.case_site_authority().insert(site.clone());
+    disclose_exact_case_site(ctx, party.leader_id, &quest_id, &site, "the incident")?;
     ctx.db.strategic_incident().insert(StrategicIncident {
         quest_id: quest_id.clone(),
         party_id: party_id.into(),
@@ -6933,14 +7179,18 @@ fn create_strategic_incident(
     for member_id in living_party_member_ids(ctx, party_id) {
         if let Some(mut member) = ctx.db.character().id().find(member_id) {
             member.current_settlement_id = None;
-            member.current_quest_location_id = Some(quest_id.clone());
+            crate::investigation::set_character_case_site(
+                ctx,
+                member.id,
+                Some(case_site_id.clone()),
+            );
             ctx.db.character().id().update(member);
         }
     }
     party.current_settlement_id = None;
-    party.current_quest_location_id = Some(quest_id.clone());
+    party.current_case_site_id = Some(CaseSiteId::from(case_site_id));
     party.active_quest_id = Some(quest_id.clone());
-    ctx.db.party().id().update(party);
+    ctx.db.party_authority().id().update(party);
     Ok(Some(quest_id))
 }
 
@@ -7096,11 +7346,11 @@ fn finish_strategic_incident(
         .strategic_incident()
         .quest_id()
         .update(incident.clone());
-    if let Some(mut party) = ctx.db.party().id().find(&incident.party_id)
+    if let Some(mut party) = ctx.db.party_authority().id().find(&incident.party_id)
         && party.active_quest_id.as_deref() == Some(quest_id)
     {
         party.active_quest_id = incident.previous_active_quest_id;
-        ctx.db.party().id().update(party);
+        ctx.db.party_authority().id().update(party);
     }
     if status == "avoided"
         && let Some(mut quest) = ctx.db.quest().id().find(&quest_id.to_string())
@@ -7122,7 +7372,7 @@ fn party_travel_leg_minutes(
 ) -> Result<u64, String> {
     let party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id.to_string())
         .ok_or("Party not found")?;
@@ -7142,7 +7392,7 @@ fn party_next_walking_minutes(
 ) -> Result<u64, String> {
     let party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id.to_string())
         .ok_or("Party not found")?;
@@ -7293,12 +7543,8 @@ fn forecast_camp_stop_minutes(
 fn start_party_journey(
     ctx: &ReducerContext,
     party: &Party,
-    origin_kind: &str,
-    origin_id: &str,
-    origin_name: &str,
-    destination_kind: &str,
-    destination_id: &str,
-    destination_name: &str,
+    origin: JourneyEndpoint,
+    destination: JourneyEndpoint,
     total_minutes: u64,
     departure_minute: u64,
     route: Option<&JourneyRoutePlan>,
@@ -7313,8 +7559,17 @@ fn start_party_journey(
     {
         ctx.db.strategic_encounter().party_id().delete(&party.id);
     }
-    if ctx.db.party_journey().party_id().find(&party.id).is_some() {
-        ctx.db.party_journey().party_id().delete(&party.id);
+    if ctx
+        .db
+        .party_journey_authority()
+        .party_id()
+        .find(&party.id)
+        .is_some()
+    {
+        ctx.db
+            .party_journey_authority()
+            .party_id()
+            .delete(&party.id);
     }
     if ctx
         .db
@@ -7330,17 +7585,20 @@ fn start_party_journey(
     }
     if ctx
         .db
-        .party_journey_route()
+        .party_journey_route_authority()
         .party_id()
         .find(&party.id)
         .is_some()
     {
-        ctx.db.party_journey_route().party_id().delete(&party.id);
+        ctx.db
+            .party_journey_route_authority()
+            .party_id()
+            .delete(&party.id);
     }
     let fatigue_percent = party.camp_fatigue_percent;
     let forecast_camp_stop_minutes =
         forecast_camp_stop_minutes(ctx, &party.id, total_minutes, 0, fatigue_percent)?;
-    let planned_movement = if destination_kind == "quest" {
+    let planned_movement = if matches!(destination, JourneyEndpoint::CaseSite(_)) {
         total_minutes.saturating_add(
             route
                 .and_then(|route| route.return_route.as_ref())
@@ -7361,14 +7619,11 @@ fn start_party_journey(
     if itinerary.truncated {
         return Err("Journey requires too many itinerary checkpoints".into());
     }
-    ctx.db.party_journey().insert(PartyJourney {
+    ctx.db.party_journey_authority().insert(PartyJourney {
         party_id: party.id.clone(),
-        origin_kind: origin_kind.into(),
-        origin_id: origin_id.into(),
-        origin_name: origin_name.into(),
-        destination_kind: destination_kind.into(),
-        destination_id: destination_id.into(),
-        destination_name: destination_name.into(),
+        gateway_bucket: 0,
+        origin,
+        destination,
         total_minutes,
         completed_minutes: 0,
         camp_stop_minutes: Vec::new(),
@@ -7398,15 +7653,18 @@ fn start_party_journey(
             forecast_camp_intervals: itinerary_camps(&itinerary),
         });
     if let Some(route) = route {
-        ctx.db.party_journey_route().insert(PartyJourneyRoute {
-            party_id: party.id.clone(),
-            package_digest: route.package_digest.clone(),
-            distance_m: route.distance_m,
-            minutes: route.minutes,
-            points: route.points.clone(),
-            spans: route.spans.clone(),
-            return_route: route.return_route.clone(),
-        });
+        ctx.db
+            .party_journey_route_authority()
+            .insert(PartyJourneyRoute {
+                party_id: party.id.clone(),
+                gateway_bucket: 0,
+                package_digest: route.package_digest.clone(),
+                distance_m: route.distance_m,
+                minutes: route.minutes,
+                points: route.points.clone(),
+                spans: route.spans.clone(),
+                return_route: route.return_route.clone(),
+            });
     }
     Ok(())
 }
@@ -7418,7 +7676,7 @@ fn record_party_journey_camp(
 ) -> Result<(), String> {
     let Some(mut journey) = ctx
         .db
-        .party_journey()
+        .party_journey_authority()
         .party_id()
         .find(&party_id.to_string())
     else {
@@ -7434,14 +7692,14 @@ fn record_party_journey_camp(
     if journey.camp_stop_minutes.last() != Some(&journey.completed_minutes) {
         journey.camp_stop_minutes.push(journey.completed_minutes);
     }
-    ctx.db.party_journey().party_id().update(journey);
+    ctx.db.party_journey_authority().party_id().update(journey);
     Ok(())
 }
 
 fn record_party_journey_interruption(ctx: &ReducerContext, party_id: &str, movement_minutes: u64) {
     if let Some(mut journey) = ctx
         .db
-        .party_journey()
+        .party_journey_authority()
         .party_id()
         .find(&party_id.to_string())
     {
@@ -7452,7 +7710,7 @@ fn record_party_journey_interruption(ctx: &ReducerContext, party_id: &str, movem
         journey.completed_elapsed_minutes = journey
             .completed_elapsed_minutes
             .saturating_add(movement_minutes);
-        ctx.db.party_journey().party_id().update(journey);
+        ctx.db.party_journey_authority().party_id().update(journey);
     }
 }
 
@@ -7470,7 +7728,7 @@ fn train_party_terrain_movement(
     }
     let Some(journey) = ctx
         .db
-        .party_journey()
+        .party_journey_authority()
         .party_id()
         .find(&party_id.to_string())
     else {
@@ -7478,7 +7736,7 @@ fn train_party_terrain_movement(
     };
     let Some(route) = ctx
         .db
-        .party_journey_route()
+        .party_journey_route_authority()
         .party_id()
         .find(&party_id.to_string())
     else {
@@ -7587,7 +7845,7 @@ fn zero_boundary_requires_settlement(actual_minutes: u64, safe_prefix: u64) -> b
 fn set_party_journey_state(
     party: &mut Party,
     current_settlement_id: Option<String>,
-    current_quest_location_id: Option<String>,
+    current_case_site_id: Option<CaseSiteId>,
     camp_destination_id: Option<String>,
     camp_destination_kind: Option<String>,
     camp_remaining_minutes: u64,
@@ -7595,9 +7853,21 @@ fn set_party_journey_state(
     // Deliberately touch only journey fields. In particular, leadership may
     // have changed while movement committed a terminal event.
     party.current_settlement_id = current_settlement_id;
-    party.current_quest_location_id = current_quest_location_id;
-    party.camp_destination_id = camp_destination_id;
-    party.camp_destination_kind = camp_destination_kind;
+    party.current_case_site_id = current_case_site_id;
+    party.camp_destination = match (camp_destination_id, camp_destination_kind.as_deref()) {
+        (Some(id), Some("settlement")) => {
+            Some(JourneyEndpoint::Settlement(JourneySettlementEndpoint {
+                id,
+                name: String::new(),
+            }))
+        }
+        (Some(id), Some("case_site")) => Some(JourneyEndpoint::CaseSite(JourneyCaseSiteEndpoint {
+            id: CaseSiteId { value: id },
+            name: String::new(),
+        })),
+        (None, None) => None,
+        _ => unreachable!("validated camp destination"),
+    };
     party.camp_remaining_minutes = camp_remaining_minutes;
 }
 
@@ -7618,7 +7888,7 @@ pub(crate) fn refresh_party_journey_forecast(
 ) -> Result<(), String> {
     let Some(mut journey) = ctx
         .db
-        .party_journey()
+        .party_journey_authority()
         .party_id()
         .find(&party_id.to_string())
     else {
@@ -7644,14 +7914,14 @@ pub(crate) fn refresh_party_journey_forecast(
     )?;
     let party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id.to_string())
         .ok_or("Party not found")?;
     let start = journey
         .departure_minute
         .saturating_add(journey.completed_elapsed_minutes);
-    let planned_movement = if journey.destination_kind == "quest" {
+    let planned_movement = if journey.destination.case_site_id().is_some() {
         journey.total_minutes.saturating_mul(2)
     } else {
         journey.total_minutes
@@ -7710,7 +7980,7 @@ pub(crate) fn refresh_party_journey_forecast(
     } else {
         ctx.db.party_journey_itinerary().insert(typed);
     }
-    ctx.db.party_journey().party_id().update(journey);
+    ctx.db.party_journey_authority().party_id().update(journey);
     Ok(())
 }
 
@@ -7724,7 +7994,7 @@ pub(crate) fn record_party_camp_rest(
 ) -> Result<(), String> {
     let Some(mut journey) = ctx
         .db
-        .party_journey()
+        .party_journey_authority()
         .party_id()
         .find(&party_id.to_string())
     else {
@@ -7775,14 +8045,23 @@ pub(crate) fn record_party_camp_rest(
     } else {
         ctx.db.party_journey_itinerary().insert(typed);
     }
-    ctx.db.party_journey().party_id().update(journey);
+    ctx.db.party_journey_authority().party_id().update(journey);
     Ok(())
 }
 
 fn finish_party_journey(ctx: &ReducerContext, party_id: &str) {
     let party_id = party_id.to_string();
-    if ctx.db.party_journey().party_id().find(&party_id).is_some() {
-        ctx.db.party_journey().party_id().delete(&party_id);
+    if ctx
+        .db
+        .party_journey_authority()
+        .party_id()
+        .find(&party_id)
+        .is_some()
+    {
+        ctx.db
+            .party_journey_authority()
+            .party_id()
+            .delete(&party_id);
     }
     if ctx
         .db
@@ -7798,12 +8077,15 @@ fn finish_party_journey(ctx: &ReducerContext, party_id: &str) {
     }
     if ctx
         .db
-        .party_journey_route()
+        .party_journey_route_authority()
         .party_id()
         .find(&party_id)
         .is_some()
     {
-        ctx.db.party_journey_route().party_id().delete(&party_id);
+        ctx.db
+            .party_journey_route_authority()
+            .party_id()
+            .delete(&party_id);
     }
     if ctx
         .db
@@ -7820,10 +8102,10 @@ fn finish_party_journey(ctx: &ReducerContext, party_id: &str) {
 }
 
 fn camp_redirect_minutes(journey: &PartyJourney, settlement_id: &str) -> Option<u64> {
-    if journey.origin_kind == "settlement" && journey.origin_id == settlement_id {
+    if journey.origin.settlement_id() == Some(settlement_id) {
         return Some(journey.completed_minutes);
     }
-    if journey.destination_kind == "settlement" && journey.destination_id == settlement_id {
+    if journey.destination.settlement_id() == Some(settlement_id) {
         return Some(
             journey
                 .total_minutes
@@ -7937,25 +8219,30 @@ fn journey_fallback_position(
     journey: &PartyJourney,
     minute: u64,
 ) -> (f64, f64) {
-    let endpoint = |kind: &str, id: &str| -> Option<(f64, f64)> {
-        match kind {
-            "settlement" => ctx
+    let endpoint = |endpoint: &JourneyEndpoint| -> Option<(f64, f64)> {
+        match endpoint {
+            JourneyEndpoint::Settlement(endpoint) => ctx
                 .db
                 .settlement()
                 .id()
-                .find(&id.to_string())
+                .find(&endpoint.id)
                 .map(|v| (v.coord_x, v.coord_y)),
-            "quest" => ctx
+            JourneyEndpoint::CaseSite(endpoint) => ctx
                 .db
-                .quest()
-                .id()
-                .find(&id.to_string())
-                .map(|v| (v.location_coord_x, v.location_coord_y)),
-            _ => None,
+                .case_site_authority()
+                .id_key()
+                .find(&endpoint.id.value)
+                .map(|v| {
+                    (
+                        f64::from(v.longitude_e7) / 10_000_000.0,
+                        f64::from(v.latitude_e7) / 10_000_000.0,
+                    )
+                }),
+            JourneyEndpoint::Camp(_) => None,
         }
     };
-    let start = endpoint(&journey.origin_kind, &journey.origin_id).unwrap_or((0.0, 0.0));
-    let end = endpoint(&journey.destination_kind, &journey.destination_id).unwrap_or(start);
+    let start = endpoint(&journey.origin).unwrap_or((0.0, 0.0));
+    let end = endpoint(&journey.destination).unwrap_or(start);
     let progress = minute.min(journey.total_minutes) as f64 / journey.total_minutes.max(1) as f64;
     (
         start.0 + (end.0 - start.0) * progress,
@@ -8071,7 +8358,7 @@ fn maybe_interrupt_travel(
     require_no_unresolved_encounter(ctx, party_id)?;
     let Some(journey) = ctx
         .db
-        .party_journey()
+        .party_journey_authority()
         .party_id()
         .find(&party_id.to_string())
     else {
@@ -8080,13 +8367,11 @@ fn maybe_interrupt_travel(
     let absolute_start = journey
         .departure_minute
         .saturating_add(journey.completed_elapsed_minutes);
-    if journey.origin_kind == "settlement" && journey.destination_kind == "settlement" {
-        crate::local_problem::ensure_route_problem(
-            ctx,
-            &journey.origin_id,
-            &journey.destination_id,
-            absolute_start,
-        )?;
+    if let (Some(origin_id), Some(destination_id)) = (
+        journey.origin.settlement_id(),
+        journey.destination.settlement_id(),
+    ) {
+        crate::local_problem::ensure_route_problem(ctx, origin_id, destination_id, absolute_start)?;
     }
     let authority = ctx
         .db
@@ -8096,17 +8381,22 @@ fn maybe_interrupt_travel(
         .ok_or("Journey encounter authority is missing")?;
     let route = ctx
         .db
-        .party_journey_route()
+        .party_journey_route_authority()
         .party_id()
         .find(&party_id.to_string());
     let active_quest_archetype = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id.to_string())
         .and_then(|party| party.active_quest_id)
+        .filter(|_| journey.destination.case_site_id().is_some())
         .filter(|quest_id| {
-            journey.destination_kind == "quest" && *quest_id == journey.destination_id
+            ctx.db
+                .case_site_authority()
+                .id_key()
+                .find(&journey.destination.case_site_id().unwrap().to_string())
+                .is_some_and(|site| site.case_id == *quest_id)
         })
         .and_then(|quest_id| ctx.db.quest().id().find(&quest_id))
         .and_then(|quest| quest_encounter_archetype(&quest.enemy_type));
@@ -8154,16 +8444,20 @@ fn maybe_interrupt_travel(
         },
         |minute| {
             let absolute_minute = absolute_start.saturating_add(minute.saturating_sub(completed));
-            (journey.origin_kind == "settlement" && journey.destination_kind == "settlement")
-                .then(|| {
+            match (
+                journey.origin.settlement_id(),
+                journey.destination.settlement_id(),
+            ) {
+                (Some(origin_id), Some(destination_id)) => {
                     crate::local_problem::route_encounter_influence(
                         ctx,
-                        &journey.origin_id,
-                        &journey.destination_id,
+                        origin_id,
+                        destination_id,
                         absolute_minute,
                     )
-                })
-                .flatten()
+                }
+                _ => None,
+            }
         },
     );
     let crossed_end = completed.saturating_add(requested_minutes);
@@ -8614,10 +8908,15 @@ fn advance_encounter_penalty(
             );
         }
     }
-    if let Some(mut journey) = ctx.db.party_journey().party_id().find(&encounter.party_id) {
+    if let Some(mut journey) = ctx
+        .db
+        .party_journey_authority()
+        .party_id()
+        .find(&encounter.party_id)
+    {
         journey.completed_elapsed_minutes =
             journey.completed_elapsed_minutes.saturating_add(minutes);
-        ctx.db.party_journey().party_id().update(journey);
+        ctx.db.party_journey_authority().party_id().update(journey);
     }
     encounter.penalty_minutes = minutes;
     Ok(())
@@ -8817,7 +9116,7 @@ pub fn resolve_strategic_encounter(
     let party_id = character.party_id.ok_or("Character is not in a party")?;
     let party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
@@ -8905,14 +9204,14 @@ fn redirect_camped_party_to_settlement(
 ) -> Result<(), String> {
     let mut journey = ctx
         .db
-        .party_journey()
+        .party_journey_authority()
         .party_id()
         .find(&party.id)
         .ok_or("Camp journey not found")?;
     let travel_minutes = if let Some(route) = route.as_ref() {
         let current_route = ctx
             .db
-            .party_journey_route()
+            .party_journey_route_authority()
             .party_id()
             .find(&party.id)
             .ok_or("Camp has no persisted terrain route")?;
@@ -8933,12 +9232,11 @@ fn redirect_camped_party_to_settlement(
         return Err("The party is already at that journey endpoint".into());
     }
 
-    journey.origin_kind = "camp".into();
-    journey.origin_id = party.id.clone();
-    journey.origin_name = "Camp".into();
-    journey.destination_kind = "settlement".into();
-    journey.destination_id = destination.id.clone();
-    journey.destination_name = destination.name.clone();
+    journey.origin = JourneyEndpoint::Camp(party.id.clone());
+    journey.destination = JourneyEndpoint::Settlement(JourneySettlementEndpoint {
+        id: destination.id.clone(),
+        name: destination.name.clone(),
+    });
     journey.total_minutes = travel_minutes;
     journey.completed_minutes = 0;
     journey.departure_minute = living_party_member_ids(ctx, &party.id)
@@ -8956,34 +9254,42 @@ fn redirect_camped_party_to_settlement(
     }
     journey.forecast_camp_stop_minutes =
         forecast_camp_stop_minutes(ctx, &party.id, travel_minutes, 0, journey.fatigue_percent)?;
-    ctx.db.party_journey().party_id().update(journey);
+    ctx.db.party_journey_authority().party_id().update(journey);
     if ctx
         .db
-        .party_journey_route()
+        .party_journey_route_authority()
         .party_id()
         .find(&party.id)
         .is_some()
     {
-        ctx.db.party_journey_route().party_id().delete(&party.id);
+        ctx.db
+            .party_journey_route_authority()
+            .party_id()
+            .delete(&party.id);
     }
     if let Some(route) = route {
-        ctx.db.party_journey_route().insert(PartyJourneyRoute {
-            party_id: party.id.clone(),
-            package_digest: route.package_digest,
-            distance_m: route.distance_m,
-            minutes: route.minutes,
-            points: route.points,
-            spans: route.spans,
-            return_route: route.return_route,
-        });
+        ctx.db
+            .party_journey_route_authority()
+            .insert(PartyJourneyRoute {
+                party_id: party.id.clone(),
+                gateway_bucket: 0,
+                package_digest: route.package_digest,
+                distance_m: route.distance_m,
+                minutes: route.minutes,
+                points: route.points,
+                spans: route.spans,
+                return_route: route.return_route,
+            });
     }
 
     party.current_settlement_id = None;
-    party.current_quest_location_id = None;
-    party.camp_destination_kind = Some("settlement".into());
-    party.camp_destination_id = Some(destination.id.clone());
+    party.current_case_site_id = None;
+    party.camp_destination = Some(JourneyEndpoint::Settlement(JourneySettlementEndpoint {
+        id: destination.id.clone(),
+        name: destination.name.clone(),
+    }));
     party.camp_remaining_minutes = travel_minutes;
-    ctx.db.party().id().update(party.clone());
+    ctx.db.party_authority().id().update(party.clone());
     refresh_party_journey_forecast(ctx, &party.id)?;
     Ok(())
 }
@@ -8998,14 +9304,14 @@ fn revalidate_party_after_departure_sync(
 ) -> Result<Party, String> {
     let party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id.to_string())
         .ok_or("Party changed during departure synchronization")?;
     let party_matches = party.leader_id == leader_id
-        && party.camp_destination_id.is_none()
+        && party.camp_destination.is_none()
         && party.current_settlement_id.as_deref() == expected_settlement_id
-        && party.current_quest_location_id.as_deref() == expected_quest_location_id
+        && party.current_case_site_id.as_deref() == expected_quest_location_id
         && !expected_active_quest_id.is_some_and(|id| party.active_quest_id.as_deref() != Some(id));
     let pending_incident = ctx
         .db
@@ -9021,7 +9327,8 @@ fn revalidate_party_after_departure_sync(
         && !members.iter().any(|id| {
             ctx.db.character().id().find(*id).is_none_or(|member| {
                 member.current_settlement_id.as_deref() != expected_settlement_id
-                    || member.current_quest_location_id.as_deref() != expected_quest_location_id
+                    || crate::investigation::character_case_site_id(ctx, member.id).as_deref()
+                        != expected_quest_location_id
             })
         });
     if !departure_snapshot_allows_travel(true, members_match, false) {
@@ -9056,7 +9363,7 @@ mod departure_invariant_tests {
         JourneyTerrainSpan, JourneyTerrainWeights, Party, PartyJourneyRoute,
         common_movement_prefix, departure_snapshot_allows_travel, party_can_continue_travel,
         reconstruct_legacy_journey_coordinates, route_position_at_minute, set_party_journey_state,
-        straight_line_distance_m, validate_journey_route_payload,
+        straight_line_distance_m, terrain_training_exposure, validate_journey_route_payload,
         zero_boundary_requires_settlement,
     };
 
@@ -9245,10 +9552,11 @@ mod departure_invariant_tests {
     fn journey_state_update_preserves_elected_successor_authority() {
         let mut fresh_party = Party {
             id: "party".into(),
+            gateway_bucket: 0,
             name: "Travelers".into(),
             leader_id: 2,
             current_settlement_id: None,
-            current_quest_location_id: None,
+            current_case_site_id: None,
             active_quest_id: None,
             is_solo: true,
             camp_fatigue_percent: 50,
@@ -9256,8 +9564,10 @@ mod departure_invariant_tests {
             travel_at_night: false,
             camp_duration_mode: CampDurationMode::Auto,
             fixed_camp_minutes: 0,
-            camp_destination_id: Some("destination".into()),
-            camp_destination_kind: Some("settlement".into()),
+            camp_destination: Some(JourneyEndpoint::Settlement(JourneySettlementEndpoint {
+                id: "destination".into(),
+                name: "Destination".into(),
+            })),
             camp_remaining_minutes: 30,
             pooled_water_ml: 0.0,
             medicine_target: 0.0,
@@ -9277,7 +9587,7 @@ mod departure_invariant_tests {
             fresh_party.current_settlement_id.as_deref(),
             Some("destination")
         );
-        assert!(fresh_party.camp_destination_id.is_none());
+        assert!(fresh_party.camp_destination.is_none());
         assert_eq!(
             fresh_party.leader_id, 2,
             "the successor can continue leading"
@@ -9291,6 +9601,7 @@ mod departure_invariant_tests {
         let route = route_fixture();
         let persisted = PartyJourneyRoute {
             party_id: "party".into(),
+            gateway_bucket: 0,
             package_digest: route.package_digest,
             distance_m: route.distance_m,
             minutes: route.minutes,
@@ -9305,30 +9616,30 @@ mod departure_invariant_tests {
 }
 
 #[reducer]
-pub fn travel_to_quest(
+pub fn travel_to_case_site(
     ctx: &ReducerContext,
     character_id: u64,
-    quest_id: String,
+    case_site_id: CaseSiteId,
 ) -> Result<(), String> {
     require_strategic_gateway(ctx)?;
-    travel_to_quest_impl(ctx, character_id, quest_id, None)
+    travel_to_case_site_impl(ctx, character_id, case_site_id.value, None)
 }
 
 #[reducer]
-pub fn travel_to_quest_planned(
+pub fn travel_to_case_site_planned(
     ctx: &ReducerContext,
     character_id: u64,
-    quest_id: String,
+    case_site_id: CaseSiteId,
     route: JourneyRoutePlan,
 ) -> Result<(), String> {
     require_strategic_gateway(ctx)?;
-    travel_to_quest_impl(ctx, character_id, quest_id, Some(route))
+    travel_to_case_site_impl(ctx, character_id, case_site_id.value, Some(route))
 }
 
-fn travel_to_quest_impl(
+fn travel_to_case_site_impl(
     ctx: &ReducerContext,
     character_id: u64,
-    quest_id: String,
+    case_site_id: String,
     route: Option<JourneyRoutePlan>,
 ) -> Result<(), String> {
     crate::character::require_living_character(ctx, character_id)?;
@@ -9336,29 +9647,22 @@ fn travel_to_quest_impl(
         return Err("Character not found".into());
     };
     let Some(party_id) = character.party_id.clone() else {
-        return Err("Must be in a party to travel to a quest".into());
+        return Err("Must be in a party to travel to a case site".into());
     };
-    let Some(mut party) = ctx.db.party().id().find(&party_id) else {
+    let Some(mut party) = ctx.db.party_authority().id().find(&party_id) else {
         return Err("Party not found".into());
     };
     if party.leader_id != character_id {
         return Err("Only the party leader can travel".into());
     }
     require_no_unresolved_encounter(ctx, &party_id)?;
-    if party.camp_destination_id.is_some() {
+    if party.camp_destination.is_some() {
         return Err("Break camp and continue the current journey first".into());
     }
-    if party.active_quest_id.as_deref() != Some(&quest_id) {
-        return Err("This is not the party's active quest".into());
-    }
-    let Some(quest) = ctx.db.quest().id().find(&quest_id) else {
-        return Err("Quest not found".into());
-    };
-    if quest.status != QuestStatus::Accepted || quest.accepted_by.as_ref() != Some(&party_id) {
-        return Err("Quest is not accepted by this party".into());
-    }
-    if character.current_settlement_id.as_ref() != Some(&quest.settlement_id) {
-        return Err("Travel to the quest must begin at its posting settlement".into());
+    let (site, _lead) = exact_case_site_for_observer(ctx, character_id, &case_site_id)
+        .ok_or("That exact site has not been disclosed to this observer")?;
+    if character.current_settlement_id.as_ref() != Some(&site.origin_settlement_id) {
+        return Err("Travel to this site must begin at its known origin settlement".into());
     }
     require_party_ready(ctx, &party_id)?;
     let traveler_ids = living_party_member_ids(ctx, &party_id);
@@ -9367,54 +9671,51 @@ fn travel_to_quest_impl(
         ctx,
         &party_id,
         character_id,
-        Some(&quest.settlement_id),
+        Some(&site.origin_settlement_id),
         None,
-        Some(&quest_id),
+        None,
     )?;
-    let quest = ctx
-        .db
-        .quest()
-        .id()
-        .find(&quest_id)
-        .filter(|quest| {
-            quest.status == QuestStatus::Accepted && quest.accepted_by.as_ref() == Some(&party_id)
-        })
-        .ok_or("Quest changed during departure synchronization")?;
+    let (site, lead) = exact_case_site_for_observer(ctx, character_id, &case_site_id)
+        .ok_or("Exact destination knowledge changed during departure synchronization")?;
     let traveler_ids = living_party_member_ids(ctx, &party_id);
 
     let origin = ctx
         .db
         .settlement()
         .id()
-        .find(&quest.settlement_id)
-        .ok_or("Quest posting settlement not found")?;
-    if let Some(route) = route.as_ref() {
-        validate_journey_route(
-            ctx,
-            route,
-            (origin.coord_x, origin.coord_y),
-            (quest.location_coord_x, quest.location_coord_y),
-        )?;
-        validate_return_journey_route(
-            ctx,
-            route,
-            (quest.location_coord_x, quest.location_coord_y),
-            (origin.coord_x, origin.coord_y),
-        )?;
-    }
-    let travel_minutes = route.as_ref().map_or_else(
-        || quest_journey_minutes(quest.distance_m),
-        |route| route.minutes,
+        .find(&site.origin_settlement_id)
+        .ok_or("Case-site origin settlement not found")?;
+    let destination = (
+        f64::from(lead.longitude_e7) / 10_000_000.0,
+        f64::from(lead.latitude_e7) / 10_000_000.0,
     );
+    if let Some(route) = route.as_ref() {
+        validate_journey_route(ctx, route, (origin.coord_x, origin.coord_y), destination)?;
+        validate_return_journey_route(ctx, route, destination, (origin.coord_x, origin.coord_y))?;
+    }
+    let distance_m = straight_line_distance_m(
+        origin.coord_x,
+        origin.coord_y,
+        destination.0,
+        destination.1,
+        site.coordinates_are_geographic && origin.source_node_id.is_some(),
+    );
+    let travel_minutes = route
+        .as_ref()
+        .map_or_else(|| quest_journey_minutes(distance_m), |route| route.minutes);
     start_party_journey(
         ctx,
         &party,
-        "settlement",
-        &origin.id,
-        &origin.name,
-        "quest",
-        &quest.id,
-        &quest.title,
+        JourneyEndpoint::Settlement(JourneySettlementEndpoint {
+            id: origin.id.clone(),
+            name: origin.name.clone(),
+        }),
+        JourneyEndpoint::CaseSite(JourneyCaseSiteEndpoint {
+            id: CaseSiteId {
+                value: site.id.value.clone(),
+            },
+            name: site.name.clone(),
+        }),
         travel_minutes,
         departure_minute,
         route.as_ref(),
@@ -9428,7 +9729,7 @@ fn travel_to_quest_impl(
     // pre-departure pooled-water value.
     party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id)
         .ok_or("Party changed while its waterskins were filled")?;
@@ -9442,7 +9743,7 @@ fn travel_to_quest_impl(
     )?;
     party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id)
         .ok_or("Party changed during travel")?;
@@ -9456,18 +9757,18 @@ fn travel_to_quest_impl(
                 .find(member_id)
                 .ok_or("Party member not found")?;
             member.current_settlement_id = None;
-            member.current_quest_location_id = None;
+            crate::investigation::set_character_case_site(ctx, member.id, None);
             ctx.db.character().id().update(member);
         }
         set_party_journey_state(
             &mut party,
             None,
             None,
-            Some(quest_id),
-            Some("quest".into()),
+            Some(case_site_id),
+            Some("case_site".into()),
             travel_minutes.saturating_sub(leg_minutes),
         );
-        ctx.db.party().id().update(party);
+        ctx.db.party_authority().id().update(party);
         if interrupted {
             record_party_journey_interruption(ctx, &party_id, leg_minutes);
             commit_encounter_scan(ctx, &party_id, next_roll, encounter)?;
@@ -9482,12 +9783,24 @@ fn travel_to_quest_impl(
     for member_id in traveler_ids {
         if let Some(mut member) = ctx.db.character().id().find(member_id) {
             member.current_settlement_id = None;
-            member.current_quest_location_id = Some(quest_id.clone());
+            crate::investigation::set_character_case_site(
+                ctx,
+                member.id,
+                Some(case_site_id.clone()),
+            );
             ctx.db.character().id().update(member);
+            mark_case_site_visited(ctx, member_id, &site)?;
         }
     }
-    set_party_journey_state(&mut party, None, Some(quest_id), None, None, 0);
-    ctx.db.party().id().update(party);
+    set_party_journey_state(
+        &mut party,
+        None,
+        Some(CaseSiteId::from(case_site_id)),
+        None,
+        None,
+        0,
+    );
+    ctx.db.party_authority().id().update(party);
     finish_party_journey(ctx, &party_id);
     Ok(())
 }
@@ -9532,7 +9845,7 @@ fn travel_to_settlement_impl(
         .as_ref()
         .map(|party_id| {
             ctx.db
-                .party()
+                .party_authority()
                 .id()
                 .find(party_id)
                 .ok_or_else(|| "Party not found".to_string())
@@ -9548,7 +9861,7 @@ fn travel_to_settlement_impl(
     // Choosing a different camp destination only changes the planned route.
     // The party can rest before it attempts the newly selected leg.
     if let Some(party) = party.as_mut()
-        && party.camp_destination_id.is_some()
+        && party.camp_destination.is_some()
     {
         return redirect_camped_party_to_settlement(ctx, party, &destination, route);
     }
@@ -9557,7 +9870,7 @@ fn travel_to_settlement_impl(
         // A defeated party can withdraw from an off-road quest location to
         // recover at a settlement, but may not begin ordinary travel while a
         // member is incapacitated.
-        if party.current_quest_location_id.is_none() {
+        if party.current_case_site_id.is_none() {
             require_party_ready(ctx, &party.id)?;
         }
     } else {
@@ -9598,22 +9911,26 @@ fn travel_to_settlement_impl(
             }
             let minutes = route.as_ref().map_or(minutes, |route| route.minutes);
             (minutes, "settlement", origin.id, origin.name)
-        } else if let Some(quest_id) = &character.current_quest_location_id {
-            let Some(quest) = ctx.db.quest().id().find(quest_id) else {
-                return Err("Character's current quest location does not exist".into());
+        } else if let Some(case_site_id) =
+            crate::investigation::character_case_site_id(ctx, character_id)
+        {
+            let Some(site) = ctx.db.case_site_authority().id_key().find(case_site_id) else {
+                return Err("Character's current case site does not exist".into());
             };
+            let site_x = f64::from(site.longitude_e7) / 10_000_000.0;
+            let site_y = f64::from(site.latitude_e7) / 10_000_000.0;
             let distance_m = straight_line_distance_m(
-                quest.location_coord_x,
-                quest.location_coord_y,
+                site_x,
+                site_y,
                 destination.coord_x,
                 destination.coord_y,
-                quest.coordinates_are_geographic && destination.source_node_id.is_some(),
+                site.coordinates_are_geographic && destination.source_node_id.is_some(),
             );
             if let Some(route) = route.as_ref() {
                 validate_journey_route(
                     ctx,
                     route,
-                    (quest.location_coord_x, quest.location_coord_y),
+                    (site_x, site_y),
                     (destination.coord_x, destination.coord_y),
                 )?;
             }
@@ -9621,15 +9938,15 @@ fn travel_to_settlement_impl(
                 route
                     .as_ref()
                     .map_or_else(|| quest_journey_minutes(distance_m), |route| route.minutes),
-                "quest",
-                quest.id,
-                quest.title,
+                "case_site",
+                site.id.value,
+                site.name,
             )
         } else {
             return Err("Character is not at a known location".into());
         };
 
-    let departing_quest = character.current_quest_location_id.clone();
+    let departing_case_site = crate::investigation::character_case_site_id(ctx, character_id);
     let traveler_ids: Vec<u64> = if let Some(party) = party.as_ref() {
         living_party_member_ids(ctx, &party.id)
     } else {
@@ -9642,7 +9959,7 @@ fn travel_to_settlement_impl(
             &current_party.id,
             character_id,
             (origin_kind == "settlement").then_some(origin_id.as_str()),
-            (origin_kind == "quest").then_some(origin_id.as_str()),
+            (origin_kind == "case_site").then_some(origin_id.as_str()),
             None,
         )?);
     }
@@ -9655,12 +9972,23 @@ fn travel_to_settlement_impl(
         start_party_journey(
             ctx,
             party,
-            origin_kind,
-            &origin_id,
-            &origin_name,
-            "settlement",
-            &destination.id,
-            &destination.name,
+            match origin_kind {
+                "settlement" => JourneyEndpoint::Settlement(JourneySettlementEndpoint {
+                    id: origin_id.clone(),
+                    name: origin_name.clone(),
+                }),
+                "case_site" => JourneyEndpoint::CaseSite(JourneyCaseSiteEndpoint {
+                    id: CaseSiteId {
+                        value: origin_id.clone(),
+                    },
+                    name: origin_name.clone(),
+                }),
+                _ => return Err("Journey origin kind is invalid".into()),
+            },
+            JourneyEndpoint::Settlement(JourneySettlementEndpoint {
+                id: destination.id.clone(),
+                name: destination.name.clone(),
+            }),
             travel_minutes,
             departure_minute,
             route.as_ref(),
@@ -9673,7 +10001,7 @@ fn travel_to_settlement_impl(
         // later camp/location write so that write preserves the filled water.
         party = Some(
             ctx.db
-                .party()
+                .party_authority()
                 .id()
                 .find(&current_party.id)
                 .ok_or("Party changed while its waterskins were prepared")?,
@@ -9695,7 +10023,7 @@ fn travel_to_settlement_impl(
         )?;
         party = Some(
             ctx.db
-                .party()
+                .party_authority()
                 .id()
                 .find(&party_id)
                 .ok_or("Party changed during travel")?,
@@ -9711,7 +10039,7 @@ fn travel_to_settlement_impl(
                     .find(traveler_id)
                     .ok_or("Party member not found")?;
                 traveler.current_settlement_id = None;
-                traveler.current_quest_location_id = None;
+                crate::investigation::set_character_case_site(ctx, traveler.id, None);
                 ctx.db.character().id().update(traveler);
             }
             let party = party.as_mut().expect("party was just reloaded");
@@ -9723,7 +10051,7 @@ fn travel_to_settlement_impl(
                 Some("settlement".into()),
                 travel_minutes.saturating_sub(leg_minutes),
             );
-            ctx.db.party().id().update(party.clone());
+            ctx.db.party_authority().id().update(party.clone());
             if interrupted {
                 record_party_journey_interruption(ctx, &party.id, leg_minutes);
                 commit_encounter_scan(ctx, &party.id, next_roll, encounter)?;
@@ -9747,7 +10075,7 @@ fn travel_to_settlement_impl(
             .find(traveler_id)
             .ok_or("Party member not found")?;
         traveler.current_settlement_id = Some(settlement_id.clone());
-        traveler.current_quest_location_id = None;
+        crate::investigation::set_character_case_site(ctx, traveler.id, None);
         ctx.db.character().id().update(traveler);
         crate::condition::replenish_needs_at_settlement(ctx, traveler_id)?;
         crate::condition::refresh_character_strategic_condition(ctx, traveler_id)?;
@@ -9757,21 +10085,26 @@ fn travel_to_settlement_impl(
 
     if let Some(ref mut party) = party {
         set_party_journey_state(party, Some(settlement_id.clone()), None, None, None, 0);
-        ctx.db.party().id().update(party.clone());
+        ctx.db.party_authority().id().update(party.clone());
         finish_party_journey(ctx, &party.id);
-        let fled_incident = departing_quest.as_ref().is_some_and(|quest_id| {
+        let departing_incident = departing_case_site.as_ref().and_then(|site_id| {
             ctx.db
-                .strategic_incident()
-                .quest_id()
-                .find(quest_id)
-                .is_some()
+                .case_site_authority()
+                .id_key()
+                .find(site_id)
+                .filter(|site| {
+                    ctx.db
+                        .strategic_incident()
+                        .quest_id()
+                        .find(&site.case_id)
+                        .is_some()
+                })
+                .map(|site| site.case_id)
         });
-        if let Some(quest_id) = departing_quest.as_deref()
-            && fled_incident
-        {
+        if let Some(quest_id) = departing_incident.as_deref() {
             finish_strategic_incident(ctx, quest_id, "avoided")?;
         }
-        if !fled_incident {
+        if departing_incident.is_none() {
             maybe_trigger_religious_incident(ctx, &party.id, &destination)?;
         }
     }
@@ -9798,7 +10131,7 @@ pub fn set_party_camp_fatigue_percent(
     let party_id = character.party_id.ok_or("Character is not in a party")?;
     let mut party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
@@ -9806,7 +10139,7 @@ pub fn set_party_camp_fatigue_percent(
         return Err("Only the party leader can configure travel".into());
     }
     party.camp_fatigue_percent = fatigue_percent;
-    ctx.db.party().id().update(party);
+    ctx.db.party_authority().id().update(party);
     Ok(())
 }
 
@@ -9838,7 +10171,7 @@ pub fn set_party_travel_itinerary(
     let party_id = character.party_id.ok_or("Character is not in a party")?;
     let mut party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
@@ -9851,8 +10184,8 @@ pub fn set_party_travel_itinerary(
     // walking window is camp/downtime.
     party.camp_duration_mode = CampDurationMode::Fixed;
     party.fixed_camp_minutes = (24 * 60_u16).saturating_sub(walking_minutes_per_day);
-    let camped = party.camp_destination_id.is_some();
-    ctx.db.party().id().update(party);
+    let camped = party.camp_destination.is_some();
+    ctx.db.party_authority().id().update(party);
     if camped {
         refresh_party_journey_forecast(ctx, &party_id)?;
     }
@@ -9874,7 +10207,7 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
     let party_id = character.party_id.ok_or("Character is not in a party")?;
     let mut party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
@@ -9882,14 +10215,10 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
         return Err("Only the party leader can continue travel".into());
     }
     require_no_unresolved_encounter(ctx, &party_id)?;
-    let destination_id = party
-        .camp_destination_id
+    let destination = party
+        .camp_destination
         .clone()
         .ok_or("The party is not camped")?;
-    let destination_kind = party
-        .camp_destination_kind
-        .clone()
-        .ok_or("Camp destination is missing")?;
     // This also upgrades pre elapsed-itinerary rows before any celestial or
     // progress coordinates are used.
     refresh_party_journey_forecast(ctx, &party_id)?;
@@ -9910,14 +10239,14 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
     )?;
     party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id)
         .ok_or("Party changed during travel")?;
     let interrupted = encounter.is_some();
     party.camp_remaining_minutes = party.camp_remaining_minutes.saturating_sub(leg_minutes);
     if interrupted || party.camp_remaining_minutes > 0 {
-        ctx.db.party().id().update(party);
+        ctx.db.party_authority().id().update(party);
         if interrupted {
             record_party_journey_interruption(ctx, &party_id, leg_minutes);
             commit_encounter_scan(ctx, &party_id, next_roll, encounter)?;
@@ -9929,8 +10258,9 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
         }
         return Ok(());
     }
-    match destination_kind.as_str() {
-        "settlement" => {
+    match destination {
+        JourneyEndpoint::Settlement(endpoint) => {
+            let destination_id = endpoint.id;
             let _destination = ctx
                 .db
                 .settlement()
@@ -9945,7 +10275,7 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
                     .find(member_id)
                     .ok_or("Party member not found")?;
                 member.current_settlement_id = Some(destination_id.clone());
-                member.current_quest_location_id = None;
+                crate::investigation::set_character_case_site(ctx, member.id, None);
                 ctx.db.character().id().update(member);
                 crate::condition::replenish_needs_at_settlement(ctx, member_id)?;
                 crate::condition::refresh_character_strategic_condition(ctx, member_id)?;
@@ -9954,15 +10284,16 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
                 )?;
             }
             party.current_settlement_id = Some(destination_id);
-            party.current_quest_location_id = None;
+            party.current_case_site_id = None;
         }
-        "quest" => {
-            let _quest = ctx
+        JourneyEndpoint::CaseSite(endpoint) => {
+            let destination_id = endpoint.id.value;
+            let site = ctx
                 .db
-                .quest()
-                .id()
+                .case_site_authority()
+                .id_key()
                 .find(&destination_id)
-                .ok_or("Camp destination quest not found")?;
+                .ok_or("Camp destination case site not found")?;
             for member_id in traveler_ids.iter().copied() {
                 let mut member = ctx
                     .db
@@ -9971,26 +10302,31 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
                     .find(member_id)
                     .ok_or("Party member not found")?;
                 member.current_settlement_id = None;
-                member.current_quest_location_id = Some(destination_id.clone());
+                crate::investigation::set_character_case_site(
+                    ctx,
+                    member.id,
+                    Some(destination_id.clone()),
+                );
                 ctx.db.character().id().update(member);
+                mark_case_site_visited(ctx, member_id, &site)?;
                 crate::condition::refresh_character_strategic_condition(ctx, member_id)?;
             }
             party.current_settlement_id = None;
-            party.current_quest_location_id = Some(destination_id);
+            party.current_case_site_id = Some(CaseSiteId::from(destination_id));
         }
-        _ => return Err("Camp destination kind is invalid".into()),
+        JourneyEndpoint::Camp(_) => return Err("A camp cannot be a journey destination".into()),
     }
     let current_settlement_id = party.current_settlement_id.clone();
-    let current_quest_location_id = party.current_quest_location_id.clone();
+    let current_case_site_id = party.current_case_site_id.clone();
     set_party_journey_state(
         &mut party,
         current_settlement_id,
-        current_quest_location_id,
+        current_case_site_id,
         None,
         None,
         0,
     );
-    ctx.db.party().id().update(party);
+    ctx.db.party_authority().id().update(party);
     finish_party_journey(ctx, &party_id);
     Ok(())
 }
@@ -10008,7 +10344,7 @@ pub fn complete_quest(ctx: &ReducerContext, quest_id: String) -> Result<(), Stri
         return Err("Quest has no party assigned".into());
     };
 
-    let Some(party) = ctx.db.party().id().find(&party_id) else {
+    let Some(party) = ctx.db.party_authority().id().find(&party_id) else {
         return Err("Party not found".into());
     };
     if party.active_quest_id.as_deref() != Some(&quest_id) {
@@ -10048,7 +10384,7 @@ pub fn turn_in_quest(
     let party_id = character.party_id.ok_or("Must be in a party")?;
     let mut party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
@@ -10081,17 +10417,20 @@ pub fn turn_in_quest(
     }
 
     party.active_quest_id = None;
-    ctx.db.party().id().update(party);
+    ctx.db.party_authority().id().update(party);
     let obsolete_requests: Vec<u64> = ctx
         .db
-        .party_action_request()
+        .party_action_request_authority()
         .party_id()
         .filter(&party_id)
         .filter(|request| request.action_kind == "turn_in_quest")
         .map(|request| request.id)
         .collect();
     for request_id in obsolete_requests {
-        ctx.db.party_action_request().id().delete(request_id);
+        ctx.db
+            .party_action_request_authority()
+            .id()
+            .delete(request_id);
     }
     ensure_settlement_activity_inner(ctx, &quest.settlement_id)?;
     Ok(())
@@ -10110,25 +10449,33 @@ pub fn autoresolve_quest(
     let Some(party_id) = character.party_id else {
         return Err("Must be in a party".into());
     };
-    let Some(party) = ctx.db.party().id().find(&party_id) else {
+    let Some(party) = ctx.db.party_authority().id().find(&party_id) else {
         return Err("Party not found".into());
     };
     if party.leader_id != character_id {
         return Err("Only the party leader can autoresolve".into());
     }
-    if party.active_quest_id.as_deref() != Some(&quest_id)
-        || party.current_quest_location_id.as_deref() != Some(&quest_id)
-    {
-        return Err("Party must be at its active quest location".into());
-    }
-    require_party_ready(ctx, &party_id)?;
-
     let quest = ctx
         .db
         .quest()
         .id()
         .find(&quest_id)
         .ok_or("Quest not found")?;
+    let at_quest_site = party
+        .current_case_site_id
+        .as_deref()
+        .and_then(|site_id| {
+            ctx.db
+                .case_site_authority()
+                .id_key()
+                .find(&site_id.to_string())
+        })
+        .is_some_and(|site| site.case_id == quest_id);
+    if party.active_quest_id.as_deref() != Some(&quest_id) || !at_quest_site {
+        return Err("Party must be at its active quest location".into());
+    }
+    require_party_ready(ctx, &party_id)?;
+
     if ctx.db.battle_result().quest_id().find(&quest_id).is_some() {
         return Ok(());
     }
@@ -10196,7 +10543,7 @@ pub fn cancel_mission_request(
     let party_id = character.party_id.ok_or("Character has no party")?;
     let party = ctx
         .db
-        .party()
+        .party_authority()
         .id()
         .find(&party_id)
         .ok_or("Party not found")?;
@@ -10566,7 +10913,7 @@ fn ensure_settlement_activity_inner(
     crate::local_problem::ensure_settlement_problems(ctx, settlement_id)?;
     let tracked_quests: HashSet<String> = ctx
         .db
-        .party()
+        .party_authority()
         .iter()
         .filter_map(|party| party.active_quest_id)
         .collect();
@@ -10624,7 +10971,7 @@ fn quest_service_for_title(title: &str) -> &'static str {
 
 fn ensure_npc_quest_parties(ctx: &ReducerContext, settlement_id: &str) -> Result<(), String> {
     let target = 1 + settlement_id.bytes().map(usize::from).sum::<usize>() % 2;
-    for mut party in ctx.db.party().iter().collect::<Vec<_>>() {
+    for mut party in ctx.db.party_authority().iter().collect::<Vec<_>>() {
         let Some(quest_id) = party.active_quest_id.as_ref() else {
             continue;
         };
@@ -10652,11 +10999,11 @@ fn ensure_npc_quest_parties(ctx: &ReducerContext, settlement_id: &str) -> Result
         party.medicine_target = party.medicine_target.round().clamp(0.0, 5.0);
         party.command_target = party.command_target.round().clamp(0.0, 5.0);
         party.religion_target = party.religion_target.round().clamp(0.0, 5.0);
-        ctx.db.party().id().update(party);
+        ctx.db.party_authority().id().update(party);
     }
     let existing = ctx
         .db
-        .party()
+        .party_authority()
         .iter()
         .filter(|party| party.current_settlement_id.as_deref() == Some(settlement_id))
         .filter(|party| party.active_quest_id.is_some())
@@ -10697,14 +11044,14 @@ fn ensure_npc_quest_parties(ctx: &ReducerContext, settlement_id: &str) -> Result
             true,
         )?;
         let party_id = leader.party_id.clone().ok_or("NPC leader has no party")?;
-        let mut party = ctx.db.party().id().find(&party_id).unwrap();
+        let mut party = ctx.db.party_authority().id().find(&party_id).unwrap();
         party.name = format!("{}'s company", leader_name);
         party.current_settlement_id = Some(settlement_id.to_string());
         party.active_quest_id = Some(quest.id.clone());
         party.medicine_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
         party.command_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
         party.religion_target = 3.0 + (ctx.random::<u64>() % 3) as f32;
-        ctx.db.party().id().update(party);
+        ctx.db.party_authority().id().update(party);
 
         let mut requirements = RecruitmentRequirements::default();
         if ctx.random::<u64>() % 2 == 0 {
@@ -10872,7 +11219,7 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
     ];
     let tracked_quests: HashSet<String> = ctx
         .db
-        .party()
+        .party_authority()
         .iter()
         .filter_map(|party| party.active_quest_id)
         .collect();
@@ -10924,10 +11271,17 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         accepted_by: None,
         enemy_type: enemy.into(),
         enemy_count,
-        location_description: arrival.into(),
-        location_scene_key: scene.into(),
-        location_coord_x: settlement.coord_x + offset_x,
-        location_coord_y: settlement.coord_y + offset_y,
+    });
+    ctx.db.case_site_authority().insert(CaseSiteAuthority {
+        id_key: format!("case-site:{quest_id}"),
+        id: CaseSiteId::from(format!("case-site:{quest_id}")),
+        case_id: quest_id.clone(),
+        origin_settlement_id: settlement.id.clone(),
+        name: format!("{title} near {}", settlement.name),
+        description: arrival.into(),
+        scene_key: scene.into(),
+        longitude_e7: ((settlement.coord_x + offset_x) * 10_000_000.0).round() as i32,
+        latitude_e7: ((settlement.coord_y + offset_y) * 10_000_000.0).round() as i32,
         coordinates_are_geographic: geographic,
         distance_m,
     });

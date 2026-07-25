@@ -31,9 +31,10 @@ use crate::live::LiveState;
 use crate::session::{CHARACTER_COOKIE, Session};
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats,
-    CharacterStrategicCondition, CharacterTime, Party, PartyActionRequest, PartyJourney,
-    PartyJourneyRoute, PartyMember, Quest, Settlement, SpacetimeClient, WorldClock,
+    BackendCaseSitePin, BackendCharacterCaseSiteLocation, Character, CharacterAttributes,
+    CharacterLimbs, CharacterSkills, CharacterStats, CharacterStrategicCondition, CharacterTime,
+    Party, PartyActionRequest, PartyJourney, PartyJourneyRoute, PartyMember, Settlement,
+    SpacetimeClient, WorldClock,
 };
 
 /// Application state shared across routes
@@ -116,6 +117,20 @@ mod return_url_tests {
 /// participate in readiness checks that gate survivor actions.
 pub(crate) fn participates_in_party_readiness(alive: bool) -> bool {
     alive
+}
+
+pub(crate) async fn character_case_site_id(
+    state: &AppState,
+    character_id: u64,
+) -> Result<Option<String>, String> {
+    state
+        .db
+        .query_one::<BackendCharacterCaseSiteLocation>(&format!(
+            "SELECT * FROM backend_character_case_site_locations WHERE character_id = {character_id}"
+        ))
+        .await
+        .map(|row| row.map(|location| location.case_site_id.value))
+        .map_err(|error| error.to_string())
 }
 
 /// Execute a leader action immediately, or persist the same validated intent for
@@ -405,19 +420,22 @@ async fn planned_travel_call(
                 (destination.coord_y, destination.coord_x),
             )
         }
-        PartyAction::TravelToQuest { quest_id } => {
+        PartyAction::TravelToCaseSite { case_site_id } => {
             let destination = state
                 .db
-                .query_one::<Quest>(&format!(
-                    "SELECT * FROM quest WHERE id = {}",
-                    sql_string_literal(quest_id)
+                .query_one::<BackendCaseSitePin>(&format!(
+                    "SELECT * FROM backend_case_site_pins WHERE owner_character_id = {actor_id} AND case_site_id = {}",
+                    sql_string_literal(case_site_id)
                 ))
                 .await
                 .map_err(|error| error.to_string())?
-                .ok_or("Quest not found")?;
+                .ok_or("Known exact case site not found")?;
             (
-                "travel_to_quest_planned",
-                (destination.location_coord_y, destination.location_coord_x),
+                "travel_to_case_site_planned",
+                (
+                    f64::from(destination.latitude_e7) / 10_000_000.0,
+                    f64::from(destination.longitude_e7) / 10_000_000.0,
+                ),
             )
         }
         _ => return Ok(None),
@@ -433,17 +451,20 @@ async fn planned_travel_call(
             .map_err(|error| error.to_string())?
             .ok_or("Origin settlement not found")?;
         (settlement.coord_y, settlement.coord_x)
-    } else if let Some(id) = character.current_quest_location_id.as_deref() {
-        let quest = state
+    } else if let Some(id) = character_case_site_id(state, actor_id).await? {
+        let site = state
             .db
-            .query_one::<Quest>(&format!(
-                "SELECT * FROM quest WHERE id = {}",
-                sql_string_literal(id)
+            .query_one::<BackendCaseSitePin>(&format!(
+                "SELECT * FROM backend_case_site_pins WHERE owner_character_id = {actor_id} AND case_site_id = {}",
+                sql_string_literal(&id)
             ))
             .await
             .map_err(|error| error.to_string())?
-            .ok_or("Origin quest not found")?;
-        (quest.location_coord_y, quest.location_coord_x)
+            .ok_or("Known exact origin case site not found")?;
+        (
+            f64::from(site.latitude_e7) / 10_000_000.0,
+            f64::from(site.longitude_e7) / 10_000_000.0,
+        )
     } else if let Some(party_id) = character.party_id.as_deref() {
         let journey = state
             .db
@@ -474,18 +495,18 @@ async fn planned_travel_call(
     {
         Ok(plan) => plan,
         Err(error) => {
-            tracing::warn!(%error, actor_id, "terrain route unavailable at execution; using legacy travel reducer");
+            tracing::warn!(%error, actor_id, "terrain route unavailable at execution; using unplanned travel reducer");
             return Ok(None);
         }
     };
-    let return_plan = if matches!(action, PartyAction::TravelToQuest { .. }) {
+    let return_plan = if matches!(action, PartyAction::TravelToCaseSite { .. }) {
         match terrain
             .plan_with_profile(destination, origin, terrain_profile)
             .await
         {
             Ok(plan) => Some(plan),
             Err(error) => {
-                tracing::warn!(%error, actor_id, "quest return terrain route unavailable at execution; using legacy travel reducer");
+                tracing::warn!(%error, actor_id, "case-site return terrain route unavailable at execution; using unplanned travel reducer");
                 return Ok(None);
             }
         }
@@ -494,13 +515,15 @@ async fn planned_travel_call(
     };
     let route_json = terrain_route_json(terrain.digest(), &plan, return_plan.as_ref());
     let destination_id = match action {
-        PartyAction::TravelToSettlement { settlement_id } => settlement_id,
-        PartyAction::TravelToQuest { quest_id } => quest_id,
+        PartyAction::TravelToSettlement { settlement_id } => json!(settlement_id),
+        PartyAction::TravelToCaseSite { case_site_id } => {
+            json!({ "value": case_site_id })
+        }
         _ => unreachable!(),
     };
     Ok(Some((
         reducer,
-        vec![json!(actor_id), json!(destination_id), route_json],
+        vec![json!(actor_id), destination_id, route_json],
     )))
 }
 

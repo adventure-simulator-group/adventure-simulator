@@ -4,51 +4,62 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::case_site_id_type::CaseSiteId;
+use super::journey_route_plan_type::JourneyRoutePlan;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct TravelToQuestArgs {
+pub(super) struct TravelToCaseSitePlannedArgs {
     pub character_id: u64,
-    pub quest_id: String,
+    pub case_site_id: CaseSiteId,
+    pub route: JourneyRoutePlan,
 }
 
-impl From<TravelToQuestArgs> for super::Reducer {
-    fn from(args: TravelToQuestArgs) -> Self {
-        Self::TravelToQuest {
+impl From<TravelToCaseSitePlannedArgs> for super::Reducer {
+    fn from(args: TravelToCaseSitePlannedArgs) -> Self {
+        Self::TravelToCaseSitePlanned {
             character_id: args.character_id,
-            quest_id: args.quest_id,
+            case_site_id: args.case_site_id,
+            route: args.route,
         }
     }
 }
 
-impl __sdk::InModule for TravelToQuestArgs {
+impl __sdk::InModule for TravelToCaseSitePlannedArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `travel_to_quest`.
+/// Extension trait for access to the reducer `travel_to_case_site_planned`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait travel_to_quest {
-    /// Request that the remote module invoke the reducer `travel_to_quest` to run as soon as possible.
+pub trait travel_to_case_site_planned {
+    /// Request that the remote module invoke the reducer `travel_to_case_site_planned` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`travel_to_quest:travel_to_quest_then`] to run a callback after the reducer completes.
-    fn travel_to_quest(&self, character_id: u64, quest_id: String) -> __sdk::Result<()> {
-        self.travel_to_quest_then(character_id, quest_id, |_, _| {})
+    /// /// Use [`travel_to_case_site_planned:travel_to_case_site_planned_then`] to run a callback after the reducer completes.
+    fn travel_to_case_site_planned(
+        &self,
+        character_id: u64,
+        case_site_id: CaseSiteId,
+        route: JourneyRoutePlan,
+    ) -> __sdk::Result<()> {
+        self.travel_to_case_site_planned_then(character_id, case_site_id, route, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `travel_to_quest` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `travel_to_case_site_planned` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn travel_to_quest_then(
+    fn travel_to_case_site_planned_then(
         &self,
         character_id: u64,
-        quest_id: String,
+        case_site_id: CaseSiteId,
+        route: JourneyRoutePlan,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -58,11 +69,12 @@ pub trait travel_to_quest {
     ) -> __sdk::Result<()>;
 }
 
-impl travel_to_quest for super::RemoteReducers {
-    fn travel_to_quest_then(
+impl travel_to_case_site_planned for super::RemoteReducers {
+    fn travel_to_case_site_planned_then(
         &self,
         character_id: u64,
-        quest_id: String,
+        case_site_id: CaseSiteId,
+        route: JourneyRoutePlan,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -71,9 +83,10 @@ impl travel_to_quest for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
-            TravelToQuestArgs {
+            TravelToCaseSitePlannedArgs {
                 character_id,
-                quest_id,
+                case_site_id,
+                route,
             },
             callback,
         )
