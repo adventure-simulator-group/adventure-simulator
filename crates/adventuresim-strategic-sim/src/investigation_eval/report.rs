@@ -6,6 +6,7 @@ use adventuresim_core::quest_generation::TemplateFamily;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
+    fmt::Write,
     time::{Duration, Instant},
 };
 
@@ -122,6 +123,95 @@ pub struct ReplayCase {
 }
 
 pub const MAX_REPLAY_DECISIONS: usize = 1_000;
+
+/// Render the player-visible half of an evaluation as a chronological anthology.
+///
+/// This deliberately accepts only the public report, so canonical cause, true
+/// site, weights, and other developer-only generator authority cannot leak into
+/// the story artifact.
+pub fn render_markdown_stories(report: &PublicEvaluationReport) -> String {
+    let mut output = String::from(
+        "# Quest evaluation stories\n\n\
+         These stories contain only information exposed to the simulated player. \
+         Dialogue is reproduced exactly as emitted by the evaluation environment.\n\n",
+    );
+    for (index, trace) in report.traces.iter().enumerate() {
+        let outcome = if trace.solved {
+            "completed"
+        } else {
+            match trace.termination {
+                Termination::StepLimit => "unfinished (step limit)",
+                Termination::DeadEnd => "unfinished (dead end)",
+                Termination::Loop => "unfinished (loop detected)",
+                Termination::PolicyError => "unfinished (policy error)",
+                Termination::BudgetExceeded => "unfinished (budget exceeded)",
+                Termination::Solved => "completed",
+            }
+        };
+        writeln!(output, "## Story {}: {}", index + 1, trace.title).unwrap();
+        writeln!(output).unwrap();
+        writeln!(output, "- Case: `{}`", trace.case_id).unwrap();
+        writeln!(output, "- Policy: {}", trace.policy).unwrap();
+        writeln!(output, "- Outcome: {outcome}").unwrap();
+        writeln!(output, "- Problem: {}", trace.problem_summary).unwrap();
+
+        for event in &trace.events {
+            let (day, hour, minute) = story_time(event.game_minute);
+            writeln!(output).unwrap();
+            writeln!(
+                output,
+                "### Day {day}, {hour:02}:{minute:02} — {}",
+                event.location
+            )
+            .unwrap();
+            writeln!(output).unwrap();
+            writeln!(output, "**Player action:** {}", event.action_label).unwrap();
+
+            for line in &event.dialogue {
+                writeln!(output).unwrap();
+                writeln!(output, "> **{}:** {}", line.speaker, line.text).unwrap();
+            }
+
+            let non_dialogue_discoveries = event
+                .learned
+                .iter()
+                .filter(|learned| {
+                    !event
+                        .dialogue
+                        .iter()
+                        .any(|line| line.text.contains(learned.as_str()))
+                })
+                .collect::<Vec<_>>();
+            if !non_dialogue_discoveries.is_empty() {
+                writeln!(output).unwrap();
+                writeln!(output, "**Recorded:**").unwrap();
+                for learned in non_dialogue_discoveries {
+                    writeln!(output, "- {learned}").unwrap();
+                }
+            }
+
+            writeln!(output).unwrap();
+            writeln!(output, "**Result:** {}", event.result).unwrap();
+            if event.game_minutes > 0 || event.resource_cost > 0 {
+                write!(output, "**Cost:** {} in-game minutes", event.game_minutes).unwrap();
+                if event.resource_cost > 0 {
+                    write!(output, "; {} supplies", event.resource_cost).unwrap();
+                }
+                writeln!(output).unwrap();
+            }
+        }
+        writeln!(output).unwrap();
+    }
+    output
+}
+
+fn story_time(game_minute: u64) -> (u64, u64, u64) {
+    (
+        game_minute / (24 * 60) + 1,
+        game_minute % (24 * 60) / 60,
+        game_minute % 60,
+    )
+}
 
 pub fn evaluate_cases(
     configs: &[EvalCaseConfig],
@@ -394,9 +484,14 @@ pub fn golden_suite(seed: u64, cases_per_family: u32) -> Vec<EvalCaseConfig> {
         TemplateFamily::DisappearanceOrLoss,
     ]
     .into_iter()
-    .flat_map(|family| {
-        (0..cases_per_family)
-            .map(move |offset| EvalCaseConfig::fixture(seed + u64::from(offset), family))
+    .enumerate()
+    .flat_map(|(family_index, family)| {
+        (0..cases_per_family).map(move |offset| {
+            let suite_offset = (family_index as u64)
+                .wrapping_mul(u64::from(cases_per_family))
+                .wrapping_add(u64::from(offset));
+            EvalCaseConfig::fixture(seed.wrapping_add(suite_offset), family)
+        })
     })
     .collect()
 }
@@ -432,6 +527,23 @@ mod tests {
                     .contains("canonical_case_id")
             );
         }
+    }
+
+    #[test]
+    fn golden_suite_uses_distinct_public_case_ids_across_families() {
+        let bundle = evaluate_cases(
+            &golden_suite(41, 2),
+            &mut ScriptedPolicy::default(),
+            &EvalLimits::default(),
+        )
+        .unwrap();
+        let ids = bundle
+            .public
+            .traces
+            .iter()
+            .map(|trace| trace.case_id.as_str())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(ids.len(), bundle.public.traces.len());
     }
 
     #[test]
@@ -486,11 +598,20 @@ mod tests {
             version: EVAL_FORMAT_VERSION,
             case_id: "case:public".into(),
             policy: "fixture".into(),
+            title: "Fixture investigation".into(),
+            problem_summary: "Something happened.".into(),
             events: vec![super::super::PublicTraceEvent {
                 step: 0,
+                game_minute: 0,
+                location: "the market".into(),
                 frame_digest: "digest".into(),
                 choice_id: "choice:fixture".into(),
                 choice_kind: super::super::ChoiceKind::InterviewWitness,
+                action_label: "Speak with Marta.".into(),
+                dialogue: vec![super::super::PublicDialogueLine {
+                    speaker: "Marta".into(),
+                    text: "I heard iron scrape against stone.".into(),
+                }],
                 result: "ordinary testimony".into(),
                 learned: vec!["no correction wording here".into()],
                 corrected_proposition_ids: vec!["claim:wrong".into()],
@@ -504,6 +625,31 @@ mod tests {
             semantic_digest: "fixture".into(),
         };
         assert_eq!(metrics(&[trace], &[]).false_hypothesis_corrections, 1);
+    }
+
+    #[test]
+    fn markdown_story_preserves_exact_dialogue_and_public_chronology() {
+        let bundle = evaluate_cases(
+            &golden_suite(5, 1),
+            &mut ScriptedPolicy::default(),
+            &EvalLimits::default(),
+        )
+        .unwrap();
+        let story = render_markdown_stories(&bundle.public);
+        let first_dialogue = &bundle.public.traces[0].events[0].dialogue[0];
+        assert!(story.contains(&format!(
+            "> **{}:** {}",
+            first_dialogue.speaker, first_dialogue.text
+        )));
+        assert!(story.contains("**Player action:**"));
+        assert!(story.contains("### Day 1, 00:00"));
+        assert!(!story.to_ascii_lowercase().contains("true site"));
+        assert!(!story.to_ascii_lowercase().contains("unspecified"));
+        for case in &bundle.developer.cases {
+            assert!(!story.contains(&case.canonical_case_id));
+            assert!(!story.contains(&case.generator_manifest_digest));
+            assert!(!story.contains(&case.true_site));
+        }
     }
 
     #[test]

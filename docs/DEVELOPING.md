@@ -6,7 +6,8 @@ For deterministic multi-year NPC balance experiments and replay commands, see
 [`STRATEGIC_SIMULATION.md`](STRATEGIC_SIMULATION.md), `just strategic-sim`, and
 `just test-strategic-sim`. Credential-free generated-investigation regression
 coverage is available through `just quest-eval` and `just quest-eval-mock`;
-these write separate player-visible and developer-only reports. Provider-backed
+these write a readable player-perspective story anthology alongside separate
+player-visible JSON and developer-only reports. Provider-backed
 runs require explicit `--allow-network` and read a key only from the named
 environment variable. See
 [`STRATEGIC_SIMULATION.md`](STRATEGIC_SIMULATION.md#investigation-quest-evaluator).

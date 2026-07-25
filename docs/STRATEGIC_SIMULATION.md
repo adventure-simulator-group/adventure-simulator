@@ -190,12 +190,19 @@ serializable player frame: visible dialogue, source-attributed claims, evidence,
 casebook locations, party capabilities/resources, and opaque IDs for currently
 legal typed choices. Arbitrary reducer names or object IDs are never accepted.
 
-Public traces and developer truth must be written to different files:
+Each run writes three distinct artifacts: machine-readable public traces, a
+Markdown anthology of the same events from the player's perspective, and
+developer truth. The stories preserve the exact dialogue emitted by the
+evaluator together with the visible action, place, time, discoveries, outcome,
+and resource cost of every step. They are intended for reading quest runs as
+complete chronological narratives without exposing probabilities, canonical
+causes, true sites, or other hidden generator authority.
 
 ```powershell
 cargo run -p adventuresim-strategic-sim -- quest-eval `
   --policy mock --seed 41 --cases-per-template 8 `
   --public-output quest-eval-public.json `
+  --stories-output quest-eval-stories.md `
   --developer-output quest-eval-developer.json
 ```
 
@@ -212,6 +219,7 @@ command accepts only the name of an API-key environment variable:
 cargo run -p adventuresim-strategic-sim -- quest-eval `
   --policy openai --allow-network --api-key-env OPENAI_API_KEY `
   --public-output quest-eval-public.json `
+  --stories-output quest-eval-stories.md `
   --developer-output quest-eval-developer.json
 ```
 

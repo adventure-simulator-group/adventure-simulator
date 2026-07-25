@@ -1,8 +1,8 @@
 use super::{
     ArgumentValue, Capability, ChoiceArguments, ChoiceKind, DeveloperCaseAnalysis, DiscoveryView,
     EVAL_FORMAT_VERSION, JournalView, LegalChoice, LocationResolution, PartyView, PlayerFrame,
-    PublicClaim, PublicEvidence, PublicLocation, PublicQuestTrace, PublicTraceEvent, Termination,
-    WitnessAvailability, WitnessReferral,
+    PublicClaim, PublicDialogueLine, PublicEvidence, PublicLocation, PublicQuestTrace,
+    PublicTraceEvent, Termination, WitnessAvailability, WitnessReferral,
 };
 use adventuresim_core::quest_generation::{
     self as qg, Circumstance, GeneratedActionOutput, GeneratedCase, GeneratedDestinationStage,
@@ -39,6 +39,8 @@ impl EvalCaseConfig {
 pub struct InvestigationEnvironment {
     generated: GeneratedCase,
     analysis: DeveloperCaseAnalysis,
+    settlement_name: String,
+    current_location: String,
     frame: PlayerFrame,
     capabilities: BTreeMap<String, Capability>,
     tavern_entered: bool,
@@ -66,12 +68,21 @@ struct CompletedAction {
 impl InvestigationEnvironment {
     pub fn generate(config: EvalCaseConfig) -> Result<Self, String> {
         let context = generation_context(config.seed, config.family);
+        let settlement_name = context.settlement_name.clone();
         let generated = qg::generate(&context)
             .map_err(|error| format!("quest generation failed: {error:?}"))?;
-        Self::from_generated(generated, config.party)
+        Self::from_generated_at(generated, config.party, settlement_name)
     }
 
     pub fn from_generated(generated: GeneratedCase, party: PartyView) -> Result<Self, String> {
+        Self::from_generated_at(generated, party, "the settlement".into())
+    }
+
+    fn from_generated_at(
+        generated: GeneratedCase,
+        party: PartyView,
+        settlement_name: String,
+    ) -> Result<Self, String> {
         let analysis = developer_analysis(&generated)?;
         let frame = PlayerFrame {
             version: EVAL_FORMAT_VERSION,
@@ -95,6 +106,8 @@ impl InvestigationEnvironment {
         let mut value = Self {
             generated,
             analysis,
+            current_location: settlement_name.clone(),
+            settlement_name,
             frame,
             capabilities: BTreeMap::new(),
             tavern_entered: false,
@@ -138,11 +151,15 @@ impl InvestigationEnvironment {
             .ok_or("choice capability lacks public presentation")?;
         validate_arguments(&legal.typed_arguments, &decision.arguments)?;
         let kind = legal.kind;
+        let action_label = legal.label.clone();
+        let game_minute = self.frame.game_minute;
         let waiting_for_witness = matches!(&capability, Capability::WaitForWitness(_));
         let mut learned = Vec::new();
+        let mut dialogue = Vec::new();
         let mut corrected_proposition_ids = Vec::new();
         let (result, minutes, cost) = match capability {
             Capability::EnterTavern => {
+                self.current_location = format!("{} tavern", self.settlement_name);
                 self.tavern_entered = true;
                 self.frame.discovery.problem_summary =
                     self.generated.consequence.public_summary.clone();
@@ -155,7 +172,7 @@ impl InvestigationEnvironment {
                     .iter()
                     .map(|witness| WitnessReferral {
                         witness_id: witness.id.0.clone(),
-                        display_name: witness_name(&witness.npc_id),
+                        display_name: witness.display_name.clone(),
                         physical_description: witness.visible_description.clone(),
                         expected_location: witness.expected_location_label.clone(),
                         interviewed: false,
@@ -164,6 +181,24 @@ impl InvestigationEnvironment {
                     .collect();
                 self.refresh_witness_availability();
                 learned.push(self.generated.consequence.public_summary.clone());
+                dialogue.push(PublicDialogueLine {
+                    speaker: "Tavern keeper".into(),
+                    text: format!(
+                        "Locals have been saying: {}",
+                        self.generated.consequence.public_summary
+                    ),
+                });
+                dialogue.extend(self.frame.discovery.referrals.iter().map(|referral| {
+                    PublicDialogueLine {
+                        speaker: "Tavern keeper".into(),
+                        text: format!(
+                            "Ask {}—{}, usually found at {}.",
+                            referral.display_name,
+                            referral.physical_description,
+                            referral.expected_location
+                        ),
+                    }
+                }));
                 (
                     "The tavern's talk reveals a local problem and witness referrals.".into(),
                     15,
@@ -172,6 +207,7 @@ impl InvestigationEnvironment {
             }
             Capability::Interview(index) => {
                 let witness = self.generated.witnesses.get(index).ok_or("stale witness")?;
+                self.current_location = witness.expected_location_label.clone();
                 self.interviewed.insert(index);
                 if let Some(referral) = self.frame.discovery.referrals.get_mut(index) {
                     referral.interviewed = true;
@@ -187,6 +223,10 @@ impl InvestigationEnvironment {
                         corrected_proposition_ids.push(corrected.clone());
                     }
                     learned.push(statement.spoken_text.clone());
+                    dialogue.push(PublicDialogueLine {
+                        speaker: witness.display_name.clone(),
+                        text: statement.spoken_text.clone(),
+                    });
                 }
                 (
                     "The witness's account is recorded with its source.".into(),
@@ -195,6 +235,9 @@ impl InvestigationEnvironment {
                 )
             }
             Capability::WaitForWitness(index) => {
+                if let Some(witness) = self.generated.witnesses.get(index) {
+                    self.current_location = witness.expected_location_label.clone();
+                }
                 let return_at = *self
                     .witness_returns_at
                     .get(&index)
@@ -211,6 +254,7 @@ impl InvestigationEnvironment {
             }
             Capability::Action(index, _action_kind, route) => {
                 let action = self.generated.actions.get(index).ok_or("stale action")?;
+                self.current_location = self.action_location(action);
                 if action.target_kind == "site" && !self.visited_sites.contains(&action.target_id) {
                     return Err("site action requires authoritative occupancy".into());
                 }
@@ -286,6 +330,7 @@ impl InvestigationEnvironment {
                     .iter()
                     .find(|site| site.id.0 == site_id)
                 {
+                    self.current_location = site.safe_label.clone();
                     upsert_location(
                         &mut self.frame.journal.locations,
                         site.safe_label.clone(),
@@ -322,9 +367,13 @@ impl InvestigationEnvironment {
         let digest = semantic_digest(&self.frame)?;
         self.trace.push(PublicTraceEvent {
             step: self.frame.step,
+            game_minute,
+            location: self.current_location.clone(),
             frame_digest: digest,
             choice_id: decision.choice_id.clone(),
             choice_kind: kind,
+            action_label,
+            dialogue,
             result,
             learned,
             corrected_proposition_ids,
@@ -352,6 +401,8 @@ impl InvestigationEnvironment {
             version: EVAL_FORMAT_VERSION,
             case_id: self.frame.case_id.clone(),
             policy,
+            title: format!("Investigation in {}", self.settlement_name),
+            problem_summary: self.generated.consequence.public_summary.clone(),
             events: self.trace.clone(),
             solved: self.solved,
             exhausted: self.frame.legal_choices.is_empty(),
@@ -361,6 +412,31 @@ impl InvestigationEnvironment {
         };
         trace.semantic_digest = semantic_digest(&trace)?;
         Ok(trace)
+    }
+
+    fn action_location(&self, action: &qg::GeneratedAction) -> String {
+        match action.target_kind.as_str() {
+            "site" => self
+                .generated
+                .sites
+                .iter()
+                .find(|site| site.id.0 == action.target_id)
+                .map(|site| site.safe_label.clone()),
+            "area" => self
+                .generated
+                .areas
+                .iter()
+                .find(|area| area.id == action.target_id)
+                .map(|area| area.safe_label.clone()),
+            "witness" => self
+                .generated
+                .witnesses
+                .iter()
+                .find(|witness| witness.id.0 == action.target_id)
+                .map(|witness| witness.expected_location_label.clone()),
+            _ => None,
+        }
+        .unwrap_or_else(|| self.current_location.clone())
     }
 
     fn refresh_choices(&mut self) {
@@ -578,18 +654,6 @@ impl InvestigationEnvironment {
     }
 }
 
-fn witness_name(npc_id: &str) -> String {
-    // Generated population names are not yet part of the core generator's
-    // portable fixture input. Keep the evaluator presentation realistic without
-    // leaking raw NPC IDs to the policy.
-    match npc_id.rsplit(':').next().unwrap_or("local") {
-        "watchman" => "Konrad, the watchman".into(),
-        "cooper" => "Marta, the cooper".into(),
-        "merchant" => "Elsbeth, the merchant".into(),
-        role => format!("a local {role}"),
-    }
-}
-
 fn validate_arguments(
     allowed: &ChoiceArguments,
     selected: &super::DecisionArguments,
@@ -678,17 +742,20 @@ fn generation_context(seed: u64, family: TemplateFamily) -> qg::GenerationContex
         Circumstance::GraveDuty,
         Circumstance::LivestockWatch,
     ]);
-    let witness = |id: &str, demographic, description: &str, location: &str| WitnessCandidate {
-        npc_id: format!("npc:{id}"),
-        demographic,
-        age_band: "adult".into(),
-        sex: "unspecified".into(),
-        profession: id.into(),
-        visible_description: description.into(),
-        expected_location: location.into(),
-        expected_location_label: location.into(),
-        presence_version: 1,
-        allowed_circumstances: circumstances.clone(),
+    let witness = |id: &str, display_name: &str, demographic, description: &str, location: &str| {
+        WitnessCandidate {
+            npc_id: format!("npc:{id}"),
+            display_name: display_name.into(),
+            demographic,
+            age_band: "adult".into(),
+            sex: "unspecified".into(),
+            profession: id.into(),
+            visible_description: description.into(),
+            expected_location: location.into(),
+            expected_location_label: location.into(),
+            presence_version: 1,
+            allowed_circumstances: circumstances.clone(),
+        }
     };
     qg::GenerationContext {
         seed,
@@ -705,18 +772,21 @@ fn generation_context(seed: u64, family: TemplateFamily) -> qg::GenerationContex
         witness_candidates: vec![
             witness(
                 "watchman",
+                "Konrad",
                 WitnessDemographic::Guard,
                 "a tall watchman with cropped fair hair and a scarred chin",
                 "the gatehouse",
             ),
             witness(
                 "cooper",
+                "Marta",
                 WitnessDemographic::Laborer,
                 "a short cooper with dark curls and a blue apron",
                 "the riverside workshop",
             ),
             witness(
                 "merchant",
+                "Elsbeth",
                 WitnessDemographic::Merchant,
                 "an elderly merchant in a red wool cap",
                 "the market arcade",

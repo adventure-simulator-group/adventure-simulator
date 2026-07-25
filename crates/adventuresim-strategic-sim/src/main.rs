@@ -26,6 +26,9 @@ enum Command {
         /// Public player-visible trace and aggregate metrics.
         #[arg(long)]
         public_output: PathBuf,
+        /// Readable player-perspective quest stories with exact dialogue.
+        #[arg(long)]
+        stories_output: PathBuf,
         /// Separate developer-only generator truth and factor audit.
         #[arg(long)]
         developer_output: PathBuf,
@@ -116,6 +119,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             seed,
             cases_per_template,
             public_output,
+            stories_output,
             developer_output,
             endpoint,
             model,
@@ -125,7 +129,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if !(1..=500).contains(&cases_per_template) {
                 return Err("cases_per_template must be 1..=500".into());
             }
-            validate_distinct_output_paths(&public_output, &developer_output)?;
+            validate_distinct_output_paths(&[&public_output, &stories_output, &developer_output])?;
             let configs = golden_suite(seed, cases_per_template);
             let limits = EvalLimits {
                 max_cases: cases_per_template
@@ -150,15 +154,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             let bundle = evaluate_cases(&configs, policy.as_mut(), &limits)?;
             fs::write(&public_output, serde_json::to_vec_pretty(&bundle.public)?)?;
+            fs::write(&stories_output, render_markdown_stories(&bundle.public))?;
             fs::write(
                 &developer_output,
                 serde_json::to_vec_pretty(&bundle.developer)?,
             )?;
             eprintln!(
-                "quest evaluation: {}/{} solved; public={} developer={}",
+                "quest evaluation: {}/{} solved; public={} stories={} developer={}",
                 bundle.public.metrics.solved,
                 bundle.public.metrics.cases,
                 public_output.display(),
+                stories_output.display(),
                 developer_output.display()
             );
             return Ok(());
@@ -284,10 +290,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn validate_distinct_output_paths(
-    public_output: &Path,
-    developer_output: &Path,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn validate_distinct_output_paths(paths: &[&Path]) -> Result<(), Box<dyn std::error::Error>> {
     let normalize = |path: &Path| -> Result<PathBuf, Box<dyn std::error::Error>> {
         let absolute = if path.is_absolute() {
             path.to_path_buf()
@@ -303,17 +306,22 @@ fn validate_distinct_output_paths(
             Ok(lexical)
         }
     };
-    let public = normalize(public_output)?;
-    let developer = normalize(developer_output)?;
-    let same = if cfg!(windows) {
-        public
-            .to_string_lossy()
-            .eq_ignore_ascii_case(&developer.to_string_lossy())
-    } else {
-        public == developer
-    };
-    if same {
-        return Err("public and developer evaluation outputs must be distinct paths".into());
+    let normalized = paths
+        .iter()
+        .map(|path| normalize(path))
+        .collect::<Result<Vec<_>, _>>()?;
+    for (index, left) in normalized.iter().enumerate() {
+        for right in normalized.iter().skip(index + 1) {
+            let same = if cfg!(windows) {
+                left.to_string_lossy()
+                    .eq_ignore_ascii_case(&right.to_string_lossy())
+            } else {
+                left == right
+            };
+            if same {
+                return Err("evaluation outputs must use distinct paths".into());
+            }
+        }
     }
     Ok(())
 }
@@ -365,7 +373,7 @@ mod tests {
     #[test]
     fn public_and_developer_outputs_must_differ() {
         let path = PathBuf::from("quest-eval-same-output.json");
-        assert!(validate_distinct_output_paths(&path, &path).is_err());
+        assert!(validate_distinct_output_paths(&[&path, &path]).is_err());
     }
 
     #[test]
@@ -374,6 +382,15 @@ mod tests {
         let alias = PathBuf::from("new-output-directory")
             .join("..")
             .join("quest-eval-alias.json");
-        assert!(validate_distinct_output_paths(&canonical, &alias).is_err());
+        assert!(validate_distinct_output_paths(&[&canonical, &alias]).is_err());
+    }
+
+    #[test]
+    fn all_evaluation_outputs_must_differ() {
+        let public = PathBuf::from("quest-eval-public.json");
+        let stories = PathBuf::from("quest-eval-stories.md");
+        let developer = PathBuf::from("quest-eval-developer.json");
+        assert!(validate_distinct_output_paths(&[&public, &stories, &developer]).is_ok());
+        assert!(validate_distinct_output_paths(&[&public, &stories, &stories]).is_err());
     }
 }

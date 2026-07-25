@@ -4,7 +4,7 @@ use adventuresim_core::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const EVAL_FORMAT_VERSION: u32 = 1;
+pub const EVAL_FORMAT_VERSION: u32 = 2;
 pub const MAX_PROVIDER_RESPONSE_BYTES: usize = 64 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -152,11 +152,25 @@ pub struct DecisionArguments {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct PublicDialogueLine {
+    pub speaker: String,
+    pub text: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PublicTraceEvent {
     pub step: u32,
+    /// Player-visible in-world time at which this action began.
+    pub game_minute: u64,
+    pub location: String,
     pub frame_digest: String,
     pub choice_id: String,
     pub choice_kind: ChoiceKind,
+    /// Exact label presented to the policy when it chose this action.
+    pub action_label: String,
+    /// Exact dialogue emitted by the evaluation environment.
+    pub dialogue: Vec<PublicDialogueLine>,
     pub result: String,
     pub learned: Vec<String>,
     /// Structured correction provenance; metrics must not infer it from prose.
@@ -171,6 +185,8 @@ pub struct PublicQuestTrace {
     pub version: u32,
     pub case_id: String,
     pub policy: String,
+    pub title: String,
+    pub problem_summary: String,
     pub events: Vec<PublicTraceEvent>,
     pub solved: bool,
     pub exhausted: bool,

@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const CATALOG_REVISION: &str = "questgen-2026-07-24.2";
+pub const CATALOG_REVISION: &str = "questgen-2026-07-24.3";
 pub const MAX_SOLVER_CANDIDATES: usize = 4_096;
 pub const MAX_SOLVER_VISITED_NODES: usize = 16_384;
 pub const MAX_FACTOR_TRACE_RECORDS: usize = 32_768;
@@ -1809,8 +1809,8 @@ fn build_actions(
         AttackPattern::VictimSpecific => {
             let target = victim_target.expect("victim-specific pattern has a bound cohort");
             format!(
-                "Watch likely {:?} victims ({}, {}, {}) near the learned location.",
-                target.demographic, target.age_band, target.sex, target.profession
+                "Watch people connected with the {} trade near the learned location.",
+                target.profession
             )
         }
         AttackPattern::Irregular => {
@@ -2237,12 +2237,8 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 .as_ref()
                 .expect("victim-specific pattern has a bound cohort");
             format!(
-                "The incidents disproportionately affect {:?} people ({}, {}, {}) near {}.",
-                target.demographic,
-                target.age_band,
-                target.sex,
-                target.profession,
-                target.expected_location_label
+                "The incidents disproportionately affect people connected with the {} trade near {}.",
+                target.profession, target.expected_location_label
             )
         }
         AttackPattern::Irregular => {
@@ -2363,7 +2359,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 truthful_text: "The earlier location does not fit the tracks; they lead elsewhere."
                     .into(),
                 spoken_text: format!(
-                    "Those tracks turn away from {} and continue toward the true site.",
+                    "Those tracks turn away from {} and continue beyond it.",
                     label(secondary_site_kind)
                 ),
                 destination_stage: "route_segment".into(),
@@ -4525,6 +4521,30 @@ mod tests {
             fingerprints.values().any(|values| values.len() >= 2),
             "cause/site pairs must not determine all downstream modules"
         );
+    }
+
+    #[test]
+    fn observer_text_avoids_generator_authority_and_internal_demographics() {
+        for family in [
+            TemplateFamily::RecurringDepredation,
+            TemplateFamily::DisappearanceOrLoss,
+        ] {
+            for seed in 0..512 {
+                let case = generate(&context(seed, family)).unwrap();
+                for testimony in case.witnesses.iter().flat_map(|witness| &witness.testimony) {
+                    let text = testimony.spoken_text.to_ascii_lowercase();
+                    assert!(!text.contains("true site"), "{text}");
+                    assert!(!text.contains("(adult, unspecified"), "{text}");
+                    assert!(!text.contains("laborer people"), "{text}");
+                }
+                for action in &case.actions {
+                    let text = action.safe_summary.to_ascii_lowercase();
+                    assert!(!text.contains("true site"), "{text}");
+                    assert!(!text.contains("unspecified"), "{text}");
+                    assert!(!text.contains("laborer people"), "{text}");
+                }
+            }
+        }
     }
 
     #[test]
