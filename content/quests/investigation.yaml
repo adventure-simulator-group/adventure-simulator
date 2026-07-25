@@ -14,7 +14,7 @@
     {"id":"merchant","label":"merchant","match_rules":[{"priority":80,"age_bands":[],"sexes":[],"professions":["merchant","innkeeper"],"local_roles":[],"fallback":false}]},
     {"id":"cleric","label":"cleric","match_rules":[{"priority":80,"age_bands":[],"sexes":[],"professions":["cleric"],"local_roles":[],"fallback":false}]},
     {"id":"guard","label":"guard","match_rules":[{"priority":80,"age_bands":[],"sexes":[],"professions":["guard","soldier"],"local_roles":[],"fallback":false},{"priority":90,"age_bands":[],"sexes":[],"professions":[],"local_roles":["retainer"],"fallback":false}]},
-    {"id":"noble","label":"noble","match_rules":[{"priority":80,"age_bands":[],"sexes":[],"professions":["noble"],"local_roles":[],"fallback":false},{"priority":90,"age_bands":[],"sexes":[],"professions":[],"local_roles":["lord"],"fallback":false}]}
+    {"id":"noble","label":"noble","match_rules":[{"priority":80,"age_bands":[],"sexes":[],"professions":["noble"],"local_roles":[],"fallback":false}]}
   ],
   "circumstances": [
     {"id":"night_window","statement":"looking from a window after dark"},{"id":"secret_riverside","statement":"at a secluded riverside meeting"},{"id":"adult_venue","statement":"near an adult venue"},{"id":"road","statement":"while traveling the road"},{"id":"grave_duty","statement":"while attending the graves"},{"id":"livestock_watch","statement":"while watching livestock"}

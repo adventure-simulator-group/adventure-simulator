@@ -65,9 +65,12 @@ Witness demographic selection is also authored. A match rule may constrain
 the NPC facts `age_band`, `sex`, `profession`, and `local_role`; empty lists are
 wildcards. Age bands are `child`, `adolescent`, `adult`, and `elder`, and sex is
 `female` or `male`. Profession and local-role selectors are lowercase
-identifier fragments matched against the generated NPC strings. Higher
+identifiers matched against either the complete generated NPC fact or one
+whole alphanumeric token in that fact; arbitrary substrings never match.
+Selectors must match the finite NPC fact vocabulary known at startup. Higher
 priority wins. Exactly one selector-free fallback is required, and
-equal-priority rules belonging to different demographics may not overlap.
+equal-priority rules belonging to different demographics may not overlap under
+the same matching function used at runtime.
 
 Generated quests are deterministic typed case manifests assembled from shared
 modules rather than scripts with substituted nouns. The initial catalog has
@@ -94,7 +97,11 @@ combinations must name a typed causal bridge. A selected bridge materializes a
 canonical event, discoverable evidence, and a playable lead. Each bridge
 authors the existing action that emits its evidence separately for both
 supported template families; startup rejects missing families or action names
-that their typed assembler does not emit.
+that their typed assembler does not emit. A selected bridge from any
+generation relation is carried through to this materialization step. Evidence
+relations are the one explicit exception: startup rejects bridges there
+because the follow-up evidence selector has no case-graph materialization
+context.
 
 The solver uses deterministic weighted candidate order, forward rejection,
 and backtracking under a hard node budget. Its private trace records factors,

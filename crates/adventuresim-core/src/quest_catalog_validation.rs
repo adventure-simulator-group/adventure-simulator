@@ -228,6 +228,17 @@ fn nonempty_string<'a>(
         Ok(value)
     }
 }
+fn optional_string<'a>(
+    object: &'a Map<String, Value>,
+    key: &str,
+    at: &str,
+) -> Result<Option<&'a str>, String> {
+    match object.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) => Ok(Some(value)),
+        Some(_) => Err(format!("{at}.{key}: expected string or null")),
+    }
+}
 fn list_strings(object: &Map<String, Value>, key: &str, at: &str) -> Result<Vec<String>, String> {
     array(
         object
@@ -245,12 +256,31 @@ fn list_strings(object: &Map<String, Value>, key: &str, at: &str) -> Result<Vec<
     })
     .collect()
 }
+fn optional_list_strings(
+    object: &Map<String, Value>,
+    key: &str,
+    at: &str,
+) -> Result<Vec<String>, String> {
+    match object.get(key) {
+        None => Ok(Vec::new()),
+        Some(value) => array(value, &format!("{at}.{key}"))?
+            .iter()
+            .enumerate()
+            .map(|(index, value)| {
+                value
+                    .as_str()
+                    .map(str::to_owned)
+                    .ok_or_else(|| format!("{at}.{key}[{index}]: expected string"))
+            })
+            .collect(),
+    }
+}
 
 #[derive(Clone)]
 struct DemographicRule {
     demographic: String,
     at: String,
-    priority: i64,
+    priority: i32,
     age_bands: Vec<String>,
     sexes: Vec<String>,
     professions: Vec<String>,
@@ -258,13 +288,58 @@ struct DemographicRule {
     fallback: bool,
 }
 
-fn selectors_overlap(left: &[String], right: &[String]) -> bool {
+pub(crate) fn selector_matches_fact(selector: &str, fact: &str) -> bool {
+    let selector = selector.trim().to_ascii_lowercase();
+    let fact = fact.trim().to_ascii_lowercase();
+    selector == fact
+        || fact
+            .split(|character: char| !character.is_ascii_alphanumeric())
+            .any(|token| !token.is_empty() && token == selector)
+}
+
+const PROFESSION_FACTS: &[&str] = &[
+    "artisan",
+    "householder",
+    "laborer",
+    "retainer",
+    "service provider",
+    "merchant",
+    "weaponsmith",
+    "armourer",
+    "tailor",
+    "herbalist",
+    "innkeeper",
+    "cleric",
+    "guard",
+    "soldier",
+    "noble",
+];
+const LOCAL_ROLE_FACTS: &[&str] = &[
+    "market steward",
+    "master weaponsmith",
+    "master armourer",
+    "master tailor",
+    "local healer",
+    "innkeeper",
+    "parish priest",
+    "customer or visitor",
+    "neighbor",
+    "household representative",
+    "local resident",
+    "resident",
+    "lord's household retainer",
+    "keep servant",
+];
+
+fn selectors_overlap(left: &[String], right: &[String], facts: &[&str]) -> bool {
     left.is_empty()
         || right.is_empty()
-        || left.iter().any(|left| {
-            right
-                .iter()
-                .any(|right| left.contains(right) || right.contains(left))
+        || facts.iter().any(|fact| {
+            left.iter()
+                .any(|selector| selector_matches_fact(selector, fact))
+                && right
+                    .iter()
+                    .any(|selector| selector_matches_fact(selector, fact))
         })
 }
 
@@ -385,10 +460,18 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                             .get("weight_kg")
                             .and_then(Value::as_f64)
                             .ok_or_else(|| format!("{at}.combat.weight_kg: expected number"))?;
-                        if !weight.is_finite() || weight <= 0.0 {
-                            return Err(format!("{at}.combat.weight_kg: must be positive"));
+                        if !weight.is_finite() || weight <= 0.0 || weight > f64::from(f32::MAX) {
+                            return Err(format!(
+                                "{at}.combat.weight_kg: must be a positive finite f32"
+                            ));
                         }
-                        boolean(combat, "ranged", &format!("{at}.combat"))?;
+                        let ranged = boolean(combat, "ranged", &format!("{at}.combat"))?;
+                        let attack = string(combat, "attack", &at)?;
+                        if (attack == "bow") != ranged {
+                            return Err(format!(
+                                "{at}.combat: bow attack and ranged flag must agree"
+                            ));
+                        }
                         signed(
                             combat,
                             "precision_bonus_milli",
@@ -423,11 +506,8 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                             &format!("{at}.combat"),
                         )?;
                         if let Some(loot) =
-                            combat.get("loot_item_id").filter(|value| !value.is_null())
+                            optional_string(combat, "loot_item_id", &format!("{at}.combat"))?
                         {
-                            let loot = loot.as_str().ok_or_else(|| {
-                                format!("{at}.combat.loot_item_id: expected string or null")
-                            })?;
                             id(loot, &format!("{at}.combat.loot_item_id"))?;
                         }
                         if string(combat, "protection", &at)? == "armored"
@@ -452,7 +532,11 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                             &["day", "night", "any"],
                             &format!("{at}.investigation.activity"),
                         )?;
-                        for habitat in list_strings(investigation, "habitats", &at)? {
+                        let habitats = list_strings(investigation, "habitats", &at)?;
+                        if habitats.is_empty() {
+                            return Err(format!("{at}.investigation.habitats: must not be empty"));
+                        }
+                        for habitat in habitats {
                             enum_value(
                                 &habitat,
                                 &[
@@ -485,8 +569,19 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                                 id(&evidence_id, &format!("{at}.investigation.{key}"))?;
                             }
                         }
-                        for description in list_strings(investigation, "silhouettes", &at)? {
+                        let silhouettes = list_strings(investigation, "silhouettes", &at)?;
+                        if silhouettes.is_empty() {
+                            return Err(format!(
+                                "{at}.investigation.silhouettes: must not be empty"
+                            ));
+                        }
+                        for description in silhouettes {
                             description_support.push((item_id.to_owned(), description, at.clone()));
+                        }
+                        if list_strings(investigation, "distinguishing_clues", &at)?.is_empty() {
+                            return Err(format!(
+                                "{at}.investigation.distinguishing_clues: must not be empty"
+                            ));
                         }
                         for hypothesis in
                             list_strings(investigation, "countermeasure_hypotheses", &at)?
@@ -580,17 +675,20 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                             let rule_at = format!("{at}.match_rules[{rule_index}]");
                             let rule = object(rule, &rule_at)?;
                             keys(rule, MATCH_RULE_KEYS, &rule_at)?;
-                            if rule
-                                .get("fallback")
-                                .and_then(Value::as_bool)
-                                .unwrap_or(false)
-                            {
+                            let fallback = match rule.get("fallback") {
+                                None => false,
+                                Some(_) => boolean(rule, "fallback", &rule_at)?,
+                            };
+                            if fallback {
                                 fallback_demographics += 1;
                             }
-                            let priority = rule
-                                .get("priority")
-                                .and_then(Value::as_i64)
-                                .ok_or_else(|| format!("{rule_at}.priority: expected integer"))?;
+                            let priority = signed(
+                                rule,
+                                "priority",
+                                i32::MIN.into(),
+                                i32::MAX.into(),
+                                &rule_at,
+                            )? as i32;
                             let age_bands = list_strings(rule, "age_bands", &rule_at)?;
                             let sexes = list_strings(rule, "sexes", &rule_at)?;
                             let professions = list_strings(rule, "professions", &rule_at)?;
@@ -612,10 +710,26 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                                     id(value, &format!("{rule_at}.{key}"))?;
                                 }
                             }
-                            let fallback = rule
-                                .get("fallback")
-                                .and_then(Value::as_bool)
-                                .unwrap_or(false);
+                            for selector in &professions {
+                                if !PROFESSION_FACTS
+                                    .iter()
+                                    .any(|fact| selector_matches_fact(selector, fact))
+                                {
+                                    return Err(format!(
+                                        "{rule_at}.professions: selector {selector:?} matches no authoritative NPC profession"
+                                    ));
+                                }
+                            }
+                            for selector in &local_roles {
+                                if !LOCAL_ROLE_FACTS
+                                    .iter()
+                                    .any(|fact| selector_matches_fact(selector, fact))
+                                {
+                                    return Err(format!(
+                                        "{rule_at}.local_roles: selector {selector:?} matches no authoritative NPC local role"
+                                    ));
+                                }
+                            }
                             if fallback
                                 && (!age_bands.is_empty()
                                     || !sexes.is_empty()
@@ -768,8 +882,7 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                             ],
                             &format!("{at}.symptom"),
                         )?;
-                        if let Some(archetype) =
-                            item.get("encounter_archetype").and_then(Value::as_str)
+                        if let Some(archetype) = optional_string(item, "encounter_archetype", &at)?
                         {
                             enum_value(
                                 archetype,
@@ -869,31 +982,40 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                             if !seen.insert(candidate_id) {
                                 return Err(format!("{candidate_at}.id: duplicate candidate"));
                             }
-                            let p = candidate
-                                .get("plausibility")
-                                .and_then(Value::as_u64)
-                                .ok_or_else(|| {
-                                    format!("{candidate_at}.plausibility: expected integer")
-                                })?;
-                            let c = candidate
-                                .get("curation")
-                                .and_then(Value::as_u64)
-                                .ok_or_else(|| {
-                                    format!("{candidate_at}.curation: expected integer")
-                                })?;
-                            let zero_reason = candidate
-                                .get("hard_zero_reason")
-                                .and_then(Value::as_str)
-                                .map(str::to_owned);
+                            let p = unsigned(
+                                candidate,
+                                "plausibility",
+                                0,
+                                u32::MAX.into(),
+                                &candidate_at,
+                            )?;
+                            let c =
+                                unsigned(candidate, "curation", 0, u32::MAX.into(), &candidate_at)?;
+                            let zero_reason =
+                                optional_string(candidate, "hard_zero_reason", &candidate_at)?
+                                    .map(str::to_owned);
+                            if zero_reason
+                                .as_ref()
+                                .is_some_and(|reason| reason.trim().is_empty())
+                            {
+                                return Err(format!(
+                                    "{candidate_at}.hard_zero_reason: must not be empty"
+                                ));
+                            }
                             if (p == 0 || c == 0) != zero_reason.is_some() {
                                 return Err(format!("{candidate_at}: zero weight/reason mismatch"));
                             }
-                            let bridge = candidate
-                                .get("required_bridge")
-                                .and_then(Value::as_str)
-                                .map(str::to_owned);
+                            let bridge =
+                                optional_string(candidate, "required_bridge", &candidate_at)?
+                                    .map(str::to_owned);
                             if let Some(value) = &bridge {
+                                id(value, &format!("{candidate_at}.required_bridge"))?;
                                 bridge_refs.push((candidate_at.clone(), value.clone()));
+                            }
+                            for factor in
+                                optional_list_strings(candidate, "factors", &candidate_at)?
+                            {
+                                id(&factor, &format!("{candidate_at}.factors"))?;
                             }
                             parsed.push((candidate_id.into(), p, c, zero_reason, bridge));
                         }
@@ -1003,7 +1125,7 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                 ));
             }
         };
-        for (candidate, _, _, _, _) in candidates {
+        for (candidate, _, _, _, required_bridge) in candidates {
             if let Some(allowed) = allowed
                 && !allowed.contains(candidate)
             {
@@ -1036,6 +1158,11 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                     "catalog.relations.{relation_id}: unknown candidate {candidate}"
                 ));
             }
+            if namespace == "evidence" && required_bridge.is_some() {
+                return Err(format!(
+                    "catalog.relations.{relation_id}: evidence relations cannot require bridges because follow-up evidence selection has no bridge materialization context"
+                ));
+            }
         }
     }
     if fallback_demographics != 1 {
@@ -1049,10 +1176,14 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                 && !left.fallback
                 && !right.fallback
                 && left.priority == right.priority
-                && selectors_overlap(&left.age_bands, &right.age_bands)
-                && selectors_overlap(&left.sexes, &right.sexes)
-                && selectors_overlap(&left.professions, &right.professions)
-                && selectors_overlap(&left.local_roles, &right.local_roles)
+                && selectors_overlap(
+                    &left.age_bands,
+                    &right.age_bands,
+                    &["child", "adolescent", "adult", "elder"],
+                )
+                && selectors_overlap(&left.sexes, &right.sexes, &["female", "male"])
+                && selectors_overlap(&left.professions, &right.professions, PROFESSION_FACTS)
+                && selectors_overlap(&left.local_roles, &right.local_roles, LOCAL_ROLE_FACTS)
             {
                 return Err(format!(
                     "{} and {}: equal-priority demographic rules can match the same NPC",

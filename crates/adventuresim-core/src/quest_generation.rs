@@ -961,7 +961,7 @@ fn reliability_candidates(
                 id: base.id.as_str(),
                 value,
                 weight: Weight::new(authored.plausibility, authored.curation),
-                bridge: None,
+                bridge: authored.required_bridge.as_deref(),
                 impossible: authored
                     .hard_zero_reason
                     .as_deref()
@@ -1005,7 +1005,7 @@ fn evidence_candidates(cause: CanonicalCause, site: SiteKind) -> Vec<Candidate<E
                 id: authored.id.as_str(),
                 value,
                 weight: Weight::new(selected.plausibility, selected.curation),
-                bridge: None,
+                bridge: selected.required_bridge.as_deref(),
                 impossible: selected
                     .hard_zero_reason
                     .as_deref()
@@ -1172,7 +1172,7 @@ fn account_style_candidates(
                 id: authored.id.as_str(),
                 value,
                 weight: Weight::new(authored.plausibility, authored.curation),
-                bridge: None,
+                bridge: authored.required_bridge.as_deref(),
                 impossible: authored
                     .hard_zero_reason
                     .as_deref()
@@ -1204,16 +1204,22 @@ fn route_variant_candidates(family: TemplateFamily) -> [Candidate<RouteVariant>;
             id: "route.direct",
             value: RouteVariant::Direct,
             weight: Weight::new(direct.plausibility, direct.curation),
-            bridge: None,
-            impossible: None,
+            bridge: direct.required_bridge.as_deref(),
+            impossible: direct
+                .hard_zero_reason
+                .as_deref()
+                .map(|_| "catalog-authored hard zero"),
             factors: vec!["factor.route.direct"],
         },
         Candidate {
             id: "route.cautious",
             value: RouteVariant::Cautious,
             weight: Weight::new(cautious.plausibility, cautious.curation),
-            bridge: None,
-            impossible: None,
+            bridge: cautious.required_bridge.as_deref(),
+            impossible: cautious
+                .hard_zero_reason
+                .as_deref()
+                .map(|_| "catalog-authored hard zero"),
             factors: vec!["factor.route.cautious"],
         },
     ]
@@ -1245,16 +1251,22 @@ fn attack_pattern_candidates(
             id: "pattern.nightly",
             value: AttackPattern::Nightly,
             weight: Weight::new(nightly.plausibility, nightly.curation),
-            bridge: None,
-            impossible: None,
+            bridge: nightly.required_bridge.as_deref(),
+            impossible: nightly
+                .hard_zero_reason
+                .as_deref()
+                .map(|_| "catalog-authored hard zero"),
             factors: vec!["factor.pattern.nightly"],
         },
         Candidate {
             id: "pattern.roadside",
             value: AttackPattern::Roadside,
             weight: Weight::new(roadside.plausibility, roadside.curation),
-            bridge: None,
-            impossible: None,
+            bridge: roadside.required_bridge.as_deref(),
+            impossible: roadside
+                .hard_zero_reason
+                .as_deref()
+                .map(|_| "catalog-authored hard zero"),
             factors: vec!["factor.pattern.roadside"],
         },
         Candidate {
@@ -1268,17 +1280,26 @@ fn attack_pattern_candidates(
                 },
                 victim.curation,
             ),
-            bridge: None,
+            bridge: victim.required_bridge.as_deref(),
             impossible: (!has_victim_target)
-                .then_some("no unused persistent NPC can anchor the victim cohort"),
+                .then_some("no unused persistent NPC can anchor the victim cohort")
+                .or_else(|| {
+                    victim
+                        .hard_zero_reason
+                        .as_deref()
+                        .map(|_| "catalog-authored hard zero")
+                }),
             factors: vec!["factor.pattern.victim", "factor.pattern.persistent_cohort"],
         },
         Candidate {
             id: "pattern.irregular",
             value: AttackPattern::Irregular,
             weight: Weight::new(irregular.plausibility, irregular.curation),
-            bridge: None,
-            impossible: None,
+            bridge: irregular.required_bridge.as_deref(),
+            impossible: irregular
+                .hard_zero_reason
+                .as_deref()
+                .map(|_| "catalog-authored hard zero"),
             factors: vec!["factor.pattern.irregular"],
         },
     ]
@@ -1318,8 +1339,11 @@ struct SolvedVariables {
     demographic: WitnessDemographic,
     circumstance: Circumstance,
     description: ReportDescription,
+    family_bridge: Option<&'static str>,
+    cause_bridge: Option<&'static str>,
     site_bridge: Option<&'static str>,
     circumstance_bridge: Option<&'static str>,
+    description_bridge: Option<&'static str>,
     primary_witness: usize,
     secondary_witness: usize,
 }
@@ -1432,13 +1456,13 @@ fn solve_variables(
                             (
                                 "module.template",
                                 format!("{family:?}"),
-                                None,
+                                families[family_index].bridge,
                                 families[family_index].factors.clone(),
                             ),
                             (
                                 "module.cause",
                                 format!("{cause:?}"),
-                                None,
+                                causes[cause_index].bridge,
                                 causes[cause_index].factors.clone(),
                             ),
                             (
@@ -1462,7 +1486,7 @@ fn solve_variables(
                             (
                                 "module.description",
                                 format!("{:?}", descriptions[description_index].value),
-                                None,
+                                descriptions[description_index].bridge,
                                 descriptions[description_index].factors.clone(),
                             ),
                         ] {
@@ -1486,8 +1510,11 @@ fn solve_variables(
                             demographic: witness.demographic,
                             circumstance,
                             description: descriptions[description_index].value,
+                            family_bridge: families[family_index].bridge,
+                            cause_bridge: causes[cause_index].bridge,
                             site_bridge: sites[site_index].bridge,
                             circumstance_bridge: circumstances[circumstance_index].bridge,
+                            description_bridge: descriptions[description_index].bridge,
                             primary_witness: primary_index,
                             secondary_witness: secondary_index,
                         });
@@ -1532,7 +1559,7 @@ fn family_candidates() -> Vec<Candidate<TemplateFamily>> {
                 _ => unreachable!("startup validation rejects unknown family"),
             },
             weight: Weight::new(candidate.plausibility, candidate.curation),
-            bridge: None,
+            bridge: candidate.required_bridge.as_deref(),
             impossible: candidate
                 .hard_zero_reason
                 .as_deref()
@@ -1567,7 +1594,7 @@ fn cause_candidates(family: TemplateFamily) -> Vec<Candidate<CanonicalCause>> {
                 id: candidate.id.as_str(),
                 value,
                 weight: Weight::new(candidate.plausibility, candidate.curation),
-                bridge: None,
+                bridge: candidate.required_bridge.as_deref(),
                 impossible: candidate
                     .hard_zero_reason
                     .as_deref()
@@ -1710,6 +1737,17 @@ fn description_candidates(cause: CanonicalCause) -> Vec<Candidate<ReportDescript
         .map(|authored| {
             let report =
                 ReportDescription::try_new(&authored.id).expect("validated open description ID");
+            let relation_candidate = match cause {
+                CanonicalCause::Hostile(threat) => crate::quest_catalog::catalog()
+                    .relation(&format!("description.{}", authored.id))
+                    .and_then(|relation| {
+                        relation
+                            .candidates
+                            .iter()
+                            .find(|candidate| candidate.id == threat.as_str())
+                    }),
+                _ => None,
+            };
             let p = match cause {
                 CanonicalCause::Hostile(threat) => description_likelihood(threat, report),
                 CanonicalCause::VoluntaryDisappearance
@@ -1735,9 +1773,18 @@ fn description_candidates(cause: CanonicalCause) -> Vec<Candidate<ReportDescript
             Candidate {
                 id: authored.id.as_str(),
                 value: report,
-                weight: Weight::new(p, 80),
-                bridge: None,
-                impossible: (p == 0).then_some("bestiary forward description likelihood is zero"),
+                weight: Weight::new(
+                    p,
+                    relation_candidate.map_or(80, |candidate| candidate.curation),
+                ),
+                bridge: relation_candidate
+                    .and_then(|candidate| candidate.required_bridge.as_deref()),
+                impossible: relation_candidate
+                    .and_then(|candidate| candidate.hard_zero_reason.as_deref())
+                    .map(|_| "catalog-authored hard zero")
+                    .or_else(|| {
+                        (p == 0).then_some("bestiary forward description likelihood is zero")
+                    }),
                 factors: vec!["factor.description.bestiary_forward_likelihood"],
             }
         })
@@ -2211,15 +2258,18 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         demographic,
         circumstance,
         description,
+        family_bridge,
+        cause_bridge,
         site_bridge,
         circumstance_bridge: circ_bridge,
+        description_bridge,
         primary_witness,
         secondary_witness,
     } = solved;
     let primary = &context.witness_candidates[primary_witness];
     let secondary = &context.witness_candidates[secondary_witness];
     let prefix = observer_scope(context);
-    let (reliability, _) = choose(
+    let (reliability, reliability_bridge) = choose(
         context.seed.rotate_left(5),
         "module.reliability",
         "relation.reliability.context",
@@ -2240,21 +2290,21 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         &secondary_circumstance_candidates(secondary, circumstance),
         &mut trace,
     )?;
-    let (evidence_kind, _) = choose(
+    let (evidence_kind, evidence_bridge) = choose(
         context.seed.rotate_left(17),
         "module.evidence",
         "relation.evidence.cause_site",
         &evidence_candidates(cause, site),
         &mut trace,
     )?;
-    let (account_style, _) = choose(
+    let (account_style, account_bridge) = choose(
         context.seed.rotate_left(23),
         "module.account",
         "relation.account.reliability_circumstance",
         &account_style_candidates(reliability, circumstance),
         &mut trace,
     )?;
-    let (route_variant, _) = choose(
+    let (route_variant, route_bridge) = choose(
         context.seed.rotate_left(31),
         "module.route",
         "relation.route.family",
@@ -2273,7 +2323,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             ),
         )
     });
-    let (attack_pattern, _) = choose(
+    let (attack_pattern, pattern_bridge) = choose(
         context.seed.rotate_left(37),
         "module.attack_pattern",
         "relation.pattern.family",
@@ -2761,8 +2811,16 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     );
     let mut bridges = Vec::new();
     for key in [
+        family_bridge,
+        cause_bridge,
         site_bridge,
         circ_bridge,
+        description_bridge,
+        reliability_bridge,
+        evidence_bridge,
+        account_bridge,
+        route_bridge,
+        pattern_bridge,
         secondary_site_bridge,
         secondary_circumstance_bridge,
     ]
@@ -4373,6 +4431,67 @@ mod tests {
         assert_eq!(adult.weight.plausibility, 2);
         assert_eq!(adult.bridge, Some("child_at_adult_venue"));
     }
+
+    #[test]
+    fn selected_yaml_bridge_materializes_complete_reachable_authority() {
+        let generated = generate(&context(44, TemplateFamily::DisappearanceOrLoss)).unwrap();
+        assert!(
+            !generated.bridges.is_empty(),
+            "fixture seed must select a YAML-authored bridge"
+        );
+        validate(&generated).unwrap();
+
+        let mut reachable = generated
+            .actions
+            .iter()
+            .filter(|action| action.active_initially)
+            .map(|action| action.id.clone())
+            .collect::<BTreeSet<_>>();
+        loop {
+            let before = reachable.len();
+            for action in &generated.actions {
+                if action
+                    .prerequisite
+                    .as_ref()
+                    .is_none_or(|required| reachable.contains(required))
+                {
+                    reachable.insert(action.id.clone());
+                }
+            }
+            if reachable.len() == before {
+                break;
+            }
+        }
+
+        for bridge in &generated.bridges {
+            assert!(
+                generated
+                    .canonical_events
+                    .iter()
+                    .any(|event| event.id == bridge.event_id)
+            );
+            assert!(
+                generated
+                    .evidence
+                    .iter()
+                    .any(|evidence| evidence.id == bridge.evidence_id)
+            );
+            assert!(reachable.contains(&bridge.action_id));
+            let action = generated
+                .actions
+                .iter()
+                .find(|action| action.id == bridge.action_id)
+                .unwrap();
+            assert!(action.outputs.iter().any(|output| {
+                matches!(
+                    output,
+                    GeneratedActionOutput::Evidence { evidence_id }
+                        if evidence_id == &bridge.evidence_id
+                )
+            }));
+        }
+    }
+
     #[test]
     fn graph_keeps_both_routes_reachable_from_authored_entries() {
         for family in [

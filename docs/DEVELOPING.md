@@ -13,9 +13,10 @@ The build, runtime startup, and checker share one strict catalog validator. It
 reports the source file and structural path for unknown fields, duplicate or
 overlong IDs, dangling references, incomplete relation coverage, ambiguous
 witness-demographic predicates, unknown closed mechanics, invalid evidence DC
-ranges, unsupported template graphs, and zero weights without a hard-zero
-reason. Catalog IDs are at most 63 ASCII identifier bytes. Production embeds
-the validated files; it never reads loose quest YAML.
+ranges, runtime numeric overflows, malformed nullable values, unsupported
+template graphs, and zero weights without a hard-zero reason. It also enforces
+bow/ranged consistency. Catalog IDs are at most 63 ASCII identifier bytes.
+Production embeds the validated files; it never reads loose quest YAML.
 
 Local workflow for running the Adventure Simulator demo.
 

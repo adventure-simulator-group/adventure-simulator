@@ -463,15 +463,17 @@ impl Catalog {
                         || rule.age_bands.iter().any(|value| value == age_band))
                         && (rule.sexes.is_empty() || rule.sexes.iter().any(|value| value == sex))
                         && (rule.professions.is_empty()
-                            || rule
-                                .professions
-                                .iter()
-                                .any(|value| profession.contains(value)))
+                            || rule.professions.iter().any(|value| {
+                                crate::quest_catalog_validation::selector_matches_fact(
+                                    value, profession,
+                                )
+                            }))
                         && (rule.local_roles.is_empty()
-                            || rule
-                                .local_roles
-                                .iter()
-                                .any(|value| local_role.contains(value)))
+                            || rule.local_roles.iter().any(|value| {
+                                crate::quest_catalog_validation::selector_matches_fact(
+                                    value, local_role,
+                                )
+                            }))
             })
             .max_by_key(|(_, rule)| rule.priority)
             .map(|(demographic, _)| demographic)
@@ -778,6 +780,142 @@ mod tests {
             crate::quest_catalog_validation::validate_documents(&tied_demographics, &files)
                 .unwrap_err()
                 .contains("equal-priority demographic rules")
+        );
+    }
+
+    #[test]
+    fn shared_validator_rejects_runtime_type_overflow_optional_and_combat_mismatches() {
+        let (documents, files) = raw_catalog();
+        let validate = |documents: &Vec<serde_json::Value>| {
+            crate::quest_catalog_validation::validate_documents(documents, &files).unwrap_err()
+        };
+
+        let mut priority = documents.clone();
+        let investigation = priority
+            .iter_mut()
+            .find(|document| document["witness_demographics"].is_array())
+            .unwrap();
+        investigation["witness_demographics"][0]["match_rules"][0]["priority"] =
+            serde_json::json!(i64::from(i32::MAX) + 1);
+        assert!(validate(&priority).contains("priority"));
+
+        let mut relation_weight = documents.clone();
+        let generation = relation_weight
+            .iter_mut()
+            .find(|document| document["relations"].is_array())
+            .unwrap();
+        generation["relations"][0]["candidates"][0]["plausibility"] =
+            serde_json::json!(u64::from(u32::MAX) + 1);
+        assert!(validate(&relation_weight).contains("plausibility"));
+
+        let mut typed_scalar = documents.clone();
+        typed_scalar[0]["monsters"][0]["base_weight"] = serde_json::json!(u64::from(u16::MAX) + 1);
+        assert!(validate(&typed_scalar).contains("base_weight"));
+
+        for (field, invalid) in [
+            ("loot_item_id", serde_json::json!(false)),
+            ("loot_item_id", serde_json::json!(17)),
+        ] {
+            let mut optional = documents.clone();
+            optional[0]["monsters"][0]["combat"][field] = invalid;
+            assert!(validate(&optional).contains("string or null"));
+        }
+
+        let mut consequence_optional = documents.clone();
+        let generation = consequence_optional
+            .iter_mut()
+            .find(|document| document["consequences"].is_array())
+            .unwrap();
+        generation["consequences"][0]["encounter_archetype"] = serde_json::json!(false);
+        assert!(validate(&consequence_optional).contains("string or null"));
+
+        let mut relation_optional = documents.clone();
+        let generation = relation_optional
+            .iter_mut()
+            .find(|document| document["relations"].is_array())
+            .unwrap();
+        generation["relations"][0]["candidates"][0]["required_bridge"] = serde_json::json!(false);
+        assert!(validate(&relation_optional).contains("string or null"));
+
+        let mut hard_zero_optional = documents.clone();
+        let generation = hard_zero_optional
+            .iter_mut()
+            .find(|document| document["relations"].is_array())
+            .unwrap();
+        generation["relations"][0]["candidates"][0]["hard_zero_reason"] = serde_json::json!(false);
+        assert!(validate(&hard_zero_optional).contains("string or null"));
+
+        let mut check_optional = documents.clone();
+        let investigation = check_optional
+            .iter_mut()
+            .find(|document| document["evidence"].is_array())
+            .unwrap();
+        investigation["evidence"][0]["topics"][0]["check"] = serde_json::json!(false);
+        assert!(validate(&check_optional).contains("expected object"));
+
+        let mut factors = documents.clone();
+        let generation = factors
+            .iter_mut()
+            .find(|document| document["relations"].is_array())
+            .unwrap();
+        generation["relations"][0]["candidates"][0]["factors"] = serde_json::json!(["valid", 7]);
+        assert!(validate(&factors).contains("expected string"));
+
+        let mut ranged = documents;
+        ranged[0]["monsters"][0]["combat"]["ranged"] = serde_json::json!(true);
+        assert!(validate(&ranged).contains("bow attack and ranged flag"));
+    }
+
+    #[test]
+    fn demographic_selectors_use_exact_or_whole_token_matching() {
+        assert!(crate::quest_catalog_validation::selector_matches_fact(
+            "merchant", "merchant"
+        ));
+        assert!(!crate::quest_catalog_validation::selector_matches_fact(
+            "mer", "merchant"
+        ));
+        assert!(!crate::quest_catalog_validation::selector_matches_fact(
+            "chant", "merchant"
+        ));
+        assert!(crate::quest_catalog_validation::selector_matches_fact(
+            "retainer",
+            "lord's household retainer"
+        ));
+
+        let catalog = catalog();
+        assert_eq!(
+            catalog
+                .witness_demographic_for("adult", "male", "merchant", "resident")
+                .unwrap()
+                .id,
+            "merchant"
+        );
+        assert_eq!(
+            catalog
+                .witness_demographic_for("adult", "male", "mer", "resident")
+                .unwrap()
+                .id,
+            "laborer"
+        );
+        assert_eq!(
+            catalog
+                .witness_demographic_for("adult", "male", "chant", "resident")
+                .unwrap()
+                .id,
+            "laborer"
+        );
+
+        let (mut documents, files) = raw_catalog();
+        let investigation = documents
+            .iter_mut()
+            .find(|document| document["witness_demographics"].is_array())
+            .unwrap();
+        investigation["witness_demographics"][2]["match_rules"][0]["professions"] =
+            serde_json::json!(["mer"]);
+        assert!(
+            crate::quest_catalog_validation::validate_documents(&documents, &files)
+                .unwrap_err()
+                .contains("matches no authoritative NPC profession")
         );
     }
 
