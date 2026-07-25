@@ -390,6 +390,14 @@
       root.querySelectorAll('.religion-detail-row').forEach((row) => { row.hidden = !expanded; });
       return;
     }
+    const bestiaryExpand = event.target.closest?.('[data-bestiary-expand]');
+    if (bestiaryExpand) {
+      const root = bestiaryExpand.closest('[data-skill-schedule]') || bestiaryExpand.closest('table');
+      const expanded = bestiaryExpand.getAttribute('aria-expanded') !== 'true';
+      bestiaryExpand.setAttribute('aria-expanded', String(expanded));
+      root.querySelectorAll('.bestiary-detail-row').forEach((row) => { row.hidden = !expanded; });
+      return;
+    }
     const combatExpand = event.target.closest?.('[data-combat-expand]');
     if (combatExpand) {
       const root = combatExpand.closest('[data-skill-schedule]') || combatExpand.closest('table');

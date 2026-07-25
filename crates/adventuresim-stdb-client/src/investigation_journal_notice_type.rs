@@ -13,6 +13,7 @@ pub struct InvestigationJournalNotice {
     pub source_id: String,
     pub summary: String,
     pub source_label: String,
+    pub bestiary_results_json: String,
     pub recorded_at: u64,
 }
 
@@ -30,6 +31,7 @@ pub struct InvestigationJournalNoticeCols {
     pub source_id: __sdk::__query_builder::Col<InvestigationJournalNotice, String>,
     pub summary: __sdk::__query_builder::Col<InvestigationJournalNotice, String>,
     pub source_label: __sdk::__query_builder::Col<InvestigationJournalNotice, String>,
+    pub bestiary_results_json: __sdk::__query_builder::Col<InvestigationJournalNotice, String>,
     pub recorded_at: __sdk::__query_builder::Col<InvestigationJournalNotice, u64>,
 }
 
@@ -43,6 +45,10 @@ impl __sdk::__query_builder::HasCols for InvestigationJournalNotice {
             source_id: __sdk::__query_builder::Col::new(table_name, "source_id"),
             summary: __sdk::__query_builder::Col::new(table_name, "summary"),
             source_label: __sdk::__query_builder::Col::new(table_name, "source_label"),
+            bestiary_results_json: __sdk::__query_builder::Col::new(
+                table_name,
+                "bestiary_results_json",
+            ),
             recorded_at: __sdk::__query_builder::Col::new(table_name, "recorded_at"),
         }
     }

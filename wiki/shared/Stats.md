@@ -267,6 +267,31 @@ A party's check for a particular religion includes every living member's effecti
 
 Conviction lives on the personality axis instead: Zealous contributes 5.0 pressure, Neutral 2.5, and Irreverent 0.0. A profession and conviction are separate; an Irreverent character may still officially profess a religion.
 
+### Bestiary (trained, 5000 hours per category)
+
+Bestiary represents learned physical knowledge of Beast, Undead, Human,
+Werekin, Elf, Dwarf, Fey, Spirit, Greenskin, Insectoid, Draconid, Construct,
+and Wildmen creatures. A creature may belong to several categories, but one
+evidence result always evaluates exactly one category. Transformed animal
+tracks can support Werekin without identifying whether the host is Human, Elf,
+or Dwarf.
+
+Direct category hours are canonical. Effective hours use one symmetric,
+nonrecursive correlation pass and are capped at the Bestiary skill's
+5,000-hour mastery calibration. Wildmen knowledge correlates strongly with Human knowledge and
+more modestly with Fey knowledge. The expandable skill rail shows effective
+and directly studied hours for every category with transferred knowledge.
+Category hover/focus lore describes tendencies and exceptions, and separates
+confirmed combat mechanics from folklore or unimplemented hypotheses.
+
+Physical evidence first requires its ordinary inspection check. The inspecting
+character then makes hidden category-specific Bestiary checks for relevant
+authored implications. One canonical record keeps the original physical
+observation. Returning after later study may add newly recognized categories,
+but never removes or duplicates an existing result. Results also remain in the
+investigation journal after leaving the evidence site. No scheduled Bestiary
+training activity is currently implemented.
+
 ## Physical
 ### Polearm, Axe, Bludgeon, Sword, and Knife (intuitive, 8000 hours)
 These are the five melee weapon leaves. Agility helps against active defense, while Precision helps against unaware or staggered targets. Hybrid weapons use a weighted average of all tagged leaves. Knife covers short weapons, including daggers, short swords, hand axes, and compact butchery tools.

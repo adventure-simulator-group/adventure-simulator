@@ -54,6 +54,41 @@ evidence requires a private, source-attributed
 evidence authority—or a belief concerning the same proposition—does not grant
 knowledge or physical possession of proof.
 
+### Physical inspection and Bestiary knowledge
+
+Physical evidence exposes only safe topic IDs and labels. Its base attribute
+thresholds, Bestiary thresholds, hidden case truth, and failed Bestiary checks
+remain private. Once the physical inspection succeeds, the reducer evaluates
+each authored atomic category implication against the inspecting character's
+effective Bestiary knowledge. It never substitutes the party's best expert and
+never consults the hidden threat.
+
+Successful category results persist on one canonical observer-owned inspection
+record: category, support basis points, and interpretation. A repeated reducer
+action ID is an idempotent no-op. A later inspection keeps the original
+physical pass/failure, narration, and timestamp, then rechecks current Bestiary
+knowledge and monotonically adds newly successful categories. It never removes
+knowledge or creates another conversation row. A failed physical observation
+can never gain Bestiary results.
+
+The evidence conversation labels these results `Bestiary check(s) succeeded:`.
+Support colors interpolate continuously from pure red at 0%, through pure
+yellow at 50%, to pure green at 100%. Text labels and percentages accompany
+the color. The same structured successes are copied into the single durable
+investigation-journal notice and remain visible after leaving the evidence
+site. Each result is keyboard focusable. Pointer hover and keyboard focus use
+the document-level strategic tooltip layer, with viewport collision handling
+and `aria-describedby`, to reveal category-level signs, strengths,
+considerations, exceptions, confirmed combat mechanics, and explicitly
+unimplemented folklore.
+
+The SpacetimeDB module currently sets `test = false`, so ordinary Cargo tests
+cannot instantiate a reducer database harness. Narrow pure tests cover action
+receipt scope, canonical-row augmentation, duplicate suppression, stable
+physical failure, success-only category filtering, and observer-safe
+serialization. End-to-end reducer transaction behavior remains a live
+database verification responsibility.
+
 ## Sharing and navigation
 
 Knowledge belongs to a character. Sharing a selected lead or belief is an

@@ -2062,6 +2062,49 @@ body.character-action-dialog-open { overflow: hidden; }
   color: var(--text-muted);
 }
 
+.bestiary-check-results em,
+.bestiary-check-heading,
+.bestiary-interpretation,
+.bestiary-result-list {
+  display: block;
+}
+
+.bestiary-check-heading {
+  margin-bottom: 0.25rem;
+}
+
+.bestiary-interpretation {
+  margin-bottom: 0.35rem;
+}
+
+.bestiary-result-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.bestiary-result-chip {
+  position: relative;
+  display: inline-flex;
+  border: 1px solid rgb(0 0 0 / 45%);
+  border-radius: 999px;
+  color: #111;
+  cursor: help;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 0.25rem 0.5rem;
+}
+
+.bestiary-result-chip:focus-visible {
+  outline: 2px solid var(--focus-ring, #fff);
+  outline-offset: 2px;
+}
+
+.journal-bestiary-results {
+  margin-top: 0.45rem;
+}
+
 .npc-description-stage {
   position: absolute;
   inset: 7rem 1rem calc(var(--chat-bottom-gap) + var(--chat-panel-height) + 5.2rem);

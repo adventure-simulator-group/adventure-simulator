@@ -45,6 +45,39 @@ catalog profile because autoresolve has not modeled overlapping anatomical and
 worn layers. Catalog validation rejects that combination rather than silently
 overwriting either layer.
 
+## Creature categories and knowledge
+
+Every threat profile carries one or more typed physical-knowledge facets:
+Beast, Undead, Human, Werekin, Elf, Dwarf, Fey, Spirit, Greenskin,
+Insectoid, Draconid, Construct, and Wildmen. These are overlapping tags rather
+than an exclusive taxonomy. A werewolf is Human + Beast + Werekin, while a
+spectral hound is Beast + Spirit. Wildmen are their own category.
+
+`BestiaryHours` stores only direct study by category. Effective knowledge is a
+single, nonrecursive pass through a symmetric diagnostic-correlation matrix,
+then capped at the Bestiary skill's 5,000-hour mastery calibration so several
+related fields cannot add beyond the skill's authored mastery range. Correlation means transferable identification
+knowledge, not merely that two tags can coexist. Wildmen transfer strongly
+with Human (`0.65`) and more modestly with Fey (`0.30`).
+
+Procedural physical-evidence topics may author atomic Bestiary implications.
+Each implication names exactly one category, a fixed support value from 0 to
+10,000 basis points, a hidden category-specific lore threshold, and safe
+interpretation text of at most 1,024 UTF-8 bytes. Both the dependency-light raw
+catalog validator and the typed runtime validator enforce that byte limit.
+Support is a stable property of the observed clue; it is not computed from
+catalog population or hidden case truth. A transformed pawprint may support
+Beast and Werekin but never reveals whether the host is Human, Elf, or Dwarf.
+
+Only the inspecting character's category-specific effective knowledge is used.
+Successful results are persisted on one canonical inspection record. Revisits
+keep the physical observation stable while current knowledge may add newly
+successful categories; existing results are never removed or duplicated. The
+same safe structured results persist in the investigation journal. Category
+lore describes tendencies, considerations, and exceptions. It distinguishes
+confirmed combat mechanics from folklore: fire, silver, daylight, and ritual
+courage remain unimplemented hypotheses.
+
 ## Weighted context and inference
 
 The catalog owns sparse forward likelihoods. Ecological base rate and curation

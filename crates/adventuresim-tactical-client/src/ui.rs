@@ -379,6 +379,7 @@ fn update_skills_ui(
             // Cooking is strategic-only and is not carried in tactical snapshots.
             Skill::Cooking => "0.00".to_owned(),
             Skill::Religion => format!("{:.2}", skills.religion_hours),
+            Skill::Bestiary => "0.00".to_string(),
             Skill::Stealth => format!("{:.2}", skills.stealth_hours),
             Skill::Balance => format!("{:.2}", skills.balance_hours),
             Skill::TerrainPlains

@@ -47,6 +47,9 @@ pub enum Skill {
     /// Mental. Trained. Knowledge of a specific religious tradition. (5000h)
     #[assoc(max_hours = 5000.0, kind = SkillKind::Mental, is_trained = true)]
     Religion,
+    /// Mental. Trained. Knowledge of a specific creature category. (5000h)
+    #[assoc(max_hours = 5000.0, kind = SkillKind::Mental, is_trained = true)]
+    Bestiary,
     /// Physical. Intuitive. Long hafted weapons. (8000h)
     #[assoc(max_hours = 8000.0, kind = SkillKind::Physical, is_trained = false)]
     Polearm,

@@ -9,7 +9,7 @@ use adventuresim_core::{
     strategic_schedule::*,
     strategic_time::MINUTES_PER_DAY,
 };
-use adventuresim_world_schema::OfficialReligion;
+use adventuresim_world_schema::{BestiaryCategory, OfficialReligion};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
@@ -498,6 +498,9 @@ fn quantize_skills(skills: &mut SkillHours) {
     for religion in OfficialReligion::ALL {
         *skills.religion.direct_mut(religion) = q32(skills.religion.direct(religion));
     }
+    for category in BestiaryCategory::ALL {
+        *skills.bestiary.direct_mut(category) = q32(skills.bestiary.direct(category));
+    }
     skills.stealth = q32(skills.stealth);
     skills.balance = q32(skills.balance);
     skills.anatomy = q32(skills.anatomy);
@@ -784,6 +787,7 @@ impl PlayerSkills for SimSkills {
             Skill::Medicine => self.0.medicine,
             Skill::Cooking => self.0.cooking,
             Skill::Religion => self.0.religion.maximum_effective(),
+            Skill::Bestiary => self.0.bestiary.maximum_effective(),
             Skill::Stealth => self.0.stealth,
             Skill::Balance => self.0.balance,
             Skill::TerrainPlains

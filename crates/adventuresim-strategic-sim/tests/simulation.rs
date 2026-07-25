@@ -228,6 +228,10 @@ fn bounded_skill_state_remains_finite_for_maximum_duration() {
             roman_catholic: MAX_INITIAL_SKILL_HOURS,
             ..Default::default()
         },
+        bestiary: adventuresim_world_schema::BestiaryHours {
+            human: adventuresim_world_schema::BESTIARY_MASTERY_HOURS,
+            ..Default::default()
+        },
         stealth: MAX_INITIAL_SKILL_HOURS,
         balance: MAX_INITIAL_SKILL_HOURS,
         anatomy: MAX_INITIAL_SKILL_HOURS,

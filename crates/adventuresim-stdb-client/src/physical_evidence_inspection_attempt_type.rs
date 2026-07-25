@@ -14,6 +14,7 @@ pub struct PhysicalEvidenceInspectionAttempt {
     pub stat_label: String,
     pub passed: bool,
     pub narration: String,
+    pub bestiary_results_json: String,
     pub attempted_at: u64,
 }
 
@@ -32,6 +33,8 @@ pub struct PhysicalEvidenceInspectionAttemptCols {
     pub stat_label: __sdk::__query_builder::Col<PhysicalEvidenceInspectionAttempt, String>,
     pub passed: __sdk::__query_builder::Col<PhysicalEvidenceInspectionAttempt, bool>,
     pub narration: __sdk::__query_builder::Col<PhysicalEvidenceInspectionAttempt, String>,
+    pub bestiary_results_json:
+        __sdk::__query_builder::Col<PhysicalEvidenceInspectionAttempt, String>,
     pub attempted_at: __sdk::__query_builder::Col<PhysicalEvidenceInspectionAttempt, u64>,
 }
 
@@ -46,6 +49,10 @@ impl __sdk::__query_builder::HasCols for PhysicalEvidenceInspectionAttempt {
             stat_label: __sdk::__query_builder::Col::new(table_name, "stat_label"),
             passed: __sdk::__query_builder::Col::new(table_name, "passed"),
             narration: __sdk::__query_builder::Col::new(table_name, "narration"),
+            bestiary_results_json: __sdk::__query_builder::Col::new(
+                table_name,
+                "bestiary_results_json",
+            ),
             attempted_at: __sdk::__query_builder::Col::new(table_name, "attempted_at"),
         }
     }

@@ -240,6 +240,7 @@ impl PlayerSkills for CharacterSkills {
             // Generic recruitment/tactical summaries use the character's best-covered
             // tradition. Authoritative religious morale always selects a tradition.
             Skill::Religion => self.religion_hours.maximum_effective(),
+            Skill::Bestiary => self.bestiary_hours.maximum_effective(),
             Skill::Stealth => self.stealth_hours,
             Skill::Balance => self.balance_hours,
             Skill::TerrainPlains => self.terrain_plains_hours,

@@ -3,10 +3,10 @@
 use crate::equipment::WeaponSkillDistribution;
 use crate::profession::ProfessionId;
 use crate::{activity::*, strategic_time::training_hours_increment};
-use adventuresim_world_schema::{OfficialReligion, ReligionHours};
+use adventuresim_world_schema::{BestiaryHours, OfficialReligion, ReligionHours};
 
 /// Stable order used by reports and schedule arrays.
-pub const SKILL_COUNT: usize = 26;
+pub const SKILL_COUNT: usize = 27;
 /// Ordinary sleep pressure accumulated over a full day without tiring activity.
 pub const BASELINE_FATIGUE_PER_DAY: f32 = 600.0;
 /// Fatigue added by an hour of sustained ordinary labor.
@@ -44,6 +44,7 @@ pub struct SkillHours {
     pub medicine: f32,
     pub cooking: f32,
     pub religion: ReligionHours,
+    pub bestiary: BestiaryHours,
     pub stealth: f32,
     pub balance: f32,
     pub anatomy: f32,
@@ -75,6 +76,7 @@ impl SkillHours {
             self.medicine,
             self.cooking,
             self.religion.total_direct(),
+            self.bestiary.total_direct(),
             self.stealth,
             self.balance,
             self.anatomy,
@@ -87,6 +89,10 @@ impl SkillHours {
         self.values().into_iter().all(f32::is_finite)
             && self
                 .religion
+                .direct_values()
+                .all(|(_, hours)| hours.is_finite())
+            && self
+                .bestiary
                 .direct_values()
                 .all(|(_, hours)| hours.is_finite())
     }

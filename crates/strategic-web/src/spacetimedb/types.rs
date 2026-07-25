@@ -1,5 +1,86 @@
 //! SpacetimeDB response types
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StoredBestiaryResult {
+    pub category: adventuresim_world_schema::BestiaryCategory,
+    pub support_bps: u16,
+    pub interpretation: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct BestiaryResultView {
+    pub category: String,
+    pub label: String,
+    pub support_bps: u16,
+    pub support_label: &'static str,
+    pub interpretation: String,
+    pub tendency: &'static str,
+    pub strengths: &'static str,
+    pub considerations: &'static str,
+    pub exceptions: &'static str,
+    pub confirmed_mechanics: &'static str,
+    pub folklore: &'static str,
+}
+
+pub fn bestiary_support_label(support_bps: u16) -> &'static str {
+    match support_bps {
+        0 => "rules out",
+        1..=2_500 => "argues against",
+        2_501..=4_999 => "weakly argues against",
+        5_000 => "inconclusive",
+        5_001..=7_499 => "supports",
+        7_500..=9_999 => "strongly supports",
+        _ => "conclusive support",
+    }
+}
+
+pub fn bestiary_support_color(support_bps: u16) -> String {
+    let bounded = support_bps.min(10_000);
+    if bounded <= 5_000 {
+        format!("rgb(255 {} 0)", (255 * u32::from(bounded) + 2_500) / 5_000)
+    } else {
+        format!(
+            "rgb({} 255 0)",
+            (255 * u32::from(10_000 - bounded) + 2_500) / 5_000
+        )
+    }
+}
+
+impl From<StoredBestiaryResult> for BestiaryResultView {
+    fn from(result: StoredBestiaryResult) -> Self {
+        let category = result.category;
+        Self {
+            category: category.id().into(),
+            label: category.label().into(),
+            support_bps: result.support_bps,
+            support_label: bestiary_support_label(result.support_bps),
+            interpretation: result.interpretation,
+            tendency: category.tendency(),
+            strengths: category.strengths(),
+            considerations: category.considerations(),
+            exceptions: category.exceptions(),
+            confirmed_mechanics: category.confirmed_mechanics(),
+            folklore: category.folklore(),
+        }
+    }
+}
+
+pub fn bestiary_result_views(payload: &str) -> Vec<BestiaryResultView> {
+    let mut categories = std::collections::BTreeSet::new();
+    serde_json::from_str::<Vec<StoredBestiaryResult>>(payload)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|result| {
+            categories.insert(result.category)
+                && result.support_bps <= 10_000
+                && !result.interpretation.trim().is_empty()
+                && result.interpretation.len() <= 1_024
+        })
+        .map(Into::into)
+        .collect()
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BackendLocalProblemTradeEffect {
     pub character_id: u64,
@@ -20,6 +101,7 @@ pub struct BackendInvestigationJournalEntry {
     pub contradiction_group: String,
     pub corrected_by: String,
     pub supersedes: String,
+    pub bestiary_results_json: String,
     pub recorded_at: u64,
 }
 
@@ -129,6 +211,7 @@ pub struct BackendPhysicalEvidenceInspection {
     pub stat_label: String,
     pub passed: bool,
     pub narration: String,
+    pub bestiary_results_json: String,
     pub attempted_at: u64,
 }
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
@@ -1289,6 +1372,7 @@ pub struct CharacterSkills {
     pub medicine_hours: f32,
     pub cooking_hours: f32,
     pub religion_hours: adventuresim_world_schema::ReligionHours,
+    pub bestiary_hours: adventuresim_world_schema::BestiaryHours,
     pub oral_languages: adventuresim_world_schema::OralLanguageHours,
     pub written_languages: adventuresim_world_schema::WrittenLanguageHours,
     pub stealth_hours: f32,
@@ -1657,6 +1741,26 @@ mod tests {
         },
     };
     use std::collections::BTreeSet;
+
+    #[test]
+    fn bestiary_probability_colors_have_exact_anchors_and_safe_payloads() {
+        assert_eq!(bestiary_support_color(0), "rgb(255 0 0)");
+        assert_eq!(bestiary_support_color(5_000), "rgb(255 255 0)");
+        assert_eq!(bestiary_support_color(10_000), "rgb(0 255 0)");
+        assert_eq!(
+            bestiary_result_views(
+                r#"[{"category":"beast","support_bps":10000,"interpretation":"Canine print"}]"#
+            )
+            .len(),
+            1
+        );
+        assert!(
+            bestiary_result_views(
+                r#"[{"category":"beast","support_bps":10000,"interpretation":"Canine print","difficulty_milli":1}]"#
+            )
+            .is_empty()
+        );
+    }
 
     #[test]
     fn strategic_statuses_reject_unknown_values() {

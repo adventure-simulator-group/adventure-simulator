@@ -17328,6 +17328,7 @@ pub fn bootstrap_development_world(
     if include_visual_demos {
         crate::character::seed_damaged_character(ctx)?;
         crate::character::seed_religion_scholar_character(ctx)?;
+        crate::character::seed_bestiary_scholar_character(ctx)?;
         crate::social::seed_social_demo(ctx)?;
     }
     Ok(())

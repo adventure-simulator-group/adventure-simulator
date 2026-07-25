@@ -53,6 +53,26 @@ pub fn religion_knowledge_check(
         .max(0.0)
 }
 
+/// The authoritative trained-mental Bestiary check for one creature category.
+pub fn bestiary_knowledge_check(
+    effective_hours: f32,
+    instinct: f32,
+    intelligence: f32,
+    focus: f32,
+    head_health: f32,
+) -> f32 {
+    let health = if head_health.is_finite() {
+        head_health.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let attribute_check = health * (instinct + intelligence * focus);
+    Skill::Bestiary
+        .training_rank(effective_hours)
+        .min(attribute_check)
+        .max(0.0)
+}
+
 pub fn aggregate_party_contribution(current: &[f32], candidate: f32) -> f32 {
     let before = aggregate_party_check(current.iter().copied());
     let after = aggregate_party_check(current.iter().copied().chain([candidate]));

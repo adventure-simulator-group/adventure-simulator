@@ -9,7 +9,7 @@ use adventuresim_core::{
     },
     strategic_time::MINUTES_PER_DAY,
 };
-use adventuresim_world_schema::OfficialReligion;
+use adventuresim_world_schema::{BestiaryCategory, OfficialReligion};
 use maud::{Markup, html};
 
 use super::character_health::stat_icon;
@@ -373,6 +373,7 @@ fn skills_table(
                     @if skills.medicine_hours > 0.0 { (party_skill_row("Medicine", "medicine", Skill::Medicine, skills.medicine_hours, head_health, schedule.is_some(), actions.examination_action.map(|href| SkillAction::Post { href, label: "Perform medical examination (15 minutes)", open: actions.examination_open }))) }
                     (party_skill_row("Cooking", "cooking", Skill::Cooking, skills.cooking_hours, head_health, schedule.is_some(), actions.cooking_href.map(|href| SkillAction::Get { href, label: "Open cooking menu", open: actions.cooking_open })))
                     (religion_skill_rows(skills, head_health, schedule, training_religion))
+                    (bestiary_skill_rows(skills, head_health, schedule.is_some()))
                     (language_skill_rows(skills, schedule.is_some()))
                     (combat_skill_rows(skills, head_health, upper_health, lower_health, schedule, combat_profile))
                     @if skills.stealth_hours > 0.0 { (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, upper_health, schedule.is_some(), None)) }
@@ -604,6 +605,83 @@ fn religion_skill_rows(
                 td class="religion-expand-cell" {}
             }
           }
+        }
+    }
+}
+
+fn bestiary_category_lore(category: BestiaryCategory) -> String {
+    format!(
+        "Typical signs: {} Common strengths: {} Considerations: {} Exceptions: {} Confirmed combat mechanics: {} Folklore / unimplemented hypotheses: {}",
+        category.tendency(),
+        category.strengths(),
+        category.considerations(),
+        category.exceptions(),
+        category.confirmed_mechanics(),
+        category.folklore(),
+    )
+}
+
+fn bestiary_skill_rows(skills: &CharacterSkills, health: f32, schedule_context: bool) -> Markup {
+    if !BestiaryCategory::ALL
+        .into_iter()
+        .any(|category| skills.bestiary_hours.direct(category) > 0.0)
+    {
+        return html! {};
+    }
+    let primary = BestiaryCategory::ALL
+        .into_iter()
+        .max_by(|left, right| {
+            skills
+                .bestiary_hours
+                .effective(*left)
+                .total_cmp(&skills.bestiary_hours.effective(*right))
+        })
+        .unwrap_or(BestiaryCategory::Human);
+    let primary_effective = skills.bestiary_hours.effective(primary);
+    let primary_direct = skills.bestiary_hours.direct(primary);
+    html! {
+        tr class="party-skill-row bestiary-primary-row" data-bestiary-primary {
+            th scope="row" class="party-skill-name party-skill-icon-cell" {
+                (stat_icon("Bestiary", "skills", "open-book", false))
+            }
+            td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
+                (skill_rank_bar(
+                    Skill::Bestiary.training_rank(primary_effective),
+                    Skill::Bestiary.training_rank(primary_effective) * health.clamp(0.0, 1.0),
+                    &format!("Best-covered category: {}; {primary_effective:.1} effective hours; {primary_direct:.1} directly studied hours", primary.label()),
+                    skill_rail_bar_options(),
+                ))
+            }
+            td class="religion-expand-cell" {
+                button type="button" class="religion-expand-button" data-bestiary-expand
+                    aria-expanded="false" aria-label="Expand Bestiary skills" title="Expand Bestiary" {
+                    span class="religion-expand-chevron" aria-hidden="true" { "›" }
+                }
+            }
+        }
+        @for category in BestiaryCategory::ALL {
+            @let effective = skills.bestiary_hours.effective(category);
+            @let direct = skills.bestiary_hours.direct(category);
+            @if effective.is_finite() && effective > 0.0 {
+                @let lore = bestiary_category_lore(category);
+                tr class="party-skill-row bestiary-detail-row" data-bestiary-detail hidden {
+                    th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
+                        span data-strategic-tooltip=(&lore) tabindex="0"
+                            aria-label=(format!("{} Bestiary lore. {}", category.label(), lore)) {
+                            (category.label())
+                        }
+                    }
+                    td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
+                        (skill_rank_bar(
+                            Skill::Bestiary.training_rank(effective),
+                            Skill::Bestiary.training_rank(effective) * health.clamp(0.0, 1.0),
+                            &format!("{effective:.1} effective hours; {direct:.1} directly studied hours"),
+                            skill_rail_bar_options(),
+                        ))
+                    }
+                    td class="religion-expand-cell" {}
+                }
+            }
         }
     }
 }
@@ -1299,6 +1377,7 @@ mod tests {
                 roman_catholic: 1_000.0,
                 ..Default::default()
             },
+            bestiary_hours: Default::default(),
             oral_languages: Default::default(),
             written_languages: Default::default(),
             stealth_hours: 0.0,
@@ -1710,6 +1789,8 @@ mod tests {
         assert!(schedule.contains("function mountSchedules(root = document)"));
         assert!(schedule.contains("[data-social-expand]"));
         assert!(schedule.contains(".social-detail-row"));
+        assert!(schedule.contains("[data-bestiary-expand]"));
+        assert!(schedule.contains(".bestiary-detail-row"));
         assert!(schedule.contains("'strategic-live-regions-refreshed'"));
         assert!(schedule.contains("event.detail.regions.includes('left-sidebar')"));
         assert!(schedule.contains("function createLatestSaveQueue(send"));
@@ -1752,5 +1833,26 @@ mod tests {
         assert!(css.contains(".numeric-editor-confirm { background: #2f7d3d; }"));
         assert!(css.contains(".numeric-editor-cancel { background: #9c3434; }"));
         assert!(css.contains(".schedule-save-status"));
+    }
+
+    #[test]
+    fn bestiary_skill_family_lists_correlated_categories_and_accessible_lore() {
+        let skills = CharacterSkills {
+            bestiary_hours: adventuresim_world_schema::BestiaryHours {
+                human: 1_000.0,
+                wildmen: 500.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let rendered = bestiary_skill_rows(&skills, 1.0, false).into_string();
+        assert!(rendered.contains("data-bestiary-expand"));
+        assert!(rendered.contains("Expand Bestiary skills"));
+        assert!(rendered.contains("Wildmen"));
+        assert!(rendered.contains("directly studied hours"));
+        assert!(rendered.contains("Confirmed combat mechanics"));
+        assert!(rendered.contains("Folklore / unimplemented hypotheses"));
+        assert!(rendered.contains("data-strategic-tooltip"));
+        assert_eq!(rendered.matches("data-bestiary-detail").count(), 13);
     }
 }

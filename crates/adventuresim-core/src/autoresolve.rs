@@ -186,6 +186,7 @@ impl PlayerSkills for CombatSkills {
             Skill::Medicine => self.medicine_hours,
             Skill::Cooking => 0.0,
             Skill::Religion => self.religion_hours,
+            Skill::Bestiary => 0.0,
             Skill::Stealth => self.stealth_hours,
             Skill::Balance => self.balance_hours,
             Skill::TerrainPlains

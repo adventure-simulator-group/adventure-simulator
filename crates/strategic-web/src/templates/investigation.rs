@@ -1,8 +1,67 @@
 use crate::spacetimedb::{
     BackendInvestigationCaseSummary, BackendInvestigationJournalEntry, BackendInvestigationLead,
+    BestiaryResultView, bestiary_result_views, bestiary_support_color,
 };
 use maud::{Markup, html};
-use std::{cmp::Reverse, collections::BTreeMap};
+use std::{
+    cmp::Reverse,
+    collections::{BTreeMap, BTreeSet},
+};
+
+#[derive(Clone, Debug)]
+struct JournalRecord {
+    recorded_at: u64,
+    summary: String,
+    source: String,
+    bestiary_results: Vec<BestiaryResultView>,
+}
+
+fn bestiary_tooltip(result: &BestiaryResultView) -> String {
+    format!(
+        "Typical signs: {}\nCommon strengths: {}\nConsiderations: {}\nExceptions: {}\nConfirmed combat mechanics: {}\nFolklore / unimplemented hypotheses: {}",
+        result.tendency,
+        result.strengths,
+        result.considerations,
+        result.exceptions,
+        result.confirmed_mechanics,
+        result.folklore,
+    )
+}
+
+fn bestiary_journal_results(results: &[BestiaryResultView]) -> Markup {
+    let mut interpretations = BTreeSet::new();
+    html! {
+        @if !results.is_empty() {
+            section class="bestiary-check-results journal-bestiary-results" {
+                strong class="bestiary-check-heading" { "Bestiary check(s) succeeded:" }
+                @for interpretation in results.iter().map(|result| &result.interpretation) {
+                    @if interpretations.insert(interpretation) {
+                        span class="bestiary-interpretation" { (interpretation) }
+                    }
+                }
+                span class="bestiary-result-list" {
+                    @for result in results {
+                        @let percent = f32::from(result.support_bps) / 100.0;
+                        @let accessible = format!(
+                            "{} Bestiary result: {}%, {}.",
+                            result.label, percent, result.support_label,
+                        );
+                        span class="bestiary-result-chip" tabindex="0" role="note"
+                            data-bestiary-category=(result.category.as_str())
+                            data-strategic-tooltip=(bestiary_tooltip(result))
+                            aria-label=(accessible)
+                            style=(format!(
+                                "background-color: {}",
+                                bestiary_support_color(result.support_bps)
+                            )) {
+                            (result.label) " — " (result.support_label) " (" (percent) "%)"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 pub fn journal_page(
     entries: &[BackendInvestigationJournalEntry],
@@ -19,27 +78,39 @@ pub fn journal_page(
             case.case_id.clone(),
         )
     });
-    let mut records: BTreeMap<String, Vec<(u64, String, String)>> = BTreeMap::new();
+    let mut records: BTreeMap<String, Vec<JournalRecord>> = BTreeMap::new();
     for entry in entries {
-        records.entry(entry.case_id.clone()).or_default().push((
-            entry.recorded_at,
-            entry.summary.clone(),
-            entry.source_label.clone(),
-        ));
+        records
+            .entry(entry.case_id.clone())
+            .or_default()
+            .push(JournalRecord {
+                recorded_at: entry.recorded_at,
+                summary: entry.summary.clone(),
+                source: entry.source_label.clone(),
+                bestiary_results: bestiary_result_views(&entry.bestiary_results_json),
+            });
     }
     for lead in leads
         .iter()
         .filter(|lead| lead.source_label != "witness referral")
     {
-        records.entry(lead.case_id.clone()).or_default().push((
-            lead.recorded_at,
-            lead.summary.clone(),
-            lead.source_label.clone(),
-        ));
+        records
+            .entry(lead.case_id.clone())
+            .or_default()
+            .push(JournalRecord {
+                recorded_at: lead.recorded_at,
+                summary: lead.summary.clone(),
+                source: lead.source_label.clone(),
+                bestiary_results: Vec::new(),
+            });
     }
     for rows in records.values_mut() {
-        rows.sort_by_key(|(recorded_at, summary, source)| {
-            (*recorded_at, summary.clone(), source.clone())
+        rows.sort_by_key(|record| {
+            (
+                record.recorded_at,
+                record.summary.clone(),
+                record.source.clone(),
+            )
         });
     }
 
@@ -91,10 +162,11 @@ pub fn journal_page(
                         }
                     }
                     @if let Some(case_records) = records.get(&case.case_id) {
-                        @for (_recorded_at, summary, source) in case_records {
+                        @for record in case_records {
                             article class="journal-record" {
-                                p { (summary) }
-                                p class="journal-source" { "Source: " (source) }
+                                p { (&record.summary) }
+                                (bestiary_journal_results(&record.bestiary_results))
+                                p class="journal-source" { "Source: " (&record.source) }
                             }
                         }
                     } @else {
@@ -238,6 +310,35 @@ mod tests {
         assert!(!markup.contains("Expected at: workshops"));
         assert!(!markup.contains("Directions: beyond the mill"));
         assert!(!markup.contains("data-exact-destination"));
+    }
+
+    #[test]
+    fn journal_renders_durable_bestiary_results_with_global_accessible_tooltips() {
+        let results = vec![BestiaryResultView {
+            category: "werekin".into(),
+            label: "Werekin".into(),
+            support_bps: 6_500,
+            support_label: "supports",
+            interpretation: "The print could have been made by a transformed werekin.".into(),
+            tendency: "Transformation signs.",
+            strengths: "Speed and strength.",
+            considerations: "Compare transformed and humanoid traces.",
+            exceptions: "Category lore describes tendencies only.",
+            confirmed_mechanics: "No category-wide combat modifier is implemented.",
+            folklore: "Silver is an unimplemented hypothesis.",
+        }];
+
+        let markup = bestiary_journal_results(&results).into_string();
+
+        assert!(markup.contains("Bestiary check(s) succeeded:"));
+        assert!(markup.contains("Werekin — supports (65%)"));
+        assert!(markup.contains("background-color: rgb(179 255 0)"));
+        assert!(markup.contains("tabindex=\"0\""));
+        assert!(markup.contains("data-strategic-tooltip"));
+        assert!(markup.contains("aria-label=\"Werekin Bestiary result: 65%, supports.\""));
+        assert!(!markup.contains("difficulty"));
+        assert!(!markup.contains("threshold"));
+        assert!(!markup.contains("canonical"));
     }
 
     #[test]

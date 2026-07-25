@@ -27,6 +27,16 @@ test("schedule editor contains only activity allocations", () => {
   }
 });
 
+test("skill family controls include Bestiary expansion", () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, "../static/training-schedule.js"),
+    "utf8",
+  );
+  assert.match(source, /\[data-bestiary-expand\]/);
+  assert.match(source, /\.bestiary-detail-row/);
+  assert.match(source, /aria-expanded/);
+});
+
 const nextTurn = () => new Promise((resolve) => setImmediate(resolve));
 const leisurePreview = (overrides = {}) => calculateLeisurePreview({
   baselineFatigue: 600,

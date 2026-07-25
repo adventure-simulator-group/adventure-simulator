@@ -1,6 +1,7 @@
 //! Shared, deterministic authority for threat identity, combat profiles, and
 //! investigation-facing evidence. Stable IDs, never display text, drive rules.
 
+use adventuresim_world_schema::BestiaryCategory;
 use core::str::FromStr;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, sync::OnceLock};
@@ -436,6 +437,7 @@ pub struct ThreatProfile {
     pub aliases: &'static [&'static str],
     pub base_weight: u16,
     pub curation_weight: u16,
+    pub categories: &'static [BestiaryCategory],
     pub combat: CombatProfile,
     pub investigation: InvestigationProfile,
 }
@@ -469,6 +471,7 @@ fn compile_profile(
         aliases: &[],
         base_weight: authored.base_weight,
         curation_weight: authored.curation_weight,
+        categories: &[],
         combat: CombatProfile {
             rig: RigTopology::Humanoid,
             speed_m_per_minute: 1,
@@ -521,6 +524,7 @@ fn compile_profile(
     );
     profile.base_weight = authored.base_weight;
     profile.curation_weight = authored.curation_weight;
+    profile.categories = Box::leak(authored.categories.clone().into_boxed_slice());
     profile.combat.rig = match authored.combat.rig.as_str() {
         "humanoid" => RigTopology::Humanoid,
         "quadruped" => RigTopology::Quadruped,
@@ -1415,6 +1419,26 @@ mod tests {
                 .investigation
                 .countermeasure_hypotheses
                 .contains(&CountermeasureHypothesis::Silver)
+        );
+    }
+
+    #[test]
+    fn authored_creature_categories_compile_as_overlapping_profile_facets() {
+        assert_eq!(
+            profile(ThreatId::WildMan).categories,
+            &[BestiaryCategory::Wildmen]
+        );
+        assert_eq!(
+            profile(ThreatId::SpectralHound).categories,
+            &[BestiaryCategory::Beast, BestiaryCategory::Spirit]
+        );
+        assert_eq!(
+            profile(ThreatId::Werewolf).categories,
+            &[
+                BestiaryCategory::Human,
+                BestiaryCategory::Beast,
+                BestiaryCategory::Werekin,
+            ]
         );
     }
 

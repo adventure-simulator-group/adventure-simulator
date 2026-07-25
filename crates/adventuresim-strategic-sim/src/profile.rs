@@ -1,6 +1,6 @@
 use crate::rng::{StableRng, sub_seed};
 use adventuresim_core::strategic_schedule::{DailySchedule, SkillHours};
-use adventuresim_world_schema::ReligionHours;
+use adventuresim_world_schema::{BestiaryHours, ReligionHours};
 use serde::{Deserialize, Serialize};
 
 const PROFILE_DOMAIN: u64 = 0x5052_4f46_494c_4501;
@@ -278,6 +278,11 @@ pub fn generate_profile(seed: u64, agent_id: u32) -> AgentProfile {
         cooking: initial(&mut rng),
         religion: ReligionHours {
             roman_catholic: initial(&mut rng),
+            ..Default::default()
+        },
+        bestiary: BestiaryHours {
+            beast: initial(&mut rng),
+            human: initial(&mut rng),
             ..Default::default()
         },
         stealth: initial(&mut rng),

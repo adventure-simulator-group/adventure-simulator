@@ -255,6 +255,7 @@ pub struct CharacterSkills {
     pub medicine_hours: f32,
     pub cooking_hours: f32,
     pub religion_hours: adventuresim_world_schema::ReligionHours,
+    pub bestiary_hours: adventuresim_world_schema::BestiaryHours,
     pub oral_languages: adventuresim_world_schema::OralLanguageHours,
     pub written_languages: adventuresim_world_schema::WrittenLanguageHours,
     pub stealth_hours: f32,
@@ -943,6 +944,51 @@ pub(crate) fn seed_religion_scholar_character(ctx: &ReducerContext) -> Result<()
     Ok(())
 }
 
+/// Seed broad category knowledge for local Bestiary rail and evidence demos.
+pub(crate) fn seed_bestiary_scholar_character(ctx: &ReducerContext) -> Result<(), String> {
+    const BESTIARY_SCHOLAR_CHARACTER_ID: u64 = 9_999_999_999_999_987;
+
+    if ctx
+        .db
+        .character()
+        .id()
+        .find(BESTIARY_SCHOLAR_CHARACTER_ID)
+        .is_none()
+    {
+        insert_new_character(
+            ctx,
+            "Bestiary Scholar Demo".to_string(),
+            BESTIARY_SCHOLAR_CHARACTER_ID,
+            false,
+        )?;
+    }
+
+    let mut skills = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(BESTIARY_SCHOLAR_CHARACTER_ID)
+        .ok_or_else(|| "Bestiary scholar demo is missing skill data".to_string())?;
+    skills.bestiary_hours = adventuresim_world_schema::BestiaryHours {
+        beast: 4_000.0,
+        undead: 4_000.0,
+        human: 4_000.0,
+        werekin: 4_000.0,
+        elf: 3_000.0,
+        dwarf: 3_000.0,
+        fey: 4_000.0,
+        spirit: 4_000.0,
+        greenskin: 3_000.0,
+        insectoid: 2_000.0,
+        draconid: 2_000.0,
+        construct: 2_000.0,
+        wildmen: 4_000.0,
+    };
+    ctx.db.character_skills().character_id().update(skills);
+    crate::capability::refresh_character_capability(ctx, BESTIARY_SCHOLAR_CHARACTER_ID)?;
+    Ok(())
+}
+
 fn set_demo_item_damage(
     ctx: &ReducerContext,
     inventory_item_id: u64,
@@ -1119,6 +1165,11 @@ fn insert_character_with_origin(
         cooking_hours: generated_skills.map_or(0.0, |s| s.cooking),
         religion_hours: adventuresim_world_schema::ReligionHours {
             roman_catholic: 1000.0,
+            ..Default::default()
+        },
+        bestiary_hours: adventuresim_world_schema::BestiaryHours {
+            beast: 1000.0,
+            human: 1000.0,
             ..Default::default()
         },
         oral_languages,

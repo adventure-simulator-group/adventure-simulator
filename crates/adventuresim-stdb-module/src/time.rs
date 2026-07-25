@@ -689,6 +689,7 @@ fn apply_training(
         medicine: skills.medicine_hours,
         cooking: skills.cooking_hours,
         religion: skills.religion_hours,
+        bestiary: skills.bestiary_hours,
         stealth: skills.stealth_hours,
         balance: skills.balance_hours,
         anatomy: skills.anatomy_hours,
@@ -824,6 +825,7 @@ fn apply_training(
     skills.medicine_hours = hours.medicine;
     skills.cooking_hours = hours.cooking;
     skills.religion_hours = hours.religion;
+    skills.bestiary_hours = hours.bestiary;
     skills.stealth_hours = hours.stealth;
     skills.balance_hours = hours.balance;
     skills.anatomy_hours = hours.anatomy;

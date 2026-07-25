@@ -137,3 +137,29 @@ test('shared tooltips render above every popup overlay', () => {
   assert.ok(tooltipZ > characterDialogZ);
   assert.ok(tooltipZ > medicalDialogZ);
 });
+
+test('dynamic Bestiary chips use the viewport tooltip and accessible description', () => {
+  const { window, document, system } = fixture('<main class="overflowing-chat"></main>');
+  const chip = document.createElement('span');
+  chip.tabIndex = 0;
+  chip.setAttribute('aria-label', 'Werekin Bestiary result: 65%, supports.');
+  chip.dataset.strategicTooltip = 'Typical signs: transformed tracks\nCommon strengths: speed';
+  chip.textContent = 'Werekin — supports (65%)';
+  chip.getBoundingClientRect = () => ({
+    left: 280,
+    right: 320,
+    top: 4,
+    bottom: 24,
+    width: 40,
+    height: 20,
+  });
+  document.querySelector('main').append(chip);
+
+  dispatch(window, chip, 'focusin');
+
+  assert.equal(system.tooltip.parentElement, document.body);
+  assert.equal(chip.getAttribute('aria-describedby'), 'strategic-tooltip');
+  assert.equal(system.tooltip.dataset.placement, 'bottom');
+  assert.equal(system.tooltip.style.left, '212px');
+  assert.equal(system.tooltip.textContent, chip.dataset.strategicTooltip);
+});
