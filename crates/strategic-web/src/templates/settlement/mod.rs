@@ -23,7 +23,7 @@ pub(crate) use character_details::{character_stats_panel, character_visual_previ
 pub use character_details::{party_personal_page, party_stats_page};
 pub use character_health::surgery_dialog;
 pub use character_skills::ActivityPreviewRates;
-pub(crate) use chrome::{party_portrait_overlay, settlement_description, visual_stage};
+pub(crate) use chrome::{party_portrait_overlay, settlement_description};
 pub use chrome::{settlement_npc_location_page, settlement_overview_page};
 pub use context::{LocationKind, LocationView};
 pub use rest::{RestSummary, SoapRestPreview, rest_result_page};

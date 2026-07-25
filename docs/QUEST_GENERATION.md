@@ -90,6 +90,21 @@ uninformed character receives no incident history, witness identity, evidence,
 or location. Follow-up evidence remains undiscovered merely because its hidden
 authority exists.
 
+Generated physical evidence has its own observer-facing presentation rather
+than speaking through an NPC. At an exact, occupied case site, each visible
+object is presented as a portrait with an italic initial observation and
+clickable inspection topics for particular parts of the object. A topic may be
+irrelevant, or it may test eyesight, intelligence, or instinct and reveal the
+object's clue.
+
+Inspection is an authoritative fixed-threshold comparison. The generator
+assigns each checked topic a hidden, deterministic difficulty when it creates
+the evidence; inspection never makes a random roll. A character therefore
+gets the same result on every retry unless their relevant attribute changes.
+The browser receives topic IDs, labels, and observed narration, but never the
+difficulty or the character's compared value. Repeated attempts are allowed,
+and only the first successful discovery records the clue in the journal.
+
 Each accumulated incident increases the unresolved problem's trade,
 encounter, and disease consequences by 25 percent of their initial values,
 before the existing global safety caps and mitigation are applied. At the

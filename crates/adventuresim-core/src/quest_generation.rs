@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const CATALOG_REVISION: &str = "questgen-2026-07-24.3";
+pub const CATALOG_REVISION: &str = "questgen-2026-07-24.4";
 pub const MAX_SOLVER_CANDIDATES: usize = 4_096;
 pub const MAX_SOLVER_VISITED_NODES: usize = 16_384;
 pub const MAX_FACTOR_TRACE_RECORDS: usize = 32_768;
@@ -138,6 +138,45 @@ pub enum EvidenceKind {
     DroppedToken,
     DragMarks,
     LedgerEntry,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EvidenceCheckStat {
+    Eyesight,
+    Intelligence,
+    Instinct,
+}
+
+impl EvidenceCheckStat {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Eyesight => "Eyesight",
+            Self::Intelligence => "Intelligence",
+            Self::Instinct => "Instinct",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EvidenceInspectionCheck {
+    pub stat: EvidenceCheckStat,
+    /// Fixed-point attribute threshold, where 1,000 is an attribute value of 1.0.
+    pub difficulty_milli: u16,
+    pub success_description: String,
+    pub reveals_clue: bool,
+}
+
+pub fn evidence_check_passes(value_milli: u16, difficulty_milli: u16) -> bool {
+    value_milli >= difficulty_milli
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EvidenceInspectionTopic {
+    pub id: String,
+    pub label: String,
+    pub inspection_description: String,
+    pub check: Option<EvidenceInspectionCheck>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -372,6 +411,10 @@ pub struct GeneratedEvidence {
     pub kind: EvidenceKind,
     pub proposition_id: String,
     pub site_id: SiteId,
+    pub portrait_label: String,
+    pub portrait_icon: String,
+    pub base_description: String,
+    pub inspection_topics: Vec<EvidenceInspectionTopic>,
     pub safe_description: String,
     pub corrects_proposition_id: Option<String>,
 }
@@ -938,6 +981,207 @@ fn evidence_candidates(cause: CanonicalCause, site: SiteKind) -> Vec<Candidate<E
         }
     })
     .collect()
+}
+
+fn evidence_presentation(
+    kind: EvidenceKind,
+    evidence_id: &EvidenceId,
+) -> (String, String, String, Vec<EvidenceInspectionTopic>) {
+    let difficulty_milli =
+        1_200 + (crate::settlement_population::stable_hash(&evidence_id.0) % 2_801) as u16;
+    let checked = |id: &str,
+                   label: &str,
+                   inspection_description: &str,
+                   stat: EvidenceCheckStat,
+                   success_description: &str| EvidenceInspectionTopic {
+        id: id.into(),
+        label: label.into(),
+        inspection_description: inspection_description.into(),
+        check: Some(EvidenceInspectionCheck {
+            stat,
+            difficulty_milli,
+            success_description: success_description.into(),
+            reveals_clue: true,
+        }),
+    };
+    let plain = |id: &str, label: &str, description: &str| EvidenceInspectionTopic {
+        id: id.into(),
+        label: label.into(),
+        inspection_description: description.into(),
+        check: None,
+    };
+    match kind {
+        EvidenceKind::Footprints => (
+            "Footprints".into(),
+            "wingfoot".into(),
+            "You see several overlapping footprints impressed into the ground.".into(),
+            vec![
+                plain(
+                    "surrounding-ground",
+                    "surrounding ground",
+                    "The nearby ground is churned by ordinary traffic and weather.",
+                ),
+                checked(
+                    "deepest-impressions",
+                    "deepest impressions",
+                    "You compare the depth, spacing, and edges of the clearest prints.",
+                    EvidenceCheckStat::Eyesight,
+                    "A repeated set of impressions has a distinctive gait and continues away from the others.",
+                ),
+            ],
+        ),
+        EvidenceKind::ClothScrap => (
+            "Torn cloth".into(),
+            "clothes".into(),
+            "You see a torn scrap of cloth caught against a rough edge.".into(),
+            vec![
+                plain(
+                    "dirt",
+                    "dirt on the cloth",
+                    "The dirt is common local soil and says little by itself.",
+                ),
+                checked(
+                    "torn-edge",
+                    "torn edge",
+                    "You study the fibers along the torn edge.",
+                    EvidenceCheckStat::Eyesight,
+                    "Several fibers are cut cleanly while others were pulled apart, suggesting the cloth snagged during a struggle.",
+                ),
+            ],
+        ),
+        EvidenceKind::BoneDust => (
+            "Bone dust".into(),
+            "death-skull".into(),
+            "You see pale dust and small fragments scattered across the surface.".into(),
+            vec![
+                plain(
+                    "loose-fragments",
+                    "loose fragments",
+                    "Most fragments are too damaged to identify.",
+                ),
+                checked(
+                    "dust-pattern",
+                    "pattern of dust",
+                    "You examine where the pale dust has settled and where it is absent.",
+                    EvidenceCheckStat::Intelligence,
+                    "The distribution is too regular for ordinary decay; something repeatedly crossed or disturbed this spot.",
+                ),
+            ],
+        ),
+        EvidenceKind::BloodlessCorpse => (
+            "Bloodless corpse".into(),
+            "bleeding-wound".into(),
+            "You see a corpse whose pallor and lack of visible blood are immediately striking."
+                .into(),
+            vec![
+                plain(
+                    "clothing",
+                    "clothing",
+                    "The clothing is disordered but carries no unique identifying mark.",
+                ),
+                checked(
+                    "wounds",
+                    "wounds",
+                    "You inspect the wounds without disturbing the body further.",
+                    EvidenceCheckStat::Eyesight,
+                    "The smallest wounds account poorly for the amount of blood missing from the body.",
+                ),
+            ],
+        ),
+        EvidenceKind::DroppedToken => (
+            "Dropped token".into(),
+            "coins".into(),
+            "You see a small token lying where it appears to have been dropped.".into(),
+            vec![
+                plain(
+                    "material",
+                    "material",
+                    "It is made from an inexpensive material common in the region.",
+                ),
+                checked(
+                    "worn-markings",
+                    "worn markings",
+                    "You turn the token under the light and compare its worn markings.",
+                    EvidenceCheckStat::Eyesight,
+                    "A partly worn device links the token to a particular trade or household, though not necessarily to the culprit.",
+                ),
+            ],
+        ),
+        EvidenceKind::DragMarks => (
+            "Drag marks".into(),
+            "eye-target".into(),
+            "You see long disturbances where something was pulled across the ground.".into(),
+            vec![
+                plain(
+                    "loose-debris",
+                    "loose debris",
+                    "The loose debris has been disturbed too broadly to preserve a useful shape.",
+                ),
+                checked(
+                    "groove-edges",
+                    "edges of the grooves",
+                    "You compare the interruptions along the edges of the grooves.",
+                    EvidenceCheckStat::Instinct,
+                    "The interruptions show where the burden was lifted briefly, revealing the direction in which it was taken.",
+                ),
+            ],
+        ),
+        EvidenceKind::LedgerEntry => (
+            "Ledger".into(),
+            "open-book".into(),
+            "You see a ledger open near a cluster of recent entries.".into(),
+            vec![
+                plain(
+                    "older-pages",
+                    "older pages",
+                    "The older pages contain routine accounts with no obvious bearing on the trouble.",
+                ),
+                checked(
+                    "recent-entries",
+                    "recent entries",
+                    "You compare the dates, hands, and totals in the recent entries.",
+                    EvidenceCheckStat::Intelligence,
+                    "One entry breaks the surrounding pattern and corroborates when and where the incidents recur.",
+                ),
+            ],
+        ),
+    }
+}
+
+fn evidence_reference(kind: EvidenceKind) -> &'static str {
+    match kind {
+        EvidenceKind::Footprints => "some footprints",
+        EvidenceKind::ClothScrap => "a piece of torn cloth",
+        EvidenceKind::BoneDust => "some bone dust",
+        EvidenceKind::BloodlessCorpse => "a bloodless corpse",
+        EvidenceKind::DroppedToken => "a dropped token",
+        EvidenceKind::DragMarks => "some drag marks",
+        EvidenceKind::LedgerEntry => "a ledger",
+    }
+}
+
+fn generated_evidence(
+    id: EvidenceId,
+    kind: EvidenceKind,
+    proposition_id: String,
+    site_id: SiteId,
+    safe_description: String,
+    corrects_proposition_id: Option<String>,
+) -> GeneratedEvidence {
+    let (portrait_label, portrait_icon, base_description, inspection_topics) =
+        evidence_presentation(kind, &id);
+    GeneratedEvidence {
+        id,
+        kind,
+        proposition_id,
+        site_id,
+        portrait_label,
+        portrait_icon,
+        base_description,
+        inspection_topics,
+        safe_description,
+        corrects_proposition_id,
+    }
 }
 
 /// Reuse the canonical cause/site likelihood table when a continuing case
@@ -1809,7 +2053,7 @@ fn build_actions(
         AttackPattern::VictimSpecific => {
             let target = victim_target.expect("victim-specific pattern has a bound cohort");
             format!(
-                "Watch people connected with the {} trade near the learned location.",
+                "Watch potential victims connected with the {} trade near the learned location.",
                 target.profession
             )
         }
@@ -2255,6 +2499,13 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             AttackPattern::Irregular => "I am sure it always happens just after dusk.".to_owned(),
         }
     };
+    let evidence_site_label = if family == TemplateFamily::RecurringDepredation {
+        "the latest incident site"
+    } else {
+        "the last-known place"
+    };
+    let primary_evidence_id = EvidenceId::new(scoped_id(&prefix, "evidence", "tracks"));
+    let primary_evidence_reference = evidence_reference(evidence_kind);
     let sites = vec![
         GeneratedSite {
             id: finale_site.clone(),
@@ -2278,11 +2529,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 SiteRole::LastKnown
             },
             terrain: Terrain::Settlement,
-            safe_label: if family == TemplateFamily::RecurringDepredation {
-                "the latest incident site".into()
-            } else {
-                "the last-known place".into()
-            },
+            safe_label: evidence_site_label.into(),
             exact_location_initially_known: true,
             is_true_location: false,
         },
@@ -2341,6 +2588,20 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     corrects_proposition_id: None,
                     referred_witness_ids: vec![],
                 },
+                TestimonyDraft {
+                    proposition_id: correction_prop.clone(),
+                    reliability: Reliability::Truthful,
+                    truthful_text: format!(
+                        "I noticed {primary_evidence_reference} worth inspecting at {evidence_site_label}."
+                    ),
+                    spoken_text: format!(
+                        "I noticed {primary_evidence_reference} worth inspecting at {evidence_site_label}. You may examine it yourself."
+                    ),
+                    destination_stage: "exact_believed".into(),
+                    site_id: Some(evidence_site.clone()),
+                    corrects_proposition_id: None,
+                    referred_witness_ids: vec![],
+                },
             ],
         },
         WitnessBinding {
@@ -2370,33 +2631,31 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         },
     ];
     let mut evidence = vec![
-        GeneratedEvidence {
-            id: EvidenceId::new(scoped_id(&prefix, "evidence", "tracks")),
-            kind: evidence_kind,
-            proposition_id: correction_prop.clone(),
-            site_id: evidence_site.clone(),
-            safe_description:
-                "This clue preserves a useful lead without identifying the culprit outright.".into(),
-            corrects_proposition_id: Some(scoped_id(&prefix, "proposition", "description")),
-        },
-        GeneratedEvidence {
-            id: EvidenceId::new(scoped_id(&prefix, "evidence", "token")),
-            kind: EvidenceKind::DroppedToken,
-            proposition_id: scoped_id(&prefix, "proposition", "association"),
-            site_id: decoy_site.clone(),
-            safe_description:
-                "A dropped token links the report to another person, not necessarily the culprit."
-                    .into(),
-            corrects_proposition_id: None,
-        },
-        GeneratedEvidence {
-            id: pattern_evidence_id.clone(),
-            kind: EvidenceKind::LedgerEntry,
-            proposition_id: pattern_prop,
-            site_id: evidence_site.clone(),
-            safe_description: format!("Corroborated accounts show: {pattern_truth}"),
-            corrects_proposition_id: None,
-        },
+        generated_evidence(
+            primary_evidence_id,
+            evidence_kind,
+            correction_prop.clone(),
+            evidence_site.clone(),
+            "This clue preserves a useful lead without identifying the culprit outright.".into(),
+            Some(scoped_id(&prefix, "proposition", "description")),
+        ),
+        generated_evidence(
+            EvidenceId::new(scoped_id(&prefix, "evidence", "token")),
+            EvidenceKind::DroppedToken,
+            scoped_id(&prefix, "proposition", "association"),
+            decoy_site.clone(),
+            "A dropped token links the report to another person, not necessarily the culprit."
+                .into(),
+            None,
+        ),
+        generated_evidence(
+            pattern_evidence_id.clone(),
+            EvidenceKind::LedgerEntry,
+            pattern_prop,
+            evidence_site.clone(),
+            format!("Corroborated accounts show: {pattern_truth}"),
+            None,
+        ),
     ];
     let area_id = scoped_id(&prefix, "area", "incident");
     let hostile_id = scoped_id(&prefix, "hostile-group", "finale");
@@ -2623,14 +2882,14 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             .iter()
             .any(|candidate| candidate.id == item.evidence_id)
         {
-            evidence.push(GeneratedEvidence {
-                id: item.evidence_id.clone(),
-                kind: EvidenceKind::DroppedToken,
-                proposition_id: bridge_proposition_id,
-                site_id: evidence_site.clone(),
-                safe_description: item.lead_summary.clone(),
-                corrects_proposition_id: None,
-            });
+            evidence.push(generated_evidence(
+                item.evidence_id.clone(),
+                EvidenceKind::DroppedToken,
+                bridge_proposition_id,
+                evidence_site.clone(),
+                item.lead_summary.clone(),
+                None,
+            ));
         }
         if let Some(action) = actions
             .iter_mut()
@@ -3865,6 +4124,31 @@ mod tests {
     }
 
     #[test]
+    fn physical_evidence_has_deterministic_inspection_topics_and_hidden_difficulty() {
+        assert!(!evidence_check_passes(2_499, 2_500));
+        assert!(evidence_check_passes(2_500, 2_500));
+        assert!(evidence_check_passes(4_000, 2_500));
+        let first = generate(&context(41, TemplateFamily::RecurringDepredation)).unwrap();
+        let replay = generate(&context(41, TemplateFamily::RecurringDepredation)).unwrap();
+        assert_eq!(first.evidence, replay.evidence);
+        assert!(first.evidence.iter().all(|evidence| {
+            !evidence.portrait_label.is_empty()
+                && !evidence.portrait_icon.is_empty()
+                && !evidence.base_description.is_empty()
+                && evidence.inspection_topics.len() >= 2
+                && evidence
+                    .inspection_topics
+                    .iter()
+                    .any(|topic| topic.check.is_none())
+                && evidence.inspection_topics.iter().any(|topic| {
+                    topic.check.as_ref().is_some_and(|check| {
+                        (1_200..=4_000).contains(&check.difficulty_milli) && check.reveals_clue
+                    })
+                })
+        }));
+    }
+
+    #[test]
     fn arbitrary_single_root_graph_does_not_satisfy_entry_invariant() {
         let mut generated = generate(&context(7, TemplateFamily::RecurringDepredation)).unwrap();
         let root = generated
@@ -4652,7 +4936,11 @@ mod tests {
                     .expect("successor consumes the clue");
                 assert_eq!(consumer.prerequisite.as_ref(), Some(&producer.id));
                 assert!(!consumer.active_initially);
-                assert!(consumer.safe_summary.contains(summary_fragment));
+                assert!(
+                    consumer.safe_summary.contains(summary_fragment),
+                    "{family:?} {pattern:?}: expected {summary_fragment:?} in {:?}",
+                    consumer.safe_summary
+                );
                 let selected_condition = consumer
                     .outputs
                     .iter()

@@ -2015,6 +2015,28 @@ body.character-action-dialog-open { overflow: hidden; }
   background: #373026;
 }
 
+.physical-evidence-portrait .party-portrait-face .game-icon {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.evidence-portrait-large .game-icon {
+  width: 4.5rem;
+  height: 4.5rem;
+}
+
+.evidence-narration em {
+  white-space: normal;
+}
+
+.evidence-check-passed em {
+  color: var(--success, #82b878);
+}
+
+.evidence-check-failed em {
+  color: var(--text-muted);
+}
+
 .npc-description-stage {
   position: absolute;
   inset: 7rem 1rem calc(var(--chat-bottom-gap) + var(--chat-panel-height) + 5.2rem);

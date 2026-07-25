@@ -67,6 +67,10 @@ pub mod backend_npc_case_intervention_type;
 pub mod backend_npc_case_interventions_table;
 pub mod backend_npc_intervention_candidate_type;
 pub mod backend_npc_intervention_candidates_table;
+pub mod backend_physical_evidence_inspection_type;
+pub mod backend_physical_evidence_inspections_table;
+pub mod backend_physical_evidence_table;
+pub mod backend_physical_evidence_type;
 pub mod backend_social_beliefs_table;
 pub mod backfill_character_deaths_and_leadership_reducer;
 pub mod backfill_equipment_condition_and_smiths_reducer;
@@ -283,6 +287,7 @@ pub mod inferred_industry_profile_type;
 pub mod inferred_tree_species_profile_type;
 pub mod inland_water_access_type;
 pub mod inland_water_size_type;
+pub mod inspect_physical_evidence_reducer;
 pub mod inventory_item_table;
 pub mod inventory_item_type;
 pub mod inventory_quantity_target_table;
@@ -416,6 +421,7 @@ pub mod peat_cutting_industry_type;
 pub mod perform_immediate_activity_reducer;
 pub mod perform_investigation_action_reducer;
 pub mod perform_social_action_reducer;
+pub mod physical_evidence_inspection_attempt_type;
 pub mod potential_vegetation_class_type;
 pub mod potential_vegetation_posterior_type;
 pub mod potential_vegetation_type;
@@ -676,6 +682,10 @@ pub use backend_npc_case_intervention_type::BackendNpcCaseIntervention;
 pub use backend_npc_case_interventions_table::*;
 pub use backend_npc_intervention_candidate_type::BackendNpcInterventionCandidate;
 pub use backend_npc_intervention_candidates_table::*;
+pub use backend_physical_evidence_inspection_type::BackendPhysicalEvidenceInspection;
+pub use backend_physical_evidence_inspections_table::*;
+pub use backend_physical_evidence_table::*;
+pub use backend_physical_evidence_type::BackendPhysicalEvidence;
 pub use backend_social_beliefs_table::*;
 pub use backfill_character_deaths_and_leadership_reducer::backfill_character_deaths_and_leadership;
 pub use backfill_equipment_condition_and_smiths_reducer::backfill_equipment_condition_and_smiths;
@@ -892,6 +902,7 @@ pub use inferred_industry_profile_type::InferredIndustryProfile;
 pub use inferred_tree_species_profile_type::InferredTreeSpeciesProfile;
 pub use inland_water_access_type::InlandWaterAccess;
 pub use inland_water_size_type::InlandWaterSize;
+pub use inspect_physical_evidence_reducer::inspect_physical_evidence;
 pub use inventory_item_table::*;
 pub use inventory_item_type::InventoryItem;
 pub use inventory_quantity_target_table::*;
@@ -1025,6 +1036,7 @@ pub use peat_cutting_industry_type::PeatCuttingIndustry;
 pub use perform_immediate_activity_reducer::perform_immediate_activity;
 pub use perform_investigation_action_reducer::perform_investigation_action;
 pub use perform_social_action_reducer::perform_social_action;
+pub use physical_evidence_inspection_attempt_type::PhysicalEvidenceInspectionAttempt;
 pub use potential_vegetation_class_type::PotentialVegetationClass;
 pub use potential_vegetation_posterior_type::PotentialVegetationPosterior;
 pub use potential_vegetation_type::PotentialVegetation;
@@ -1482,6 +1494,12 @@ pub enum Reducer {
     ImportWorldNodes {
         nodes: Vec<WorldNodeImport>,
     },
+    InspectPhysicalEvidence {
+        character_id: u64,
+        evidence_id: String,
+        topic_id: String,
+        action_id: String,
+    },
     JoinDialogueSession {
         character_id: u64,
         session_id: String,
@@ -1890,6 +1908,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::ImportSettlements { .. } => "import_settlements",
             Reducer::ImportTravelEdges { .. } => "import_travel_edges",
             Reducer::ImportWorldNodes { .. } => "import_world_nodes",
+            Reducer::InspectPhysicalEvidence { .. } => "inspect_physical_evidence",
             Reducer::JoinDialogueSession { .. } => "join_dialogue_session",
             Reducer::KillSimulationCharacter { .. } => "kill_simulation_character",
             Reducer::LeaveMission { .. } => "leave_mission",
@@ -2413,6 +2432,17 @@ Reducer::CancelMissionRequest{
                 nodes,
 }             => __sats::bsatn::to_vec(&import_world_nodes_reducer::ImportWorldNodesArgs {
                 nodes: nodes.clone(),
+}),
+            Reducer::InspectPhysicalEvidence{
+                character_id,
+                evidence_id,
+                topic_id,
+                action_id,
+}             => __sats::bsatn::to_vec(&inspect_physical_evidence_reducer::InspectPhysicalEvidenceArgs {
+                character_id: character_id.clone(),
+                evidence_id: evidence_id.clone(),
+                topic_id: topic_id.clone(),
+                action_id: action_id.clone(),
 }),
             Reducer::JoinDialogueSession{
                 character_id,
@@ -3055,6 +3085,8 @@ pub struct DbUpdate {
     backend_medical_examinations: __sdk::TableUpdate<MedicalExamination>,
     backend_npc_case_interventions: __sdk::TableUpdate<BackendNpcCaseIntervention>,
     backend_npc_intervention_candidates: __sdk::TableUpdate<BackendNpcInterventionCandidate>,
+    backend_physical_evidence: __sdk::TableUpdate<BackendPhysicalEvidence>,
+    backend_physical_evidence_inspections: __sdk::TableUpdate<BackendPhysicalEvidenceInspection>,
     backend_social_beliefs: __sdk::TableUpdate<SocialBelief>,
     battle_loot_item: __sdk::TableUpdate<BattleLootItem>,
     battle_participant: __sdk::TableUpdate<BattleParticipant>,
@@ -3233,6 +3265,16 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "backend_npc_intervention_candidates" => {
                     db_update.backend_npc_intervention_candidates.append(
                         backend_npc_intervention_candidates_table::parse_table_update(
+                            table_update,
+                        )?,
+                    )
+                }
+                "backend_physical_evidence" => db_update.backend_physical_evidence.append(
+                    backend_physical_evidence_table::parse_table_update(table_update)?,
+                ),
+                "backend_physical_evidence_inspections" => {
+                    db_update.backend_physical_evidence_inspections.append(
+                        backend_physical_evidence_inspections_table::parse_table_update(
                             table_update,
                         )?,
                     )
@@ -3854,6 +3896,15 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_npc_intervention_candidates",
                 &self.backend_npc_intervention_candidates,
             );
+        diff.backend_physical_evidence = cache.apply_diff_to_table::<BackendPhysicalEvidence>(
+            "backend_physical_evidence",
+            &self.backend_physical_evidence,
+        );
+        diff.backend_physical_evidence_inspections = cache
+            .apply_diff_to_table::<BackendPhysicalEvidenceInspection>(
+                "backend_physical_evidence_inspections",
+                &self.backend_physical_evidence_inspections,
+            );
         diff.backend_social_beliefs = cache.apply_diff_to_table::<SocialBelief>(
             "backend_social_beliefs",
             &self.backend_social_beliefs,
@@ -3964,6 +4015,12 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_npc_intervention_candidates" => db_update
                     .backend_npc_intervention_candidates
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_physical_evidence" => db_update
+                    .backend_physical_evidence
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_physical_evidence_inspections" => db_update
+                    .backend_physical_evidence_inspections
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_social_beliefs" => db_update
                     .backend_social_beliefs
@@ -4266,6 +4323,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_npc_intervention_candidates" => db_update
                     .backend_npc_intervention_candidates
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_physical_evidence" => db_update
+                    .backend_physical_evidence
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_physical_evidence_inspections" => db_update
+                    .backend_physical_evidence_inspections
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_social_beliefs" => db_update
                     .backend_social_beliefs
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -4519,6 +4582,9 @@ pub struct AppliedDiff<'r> {
     backend_npc_case_interventions: __sdk::TableAppliedDiff<'r, BackendNpcCaseIntervention>,
     backend_npc_intervention_candidates:
         __sdk::TableAppliedDiff<'r, BackendNpcInterventionCandidate>,
+    backend_physical_evidence: __sdk::TableAppliedDiff<'r, BackendPhysicalEvidence>,
+    backend_physical_evidence_inspections:
+        __sdk::TableAppliedDiff<'r, BackendPhysicalEvidenceInspection>,
     backend_social_beliefs: __sdk::TableAppliedDiff<'r, SocialBelief>,
     battle_loot_item: __sdk::TableAppliedDiff<'r, BattleLootItem>,
     battle_participant: __sdk::TableAppliedDiff<'r, BattleParticipant>,
@@ -4734,6 +4800,16 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendNpcInterventionCandidate>(
             "backend_npc_intervention_candidates",
             &self.backend_npc_intervention_candidates,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendPhysicalEvidence>(
+            "backend_physical_evidence",
+            &self.backend_physical_evidence,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendPhysicalEvidenceInspection>(
+            "backend_physical_evidence_inspections",
+            &self.backend_physical_evidence_inspections,
             event,
         );
         callbacks.invoke_table_row_callbacks::<SocialBelief>(
@@ -5728,6 +5804,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_medical_examinations_table::register_table(client_cache);
         backend_npc_case_interventions_table::register_table(client_cache);
         backend_npc_intervention_candidates_table::register_table(client_cache);
+        backend_physical_evidence_table::register_table(client_cache);
+        backend_physical_evidence_inspections_table::register_table(client_cache);
         backend_social_beliefs_table::register_table(client_cache);
         battle_loot_item_table::register_table(client_cache);
         battle_participant_table::register_table(client_cache);
@@ -5826,6 +5904,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_medical_examinations",
         "backend_npc_case_interventions",
         "backend_npc_intervention_candidates",
+        "backend_physical_evidence",
+        "backend_physical_evidence_inspections",
         "backend_social_beliefs",
         "battle_loot_item",
         "battle_participant",
