@@ -160,6 +160,18 @@ pub enum SocialActionKind {
 }
 
 impl SocialActionKind {
+    pub const fn reducer_value(self) -> &'static str {
+        match self {
+            Self::Reflect => "reflect",
+            Self::Listen => "listen",
+            Self::Commiserate => "commiserate",
+            Self::LightenMood => "humor",
+            Self::Rally => "command",
+            Self::Reframe => "deception",
+            Self::Flirt => "seduction",
+        }
+    }
+
     pub const fn skill_name(self, shares_concern: bool) -> &'static str {
         match self {
             Self::Reflect => "Self-awareness",
@@ -250,6 +262,33 @@ impl SocialActionKind {
             Self::Flirt => 0.85,
         }
     }
+}
+
+/// Select the available automatic approach which best combines the actor's
+/// effective skill with their personality fit. Risk only breaks exact ties,
+/// so automation does not collapse to the universally low-risk action.
+pub fn choose_automatic_social_action(
+    topic: SocialTopic,
+    candidates: impl IntoIterator<Item = (SocialActionKind, f32, f32)>,
+) -> Option<SocialActionKind> {
+    candidates
+        .into_iter()
+        .filter(|(action, skill_check, personality_fit)| {
+            *action != SocialActionKind::Reflect
+                && action.available_for(topic)
+                && skill_check.is_finite()
+                && personality_fit.is_finite()
+        })
+        .max_by(|left, right| {
+            let left_score = left.1.clamp(0.0, 5.0) + left.2.clamp(-2.0, 2.0);
+            let right_score = right.1.clamp(0.0, 5.0) + right.2.clamp(-2.0, 2.0);
+            left_score
+                .total_cmp(&right_score)
+                .then_with(|| left.2.total_cmp(&right.2))
+                .then_with(|| left.1.total_cmp(&right.1))
+                .then_with(|| left.0.risk().total_cmp(&right.0.risk()))
+        })
+        .map(|(action, _, _)| action)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -537,6 +576,43 @@ mod tests {
             (4, true, true),
         ];
         assert_eq!(automatic_social_targets(60, preferences, 3), vec![4]);
+    }
+
+    #[test]
+    fn automatic_action_combines_personality_and_skill_instead_of_forcing_listen() {
+        let action = choose_automatic_social_action(
+            SocialTopic::Defeat,
+            [
+                (SocialActionKind::Listen, 3.0, 0.0),
+                (SocialActionKind::LightenMood, 3.5, 1.0),
+                (SocialActionKind::Rally, 4.0, 0.0),
+                (SocialActionKind::Flirt, 1.0, 0.0),
+            ],
+        );
+        assert_eq!(action, Some(SocialActionKind::LightenMood));
+
+        let skilled = choose_automatic_social_action(
+            SocialTopic::Defeat,
+            [
+                (SocialActionKind::Listen, 1.0, 1.0),
+                (SocialActionKind::Rally, 4.5, 0.0),
+            ],
+        );
+        assert_eq!(skilled, Some(SocialActionKind::Rally));
+    }
+
+    #[test]
+    fn automatic_action_rejects_actions_that_do_not_fit_the_topic() {
+        assert_eq!(
+            choose_automatic_social_action(
+                SocialTopic::Hunger,
+                [
+                    (SocialActionKind::Flirt, 5.0, 2.0),
+                    (SocialActionKind::Listen, 1.0, 0.0),
+                ],
+            ),
+            Some(SocialActionKind::Listen)
+        );
     }
 
     #[test]

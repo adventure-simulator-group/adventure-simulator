@@ -378,12 +378,18 @@ pub(crate) fn party_portrait_overlay(
             .then(|| {
                 html! {
                     span class="party-portrait-actions" aria-label=(format!("Actions for {}", member.name)) {
-                            @if notified {
-                                a href=(&inspection_href)
-                                    class="party-portrait-action party-inspect-action"
-                                    title=(format!("Inspect {}", member.name))
-                                    aria-label=(format!("Inspect {}", member.name)) {
-                                    span aria-hidden="true" { "i" }
+                            a href=(format!("{}/party/{}/social", location_path, member.id))
+                                class=(format!("party-portrait-action party-social-action{}", if notified { " party-social-notified" } else { "" }))
+                                title=(if notified { format!("Talk to {} about {} morale concerns", member.name, member.social_notification_count) } else { format!("Talk to {}", member.name) })
+                                aria-label=(if notified { format!("Talk to {} about {} unaddressed morale concerns", member.name, member.social_notification_count) } else { format!("Talk to {}", member.name) })
+                                aria-haspopup="dialog" {
+                                span class="party-action-icon"
+                                    style="--party-action-icon: url('/static/icons/game/conversation.svg')"
+                                    aria-hidden="true" {}
+                                @if notified {
+                                    span class="party-social-notification" aria-hidden="true" {
+                                        (member.social_notification_count)
+                                    }
                                 }
                             }
                             @if is_active && can_examine && location_path.starts_with("/locations/settlement/") {
@@ -421,34 +427,10 @@ pub(crate) fn party_portrait_overlay(
                 alive: member.alive,
                 active: is_active,
                 selected: selected_character_id == Some(member.id),
-                href: if notified {
-                    format!("{}/party/{}/social", location_path, member.id)
-                } else {
-                    inspection_href
-                },
-                title: if notified {
-                    format!(
-                        "Talk to {} about {} morale concerns",
-                        member.name, member.social_notification_count
-                    )
-                } else {
-                    format!("Inspect {}", member.name)
-                },
-                aria_label: if notified {
-                    format!(
-                        "Talk to {} about {} unaddressed morale concerns",
-                        member.name, member.social_notification_count
-                    )
-                } else {
-                    format!("Inspect {}", member.name)
-                },
-                badge: notified.then(|| {
-                    html! {
-                        span class="party-social-notification" aria-hidden="true" {
-                            (member.social_notification_count)
-                        }
-                    }
-                }),
+                href: inspection_href,
+                title: format!("Inspect {}", member.name),
+                aria_label: format!("Inspect {}", member.name),
+                badge: None,
                 actions,
             }
         })
@@ -463,7 +445,7 @@ mod tests {
     use crate::templates::settlement::test_support::*;
 
     #[test]
-    fn notified_portrait_and_badge_open_social_while_inspection_remains_available() {
+    fn notified_social_action_stays_visible_while_portrait_keeps_inspection() {
         let member = Character {
             id: 12,
             name: "Greta".into(),
@@ -486,10 +468,18 @@ mod tests {
             false,
         )
         .into_string();
+        assert!(markup.contains(
+            "class=\"party-portrait-select\" href=\"/locations/settlement/lubeck/party/12\""
+        ));
+        assert!(
+            markup.contains(
+                "class=\"party-portrait-action party-social-action party-social-notified\""
+            )
+        );
         assert!(markup.contains("href=\"/locations/settlement/lubeck/party/12/social\""));
         assert!(markup.contains("class=\"party-social-notification\""));
         assert!(markup.contains("2 unaddressed morale concerns"));
-        assert!(markup.contains("class=\"party-portrait-action party-inspect-action\""));
+        assert!(markup.contains("/static/icons/game/conversation.svg"));
 
         let mut quiet = member;
         quiet.social_notification_count = 0;
@@ -502,7 +492,9 @@ mod tests {
         )
         .into_string();
         assert!(!quiet_markup.contains("party-social-notification"));
-        assert!(!quiet_markup.contains("/party/12/social"));
+        assert!(quiet_markup.contains("class=\"party-portrait-action party-social-action\""));
+        assert!(quiet_markup.contains("/party/12/social"));
+        assert!(quiet_markup.contains("aria-label=\"Talk to Greta\""));
     }
 
     #[test]

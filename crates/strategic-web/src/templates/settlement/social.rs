@@ -169,13 +169,14 @@ pub fn party_social_dialog(
                 form class="automatic-social-chat" method="post" action=(&automatic_href) {
                     label {
                         input type="checkbox" name="enabled" value="true"
-                            checked[social.automatic_chat_enabled];
+                            checked[social.automatic_chat_enabled]
+                            data-automatic-social-chat
+                            aria-label="Automatic chats during downtime"
+                            data-strategic-tooltip="During downtime, you choose an approach from your available social actions according to your personality and relevant skills. Normal risks, cooldowns, and outcomes apply.";
                         span {
                             strong { "Automatic chats during downtime" }
-                            small { "Use low-risk listening when this companion has an unaddressed concern." }
                         }
                     }
-                    button type="submit" class="btn btn-secondary" { "Save" }
                 }
             }
             (sidebar_section("What you believe", html! {
@@ -509,7 +510,10 @@ mod tests {
         assert!(markup.contains("Automatic chats during downtime"));
         assert!(markup.contains("name=\"enabled\" value=\"true\" checked"));
         assert!(markup.contains("/party/2/social/automatic?building=inn"));
-        assert!(markup.contains(">Save</button>"));
+        assert!(markup.contains("data-automatic-social-chat"));
+        assert!(markup.contains("according to your personality and relevant skills"));
+        assert!(!markup.contains(">Save</button>"));
+        assert!(!markup.contains("Use low-risk listening"));
         assert!(markup.contains("social-source-addressed"));
         assert!(markup.contains("Addressed by you"));
     }

@@ -4,8 +4,8 @@ use adventuresim_core::skill::Skill;
 use adventuresim_core::social::{
     AFFINITY_MAX, AFFINITY_MIN, PersonalityAxis, SOCIAL_COOLDOWN_MINUTES, SocialActionKind,
     SocialAttempt, SocialTopic, affinity_gain, axis_for_topic, canonical_cooldown_id,
-    canonical_pair, diagnosed_axis, diagnosis_for_axis, resolve_social_attempt, settle_affinity,
-    social_source_eligible, topic_for_source_kind,
+    canonical_pair, choose_automatic_social_action, diagnosed_axis, diagnosis_for_axis,
+    resolve_social_attempt, settle_affinity, social_source_eligible, topic_for_source_kind,
 };
 use spacetimedb::{ReducerContext, Table, ViewContext, reducer, table, view};
 
@@ -416,6 +416,186 @@ fn parse_action(value: &str) -> Result<SocialActionKind, String> {
     }
 }
 
+fn social_action_skill(action: SocialActionKind, shares_concern: bool) -> Skill {
+    match action {
+        SocialActionKind::Reflect => Skill::SelfAwareness,
+        SocialActionKind::Listen => Skill::Insight,
+        SocialActionKind::Commiserate if shares_concern => Skill::Insight,
+        SocialActionKind::Commiserate => Skill::Deception,
+        SocialActionKind::LightenMood => Skill::Humor,
+        SocialActionKind::Rally => Skill::Command,
+        SocialActionKind::Reframe => Skill::Deception,
+        SocialActionKind::Flirt => Skill::Seduction,
+    }
+}
+
+fn automatic_personality_fit(
+    personality: &crate::personality::CharacterPersonality,
+    action: SocialActionKind,
+    topic: SocialTopic,
+) -> f32 {
+    use crate::personality::{
+        Conscience, Conviction, Drive, Nerve, Outlook, SelfRegard, Sociability,
+    };
+
+    let mut fit = 0.0;
+    match personality.conscience {
+        Conscience::Compassionate
+            if matches!(
+                action,
+                SocialActionKind::Listen | SocialActionKind::Commiserate
+            ) =>
+        {
+            fit += 1.0;
+        }
+        Conscience::Callous | Conscience::Cruel if action == SocialActionKind::Reframe => {
+            fit += 0.75;
+        }
+        Conscience::Callous | Conscience::Cruel
+            if matches!(
+                action,
+                SocialActionKind::Listen | SocialActionKind::Commiserate
+            ) =>
+        {
+            fit -= 0.75;
+        }
+        _ => {}
+    }
+    match personality.sociability {
+        Sociability::Gregarious
+            if matches!(
+                action,
+                SocialActionKind::Commiserate
+                    | SocialActionKind::LightenMood
+                    | SocialActionKind::Flirt
+            ) =>
+        {
+            fit += 0.75;
+        }
+        Sociability::Solitary if action == SocialActionKind::Listen => fit += 0.5,
+        Sociability::Solitary
+            if matches!(
+                action,
+                SocialActionKind::LightenMood | SocialActionKind::Flirt
+            ) =>
+        {
+            fit -= 0.75;
+        }
+        _ => {}
+    }
+    match personality.outlook {
+        Outlook::Sanguine if action == SocialActionKind::LightenMood => fit += 1.0,
+        Outlook::Brooding
+            if matches!(action, SocialActionKind::Listen | SocialActionKind::Reframe) =>
+        {
+            fit += 0.5;
+        }
+        Outlook::Brooding if action == SocialActionKind::LightenMood => fit -= 0.5,
+        _ => {}
+    }
+    match personality.drive {
+        Drive::Ambitious if action == SocialActionKind::Rally => fit += 1.0,
+        Drive::Content
+            if matches!(
+                action,
+                SocialActionKind::Listen | SocialActionKind::Commiserate
+            ) =>
+        {
+            fit += 0.5;
+        }
+        Drive::Content if action == SocialActionKind::Rally => fit -= 0.5,
+        _ => {}
+    }
+    match personality.nerve {
+        Nerve::Brave if action == SocialActionKind::Rally => fit += 0.75,
+        Nerve::Fearful if action == SocialActionKind::Listen => fit += 0.5,
+        Nerve::Fearful if action == SocialActionKind::Rally => fit -= 0.5,
+        _ => {}
+    }
+    match personality.self_regard {
+        SelfRegard::Proud
+            if matches!(action, SocialActionKind::Rally | SocialActionKind::Flirt) =>
+        {
+            fit += 0.5;
+        }
+        SelfRegard::Humble
+            if matches!(
+                action,
+                SocialActionKind::Listen | SocialActionKind::Commiserate
+            ) =>
+        {
+            fit += 0.5;
+        }
+        SelfRegard::Humble if action == SocialActionKind::Flirt => fit -= 0.25,
+        _ => {}
+    }
+    if topic == SocialTopic::Faith {
+        match personality.conviction {
+            Conviction::Zealous if action == SocialActionKind::Rally => fit += 0.75,
+            Conviction::Irreverent if action == SocialActionKind::Reframe => fit += 0.75,
+            _ => {}
+        }
+    }
+    fit
+}
+
+fn automatic_social_action(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    target_id: u64,
+    topic: SocialTopic,
+) -> Result<Option<SocialActionKind>, String> {
+    const ACTIONS: [SocialActionKind; 6] = [
+        SocialActionKind::Listen,
+        SocialActionKind::Commiserate,
+        SocialActionKind::LightenMood,
+        SocialActionKind::Rally,
+        SocialActionKind::Reframe,
+        SocialActionKind::Flirt,
+    ];
+
+    let shares_concern = shares_concern(ctx, actor_id, topic);
+    let personality = crate::personality::personality_or_neutral(ctx, actor_id);
+    let now = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(target_id)
+        .map_or(0, |row| row.minutes);
+    let language = crate::character::shared_language_coefficient(ctx, actor_id, target_id);
+    let mut candidates = Vec::with_capacity(ACTIONS.len());
+    for action in ACTIONS
+        .into_iter()
+        .filter(|action| action.available_for(topic))
+    {
+        let action_kind = action.reducer_value();
+        let cooldown_id = canonical_cooldown_id(actor_id, target_id, topic, action_kind);
+        if ctx
+            .db
+            .social_action_cooldown()
+            .id()
+            .find(&cooldown_id)
+            .is_some_and(|cooldown| now < cooldown.available_at_minute)
+        {
+            continue;
+        }
+        let skill_check = adventuresim_world_schema::language_scaled_effect(
+            crate::condition::mental_check(
+                ctx,
+                actor_id,
+                social_action_skill(action, shares_concern),
+            )?,
+            language,
+        );
+        candidates.push((
+            action,
+            skill_check,
+            automatic_personality_fit(&personality, action, topic),
+        ));
+    }
+    Ok(choose_automatic_social_action(topic, candidates))
+}
+
 fn sensitivity(ctx: &ReducerContext, target_id: u64, topic: SocialTopic) -> f32 {
     let Some(p) = ctx
         .db
@@ -600,16 +780,7 @@ fn perform_social_action_authoritative(
         current_affinity(ctx, target_id, actor_id)
     };
     let actor_shares_concern = shares_concern(ctx, actor_id, topic);
-    let skill = match action {
-        SocialActionKind::Reflect => Skill::SelfAwareness,
-        SocialActionKind::Listen => Skill::Insight,
-        SocialActionKind::Commiserate if actor_shares_concern => Skill::Insight,
-        SocialActionKind::Commiserate => Skill::Deception,
-        SocialActionKind::LightenMood => Skill::Humor,
-        SocialActionKind::Rally => Skill::Command,
-        SocialActionKind::Reframe => Skill::Deception,
-        SocialActionKind::Flirt => Skill::Seduction,
-    };
+    let skill = social_action_skill(action, actor_shares_concern);
     let mut skill_check = crate::condition::mental_check(ctx, actor_id, skill)?;
     if !is_self {
         skill_check = adventuresim_world_schema::language_scaled_effect(
@@ -755,9 +926,10 @@ fn perform_social_action_authoritative(
 }
 
 /// Run bounded, opt-in social care after real discretionary downtime. Targets
-/// and source rows use stable ID ordering; each pair receives at most one Listen
-/// attempt per interval, with the ordinary action reducer enforcing every
-/// co-location, life, source, skill, and cooldown rule.
+/// and source rows use stable ID ordering. Each pair receives at most one
+/// personality- and skill-selected attempt per interval, with the ordinary
+/// action reducer enforcing every co-location, life, source, skill, and outcome
+/// rule.
 pub(crate) fn apply_automatic_social_chats(
     ctx: &ReducerContext,
     actor_id: u64,
@@ -814,7 +986,23 @@ pub(crate) fn apply_automatic_social_chats(
                     .flatten()
             })
             .expect("automatic target planner only returns actionable candidates");
-        perform_social_action_authoritative(ctx, actor_id, target_id, source_id, "listen".into())?;
+        let topic = ctx
+            .db
+            .character_morale_source()
+            .id()
+            .find(&source_id)
+            .and_then(|source| topic_for_source_kind(&source.kind))
+            .expect("automatic target planner only returns actionable sources");
+        let Some(action) = automatic_social_action(ctx, actor_id, target_id, topic)? else {
+            continue;
+        };
+        perform_social_action_authoritative(
+            ctx,
+            actor_id,
+            target_id,
+            source_id,
+            action.reducer_value().into(),
+        )?;
     }
     Ok(())
 }
@@ -999,6 +1187,48 @@ pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
 
 #[cfg(test)]
 mod contract_tests {
+    use super::*;
+
+    #[test]
+    fn automatic_personality_fit_changes_the_preferred_style() {
+        let mut sanguine = crate::personality::CharacterPersonality::neutral(1);
+        sanguine.outlook = crate::personality::Outlook::Sanguine;
+        sanguine.sociability = crate::personality::Sociability::Gregarious;
+        assert!(
+            automatic_personality_fit(
+                &sanguine,
+                SocialActionKind::LightenMood,
+                SocialTopic::Defeat,
+            ) > automatic_personality_fit(&sanguine, SocialActionKind::Listen, SocialTopic::Defeat,)
+        );
+
+        let mut ambitious = crate::personality::CharacterPersonality::neutral(2);
+        ambitious.drive = crate::personality::Drive::Ambitious;
+        ambitious.nerve = crate::personality::Nerve::Brave;
+        assert!(
+            automatic_personality_fit(&ambitious, SocialActionKind::Rally, SocialTopic::Defeat,)
+                > automatic_personality_fit(
+                    &ambitious,
+                    SocialActionKind::Commiserate,
+                    SocialTopic::Defeat,
+                )
+        );
+    }
+
+    #[test]
+    fn automatic_selection_uses_the_same_target_clock_as_execution() {
+        let source = include_str!("social.rs");
+        let automatic = source
+            .split("fn automatic_social_action")
+            .nth(1)
+            .expect("automatic selector")
+            .split("fn sensitivity")
+            .next()
+            .expect("selector boundary");
+        assert!(automatic.contains(".find(target_id)"));
+        assert!(!automatic.contains(".find(actor_id)"));
+    }
+
     #[test]
     fn automatic_failures_propagate_and_no_fallible_work_follows_first_auxiliary_write() {
         let source = include_str!("social.rs");
@@ -1010,6 +1240,7 @@ mod contract_tests {
         assert!(!automatic.contains("let _ = perform_social_action_authoritative"));
         assert!(automatic.contains("perform_social_action_authoritative("));
         assert!(automatic.contains(")?;"));
+        assert!(!automatic.contains("\"listen\".into()"));
 
         let action = source
             .split("fn perform_social_action_authoritative")

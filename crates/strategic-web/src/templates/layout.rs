@@ -169,7 +169,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/reset.css";
                 link rel="stylesheet" href="/static/css/layout.css?v=journal-tab-1";
                 link rel="stylesheet" href="/static/css/components.css?v=lowercase-display-type-1";
-                link rel="stylesheet" href="/static/css/strategic.css?v=journal-tab-1";
+                link rel="stylesheet" href="/static/css/strategic.css?v=social-actions-1";
                 link rel="stylesheet" href="/static/css/utilities.css?v=strategic-ui-overhaul-1";
 
                 // Datastar
@@ -178,7 +178,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 script src="/static/developer-mode.js?v=dialogue-sources-1" defer {}
                 script src="/static/tooltips.js?v=styled-tooltips-2" defer {}
                 script src="/static/medical-examination.js?v=strategic-dialogs-1" defer {}
-                script src="/static/character-action-dialog.js?v=character-actions-1" defer {}
+                script src="/static/character-action-dialog.js?v=character-actions-2" defer {}
                 @if scripts != ScriptProfile::Entry {
                     script src="/static/live-state.js?v=sse-3" defer {}
                     script src="/static/live-regions.js?v=persistent-rest-refresh-2" defer {}
