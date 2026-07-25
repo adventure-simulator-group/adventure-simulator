@@ -42,6 +42,20 @@ impl PlayerId {
     }
 }
 
+/// Creature families used to select the attacker's anatomical lore.
+///
+/// Current tactical characters are Human by default. Multi-category enemies
+/// can provide every applicable category without changing combat resolution.
+#[derive(Component, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[component(immutable)]
+pub struct BestiaryCategories(pub Vec<BestiaryCategory>);
+
+impl Default for BestiaryCategories {
+    fn default() -> Self {
+        Self(vec![BestiaryCategory::Human])
+    }
+}
+
 /// General player stats.
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq)]
 pub struct Stats {
@@ -142,11 +156,44 @@ pub struct Skills {
     pub seduction_hours: f32,
     pub medicine_hours: f32,
     pub religion_hours: f32,
+    pub bestiary_beast_hours: f32,
+    pub bestiary_undead_hours: f32,
+    pub bestiary_human_hours: f32,
+    pub bestiary_werekin_hours: f32,
+    pub bestiary_elf_hours: f32,
+    pub bestiary_dwarf_hours: f32,
+    pub bestiary_fey_hours: f32,
+    pub bestiary_spirit_hours: f32,
+    pub bestiary_greenskin_hours: f32,
+    pub bestiary_insectoid_hours: f32,
+    pub bestiary_draconid_hours: f32,
+    pub bestiary_construct_hours: f32,
+    pub bestiary_wildmen_hours: f32,
+    pub surgery_hours: f32,
     pub stealth_hours: f32,
     pub balance_hours: f32,
-    pub anatomy_hours: f32,
     pub tailoring_hours: f32,
     pub smithing_hours: f32,
+}
+
+impl Skills {
+    fn bestiary_hours(&self) -> BestiaryHours {
+        BestiaryHours {
+            beast: self.bestiary_beast_hours,
+            undead: self.bestiary_undead_hours,
+            human: self.bestiary_human_hours,
+            werekin: self.bestiary_werekin_hours,
+            elf: self.bestiary_elf_hours,
+            dwarf: self.bestiary_dwarf_hours,
+            fey: self.bestiary_fey_hours,
+            spirit: self.bestiary_spirit_hours,
+            greenskin: self.bestiary_greenskin_hours,
+            insectoid: self.bestiary_insectoid_hours,
+            draconid: self.bestiary_draconid_hours,
+            construct: self.bestiary_construct_hours,
+            wildmen: self.bestiary_wildmen_hours,
+        }
+    }
 }
 
 impl PlayerSkills for Skills {
@@ -173,16 +220,21 @@ impl PlayerSkills for Skills {
             Skill::Medicine => self.medicine_hours,
             Skill::Cooking => 0.0,
             Skill::Religion => self.religion_hours,
+            Skill::Bestiary => self.bestiary_hours().aggregate_effective(),
+            Skill::Surgery => self.surgery_hours,
             Skill::Stealth => self.stealth_hours,
             Skill::Balance => self.balance_hours,
             Skill::TerrainPlains
             | Skill::TerrainForest
             | Skill::TerrainHills
             | Skill::TerrainUrban => 0.0,
-            Skill::Anatomy => self.anatomy_hours,
             Skill::Tailoring => self.tailoring_hours,
             Skill::Smithing => self.smithing_hours,
         }
+    }
+
+    fn bestiary_hours_for(&self, category: BestiaryCategory) -> f32 {
+        self.bestiary_hours().effective(category)
     }
 }
 

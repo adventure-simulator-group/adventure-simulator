@@ -115,7 +115,7 @@ Skills are divided into two categories: mental and physical. The former is gover
 ## Training
 Skills increase on a much longer timescale than is conventional for RPGs. They are not increased via an abstract XP/leveling system, and very little of their value comes from using them during tactical play. Instead they are trained through activities in the character's off-screen settlement-downtime schedule. Individual skill-study allocations are not available.
 
-Combat Training practices the leaf skills relevant to the equipped weapons plus Dodge, Block, Balance, and Will; it includes both sparring and target practice. Carousing trains Humor, improves Morale, and carries a small Virtue penalty. Prayer, Labor, Thievery, and Raiding retain their related training and strategic results. Profession activities cover Medicine, Anatomy, Knife, Tailoring, Smithing, Command, and knowledge of the settlement church's religious tradition. An activity conserves its training time when it covers several skills rather than awarding the full allocation to every skill. Travel never performs scheduled settlement activities. Activity rows preview the signed Gold, Virtue, Morale, and Fatigue generated per day by the current allocation; notoriety-producing activities display that cost as negative Virtue. Leisure is the unallocated remainder and includes sleep.
+Combat Training practices the leaf skills relevant to the equipped weapons plus Dodge, Block, Balance, and Will; it includes both sparring and target practice. Carousing trains Humor, improves Morale, and carries a small Virtue penalty. Prayer, Labor, Thievery, and Raiding retain their related training and strategic results. Profession activities cover Medicine, Human Bestiary knowledge, Surgery, Tailoring, Smithing, Command, and knowledge of the settlement church's religious tradition. An activity conserves its training time when it covers several skills rather than awarding the full allocation to every skill. Travel never performs scheduled settlement activities. Activity rows preview the signed Gold, Virtue, Morale, and Fatigue generated per day by the current allocation; notoriety-producing activities display that cost as negative Virtue. Leisure is the unallocated remainder and includes sleep.
 
 Selecting an explicit activity icon previews and performs one continuous one-to-24-hour interval using the same training and outcome rules. Its preview is based on the chosen duration; Prayer/Meditation and Carousing are nonlinear, so increasing their duration has diminishing Morale returns. Immediate activity never includes implicit Leisure or modifies the recurring allocation.
 
@@ -267,6 +267,46 @@ A party's check for a particular religion includes every living member's effecti
 
 Conviction lives on the personality axis instead: Zealous contributes 5.0 pressure, Neutral 2.5, and Irreverent 0.0. A profession and conviction are separate; an Irreverent character may still officially profess a religion.
 
+### Bestiary (trained, 5000 hours per category)
+
+Bestiary is a meta-skill, following the Religion model, whose leaf skills
+represent learned physical knowledge of Beast, Undead, Human,
+Werekin, Elf, Dwarf, Fey, Spirit, Greenskin, Insectoid, Draconid, Construct,
+and Wildmen creatures. A creature has one main type and may have several
+secondary types. Skeletons and ghouls are primarily Undead with Human as a
+secondary anatomical type; werewolves are primarily Werekin with Human and
+Beast secondary types. One evidence result always evaluates exactly one
+category. Transformed animal tracks can support Werekin without identifying
+whether the host is Human, Elf, or Dwarf.
+
+Direct category hours are canonical. Effective hours use one symmetric,
+nonrecursive correlation pass and are capped at the Bestiary skill's
+5,000-hour mastery calibration. Wildmen knowledge correlates strongly with Human knowledge and
+more modestly with Fey knowledge. The expandable skill rail shows effective
+and directly studied hours for every category with transferred knowledge.
+The parent Bestiary value is the mean effective coverage across every category,
+not the character's single best category. A question-mark cursor marks category
+icons as inspectable. Their hover/focus tooltips separate creatures for which
+the category is the main type from creatures for which it is a secondary type,
+and clicking pins the tooltip. Hovering or focusing an enemy type then shows
+only strengths and weaknesses derived from mechanics currently consumed by
+combat. Each strength appears on its own green line and each weakness on its
+own red line; no category-wide generalizations or unimplemented folklore are
+shown.
+
+Against a creature, the attacker averages the Bestiary checks for every
+category on that creature. Excess-accuracy damage is capped at 2× plus that
+average check (up to 7×); even an untrained character retains the ordinary 2×
+head-and-throat cap.
+
+Physical evidence first requires its ordinary inspection check. The inspecting
+character then makes hidden category-specific Bestiary checks for relevant
+authored implications. One canonical record keeps the original physical
+observation. Returning after later study may add newly recognized categories,
+but never removes or duplicates an existing result. Results also remain in the
+investigation journal after leaving the evidence site. No scheduled Bestiary
+training activity is currently implemented.
+
 ## Physical
 ### Polearm, Axe, Bludgeon, Sword, and Knife (intuitive, 8000 hours)
 These are the five melee weapon leaves. Agility helps against active defense, while Precision helps against unaware or staggered targets. Hybrid weapons use a weighted average of all tagged leaves. Knife covers short weapons, including daggers, short swords, hand axes, and compact butchery tools.
@@ -327,8 +367,24 @@ separate Terrain meta-skill and does not stack with Balance.
 4. Skilled gymnast or martial artist, can walk a tightrope
 5. Graceful elf
 
-### Anatomy (trained, 10000 hours)
-Anatomy is the medical knowledge that turns ordinary craft and weapon skills into treatment skills. Bandaging and splinting use Anatomy; projectile extraction uses Anatomy plus Knife; stitching uses Anatomy plus Tailoring. Procedures are strictly individual and self-treatment applies a penalty.
+### Surgery (physical, upper-body, trained, 5000 hours)
+Surgery is an ordinary leaf skill with its own directly trained hours. Its
+check uses arm Agility and Precision and receives the same upper-body injury,
+armor, encumbrance, and fatigue penalties as other upper-body physical skills.
+Herbalist apprenticeship and practice divide their training between Medicine
+(one half), Human Bestiary knowledge (one sixth), and Surgery (one third).
+
+Effective Surgery knowledge is calculated in one nonrecursive pass as direct
+Surgery hours plus 25% of direct Knife hours and 25% of direct Tailoring hours,
+capped at Surgery's 5,000-hour mastery calibration. Knife and Tailoring are
+trained through their own activities; transferred Surgery knowledge does not
+feed back into either source skill.
+
+Every procedure uses the resulting physical Surgery check. Separately, that
+check is capped by the treating character's effective Bestiary knowledge for
+the patient's species before the self-treatment penalty is applied. Current
+characters are Human, while the category boundary is ready for future playable
+species.
 
 ### Terrain (computed meta-skill; intuitive subskills, 30000 hours each)
 
@@ -342,7 +398,7 @@ underlying terrain rather than Urban and reduce training in proportion to the
 time they save.
 
 ### Tailoring (trained, 10000 hours)
-Tailoring makes and repairs cloth goods. Settlement tailors and field maintenance use it for clothing durability, while wound stitching combines it with Anatomy.
+Tailoring makes and repairs cloth goods. Settlement tailors and field maintenance use it for clothing durability, and one quarter of direct Tailoring hours transfers to effective Surgery knowledge.
 
 ### Smithing (trained, 10000 hours)
 Smithing makes and repairs weapons, armor, and shields. It does not repair clothing.

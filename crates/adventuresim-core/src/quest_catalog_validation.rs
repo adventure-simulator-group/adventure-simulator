@@ -4,6 +4,8 @@
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
+const MAX_BESTIARY_INTERPRETATION_BYTES: usize = 1_024;
+
 const ROOT_KEYS: &[&str] = &[
     "monsters",
     "evidence",
@@ -25,6 +27,8 @@ const MONSTER_KEYS: &[&str] = &[
     "base_weight",
     "curation_weight",
     "northern_germany_prior",
+    "primary_category",
+    "secondary_categories",
     "combat",
     "investigation",
 ];
@@ -73,13 +77,34 @@ const EVIDENCE_KEYS: &[&str] = &[
     "base_description",
     "topics",
 ];
-const TOPIC_KEYS: &[&str] = &["id", "label", "inspection_description", "check"];
+const TOPIC_KEYS: &[&str] = &["id", "label", "inspection_description", "check", "bestiary"];
 const CHECK_KEYS: &[&str] = &[
     "stat",
     "difficulty_min_milli",
     "difficulty_max_milli",
     "success_description",
     "reveals_clue",
+];
+const BESTIARY_IMPLICATION_KEYS: &[&str] = &[
+    "category",
+    "support_bps",
+    "lore_difficulty_milli",
+    "interpretation",
+];
+const BESTIARY_CATEGORY_IDS: &[&str] = &[
+    "beast",
+    "undead",
+    "human",
+    "werekin",
+    "elf",
+    "dwarf",
+    "fey",
+    "spirit",
+    "greenskin",
+    "insectoid",
+    "draconid",
+    "construct",
+    "wildmen",
 ];
 const DEMOGRAPHIC_KEYS: &[&str] = &["id", "label", "match_rules"];
 const MATCH_RULE_KEYS: &[&str] = &[
@@ -407,6 +432,28 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                         unsigned(item, "base_weight", 1, u16::MAX.into(), &at)?;
                         unsigned(item, "curation_weight", 1, u16::MAX.into(), &at)?;
                         unsigned(item, "northern_germany_prior", 1, u16::MAX.into(), &at)?;
+                        let primary_category = string(item, "primary_category", &at)?;
+                        enum_value(
+                            primary_category,
+                            BESTIARY_CATEGORY_IDS,
+                            &format!("{at}.primary_category"),
+                        )?;
+                        let categories = list_strings(item, "secondary_categories", &at)?;
+                        let mut unique_categories = BTreeSet::new();
+                        for category in categories {
+                            enum_value(
+                                &category,
+                                BESTIARY_CATEGORY_IDS,
+                                &format!("{at}.secondary_categories"),
+                            )?;
+                            if category == primary_category
+                                || !unique_categories.insert(category.clone())
+                            {
+                                return Err(format!(
+                                    "{at}: duplicate Bestiary category {category}"
+                                ));
+                            }
+                        }
                         let combat = object(
                             item.get("combat")
                                 .ok_or_else(|| format!("{at}.combat: missing"))?,
@@ -658,6 +705,47 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                                 }
                                 nonempty_string(check, "success_description", &topic_at)?;
                                 boolean(check, "reveals_clue", &format!("{topic_at}.check"))?;
+                            }
+                            let implications = match topic.get("bestiary") {
+                                None => &[][..],
+                                Some(value) => array(value, &format!("{topic_at}.bestiary"))?,
+                            };
+                            let mut categories = BTreeSet::new();
+                            for (implication_index, implication) in implications.iter().enumerate()
+                            {
+                                let implication_at =
+                                    format!("{topic_at}.bestiary[{implication_index}]");
+                                let implication = object(implication, &implication_at)?;
+                                keys(implication, BESTIARY_IMPLICATION_KEYS, &implication_at)?;
+                                let category = string(implication, "category", &implication_at)?;
+                                enum_value(
+                                    category,
+                                    BESTIARY_CATEGORY_IDS,
+                                    &format!("{implication_at}.category"),
+                                )?;
+                                if !categories.insert(category) {
+                                    return Err(format!(
+                                        "{topic_at}.bestiary: duplicate category {category}"
+                                    ));
+                                }
+                                unsigned(implication, "support_bps", 0, 10_000, &implication_at)?;
+                                unsigned(
+                                    implication,
+                                    "lore_difficulty_milli",
+                                    0,
+                                    5_000,
+                                    &implication_at,
+                                )?;
+                                let interpretation = nonempty_string(
+                                    implication,
+                                    "interpretation",
+                                    &implication_at,
+                                )?;
+                                if interpretation.len() > MAX_BESTIARY_INTERPRETATION_BYTES {
+                                    return Err(format!(
+                                        "{implication_at}.interpretation: exceeds {MAX_BESTIARY_INTERPRETATION_BYTES} UTF-8 bytes"
+                                    ));
+                                }
                             }
                         }
                     }

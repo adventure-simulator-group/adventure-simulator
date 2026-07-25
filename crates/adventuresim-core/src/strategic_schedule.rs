@@ -3,10 +3,10 @@
 use crate::equipment::WeaponSkillDistribution;
 use crate::profession::ProfessionId;
 use crate::{activity::*, strategic_time::training_hours_increment};
-use adventuresim_world_schema::{OfficialReligion, ReligionHours};
+use adventuresim_world_schema::{BestiaryHours, OfficialReligion, ReligionHours};
 
 /// Stable order used by reports and schedule arrays.
-pub const SKILL_COUNT: usize = 26;
+pub const SKILL_COUNT: usize = 27;
 /// Ordinary sleep pressure accumulated over a full day without tiring activity.
 pub const BASELINE_FATIGUE_PER_DAY: f32 = 600.0;
 /// Fatigue added by an hour of sustained ordinary labor.
@@ -44,9 +44,10 @@ pub struct SkillHours {
     pub medicine: f32,
     pub cooking: f32,
     pub religion: ReligionHours,
+    pub bestiary: BestiaryHours,
+    pub surgery: f32,
     pub stealth: f32,
     pub balance: f32,
-    pub anatomy: f32,
     pub tailoring: f32,
     pub smithing: f32,
 }
@@ -75,9 +76,10 @@ impl SkillHours {
             self.medicine,
             self.cooking,
             self.religion.total_direct(),
+            self.bestiary.total_direct(),
+            self.surgery,
             self.stealth,
             self.balance,
-            self.anatomy,
             self.tailoring,
             self.smithing,
         ]
@@ -87,6 +89,10 @@ impl SkillHours {
         self.values().into_iter().all(f32::is_finite)
             && self
                 .religion
+                .direct_values()
+                .all(|(_, hours)| hours.is_finite())
+            && self
+                .bestiary
                 .direct_values()
                 .all(|(_, hours)| hours.is_finite())
     }
@@ -352,9 +358,8 @@ fn apply_profession_training(
         Some(ProfessionId::Tailor) => skills.tailoring += hours,
         Some(ProfessionId::Herbalist) => {
             skills.medicine += hours * 0.5;
-            skills.anatomy += hours / 6.0;
-            skills.knife += hours / 6.0;
-            skills.tailoring += hours / 6.0;
+            skills.bestiary.human += hours / 6.0;
+            skills.surgery += hours / 3.0;
         }
         Some(ProfessionId::Cook) => skills.cooking += hours,
         // Religion is tradition-specific and is applied by the authoritative
@@ -476,13 +481,13 @@ mod tests {
             + skills.block
             + skills.will
             + skills.balance;
-        // Knife also receives one sixth of the two-hour herbalist activity.
-        assert!((combat_total - skills.knife - 6.0).abs() < 0.001);
+        assert!((combat_total - 6.0).abs() < 0.001);
         assert!((skills.humor - 1.0).abs() < 0.001);
         assert!((skills.medicine - 1.0).abs() < 0.001);
-        assert!((skills.anatomy - 1.0 / 3.0).abs() < 0.001);
-        assert!((skills.knife - 1.0 / 3.0).abs() < 0.001);
-        assert!((skills.tailoring - 1.0 / 3.0).abs() < 0.001);
+        assert!((skills.bestiary.human - 1.0 / 3.0).abs() < 0.001);
+        assert!((skills.surgery - 2.0 / 3.0).abs() < 0.001);
+        assert_eq!(skills.knife, 0.0);
+        assert_eq!(skills.tailoring, 0.0);
     }
 
     #[test]

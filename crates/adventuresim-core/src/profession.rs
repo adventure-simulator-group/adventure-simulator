@@ -157,16 +157,12 @@ const MEDICAL: &[ProfessionSkillWeight] = &[
         weight: 0.5,
     },
     ProfessionSkillWeight {
-        skill: Skill::Anatomy,
+        skill: Skill::Bestiary,
         weight: 1.0 / 6.0,
     },
     ProfessionSkillWeight {
-        skill: Skill::Knife,
-        weight: 1.0 / 6.0,
-    },
-    ProfessionSkillWeight {
-        skill: Skill::Tailoring,
-        weight: 1.0 / 6.0,
+        skill: Skill::Surgery,
+        weight: 1.0 / 3.0,
     },
 ];
 const COOKING: &[ProfessionSkillWeight] = &[ProfessionSkillWeight {
@@ -358,8 +354,8 @@ mod tests {
         assert_eq!(
             profession_tier(herbalist, |skill| match skill {
                 Skill::Medicine => 20_000.0,
-                Skill::Anatomy => 0.0,
-                Skill::Knife | Skill::Tailoring => 20_000.0,
+                Skill::Bestiary => 0.0,
+                Skill::Surgery => 20_000.0,
                 _ => unreachable!("unexpected medical skill: {skill:?}"),
             }),
             ProfessionTier::Apprentice

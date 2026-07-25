@@ -14,6 +14,7 @@ use crate::{
     investigation_action::{InvestigationActionKind, Terrain},
     local_problem::{Effects, EncounterArchetype, Scope, Symptom},
 };
+use adventuresim_world_schema::BestiaryCategory;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -207,6 +208,16 @@ pub struct EvidenceInspectionTopic {
     pub label: String,
     pub inspection_description: String,
     pub check: Option<EvidenceInspectionCheck>,
+    pub bestiary: Vec<BestiaryEvidenceImplication>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BestiaryEvidenceImplication {
+    pub category: BestiaryCategory,
+    pub support_bps: u16,
+    /// Hidden fixed-point Bestiary threshold, where 1,000 is a check of 1.0.
+    pub lore_difficulty_milli: u16,
+    pub interpretation: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -1055,6 +1066,16 @@ fn evidence_presentation(
                 label: topic.label.clone(),
                 inspection_description: topic.inspection_description.clone(),
                 check,
+                bestiary: topic
+                    .bestiary
+                    .iter()
+                    .map(|implication| BestiaryEvidenceImplication {
+                        category: implication.category,
+                        support_bps: implication.support_bps,
+                        lore_difficulty_milli: implication.lore_difficulty_milli,
+                        interpretation: implication.interpretation.clone(),
+                    })
+                    .collect(),
             }
         })
         .collect();
@@ -4113,6 +4134,42 @@ mod tests {
                     })
                 })
         }));
+    }
+
+    #[test]
+    fn pawprint_bestiary_implications_are_atomic_and_do_not_reveal_ancestry() {
+        let (_, _, _, topics) = evidence_presentation(
+            EvidenceKind::Footprints,
+            &EvidenceId("test-pawprint".into()),
+        );
+        let implications = &topics
+            .iter()
+            .find(|topic| topic.id == "edges")
+            .unwrap()
+            .bestiary;
+        assert!(implications.iter().all(|implication| {
+            matches!(
+                implication.category,
+                BestiaryCategory::Beast
+                    | BestiaryCategory::Werekin
+                    | BestiaryCategory::Spirit
+                    | BestiaryCategory::Undead
+            )
+        }));
+        assert!(!implications.iter().any(|implication| {
+            matches!(
+                implication.category,
+                BestiaryCategory::Human | BestiaryCategory::Elf | BestiaryCategory::Dwarf
+            )
+        }));
+        assert_eq!(
+            implications
+                .iter()
+                .find(|implication| implication.category == BestiaryCategory::Beast)
+                .unwrap()
+                .support_bps,
+            10_000
+        );
     }
 
     #[test]

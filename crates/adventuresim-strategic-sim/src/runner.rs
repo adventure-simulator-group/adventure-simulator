@@ -9,7 +9,7 @@ use adventuresim_core::{
     strategic_schedule::*,
     strategic_time::MINUTES_PER_DAY,
 };
-use adventuresim_world_schema::OfficialReligion;
+use adventuresim_world_schema::{BestiaryCategory, OfficialReligion};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
@@ -495,12 +495,16 @@ fn quantize_skills(skills: &mut SkillHours) {
     skills.deception = q32(skills.deception);
     skills.seduction = q32(skills.seduction);
     skills.medicine = q32(skills.medicine);
+    skills.surgery = q32(skills.surgery);
     for religion in OfficialReligion::ALL {
         *skills.religion.direct_mut(religion) = q32(skills.religion.direct(religion));
     }
+    for category in BestiaryCategory::ALL {
+        *skills.bestiary.direct_mut(category) = q32(skills.bestiary.direct(category));
+    }
     skills.stealth = q32(skills.stealth);
     skills.balance = q32(skills.balance);
-    skills.anatomy = q32(skills.anatomy);
+    skills.bestiary.human = q32(skills.bestiary.human);
     skills.tailoring = q32(skills.tailoring);
 }
 
@@ -784,16 +788,21 @@ impl PlayerSkills for SimSkills {
             Skill::Medicine => self.0.medicine,
             Skill::Cooking => self.0.cooking,
             Skill::Religion => self.0.religion.maximum_effective(),
+            Skill::Bestiary => self.0.bestiary.aggregate_effective(),
+            Skill::Surgery => self.0.surgery,
             Skill::Stealth => self.0.stealth,
             Skill::Balance => self.0.balance,
             Skill::TerrainPlains
             | Skill::TerrainForest
             | Skill::TerrainHills
             | Skill::TerrainUrban => 0.0,
-            Skill::Anatomy => self.0.anatomy,
             Skill::Tailoring => self.0.tailoring,
             Skill::Smithing => self.0.smithing,
         }
+    }
+
+    fn bestiary_hours_for(&self, category: adventuresim_world_schema::BestiaryCategory) -> f32 {
+        self.0.bestiary.effective(category)
     }
 }
 

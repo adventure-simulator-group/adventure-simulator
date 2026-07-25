@@ -215,11 +215,6 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                                 Text::new("Balance hours:\n"),
                                 children![(SkillSpan(Skill::Balance), TextSpan::default())]
                             ),
-                            (
-                                Name::new("anatomy"),
-                                Text::new("Anatomy hours:\n"),
-                                children![(SkillSpan(Skill::Anatomy), TextSpan::default())]
-                            ),
                         ]
                     ),
                     (
@@ -379,13 +374,14 @@ fn update_skills_ui(
             // Cooking is strategic-only and is not carried in tactical snapshots.
             Skill::Cooking => "0.00".to_owned(),
             Skill::Religion => format!("{:.2}", skills.religion_hours),
+            Skill::Bestiary => "0.00".to_string(),
+            Skill::Surgery => format!("{:.2}", skills.surgery_hours_effective()),
             Skill::Stealth => format!("{:.2}", skills.stealth_hours),
             Skill::Balance => format!("{:.2}", skills.balance_hours),
             Skill::TerrainPlains
             | Skill::TerrainForest
             | Skill::TerrainHills
             | Skill::TerrainUrban => "0.00".into(),
-            Skill::Anatomy => format!("{:.2}", skills.anatomy_hours),
             Skill::Tailoring => format!("{:.2}", skills.tailoring_hours),
             Skill::Smithing => format!("{:.2}", skills.smithing_hours),
         };

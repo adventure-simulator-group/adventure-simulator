@@ -30,6 +30,10 @@ fn simulation_religion_hours_valid(hours: adventuresim_world_schema::ReligionHou
     hours.direct_fields_valid(MAX_INITIAL_SKILL_HOURS)
 }
 
+fn simulation_bestiary_hours_valid(hours: adventuresim_world_schema::BestiaryHours) -> bool {
+    hours.direct_fields_valid(MAX_INITIAL_SKILL_HOURS)
+}
+
 #[derive(Clone, Debug)]
 #[table(accessor = simulation_run, public)]
 pub struct SimulationRun {
@@ -266,12 +270,12 @@ pub fn configure_simulation_character(
         skills.medicine_hours,
         skills.stealth_hours,
         skills.balance_hours,
-        skills.anatomy_hours,
         skills.tailoring_hours,
     ]
     .into_iter()
     .all(|value| value.is_finite() && (0.0..=MAX_INITIAL_SKILL_HOURS).contains(&value))
         && simulation_religion_hours_valid(skills.religion_hours)
+        && simulation_bestiary_hours_valid(skills.bestiary_hours)
         && skills
             .oral_languages
             .direct_fields_valid(MAX_INITIAL_SKILL_HOURS)

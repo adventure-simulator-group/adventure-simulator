@@ -102,8 +102,10 @@ fn quest_encounter_archetype(
 fn autoresolve_enemy(id: u64, enemy_type: &str, difficulty: i32) -> Result<Combatant, String> {
     use adventuresim_core::bestiary::{AttackStyle, Protection};
     let rating = (1.2 + difficulty.max(1) as f32 * 0.35).min(4.0);
-    let profile = parse_threat(enemy_type)?.profile().combat;
+    let threat_profile = parse_threat(enemy_type)?.profile();
+    let profile = threat_profile.combat;
     let mut combatant = Combatant::new(id);
+    combatant.bestiary_categories = threat_profile.categories().collect();
     combatant.attributes = CombatAttributes {
         endurance: rating,
         immunity: rating,
@@ -17328,6 +17330,7 @@ pub fn bootstrap_development_world(
     if include_visual_demos {
         crate::character::seed_damaged_character(ctx)?;
         crate::character::seed_religion_scholar_character(ctx)?;
+        crate::character::seed_bestiary_scholar_character(ctx)?;
         crate::social::seed_social_demo(ctx)?;
     }
     Ok(())

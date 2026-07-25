@@ -3,11 +3,14 @@
 //! Files under `content/quests` are sorted, validated, embedded, and hashed by
 //! `build.rs`. Deployment never reads loose data files.
 
+use adventuresim_world_schema::BestiaryCategory;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::OnceLock,
 };
+
+const MAX_BESTIARY_INTERPRETATION_BYTES: usize = 1_024;
 
 include!(concat!(env!("OUT_DIR"), "/quest_catalog.rs"));
 
@@ -48,8 +51,16 @@ pub struct Monster {
     pub base_weight: u16,
     pub curation_weight: u16,
     pub northern_germany_prior: u16,
+    pub primary_category: BestiaryCategory,
+    pub secondary_categories: Vec<BestiaryCategory>,
     pub combat: MonsterCombat,
     pub investigation: MonsterInvestigation,
+}
+
+impl Monster {
+    pub fn categories(&self) -> impl Iterator<Item = BestiaryCategory> + '_ {
+        std::iter::once(self.primary_category).chain(self.secondary_categories.iter().copied())
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -113,6 +124,17 @@ pub struct EvidenceTopicDefinition {
     pub label: String,
     pub inspection_description: String,
     pub check: Option<EvidenceCheckDefinition>,
+    #[serde(default)]
+    pub bestiary: Vec<BestiaryImplicationDefinition>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BestiaryImplicationDefinition {
+    pub category: BestiaryCategory,
+    pub support_bps: u16,
+    pub lore_difficulty_milli: u16,
+    pub interpretation: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -541,6 +563,17 @@ fn validate_monster(monster: &Monster) -> Result<(), String> {
             monster.id
         ));
     }
+    let mut categories = BTreeSet::from([monster.primary_category]);
+    if !monster
+        .secondary_categories
+        .iter()
+        .all(|category| categories.insert(*category))
+    {
+        return Err(format!(
+            "monster {} has duplicate Bestiary categories",
+            monster.id
+        ));
+    }
     if monster.investigation.habitats.is_empty()
         || monster.investigation.silhouettes.is_empty()
         || monster.investigation.distinguishing_clues.is_empty()
@@ -606,6 +639,20 @@ fn validate_evidence(evidence: &EvidenceDefinition) -> Result<(), String> {
                 return Err(format!(
                     "evidence {} topic {} names unknown check stat {}",
                     evidence.id, topic.id, check.stat
+                ));
+            }
+        }
+        let mut categories = BTreeSet::new();
+        for implication in &topic.bestiary {
+            if !categories.insert(implication.category)
+                || implication.support_bps > 10_000
+                || implication.lore_difficulty_milli > 5_000
+                || implication.interpretation.trim().is_empty()
+                || implication.interpretation.len() > MAX_BESTIARY_INTERPRETATION_BYTES
+            {
+                return Err(format!(
+                    "evidence {} topic {} has invalid Bestiary implication",
+                    evidence.id, topic.id
                 ));
             }
         }
@@ -691,6 +738,64 @@ mod tests {
             crate::quest_catalog_validation::validate_documents(&layered, &files)
                 .unwrap_err()
                 .contains("cannot compose")
+        );
+    }
+
+    #[test]
+    fn shared_validator_rejects_invalid_bestiary_tags_and_implications() {
+        let (documents, files) = raw_catalog();
+        let mut unknown_category = documents.clone();
+        unknown_category[0]["monsters"][0]["primary_category"] =
+            serde_json::json!("not_a_category");
+        assert!(
+            crate::quest_catalog_validation::validate_documents(&unknown_category, &files)
+                .unwrap_err()
+                .contains("unknown mechanic")
+        );
+
+        let mut duplicate_category = documents.clone();
+        duplicate_category[0]["monsters"][0]["secondary_categories"] = serde_json::json!(["human"]);
+        assert!(
+            crate::quest_catalog_validation::validate_documents(&duplicate_category, &files)
+                .unwrap_err()
+                .contains("duplicate Bestiary category")
+        );
+
+        let mut invalid_support = documents;
+        let investigation = invalid_support
+            .iter_mut()
+            .find(|document| document["evidence"].is_array())
+            .unwrap();
+        investigation["evidence"][0]["topics"][1]["bestiary"][0]["support_bps"] =
+            serde_json::json!(10_001);
+        assert!(
+            crate::quest_catalog_validation::validate_documents(&invalid_support, &files)
+                .unwrap_err()
+                .contains("outside 0..=10000")
+        );
+
+        let (mut oversized_interpretation, files) = raw_catalog();
+        let investigation = oversized_interpretation
+            .iter_mut()
+            .find(|document| document["evidence"].is_array())
+            .unwrap();
+        investigation["evidence"][0]["topics"][1]["bestiary"][0]["interpretation"] =
+            serde_json::json!("é".repeat(513));
+        assert!(
+            crate::quest_catalog_validation::validate_documents(&oversized_interpretation, &files)
+                .unwrap_err()
+                .contains("exceeds 1024 UTF-8 bytes")
+        );
+
+        let typed_documents = oversized_interpretation
+            .into_iter()
+            .map(serde_json::from_value)
+            .collect::<Result<Vec<CatalogDocument>, _>>()
+            .unwrap();
+        assert!(
+            Catalog::compile(typed_documents)
+                .unwrap_err()
+                .contains("invalid Bestiary implication")
         );
     }
 

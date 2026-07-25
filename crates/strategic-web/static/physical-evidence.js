@@ -47,6 +47,52 @@
     return row;
   };
 
+  const bestiaryColor = (supportBps) => {
+    const bounded = Math.max(0, Math.min(10000, Number(supportBps) || 0));
+    if (bounded <= 5000) {
+      return `rgb(255 ${Math.round(255 * bounded / 5000)} 0)`;
+    }
+    return `rgb(${Math.round(255 * (10000 - bounded) / 5000)} 255 0)`;
+  };
+
+  const bestiaryResultsRow = (results) => {
+    const row = narrationRow(document.createTextNode(""), "bestiary-check-results");
+    const narration = row.querySelector("em");
+    narration.replaceChildren();
+    const heading = document.createElement("strong");
+    heading.className = "bestiary-check-heading";
+    heading.textContent = "Bestiary check(s) succeeded:";
+    narration.append(heading);
+    [...new Set(results.map((result) => result.interpretation))].forEach((interpretation) => {
+      const line = document.createElement("span");
+      line.className = "bestiary-interpretation";
+      line.textContent = interpretation;
+      narration.append(line);
+    });
+    const chips = document.createElement("span");
+    chips.className = "bestiary-result-list";
+    results.forEach((result) => {
+      const percent = result.support_bps / 100;
+      const chip = document.createElement("span");
+      chip.className = "bestiary-result-chip";
+      chip.tabIndex = 0;
+      chip.setAttribute("role", "button");
+      chip.setAttribute("aria-pressed", "false");
+      chip.dataset.bestiaryCategory = result.category;
+      chip.dataset.bestiaryName = result.label;
+      chip.dataset.bestiaryEnemies = JSON.stringify(result.enemies || []);
+      chip.dataset.tooltipPinnable = "";
+      chip.style.backgroundColor = bestiaryColor(result.support_bps);
+      chip.textContent = `${result.label} — ${result.support_label} (${percent}%)`;
+      const accessible = `${result.label} Bestiary result: ${percent}%, ${result.support_label}.`;
+      chip.setAttribute("aria-label", accessible);
+      chip.dataset.strategicTooltip = result.label;
+      chips.append(chip);
+    });
+    narration.append(chips);
+    return row;
+  };
+
   const renderConversation = (item) => {
     messages?.querySelectorAll("[data-evidence-scripted]").forEach((node) => node.remove());
     if (!messages) return;
@@ -71,6 +117,9 @@
         document.createTextNode(attempt.narration),
         attempt.stat_label ? (attempt.passed ? "evidence-check-passed" : "evidence-check-failed") : "",
       ));
+      if (attempt.bestiary_results?.length) {
+        messages.append(bestiaryResultsRow(attempt.bestiary_results));
+      }
     });
     messages.scrollTop = messages.scrollHeight;
   };

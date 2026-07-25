@@ -42,14 +42,8 @@ fn surgery_duration(procedure: &str, skill: f32, dc: f32) -> u64 {
     adventuresim_core::surgery::procedure_duration_minutes(procedure, skill, dc)
 }
 
-fn surgery_procedure_skill(procedure: &str, checks: [f32; 3], self_treatment: bool) -> f32 {
-    adventuresim_core::surgery::procedure_skill(
-        procedure,
-        checks[0],
-        checks[1],
-        checks[2],
-        self_treatment,
-    )
+fn surgery_procedure_skill(checks: [f32; 2], self_treatment: bool) -> f32 {
+    adventuresim_core::surgery::procedure_skill(checks[0], checks[1], self_treatment)
 }
 
 #[derive(Clone, Copy)]
@@ -220,7 +214,7 @@ pub fn surgery_dialog(
     soaps: u32,
     alcohol_units: u32,
     selected_alcohol: Option<&str>,
-    procedure_checks: [f32; 3],
+    procedure_checks: [f32; 2],
 ) -> Markup {
     let action = location.preserve_building(format!(
         "{}/party/{}/surgery/{}/procedure",
@@ -237,11 +231,7 @@ pub fn surgery_dialog(
     let splinted = selected.is_some_and(|injury| injury.splint_inventory_item_id.is_some());
     let has_kit = surgery_kits > 0;
     let self_treatment = active_character.id == patient.id;
-    let procedure_skill =
-        |procedure| surgery_procedure_skill(procedure, procedure_checks, self_treatment);
-    let anatomy_skill = procedure_skill("bandage");
-    let extraction_skill = procedure_skill("extract");
-    let stitching_skill = procedure_skill("stitch");
+    let procedure_skill = surgery_procedure_skill(procedure_checks, self_treatment);
     let close_href = location.preserve_building(if self_treatment {
         format!("{}/party/{}", location.base_path(), patient.id)
     } else {
@@ -266,18 +256,18 @@ pub fn surgery_dialog(
                 div class="surgery-procedures" {
                     @for projectile in projectiles.iter().filter(|projectile| projectile.limb == selected_limb) {
                         @let requires_kit = adventuresim_core::surgery::extraction_requires_surgery_kit(projectile.extraction_dc);
-                        (surgery_procedure_row(&action, match projectile.kind { ProjectileKind::Arrowhead => "Remove arrowhead", ProjectileKind::Ball => "Remove ball" }, match projectile.kind { ProjectileKind::Arrowhead => "plain-arrow", ProjectileKind::Ball => "bullet-visual" }, "extract", if requires_kit { &[SurgeryItemRequirement::SurgeryKitReusable] } else { &[] }, surgery_duration("extract", extraction_skill, projectile.extraction_dc), projectile.extraction_dc,
-                            extraction_skill, None, if extraction_skill < projectile.extraction_dc { Some("Insufficient Anatomy + Knife skill") } else if requires_kit && !has_kit { Some("No surgery kit") } else { None }, Some(projectile.id), soaps > 0, true, selected_alcohol))
+                        (surgery_procedure_row(&action, match projectile.kind { ProjectileKind::Arrowhead => "Remove arrowhead", ProjectileKind::Ball => "Remove ball" }, match projectile.kind { ProjectileKind::Arrowhead => "plain-arrow", ProjectileKind::Ball => "bullet-visual" }, "extract", if requires_kit { &[SurgeryItemRequirement::SurgeryKitReusable] } else { &[] }, surgery_duration("extract", procedure_skill, projectile.extraction_dc), projectile.extraction_dc,
+                            procedure_skill, None, if procedure_skill < projectile.extraction_dc { Some("Insufficient Surgery or Human knowledge") } else if requires_kit && !has_kit { Some("No surgery kit") } else { None }, Some(projectile.id), soaps > 0, true, selected_alcohol))
                     }
-                    (surgery_procedure_row(&action, "Bandage", "bandage-roll", "bandage", &[SurgeryItemRequirement::BandageConsumed], surgery_duration("bandage", anatomy_skill, 0.0), 0.0,
-                        anatomy_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if bandaged { Some("Already bandaged") } else if bandages == 0 { Some("No bandages") } else { None }, None, soaps > 0, true, selected_alcohol))
-                    (surgery_procedure_row(&action, "Stitch", "scalpel", "stitch", &[SurgeryItemRequirement::SurgeryKitReusable], surgery_duration("stitch", stitching_skill, 2.0), 2.0,
-                        stitching_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if stitched { Some("Already stitched") } else if stitching_skill < 2.0 { Some("Insufficient Anatomy + Tailoring skill") } else if !has_kit { Some("No surgery kit") } else { None }, None, soaps > 0, true, selected_alcohol))
+                    (surgery_procedure_row(&action, "Bandage", "bandage-roll", "bandage", &[SurgeryItemRequirement::BandageConsumed], surgery_duration("bandage", procedure_skill, 0.0), 0.0,
+                        procedure_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if bandaged { Some("Already bandaged") } else if bandages == 0 { Some("No bandages") } else { None }, None, soaps > 0, true, selected_alcohol))
+                    (surgery_procedure_row(&action, "Stitch", "scalpel", "stitch", &[SurgeryItemRequirement::SurgeryKitReusable], surgery_duration("stitch", procedure_skill, 2.0), 2.0,
+                        procedure_skill, if cut <= 0.0 { Some("No injury is present") } else { None }, if cut <= 0.0 { Some("No injury is present") } else if stitched { Some("Already stitched") } else if procedure_skill < 2.0 { Some("Insufficient Surgery or Human knowledge") } else if !has_kit { Some("No surgery kit") } else { None }, None, soaps > 0, true, selected_alcohol))
                     @if splinted {
-                        (surgery_procedure_row(&action, "Remove splint", "arm-bandage", "remove-splint", &[], surgery_duration("remove-splint", anatomy_skill, 0.0), 0.0, anatomy_skill, None, None, None, false, false, None))
+                        (surgery_procedure_row(&action, "Remove splint", "arm-bandage", "remove-splint", &[], surgery_duration("remove-splint", procedure_skill, 0.0), 0.0, procedure_skill, None, None, None, false, false, None))
                     } @else {
-                        (surgery_procedure_row(&action, "Splint", "arm-bandage", "splint", &[SurgeryItemRequirement::SplintEquipped], surgery_duration("splint", anatomy_skill, 1.0), 1.0,
-                            anatomy_skill, if fracture <= 0.0 { Some("No injury is present") } else { None }, if fracture <= 0.0 { Some("No injury is present") } else if anatomy_skill < 1.0 { Some("Insufficient Anatomy skill") } else if splints == 0 { Some("No splints") } else { None }, None, false, false, None))
+                        (surgery_procedure_row(&action, "Splint", "arm-bandage", "splint", &[SurgeryItemRequirement::SplintEquipped], surgery_duration("splint", procedure_skill, 1.0), 1.0,
+                            procedure_skill, if fracture <= 0.0 { Some("No injury is present") } else { None }, if fracture <= 0.0 { Some("No injury is present") } else if procedure_skill < 1.0 { Some("Insufficient Surgery or Human knowledge") } else if splints == 0 { Some("No splints") } else { None }, None, false, false, None))
                     }
                     @if cut <= 0.0 && bruise > 0.0 && fracture <= 0.0 {
                         p class="text-muted small-copy" { "Bruising must heal on its own." }
@@ -1085,21 +1075,14 @@ mod tests {
     }
 
     #[test]
-    fn surgery_preview_uses_the_same_asymmetric_procedure_composition_as_reducers() {
-        let checks = [5.0, 5.0, 0.0];
-        let extraction = surgery_procedure_skill("extract", checks, false);
-        let stitching = surgery_procedure_skill("stitch", checks, false);
+    fn surgery_preview_uses_the_same_species_cap_as_reducers() {
+        let checks = [5.0, 2.0];
+        assert_eq!(surgery_procedure_skill(checks, false), 2.0);
         assert_eq!(
-            extraction,
-            adventuresim_core::surgery::procedure_skill("extract", 5.0, 5.0, 0.0, false)
+            surgery_procedure_skill(checks, false),
+            adventuresim_core::surgery::procedure_skill(5.0, 2.0, false)
         );
-        assert_eq!(
-            stitching,
-            adventuresim_core::surgery::procedure_skill("stitch", 5.0, 5.0, 0.0, false)
-        );
-        assert!(extraction >= 4.0);
-        assert!(stitching < 4.0);
-        assert_eq!(surgery_procedure_skill("extract", checks, true), 2.5);
+        assert_eq!(surgery_procedure_skill([5.0, 5.0], true), 2.5);
     }
 
     #[test]

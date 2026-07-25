@@ -9,7 +9,7 @@ use adventuresim_core::{
     },
     strategic_time::MINUTES_PER_DAY,
 };
-use adventuresim_world_schema::OfficialReligion;
+use adventuresim_world_schema::{BestiaryCategory, OfficialReligion};
 use maud::{Markup, html};
 
 use super::character_health::stat_icon;
@@ -158,7 +158,8 @@ impl ActivityPreviewRates {
                 Skill::Smithing => skills.smithing_hours,
                 Skill::Tailoring => skills.tailoring_hours,
                 Skill::Medicine => skills.medicine_hours,
-                Skill::Anatomy => skills.anatomy_hours,
+                Skill::Bestiary => skills.bestiary_hours.direct(BestiaryCategory::Human),
+                Skill::Surgery => skills.surgery_hours,
                 Skill::Knife => skills.knife_hours,
                 Skill::Cooking => skills.cooking_hours,
                 Skill::Religion => row
@@ -183,7 +184,16 @@ impl ActivityPreviewRates {
                     training_rates: definition
                         .skills
                         .iter()
-                        .map(|entry| (format!("{:?}", entry.skill), entry.weight))
+                        .map(|entry| {
+                            (
+                                if entry.skill == Skill::Bestiary {
+                                    "Human knowledge".into()
+                                } else {
+                                    format!("{:?}", entry.skill)
+                                },
+                                entry.weight,
+                            )
+                        })
                         .collect(),
                     apprenticeship_accrued: row.apprenticeship_minutes_accrued,
                     practice_accrued: row.practice_minutes_accrued,
@@ -373,11 +383,12 @@ fn skills_table(
                     @if skills.medicine_hours > 0.0 { (party_skill_row("Medicine", "medicine", Skill::Medicine, skills.medicine_hours, head_health, schedule.is_some(), actions.examination_action.map(|href| SkillAction::Post { href, label: "Perform medical examination (15 minutes)", open: actions.examination_open }))) }
                     (party_skill_row("Cooking", "cooking", Skill::Cooking, skills.cooking_hours, head_health, schedule.is_some(), actions.cooking_href.map(|href| SkillAction::Get { href, label: "Open cooking menu", open: actions.cooking_open })))
                     (religion_skill_rows(skills, head_health, schedule, training_religion))
+                    (bestiary_skill_rows(skills, head_health, schedule.is_some()))
+                    (surgery_skill_rows(skills, upper_health, schedule.is_some()))
                     (language_skill_rows(skills, schedule.is_some()))
                     (combat_skill_rows(skills, head_health, upper_health, lower_health, schedule, combat_profile))
                     @if skills.stealth_hours > 0.0 { (party_skill_row("Stealth", "stealth", Skill::Stealth, skills.stealth_hours, upper_health, schedule.is_some(), None)) }
                     (terrain_skill_rows(skills, schedule.is_some()))
-                    @if skills.anatomy_hours > 0.0 { (party_skill_row("Anatomy", "surgeon", Skill::Anatomy, skills.anatomy_hours, head_health, schedule.is_some(), None)) }
                     @if skills.tailoring_hours > 0.0 { (party_skill_row("Tailoring", "sewing-needle", Skill::Tailoring, skills.tailoring_hours, upper_health, schedule.is_some(), None)) }
                     @if skills.smithing_hours > 0.0 { (party_skill_row("Smithing", "smithing", Skill::Smithing, skills.smithing_hours, upper_health, schedule.is_some(), None)) }
                     @if let Some(schedule) = schedule {
@@ -604,6 +615,136 @@ fn religion_skill_rows(
                 td class="religion-expand-cell" {}
             }
           }
+        }
+    }
+}
+
+fn bestiary_category_enemies(category: BestiaryCategory) -> (String, String) {
+    let enemies = crate::spacetimedb::bestiary_enemy_lore(category);
+    let primary_names = enemies
+        .iter()
+        .filter(|enemy| enemy.is_primary)
+        .map(|enemy| enemy.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let secondary_names = enemies
+        .iter()
+        .filter(|enemy| !enemy.is_primary)
+        .map(|enemy| enemy.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut relationships = Vec::new();
+    if !primary_names.is_empty() {
+        relationships.push(format!("Main type for: {primary_names}."));
+    }
+    if !secondary_names.is_empty() {
+        relationships.push(format!("Secondary type for: {secondary_names}."));
+    }
+    (
+        serde_json::to_string(&enemies).expect("Bestiary enemy lore serializes"),
+        if relationships.is_empty() {
+            "No current enemy types".into()
+        } else {
+            relationships.join(" ")
+        },
+    )
+}
+
+fn bestiary_skill_rows(skills: &CharacterSkills, health: f32, schedule_context: bool) -> Markup {
+    if !BestiaryCategory::ALL
+        .into_iter()
+        .any(|category| skills.bestiary_hours.direct(category) > 0.0)
+    {
+        return html! {};
+    }
+    let aggregate_effective = skills.bestiary_hours.aggregate_effective();
+    let total_direct = skills.bestiary_hours.total_direct();
+    html! {
+        tr class="party-skill-row skill-family-primary-row bestiary-primary-row"
+            data-skill-family="bestiary" data-bestiary-primary {
+            th scope="row" class="party-skill-name party-skill-icon-cell" {
+                (stat_icon("Bestiary", "bestiary", "bestiary", false))
+            }
+            td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
+                (skill_rank_bar(
+                    Skill::Bestiary.training_rank(aggregate_effective),
+                    Skill::Bestiary.training_rank(aggregate_effective) * health.clamp(0.0, 1.0),
+                    &format!("{aggregate_effective:.1} average effective hours across all Bestiary categories; {total_direct:.1} total directly studied hours"),
+                    skill_rail_bar_options(),
+                ))
+            }
+            td class="religion-expand-cell" {
+                button type="button" class="religion-expand-button" data-bestiary-expand
+                    aria-expanded="false" aria-label="Expand Bestiary skills" title="Expand Bestiary" {
+                    span class="religion-expand-chevron" aria-hidden="true" { "›" }
+                }
+            }
+        }
+        @for category in BestiaryCategory::ALL {
+            @let effective = skills.bestiary_hours.effective(category);
+            @let direct = skills.bestiary_hours.direct(category);
+            @if effective.is_finite() && effective > 0.0 {
+                @let (enemies, applies_to) = bestiary_category_enemies(category);
+                tr class="party-skill-row bestiary-detail-row" data-bestiary-detail hidden {
+                    th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
+                        span class="bestiary-lore-trigger" data-strategic-tooltip=(category.label())
+                            data-tooltip-pinnable data-bestiary-enemies=(&enemies)
+                            tabindex="0" role="button" aria-pressed="false"
+                            data-bestiary-name=(category.label())
+                            aria-label=(format!("{} knowledge. {}", category.label(), applies_to)) {
+                            (stat_icon(category.label(), "bestiary", category.id(), true))
+                            span class="sr-only" { (category.label()) }
+                        }
+                    }
+                    td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
+                        (skill_rank_bar(
+                            Skill::Bestiary.training_rank(effective),
+                            Skill::Bestiary.training_rank(effective) * health.clamp(0.0, 1.0),
+                            &format!("{effective:.1} effective hours; {direct:.1} directly studied hours"),
+                            skill_rail_bar_options(),
+                        ))
+                    }
+                    td class="religion-expand-cell" {}
+                }
+            }
+        }
+    }
+}
+
+fn surgery_skill_rows(
+    skills: &CharacterSkills,
+    upper_health: f32,
+    schedule_context: bool,
+) -> Markup {
+    let knife_transfer_percent = adventuresim_core::surgery::KNIFE_SURGERY_CORRELATION * 100.0;
+    let tailoring_transfer_percent =
+        adventuresim_core::surgery::TAILORING_SURGERY_CORRELATION * 100.0;
+    let effective_hours = adventuresim_core::surgery::effective_surgery_hours(
+        skills.surgery_hours,
+        skills.knife_hours,
+        skills.tailoring_hours,
+    );
+    if effective_hours <= 0.0 {
+        return html! {};
+    }
+    let rank = Skill::Surgery.training_rank(effective_hours);
+    html! {
+        tr class="party-skill-row surgery-skill-row" data-skill="surgery" {
+            th scope="row" class="party-skill-name party-skill-icon-cell" {
+                (stat_icon("Surgery", "skills", "surgeon", false))
+            }
+            td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
+                (skill_rank_bar(
+                    rank,
+                    rank * upper_health.clamp(0.0, 1.0),
+                    &format!(
+                        "{effective_hours:.1} effective hours; {:.1} directly trained hours; Knife transfers at {knife_transfer_percent:.0}% and Tailoring transfers at {tailoring_transfer_percent:.0}%",
+                        skills.surgery_hours.max(0.0),
+                    ),
+                    skill_rail_bar_options(),
+                ))
+            }
+            td class="religion-expand-cell" {}
         }
     }
 }
@@ -1299,6 +1440,8 @@ mod tests {
                 roman_catholic: 1_000.0,
                 ..Default::default()
             },
+            bestiary_hours: Default::default(),
+            surgery_hours: 0.0,
             oral_languages: Default::default(),
             written_languages: Default::default(),
             stealth_hours: 0.0,
@@ -1307,7 +1450,6 @@ mod tests {
             terrain_forest_hours: 0.0,
             terrain_hills_hours: 0.0,
             terrain_urban_hours: 0.0,
-            anatomy_hours: 0.0,
             tailoring_hours: 0.0,
             smithing_hours: 0.0,
         };
@@ -1548,9 +1690,8 @@ mod tests {
         let profession = ProfessionActivityPreview {
             training_rates: vec![
                 ("Medicine".into(), 0.5),
-                ("Anatomy".into(), 1.0 / 6.0),
-                ("Knife".into(), 1.0 / 6.0),
-                ("Tailoring".into(), 1.0 / 6.0),
+                ("Human knowledge".into(), 1.0 / 6.0),
+                ("Surgery".into(), 1.0 / 3.0),
             ],
             apprenticeship_accrued: 0,
             practice_accrued: 0,
@@ -1567,9 +1708,10 @@ mod tests {
         .into_string();
         assert!(apprenticeship.contains(">+2.00h<"));
         assert!(apprenticeship.contains("Medicine: +1.00h"));
-        assert!(apprenticeship.contains("Anatomy: +0.33h"));
-        assert!(apprenticeship.contains("Knife: +0.33h"));
-        assert!(apprenticeship.contains("Tailoring: +0.33h"));
+        assert!(apprenticeship.contains("Human knowledge: +0.33h"));
+        assert!(apprenticeship.contains("Surgery: +0.67h"));
+        assert!(!apprenticeship.contains("Knife:"));
+        assert!(!apprenticeship.contains("Tailoring:"));
 
         let leisure = activity_training_cell("Leisure", "leisure_minutes", 480, None).into_string();
         assert!(leisure.contains(">—<"));
@@ -1710,6 +1852,8 @@ mod tests {
         assert!(schedule.contains("function mountSchedules(root = document)"));
         assert!(schedule.contains("[data-social-expand]"));
         assert!(schedule.contains(".social-detail-row"));
+        assert!(schedule.contains("[data-bestiary-expand]"));
+        assert!(schedule.contains(".bestiary-detail-row"));
         assert!(schedule.contains("'strategic-live-regions-refreshed'"));
         assert!(schedule.contains("event.detail.regions.includes('left-sidebar')"));
         assert!(schedule.contains("function createLatestSaveQueue(send"));
@@ -1752,5 +1896,95 @@ mod tests {
         assert!(css.contains(".numeric-editor-confirm { background: #2f7d3d; }"));
         assert!(css.contains(".numeric-editor-cancel { background: #9c3434; }"));
         assert!(css.contains(".schedule-save-status"));
+    }
+
+    #[test]
+    fn bestiary_skill_family_lists_correlated_categories_and_accessible_lore() {
+        let css = include_str!("../../../static/css/strategic.css");
+        let skills = CharacterSkills {
+            bestiary_hours: adventuresim_world_schema::BestiaryHours {
+                human: 1_000.0,
+                wildmen: 500.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let rendered = bestiary_skill_rows(&skills, 1.0, false).into_string();
+        assert!(rendered.contains("data-skill-family=\"bestiary\""));
+        assert!(rendered.contains("/static/icons/stats/bestiary/bestiary.png"));
+        assert!(rendered.contains("/static/icons/stats/bestiary/wildmen.png"));
+        assert!(rendered.contains("data-bestiary-expand"));
+        assert!(rendered.contains("Expand Bestiary skills"));
+        assert!(rendered.contains("Wildmen"));
+        assert!(rendered.contains("directly studied hours"));
+        assert!(rendered.contains("data-bestiary-enemies"));
+        assert!(rendered.contains("data-tooltip-pinnable"));
+        assert!(rendered.contains("Wild man"));
+        assert!(rendered.contains("Main type for:"));
+        assert!(rendered.contains("Secondary type for:"));
+        assert!(!rendered.contains("data-bestiary-strengths"));
+        assert!(!rendered.contains("data-bestiary-weaknesses"));
+        assert!(!rendered.contains("Great strength and endurance"));
+        assert!(!rendered.contains("Limited armour"));
+        assert!(!rendered.contains("combat modifier"));
+        assert!(!rendered.contains("no effect"));
+        assert!(rendered.contains("data-strategic-tooltip"));
+        assert_eq!(rendered.matches("data-bestiary-detail").count(), 13);
+        assert!(css.contains(".bestiary-primary-row .stat-icon,"));
+        assert!(css.contains("--stat-icon-color: var(--info);"));
+        assert!(css.contains("cursor: help;"));
+    }
+
+    #[test]
+    fn surgery_is_a_single_leaf_row_with_direct_and_correlated_hours() {
+        let skills = CharacterSkills {
+            surgery_hours: 500.0,
+            knife_hours: 750.0,
+            tailoring_hours: 250.0,
+            ..Default::default()
+        };
+        let rendered = surgery_skill_rows(&skills, 1.0, false).into_string();
+        assert!(rendered.contains("data-skill=\"surgery\""));
+        assert!(rendered.contains("750.0 effective hours"));
+        assert!(rendered.contains("500.0 directly trained hours"));
+        let knife_percent = adventuresim_core::surgery::KNIFE_SURGERY_CORRELATION * 100.0;
+        let tailoring_percent = adventuresim_core::surgery::TAILORING_SURGERY_CORRELATION * 100.0;
+        assert!(rendered.contains(&format!(
+            "Knife transfers at {knife_percent:.0}% and Tailoring transfers at {tailoring_percent:.0}%"
+        )));
+        assert!(!rendered.contains("data-surgery-expand"));
+        assert!(!rendered.contains("data-surgery-detail"));
+    }
+
+    #[test]
+    fn surgery_row_uses_upper_body_health_for_its_injury_adjusted_rank() {
+        let skills = CharacterSkills {
+            surgery_hours: 5_000.0,
+            ..Default::default()
+        };
+        let impaired = skills_table(
+            "Skills",
+            &skills,
+            1.0,
+            0.25,
+            1.0,
+            None,
+            None,
+            false,
+            0.0,
+            None,
+            CombatTrainingProfile::default(),
+            false,
+            CharacterSheetActions::default(),
+        )
+        .into_string();
+        let rank = Skill::Surgery.training_rank(5_000.0);
+
+        let surgery = impaired.find("data-skill=\"surgery\"").unwrap();
+        let row_start = impaired[..surgery].rfind("<tr").unwrap();
+        let row_end = surgery + impaired[surgery..].find("</tr>").unwrap() + "</tr>".len();
+        let surgery_row = &impaired[row_start..row_end];
+        assert!(surgery_row.contains(&format!("aria-valuenow=\"{:.1}\"", rank * 0.25)));
+        assert!(surgery_row.contains("class=\"rank-damage\""));
     }
 }

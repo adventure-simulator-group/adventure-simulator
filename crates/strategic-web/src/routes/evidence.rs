@@ -1,7 +1,10 @@
 use super::AppState;
 use crate::{
     session::Session,
-    spacetimedb::{BackendPhysicalEvidence, BackendPhysicalEvidenceInspection, sql_string_literal},
+    spacetimedb::{
+        BackendPhysicalEvidence, BackendPhysicalEvidenceInspection, BestiaryResultView,
+        bestiary_result_views, sql_string_literal,
+    },
 };
 use axum::{
     Json, Router,
@@ -44,6 +47,7 @@ struct EvidenceInspectionView {
     stat_label: String,
     passed: bool,
     narration: String,
+    bestiary_results: Vec<BestiaryResultView>,
 }
 
 async fn evidence_at_site(
@@ -100,6 +104,7 @@ async fn evidence_at_site(
                         stat_label: attempt.stat_label,
                         passed: attempt.passed,
                         narration: attempt.narration,
+                        bestiary_results: bestiary_result_views(&attempt.bestiary_results_json),
                     })
                     .collect(),
             }
@@ -173,6 +178,9 @@ async fn inspect(
 
 #[cfg(test)]
 mod tests {
+    use crate::spacetimedb::{BestiaryResultView, StoredBestiaryResult, bestiary_support_label};
+    use adventuresim_world_schema::BestiaryCategory;
+
     #[test]
     fn evidence_api_never_serializes_check_difficulty() {
         let source = include_str!("evidence.rs");
@@ -180,5 +188,35 @@ mod tests {
         assert!(production.contains("inspect_physical_evidence"));
         assert!(!production.contains("difficulty_milli"));
         assert!(!production.contains("current_value"));
+    }
+
+    #[test]
+    fn bestiary_support_labels_cover_exact_probability_anchors() {
+        assert_eq!(bestiary_support_label(0), "rules out");
+        assert_eq!(bestiary_support_label(5_000), "inconclusive");
+        assert_eq!(bestiary_support_label(10_000), "conclusive support");
+    }
+
+    #[test]
+    fn bestiary_api_result_contains_accessible_lore_but_no_hidden_truth() {
+        let view = BestiaryResultView::from(StoredBestiaryResult {
+            category: BestiaryCategory::Spirit,
+            support_bps: 5_000,
+            interpretation: "The impression may not have been fully physical.".into(),
+        });
+        let serialized = serde_json::to_string(&view).unwrap();
+
+        assert!(serialized.contains("\"support_bps\":5000"));
+        assert!(serialized.contains("\"support_label\":\"inconclusive\""));
+        assert!(serialized.contains("\"enemies\":["));
+        assert!(serialized.contains("\"name\":\"Spectral hound\""));
+        assert!(serialized.contains("\"strengths\":["));
+        assert!(serialized.contains("\"weaknesses\":["));
+        assert!(!serialized.contains("confirmed_mechanics"));
+        assert!(!serialized.contains("folklore"));
+        assert!(!serialized.contains("combat modifier"));
+        assert!(!serialized.contains("difficulty"));
+        assert!(!serialized.contains("threat"));
+        assert!(!serialized.contains("canonical"));
     }
 }

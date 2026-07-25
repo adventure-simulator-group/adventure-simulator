@@ -13,6 +13,10 @@ const MUSCLE_KG_TO_JOULES: f32 = 2.0;
 const UPPER_MUSCLE_KG_TO_PUNCH_KG: f32 = 0.1;
 const STAGGER_RESISTANCE_JOULES_PER_KG: f32 = 10.0;
 
+fn precision_damage_multiplier(excess_accuracy: f32, lore_cap: f32) -> f32 {
+    excess_accuracy.max(0.0).min(lore_cap.max(2.0))
+}
+
 /// Result of resolving a melee attack.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum AttackResult {
@@ -111,6 +115,7 @@ pub fn resolve_melee_attack_by_parts(
     attacker_equip: &impl PlayerEquipment,
     attacker_side: BodySide,
     hit_precision: f32,
+    precision_damage_multiplier_cap: f32,
     flanking: f32,
     defender_body_part: BodyPart,
     defender_response: DefenderResponse,
@@ -206,7 +211,7 @@ pub fn resolve_melee_attack_by_parts(
                     defender_body,
                     defender_equip,
                     false,
-                ) * critical_attack
+                ) * precision_damage_multiplier(critical_attack, precision_damage_multiplier_cap)
             } else {
                 calculate_damage(
                     1.0,
@@ -244,6 +249,7 @@ pub fn resolve_ranged_attack_by_parts(
     attacker_essentials: &impl PlayerEssentials,
     attacker_equip: &impl PlayerEquipment,
     hit_precision: f32,
+    precision_damage_multiplier_cap: f32,
     flanking: f32,
     defender_body_part: BodyPart,
     defender_response: DefenderResponse,
@@ -310,7 +316,7 @@ pub fn resolve_ranged_attack_by_parts(
                 defender_body,
                 defender_equip,
                 false,
-            ) * critical;
+            ) * precision_damage_multiplier(critical, precision_damage_multiplier_cap);
         }
     }
     calculate_damage_from_force(
@@ -640,5 +646,12 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn anatomical_lore_clamps_excess_accuracy_with_a_two_x_floor() {
+        assert_eq!(precision_damage_multiplier(6.0, 0.0), 2.0);
+        assert_eq!(precision_damage_multiplier(6.0, 3.5), 3.5);
+        assert_eq!(precision_damage_multiplier(1.25, 7.0), 1.25);
     }
 }

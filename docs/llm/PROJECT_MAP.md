@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (1231)
+## Files (1248)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -177,6 +177,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/battle_result_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/begin_apprenticeship_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/begin_world_data_import_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/bestiary_hours_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/blood_exposure_checkpoint_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/bootstrap_development_world_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/built_settlement_cover_type.rs` — Generated SpacetimeDB data type.
@@ -516,6 +517,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/perform_immediate_activity_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/perform_investigation_action_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/perform_social_action_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/physical_evidence_inspection_action_receipt_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/physical_evidence_inspection_attempt_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/potential_vegetation_class_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/potential_vegetation_posterior_type.rs` — Generated SpacetimeDB data type.
@@ -1058,6 +1060,21 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/icons/stats/attributes/immunity.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/attributes/strength-arm.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/attributes/strength-leg.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/ATTRIBUTION.md` — Project documentation.
+- `crates/strategic-web/static/icons/stats/bestiary/beast.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/bestiary.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/construct.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/draconid.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/dwarf.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/elf.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/fey.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/greenskin.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/human.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/insectoid.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/spirit.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/undead.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/werekin.png` — Binary game or UI asset.
+- `crates/strategic-web/static/icons/stats/bestiary/wildmen.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/terrain/forest.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/terrain/hills.png` — Binary game or UI asset.
 - `crates/strategic-web/static/icons/stats/terrain/plains.png` — Binary game or UI asset.

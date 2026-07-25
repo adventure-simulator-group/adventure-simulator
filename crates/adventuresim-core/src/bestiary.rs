@@ -1,6 +1,7 @@
 //! Shared, deterministic authority for threat identity, combat profiles, and
 //! investigation-facing evidence. Stable IDs, never display text, drive rules.
 
+pub use adventuresim_world_schema::{BestiaryCategory, BestiaryHours};
 use core::str::FromStr;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, sync::OnceLock};
@@ -436,8 +437,111 @@ pub struct ThreatProfile {
     pub aliases: &'static [&'static str],
     pub base_weight: u16,
     pub curation_weight: u16,
+    pub primary_category: BestiaryCategory,
+    pub secondary_categories: &'static [BestiaryCategory],
     pub combat: CombatProfile,
     pub investigation: InvestigationProfile,
+}
+
+impl ThreatProfile {
+    pub fn categories(self) -> impl Iterator<Item = BestiaryCategory> {
+        std::iter::once(self.primary_category).chain(self.secondary_categories.iter().copied())
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ImplementedCombatLore {
+    pub strengths: Vec<String>,
+    pub weaknesses: Vec<String>,
+}
+
+/// Bestiary facts derived only from fields consumed by current strategic
+/// combat. Investigation hypotheses and unimplemented profile fields are
+/// deliberately excluded.
+pub fn implemented_combat_lore(profile: ThreatProfile) -> ImplementedCombatLore {
+    let combat = profile.combat;
+    let mut lore = ImplementedCombatLore::default();
+
+    if combat.ranged {
+        lore.strengths
+            .push("Can attack from range before melee closes".into());
+    }
+    if matches!(combat.protection, Protection::Armored) {
+        lore.strengths
+            .push("Worn armor adds resistance and padding to covered hits".into());
+    }
+    if combat.innate_protection.resistance_joules > 0.0 {
+        lore.strengths.push(format!(
+            "{:.0} J innate resistance reduces edged force",
+            combat.innate_protection.resistance_joules
+        ));
+    }
+    if combat.innate_protection.padding_joules > 0.0 {
+        lore.strengths.push(format!(
+            "{:.0} J innate padding absorbs blunt force",
+            combat.innate_protection.padding_joules
+        ));
+    }
+    if combat.training_multiplier > 1.0 {
+        lore.strengths.push(format!(
+            "{:.1}x baseline combat training",
+            combat.training_multiplier
+        ));
+    }
+    if combat.morale > 50 {
+        lore.strengths
+            .push("Morale profile grants increased Will training".into());
+    }
+
+    if !combat.ranged {
+        lore.weaknesses
+            .push("Must close to melee range before attacking".into());
+    }
+    if !matches!(combat.protection, Protection::Armored)
+        && combat.innate_protection.resistance_joules == 0.0
+    {
+        lore.weaknesses
+            .push("No implemented resistance against edged force".into());
+    }
+    if combat.innate_protection.resistance_joules > 0.0
+        && combat.innate_protection.padding_joules == 0.0
+    {
+        lore.weaknesses
+            .push("No innate padding against blunt force".into());
+    }
+    if combat.training_multiplier < 1.0 {
+        lore.weaknesses.push(format!(
+            "{:.1}x baseline combat training",
+            combat.training_multiplier
+        ));
+    }
+    if combat.morale < 50 {
+        lore.weaknesses
+            .push("Morale profile grants reduced Will training".into());
+    }
+
+    lore
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct CategorizedThreatProfile {
+    pub profile: ThreatProfile,
+    pub is_primary: bool,
+}
+
+pub fn profiles_for_category(category: BestiaryCategory) -> Vec<CategorizedThreatProfile> {
+    crate::quest_catalog::catalog()
+        .monsters()
+        .filter(|monster| {
+            monster.primary_category == category || monster.secondary_categories.contains(&category)
+        })
+        .map(|monster| CategorizedThreatProfile {
+            profile: ThreatId::try_new(&monster.id)
+                .expect("validated threat ID")
+                .profile(),
+            is_primary: monster.primary_category == category,
+        })
+        .collect()
 }
 
 /// Returns the startup-compiled, YAML-authoritative threat profile.
@@ -469,6 +573,8 @@ fn compile_profile(
         aliases: &[],
         base_weight: authored.base_weight,
         curation_weight: authored.curation_weight,
+        primary_category: authored.primary_category,
+        secondary_categories: &[],
         combat: CombatProfile {
             rig: RigTopology::Humanoid,
             speed_m_per_minute: 1,
@@ -521,6 +627,9 @@ fn compile_profile(
     );
     profile.base_weight = authored.base_weight;
     profile.curation_weight = authored.curation_weight;
+    profile.primary_category = authored.primary_category;
+    profile.secondary_categories =
+        Box::leak(authored.secondary_categories.clone().into_boxed_slice());
     profile.combat.rig = match authored.combat.rig.as_str() {
         "humanoid" => RigTopology::Humanoid,
         "quadruped" => RigTopology::Quadruped,
@@ -1415,6 +1524,73 @@ mod tests {
                 .investigation
                 .countermeasure_hypotheses
                 .contains(&CountermeasureHypothesis::Silver)
+        );
+    }
+
+    #[test]
+    fn authored_creature_categories_distinguish_primary_and_secondary_facets() {
+        let wild_man = profile(ThreatId::WildMan);
+        assert_eq!(wild_man.primary_category, BestiaryCategory::Wildmen);
+        assert!(wild_man.secondary_categories.is_empty());
+
+        let spectral_hound = profile(ThreatId::SpectralHound);
+        assert_eq!(spectral_hound.primary_category, BestiaryCategory::Spirit);
+        assert_eq!(
+            spectral_hound.secondary_categories,
+            &[BestiaryCategory::Beast]
+        );
+
+        let werewolf = profile(ThreatId::Werewolf);
+        assert_eq!(werewolf.primary_category, BestiaryCategory::Werekin);
+        assert_eq!(
+            werewolf.secondary_categories,
+            &[BestiaryCategory::Human, BestiaryCategory::Beast]
+        );
+        assert_eq!(
+            werewolf.categories().collect::<Vec<_>>(),
+            vec![
+                BestiaryCategory::Werekin,
+                BestiaryCategory::Human,
+                BestiaryCategory::Beast,
+            ]
+        );
+
+        let skeleton = profile(ThreatId::Skeleton);
+        assert_eq!(skeleton.primary_category, BestiaryCategory::Undead);
+        assert_eq!(
+            skeleton.categories().collect::<Vec<_>>(),
+            vec![BestiaryCategory::Undead, BestiaryCategory::Human]
+        );
+    }
+
+    #[test]
+    fn combat_lore_is_derived_from_consumed_profile_fields() {
+        let skeleton = implemented_combat_lore(profile(ThreatId::Skeleton));
+        assert!(
+            skeleton
+                .strengths
+                .iter()
+                .any(|fact| fact.contains("150 J innate resistance"))
+        );
+        assert!(
+            skeleton
+                .weaknesses
+                .iter()
+                .any(|fact| fact == "No innate padding against blunt force")
+        );
+
+        let ghoul = implemented_combat_lore(profile(ThreatId::Ghoul));
+        assert!(
+            ghoul
+                .strengths
+                .iter()
+                .any(|fact| fact.contains("15 J innate padding"))
+        );
+        assert!(
+            !ghoul
+                .weaknesses
+                .iter()
+                .any(|fact| fact == "No innate padding against blunt force")
         );
     }
 

@@ -255,6 +255,8 @@ pub struct CharacterSkills {
     pub medicine_hours: f32,
     pub cooking_hours: f32,
     pub religion_hours: adventuresim_world_schema::ReligionHours,
+    pub bestiary_hours: adventuresim_world_schema::BestiaryHours,
+    pub surgery_hours: f32,
     pub oral_languages: adventuresim_world_schema::OralLanguageHours,
     pub written_languages: adventuresim_world_schema::WrittenLanguageHours,
     pub stealth_hours: f32,
@@ -263,7 +265,6 @@ pub struct CharacterSkills {
     pub terrain_forest_hours: f32,
     pub terrain_hills_hours: f32,
     pub terrain_urban_hours: f32,
-    pub anatomy_hours: f32,
     pub tailoring_hours: f32,
     pub smithing_hours: f32,
 }
@@ -807,9 +808,8 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
             .character_id()
             .find(id)
             .ok_or("Surgery demo character is missing skills")?;
-        skills.anatomy_hours = procedure_hours;
-        skills.knife_hours = procedure_hours;
-        skills.tailoring_hours = procedure_hours;
+        skills.bestiary_hours.human = procedure_hours;
+        skills.surgery_hours = procedure_hours;
         ctx.db.character_skills().character_id().update(skills);
         let mut time = ctx
             .db
@@ -940,6 +940,51 @@ pub(crate) fn seed_religion_scholar_character(ctx: &ReducerContext) -> Result<()
 
     crate::capability::refresh_character_capability(ctx, RELIGION_SCHOLAR_CHARACTER_ID)?;
     crate::condition::refresh_character_strategic_condition(ctx, RELIGION_SCHOLAR_CHARACTER_ID)?;
+    Ok(())
+}
+
+/// Seed broad category knowledge for local Bestiary rail and evidence demos.
+pub(crate) fn seed_bestiary_scholar_character(ctx: &ReducerContext) -> Result<(), String> {
+    const BESTIARY_SCHOLAR_CHARACTER_ID: u64 = 9_999_999_999_999_987;
+
+    if ctx
+        .db
+        .character()
+        .id()
+        .find(BESTIARY_SCHOLAR_CHARACTER_ID)
+        .is_none()
+    {
+        insert_new_character(
+            ctx,
+            "Bestiary Scholar Demo".to_string(),
+            BESTIARY_SCHOLAR_CHARACTER_ID,
+            false,
+        )?;
+    }
+
+    let mut skills = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(BESTIARY_SCHOLAR_CHARACTER_ID)
+        .ok_or_else(|| "Bestiary scholar demo is missing skill data".to_string())?;
+    skills.bestiary_hours = adventuresim_world_schema::BestiaryHours {
+        beast: 4_000.0,
+        undead: 4_000.0,
+        human: 4_000.0,
+        werekin: 4_000.0,
+        elf: 3_000.0,
+        dwarf: 3_000.0,
+        fey: 4_000.0,
+        spirit: 4_000.0,
+        greenskin: 3_000.0,
+        insectoid: 2_000.0,
+        draconid: 2_000.0,
+        construct: 2_000.0,
+        wildmen: 4_000.0,
+    };
+    ctx.db.character_skills().character_id().update(skills);
+    crate::capability::refresh_character_capability(ctx, BESTIARY_SCHOLAR_CHARACTER_ID)?;
     Ok(())
 }
 
@@ -1121,6 +1166,12 @@ fn insert_character_with_origin(
             roman_catholic: 1000.0,
             ..Default::default()
         },
+        bestiary_hours: adventuresim_world_schema::BestiaryHours {
+            beast: 1000.0,
+            human: 1000.0,
+            ..Default::default()
+        },
+        surgery_hours: 1000.0,
         oral_languages,
         written_languages,
         stealth_hours: generated_skills.map_or(1000.0, |s| s.stealth),
@@ -1129,7 +1180,6 @@ fn insert_character_with_origin(
         terrain_forest_hours: 0.0,
         terrain_hills_hours: 0.0,
         terrain_urban_hours: 0.0,
-        anatomy_hours: 1000.0,
         tailoring_hours: 1000.0,
         smithing_hours: 1000.0,
     });

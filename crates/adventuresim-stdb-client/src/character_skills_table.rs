@@ -2,6 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use super::bestiary_hours_type::BestiaryHours;
 use super::character_skills_type::CharacterSkills;
 use super::oral_language_hours_type::OralLanguageHours;
 use super::religion_hours_type::ReligionHours;

@@ -7,6 +7,32 @@ pub const UNTREATED_CUT_BLOOD_LOSS_PER_DAY: f32 = 0.08;
 pub const PROJECTILE_KIT_DC_THRESHOLD: f32 = 1.0;
 /// Small visible contamination transferred by a successful bloody procedure.
 pub const PROCEDURE_BLOOD_EXPOSURE_FILTH: u16 = 2;
+/// Transfer from trained Knife hours into effective Surgery knowledge.
+pub const KNIFE_SURGERY_CORRELATION: f32 = 0.25;
+/// Transfer from trained Tailoring hours into effective Surgery knowledge.
+pub const TAILORING_SURGERY_CORRELATION: f32 = 0.25;
+
+/// Compute effective Surgery knowledge in one nonrecursive pass.
+///
+/// Only direct Surgery, Knife, and Tailoring hours are inputs. Transferred
+/// knowledge never feeds back into any source skill.
+pub fn effective_surgery_hours(
+    direct_surgery_hours: f32,
+    knife_hours: f32,
+    tailoring_hours: f32,
+) -> f32 {
+    let valid_hours = |hours: f32| {
+        if hours.is_finite() {
+            hours.max(0.0)
+        } else {
+            0.0
+        }
+    };
+    (valid_hours(direct_surgery_hours)
+        + valid_hours(knife_hours) * KNIFE_SURGERY_CORRELATION
+        + valid_hours(tailoring_hours) * TAILORING_SURGERY_CORRELATION)
+        .min(crate::skill::Skill::Surgery.max_hours())
+}
 
 pub fn procedure_blood_exposure(procedure: &str, treating_other: bool) -> u16 {
     if treating_other && matches!(procedure, "bandage" | "stitch" | "extract") {
@@ -26,20 +52,17 @@ pub fn effective_skill(skill: f32, self_treatment: bool) -> f32 {
     .max(0.0)
 }
 
-/// Compose the procedure's complete leaf checks and apply self-treatment once.
+/// Cap an operative Surgery check by knowledge of the patient's species, then
+/// apply the shared self-treatment penalty once.
 pub fn procedure_skill(
-    procedure: &str,
-    anatomy: f32,
-    knife: f32,
-    tailoring: f32,
+    surgery_check: f32,
+    species_knowledge_check: f32,
     self_treatment: bool,
 ) -> f32 {
-    let composite = match procedure {
-        "extract" => (anatomy + knife) * 0.5,
-        "stitch" => (anatomy + tailoring) * 0.5,
-        _ => anatomy,
-    };
-    effective_skill(composite, self_treatment)
+    effective_skill(
+        surgery_check.max(0.0).min(species_knowledge_check.max(0.0)),
+        self_treatment,
+    )
 }
 
 pub fn procedure_duration_minutes(procedure: &str, skill: f32, dc: f32) -> u64 {
@@ -182,12 +205,26 @@ mod tests {
     }
 
     #[test]
-    fn procedure_composition_distinguishes_extraction_from_stitching() {
-        assert_eq!(procedure_skill("extract", 5.0, 5.0, 0.0, false), 5.0);
-        assert_eq!(procedure_skill("stitch", 5.0, 5.0, 0.0, false), 2.5);
-        assert!(procedure_skill("extract", 5.0, 5.0, 0.0, false) >= 4.0);
-        assert!(procedure_skill("stitch", 5.0, 5.0, 0.0, false) < 4.0);
-        assert_eq!(procedure_skill("extract", 5.0, 5.0, 0.0, true), 2.5);
+    fn surgery_hours_use_direct_and_one_pass_adjacent_skill_transfer() {
+        assert_eq!(effective_surgery_hours(1_000.0, 800.0, 400.0), 1_300.0);
+        assert_eq!(effective_surgery_hours(0.0, 1_000.0, 0.0), 250.0);
+        assert_eq!(effective_surgery_hours(0.0, 0.0, 1_000.0), 250.0);
+    }
+
+    #[test]
+    fn effective_surgery_hours_are_capped_at_mastery() {
+        assert_eq!(
+            effective_surgery_hours(4_500.0, 4_000.0, 4_000.0),
+            crate::skill::Skill::Surgery.max_hours()
+        );
+        assert_eq!(effective_surgery_hours(f32::NAN, -10.0, 400.0), 100.0);
+    }
+
+    #[test]
+    fn every_procedure_check_is_capped_by_species_knowledge() {
+        assert_eq!(procedure_skill(4.5, 2.0, false), 2.0);
+        assert_eq!(procedure_skill(1.5, 4.0, false), 1.5);
+        assert_eq!(procedure_skill(5.0, 5.0, true), 2.5);
     }
 
     #[test]

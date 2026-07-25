@@ -60,7 +60,7 @@ It is at this point that Derthert arrives, shielded orc in tow. The orc, seeing 
 # After-Battle
 Orcs, having very high strength, can easily out*sprint* most humans. But a hunt is often a function of endurance, not speed, especially when you're already wounded. The party can take their time tracking the orc, giving them the opportunity to bandage Jack and gather their packs before setting out to finish off their quarter.
 
-Geoffrey has a little Anatomy training (as most characters do), enough to apply a bandage and tourniquet. He staunches Jack's bleeding and splashes some alcohol on the wound for good measure.
+Geoffrey has a little Surgery training and enough Human Bestiary knowledge to apply a bandage and tourniquet. He staunches Jack's bleeding and splashes some alcohol on the wound for good measure.
 
 As the party leaves the area and enters the travel screen, they see a summary of all the loot. The process of actually managing your inventory is largely automated, you define only a minimum weight/value ratio and how much total weight you're willing to carry. These parameters are used for your characters to automatically decide how much loot to take, prioritizing the lightest and most valuable loot first. But you can override this, in this case Geoffrey decides to bring the orc's latest kill, the elk, even though it will significantly encumber him. He's in no rush anyway, as Derthert still needs to track down the final orc.
 # Tracking

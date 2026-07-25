@@ -287,7 +287,8 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
             terrain_forest_hours: 0.0,
             terrain_hills_hours: 0.0,
             terrain_urban_hours: 0.0,
-            anatomy_hours: 1000.0,
+            bestiary_hours: Default::default(),
+            surgery_hours: 1000.0,
             tailoring_hours: 1000.0,
             smithing_hours: 1000.0,
         };
@@ -338,7 +339,7 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
             athletics: 0.0,
             endurance: spec.attributes.endurance,
             medicine: 0.0,
-            anatomy: 0.0,
+            human_lore: 0.0,
             knife: 0.0,
             tailoring: 0.0,
             surgery: 0.0,

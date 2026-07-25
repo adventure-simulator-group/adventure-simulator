@@ -270,11 +270,20 @@ and move its data directory aside or configure a new empty data directory.
 Then install/select SpacetimeDB 2.6.1 and use an explicitly isolated profile,
 or perform a separately reviewed operator migration. `web-isolated` starts a
 profile-owned server, reset-publishes, reseeds the normal world plus the sick
-`Sick Demo`, injured `Wounded Demo`, and all-traditions `Religion Scholar Demo`
-UI fixtures, and launches the browser stack; it
+`Sick Demo`, injured `Wounded Demo`, all-traditions `Religion Scholar Demo`,
+and all-categories `Bestiary Scholar Demo` UI fixtures, and launches the browser stack; it
 permanently discards only that profile's contents. Keep
 the moved directory until the reset has been validated, then retire it under
 the operator's normal backup-retention policy.
+
+Bestiary knowledge adds a clean `bestiary_hours` field to `character_skills`;
+trained Surgery adds `surgery_hours` to the same disposable schema. Surgery
+uses direct hours plus one-pass Knife and Tailoring transfer, while procedures
+are capped by Bestiary knowledge for the patient's species. These changes add
+canonical physical-inspection/action-receipt authority, and structured
+Bestiary results on investigation journal notices. Because development data is
+disposable, regenerate the SpacetimeDB client bindings and reset/reseed an
+isolated profile rather than adding a migration or compatibility path.
 
 After this one-time reset, routine startup should use `just dev` / `just web`
 and routine publishes should use `just publish`, all of which preserve data.

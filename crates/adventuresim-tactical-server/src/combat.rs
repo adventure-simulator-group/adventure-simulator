@@ -19,6 +19,7 @@ fn on_attack_action_triggered(
     mut cmd: Commands,
     viewer: TacticalPlayerViewer,
     q_character: Query<&CharacterLook>,
+    q_bestiary_categories: Query<&BestiaryCategories>,
 ) {
     let Some(entity) = event.client_id.entity() else {
         warn!(
@@ -57,10 +58,15 @@ fn on_attack_action_triggered(
     };
 
     let defender_response = DefenderResponse::Dodge { input_reflex: 1.0 };
+    let fallback_categories = BestiaryCategories::default();
+    let defender_categories = q_bestiary_categories
+        .get(event.target)
+        .unwrap_or(&fallback_categories);
 
     let result = attacker_view.resolve_melee_attack(
         attacker_side,
         &defender_view,
+        &defender_categories.0,
         defender_response,
         event.hit_precision,
         flanking,

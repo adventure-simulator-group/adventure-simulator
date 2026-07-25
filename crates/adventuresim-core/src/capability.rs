@@ -53,6 +53,26 @@ pub fn religion_knowledge_check(
         .max(0.0)
 }
 
+/// The authoritative trained-mental Bestiary check for one creature category.
+pub fn bestiary_knowledge_check(
+    effective_hours: f32,
+    instinct: f32,
+    intelligence: f32,
+    focus: f32,
+    head_health: f32,
+) -> f32 {
+    let health = if head_health.is_finite() {
+        head_health.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let attribute_check = health * (instinct + intelligence * focus);
+    Skill::Bestiary
+        .training_rank(effective_hours)
+        .min(attribute_check)
+        .max(0.0)
+}
+
 pub fn aggregate_party_contribution(current: &[f32], candidate: f32) -> f32 {
     let before = aggregate_party_check(current.iter().copied());
     let after = aggregate_party_check(current.iter().copied().chain([candidate]));
@@ -141,7 +161,7 @@ pub struct CharacterCapabilities {
     pub athletics: f32,
     pub endurance: f32,
     pub medicine: f32,
-    pub anatomy: f32,
+    pub human_lore: f32,
     pub knife: f32,
     pub tailoring: f32,
     pub surgery: f32,
@@ -268,16 +288,14 @@ pub fn evaluate_capabilities(
         * equipment.armor_penalty(BodyPart::FULL_BODY)
         * encumbrance;
     let (quarter_armor, half_armor, three_quarter_armor, full_armor) = armor_tiers(equipment);
-    let anatomy = skills
-        .skill_check_by_parts(
-            Skill::Anatomy,
-            attributes,
-            body,
-            essentials,
-            equipment,
-            LimbWeights::both_arms(),
-        )
-        .clamp(0.0, 5.0);
+    let human_lore = bestiary_knowledge_check(
+        skills.bestiary_hours_for(adventuresim_world_schema::BestiaryCategory::Human),
+        attributes.attr_by_parts(SimpleAttribute::Instinct, body),
+        attributes.attr_by_parts(SimpleAttribute::Intelligence, body),
+        essentials.focus_level(),
+        body.body_part_health(BodyPart::Head),
+    )
+    .clamp(0.0, 5.0);
     let knife = skills
         .skill_check_by_parts(
             Skill::Knife,
@@ -291,6 +309,16 @@ pub fn evaluate_capabilities(
     let tailoring = skills
         .skill_check_by_parts(
             Skill::Tailoring,
+            attributes,
+            body,
+            essentials,
+            equipment,
+            LimbWeights::both_arms(),
+        )
+        .clamp(0.0, 5.0);
+    let surgery = skills
+        .skill_check_by_parts(
+            Skill::Surgery,
             attributes,
             body,
             essentials,
@@ -321,10 +349,10 @@ pub fn evaluate_capabilities(
                 LimbWeights::all_equal(),
             )
             .clamp(0.0, 5.0),
-        anatomy,
+        human_lore,
         knife,
         tailoring,
-        surgery: (anatomy + knife + tailoring) / 3.0,
+        surgery,
         command: skills
             .skill_check_by_parts(
                 Skill::Command,

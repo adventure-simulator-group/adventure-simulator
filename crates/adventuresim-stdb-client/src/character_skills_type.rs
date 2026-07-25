@@ -4,6 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::bestiary_hours_type::BestiaryHours;
 use super::oral_language_hours_type::OralLanguageHours;
 use super::religion_hours_type::ReligionHours;
 use super::written_language_hours_type::WrittenLanguageHours;
@@ -33,6 +34,8 @@ pub struct CharacterSkills {
     pub medicine_hours: f32,
     pub cooking_hours: f32,
     pub religion_hours: ReligionHours,
+    pub bestiary_hours: BestiaryHours,
+    pub surgery_hours: f32,
     pub oral_languages: OralLanguageHours,
     pub written_languages: WrittenLanguageHours,
     pub stealth_hours: f32,
@@ -41,7 +44,6 @@ pub struct CharacterSkills {
     pub terrain_forest_hours: f32,
     pub terrain_hills_hours: f32,
     pub terrain_urban_hours: f32,
-    pub anatomy_hours: f32,
     pub tailoring_hours: f32,
     pub smithing_hours: f32,
 }
@@ -76,6 +78,8 @@ pub struct CharacterSkillsCols {
     pub medicine_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub cooking_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub religion_hours: __sdk::__query_builder::Col<CharacterSkills, ReligionHours>,
+    pub bestiary_hours: __sdk::__query_builder::Col<CharacterSkills, BestiaryHours>,
+    pub surgery_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub oral_languages: __sdk::__query_builder::Col<CharacterSkills, OralLanguageHours>,
     pub written_languages: __sdk::__query_builder::Col<CharacterSkills, WrittenLanguageHours>,
     pub stealth_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
@@ -84,7 +88,6 @@ pub struct CharacterSkillsCols {
     pub terrain_forest_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub terrain_hills_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub terrain_urban_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
-    pub anatomy_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub tailoring_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
     pub smithing_hours: __sdk::__query_builder::Col<CharacterSkills, f32>,
 }
@@ -118,6 +121,8 @@ impl __sdk::__query_builder::HasCols for CharacterSkills {
             medicine_hours: __sdk::__query_builder::Col::new(table_name, "medicine_hours"),
             cooking_hours: __sdk::__query_builder::Col::new(table_name, "cooking_hours"),
             religion_hours: __sdk::__query_builder::Col::new(table_name, "religion_hours"),
+            bestiary_hours: __sdk::__query_builder::Col::new(table_name, "bestiary_hours"),
+            surgery_hours: __sdk::__query_builder::Col::new(table_name, "surgery_hours"),
             oral_languages: __sdk::__query_builder::Col::new(table_name, "oral_languages"),
             written_languages: __sdk::__query_builder::Col::new(table_name, "written_languages"),
             stealth_hours: __sdk::__query_builder::Col::new(table_name, "stealth_hours"),
@@ -138,7 +143,6 @@ impl __sdk::__query_builder::HasCols for CharacterSkills {
                 table_name,
                 "terrain_urban_hours",
             ),
-            anatomy_hours: __sdk::__query_builder::Col::new(table_name, "anatomy_hours"),
             tailoring_hours: __sdk::__query_builder::Col::new(table_name, "tailoring_hours"),
             smithing_hours: __sdk::__query_builder::Col::new(table_name, "smithing_hours"),
         }

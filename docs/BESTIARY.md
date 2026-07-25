@@ -45,6 +45,53 @@ catalog profile because autoresolve has not modeled overlapping anatomical and
 worn layers. Catalog validation rejects that combination rather than silently
 overwriting either layer.
 
+## Creature categories and knowledge
+
+Every threat profile carries one or more typed physical-knowledge facets:
+Beast, Undead, Human, Werekin, Elf, Dwarf, Fey, Spirit, Greenskin,
+Insectoid, Draconid, Construct, and Wildmen. One facet is authored as the
+creature's primary type; any others are secondary physical traits. These remain
+overlapping rather than exclusive: a werewolf is primarily Werekin with Human
+and Beast traits, while a spectral hound is primarily Spirit with a secondary
+Beast trait. Skeletons and ghouls are primarily Undead and only secondarily
+Human. Wildmen are their own primary category.
+
+`BestiaryHours` stores only direct study by category. Effective knowledge is a
+single, nonrecursive pass through a symmetric diagnostic-correlation matrix,
+then capped at the Bestiary skill's 5,000-hour mastery calibration so several
+related fields cannot add beyond the skill's authored mastery range. Correlation means transferable identification
+knowledge, not merely that two tags can coexist. Wildmen transfer strongly
+with Human (`0.65`) and more modestly with Fey (`0.30`).
+
+Surgery is a separate trained leaf skill. Its effective hours are direct
+Surgery plus 25% of direct Knife and 25% of direct Tailoring in one
+nonrecursive pass, capped at 5,000 hours. Surgery is an upper-body physical
+check, so arm impairment and the normal physical penalties affect it. Every
+operative procedure then caps that check by the treating character's separate
+effective Bestiary knowledge for the patient's species. All current characters
+resolve to Human through a dedicated category boundary that can adopt persisted
+species later.
+
+Procedural physical-evidence topics may author atomic Bestiary implications.
+Each implication names exactly one category, a fixed support value from 0 to
+10,000 basis points, a hidden category-specific lore threshold, and safe
+interpretation text of at most 1,024 UTF-8 bytes. Both the dependency-light raw
+catalog validator and the typed runtime validator enforce that byte limit.
+Support is a stable property of the observed clue; it is not computed from
+catalog population or hidden case truth. A transformed pawprint may support
+Beast and Werekin but never reveals whether the host is Human, Elf, or Dwarf.
+
+Only the inspecting character's category-specific effective knowledge is used.
+Successful results are persisted on one canonical inspection record. Revisits
+keep the physical observation stable while current knowledge may add newly
+successful categories; existing results are never removed or duplicated. The
+same safe structured results persist in the investigation journal. Category
+lore separates enemies for which that category is the main type from enemies
+for which it is a secondary type. Enemy-specific hover details include only
+facts derived from fields consumed by current combat, such as a skeleton's edge
+resistance and lack of innate padding. Unimplemented folklore such as fire,
+silver, daylight, and ritual courage is not presented as gameplay knowledge.
+
 ## Weighted context and inference
 
 The catalog owns sparse forward likelihoods. Ecological base rate and curation

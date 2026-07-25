@@ -1,4 +1,7 @@
-use crate::{attribute::*, body::*, combat::*, equipment::*, essential::*, skill::*};
+use crate::{
+    attribute::*, bestiary::BestiaryCategory, body::*, capability::bestiary_knowledge_check,
+    combat::*, equipment::*, essential::*, skill::*,
+};
 
 /// A composite type that holds all aspects of a player's state.
 ///
@@ -289,10 +292,36 @@ where
         )
     }
 
+    pub fn precision_damage_multiplier_cap(&self, defender_categories: &[BestiaryCategory]) -> f32 {
+        let fallback = [BestiaryCategory::Human];
+        let categories = if defender_categories.is_empty() {
+            &fallback
+        } else {
+            defender_categories
+        };
+        let check = categories
+            .iter()
+            .map(|category| {
+                bestiary_knowledge_check(
+                    self.skills.bestiary_hours_for(*category),
+                    self.attributes
+                        .raw_single_body_part_attr(SimpleAttribute::Instinct),
+                    self.attributes
+                        .raw_single_body_part_attr(SimpleAttribute::Intelligence),
+                    self.essentials.focus_level(),
+                    self.body.body_part_health(BodyPart::Head),
+                )
+            })
+            .sum::<f32>()
+            / categories.len() as f32;
+        2.0 + check.clamp(0.0, 5.0)
+    }
+
     pub fn resolve_melee_attack(
         &self,
         side: BodySide,
         defender: &Self,
+        defender_categories: &[BestiaryCategory],
         defender_response: DefenderResponse,
         hit_precision: f32,
         flanking: f32,
@@ -306,6 +335,7 @@ where
             &self.equipment,
             side,
             hit_precision,
+            self.precision_damage_multiplier_cap(defender_categories),
             flanking,
             body_part,
             defender_response,
@@ -320,6 +350,7 @@ where
     pub fn resolve_ranged_attack(
         &self,
         defender: &Self,
+        defender_categories: &[BestiaryCategory],
         defender_response: DefenderResponse,
         hit_precision: f32,
         flanking: f32,
@@ -332,6 +363,7 @@ where
             &self.essentials,
             &self.equipment,
             hit_precision,
+            self.precision_damage_multiplier_cap(defender_categories),
             flanking,
             body_part,
             defender_response,
@@ -341,5 +373,61 @@ where
             &defender.essentials,
             &defender.equipment,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::stub::{StubAttributes, StubBody, StubEquipment, StubEssentials};
+
+    #[derive(Default)]
+    struct HumanLoreSkills {
+        hours: f32,
+    }
+
+    impl PlayerSkills for HumanLoreSkills {
+        fn skill_hours_trained(&self, _skill: Skill) -> f32 {
+            0.0
+        }
+
+        fn bestiary_hours_for(&self, category: BestiaryCategory) -> f32 {
+            if category == BestiaryCategory::Human {
+                self.hours
+            } else {
+                0.0
+            }
+        }
+    }
+
+    fn player_with_skills<Sl: PlayerSkills>(
+        skills: Sl,
+    ) -> PlayerInfo<StubAttributes, StubBody, StubEssentials, StubEquipment, Sl> {
+        PlayerInfo::empty()
+            .with_attributes(StubAttributes)
+            .with_body(StubBody)
+            .with_essentials(StubEssentials)
+            .with_equipment(StubEquipment)
+            .with_skills(skills)
+    }
+
+    #[test]
+    fn precision_damage_cap_uses_target_category_lore_with_two_x_floor() {
+        let novice = player_with_skills(HumanLoreSkills::default());
+        let expert = player_with_skills(HumanLoreSkills { hours: 5_000.0 });
+
+        assert_eq!(
+            novice.precision_damage_multiplier_cap(&[BestiaryCategory::Human]),
+            2.0
+        );
+        assert!(expert.precision_damage_multiplier_cap(&[BestiaryCategory::Human]) > 2.0);
+        assert!(
+            expert.precision_damage_multiplier_cap(&[BestiaryCategory::Human])
+                > expert.precision_damage_multiplier_cap(&[BestiaryCategory::Beast])
+        );
+        assert_eq!(
+            expert.precision_damage_multiplier_cap(&[]),
+            expert.precision_damage_multiplier_cap(&[BestiaryCategory::Human])
+        );
     }
 }

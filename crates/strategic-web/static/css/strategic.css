@@ -358,6 +358,103 @@
 #strategic-tooltip[hidden],
 .strategic-tooltip[hidden] { display: none; }
 
+.strategic-tooltip-section + .strategic-tooltip-section {
+  margin-top: .42rem;
+}
+
+.strategic-tooltip-heading {
+  display: block;
+  margin-bottom: .12rem;
+  color: var(--text-primary);
+}
+
+.strategic-tooltip-title {
+  display: block;
+  margin-bottom: .45rem;
+  color: var(--text-primary);
+  font-size: 1.05em;
+}
+
+.strategic-tooltip-list {
+  display: grid;
+  gap: .08rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.strategic-tooltip-strength {
+  color: var(--success);
+}
+
+.strategic-tooltip-weakness {
+  color: var(--danger);
+}
+
+.bestiary-lore-trigger,
+.party-skill-icon-cell [data-tooltip-pinnable] {
+  cursor: help;
+}
+
+.strategic-tooltip-interactive {
+  pointer-events: auto;
+}
+
+.strategic-tooltip-enemy-groups {
+  display: grid;
+  gap: .45rem;
+}
+
+.strategic-tooltip-enemy-group-heading {
+  display: block;
+  margin-bottom: .2rem;
+  color: var(--text-secondary);
+  font-size: .75rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.strategic-tooltip-enemy-group.is-secondary .strategic-tooltip-enemy {
+  color: var(--text-secondary);
+}
+
+.strategic-tooltip-enemy-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .28rem;
+}
+
+.strategic-tooltip-enemy {
+  padding: .12rem .28rem;
+  border: 1px solid color-mix(in srgb, var(--border-light) 72%, transparent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--panel-bg) 80%, var(--accent));
+  color: var(--text-primary);
+  cursor: help;
+  font: inherit;
+}
+
+.strategic-tooltip-enemy:is(:hover, :focus-visible) {
+  border-color: var(--accent-light);
+  outline: none;
+}
+
+.strategic-tooltip-enemy-details {
+  margin-top: .45rem;
+  padding-top: .4rem;
+  border-top: 1px solid color-mix(in srgb, var(--border-light) 58%, transparent);
+}
+
+.strategic-tooltip-enemy-title {
+  display: block;
+  margin-bottom: .28rem;
+  color: var(--text-primary);
+}
+
+.strategic-tooltip-empty {
+  color: var(--text-muted);
+}
+
 #strategic-tooltip::after,
 .strategic-tooltip::after {
   position: absolute;
@@ -2060,6 +2157,49 @@ body.character-action-dialog-open { overflow: hidden; }
 
 .evidence-check-failed em {
   color: var(--text-muted);
+}
+
+.bestiary-check-results em,
+.bestiary-check-heading,
+.bestiary-interpretation,
+.bestiary-result-list {
+  display: block;
+}
+
+.bestiary-check-heading {
+  margin-bottom: 0.25rem;
+}
+
+.bestiary-interpretation {
+  margin-bottom: 0.35rem;
+}
+
+.bestiary-result-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.bestiary-result-chip {
+  position: relative;
+  display: inline-flex;
+  border: 1px solid rgb(0 0 0 / 45%);
+  border-radius: 999px;
+  color: #111;
+  cursor: help;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 0.25rem 0.5rem;
+}
+
+.bestiary-result-chip:focus-visible {
+  outline: 2px solid var(--focus-ring, #fff);
+  outline-offset: 2px;
+}
+
+.journal-bestiary-results {
+  margin-top: 0.45rem;
 }
 
 .npc-description-stage {
@@ -4183,6 +4323,11 @@ body.chat-resizing {
 .stat-icon-forest,
 .stat-icon-hills,
 .stat-icon-urban { --stat-icon-color: var(--icon-mental); }
+
+.bestiary-primary-row .stat-icon,
+.bestiary-detail-row .stat-icon {
+  --stat-icon-color: var(--info);
+}
 
 .character-select-grid {
   display: grid;
