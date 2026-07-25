@@ -6,6 +6,7 @@ pub const MERCHANT_MARGIN: f32 = 1.25;
 pub const SALES_TAX: f32 = 0.10;
 pub const NPC_HERBALIST_EXAM_FEE: u32 = 25;
 pub const HERBALIST_MEDICATION_PREMIUM: f32 = 1.50;
+pub const INN_FULL_BOARD_GOLD_PER_DAY: u32 = 2;
 
 /// Canonical ingredient values used by both item seeding and herbalist quotes.
 pub const MEDICINAL_INGREDIENT_VALUES: [(&str, u32); 11] = [
@@ -24,6 +25,16 @@ pub const MEDICINAL_INGREDIENT_VALUES: [(&str, u32); 11] = [
 
 pub fn merchant_buy_price(base_value: u32) -> u32 {
     (base_value as f32 * MERCHANT_MARGIN * (1.0 + SALES_TAX)).ceil() as u32
+}
+
+/// Charges each complete inn day once and rounds any partial day up once.
+pub fn inn_full_board_cost(requested_minutes: u64) -> Option<u64> {
+    let minutes_per_day = crate::strategic_time::MINUTES_PER_DAY;
+    let complete_days = requested_minutes / minutes_per_day;
+    let partial_day = u64::from(requested_minutes % minutes_per_day != 0);
+    complete_days
+        .checked_add(partial_day)?
+        .checked_mul(u64::from(INN_FULL_BOARD_GOLD_PER_DAY))
 }
 
 pub fn merchant_sell_price(base_value: u32) -> u32 {

@@ -154,7 +154,11 @@ minutes on road/open/sparse/deep terrain. Running costs 20/30/45/60 minutes and
 is offered only when sustainable speed exceeds enemy speed. Sustainable speed
 includes the members' current fatigue after reaching the boundary, aggregate personal and party encumbrance, party-size
 logistics, and terrain; mounts are neutral until modeled. Unresolved rows block
-departure, redirection, rest continuation, and travel continuation.
+departure, redirection, rest continuation, and travel continuation. At camp,
+the authoritative choices replace rest controls and disable Continue travel
+with an explicit instruction to resolve the encounter first. If encounter
+presentation cannot be decoded, the camp request fails closed instead of
+presenting travel as available.
 
 Bandit surrender removes every currency stack and every carried or equipped
 item worth at least 20, from the party pool and every living member. The UI
@@ -234,11 +238,14 @@ location cannot resupply the party.
 The leader can set a transient target surplus, including a negative target, in
 Travel configuration. Its value uses the shared floating numeric editor also
 used by daily skill allocations: click or focus it to type, use the arrow
-buttons, keyboard arrows, or mouse wheel, then save or cancel. **Buy** opens the current settlement's General Market,
-selects Party inventory, and stages the exact whole rations and waterskins
-needed to reach that target. The transparent target rails are removed after
-departure, when the settlement merchant is no longer available. It does not
-submit the offer. Party gold pays when
+buttons, keyboard arrows, or mouse wheel, then save or cancel. **Buy** opens an
+actually available, NPC-bound provisioning storefront in the current
+settlement: the General Market is preferred and the Inn is the fallback.
+Travel rations and waterskins are basic stock at either venue. If neither
+venue has a valid provider, no active Buy link is shown. The storefront selects
+Party inventory and stages the exact whole rations and waterskins needed to
+reach that target. The transparent target rails are removed after departure,
+when settlement trade is no longer available. It does not submit the offer. Party gold pays when
 the leader accepts the normal merchant offer; the former fixed 30% buffer and
 automatic provisioning purchase no longer apply.
 
@@ -249,6 +256,16 @@ locations do not refill water. Settlement arrival continues to clear hunger
 and thirst and refill personal containers. Foraging, intermediate freshwater
 stops, weather-based water use, spoilage, food quality, and manual eating or
 drinking remain future layers.
+
+Field rest at a quest location consumes the same food and water needs as other
+elapsed wilderness time. It can relieve fatigue and permit natural injury
+recovery, but it cannot create missing supplies; continuing to rest while
+hungry or thirsty may therefore worsen incapacitation. An incapacitated party
+at a case site may make an emergency withdrawal to a settlement even though it
+cannot investigate, fight, or begin an outbound quest journey. The withdrawal
+still advances time and retains normal journey and encounter risk. The
+case-site interface identifies the current incapacitation causes and links to
+the nearest settlement choice on the map.
 
 # Emergency alcohol hydration
 

@@ -202,6 +202,7 @@ pub enum Effect {
     BeginApprenticeship { profession: String },
     ExamineDisease,
     SetFlag { flag: String, value: bool },
+    ReceiveReferredTestimony,
     InvestigationAction { action: InvestigationAction },
 }
 
@@ -898,6 +899,84 @@ mod tests {
         let known = BTreeSet::from(["profession".to_owned(), "quest".to_owned()]);
         let eligible = eligible_topics(c, &known, &FactContext::default());
         assert!(eligible.iter().any(|t| t.id == "profession"));
+    }
+    #[test]
+    fn generated_case_resolution_actions_are_compiled_for_services_and_residents() {
+        for conversation_id in ["service-professions", "local-resident"] {
+            let conversation = find_conversation(conversation_id).unwrap();
+            for (topic_id, expected) in [
+                (
+                    "return-recovered-property",
+                    InvestigationAction::ReturnAsset,
+                ),
+                ("expose-false-account", InvestigationAction::Expose),
+            ] {
+                let topic = conversation
+                    .topics
+                    .iter()
+                    .find(|topic| topic.id == topic_id)
+                    .unwrap();
+                assert!(topic.initially_known);
+                assert!(topic.responses[0].effects.iter().any(|effect| {
+                    matches!(
+                        effect,
+                        Effect::InvestigationAction { action } if action == &expected
+                    )
+                }));
+            }
+        }
+    }
+    #[test]
+    fn exact_referred_witness_has_an_actionable_testimony_topic_in_every_npc_conversation() {
+        for (conversation_id, npc_role) in [
+            ("service-professions", "professional"),
+            ("herbalist-examination", "herbalist"),
+            ("religion-service", "cleric"),
+            ("local-resident", "local"),
+            ("recruitment", "employer"),
+        ] {
+            let conversation = find_conversation(conversation_id).unwrap();
+            let topic = conversation
+                .topics
+                .iter()
+                .find(|topic| topic.id == "referred-testimony")
+                .expect("every persistent NPC conversation can address a referred witness");
+            let mut facts = FactContext::default();
+            facts.facts.insert(
+                FactKey::ParticipantReferralContact {
+                    role: npc_role.into(),
+                },
+                FactValue::Bool(true),
+            );
+            assert!(topic.initially_known);
+            assert!(facts.matches(&topic.conditions));
+            assert!(
+                topic.responses[0]
+                    .effects
+                    .contains(&Effect::ReceiveReferredTestimony)
+            );
+        }
+
+        let resident = find_conversation("local-resident").unwrap();
+        let generic_referral = resident
+            .topics
+            .iter()
+            .find(|topic| topic.id == "local-problem")
+            .unwrap();
+        let mut exact_witness = FactContext::default();
+        exact_witness.facts.insert(
+            FactKey::ParticipantRumorCase {
+                role: "local".into(),
+            },
+            FactValue::Bool(true),
+        );
+        exact_witness.facts.insert(
+            FactKey::ParticipantReferralContact {
+                role: "local".into(),
+            },
+            FactValue::Bool(true),
+        );
+        assert!(!exact_witness.matches(&generic_referral.conditions));
     }
     #[test]
     fn multi_party_and_prompt_are_first_class() {

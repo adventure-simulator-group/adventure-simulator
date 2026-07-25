@@ -26,7 +26,7 @@ pub const BASE_HEALTH_RECOVERED_PER_DAY: f32 = 0.01;
 /// Additional daily recovery supplied by each point of the party Medicine
 /// check. Checks are capped at the five-point scale used by the strategic UI.
 pub const HEALTH_RECOVERED_PER_MEDICINE_CHECK_PER_DAY: f32 = 0.01;
-pub const INN_GOLD_PER_DAY: u32 = 1;
+pub const INN_GOLD_PER_DAY: u32 = adventuresim_core::strategic_economy::INN_FULL_BOARD_GOLD_PER_DAY;
 const MIN_SETTLEMENT_REST_MINUTES: u64 = 60;
 const MAX_SETTLEMENT_REST_MINUTES: u64 = MINUTES_PER_YEAR;
 /// The current authoritative strategic time. `official_minutes` is absolute;
@@ -1315,6 +1315,7 @@ pub fn rest_at_settlement(
     at_inn: bool,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
+    require_character_rest_service(ctx, character_id, at_inn)?;
     rest_for_minutes(
         ctx,
         character_id,
@@ -1324,7 +1325,7 @@ pub fn rest_at_settlement(
     )
 }
 
-/// Spend settlement time in hour-sized increments.  This intentionally keeps
+/// Spend an exact number of settlement minutes. This intentionally keeps
 /// each character's clock independent: sharing a settlement does not force a
 /// party to keep identical strategic times.
 #[reducer]
@@ -1335,7 +1336,44 @@ pub fn rest_at_settlement_hours(
     at_inn: bool,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
+    require_character_rest_service(ctx, character_id, at_inn)?;
     rest_for_minutes(ctx, character_id, requested_minutes, at_inn, true)
+}
+
+fn require_settlement_rest_service(
+    profile: &adventuresim_world_schema::SettlementEconomyProfile,
+    at_inn: bool,
+) -> Result<(), String> {
+    use adventuresim_core::settlement_economy::{
+        SettlementDowntimeAccess, action_service_available, required_settlement_rest_service,
+    };
+    let service =
+        required_settlement_rest_service(SettlementDowntimeAccess::PublicService { at_inn })
+            .expect("public settlement rest always names a service");
+    if action_service_available(profile, service) {
+        Ok(())
+    } else {
+        Err("This settlement does not offer the requested rest service".into())
+    }
+}
+
+fn require_character_rest_service(
+    ctx: &ReducerContext,
+    character_id: u64,
+    at_inn: bool,
+) -> Result<(), String> {
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    let settlement_id = character
+        .current_settlement_id
+        .as_deref()
+        .ok_or("Settlement rest requires the character to be at a settlement")?;
+    let settlement = ctx
+        .db
+        .settlement()
+        .id()
+        .find(settlement_id.to_owned())
+        .ok_or("Character's settlement not found")?;
+    require_settlement_rest_service(&settlement.economy, at_inn)
 }
 
 fn rest_for_minutes(
@@ -1347,7 +1385,7 @@ fn rest_for_minutes(
 ) -> Result<(), String> {
     let character = crate::character::require_living_character(ctx, character_id)?;
     if character.current_settlement_id.is_none() {
-        return Err("Settlement rest requires the character to be at a settlement".into());
+        return Err("Settlement downtime requires the character to be at a settlement".into());
     }
     ensure_character_time(ctx, character_id)?;
     let _ = refresh_clock(ctx)?;
@@ -1376,16 +1414,9 @@ fn rest_for_minutes(
             .find(|choice| choice.0 == character_id)
     });
 
-    if !(MIN_SETTLEMENT_REST_MINUTES..=MAX_SETTLEMENT_REST_MINUTES).contains(&requested_minutes)
-        || requested_minutes % MIN_SETTLEMENT_REST_MINUTES != 0
-    {
-        return Err("Settlement rest must use whole hours between one hour and one year".into());
-    }
+    validate_settlement_rest_minutes(requested_minutes)?;
 
-    let cost = requested_minutes
-        .div_ceil(MINUTES_PER_DAY)
-        .checked_mul(u64::from(INN_GOLD_PER_DAY))
-        .ok_or("Inn cost overflow")?;
+    let cost = inn_stay_cost(requested_minutes)?;
     if at_inn {
         crate::item::consume_personal_currency(ctx, character_id, cost)
             .map_err(|_| "Not enough coin to pay for the inn stay".to_string())?;
@@ -1413,6 +1444,7 @@ fn rest_for_minutes(
         .character_id()
         .update(character_time);
     crate::social::settle_shared_party_time(ctx, character_id);
+    crate::condition::apply_settlement_rest_elapsed_needs(ctx, character_id, elapsed, at_inn)?;
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
     if terminal.is_some() || !settled.alive {
         return Ok(());
@@ -1504,6 +1536,37 @@ fn rest_for_minutes(
     Ok(())
 }
 
+fn inn_stay_cost(requested_minutes: u64) -> Result<u64, String> {
+    adventuresim_core::strategic_economy::inn_full_board_cost(requested_minutes)
+        .ok_or_else(|| "Inn cost overflow".to_string())
+}
+
+fn validate_settlement_rest_minutes(requested_minutes: u64) -> Result<(), String> {
+    if (MIN_SETTLEMENT_REST_MINUTES..=MAX_SETTLEMENT_REST_MINUTES).contains(&requested_minutes) {
+        Ok(())
+    } else {
+        Err("Settlement rest must last between one hour and one year".into())
+    }
+}
+
+/// Venue-neutral private downtime for system-owned clock synchronization,
+/// convalescence, and private holy-day observance. Public service reducers
+/// must authorize an Inn or Temple before entering `rest_for_minutes`.
+pub(crate) fn spend_private_settlement_downtime(
+    ctx: &ReducerContext,
+    character_id: u64,
+    requested_minutes: u64,
+    explicit: bool,
+) -> Result<(), String> {
+    debug_assert_eq!(
+        adventuresim_core::settlement_economy::required_settlement_rest_service(
+            adventuresim_core::settlement_economy::SettlementDowntimeAccess::PrivateSystem,
+        ),
+        None
+    );
+    rest_for_minutes(ctx, character_id, requested_minutes, false, explicit)
+}
+
 /// Move living party clocks forward to their latest member without ever
 /// rewinding chronology. Lagging members receive ordinary location-appropriate
 /// downtime. A one-year cap rejects corrupt/pathological party skew.
@@ -1549,7 +1612,7 @@ pub(crate) fn synchronize_party_departure_time(
             .find(member_id)
             .is_some_and(|character| character.current_settlement_id.is_some());
         if at_settlement {
-            rest_for_minutes(ctx, member_id, elapsed, false, false)?;
+            spend_private_settlement_downtime(ctx, member_id, elapsed, false)?;
         } else {
             advance_personal_camp_time(ctx, member_id, elapsed)?;
         }
@@ -1674,7 +1737,7 @@ pub(crate) fn rest_temporary_party_member_until_healed_at_settlement(
     let recovery_minutes =
         convalescence_minutes(ctx, character_id, party_medicine_check(ctx, character_id)?);
     if recovery_minutes > 0 {
-        rest_for_minutes(ctx, character_id, recovery_minutes, false, false)?;
+        spend_private_settlement_downtime(ctx, character_id, recovery_minutes, false)?;
     }
     Ok(())
 }
@@ -2034,6 +2097,59 @@ pub fn update_training_schedule(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn settlement_rest_rejects_unavailable_inn_and_temple_services() {
+        use adventuresim_world_schema::SettlementService;
+
+        let mut profile = adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder();
+        assert!(require_settlement_rest_service(&profile, true).is_ok());
+        assert!(require_settlement_rest_service(&profile, false).is_err());
+        profile.services.clear();
+        assert!(require_settlement_rest_service(&profile, true).is_err());
+        profile.services.push(SettlementService::Temple);
+        assert!(require_settlement_rest_service(&profile, false).is_ok());
+    }
+
+    #[test]
+    fn settlement_rest_accepts_exact_wake_minutes_with_bounded_duration() {
+        assert!(validate_settlement_rest_minutes(36 * 60 + 32).is_ok());
+        assert!(validate_settlement_rest_minutes(2 * MINUTES_PER_DAY).is_ok());
+        assert!(validate_settlement_rest_minutes(MIN_SETTLEMENT_REST_MINUTES).is_ok());
+        assert!(validate_settlement_rest_minutes(MAX_SETTLEMENT_REST_MINUTES).is_ok());
+        assert!(validate_settlement_rest_minutes(MIN_SETTLEMENT_REST_MINUTES - 1).is_err());
+        assert!(validate_settlement_rest_minutes(MAX_SETTLEMENT_REST_MINUTES + 1).is_err());
+    }
+
+    #[test]
+    fn inn_stay_cost_only_rounds_up_partial_days() {
+        assert_eq!(inn_stay_cost(MINUTES_PER_DAY), Ok(2));
+        assert_eq!(inn_stay_cost(2 * MINUTES_PER_DAY), Ok(4));
+        assert_eq!(inn_stay_cost(1), Ok(2));
+        assert_eq!(inn_stay_cost(MINUTES_PER_DAY + 1), Ok(4));
+    }
+
+    #[test]
+    fn settlement_rest_consumes_elapsed_needs_once_in_terminal_safe_order() {
+        let source = include_str!("time.rs");
+        let rest = source
+            .split("fn rest_for_minutes")
+            .nth(1)
+            .and_then(|tail| tail.split("fn validate_settlement_rest_minutes").next())
+            .expect("settlement rest implementation");
+        assert_eq!(rest.matches("inn_stay_cost(requested_minutes)?").count(), 1);
+        let needs = "crate::condition::apply_settlement_rest_elapsed_needs(";
+        assert_eq!(rest.matches(needs).count(), 1);
+        assert!(rest.find("settle_shared_party_time").unwrap() < rest.find(needs).unwrap());
+        assert!(rest.find(needs).unwrap() < rest.find("finish_disease_interval").unwrap());
+        assert!(
+            rest.find("finish_disease_interval").unwrap()
+                < rest.find("terminal.is_some()").unwrap()
+        );
+        assert!(
+            rest.find("terminal.is_some()").unwrap() < rest.find("clear_stomach_fullness").unwrap()
+        );
+    }
 
     #[test]
     fn immediate_activity_schedule_contains_only_the_selected_interval() {

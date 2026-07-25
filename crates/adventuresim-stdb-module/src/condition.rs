@@ -7,7 +7,9 @@ use crate::character::character;
 use crate::filth::character_filth;
 use crate::investigation::case_site_authority;
 use crate::item::item;
-use crate::strategic::{contract_authority, party_authority, party_inventory_item, settlement};
+use crate::strategic::{
+    hostile_group_authority, party_authority, party_inventory_item, settlement,
+};
 use crate::{
     CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, character_attributes,
     character_equip, character_limbs, character_skills, character_stats, character_time,
@@ -280,8 +282,81 @@ pub fn apply_elapsed_needs(
     character_id: u64,
     elapsed_minutes: u64,
 ) -> Result<(), String> {
+    apply_elapsed_needs_with_provision(
+        ctx,
+        character_id,
+        elapsed_minutes,
+        ElapsedNeedsProvision::PersonalSupplies,
+    )
+}
+
+/// Applies settlement-rest needs exactly once, with paid inn stays providing
+/// full board instead of consuming the character's or party's provisions.
+pub fn apply_settlement_rest_elapsed_needs(
+    ctx: &ReducerContext,
+    character_id: u64,
+    elapsed_minutes: u64,
+    at_inn: bool,
+) -> Result<(), String> {
+    let provision = if at_inn {
+        ElapsedNeedsProvision::InnBoard
+    } else {
+        ElapsedNeedsProvision::PersonalSupplies
+    };
+    apply_elapsed_needs_with_provision(ctx, character_id, elapsed_minutes, provision)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ElapsedNeedsProvision {
+    PersonalSupplies,
+    InnBoard,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ElapsedNeedsPlan {
+    food_balance_kcal: f32,
+    consume_stored_food: bool,
+    water_balance_ml: f32,
+    consume_stored_water: bool,
+}
+
+fn elapsed_needs_plan(
+    starting_food_balance_kcal: f32,
+    starting_water_balance_ml: f32,
+    elapsed_minutes: u64,
+    provision: ElapsedNeedsProvision,
+) -> ElapsedNeedsPlan {
+    match provision {
+        ElapsedNeedsProvision::PersonalSupplies => {
+            let elapsed_days = elapsed_minutes as f32 / (24.0 * 60.0);
+            ElapsedNeedsPlan {
+                food_balance_kcal: starting_food_balance_kcal
+                    - elapsed_days * TRAVEL_CALORIES_PER_DAY,
+                consume_stored_food: true,
+                water_balance_ml: starting_water_balance_ml
+                    - elapsed_days * TRAVEL_WATER_ML_PER_DAY,
+                consume_stored_water: true,
+            }
+        }
+        // Full board covers the elapsed interval and brings an underfed guest
+        // back to neutral, without creating surplus fullness or consuming
+        // provisions carried by the guest or party.
+        ElapsedNeedsProvision::InnBoard => ElapsedNeedsPlan {
+            food_balance_kcal: starting_food_balance_kcal.max(0.0),
+            consume_stored_food: false,
+            water_balance_ml: starting_water_balance_ml.max(0.0),
+            consume_stored_water: false,
+        },
+    }
+}
+
+fn apply_elapsed_needs_with_provision(
+    ctx: &ReducerContext,
+    character_id: u64,
+    elapsed_minutes: u64,
+    provision: ElapsedNeedsProvision,
+) -> Result<(), String> {
     initialize_character_condition(ctx, character_id)?;
-    let elapsed_days = elapsed_minutes as f32 / (24.0 * 60.0);
     let mut needs = ctx
         .db
         .character_needs()
@@ -289,12 +364,20 @@ pub fn apply_elapsed_needs(
         .find(character_id)
         .ok_or("Character needs not found")?;
 
-    needs.food_balance_kcal -= elapsed_days * TRAVEL_CALORIES_PER_DAY;
+    let needs_plan = elapsed_needs_plan(
+        needs.food_balance_kcal,
+        needs.water_balance_ml,
+        elapsed_minutes,
+        provision,
+    );
+    needs.food_balance_kcal = needs_plan.food_balance_kcal;
     ctx.db
         .character_needs()
         .character_id()
         .update(needs.clone());
-    crate::food::consume_travel_food_to_zero(ctx, character_id)?;
+    if needs_plan.consume_stored_food {
+        crate::food::consume_travel_food_to_zero(ctx, character_id)?;
+    }
     needs = ctx
         .db
         .character_needs()
@@ -302,8 +385,8 @@ pub fn apply_elapsed_needs(
         .find(character_id)
         .ok_or("Character needs not found")?;
 
-    needs.water_balance_ml -= elapsed_days * TRAVEL_WATER_ML_PER_DAY;
-    if needs.water_balance_ml < 0.0 {
+    needs.water_balance_ml = needs_plan.water_balance_ml;
+    if needs_plan.consume_stored_water && needs.water_balance_ml < 0.0 {
         if let Some(party_id) = ctx
             .db
             .character()
@@ -768,28 +851,27 @@ fn base_morale(
 
     if let Some(case_site_id) = crate::investigation::character_case_site_id(ctx, character.id)
         && let Some(site) = ctx.db.case_site_authority().id_key().find(&case_site_id)
-        && let Some(quest) = ctx
+        && let Some(group) = ctx
             .db
-            .contract_authority()
-            .case_id()
-            .filter(&site.case_id)
-            .next()
+            .hostile_group_authority()
+            .iter()
+            .find(|group| group.case_site_id == site.id)
     {
-        let enemy_power = quest.enemy_count.max(1) as f32 * (quest.difficulty.max(1) as f32 + 4.0);
+        let enemy_power = group.enemy_count.max(1) as f32 * (group.difficulty.max(1) as f32 + 4.0);
         let difference = allied_power - enemy_power;
         if difference != 0.0 {
             add_source(
-                format!("power-{}", quest.id),
+                format!("power-{}", group.id),
                 "power".into(),
                 if difference > 0.0 {
                     "Superior allied strength".into()
                 } else {
-                    format!("Outmatched by {}", quest.enemy_type)
+                    format!("Outmatched by {}", group.enemy_type)
                 },
                 if difference > 0.0 {
                     difference
                 } else {
-                    difference.abs() * -enemy_fear_multiplier(&quest.enemy_type)?
+                    difference.abs() * -enemy_fear_multiplier(&group.enemy_type)?
                 },
                 if difference < 0.0 {
                     crate::personality::MoraleStimulus::Threat
@@ -1240,7 +1322,14 @@ pub fn resolve_religious_demand(
 
     match choice.as_str() {
         "observe" if demand.kind == "holy_day" => {
-            crate::time::rest_at_settlement(ctx, demand.character_id, 1, false)?;
+            // Holy-day demand represents private observance and abstention
+            // from work; it does not imply access to a Church service.
+            crate::time::spend_private_settlement_downtime(
+                ctx,
+                demand.character_id,
+                adventuresim_core::strategic_time::MINUTES_PER_DAY,
+                true,
+            )?;
             record_morale_event(
                 ctx,
                 demand.character_id,
@@ -1797,6 +1886,7 @@ pub fn set_character_religion(
             .id()
             .find(&settlement_id)
             .ok_or("Character's settlement not found")?;
+        require_profession_service(&settlement.economy)?;
         if !settlement
             .religious_status
             .represented_religions()
@@ -1820,14 +1910,39 @@ pub fn set_character_religion(
     refresh_character_strategic_condition(ctx, character_id).map(|_| ())
 }
 
+fn require_profession_service(
+    profile: &adventuresim_world_schema::SettlementEconomyProfile,
+) -> Result<(), String> {
+    use adventuresim_core::settlement_economy::{
+        SettlementActionService, action_service_available,
+    };
+    if action_service_available(profile, SettlementActionService::Temple) {
+        Ok(())
+    } else {
+        Err("This settlement has no church to receive a profession of faith".into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        CharacterNeeds, ProjectedMoraleSource, accumulated_leisure_morale,
-        condition_projection_member_ids, food_reserve_days, holy_day_demand_has_expired,
-        leisure_morale_effect, rank_morale_sources, religion_cohort_pressure, water_reserve_days,
+        CharacterNeeds, ElapsedNeedsProvision, ProjectedMoraleSource, TRAVEL_CALORIES_PER_DAY,
+        TRAVEL_WATER_ML_PER_DAY, accumulated_leisure_morale, condition_projection_member_ids,
+        elapsed_needs_plan, food_reserve_days, holy_day_demand_has_expired, leisure_morale_effect,
+        rank_morale_sources, religion_cohort_pressure, require_profession_service,
+        water_reserve_days,
     };
     use std::collections::BTreeMap;
+
+    #[test]
+    fn profession_requires_an_available_temple_service() {
+        let mut profile = adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder();
+        assert!(require_profession_service(&profile).is_err());
+        profile
+            .services
+            .push(adventuresim_world_schema::SettlementService::Temple);
+        assert!(require_profession_service(&profile).is_ok());
+    }
 
     #[test]
     fn irreverent_only_cohorts_create_no_religious_pressure() {
@@ -1872,6 +1987,51 @@ mod tests {
 
         assert_eq!(food_reserve_days(&needs), 0.5);
         assert_eq!(water_reserve_days(&needs), 0.25);
+    }
+
+    #[test]
+    fn inn_board_clears_food_and_water_deficits_without_consuming_provisions() {
+        let plan = elapsed_needs_plan(
+            -1_450.0,
+            -900.0,
+            MINUTES_PER_DAY,
+            ElapsedNeedsProvision::InnBoard,
+        );
+
+        assert_eq!(plan.food_balance_kcal, 0.0);
+        assert_eq!(plan.water_balance_ml, 0.0);
+        assert!(!plan.consume_stored_food);
+        assert!(!plan.consume_stored_water);
+    }
+
+    #[test]
+    fn inn_board_preserves_existing_food_and_water_fullness_without_creating_more() {
+        let plan = elapsed_needs_plan(
+            250.0,
+            375.0,
+            MINUTES_PER_DAY * 3,
+            ElapsedNeedsProvision::InnBoard,
+        );
+
+        assert_eq!(plan.food_balance_kcal, 250.0);
+        assert_eq!(plan.water_balance_ml, 375.0);
+        assert!(!plan.consume_stored_food);
+        assert!(!plan.consume_stored_water);
+    }
+
+    #[test]
+    fn non_inn_elapsed_needs_still_draw_from_carried_provisions() {
+        let plan = elapsed_needs_plan(
+            -500.0,
+            250.0,
+            MINUTES_PER_DAY,
+            ElapsedNeedsProvision::PersonalSupplies,
+        );
+
+        assert_eq!(plan.food_balance_kcal, -500.0 - TRAVEL_CALORIES_PER_DAY);
+        assert_eq!(plan.water_balance_ml, 250.0 - TRAVEL_WATER_ML_PER_DAY);
+        assert!(plan.consume_stored_food);
+        assert!(plan.consume_stored_water);
     }
 
     #[test]

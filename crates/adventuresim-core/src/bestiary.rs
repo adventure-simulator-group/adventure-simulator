@@ -2,8 +2,10 @@
 //! investigation-facing evidence. Stable IDs, never display text, drive rules.
 
 use core::str::FromStr;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ThreatId {
     Bandit,
     Deserter,
@@ -191,7 +193,8 @@ pub enum WitnessCapability {
     Ordinary,
     Trained,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ReportDescription {
     ArmedPeople,
     SmallUprightFigures,

@@ -25,12 +25,16 @@ use super::{
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    AutoresolveReport, BackendCaseBattle, BackendCaseSitePin, BattleLootItem, BattleResult,
-    Character, CharacterAttributes, CharacterLimbs, CharacterStats, CharacterTime,
-    CharacterTrainingSchedule, ContractPresentation, ContractPresentationStatus,
-    InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem, PartyStake, Settlement,
+    AutoresolveReport, BackendCaseBattle, BackendCaseSitePin, BackendInvestigationAction,
+    BattleLootItem, BattleResult, Character, CharacterAttributes, CharacterLimbs, CharacterStats,
+    CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, ContractPresentation,
+    ContractPresentationStatus, InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem,
+    PartyStake, Settlement,
 };
-use crate::templates::quest::{quest_location_enemy_page, quest_location_map_page};
+use crate::templates::quest::{
+    CaseSitePagePresentation, CaseSiteRecoveryNotice, quest_location_enemy_page,
+    quest_location_map_page,
+};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -218,13 +222,51 @@ async fn travel_to_case_site(
         },
     )
     .await;
-    if let Err(ref error) = outcome {
-        tracing::error!("Failed to travel to case site: {error:?}");
-        return (StatusCode::BAD_REQUEST, error.clone()).into_response();
+    match outcome {
+        Ok(PartyActionOutcome::Executed) => Redirect::to("/camp").into_response(),
+        Ok(PartyActionOutcome::Requested) => (
+            StatusCode::ACCEPTED,
+            Html(
+                crate::templates::strategic_notice_page(
+                    "Travel requested",
+                    "The party leader has been asked to begin this journey.",
+                    "/quests",
+                    "Return to the journal",
+                    None,
+                )
+                .into_string(),
+            ),
+        )
+            .into_response(),
+        Err(error) => {
+            tracing::warn!(%error, character_id, "case-site travel rejected");
+            (
+                StatusCode::BAD_REQUEST,
+                Html(
+                    crate::templates::strategic_notice_page(
+                        "Travel could not begin",
+                        safe_case_site_travel_error(&error),
+                        "/quests",
+                        "Return to the journal",
+                        None,
+                    )
+                    .into_string(),
+                ),
+            )
+                .into_response()
+        }
     }
-    match outcome.unwrap() {
-        PartyActionOutcome::Executed => StatusCode::NO_CONTENT.into_response(),
-        PartyActionOutcome::Requested => StatusCode::ACCEPTED.into_response(),
+}
+
+fn safe_case_site_travel_error(error: &str) -> &'static str {
+    if error.contains("incapacitated") {
+        "An incapacitated party member must recover before the party can travel."
+    } else if error.contains("current journey") || error.contains("camped") {
+        "Finish or change the party's current journey before starting another."
+    } else if error.contains("party leader") {
+        "Only the party leader can begin this journey immediately."
+    } else {
+        "The exact destination or the party's travel readiness changed. Review the journal before trying again."
     }
 }
 
@@ -291,11 +333,7 @@ async fn store_battle_loot(
     {
         tracing::error!("Failed to store battle loot: {error:?}");
     }
-    let case_site_id = state
-        .db
-        .query_one::<Character>(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
-        ))
+    let case_site_id = super::data::character(&state, character_id)
         .await
         .ok()
         .flatten()
@@ -314,6 +352,152 @@ struct QuestMapQuery {
 enum QuestLocationTab {
     Map(Option<String>),
     Enemy,
+}
+
+fn case_site_page_presentation(
+    site: &BackendCaseSitePin,
+    legacy_quest: Option<&ContractPresentation>,
+) -> Option<CaseSitePagePresentation> {
+    if site.generated_case {
+        if site.display_title.is_empty() {
+            return None;
+        }
+        Some(CaseSitePagePresentation {
+            title: site.display_title.clone(),
+            action_id: site.case_site_id.clone(),
+            allow_tactical_combat: false,
+        })
+    } else {
+        let quest = legacy_quest?;
+        Some(CaseSitePagePresentation {
+            title: quest.title.clone(),
+            action_id: quest.id.clone(),
+            allow_tactical_combat: true,
+        })
+    }
+}
+
+fn case_site_combat_permitted(
+    site: &BackendCaseSitePin,
+    legacy_quest: Option<&ContractPresentation>,
+    active_contract_id: Option<&str>,
+    can_control: bool,
+    party_ready: bool,
+) -> bool {
+    if !can_control || !party_ready {
+        return false;
+    }
+    if site.generated_case {
+        site.combat_available
+    } else {
+        legacy_quest.is_some_and(|quest| {
+            quest.status == ContractPresentationStatus::Accepted
+                && active_contract_id == Some(quest.id.as_str())
+        })
+    }
+}
+
+fn case_site_is_resolved(site: &BackendCaseSitePin, has_battle_result: bool) -> bool {
+    site.case_resolved || has_battle_result
+}
+
+fn onsite_investigation_actions(
+    actions: Vec<BackendInvestigationAction>,
+    case_site_id: &str,
+) -> Vec<BackendInvestigationAction> {
+    actions
+        .into_iter()
+        .filter(|action| action.available && action.required_case_site_id == case_site_id)
+        .collect()
+}
+
+fn character_and_party_are_at_case_site(
+    character: Option<&Character>,
+    party: Option<&Party>,
+    case_site_id: &str,
+) -> bool {
+    character
+        .is_some_and(|character| character.current_case_site_id.as_deref() == Some(case_site_id))
+        && party.is_some_and(|party| {
+            party
+                .current_case_site_id
+                .as_ref()
+                .is_some_and(|id| id.value == case_site_id)
+        })
+}
+
+fn case_site_recovery_notice(
+    members: &[Character],
+    conditions: &[CharacterStrategicCondition],
+    site_id: &str,
+    nearest_settlement: Option<&TravelDestination>,
+) -> Option<CaseSiteRecoveryNotice> {
+    let incapacitated = members
+        .iter()
+        .filter_map(|member| {
+            let condition = conditions
+                .iter()
+                .find(|row| row.character_id == member.id && row.status == "incapacitated")?;
+            Some((member, condition))
+        })
+        .collect::<Vec<_>>();
+    if incapacitated.is_empty() {
+        return None;
+    }
+    let member_names = incapacitated
+        .iter()
+        .map(|(member, _)| member.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let has = |select: fn(&CharacterStrategicCondition) -> f32| {
+        incapacitated
+            .iter()
+            .any(|(_, condition)| select(condition) > 0.001)
+    };
+    let mut causes = Vec::new();
+    if has(|condition| condition.hunger) {
+        causes.push("hunger");
+    }
+    if has(|condition| condition.thirst) {
+        causes.push("thirst");
+    }
+    if has(|condition| condition.pain) {
+        causes.push("pain");
+    }
+    if has(|condition| condition.blood_loss) {
+        causes.push("blood loss");
+    }
+    if has(|condition| condition.fatigue) {
+        causes.push("fatigue");
+    }
+    if has(|condition| condition.fear) {
+        causes.push("fear");
+    }
+    let resource_blocked = causes.contains(&"hunger") || causes.contains(&"thirst");
+    let (withdrawal_destination, withdrawal_href) = nearest_settlement.map_or_else(
+        || {
+            (
+                "a settlement".to_owned(),
+                format!("/locations/case-site/{site_id}/map"),
+            )
+        },
+        |destination| {
+            (
+                destination.name.clone(),
+                format!(
+                    "/locations/case-site/{site_id}/map?destination={}",
+                    destination.id
+                ),
+            )
+        },
+    );
+    Some(CaseSiteRecoveryNotice {
+        member_names,
+        causes: causes.join(", "),
+        resource_blocked,
+        withdrawal_destination,
+        withdrawal_href,
+    })
 }
 
 async fn quest_location_base(
@@ -387,11 +571,7 @@ async fn rest_at_quest_location_with_redirect(
     let Some(character_id) = session.character_id_u64() else {
         return Redirect::to("/characters").into_response();
     };
-    let character = state
-        .db
-        .query_one::<Character>(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
-        ))
+    let character = super::data::character(&state, character_id)
         .await
         .ok()
         .flatten();
@@ -432,11 +612,7 @@ async fn render_quest_location(
     let Some(character_id) = session.character_id_u64() else {
         return Redirect::to("/characters").into_response();
     };
-    let character = state
-        .db
-        .query_one::<Character>(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
-        ))
+    let character = super::data::character(&state, character_id)
         .await
         .ok()
         .flatten();
@@ -465,15 +641,21 @@ async fn render_quest_location(
         )
             .into_response();
     };
-    let matching_quests: Vec<ContractPresentation> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM backend_contracts WHERE case_id = {}",
-            sql_string_literal(&site.case_id)
-        ))
-        .await
-        .unwrap_or_default();
-    let Some(quest) = matching_quests.first() else {
+    let legacy_quest = if site.generated_case {
+        None
+    } else {
+        state
+            .db
+            .query::<ContractPresentation>(&format!(
+                "SELECT * FROM backend_contracts WHERE case_id = {}",
+                sql_string_literal(&site.case_id)
+            ))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+    };
+    let Some(mut presentation) = case_site_page_presentation(site, legacy_quest.as_ref()) else {
         return (
             StatusCode::NOT_FOUND,
             Html(
@@ -503,9 +685,11 @@ async fn render_quest_location(
     } else {
         None
     };
-    let is_at_location = character
-        .as_ref()
-        .is_some_and(|c| c.current_case_site_id.as_deref() == Some(&site.case_site_id));
+    let is_at_location = character_and_party_are_at_case_site(
+        character.as_ref(),
+        party.as_ref(),
+        &site.case_site_id,
+    );
     if !is_at_location {
         let return_href = character
             .as_ref()
@@ -578,17 +762,21 @@ async fn render_quest_location(
         state
             .db
             .query::<BackendCaseBattle>(&format!(
-                "SELECT * FROM backend_case_battles WHERE case_id = {} AND party_id = {}",
-                sql_string_literal(&quest.case_id),
+                "SELECT * FROM backend_case_battles WHERE party_id = {}",
                 sql_string_literal(&party.id)
             ))
             .await
             .unwrap_or_default()
             .into_iter()
-            .next()
+            .find(|battle| battle.case_site_id.value == site.case_site_id)
     } else {
         None
     };
+    if site.generated_case
+        && let Some(case_battle) = case_battle.as_ref()
+    {
+        presentation.action_id = case_battle.battle_id.clone();
+    }
     let results: Vec<BattleResult> = if let Some(case_battle) = case_battle.as_ref() {
         state
             .db
@@ -601,7 +789,7 @@ async fn render_quest_location(
     } else {
         Vec::new()
     };
-    let resolved = !results.is_empty();
+    let resolved = case_site_is_resolved(site, !results.is_empty());
     let autoresolve_report = if let Some(case_battle) = case_battle.as_ref() {
         state
             .db
@@ -735,13 +923,32 @@ async fn render_quest_location(
             .flatten();
         }
     }
-    let party_ready = party_is_ready(&state, &party_members).await;
-    let can_fight = can_control
-        && party_ready
-        && quest.status == ContractPresentationStatus::Accepted
-        && party
+    let (party_ready, strategic_conditions) = party_readiness(&state, &party_members).await;
+    let recovery_notice = case_site_recovery_notice(
+        &living_party_members,
+        &strategic_conditions,
+        &site.case_site_id,
+        nearby.first(),
+    );
+    let can_fight = case_site_combat_permitted(
+        site,
+        legacy_quest.as_ref(),
+        party
             .as_ref()
-            .is_some_and(|party| party.active_contract_id.as_deref() == Some(&quest.id));
+            .and_then(|party| party.active_contract_id.as_deref()),
+        can_control,
+        party_ready,
+    );
+    let onsite_actions = onsite_investigation_actions(
+        state
+            .db
+            .query::<BackendInvestigationAction>(&format!(
+                "SELECT * FROM backend_investigation_actions WHERE owner_character_id = {character_id}"
+            ))
+            .await
+            .unwrap_or_default(),
+        &site.case_site_id,
+    );
     let logged_in_as = character.as_ref().map(|c| c.name.as_str());
     let soap_preview = soap_rest_preview(
         &state,
@@ -751,8 +958,9 @@ async fn render_quest_location(
     .await;
     let page = match tab {
         QuestLocationTab::Map(selected) => quest_location_map_page(
-            quest,
+            &presentation,
             site,
+            &onsite_actions,
             &nearby,
             selected.as_deref(),
             character.as_ref(),
@@ -765,11 +973,13 @@ async fn render_quest_location(
             can_configure_travel,
             default_rest_minutes,
             soap_preview,
+            recovery_notice.as_ref(),
             logged_in_as,
         ),
         QuestLocationTab::Enemy => quest_location_enemy_page(
-            quest,
+            &presentation,
             site,
+            &onsite_actions,
             character.as_ref(),
             &party_members,
             can_fight,
@@ -779,6 +989,7 @@ async fn render_quest_location(
             can_configure_travel,
             default_rest_minutes,
             soap_preview,
+            recovery_notice.as_ref(),
             &loot,
             &pooled,
             stake,
@@ -790,7 +1001,12 @@ async fn render_quest_location(
     Html(page.into_string()).into_response()
 }
 
-async fn party_is_ready(state: &AppState, members: &[Character]) -> bool {
+async fn party_readiness(
+    state: &AppState,
+    members: &[Character],
+) -> (bool, Vec<CharacterStrategicCondition>) {
+    let mut ready = true;
+    let mut conditions = Vec::new();
     for member in members
         .iter()
         .filter(|member| participates_in_party_readiness(member.alive))
@@ -804,20 +1020,25 @@ async fn party_is_ready(state: &AppState, members: &[Character]) -> bool {
             .await
             .is_err()
         {
-            return false;
+            ready = false;
+            continue;
         }
         let condition = state
             .db
-            .query_one::<crate::spacetimedb::CharacterStrategicCondition>(&format!(
+            .query_one::<CharacterStrategicCondition>(&format!(
                 "SELECT * FROM character_strategic_condition WHERE character_id = {}",
                 member.id
             ))
             .await;
-        if !matches!(condition, Ok(Some(condition)) if condition.status != "incapacitated") {
-            return false;
+        match condition {
+            Ok(Some(condition)) => {
+                ready &= condition.status != "incapacitated";
+                conditions.push(condition);
+            }
+            _ => ready = false,
         }
     }
-    true
+    (ready, conditions)
 }
 
 async fn party_targets(state: &AppState, party_id: &str) -> Vec<InventoryQuantityTarget> {
@@ -839,12 +1060,23 @@ async fn party_targets(state: &AppState, party_id: &str) -> Vec<InventoryQuantit
 
 async fn autoresolve_quest(
     State(state): State<AppState>,
-    Path(_id): Path<String>,
+    Path(id): Path<String>,
     session: Session,
 ) -> Redirect {
     let Some(character_id) = session.character_id_u64() else {
         return Redirect::to("/characters");
     };
+    let selected_case_site_id = super::data::character(&state, character_id)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|character| character.current_case_site_id);
+    if selected_case_site_id.as_deref() != Some(id.as_str()) {
+        return selected_case_site_id.map_or_else(
+            || Redirect::to("/characters"),
+            |case_site_id| Redirect::to(&format!("/locations/case-site/{case_site_id}/enemy")),
+        );
+    }
     let outcome = execute_or_request_party_action(
         &state,
         character_id,
@@ -856,11 +1088,7 @@ async fn autoresolve_quest(
     if let Err(ref error) = outcome {
         tracing::error!("Failed to autoresolve quest: {error:?}");
     }
-    let case_site_id = state
-        .db
-        .query_one::<Character>(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
-        ))
+    let case_site_id = super::data::character(&state, character_id)
         .await
         .ok()
         .flatten()
@@ -921,6 +1149,164 @@ mod quest_route_tests {
             .to_owned()
     }
 
+    fn case_site(generated_case: bool, combat_available: bool) -> BackendCaseSitePin {
+        BackendCaseSitePin {
+            owner_character_id: 7,
+            case_id: "journal:case".into(),
+            case_site_id: "site:known".into(),
+            origin_settlement_id: "settlement".into(),
+            name: "a camp in the woods".into(),
+            description: "A known place.".into(),
+            scene_key: "forest".into(),
+            longitude_e7: 0,
+            latitude_e7: 0,
+            coordinates_are_geographic: false,
+            distance_m: 4_000,
+            knowledge_stage: "visited".into(),
+            tracked: false,
+            display_title: "Travellers have gone missing".into(),
+            generated_case,
+            case_resolved: false,
+            combat_available,
+        }
+    }
+
+    fn accepted_contract() -> ContractPresentation {
+        ContractPresentation {
+            id: "contract:one".into(),
+            case_id: "case:one".into(),
+            title: "Legacy bounty".into(),
+            description: String::new(),
+            difficulty: 1,
+            gold_reward: 10,
+            xp_reward: 10,
+            settlement_id: "settlement".into(),
+            service_id: "tavern".into(),
+            issuer_npc_id: "npc:issuer".into(),
+            status: ContractPresentationStatus::Accepted,
+            accepted_by: Some("party".into()),
+            opposition_wording: "unknown opposition".into(),
+            opposition_count_wording: "unknown number".into(),
+        }
+    }
+
+    fn onsite_action(site: &str, available: bool) -> BackendInvestigationAction {
+        BackendInvestigationAction {
+            owner_character_id: 7,
+            action_id: "action:inspect".into(),
+            method: "inspect_site".into(),
+            expected_version: 1,
+            summary: "Inspect this place".into(),
+            known_prerequisites: String::new(),
+            duration_min_minutes: 15,
+            duration_max_minutes: 45,
+            uncertainty_bps: 2500,
+            skill_contributions: "awareness".into(),
+            weather_available: false,
+            required_case_site_id: site.into(),
+            available,
+            can_travel_to_required_site: false,
+            unavailable_reason: String::new(),
+        }
+    }
+
+    fn character_at(case_site_id: Option<&str>) -> Character {
+        Character {
+            id: 7,
+            name: "Ada".into(),
+            xp: 0,
+            level: 1,
+            gold: 0,
+            current_settlement_id: None,
+            current_case_site_id: case_site_id.map(str::to_owned),
+            party_id: Some("party".into()),
+            age_years: 25,
+            alive: true,
+            temporary: false,
+        }
+    }
+
+    fn party_at(case_site_id: Option<&str>) -> Party {
+        Party {
+            id: "party".into(),
+            name: "Ada's party".into(),
+            leader_id: 7,
+            current_settlement_id: None,
+            current_case_site_id: case_site_id.map(|value| crate::spacetimedb::CaseSiteId {
+                value: value.to_owned(),
+            }),
+            active_contract_id: None,
+            is_solo: true,
+            camp_fatigue_percent: 50,
+            walking_minutes_per_day: 480,
+            travel_at_night: false,
+            camp_duration_mode: crate::spacetimedb::CampDurationMode::Auto,
+            fixed_camp_minutes: 0,
+            camp_destination: None,
+            camp_remaining_minutes: 0,
+            pooled_water_ml: 0.0,
+            medicine_target: 0.0,
+            command_target: 0.0,
+            religion_target: 0.0,
+        }
+    }
+
+    fn strategic_condition(
+        character_id: u64,
+        status: &str,
+        hunger: f32,
+        thirst: f32,
+        pain: f32,
+        blood_loss: f32,
+        fatigue: f32,
+    ) -> CharacterStrategicCondition {
+        CharacterStrategicCondition {
+            character_id,
+            morale: 0.0,
+            morale_bonus: 0.0,
+            morale_bonus_cap: 0.0,
+            fervor: 0.0,
+            pain,
+            blood_loss,
+            fear: 0.0,
+            fatigue,
+            hunger,
+            thirst,
+            food_days: 0.0,
+            water_days: 0.0,
+            water_capacity_ml: 0,
+            incapacitation: hunger + thirst + pain + blood_loss + fatigue,
+            check_multiplier: 0.0,
+            status: status.into(),
+        }
+    }
+
+    fn withdrawal_destination() -> TravelDestination {
+        TravelDestination {
+            id: "ironforge".into(),
+            name: "Ironforge".into(),
+            description: String::new(),
+            summary: None,
+            travel_action: "/settlements/ironforge/travel".into(),
+            track_action: None,
+            tracked: false,
+            distance_m: 1_000,
+            journey_minutes: 60,
+            camp_stop_minutes: Vec::new(),
+            camp_forecasts: Vec::new(),
+            departure_minute: 0,
+            itinerary_total_elapsed_minutes: 60,
+            itinerary_segments: Vec::new(),
+            round_trip_destination: false,
+            case_site_knowledge: None,
+            active_contract_destination: false,
+            provision_forecast: None,
+            terrain_route: None,
+            return_terrain_route: None,
+            route_fallback: true,
+        }
+    }
+
     #[test]
     fn autoresolve_stays_on_the_enemy_lifecycle_except_while_requesting_approval() {
         let enemy = "/locations/case-site/case-site-1/enemy";
@@ -942,5 +1328,260 @@ mod quest_route_tests {
             )),
             "/?party-requested=autoresolve",
         );
+    }
+
+    #[test]
+    fn case_site_travel_errors_are_safe_and_actionable() {
+        assert_eq!(
+            safe_case_site_travel_error("An incapacitated member cannot act"),
+            "An incapacitated party member must recover before the party can travel."
+        );
+        assert_eq!(
+            safe_case_site_travel_error("private canonical site mismatch: site:secret"),
+            "The exact destination or the party's travel readiness changed. Review the journal before trying again."
+        );
+        assert!(!safe_case_site_travel_error("site:secret").contains("site:secret"));
+    }
+
+    #[test]
+    fn generated_location_is_contract_free_but_manual_location_is_not() {
+        let generated = case_site(true, true);
+        let generated_presentation =
+            case_site_page_presentation(&generated, None).expect("generated presentation");
+        assert_eq!(generated_presentation.title, "Travellers have gone missing");
+        assert!(!generated_presentation.allow_tactical_combat);
+        assert!(case_site_combat_permitted(
+            &generated, None, None, true, true
+        ));
+        assert!(!case_site_combat_permitted(
+            &generated, None, None, true, false
+        ));
+
+        let evidence_site = case_site(true, false);
+        assert!(!case_site_combat_permitted(
+            &evidence_site,
+            None,
+            None,
+            true,
+            true
+        ));
+
+        let manual = case_site(false, false);
+        assert!(case_site_page_presentation(&manual, None).is_none());
+        let contract = accepted_contract();
+        let manual_presentation =
+            case_site_page_presentation(&manual, Some(&contract)).expect("legacy presentation");
+        assert_eq!(manual_presentation.title, "Legacy bounty");
+        assert!(manual_presentation.allow_tactical_combat);
+        assert!(case_site_combat_permitted(
+            &manual,
+            Some(&contract),
+            Some("contract:one"),
+            true,
+            true,
+        ));
+        assert!(!case_site_combat_permitted(
+            &manual,
+            Some(&contract),
+            Some("contract:other"),
+            true,
+            true,
+        ));
+    }
+
+    #[test]
+    fn generated_noncombat_completion_does_not_require_a_battle_result() {
+        let mut site = case_site(true, false);
+        site.case_resolved = true;
+
+        assert!(case_site_is_resolved(&site, false));
+        site.case_resolved = false;
+        assert!(case_site_is_resolved(&site, true));
+        assert!(!case_site_is_resolved(&site, false));
+    }
+
+    #[test]
+    fn onsite_investigation_requires_exact_available_site_action() {
+        let actions = onsite_investigation_actions(
+            vec![
+                onsite_action("site:known", true),
+                onsite_action("site:other", true),
+                onsite_action("site:known", false),
+            ],
+            "site:known",
+        );
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].action_id, "action:inspect");
+    }
+
+    #[test]
+    fn case_site_guard_requires_matching_character_and_party_occupancy() {
+        let character = character_at(Some("site:known"));
+        let party = party_at(Some("site:known"));
+        assert!(character_and_party_are_at_case_site(
+            Some(&character),
+            Some(&party),
+            "site:known"
+        ));
+
+        let elsewhere_character = character_at(Some("site:other"));
+        assert!(!character_and_party_are_at_case_site(
+            Some(&elsewhere_character),
+            Some(&party),
+            "site:known"
+        ));
+        let elsewhere_party = party_at(Some("site:other"));
+        assert!(!character_and_party_are_at_case_site(
+            Some(&character),
+            Some(&elsewhere_party),
+            "site:known"
+        ));
+        assert!(!character_and_party_are_at_case_site(
+            None,
+            Some(&party),
+            "site:known"
+        ));
+        assert!(!character_and_party_are_at_case_site(
+            Some(&character),
+            None,
+            "site:known"
+        ));
+    }
+
+    #[test]
+    fn recovery_notice_distinguishes_resource_deficits_from_rest_recovery() {
+        let member = character_at(Some("site:known"));
+        let destination = withdrawal_destination();
+        let resource_blocked = case_site_recovery_notice(
+            std::slice::from_ref(&member),
+            &[strategic_condition(
+                member.id,
+                "incapacitated",
+                4.0,
+                26.0,
+                0.0,
+                0.0,
+                0.0,
+            )],
+            "site:known",
+            Some(&destination),
+        )
+        .expect("resource deficit should produce recovery guidance");
+        assert_eq!(resource_blocked.member_names, "Ada");
+        assert_eq!(resource_blocked.causes, "hunger, thirst");
+        assert!(resource_blocked.resource_blocked);
+        assert_eq!(resource_blocked.withdrawal_destination, "Ironforge");
+        assert_eq!(
+            resource_blocked.withdrawal_href,
+            "/locations/case-site/site:known/map?destination=ironforge"
+        );
+
+        let rest_recoverable = case_site_recovery_notice(
+            std::slice::from_ref(&member),
+            &[strategic_condition(
+                member.id,
+                "incapacitated",
+                0.0,
+                0.0,
+                0.2,
+                0.1,
+                0.8,
+            )],
+            "site:known",
+            None,
+        )
+        .expect("recoverable condition should produce guidance");
+        assert_eq!(rest_recoverable.causes, "pain, blood loss, fatigue");
+        assert!(!rest_recoverable.resource_blocked);
+        assert_eq!(
+            rest_recoverable.withdrawal_href,
+            "/locations/case-site/site:known/map"
+        );
+
+        assert!(
+            case_site_recovery_notice(
+                &[member],
+                &[strategic_condition(7, "ready", 0.0, 0.0, 0.0, 0.0, 0.0,)],
+                "site:known",
+                Some(&destination),
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn generated_location_loader_keeps_owner_pin_and_occupancy_boundaries() {
+        let source = include_str!("quests.rs");
+        let loader = source
+            .split("async fn render_quest_location")
+            .nth(1)
+            .and_then(|tail| tail.split("async fn party_readiness").next())
+            .expect("case-site loader");
+        assert!(loader.contains("owner_character_id = {character_id}"));
+        assert!(loader.contains("case_site_id = {}"));
+        assert!(loader.contains("character_and_party_are_at_case_site("));
+        assert!(loader.contains("if site.generated_case"));
+        assert!(loader.contains("case_site_combat_permitted"));
+        assert!(loader.contains("battle.case_site_id.value == site.case_site_id"));
+        assert!(!loader.contains("active_contract_id.as_deref() == Some(&presentation"));
+    }
+
+    #[test]
+    fn site_sensitive_handlers_use_the_authoritative_character_loader() {
+        let source = include_str!("quests.rs");
+        let raw_character_query = ["query_one::<", "Character>"].concat();
+        let authoritative_loader = ["super::data::", "character(&state, character_id)"].concat();
+        assert!(!source.contains(&raw_character_query));
+        assert_eq!(source.matches(&authoritative_loader).count(), 5);
+        for (start, end) in [
+            ("async fn store_battle_loot", "enum QuestLocationTab"),
+            (
+                "async fn rest_at_quest_location_with_redirect",
+                "async fn render_quest_location",
+            ),
+            ("async fn render_quest_location", "async fn party_readiness"),
+            ("async fn autoresolve_quest", "fn autoresolve_redirect"),
+        ] {
+            let handler = source
+                .split(start)
+                .nth(1)
+                .and_then(|tail| tail.split(end).next())
+                .expect("site-sensitive handler");
+            assert!(handler.contains(&authoritative_loader));
+        }
+    }
+
+    #[test]
+    fn case_site_map_keeps_settlement_withdrawal_visible_when_party_is_not_ready() {
+        let source = include_str!("quests.rs");
+        let rendering = source
+            .split("let page = match tab")
+            .nth(1)
+            .and_then(|tail| tail.split("async fn party_readiness").next())
+            .expect("case-site page rendering");
+        let map = rendering
+            .split("QuestLocationTab::Map(selected)")
+            .nth(1)
+            .and_then(|tail| tail.split("QuestLocationTab::Enemy").next())
+            .expect("case-site map branch");
+        assert!(map.contains("can_control,"));
+        assert!(!map.contains("party_ready,"));
+        assert!(map.contains("recovery_notice.as_ref()"));
+    }
+
+    #[test]
+    fn autoresolve_url_site_must_match_authoritative_character_occupancy() {
+        let source = include_str!("quests.rs");
+        let handler = source
+            .split("async fn autoresolve_quest")
+            .nth(1)
+            .and_then(|tail| tail.split("fn autoresolve_redirect").next())
+            .expect("autoresolve handler");
+        assert!(handler.contains("Path(id): Path<String>"));
+        assert!(handler.contains("selected_case_site_id.as_deref() != Some(id.as_str())"));
+        assert!(handler.contains("character.current_case_site_id"));
+        let authoritative_loader = ["super::data::", "character(&state, character_id)"].concat();
+        assert_eq!(handler.matches(&authoritative_loader).count(), 2);
+        assert!(!handler.contains("Path(_id)"));
     }
 }

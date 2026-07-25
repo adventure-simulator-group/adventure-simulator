@@ -133,6 +133,22 @@ pub(crate) async fn character_case_site_id(
         .map_err(|error| error.to_string())
 }
 
+fn action_requires_ready_party(
+    action: &PartyAction,
+    character_case_site_id: Option<&str>,
+    party: &Party,
+) -> bool {
+    match action {
+        PartyAction::TravelToSettlement { .. } => !character_case_site_id.is_some_and(|site_id| {
+            party
+                .current_case_site_id
+                .as_ref()
+                .is_some_and(|party_site| party_site.value == site_id)
+        }),
+        _ => action.requires_ready_party(),
+    }
+}
+
 /// Execute a leader action immediately, or persist the same validated intent for
 /// the party leader when a member attempts it.
 pub(crate) async fn execute_or_request_party_action(
@@ -156,7 +172,12 @@ pub(crate) async fn execute_or_request_party_action(
         .await
         .map_err(|e| e.to_string())?
         .ok_or("Party not found")?;
-    if action.requires_ready_party() {
+    let actor_case_site_id = if matches!(&action, PartyAction::TravelToSettlement { .. }) {
+        character_case_site_id(state, actor_id).await?
+    } else {
+        None
+    };
+    if action_requires_ready_party(&action, actor_case_site_id.as_deref(), &party) {
         let members = state
             .db
             .query::<PartyMember>(&format!(
@@ -599,12 +620,73 @@ fn terrain_route_json(
 
 #[cfg(test)]
 mod readiness_tests {
-    use super::participates_in_party_readiness;
+    use super::{PartyAction, action_requires_ready_party, participates_in_party_readiness};
+    use crate::spacetimedb::{CampDurationMode, CaseSiteId, Party};
+
+    fn party(case_site_id: Option<&str>) -> Party {
+        Party {
+            id: "party".into(),
+            name: "Party".into(),
+            leader_id: 7,
+            current_settlement_id: case_site_id.is_none().then(|| "ironforge".into()),
+            current_case_site_id: case_site_id.map(|value| CaseSiteId {
+                value: value.into(),
+            }),
+            active_contract_id: None,
+            is_solo: true,
+            camp_fatigue_percent: 50,
+            walking_minutes_per_day: 480,
+            travel_at_night: false,
+            camp_duration_mode: CampDurationMode::Auto,
+            fixed_camp_minutes: 0,
+            camp_destination: None,
+            camp_remaining_minutes: 0,
+            pooled_water_ml: 0.0,
+            medicine_target: 0.0,
+            command_target: 0.0,
+            religion_target: 0.0,
+        }
+    }
 
     #[test]
     fn corpses_do_not_participate_in_party_readiness() {
         assert!(participates_in_party_readiness(true));
         assert!(!participates_in_party_readiness(false));
+    }
+
+    #[test]
+    fn only_exact_case_site_settlement_withdrawal_bypasses_web_readiness() {
+        let withdrawal = PartyAction::TravelToSettlement {
+            settlement_id: "ironforge".into(),
+        };
+        let onsite_party = party(Some("site:old-graveyard"));
+        assert!(!action_requires_ready_party(
+            &withdrawal,
+            Some("site:old-graveyard"),
+            &onsite_party
+        ));
+        assert!(action_requires_ready_party(
+            &withdrawal,
+            Some("site:other"),
+            &onsite_party
+        ));
+        assert!(action_requires_ready_party(
+            &withdrawal,
+            None,
+            &onsite_party
+        ));
+        assert!(action_requires_ready_party(&withdrawal, None, &party(None)));
+
+        let investigate = PartyAction::PerformInvestigation {
+            action_id: "action:inspect".into(),
+            method: "inspect_site".into(),
+            expected_version: 1,
+        };
+        assert!(action_requires_ready_party(
+            &investigate,
+            Some("site:old-graveyard"),
+            &onsite_party
+        ));
     }
 }
 

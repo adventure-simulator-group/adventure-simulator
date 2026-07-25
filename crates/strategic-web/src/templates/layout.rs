@@ -181,20 +181,20 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 script src="/static/character-action-dialog.js?v=character-actions-1" defer {}
                 @if scripts != ScriptProfile::Entry {
                     script src="/static/live-state.js?v=sse-3" defer {}
-                    script src="/static/live-regions.js?v=floating-time-editor-1" defer {}
+                    script src="/static/live-regions.js?v=persistent-rest-refresh-2" defer {}
                 }
                 @if scripts == ScriptProfile::Strategic {
                     script src="/static/numeric-editor.js?v=shared-numeric-editor-2" defer {}
                     script src="/static/inventory-browser.js?v=coin-currencies-3-alcohol-targets-1-food-lots-4-infinite-catalog" defer {}
-                    script src="/static/party-trade.js?v=inventory-numeric-editor-1" defer {}
+                    script src="/static/party-trade.js?v=provision-party-food-1" defer {}
                     script src="/static/cooking.js?v=trade-pot-1" defer {}
                     script src="/static/equipment-toggle.js?v=functional-equipment-1" defer {}
                     script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}
                     script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
                     script src="/static/service-quests.js?v=apprentice-system-1" defer {}
-                    script src="/static/dialogue-client.js?v=authoritative-dialogue-3" defer {}
+                    script src="/static/dialogue-client.js?v=authoritative-dialogue-4" defer {}
                     script src="/static/chat-resize.js?v=floating-chat-3" defer {}
-                    script src="/static/local-chat.js?v=herbalist-private-1" defer {}
+                    script src="/static/local-chat.js?v=local-chat-location-authority-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}
                     script src="/static/building-state.js?v=village-building-tabs-1" defer {}
                     script src="/static/travel-planner.js?v=travel-rails-1" defer {}
@@ -325,19 +325,19 @@ fn service_tab_available(
     profile: &adventuresim_world_schema::SettlementEconomyProfile,
     path: &str,
 ) -> bool {
-    use adventuresim_core::settlement_economy::{Storefront, storefront_available};
-    use adventuresim_world_schema::SettlementService as S;
-    match path {
-        "map" => true,
-        "merchants" => storefront_available(profile, Storefront::General),
-        "weapons" => storefront_available(profile, Storefront::Weapons),
-        "armor" => storefront_available(profile, Storefront::Armor),
-        "clothing" => storefront_available(profile, Storefront::Clothing),
-        "herbalist" => storefront_available(profile, Storefront::Herbalist),
-        "inn" => storefront_available(profile, Storefront::Inn),
-        "religion" => profile.has_service(S::Temple),
-        _ => false,
-    }
+    use adventuresim_core::settlement_economy::{player_visible_npc_tabs, visible_npc_tab};
+    let location_id = match path {
+        "map" => return true,
+        "merchants" => "market",
+        "weapons" => "forge",
+        "armor" => "armoury",
+        "clothing" => "tailor",
+        "herbalist" => "herbalist",
+        "inn" => "inn",
+        "religion" => "church",
+        _ => return false,
+    };
+    visible_npc_tab(&player_visible_npc_tabs(profile, false), location_id).is_some()
 }
 
 fn quest_location_top_bar(
@@ -607,7 +607,7 @@ fn character_switcher(name: &str) -> Markup {
                 }
             }
             div class="character-switcher-menu" {
-                a href="/journal" class="btn btn-small" { "Investigation journal" }
+                a href="/quests" class="btn btn-small" { "Investigation journal" }
                 form action="/characters/switch" method="post" {
                     button type="submit" class="btn btn-small" { "Character select" }
                 }
@@ -631,12 +631,21 @@ pub fn sidebar_section(title: &str, content: Markup) -> Markup {
 #[cfg(test)]
 mod tests {
     use super::{
-        HorizonVariant, WildernessVariant, building_tier, building_tint, entry_layout,
-        horizon_variant, quest_location_top_bar, religion_icon_path,
+        HorizonVariant, ScriptProfile, WildernessVariant, building_tier, building_tint,
+        entry_layout, horizon_variant, page_shell, quest_location_top_bar, religion_icon_path,
         settlement_layout_with_session, settlement_top_bar, wilderness_variant,
     };
     use crate::spacetimedb::SettlementCategory;
     use maud::html;
+
+    #[test]
+    fn strategic_shell_cache_busts_exact_location_chat_authority() {
+        let markup = page_shell("Chat", html! {}, html! {}, ScriptProfile::Strategic).into_string();
+        assert!(markup.contains("/static/local-chat.js?v=local-chat-location-authority-1"));
+        assert!(!markup.contains("local-chat.js?v=herbalist-private-1"));
+        assert!(markup.contains("/static/live-regions.js?v=persistent-rest-refresh-2"));
+        assert!(!markup.contains("live-regions.js?v=floating-time-editor-1"));
+    }
 
     #[test]
     fn building_tints_are_stable_distinct_and_material_bounded() {

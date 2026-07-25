@@ -2,14 +2,19 @@
 
 use crate::{
     character::{character, character__view, character_skills},
+    condition::character_strategic_condition__view,
     local_problem::local_problem_receipt,
     settlement_population::{settlement_npc, settlement_npc_presence},
     strategic::{
-        CustodyHolderKind, CustodyObjectKind, case_authority, case_custody,
-        coordinate_distance_e7_m, living_party_member_ids, party_authority,
-        party_journey_authority, require_no_unresolved_encounter, require_party_ready,
+        CustodyHolderKind, CustodyObjectKind, case_authority, case_authority__view, case_custody,
+        case_finale_authority__view, case_outcome_fact__view, coordinate_distance_e7_m,
+        generated_case_site_combat_eligible, generated_case_site_combat_group_id,
+        hostile_group_authority__view, living_party_member_ids, party_authority,
+        party_authority__view, party_journey_authority, party_member__view,
+        quest_generation_authority, quest_generation_authority__view,
+        require_no_unresolved_encounter, require_party_ready,
         require_strategic_character_authority, require_strategic_gateway, settlement,
-        strategic_gateway_authority__view,
+        strategic_gateway_authority__view, validate_quest_generation_authority,
     },
     time::{
         advance_investigation_time, character_time, synchronize_party_activity_time, world_clock,
@@ -19,7 +24,7 @@ use adventuresim_core::investigation as inv;
 use adventuresim_core::investigation_action as action;
 use adventuresim_core::skill::Skill;
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_TEXT: usize = 512;
 const AREA_RADIUS_TOLERANCE_M: u64 = 1;
@@ -261,6 +266,7 @@ pub struct InvestigationLead {
     pub owner_character_id: u64,
     #[index(btree)]
     pub case_id: String,
+    pub proposition_id: String,
     pub summary: String,
     pub source_label: String,
     pub confidence_bps: u16,
@@ -331,6 +337,10 @@ pub struct InvestigationActionCapability {
     pub owner_character_id: u64,
     #[index(btree)]
     pub case_id: String,
+    /// Immutable private provenance. Generated capabilities never fall back to
+    /// manual semantics when their generation authority is damaged or absent.
+    pub provenance_kind: String,
+    pub generated_case_id: String,
     pub method: String,
     pub version: u32,
     pub target_kind: String,
@@ -346,6 +356,35 @@ pub struct InvestigationActionCapability {
     pub required_action_id: String,
     pub alternate_route_action_id: String,
     pub active: bool,
+}
+
+/// Private typed output blueprint for generated capabilities. Free-form
+/// result wording never grants evidence, custody, or destination knowledge.
+#[derive(Clone, Debug)]
+#[table(accessor = investigation_generated_action_output)]
+pub struct InvestigationGeneratedActionOutput {
+    #[primary_key]
+    pub capability_id: String,
+    pub outputs_json: String,
+}
+
+/// Private binding from an opaque learned cohort to one persistent NPC and
+/// the exact demographic/presence facts authored at generation time.
+#[derive(Clone, Debug)]
+#[table(accessor = investigation_pattern_target_authority)]
+pub struct InvestigationPatternTargetAuthority {
+    #[primary_key]
+    pub cohort_id: String,
+    #[index(btree)]
+    pub case_id: String,
+    pub npc_id: String,
+    pub demographic: String,
+    pub age_band: String,
+    pub sex: String,
+    pub profession: String,
+    pub expected_settlement_id: String,
+    pub expected_location: String,
+    pub presence_version: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -495,6 +534,31 @@ pub struct InvestigationReceivedTestimony {
     pub received_at: u64,
 }
 
+/// Private observer knowledge that one exact generated witness has been
+/// explicitly referred. Manifest membership alone never grants dialogue access.
+#[derive(Clone, Debug)]
+#[table(accessor = investigation_witness_referral)]
+pub struct InvestigationWitnessReferral {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub owner_character_id: u64,
+    #[index(btree)]
+    pub canonical_case_id: String,
+    pub public_case_id: String,
+    pub witness_npc_id: String,
+    pub expected_settlement_id: String,
+    pub expected_location_id: String,
+    pub grant_kind: String,
+    pub source_receipt_id: String,
+    pub source_witness_id: String,
+    pub source_witness_npc_id: String,
+    pub source_testimony_index: u32,
+    pub source_proposition_id: String,
+    pub catalog_revision: String,
+    pub granted_at: u64,
+}
+
 #[derive(Clone, Debug)]
 #[table(accessor = investigation_testimony_bundle)]
 pub struct InvestigationTestimonyBundle {
@@ -580,6 +644,10 @@ pub struct BackendInvestigationAction {
     pub uncertainty_bps: u16,
     pub skill_contributions: String,
     pub weather_available: bool,
+    pub required_case_site_id: String,
+    pub available: bool,
+    pub can_travel_to_required_site: bool,
+    pub unavailable_reason: String,
 }
 
 #[derive(Clone, Debug, SpacetimeType)]
@@ -610,6 +678,15 @@ pub struct BackendCaseSitePin {
     pub distance_m: u64,
     pub knowledge_stage: String,
     pub tracked: bool,
+    /// Observer-safe problem wording from a fully validated generated manifest,
+    /// or the ordinary site name for a manual case.
+    pub display_title: String,
+    /// Generated presentation is deliberately independent of contract state.
+    pub generated_case: bool,
+    /// Observer-safe completion state for the generated case.
+    pub case_resolved: bool,
+    /// This reveals only that combat is currently a permitted onsite action.
+    pub combat_available: bool,
 }
 
 #[derive(Clone, Debug, SpacetimeType)]
@@ -642,6 +719,18 @@ pub fn backend_investigation_journal(ctx: &ViewContext) -> Vec<BackendInvestigat
                 if belief.owner_character_id != r.owner_character_id {
                     return None;
                 }
+                let supersedes = safe_superseded_revision_label(
+                    &r,
+                    (!r.supersedes.is_empty())
+                        .then(|| {
+                            ctx.db
+                                .investigation_belief_revision()
+                                .id()
+                                .find(&r.supersedes)
+                        })
+                        .flatten()
+                        .as_ref(),
+                );
                 Some(BackendInvestigationJournalEntry {
                     owner_character_id: r.owner_character_id,
                     case_id: belief.case_id,
@@ -652,7 +741,7 @@ pub fn backend_investigation_journal(ctx: &ViewContext) -> Vec<BackendInvestigat
                     confidence_bps: r.confidence_bps,
                     contradiction_group: belief.conflict_group,
                     corrected_by: String::new(),
-                    supersedes: r.supersedes,
+                    supersedes,
                     recorded_at: r.recorded_at,
                 })
             }),
@@ -676,7 +765,12 @@ pub fn backend_investigation_leads(ctx: &ViewContext) -> Vec<BackendInvestigatio
         .investigation_lead()
         .owner_character_id()
         .filter(0u64..)
-        .map(sanitize_lead)
+        .map(|lead| {
+            let correction = (!lead.corrected_by.is_empty())
+                .then(|| ctx.db.investigation_lead().id().find(&lead.corrected_by))
+                .flatten();
+            sanitize_lead(lead, correction.as_ref())
+        })
         .collect()
 }
 
@@ -692,7 +786,16 @@ pub fn backend_investigation_actions(ctx: &ViewContext) -> Vec<BackendInvestigat
         .filter(|capability| capability.active)
         .filter_map(|capability| {
             let kind = parse_action_kind(&capability.method).ok()?;
+            if capability_has_successful_attempt_view(ctx, &capability.id)
+                || !capability_has_live_support_view(ctx, &capability, kind)
+            {
+                return None;
+            }
             let cost = action::base_cost(kind);
+            let required_case_site_id =
+                exact_action_site_for_observer(ctx, &capability, kind).unwrap_or_default();
+            let availability =
+                action_unavailable_reason_view(ctx, &capability, &required_case_site_id);
             Some(BackendInvestigationAction {
                 owner_character_id: capability.owner_character_id,
                 action_id: capability.id,
@@ -707,9 +810,615 @@ pub fn backend_investigation_actions(ctx: &ViewContext) -> Vec<BackendInvestigat
                     "terrain, awareness, stealth, local familiarity, and bounded party assistance"
                         .into(),
                 weather_available: false,
+                required_case_site_id,
+                available: availability.unavailable_reason.is_none(),
+                can_travel_to_required_site: availability.can_travel_to_required_site,
+                unavailable_reason: availability.unavailable_reason.unwrap_or_default(),
             })
         })
         .collect()
+}
+
+fn capability_has_successful_attempt_view(ctx: &ViewContext, capability_id: &str) -> bool {
+    ctx.db
+        .investigation_action_attempt()
+        .capability_id()
+        .filter(capability_id)
+        .any(|attempt| attempt.success)
+}
+
+fn lead_is_live_contact_referral(
+    lead: &InvestigationLead,
+    owner_character_id: u64,
+    case_id: &str,
+) -> bool {
+    lead.owner_character_id == owner_character_id
+        && lead.case_id == case_id
+        && !lead.witness_name.is_empty()
+        && lead.corrected_by.is_empty()
+}
+
+#[cfg(test)]
+fn generated_pattern_evidence_id(outputs_json: &str) -> Result<Option<String>, &'static str> {
+    let outputs = serde_json::from_str::<
+        Vec<adventuresim_core::quest_generation::GeneratedActionOutput>,
+    >(outputs_json)
+    .map_err(|_| "Generated action output authority is invalid")?;
+    Ok(outputs.into_iter().find_map(|output| match output {
+        adventuresim_core::quest_generation::GeneratedActionOutput::PatternCondition {
+            evidence_id,
+            ..
+        } => Some(evidence_id.0),
+        _ => None,
+    }))
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum GeneratedPatternAuthority {
+    Manual,
+    GeneratedWithoutPattern,
+    Pattern {
+        evidence_id: String,
+        condition: adventuresim_core::quest_generation::GeneratedPatternCondition,
+    },
+    Invalid,
+}
+
+fn generated_capability_safe_text(
+    manifest: &adventuresim_core::quest_generation::GeneratedCase,
+    generated: &adventuresim_core::quest_generation::GeneratedAction,
+) -> (String, String) {
+    let evidence_summary = |evidence_id: &str| {
+        manifest
+            .evidence
+            .iter()
+            .find(|evidence| evidence.id.0 == evidence_id)
+            .map(|evidence| evidence.safe_description.clone())
+    };
+    let learned_condition = generated.outputs.iter().find_map(|output| match output {
+        adventuresim_core::quest_generation::GeneratedActionOutput::PatternCondition {
+            evidence_id,
+            ..
+        } => evidence_summary(&evidence_id.0),
+        _ => None,
+    });
+    let earned_clue = generated.outputs.iter().find_map(|output| match output {
+        adventuresim_core::quest_generation::GeneratedActionOutput::Evidence { evidence_id } => {
+            evidence_summary(&evidence_id.0)
+        }
+        _ => None,
+    });
+    (
+        learned_condition.map_or_else(
+            || {
+                "Complete the preceding generated lead and remain with your ready, co-located party."
+                    .into()
+            },
+            |clue| format!("First learn and retain this corroborated clue: {clue}"),
+        ),
+        earned_clue.unwrap_or_else(|| {
+            "The investigation produces a new, source-attributed lead.".into()
+        }),
+    )
+}
+
+fn generated_pattern_authority(
+    capability: &InvestigationActionCapability,
+    authority: Option<(&str, &str)>,
+    persisted_outputs_json: Option<&str>,
+) -> GeneratedPatternAuthority {
+    match capability.provenance_kind.as_str() {
+        "manual" if capability.generated_case_id.is_empty() => {
+            return if authority.is_none() && persisted_outputs_json.is_none() {
+                GeneratedPatternAuthority::Manual
+            } else {
+                GeneratedPatternAuthority::Invalid
+            };
+        }
+        "generated" if !capability.generated_case_id.is_empty() => {}
+        _ => return GeneratedPatternAuthority::Invalid,
+    }
+    let Some((manifest_json, context_json)) = authority else {
+        return GeneratedPatternAuthority::Invalid;
+    };
+    // `authority` is supplied only by the unique-row wrappers after the
+    // centralized commitment, replay, and semantic validation succeeds.
+    let Ok(manifest) =
+        serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(manifest_json)
+    else {
+        return GeneratedPatternAuthority::Invalid;
+    };
+    let Ok(context) = serde_json::from_str::<adventuresim_core::quest_generation::GenerationContext>(
+        context_json,
+    ) else {
+        return GeneratedPatternAuthority::Invalid;
+    };
+    if capability.case_id != manifest.canonical_case_id
+        && capability.case_id != manifest.public_case_id
+        || capability.generated_case_id != manifest.canonical_case_id
+    {
+        return GeneratedPatternAuthority::Invalid;
+    }
+    let generated = manifest.actions.iter().find(|action| {
+        adventuresim_core::quest_generation::observer_scoped_id(
+            &context,
+            "capability",
+            &format!("{}:{}", capability.owner_character_id, action.id.0),
+        ) == capability.id
+    });
+    let Some(generated) = generated else {
+        return GeneratedPatternAuthority::Invalid;
+    };
+    let remap = |id: &adventuresim_core::quest_generation::ActionId| {
+        adventuresim_core::quest_generation::observer_scoped_id(
+            &context,
+            "capability",
+            &format!("{}:{}", capability.owner_character_id, id.0),
+        )
+    };
+    let expected_required = generated
+        .prerequisite
+        .as_ref()
+        .map_or_else(String::new, remap);
+    let expected_alternate = remap(&generated.alternate);
+    let (expected_known_prerequisites, expected_safe_result) =
+        generated_capability_safe_text(&manifest, generated);
+    let expected_terrain = manifest
+        .sites
+        .iter()
+        .find(|site| site.id.0 == generated.target_id)
+        .map(|site| site.terrain)
+        .or_else(|| {
+            manifest
+                .areas
+                .iter()
+                .find(|area| area.id == generated.target_id)
+                .map(|area| area.terrain)
+        })
+        .unwrap_or(action::Terrain::Settlement);
+    if capability.method != action_method(generated.kind)
+        || capability.target_kind != generated.target_kind
+        || capability.target_id != generated.target_id
+        || capability.target_terrain != format!("{expected_terrain:?}").to_ascii_lowercase()
+        || capability.required_action_id != expected_required
+        || capability.alternate_route_action_id != expected_alternate
+        || capability.safe_summary != generated.safe_summary
+        || capability.known_prerequisites != expected_known_prerequisites
+        || capability.safe_result_on_success != expected_safe_result
+    {
+        return GeneratedPatternAuthority::Invalid;
+    }
+    let expected_consequence = generated
+        .outputs
+        .iter()
+        .find_map(|output| match output {
+            adventuresim_core::quest_generation::GeneratedActionOutput::Consequence {
+                consequence:
+                    adventuresim_core::quest_generation::GeneratedActionConsequence::RetrieveAsset {
+                        asset_id,
+                        next_version,
+                    },
+            } => Some(InvestigationActionConsequence::RetrieveAsset {
+                asset_id: asset_id.clone(),
+                version: *next_version,
+            }),
+            adventuresim_core::quest_generation::GeneratedActionOutput::Consequence {
+                consequence:
+                    adventuresim_core::quest_generation::GeneratedActionConsequence::RescueSubject {
+                        subject_id,
+                        next_version,
+                    },
+            } => Some(InvestigationActionConsequence::RescueSubject {
+                subject_id: subject_id.clone(),
+                version: *next_version,
+            }),
+            _ => None,
+        })
+        .unwrap_or(InvestigationActionConsequence::None);
+    if serde_json::to_string(&expected_consequence).ok().as_deref()
+        != Some(capability.consequence_json.as_str())
+    {
+        return GeneratedPatternAuthority::Invalid;
+    }
+    let Some(persisted_outputs_json) = persisted_outputs_json else {
+        return GeneratedPatternAuthority::Invalid;
+    };
+    let Ok(persisted_outputs) = serde_json::from_str::<
+        Vec<adventuresim_core::quest_generation::GeneratedActionOutput>,
+    >(persisted_outputs_json) else {
+        return GeneratedPatternAuthority::Invalid;
+    };
+    if persisted_outputs != generated.outputs {
+        return GeneratedPatternAuthority::Invalid;
+    }
+    generated
+        .outputs
+        .iter()
+        .find_map(|output| match output {
+            adventuresim_core::quest_generation::GeneratedActionOutput::PatternCondition {
+                evidence_id,
+                condition,
+            } => Some(GeneratedPatternAuthority::Pattern {
+                evidence_id: evidence_id.0.clone(),
+                condition: condition.clone(),
+            }),
+            _ => None,
+        })
+        .unwrap_or(GeneratedPatternAuthority::GeneratedWithoutPattern)
+}
+
+fn exactly_one_generated_authority(
+    matches: impl IntoIterator<Item = (String, String, String)>,
+) -> Result<Option<(String, String)>, ()> {
+    let mut unique = BTreeMap::new();
+    for (case_id, manifest, context) in matches {
+        if unique
+            .insert(case_id, (manifest.clone(), context.clone()))
+            .is_some_and(|existing| existing != (manifest, context))
+        {
+            return Err(());
+        }
+    }
+    let mut unique = unique.into_values();
+    let Some(authority) = unique.next() else {
+        return Ok(None);
+    };
+    if unique.next().is_some() {
+        return Err(());
+    }
+    Ok(Some(authority))
+}
+
+fn validated_generated_authority_candidate(
+    authority: crate::strategic::QuestGenerationAuthority,
+) -> Result<(String, String, String), ()> {
+    validate_quest_generation_authority(&authority).map_err(|_| ())?;
+    Ok((
+        authority.case_id,
+        authority.manifest_json,
+        authority.context_snapshot_json,
+    ))
+}
+
+fn generated_authority_view(
+    ctx: &ViewContext,
+    capability: &InvestigationActionCapability,
+) -> Result<Option<(String, String)>, ()> {
+    match capability.provenance_kind.as_str() {
+        "manual" if capability.generated_case_id.is_empty() => return Ok(None),
+        "generated" if !capability.generated_case_id.is_empty() => {}
+        _ => return Err(()),
+    }
+    let mut candidates = Vec::new();
+    for alias in [&capability.generated_case_id, &capability.case_id] {
+        if candidates
+            .iter()
+            .any(|(queried, _, _, _): &(String, String, String, String)| queried == alias)
+        {
+            continue;
+        }
+        if let Some(authority) = ctx.db.quest_generation_authority().case_id().find(alias) {
+            let candidate = validated_generated_authority_candidate(authority)?;
+            candidates.push((alias.clone(), candidate.0, candidate.1, candidate.2));
+        }
+        for authority in ctx
+            .db
+            .quest_generation_authority()
+            .public_case_id()
+            .filter(alias)
+        {
+            let candidate = validated_generated_authority_candidate(authority)?;
+            candidates.push((alias.clone(), candidate.0, candidate.1, candidate.2));
+        }
+    }
+    exactly_one_generated_authority(
+        candidates
+            .into_iter()
+            .map(|(_, case_id, manifest, context)| (case_id, manifest, context)),
+    )
+}
+
+fn generated_authority_reducer(
+    ctx: &ReducerContext,
+    capability: &InvestigationActionCapability,
+) -> Result<Option<(String, String)>, ()> {
+    match capability.provenance_kind.as_str() {
+        "manual" if capability.generated_case_id.is_empty() => return Ok(None),
+        "generated" if !capability.generated_case_id.is_empty() => {}
+        _ => return Err(()),
+    }
+    let mut candidates = Vec::new();
+    for alias in [&capability.generated_case_id, &capability.case_id] {
+        if candidates
+            .iter()
+            .any(|(queried, _, _, _): &(String, String, String, String)| queried == alias)
+        {
+            continue;
+        }
+        if let Some(authority) = ctx.db.quest_generation_authority().case_id().find(alias) {
+            let candidate = validated_generated_authority_candidate(authority)?;
+            candidates.push((alias.clone(), candidate.0, candidate.1, candidate.2));
+        }
+        for authority in ctx
+            .db
+            .quest_generation_authority()
+            .public_case_id()
+            .filter(alias)
+        {
+            let candidate = validated_generated_authority_candidate(authority)?;
+            candidates.push((alias.clone(), candidate.0, candidate.1, candidate.2));
+        }
+    }
+    exactly_one_generated_authority(
+        candidates
+            .into_iter()
+            .map(|(_, case_id, manifest, context)| (case_id, manifest, context)),
+    )
+}
+
+fn observer_pattern_route_has_live_corroborated_clue(
+    owner_character_id: u64,
+    case_id: &str,
+    evidence_id: &str,
+    knowledge: impl IntoIterator<Item = InvestigationEvidenceKnowledge>,
+) -> bool {
+    knowledge.into_iter().any(|knowledge| {
+        knowledge.owner_character_id == owner_character_id
+            && knowledge.case_id == case_id
+            && knowledge.evidence_id == evidence_id
+    })
+}
+
+fn capability_has_live_pattern_support_view(
+    ctx: &ViewContext,
+    capability: &InvestigationActionCapability,
+) -> bool {
+    let output = ctx
+        .db
+        .investigation_generated_action_output()
+        .capability_id()
+        .find(&capability.id);
+    let Ok(authority) = generated_authority_view(ctx, capability) else {
+        return false;
+    };
+    let evidence_id = match generated_pattern_authority(
+        capability,
+        authority
+            .as_ref()
+            .map(|(manifest, context)| (manifest.as_str(), context.as_str())),
+        output.as_ref().map(|output| output.outputs_json.as_str()),
+    ) {
+        GeneratedPatternAuthority::Manual | GeneratedPatternAuthority::GeneratedWithoutPattern => {
+            return true;
+        }
+        GeneratedPatternAuthority::Pattern { evidence_id, .. } => evidence_id,
+        GeneratedPatternAuthority::Invalid => return false,
+    };
+    observer_pattern_route_has_live_corroborated_clue(
+        capability.owner_character_id,
+        &capability.case_id,
+        &evidence_id,
+        ctx.db
+            .investigation_evidence_knowledge()
+            .owner_character_id()
+            .filter(capability.owner_character_id),
+    )
+}
+
+fn capability_has_live_support_view(
+    ctx: &ViewContext,
+    capability: &InvestigationActionCapability,
+    kind: action::InvestigationActionKind,
+) -> bool {
+    if !capability.required_action_id.is_empty()
+        && !capability_has_successful_attempt_view(ctx, &capability.required_action_id)
+    {
+        return false;
+    }
+    if !capability_has_live_pattern_support_view(ctx, capability) {
+        return false;
+    }
+    if kind == action::InvestigationActionKind::InspectSite
+        && capability.target_kind == "site"
+        && exact_action_site_for_observer(ctx, capability, kind).is_none()
+    {
+        return false;
+    }
+    let prerequisites = action::prerequisites(kind);
+    if prerequisites.requires_contact_referral
+        && !ctx
+            .db
+            .investigation_lead()
+            .owner_character_id()
+            .filter(capability.owner_character_id)
+            .any(|lead| {
+                lead_is_live_contact_referral(
+                    &lead,
+                    capability.owner_character_id,
+                    &capability.case_id,
+                )
+            })
+    {
+        return false;
+    }
+    if prerequisites.requires_approximate_destination
+        && capability.target_kind != "area"
+        && !ctx
+            .db
+            .investigation_lead()
+            .owner_character_id()
+            .filter(capability.owner_character_id)
+            .any(|lead| {
+                lead.case_id == capability.case_id
+                    && lead.destination_stage == "approximate_area"
+                    && lead.corrected_by.is_empty()
+            })
+    {
+        return false;
+    }
+    !prerequisites.requires_tracks || !capability.required_action_id.is_empty()
+}
+
+fn exact_action_site_for_observer(
+    ctx: &ViewContext,
+    capability: &InvestigationActionCapability,
+    kind: action::InvestigationActionKind,
+) -> Option<String> {
+    if kind != action::InvestigationActionKind::InspectSite || capability.target_kind != "site" {
+        return None;
+    }
+    let lead = ctx
+        .db
+        .investigation_lead()
+        .owner_character_id()
+        .filter(capability.owner_character_id)
+        .find(|lead| {
+            lead.exact_location_id == capability.target_id
+                && lead.corrected_by.is_empty()
+                && matches!(
+                    lead.destination_stage.as_str(),
+                    "exact_believed" | "visited"
+                )
+        })?;
+    let site = ctx
+        .db
+        .case_site_authority()
+        .id_key()
+        .find(&lead.exact_location_id)?;
+    let generated_aliases = case_site_provenance_view(ctx, &site)?;
+    match (&generated_aliases, capability.provenance_kind.as_str()) {
+        (None, "manual") if capability.generated_case_id.is_empty() => {}
+        (Some((canonical, public)), "generated")
+            if capability.generated_case_id == canonical.as_str()
+                && (capability.case_id == canonical.as_str()
+                    || capability.case_id == public.as_str()) => {}
+        _ => return None,
+    }
+    exact_site_knowledge_is_live(
+        &capability.case_id,
+        &capability.target_id,
+        &lead.case_id,
+        &lead.exact_location_id,
+        &lead.destination_stage,
+        &lead.corrected_by,
+        &site.case_id,
+        &site.id.value,
+        lead.latitude_e7 == site.latitude_e7 && lead.longitude_e7 == site.longitude_e7,
+        generated_aliases.as_ref().map(|aliases| aliases.0.as_str()),
+        generated_aliases.as_ref().map(|aliases| aliases.1.as_str()),
+    )
+    .then_some(lead.exact_location_id)
+}
+
+fn exact_site_knowledge_is_live(
+    capability_case_id: &str,
+    capability_target_id: &str,
+    lead_case_id: &str,
+    lead_exact_location_id: &str,
+    lead_destination_stage: &str,
+    lead_corrected_by: &str,
+    authority_case_id: &str,
+    authority_site_id: &str,
+    coordinates_match: bool,
+    generated_canonical_case_id: Option<&str>,
+    generated_public_case_id: Option<&str>,
+) -> bool {
+    let cases_match = if let Some(canonical) = generated_canonical_case_id {
+        let is_generated_alias = |candidate: &str| {
+            candidate == canonical
+                || generated_public_case_id.is_some_and(|public| candidate == public)
+        };
+        is_generated_alias(capability_case_id)
+            && is_generated_alias(lead_case_id)
+            && authority_case_id == canonical
+    } else {
+        capability_case_id == lead_case_id && capability_case_id == authority_case_id
+    };
+    cases_match
+        && capability_target_id == lead_exact_location_id
+        && capability_target_id == authority_site_id
+        && matches!(lead_destination_stage, "exact_believed" | "visited")
+        && lead_corrected_by.is_empty()
+        && coordinates_match
+}
+
+struct ProjectedActionAvailability {
+    unavailable_reason: Option<String>,
+    can_travel_to_required_site: bool,
+}
+
+fn projected_action_availability(
+    party_ready: bool,
+    required_case_site_id: &str,
+    occupying_required_site: bool,
+) -> ProjectedActionAvailability {
+    if !party_ready {
+        return ProjectedActionAvailability {
+            unavailable_reason: Some(
+                "An incapacitated party member must recover before the party can investigate."
+                    .into(),
+            ),
+            can_travel_to_required_site: false,
+        };
+    }
+    if !required_case_site_id.is_empty() && !occupying_required_site {
+        return ProjectedActionAvailability {
+            unavailable_reason: Some(
+                "Travel to the known investigation site before inspecting it.".into(),
+            ),
+            can_travel_to_required_site: true,
+        };
+    }
+    ProjectedActionAvailability {
+        unavailable_reason: None,
+        can_travel_to_required_site: false,
+    }
+}
+
+fn action_unavailable_reason_view(
+    ctx: &ViewContext,
+    capability: &InvestigationActionCapability,
+    required_case_site_id: &str,
+) -> ProjectedActionAvailability {
+    let Some(character) = ctx.db.character().id().find(capability.owner_character_id) else {
+        return ProjectedActionAvailability {
+            unavailable_reason: Some(
+                "The investigating character is currently unavailable.".into(),
+            ),
+            can_travel_to_required_site: false,
+        };
+    };
+    let Some(party_id) = character.party_id else {
+        return ProjectedActionAvailability {
+            unavailable_reason: Some(
+                "Join or form a party before attempting this investigation.".into(),
+            ),
+            can_travel_to_required_site: false,
+        };
+    };
+    let party_ready = !ctx
+        .db
+        .party_member()
+        .party_id()
+        .filter(&party_id)
+        .filter_map(|membership| ctx.db.character().id().find(membership.character_id))
+        .filter(|member| member.alive)
+        .any(|member| {
+            ctx.db
+                .character_strategic_condition()
+                .character_id()
+                .find(member.id)
+                .is_some_and(|condition| condition.status == "incapacitated")
+        });
+    let occupying_required_site = !required_case_site_id.is_empty()
+        && ctx
+            .db
+            .party_authority()
+            .id()
+            .find(&party_id)
+            .and_then(|party| party.current_case_site_id)
+            .is_some_and(|site| site.value == required_case_site_id);
+    projected_action_availability(party_ready, required_case_site_id, occupying_required_site)
 }
 
 #[view(accessor = backend_investigation_action_outcomes, public)]
@@ -790,11 +1499,42 @@ fn parse_action_terrain(value: &str) -> Result<action::Terrain, String> {
 /// Trusted generator seam. The opaque id is the only authority returned to a
 /// browser. Hidden targets, seeds, and consequences remain private.
 #[allow(clippy::too_many_arguments)]
+fn validate_investigation_action_text(
+    id: &str,
+    case_id: &str,
+    target_kind: &str,
+    target_id: &str,
+    safe_summary: &str,
+    known_prerequisites: &str,
+    safe_result_on_success: &str,
+    required_action_id: &str,
+    alternate_route_action_id: &str,
+) -> Result<(), String> {
+    for text in [
+        id,
+        case_id,
+        target_kind,
+        target_id,
+        safe_summary,
+        known_prerequisites,
+        safe_result_on_success,
+        alternate_route_action_id,
+    ] {
+        bounded(text)?;
+    }
+    // Root actions have no predecessor. Successor actions still carry the
+    // observer-scoped prerequisite id and are validated as ordinary text.
+    bounded_optional(required_action_id)
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn issue_investigation_action_capability(
     ctx: &ReducerContext,
     id: String,
     owner_character_id: u64,
     case_id: String,
+    provenance_kind: String,
+    generated_case_id: String,
     kind: action::InvestigationActionKind,
     target_kind: String,
     target_id: String,
@@ -808,7 +1548,12 @@ pub(crate) fn issue_investigation_action_capability(
     required_action_id: String,
     alternate_route_action_id: String,
 ) -> Result<(), String> {
-    for text in [
+    match provenance_kind.as_str() {
+        "manual" if generated_case_id.is_empty() => {}
+        "generated" if !generated_case_id.is_empty() => {}
+        _ => return Err("Investigation capability provenance is invalid".into()),
+    }
+    validate_investigation_action_text(
         &id,
         &case_id,
         &target_kind,
@@ -818,9 +1563,7 @@ pub(crate) fn issue_investigation_action_capability(
         &safe_result_on_success,
         &required_action_id,
         &alternate_route_action_id,
-    ] {
-        bounded(text)?;
-    }
+    )?;
     bps(uncertainty_bps)?;
     if alternate_route_action_id == id {
         return Err("A critical action needs a distinct recovery route".into());
@@ -847,6 +1590,12 @@ pub(crate) fn issue_investigation_action_capability(
             .id()
             .find(&target_id)
             .is_some(),
+        "cohort" => ctx
+            .db
+            .investigation_pattern_target_authority()
+            .cohort_id()
+            .find(&target_id)
+            .is_some_and(|target| target.case_id == case_id),
         "contact" | "route" | "tracks" => true,
         _ => false,
     };
@@ -859,6 +1608,8 @@ pub(crate) fn issue_investigation_action_capability(
             id,
             owner_character_id,
             case_id,
+            provenance_kind,
+            generated_case_id,
             method: action_method(kind).into(),
             version: 0,
             target_kind,
@@ -885,6 +1636,22 @@ fn character_strategic_minute(ctx: &ReducerContext, character_id: u64) -> u64 {
         .character_id()
         .find(character_id)
         .map_or_else(|| official_minute(ctx), |time| time.minutes)
+}
+
+fn generated_observer_id(
+    ctx: &ReducerContext,
+    case_id: &str,
+    kind: &str,
+    name: &str,
+) -> Option<String> {
+    ctx.db
+        .quest_generation_authority()
+        .case_id()
+        .find(&case_id.to_string())
+        .and_then(|authority| validate_quest_generation_authority(&authority).ok())
+        .map(|validated| {
+            adventuresim_core::quest_generation::observer_scoped_id(&validated.context, kind, name)
+        })
 }
 
 fn set_action_active(ctx: &ReducerContext, action_id: &str, active: bool) -> Result<(), String> {
@@ -929,13 +1696,38 @@ fn validate_action_route_graph(
             return Err("Investigation alternate route crosses authority boundaries".into());
         }
     }
-    if capabilities
+    let active = capabilities
         .iter()
         .filter(|capability| capability.active)
-        .count()
-        < 2
-    {
-        return Err("Investigation needs two immediately playable routes".into());
+        .collect::<Vec<_>>();
+    if active.is_empty() {
+        return Err("Investigation needs an immediately playable entry action".into());
+    }
+    if active.len() == 1 {
+        let entry = active[0];
+        if entry.method != "locate_contact"
+            || entry.target_kind != "contact"
+            || !entry.required_action_id.is_empty()
+        {
+            return Err("A single investigation entry must be an exact referred contact".into());
+        }
+        let successors = capabilities
+            .iter()
+            .filter(|candidate| candidate.required_action_id == entry.id)
+            .collect::<Vec<_>>();
+        if successors.len() != 2
+            || successors.iter().any(|candidate| candidate.active)
+            || !successors
+                .iter()
+                .any(|candidate| candidate.method == "approach_lead")
+            || !successors
+                .iter()
+                .any(|candidate| candidate.method == "watch")
+        {
+            return Err(
+                "The referred contact must unlock inactive approach and watch routes".into(),
+            );
+        }
     }
     Ok(())
 }
@@ -944,7 +1736,7 @@ fn activate_action_successors(
     ctx: &ReducerContext,
     capability: &InvestigationActionCapability,
     succeeded: bool,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let mut activate = Vec::new();
     if succeeded {
         activate.extend(
@@ -959,21 +1751,460 @@ fn activate_action_successors(
                 .map(|candidate| candidate.id),
         );
     } else {
-        let alternate = ctx
+        use adventuresim_core::quest_generation::{
+            FailedActionAlternateTransition, ReferredContactActionState,
+            transition_failed_action_alternate,
+        };
+        let capabilities: Vec<_> = ctx
             .db
             .investigation_action_capability()
-            .id()
-            .find(&capability.alternate_route_action_id)
-            .ok_or("Investigation recovery route no longer exists")?;
-        if alternate.owner_character_id != capability.owner_character_id
-            || alternate.case_id != capability.case_id
-        {
-            return Err("Investigation recovery route no longer matches its case".into());
+            .owner_character_id()
+            .filter(capability.owner_character_id)
+            .filter(|candidate| candidate.case_id == capability.case_id)
+            .collect();
+        let mut states = capabilities
+            .iter()
+            .map(|candidate| ReferredContactActionState {
+                id: candidate.id.clone(),
+                owner_character_id: candidate.owner_character_id,
+                case_id: candidate.case_id.clone(),
+                method: candidate.method.clone(),
+                target_kind: candidate.target_kind.clone(),
+                target_id: candidate.target_id.clone(),
+                required_action_id: candidate.required_action_id.clone(),
+                active: candidate.active,
+                version: candidate.version,
+                successful_attempt: ctx
+                    .db
+                    .investigation_action_attempt()
+                    .capability_id()
+                    .filter(&candidate.id)
+                    .any(|attempt| attempt.success),
+            })
+            .collect::<Vec<_>>();
+        match transition_failed_action_alternate(
+            &mut states,
+            capability.owner_character_id,
+            &capability.case_id,
+            &capability.alternate_route_action_id,
+        )? {
+            FailedActionAlternateTransition::Activated { alternate_id } => {
+                let alternate = capabilities
+                    .iter()
+                    .find(|candidate| candidate.id == alternate_id)
+                    .ok_or("Investigation recovery route no longer exists")?;
+                let kind = parse_action_kind(&alternate.method)?;
+                if capability_has_live_support_reducer(ctx, alternate, kind) {
+                    activate.push(alternate_id);
+                }
+            }
+            FailedActionAlternateTransition::Unavailable => {}
         }
-        activate.push(alternate.id);
     }
     for id in activate {
         set_action_active(ctx, &id, true)?;
+    }
+    if succeeded {
+        return Ok(false);
+    }
+    Ok(ctx
+        .db
+        .investigation_action_capability()
+        .owner_character_id()
+        .filter(capability.owner_character_id)
+        .filter(|candidate| {
+            candidate.case_id == capability.case_id
+                && candidate.id != capability.id
+                && candidate.active
+                && !ctx
+                    .db
+                    .investigation_action_attempt()
+                    .capability_id()
+                    .filter(&candidate.id)
+                    .any(|attempt| attempt.success)
+        })
+        .any(|candidate| {
+            parse_action_kind(&candidate.method)
+                .is_ok_and(|kind| capability_has_live_support_reducer(ctx, &candidate, kind))
+        }))
+}
+
+fn capability_has_live_support_reducer(
+    ctx: &ReducerContext,
+    capability: &InvestigationActionCapability,
+    kind: action::InvestigationActionKind,
+) -> bool {
+    if !capability.required_action_id.is_empty()
+        && !ctx
+            .db
+            .investigation_action_attempt()
+            .capability_id()
+            .filter(&capability.required_action_id)
+            .any(|attempt| attempt.success)
+    {
+        return false;
+    }
+    if !capability_has_live_pattern_support_reducer(ctx, capability) {
+        return false;
+    }
+    if kind == action::InvestigationActionKind::InspectSite && capability.target_kind == "site" {
+        let Some((site, lead, generated_aliases)) =
+            exact_action_case_site_for_observer(ctx, capability)
+        else {
+            return false;
+        };
+        if !exact_site_knowledge_is_live(
+            &capability.case_id,
+            &capability.target_id,
+            &lead.case_id,
+            &lead.exact_location_id,
+            &lead.destination_stage,
+            &lead.corrected_by,
+            &site.case_id,
+            &site.id.value,
+            lead.latitude_e7 == site.latitude_e7 && lead.longitude_e7 == site.longitude_e7,
+            generated_aliases.as_ref().map(|aliases| aliases.0.as_str()),
+            generated_aliases.as_ref().map(|aliases| aliases.1.as_str()),
+        ) {
+            return false;
+        }
+    }
+    let prerequisites = action::prerequisites(kind);
+    if prerequisites.requires_contact_referral
+        && !ctx
+            .db
+            .investigation_lead()
+            .owner_character_id()
+            .filter(capability.owner_character_id)
+            .any(|lead| {
+                lead_is_live_contact_referral(
+                    &lead,
+                    capability.owner_character_id,
+                    &capability.case_id,
+                )
+            })
+    {
+        return false;
+    }
+    if prerequisites.requires_approximate_destination
+        && capability.target_kind != "area"
+        && !ctx
+            .db
+            .investigation_lead()
+            .owner_character_id()
+            .filter(capability.owner_character_id)
+            .any(|lead| {
+                lead.case_id == capability.case_id
+                    && lead.destination_stage == "approximate_area"
+                    && lead.corrected_by.is_empty()
+            })
+    {
+        return false;
+    }
+    !prerequisites.requires_tracks || !capability.required_action_id.is_empty()
+}
+
+fn capability_has_live_pattern_support_reducer(
+    ctx: &ReducerContext,
+    capability: &InvestigationActionCapability,
+) -> bool {
+    let output = ctx
+        .db
+        .investigation_generated_action_output()
+        .capability_id()
+        .find(&capability.id);
+    let Ok(authority) = generated_authority_reducer(ctx, capability) else {
+        return false;
+    };
+    let evidence_id = match generated_pattern_authority(
+        capability,
+        authority
+            .as_ref()
+            .map(|(manifest, context)| (manifest.as_str(), context.as_str())),
+        output.as_ref().map(|output| output.outputs_json.as_str()),
+    ) {
+        GeneratedPatternAuthority::Manual | GeneratedPatternAuthority::GeneratedWithoutPattern => {
+            return true;
+        }
+        GeneratedPatternAuthority::Pattern { evidence_id, .. } => evidence_id,
+        GeneratedPatternAuthority::Invalid => return false,
+    };
+    observer_pattern_route_has_live_corroborated_clue(
+        capability.owner_character_id,
+        &capability.case_id,
+        &evidence_id,
+        ctx.db
+            .investigation_evidence_knowledge()
+            .owner_character_id()
+            .filter(capability.owner_character_id),
+    )
+}
+
+fn validate_capability_blueprint_reducer(
+    ctx: &ReducerContext,
+    capability: &InvestigationActionCapability,
+) -> Result<(), String> {
+    let output = ctx
+        .db
+        .investigation_generated_action_output()
+        .capability_id()
+        .find(&capability.id);
+    let authority = generated_authority_reducer(ctx, capability)
+        .map_err(|()| "Generated action authority is ambiguous or invalid")?;
+    match generated_pattern_authority(
+        capability,
+        authority
+            .as_ref()
+            .map(|(manifest, context)| (manifest.as_str(), context.as_str())),
+        output.as_ref().map(|output| output.outputs_json.as_str()),
+    ) {
+        GeneratedPatternAuthority::Invalid => {
+            Err("Investigation capability no longer matches its authored blueprint".into())
+        }
+        GeneratedPatternAuthority::Manual
+        | GeneratedPatternAuthority::GeneratedWithoutPattern
+        | GeneratedPatternAuthority::Pattern { .. } => Ok(()),
+    }
+}
+
+fn validate_referred_contact_authority(
+    ctx: &ReducerContext,
+    owner_character_id: u64,
+    canonical_case_id: &str,
+    witness_npc_id: &str,
+) -> Result<bool, String> {
+    let roots = ctx
+        .db
+        .investigation_action_capability()
+        .owner_character_id()
+        .filter(owner_character_id)
+        .filter(|capability| {
+            capability.case_id == canonical_case_id
+                && capability.method == "locate_contact"
+                && capability.target_kind == "contact"
+                && capability.target_id == witness_npc_id
+        })
+        .collect::<Vec<_>>();
+    if roots.len() > 1 {
+        return Err("Referred contact capability authority is ambiguous".into());
+    }
+    let Some(root) = roots.first() else {
+        return Ok(false);
+    };
+    if !root.required_action_id.is_empty() {
+        return Err("Referred contact capability is not an authored root".into());
+    }
+    validate_capability_blueprint_reducer(ctx, root)?;
+    if root.provenance_kind != "generated" {
+        return Err("Generated referred contact root has invalid provenance".into());
+    }
+    let authority = generated_authority_reducer(ctx, root)
+        .map_err(|()| "Generated contact authority is ambiguous or invalid")?
+        .ok_or("Generated contact authority is missing")?;
+    let manifest =
+        serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(&authority.0)
+            .map_err(|_| "Generated contact manifest is invalid")?;
+    let context = serde_json::from_str::<adventuresim_core::quest_generation::GenerationContext>(
+        &authority.1,
+    )
+    .map_err(|_| "Generated contact context is invalid")?;
+    let generated_root = manifest
+        .actions
+        .iter()
+        .find(|action| {
+            adventuresim_core::quest_generation::observer_scoped_id(
+                &context,
+                "capability",
+                &format!("{owner_character_id}:{}", action.id.0),
+            ) == root.id
+        })
+        .ok_or("Generated contact root is absent from its manifest")?;
+    let expected_successors = manifest
+        .actions
+        .iter()
+        .filter(|action| action.prerequisite.as_ref() == Some(&generated_root.id))
+        .collect::<Vec<_>>();
+    if expected_successors.is_empty() {
+        return Err("Generated contact root has no authored successors".into());
+    }
+    let expected_successor_ids = expected_successors
+        .into_iter()
+        .map(|generated| {
+            adventuresim_core::quest_generation::observer_scoped_id(
+                &context,
+                "capability",
+                &format!("{owner_character_id}:{}", generated.id.0),
+            )
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let actual_successors = ctx
+        .db
+        .investigation_action_capability()
+        .owner_character_id()
+        .filter(owner_character_id)
+        .filter(|capability| {
+            capability.case_id == canonical_case_id && capability.required_action_id == root.id
+        })
+        .collect::<Vec<_>>();
+    if actual_successors
+        .iter()
+        .map(|successor| successor.id.clone())
+        .collect::<std::collections::BTreeSet<_>>()
+        != expected_successor_ids
+    {
+        return Err("Generated contact successor set differs from its manifest".into());
+    }
+    for successor_id in expected_successor_ids {
+        let successor = ctx
+            .db
+            .investigation_action_capability()
+            .id()
+            .find(&successor_id)
+            .ok_or("Generated contact successor is missing")?;
+        validate_capability_blueprint_reducer(ctx, &successor)?;
+    }
+    Ok(true)
+}
+
+fn complete_referred_contact_action(
+    ctx: &ReducerContext,
+    owner_character_id: u64,
+    canonical_case_id: &str,
+    witness_npc_id: &str,
+    dialogue_action_id: &str,
+) -> Result<(), String> {
+    use adventuresim_core::quest_generation::{
+        ReferredContactActionState, ReferredContactTransition, transition_referred_contact_action,
+    };
+    if !validate_referred_contact_authority(
+        ctx,
+        owner_character_id,
+        canonical_case_id,
+        witness_npc_id,
+    )? {
+        return Ok(());
+    }
+    let capabilities: Vec<_> = ctx
+        .db
+        .investigation_action_capability()
+        .owner_character_id()
+        .filter(owner_character_id)
+        .filter(|capability| capability.case_id == canonical_case_id)
+        .collect();
+    let mut states: Vec<_> = capabilities
+        .iter()
+        .map(|capability| ReferredContactActionState {
+            id: capability.id.clone(),
+            owner_character_id: capability.owner_character_id,
+            case_id: capability.case_id.clone(),
+            method: capability.method.clone(),
+            target_kind: capability.target_kind.clone(),
+            target_id: capability.target_id.clone(),
+            required_action_id: capability.required_action_id.clone(),
+            active: capability.active,
+            version: capability.version,
+            successful_attempt: ctx
+                .db
+                .investigation_action_attempt()
+                .capability_id()
+                .filter(&capability.id)
+                .any(|attempt| attempt.success),
+        })
+        .collect();
+    let transition = transition_referred_contact_action(
+        &mut states,
+        owner_character_id,
+        canonical_case_id,
+        witness_npc_id,
+    )?;
+    let ReferredContactTransition::Applied {
+        root_id,
+        expected_version,
+        next_version,
+        activated_successor_ids,
+        attempt_success,
+        outcome_wording,
+    } = transition
+    else {
+        return Ok(());
+    };
+    let mut capability = capabilities
+        .into_iter()
+        .find(|capability| capability.id == root_id)
+        .ok_or("Referred contact action disappeared")?;
+    if capability.version != expected_version || !capability.active {
+        return Err("Referred contact action changed during transition planning".into());
+    }
+    let completed_at = character_strategic_minute(ctx, owner_character_id);
+    let attempt_name = format!("dialogue:{dialogue_action_id}:{}", capability.id);
+    let attempt_id = if capability.provenance_kind == "generated" {
+        generated_observer_id(ctx, canonical_case_id, "attempt", &attempt_name)
+            .ok_or("Generated contact action lacks observer-id authority")?
+    } else {
+        inv::compound_id(&["attempt", "manual-contact", &attempt_name])
+    };
+    ctx.db
+        .investigation_action_attempt()
+        .insert(InvestigationActionAttempt {
+            id: attempt_id.clone(),
+            capability_id: capability.id.clone(),
+            owner_character_id,
+            expected_version: capability.version,
+            method: capability.method.clone(),
+            started_at: completed_at,
+            completed_at,
+            duration_minutes: 0,
+            success: attempt_success,
+            resulting_uncertainty_bps: capability.uncertainty_bps,
+            private_resolution_json: serde_json::json!({
+                "source": "exact_referred_witness_dialogue"
+            })
+            .to_string(),
+        });
+    capability.active = false;
+    capability.version = next_version;
+    ctx.db
+        .investigation_action_capability()
+        .id()
+        .update(capability.clone());
+    let outcome_id = if capability.provenance_kind == "generated" {
+        generated_observer_id(ctx, canonical_case_id, "outcome", &attempt_id)
+            .ok_or("Generated contact action lacks observer-id authority")?
+    } else {
+        inv::compound_id(&["outcome", "manual-contact", &attempt_id])
+    };
+    if ctx
+        .db
+        .investigation_action_outcome()
+        .id()
+        .find(&outcome_id)
+        .is_none()
+    {
+        ctx.db
+            .investigation_action_outcome()
+            .insert(InvestigationActionOutcome {
+                id: outcome_id,
+                owner_character_id,
+                case_id: canonical_case_id.into(),
+                capability_id: capability.id.clone(),
+                safe_wording: outcome_wording,
+                recorded_at: official_minute(ctx),
+            });
+    }
+    for successor_id in activated_successor_ids {
+        let successor = ctx
+            .db
+            .investigation_action_capability()
+            .id()
+            .find(&successor_id)
+            .ok_or("Referred contact successor disappeared")?;
+        if successor.owner_character_id != owner_character_id
+            || successor.case_id != canonical_case_id
+            || successor.required_action_id != capability.id
+        {
+            return Err("Referred contact successor changed during transition planning".into());
+        }
+        set_action_active(ctx, &successor_id, true)?;
     }
     Ok(())
 }
@@ -987,6 +2218,165 @@ fn issue_rumor_action_graph(
     contact_id: &str,
     safe_summary: &str,
 ) -> Result<(), String> {
+    if let Some(authority) = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&case_id.to_string())
+    {
+        let validated = validate_quest_generation_authority(&authority)?;
+        let manifest = validated.manifest;
+        let generation_context = validated.context;
+        for target in &manifest.pattern_targets {
+            let row = InvestigationPatternTargetAuthority {
+                cohort_id: target.cohort_id.clone(),
+                case_id: case_id.to_string(),
+                npc_id: target.npc_id.clone(),
+                demographic: format!("{:?}", target.demographic).to_ascii_lowercase(),
+                age_band: target.age_band.clone(),
+                sex: target.sex.clone(),
+                profession: target.profession.clone(),
+                expected_settlement_id: target.expected_settlement_id.clone(),
+                expected_location: target.expected_location.clone(),
+                presence_version: target.presence_version,
+            };
+            if let Some(existing) = ctx
+                .db
+                .investigation_pattern_target_authority()
+                .cohort_id()
+                .find(&row.cohort_id)
+            {
+                if existing.case_id != row.case_id
+                    || existing.npc_id != row.npc_id
+                    || existing.demographic != row.demographic
+                    || existing.age_band != row.age_band
+                    || existing.sex != row.sex
+                    || existing.profession != row.profession
+                    || existing.expected_settlement_id != row.expected_settlement_id
+                    || existing.expected_location != row.expected_location
+                    || existing.presence_version != row.presence_version
+                {
+                    return Err("Generated pattern target authority conflicts".into());
+                }
+            } else {
+                ctx.db.investigation_pattern_target_authority().insert(row);
+            }
+        }
+        for generated in &manifest.actions {
+            let capability_id = adventuresim_core::quest_generation::observer_scoped_id(
+                &generation_context,
+                "capability",
+                &format!("{owner_character_id}:{}", generated.id.0),
+            );
+            if let Some(existing) = ctx
+                .db
+                .investigation_action_capability()
+                .id()
+                .find(&capability_id)
+            {
+                validate_capability_blueprint_reducer(ctx, &existing)?;
+                continue;
+            }
+            let remap = |id: &adventuresim_core::quest_generation::ActionId| {
+                adventuresim_core::quest_generation::observer_scoped_id(
+                    &generation_context,
+                    "capability",
+                    &format!("{owner_character_id}:{}", id.0),
+                )
+            };
+            let site_terrain = manifest
+                .sites
+                .iter()
+                .find(|site| site.id.0 == generated.target_id)
+                .map(|site| site.terrain);
+            let area_terrain = manifest
+                .areas
+                .iter()
+                .find(|area| area.id == generated.target_id)
+                .map(|area| area.terrain);
+            let consequence = generated
+                .outputs
+                .iter()
+                .find_map(|output| match output {
+                    adventuresim_core::quest_generation::GeneratedActionOutput::Consequence {
+                        consequence:
+                            adventuresim_core::quest_generation::GeneratedActionConsequence::RetrieveAsset {
+                                asset_id,
+                                next_version,
+                            },
+                    } => Some(InvestigationActionConsequence::RetrieveAsset {
+                        asset_id: asset_id.clone(),
+                        version: *next_version,
+                    }),
+                    adventuresim_core::quest_generation::GeneratedActionOutput::Consequence {
+                        consequence:
+                            adventuresim_core::quest_generation::GeneratedActionConsequence::RescueSubject {
+                                subject_id,
+                                next_version,
+                            },
+                    } => Some(InvestigationActionConsequence::RescueSubject {
+                        subject_id: subject_id.clone(),
+                        version: *next_version,
+                    }),
+                    _ => None,
+                })
+                .unwrap_or(InvestigationActionConsequence::None);
+            let (known_prerequisites, safe_result_on_success) =
+                generated_capability_safe_text(&manifest, generated);
+            issue_investigation_action_capability(
+                ctx,
+                capability_id,
+                owner_character_id,
+                case_id.to_string(),
+                "generated".into(),
+                manifest.canonical_case_id.clone(),
+                generated.kind,
+                generated.target_kind.clone(),
+                generated.target_id.clone(),
+                site_terrain
+                    .or(area_terrain)
+                    .unwrap_or(action::Terrain::Settlement),
+                ctx.random::<u64>(),
+                7_000,
+                generated.safe_summary.clone(),
+                known_prerequisites,
+                safe_result_on_success,
+                consequence,
+                generated
+                    .prerequisite
+                    .as_ref()
+                    .map_or_else(String::new, remap),
+                remap(&generated.alternate),
+            )?;
+            ctx.db.investigation_generated_action_output().insert(
+                InvestigationGeneratedActionOutput {
+                    capability_id: adventuresim_core::quest_generation::observer_scoped_id(
+                        &generation_context,
+                        "capability",
+                        &format!("{owner_character_id}:{}", generated.id.0),
+                    ),
+                    outputs_json: serde_json::to_string(&generated.outputs)
+                        .map_err(|_| "Could not encode generated action outputs")?,
+                },
+            );
+        }
+        for generated in manifest
+            .actions
+            .iter()
+            .filter(|action| action.active_initially)
+        {
+            set_action_active(
+                ctx,
+                &adventuresim_core::quest_generation::observer_scoped_id(
+                    &generation_context,
+                    "capability",
+                    &format!("{owner_character_id}:{}", generated.id.0),
+                ),
+                true,
+            )?;
+        }
+        return validate_action_route_graph(ctx, owner_character_id, case_id);
+    }
     let area_id = inv::compound_id(&["area", lead_id]);
     if ctx
         .db
@@ -1183,11 +2573,13 @@ fn issue_rumor_action_graph(
             id,
             owner_character_id,
             case_id.to_string(),
+            "manual".into(),
+            String::new(),
             kind,
             kind_name.into(),
             target,
             terrain,
-            stable_action_seed(lead_id, action_method(kind)),
+            ctx.random::<u64>(),
             if matches!(
                 kind,
                 action::InvestigationActionKind::FollowTracks
@@ -1284,23 +2676,78 @@ fn persist_action_result_lead(
     attempt_id: &str,
     resolution: &action::Resolution,
 ) -> Result<(), String> {
-    let kind = parse_action_kind(&capability.method)?;
-    let exact = resolution.success
-        && capability.target_kind == "site"
-        && (kind == action::InvestigationActionKind::InspectSite
-            || resolution.resulting_uncertainty_bps <= 1_500);
-    let site = exact
-        .then(|| {
-            ctx.db
-                .case_site_authority()
-                .id_key()
-                .find(&capability.target_id)
+    let public_case_id = generated_authority_reducer(ctx, capability)
+        .map_err(|()| "Generated action authority is invalid")?
+        .map(|(manifest, _)| {
+            serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(&manifest)
+                .map(|generated| generated.public_case_id)
+                .map_err(|_| "Validated generated manifest became invalid")
         })
-        .flatten();
-    let lead_id = inv::compound_id(&["lead", "action", attempt_id]);
+        .transpose()?
+        .unwrap_or_else(|| capability.case_id.clone());
+    let kind = parse_action_kind(&capability.method)?;
+    let generated_outputs = ctx
+        .db
+        .investigation_generated_action_output()
+        .capability_id()
+        .find(&capability.id)
+        .map(|row| {
+            serde_json::from_str::<Vec<adventuresim_core::quest_generation::GeneratedActionOutput>>(
+                &row.outputs_json,
+            )
+            .map_err(|_| "Generated action output authority is invalid")
+        })
+        .transpose()?;
+    let typed_destination = generated_outputs.as_ref().and_then(|outputs| {
+        outputs.iter().find_map(|output| match output {
+            adventuresim_core::quest_generation::GeneratedActionOutput::Destination {
+                stage,
+                site_id,
+            } => Some((*stage, site_id.as_ref())),
+            _ => None,
+        })
+    });
+    let exact_site_id = typed_destination.and_then(|(stage, site_id)| {
+        (stage == adventuresim_core::quest_generation::GeneratedDestinationStage::Exact)
+            .then_some(site_id)
+            .flatten()
+    });
+    let exact = resolution.success
+        && if generated_outputs.is_some() {
+            exact_site_id.is_some()
+        } else {
+            capability.target_kind == "site"
+                && (kind == action::InvestigationActionKind::InspectSite
+                    || resolution.resulting_uncertainty_bps <= 1_500)
+        };
+    let site = if exact {
+        let site_id =
+            exact_site_id.map_or_else(|| capability.target_id.clone(), |site_id| site_id.0.clone());
+        ctx.db.case_site_authority().id_key().find(&site_id)
+    } else {
+        None
+    };
+    let lead_id = generated_observer_id(ctx, &capability.case_id, "lead", attempt_id)
+        .unwrap_or_else(|| inv::compound_id(&["lead", "action", attempt_id]));
     if ctx.db.investigation_lead().id().find(&lead_id).is_some() {
         return Ok(());
     }
+    let typed_stage = typed_destination.map(|(stage, _)| match stage {
+        adventuresim_core::quest_generation::GeneratedDestinationStage::Unknown => "unknown",
+        adventuresim_core::quest_generation::GeneratedDestinationStage::Textual => "textual",
+        adventuresim_core::quest_generation::GeneratedDestinationStage::Landmark => "landmark",
+        adventuresim_core::quest_generation::GeneratedDestinationStage::ApproximateArea => {
+            "approximate_area"
+        }
+        adventuresim_core::quest_generation::GeneratedDestinationStage::RouteSegment => {
+            "route_segment"
+        }
+        adventuresim_core::quest_generation::GeneratedDestinationStage::Exact => "exact_believed",
+    });
+    let exact_location_label = site
+        .as_ref()
+        .map(|site| site.name.clone())
+        .unwrap_or_default();
     let (stage, exact_location_id, latitude_e7, longitude_e7) = if let Some(site) = site {
         (
             "exact_believed",
@@ -1309,14 +2756,20 @@ fn persist_action_result_lead(
             site.longitude_e7,
         )
     } else if resolution.success {
-        ("approximate_area", String::new(), 0, 0)
+        (
+            typed_stage.unwrap_or("approximate_area"),
+            String::new(),
+            0,
+            0,
+        )
     } else {
         ("unknown", String::new(), 0, 0)
     };
     ctx.db.investigation_lead().insert(InvestigationLead {
         id: lead_id,
         owner_character_id: capability.owner_character_id,
-        case_id: capability.case_id.clone(),
+        case_id: public_case_id,
+        proposition_id: String::new(),
         summary: if resolution.success {
             capability.safe_result_on_success.clone()
         } else {
@@ -1338,11 +2791,29 @@ fn persist_action_result_lead(
         witness_description: String::new(),
         witness_occupation_or_relationship: String::new(),
         expected_location: String::new(),
-        current_learned_location: String::new(),
+        current_learned_location: exact_location_label,
         contradiction_group: format!("action-location:{}", capability.case_id),
         corrected_by: String::new(),
         recorded_at: official_minute(ctx),
     });
+    if resolution.success
+        && let Some(outputs) = generated_outputs
+    {
+        for evidence_id in outputs.iter().filter_map(|output| match output {
+            adventuresim_core::quest_generation::GeneratedActionOutput::Evidence {
+                evidence_id,
+            } => Some(&evidence_id.0),
+            _ => None,
+        }) {
+            record_evidence_knowledge(
+                ctx,
+                capability.owner_character_id,
+                &capability.case_id,
+                evidence_id,
+                attempt_id,
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -1375,6 +2846,31 @@ fn validate_action_position(
                 if !present {
                     return Err("The referred contact is not currently present".into());
                 }
+            }
+            Ok(())
+        }
+        "cohort" => {
+            let target = ctx
+                .db
+                .investigation_pattern_target_authority()
+                .cohort_id()
+                .find(&capability.target_id)
+                .ok_or("Victim cohort authority no longer exists")?;
+            if target.case_id != capability.case_id {
+                return Err("Victim cohort belongs to another case".into());
+            }
+            let presence = ctx
+                .db
+                .settlement_npc_presence()
+                .npc_id()
+                .find(&target.npc_id)
+                .ok_or("Victim cohort target is unavailable")?;
+            if actor.current_settlement_id.as_deref() != Some(presence.settlement_id.as_str())
+                || presence.settlement_id != target.expected_settlement_id
+                || presence.location_id != target.expected_location
+                || presence.settlement_id != target.expected_settlement_id
+            {
+                return Err("Victim cohort target moved from the learned location".into());
             }
             Ok(())
         }
@@ -1461,6 +2957,142 @@ fn validate_action_position(
     }
 }
 
+fn validate_generated_pattern_condition(
+    ctx: &ReducerContext,
+    capability: &InvestigationActionCapability,
+    kind: action::InvestigationActionKind,
+    started_at: u64,
+) -> Result<(), String> {
+    let output = ctx
+        .db
+        .investigation_generated_action_output()
+        .capability_id()
+        .find(&capability.id);
+    let authority = generated_authority_reducer(ctx, capability)
+        .map_err(|()| "Generated action authority is ambiguous")?;
+    let (evidence_id, condition) = match generated_pattern_authority(
+        capability,
+        authority
+            .as_ref()
+            .map(|(manifest, context)| (manifest.as_str(), context.as_str())),
+        output.as_ref().map(|output| output.outputs_json.as_str()),
+    ) {
+        GeneratedPatternAuthority::Manual | GeneratedPatternAuthority::GeneratedWithoutPattern => {
+            return Ok(());
+        }
+        GeneratedPatternAuthority::Pattern {
+            evidence_id,
+            condition,
+        } => (evidence_id, condition),
+        GeneratedPatternAuthority::Invalid => {
+            return Err("Generated action output authority is invalid".into());
+        }
+    };
+    if !observer_pattern_route_has_live_corroborated_clue(
+        capability.owner_character_id,
+        &capability.case_id,
+        &evidence_id,
+        ctx.db
+            .investigation_evidence_knowledge()
+            .owner_character_id()
+            .filter(capability.owner_character_id),
+    ) {
+        return Err("The selected pattern has not been corroborated yet".into());
+    }
+    use adventuresim_core::quest_generation::GeneratedPatternCondition as C;
+    match &condition {
+        C::NightWindow if started_at % 1_440 >= 360 && started_at % 1_440 < 1_200 => {
+            Err("The learned pattern requires acting during the nighttime window".into())
+        }
+        C::RoadRoute if capability.target_kind != "route" => {
+            Err("The learned roadside pattern is not bound to route geography".into())
+        }
+        C::VictimProfile {
+            cohort_id,
+            demographic,
+            age_band,
+            sex,
+            profession,
+        } => {
+            if kind != action::InvestigationActionKind::Patrol
+                || capability.target_kind != "cohort"
+                || capability.target_id != *cohort_id
+            {
+                return Err("The learned victim profile targets another cohort".into());
+            }
+            let target = ctx
+                .db
+                .investigation_pattern_target_authority()
+                .cohort_id()
+                .find(cohort_id)
+                .ok_or("Victim cohort authority no longer exists")?;
+            let expected_demographic = format!("{demographic:?}").to_ascii_lowercase();
+            if target.case_id != capability.case_id
+                || target.demographic != expected_demographic
+                || target.age_band != *age_band
+                || target.sex != *sex
+                || target.profession != *profession
+            {
+                return Err("Victim cohort profile no longer matches its authority".into());
+            }
+            let npc = ctx
+                .db
+                .settlement_npc()
+                .id()
+                .find(&target.npc_id)
+                .ok_or("Victim cohort NPC no longer exists")?;
+            let presence = ctx
+                .db
+                .settlement_npc_presence()
+                .npc_id()
+                .find(&target.npc_id)
+                .ok_or("Victim cohort target is unavailable")?;
+            let current_demographic = crate::strategic::generated_npc_demographic(&npc);
+            let current_version = crate::strategic::generated_npc_presence_version(&npc, &presence);
+            let expected = adventuresim_core::quest_generation::GeneratedPatternTarget {
+                cohort_id: target.cohort_id.clone(),
+                npc_id: target.npc_id.clone(),
+                demographic: *demographic,
+                age_band: target.age_band.clone(),
+                sex: target.sex.clone(),
+                profession: target.profession.clone(),
+                expected_settlement_id: target.expected_settlement_id.clone(),
+                expected_location: target.expected_location.clone(),
+                expected_location_label: String::new(),
+                presence_version: target.presence_version,
+            };
+            let current = adventuresim_core::quest_generation::WitnessCandidate {
+                npc_id: npc.id.clone(),
+                demographic: current_demographic,
+                age_band: format!("{:?}", npc.age_band).to_ascii_lowercase(),
+                sex: format!("{:?}", npc.sex).to_ascii_lowercase(),
+                profession: npc.profession.clone(),
+                visible_description: String::new(),
+                expected_location: presence.location_id.clone(),
+                expected_location_label: presence.location_id.clone(),
+                presence_version: current_version,
+                allowed_circumstances: Default::default(),
+            };
+            if !adventuresim_core::quest_generation::pattern_target_matches(
+                &expected,
+                &current,
+                &presence.settlement_id,
+            ) || !crate::settlement_population::npc_is_present(&presence, started_at)
+            {
+                return Err("Victim cohort target moved, changed, or is unavailable".into());
+            }
+            Ok(())
+        }
+        C::BroadSurvey
+            if kind != action::InvestigationActionKind::SearchArea
+                || capability.target_kind != "area" =>
+        {
+            Err("An irregular pattern requires a broad area search".into())
+        }
+        _ => Ok(()),
+    }
+}
+
 fn validate_live_action_prerequisites(
     ctx: &ReducerContext,
     actor: &crate::Character,
@@ -1468,6 +3100,9 @@ fn validate_live_action_prerequisites(
     capability: &InvestigationActionCapability,
     kind: action::InvestigationActionKind,
 ) -> Result<Vec<u64>, String> {
+    if !capability_has_live_support_reducer(ctx, capability, kind) {
+        return Err("The current journal no longer supports this investigation route".into());
+    }
     require_party_ready(ctx, party_id)?;
     require_no_unresolved_encounter(ctx, party_id)?;
     let party = ctx
@@ -1531,7 +3166,7 @@ fn validate_live_action_prerequisites(
             .investigation_lead()
             .owner_character_id()
             .filter(actor.id)
-            .any(|lead| lead.case_id == capability.case_id && !lead.witness_name.is_empty())
+            .any(|lead| lead_is_live_contact_referral(&lead, actor.id, &capability.case_id))
     {
         return Err("No live witness referral supports this action".into());
     }
@@ -1676,6 +3311,7 @@ fn reissue_stale_custody_capability(
     capability.consequence_json = serde_json::to_string(&refreshed)
         .map_err(|_| "Refreshed investigation consequence is invalid")?;
     capability.version = capability.version.saturating_add(1);
+    capability.seed = ctx.random::<u64>();
     ctx.db
         .investigation_action_capability()
         .id()
@@ -1683,12 +3319,20 @@ fn reissue_stale_custody_capability(
     ctx.db
         .investigation_action_outcome()
         .insert(InvestigationActionOutcome {
-        id: inv::compound_id(&[
+        id: generated_observer_id(
+            ctx,
+            &capability.case_id,
             "outcome",
-            "reissue",
-            &capability.id,
-            &capability.version.to_string(),
-        ]),
+            &format!("reissue:{}:{}", capability.id, capability.version),
+        )
+        .unwrap_or_else(|| {
+            inv::compound_id(&[
+                "outcome",
+                "reissue",
+                &capability.id,
+                &capability.version.to_string(),
+            ])
+        }),
         owner_character_id: capability.owner_character_id,
         case_id: capability.case_id.clone(),
         capability_id: capability.id.clone(),
@@ -1756,6 +3400,213 @@ fn commit_action_consequence(
     }
 }
 
+fn generated_progress_kind(kind: action::InvestigationActionKind) -> bool {
+    use action::InvestigationActionKind as K;
+    match kind {
+        K::InspectSite
+        | K::SearchArea
+        | K::FollowTracks
+        | K::ReacquireTracks
+        | K::LocateContact
+        | K::Watch
+        | K::Patrol
+        | K::LayAmbush
+        | K::ApproachLead => true,
+    }
+}
+
+fn capability_uses_bounded_progress(
+    provenance_kind: &str,
+    kind: action::InvestigationActionKind,
+) -> bool {
+    provenance_kind == "generated" && generated_progress_kind(kind)
+}
+
+fn contiguous_failed_attempts(
+    capability_id: &str,
+    owner_character_id: u64,
+    method: &str,
+    current_version: u32,
+    attempts: impl IntoIterator<Item = InvestigationActionAttempt>,
+) -> u32 {
+    let attempts = attempts
+        .into_iter()
+        .filter(|attempt| {
+            attempt.capability_id == capability_id
+                && attempt.owner_character_id == owner_character_id
+                && attempt.method == method
+                && !attempt.success
+                && attempt.expected_version < current_version
+        })
+        .map(|attempt| (attempt.expected_version, attempt))
+        .collect::<BTreeMap<_, _>>();
+    let mut cursor = current_version;
+    let mut failures = 0;
+    while cursor > 0 {
+        cursor -= 1;
+        if attempts.get(&cursor).is_none() {
+            break;
+        }
+        failures += 1;
+    }
+    failures
+}
+
+fn bounded_failure_wording(
+    progress: action::BoundedProgressResolution,
+    alternate_available: bool,
+) -> String {
+    let threshold_whole = progress.success_threshold_bps / 100;
+    let threshold_fraction = progress.success_threshold_bps % 100;
+    let progress_whole = progress.persistent_progress_bps / 100;
+    let progress_fraction = progress.persistent_progress_bps % 100;
+    let alternate = if alternate_available {
+        " Another currently supported route is also available."
+    } else {
+        " No alternate route is currently supported by the leads in your journal."
+    };
+    format!(
+        "No conclusive result. Persistent fieldwork advanced this exact route to attempt {} of {}; accumulated progress added {progress_whole}.{progress_fraction:02}% to this attempt's bounded success threshold of {threshold_whole}.{threshold_fraction:02}%, uncertainty fell to {}.{:02}%, and contiguous work guarantees success by attempt {}.{alternate}",
+        progress.attempt_number,
+        progress.guaranteed_by_attempt,
+        progress.resolution.resulting_uncertainty_bps / 100,
+        progress.resolution.resulting_uncertainty_bps % 100,
+        progress.guaranteed_by_attempt,
+    )
+}
+
+fn private_action_resolution_json(
+    resolution: action::Resolution,
+    bounded_progress: Option<action::BoundedProgressResolution>,
+) -> Result<String, String> {
+    if let Some(progress) = bounded_progress {
+        serde_json::to_string(&serde_json::json!({
+            "resolution": progress.resolution,
+            "attempt_number": progress.attempt_number,
+            "persistent_progress_bps": progress.persistent_progress_bps,
+            "success_threshold_bps": progress.success_threshold_bps,
+            "guaranteed_by_attempt": progress.guaranteed_by_attempt,
+        }))
+    } else {
+        // Preserve the historical bare Resolution audit shape for manual and
+        // otherwise unbounded actions.
+        serde_json::to_string(&resolution)
+    }
+    .map_err(|_| "Investigation resolution could not be recorded".into())
+}
+
+fn capability_progress_depends_on_exact_lead(
+    capability: &InvestigationActionCapability,
+    lead: &InvestigationLead,
+    generated_case_aliases: Option<(&str, &str)>,
+) -> bool {
+    let case_matches = match (capability.provenance_kind.as_str(), generated_case_aliases) {
+        ("manual", None) => capability.case_id == lead.case_id,
+        ("generated", Some((canonical, public))) => {
+            capability.generated_case_id == canonical
+                && (capability.case_id == canonical || capability.case_id == public)
+                && (lead.case_id == canonical || lead.case_id == public)
+        }
+        _ => false,
+    };
+    capability.provenance_kind == "generated"
+        && capability.active
+        && capability.owner_character_id == lead.owner_character_id
+        && case_matches
+        && capability.target_kind == "site"
+        && capability.target_id == lead.exact_location_id
+        && matches!(
+            lead.destination_stage.as_str(),
+            "exact_believed" | "visited"
+        )
+        && parse_action_kind(&capability.method).is_ok_and(generated_progress_kind)
+}
+
+fn dependent_capability_ids_for_exact_lead(
+    ctx: &ReducerContext,
+    lead: &InvestigationLead,
+) -> BTreeSet<String> {
+    if lead.exact_location_id.is_empty() {
+        return BTreeSet::new();
+    }
+    ctx.db
+        .investigation_action_capability()
+        .owner_character_id()
+        .filter(lead.owner_character_id)
+        .filter(|capability| {
+            let aliases = generated_authority_reducer(ctx, capability)
+                .ok()
+                .flatten()
+                .and_then(|(manifest, _)| {
+                    serde_json::from_str::<adventuresim_core::quest_generation::GeneratedCase>(
+                        &manifest,
+                    )
+                    .ok()
+                    .map(|generated| (generated.canonical_case_id, generated.public_case_id))
+                });
+            capability_progress_depends_on_exact_lead(
+                capability,
+                lead,
+                aliases
+                    .as_ref()
+                    .map(|(canonical, public)| (canonical.as_str(), public.as_str())),
+            )
+        })
+        .map(|capability| capability.id)
+        .collect()
+}
+
+fn unique_capability_ids(capability_ids: impl IntoIterator<Item = String>) -> BTreeSet<String> {
+    capability_ids.into_iter().collect()
+}
+
+fn correction_requires_progress_reset(has_live_replacement_support: bool) -> bool {
+    !has_live_replacement_support
+}
+
+fn reset_capability_progress_if_unsupported(
+    capability: &mut InvestigationActionCapability,
+    has_live_replacement_support: bool,
+    replacement_seed: impl FnOnce() -> u64,
+) -> bool {
+    if !correction_requires_progress_reset(has_live_replacement_support) {
+        return false;
+    }
+    capability.version = capability.version.saturating_add(1);
+    capability.seed = replacement_seed();
+    true
+}
+
+fn reset_unsupported_capability_progress(
+    ctx: &ReducerContext,
+    capability_ids: impl IntoIterator<Item = String>,
+) -> Result<(), String> {
+    for capability_id in unique_capability_ids(capability_ids) {
+        let Some(mut capability) = ctx
+            .db
+            .investigation_action_capability()
+            .id()
+            .find(&capability_id)
+        else {
+            continue;
+        };
+        let has_live_replacement_support =
+            exact_action_case_site_for_observer(ctx, &capability).is_some();
+        if !reset_capability_progress_if_unsupported(
+            &mut capability,
+            has_live_replacement_support,
+            || ctx.random::<u64>(),
+        ) {
+            continue;
+        }
+        ctx.db
+            .investigation_action_capability()
+            .id()
+            .update(capability);
+    }
+    Ok(())
+}
+
 pub(crate) fn perform_investigation_action_authorized(
     ctx: &ReducerContext,
     actor_id: u64,
@@ -1814,7 +3665,8 @@ pub(crate) fn perform_investigation_action_authorized(
     validate_action_route_graph(ctx, actor_id, &capability.case_id)?;
     let members = validate_live_action_prerequisites(ctx, &actor, &party_id, &capability, kind)?;
     let started_at = synchronize_party_activity_time(ctx, &members, party.leader_id)?;
-    let resolution = action::resolve(action::ResolutionInput {
+    validate_generated_pattern_condition(ctx, &capability, kind, started_at)?;
+    let resolution_input = action::ResolutionInput {
         seed: capability.seed,
         attempt_index: expected_version,
         kind,
@@ -1829,10 +3681,28 @@ pub(crate) fn perform_investigation_action_authorized(
         current_uncertainty_bps: capability.uncertainty_bps,
         skills: party_action_skills(ctx, &party_id, actor_id, target_terrain)?,
         weather: action::WeatherAuthority::Unavailable,
-    });
+    };
+    let bounded_progress = capability_uses_bounded_progress(&capability.provenance_kind, kind)
+        .then(|| {
+            let prior_failures = contiguous_failed_attempts(
+                &capability.id,
+                capability.owner_character_id,
+                &capability.method,
+                capability.version,
+                ctx.db
+                    .investigation_action_attempt()
+                    .capability_id()
+                    .filter(&capability.id),
+            );
+            action::resolve_with_bounded_progress(resolution_input, prior_failures)
+        });
+    let resolution = bounded_progress
+        .map(|progress| progress.resolution)
+        .unwrap_or_else(|| action::resolve(resolution_input));
     // This is the final mutation-boundary validation. Browser previews and
     // party votes are UX; only this transaction authorizes the shared time.
     validate_live_action_prerequisites(ctx, &actor, &party_id, &capability, kind)?;
+    validate_generated_pattern_condition(ctx, &capability, kind, started_at)?;
     for member_id in &members {
         if !advance_investigation_time(ctx, *member_id, u64::from(resolution.cost.minutes))? {
             return Err("Every living party member must survive the investigation interval".into());
@@ -1863,39 +3733,19 @@ pub(crate) fn perform_investigation_action_authorized(
             duration_minutes: resolution.cost.minutes,
             success: resolution.success,
             resulting_uncertainty_bps: resolution.resulting_uncertainty_bps,
-            private_resolution_json: serde_json::to_string(&resolution)
-                .map_err(|_| "Investigation resolution could not be recorded")?,
+            private_resolution_json: private_action_resolution_json(resolution, bounded_progress)?,
         });
-    ctx.db
-        .investigation_action_outcome()
-        .insert(InvestigationActionOutcome {
-            id: inv::compound_id(&["outcome", &attempt_id]),
-            owner_character_id: actor_id,
-            case_id: capability.case_id.clone(),
-            capability_id: action_id.clone(),
-            safe_wording: if resolution.success {
-                if resolution.risk_triggered {
-                    format!(
-                        "{} The party was exposed to danger during the attempt.",
-                        capability.safe_result_on_success
-                    )
-                } else {
-                    capability.safe_result_on_success.clone()
-                }
-            } else {
-                "No conclusive result. Time passed and the validated alternate route remains available."
-                    .into()
-            },
-            recorded_at: completed_at,
-        });
+    let outcome_case_id = capability.case_id.clone();
+    let safe_result_on_success = capability.safe_result_on_success.clone();
     capability.version = capability.version.saturating_add(1);
+    capability.seed = ctx.random::<u64>();
     capability.uncertainty_bps = resolution.resulting_uncertainty_bps;
     capability.active = !resolution.success;
     ctx.db
         .investigation_action_capability()
         .id()
         .update(capability);
-    activate_action_successors(
+    let alternate_available = activate_action_successors(
         ctx,
         &ctx.db
             .investigation_action_capability()
@@ -1904,6 +3754,33 @@ pub(crate) fn perform_investigation_action_authorized(
             .ok_or("Investigation action disappeared")?,
         resolution.success,
     )?;
+    ctx.db
+        .investigation_action_outcome()
+        .insert(InvestigationActionOutcome {
+            id: generated_observer_id(ctx, &outcome_case_id, "outcome", &attempt_id)
+                .unwrap_or_else(|| inv::compound_id(&["outcome", &attempt_id])),
+            owner_character_id: actor_id,
+            case_id: outcome_case_id,
+            capability_id: action_id.clone(),
+            safe_wording: if resolution.success {
+                if resolution.risk_triggered {
+                    format!(
+                        "{} The party was exposed to danger during the attempt.",
+                        safe_result_on_success
+                    )
+                } else {
+                    safe_result_on_success
+                }
+            } else if let Some(progress) = bounded_progress {
+                bounded_failure_wording(progress, alternate_available)
+            } else {
+                adventuresim_core::quest_generation::failed_action_outcome_wording(
+                    alternate_available,
+                )
+                .into()
+            },
+            recorded_at: completed_at,
+        });
     Ok(())
 }
 
@@ -1949,12 +3826,16 @@ pub fn backend_case_site_pins(ctx: &ViewContext) -> Vec<BackendCaseSitePin> {
                 .case_site_authority()
                 .id_key()
                 .find(&lead.exact_location_id)?;
-            if site.case_id != lead.case_id
-                || site.latitude_e7 != lead.latitude_e7
-                || site.longitude_e7 != lead.longitude_e7
-            {
+            let aliases = case_site_provenance_view(ctx, &site)?;
+            if !lead_projects_exact_case_site_pin(
+                &lead,
+                &site,
+                aliases.as_ref().map(|aliases| aliases.1.as_str()),
+            ) {
                 return None;
             }
+            let presentation =
+                case_site_presentation_view(ctx, lead.owner_character_id, &site, aliases.as_ref())?;
             let tracked = ctx
                 .db
                 .character()
@@ -1968,7 +3849,9 @@ pub fn backend_case_site_pins(ctx: &ViewContext) -> Vec<BackendCaseSitePin> {
                 });
             Some(BackendCaseSitePin {
                 owner_character_id: lead.owner_character_id,
-                case_id: lead.case_id,
+                case_id: aliases
+                    .as_ref()
+                    .map_or_else(|| site.case_id.clone(), |aliases| aliases.1.clone()),
                 case_site_id: site.id.value,
                 origin_settlement_id: site.origin_settlement_id,
                 name: site.name,
@@ -1980,6 +3863,10 @@ pub fn backend_case_site_pins(ctx: &ViewContext) -> Vec<BackendCaseSitePin> {
                 distance_m: site.distance_m,
                 knowledge_stage: lead.destination_stage,
                 tracked,
+                display_title: presentation.display_title,
+                generated_case: presentation.generated_case,
+                case_resolved: presentation.case_resolved,
+                combat_available: presentation.combat_available,
             })
         })
     {
@@ -1993,6 +3880,199 @@ pub fn backend_case_site_pins(ctx: &ViewContext) -> Vec<BackendCaseSitePin> {
         }
     }
     pins.into_values().collect()
+}
+
+struct CaseSitePresentationView {
+    display_title: String,
+    generated_case: bool,
+    case_resolved: bool,
+    combat_available: bool,
+}
+
+fn case_site_presentation_view(
+    ctx: &ViewContext,
+    owner_character_id: u64,
+    site: &CaseSiteAuthority,
+    aliases: Option<&(String, String)>,
+) -> Option<CaseSitePresentationView> {
+    let Some((canonical_case_id, _public_case_id)) = aliases else {
+        return Some(CaseSitePresentationView {
+            display_title: site.name.clone(),
+            generated_case: false,
+            case_resolved: false,
+            combat_available: false,
+        });
+    };
+    let authority = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(canonical_case_id)?;
+    let validated = validate_quest_generation_authority(&authority).ok()?;
+    let generated_site = validated
+        .manifest
+        .sites
+        .iter()
+        .find(|generated_site| generated_site.id.0 == site.id.value)?;
+    if generated_site.safe_label != site.name {
+        return None;
+    }
+    let case = ctx.db.case_authority().id().find(canonical_case_id)?;
+    let party_id = ctx
+        .db
+        .character()
+        .id()
+        .find(owner_character_id)
+        .and_then(|character| character.party_id);
+    let hostile_groups: Vec<_> = generated_case_site_combat_group_id(&validated.manifest, site)
+        .and_then(|group_id| {
+            ctx.db
+                .hostile_group_authority()
+                .id()
+                .find(&group_id.to_string())
+        })
+        .into_iter()
+        .collect();
+    let finales: Vec<_> = ctx
+        .db
+        .case_finale_authority()
+        .case_id()
+        .filter(canonical_case_id)
+        .collect();
+    let facts = ctx
+        .db
+        .case_outcome_fact()
+        .case_id()
+        .filter(canonical_case_id)
+        .map(|row| serde_json::from_str(&row.fact_json))
+        .collect::<Result<Vec<adventuresim_core::case::OutcomeFact>, _>>()
+        .ok();
+    let combat_available =
+        party_id
+            .as_deref()
+            .zip(facts.as_deref())
+            .is_some_and(|(party_id, facts)| {
+                generated_case_site_combat_eligible(
+                    &validated.manifest,
+                    &case,
+                    site,
+                    &hostile_groups,
+                    &finales,
+                    facts,
+                    party_id,
+                )
+                .is_some()
+            });
+    Some(CaseSitePresentationView {
+        display_title: validated.manifest.consequence.public_summary,
+        generated_case: true,
+        case_resolved: case.resolution_status != crate::strategic::CaseResolutionStatus::Open,
+        combat_available,
+    })
+}
+
+fn lead_projects_exact_case_site_pin(
+    lead: &InvestigationLead,
+    site: &CaseSiteAuthority,
+    generated_public_case_id: Option<&str>,
+) -> bool {
+    lead.corrected_by.is_empty()
+        && matches!(
+            lead.destination_stage.as_str(),
+            "exact_believed" | "visited"
+        )
+        && (lead.case_id == site.case_id
+            || generated_public_case_id.is_some_and(|public| lead.case_id == public))
+        && lead.exact_location_id == site.id.value
+        && lead.latitude_e7 == site.latitude_e7
+        && lead.longitude_e7 == site.longitude_e7
+}
+
+fn validated_case_site_aliases(
+    case: &crate::strategic::CaseAuthority,
+    authorities: impl IntoIterator<Item = crate::strategic::QuestGenerationAuthority>,
+) -> Option<Option<(String, String)>> {
+    let mut authorities: Vec<_> = authorities
+        .into_iter()
+        .filter(|authority| {
+            authority.case_id == case.id
+                || authority.public_case_id == case.id
+                || (!case.generated_case_id.is_empty()
+                    && (authority.case_id == case.generated_case_id
+                        || authority.public_case_id == case.generated_case_id))
+        })
+        .collect();
+    authorities.sort_by(|left, right| left.case_id.cmp(&right.case_id));
+    authorities.dedup_by(|left, right| left.case_id == right.case_id);
+    match case.provenance_kind.as_str() {
+        "manual" if case.generated_case_id.is_empty() && authorities.is_empty() => Some(None),
+        "generated" if case.generated_case_id == case.id && authorities.len() == 1 => {
+            let validated = validate_quest_generation_authority(&authorities[0]).ok()?;
+            (validated.manifest.canonical_case_id == case.id).then_some(Some((
+                validated.manifest.canonical_case_id,
+                validated.manifest.public_case_id,
+            )))
+        }
+        _ => None,
+    }
+}
+
+fn case_site_provenance_view(
+    ctx: &ViewContext,
+    site: &CaseSiteAuthority,
+) -> Option<Option<(String, String)>> {
+    let case = ctx.db.case_authority().id().find(&site.case_id)?;
+    let mut authorities = Vec::new();
+    for alias in [&case.id, &case.generated_case_id] {
+        if alias.is_empty()
+            || authorities
+                .iter()
+                .any(|authority: &crate::strategic::QuestGenerationAuthority| {
+                    authority.case_id == alias.as_str()
+                })
+        {
+            continue;
+        }
+        if let Some(authority) = ctx.db.quest_generation_authority().case_id().find(alias) {
+            authorities.push(authority);
+        }
+        authorities.extend(
+            ctx.db
+                .quest_generation_authority()
+                .public_case_id()
+                .filter(alias),
+        );
+    }
+    validated_case_site_aliases(&case, authorities)
+}
+
+pub(crate) fn case_site_provenance_reducer(
+    ctx: &ReducerContext,
+    site: &CaseSiteAuthority,
+) -> Option<Option<(String, String)>> {
+    let case = ctx.db.case_authority().id().find(&site.case_id)?;
+    let mut authorities = Vec::new();
+    for alias in [&case.id, &case.generated_case_id] {
+        if alias.is_empty()
+            || authorities
+                .iter()
+                .any(|authority: &crate::strategic::QuestGenerationAuthority| {
+                    authority.case_id == alias.as_str()
+                })
+        {
+            continue;
+        }
+        if let Some(authority) = ctx.db.quest_generation_authority().case_id().find(alias) {
+            authorities.push(authority);
+        }
+        authorities.extend(
+            ctx.db
+                .quest_generation_authority()
+                .public_case_id()
+                .filter(alias),
+        );
+    }
+    validated_case_site_aliases(&case, authorities)
 }
 
 #[view(accessor = backend_character_case_site_locations, public)]
@@ -2013,6 +4093,49 @@ pub fn backend_character_case_site_locations(
         .collect()
 }
 
+fn exact_action_case_site_for_observer(
+    ctx: &ReducerContext,
+    capability: &InvestigationActionCapability,
+) -> Option<(
+    CaseSiteAuthority,
+    InvestigationLead,
+    Option<(String, String)>,
+)> {
+    let site = ctx
+        .db
+        .case_site_authority()
+        .id_key()
+        .find(&capability.target_id)?;
+    let generated_aliases = case_site_provenance_reducer(ctx, &site)?;
+    match (&generated_aliases, capability.provenance_kind.as_str()) {
+        (None, "manual") if capability.generated_case_id.is_empty() => {}
+        (Some((canonical, public)), "generated")
+            if capability.generated_case_id == canonical.as_str()
+                && (capability.case_id == canonical.as_str()
+                    || capability.case_id == public.as_str()) => {}
+        _ => return None,
+    }
+    ctx.db
+        .investigation_lead()
+        .owner_character_id()
+        .filter(capability.owner_character_id)
+        .find(|lead| {
+            lead.exact_location_id == capability.target_id
+                && (lead.case_id == capability.case_id
+                    || generated_aliases.as_ref().is_some_and(|aliases| {
+                        lead.case_id == aliases.0 || lead.case_id == aliases.1
+                    }))
+                && lead.latitude_e7 == site.latitude_e7
+                && lead.longitude_e7 == site.longitude_e7
+                && lead.corrected_by.is_empty()
+                && matches!(
+                    lead.destination_stage.as_str(),
+                    "exact_believed" | "visited"
+                )
+        })
+        .map(|lead| (site, lead, generated_aliases))
+}
+
 pub(crate) fn exact_case_site_for_observer(
     ctx: &ReducerContext,
     observer_character_id: u64,
@@ -2023,13 +4146,17 @@ pub(crate) fn exact_case_site_for_observer(
         .case_site_authority()
         .id_key()
         .find(&case_site_id.to_string())?;
+    let generated_aliases = case_site_provenance_reducer(ctx, &site)?;
     ctx.db
         .investigation_lead()
         .owner_character_id()
         .filter(observer_character_id)
         .find(|lead| {
             lead.exact_location_id == case_site_id
-                && lead.case_id == site.case_id
+                && (lead.case_id == site.case_id
+                    || generated_aliases
+                        .as_ref()
+                        .is_some_and(|aliases| lead.case_id == aliases.1.as_str()))
                 && lead.latitude_e7 == site.latitude_e7
                 && lead.longitude_e7 == site.longitude_e7
                 && lead.corrected_by.is_empty()
@@ -2100,6 +4227,7 @@ pub(crate) fn disclose_exact_case_site(
         id,
         owner_character_id: observer_character_id,
         case_id: case_id.into(),
+        proposition_id: String::new(),
         summary: format!("Exact destination disclosed: {}", site.name),
         source_label: source_label.into(),
         confidence_bps: 10_000,
@@ -2112,7 +4240,7 @@ pub(crate) fn disclose_exact_case_site(
         witness_description: String::new(),
         witness_occupation_or_relationship: String::new(),
         expected_location: String::new(),
-        current_learned_location: String::new(),
+        current_learned_location: site.name.clone(),
         contradiction_group: format!("case-site:{}", site.case_id),
         corrected_by: String::new(),
         recorded_at,
@@ -2160,8 +4288,56 @@ pub(crate) fn mark_case_site_visited(
     Ok(())
 }
 
-fn sanitize_lead(row: InvestigationLead) -> BackendInvestigationLead {
+fn safe_correction_label(
+    row: &InvestigationLead,
+    correction: Option<&InvestigationLead>,
+) -> String {
+    if row.corrected_by.is_empty() {
+        return String::new();
+    }
+    let Some(correction) = correction.filter(|correction| {
+        correction.owner_character_id == row.owner_character_id && correction.case_id == row.case_id
+    }) else {
+        return "a later account".into();
+    };
+    if !correction.witness_name.is_empty() {
+        correction.witness_name.clone()
+    } else if !correction.source_label.is_empty() {
+        correction.source_label.clone()
+    } else {
+        "a later account".into()
+    }
+}
+
+fn safe_superseded_revision_label(
+    row: &InvestigationBeliefRevision,
+    superseded: Option<&InvestigationBeliefRevision>,
+) -> String {
+    if row.supersedes.is_empty() {
+        return String::new();
+    }
+    let Some(superseded) = superseded.filter(|superseded| {
+        superseded.owner_character_id == row.owner_character_id
+            && superseded.belief_id == row.belief_id
+    }) else {
+        return "an earlier account".into();
+    };
+    if superseded.provenance_label.is_empty() {
+        format!("revision {}", superseded.revision)
+    } else {
+        format!(
+            "revision {} from {}",
+            superseded.revision, superseded.provenance_label
+        )
+    }
+}
+
+fn sanitize_lead(
+    row: InvestigationLead,
+    correction: Option<&InvestigationLead>,
+) -> BackendInvestigationLead {
     let exact = matches!(row.destination_stage.as_str(), "exact_believed" | "visited");
+    let corrected_by = safe_correction_label(&row, correction);
     BackendInvestigationLead {
         owner_character_id: row.owner_character_id,
         case_id: row.case_id,
@@ -2184,7 +4360,7 @@ fn sanitize_lead(row: InvestigationLead) -> BackendInvestigationLead {
         expected_location: row.expected_location,
         current_learned_location: row.current_learned_location,
         contradiction_group: row.contradiction_group,
-        corrected_by: row.corrected_by,
+        corrected_by,
         recorded_at: row.recorded_at,
     }
 }
@@ -2250,14 +4426,6 @@ fn canonical_payload(parts: &[&str]) -> Result<String, String> {
         Ok(payload)
     }
 }
-fn stable_action_seed(authority_id: &str, domain: &str) -> u64 {
-    let mut hash = 0xcbf2_9ce4_8422_2325u64;
-    for byte in authority_id.bytes().chain([0xff]).chain(domain.bytes()) {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x100_0000_01b3);
-    }
-    hash
-}
 fn idempotent(
     ctx: &ReducerContext,
     action_id: &str,
@@ -2300,6 +4468,366 @@ fn record_action(
         });
 }
 
+fn witness_referral_id(character_id: u64, canonical_case_id: &str, witness_npc_id: &str) -> String {
+    inv::compound_id(&[
+        "generated-witness-referral",
+        &character_id.to_string(),
+        canonical_case_id,
+        witness_npc_id,
+    ])
+}
+
+fn witness_referral_context_matches(
+    referral: &InvestigationWitnessReferral,
+    character_id: u64,
+    canonical_case_id: &str,
+    witness_npc_id: &str,
+    settlement_id: &str,
+    location_id: &str,
+) -> bool {
+    referral.owner_character_id == character_id
+        && referral.canonical_case_id == canonical_case_id
+        && referral.witness_npc_id == witness_npc_id
+        && referral.expected_settlement_id == settlement_id
+        && referral.expected_location_id == location_id
+}
+
+fn validate_referral_manifest_provenance(
+    referral: &InvestigationWitnessReferral,
+    generated: &adventuresim_core::quest_generation::GeneratedCase,
+    witness: &adventuresim_core::quest_generation::WitnessBinding,
+) -> Result<(), String> {
+    match referral.grant_kind.as_str() {
+        "initial_rumor" => {
+            if referral.source_receipt_id.is_empty()
+                || !referral.source_witness_id.is_empty()
+                || referral.source_testimony_index != 0
+                || !referral.source_proposition_id.is_empty()
+                || generated.witnesses.first() != Some(witness)
+            {
+                return Err("Initial witness referral provenance is malformed".into());
+            }
+        }
+        "testimony" => {
+            if referral.source_receipt_id.is_empty() {
+                return Err("Testimony witness referral provenance is malformed".into());
+            }
+            let source = generated
+                .witnesses
+                .iter()
+                .find(|candidate| {
+                    candidate.id.0 == referral.source_witness_id
+                        && candidate.npc_id == referral.source_witness_npc_id
+                })
+                .ok_or("Testimony witness referral source disappeared")?;
+            let source_draft = source
+                .testimony
+                .get(referral.source_testimony_index as usize)
+                .filter(|draft| draft.proposition_id == referral.source_proposition_id)
+                .ok_or("Testimony witness referral draft disappeared")?;
+            if source_draft
+                .referred_witness_ids
+                .iter()
+                .filter(|target| **target == witness.id)
+                .count()
+                != 1
+            {
+                return Err("Testimony no longer authors one exact witness referral".into());
+            }
+        }
+        _ => return Err("Unknown witness referral provenance".into()),
+    }
+    Ok(())
+}
+
+fn authored_witness_referrals<'a>(
+    generated: &'a adventuresim_core::quest_generation::GeneratedCase,
+    witness: &adventuresim_core::quest_generation::WitnessBinding,
+    draft: &adventuresim_core::quest_generation::TestimonyDraft,
+) -> Result<Vec<&'a adventuresim_core::quest_generation::WitnessBinding>, String> {
+    if !generated
+        .witnesses
+        .iter()
+        .any(|authoritative| authoritative == witness)
+    {
+        return Err("Generated testimony witness is absent from the authoritative manifest".into());
+    }
+    draft
+        .referred_witness_ids
+        .iter()
+        .map(|referred_id| {
+            generated
+                .witnesses
+                .iter()
+                .find(|candidate| candidate.id == *referred_id)
+                .ok_or_else(|| "Authored testimony referral witness disappeared".into())
+        })
+        .collect()
+}
+
+enum WitnessReferralProvenance<'a> {
+    InitialRumor(&'a crate::local_problem::LocalProblemReceipt),
+    Testimony {
+        source_witness: &'a adventuresim_core::quest_generation::WitnessBinding,
+        testimony_index: usize,
+        source_draft: &'a adventuresim_core::quest_generation::TestimonyDraft,
+        source_receipt_id: &'a str,
+    },
+}
+
+fn grant_generated_witness_referral(
+    ctx: &ReducerContext,
+    character_id: u64,
+    generated: &adventuresim_core::quest_generation::GeneratedCase,
+    witness: &adventuresim_core::quest_generation::WitnessBinding,
+    expected_settlement_id: &str,
+    provenance: WitnessReferralProvenance<'_>,
+) -> Result<(), String> {
+    if !generated
+        .witnesses
+        .iter()
+        .any(|authoritative| authoritative == witness)
+    {
+        return Err("Generated witness referral is absent from its manifest".into());
+    }
+    let (
+        grant_kind,
+        source_receipt_id,
+        source_witness_id,
+        source_witness_npc_id,
+        source_testimony_index,
+        source_proposition_id,
+    ) = match provenance {
+        WitnessReferralProvenance::InitialRumor(receipt) => {
+            if generated.witnesses.first() != Some(witness)
+                || receipt.character_id != character_id
+                || receipt.opaque_case_ref != generated.canonical_case_id
+                || receipt.problem_id != generated.problem_id
+                || receipt.settlement_id != expected_settlement_id
+                || receipt.contact_npc_id != witness.npc_id
+                || receipt.expected_location_id != witness.expected_location
+            {
+                return Err("Initial rumor does not grant the exact primary witness".into());
+            }
+            (
+                "initial_rumor".to_owned(),
+                receipt.id.clone(),
+                String::new(),
+                receipt.source_npc_id.clone(),
+                0,
+                String::new(),
+            )
+        }
+        WitnessReferralProvenance::Testimony {
+            source_witness,
+            testimony_index,
+            source_draft,
+            source_receipt_id,
+        } => {
+            if generated
+                .witnesses
+                .iter()
+                .filter(|candidate| *candidate == source_witness)
+                .count()
+                != 1
+                || source_witness.testimony.get(testimony_index) != Some(source_draft)
+                || !source_draft.referred_witness_ids.contains(&witness.id)
+            {
+                return Err("Testimony does not author the exact witness referral".into());
+            }
+            let receipt = ctx
+                .db
+                .investigation_safe_claim_receipt()
+                .id()
+                .find(source_receipt_id.to_owned())
+                .ok_or("Testimony witness referral receipt is missing")?;
+            if receipt.owner_character_id != character_id
+                || receipt.public_case_id != generated.public_case_id
+                || receipt.proposition_id != source_draft.proposition_id
+                || receipt.consumed_by.is_empty()
+            {
+                return Err("Testimony witness referral receipt is inconsistent".into());
+            }
+            (
+                "testimony".to_owned(),
+                source_receipt_id.to_owned(),
+                source_witness.id.0.clone(),
+                source_witness.npc_id.clone(),
+                u32::try_from(testimony_index)
+                    .map_err(|_| "Testimony referral index is too large")?,
+                source_draft.proposition_id.clone(),
+            )
+        }
+    };
+    let id = witness_referral_id(character_id, &generated.canonical_case_id, &witness.npc_id);
+    let row = InvestigationWitnessReferral {
+        id: id.clone(),
+        owner_character_id: character_id,
+        canonical_case_id: generated.canonical_case_id.clone(),
+        public_case_id: generated.public_case_id.clone(),
+        witness_npc_id: witness.npc_id.clone(),
+        expected_settlement_id: expected_settlement_id.into(),
+        expected_location_id: witness.expected_location.clone(),
+        grant_kind,
+        source_receipt_id,
+        source_witness_id,
+        source_witness_npc_id,
+        source_testimony_index,
+        source_proposition_id,
+        catalog_revision: generated.catalog_revision.clone(),
+        granted_at: official_minute(ctx),
+    };
+    if let Some(existing) = ctx.db.investigation_witness_referral().id().find(&id) {
+        return if existing.owner_character_id == row.owner_character_id
+            && existing.canonical_case_id == row.canonical_case_id
+            && existing.public_case_id == row.public_case_id
+            && existing.witness_npc_id == row.witness_npc_id
+            && existing.expected_settlement_id == row.expected_settlement_id
+            && existing.expected_location_id == row.expected_location_id
+            && existing.grant_kind == row.grant_kind
+            && existing.source_receipt_id == row.source_receipt_id
+            && existing.source_witness_id == row.source_witness_id
+            && existing.source_witness_npc_id == row.source_witness_npc_id
+            && existing.source_testimony_index == row.source_testimony_index
+            && existing.source_proposition_id == row.source_proposition_id
+            && existing.catalog_revision == row.catalog_revision
+        {
+            Ok(())
+        } else {
+            Err("Generated witness referral conflicts with existing authority".into())
+        };
+    }
+    ctx.db.investigation_witness_referral().insert(row);
+    let npc = ctx
+        .db
+        .settlement_npc()
+        .id()
+        .find(&witness.npc_id)
+        .ok_or("Referred generated witness is no longer persistent")?;
+    let lead_id = inv::compound_id(&["lead", "generated-witness-referral", &id]);
+    if ctx.db.investigation_lead().id().find(&lead_id).is_none() {
+        let location =
+            adventuresim_core::quest_generation::referral_display_location(witness).to_owned();
+        ctx.db.investigation_lead().insert(InvestigationLead {
+            id: lead_id,
+            owner_character_id: character_id,
+            case_id: generated.public_case_id.clone(),
+            proposition_id: String::new(),
+            summary: format!(
+                "Ask {}—{}, usually found at the {}.",
+                npc.name, witness.visible_description, location
+            ),
+            source_label: "witness referral".into(),
+            confidence_bps: 10_000,
+            destination_stage: "textual".into(),
+            directions: location.clone(),
+            exact_location_id: String::new(),
+            latitude_e7: 0,
+            longitude_e7: 0,
+            witness_name: npc.name,
+            witness_description: witness.visible_description.clone(),
+            witness_occupation_or_relationship: npc.profession,
+            expected_location: location,
+            current_learned_location: String::new(),
+            contradiction_group: String::new(),
+            corrected_by: String::new(),
+            recorded_at: official_minute(ctx),
+        });
+    }
+    Ok(())
+}
+
+pub(crate) fn referred_generated_witness(
+    ctx: &ReducerContext,
+    character_id: u64,
+    canonical_case_id: &str,
+    witness_npc_id: &str,
+    settlement_id: &str,
+    location_id: &str,
+) -> Result<
+    Option<(
+        adventuresim_core::quest_generation::GeneratedCase,
+        adventuresim_core::quest_generation::WitnessBinding,
+    )>,
+    String,
+> {
+    let id = witness_referral_id(character_id, canonical_case_id, witness_npc_id);
+    let Some(referral) = ctx.db.investigation_witness_referral().id().find(&id) else {
+        return Ok(None);
+    };
+    if !witness_referral_context_matches(
+        &referral,
+        character_id,
+        canonical_case_id,
+        witness_npc_id,
+        settlement_id,
+        location_id,
+    ) {
+        return Ok(None);
+    }
+    let authority = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&referral.canonical_case_id)
+        .ok_or("Witness referral generation authority disappeared")?;
+    let validated = validate_quest_generation_authority(&authority)?;
+    if validated.manifest.public_case_id != referral.public_case_id
+        || validated.manifest.catalog_revision != referral.catalog_revision
+        || validated.context.settlement_id != referral.expected_settlement_id
+    {
+        return Err("Witness referral no longer matches generated authority".into());
+    }
+    let witness = validated
+        .manifest
+        .witnesses
+        .iter()
+        .find(|witness| {
+            witness.npc_id == referral.witness_npc_id
+                && witness.expected_location == referral.expected_location_id
+        })
+        .cloned()
+        .ok_or("Witness referral is absent from generated authority")?;
+    validate_referral_manifest_provenance(&referral, &validated.manifest, &witness)?;
+    match referral.grant_kind.as_str() {
+        "initial_rumor" => {
+            let receipt = ctx
+                .db
+                .local_problem_receipt()
+                .id()
+                .find(&referral.source_receipt_id)
+                .ok_or("Initial witness referral receipt disappeared")?;
+            if receipt.character_id != character_id
+                || receipt.opaque_case_ref != referral.canonical_case_id
+                || receipt.problem_id != validated.manifest.problem_id
+                || receipt.settlement_id != referral.expected_settlement_id
+                || receipt.contact_npc_id != referral.witness_npc_id
+                || receipt.expected_location_id != referral.expected_location_id
+                || receipt.source_npc_id != referral.source_witness_npc_id
+            {
+                return Err("Initial witness referral no longer matches its receipt".into());
+            }
+        }
+        "testimony" => {
+            let receipt = ctx
+                .db
+                .investigation_safe_claim_receipt()
+                .id()
+                .find(&referral.source_receipt_id)
+                .ok_or("Testimony witness referral receipt disappeared")?;
+            if receipt.owner_character_id != character_id
+                || receipt.public_case_id != referral.public_case_id
+                || receipt.proposition_id != referral.source_proposition_id
+                || receipt.consumed_by.is_empty()
+            {
+                return Err("Testimony witness referral no longer matches its receipt".into());
+            }
+        }
+        _ => unreachable!("validated referral kind"),
+    }
+    Ok(Some((validated.manifest, witness)))
+}
+
 /// Converts #182's private safe receipt to owner knowledge without consulting
 /// or exposing the local problem's hidden cause.
 #[reducer]
@@ -2327,19 +4855,49 @@ pub fn receive_local_problem_rumor(
     let contact = ctx.db.settlement_npc().id().find(&receipt.contact_npc_id);
     let visible_description = contact.as_ref().map_or_else(String::new, |npc| {
         format!(
-            "{}, {}, {}, with {} hair; {}",
+            "{}, {}, {}, with {}; {}",
             npc.height, npc.build, npc.complexion, npc.hair, npc.visible_features
         )
     });
     // Never expose the private opaque case seam. This observer-facing stable ID
     // derives only from the already-public problem identifier.
-    let case_id = inv::compound_id(&["case", "problem", &receipt.problem_id]);
+    let canonical_case_id = receipt.opaque_case_ref.clone();
+    let generation = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&canonical_case_id)
+        .ok_or("Rumor is not linked to a real generated case")?;
+    let generated = validate_quest_generation_authority(&generation)?.manifest;
+    let referred_witness = generated
+        .witnesses
+        .iter()
+        .find(|witness| {
+            witness.npc_id == receipt.contact_npc_id
+                && witness.expected_location == receipt.expected_location_id
+        })
+        .ok_or("Generated rumor referral has no authoritative witness")?;
+    let referral_location_label = Some(referred_witness)
+        .map(adventuresim_core::quest_generation::referral_display_location)
+        .map(str::to_owned)
+        .filter(|label| !label.is_empty())
+        .ok_or("Generated rumor referral has no player-visible tab label")?;
+    grant_generated_witness_referral(
+        ctx,
+        character_id,
+        &generated,
+        referred_witness,
+        &receipt.settlement_id,
+        WitnessReferralProvenance::InitialRumor(&receipt),
+    )?;
+    let case_id = generated.public_case_id;
     let lead_id = inv::compound_id(&["lead", "rumor", &receipt.id]);
     if ctx.db.investigation_lead().id().find(&lead_id).is_none() {
         ctx.db.investigation_lead().insert(InvestigationLead {
             id: lead_id.clone(),
             owner_character_id: character_id,
             case_id: case_id.clone(),
+            proposition_id: String::new(),
             summary: receipt.safe_summary.clone(),
             source_label: "local rumor".into(),
             confidence_bps: 5_000,
@@ -2349,7 +4907,7 @@ pub fn receive_local_problem_rumor(
                 "textual"
             }
             .into(),
-            directions: receipt.expected_location_id.clone(),
+            directions: referral_location_label.clone(),
             exact_location_id: String::new(),
             latitude_e7: 0,
             longitude_e7: 0,
@@ -2359,7 +4917,7 @@ pub fn receive_local_problem_rumor(
             witness_description: visible_description,
             witness_occupation_or_relationship: contact
                 .map_or_else(String::new, |npc| npc.profession),
-            expected_location: receipt.expected_location_id.clone(),
+            expected_location: referral_location_label,
             current_learned_location: String::new(),
             contradiction_group: String::new(),
             corrected_by: String::new(),
@@ -2369,7 +4927,7 @@ pub fn receive_local_problem_rumor(
     issue_rumor_action_graph(
         ctx,
         character_id,
-        &case_id,
+        &canonical_case_id,
         &lead_id,
         &receipt.settlement_id,
         &receipt.contact_npc_id,
@@ -2382,6 +4940,13 @@ pub fn receive_local_problem_rumor(
 /// Trusted authority seam for #184/generation. `pipeline_json` is private
 /// server-authored material and must never originate in or be projected to a
 /// browser; only the registered SSR gateway can invoke this temporary seam.
+fn process_investigation_pipeline(
+    pipeline: inv::PipelineInput,
+) -> Result<(inv::Observation, inv::Recollection, Option<inv::Claim>), String> {
+    inv::process_report(pipeline)
+        .map_err(|error| format!("Invalid investigation pipeline at report processing: {error:?}"))
+}
+
 pub(crate) fn stage_investigation_claim(
     ctx: &ReducerContext,
     character_id: u64,
@@ -2401,12 +4966,10 @@ pub(crate) fn stage_investigation_claim(
     if pipeline_json.len() > 8_192 {
         return Err("Pipeline payload is too large".into());
     }
-    let pipeline: inv::PipelineInput =
-        serde_json::from_str(&pipeline_json).map_err(|_| "Invalid investigation pipeline")?;
+    let pipeline: inv::PipelineInput = serde_json::from_str(&pipeline_json)
+        .map_err(|_| "Invalid investigation pipeline at payload decoding")?;
     let proposition = pipeline.proposition.clone();
-    let public_claim_id = pipeline.receipt_identity.clone();
-    let (observation, recollection, claim) =
-        inv::process_report(pipeline).map_err(|_| "Invalid investigation pipeline")?;
+    let (observation, recollection, claim) = process_investigation_pipeline(pipeline)?;
     let claim = claim.ok_or("An omitted proposition cannot create a receivable claim")?;
     if ctx
         .db
@@ -2521,77 +5084,91 @@ pub(crate) fn stage_investigation_claim(
             correction_of_belief_id,
             consumed_by: String::new(),
         });
-    let _ = public_claim_id;
     Ok(())
 }
 
-pub(crate) fn persist_runtime_testimony(
+fn validate_generated_testimony_site(
+    generated: &adventuresim_core::quest_generation::GeneratedCase,
+    draft: &adventuresim_core::quest_generation::TestimonyDraft,
+    site: Option<&CaseSiteAuthority>,
+) -> Result<(), &'static str> {
+    if draft.destination_stage != "exact_believed" {
+        return Ok(());
+    }
+    let site_id = draft
+        .site_id
+        .as_ref()
+        .filter(|site_id| !site_id.0.is_empty())
+        .ok_or("Exact generated testimony has no site identity")?;
+    let generated_site = generated
+        .sites
+        .iter()
+        .find(|site| site.id == *site_id)
+        .ok_or("Exact generated testimony site is absent from the manifest")?;
+    let site = site.ok_or("Exact generated testimony site authority is missing")?;
+    if site.case_id != generated.canonical_case_id
+        || site.id.value != site_id.0
+        || site.id_key != site_id.0
+        || site.name != generated_site.safe_label
+        || site.distance_m == 0
+        || (site.coordinates_are_geographic
+            && (!(-1_800_000_000..=1_800_000_000).contains(&site.longitude_e7)
+                || !(-900_000_000..=900_000_000).contains(&site.latitude_e7)))
+    {
+        return Err("Exact generated testimony site authority is inconsistent");
+    }
+    Ok(())
+}
+
+pub(crate) fn persist_generated_testimony(
     ctx: &ReducerContext,
     character_id: u64,
-    private_case_id: &str,
-    public_case_id: &str,
-    witness_ref: &str,
-    safe_source_label: &str,
-    reliability: adventuresim_dialogue::TestimonyReliability,
-    event_statement: &str,
-    circumstance_statement: &str,
+    generated: &adventuresim_core::quest_generation::GeneratedCase,
+    witness: &adventuresim_core::quest_generation::WitnessBinding,
+    dialogue_action_id: &str,
 ) -> Result<(), String> {
-    use adventuresim_core::investigation::{
-        AtomicProposition, CaseId, DisclosureMode, EventId, MemoryCondition, PerceptionCondition,
-        PipelineInput, PropositionId, TransmissionCondition,
-    };
-    let event = adventuresim_dialogue::PropositionTestimony {
-        proposition_id: inv::compound_id(&["proposition", private_case_id, "event"]),
-        statement: event_statement.into(),
-        confidence_bps: 7_000,
-        disclosed: true,
-    };
-    let circumstance = adventuresim_dialogue::PropositionTestimony {
-        proposition_id: inv::compound_id(&["proposition", private_case_id, "circumstance"]),
-        statement: circumstance_statement.into(),
-        confidence_bps: 6_000,
-        disclosed: true,
-    };
-    let stages = adventuresim_dialogue::build_testimony_bundle(
-        reliability.clone(),
-        event,
-        circumstance,
-        "I remember a smaller, stooped figure instead.",
-        "I saw nothing unusual there.",
-    );
-    let bundle_id = inv::compound_id(&["testimony", private_case_id, witness_ref]);
-    let stages_json = serde_json::to_string(&stages).map_err(|e| e.to_string())?;
-    let reliability_json = serde_json::to_string(&reliability).map_err(|e| e.to_string())?;
-    if let Some(existing) = ctx
-        .db
-        .investigation_testimony_bundle()
-        .id()
-        .find(&bundle_id)
+    use adventuresim_core::quest_generation::Reliability;
+    if !generated
+        .witnesses
+        .iter()
+        .any(|authoritative| authoritative == witness)
     {
-        if existing.stages_json != stages_json || existing.reliability_json != reliability_json {
-            return Err("Testimony bundle identity conflicts with authority".into());
-        }
-    } else {
-        ctx.db
-            .investigation_testimony_bundle()
-            .insert(InvestigationTestimonyBundle {
-                id: bundle_id.clone(),
-                case_id: private_case_id.into(),
-                witness_ref: witness_ref.into(),
-                reliability_json,
-                stages_json,
-            });
+        return Err("Generated testimony witness is absent from the authoritative manifest".into());
     }
-    for (index, stage) in stages.into_iter().enumerate() {
-        let Some(disclosed) = stage.disclosed_text.clone() else {
-            continue;
-        };
-        let receipt_id = inv::compound_id(&[
-            "safe-testimony",
-            &character_id.to_string(),
-            &bundle_id,
-            &index.to_string(),
-        ]);
+    let projection_plan =
+        adventuresim_core::quest_generation::generated_testimony_projection_plan(witness)
+            .map_err(str::to_string)?;
+    let authority = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&generated.canonical_case_id)
+        .ok_or("Generated testimony case authority is missing")?;
+    let validated_authority = validate_quest_generation_authority(&authority)?;
+    if validated_authority.manifest != *generated {
+        return Err("Generated testimony manifest does not match private authority".into());
+    }
+    for draft in &projection_plan {
+        let site = draft
+            .site_id
+            .as_ref()
+            .and_then(|site_id| ctx.db.case_site_authority().id_key().find(&site_id.0));
+        validate_generated_testimony_site(generated, draft, site.as_ref())
+            .map_err(str::to_string)?;
+    }
+    let generation_context = validated_authority.context;
+    let mut corrected_capability_ids = BTreeSet::new();
+    for (index, draft) in projection_plan.iter().enumerate() {
+        let (receipt_id, pipeline) =
+            adventuresim_core::quest_generation::generated_testimony_pipeline(
+                &generation_context,
+                character_id,
+                generated,
+                witness,
+                index,
+                official_minute(ctx),
+            )
+            .map_err(|error| format!("Invalid generated testimony pipeline: {error:?}"))?;
         if ctx
             .db
             .investigation_safe_claim_receipt()
@@ -2599,68 +5176,168 @@ pub(crate) fn persist_runtime_testimony(
             .find(&receipt_id)
             .is_some()
         {
+            for referred in authored_witness_referrals(generated, witness, draft)? {
+                grant_generated_witness_referral(
+                    ctx,
+                    character_id,
+                    generated,
+                    referred,
+                    &generation_context.settlement_id,
+                    WitnessReferralProvenance::Testimony {
+                        source_witness: witness,
+                        testimony_index: index,
+                        source_draft: draft,
+                        source_receipt_id: &receipt_id,
+                    },
+                )?;
+            }
             continue;
         }
-        let proposition_id =
-            PropositionId::new(stage.proposition_id.clone()).map_err(|_| "Invalid proposition")?;
-        let proposition = AtomicProposition::new(
-            proposition_id,
-            witness_ref,
-            "reported",
-            &stage.perceived_text,
-        )
-        .map_err(|_| "Invalid testimony proposition")?;
-        let pipeline = PipelineInput {
-            case_id: CaseId::new(private_case_id).map_err(|_| "Invalid case ID")?,
-            event_id: EventId::new(inv::compound_id(&["event", &bundle_id, &index.to_string()]))
-                .map_err(|_| "Invalid event ID")?,
-            proposition,
-            observer_ref: witness_ref.into(),
-            speaker_ref: witness_ref.into(),
-            receipt_identity: receipt_id.clone(),
-            recollection_revision: 1,
-            perceived_text: stage.perceived_text,
-            recalled_text: stage.recalled_text,
-            disclosed_text: Some(disclosed),
-            transmitted_text: stage.transmitted_text,
-            perception: PerceptionCondition::Clear,
-            memory: if matches!(
-                reliability,
-                adventuresim_dialogue::TestimonyReliability::Mistaken
-            ) {
-                MemoryCondition::Confused
-            } else {
-                MemoryCondition::Accurate
-            },
-            disclosure: if matches!(
-                reliability,
-                adventuresim_dialogue::TestimonyReliability::Deceptive
-            ) {
-                DisclosureMode::Distort
-            } else {
-                DisclosureMode::Disclose
-            },
-            transmission: TransmissionCondition::Clear,
-            received_at: official_minute(ctx),
-        };
+        let correction_belief_id = draft
+            .corrects_proposition_id
+            .as_ref()
+            .and_then(|proposition_id| {
+                ctx.db
+                    .investigation_belief()
+                    .owner_character_id()
+                    .filter(character_id)
+                    .find(|belief| {
+                        belief.case_id == generated.public_case_id
+                            && belief.proposition_id == *proposition_id
+                    })
+                    .map(|belief| belief.id)
+            })
+            .unwrap_or_default();
         stage_investigation_claim(
             ctx,
             character_id,
             receipt_id.clone(),
-            serde_json::to_string(&pipeline).map_err(|e| e.to_string())?,
-            public_case_id.into(),
-            safe_source_label.into(),
-            inv::compound_id(&["conflict", public_case_id, &stage.proposition_id]),
-            String::new(),
+            serde_json::to_string(&pipeline)
+                .map_err(|_| "Could not encode generated testimony pipeline")?,
+            generated.public_case_id.clone(),
+            "the referred local witness".into(),
+            inv::compound_id(&["conflict", &generated.public_case_id, &draft.proposition_id]),
+            correction_belief_id,
         )?;
         receive_investigation_claim(
             ctx,
             character_id,
-            inv::compound_id(&["receive-testimony", &receipt_id]),
-            receipt_id,
+            inv::compound_id(&["receive-generated-testimony", &receipt_id]),
+            receipt_id.clone(),
         )?;
+
+        let site = draft
+            .site_id
+            .as_ref()
+            .and_then(|site_id| ctx.db.case_site_authority().id_key().find(&site_id.0));
+        let exact = draft.destination_stage == "exact_believed";
+        let lead_id = inv::compound_id(&[
+            "lead",
+            "generated-testimony",
+            &character_id.to_string(),
+            &witness.id.0,
+            &index.to_string(),
+        ]);
+        if ctx.db.investigation_lead().id().find(&lead_id).is_none() {
+            let npc = ctx
+                .db
+                .settlement_npc()
+                .id()
+                .find(&witness.npc_id)
+                .ok_or("Generated witness is no longer persistent")?;
+            ctx.db.investigation_lead().insert(InvestigationLead {
+                id: lead_id.clone(),
+                owner_character_id: character_id,
+                case_id: generated.public_case_id.clone(),
+                proposition_id: draft.proposition_id.clone(),
+                summary: draft.spoken_text.clone(),
+                source_label: "the referred local witness".into(),
+                confidence_bps: if draft.reliability == Reliability::Truthful {
+                    8_000
+                } else {
+                    5_000
+                },
+                destination_stage: draft.destination_stage.clone(),
+                directions: if exact {
+                    String::new()
+                } else {
+                    draft.spoken_text.clone()
+                },
+                exact_location_id: site
+                    .as_ref()
+                    .filter(|_| exact)
+                    .map_or_else(String::new, |site| site.id.value.clone()),
+                latitude_e7: site
+                    .as_ref()
+                    .filter(|_| exact)
+                    .map_or(0, |site| site.latitude_e7),
+                longitude_e7: site
+                    .as_ref()
+                    .filter(|_| exact)
+                    .map_or(0, |site| site.longitude_e7),
+                witness_name: npc.name,
+                witness_description: witness.visible_description.clone(),
+                witness_occupation_or_relationship: npc.profession,
+                expected_location: adventuresim_core::quest_generation::referral_display_location(
+                    witness,
+                )
+                .to_owned(),
+                current_learned_location: site.as_ref().filter(|_| exact).map_or_else(
+                    || {
+                        adventuresim_core::quest_generation::referral_display_location(witness)
+                            .to_owned()
+                    },
+                    |site| site.name.clone(),
+                ),
+                contradiction_group: format!("generated-location:{}", generated.public_case_id),
+                corrected_by: String::new(),
+                recorded_at: official_minute(ctx),
+            });
+            if let Some(corrected_proposition) = &draft.corrects_proposition_id {
+                for mut prior in ctx
+                    .db
+                    .investigation_lead()
+                    .owner_character_id()
+                    .filter(character_id)
+                    .filter(|prior| {
+                        prior.case_id == generated.public_case_id
+                            && prior.proposition_id == *corrected_proposition
+                            && prior.id != lead_id
+                            && prior.corrected_by.is_empty()
+                    })
+                    .collect::<Vec<_>>()
+                {
+                    corrected_capability_ids
+                        .extend(dependent_capability_ids_for_exact_lead(ctx, &prior));
+                    prior.corrected_by = lead_id.clone();
+                    ctx.db.investigation_lead().id().update(prior);
+                }
+            }
+        }
+        for referred in authored_witness_referrals(generated, witness, draft)? {
+            grant_generated_witness_referral(
+                ctx,
+                character_id,
+                generated,
+                referred,
+                &generation_context.settlement_id,
+                WitnessReferralProvenance::Testimony {
+                    source_witness: witness,
+                    testimony_index: index,
+                    source_draft: draft,
+                    source_receipt_id: &receipt_id,
+                },
+            )?;
+        }
     }
-    Ok(())
+    reset_unsupported_capability_progress(ctx, corrected_capability_ids)?;
+    complete_referred_contact_action(
+        ctx,
+        character_id,
+        &generated.canonical_case_id,
+        &witness.npc_id,
+        dialogue_action_id,
+    )
 }
 
 #[reducer]
@@ -2930,6 +5607,7 @@ pub fn discover_investigation_lead(
         }
     }
     let lead_id = inv::compound_id(&["lead", &character_id.to_string(), &receipt_id]);
+    let mut corrected_capability_ids = BTreeSet::new();
     if !receipt.correction_of_lead_id.is_empty() {
         let mut prior = ctx
             .db
@@ -2940,6 +5618,10 @@ pub fn discover_investigation_lead(
         if prior.owner_character_id != character_id || prior.case_id != receipt.public_case_id {
             return Err("Correction target does not match observer and case".into());
         }
+        let invalidated_live_support = prior.corrected_by.is_empty();
+        if invalidated_live_support {
+            corrected_capability_ids.extend(dependent_capability_ids_for_exact_lead(ctx, &prior));
+        }
         prior.corrected_by = lead_id.clone();
         ctx.db.investigation_lead().id().update(prior);
     }
@@ -2947,6 +5629,7 @@ pub fn discover_investigation_lead(
         id: lead_id,
         owner_character_id: character_id,
         case_id: receipt.public_case_id.clone(),
+        proposition_id: String::new(),
         summary: receipt.summary.clone(),
         source_label: receipt.safe_source_label.clone(),
         confidence_bps: receipt.confidence_bps,
@@ -2964,6 +5647,7 @@ pub fn discover_investigation_lead(
         corrected_by: String::new(),
         recorded_at: official_minute(ctx),
     });
+    reset_unsupported_capability_progress(ctx, corrected_capability_ids)?;
     receipt.consumed_by = action_id.clone();
     ctx.db
         .investigation_safe_lead_receipt()
@@ -3058,7 +5742,7 @@ pub fn share_investigation_lead(
     ctx.db.investigation_lead().insert(InvestigationLead {
         id: copy_id,
         owner_character_id: recipient_id,
-        source_label: format!("shared by character {sender_id}"),
+        source_label: format!("shared by {}", sender.name),
         ..source
     });
     ctx.db
@@ -3170,7 +5854,7 @@ pub fn share_investigation_belief(
             statement: source.statement.clone(),
             confidence_bps: source.confidence_bps,
             provenance_kind: "shared_by".into(),
-            provenance_label: format!("shared by character {sender_id}"),
+            provenance_label: format!("shared by {}", sender.name),
             supersedes: existing
                 .as_ref()
                 .map_or_else(String::new, |belief| belief.current_revision_id.clone()),
@@ -3207,7 +5891,921 @@ pub fn share_investigation_belief(
 
 #[cfg(test)]
 mod tests {
+    fn failed_attempt(
+        id: &str,
+        capability_id: &str,
+        owner_character_id: u64,
+        method: &str,
+        expected_version: u32,
+        success: bool,
+    ) -> InvestigationActionAttempt {
+        InvestigationActionAttempt {
+            id: id.into(),
+            capability_id: capability_id.into(),
+            owner_character_id,
+            expected_version,
+            method: method.into(),
+            started_at: 0,
+            completed_at: 1,
+            duration_minutes: 1,
+            success,
+            resulting_uncertainty_bps: 9_000,
+            private_resolution_json: "{}".into(),
+        }
+    }
+
+    fn exact_lead(owner: u64, case_id: &str, site_id: &str) -> InvestigationLead {
+        InvestigationLead {
+            id: "lead".into(),
+            owner_character_id: owner,
+            case_id: case_id.into(),
+            proposition_id: "proposition".into(),
+            summary: "Exact lead".into(),
+            source_label: "witness".into(),
+            confidence_bps: 8_000,
+            destination_stage: "exact_believed".into(),
+            directions: String::new(),
+            exact_location_id: site_id.into(),
+            latitude_e7: 1,
+            longitude_e7: 2,
+            witness_name: String::new(),
+            witness_description: String::new(),
+            witness_occupation_or_relationship: String::new(),
+            expected_location: String::new(),
+            current_learned_location: String::new(),
+            contradiction_group: "group".into(),
+            corrected_by: String::new(),
+            recorded_at: 0,
+        }
+    }
+
+    fn exact_capability(owner: u64, case_id: &str, site_id: &str) -> InvestigationActionCapability {
+        InvestigationActionCapability {
+            id: "capability".into(),
+            owner_character_id: owner,
+            case_id: case_id.into(),
+            provenance_kind: "generated".into(),
+            generated_case_id: "canonical-case".into(),
+            method: "inspect_site".into(),
+            version: 1,
+            target_kind: "site".into(),
+            target_id: site_id.into(),
+            target_terrain: "forest".into(),
+            seed: 1,
+            evidence_age_origin_minute: 0,
+            uncertainty_bps: 9_000,
+            safe_summary: "Inspect".into(),
+            known_prerequisites: String::new(),
+            safe_result_on_success: "Found".into(),
+            consequence_json: "{}".into(),
+            required_action_id: String::new(),
+            alternate_route_action_id: String::new(),
+            active: true,
+        }
+    }
+
+    #[test]
+    fn testimony_correction_resets_only_exact_dependent_progress_chain() {
+        let lead = exact_lead(7, "public-case", "site-a");
+        let capability = exact_capability(7, "canonical-case", "site-a");
+        assert!(capability_progress_depends_on_exact_lead(
+            &capability,
+            &lead,
+            Some(("canonical-case", "public-case")),
+        ));
+        for unrelated in [
+            InvestigationActionCapability {
+                id: "other-capability".into(),
+                target_id: "site-b".into(),
+                ..capability.clone()
+            },
+            InvestigationActionCapability {
+                owner_character_id: 8,
+                ..capability.clone()
+            },
+            InvestigationActionCapability {
+                case_id: "other-case".into(),
+                ..capability.clone()
+            },
+            InvestigationActionCapability {
+                active: false,
+                ..capability.clone()
+            },
+            InvestigationActionCapability {
+                provenance_kind: "manual".into(),
+                generated_case_id: String::new(),
+                ..capability.clone()
+            },
+        ] {
+            assert!(!capability_progress_depends_on_exact_lead(
+                &unrelated,
+                &lead,
+                Some(("canonical-case", "public-case")),
+            ));
+        }
+        let failure = failed_attempt("attempt-0", "capability", 7, "inspect_site", 0, false);
+        assert_eq!(
+            contiguous_failed_attempts("capability", 7, "inspect_site", 1, [failure.clone()]),
+            1
+        );
+        // Correction bumps version without manufacturing an attempt. Relearning
+        // the same site leaves that gap intact, so progress restarts at attempt 1.
+        assert_eq!(
+            contiguous_failed_attempts("capability", 7, "inspect_site", 2, [failure]),
+            0
+        );
+        let restarted = (2..7)
+            .map(|version| {
+                failed_attempt(
+                    &format!("attempt-{version}"),
+                    "capability",
+                    7,
+                    "inspect_site",
+                    version,
+                    false,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            contiguous_failed_attempts("capability", 7, "inspect_site", 7, restarted),
+            action::GENERATED_ACTION_ATTEMPT_BOUND - 1
+        );
+        assert!(!exact_site_knowledge_is_live(
+            "public-case",
+            "site-a",
+            "public-case",
+            "site-a",
+            "exact_believed",
+            "correction-lead",
+            "canonical-case",
+            "site-a",
+            true,
+            Some("canonical-case"),
+            Some("public-case"),
+        ));
+    }
+
+    #[test]
+    fn correction_paths_reset_after_invalidation_and_replay_before_mutation() {
+        let source = include_str!("investigation.rs");
+        let generated = source
+            .split("pub(crate) fn persist_generated_testimony")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .unwrap();
+        assert!(
+            generated.find("investigation_safe_claim_receipt").unwrap()
+                < generated
+                    .find("dependent_capability_ids_for_exact_lead")
+                    .unwrap()
+        );
+        assert!(
+            generated
+                .find("prior.corrected_by = lead_id.clone()")
+                .unwrap()
+                < generated
+                    .rfind("reset_unsupported_capability_progress")
+                    .unwrap()
+        );
+        let generic = source
+            .split("pub fn discover_investigation_lead")
+            .nth(1)
+            .and_then(|tail| tail.split("fn same_place").next())
+            .unwrap();
+        assert!(
+            generic.find("idempotent(").unwrap()
+                < generic
+                    .find("reset_unsupported_capability_progress")
+                    .unwrap()
+        );
+        assert!(generic.contains("invalidated_live_support"));
+        assert!(
+            generic.find("investigation_lead().insert").unwrap()
+                < generic
+                    .find("reset_unsupported_capability_progress")
+                    .unwrap()
+        );
+        assert!(
+            generic
+                .find("reset_unsupported_capability_progress")
+                .unwrap()
+                < generic.find("receipt.consumed_by").unwrap()
+        );
+        let reset_revision = source
+            .split("fn reset_capability_progress_if_unsupported")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("fn reset_unsupported_capability_progress")
+                    .next()
+            })
+            .unwrap();
+        assert!(reset_revision.contains("capability.version.saturating_add(1)"));
+        assert!(reset_revision.contains("capability.seed = replacement_seed()"));
+        let reset = source
+            .split("fn reset_unsupported_capability_progress")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("pub(crate) fn perform_investigation_action_authorized")
+                    .next()
+            })
+            .unwrap();
+        assert!(reset.contains("unique_capability_ids"));
+        assert!(reset.contains("reset_capability_progress_if_unsupported"));
+        assert!(reset.contains("exact_action_case_site_for_observer"));
+        assert!(reset.contains("ctx.random"));
+    }
+
+    #[test]
+    fn correction_reset_waits_for_final_replacement_support() {
+        let failure = failed_attempt("attempt-0", "capability", 7, "inspect_site", 0, false);
+        let mut same_site_replacement = exact_capability(7, "public-case", "site-a");
+        assert_eq!(same_site_replacement.version, 1);
+        assert_eq!(
+            contiguous_failed_attempts(
+                "capability",
+                7,
+                "inspect_site",
+                same_site_replacement.version,
+                [failure.clone()]
+            ),
+            1
+        );
+        assert!(!reset_capability_progress_if_unsupported(
+            &mut same_site_replacement,
+            true,
+            || panic!("a supported correction must not consume a replacement seed")
+        ));
+        assert_eq!(same_site_replacement.version, 1);
+        assert_eq!(same_site_replacement.seed, 1);
+        assert_eq!(
+            contiguous_failed_attempts(
+                "capability",
+                7,
+                "inspect_site",
+                same_site_replacement.version,
+                [failure.clone()]
+            ),
+            1
+        );
+
+        let mut unsupported_replacement = exact_capability(7, "public-case", "site-a");
+        assert!(reset_capability_progress_if_unsupported(
+            &mut unsupported_replacement,
+            false,
+            || 77
+        ));
+        assert_eq!(unsupported_replacement.version, 2);
+        assert_eq!(unsupported_replacement.seed, 77);
+        assert_eq!(
+            contiguous_failed_attempts(
+                "capability",
+                7,
+                "inspect_site",
+                unsupported_replacement.version,
+                [failure]
+            ),
+            0
+        );
+        assert!(!reset_capability_progress_if_unsupported(
+            &mut unsupported_replacement,
+            true,
+            || panic!("replay must not consume a replacement seed")
+        ));
+        assert_eq!(unsupported_replacement.version, 2);
+        assert_eq!(unsupported_replacement.seed, 77);
+    }
+
+    #[test]
+    fn testimony_correction_dedupes_caps_and_preserves_replacement_support() {
+        let unique = unique_capability_ids([
+            "cap-a".to_string(),
+            "cap-a".to_string(),
+            "cap-b".to_string(),
+            "cap-b".to_string(),
+        ]);
+        assert_eq!(
+            unique,
+            BTreeSet::from(["cap-a".to_string(), "cap-b".to_string()])
+        );
+        let mut reset_counts = BTreeMap::<String, u32>::new();
+        for capability_id in unique {
+            *reset_counts.entry(capability_id).or_default() += 1;
+        }
+        assert_eq!(reset_counts["cap-a"], 1);
+        assert_eq!(reset_counts["cap-b"], 1);
+        assert!(correction_requires_progress_reset(false));
+        assert!(!correction_requires_progress_reset(true));
+
+        let mut first_lead = exact_lead(7, "public-case", "site-a");
+        first_lead.id = "lead-a".into();
+        let mut second_lead = first_lead.clone();
+        second_lead.id = "lead-b".into();
+        let first_capability = exact_capability(7, "canonical-case", "site-a");
+        let mut second_capability = first_capability.clone();
+        second_capability.id = "cap-b".into();
+        let corrected_leads = [first_lead, second_lead];
+        let dependent_ids = corrected_leads.iter().flat_map(|lead| {
+            [&first_capability, &second_capability]
+                .into_iter()
+                .filter_map(|capability| {
+                    capability_progress_depends_on_exact_lead(
+                        capability,
+                        lead,
+                        Some(("canonical-case", "public-case")),
+                    )
+                    .then(|| capability.id.clone())
+                })
+        });
+        assert_eq!(
+            unique_capability_ids(dependent_ids),
+            BTreeSet::from(["capability".to_string(), "cap-b".to_string()])
+        );
+    }
+
+    #[test]
+    fn bounded_progress_history_is_exact_contiguous_and_nontransferable() {
+        let exact = vec![
+            failed_attempt("a0", "cap-a", 7, "reacquire_tracks", 0, false),
+            failed_attempt("a1", "cap-a", 7, "reacquire_tracks", 1, false),
+            failed_attempt("a2", "cap-a", 7, "reacquire_tracks", 2, false),
+        ];
+        assert_eq!(
+            contiguous_failed_attempts("cap-a", 7, "reacquire_tracks", 3, exact.clone()),
+            3
+        );
+        assert_eq!(
+            contiguous_failed_attempts("cap-b", 7, "reacquire_tracks", 3, exact.clone()),
+            0
+        );
+        assert_eq!(
+            contiguous_failed_attempts("cap-a", 8, "reacquire_tracks", 3, exact.clone()),
+            0
+        );
+        assert_eq!(
+            contiguous_failed_attempts("cap-a", 7, "search_area", 3, exact.clone()),
+            0
+        );
+        assert_eq!(
+            contiguous_failed_attempts(
+                "cap-a",
+                7,
+                "reacquire_tracks",
+                3,
+                [exact[0].clone(), exact[2].clone()]
+            ),
+            1
+        );
+        let mut success_break = exact;
+        success_break[2].success = true;
+        assert_eq!(
+            contiguous_failed_attempts("cap-a", 7, "reacquire_tracks", 3, success_break),
+            0
+        );
+    }
+
+    #[test]
+    fn bounded_failure_wording_snapshots_progress_and_live_alternate_truthfully() {
+        let input = action::ResolutionInput {
+            seed: 1,
+            attempt_index: 0,
+            kind: action::InvestigationActionKind::ReacquireTracks,
+            terrain: action::Terrain::Road,
+            target_terrain: action::Terrain::Forest,
+            time_of_day: action::TimeOfDay::Day,
+            evidence_age_minutes: 600_000,
+            current_uncertainty_bps: 10_000,
+            skills: action::SkillContribution {
+                terrain_bps: 0,
+                awareness_bps: 0,
+                stealth_bps: 0,
+                assistance_bps: 0,
+                familiarity_bps: 0,
+            },
+            weather: action::WeatherAuthority::Unavailable,
+        };
+        let progress = (0..u64::MAX)
+            .find_map(|seed| {
+                let progress = action::resolve_with_bounded_progress(
+                    action::ResolutionInput { seed, ..input },
+                    0,
+                );
+                (!progress.resolution.success).then_some(progress)
+            })
+            .unwrap();
+        let without = bounded_failure_wording(progress, false);
+        assert!(without.contains("attempt 1 of 6"));
+        assert!(without.contains("uncertainty fell to 97.00%"));
+        assert!(without.contains("No alternate route is currently supported"));
+        let with = bounded_failure_wording(progress, true);
+        assert!(with.contains("Another currently supported route is also available"));
+        assert!(!with.contains("No alternate route"));
+        let bare = private_action_resolution_json(progress.resolution, None).unwrap();
+        assert_eq!(
+            serde_json::from_str::<action::Resolution>(&bare).unwrap(),
+            progress.resolution
+        );
+        let bounded = private_action_resolution_json(progress.resolution, Some(progress)).unwrap();
+        let bounded: serde_json::Value = serde_json::from_str(&bounded).unwrap();
+        assert_eq!(bounded["attempt_number"], 1);
+        assert_eq!(bounded["guaranteed_by_attempt"], 6);
+    }
+
+    #[test]
+    fn bounded_progress_covers_every_generated_kind_and_replay_precedes_history() {
+        let source = include_str!("investigation.rs");
+        let reducer = source
+            .split("pub(crate) fn perform_investigation_action_authorized")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .unwrap();
+        assert!(reducer.contains("capability_uses_bounded_progress"));
+        assert!(
+            reducer
+                .find("investigation_action_attempt().id().find")
+                .unwrap()
+                < reducer.find("contiguous_failed_attempts").unwrap()
+        );
+        let generated = source
+            .split("fn generated_progress_kind")
+            .nth(1)
+            .and_then(|tail| tail.split("fn contiguous_failed_attempts").next())
+            .unwrap();
+        for kind in [
+            "InspectSite",
+            "SearchArea",
+            "FollowTracks",
+            "ReacquireTracks",
+            "LocateContact",
+            "Watch",
+            "Patrol",
+            "LayAmbush",
+            "ApproachLead",
+        ] {
+            assert!(generated.contains(kind));
+        }
+        assert!(!generated.contains("_ =>"));
+        for kind in [
+            action::InvestigationActionKind::InspectSite,
+            action::InvestigationActionKind::SearchArea,
+            action::InvestigationActionKind::FollowTracks,
+            action::InvestigationActionKind::ReacquireTracks,
+            action::InvestigationActionKind::LocateContact,
+            action::InvestigationActionKind::Watch,
+            action::InvestigationActionKind::Patrol,
+            action::InvestigationActionKind::LayAmbush,
+            action::InvestigationActionKind::ApproachLead,
+        ] {
+            assert!(capability_uses_bounded_progress("generated", kind));
+            assert!(!capability_uses_bounded_progress("manual", kind));
+        }
+        assert!(reducer.contains("\"attempt_number\""));
+        assert!(reducer.contains("\"persistent_progress_bps\""));
+        assert!(reducer.contains("\"success_threshold_bps\""));
+        assert!(reducer.contains("\"guaranteed_by_attempt\""));
+    }
+
+    #[test]
+    fn exact_site_projection_and_travel_require_explicit_case_provenance() {
+        let source = include_str!("investigation.rs");
+        let compact_source: String = source
+            .chars()
+            .filter(|character| !character.is_whitespace())
+            .collect();
+        let forbidden_view_scan = ["quest_generation_authority()", ".iter()"].concat();
+        assert!(!compact_source.contains(&forbidden_view_scan));
+        let provenance = source
+            .split("fn validated_case_site_aliases")
+            .nth(1)
+            .and_then(|tail| tail.split("fn case_site_provenance_view").next())
+            .unwrap();
+        for required in [
+            "\"manual\" if case.generated_case_id.is_empty() && authorities.is_empty()",
+            "\"generated\" if case.generated_case_id == case.id && authorities.len() == 1",
+            "validate_quest_generation_authority",
+            "canonical_case_id == case.id",
+        ] {
+            assert!(provenance.contains(required), "{required}");
+        }
+        let pins = source
+            .split("pub fn backend_case_site_pins")
+            .nth(1)
+            .and_then(|tail| tail.split("fn lead_projects_exact_case_site_pin").next())
+            .unwrap();
+        let travel = source
+            .split("pub(crate) fn exact_case_site_for_observer")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(crate) fn disclose_exact_case_site").next())
+            .unwrap();
+        assert!(pins.contains("case_site_provenance_view"));
+        assert!(travel.contains("case_site_provenance_reducer"));
+        for consumer in [
+            "fn exact_action_site_for_observer",
+            "fn exact_action_case_site_for_observer",
+        ] {
+            let body = source.split(consumer).nth(1).unwrap();
+            assert!(body.contains("case_site_provenance_"));
+        }
+    }
+
+    #[test]
+    fn exact_site_provenance_accepts_only_valid_manual_or_generated_tuples() {
+        use adventuresim_core::{
+            local_problem::Scope,
+            quest_generation::{GenerationContext, TemplateFamily, generate, test_witnesses},
+        };
+        let context = GenerationContext {
+            seed: 19,
+            observer_entropy_hi: 23,
+            observer_entropy_lo: 29,
+            settlement_id: "lubeck".into(),
+            settlement_name: "Lubeck".into(),
+            scope: Scope::Settlement {
+                settlement_id: "lubeck".into(),
+            },
+            ordinal: 0,
+            now_minute: 50_000,
+            requested_family: Some(TemplateFamily::RecurringDepredation),
+            witness_candidates: test_witnesses(),
+        };
+        let manifest = generate(&context).unwrap();
+        let context_snapshot_json = serde_json::to_string(&context).unwrap();
+        let authority = crate::strategic::QuestGenerationAuthority {
+            case_id: manifest.canonical_case_id.clone(),
+            public_case_id: manifest.public_case_id.clone(),
+            settlement_id: context.settlement_id.clone(),
+            settlement_name: context.settlement_name.clone(),
+            seed: context.seed,
+            catalog_revision: manifest.catalog_revision.clone(),
+            context_commitment: crate::strategic::quest_generation_context_commitment(
+                &context_snapshot_json,
+            ),
+            context_snapshot_json,
+            manifest_json: serde_json::to_string(&manifest).unwrap(),
+            factor_trace_json: serde_json::to_string(&manifest.factor_trace).unwrap(),
+        };
+        let generated_case = crate::strategic::CaseAuthority {
+            id: manifest.canonical_case_id.clone(),
+            investigation_case_id: manifest.canonical_case_id.clone(),
+            provenance_kind: "generated".into(),
+            generated_case_id: manifest.canonical_case_id.clone(),
+            local_problem_id: Some(manifest.problem_id.clone()),
+            objective_expression_json: serde_json::to_string(&manifest.objectives).unwrap(),
+            resolution_status: crate::strategic::CaseResolutionStatus::Open,
+            resolved_by_party_id: None,
+        };
+        assert_eq!(
+            validated_case_site_aliases(&generated_case, [authority.clone()]),
+            Some(Some((
+                manifest.canonical_case_id.clone(),
+                manifest.public_case_id.clone()
+            )))
+        );
+        assert_eq!(
+            validated_case_site_aliases(&generated_case, std::iter::empty()),
+            None
+        );
+        let mut corrupt = authority.clone();
+        corrupt.context_commitment = "corrupt".into();
+        assert_eq!(
+            validated_case_site_aliases(&generated_case, [corrupt]),
+            None
+        );
+        let manual = crate::strategic::CaseAuthority {
+            id: "manual-case".into(),
+            investigation_case_id: "manual-case".into(),
+            provenance_kind: "manual".into(),
+            generated_case_id: String::new(),
+            local_problem_id: None,
+            objective_expression_json: "{}".into(),
+            resolution_status: crate::strategic::CaseResolutionStatus::Open,
+            resolved_by_party_id: None,
+        };
+        assert_eq!(
+            validated_case_site_aliases(&manual, std::iter::empty()),
+            Some(None)
+        );
+        let mut collision = authority;
+        collision.public_case_id = manual.id.clone();
+        assert_eq!(validated_case_site_aliases(&manual, [collision]), None);
+    }
+
     use super::*;
+
+    #[test]
+    fn explicit_secondary_referral_and_context_are_exact() {
+        use adventuresim_core::{
+            local_problem::Scope,
+            quest_generation::{GenerationContext, TemplateFamily, generate, test_witnesses},
+        };
+        let generated = generate(&GenerationContext {
+            seed: 7,
+            observer_entropy_hi: 11,
+            observer_entropy_lo: 13,
+            settlement_id: "riverdale".into(),
+            settlement_name: "Riverdale".into(),
+            scope: Scope::Settlement {
+                settlement_id: "riverdale".into(),
+            },
+            ordinal: 0,
+            now_minute: 50_000,
+            requested_family: Some(TemplateFamily::RecurringDepredation),
+            witness_candidates: test_witnesses(),
+        })
+        .unwrap();
+        let primary = &generated.witnesses[0];
+        let secondary = &generated.witnesses[1];
+        let referred = authored_witness_referrals(&generated, primary, &primary.testimony[0])
+            .expect("primary account has an authored referral");
+        assert_eq!(referred, vec![secondary]);
+        assert!(
+            authored_witness_referrals(&generated, secondary, &secondary.testimony[0])
+                .unwrap()
+                .is_empty()
+        );
+
+        let referral = InvestigationWitnessReferral {
+            id: "referral".into(),
+            owner_character_id: 7,
+            canonical_case_id: generated.canonical_case_id.clone(),
+            public_case_id: generated.public_case_id.clone(),
+            witness_npc_id: secondary.npc_id.clone(),
+            expected_settlement_id: "riverdale".into(),
+            expected_location_id: secondary.expected_location.clone(),
+            grant_kind: "testimony".into(),
+            source_receipt_id: "testimony-receipt".into(),
+            source_witness_id: primary.id.0.clone(),
+            source_witness_npc_id: primary.npc_id.clone(),
+            source_testimony_index: 0,
+            source_proposition_id: primary.testimony[0].proposition_id.clone(),
+            catalog_revision: generated.catalog_revision.clone(),
+            granted_at: 50_000,
+        };
+        assert!(witness_referral_context_matches(
+            &referral,
+            7,
+            &referral.canonical_case_id,
+            &secondary.npc_id,
+            "riverdale",
+            &secondary.expected_location,
+        ));
+        for mismatch in [
+            (
+                8,
+                secondary.npc_id.as_str(),
+                "riverdale",
+                secondary.expected_location.as_str(),
+            ),
+            (
+                7,
+                primary.npc_id.as_str(),
+                "riverdale",
+                secondary.expected_location.as_str(),
+            ),
+            (
+                7,
+                secondary.npc_id.as_str(),
+                "elsewhere",
+                secondary.expected_location.as_str(),
+            ),
+            (7, secondary.npc_id.as_str(), "riverdale", "wrong-tab"),
+        ] {
+            assert!(!witness_referral_context_matches(
+                &referral,
+                mismatch.0,
+                &referral.canonical_case_id,
+                mismatch.1,
+                mismatch.2,
+                mismatch.3,
+            ));
+        }
+
+        assert!(validate_referral_manifest_provenance(&referral, &generated, secondary).is_ok());
+        for malformed in [
+            InvestigationWitnessReferral {
+                source_witness_id: "witness:wrong".into(),
+                ..referral.clone()
+            },
+            InvestigationWitnessReferral {
+                source_testimony_index: 1,
+                ..referral.clone()
+            },
+            InvestigationWitnessReferral {
+                source_proposition_id: "proposition:wrong".into(),
+                ..referral.clone()
+            },
+            InvestigationWitnessReferral {
+                grant_kind: "unknown".into(),
+                ..referral.clone()
+            },
+        ] {
+            assert!(
+                validate_referral_manifest_provenance(&malformed, &generated, secondary).is_err()
+            );
+        }
+        let mut absent_edge_case = generated.clone();
+        absent_edge_case.witnesses[0].testimony[0]
+            .referred_witness_ids
+            .clear();
+        assert!(
+            validate_referral_manifest_provenance(
+                &referral,
+                &absent_edge_case,
+                &absent_edge_case.witnesses[1],
+            )
+            .is_err()
+        );
+        let mut ambiguous_edge_case = generated.clone();
+        ambiguous_edge_case.witnesses[0].testimony[0]
+            .referred_witness_ids
+            .push(secondary.id.clone());
+        assert!(
+            validate_referral_manifest_provenance(
+                &referral,
+                &ambiguous_edge_case,
+                &ambiguous_edge_case.witnesses[1],
+            )
+            .is_err()
+        );
+
+        let initial = InvestigationWitnessReferral {
+            grant_kind: "initial_rumor".into(),
+            source_receipt_id: "receipt:primary".into(),
+            source_witness_id: String::new(),
+            source_witness_npc_id: "npc:rumor-source".into(),
+            source_testimony_index: 0,
+            source_proposition_id: String::new(),
+            witness_npc_id: primary.npc_id.clone(),
+            expected_location_id: primary.expected_location.clone(),
+            ..referral.clone()
+        };
+        assert!(validate_referral_manifest_provenance(&initial, &generated, primary).is_ok());
+        assert!(validate_referral_manifest_provenance(&initial, &generated, secondary).is_err());
+    }
+
+    #[test]
+    fn both_generated_families_issue_root_and_successor_action_text() {
+        use adventuresim_core::{
+            local_problem::Scope,
+            quest_generation::{
+                GeneratedActionOutput, GenerationContext, TemplateFamily, generate,
+                observer_scoped_id, test_witnesses,
+            },
+        };
+
+        for (seed, family) in [
+            (7, TemplateFamily::RecurringDepredation),
+            (11, TemplateFamily::DisappearanceOrLoss),
+        ] {
+            let context = GenerationContext {
+                seed,
+                observer_entropy_hi: seed ^ 0x6f62_7365_7276_6572,
+                observer_entropy_lo: seed.rotate_left(23) ^ 0x7175_6573_742d_7631,
+                settlement_id: "lubeck".into(),
+                settlement_name: "Lubeck".into(),
+                scope: Scope::Settlement {
+                    settlement_id: "lubeck".into(),
+                },
+                ordinal: 0,
+                now_minute: 50_000,
+                requested_family: Some(family),
+                witness_candidates: test_witnesses(),
+            };
+            let manifest = generate(&context).expect("family should generate");
+            let mut saw_root = false;
+            let mut saw_successor = false;
+            for action in &manifest.actions {
+                let remap = |id: &adventuresim_core::quest_generation::ActionId| {
+                    observer_scoped_id(&context, "capability", &format!("1:{}", id.0))
+                };
+                let required_action_id =
+                    action.prerequisite.as_ref().map_or_else(String::new, remap);
+                saw_root |= required_action_id.is_empty();
+                saw_successor |= !required_action_id.is_empty();
+                let earned_clue = action.outputs.iter().find_map(|output| match output {
+                    GeneratedActionOutput::Evidence { evidence_id } => manifest
+                        .evidence
+                        .iter()
+                        .find(|evidence| evidence.id == *evidence_id)
+                        .map(|evidence| evidence.safe_description.clone()),
+                    _ => None,
+                });
+                validate_investigation_action_text(
+                    &remap(&action.id),
+                    &manifest.public_case_id,
+                    &action.target_kind,
+                    &action.target_id,
+                    &action.safe_summary,
+                    "Complete the preceding generated lead and remain with your ready, co-located party.",
+                    earned_clue.as_deref().unwrap_or(
+                        "The investigation produces a new, source-attributed lead.",
+                    ),
+                    &required_action_id,
+                    &remap(&action.alternate),
+                )
+                .expect("generated issuance text should accept an absent root prerequisite");
+            }
+            assert!(saw_root, "{family:?} did not generate a root action");
+            assert!(
+                saw_successor,
+                "{family:?} did not generate a successor action"
+            );
+        }
+    }
+
+    #[test]
+    fn root_rumor_then_every_referred_witness_pipeline_is_valid_in_both_families() {
+        use adventuresim_core::{
+            investigation::ValidationError,
+            local_problem::Scope,
+            quest_generation::{
+                GenerationContext, TemplateFamily, generate, test_witnesses, validate,
+            },
+        };
+
+        for (seed, family) in [
+            (7, TemplateFamily::RecurringDepredation),
+            (11, TemplateFamily::DisappearanceOrLoss),
+        ] {
+            let mut context = GenerationContext {
+                seed,
+                observer_entropy_hi: seed ^ 0x6f62_7365_7276_6572,
+                observer_entropy_lo: seed.rotate_left(23) ^ 0x7175_6573_742d_7631,
+                settlement_id: "lubeck".into(),
+                settlement_name: "Lubeck".into(),
+                scope: Scope::Settlement {
+                    settlement_id: "lubeck".into(),
+                },
+                ordinal: 0,
+                now_minute: 50_000,
+                requested_family: Some(family),
+                witness_candidates: test_witnesses(),
+            };
+            for (index, witness) in context.witness_candidates.iter_mut().enumerate() {
+                witness.npc_id = format!("npc:riverdale:residences:{index}");
+            }
+            let generated = generate(&context).expect("root rumor should materialize a case");
+            validate(&generated).expect("generated action graph should remain valid");
+            assert_ne!(generated.canonical_case_id, generated.public_case_id);
+            assert!(
+                generated.witnesses.len() >= 2,
+                "the referral transition needs another authored local account"
+            );
+
+            let character_id = 17_849_106_825_763_413_937;
+            let mut authored_claims = 0;
+            for witness in &generated.witnesses {
+                for index in 0..witness.testimony.len() {
+                    let (receipt_id, pipeline) =
+                        adventuresim_core::quest_generation::generated_testimony_pipeline(
+                            &context,
+                            character_id,
+                            &generated,
+                            witness,
+                            index,
+                            50_000,
+                        )
+                        .expect("referred witness should produce a pipeline");
+                    assert!(receipt_id.starts_with("testimony:"));
+                    assert!(receipt_id.len() <= 256);
+                    let (observation, recollection, claim) =
+                        process_investigation_pipeline(pipeline.clone())
+                            .expect("every authored witness claim should persist");
+                    let claim = claim.expect("generated testimony is never omitted");
+                    for id in [
+                        observation.id.as_str(),
+                        recollection.id.as_str(),
+                        claim.id.as_str(),
+                    ] {
+                        assert!(id.len() <= 256, "pipeline id exceeds stable-id budget");
+                        assert!(id.bytes().all(|byte| {
+                            byte.is_ascii_alphanumeric()
+                                || matches!(byte, b'-' | b'_' | b':' | b'.')
+                        }));
+                    }
+                    authored_claims += 1;
+
+                    if authored_claims == 1 {
+                        let mut invalid = pipeline;
+                        invalid.receipt_identity = inv::compound_id(&[
+                            "generated-testimony",
+                            &character_id.to_string(),
+                            &witness.id.0,
+                            &index.to_string(),
+                        ]);
+                        assert_eq!(
+                            inv::process_report(invalid.clone()).unwrap_err(),
+                            ValidationError::InvalidId
+                        );
+                        assert_eq!(
+                            process_investigation_pipeline(invalid).unwrap_err(),
+                            "Invalid investigation pipeline at report processing: InvalidId"
+                        );
+                    }
+                }
+            }
+            assert!(authored_claims >= generated.witnesses.len());
+        }
+    }
 
     #[test]
     fn non_exact_rows_are_sanitized_without_coordinates() {
@@ -3215,6 +6813,7 @@ mod tests {
             id: "lead".into(),
             owner_character_id: 1,
             case_id: "case".into(),
+            proposition_id: String::new(),
             summary: "somewhere north".into(),
             source_label: "witness".into(),
             confidence_bps: 5000,
@@ -3232,9 +6831,95 @@ mod tests {
             corrected_by: String::new(),
             recorded_at: 1,
         };
-        let safe = sanitize_lead(row);
+        let safe = sanitize_lead(row, None);
         assert!(safe.exact_location_id.is_empty());
         assert_eq!((safe.latitude_e7, safe.longitude_e7), (0, 0));
+    }
+
+    #[test]
+    fn journal_cross_scope_references_degrade_to_safe_chronology() {
+        let lead = InvestigationLead {
+            id: "lead:one".into(),
+            owner_character_id: 7,
+            case_id: "case:public".into(),
+            proposition_id: String::new(),
+            summary: "An uncertain account".into(),
+            source_label: "the miller".into(),
+            confidence_bps: 5000,
+            destination_stage: "textual".into(),
+            directions: String::new(),
+            exact_location_id: String::new(),
+            latitude_e7: 0,
+            longitude_e7: 0,
+            witness_name: String::new(),
+            witness_description: String::new(),
+            witness_occupation_or_relationship: String::new(),
+            expected_location: String::new(),
+            current_learned_location: String::new(),
+            contradiction_group: String::new(),
+            corrected_by: "lead:later".into(),
+            recorded_at: 1,
+        };
+        let mut correction = lead.clone();
+        correction.id = "lead:later".into();
+        correction.corrected_by.clear();
+        correction.witness_name = "Greta".into();
+        assert_eq!(safe_correction_label(&lead, Some(&correction)), "Greta");
+        correction.witness_name.clear();
+        correction.source_label = "another witness".into();
+        assert_eq!(
+            safe_correction_label(&lead, Some(&correction)),
+            "another witness"
+        );
+        correction.owner_character_id = 8;
+        assert_eq!(
+            safe_correction_label(&lead, Some(&correction)),
+            "a later account"
+        );
+        correction.owner_character_id = 7;
+        correction.case_id = "case:other".into();
+        assert_eq!(
+            safe_correction_label(&lead, Some(&correction)),
+            "a later account"
+        );
+        assert_eq!(safe_correction_label(&lead, None), "a later account");
+
+        let revision = InvestigationBeliefRevision {
+            id: "revision:two".into(),
+            owner_character_id: 7,
+            belief_id: "belief:one".into(),
+            revision: 2,
+            statement: "Later account".into(),
+            confidence_bps: 6000,
+            provenance_kind: "witness".into(),
+            provenance_label: "Greta".into(),
+            supersedes: "revision:one".into(),
+            recorded_at: 2,
+        };
+        let mut earlier = revision.clone();
+        earlier.id = "revision:one".into();
+        earlier.revision = 1;
+        earlier.provenance_label = "the miller".into();
+        earlier.supersedes.clear();
+        assert_eq!(
+            safe_superseded_revision_label(&revision, Some(&earlier)),
+            "revision 1 from the miller"
+        );
+        earlier.belief_id = "belief:other".into();
+        assert_eq!(
+            safe_superseded_revision_label(&revision, Some(&earlier)),
+            "an earlier account"
+        );
+        earlier.belief_id = revision.belief_id.clone();
+        earlier.owner_character_id = 8;
+        assert_eq!(
+            safe_superseded_revision_label(&revision, Some(&earlier)),
+            "an earlier account"
+        );
+        assert_eq!(
+            safe_superseded_revision_label(&revision, None),
+            "an earlier account"
+        );
     }
 
     #[test]
@@ -3268,6 +6953,7 @@ mod tests {
             "investigation_sharing_receipt",
             "investigation_area_authority",
             "investigation_action_capability",
+            "investigation_pattern_target_authority",
             "investigation_action_attempt",
             "investigation_action_outcome",
         ] {
@@ -3299,6 +6985,90 @@ mod tests {
     }
 
     #[test]
+    fn generated_case_site_presentation_is_validated_and_action_only() {
+        let source = include_str!("investigation.rs");
+        let projection = source
+            .split("fn case_site_presentation_view")
+            .nth(1)
+            .and_then(|tail| tail.split("fn lead_projects_exact_case_site_pin").next())
+            .expect("generated case-site presentation helper");
+        for required in [
+            "validate_quest_generation_authority",
+            "generated_site.id.0 == site.id.value",
+            "generated_site.safe_label != site.name",
+            "generated_case_site_combat_eligible",
+            "find(owner_character_id)",
+            "case_outcome_fact()",
+            "consequence.public_summary",
+        ] {
+            assert!(projection.contains(required), "{required}");
+        }
+        for forbidden in ["enemy_type", "cause", "factor_trace", "manifest_json"] {
+            assert!(!projection.contains(forbidden), "{forbidden} leaked");
+        }
+    }
+
+    #[test]
+    fn exact_witness_belief_projects_a_pin_without_route_completion() {
+        let site = CaseSiteAuthority {
+            id_key: "site:opaque".into(),
+            id: CaseSiteId {
+                value: "site:opaque".into(),
+            },
+            case_id: "canonical-case".into(),
+            origin_settlement_id: "settlement".into(),
+            name: "The abandoned croft".into(),
+            description: "A roofless croft beyond the mill.".into(),
+            scene_key: "ruins".into(),
+            longitude_e7: 110_000_000,
+            latitude_e7: 532_000_000,
+            coordinates_are_geographic: true,
+            distance_m: 8_000,
+        };
+        let lead = InvestigationLead {
+            id: "witness-lead".into(),
+            owner_character_id: 7,
+            case_id: "public-case".into(),
+            proposition_id: "reported-place".into(),
+            summary: "I saw it enter the old croft.".into(),
+            source_label: "the referred local witness".into(),
+            confidence_bps: 5_000,
+            destination_stage: "exact_believed".into(),
+            directions: String::new(),
+            exact_location_id: site.id.value.clone(),
+            latitude_e7: site.latitude_e7,
+            longitude_e7: site.longitude_e7,
+            witness_name: "Marta".into(),
+            witness_description: "A short, dark-haired miller.".into(),
+            witness_occupation_or_relationship: "miller".into(),
+            expected_location: "The mill".into(),
+            current_learned_location: site.name.clone(),
+            contradiction_group: "reported-place".into(),
+            corrected_by: String::new(),
+            recorded_at: 1,
+        };
+        assert!(lead_projects_exact_case_site_pin(
+            &lead,
+            &site,
+            Some("public-case")
+        ));
+        let mut approximate = lead.clone();
+        approximate.destination_stage = "approximate_area".into();
+        assert!(!lead_projects_exact_case_site_pin(
+            &approximate,
+            &site,
+            Some("public-case")
+        ));
+        let mut corrected = lead;
+        corrected.corrected_by = "later-testimony".into();
+        assert!(!lead_projects_exact_case_site_pin(
+            &corrected,
+            &site,
+            Some("public-case")
+        ));
+    }
+
+    #[test]
     fn source_has_authorization_idempotency_and_no_implicit_sharing() {
         let source = include_str!("investigation.rs");
         assert!(source.contains("require_strategic_gateway(ctx)?"));
@@ -3316,6 +7086,11 @@ mod tests {
     #[test]
     fn action_projection_and_reducer_keep_hidden_authority_server_side() {
         let source = include_str!("investigation.rs");
+        let projected_type = source
+            .split("pub struct BackendInvestigationAction")
+            .nth(1)
+            .and_then(|tail| tail.split("#[derive").next())
+            .expect("action projection type");
         let projection = source
             .split("pub fn backend_investigation_actions")
             .nth(1)
@@ -3327,16 +7102,19 @@ mod tests {
         for hidden in [
             "case_id",
             "target_id",
-            "latitude_e7",
-            "longitude_e7",
             "resolution_seed",
             "success_threshold",
         ] {
             assert!(
-                !projection.contains(hidden),
+                !projected_type.contains(hidden),
                 "{hidden} leaked into projection"
             );
         }
+        assert!(projected_type.contains("required_case_site_id"));
+        assert!(projected_type.contains("available"));
+        assert!(projection.contains("capability_has_successful_attempt_view"));
+        assert!(projection.contains("capability_has_live_support_view"));
+        assert!(projection.contains("action_unavailable_reason_view"));
 
         let reducer = source
             .split("pub fn perform_investigation_action")
@@ -3345,6 +7123,177 @@ mod tests {
         assert!(reducer.contains("expected_version"));
         assert!(reducer.contains("perform_investigation_action_authorized"));
         assert!(!reducer.contains("stage_investigation_lead"));
+    }
+
+    #[test]
+    fn corrected_exact_site_knowledge_is_not_live_action_support() {
+        assert!(exact_site_knowledge_is_live(
+            "case",
+            "site",
+            "case",
+            "site",
+            "exact_believed",
+            "",
+            "case",
+            "site",
+            true,
+            None,
+            None,
+        ));
+        assert!(!exact_site_knowledge_is_live(
+            "case",
+            "site",
+            "case",
+            "site",
+            "exact_believed",
+            "newer-lead",
+            "case",
+            "site",
+            true,
+            None,
+            None,
+        ));
+        assert!(exact_site_knowledge_is_live(
+            "canonical",
+            "site",
+            "public",
+            "site",
+            "visited",
+            "",
+            "canonical",
+            "site",
+            true,
+            Some("canonical"),
+            Some("public"),
+        ));
+        assert!(!exact_site_knowledge_is_live(
+            "canonical",
+            "site",
+            "collision",
+            "site",
+            "visited",
+            "",
+            "canonical",
+            "site",
+            true,
+            Some("canonical"),
+            Some("public"),
+        ));
+        assert!(!exact_site_knowledge_is_live(
+            "canonical",
+            "site",
+            "public",
+            "other-site",
+            "visited",
+            "",
+            "canonical",
+            "site",
+            true,
+            Some("canonical"),
+            Some("public"),
+        ));
+        let source = include_str!("investigation.rs");
+        let projection = source
+            .split("fn capability_has_live_support_view")
+            .nth(1)
+            .and_then(|tail| tail.split("fn exact_action_site_for_observer").next())
+            .expect("projection live-support predicate");
+        assert!(projection.contains("exact_action_site_for_observer"));
+        let recovery = source
+            .split("fn activate_action_successors")
+            .nth(1)
+            .and_then(|tail| tail.split("fn complete_referred_contact_action").next())
+            .expect("failed-alternate live-support predicate");
+        assert!(recovery.contains("capability_has_live_support_reducer"));
+        assert!(recovery.contains("exact_site_knowledge_is_live"));
+        assert!(recovery.contains("exact_action_case_site_for_observer(ctx, capability)"));
+        let legacy_site_lookup = source
+            .split("pub(crate) fn exact_case_site_for_observer")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(crate) fn disclose_exact_case_site").next())
+            .expect("stable travel and pin exact-site helper");
+        assert!(legacy_site_lookup.contains("observer_character_id: u64"));
+        assert!(legacy_site_lookup.contains("case_site_id: &str"));
+        assert!(legacy_site_lookup.contains("Option<(CaseSiteAuthority, InvestigationLead)>"));
+        assert!(!legacy_site_lookup.contains("InvestigationActionCapability"));
+    }
+
+    #[test]
+    fn corrected_contact_referral_is_not_live_at_any_action_boundary() {
+        let referral = |owner_character_id, case_id: &str, corrected_by: &str| InvestigationLead {
+            id: "lead".into(),
+            owner_character_id,
+            case_id: case_id.into(),
+            proposition_id: String::new(),
+            summary: "Ask the cooper what she saw.".into(),
+            source_label: "local rumor".into(),
+            confidence_bps: 5_000,
+            destination_stage: "textual".into(),
+            directions: "Public square".into(),
+            exact_location_id: String::new(),
+            latitude_e7: 0,
+            longitude_e7: 0,
+            witness_name: "Greta".into(),
+            witness_description: "A tall cooper.".into(),
+            witness_occupation_or_relationship: "cooper".into(),
+            expected_location: "Public square".into(),
+            current_learned_location: String::new(),
+            contradiction_group: String::new(),
+            corrected_by: corrected_by.into(),
+            recorded_at: 50_000,
+        };
+        let live = referral(7, "case", "");
+        assert!(lead_is_live_contact_referral(&live, 7, "case"));
+        let corrected = referral(7, "case", "replacement-lead");
+        assert!(!lead_is_live_contact_referral(&corrected, 7, "case"));
+        let mut retracted = referral(7, "case", "");
+        retracted.witness_name.clear();
+        assert!(!lead_is_live_contact_referral(&retracted, 7, "case"));
+        assert!(!lead_is_live_contact_referral(&live, 8, "case"));
+        assert!(!lead_is_live_contact_referral(&live, 7, "other-case"));
+
+        let source = include_str!("investigation.rs");
+        let projection = source
+            .split("fn capability_has_live_support_view")
+            .nth(1)
+            .and_then(|tail| tail.split("fn exact_action_site_for_observer").next())
+            .expect("projection contact support");
+        assert!(projection.contains("lead_is_live_contact_referral"));
+        let recovery = source
+            .split("fn capability_has_live_support_reducer")
+            .nth(1)
+            .and_then(|tail| tail.split("fn complete_referred_contact_action").next())
+            .expect("recovery contact support");
+        assert!(recovery.contains("lead_is_live_contact_referral"));
+        let execution = source
+            .split("fn validate_live_action_prerequisites")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("fn case_objective_contains_custody_target")
+                    .next()
+            })
+            .expect("execution contact support");
+        assert!(execution.contains("lead_is_live_contact_referral"));
+        assert!(execution.contains("No live witness referral supports this action"));
+    }
+
+    #[test]
+    fn inspect_site_travel_requires_ready_off_site_party() {
+        let ready_off_site = projected_action_availability(true, "site", false);
+        assert!(ready_off_site.unavailable_reason.is_some());
+        assert!(ready_off_site.can_travel_to_required_site);
+
+        let incapacitated_off_site = projected_action_availability(false, "site", false);
+        assert!(incapacitated_off_site.unavailable_reason.is_some());
+        assert!(!incapacitated_off_site.can_travel_to_required_site);
+
+        let incapacitated_on_site = projected_action_availability(false, "site", true);
+        assert!(incapacitated_on_site.unavailable_reason.is_some());
+        assert!(!incapacitated_on_site.can_travel_to_required_site);
+
+        let ready_on_site = projected_action_availability(true, "site", true);
+        assert!(ready_on_site.unavailable_reason.is_none());
+        assert!(!ready_on_site.can_travel_to_required_site);
     }
 
     #[test]
@@ -3416,6 +7365,636 @@ mod tests {
             .expect("lead write");
         assert!(position_check < time_advance);
         assert!(position_check < lead_write);
+    }
+
+    #[test]
+    fn generated_physical_and_social_reveals_execute_from_known_origins() {
+        let source = include_str!("investigation.rs");
+        let position = source
+            .split("fn validate_action_position")
+            .nth(1)
+            .and_then(|tail| tail.split("fn validate_live_action_prerequisites").next())
+            .expect("real position validator");
+        assert!(position.contains("\"site\" =>"));
+        assert!(position.contains("InvestigationActionKind::FollowTracks"));
+        assert!(position.contains("InvestigationActionKind::ReacquireTracks"));
+        assert!(position.contains("predecessor.target_kind != \"area\""));
+        assert!(position.contains("\"tracks\" | \"route\" =>"));
+        assert!(position.contains("validate_action_position("));
+        let generated = include_str!("../../adventuresim-core/src/quest_generation.rs");
+        let disappearance = generated
+            .split("TemplateFamily::DisappearanceOrLoss => vec![")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn generate").next())
+            .expect("generated disappearance graph");
+        assert!(disappearance.contains("\"locate_contact\""));
+        assert!(disappearance.contains("GeneratedDestinationStage::ApproximateArea"));
+        assert!(disappearance.contains("\"approach_social\""));
+        assert!(disappearance.contains("\"route\""));
+        assert!(disappearance.contains("GeneratedDestinationStage::Exact"));
+        assert!(disappearance.contains("\"resolve_social\""));
+        assert!(disappearance.contains("\"site\""));
+    }
+
+    #[test]
+    fn generated_pattern_actions_require_the_exact_earned_clue() {
+        let source = include_str!("investigation.rs");
+        let validator = source
+            .split("fn validate_generated_pattern_condition")
+            .nth(1)
+            .and_then(|tail| tail.split("fn validate_live_action_prerequisites").next())
+            .expect("pattern-condition validator");
+        assert!(validator.contains("GeneratedActionOutput::PatternCondition"));
+        assert!(validator.contains("investigation_evidence_knowledge()"));
+        assert!(validator.contains("knowledge.evidence_id.as_str() == evidence_id.as_str()"));
+        assert!(validator.contains("started_at % 1_440"));
+        assert!(validator.contains("capability.target_kind != \"route\""));
+        assert!(validator.contains("InvestigationActionKind::SearchArea"));
+        assert!(validator.contains("investigation_pattern_target_authority()"));
+        assert!(validator.contains("pattern_target_matches"));
+        assert!(validator.contains("generated_npc_presence_version"));
+        assert!(validator.contains("npc_is_present"));
+        assert!(validator.contains("capability.target_id != *cohort_id"));
+        assert!(
+            !source.contains("#[table(accessor = investigation_pattern_target_authority, public)]")
+        );
+        let generated_client = include_str!("../../adventuresim-stdb-client/src/mod.rs");
+        assert!(!generated_client.contains("investigation_pattern_target_authority_table"));
+        let performer = source
+            .split("pub(crate) fn perform_investigation_action_authorized")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("authorized action performer");
+        assert_eq!(
+            performer
+                .matches("validate_generated_pattern_condition")
+                .count(),
+            2,
+            "pattern authority is checked before resolution and at the mutation boundary"
+        );
+    }
+
+    #[test]
+    fn pattern_route_support_requires_exact_observer_clue_knowledge() {
+        use adventuresim_core::quest_generation::{
+            EvidenceId, GeneratedActionOutput, GeneratedPatternCondition,
+        };
+
+        let outputs_json = serde_json::to_string(&[GeneratedActionOutput::PatternCondition {
+            evidence_id: EvidenceId("pattern-clue".into()),
+            condition: GeneratedPatternCondition::BroadSurvey,
+        }])
+        .unwrap();
+        assert_eq!(
+            generated_pattern_evidence_id(&outputs_json).unwrap(),
+            Some("pattern-clue".into())
+        );
+        let learned = InvestigationEvidenceKnowledge {
+            id: "knowledge".into(),
+            owner_character_id: 7,
+            case_id: "case".into(),
+            evidence_id: "pattern-clue".into(),
+            source_id: "search-attempt".into(),
+            learned_at: 50_000,
+        };
+        assert!(observer_pattern_route_has_live_corroborated_clue(
+            7,
+            "case",
+            "pattern-clue",
+            [learned.clone()],
+        ));
+        assert!(!observer_pattern_route_has_live_corroborated_clue(
+            7,
+            "case",
+            "pattern-clue",
+            Vec::<InvestigationEvidenceKnowledge>::new(),
+        ));
+        assert!(!observer_pattern_route_has_live_corroborated_clue(
+            8,
+            "case",
+            "pattern-clue",
+            [learned.clone()],
+        ));
+        assert!(!observer_pattern_route_has_live_corroborated_clue(
+            7,
+            "other-case",
+            "pattern-clue",
+            [learned.clone()],
+        ));
+        assert!(!observer_pattern_route_has_live_corroborated_clue(
+            7,
+            "case",
+            "other-clue",
+            [learned],
+        ));
+
+        let source = include_str!("investigation.rs");
+        let projection = source
+            .split("fn capability_has_live_support_view")
+            .nth(1)
+            .and_then(|tail| tail.split("fn exact_action_site_for_observer").next())
+            .expect("pattern projection support");
+        assert!(projection.contains("capability_has_live_pattern_support_view"));
+        let recovery = source
+            .split("fn capability_has_live_support_reducer")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("fn capability_has_live_pattern_support_reducer")
+                    .next()
+            })
+            .expect("pattern recovery support");
+        assert!(recovery.contains("capability_has_live_pattern_support_reducer"));
+        let execution = source
+            .split("fn validate_generated_pattern_condition")
+            .nth(1)
+            .and_then(|tail| tail.split("fn validate_live_action_prerequisites").next())
+            .expect("pattern execution support");
+        assert!(execution.contains("observer_pattern_route_has_live_corroborated_clue"));
+        assert!(execution.contains("The selected pattern has not been corroborated yet"));
+        let live_execution = source
+            .split("fn validate_live_action_prerequisites")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("fn case_objective_contains_custody_target")
+                    .next()
+            })
+            .expect("live execution support");
+        assert!(live_execution.contains("capability_has_live_support_reducer"));
+        let reducer_support = source
+            .split("fn capability_has_live_support_reducer")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("fn capability_has_live_pattern_support_reducer")
+                    .next()
+            })
+            .expect("combined reducer support");
+        assert!(
+            reducer_support.find("required_action_id").unwrap()
+                < reducer_support
+                    .find("capability_has_live_pattern_support_reducer")
+                    .unwrap()
+        );
+    }
+
+    #[test]
+    fn generated_pattern_authority_fails_closed_and_manual_actions_remain_permissive() {
+        use adventuresim_core::{
+            local_problem::Scope,
+            quest_generation::{
+                GeneratedActionOutput, GenerationContext, TemplateFamily, generate,
+                observer_scoped_id, test_witnesses,
+            },
+        };
+        let context = GenerationContext {
+            seed: 7,
+            observer_entropy_hi: 11,
+            observer_entropy_lo: 13,
+            settlement_id: "lubeck".into(),
+            settlement_name: "Lubeck".into(),
+            scope: Scope::Settlement {
+                settlement_id: "lubeck".into(),
+            },
+            ordinal: 0,
+            now_minute: 50_000,
+            requested_family: Some(TemplateFamily::RecurringDepredation),
+            witness_candidates: test_witnesses(),
+        };
+        let manifest = generate(&context).unwrap();
+        let generated = manifest
+            .actions
+            .iter()
+            .find(|action| {
+                action
+                    .outputs
+                    .iter()
+                    .any(|output| matches!(output, GeneratedActionOutput::PatternCondition { .. }))
+            })
+            .unwrap();
+        let (known_prerequisites, safe_result_on_success) =
+            generated_capability_safe_text(&manifest, generated);
+        let capability = InvestigationActionCapability {
+            id: observer_scoped_id(&context, "capability", &format!("7:{}", generated.id.0)),
+            owner_character_id: 7,
+            case_id: manifest.public_case_id.clone(),
+            provenance_kind: "generated".into(),
+            generated_case_id: manifest.canonical_case_id.clone(),
+            method: action_method(generated.kind).into(),
+            version: 0,
+            target_kind: generated.target_kind.clone(),
+            target_id: generated.target_id.clone(),
+            target_terrain: format!(
+                "{:?}",
+                manifest
+                    .sites
+                    .iter()
+                    .find(|site| site.id.0 == generated.target_id)
+                    .map(|site| site.terrain)
+                    .or_else(|| {
+                        manifest
+                            .areas
+                            .iter()
+                            .find(|area| area.id == generated.target_id)
+                            .map(|area| area.terrain)
+                    })
+                    .unwrap_or(action::Terrain::Settlement)
+            )
+            .to_ascii_lowercase(),
+            seed: 1,
+            evidence_age_origin_minute: 0,
+            uncertainty_bps: 0,
+            safe_summary: generated.safe_summary.clone(),
+            known_prerequisites,
+            safe_result_on_success,
+            consequence_json: serde_json::to_string(&InvestigationActionConsequence::None).unwrap(),
+            required_action_id: generated
+                .prerequisite
+                .as_ref()
+                .map_or_else(String::new, |id| {
+                    observer_scoped_id(&context, "capability", &format!("7:{}", id.0))
+                }),
+            alternate_route_action_id: observer_scoped_id(
+                &context,
+                "capability",
+                &format!("7:{}", generated.alternate.0),
+            ),
+            active: true,
+        };
+        let manifest_json = serde_json::to_string(&manifest).unwrap();
+        let context_json = serde_json::to_string(&context).unwrap();
+        let authority = Some((manifest_json.as_str(), context_json.as_str()));
+        let exact_outputs = serde_json::to_string(&generated.outputs).unwrap();
+        assert!(matches!(
+            generated_pattern_authority(&capability, authority, Some(&exact_outputs)),
+            GeneratedPatternAuthority::Pattern { .. }
+        ));
+        assert_eq!(
+            generated_pattern_authority(&capability, authority, None),
+            GeneratedPatternAuthority::Invalid
+        );
+        assert_eq!(
+            generated_pattern_authority(&capability, None, None),
+            GeneratedPatternAuthority::Invalid
+        );
+        let mut absent_action_manifest = manifest.clone();
+        absent_action_manifest
+            .actions
+            .retain(|action| action.id != generated.id);
+        let absent_action_json = serde_json::to_string(&absent_action_manifest).unwrap();
+        let absent_action_authority = Some((absent_action_json.as_str(), context_json.as_str()));
+        assert_eq!(
+            generated_pattern_authority(&capability, absent_action_authority, None),
+            GeneratedPatternAuthority::Invalid
+        );
+        assert_eq!(
+            generated_pattern_authority(&capability, absent_action_authority, Some(&exact_outputs)),
+            GeneratedPatternAuthority::Invalid
+        );
+        let mismatched = serde_json::to_string(&vec![GeneratedActionOutput::AmbushReady]).unwrap();
+        assert_eq!(
+            generated_pattern_authority(&capability, authority, Some(&mismatched)),
+            GeneratedPatternAuthority::Invalid
+        );
+        let mut wrong_evidence_outputs = generated.outputs.clone();
+        let pattern = wrong_evidence_outputs
+            .iter_mut()
+            .find_map(|output| match output {
+                GeneratedActionOutput::PatternCondition { evidence_id, .. } => Some(evidence_id),
+                _ => None,
+            })
+            .unwrap();
+        pattern.0 = "wrong-evidence".into();
+        let wrong_evidence = serde_json::to_string(&wrong_evidence_outputs).unwrap();
+        assert_eq!(
+            generated_pattern_authority(&capability, authority, Some(&wrong_evidence)),
+            GeneratedPatternAuthority::Invalid
+        );
+        assert_eq!(
+            generated_pattern_authority(&capability, authority, Some("not-json")),
+            GeneratedPatternAuthority::Invalid
+        );
+
+        let mut wrong_observer = capability.clone();
+        wrong_observer.owner_character_id = 8;
+        assert_eq!(
+            generated_pattern_authority(&wrong_observer, authority, Some(&exact_outputs)),
+            GeneratedPatternAuthority::Invalid
+        );
+        let mut wrong_case = capability.clone();
+        wrong_case.case_id = "another-case".into();
+        assert_eq!(
+            generated_pattern_authority(&wrong_case, authority, Some(&exact_outputs)),
+            GeneratedPatternAuthority::Invalid
+        );
+        for mutate in 0..10 {
+            let mut changed = capability.clone();
+            match mutate {
+                0 => changed.method = "watch".into(),
+                1 => changed.target_kind = "site".into(),
+                2 => changed.target_id = "wrong-target".into(),
+                3 => changed.target_terrain = "water".into(),
+                4 => changed.required_action_id = "wrong-required".into(),
+                5 => changed.alternate_route_action_id = "wrong-alternate".into(),
+                6 => changed.safe_summary = "wrong summary".into(),
+                7 => changed.consequence_json = r#"{"kind":"rescue_subject"}"#.into(),
+                8 => changed.known_prerequisites = "wrong prerequisites".into(),
+                _ => changed.safe_result_on_success = "wrong result".into(),
+            }
+            assert_eq!(
+                generated_pattern_authority(&changed, authority, Some(&exact_outputs)),
+                GeneratedPatternAuthority::Invalid,
+                "blueprint mutation {mutate} unexpectedly remained valid"
+            );
+        }
+        let mut night_manifest = manifest.clone();
+        let night_action = night_manifest
+            .actions
+            .iter_mut()
+            .find(|action| action.id == generated.id)
+            .unwrap();
+        for output in &mut night_action.outputs {
+            if let GeneratedActionOutput::PatternCondition { condition, .. } = output {
+                *condition =
+                    adventuresim_core::quest_generation::GeneratedPatternCondition::NightWindow;
+            }
+        }
+        let night_outputs = serde_json::to_string(&night_action.outputs).unwrap();
+        let night_manifest_json = serde_json::to_string(&night_manifest).unwrap();
+        let mut wrong_night_geography = capability.clone();
+        wrong_night_geography.target_terrain = "water".into();
+        assert_eq!(
+            generated_pattern_authority(
+                &wrong_night_geography,
+                Some((night_manifest_json.as_str(), context_json.as_str())),
+                Some(&night_outputs),
+            ),
+            GeneratedPatternAuthority::Invalid
+        );
+        let manual = InvestigationActionCapability {
+            id: "manual".into(),
+            case_id: "manual-case".into(),
+            provenance_kind: "manual".into(),
+            generated_case_id: String::new(),
+            ..capability
+        };
+        assert_eq!(
+            generated_pattern_authority(&manual, None, None),
+            GeneratedPatternAuthority::Manual
+        );
+        assert_eq!(
+            exactly_one_generated_authority(Vec::<(String, String, String)>::new()),
+            Ok(None)
+        );
+        assert_eq!(
+            exactly_one_generated_authority([("case".into(), "manifest".into(), "context".into())]),
+            Ok(Some(("manifest".into(), "context".into())))
+        );
+        // Canonical and public lookup paths can return the same row; row
+        // identity deduplicates it rather than manufacturing ambiguity.
+        assert_eq!(
+            exactly_one_generated_authority([
+                ("same-case".into(), "manifest".into(), "context".into()),
+                ("same-case".into(), "manifest".into(), "context".into()),
+            ]),
+            Ok(Some(("manifest".into(), "context".into())))
+        );
+        // Canonical/public and public/public collisions both contain distinct
+        // private authority rows and therefore fail closed.
+        assert_eq!(
+            exactly_one_generated_authority([
+                ("case-a".into(), "manifest-a".into(), "context-a".into()),
+                ("case-b".into(), "manifest-b".into(), "context-b".into()),
+            ]),
+            Err(())
+        );
+        assert_eq!(
+            exactly_one_generated_authority([
+                ("public-a".into(), "manifest-a".into(), "context-a".into()),
+                ("public-b".into(), "manifest-b".into(), "context-b".into()),
+            ]),
+            Err(())
+        );
+
+        let source = include_str!("investigation.rs");
+        for boundary in [
+            "fn capability_has_live_pattern_support_view",
+            "fn capability_has_live_pattern_support_reducer",
+            "fn validate_generated_pattern_condition",
+        ] {
+            let body = source.split(boundary).nth(1).unwrap();
+            assert!(body.contains("generated_pattern_authority"));
+        }
+        for lookup in [
+            "fn generated_authority_view",
+            "fn generated_authority_reducer",
+        ] {
+            let body = source
+                .split(lookup)
+                .nth(1)
+                .and_then(|tail| tail.split("\nfn ").next())
+                .unwrap();
+            assert!(body.contains(".case_id()"));
+            assert!(body.contains(".public_case_id()"));
+            assert!(body.contains(".filter("));
+            assert!(body.contains("exactly_one_generated_authority"));
+            assert!(!body.contains(".iter()"));
+        }
+        let candidate_validator = source
+            .split("fn validated_generated_authority_candidate")
+            .nth(1)
+            .and_then(|tail| tail.split("fn generated_authority_view").next())
+            .unwrap();
+        assert!(candidate_validator.contains("validate_quest_generation_authority"));
+        let observer_ids = source
+            .split("fn generated_observer_id")
+            .nth(1)
+            .and_then(|tail| tail.split("fn set_action_active").next())
+            .unwrap();
+        assert!(observer_ids.contains("validate_quest_generation_authority"));
+        let issuer = source
+            .split("fn issue_rumor_action_graph")
+            .nth(1)
+            .and_then(|tail| tail.split("fn issue_investigation_actions").next())
+            .unwrap();
+        assert!(issuer.contains("if let Some(existing)"));
+        assert!(issuer.contains("validate_capability_blueprint_reducer(ctx, &existing)?"));
+        assert!(issuer.contains("generated_capability_safe_text(&manifest, generated)"));
+        assert!(
+            issuer
+                .find("validate_capability_blueprint_reducer(ctx, &existing)?")
+                .unwrap()
+                < issuer.find("continue;").unwrap()
+        );
+    }
+
+    #[test]
+    fn failed_action_wording_counts_any_other_live_supported_route() {
+        let source = include_str!("investigation.rs");
+        let recovery = source
+            .split("fn activate_action_successors")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("\nfn capability_has_live_support_reducer")
+                    .next()
+            })
+            .expect("failed route recovery");
+        assert!(recovery.contains("candidate.id != capability.id"));
+        assert!(recovery.contains("candidate.active"));
+        assert!(recovery.contains("capability_has_live_support_reducer"));
+        assert!(recovery.contains("set_action_active"));
+        assert!(
+            recovery.rfind("set_action_active").unwrap()
+                < recovery
+                    .rfind("capability_has_live_support_reducer")
+                    .unwrap(),
+            "availability must be computed after successor state updates"
+        );
+    }
+
+    #[test]
+    fn capability_randomness_is_private_persisted_and_attempt_domain_separated() {
+        let source = include_str!("investigation.rs");
+        let issuer = source
+            .split("pub(crate) fn issue_investigation_action_capability")
+            .nth(1)
+            .and_then(|tail| tail.split("fn character_strategic_minute").next())
+            .expect("capability issuer");
+        assert!(issuer.contains("seed,"));
+        assert!(issuer.contains("InvestigationActionCapability"));
+        let generated_issuer = source
+            .split("fn issue_rumor_action_graph")
+            .nth(1)
+            .and_then(|tail| tail.split("let area_id =").next())
+            .expect("generated capability issuer");
+        assert!(generated_issuer.contains("ctx.random::<u64>()"));
+        let performer = source
+            .split("pub(crate) fn perform_investigation_action_authorized")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("authorized performer");
+        assert!(performer.contains("&expected_version.to_string()"));
+        assert!(performer.contains("if let Some(attempt)"));
+        assert!(performer.contains("seed: capability.seed"));
+        assert!(performer.contains("attempt_index: expected_version"));
+        assert!(!source.contains("stable_action_seed"));
+    }
+
+    #[test]
+    fn generated_testimony_persists_every_proposition_and_corrections_gate_pins() {
+        let source = include_str!("investigation.rs");
+        let generated = source
+            .split("pub(crate) fn persist_generated_testimony")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("#[reducer]\npub fn receive_investigation_claim")
+                    .next()
+            })
+            .unwrap();
+        assert!(
+            generated.find(".witnesses").unwrap() < generated.find("for (index, draft)").unwrap()
+        );
+        assert!(generated.contains("authoritative == witness"));
+        assert!(generated.contains("for (index, draft) in projection_plan.iter().enumerate()"));
+        assert!(generated.contains("draft.proposition_id.clone()"));
+        assert!(generated.contains("draft.corrects_proposition_id"));
+        assert!(generated.contains("belief.proposition_id == *proposition_id"));
+        assert!(generated.contains("let exact = draft.destination_stage == \"exact_believed\""));
+        assert!(generated.contains(".filter(|_| exact)"));
+        assert!(generated.contains("prior.corrected_by = lead_id.clone()"));
+        assert!(generated.contains("prior.proposition_id == *corrected_proposition"));
+        assert!(
+            generated.find("validate_generated_testimony_site").unwrap()
+                < generated.find("for (index, draft)").unwrap()
+        );
+        let preflight = source
+            .split("fn validate_referred_contact_authority")
+            .nth(1)
+            .and_then(|tail| tail.split("fn complete_referred_contact_action").next())
+            .unwrap();
+        assert!(preflight.contains("if roots.len() > 1"));
+        assert!(preflight.contains("return Ok(false)"));
+        assert!(preflight.contains("!root.required_action_id.is_empty()"));
+        assert!(preflight.contains("validate_capability_blueprint_reducer(ctx, root)"));
+        assert!(preflight.contains("expected_successors"));
+        assert!(preflight.contains("Generated contact successor is missing"));
+        assert!(preflight.contains("validate_capability_blueprint_reducer(ctx, &successor)"));
+        let completion = source
+            .split("fn complete_referred_contact_action")
+            .nth(1)
+            .and_then(|tail| tail.split("fn issue_rumor_action_graph").next())
+            .unwrap();
+        assert!(
+            completion
+                .find("validate_referred_contact_authority")
+                .unwrap()
+                < completion
+                    .find("investigation_action_attempt()\n        .insert")
+                    .unwrap()
+        );
+        assert!(completion.contains("return Ok(())"));
+    }
+
+    #[test]
+    fn exact_generated_testimony_requires_matching_private_site_authority() {
+        use adventuresim_core::{
+            local_problem::Scope,
+            quest_generation::{
+                GenerationContext, SiteId, TemplateFamily, generate, test_witnesses,
+            },
+        };
+        let generated = generate(&GenerationContext {
+            seed: 7,
+            observer_entropy_hi: 11,
+            observer_entropy_lo: 13,
+            settlement_id: "lubeck".into(),
+            settlement_name: "Lubeck".into(),
+            scope: Scope::Settlement {
+                settlement_id: "lubeck".into(),
+            },
+            ordinal: 0,
+            now_minute: 50_000,
+            requested_family: Some(TemplateFamily::RecurringDepredation),
+            witness_candidates: test_witnesses(),
+        })
+        .unwrap();
+        let generated_site = &generated.sites[0];
+        let mut draft = generated.witnesses[0].testimony[0].clone();
+        draft.destination_stage = "exact_believed".into();
+        draft.site_id = Some(generated_site.id.clone());
+        let site = CaseSiteAuthority {
+            id_key: generated_site.id.0.clone(),
+            id: CaseSiteId::from(generated_site.id.0.clone()),
+            case_id: generated.canonical_case_id.clone(),
+            origin_settlement_id: "lubeck".into(),
+            name: generated_site.safe_label.clone(),
+            description: String::new(),
+            scene_key: "generated".into(),
+            longitude_e7: 100,
+            latitude_e7: 200,
+            coordinates_are_geographic: true,
+            distance_m: 1_000,
+        };
+        assert!(validate_generated_testimony_site(&generated, &draft, Some(&site)).is_ok());
+        assert!(validate_generated_testimony_site(&generated, &draft, None).is_err());
+        let mut cross_case = site.clone();
+        cross_case.case_id = "other-case".into();
+        assert!(validate_generated_testimony_site(&generated, &draft, Some(&cross_case)).is_err());
+        let mut wrong_identity = site.clone();
+        wrong_identity.name = "wrong generated site".into();
+        assert!(
+            validate_generated_testimony_site(&generated, &draft, Some(&wrong_identity)).is_err()
+        );
+        let mut wrong_geometry = site.clone();
+        wrong_geometry.latitude_e7 = i32::MAX;
+        assert!(
+            validate_generated_testimony_site(&generated, &draft, Some(&wrong_geometry)).is_err()
+        );
+        let mut missing_site = draft.clone();
+        missing_site.site_id = Some(SiteId::try_new("missing-site").unwrap());
+        assert!(validate_generated_testimony_site(&generated, &missing_site, Some(&site)).is_err());
+        let mut non_exact = draft;
+        non_exact.destination_stage = "approximate_area".into();
+        non_exact.site_id = None;
+        assert!(validate_generated_testimony_site(&generated, &non_exact, None).is_ok());
     }
 
     #[test]

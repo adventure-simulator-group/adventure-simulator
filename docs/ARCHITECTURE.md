@@ -335,6 +335,13 @@ servers cannot supply an arbitrary XP award.
 
 ### Observer-specific investigations
 
+Procedural case construction is specified in
+[QUEST_GENERATION.md](QUEST_GENERATION.md). A bounded shared-core weighted
+constraint solver produces one private typed manifest; the strategic reducer
+atomically materializes its symptom-only local problem, witnesses, evidence,
+actions, DNF objectives, custody, hostiles, finales, and replay trace.
+Canonical case identity remains separate from public observer knowledge.
+
 Canonical case events and every testimony stage are private SpacetimeDB state;
 per-character beliefs, revisions, and leads are private too. The registered
 strategic SSR gateway receives only sanitized `backend_investigation_*` views
@@ -354,7 +361,10 @@ and success state. The registered SSR gateway exposes only observer-safe action
 and outcome projections and accepts an opaque action ID, method, and expected
 version. Party members route the same request through party consent. The
 authority revalidates ownership, prerequisites, party state, and location
-before consuming strenuous strategic time. Surveillance and ambush preparation
+before consuming strenuous strategic time. Generated public IDs use
+domain-separated SHA-256 tokens derived from separately sampled private
+observer entropy; resolution seeds are independently sampled and refreshed for
+new capability versions. Surveillance and ambush preparation
 remain strategic and never persist tactical positions, damage, HP, enemies, or
 fabricated hostile dispositions. Drive-off and capture require the
 authoritative tactical producer tracked in #207.
@@ -402,6 +412,7 @@ effects are committed only by their owning strategic adapters.
 | `battle_result` | Battle/source attribution, never keyed by quest |
 | `battle_loot_item` / `battle_participant` | Battle-keyed loot and eligible participants |
 | private `case_authority` / `case_outcome_fact` / `case_outcome` | World resolution authority, typed source-idempotent facts, and one final outcome; separate from investigation truth and tactical ticks |
+| private `quest_generation_authority` | Catalog revision, deterministic context, canonical manifest, and factor/backtrack trace for private replay |
 | private `contract_authority` | Offered, accepted, reported, and paid agreements concerning a case; acceptance never creates or deletes the case |
 | private `case_custody` | One versioned current holder per case asset or subject |
 | `backend_contracts` view | Trusted-gateway contract projection; browsers receive only server-selected observer-safe presentation |

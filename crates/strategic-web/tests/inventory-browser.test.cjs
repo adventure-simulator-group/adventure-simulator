@@ -102,6 +102,16 @@ test("dynamic transfer routing survives glyph replacement", () => {
   assert.doesNotMatch(source, /const merchantButton = event\.target\.closest/);
 });
 
+test("provisioning explicitly selects party scope and reveals the staged food row", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../static/party-trade.js"), "utf8");
+  assert.match(source, /selectMerchantInventoryScope\(partyTab\)/);
+  assert.match(source, /scope\.value = tab\.dataset\.inventoryTab/);
+  assert.match(source, /itemId === "travel_ration"/);
+  assert.match(source, /querySelector\(":scope > \.food-parent-row"\)/);
+  assert.match(source, /querySelector\("\[data-food-toggle\]"\)\?\.click\(\)/);
+  assert.doesNotMatch(source, /partyTab\.click\(\)/);
+});
+
 test("live sidebar replacement remeasures connected inventory rails", () => {
   const source = fs.readFileSync(path.join(__dirname, "../static/party-trade.js"), "utf8");
   assert.match(source, /"strategic-live-regions-refreshed", \(\) => refreshInventoryPanel\(document\)/);

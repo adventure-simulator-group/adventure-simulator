@@ -687,7 +687,7 @@ mod tests {
             .map(|_| settlement_activity_outcome(schedule, MINUTES_PER_DAY, inputs).gold_earned)
             .sum::<u32>();
         assert_ne!(aggregate.gold_earned, repeated);
-        assert_eq!(aggregate.gold_earned, 19);
+        assert_eq!(aggregate.gold_earned, 38);
         assert_eq!(repeated, 30);
     }
 

@@ -8,8 +8,8 @@ outputs and a marginal, local, or regional scale. Future trade simulation may
 consume these signals, but rules v6 does not create prices, inventory, or
 shipping flows.
 
-For the current strategic prototype, every settlement exposes the same unlimited
-merchant catalogue, including imported Viabundus settlements. Items have a base coin value; merchant buy and sell prices are
+For the current strategic prototype, each available storefront exposes an
+unlimited catalogue selected from the settlement's economy profile. Items have a base coin value; merchant buy and sell prices are
 derived from it with shared hidden profit-margin and sales-tax multipliers.
 Both the merchant and player inventory tables display each item's per-unit
 weight and relevant coin value.
@@ -26,14 +26,19 @@ collapsed **Coin** row. Its quantity, value, and weight aggregate the underlying
 stacks. An accessible disclosure reveals read-only denomination rows; expansion
 is transient and has no effect on sorting, filtering, or bulk actions.
 
-The General Market, Weaponsmith, Armourer, and Tailor use the same live trade
-interface and transaction reducer. The specialist storefronts filter their
+The General Market, Weaponsmith, Armourer, Tailor, and Inn use the same live
+trade interface and transaction reducer. The specialist storefronts filter their
 unlimited displayed stock by item category, while all use the same pricing and
 buy/sell behavior. Drafting a trade immediately displays the item and coin
 quantity changes on both sides; inventory changes only persist after choosing
 **Offer**.
-Trades are bound to the settlement where the character is currently located;
-visiting another settlement's URL does not allow remote trading.
+Each offer is bound to its exact storefront and unique persistent service
+provider. The reducer revalidates the settlement economy, provider service,
+provider location and schedule, and every purchased catalogue item before
+pricing or mutating inventory. Inn cooking supplies therefore remain Inn stock
+rather than being reclassified as General Market goods. Trades are also bound
+to the settlement where the character is currently located; visiting another
+settlement's URL does not allow remote trading.
 Party-scoped purchases spend pooled coin first, then the active character's
 personal coin for any shortfall. The Party tab's collapsed Coin row therefore
 shows both sources while drafting a purchase. Personal coin contributed to a

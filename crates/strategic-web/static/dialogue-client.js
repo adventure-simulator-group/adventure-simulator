@@ -30,9 +30,35 @@
     const ids = [...new Set(matches.map((match) => match.id))];
     return ids.length === matches.length ? ids : null;
   };
+  const dialogueTopicPayload = (binding, currentGeneration, currentNpcId, actionId) => {
+    if (!binding
+      || binding.selectionGeneration !== currentGeneration
+      || binding.npcId !== currentNpcId
+      || !binding.sessionId
+      || !binding.topicId) return null;
+    return {
+      session_id: binding.sessionId,
+      topic_id: binding.topicId,
+      action_id: actionId,
+      expected_revision: binding.revision,
+    };
+  };
+  const dialogueResponseIsCurrent = (binding, currentGeneration, currentNpcId, currentView) => Boolean(
+    binding
+    && binding.selectionGeneration === currentGeneration
+    && binding.npcId === currentNpcId
+    && binding.sessionId === currentView?.session_id
+    && binding.revision === currentView?.revision
+  );
 
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { dialogueCompletion, dialogueSubmission, exactCandidate };
+    module.exports = {
+      dialogueCompletion,
+      dialogueSubmission,
+      dialogueResponseIsCurrent,
+      dialogueTopicPayload,
+      exactCandidate,
+    };
   }
   if (typeof document === "undefined") return;
 
@@ -60,8 +86,8 @@
     if (!source?.edit_url) return null;
     const link = document.createElement("a"); link.className = "dialogue-source-link"; link.href = source.edit_url; link.target = "_blank"; link.rel = "noopener noreferrer"; link.hidden = !document.documentElement.hasAttribute("data-developer-mode"); link.setAttribute("aria-label", `Edit dialogue source at ${source.file} line ${source.line}`); link.title = `Edit ${source.file}:${source.line}`; const icon = document.createElement("span"); icon.className = "dialogue-source-icon"; icon.setAttribute("aria-hidden", "true"); link.append(icon); return link;
   };
-  const topicAnchor = (topic) => {
-    const anchor = document.createElement("a"); anchor.href = "#"; anchor.className = "chat-quest-link"; anchor.textContent = topic.label; anchor.dataset.dialogueTopic = topic.id; const edit = sourceLink(topic.source); if (edit) anchor.append(edit); return anchor;
+  const topicAnchor = (topic, binding) => {
+    const anchor = document.createElement("a"); anchor.href = "#"; anchor.className = "chat-quest-link"; anchor.textContent = topic.label; anchor.dataset.dialogueTopic = topic.id; anchor.dataset.dialogueSession = binding.sessionId; anchor.dataset.dialogueRevision = String(binding.revision); anchor.dataset.dialogueGeneration = String(binding.selectionGeneration); anchor.dataset.dialogueNpc = binding.npcId; const edit = sourceLink(topic.source); if (!edit) return anchor; const fragment = document.createDocumentFragment(); fragment.append(anchor, edit); return fragment;
   };
   const renderPrompt = (prompt) => {
     if (!prompt) return;
@@ -93,6 +119,12 @@
   };
   const render = (view) => {
     currentView = view;
+    const binding = {
+      sessionId: view.session_id,
+      revision: view.revision,
+      selectionGeneration,
+      npcId: chat.dataset.localChatSubject || "",
+    };
     messages?.querySelectorAll("[data-dialogue-scripted]").forEach((node) => node.remove());
     view.events.forEach((event) => {
       const row = document.createElement("div");
@@ -104,27 +136,73 @@
       row.append(timestamp, speaker);
       event.fragments.forEach(({ fragment, source }) => {
         if (fragment.kind === "text") { row.append(document.createTextNode(fragment.value)); const edit = sourceLink(source); if (edit) row.append(edit); }
-        else if (fragment.kind === "topic") row.append(topicAnchor({ id: fragment.topic, label: fragment.label, source }));
+        else if (fragment.kind === "topic") row.append(topicAnchor({ id: fragment.topic, label: fragment.label, source }, { ...binding, topicId: fragment.topic }));
       });
       messages.append(row);
     });
     renderPrompt(view.open_prompt);
     renderExamination(view.examination);
     if (topicPane && topicList) {
-      topicList.replaceChildren(...view.topics.map((topic) => { const item = document.createElement("li"); item.append(topicAnchor(topic)); return item; }));
+      topicList.replaceChildren(...view.topics.map((topic) => { const item = document.createElement("li"); item.append(topicAnchor(topic, { ...binding, topicId: topic.id })); return item; }));
       topicPane.hidden = false;
     }
     refreshCompletion();
     messages.scrollTop = messages.scrollHeight;
   };
-  const chooseTopic = (topicId) => request("/api/dialogue/topic", { session_id: currentView.session_id, topic_id: topicId, action_id: actionId(), expected_revision: currentView.revision }).then(render).catch((error) => window.reportStrategicError(error, "choose dialogue topic"));
+  const chooseTopic = (binding) => {
+    const payload = dialogueTopicPayload(
+      binding,
+      selectionGeneration,
+      chat.dataset.localChatSubject || "",
+      actionId(),
+    );
+    if (!payload) return null;
+    return request("/api/dialogue/topic", payload).then((view) => {
+      if (dialogueResponseIsCurrent(
+        binding,
+        selectionGeneration,
+        chat.dataset.localChatSubject || "",
+        currentView,
+      )
+        && binding.sessionId === view.session_id) render(view);
+    }).catch((error) => {
+      if (dialogueResponseIsCurrent(
+        binding,
+        selectionGeneration,
+        chat.dataset.localChatSubject || "",
+        currentView,
+      )) {
+        window.reportStrategicError(error, "choose dialogue topic");
+      }
+    });
+  };
   const answerPrompt = (choices) => {
     const prompt = currentView.open_prompt;
     if (!prompt || choices.length < prompt.min_choices || choices.length > prompt.max_choices) {
       window.reportStrategicError(new Error(`Choose between ${prompt?.min_choices ?? 0} and ${prompt?.max_choices ?? 0} responses.`), "answer dialogue prompt");
       return;
     }
-    return request("/api/dialogue/answer", { session_id: currentView.session_id, prompt_row_id: prompt.id, choice_ids: choices, action_id: actionId(), expected_revision: currentView.revision }).then(render).catch((error) => window.reportStrategicError(error, "answer dialogue prompt"));
+    const binding = {
+      sessionId: currentView.session_id,
+      revision: currentView.revision,
+      selectionGeneration,
+      npcId: chat.dataset.localChatSubject || "",
+    };
+    return request("/api/dialogue/answer", { session_id: binding.sessionId, prompt_row_id: prompt.id, choice_ids: choices, action_id: actionId(), expected_revision: binding.revision }).then((view) => {
+      if (dialogueResponseIsCurrent(
+        binding,
+        selectionGeneration,
+        chat.dataset.localChatSubject || "",
+        currentView,
+      ) && binding.sessionId === view.session_id) render(view);
+    }).catch((error) => {
+      if (dialogueResponseIsCurrent(
+        binding,
+        selectionGeneration,
+        chat.dataset.localChatSubject || "",
+        currentView,
+      )) window.reportStrategicError(error, "answer dialogue prompt");
+    });
   };
   const submitTypedAction = () => {
     if (!currentView || !input) return false;
@@ -133,7 +211,13 @@
     input.value = "";
     refreshCompletion();
     if (currentView.open_prompt) answerPrompt(ids);
-    else chooseTopic(ids[0]);
+    else chooseTopic({
+      sessionId: currentView.session_id,
+      topicId: ids[0],
+      revision: currentView.revision,
+      selectionGeneration,
+      npcId: chat.dataset.localChatSubject || "",
+    });
     return true;
   };
 
@@ -155,7 +239,7 @@
     event.preventDefault();
     event.stopImmediatePropagation();
   }, true);
-  document.addEventListener("click", (event) => { const topic = event.target.closest("[data-dialogue-topic]"); if (!topic || event.target.closest(".dialogue-source-link")) return; event.preventDefault(); chooseTopic(topic.dataset.dialogueTopic); });
+  document.addEventListener("click", (event) => { const topic = event.target.closest("[data-dialogue-topic]"); if (!topic || event.target.closest(".dialogue-source-link")) return; event.preventDefault(); chooseTopic({ sessionId: topic.dataset.dialogueSession, topicId: topic.dataset.dialogueTopic, revision: Number(topic.dataset.dialogueRevision), selectionGeneration: Number(topic.dataset.dialogueGeneration), npcId: topic.dataset.dialogueNpc }); });
   document.addEventListener("click", (event) => { const medication = event.target.closest("[data-dialogue-medication]"); if (!medication) return; const rows = Array.from(document.querySelectorAll("[data-herbalist-medication-name]")); const row = rows.find((candidate) => candidate.dataset.herbalistMedicationName === medication.dataset.dialogueMedication); row?.scrollIntoView({ behavior: "smooth", block: "center" }); row?.querySelector("[data-merchant-buy]")?.focus(); });
   document.addEventListener("submit", (event) => { const form = event.target.closest("[data-dialogue-prompt]"); if (!form) return; event.preventDefault(); const submitter = event.submitter; const choices = submitter?.name === "choice" ? [submitter.value] : Array.from(new FormData(form).getAll("choice"), String); answerPrompt(choices); });
   const begin = () => {
@@ -176,6 +260,10 @@
     chat.dataset.localChatSubject = npc.id;
     chat.dispatchEvent(new Event("local-chat-subject-changed"));
     currentView = null;
+    topicList?.replaceChildren();
+    if (topicPane) topicPane.hidden = true;
+    messages?.querySelectorAll("[data-dialogue-scripted]").forEach((node) => node.remove());
+    refreshCompletion();
     npcStrip?.querySelectorAll("button").forEach((candidate) => {
       const active = candidate === button;
       candidate.classList.toggle("active", active);

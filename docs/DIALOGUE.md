@@ -73,6 +73,12 @@ give their occupation/relationship and expected location, and retain explicit
 uncertainty. Truthfulness, private motives, hidden causes, and undiscovered
 evidence never participate in topic eligibility.
 
+Generated return and exposure finales reuse compiled generic topics in both
+service and resident conversations. A topic is projected only when the server
+can pre-issue exactly one generated case/objective binding for the addressed
+NPC. Execution revalidates the public/canonical mapping, recipient, evidence or
+custody, session revision, and one-use binding before emitting a typed fact.
+
 Run `just dialogue-check` before review. Use
 `cargo run -p adventuresim-dialogue --bin dialogue-check -- explain <id>` to
 inspect response priorities. Equal highest priorities at runtime are rejected

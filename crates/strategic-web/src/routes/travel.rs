@@ -7,7 +7,6 @@ use std::{
 };
 
 use adventuresim_core::{
-    bestiary::ThreatId,
     strategic_schedule::DailySchedule,
     strategic_time::{CampDurationPolicy, ItineraryMember, ItinerarySegment, forecast_itinerary},
 };
@@ -126,12 +125,10 @@ impl TerrainPlanner {
 }
 
 pub(crate) fn active_contract_summary(contract: &ContractPresentation) -> String {
-    let name = contract
-        .enemy_type
-        .parse::<ThreatId>()
-        .map(|id| id.display_name(contract.enemy_count.max(0) as u32))
-        .unwrap_or_else(|_| "Unknown threat".to_string());
-    format!("Active quest · {} {name}", contract.enemy_count)
+    format!(
+        "Active quest · {} {}",
+        contract.opposition_count_wording, contract.opposition_wording
+    )
 }
 
 pub(crate) fn active_contract_tooltip(contract: &ContractPresentation) -> String {
@@ -145,7 +142,7 @@ pub(crate) fn active_contract_tooltip(contract: &ContractPresentation) -> String
 #[derive(Debug, Default, Deserialize)]
 pub struct TravelForm {}
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct TravelProvisionForecast {
     pub planning_minutes: u64,
     pub living_members: u32,
@@ -170,6 +167,29 @@ pub struct TravelCampForecast {
     pub camp_stop_minutes: Vec<u64>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CaseSiteKnowledgePresentation {
+    ReportedExactLocation,
+    VisitedCaseSite,
+}
+
+impl CaseSiteKnowledgePresentation {
+    pub fn from_stage(stage: &str) -> Option<Self> {
+        match stage {
+            "exact_believed" => Some(Self::ReportedExactLocation),
+            "visited" => Some(Self::VisitedCaseSite),
+            _ => None,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::ReportedExactLocation => "Reported exact location",
+            Self::VisitedCaseSite => "Visited case site",
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct TravelDestination {
     pub id: String,
@@ -187,7 +207,10 @@ pub struct TravelDestination {
     pub departure_minute: u64,
     pub itinerary_total_elapsed_minutes: u64,
     pub itinerary_segments: Vec<ItinerarySegment>,
-    pub quest_in_progress: bool,
+    /// Whether travel planning includes an estimated return to the origin.
+    pub round_trip_destination: bool,
+    pub case_site_knowledge: Option<CaseSiteKnowledgePresentation>,
+    pub active_contract_destination: bool,
     pub provision_forecast: Option<TravelProvisionForecast>,
     pub terrain_route: Option<adventuresim_terrain::RoutePlan>,
     pub return_terrain_route: Option<adventuresim_terrain::RoutePlan>,
@@ -196,7 +219,7 @@ pub struct TravelDestination {
 
 impl TravelDestination {
     pub fn forecast_minutes(&self) -> u64 {
-        if self.quest_in_progress {
+        if self.round_trip_destination {
             self.journey_minutes.saturating_add(
                 self.return_terrain_route
                     .as_ref()
@@ -237,7 +260,9 @@ pub(crate) fn settlement_destination(
         departure_minute: 0,
         itinerary_total_elapsed_minutes: journey_minutes,
         itinerary_segments: Vec::new(),
-        quest_in_progress: false,
+        round_trip_destination: false,
+        case_site_knowledge: None,
+        active_contract_destination: false,
         provision_forecast: None,
         terrain_route: None,
         return_terrain_route: None,
@@ -258,7 +283,7 @@ pub(crate) async fn apply_terrain_route(
     };
     match terrain.plan_with_profile(start, goal, profile).await {
         Ok(plan) => {
-            let return_plan = if destination.quest_in_progress {
+            let return_plan = if destination.round_trip_destination {
                 match terrain.plan_with_profile(goal, start, profile).await {
                     Ok(plan) => Some(plan),
                     Err(error) => {
@@ -272,7 +297,7 @@ pub(crate) async fn apply_terrain_route(
             };
             destination.distance_m = plan.distance_m;
             destination.journey_minutes = plan.minutes;
-            destination.itinerary_total_elapsed_minutes = if destination.quest_in_progress {
+            destination.itinerary_total_elapsed_minutes = if destination.round_trip_destination {
                 plan.minutes.saturating_add(
                     return_plan
                         .as_ref()
@@ -515,8 +540,8 @@ mod tests {
             issuer_npc_id: String::new(),
             status,
             accepted_by: None,
-            enemy_type: String::new(),
-            enemy_count: 1,
+            opposition_wording: "unknown opposition".into(),
+            opposition_count_wording: "an unknown number of".into(),
         }
     }
 
@@ -530,12 +555,12 @@ mod tests {
     fn active_quest_tooltip_includes_encounter_summary() {
         let mut quest = quest("crypt", "riverdale", ContractPresentationStatus::Accepted);
         quest.description = "A necromancer has raised the dead.".into();
-        quest.enemy_count = 11;
-        quest.enemy_type = "skeleton".into();
+        quest.opposition_count_wording = "perhaps eleven".into();
+        quest.opposition_wording = "walking dead".into();
 
         assert_eq!(
             active_contract_tooltip(&quest),
-            "A necromancer has raised the dead.\nActive quest · 11 Skeletons"
+            "A necromancer has raised the dead.\nActive quest · perhaps eleven walking dead"
         );
     }
 
@@ -548,7 +573,7 @@ mod tests {
     fn quests_forecast_a_return_but_settlements_do_not() {
         let mut destination = settlement_destination(settlement("town", 1), 1_000, 120);
         assert_eq!(destination.forecast_minutes(), 120);
-        destination.quest_in_progress = true;
+        destination.round_trip_destination = true;
         assert_eq!(destination.forecast_minutes(), 240);
     }
 

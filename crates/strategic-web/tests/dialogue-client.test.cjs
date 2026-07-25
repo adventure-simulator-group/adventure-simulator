@@ -3,7 +3,12 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const source = fs.readFileSync(path.join(__dirname, "..", "static", "dialogue-client.js"), "utf8");
-const { dialogueCompletion, dialogueSubmission } = require("../static/dialogue-client.js");
+const {
+  dialogueCompletion,
+  dialogueResponseIsCurrent,
+  dialogueSubmission,
+  dialogueTopicPayload,
+} = require("../static/dialogue-client.js");
 
 test("dialogue client is schema-driven with stable authoritative actions", () => {
   assert.match(source, /api\/dialogue\/start/);
@@ -20,12 +25,15 @@ test("known topics share the inline topic action contract", () => {
   assert.match(source, /data-dialogue-topic-pane/);
   assert.match(source, /topicList\.replaceChildren/);
   assert.match(source, /row\.append\(topicAnchor/);
+  assert.match(source, /document\.createDocumentFragment\(\)/);
+  assert.match(source, /fragment\.append\(anchor, edit\)/);
+  assert.doesNotMatch(source, /anchor\.append\(edit\)/);
   assert.doesNotMatch(source, /querySelector\("\.right-sidebar"\)/);
 });
 
 test("client renders only persisted authoritative views and enforces prompt bounds", () => {
   assert.match(source, /view\.events\.forEach/);
-  assert.match(source, /expected_revision:\s*currentView\.revision/);
+  assert.match(source, /expected_revision:\s*binding\.revision/);
   assert.match(source, /choices\.length\s*<\s*prompt\.min_choices/);
 });
 
@@ -51,6 +59,115 @@ test("settlement NPC selection is accessible and actor-backed", () => {
 test("late dialogue responses cannot replace the newly selected NPC", () => {
   assert.match(source, /const actor = chat\.dataset\.localChatSubject/);
   assert.match(source, /chat\.dataset\.localChatSubject === actor/);
+  assert.match(source, /dialogueResponseIsCurrent\(/);
+  assert.match(source, /binding\.selectionGeneration === currentGeneration/);
+  assert.match(source, /binding\.npcId === currentNpcId/);
+  assert.match(source, /binding\.sessionId === currentView\?\.session_id/);
+});
+
+test("late topic responses and errors cannot supersede a newer same-session revision", () => {
+  const topic = {
+    sessionId: "dialogue:7:witness",
+    topicId: "referred-testimony",
+    revision: 2,
+    selectionGeneration: 4,
+    npcId: "npc:town:inn:1",
+  };
+  assert.equal(
+    dialogueResponseIsCurrent(
+      topic,
+      4,
+      "npc:town:inn:1",
+      { session_id: topic.sessionId, revision: 2 },
+    ),
+    true,
+  );
+  assert.equal(
+    dialogueResponseIsCurrent(
+      topic,
+      4,
+      "npc:town:inn:1",
+      { session_id: topic.sessionId, revision: 3 },
+    ),
+    false,
+  );
+  const topicHandler = source
+    .split("const chooseTopic =")
+    .at(1)
+    .split("const answerPrompt =")
+    .at(0);
+  assert.match(topicHandler, /dialogueResponseIsCurrent\(/);
+  assert.match(topicHandler, /\.then\([\s\S]*dialogueResponseIsCurrent/);
+  assert.match(topicHandler, /\.catch\([\s\S]*dialogueResponseIsCurrent/);
+});
+
+test("rapid provider-to-witness selection rejects stale topics and binds the witness session", () => {
+  const hans = {
+    sessionId: "dialogue:7:hans",
+    topicId: "referred-testimony",
+    revision: 0,
+    selectionGeneration: 1,
+    npcId: "npc:town:inn:0",
+  };
+  const agnes = {
+    sessionId: "dialogue:7:agnes",
+    topicId: "referred-testimony",
+    revision: 2,
+    selectionGeneration: 2,
+    npcId: "npc:town:inn:1",
+  };
+  assert.equal(
+    dialogueTopicPayload(hans, 2, "npc:town:inn:1", "stale-action"),
+    null,
+  );
+  assert.deepEqual(
+    dialogueTopicPayload(agnes, 2, "npc:town:inn:1", "agnes-action"),
+    {
+      session_id: "dialogue:7:agnes",
+      topic_id: "referred-testimony",
+      action_id: "agnes-action",
+      expected_revision: 2,
+    },
+  );
+  assert.match(source, /topicList\?\.replaceChildren\(\)/);
+  assert.match(source, /if \(topicPane\) topicPane\.hidden = true/);
+});
+
+test("a delayed prompt answer cannot supersede a newly selected witness", () => {
+  const providerAnswer = {
+    sessionId: "dialogue:7:provider",
+    revision: 3,
+    selectionGeneration: 1,
+    npcId: "npc:town:inn:0",
+  };
+  assert.equal(
+    dialogueResponseIsCurrent(
+      providerAnswer,
+      1,
+      "npc:town:inn:0",
+      { session_id: "dialogue:7:provider", revision: 3 },
+    ),
+    true,
+  );
+  assert.equal(
+    dialogueResponseIsCurrent(
+      providerAnswer,
+      2,
+      "npc:town:inn:1",
+      { session_id: "dialogue:7:witness", revision: 0 },
+    ),
+    false,
+  );
+  assert.equal(
+    dialogueResponseIsCurrent(
+      providerAnswer,
+      1,
+      "npc:town:inn:0",
+      { session_id: "dialogue:7:provider", revision: 4 },
+    ),
+    false,
+  );
+  assert.match(source, /dialogueResponseIsCurrent\([\s\S]*answer dialogue prompt/);
 });
 
 test("only the same in-flight encounter start is deduplicated", () => {

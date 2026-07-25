@@ -9,6 +9,7 @@ const {
   mergeChannelRows,
   pendingLocalRows,
   localChatEndpoint,
+  localChatForm,
 } = require("../static/local-chat.js");
 
 const localChatSource = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "static", "local-chat.js"), "utf8");
@@ -123,8 +124,23 @@ test("local chat derives GET and POST endpoints from the current selected NPC", 
   assert.match(localChatSource, /const endpoint = localChatEndpoint\(chat\);/g);
   assert.match(localChatSource, /local-chat-subject-changed/);
   assert.doesNotMatch(localChatSource, /const subject = chat\.dataset\.localChatSubject/);
-  const chat = { dataset: { localChatKind: "npc", localChatSubject: "npc:first" } };
-  assert.equal(localChatEndpoint(chat), "/api/local-chat/npc/npc%3Afirst");
+  const chat = { dataset: { localChatKind: "npc", localChatSubject: "npc:first", localChatLocation: "village inn" } };
+  assert.equal(localChatEndpoint(chat), "/api/local-chat/npc/npc%3Afirst?location_id=village%20inn");
+  assert.equal(localChatForm(chat, "Hello").toString(), "body=Hello&location_id=village+inn");
   chat.dataset.localChatSubject = "npc:second";
-  assert.equal(localChatEndpoint(chat), "/api/local-chat/npc/npc%3Asecond");
+  assert.equal(localChatEndpoint(chat), "/api/local-chat/npc/npc%3Asecond?location_id=village%20inn");
+});
+
+test("local chat waits for a non-empty subject and an exact NPC location", () => {
+  const chat = { dataset: { localChatKind: "npc", localChatSubject: "", localChatLocation: "inn" } };
+  assert.equal(localChatEndpoint(chat), null);
+  chat.dataset.localChatSubject = "npc:keeper";
+  chat.dataset.localChatLocation = "";
+  assert.equal(localChatEndpoint(chat), null);
+});
+
+test("player chat omits NPC location authority", () => {
+  const chat = { dataset: { localChatKind: "player", localChatSubject: "42" } };
+  assert.equal(localChatEndpoint(chat), "/api/local-chat/player/42");
+  assert.equal(localChatForm(chat, "Hello").toString(), "body=Hello&location_id=");
 });

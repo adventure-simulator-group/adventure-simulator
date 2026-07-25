@@ -53,6 +53,8 @@ pub mod backend_investigation_journal_entry_type;
 pub mod backend_investigation_journal_table;
 pub mod backend_investigation_lead_type;
 pub mod backend_investigation_leads_table;
+pub mod backend_local_chat_message_type;
+pub mod backend_local_chat_messages_table;
 pub mod backend_local_problem_rumor_type;
 pub mod backend_local_problem_rumors_table;
 pub mod backend_local_problem_trade_effect_type;
@@ -228,6 +230,7 @@ pub mod finale_kind_type;
 pub mod finale_status_type;
 pub mod finalize_merchant_trade_reducer;
 pub mod finalize_party_offer_reducer;
+pub mod finalize_storefront_trade_reducer;
 pub mod finish_world_data_import_reducer;
 pub mod fish_commodity_type;
 pub mod fishing_industry_type;
@@ -288,14 +291,17 @@ pub mod investigation_claim_type;
 pub mod investigation_event_authority_type;
 pub mod investigation_evidence_authority_type;
 pub mod investigation_evidence_knowledge_type;
+pub mod investigation_generated_action_output_type;
 pub mod investigation_lead_type;
 pub mod investigation_observation_type;
+pub mod investigation_pattern_target_authority_type;
 pub mod investigation_received_testimony_type;
 pub mod investigation_recollection_type;
 pub mod investigation_safe_claim_receipt_type;
 pub mod investigation_safe_lead_receipt_type;
 pub mod investigation_sharing_receipt_type;
 pub mod investigation_testimony_bundle_type;
+pub mod investigation_witness_referral_type;
 pub mod item_condition_table;
 pub mod item_condition_type;
 pub mod item_kind_type;
@@ -324,7 +330,6 @@ pub mod limb_injury_table;
 pub mod limb_injury_type;
 pub mod limb_region_type;
 pub mod liquidate_party_inventory_reducer;
-pub mod local_chat_message_table;
 pub mod local_chat_message_type;
 pub mod local_problem_authority_type;
 pub mod local_problem_generation_explanation_type;
@@ -343,7 +348,10 @@ pub mod mined_commodity_type;
 pub mod mineral_soil_texture_type;
 pub mod mineral_soil_type;
 pub mod mining_industry_type;
+pub mod mission_approach_capability_type;
+pub mod mission_attempt_status_type;
 pub mod mission_authority_type;
+pub mod mission_outcome_candidate_type;
 pub mod mixed_lithology_type;
 pub mod modeled_tree_species_profile_type;
 pub mod modeled_tree_species_type;
@@ -407,6 +415,7 @@ pub mod prosperity_tier_type;
 pub mod purchase_from_herbalist_reducer;
 pub mod quarry_commodity_type;
 pub mod quarrying_industry_type;
+pub mod quest_generation_authority_type;
 pub mod receive_investigation_claim_reducer;
 pub mod receive_local_problem_rumor_reducer;
 pub mod recruitment_offer_id_type;
@@ -639,6 +648,8 @@ pub use backend_investigation_journal_entry_type::BackendInvestigationJournalEnt
 pub use backend_investigation_journal_table::*;
 pub use backend_investigation_lead_type::BackendInvestigationLead;
 pub use backend_investigation_leads_table::*;
+pub use backend_local_chat_message_type::BackendLocalChatMessage;
+pub use backend_local_chat_messages_table::*;
 pub use backend_local_problem_rumor_type::BackendLocalProblemRumor;
 pub use backend_local_problem_rumors_table::*;
 pub use backend_local_problem_trade_effect_type::BackendLocalProblemTradeEffect;
@@ -814,6 +825,7 @@ pub use finale_kind_type::FinaleKind;
 pub use finale_status_type::FinaleStatus;
 pub use finalize_merchant_trade_reducer::finalize_merchant_trade;
 pub use finalize_party_offer_reducer::finalize_party_offer;
+pub use finalize_storefront_trade_reducer::finalize_storefront_trade;
 pub use finish_world_data_import_reducer::finish_world_data_import;
 pub use fish_commodity_type::FishCommodity;
 pub use fishing_industry_type::FishingIndustry;
@@ -874,14 +886,17 @@ pub use investigation_claim_type::InvestigationClaim;
 pub use investigation_event_authority_type::InvestigationEventAuthority;
 pub use investigation_evidence_authority_type::InvestigationEvidenceAuthority;
 pub use investigation_evidence_knowledge_type::InvestigationEvidenceKnowledge;
+pub use investigation_generated_action_output_type::InvestigationGeneratedActionOutput;
 pub use investigation_lead_type::InvestigationLead;
 pub use investigation_observation_type::InvestigationObservation;
+pub use investigation_pattern_target_authority_type::InvestigationPatternTargetAuthority;
 pub use investigation_received_testimony_type::InvestigationReceivedTestimony;
 pub use investigation_recollection_type::InvestigationRecollection;
 pub use investigation_safe_claim_receipt_type::InvestigationSafeClaimReceipt;
 pub use investigation_safe_lead_receipt_type::InvestigationSafeLeadReceipt;
 pub use investigation_sharing_receipt_type::InvestigationSharingReceipt;
 pub use investigation_testimony_bundle_type::InvestigationTestimonyBundle;
+pub use investigation_witness_referral_type::InvestigationWitnessReferral;
 pub use item_condition_table::*;
 pub use item_condition_type::ItemCondition;
 pub use item_kind_type::ItemKind;
@@ -910,7 +925,6 @@ pub use limb_injury_table::*;
 pub use limb_injury_type::LimbInjury;
 pub use limb_region_type::LimbRegion;
 pub use liquidate_party_inventory_reducer::liquidate_party_inventory;
-pub use local_chat_message_table::*;
 pub use local_chat_message_type::LocalChatMessage;
 pub use local_problem_authority_type::LocalProblemAuthority;
 pub use local_problem_generation_explanation_type::LocalProblemGenerationExplanation;
@@ -929,7 +943,10 @@ pub use mined_commodity_type::MinedCommodity;
 pub use mineral_soil_texture_type::MineralSoilTexture;
 pub use mineral_soil_type::MineralSoil;
 pub use mining_industry_type::MiningIndustry;
+pub use mission_approach_capability_type::MissionApproachCapability;
+pub use mission_attempt_status_type::MissionAttemptStatus;
 pub use mission_authority_type::MissionAuthority;
+pub use mission_outcome_candidate_type::MissionOutcomeCandidate;
 pub use mixed_lithology_type::MixedLithology;
 pub use modeled_tree_species_profile_type::ModeledTreeSpeciesProfile;
 pub use modeled_tree_species_type::ModeledTreeSpecies;
@@ -993,6 +1010,7 @@ pub use prosperity_tier_type::ProsperityTier;
 pub use purchase_from_herbalist_reducer::purchase_from_herbalist;
 pub use quarry_commodity_type::QuarryCommodity;
 pub use quarrying_industry_type::QuarryingIndustry;
+pub use quest_generation_authority_type::QuestGenerationAuthority;
 pub use receive_investigation_claim_reducer::receive_investigation_claim;
 pub use receive_local_problem_rumor_reducer::receive_local_problem_rumor;
 pub use recruitment_offer_id_type::RecruitmentOfferId;
@@ -1403,6 +1421,17 @@ pub enum Reducer {
         inventory_item_ids: Vec<u64>,
         quantities: Vec<u32>,
     },
+    FinalizeStorefrontTrade {
+        character_id: u64,
+        settlement_id: String,
+        service_id: String,
+        provider_npc_id: String,
+        buy_item_ids: Vec<String>,
+        buy_quantities: Vec<u32>,
+        sell_inventory_ids: Vec<u64>,
+        sell_quantities: Vec<u32>,
+        party_scope: bool,
+    },
     FinishWorldDataImport {
         artifact_id: String,
     },
@@ -1594,6 +1623,7 @@ pub enum Reducer {
         sender_id: u64,
         subject_kind: String,
         subject_id: String,
+        location_id: String,
         body: String,
     },
     SetCharacterReligion {
@@ -1815,6 +1845,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::ExaminePatient { .. } => "examine_patient",
             Reducer::FinalizeMerchantTrade { .. } => "finalize_merchant_trade",
             Reducer::FinalizePartyOffer { .. } => "finalize_party_offer",
+            Reducer::FinalizeStorefrontTrade { .. } => "finalize_storefront_trade",
             Reducer::FinishWorldDataImport { .. } => "finish_world_data_import",
             Reducer::ImportSettlementAliases { .. } => "import_settlement_aliases",
             Reducer::ImportSettlementDescriptions { .. } => "import_settlement_descriptions",
@@ -2284,6 +2315,27 @@ Reducer::CancelMissionRequest{
                 inventory_item_ids: inventory_item_ids.clone(),
                 quantities: quantities.clone(),
 }),
+            Reducer::FinalizeStorefrontTrade{
+                character_id,
+                settlement_id,
+                service_id,
+                provider_npc_id,
+                buy_item_ids,
+                buy_quantities,
+                sell_inventory_ids,
+                sell_quantities,
+                party_scope,
+}             => __sats::bsatn::to_vec(&finalize_storefront_trade_reducer::FinalizeStorefrontTradeArgs {
+                character_id: character_id.clone(),
+                settlement_id: settlement_id.clone(),
+                service_id: service_id.clone(),
+                provider_npc_id: provider_npc_id.clone(),
+                buy_item_ids: buy_item_ids.clone(),
+                buy_quantities: buy_quantities.clone(),
+                sell_inventory_ids: sell_inventory_ids.clone(),
+                sell_quantities: sell_quantities.clone(),
+                party_scope: party_scope.clone(),
+}),
             Reducer::FinishWorldDataImport{
                 artifact_id,
 }             => __sats::bsatn::to_vec(&finish_world_data_import_reducer::FinishWorldDataImportArgs {
@@ -2620,11 +2672,13 @@ Reducer::CancelMissionRequest{
                 sender_id,
                 subject_kind,
                 subject_id,
+                location_id,
                 body,
 }             => __sats::bsatn::to_vec(&send_local_chat_message_reducer::SendLocalChatMessageArgs {
                 sender_id: sender_id.clone(),
                 subject_kind: subject_kind.clone(),
                 subject_id: subject_id.clone(),
+                location_id: location_id.clone(),
                 body: body.clone(),
 }),
             Reducer::SetCharacterReligion{
@@ -2937,6 +2991,7 @@ pub struct DbUpdate {
     backend_investigation_actions: __sdk::TableUpdate<BackendInvestigationAction>,
     backend_investigation_journal: __sdk::TableUpdate<BackendInvestigationJournalEntry>,
     backend_investigation_leads: __sdk::TableUpdate<BackendInvestigationLead>,
+    backend_local_chat_messages: __sdk::TableUpdate<BackendLocalChatMessage>,
     backend_local_problem_rumors: __sdk::TableUpdate<BackendLocalProblemRumor>,
     backend_local_problem_trade_effects: __sdk::TableUpdate<BackendLocalProblemTradeEffect>,
     backend_medical_examinations: __sdk::TableUpdate<MedicalExamination>,
@@ -2972,7 +3027,6 @@ pub struct DbUpdate {
     item: __sdk::TableUpdate<Item>,
     item_condition: __sdk::TableUpdate<ItemCondition>,
     limb_injury: __sdk::TableUpdate<LimbInjury>,
-    local_chat_message: __sdk::TableUpdate<LocalChatMessage>,
     local_problem_symptom: __sdk::TableUpdate<LocalProblemSymptom>,
     morale_event: __sdk::TableUpdate<MoraleEvent>,
     party: __sdk::TableUpdate<Party>,
@@ -3092,6 +3146,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "backend_investigation_leads" => db_update.backend_investigation_leads.append(
                     backend_investigation_leads_table::parse_table_update(table_update)?,
                 ),
+                "backend_local_chat_messages" => db_update.backend_local_chat_messages.append(
+                    backend_local_chat_messages_table::parse_table_update(table_update)?,
+                ),
                 "backend_local_problem_rumors" => db_update.backend_local_problem_rumors.append(
                     backend_local_problem_rumors_table::parse_table_update(table_update)?,
                 ),
@@ -3201,9 +3258,6 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "limb_injury" => db_update
                     .limb_injury
                     .append(limb_injury_table::parse_table_update(table_update)?),
-                "local_chat_message" => db_update
-                    .local_chat_message
-                    .append(local_chat_message_table::parse_table_update(table_update)?),
                 "local_problem_symptom" => db_update.local_problem_symptom.append(
                     local_problem_symptom_table::parse_table_update(table_update)?,
                 ),
@@ -3482,9 +3536,6 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.limb_injury = cache
             .apply_diff_to_table::<LimbInjury>("limb_injury", &self.limb_injury)
             .with_updates_by_pk(|row| &row.id);
-        diff.local_chat_message = cache
-            .apply_diff_to_table::<LocalChatMessage>("local_chat_message", &self.local_chat_message)
-            .with_updates_by_pk(|row| &row.id);
         diff.local_problem_symptom = cache
             .apply_diff_to_table::<LocalProblemSymptom>(
                 "local_problem_symptom",
@@ -3696,6 +3747,10 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_investigation_leads",
             &self.backend_investigation_leads,
         );
+        diff.backend_local_chat_messages = cache.apply_diff_to_table::<BackendLocalChatMessage>(
+            "backend_local_chat_messages",
+            &self.backend_local_chat_messages,
+        );
         diff.backend_local_problem_rumors = cache.apply_diff_to_table::<BackendLocalProblemRumor>(
             "backend_local_problem_rumors",
             &self.backend_local_problem_rumors,
@@ -3798,6 +3853,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_investigation_leads" => db_update
                     .backend_investigation_leads
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_local_chat_messages" => db_update
+                    .backend_local_chat_messages
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_local_problem_rumors" => db_update
                     .backend_local_problem_rumors
@@ -3903,9 +3961,6 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "limb_injury" => db_update
                     .limb_injury
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "local_chat_message" => db_update
-                    .local_chat_message
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "local_problem_symptom" => db_update
                     .local_problem_symptom
@@ -4091,6 +4146,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_investigation_leads" => db_update
                     .backend_investigation_leads
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_local_chat_messages" => db_update
+                    .backend_local_chat_messages
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_local_problem_rumors" => db_update
                     .backend_local_problem_rumors
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -4195,9 +4253,6 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "limb_injury" => db_update
                     .limb_injury
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "local_chat_message" => db_update
-                    .local_chat_message
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "local_problem_symptom" => db_update
                     .local_problem_symptom
@@ -4347,6 +4402,7 @@ pub struct AppliedDiff<'r> {
     backend_investigation_actions: __sdk::TableAppliedDiff<'r, BackendInvestigationAction>,
     backend_investigation_journal: __sdk::TableAppliedDiff<'r, BackendInvestigationJournalEntry>,
     backend_investigation_leads: __sdk::TableAppliedDiff<'r, BackendInvestigationLead>,
+    backend_local_chat_messages: __sdk::TableAppliedDiff<'r, BackendLocalChatMessage>,
     backend_local_problem_rumors: __sdk::TableAppliedDiff<'r, BackendLocalProblemRumor>,
     backend_local_problem_trade_effects:
         __sdk::TableAppliedDiff<'r, BackendLocalProblemTradeEffect>,
@@ -4383,7 +4439,6 @@ pub struct AppliedDiff<'r> {
     item: __sdk::TableAppliedDiff<'r, Item>,
     item_condition: __sdk::TableAppliedDiff<'r, ItemCondition>,
     limb_injury: __sdk::TableAppliedDiff<'r, LimbInjury>,
-    local_chat_message: __sdk::TableAppliedDiff<'r, LocalChatMessage>,
     local_problem_symptom: __sdk::TableAppliedDiff<'r, LocalProblemSymptom>,
     morale_event: __sdk::TableAppliedDiff<'r, MoraleEvent>,
     party: __sdk::TableAppliedDiff<'r, Party>,
@@ -4532,6 +4587,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendInvestigationLead>(
             "backend_investigation_leads",
             &self.backend_investigation_leads,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendLocalChatMessage>(
+            "backend_local_chat_messages",
+            &self.backend_local_chat_messages,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendLocalProblemRumor>(
@@ -4693,11 +4753,6 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             event,
         );
         callbacks.invoke_table_row_callbacks::<LimbInjury>("limb_injury", &self.limb_injury, event);
-        callbacks.invoke_table_row_callbacks::<LocalChatMessage>(
-            "local_chat_message",
-            &self.local_chat_message,
-            event,
-        );
         callbacks.invoke_table_row_callbacks::<LocalProblemSymptom>(
             "local_problem_symptom",
             &self.local_problem_symptom,
@@ -5539,6 +5594,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_investigation_actions_table::register_table(client_cache);
         backend_investigation_journal_table::register_table(client_cache);
         backend_investigation_leads_table::register_table(client_cache);
+        backend_local_chat_messages_table::register_table(client_cache);
         backend_local_problem_rumors_table::register_table(client_cache);
         backend_local_problem_trade_effects_table::register_table(client_cache);
         backend_medical_examinations_table::register_table(client_cache);
@@ -5574,7 +5630,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         item_table::register_table(client_cache);
         item_condition_table::register_table(client_cache);
         limb_injury_table::register_table(client_cache);
-        local_chat_message_table::register_table(client_cache);
         local_problem_symptom_table::register_table(client_cache);
         morale_event_table::register_table(client_cache);
         party_table::register_table(client_cache);
@@ -5634,6 +5689,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_investigation_actions",
         "backend_investigation_journal",
         "backend_investigation_leads",
+        "backend_local_chat_messages",
         "backend_local_problem_rumors",
         "backend_local_problem_trade_effects",
         "backend_medical_examinations",
@@ -5669,7 +5725,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "item",
         "item_condition",
         "limb_injury",
-        "local_chat_message",
         "local_problem_symptom",
         "morale_event",
         "party",

@@ -20,6 +20,15 @@
     };
   };
   window.strategicLiveRetryPolicyFactory = createDirtyRetryPolicy;
+  const liveRefreshUrl = (root = document, currentLocation = location) => {
+    const markedUrl = root.querySelector("[data-live-refresh-url]")?.dataset.liveRefreshUrl;
+    if (markedUrl) return markedUrl;
+    if (/^\/settlements\/[^/]+\/rest\/(?:inn|temple)\/?$/.test(currentLocation.pathname)) {
+      return null;
+    }
+    return `${currentLocation.pathname}${currentLocation.search}`;
+  };
+  window.strategicLiveRefreshUrl = liveRefreshUrl;
   if (!document.querySelector("#strategic-live-revision")) return;
 
   let generation = 0;
@@ -94,9 +103,11 @@
 
   const refresh = async () => {
     if (navigating) return;
+    const refreshUrl = liveRefreshUrl();
+    if (!refreshUrl) return;
     const currentGeneration = ++generation;
     const schedulePendingAtStart = scheduleEditorIsPending();
-    const response = await window.strategicBackgroundFetch("live-regions", `${location.pathname}${location.search}`, {
+    const response = await window.strategicBackgroundFetch("live-regions", refreshUrl, {
       headers: { Accept: "text/html", "X-Strategic-Live-Region": "true" },
     });
     if (!response.ok) return;

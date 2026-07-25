@@ -446,6 +446,15 @@ pub fn request_tactical_server(
     if case_site.scene_key != scene_key {
         return Err("Tactical scene does not match the occupied case site".into());
     }
+    match crate::investigation::case_site_provenance_reducer(ctx, &case_site) {
+        Some(None) => {}
+        Some(Some(_)) => {
+            return Err(
+                "Generated quest finales support strategic autoresolve, not tactical entry".into(),
+            );
+        }
+        None => return Err("Case-site combat provenance is invalid or ambiguous".into()),
+    }
     let mission = ensure_bound_mission_authority(
         ctx,
         &mission_id,
@@ -780,6 +789,35 @@ mod authority_tests {
             .and_then(|tail| tail.split("#[reducer]").next())
             .expect("request reducer");
         assert!(request.contains("require_strategic_character_authority(ctx, character_id)?"));
+    }
+
+    #[test]
+    fn tactical_entry_is_manual_only_and_scene_wrapper_cannot_bypass_it() {
+        let source = include_str!("tactical.rs");
+        let wrapper = source
+            .split("pub fn request_tactical_server_for_scene")
+            .nth(1)
+            .and_then(|tail| tail.split("/// Request a new").next())
+            .expect("scene request wrapper");
+        assert!(
+            wrapper.contains("request_tactical_server(ctx, character_id, mission_id, scene_key)")
+        );
+
+        let request = source
+            .split("pub fn request_tactical_server(")
+            .nth(1)
+            .and_then(|tail| tail.split("#[reducer]").next())
+            .expect("request reducer");
+        let provenance = request
+            .find("case_site_provenance_reducer")
+            .expect("manual-only provenance guard");
+        let binding = request
+            .find("ensure_bound_mission_authority")
+            .expect("mission binding");
+        assert!(provenance < binding);
+        assert!(request.contains("Some(None) => {}"));
+        assert!(request.contains("Some(Some(_))"));
+        assert!(request.contains("strategic autoresolve, not tactical entry"));
     }
 
     #[test]

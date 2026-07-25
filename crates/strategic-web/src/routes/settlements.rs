@@ -1,7 +1,6 @@
 //! Settlement route handlers
 
 use adventuresim_core::{
-    bestiary::ThreatId,
     equipment::{EncumbranceSummary, encumbrance_capacity_kg},
     prelude::{
         PartyProvisioningInputs, STANDARD_TRAVEL_RATION_ID, STANDARD_WATERSKIN_ID,
@@ -42,6 +41,21 @@ struct BuildingQuery {
     cook: Option<bool>,
 }
 
+#[derive(Deserialize)]
+struct MerchantProviderRow {
+    id: String,
+    home_settlement_id: String,
+    service_id: String,
+}
+
+#[derive(Deserialize)]
+struct MerchantProviderPresenceRow {
+    npc_id: String,
+    settlement_id: String,
+    location_id: String,
+    is_default: bool,
+}
+
 impl BuildingQuery {
     fn valid(&self) -> Option<&str> {
         self.building
@@ -68,7 +82,7 @@ impl BuildingQuery {
 
 #[cfg(test)]
 mod building_query_tests {
-    use super::{BuildingQuery, character_details_path};
+    use super::{BuildingQuery, character_details_path, merchant_service_location};
 
     #[test]
     fn building_query_is_closed_and_preserved_on_redirects() {
@@ -111,6 +125,17 @@ mod building_query_tests {
             "/locations/settlement/x/party/7/stats?building=inn"
         );
     }
+
+    #[test]
+    fn merchant_offer_routes_accept_only_bound_storefront_services() {
+        assert_eq!(merchant_service_location("merchants"), Some("market"));
+        assert_eq!(merchant_service_location("weapons"), Some("forge"));
+        assert_eq!(merchant_service_location("armor"), Some("armoury"));
+        assert_eq!(merchant_service_location("clothing"), Some("tailor"));
+        assert_eq!(merchant_service_location("inn"), Some("inn"));
+        assert_eq!(merchant_service_location("herbalist"), None);
+        assert_eq!(merchant_service_location("../inn"), None);
+    }
 }
 
 use super::AppState;
@@ -119,8 +144,8 @@ use super::inventory_forms::{
 };
 use super::redirect_to_local;
 use super::travel::{
-    TravelDestination, TravelForm, TravelProvisionForecast, active_contract_tooltip,
-    connected_destinations, populate_itinerary_forecasts,
+    CaseSiteKnowledgePresentation, TravelDestination, TravelForm, TravelProvisionForecast,
+    active_contract_tooltip, connected_destinations, populate_itinerary_forecasts,
 };
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
@@ -295,7 +320,7 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/settlements/{id}/merchants", get(merchants))
         .route(
-            "/settlements/{id}/merchants/offer",
+            "/settlements/{id}/storefront/{service_id}/offer",
             post(finalize_merchant_offer),
         )
         .route("/settlements/{id}/weapons", get(weapons))
@@ -1088,18 +1113,19 @@ async fn settlement_map(
     let is_current_settlement = active_character.as_ref().is_some_and(|(character, _)| {
         character.current_settlement_id.as_deref() == Some(&settlement.id)
     });
-    let can_travel = map_data_initialized && is_current_settlement && active_party.is_some();
+    // The interactive map bundle is optional presentation. Exact observer-owned
+    // case sites must remain selectable and travelable through the HTML fallback.
+    let can_travel =
+        settlement_html_travel_available(is_current_settlement, active_party.is_some());
     if can_travel {
-        for site in case_sites
-            .iter()
-            .filter(|site| site.origin_settlement_id == settlement.id)
-        {
-            let distance_m = site.distance_m;
+        for site in &case_sites {
+            let distance_m = crate::routes::quests::straight_line_distance_m(site, settlement);
             destinations.push(TravelDestination {
                 id: site.case_site_id.clone(),
                 name: site.name.clone(),
                 description: site.description.clone(),
-                summary: Some(format!("Exact {} destination", site.knowledge_stage)),
+                summary: CaseSiteKnowledgePresentation::from_stage(&site.knowledge_stage)
+                    .map(|knowledge| knowledge.label().to_string()),
                 travel_action: format!("/case-sites/{}/travel", site.case_site_id),
                 track_action: Some(format!("/case-sites/{}/track", site.case_site_id)),
                 tracked: site.tracked,
@@ -1113,7 +1139,14 @@ async fn settlement_map(
                 )
                 .saturating_mul(2),
                 itinerary_segments: Vec::new(),
-                quest_in_progress: true,
+                round_trip_destination: true,
+                case_site_knowledge: CaseSiteKnowledgePresentation::from_stage(
+                    &site.knowledge_stage,
+                ),
+                active_contract_destination: case_site_has_active_contract(
+                    &site.case_id,
+                    active_contract,
+                ),
                 provision_forecast: None,
                 terrain_route: None,
                 return_terrain_route: None,
@@ -1241,6 +1274,11 @@ async fn settlement_map(
         active_party.as_ref().map(|party| party.id.as_str()),
     )
     .await;
+    let provisioning_path = if can_travel {
+        provisioning_storefront_path(&state, settlement).await
+    } else {
+        None
+    };
     Html(
         settlement_map_page(
             settlement,
@@ -1256,6 +1294,7 @@ async fn settlement_map(
             soap_preview,
             can_travel,
             provision_forecast,
+            provisioning_path.as_deref(),
             is_current_settlement,
             active_contract.filter(|contract| {
                 can_abandon_active_contract(
@@ -1273,6 +1312,17 @@ async fn settlement_map(
     )
 }
 
+fn settlement_html_travel_available(is_current_settlement: bool, has_party: bool) -> bool {
+    is_current_settlement && has_party
+}
+
+fn case_site_has_active_contract(
+    case_id: &str,
+    active_contract: Option<&ContractPresentation>,
+) -> bool {
+    active_contract.is_some_and(|contract| contract.case_id == case_id)
+}
+
 fn can_abandon_active_contract(
     contract: &ContractPresentation,
     current_case_site_id: Option<&str>,
@@ -1283,6 +1333,27 @@ fn can_abandon_active_contract(
 #[cfg(test)]
 mod map_quest_tests {
     use super::*;
+
+    #[test]
+    fn exact_owned_case_sites_use_the_current_settlement_as_the_map_origin() {
+        let source = include_str!("settlements.rs");
+        let map = source
+            .split("async fn settlement_map(")
+            .nth(1)
+            .and_then(|tail| tail.split("fn settlement_html_travel_available").next())
+            .expect("settlement map route");
+
+        assert!(map.contains("for site in &case_sites"));
+        assert!(map.contains("straight_line_distance_m(site, settlement)"));
+        assert!(!map.contains("site.origin_settlement_id == settlement.id"));
+    }
+
+    #[test]
+    fn html_case_site_travel_does_not_depend_on_optional_map_data() {
+        assert!(settlement_html_travel_available(true, true));
+        assert!(!settlement_html_travel_available(false, true));
+        assert!(!settlement_html_travel_available(true, false));
+    }
 
     fn quest(status: ContractPresentationStatus) -> ContractPresentation {
         ContractPresentation {
@@ -1298,8 +1369,8 @@ mod map_quest_tests {
             issuer_npc_id: String::new(),
             status,
             accepted_by: Some("party".into()),
-            enemy_type: String::new(),
-            enemy_count: 1,
+            opposition_wording: "unknown opposition".into(),
+            opposition_count_wording: "an unknown number of".into(),
         }
     }
 
@@ -1317,6 +1388,18 @@ mod map_quest_tests {
             &quest(ContractPresentationStatus::ReadyToReport),
             None
         ));
+    }
+
+    #[test]
+    fn case_site_badge_requires_an_explicit_active_contract_case_match() {
+        let active = quest(ContractPresentationStatus::Accepted);
+
+        assert!(case_site_has_active_contract("case:active", Some(&active)));
+        assert!(!case_site_has_active_contract(
+            "case:reported-decoy",
+            Some(&active)
+        ));
+        assert!(!case_site_has_active_contract("case:active", None));
     }
 }
 
@@ -1475,15 +1558,28 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
         .await
         .ok()
         .flatten();
-    let encounter = state
+    let encounter = match state
         .db
         .query_one::<StrategicEncounter>(&format!(
             "SELECT * FROM strategic_encounter WHERE party_id = {}",
             sql_string_literal(&party.id)
         ))
         .await
-        .ok()
-        .flatten();
+    {
+        Ok(encounter) => encounter,
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                party_id = %party.id,
+                "camp encounter state unavailable; refusing to render travel controls"
+            );
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Encounter details are temporarily unavailable. Reload camp before continuing travel.",
+            )
+                .into_response();
+        }
+    };
     let stats: Vec<CharacterStats> = state
         .db
         .query("SELECT * FROM character_stats")
@@ -1504,14 +1600,16 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
     .max(1);
     let planned_wake_minute =
         (current_party_minute.saturating_add(default_rest_minutes) % 1_440) as u16;
-    let can_continue_travel = encounter
-        .as_ref()
-        .is_none_or(|encounter| encounter.status != "awaiting_choice")
-        && is_walking_time(
+    let continue_block_reason = camp_continue_block_reason(
+        encounter
+            .as_ref()
+            .map(|encounter| encounter.status.as_str()),
+        is_walking_time(
             current_party_minute,
             party.walking_minutes_per_day,
             party.travel_at_night,
-        );
+        ),
+    );
     let remaining_journey_minutes = journey
         .as_ref()
         .map_or(party.camp_remaining_minutes, |row| {
@@ -1570,13 +1668,26 @@ async fn camp(State(state): State<AppState>, session: Session) -> Response {
             default_rest_minutes,
             soap_preview,
             planned_wake_minute,
-            can_continue_travel,
+            continue_block_reason,
             encounter.as_ref(),
             Some(&character.name),
         )
         .into_string(),
     )
     .into_response()
+}
+
+fn camp_continue_block_reason(
+    encounter_status: Option<&str>,
+    is_walking_time: bool,
+) -> Option<&'static str> {
+    if encounter_status == Some("awaiting_choice") {
+        Some("Resolve the encounter above before continuing travel.")
+    } else if !is_walking_time {
+        Some("Rest until the planned walking window begins.")
+    } else {
+        None
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -2351,8 +2462,6 @@ async fn service_quest_offers(
                     return None;
                 };
                 let problem = quest.description.trim_end_matches('.').to_lowercase();
-                let low = (quest.enemy_count - 2).max(1);
-                let high = quest.enemy_count + 2;
                 let (npc_name, greeting) = service_quest_greeting(&quest.service_id);
                 Some(ServiceQuestOffer {
                     id: quest.id.clone(),
@@ -2368,8 +2477,6 @@ async fn service_quest_offers(
                         quest,
                         &settlement.name,
                         &neighboring_name,
-                        low,
-                        high,
                     ),
                     acceptance: "Splendid! And please, do be careful! You wouldn't be the first men they've slain.",
                     state,
@@ -2420,22 +2527,13 @@ fn service_quest_details(
     quest: &ContractPresentation,
     _settlement_name: &str,
     _neighboring_name: &str,
-    low: i32,
-    high: i32,
 ) -> String {
-    let threat = quest.enemy_type.parse::<ThreatId>().ok();
-    let threat_name = threat
-        .map(|id| id.display_name(high.max(0) as u32).to_lowercase())
-        .unwrap_or_else(|| "unknown threats".to_string());
-    let preparation = threat
-        .map(|id| id.profile().investigation.preparation_advice)
-        .unwrap_or("Learn more before committing to a fight.");
     // The generated quest is authoritative. Service identifies the speaker,
     // never the threat or location; several templates intentionally share it.
     let situation = &quest.description;
     format!(
-        "Yes, {situation}. I believe there are about {low} or {high} {threat_name}, give or take. I'd offer {} coin to anyone who clears them out. Preparation: {preparation} Are you",
-        quest.gold_reward,
+        "Yes, {situation}. I believe it involves {} {}, but that account may be wrong. I'd offer {} coin for a verified resolution. Learn more before committing to a fight. Are you",
+        quest.opposition_count_wording, quest.opposition_wording, quest.gold_reward,
     )
 }
 
@@ -2443,7 +2541,7 @@ fn service_quest_details(
 mod bestiary_quest_presentation_tests {
     use super::*;
 
-    fn quest(enemy_type: &str, description: &str) -> ContractPresentation {
+    fn quest(opposition_wording: &str, description: &str) -> ContractPresentation {
         ContractPresentation {
             id: "q".into(),
             case_id: "case:q".into(),
@@ -2457,8 +2555,8 @@ mod bestiary_quest_presentation_tests {
             issuer_npc_id: String::new(),
             status: ContractPresentationStatus::Offered,
             accepted_by: None,
-            enemy_type: enemy_type.into(),
-            enemy_count: 3,
+            opposition_wording: opposition_wording.into(),
+            opposition_count_wording: "perhaps several".into(),
         }
     }
 
@@ -2466,8 +2564,8 @@ mod bestiary_quest_presentation_tests {
     fn shared_service_never_substitutes_its_old_fixed_threat_or_location() {
         let alp = quest("alp", "Sleepers report an unseen visitor.");
         let hound = quest("spectral_hound", "A black hound haunts the road.");
-        let alp_details = service_quest_details("inn", &alp, "A", "B", 2, 3);
-        let hound_details = service_quest_details("inn", &hound, "A", "B", 2, 3);
+        let alp_details = service_quest_details("inn", &alp, "A", "B");
+        let hound_details = service_quest_details("inn", &hound, "A", "B");
         assert!(alp_details.contains("unseen visitor"));
         assert!(hound_details.contains("black hound"));
         assert!(!alp_details.contains("goblin") && !hound_details.contains("goblin"));
@@ -4306,11 +4404,14 @@ async fn merchants(
 
 async fn finalize_merchant_offer(
     State(state): State<AppState>,
-    Path(id): Path<String>,
+    Path((id, service_id)): Path<(String, String)>,
     session: Session,
     Form(form): Form<MerchantOfferForm>,
 ) -> Redirect {
-    let fallback = format!("/settlements/{id}/merchants");
+    let Some(location_id) = merchant_service_location(&service_id) else {
+        return Redirect::to(&format!("/settlements/{id}/merchants"));
+    };
+    let fallback = format!("/settlements/{id}/{service_id}");
     let mut trade_completed = false;
     if let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await {
         if let (Ok(buys), Ok(sells)) = (form.buys(), form.sells()) {
@@ -4322,14 +4423,19 @@ async fn finalize_merchant_offer(
                 .into_iter()
                 .map(|entry| (entry.id, entry.quantity))
                 .unzip();
-            if !items.is_empty() || !sell_ids.is_empty() {
+            let provider_npc_id = merchant_provider_id(&state, &id, &service_id, location_id).await;
+            if items.is_empty() && sell_ids.is_empty() {
+                trade_completed = true;
+            } else if let Some(provider_npc_id) = provider_npc_id {
                 match state
                     .db
                     .call(
-                        "finalize_merchant_trade",
+                        "finalize_storefront_trade",
                         &[
                             json!(character.id),
-                            json!(id),
+                            json!(&id),
+                            json!(&service_id),
+                            json!(provider_npc_id),
                             json!(items),
                             json!(quantities),
                             json!(sell_ids),
@@ -4344,8 +4450,6 @@ async fn finalize_merchant_offer(
                         tracing::warn!(%error, settlement_id = %id, "merchant offer was rejected");
                     }
                 }
-            } else {
-                trade_completed = true;
             }
         }
     }
@@ -4354,6 +4458,73 @@ async fn finalize_merchant_offer(
     } else {
         Redirect::to(&fallback)
     }
+}
+
+fn merchant_service_location(service_id: &str) -> Option<&'static str> {
+    match service_id {
+        "merchants" => Some("market"),
+        "weapons" => Some("forge"),
+        "armor" => Some("armoury"),
+        "clothing" => Some("tailor"),
+        "inn" => Some("inn"),
+        _ => None,
+    }
+}
+
+async fn merchant_provider_id(
+    state: &AppState,
+    settlement_id: &str,
+    service_id: &str,
+    location_id: &str,
+) -> Option<String> {
+    let settlement_literal = sql_string_literal(settlement_id);
+    let providers_sql =
+        format!("SELECT * FROM settlement_npc WHERE home_settlement_id = {settlement_literal}");
+    let presences_sql =
+        format!("SELECT * FROM settlement_npc_presence WHERE settlement_id = {settlement_literal}");
+    let (providers, presences) = tokio::join!(
+        state.db.query::<MerchantProviderRow>(&providers_sql),
+        state
+            .db
+            .query::<MerchantProviderPresenceRow>(&presences_sql),
+    );
+    let providers = providers.ok()?;
+    let presences = presences.ok()?;
+    let mut matches = providers.into_iter().filter_map(|provider| {
+        (provider.home_settlement_id == settlement_id && provider.service_id == service_id)
+            .then_some(provider)
+            .and_then(|provider| {
+                presences
+                    .iter()
+                    .any(|presence| {
+                        presence.npc_id == provider.id
+                            && presence.settlement_id == settlement_id
+                            && presence.location_id == location_id
+                            && presence.is_default
+                    })
+                    .then_some(provider.id)
+            })
+    });
+    let provider = matches.next()?;
+    matches.next().is_none().then_some(provider)
+}
+
+async fn provisioning_storefront_path(state: &AppState, settlement: &Settlement) -> Option<String> {
+    use adventuresim_core::settlement_economy::{Storefront, storefront_available};
+
+    for (storefront, service_id, location_id) in [
+        (Storefront::General, "merchants", "market"),
+        (Storefront::Inn, "inn", "inn"),
+    ] {
+        if storefront_available(&settlement.economy, storefront)
+            && merchant_provider_id(state, &settlement.id, service_id, location_id)
+                .await
+                .is_some()
+        {
+            return Some(format!("/settlements/{}/{service_id}", settlement.id));
+        }
+    }
+    None
 }
 
 async fn rest_at_settlement_map(
@@ -4482,6 +4653,14 @@ fn parsed_rest_minutes(form: &RestForm) -> Result<u64, &'static str> {
     })
 }
 
+fn safe_rest_error(error: &str) -> &'static str {
+    if error.contains("Not enough coin") {
+        "You do not have enough coin for that inn stay."
+    } else {
+        "The rest could not be completed. Review the duration and try again."
+    }
+}
+
 async fn rest(
     State(state): State<AppState>,
     Path((id, kind)): Path<(String, String)>,
@@ -4496,12 +4675,43 @@ async fn rest(
     let Some(character_id) = session.character_id_u64() else {
         return Html("<h1>Choose a character first</h1>".to_string()).into_response();
     };
+    let settlements: Vec<Settlement> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM settlement WHERE id = {}",
+            sql_string_literal(&id)
+        ))
+        .await
+        .unwrap_or_default();
+    let Some(settlement) = settlements.first() else {
+        return Html("<h1>Settlement not found</h1>".to_string()).into_response();
+    };
+    let service = if at_inn {
+        adventuresim_core::settlement_economy::SettlementActionService::Inn
+    } else {
+        adventuresim_core::settlement_economy::SettlementActionService::Temple
+    };
+    if !settlement_action_service_available(&settlement.economy, service) {
+        return Html("<h1>Rest service unavailable</h1>".to_string()).into_response();
+    }
     let requested_minutes = match settlement_rest_minutes(&form) {
         Ok(minutes) => minutes,
         Err(message) => {
             return (
                 axum::http::StatusCode::BAD_REQUEST,
-                Html(format!("<h1>Unable to rest</h1><p>{message}</p>")),
+                Html(
+                    crate::templates::strategic_notice_page(
+                        "Unable to rest",
+                        message,
+                        &format!(
+                            "/settlements/{id}/{}",
+                            if at_inn { "inn" } else { "religion" }
+                        ),
+                        "Return to rest service",
+                        None,
+                    )
+                    .into_string(),
+                ),
             )
                 .into_response();
         }
@@ -4524,20 +4734,25 @@ async fn rest(
         )
         .await
     {
-        return Html(format!("<h1>Unable to rest</h1><p>{error}</p>")).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Html(
+                crate::templates::strategic_notice_page(
+                    "Unable to rest",
+                    safe_rest_error(&error.to_string()),
+                    &format!(
+                        "/settlements/{id}/{}",
+                        if at_inn { "inn" } else { "religion" }
+                    ),
+                    "Return to rest service",
+                    None,
+                )
+                .into_string(),
+            ),
+        )
+            .into_response();
     }
 
-    let settlements: Vec<Settlement> = state
-        .db
-        .query(&format!(
-            "SELECT * FROM settlement WHERE id = {}",
-            sql_string_literal(&id)
-        ))
-        .await
-        .unwrap_or_default();
-    let Some(settlement) = settlements.first() else {
-        return Html("<h1>Settlement not found</h1>".to_string()).into_response();
-    };
     let active_character = get_active_character(&state, Some(character_id)).await;
     if let Some(case_site_id) = active_character
         .as_ref()
@@ -4573,6 +4788,8 @@ async fn rest(
         after_time.as_ref(),
         before_notoriety.as_ref(),
         after_notoriety.as_ref(),
+        at_inn,
+        requested_minutes,
     );
     let logged_in_as = active_character
         .as_ref()
@@ -4638,6 +4855,8 @@ fn rest_summary(
     after_time: Option<&crate::spacetimedb::CharacterTime>,
     before_notoriety: Option<&CharacterNotoriety>,
     after_notoriety: Option<&CharacterNotoriety>,
+    at_inn: bool,
+    requested_minutes: u64,
 ) -> RestSummary {
     let minutes = before_time.zip(after_time).map_or(0, |(before, after)| {
         after.minutes.saturating_sub(before.minutes)
@@ -4652,6 +4871,8 @@ fn rest_summary(
     let before_currency = currency_total(before_inventory);
     let after_currency = currency_total(after_inventory);
     let gold_spent = before_currency.saturating_sub(after_currency);
+    let (full_board_gold_spent, additional_gold_spent) =
+        rest_spending_breakdown(gold_spent, at_inn, requested_minutes);
     let gold_earned = after_currency.saturating_sub(before_currency);
     let notoriety_gained = after_notoriety.map_or(0.0, |after| {
         after.value - before_notoriety.map_or(0.0, |before| before.value)
@@ -4666,12 +4887,28 @@ fn rest_summary(
     };
     RestSummary {
         minutes,
-        gold_spent,
+        full_board_gold_spent,
+        additional_gold_spent,
         gold_earned,
         notoriety_gained,
         healed,
         trained,
     }
+}
+
+fn rest_spending_breakdown(
+    total_gold_spent: u32,
+    at_inn: bool,
+    requested_minutes: u64,
+) -> (u32, u32) {
+    let full_board = if at_inn {
+        adventuresim_core::strategic_economy::inn_full_board_cost(requested_minutes)
+            .and_then(|cost| u32::try_from(cost).ok())
+            .unwrap_or(u32::MAX)
+    } else {
+        0
+    };
+    (full_board, total_gold_spent.saturating_sub(full_board))
 }
 
 fn limb_deltas(before: &CharacterLimbs, after: &CharacterLimbs) -> Vec<(String, f32)> {
@@ -4949,7 +5186,59 @@ async fn religion(
     Path(id): Path<String>,
     session: Session,
 ) -> Html<String> {
-    render_service_page(state, id, session, religion_page).await
+    render_service_page(
+        state,
+        id,
+        session,
+        adventuresim_core::settlement_economy::SettlementActionService::Temple,
+        religion_page,
+    )
+    .await
+}
+
+fn settlement_action_service_available(
+    profile: &adventuresim_world_schema::SettlementEconomyProfile,
+    service: adventuresim_core::settlement_economy::SettlementActionService,
+) -> bool {
+    adventuresim_core::settlement_economy::action_service_available(profile, service)
+}
+
+#[cfg(test)]
+mod service_availability_tests {
+    use super::settlement_action_service_available;
+    use adventuresim_core::settlement_economy::{
+        SettlementActionService, player_visible_npc_tabs, visible_npc_tab,
+    };
+    use adventuresim_world_schema::{SettlementEconomyProfile, SettlementService};
+
+    #[test]
+    fn direct_routes_reject_unadvertised_church_inn_and_armoury() {
+        let mut profile = SettlementEconomyProfile::stage_placeholder();
+        profile.services.clear();
+        assert!(!settlement_action_service_available(
+            &profile,
+            SettlementActionService::Temple
+        ));
+        assert!(!settlement_action_service_available(
+            &profile,
+            SettlementActionService::Inn
+        ));
+        let tabs = player_visible_npc_tabs(&profile, false);
+        assert!(visible_npc_tab(&tabs, "church").is_none());
+        assert!(visible_npc_tab(&tabs, "inn").is_none());
+        assert!(visible_npc_tab(&tabs, "armoury").is_none());
+
+        profile.services = vec![SettlementService::Inn, SettlementService::Temple];
+        profile.services.sort();
+        assert!(settlement_action_service_available(
+            &profile,
+            SettlementActionService::Temple
+        ));
+        assert!(settlement_action_service_available(
+            &profile,
+            SettlementActionService::Inn
+        ));
+    }
 }
 
 #[derive(Deserialize)]
@@ -4982,10 +5271,22 @@ async fn religion_dialogue(
         .next();
     let priest_religion_id = settlement
         .as_ref()
+        .filter(|settlement| {
+            settlement_action_service_available(
+                &settlement.economy,
+                adventuresim_core::settlement_economy::SettlementActionService::Temple,
+            )
+        })
         .map(|settlement| settlement.religion_id.clone())
         .unwrap_or_default();
     let represented_religion_ids = settlement
         .as_ref()
+        .filter(|settlement| {
+            settlement_action_service_available(
+                &settlement.economy,
+                adventuresim_core::settlement_economy::SettlementActionService::Temple,
+            )
+        })
         .map(|s| {
             s.religious_status
                 .represented_religions()
@@ -5003,8 +5304,12 @@ async fn religion_dialogue(
             can_choose: false,
         });
     };
-    let can_choose =
-        settlement.is_some() && character.current_settlement_id.as_deref() == Some(id.as_str());
+    let can_choose = settlement.as_ref().is_some_and(|settlement| {
+        settlement_action_service_available(
+            &settlement.economy,
+            adventuresim_core::settlement_economy::SettlementActionService::Temple,
+        )
+    }) && character.current_settlement_id.as_deref() == Some(id.as_str());
     let condition = state
         .db
         .query::<CharacterCondition>(&format!(
@@ -5054,6 +5359,16 @@ async fn set_religion(
             message: "There is no church here to receive your profession.",
         });
     };
+    if !settlement_action_service_available(
+        &settlement.economy,
+        adventuresim_core::settlement_economy::SettlementActionService::Temple,
+    ) {
+        return Json(ReligionChange {
+            changed: false,
+            religion_id: None,
+            message: "There is no church here to receive your profession.",
+        });
+    }
     if !settlement
         .religious_status
         .represented_religions()
@@ -5377,6 +5692,7 @@ async fn render_service_page(
     state: AppState,
     id: String,
     session: Session,
+    required_service: adventuresim_core::settlement_economy::SettlementActionService,
     render: ServiceRenderer,
 ) -> Html<String> {
     let settlement_sql = format!(
@@ -5392,6 +5708,18 @@ async fn render_service_page(
         Some(settlement) => settlement,
         None => return Html("<h1>Settlement not found</h1>".to_string()),
     };
+    if !settlement_action_service_available(&settlement.economy, required_service) {
+        return Html(
+            crate::templates::strategic_notice_page(
+                "Service unavailable",
+                "This settlement does not offer that service.",
+                &format!("/locations/settlement/{}", settlement.id),
+                "Return to settlement",
+                None,
+            )
+            .into_string(),
+        );
+    }
 
     let active_character_ref = active_character.as_ref().map(|(character, _)| character);
     let limbs_lookup = async {
@@ -6005,6 +6333,7 @@ mod rest_form_tests {
 
     use super::{
         RestForm, calculate_rest_supply_availability, calculate_soap_rest_preview,
+        camp_continue_block_reason, rest_spending_breakdown, safe_rest_error,
         settlement_rest_minutes, travel_rest_minutes,
     };
     use crate::spacetimedb::{
@@ -6152,6 +6481,10 @@ mod rest_form_tests {
             settlement_rest_minutes(&form("24:01", "hours", Some(1_441))),
             Ok(1_441)
         );
+        assert_eq!(
+            settlement_rest_minutes(&form("36:32", "hours", Some(2_192))),
+            Ok(2_192)
+        );
         assert!(settlement_rest_minutes(&form("23:59", "hours", Some(1_439))).is_err());
     }
 
@@ -6176,12 +6509,25 @@ mod rest_form_tests {
 
     #[test]
     fn days_are_independent_whole_days_with_a_minimum_of_one() {
+        assert_eq!(settlement_rest_minutes(&form("1", "days", None)), Ok(1_440));
         assert_eq!(
             settlement_rest_minutes(&form("2", "days", Some(1_441))),
             Ok(2_880)
         );
         assert!(settlement_rest_minutes(&form("0", "days", None)).is_err());
         assert!(settlement_rest_minutes(&form("1.5", "days", None)).is_err());
+        assert_eq!(
+            settlement_rest_minutes(&form("365", "days", None)),
+            Ok(365 * 1_440)
+        );
+        assert!(settlement_rest_minutes(&form("366", "days", None)).is_err());
+    }
+
+    #[test]
+    fn rest_spending_itemizes_full_board_and_other_downtime_costs() {
+        assert_eq!(rest_spending_breakdown(4, true, 1_440), (2, 2));
+        assert_eq!(rest_spending_breakdown(10, true, 2_880), (4, 6));
+        assert_eq!(rest_spending_breakdown(2, false, 1_440), (0, 2));
     }
 
     #[test]
@@ -6195,6 +6541,15 @@ mod rest_form_tests {
         assert_eq!(blank.requested_minutes, None);
         assert_eq!(settlement_rest_minutes(&blank), Ok(2_880));
         assert!(settlement_rest_minutes(&form("24:00", "hours", Some(1_441))).is_err());
+    }
+
+    #[test]
+    fn rest_failures_have_safe_visible_prose() {
+        assert_eq!(
+            safe_rest_error("Not enough coin to pay for the inn stay"),
+            "You do not have enough coin for that inn stay."
+        );
+        assert!(!safe_rest_error("private injury authority 123").contains("123"));
     }
 
     #[test]
@@ -6218,6 +6573,20 @@ mod rest_form_tests {
             Some(2 * 60)
         );
         assert!(is_walking_time(21 * 60, 8 * 60, true));
+    }
+
+    #[test]
+    fn unresolved_encounters_override_walking_time_for_camp_continuation() {
+        assert_eq!(
+            camp_continue_block_reason(Some("awaiting_choice"), true),
+            Some("Resolve the encounter above before continuing travel.")
+        );
+        assert_eq!(camp_continue_block_reason(Some("resolved"), true), None);
+        assert_eq!(camp_continue_block_reason(None, true), None);
+        assert_eq!(
+            camp_continue_block_reason(None, false),
+            Some("Rest until the planned walking window begins.")
+        );
     }
 }
 

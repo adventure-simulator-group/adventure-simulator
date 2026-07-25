@@ -34,7 +34,9 @@ pub struct BackendInvestigationLead {
     pub destination_stage: String,
     pub directions: String,
     pub exact_location_id: String,
+    #[serde(rename = "latitude_e_7")]
     pub latitude_e7: i32,
+    #[serde(rename = "longitude_e_7")]
     pub longitude_e7: i32,
     pub witness_name: String,
     pub witness_description: String,
@@ -59,6 +61,10 @@ pub struct BackendInvestigationAction {
     pub uncertainty_bps: u16,
     pub skill_contributions: String,
     pub weather_available: bool,
+    pub required_case_site_id: String,
+    pub available: bool,
+    pub can_travel_to_required_site: bool,
+    pub unavailable_reason: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -76,6 +82,7 @@ pub struct BackendCaseBattle {
     pub party_id: String,
     pub battle_id: String,
     pub mission_id: String,
+    pub case_site_id: CaseSiteId,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -87,12 +94,18 @@ pub struct BackendCaseSitePin {
     pub name: String,
     pub description: String,
     pub scene_key: String,
+    #[serde(rename = "longitude_e_7")]
     pub longitude_e7: i32,
+    #[serde(rename = "latitude_e_7")]
     pub latitude_e7: i32,
     pub coordinates_are_geographic: bool,
     pub distance_m: u64,
     pub knowledge_stage: String,
     pub tracked: bool,
+    pub display_title: String,
+    pub generated_case: bool,
+    pub case_resolved: bool,
+    pub combat_available: bool,
 }
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use serde_json::Value;
@@ -380,8 +393,8 @@ pub struct ContractPresentation {
     pub issuer_npc_id: String,
     pub status: ContractPresentationStatus,
     pub accepted_by: Option<String>,
-    pub enemy_type: String,
-    pub enemy_count: i32,
+    pub opposition_wording: String,
+    pub opposition_count_wording: String,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -431,7 +444,7 @@ pub struct Party {
     pub name: String,
     pub leader_id: u64,
     pub current_settlement_id: Option<String>,
-    pub current_case_site_id: Option<String>,
+    pub current_case_site_id: Option<CaseSiteId>,
     pub active_contract_id: Option<String>,
     pub is_solo: bool,
     pub camp_fatigue_percent: u8,
@@ -548,7 +561,9 @@ pub struct StrategicEncounter {
     pub journey_movement_minute: u64,
     pub journey_elapsed_minute: u64,
     pub absolute_minute: u64,
+    #[serde(rename = "longitude_e_7")]
     pub longitude_e7: i32,
+    #[serde(rename = "latitude_e_7")]
     pub latitude_e7: i32,
     pub terrain: String,
     pub party_aware: bool,
@@ -661,9 +676,12 @@ pub struct PartyLeaderVote {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LocalChatMessage {
+pub struct BackendLocalChatMessage {
     pub id: u64,
-    pub conversation_key: String,
+    pub owner_character_id: u64,
+    pub conversation_kind: String,
+    pub subject_party_id: String,
+    pub subject_npc_id: String,
     pub sender_id: u64,
     pub sender_name: String,
     pub body: String,
@@ -1585,6 +1603,13 @@ pub struct TacticalServerRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use adventuresim_core::{
+        local_problem::Scope,
+        quest_generation::{
+            GenerationContext, TemplateFamily, generate, observer_scoped_id, test_witnesses,
+        },
+    };
+    use std::collections::BTreeSet;
 
     #[test]
     fn strategic_statuses_reject_unknown_values() {
@@ -1597,6 +1622,296 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<MissionStatus>("\"Starting\"").unwrap(),
             MissionStatus::Pending
+        );
+    }
+
+    #[test]
+    fn party_case_site_decodes_the_typed_spacetimedb_sql_shape() {
+        let row = serde_json::json!({
+            "id": "party-7",
+            "gateway_bucket": 0,
+            "name": "Ada's party",
+            "leader_id": 7,
+            "current_settlement_id": null,
+            "current_case_site_id": { "value": "site:known" },
+            "active_contract_id": null,
+            "is_solo": true,
+            "camp_fatigue_percent": 50,
+            "walking_minutes_per_day": 480,
+            "travel_at_night": false,
+            "camp_duration_mode": "Auto",
+            "fixed_camp_minutes": 0,
+            "camp_destination": null,
+            "camp_remaining_minutes": 0,
+            "pooled_water_ml": 0.0,
+            "medicine_target": 0.0,
+            "command_target": 0.0,
+            "religion_target": 0.0
+        });
+        let decoded: Party = serde_json::from_value(row).unwrap();
+        assert_eq!(
+            decoded.current_case_site_id,
+            Some(CaseSiteId {
+                value: "site:known".into()
+            })
+        );
+    }
+
+    #[test]
+    fn investigation_projection_coordinates_match_spacetimedb_sql_schema() {
+        let lead = serde_json::json!({
+            "owner_character_id": 7,
+            "case_id": "case-public",
+            "lead_id": "lead-public",
+            "summary": "Tracks cross the north road.",
+            "source_label": "witness",
+            "confidence_bps": 6500,
+            "destination_stage": "exact_believed",
+            "directions": "Beyond the old milestone.",
+            "exact_location_id": "site-public",
+            "latitude_e_7": 521234567,
+            "longitude_e_7": 134567890,
+            "witness_name": "Greta",
+            "witness_description": "A tall cooper with grey hair.",
+            "witness_occupation_or_relationship": "cooper",
+            "expected_location": "Public square",
+            "current_learned_location": "Public square",
+            "contradiction_group": "creature-shape",
+            "corrected_by": "",
+            "recorded_at": 50000
+        });
+        let decoded: BackendInvestigationLead = serde_json::from_value(lead).unwrap();
+        assert_eq!(decoded.latitude_e7, 521_234_567);
+        assert_eq!(decoded.longitude_e7, 134_567_890);
+
+        let pin = serde_json::json!({
+            "owner_character_id": 7,
+            "case_id": "case-public",
+            "case_site_id": "site-public",
+            "origin_settlement_id": "settlement-public",
+            "name": "Old milestone",
+            "description": "A weathered stone beside the north road.",
+            "scene_key": "roadside",
+            "longitude_e_7": 134567890,
+            "latitude_e_7": 521234567,
+            "coordinates_are_geographic": true,
+            "distance_m": 1800,
+            "knowledge_stage": "exact_believed",
+            "tracked": true,
+            "display_title": "Something preys on travellers",
+            "generated_case": true,
+            "combat_available": true
+        });
+        let decoded: BackendCaseSitePin = serde_json::from_value(pin).unwrap();
+        assert_eq!(decoded.latitude_e7, 521_234_567);
+        assert_eq!(decoded.longitude_e7, 134_567_890);
+        assert!(decoded.generated_case);
+        assert!(decoded.combat_available);
+    }
+
+    #[test]
+    fn investigation_action_projection_decodes_eligibility_contract() {
+        let action = serde_json::json!({
+            "owner_character_id": 7,
+            "action_id": "action-public",
+            "method": "inspect_site",
+            "expected_version": 2,
+            "summary": "Inspect the abandoned croft.",
+            "known_prerequisites": "Reach the croft.",
+            "duration_min_minutes": 30,
+            "duration_max_minutes": 90,
+            "uncertainty_bps": 2000,
+            "skill_contributions": "awareness",
+            "weather_available": false,
+            "required_case_site_id": "site-public",
+            "available": false,
+            "can_travel_to_required_site": true,
+            "unavailable_reason": "Travel to the known investigation site before inspecting it."
+        });
+        let decoded: BackendInvestigationAction = serde_json::from_value(action).unwrap();
+        assert_eq!(decoded.required_case_site_id, "site-public");
+        assert!(!decoded.available);
+        assert!(decoded.can_travel_to_required_site);
+        assert!(decoded.unavailable_reason.contains("Travel"));
+    }
+
+    #[test]
+    fn strategic_encounter_decodes_the_spacetimedb_sql_shape() {
+        let row = serde_json::json!({
+            "party_id": "party-7",
+            "encounter_id": "party-7:3",
+            "archetype": "bandits",
+            "enemy_count": 4,
+            "roll_index": 3,
+            "journey_movement_minute": 540,
+            "journey_elapsed_minute": 700,
+            "absolute_minute": 1700,
+            "longitude_e_7": 134567890,
+            "latitude_e_7": 521234567,
+            "terrain": "road",
+            "party_aware": false,
+            "enemy_aware": true,
+            "available_choices": ["attack", "surrender"],
+            "status": "awaiting_choice",
+            "selected_choice": null,
+            "selection_explanation": "The enemy surprised the party.",
+            "party_speed_m_per_minute": 60,
+            "enemy_speed_m_per_minute": 80,
+            "run_ineligibility": "The enemy is faster.",
+            "penalty_minutes": 0,
+            "loss_preview": [],
+            "outcome": null
+        });
+
+        let decoded: StrategicEncounter = serde_json::from_value(row).unwrap();
+        assert_eq!(decoded.longitude_e7, 134_567_890);
+        assert_eq!(decoded.latitude_e7, 521_234_567);
+        assert_eq!(decoded.status, "awaiting_choice");
+        assert_eq!(
+            decoded.available_choices,
+            vec!["attack".to_string(), "surrender".to_string()]
+        );
+    }
+
+    #[test]
+    fn investigation_projection_rejects_noncanonical_coordinate_names() {
+        let lead = serde_json::json!({
+            "owner_character_id": 7,
+            "case_id": "case-public",
+            "lead_id": "lead-public",
+            "summary": "Tracks cross the north road.",
+            "source_label": "witness",
+            "confidence_bps": 6500,
+            "destination_stage": "exact_believed",
+            "directions": "Beyond the old milestone.",
+            "exact_location_id": "site-public",
+            "latitude_e7": 521234567,
+            "longitude_e7": 134567890,
+            "witness_name": "Greta",
+            "witness_description": "A tall cooper with grey hair.",
+            "witness_occupation_or_relationship": "cooper",
+            "expected_location": "Public square",
+            "current_learned_location": "Public square",
+            "contradiction_group": "creature-shape",
+            "corrected_by": "",
+            "recorded_at": 50000
+        });
+        assert!(serde_json::from_value::<BackendInvestigationLead>(lead).is_err());
+    }
+
+    #[test]
+    fn serialized_investigation_dtos_use_independent_opaque_ids() {
+        let context = |entropy: u64, ordinal: u16| GenerationContext {
+            seed: 0x4341_4e4f_4e49_4341,
+            observer_entropy_hi: entropy,
+            observer_entropy_lo: entropy.rotate_left(29) ^ 0x4c2d_5345_4e54_494e,
+            settlement_id: "sentinel-settlement".into(),
+            settlement_name: "Sentinel".into(),
+            scope: Scope::Settlement {
+                settlement_id: "sentinel-settlement".into(),
+            },
+            ordinal,
+            now_minute: 50_000,
+            requested_family: Some(TemplateFamily::RecurringDepredation),
+            witness_candidates: test_witnesses(),
+        };
+        let first_context = context(11, 0);
+        let second_context = context(12, 1);
+        let first = generate(&first_context).unwrap();
+        let second = generate(&second_context).unwrap();
+        let capability_id = observer_scoped_id(
+            &first_context,
+            "capability",
+            &format!("7:{}", first.actions[0].id.0),
+        );
+        let lead_id = observer_scoped_id(&first_context, "lead", "attempt-private-sentinel");
+        let action = BackendInvestigationAction {
+            owner_character_id: 7,
+            action_id: capability_id.clone(),
+            method: "search_area".into(),
+            expected_version: 0,
+            summary: "Search the reported area.".into(),
+            known_prerequisites: "A local account.".into(),
+            duration_min_minutes: 30,
+            duration_max_minutes: 180,
+            uncertainty_bps: 7_000,
+            skill_contributions: "terrain".into(),
+            weather_available: false,
+            required_case_site_id: String::new(),
+            available: true,
+            can_travel_to_required_site: false,
+            unavailable_reason: String::new(),
+        };
+        let lead = BackendInvestigationLead {
+            owner_character_id: 7,
+            case_id: first.public_case_id.clone(),
+            lead_id: lead_id.clone(),
+            summary: "A bounded lead.".into(),
+            source_label: "witness".into(),
+            confidence_bps: 5_000,
+            destination_stage: "textual".into(),
+            directions: String::new(),
+            exact_location_id: String::new(),
+            latitude_e7: 0,
+            longitude_e7: 0,
+            witness_name: String::new(),
+            witness_description: String::new(),
+            witness_occupation_or_relationship: String::new(),
+            expected_location: String::new(),
+            current_learned_location: String::new(),
+            contradiction_group: String::new(),
+            corrected_by: String::new(),
+            recorded_at: 50_000,
+        };
+        let proposition_ids = first
+            .evidence
+            .iter()
+            .map(|evidence| evidence.proposition_id.clone())
+            .collect::<Vec<_>>();
+        let witness_ids = first
+            .witnesses
+            .iter()
+            .map(|witness| witness.id.0.clone())
+            .collect::<Vec<_>>();
+        let json = serde_json::to_string(&(
+            &action,
+            &lead,
+            &first.actions,
+            &witness_ids,
+            &proposition_ids,
+        ))
+        .unwrap();
+        assert!(!json.contains(&first.canonical_case_id));
+        assert!(!json.contains("CANONICAL-SENTINEL"));
+        assert!(!json.contains("attempt-private-sentinel"));
+        let first_ids = first
+            .actions
+            .iter()
+            .map(|item| item.id.0.clone())
+            .chain(witness_ids.iter().cloned())
+            .chain(proposition_ids.iter().cloned())
+            .chain([capability_id, lead_id])
+            .collect::<BTreeSet<_>>();
+        let second_ids = second
+            .actions
+            .iter()
+            .map(|item| item.id.0.clone())
+            .chain(second.witnesses.iter().map(|item| item.id.0.clone()))
+            .chain(
+                second
+                    .evidence
+                    .iter()
+                    .map(|item| item.proposition_id.clone()),
+            )
+            .chain([
+                observer_scoped_id(&second_context, "capability", "same-logical-action"),
+                observer_scoped_id(&second_context, "lead", "same-logical-attempt"),
+            ])
+            .collect::<BTreeSet<_>>();
+        assert!(first_ids.is_disjoint(&second_ids));
+        assert_eq!(
+            first_ids.len(),
+            first.actions.len() + witness_ids.len() + proposition_ids.len() + 2
         );
     }
 

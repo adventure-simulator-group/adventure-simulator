@@ -21,7 +21,7 @@ replaces the party's active quest or changes an objective.
 
 For local development, creating a recruitment role seeds capable temporary NPCs at the party's current location and immediately fills its requested slots. This is a testing aid; ordinary player recruitment continues to use applications and the leader's approval.
 
-Opening the issuing service adds the NPC's greeting to party chat with a linked description of the problem. Following the linked dialogue reveals the estimated opposition and reward; choosing the linked interest response formally accepts the quest. Accepting does not teleport the party, but the direct-bounty issuer explicitly discloses its seeded case site. Only that observer-safe exact disclosure makes the destination eligible for an exact map pin and travel. Selecting or tracking the site is navigation state only and cannot accept the quest or grant rewards. An accepted quest can be abandoned until the party reaches its case site. There are no standalone quest-list, quest-detail, or party-list pages. Travel to a case site and travel onward from it are straight-line, off-road journeys at one quarter of the normal 5 km/h settlement travel speed. Case sites therefore do not need a Viabundus road connection.
+Opening the issuing service adds the NPC's greeting to party chat with a linked description of the problem. Following the linked dialogue reveals the estimated opposition and reward; choosing the linked interest response formally accepts the quest. Accepting does not teleport the party, but the direct-bounty issuer explicitly discloses its seeded case site. Only that observer-safe exact disclosure makes the destination eligible for an exact map pin and travel. Once the observer knows that exact physical site, its originating settlement remains disclosure provenance rather than a permanent routing constraint: the pin is available on the map at any current settlement, and a new journey is planned from the party's authoritative current settlement or case site. Selecting or tracking the site is navigation state only and cannot accept the quest or grant rewards. An accepted quest can be abandoned until the party reaches its case site. There are no standalone quest-list, quest-detail, or party-list pages. Travel to a case site and travel onward from it are straight-line, off-road journeys at one quarter of the normal 5 km/h settlement travel speed. Case sites therefore do not need a Viabundus road connection.
 
 The quest destination uses the same location header and party-portrait overlay as settlement pages, but omits settlement-service tabs. Its left rail always shows unclaimed loot and starts empty; its right rail always shows the shared party inventory. Resolving combat adds enemy equipment and any quest gold to the loot rail. Loot transfers are staged with the shared inventory arrows, then committed from a fixed confirmation popup without leaving the location screen.
 
@@ -45,6 +45,27 @@ legacy direct bounty explicitly reveals its exact case site, but the resulting
 pin is a knowledge projection rather than a quest marker. Recruitment
 indicators remain separate from quest markers.
 
+The first modular generator supports recurring depredation and
+disappearance/loss cases. Both begin as observable local consequences rather
+than a named monster. Witness descriptions, circumstances, reliability,
+evidence, sites, and habitats are weighted independently, so the template does
+not reveal the answer. Impossible combinations have zero weight; rare ones
+remain possible only when the case generates a discoverable causal bridge.
+
+Each case offers two different routes to the same real target. Physical tracks
+and social inquiry may fail or contradict one another without deleting the
+alternate route. Canonical cause determines the finale: rescue a concealed or
+abducted person, retrieve and return a lost asset, expose a fabricated claim,
+or defeat/drive off recurring attackers. Unsupported endings are not rolled.
+The modular cases create no contracts: entering the tavern guarantees a rumor
+entry point, and referrals identify witnesses by appearance and expected
+location. Recurring problems begin with that exact referred contact and unlock
+their approach and watch branches only after the contact succeeds;
+disappearance/loss cases retain independent physical and witness starts.
+A route first reveals travel-capable exact knowledge; only after the
+party travels to and occupies that site can a separate inspection, ambush,
+retrieval, or rescue action resolve it.
+
 ## Planning
 Since you know what enemies you will face at the destination and can estimate what enemies you'll possibly face on the journey, you should plan a party in advance to account for this. For now this is mainly a question of whether you expect to encounter armored enemies (and therefore need hammers/rondels), hordes of weak enemies (therefore want a cleaving sword/axe/hammer and heavy armor), large enemies (therefore want a polearm), and enemies with projectiles (therefore want armor/full-plate). You will also want to account for difficult terrain or the need for stealth/detection during [travel](Travel.md) in your party composition, the latter is important if you're traveling through an area with enemies that are too dangerous for your party to fight against.
 ### Mixed-Level
@@ -54,7 +75,18 @@ Rewards are proportional to difficulty, which is better thought of as a measurem
 ## Interface
 Case sites use the shared strategic location shell but expose no settlement services. The location name and description come from the site authority; Map lists the nearest off-road settlement destinations and reveals travel details only after selection; Loot contains unclaimed battle loot and the shared party inventory. Party portraits and character inspection use location-relative routes, so they work at both settlements and case sites.
 
-Location headers do not contain a quest tracker. The Map building tab carries a red exclamation while the party has an active quest. Map destination rows use a gold exclamation for available quests and a red exclamation for the party's active quest route or destination. Resolving the objective does not change the active marker to gold: it remains red while guiding the party back to the issuing settlement, until turn-in removes the active quest. Quest locations do not display a separate resolution badge over the center view.
+Generated case sites do not require or fabricate contracts. Once the active
+character knows the exact site and the party occupies it, the location exposes
+only investigation actions currently authorized at that site. A combat
+autoresolve action appears only for an open generated objective whose active
+hostile group and finale are bound to that exact site; evidence and other
+noncombat sites do not gain combat controls merely because the party arrived.
+When generated case authority resolves, including through a noncombat rescue
+or recovery, the site shows a plain completion notice and removes its
+pre-finale rest controls without exposing private cause or manifest data.
+Legacy direct bounties continue to require their accepted active contract.
+
+Location headers do not contain a quest tracker. The Map building tab carries a red exclamation while the party has an active quest. Map destination rows use a gold exclamation for available quests and a red exclamation for the party's active quest route or destination. Resolving the objective does not change the active marker to gold: it remains red while guiding the party back to the issuing settlement, until turn-in removes the active quest. The generated-case completion notice is ordinary page content rather than a marker over the center visual.
 
 So that new players don't naively accept difficult quests since they have no frame of reference for estimating their own/enemies power level, the quest should display recommended power level and their current value before they head out.
 ### Equations

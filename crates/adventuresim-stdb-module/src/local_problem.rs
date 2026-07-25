@@ -2,7 +2,10 @@
 use crate::{
     character::{character, character__view},
     settlement_population::{settlement_npc, settlement_npc_presence},
-    strategic::{settlement, strategic_gateway_authority__view},
+    strategic::{
+        ValidatedQuestGenerationAuthority, quest_generation_authority, settlement,
+        strategic_gateway_authority__view, validate_quest_generation_authority,
+    },
     time::{character_time, character_time__view, world_clock},
 };
 use adventuresim_core::local_problem as lp;
@@ -18,7 +21,9 @@ pub struct LocalProblemAuthority {
     #[index(btree)]
     pub scope_key: String,
     pub scope_json: String,
-    pub cause: String,
+    /// Symptom-to-effect mechanism only. Canonical cause belongs exclusively
+    /// to the linked generated case manifest.
+    pub consequence_mechanism: String,
     pub symptom: String,
     pub buy_bps: i32,
     pub sell_penalty_bps: i32,
@@ -76,6 +81,7 @@ pub struct LocalProblemReceipt {
     pub problem_id: String,
     pub opaque_case_ref: String,
     pub source_npc_id: String,
+    pub discovery_session_id: String,
     pub contact_npc_id: String,
     pub expected_location_id: String,
     pub safe_summary: String,
@@ -154,13 +160,12 @@ fn safe_summary(value: lp::Symptom) -> &'static str {
         lp::Symptom::VanishedLivestock => "Livestock have been disappearing from nearby holdings.",
     }
 }
-fn cause_name(value: lp::Cause) -> &'static str {
+fn route_mechanism(value: lp::Symptom) -> &'static str {
     match value {
-        lp::Cause::Bandits => "bandits",
-        lp::Cause::Goblins => "goblins",
-        lp::Cause::Ghouls => "ghouls",
-        lp::Cause::ContaminatedWell => "contaminated_well",
-        lp::Cause::Smugglers => "smugglers",
+        lp::Symptom::MissingCaravans | lp::Symptom::EmptyStalls => "route_supply_disruption",
+        lp::Symptom::NightScreams => "route_nighttime_insecurity",
+        lp::Symptom::SickLocals => "route_illness_pressure",
+        lp::Symptom::VanishedLivestock => "route_livestock_losses",
     }
 }
 fn archetype_name(value: Option<lp::EncounterArchetype>) -> &'static str {
@@ -260,6 +265,63 @@ fn official_minute(ctx: &ReducerContext) -> u64 {
         .map_or(0, |r| r.official_minutes)
 }
 
+/// Materialize only symptom and consequence authority from a fully validated
+/// canonical generated case. The caller owns the surrounding transaction.
+pub(crate) fn materialize_generated_problem(
+    ctx: &ReducerContext,
+    case: &adventuresim_core::quest_generation::GeneratedCase,
+    settlement_id: &str,
+) -> Result<(), String> {
+    let consequence = &case.consequence;
+    let scope = lp::Scope::Settlement {
+        settlement_id: settlement_id.into(),
+    };
+    let scope_key = scope_key(&scope);
+    let starts_at = official_minute(ctx);
+    let ends_at = starts_at.saturating_add(30 * 1_440);
+    let mechanism = match consequence.symptom {
+        lp::Symptom::MissingCaravans => "supply_disruption",
+        lp::Symptom::NightScreams => "nighttime_insecurity",
+        lp::Symptom::SickLocals => "community_illness",
+        lp::Symptom::EmptyStalls => "trade_disruption",
+        lp::Symptom::VanishedLivestock => "livestock_losses",
+    };
+    ctx.db
+        .local_problem_authority()
+        .insert(LocalProblemAuthority {
+            id: case.problem_id.clone(),
+            scope_key,
+            scope_json: serde_json::to_string(&scope)
+                .map_err(|_| "Could not encode generated problem scope")?,
+            consequence_mechanism: mechanism.into(),
+            symptom: symptom_name(consequence.symptom).into(),
+            buy_bps: consequence.effects.buy_bps,
+            sell_penalty_bps: consequence.effects.sell_penalty_bps,
+            encounter_frequency_bps: consequence.effects.encounter_frequency_bps,
+            encounter_archetype: archetype_name(consequence.effects.encounter_archetype).into(),
+            disease_intensity: consequence.effects.disease_intensity,
+            disease_id: if consequence.effects.disease_intensity > 0 {
+                "influenza".into()
+            } else {
+                String::new()
+            },
+            starts_at,
+            ends_at,
+            mitigation_bps: 0,
+            resolved_at: None,
+            opaque_case_ref: case.canonical_case_id.clone(),
+        });
+    ctx.db.local_problem_symptom().insert(LocalProblemSymptom {
+        problem_id: case.problem_id.clone(),
+        settlement_id: settlement_id.into(),
+        symptom: symptom_name(consequence.symptom).into(),
+        public_summary: consequence.public_summary.clone(),
+        active_from: starts_at,
+        active_until: ends_at,
+    });
+    Ok(())
+}
+
 pub fn ensure_settlement_problems(ctx: &ReducerContext, settlement_id: &str) -> Result<(), String> {
     let scope = lp::Scope::Settlement {
         settlement_id: settlement_id.into(),
@@ -297,7 +359,7 @@ pub fn ensure_settlement_problems(ctx: &ReducerContext, settlement_id: &str) -> 
             scope_key: key,
             scope_json: serde_json::to_string(&scope)
                 .map_err(|_| "Could not encode problem scope")?,
-            cause: cause_name(problem.cause).into(),
+            consequence_mechanism: route_mechanism(problem.symptom).into(),
             symptom: symptom_name(problem.symptom).into(),
             buy_bps: problem.effects.buy_bps,
             sell_penalty_bps: problem.effects.sell_penalty_bps,
@@ -366,7 +428,7 @@ pub fn ensure_route_problem(
             scope_key: key,
             scope_json: serde_json::to_string(&scope)
                 .map_err(|_| "Could not encode route scope")?,
-            cause: cause_name(problem.cause).into(),
+            consequence_mechanism: route_mechanism(problem.symptom).into(),
             symptom: symptom_name(problem.symptom).into(),
             buy_bps: 0,
             sell_penalty_bps: 0,
@@ -553,13 +615,88 @@ fn referral_text(
     tab: &str,
 ) -> String {
     let description = format!(
-        "{}, {}, with {} hair",
+        "{}, {}, with {}",
         contact.height, contact.build, contact.hair
     );
     format!(
         "{summary} Ask {}—the {}, {}, usually found at the {tab}.",
         contact.name, contact.profession, description
     )
+}
+
+fn validated_problem_generation(
+    ctx: &ReducerContext,
+    problem: &LocalProblemAuthority,
+    settlement_id: &str,
+) -> Option<ValidatedQuestGenerationAuthority> {
+    let mut candidates = Vec::new();
+    if let Some(authority) = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&problem.opaque_case_ref)
+    {
+        candidates.push(authority);
+    }
+    candidates.extend(
+        ctx.db
+            .quest_generation_authority()
+            .public_case_id()
+            .filter(&problem.opaque_case_ref),
+    );
+    candidates.sort_by(|left, right| left.case_id.cmp(&right.case_id));
+    candidates.dedup_by(|left, right| left.case_id == right.case_id);
+    if candidates.len() != 1 {
+        return None;
+    }
+    let validated = validate_quest_generation_authority(&candidates[0]).ok()?;
+    let settlement = ctx.db.settlement().id().find(&settlement_id.to_string())?;
+    if validated.manifest.canonical_case_id != problem.opaque_case_ref
+        || validated.manifest.problem_id != problem.id
+        || validated.context.settlement_id != settlement_id
+        || validated.context.settlement_name != settlement.name
+        || problem.scope_key != format!("settlement:{settlement_id}")
+    {
+        return None;
+    }
+    Some(validated)
+}
+
+fn referral_location_label(
+    ctx: &ReducerContext,
+    problem: &LocalProblemAuthority,
+    receipt: &LocalProblemReceipt,
+) -> Option<String> {
+    let validated = validated_problem_generation(ctx, problem, &receipt.settlement_id)?;
+    if problem.opaque_case_ref != receipt.opaque_case_ref || problem.id != receipt.problem_id {
+        return None;
+    }
+    validated
+        .manifest
+        .witnesses
+        .iter()
+        .find(|witness| {
+            witness.npc_id == receipt.contact_npc_id
+                && witness.expected_location == receipt.expected_location_id
+        })
+        .map(adventuresim_core::quest_generation::referral_display_location)
+        .map(str::to_owned)
+        .filter(|label| !label.is_empty())
+}
+
+fn stable_eligible_candidates<T, K: Ord>(
+    candidates: impl IntoIterator<Item = T>,
+    limit: usize,
+    mut eligible: impl FnMut(&T) -> bool,
+    mut stable_key: impl FnMut(&T) -> K,
+) -> Vec<T> {
+    let mut eligible_candidates: Vec<_> = candidates
+        .into_iter()
+        .filter(|candidate| eligible(candidate))
+        .collect();
+    eligible_candidates.sort_by_key(|candidate| stable_key(candidate));
+    eligible_candidates.truncate(limit);
+    eligible_candidates
 }
 
 pub fn surface_problem(
@@ -585,39 +722,57 @@ pub fn surface_problem(
         .find(character_id)
         .map_or(0, |t| t.minutes);
     let scope = format!("settlement:{settlement_id}");
-    let mut active_problems: Vec<_> = ctx
-        .db
-        .local_problem_authority()
-        .scope_key()
-        .filter(&scope)
-        .filter(|problem| is_active(problem, minute))
-        .take(lp::MAX_ACTIVE_PER_SCOPE)
-        .collect();
-    active_problems.sort_by(|left, right| left.id.cmp(&right.id));
-    let known = active_problems.iter().find_map(|problem| {
+    let active_problems = stable_eligible_candidates(
         ctx.db
+            .local_problem_authority()
+            .scope_key()
+            .filter(&scope)
+            .filter(|problem| is_active(problem, minute)),
+        lp::MAX_ACTIVE_PER_SCOPE,
+        |problem| validated_problem_generation(ctx, problem, &settlement_id).is_some(),
+        |problem| (problem.id.clone(), problem.opaque_case_ref.clone()),
+    );
+    for problem in &active_problems {
+        let Some(receipt) = ctx
+            .db
             .local_problem_receipt()
             .id()
             .find(&format!("{character_id}:{}", problem.id))
-    });
-    if let Some(receipt) = known {
-        if let Some(contact) = ctx.db.settlement_npc().id().find(&receipt.contact_npc_id) {
-            ctx.db
-                .local_problem_rumor_delivery()
-                .insert(LocalProblemRumorDelivery {
-                    id: format!("{session_id}:rumor"),
-                    character_id,
-                    settlement_id,
-                    session_id: session_id.into(),
-                    receipt_id: receipt.id,
-                    delivery_text: referral_text(
-                        &receipt.safe_summary,
-                        &contact,
-                        &receipt.expected_location_id,
-                    ),
-                });
-            return Ok(());
+        else {
+            continue;
+        };
+        if receipt.character_id != character_id || receipt.settlement_id != settlement_id {
+            continue;
         }
+        let Some(contact) = ctx.db.settlement_npc().id().find(&receipt.contact_npc_id) else {
+            continue;
+        };
+        let Some(location_label) = referral_location_label(ctx, problem, &receipt) else {
+            continue;
+        };
+        let present = ctx
+            .db
+            .settlement_npc_presence()
+            .npc_id()
+            .find(&receipt.contact_npc_id)
+            .is_some_and(|presence| {
+                presence.settlement_id == settlement_id
+                    && presence.location_id == receipt.expected_location_id
+            });
+        if !present {
+            continue;
+        }
+        ctx.db
+            .local_problem_rumor_delivery()
+            .insert(LocalProblemRumorDelivery {
+                id: format!("{session_id}:rumor"),
+                character_id,
+                settlement_id,
+                session_id: session_id.into(),
+                receipt_id: receipt.id,
+                delivery_text: referral_text(&receipt.safe_summary, &contact, &location_label),
+            });
+        return Ok(());
     }
     let inn_service = ctx
         .db
@@ -640,63 +795,171 @@ pub fn surface_problem(
     if lp::discovery_action(location_id, inn_available, false) != lp::DiscoveryAction::NewRumor {
         return Ok(());
     }
-    let Some(problem) = active_problems.into_iter().find(|problem| {
-        ctx.db
+    for problem in active_problems {
+        if ctx
+            .db
             .local_problem_receipt()
             .id()
             .find(&format!("{character_id}:{}", problem.id))
-            .is_none()
-    }) else {
-        return Ok(());
-    };
-    let mut contacts: Vec<_> = ctx
-        .db
-        .settlement_npc_presence()
-        .settlement_id()
-        .filter(&settlement_id)
-        .filter(|p| p.location_id != "inn")
-        .filter_map(|p| ctx.db.settlement_npc().id().find(&p.npc_id).map(|n| (p, n)))
-        .collect();
-    contacts.sort_by(|a, b| a.1.id.cmp(&b.1.id));
-    let (presence, contact) = contacts
-        .into_iter()
-        .next()
-        .ok_or("Local problem has no reliable referral contact")?;
-    let symptom = ctx
-        .db
-        .local_problem_symptom()
-        .problem_id()
-        .find(&problem.id)
-        .ok_or("Problem symptom projection missing")?;
-    let text = referral_text(&symptom.public_summary, &contact, &presence.location_id);
-    let receipt_id = format!("{character_id}:{}", problem.id);
-    ctx.db.local_problem_receipt().insert(LocalProblemReceipt {
-        id: receipt_id.clone(),
-        character_id,
-        settlement_id: settlement_id.clone(),
-        problem_id: problem.id,
-        opaque_case_ref: problem.opaque_case_ref,
-        source_npc_id: source_npc_id.into(),
-        contact_npc_id: contact.id,
-        expected_location_id: presence.location_id,
-        safe_summary: symptom.public_summary,
-        learned_at: minute,
-    });
-    ctx.db
-        .local_problem_rumor_delivery()
-        .insert(LocalProblemRumorDelivery {
-            id: format!("{session_id}:rumor"),
+            .is_some()
+        {
+            continue;
+        }
+        let Some(validated) = validated_problem_generation(ctx, &problem, &settlement_id) else {
+            continue;
+        };
+        let Some(witness) = validated.manifest.witnesses.first() else {
+            continue;
+        };
+        let Some(contact) = ctx.db.settlement_npc().id().find(&witness.npc_id) else {
+            continue;
+        };
+        let Some(presence) = ctx
+            .db
+            .settlement_npc_presence()
+            .npc_id()
+            .find(&witness.npc_id)
+            .filter(|presence| {
+                presence.settlement_id == settlement_id
+                    && presence.location_id == witness.expected_location
+            })
+        else {
+            continue;
+        };
+        let Some(symptom) = ctx
+            .db
+            .local_problem_symptom()
+            .problem_id()
+            .find(&problem.id)
+        else {
+            continue;
+        };
+        let location_label =
+            adventuresim_core::quest_generation::referral_display_location(witness);
+        if location_label.is_empty() {
+            continue;
+        }
+        let text = referral_text(&symptom.public_summary, &contact, location_label);
+        let receipt_id = format!("{character_id}:{}", problem.id);
+        ctx.db.local_problem_receipt().insert(LocalProblemReceipt {
+            id: receipt_id.clone(),
             character_id,
-            settlement_id,
-            session_id: session_id.into(),
-            receipt_id,
-            delivery_text: text,
+            settlement_id: settlement_id.clone(),
+            problem_id: problem.id,
+            opaque_case_ref: problem.opaque_case_ref,
+            source_npc_id: source_npc_id.into(),
+            discovery_session_id: session_id.into(),
+            contact_npc_id: contact.id,
+            expected_location_id: presence.location_id,
+            safe_summary: symptom.public_summary,
+            learned_at: minute,
         });
+        ctx.db
+            .local_problem_rumor_delivery()
+            .insert(LocalProblemRumorDelivery {
+                id: format!("{session_id}:rumor"),
+                character_id,
+                settlement_id,
+                session_id: session_id.into(),
+                receipt_id,
+                delivery_text: text,
+            });
+        return Ok(());
+    }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::local_problem::stable_eligible_candidates;
+
+    #[test]
+    fn deterministic_rumor_selection_skips_unbacked_or_invalid_candidates() {
+        let candidates = [
+            ("valid-d", true),
+            ("unbacked-a", false),
+            ("valid-b", true),
+            ("invalid-c", false),
+            ("valid-a", true),
+        ];
+        assert_eq!(
+            stable_eligible_candidates(
+                candidates,
+                2,
+                |(_, eligible)| *eligible,
+                |(id, _)| id.to_string(),
+            ),
+            vec![("valid-a", true), ("valid-b", true)]
+        );
+        assert!(
+            stable_eligible_candidates(
+                [("unbacked", false), ("ambiguous", false)],
+                2,
+                |(_, eligible)| *eligible,
+                |(id, _)| id.to_string(),
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn rumor_consumers_use_validated_generation_provenance_before_disclosure() {
+        let source = include_str!("local_problem.rs");
+        let authority = source
+            .split("fn validated_problem_generation")
+            .nth(1)
+            .and_then(|tail| tail.split("fn referral_location_label").next())
+            .unwrap();
+        let referral = source
+            .split("fn referral_location_label")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn surface_problem").next())
+            .unwrap();
+        let surface = source
+            .split("pub fn surface_problem")
+            .nth(1)
+            .and_then(|tail| tail.split("#[cfg(test)]").next())
+            .unwrap();
+        assert!(authority.contains("validate_quest_generation_authority"));
+        assert!(authority.contains("candidates.len() != 1"));
+        assert!(authority.contains(".case_id()"));
+        assert!(authority.contains(".public_case_id()"));
+        assert!(referral.contains("validated_problem_generation"));
+        assert!(surface.contains("validated_problem_generation"));
+        assert!(!referral.contains("serde_json::from_str"));
+        assert!(!surface.contains("serde_json::from_str"));
+        for binding in [
+            "problem.opaque_case_ref != receipt.opaque_case_ref",
+            "problem.id != receipt.problem_id",
+            "witness.npc_id == receipt.contact_npc_id",
+            "witness.expected_location == receipt.expected_location_id",
+        ] {
+            assert!(referral.contains(binding), "{binding}");
+        }
+        for binding in [
+            "manifest.canonical_case_id != problem.opaque_case_ref",
+            "manifest.problem_id != problem.id",
+            "context.settlement_id != settlement_id",
+            "context.settlement_name != settlement.name",
+        ] {
+            assert!(authority.contains(binding), "{binding}");
+        }
+        assert!(surface.contains("presence.location_id == witness.expected_location"));
+        assert!(surface.contains("stable_eligible_candidates"));
+        let selector = source
+            .split("fn stable_eligible_candidates")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn surface_problem").next())
+            .unwrap();
+        assert!(
+            selector.find(".filter(").unwrap() < selector.find(".sort_by_key(").unwrap()
+                && selector.find(".sort_by_key(").unwrap() < selector.find(".truncate(").unwrap()
+        );
+        assert!(surface.matches("continue;").count() >= 8);
+        assert!(!surface.contains("case:opaque:"));
+        assert!(!surface.contains("Manual problem"));
+    }
+
     #[test]
     fn public_schema_has_no_hidden_fields() {
         let source = include_str!("local_problem.rs");
@@ -739,6 +1002,10 @@ mod tests {
             .unwrap();
         assert!(!start.contains("local-problem-rumor"));
         assert!(!start.contains("fragments_json: serde_json::to_string(&fragments)"));
+        assert!(
+            start.find("local_problem_rumor_delivery()").unwrap()
+                < start.find("receive_local_problem_rumor").unwrap()
+        );
     }
     #[test]
     fn authoritative_purchase_seams_apply_problem_price_after_base_quote() {
@@ -768,10 +1035,43 @@ mod tests {
     fn discovery_and_outcome_boundaries_are_bounded() {
         let source = include_str!("local_problem.rs");
         assert!(source.contains("has_service(adventuresim_world_schema::SettlementService::Inn)"));
-        assert!(source.contains("take(lp::MAX_ACTIVE_PER_SCOPE)"));
+        assert!(source.contains("stable_eligible_candidates"));
+        assert!(source.contains("eligible_candidates.truncate(limit)"));
         let discovery = source.split("pub fn surface_problem").nth(1).unwrap();
         assert!(!discovery.contains("local_problem_receipt()\n        .character_id()"));
         assert!(source.contains("Conflicting retry for source outcome ID"));
         assert!(source.contains("input.at_minute != official_minute(ctx)"));
+    }
+
+    #[test]
+    fn generated_referrals_bind_persistent_npcs_without_revealing_testimony() {
+        let local = include_str!("local_problem.rs");
+        let surface = local.split("pub fn surface_problem").nth(1).unwrap();
+        assert!(surface.contains("validated.manifest.witnesses.first()"));
+        assert!(surface.contains("settlement_npc().id().find(&witness.npc_id)"));
+        assert!(surface.contains("presence.location_id == witness.expected_location"));
+        assert!(surface.contains("contact_npc_id: contact.id"));
+        assert!(surface.contains("discovery_session_id: session_id.into()"));
+
+        let strategic = include_str!("strategic.rs");
+        let start = strategic
+            .split("pub fn start_dialogue")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn join_dialogue_session").next())
+            .unwrap();
+        assert!(!start.contains("persist_generated_testimony("));
+        let receive = strategic
+            .split("fn receive_referred_testimony")
+            .nth(1)
+            .and_then(|tail| tail.split("fn resolve_dialogue_fragments").next())
+            .unwrap();
+        assert!(receive.contains("referred_generated_witness"));
+        assert!(receive.contains("&receipt.opaque_case_ref"));
+        assert!(receive.contains("&live_npc.id"));
+        assert!(receive.contains("&session.settlement_id"));
+        assert!(receive.contains("&session.location_id"));
+        assert!(!receive.contains("manifest.witnesses"));
+        assert!(receive.contains("persist_generated_testimony("));
+        assert!(!start.contains("accept_contract("));
     }
 }

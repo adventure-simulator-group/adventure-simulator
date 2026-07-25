@@ -6,7 +6,7 @@ use super::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use super::{empty_state, item_display_name, item_type_icon, sidebar_section};
 use crate::routes::travel::TravelDestination;
 use crate::spacetimedb::{
-    AutoresolveReport, BackendCaseSitePin, BattleLootItem, ContractPresentation,
+    AutoresolveReport, BackendCaseSitePin, BackendInvestigationAction, BattleLootItem,
     InventoryQuantityTarget, ItemDefinition, PartyInventoryItem,
 };
 use crate::{
@@ -17,9 +17,25 @@ use crate::{
     },
 };
 
+pub struct CaseSitePagePresentation {
+    pub title: String,
+    pub action_id: String,
+    pub allow_tactical_combat: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CaseSiteRecoveryNotice {
+    pub member_names: String,
+    pub causes: String,
+    pub resource_blocked: bool,
+    pub withdrawal_destination: String,
+    pub withdrawal_href: String,
+}
+
 pub fn quest_location_map_page(
-    quest: &ContractPresentation,
+    presentation: &CaseSitePagePresentation,
     site: &BackendCaseSitePin,
+    onsite_actions: &[BackendInvestigationAction],
     nearby: &[TravelDestination],
     selected_id: Option<&str>,
     active_character: Option<&Character>,
@@ -32,6 +48,7 @@ pub fn quest_location_map_page(
     can_configure_travel: bool,
     default_rest_minutes: u64,
     soap_preview: super::settlement::SoapRestPreview,
+    recovery_notice: Option<&CaseSiteRecoveryNotice>,
     logged_in_as: Option<&str>,
 ) -> Markup {
     let selected = selected_id.and_then(|id| nearby.iter().find(|entry| entry.id == id));
@@ -41,6 +58,7 @@ pub fn quest_location_map_page(
             selected_id,
             &format!("/locations/case-site/{}/map", site.case_site_id),
             html! {
+                @if !resolved {
                 section class="rest-service-menu quest-rest-menu" aria-label="Destination rest" {
                     (party_rest_menu(
                         &format!("/locations/case-site/{}/map/rest", site.case_site_id),
@@ -52,11 +70,13 @@ pub fn quest_location_map_page(
                         soap_preview,
                     ))
                 }
+                }
             },
         ))
         (quest_location_center(
-            quest,
+            presentation,
             site,
+            onsite_actions,
             active_character,
             party_members,
             can_fight,
@@ -64,13 +84,15 @@ pub fn quest_location_map_page(
             autoresolve_report,
             None,
             false,
+            recovery_notice,
+            true,
         ))
         (map_destination_detail(
             selected,
             None,
             false,
             can_travel,
-            false,
+            None,
             None,
             party,
             can_configure_travel,
@@ -79,8 +101,8 @@ pub fn quest_location_map_page(
         ))
     };
     super::quest_location_layout_with_session(
-        &format!("{} map", quest.title),
-        &quest.title,
+        &format!("{} map", presentation.title),
+        &presentation.title,
         &site.case_site_id,
         "map",
         content,
@@ -89,8 +111,9 @@ pub fn quest_location_map_page(
 }
 
 fn quest_location_center(
-    quest: &ContractPresentation,
+    presentation: &CaseSitePagePresentation,
     site: &BackendCaseSitePin,
+    onsite_actions: &[BackendInvestigationAction],
     active_character: Option<&Character>,
     party_members: &[Character],
     can_fight: bool,
@@ -98,10 +121,52 @@ fn quest_location_center(
     autoresolve_report: Option<&AutoresolveReport>,
     travel_planner: Option<Markup>,
     show_combat_actions: bool,
+    recovery_notice: Option<&CaseSiteRecoveryNotice>,
+    map_tab: bool,
 ) -> Markup {
     let autoresolve_messages = autoresolve_info_messages(autoresolve_report);
     html! {
         main class="center-content settlement-main quest-location-main" {
+            @if resolved {
+                section class="strategic-notice quest-complete-notice" role="status" {
+                    h3 { "Quest complete" }
+                    p { "The local problem has been resolved." }
+                }
+            }
+            @if let Some(notice) = recovery_notice {
+                section class="strategic-notice quest-recovery-notice" role="status" {
+                    h3 { "Party recovery" }
+                    p {
+                        (&notice.member_names) " "
+                        @if notice.causes.is_empty() {
+                            "cannot currently act."
+                        } @else {
+                            "cannot currently act because of " (&notice.causes) "."
+                        }
+                    }
+                    @if notice.resource_blocked {
+                        p {
+                            "Field rest does not provide food or water. Resting longer may worsen these deficits."
+                        }
+                    } @else {
+                        p {
+                            "Field rest can reduce fatigue and permit natural recovery, but severe conditions may require settlement care."
+                        }
+                    }
+                    p {
+                        "An incapacitated party may still withdraw to a settlement. The journey costs time and carries normal travel risk; supplies and care become available after arrival."
+                    }
+                    p {
+                        a class="btn btn-secondary" href=(&notice.withdrawal_href) {
+                            @if map_tab {
+                                "Select " (&notice.withdrawal_destination) " and begin journey"
+                            } @else {
+                                "Open map and select " (&notice.withdrawal_destination)
+                            }
+                        }
+                    }
+                }
+            }
             (party_portrait_overlay(
                 party_members,
                 active_character,
@@ -111,13 +176,18 @@ fn quest_location_center(
             ))
             div class="quest-visual-wrap" {
                 (visual_stage("quest", &site.name, &site.description))
-                @if show_combat_actions && (can_fight || !resolved) {
+                @if show_combat_actions
+                    && (can_fight
+                        || (presentation.allow_tactical_combat && !resolved)
+                        || autoresolve_report.is_some_and(|report| report.victor == "enemies")) {
                 div class="quest-combat-actions" aria-label="Quest actions" {
                     @if can_fight {
-                        form action="/missions/enter" method="post" {
-                            button type="submit" class="btn btn-danger" { "Initiate Combat" }
+                        @if presentation.allow_tactical_combat {
+                            form action="/missions/enter" method="post" {
+                                button type="submit" class="btn btn-danger" { "Initiate Combat" }
+                            }
                         }
-                        form action=(format!("/quests/{}/autoresolve", quest.id)) method="post" {
+                        form action=(format!("/quests/{}/autoresolve", site.case_site_id)) method="post" {
                             button type="submit" class="btn btn-primary" { "Autoresolve" }
                         }
                     } @else if autoresolve_report.is_some_and(|report| report.victor == "enemies") {
@@ -128,8 +198,21 @@ fn quest_location_center(
                 }
                 }
             }
+            @if !onsite_actions.is_empty() {
+                section class="quest-onsite-investigation" aria-label="Onsite investigation" {
+                    h3 { "Investigate here" }
+                    @for action in onsite_actions {
+                        form method="post" action="/quests/actions" {
+                            input type="hidden" name="action_id" value=(&action.action_id);
+                            input type="hidden" name="method" value=(&action.method);
+                            input type="hidden" name="expected_version" value=(action.expected_version);
+                            button type="submit" { (&action.summary) }
+                        }
+                    }
+                }
+            }
             @if let Some(travel_planner) = travel_planner { (travel_planner) }
-            (settlement_chat_area_with_info(&quest.title, active_character, &autoresolve_messages))
+            (settlement_chat_area_with_info(&presentation.title, active_character, &autoresolve_messages))
         }
     }
 }
@@ -149,8 +232,9 @@ fn autoresolve_info_messages(report: Option<&AutoresolveReport>) -> Vec<String> 
 
 /// Enemy encounter and, once resolved, its loot at an off-road quest location.
 pub fn quest_location_enemy_page(
-    quest: &ContractPresentation,
+    presentation: &CaseSitePagePresentation,
     site: &BackendCaseSitePin,
+    onsite_actions: &[BackendInvestigationAction],
     active_character: Option<&Character>,
     party_members: &[Character],
     can_fight: bool,
@@ -160,6 +244,7 @@ pub fn quest_location_enemy_page(
     can_configure_travel: bool,
     default_rest_minutes: u64,
     soap_preview: super::settlement::SoapRestPreview,
+    recovery_notice: Option<&CaseSiteRecoveryNotice>,
     loot: &[BattleLootItem],
     pooled: &[PartyInventoryItem],
     stake: u64,
@@ -209,7 +294,7 @@ pub fn quest_location_enemy_page(
                                 }
                             }
                     }}.render())
-                    (loot_stage_form(&quest.id))
+                    (loot_stage_form(&presentation.action_id))
                     (super::settlement::inventory_footer_controls("loot", "Move loot to targets", "Move all loot"))
                 }
                 }))
@@ -217,8 +302,9 @@ pub fn quest_location_enemy_page(
         }
 
         (quest_location_center(
-            quest,
+            presentation,
             site,
+            onsite_actions,
             active_character,
             party_members,
             can_fight,
@@ -226,6 +312,8 @@ pub fn quest_location_enemy_page(
             autoresolve_report,
             None,
             true,
+            recovery_notice,
+            false,
         ))
 
         aside class=(if resolved { "right-sidebar" } else { "right-sidebar travel-preferences-only-sidebar" })
@@ -269,8 +357,8 @@ pub fn quest_location_enemy_page(
         }
     };
     super::quest_location_layout_with_session(
-        &quest.title,
-        &quest.title,
+        &presentation.title,
+        &presentation.title,
         &site.case_site_id,
         "enemy",
         content,
@@ -338,5 +426,243 @@ mod tests {
         }];
         assert_eq!(inventory_target(&targets, "sword"), 4);
         assert_eq!(inventory_target(&targets, "shield"), 0);
+    }
+
+    #[test]
+    fn generated_site_offers_authorized_investigation_and_strategic_finale_only() {
+        let presentation = CaseSitePagePresentation {
+            title: "Travellers have gone missing".into(),
+            action_id: "site:known".into(),
+            allow_tactical_combat: false,
+        };
+        let site = BackendCaseSitePin {
+            owner_character_id: 7,
+            case_id: "journal:case".into(),
+            case_site_id: "site:known".into(),
+            origin_settlement_id: "settlement".into(),
+            name: "a camp in the woods".into(),
+            description: "A known place.".into(),
+            scene_key: "forest".into(),
+            longitude_e7: 0,
+            latitude_e7: 0,
+            coordinates_are_geographic: false,
+            distance_m: 4_000,
+            knowledge_stage: "visited".into(),
+            tracked: false,
+            display_title: presentation.title.clone(),
+            generated_case: true,
+            case_resolved: false,
+            combat_available: true,
+        };
+        let action = BackendInvestigationAction {
+            owner_character_id: 7,
+            action_id: "action:inspect".into(),
+            method: "inspect_site".into(),
+            expected_version: 2,
+            summary: "Inspect the camp".into(),
+            known_prerequisites: String::new(),
+            duration_min_minutes: 15,
+            duration_max_minutes: 45,
+            uncertainty_bps: 2000,
+            skill_contributions: "awareness".into(),
+            weather_available: false,
+            required_case_site_id: site.case_site_id.clone(),
+            available: true,
+            can_travel_to_required_site: false,
+            unavailable_reason: String::new(),
+        };
+        let markup = quest_location_center(
+            &presentation,
+            &site,
+            &[action],
+            None,
+            &[],
+            true,
+            false,
+            None,
+            None,
+            true,
+            None,
+            false,
+        )
+        .into_string();
+        assert!(markup.contains("action=\"/quests/actions\""));
+        assert!(markup.contains("Inspect the camp"));
+        assert!(markup.contains("/quests/site:known/autoresolve"));
+        assert!(!markup.contains("/missions/enter"));
+    }
+
+    #[test]
+    fn unresolved_generated_noncombat_site_has_no_combat_panel() {
+        let presentation = CaseSitePagePresentation {
+            title: "A trail ends at the old well".into(),
+            action_id: "site:evidence".into(),
+            allow_tactical_combat: false,
+        };
+        let site = BackendCaseSitePin {
+            owner_character_id: 7,
+            case_id: "journal:case".into(),
+            case_site_id: "site:evidence".into(),
+            origin_settlement_id: "settlement".into(),
+            name: "the old well".into(),
+            description: "A place to inspect.".into(),
+            scene_key: "village".into(),
+            longitude_e7: 0,
+            latitude_e7: 0,
+            coordinates_are_geographic: false,
+            distance_m: 100,
+            knowledge_stage: "visited".into(),
+            tracked: false,
+            display_title: presentation.title.clone(),
+            generated_case: true,
+            case_resolved: false,
+            combat_available: false,
+        };
+        let markup = quest_location_center(
+            &presentation,
+            &site,
+            &[],
+            None,
+            &[],
+            false,
+            false,
+            None,
+            None,
+            true,
+            None,
+            false,
+        )
+        .into_string();
+        assert!(!markup.contains("quest-combat-actions"));
+        assert!(!markup.contains("Waiting for party leader"));
+        assert!(!markup.contains("Autoresolve"));
+        assert!(!markup.contains("/missions/enter"));
+    }
+
+    #[test]
+    fn resolved_generated_noncombat_site_shows_clear_completion() {
+        let presentation = CaseSitePagePresentation {
+            title: "A missing villager".into(),
+            action_id: "site:rescue".into(),
+            allow_tactical_combat: false,
+        };
+        let site = BackendCaseSitePin {
+            owner_character_id: 7,
+            case_id: "journal:case".into(),
+            case_site_id: "site:rescue".into(),
+            origin_settlement_id: "settlement".into(),
+            name: "a camp in the woods".into(),
+            description: "The captive was found here.".into(),
+            scene_key: "forest".into(),
+            longitude_e7: 0,
+            latitude_e7: 0,
+            coordinates_are_geographic: false,
+            distance_m: 100,
+            knowledge_stage: "visited".into(),
+            tracked: false,
+            display_title: presentation.title.clone(),
+            generated_case: true,
+            case_resolved: true,
+            combat_available: false,
+        };
+
+        let markup = quest_location_center(
+            &presentation,
+            &site,
+            &[],
+            None,
+            &[],
+            false,
+            true,
+            None,
+            None,
+            true,
+            None,
+            false,
+        )
+        .into_string();
+
+        assert!(markup.contains("Quest complete"));
+        assert!(markup.contains("The local problem has been resolved."));
+        assert!(!markup.contains("quest-combat-actions"));
+    }
+
+    #[test]
+    fn resource_blocked_recovery_notice_is_truthful_and_actionable() {
+        let presentation = CaseSitePagePresentation {
+            title: "The old graveyard".into(),
+            action_id: "site:old-graveyard".into(),
+            allow_tactical_combat: false,
+        };
+        let site = BackendCaseSitePin {
+            owner_character_id: 7,
+            case_id: "journal:case".into(),
+            case_site_id: "site:old-graveyard".into(),
+            origin_settlement_id: "settlement".into(),
+            name: "the old graveyard".into(),
+            description: "A place to inspect.".into(),
+            scene_key: "graveyard".into(),
+            longitude_e7: 0,
+            latitude_e7: 0,
+            coordinates_are_geographic: false,
+            distance_m: 100,
+            knowledge_stage: "visited".into(),
+            tracked: false,
+            display_title: presentation.title.clone(),
+            generated_case: true,
+            case_resolved: false,
+            combat_available: false,
+        };
+        let notice = CaseSiteRecoveryNotice {
+            member_names: "Lukas".into(),
+            causes: "hunger, thirst".into(),
+            resource_blocked: true,
+            withdrawal_destination: "Ironforge".into(),
+            withdrawal_href: "/locations/case-site/site:old-graveyard/map?destination=ironforge"
+                .into(),
+        };
+        let enemy = quest_location_center(
+            &presentation,
+            &site,
+            &[],
+            None,
+            &[],
+            false,
+            false,
+            None,
+            None,
+            false,
+            Some(&notice),
+            false,
+        )
+        .into_string();
+        assert!(enemy.contains("Lukas"));
+        assert!(enemy.contains("hunger, thirst"));
+        assert!(enemy.contains("Field rest does not provide food or water"));
+        assert!(enemy.contains("Resting longer may worsen"));
+        assert!(enemy.contains("costs time and carries normal travel risk"));
+        assert!(enemy.contains("supplies and care become available after arrival"));
+        assert!(enemy.contains("Open map and select Ironforge"));
+        assert!(enemy.contains(
+            "href=\"/locations/case-site/site:old-graveyard/map?destination=ironforge\""
+        ));
+        assert!(!enemy.contains("guaranteed"));
+
+        let map = quest_location_center(
+            &presentation,
+            &site,
+            &[],
+            None,
+            &[],
+            false,
+            false,
+            None,
+            None,
+            false,
+            Some(&notice),
+            true,
+        )
+        .into_string();
+        assert!(map.contains("Select Ironforge and begin journey"));
     }
 }

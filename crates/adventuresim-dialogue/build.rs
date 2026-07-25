@@ -84,6 +84,7 @@ enum BuildEffect {
     BeginApprenticeship { profession: String },
     ExamineDisease,
     SetFlag { flag: String, value: bool },
+    ReceiveReferredTestimony,
     InvestigationAction { action: String },
 }
 
@@ -128,6 +129,9 @@ fn validate_effect(effect: &BuildEffect, relative: &str) {
                     | "present_proof"
                     | "present_testimony"
                     | "negotiate"
+                    | "return_asset"
+                    | "release_subject"
+                    | "exchange_asset"
                     | "report_to_issuer"
             ),
             "unknown investigation action {action} in {relative}"

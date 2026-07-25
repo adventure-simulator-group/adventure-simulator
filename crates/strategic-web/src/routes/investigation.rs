@@ -19,8 +19,8 @@ use crate::{
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/journal", get(journal))
-        .route("/journal/actions", post(perform_action))
+        .route("/quests", get(journal))
+        .route("/quests/actions", post(perform_action))
 }
 
 async fn journal(State(state): State<AppState>, session: Session) -> Response {
@@ -41,6 +41,16 @@ async fn journal(State(state): State<AppState>, session: Session) -> Response {
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     };
+    journal_response(&state, &character, None, StatusCode::OK).await
+}
+
+async fn journal_response(
+    state: &AppState,
+    character: &Character,
+    feedback: Option<&str>,
+    status: StatusCode,
+) -> Response {
+    let character_id = character.id;
     // Defense in depth: the gateway view is already sanitized, and SSR still
     // scopes every query to the selected session character.
     let entries_sql = format!(
@@ -71,7 +81,20 @@ async fn journal(State(state): State<AppState>, session: Session) -> Response {
             leads.sort_by_key(|row| (row.case_id.clone(), row.recorded_at));
             actions.sort_by_key(|row| (row.summary.clone(), row.action_id.clone()));
             outcomes.sort_by_key(|row| row.recorded_at);
-            Html(journal_page(&entries, &leads, &actions, &outcomes, &character.name).into_string())
+            (
+                status,
+                Html(
+                    journal_page(
+                        &entries,
+                        &leads,
+                        &actions,
+                        &outcomes,
+                        &character.name,
+                        feedback,
+                    )
+                    .into_string(),
+                ),
+            )
                 .into_response()
         }
         (Err(error), _, _, _)
@@ -81,6 +104,16 @@ async fn journal(State(state): State<AppState>, session: Session) -> Response {
             tracing::error!(%error, character_id, "sanitized investigation projection failed");
             StatusCode::SERVICE_UNAVAILABLE.into_response()
         }
+    }
+}
+
+fn safe_investigation_action_error(error: &str) -> &'static str {
+    if error.contains("incapacitated") {
+        "An incapacitated party member must recover before the party can investigate."
+    } else if error.contains("occupy the action's authoritative site") {
+        "Travel to the known investigation site before attempting that action."
+    } else {
+        "That investigation route is no longer available. The journal now shows the routes supported by your current leads."
     }
 }
 
@@ -110,16 +143,60 @@ async fn perform_action(
     )
     .await
     {
-        Ok(_) => Redirect::to("/journal").into_response(),
+        Ok(_) => Redirect::to("/quests").into_response(),
         Err(error) => {
             tracing::warn!(%error, character_id, "investigation action rejected");
-            (StatusCode::CONFLICT, error).into_response()
+            let feedback = safe_investigation_action_error(&error);
+            match state
+                .db
+                .query_one::<Character>(&format!(
+                    "SELECT * FROM character WHERE id = {character_id}"
+                ))
+                .await
+            {
+                Ok(Some(character)) => {
+                    journal_response(&state, &character, Some(feedback), StatusCode::CONFLICT).await
+                }
+                _ => (
+                    StatusCode::CONFLICT,
+                    Html(
+                        crate::templates::strategic_notice_page(
+                            "Investigation route unavailable",
+                            feedback,
+                            "/quests",
+                            "Return to journal",
+                            None,
+                        )
+                        .into_string(),
+                    ),
+                )
+                    .into_response(),
+            }
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::safe_investigation_action_error;
+
+    #[test]
+    fn rejected_actions_map_to_visible_player_safe_feedback() {
+        assert_eq!(
+            safe_investigation_action_error(
+                "An incapacitated party member must recover before the party can act"
+            ),
+            "An incapacitated party member must recover before the party can investigate."
+        );
+        assert_eq!(
+            safe_investigation_action_error(
+                "The party must occupy the action's authoritative site"
+            ),
+            "Travel to the known investigation site before attempting that action."
+        );
+        assert!(!safe_investigation_action_error("private target id 123").contains("123"));
+    }
+
     #[test]
     fn route_filters_both_safe_views_to_the_session_observer() {
         let source = include_str!("investigation.rs");
@@ -145,5 +222,14 @@ mod tests {
         assert!(!production.contains("seed"));
         assert!(!production.contains("investigation_case_authority"));
         assert!(!production.contains("investigation_evidence_authority"));
+        assert!(production.contains(".route(\"/quests\", get(journal))"));
+        assert!(production.contains(".route(\"/quests/actions\", post(perform_action))"));
+        assert!(production.contains("Redirect::to(\"/quests\")"));
+        assert!(production.contains("journal_response("));
+        assert!(production.contains("safe_investigation_action_error"));
+        assert!(!production.contains(".route(\"/journal"));
+        assert!(!production.contains("Redirect::to(\"/journal\")"));
+        assert!(!production.contains(".route(\"/investigations"));
+        assert!(!production.contains("Redirect::to(\"/investigations\")"));
     }
 }

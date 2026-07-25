@@ -116,9 +116,7 @@ impl PartyAction {
             Self::TravelToSettlement { settlement_id, .. } => {
                 format!("Travel to settlement {settlement_id}")
             }
-            Self::TravelToCaseSite { case_site_id, .. } => {
-                format!("Travel to case site {case_site_id}")
-            }
+            Self::TravelToCaseSite { .. } => "Travel to investigation site".into(),
             Self::RemovePartyMember { character_id } => {
                 format!("Remove party member {character_id}")
             }
@@ -300,6 +298,30 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<PartyAction>(&encoded).unwrap(),
             action
+        );
+    }
+
+    #[test]
+    fn only_settlement_withdrawal_is_readiness_exempt() {
+        assert!(
+            !PartyAction::TravelToSettlement {
+                settlement_id: "ironforge".into()
+            }
+            .requires_ready_party()
+        );
+        assert!(
+            PartyAction::TravelToCaseSite {
+                case_site_id: "site:old-graveyard".into()
+            }
+            .requires_ready_party()
+        );
+        assert!(
+            PartyAction::PerformInvestigation {
+                action_id: "action:inspect".into(),
+                method: "inspect_site".into(),
+                expected_version: 1,
+            }
+            .requires_ready_party()
         );
     }
 

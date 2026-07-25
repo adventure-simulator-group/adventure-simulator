@@ -26,6 +26,11 @@ and derives an observer-facing case ID from the public problem ID. It never
 projects `opaque_case_ref`, consults the problem cause, or silently grants a
 contact's current location.
 
+Generated cases privately map canonical, investigation, and public journal
+identities. Dialogue eligibility accepts only those exact aliases plus
+session-relevant rumor, testimony, belief, evidence, or custody provenance; it
+never searches arbitrary cases the character happens to know.
+
 Runtime testimony generation is a private production pipeline. Server-authored
 perception, memory, disclosure, and transmission stages are persisted as a
 private bundle, then issue a private, one-use, character-owned safe receipt.
@@ -62,6 +67,10 @@ observer-specific visited location. Only the last two stages may carry a pin.
 An incorrect exact account remains the observer's destination until a sourced
 correction revises it.
 
+Generated corrections reuse the proposition ID they revise. A later witness or
+evidence receipt creates the revision and marks the earlier lead corrected;
+private materialization alone does not remove the observer's false pin.
+
 Strategic destinations have stable case-site IDs independent of quests and
 contracts. Character and party location, journey endpoints, camp continuation,
 terrain planning, map links, and tactical scene selection all use the case-site
@@ -78,7 +87,10 @@ prototype flow without making quest state the location authority.
 
 Available-quest, quest-giver/service, issuer-route, and turn-in exclamation
 markers are absent. Exact case-site pins are knowledge projections, not quest
-markers. Recruitment indicators are a separate social feature.
+markers. Reported exact locations and visited sites are labeled separately;
+an active-contract badge appears only when the party's active contract
+explicitly matches that case. Recruitment indicators are a separate social
+feature.
 
 ## Threat inference
 
@@ -99,10 +111,14 @@ success thresholds, and weights never enter browser state.
 The initial action vocabulary is inspect site, search area, follow or reacquire
 tracks, locate a contact, watch, patrol, lay an ambush, and approach a lead.
 Rumors materialize all nine as two linked routes: witness-led search and
-observation-led interception. Only the two roots begin active; successful
-actions unlock their successors and failed actions reactivate a validated
-same-owner, same-case alternate. Approximate areas are private strategic
-geometry, not client-authored destinations.
+observation-led interception. A recurring case begins with the exact referred
+contact; succeeding there unlocks inactive approach and watch branches.
+Disappearance/loss cases instead retain independent physical and witness roots.
+Successful actions unlock their successors, and failed actions reactivate a
+validated same-owner, same-case alternate. Failure text reports whether any
+other currently live-supported case route remains, including a patrol already
+supported by its exact clue. Approximate areas are private strategic geometry,
+not client-authored destinations.
 Resolution uses authoritative terrain, time of day, evidence age, relevant
 skills, bounded party assistance, and observer familiarity. Weather is
 explicitly unavailable until the strategic layer owns authoritative weather;
@@ -112,7 +128,9 @@ Every attempt is idempotent and consumes strenuous strategic time, including a
 failed attempt. Failure may increase risk or uncertainty, but it does not
 silently invalidate alternate investigation routes. Approximate discoveries
 remain directions or areas. An exact map pin is disclosed only when an
-authoritative result supports exact observer knowledge. Watches, patrols, and
+authoritative result supports exact observer knowledge. Journal and map-pin
+text use the site's safe generated name; opaque site IDs remain navigation
+authority and are not shown as destination labels. Watches, patrols, and
 ambush preparation remain strategic actions; they do not persist tactical tick
 state and cannot fabricate a combat result.
 Before spending time the reducer revalidates party readiness, co-location,

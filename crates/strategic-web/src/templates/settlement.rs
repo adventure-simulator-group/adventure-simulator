@@ -163,7 +163,7 @@ impl ActivityPreviewRates {
             .max(capability.athletics)
             .max(capability.endurance);
         Self {
-            labor_gold_per_hour: (strength.max(0.0) + endurance.max(0.0)) / 8.0,
+            labor_gold_per_hour: (strength.max(0.0) + endurance.max(0.0)) / 4.0,
             thievery_gold_per_hour: population.max(0.0) * (1.0 + stealth.max(0.0)) / 8.0,
             thievery_virtue_per_hour: -population.max(0.0) * 0.5 / (1.0 + stealth.max(0.0)),
             raiding_gold_per_hour: (2.0 + combat.max(0.0)) / 6.0,
@@ -319,7 +319,8 @@ pub enum MerchantShop {
 
 pub struct RestSummary {
     pub minutes: u64,
-    pub gold_spent: u32,
+    pub full_board_gold_spent: u32,
+    pub additional_gold_spent: u32,
     pub gold_earned: u32,
     pub notoriety_gained: f32,
     pub healed: Vec<(String, f32)>,
@@ -530,6 +531,31 @@ pub fn alchemy_page(
 
 /// Settlement information and the next destinations on the imported road and
 /// ferry network.
+fn settlement_has_keep(category: &SettlementCategory) -> bool {
+    matches!(
+        category,
+        SettlementCategory::Town | SettlementCategory::City | SettlementCategory::Capital
+    )
+}
+
+fn public_square_place_link(settlement: &Settlement, current: bool) -> Markup {
+    use adventuresim_core::settlement_economy::{player_visible_npc_tabs, visible_npc_tab};
+
+    let tabs = player_visible_npc_tabs(
+        &settlement.economy,
+        settlement_has_keep(&settlement.category),
+    );
+    let tab = visible_npc_tab(&tabs, "overview")
+        .expect("every settlement exposes its overview as a navigable NPC tab");
+    html! {
+        a href=(format!("/locations/settlement/{}", settlement.id))
+            class=(if current { "active" } else { "" })
+            aria-current=(if current { "page" } else { "false" }) {
+            (tab.label)
+        }
+    }
+}
+
 pub fn settlement_overview_page(
     settlement: &Settlement,
     aliases: &[SettlementAlias],
@@ -566,8 +592,9 @@ pub fn settlement_overview_page(
             }))
             (sidebar_section("Places", html! {
                 nav aria-label="Settlement places" {
+                    (public_square_place_link(settlement, true))
                     a href=(format!("/settlements/{}/places/residences", settlement.id)) { "Residences" }
-                    @if matches!(settlement.category, SettlementCategory::Town | SettlementCategory::City | SettlementCategory::Capital) {
+                    @if settlement_has_keep(&settlement.category) {
                         a href=(format!("/settlements/{}/places/keep", settlement.id)) { "Keep" }
                     }
                 }
@@ -630,9 +657,9 @@ pub fn settlement_npc_location_page(
         aside class="left-sidebar" {
             (sidebar_section("Places", html! {
                 nav aria-label="Settlement places" {
-                    a href=(format!("/locations/settlement/{}", settlement.id)) { "Public square" }
+                    (public_square_place_link(settlement, false))
                     a href=(format!("/settlements/{}/places/residences", settlement.id)) { "Residences" }
-                    @if matches!(settlement.category, SettlementCategory::Town | SettlementCategory::City | SettlementCategory::Capital) {
+                    @if settlement_has_keep(&settlement.category) {
                         a href=(format!("/settlements/{}/places/keep", settlement.id)) { "Keep" }
                     }
                 }
@@ -717,6 +744,7 @@ pub fn settlement_map_page(
     soap_preview: SoapRestPreview,
     can_travel: bool,
     provision_forecast: Option<&TravelProvisionForecast>,
+    provisioning_path: Option<&str>,
     is_current_settlement: bool,
     abandonable_quest: Option<&ContractPresentation>,
     logged_in_as: Option<&str>,
@@ -727,7 +755,7 @@ pub fn settlement_map_page(
     let base_path = format!("/locations/settlement/{}/map", settlement.id);
     let connected_ids = destinations
         .iter()
-        .filter(|destination| !destination.quest_in_progress)
+        .filter(|destination| !destination.round_trip_destination)
         .map(|destination| destination.id.as_str())
         .collect::<BTreeSet<_>>();
     let content = html! {
@@ -781,7 +809,7 @@ pub fn settlement_map_page(
             selected_settlement,
             selected_settlement.is_some_and(|destination| destination.id == settlement.id),
             can_travel,
-            true,
+            provisioning_path,
             provision_forecast,
             active_party,
             active_party.is_some_and(|party| party.leader_id == active_character.map_or(0, |character| character.id)),
@@ -869,7 +897,7 @@ fn map_destination_list_with_context(
                                 data-travel-name=(&destination.name)
                                 data-travel-description=[destination_tooltip.as_deref()]
                                 data-travel-minutes=(destination.journey_minutes)
-                                data-travel-round-trip=(destination.quest_in_progress)
+                                data-travel-round-trip=(destination.round_trip_destination)
                                 data-travel-camp-stops=(format_camp_stops(&destination.camp_stop_minutes))
                                 data-travel-camp-forecasts=(format_camp_forecasts(destination))
                                 data-travel-distance=(format_distance(destination.distance_m)) {
@@ -885,7 +913,12 @@ fn map_destination_list_with_context(
                                         data-waterskin-ml=(forecast.waterskin_capacity_ml) {}
                                 }
                                 strong { (&destination.name) }
-                                @if destination.quest_in_progress {
+                                @if let Some(knowledge) = destination.case_site_knowledge {
+                                    span class="text-muted small-copy destination-case-site-status" {
+                                        (knowledge.label())
+                                    }
+                                }
+                                @if destination.active_contract_destination {
                                     span class="destination-quest-badge" title=(destination_tooltip.as_deref().unwrap_or("Active quest destination"))
                                         aria-label="Active quest destination" { "!" }
                                 }
@@ -952,7 +985,7 @@ pub(crate) fn map_destination_detail(
     selected_settlement: Option<&Settlement>,
     selected_is_current: bool,
     can_travel: bool,
-    provisioning_available: bool,
+    provisioning_path: Option<&str>,
     provision_forecast: Option<&TravelProvisionForecast>,
     party: Option<&Party>,
     can_configure_travel: bool,
@@ -962,14 +995,6 @@ pub(crate) fn map_destination_detail(
     let camp_fatigue_percent = party.map_or(50, |party| party.camp_fatigue_percent);
     let travel_disabled = party.is_some_and(|party| party.walking_minutes_per_day == 0);
     let inspecting_nonroute = selected.is_none() && selected_settlement.is_some();
-    let market_path = format!(
-        "/settlements/{}/merchants",
-        map_path
-            .trim_end_matches("/map")
-            .rsplit('/')
-            .next()
-            .unwrap_or("")
-    );
     html! {
         aside class=(if party.is_some() && can_configure_travel && !inspecting_nonroute { "right-sidebar travel-configuration-sidebar" } else { "right-sidebar" }) {
             @if party.is_some() && can_configure_travel {
@@ -978,7 +1003,7 @@ pub(crate) fn map_destination_detail(
                     (travel_planner_bar(selected, camp_fatigue_percent))
                 }
                 (travel_preferences_form(party.expect("party checked above"), &format!("{map_path}/travel-configuration")))
-                @if provisioning_available {
+                @if let Some(provisioning_path) = provisioning_path {
                     div class="travel-provisioning-control" data-provisioning-control {
                         div class="travel-provisioning-input" {
                             input type="hidden" value="0" data-target-surplus;
@@ -1001,10 +1026,10 @@ pub(crate) fn map_destination_detail(
                             }
                             @if let Some(forecast) = provision_forecast {
                                 a class="btn btn-secondary" data-provision-buy
-                                    data-market-path=(&market_path)
+                                    data-market-path=(provisioning_path)
                                     data-initial-rations=(forecast.rations_to_buy)
                                     data-initial-waterskins=(forecast.waterskins_to_buy)
-                                    href=(&market_path) { "Buy" }
+                                    href=(provisioning_path) { "Buy" }
                             } @else {
                                 button type="button" class="btn btn-secondary" disabled title="Provision estimates are unavailable" { "Buy" }
                             }
@@ -1044,9 +1069,7 @@ pub(crate) fn map_destination_detail(
                         }
                     }
                     p class="text-muted small-copy" {
-                        @if !destination.quest_in_progress {
-                            @if let Some(summary) = &destination.summary { (summary) " · " }
-                        }
+                        @if let Some(summary) = &destination.summary { (summary) " · " }
                         (format_distance(destination.distance_m))
                         " · " (format_journey_time(destination.journey_minutes))
                         @if destination.route_fallback {
@@ -1101,7 +1124,7 @@ pub(crate) fn travel_planner_bar(
         selected_name,
         &selected_description,
         selected.is_some_and(|destination| {
-            destination.quest_in_progress && destination.return_terrain_route.is_none()
+            destination.round_trip_destination && destination.return_terrain_route.is_none()
         }),
         selected_minutes,
         &selected_camp_stops,
@@ -1124,7 +1147,7 @@ pub(crate) fn travel_planner_bar(
 }
 
 fn quest_destination_tooltip(destination: &TravelDestination) -> Option<String> {
-    destination.quest_in_progress.then(|| {
+    destination.case_site_knowledge.map(|_| {
         destination.summary.as_ref().map_or_else(
             || destination.description.clone(),
             |summary| format!("{}\n{summary}", destination.description),
@@ -1500,7 +1523,7 @@ pub fn camp_page(
     default_rest_minutes: u64,
     soap_preview: SoapRestPreview,
     planned_wake_minute: u16,
-    can_continue_travel: bool,
+    continue_block_reason: Option<&str>,
     encounter: Option<&StrategicEncounter>,
     logged_in_as: Option<&str>,
 ) -> Markup {
@@ -1560,14 +1583,7 @@ pub fn camp_page(
                 div class="travel-planner-vertical" {
                     (travel_planner_bar_for(destination_name, "", false, party.camp_remaining_minutes, "", "", party.camp_fatigue_percent, journey, terrain_route, provision_forecast, journey.map_or(0, |item| item.departure_minute), journey.map_or(party.camp_remaining_minutes, |item| item.total_elapsed_minutes), &match (journey, itinerary) { (Some(journey), Some(itinerary)) => format_persisted_itinerary(journey, itinerary), (Some(journey), None) => format_legacy_persisted_itinerary(journey), _ => String::new() }, &format_persisted_terrain_spans(terrain_route)))
                 }
-                form action="/camp/continue" method="post" {
-                    button type="submit" class="btn btn-primary btn-small btn-block"
-                        disabled[!can_continue_travel]
-                        title=(if can_continue_travel { "Continue travel" } else { "Rest until the planned walking window begins" }) {
-                        "Continue travel"
-                    }
-                }
-                p class="travel-action-status" data-travel-action-status role="alert" hidden {}
+                (camp_continue_control(continue_block_reason))
             }
             (sidebar_section("Travel preferences", travel_preferences_form(party, "/camp/travel-configuration")))
         }
@@ -1580,6 +1596,25 @@ pub fn camp_page(
         content,
         logged_in_as,
     )
+}
+
+fn camp_continue_control(block_reason: Option<&str>) -> Markup {
+    html! {
+        form action="/camp/continue" method="post" {
+            button type="submit" class="btn btn-primary btn-small btn-block"
+                disabled[block_reason.is_some()]
+                title=(block_reason.unwrap_or("Continue travel")) {
+                "Continue travel"
+            }
+        }
+        @if let Some(reason) = block_reason {
+            p class="travel-action-status" data-travel-action-status role="alert" {
+                (reason)
+            }
+        } @else {
+            p class="travel-action-status" data-travel-action-status role="alert" hidden {}
+        }
+    }
 }
 
 fn strategic_encounter_panel(encounter: &StrategicEncounter) -> Markup {
@@ -3177,7 +3212,7 @@ pub fn live_merchant_shop_page(
             (repair_custody_panel(settlement, shop, repair_orders, conditions, items, now_minutes, smith_skill))
         }
         }
-        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None, false)) (npc_portrait_strip(&settlement.id, npc_location_id(service_id))) (npc_description_stage(title, "Merchant counter and attending craftsperson")) (settlement_npc_chat_area(title, Some(character), &settlement.id, npc_location_id(service_id), Some(service_id))) form # "merchant-offer" class="party-offer" action=(if matches!(shop, MerchantShop::Herbalist) { format!("/settlements/{}/herbalist/purchase", settlement.id) } else { format!("/settlements/{}/merchants/offer", settlement.id) }) method="post" hidden role="dialog" aria-modal="true" aria-label="Confirm merchant offer" tabindex="-1" { span class="party-offer-summary" { "Review and submit the staged trade." } input type="hidden" name="return_to" value=(format!("/settlements/{}/{}", settlement.id, service_id)); input type="hidden" name="inventory_scope" value="player"; button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
+        main class="center-content settlement-main" { (party_portrait_overlay(party_members, Some(character), &format!("/locations/settlement/{}", settlement.id), None, false)) (npc_portrait_strip(&settlement.id, npc_location_id(service_id))) (npc_description_stage(title, "Merchant counter and attending craftsperson")) (settlement_npc_chat_area(title, Some(character), &settlement.id, npc_location_id(service_id), Some(service_id))) form # "merchant-offer" class="party-offer" action=(if matches!(shop, MerchantShop::Herbalist) { format!("/settlements/{}/herbalist/purchase", settlement.id) } else { format!("/settlements/{}/storefront/{}/offer", settlement.id, service_id) }) method="post" hidden role="dialog" aria-modal="true" aria-label="Confirm merchant offer" tabindex="-1" { span class="party-offer-summary" { "Review and submit the staged trade." } input type="hidden" name="return_to" value=(format!("/settlements/{}/{}", settlement.id, service_id)); input type="hidden" name="inventory_scope" value="player"; button type="button" class="party-offer-cancel" data-cancel-trade="merchant" { "Cancel" } button type="submit" disabled { "Offer" } } }
         aside class="right-sidebar inventory-owner-panel" data-inventory-tabs {
             nav class="inventory-owner-tabs" aria-label="Trading inventory" {
                 button type="button" class="inventory-owner-tab active" data-inventory-tab="player" { "Player" }
@@ -5863,7 +5898,7 @@ pub(crate) fn party_portrait_overlay(
 /// filters are present so their messages can join the same stream as their
 /// backends become available.
 pub(crate) fn settlement_chat_area(location: &str, active_character: Option<&Character>) -> Markup {
-    chat_area(location, active_character, None, None, &[])
+    chat_area(location, active_character, None, None, None, &[])
 }
 
 pub(crate) fn settlement_chat_area_with_info(
@@ -5871,7 +5906,7 @@ pub(crate) fn settlement_chat_area_with_info(
     active_character: Option<&Character>,
     info_messages: &[String],
 ) -> Markup {
-    chat_area(location, active_character, None, None, info_messages)
+    chat_area(location, active_character, None, None, None, info_messages)
 }
 
 fn player_chat_area(subject: &Character, active_character: &Character) -> Markup {
@@ -5881,6 +5916,7 @@ fn player_chat_area(subject: &Character, active_character: &Character) -> Markup
         Some(active_character),
         None,
         Some(context),
+        None,
         &[],
     )
 }
@@ -5916,7 +5952,7 @@ fn settlement_npc_chat_area(
     location: &str,
     active_character: Option<&Character>,
     settlement_id: &str,
-    _location_id: &str,
+    location_id: &str,
     service_id: Option<&str>,
 ) -> Markup {
     chat_area(
@@ -5924,6 +5960,7 @@ fn settlement_npc_chat_area(
         active_character,
         Some((settlement_id, service_id.unwrap_or(""))),
         Some(("npc", String::new())),
+        Some(location_id),
         &[],
     )
 }
@@ -5933,6 +5970,7 @@ fn chat_area(
     _active_character: Option<&Character>,
     service_context: Option<(&str, &str)>,
     local_context: Option<(&str, String)>,
+    local_location_id: Option<&str>,
     info_messages: &[String],
 ) -> Markup {
     html! {
@@ -5944,7 +5982,8 @@ fn chat_area(
                 .filter(|context| context.1 == "herbalist")
                 .map(|_| adventuresim_core::strategic_economy::NPC_HERBALIST_EXAM_FEE)]
             data-local-chat-kind=[local_context.as_ref().map(|context| context.0)]
-            data-local-chat-subject=[local_context.as_ref().map(|context| context.1.as_str())] {
+            data-local-chat-subject=[local_context.as_ref().map(|context| context.1.as_str())]
+            data-local-chat-location=[local_location_id] {
             div class="settlement-chat-resize" role="separator" aria-label="Resize chat"
                 aria-orientation="horizontal" aria-valuemin="128" aria-valuemax="640"
                 aria-valuenow="184" tabindex="0" title="Drag to resize chat" {
@@ -6098,10 +6137,14 @@ fn rest_service_menu(
 ) -> Markup {
     html! {
     section class="rest-service-menu" aria-label=(format!("{} rest service", location))
-        title=(if kind == "inn" { "A bed costs 1 coin per day. Injuries are tended before downtime." } else { "Sanctuary is free. Injuries are tended before downtime." }) {
+        data-live-refresh-url=(format!(
+            "/settlements/{settlement_id}/{}",
+            if kind == "inn" { "inn" } else { "religion" }
+        ))
+        title=(if kind == "inn" { "Full board costs 2 coin per day. Meals, drinking water, and injury treatment are included." } else { "Sanctuary is free. Injuries are tended before downtime." }) {
         div class="rest-service-heading" { strong { "Rest" } }
         @if kind == "inn" {
-            p class="rest-service-copy" { "1 coin / day · treatment included" }
+            p class="rest-service-copy" { "2 coin / day · meals + water + treatment included" }
         } @else {
             p class="rest-service-copy" { "Free · treatment included" }
         }
@@ -6138,7 +6181,16 @@ fn rest_service_menu(
                         a href=(format!("/settlements/{settlement_id}/{}", if kind == "inn" { "inn" } else { "religion" })) class="rest-summary-close" aria-label="Close rest summary" { "×" }
                     }
                     p { (format_rest_duration(summary.minutes)) " passed." }
-                    @if summary.gold_spent > 0 { p { (summary.gold_spent) " coin paid." } }
+                    @if summary.full_board_gold_spent > 0 {
+                        p { (summary.full_board_gold_spent) " coin paid for full board." }
+                    }
+                    @if summary.additional_gold_spent > 0 {
+                        @if summary.full_board_gold_spent > 0 {
+                            p { (summary.additional_gold_spent) " additional coin spent during rest." }
+                        } @else {
+                            p { (summary.additional_gold_spent) " coin paid." }
+                        }
+                    }
                     @if summary.gold_earned > 0 { p { (summary.gold_earned) " coin earned from activities." } }
                     @if summary.notoriety_gained > 0.0 { p class="schedule-effect-negative" { (format!("-{:.1}", summary.notoriety_gained)) " Virtue from activities." } }
                     @if summary.healed.is_empty() { p { "No injuries needed tending." } } @else {
@@ -6285,17 +6337,101 @@ fn blood_recovery_minutes(condition: &CharacterCondition) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        Character, CharacterCondition, LocationKind, MerchantShop, encumbrance_inventory_rail,
-        encumbrance_meter, filth_status_bar, format_rest_duration, live_merchant_shop_page,
-        merchant_inventory_sell_price, merchant_inventory_weight, need_balance_meter,
-        repair_custody_panel, repair_submit_control, rest_default_minutes,
-        settlement_rest_duration_control, strategic_condition_rail, strategic_encounter_panel,
+        Character, CharacterCondition, LocationKind, MerchantShop, RestSummary, SoapRestPreview,
+        camp_continue_control, encumbrance_inventory_rail, encumbrance_meter, filth_status_bar,
+        format_rest_duration, live_merchant_shop_page, merchant_inventory_sell_price,
+        merchant_inventory_weight, need_balance_meter, repair_custody_panel, repair_submit_control,
+        rest_default_minutes, rest_service_menu, settlement_rest_duration_control,
+        strategic_condition_rail, strategic_encounter_panel,
     };
     use crate::spacetimedb::{
         CharacterFilth, CharacterStrategicCondition, FilthOrigin, FilthSubstance, FoodLot,
         FoodPreparation, ItemKind, StrategicEncounter, StrategicEncounterLoss,
     };
     use adventuresim_core::equipment::EncumbranceSummary;
+
+    #[test]
+    fn rest_pages_keep_a_gettable_refresh_marker_across_repeated_refreshes() {
+        let summary = RestSummary {
+            minutes: 480,
+            full_board_gold_spent: 0,
+            additional_gold_spent: 1,
+            gold_earned: 0,
+            notoriety_gained: 0.0,
+            healed: Vec::new(),
+            trained: Vec::new(),
+        };
+        for (location, kind, expected) in [
+            ("Inn", "inn", "/settlements/riverdale/inn"),
+            ("Church", "temple", "/settlements/riverdale/religion"),
+        ] {
+            for rest_summary in [Some(&summary), None] {
+                let markup = rest_service_menu(
+                    location,
+                    "riverdale",
+                    kind,
+                    None,
+                    rest_summary,
+                    SoapRestPreview::default(),
+                )
+                .into_string();
+                assert!(markup.contains(&format!("data-live-refresh-url=\"{expected}\"")));
+                assert!(!markup.contains("data-live-refresh-url=\"/settlements/riverdale/rest/"));
+            }
+        }
+    }
+
+    #[test]
+    fn inn_rest_summary_separates_full_board_from_additional_spending() {
+        let summary = RestSummary {
+            minutes: 2_880,
+            full_board_gold_spent: 4,
+            additional_gold_spent: 6,
+            gold_earned: 0,
+            notoriety_gained: 0.0,
+            healed: Vec::new(),
+            trained: Vec::new(),
+        };
+        let markup = rest_service_menu(
+            "Inn",
+            "ironforge",
+            "inn",
+            None,
+            Some(&summary),
+            SoapRestPreview::default(),
+        )
+        .into_string();
+
+        assert!(markup.contains("4 coin paid for full board."));
+        assert!(markup.contains("6 additional coin spent during rest."));
+        assert!(!markup.contains("10 coin paid."));
+    }
+
+    #[test]
+    fn temple_rest_keeps_neutral_spending_copy() {
+        let summary = RestSummary {
+            minutes: 1_440,
+            full_board_gold_spent: 0,
+            additional_gold_spent: 2,
+            gold_earned: 0,
+            notoriety_gained: 0.0,
+            healed: Vec::new(),
+            trained: Vec::new(),
+        };
+        let markup = rest_service_menu(
+            "Church",
+            "ironforge",
+            "temple",
+            None,
+            Some(&summary),
+            SoapRestPreview::default(),
+        )
+        .into_string();
+
+        assert!(markup.contains("2 coin paid."));
+        assert!(!markup.contains("additional coin"));
+        assert!(!markup.contains("paid for full board"));
+    }
 
     #[test]
     fn encounter_panel_renders_only_authoritative_choices_and_exact_losses() {
@@ -6339,6 +6475,23 @@ mod tests {
         assert!(rendered.contains("value=\"surrender\""));
         assert!(!rendered.contains("value=\"run\""));
         assert!(!rendered.contains("value=\"sneak\""));
+    }
+
+    #[test]
+    fn unresolved_encounter_disables_camp_continuation_with_actionable_copy() {
+        let rendered = camp_continue_control(Some(
+            "Resolve the encounter above before continuing travel.",
+        ))
+        .into_string();
+
+        assert!(rendered.contains("action=\"/camp/continue\""));
+        assert!(rendered.contains("disabled"));
+        assert!(rendered.contains("Resolve the encounter above"));
+        assert!(!rendered.contains("role=\"alert\" hidden"));
+
+        let enabled = camp_continue_control(None).into_string();
+        assert!(!enabled.contains("disabled"));
+        assert!(enabled.contains("role=\"alert\" hidden"));
     }
 
     #[test]
@@ -6694,19 +6847,83 @@ mod tests {
             .into_string()
         };
         let merchant = render(MerchantShop::Weapons);
+        assert!(merchant.contains("action=\"/settlements/viabundus-1/storefront/weapons/offer\""));
         assert!(merchant.contains("data-inventory-pane=\"player\""));
         assert!(merchant.contains("data-inventory-pane=\"party\""));
         assert!(merchant.contains(">10.0 / 100.0 kg<"));
         assert!(merchant.contains(">30.0 / 200.0 kg<"));
 
+        let general = render(MerchantShop::General);
+        assert!(general.contains("action=\"/settlements/viabundus-1/storefront/merchants/offer\""));
+
         let herbalist = render(MerchantShop::Herbalist);
+        assert!(herbalist.contains("action=\"/settlements/viabundus-1/herbalist/purchase\""));
         assert!(herbalist.contains(">10.0 / 100.0 kg<"));
         assert!(!herbalist.contains("data-inventory-pane=\"party\""));
         assert!(!herbalist.contains(">30.0 / 200.0 kg<"));
 
         let inn = render(MerchantShop::Inn);
         assert!(inn.contains("Cooking supplies"));
+        assert!(inn.contains("action=\"/settlements/viabundus-1/storefront/inn/offer\""));
         assert!(inn.contains("aria-label=\"Inn rest service\""));
+    }
+
+    #[test]
+    fn inn_catalog_renders_an_authoritatively_quoted_travel_ration_purchase() {
+        let mut town = settlement();
+        town.economy.services = vec![adventuresim_world_schema::SettlementService::Inn];
+        let character = Character {
+            id: 1,
+            name: "Traveller".into(),
+            xp: 0,
+            level: 1,
+            gold: 20,
+            current_settlement_id: Some(town.id.clone()),
+            current_case_site_id: None,
+            party_id: Some("party".into()),
+            age_years: 20,
+            alive: true,
+            temporary: false,
+        };
+        let ration = crate::spacetimedb::ItemDefinition {
+            id: "travel_ration".into(),
+            weight: 0.65,
+            base_value: Some(3),
+            nutrition_kcal: 2_500.0,
+            kind: ItemKind::Food,
+            ..Default::default()
+        };
+
+        let markup = live_merchant_shop_page(
+            &town,
+            &character,
+            &[],
+            std::slice::from_ref(&ration),
+            &[],
+            &[],
+            None,
+            &[],
+            &[],
+            &[],
+            MerchantShop::Inn,
+            1.0,
+            0,
+            0,
+            &[],
+            None,
+            &[],
+            0,
+            EncumbranceSummary::default(),
+            EncumbranceSummary::default(),
+            None,
+            SoapRestPreview::default(),
+        )
+        .into_string();
+
+        assert!(markup.contains("data-merchant-item=\"travel_ration\""));
+        assert!(markup.contains("data-merchant-buy=\"travel_ration\""));
+        assert!(markup.contains("data-merchant-buy-price=\"5\""));
+        assert!(markup.contains(">0.65<"));
     }
 
     #[test]
@@ -6738,6 +6955,23 @@ mod tests {
         assert!(markup.contains("aria-label=\"Wake time\""));
         assert!(markup.contains("aria-valuetext=\"08:00\""));
         assert!(markup.contains("name=\"requested_minutes\""));
+    }
+
+    #[test]
+    fn inn_rest_advertises_full_board() {
+        let markup = rest_service_menu(
+            "Inn",
+            "riverdale",
+            "inn",
+            Some(1_440),
+            None,
+            SoapRestPreview::default(),
+        )
+        .into_string();
+
+        assert!(markup.contains("Full board costs 2 coin per day"));
+        assert!(markup.contains("Meals, drinking water, and injury treatment are included"));
+        assert!(markup.contains("meals + water + treatment included"));
     }
 
     #[test]
@@ -7908,8 +8142,8 @@ mod tests {
             id: "quest-location".to_string(),
             name: "Bandit camp".to_string(),
             description: "A camp beside the road.".to_string(),
-            summary: Some("Active quest".to_string()),
-            travel_action: "/quests/quest-location/travel".to_string(),
+            summary: Some("Reported exact location".to_string()),
+            travel_action: "/case-sites/quest-location/travel".to_string(),
             track_action: Some("/case-sites/quest-location/track".to_string()),
             tracked: false,
             distance_m: 1_000,
@@ -7919,7 +8153,11 @@ mod tests {
             departure_minute: 0,
             itinerary_total_elapsed_minutes: 96,
             itinerary_segments: Vec::new(),
-            quest_in_progress: true,
+            round_trip_destination: true,
+            case_site_knowledge: Some(
+                crate::routes::travel::CaseSiteKnowledgePresentation::ReportedExactLocation,
+            ),
+            active_contract_destination: false,
             provision_forecast: None,
             terrain_route: None,
             return_terrain_route: None,
@@ -7928,16 +8166,45 @@ mod tests {
     }
 
     #[test]
-    fn active_quest_destination_has_red_status_badge() {
+    fn reported_exact_destination_is_neutral_and_keeps_round_trip_planning() {
         let destination = quest_destination();
+
+        let markup = map_destination_list(&[destination], None, "/locations/settlement/test/map")
+            .into_string();
+
+        assert!(markup.contains("data-travel-round-trip=\"true\""));
+        assert!(markup.contains("destination-case-site-status"));
+        assert!(markup.contains("Reported exact location"));
+        assert!(!markup.contains("destination-quest-badge"));
+        assert!(!markup.contains("aria-label=\"Active quest destination\""));
+        assert!(markup.contains("title=\"A camp beside the road.\nReported exact location\""));
+        assert!(!markup.contains("destination-turn-in-badge"));
+    }
+
+    #[test]
+    fn visited_destination_uses_visited_case_site_label() {
+        let mut destination = quest_destination();
+        destination.summary = Some("Visited case site".into());
+        destination.case_site_knowledge =
+            Some(crate::routes::travel::CaseSiteKnowledgePresentation::VisitedCaseSite);
+
+        let markup = map_destination_list(&[destination], None, "/locations/settlement/test/map")
+            .into_string();
+
+        assert!(markup.contains("Visited case site"));
+        assert!(!markup.contains("aria-label=\"Active quest destination\""));
+    }
+
+    #[test]
+    fn active_contract_destination_badge_requires_explicit_match() {
+        let mut destination = quest_destination();
+        destination.active_contract_destination = true;
 
         let markup = map_destination_list(&[destination], None, "/locations/settlement/test/map")
             .into_string();
 
         assert!(markup.contains("destination-quest-badge"));
         assert!(markup.contains("aria-label=\"Active quest destination\""));
-        assert!(markup.contains("title=\"A camp beside the road.\nActive quest\""));
-        assert!(!markup.contains("destination-turn-in-badge"));
     }
 
     #[test]
@@ -8004,7 +8271,7 @@ mod tests {
             None,
             false,
             true,
-            false,
+            None,
             None,
             None,
             false,
@@ -8014,10 +8281,11 @@ mod tests {
         .into_string();
 
         assert!(markup.contains("Begin journey"));
+        assert!(markup.contains("action=\"/case-sites/quest-location/travel\""));
         assert!(markup.contains("action=\"/case-sites/quest-location/track\""));
         assert!(markup.contains("Track site"));
         assert!(!markup.contains("<p>A camp beside the road.</p>"));
-        assert!(!markup.contains("Active quest"));
+        assert!(markup.contains("Reported exact location"));
         assert!(!markup.contains("name=\"provisioning\""));
         assert!(!markup.contains("data-provision-buy"));
     }
@@ -8032,7 +8300,7 @@ mod tests {
             Some(&destination),
             false,
             true,
-            true,
+            Some("/settlements/viabundus-1/inn"),
             None,
             None,
             false,
@@ -8052,14 +8320,16 @@ mod tests {
         let mut destination = quest_destination();
         destination.id = "viabundus-2".into();
         destination.name = "Connected town".into();
-        destination.quest_in_progress = false;
+        destination.round_trip_destination = false;
+        destination.case_site_knowledge = None;
+        destination.active_contract_destination = false;
         destination.travel_action = "/settlements/viabundus-2/travel".into();
         let markup = map_destination_detail(
             Some(&destination),
             None,
             false,
             true,
-            true,
+            Some("/settlements/viabundus-1/inn"),
             None,
             None,
             false,
@@ -8075,8 +8345,55 @@ mod tests {
     }
 
     #[test]
+    fn provisioning_buy_uses_the_selected_exposed_storefront() {
+        let mut destination = quest_destination();
+        destination.provision_forecast = Some(TravelProvisionForecast {
+            rations_to_buy: 2,
+            waterskins_to_buy: 1,
+            ..TravelProvisionForecast::default()
+        });
+        let party = Party {
+            id: "party-1".into(),
+            name: "Test party".into(),
+            leader_id: 1,
+            current_settlement_id: Some("ironforge".into()),
+            current_case_site_id: None,
+            active_contract_id: None,
+            is_solo: true,
+            camp_fatigue_percent: 50,
+            walking_minutes_per_day: 480,
+            travel_at_night: false,
+            camp_duration_mode: crate::spacetimedb::CampDurationMode::Auto,
+            fixed_camp_minutes: 0,
+            camp_destination: None,
+            camp_remaining_minutes: 0,
+            pooled_water_ml: 0.0,
+            medicine_target: 5.0,
+            command_target: 5.0,
+            religion_target: 4.0,
+        };
+        let markup = map_destination_detail(
+            Some(&destination),
+            None,
+            false,
+            true,
+            Some("/settlements/ironforge/inn"),
+            destination.provision_forecast.as_ref(),
+            Some(&party),
+            true,
+            None,
+            "/locations/settlement/ironforge/map",
+        )
+        .into_string();
+
+        assert!(markup.contains("data-market-path=\"/settlements/ironforge/inn\""));
+        assert!(markup.contains("href=\"/settlements/ironforge/inn\""));
+        assert!(!markup.contains("/settlements/ironforge/merchants"));
+    }
+
+    #[test]
     fn chat_uses_one_stream_with_all_channel_filters() {
-        let markup = chat_area("Lubeck", None, None, None, &[]).into_string();
+        let markup = chat_area("Lubeck", None, None, None, None, &[]).into_string();
 
         assert!(!markup.contains("role=\"tablist\""));
         for channel in ["local", "party", "settlement", "dm", "guild", "info"] {
@@ -8107,6 +8424,7 @@ mod tests {
         let chat = settlement_npc_chat_area("Market", None, "lubeck", "market", Some("merchants"))
             .into_string();
         assert!(chat.contains("data-local-chat-kind=\"npc\""));
+        assert!(chat.contains("data-local-chat-location=\"market\""));
         assert!(chat.contains("data-dialogue-catalog-revision"));
         assert!(!chat.contains("lubeck:merchants"));
     }
@@ -8143,6 +8461,57 @@ mod tests {
             assert!(markup.contains("href=\"/locations/settlement/viabundus-1/party-inventory\""));
             assert!(!markup.contains(&format!("/places/{location}/party/")));
         }
+    }
+
+    #[test]
+    fn places_navigation_exposes_the_generated_public_square_referral_tab() {
+        use adventuresim_core::settlement_economy::{player_visible_npc_tabs, visible_npc_tab};
+
+        let settlement = settlement();
+        let tabs = player_visible_npc_tabs(&settlement.economy, true);
+        let public_square = visible_npc_tab(&tabs, "overview").unwrap();
+        assert_eq!(public_square.label, "Public square");
+
+        let overview = settlement_overview_page(&settlement, &[], &[], None, &[], Some("Visitor"))
+            .into_string();
+        let overview_places = overview
+            .split("aria-label=\"Settlement places\"")
+            .nth(1)
+            .and_then(|tail| tail.split("</nav>").next())
+            .expect("overview Places navigation");
+        assert!(overview_places.contains("href=\"/locations/settlement/viabundus-1\""));
+        assert!(overview_places.contains(&format!(">{}</a>", public_square.label)));
+        assert!(overview_places.contains("aria-current=\"page\""));
+
+        let character = Character {
+            id: 1,
+            name: "Visitor".into(),
+            xp: 0,
+            level: 1,
+            gold: 0,
+            current_settlement_id: Some(settlement.id.clone()),
+            current_case_site_id: None,
+            party_id: Some("party".into()),
+            age_years: 20,
+            alive: true,
+            temporary: false,
+        };
+        let residences = settlement_npc_location_page(
+            &settlement,
+            &character,
+            &[],
+            "residences",
+            Some("Visitor"),
+        )
+        .into_string();
+        let residence_places = residences
+            .split("aria-label=\"Settlement places\"")
+            .nth(1)
+            .and_then(|tail| tail.split("</nav>").next())
+            .expect("residence Places navigation");
+        assert!(residence_places.contains("href=\"/locations/settlement/viabundus-1\""));
+        assert!(residence_places.contains(&format!(">{}</a>", public_square.label)));
+        assert!(residence_places.contains("aria-current=\"false\""));
     }
 
     #[test]
