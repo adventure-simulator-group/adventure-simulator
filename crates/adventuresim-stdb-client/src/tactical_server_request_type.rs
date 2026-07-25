@@ -4,8 +4,6 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::hostile_resolution_kind_type::HostileResolutionKind;
-
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct TacticalServerRequest {
@@ -15,7 +13,6 @@ pub struct TacticalServerRequest {
     pub party_id: String,
     pub requested_by: u64,
     pub required_enemy_kills: u32,
-    pub expected_resolution: HostileResolutionKind,
 }
 
 impl __sdk::InModule for TacticalServerRequest {
@@ -32,8 +29,6 @@ pub struct TacticalServerRequestCols {
     pub party_id: __sdk::__query_builder::Col<TacticalServerRequest, String>,
     pub requested_by: __sdk::__query_builder::Col<TacticalServerRequest, u64>,
     pub required_enemy_kills: __sdk::__query_builder::Col<TacticalServerRequest, u32>,
-    pub expected_resolution:
-        __sdk::__query_builder::Col<TacticalServerRequest, HostileResolutionKind>,
 }
 
 impl __sdk::__query_builder::HasCols for TacticalServerRequest {
@@ -48,10 +43,6 @@ impl __sdk::__query_builder::HasCols for TacticalServerRequest {
             required_enemy_kills: __sdk::__query_builder::Col::new(
                 table_name,
                 "required_enemy_kills",
-            ),
-            expected_resolution: __sdk::__query_builder::Col::new(
-                table_name,
-                "expected_resolution",
             ),
         }
     }

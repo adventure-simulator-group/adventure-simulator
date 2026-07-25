@@ -11,8 +11,13 @@ Combat authority is independent from contracts and legacy quest identity.
 - `OutcomeSourceId` is the authenticated idempotency key for the strategic
   consequences of a victorious battle.
 
-Private `mission_authority` rows bind a mission to its party, optional exact
-case site, optional hostile group, and scene. Private
+Private `mission_authority` rows bind a mission to its party, observer, exact
+case site, case, hostile group, and scene. Case missions snapshot a private,
+immutable set of exact `mission_outcome_candidate` rows derived from
+observer-authorized `mission_approach_capability` rows. Each candidate names a
+pending path and objective, compatible resolution, weight, and, for capture,
+the exact subject and custody version. Capabilities require exact believed or
+visited site knowledge; their IDs and weights have no public projection. Private
 `hostile_group_authority` rows are materialized when a case site is created
 and own enemy composition, immutable drop manifest, and defeated state.
 Mission creation reads only these authorities, never a quest. Public tactical
@@ -32,17 +37,36 @@ requires cancellation or dispatcher restart; durable child supervision is a
 follow-up operational improvement.
 
 Tactical servers keep positions, health, enemies, and per-tick simulation
-transient. On victory, the owning server submits its bound mission through the
-same strategic commit used by autoresolve. The commit validates party,
-mission, and hostile-group attribution and inserts one private
+transient. Their completion enum is only a compatibility transport: `Failed`
+means failure, `CaptureTargetKilled` is explicit contradictory terminal
+evidence that also fails without sampling, and the other values are the same
+opaque authenticated success signal. Tactical requests and servers contain no strategic approach,
+objective, subject, weight, or expected-result field. On success, strategic
+authority revalidates the prebound candidates, canonically sorts them, and
+performs a deterministic SHA-256-derived weighted draw from private
+server-generated mission entropy. Caller-selected mission IDs therefore cannot
+grind outcomes, while retries reuse the persisted entropy and select the same
+result. Stale capture custody removes that
+candidate; if none remains, the attempt fails without fabrication. Allied
+autoresolve victory uses the same sampler.
+
+The strategic commit validates party, mission, site, hostile-group, objective,
+candidate, and capture custody attribution and inserts one private
 `outcome_source_authority` receipt before writing the public battle result,
 participants, and loot. Tactical drops come from the immutable hostile-group
-manifest, not temporary enemy equipment. Replaying the same source is a no-op, so it cannot
-duplicate facts, morale, loot, or reward shares.
+manifest, not temporary enemy equipment. Only `Defeated` can mint group drops
+or random gold. `DrivenOff` emits its typed fact without loot. `Captured`
+atomically transfers the exact subject from the bound site and custody version
+to the party and emits `SubjectCaptured`, also without loot. Success revokes
+sibling approaches for that group and site. Replaying a source is a no-op, so
+it cannot duplicate facts, morale, custody, loot, or reward shares.
 
-Defeat and stalemate retain only the bounded autoresolve diagnostic report and
-condition consequences; they do not create a strategic victory outcome or
-defeat a hostile group. A new attempt requires a new mission ID.
+Failed, cancelled, stale, defeated, and stalemated attempts are terminal under
+their mission ID. Defeat and stalemate retain only the bounded autoresolve
+diagnostic report and condition consequences; they do not create a strategic
+victory outcome or resolve a hostile group. A retry requires a new mission ID.
+Pending or active sessions for the same group remain mutually exclusive.
+Random encounters have no case manifest and remain defeat-only.
 
 Legacy bounty completion is currently a downstream projection from a newly
 defeated bound group to its case. It is not an input or fallback for mission,
