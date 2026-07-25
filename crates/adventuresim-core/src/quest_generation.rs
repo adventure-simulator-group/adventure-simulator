@@ -940,6 +940,36 @@ fn evidence_candidates(cause: CanonicalCause, site: SiteKind) -> Vec<Candidate<E
     .collect()
 }
 
+/// Reuse the canonical cause/site likelihood table when a continuing case
+/// produces fresh evidence after the initial manifest was written.
+pub fn select_follow_up_evidence(
+    cause: CanonicalCause,
+    site: SiteKind,
+    entropy: u64,
+) -> Option<EvidenceKind> {
+    let candidates: Vec<_> = evidence_candidates(cause, site)
+        .into_iter()
+        .filter(|candidate| candidate.impossible.is_none() && candidate.weight.combined() > 0)
+        .collect();
+    let total = candidates
+        .iter()
+        .map(|candidate| candidate.weight.combined())
+        .sum::<u64>();
+    if total == 0 {
+        return None;
+    }
+    let mut draw = entropy % total;
+    candidates.into_iter().find_map(|candidate| {
+        let weight = candidate.weight.combined();
+        if draw < weight {
+            Some(candidate.value)
+        } else {
+            draw -= weight;
+            None
+        }
+    })
+}
+
 fn account_style_candidates(
     reliability: Reliability,
     circumstance: Circumstance,
@@ -4084,6 +4114,38 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn follow_up_incidents_reuse_conditional_evidence_likelihoods() {
+        let skeleton = (0..10_000)
+            .filter_map(|entropy| {
+                select_follow_up_evidence(
+                    CanonicalCause::Hostile(ThreatId::Skeleton),
+                    SiteKind::Crypt,
+                    crate::settlement_population::stable_hash(&format!("skeleton:{entropy}")),
+                )
+            })
+            .filter(|kind| *kind == EvidenceKind::BoneDust)
+            .count();
+        let bandit = (0..10_000)
+            .filter_map(|entropy| {
+                select_follow_up_evidence(
+                    CanonicalCause::Hostile(ThreatId::Bandit),
+                    SiteKind::Crypt,
+                    crate::settlement_population::stable_hash(&format!("bandit:{entropy}")),
+                )
+            })
+            .filter(|kind| *kind == EvidenceKind::BoneDust)
+            .count();
+        assert!(skeleton > bandit);
+        assert!((0..10_000).all(|entropy| {
+            select_follow_up_evidence(
+                CanonicalCause::FabricatedClaim,
+                SiteKind::OccupiedHouse,
+                entropy,
+            ) != Some(EvidenceKind::BloodlessCorpse)
+        }));
     }
 
     #[test]

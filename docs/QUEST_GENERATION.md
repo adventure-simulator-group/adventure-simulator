@@ -69,6 +69,31 @@ has no public table accessor. Gateway projections expose only symptoms and
 observer-owned knowledge; browsers never receive canonical causes, traces,
 undiscovered evidence, true/decoy status, or hidden coordinates.
 
+The initial manifest remains immutable, but an unresolved generated problem
+may acquire append-only follow-up incidents as authoritative world time
+advances. Every two days, settlement activity materializes the next due
+incident with a stable `(case, ordinal)` identity, occurrence time, persistent
+NPC witness and victim binding, circumstance, existing case site, canonical
+event, and new physical-evidence authority. Delayed refreshes deterministically
+catch up every missed incident. Fresh evidence is selected through the same
+cause-and-site likelihood table and hard zeros as initial evidence rather than
+an incident-only inverse lookup. The original offence plus four follow-ups is
+the temporary maximum; this cap is intended to be replaced by NPC adventurer
+resolution of neglected cases.
+
+Incident authority is private. A character who already knows the problem can
+receive a dry local report when rumor circulation next reaches them; an
+uninformed character receives no incident history, witness identity, evidence,
+or location. Follow-up evidence remains undiscovered merely because its hidden
+authority exists.
+
+Each accumulated incident increases the unresolved problem's trade,
+encounter, and disease consequences by 25 percent of their initial values,
+before the existing global safety caps and mitigation are applied. At the
+temporary five-incident ceiling, consequences are twice their initial
+severity. Resolving or fully mitigating the linked problem still suppresses
+all of those effects.
+
 The private authority also stores a domain-separated SHA-256 commitment to the
 exact serialized generation context, including observer-ID entropy. Every
 authoritative consumer validates that commitment, row identities, seed,

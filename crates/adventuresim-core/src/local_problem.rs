@@ -9,6 +9,41 @@ pub const MAX_ACTIVE_PER_SCOPE: usize = 3;
 pub const MAX_TRADE_BPS: i32 = 2_500;
 pub const MAX_ENCOUNTER_BPS: u16 = 2_000;
 pub const MAX_DISEASE_INTENSITY: u16 = 700;
+/// The initial offence plus four follow-up incidents. This bounded ceiling is
+/// temporary until other adventuring parties can retire neglected cases.
+pub const MAX_INCIDENTS_PER_PROBLEM: u16 = 5;
+pub const INCIDENT_INTERVAL_MINUTES: u64 = 2 * 1_440;
+/// Each follow-up incident makes the unresolved consequences 25% more severe.
+pub const INCIDENT_SEVERITY_STEP_BPS: u32 = 2_500;
+
+pub fn due_incident_count(starts_at: u64, minute: u64) -> u16 {
+    if minute < starts_at {
+        return 0;
+    }
+    let follow_ups = minute.saturating_sub(starts_at) / INCIDENT_INTERVAL_MINUTES;
+    u16::try_from(follow_ups.saturating_add(1))
+        .unwrap_or(u16::MAX)
+        .min(MAX_INCIDENTS_PER_PROBLEM)
+}
+
+pub fn incident_severity_bps(incident_count: u16) -> u32 {
+    if incident_count == 0 {
+        return 0;
+    }
+    10_000u32.saturating_add(
+        u32::from(incident_count.saturating_sub(1)).saturating_mul(INCIDENT_SEVERITY_STEP_BPS),
+    )
+}
+
+fn scale_i32_for_incidents(value: i32, incident_count: u16) -> i32 {
+    (i64::from(value) * i64::from(incident_severity_bps(incident_count)) / 10_000)
+        .clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+}
+
+fn scale_u16_for_incidents(value: u16, incident_count: u16) -> u16 {
+    (u64::from(value) * u64::from(incident_severity_bps(incident_count)) / 10_000)
+        .min(u64::from(u16::MAX)) as u16
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ProblemId(pub String);
@@ -353,6 +388,7 @@ pub struct ConsequenceInput {
     pub ends_at: u64,
     pub mitigation_bps: u16,
     pub resolved_at: Option<u64>,
+    pub incident_count: u16,
 }
 
 pub fn aggregate_consequences<'a>(
@@ -373,17 +409,22 @@ pub fn aggregate_consequences<'a>(
     let mut out = AggregateEffects::default();
     for r in rows {
         let f = i64::from(10_000u16.saturating_sub(r.mitigation_bps.min(10_000)));
-        out.buy_bps = (i64::from(out.buy_bps) + i64::from(r.buy_bps) * f / 10_000)
+        let buy_bps = scale_i32_for_incidents(r.buy_bps, r.incident_count);
+        let sell_penalty_bps = scale_i32_for_incidents(r.sell_penalty_bps, r.incident_count);
+        let encounter_frequency_bps =
+            scale_u16_for_incidents(r.encounter_frequency_bps, r.incident_count);
+        let disease_intensity = scale_u16_for_incidents(r.disease_intensity, r.incident_count);
+        out.buy_bps = (i64::from(out.buy_bps) + i64::from(buy_bps) * f / 10_000)
             .clamp(i64::from(-MAX_TRADE_BPS), i64::from(MAX_TRADE_BPS))
             as i32;
         out.sell_penalty_bps = (i64::from(out.sell_penalty_bps)
-            + i64::from(r.sell_penalty_bps) * f / 10_000)
+            + i64::from(sell_penalty_bps) * f / 10_000)
             .clamp(0, i64::from(MAX_TRADE_BPS)) as i32;
         out.encounter_frequency_bps = (u64::from(out.encounter_frequency_bps)
-            + u64::from(r.encounter_frequency_bps) * f as u64 / 10_000)
+            + u64::from(encounter_frequency_bps) * f as u64 / 10_000)
             .min(u64::from(MAX_ENCOUNTER_BPS)) as u16;
         out.disease_intensity = (u64::from(out.disease_intensity)
-            + u64::from(r.disease_intensity) * f as u64 / 10_000)
+            + u64::from(disease_intensity) * f as u64 / 10_000)
             .min(u64::from(MAX_DISEASE_INTENSITY)) as u16;
     }
     out
@@ -570,6 +611,42 @@ mod tests {
         assert_eq!(a, generate(&ctx("x"), 0, 12).unwrap());
         assert!(a.1.plausibility > 0);
         assert!(a.1.curation > 0);
+    }
+    #[test]
+    fn unresolved_incidents_arrive_periodically_and_stop_at_the_cap() {
+        let start = 10_000;
+        assert_eq!(due_incident_count(start, start - 1), 0);
+        assert_eq!(due_incident_count(start, start), 1);
+        assert_eq!(
+            due_incident_count(start, start + INCIDENT_INTERVAL_MINUTES),
+            2
+        );
+        assert_eq!(
+            due_incident_count(start, u64::MAX),
+            MAX_INCIDENTS_PER_PROBLEM
+        );
+        assert_eq!(incident_severity_bps(1), 10_000);
+        assert_eq!(incident_severity_bps(MAX_INCIDENTS_PER_PROBLEM), 20_000);
+    }
+    #[test]
+    fn accumulated_incidents_scale_every_consequence_before_global_caps() {
+        let row = ConsequenceInput {
+            id: "problem".into(),
+            buy_bps: 500,
+            sell_penalty_bps: 200,
+            encounter_frequency_bps: 300,
+            disease_intensity: 100,
+            starts_at: 0,
+            ends_at: u64::MAX,
+            mitigation_bps: 0,
+            resolved_at: None,
+            incident_count: 3,
+        };
+        let effects = aggregate_consequences([&row], 1);
+        assert_eq!(effects.buy_bps, 750);
+        assert_eq!(effects.sell_penalty_bps, 300);
+        assert_eq!(effects.encounter_frequency_bps, 450);
+        assert_eq!(effects.disease_intensity, 150);
     }
     #[test]
     fn every_generatable_public_symptom_has_multiple_possible_causes() {
