@@ -1,5 +1,56 @@
 # Quest generation
 
+## Developer quest editor
+
+Settlement pages expose a complete quest-authoring dialog when the existing
+browser-local developer mode is enabled. The top-right book button loads the
+startup-compiled catalog, closed engine mechanics, and the current settlement's
+persistent navigable NPCs. Its typed repeaters cover the template and canonical
+cause, consequences and incident cadence, sites and areas, witnesses and
+testimony/referrals, physical evidence and deterministic inspection topics,
+routes and action outputs, DNF objectives/custody/hostiles, finales, dialogue
+producers, canonical events, and causal bridges.
+
+Submission derives the settlement from the session-selected character's
+authoritative current location; the
+browser never supplies a settlement ID. Structural diagnostics (references,
+bounds, navigable NPCs, and generated-case invariants) always block creation.
+Catalog compatibility/curation diagnostics block by default, but the explicitly
+labeled developer override can suppress only that second tier. Invalid input is
+transactional and writes nothing.
+
+Debug and automatic generation call the same strategic materializer.
+`DeveloperGenerationContext` persists the complete definition, compatibility
+override, private observer entropy, ordinal, current witness candidates, and
+catalog revision in private authority. Authority validation compiles that
+context again and requires an exact manifest match.
+
+Author-local IDs are validated before compilation, then every internal case,
+site, area, event, proposition, witness, evidence, action, objective, custody
+object, hostile group, finale, and bridge reference is deterministically
+rewritten beneath the newly minted case scope. Persistent settlement NPC IDs
+and catalog IDs are never rewritten. This permits the same definition to be
+spawned repeatedly without colliding in globally keyed authority tables.
+Starting custody is authored as exact object/site tuples; its asset-or-subject
+kind is derived unambiguously from objective leaves rather than from the finale.
+
+Creating a debug quest inserts only latent open world authority. It deliberately
+does not grant a rumor receipt, referral, journal entry, destination pin, or any
+observer knowledge. Players discover it through the same tavern/NPC rumor path
+as automatically generated trouble.
+
+> **Security limitation:** developer mode is UI hiding only. It is off by
+> default and stored in the browser, but there is currently no developer
+> credential or reducer authorization. A caller able to reach strategic-web or
+> invoke `spawn_developer_quest` directly can use the tool. Add server-side
+> authorization before exposing it to an untrusted deployment.
+
+The editor is complete for the declarative surfaces represented by
+`GeneratedCase`. Closed engine mechanics remain Rust-owned and are exposed as
+schema options. Tactical encounter execution and tactical enemy authoring are
+outside this editor; hostile identity, count, and site are configurable while
+the existing tactical/autoresolve systems consume them.
+
 ## Authoring catalog
 
 Modular quest and bestiary content is authored in the strict JSON-compatible

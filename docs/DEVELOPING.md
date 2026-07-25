@@ -1,5 +1,17 @@
 # Development Workflow
 
+## Developer quest spawning
+
+The existing browser-local developer mode is off by default. On settlement
+pages it reveals a top-right quest-authoring button; it never appears at camp
+or case sites. The resulting quest remains undiscovered until ordinary
+tavern/NPC rumor delivery.
+
+This is not an authorization boundary. The HTTP endpoint and
+`spawn_developer_quest` reducer intentionally have no developer credential yet,
+so they must not be exposed as an administrative tool on an untrusted
+deployment.
+
 ## Quest content
 
 Quest and bestiary content lives in `content/quests/*.yaml` using the same

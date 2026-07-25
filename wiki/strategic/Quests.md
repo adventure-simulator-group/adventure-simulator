@@ -2,6 +2,14 @@
 
 ## Current architecture
 
+In developer mode, settlement pages provide a catalog-driven editor for
+spawning latent investigation quests. Spawned quests do not become known to the
+active character automatically; tavern and NPC rumors remain the discovery
+mechanism. The editor's explicit compatibility override permits intentionally
+unlikely catalog combinations, but cannot bypass structural validity or
+reference integrity. This browser-local developer mode is presentation only,
+not a server authorization boundary.
+
 Cases are persistent world problems with private investigation truth and a
 typed AND/OR resolution graph. Contracts are separate agreements offered by
 NPCs concerning those cases. Accepting or abandoning a contract never creates

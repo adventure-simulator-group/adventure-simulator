@@ -9,6 +9,7 @@ pub mod capability;
 pub mod case;
 pub mod combat;
 pub mod composite;
+pub mod developer_quest;
 pub mod disease;
 pub mod durability;
 pub mod encounter;

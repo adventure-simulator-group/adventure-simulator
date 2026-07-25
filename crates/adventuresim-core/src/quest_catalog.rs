@@ -435,6 +435,9 @@ impl Catalog {
     pub fn evidence(&self, id: &str) -> Option<&EvidenceDefinition> {
         self.evidence.get(id)
     }
+    pub fn evidence_definitions(&self) -> impl Iterator<Item = &EvidenceDefinition> {
+        self.evidence.values()
+    }
     pub fn circumstance(&self, id: &str) -> Option<&CircumstanceDefinition> {
         self.documents
             .iter()
@@ -489,11 +492,17 @@ impl Catalog {
     pub fn site(&self, id: &str) -> Option<&SiteDefinition> {
         self.sites.get(id)
     }
+    pub fn sites(&self) -> impl Iterator<Item = &SiteDefinition> {
+        self.sites.values()
+    }
     pub fn description(&self, id: &str) -> Option<&DescriptionDefinition> {
         self.descriptions.get(id)
     }
     pub fn template(&self, id: &str) -> Option<&TemplateDefinition> {
         self.templates.get(id)
+    }
+    pub fn templates(&self) -> impl Iterator<Item = &TemplateDefinition> {
+        self.templates.values()
     }
     pub fn relation(&self, id: &str) -> Option<&WeightedRelation> {
         self.relations.get(id)

@@ -109,6 +109,105 @@
   mask: url("/static/icons/game/hammer-nails.svg") center / contain no-repeat;
 }
 
+[data-developer-only] { display: none; }
+
+html[data-developer-mode] [data-developer-only] { display: inline-grid; }
+
+.developer-quest-button {
+  width: 2rem;
+  height: 2rem;
+  padding: 0.35rem;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 50%;
+  color: var(--text-primary);
+  background: rgb(10 12 16 / 75%);
+  cursor: pointer;
+}
+
+.developer-quest-button-icon {
+  width: 100%;
+  height: 100%;
+  background: currentcolor;
+  mask: url("/static/icons/game/open-book.svg") center / contain no-repeat;
+}
+
+.developer-quest-dialog {
+  width: min(76rem, calc(100vw - 2rem));
+  height: min(54rem, calc(100dvh - 2rem));
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-accent);
+  color: var(--text-primary);
+  background: var(--panel-bg);
+}
+
+.developer-quest-dialog::backdrop { background: rgb(0 0 0 / 72%); }
+
+.developer-quest-shell {
+  display: grid;
+  grid-template-rows: auto auto auto 1fr auto;
+  height: 100%;
+  min-height: 0;
+}
+
+.developer-quest-header,
+.developer-quest-footer {
+  position: sticky;
+  z-index: 2;
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.8rem 1rem;
+  background: var(--bg-secondary);
+}
+
+.developer-quest-header { top: 0; border-bottom: 1px solid var(--border-light); }
+.developer-quest-header h2,
+.developer-quest-header p { margin: 0; }
+.developer-quest-header p { color: var(--text-secondary); font-size: 0.85rem; }
+.developer-quest-footer { bottom: 0; border-top: 1px solid var(--border-light); }
+.developer-quest-footer > span { display: flex; gap: 0.5rem; }
+
+.developer-quest-fields {
+  min-height: 0;
+  padding: 1rem;
+  overflow: auto;
+}
+
+.developer-quest-fields fieldset {
+  min-width: 0;
+  margin: 0 0 1rem;
+  padding: 0.8rem;
+  border: 1px solid var(--border-light);
+}
+
+.developer-quest-fields legend { padding-inline: 0.35rem; color: var(--accent-light); }
+.developer-quest-binding-snapshot {
+  margin: 0.25rem 0 0.75rem;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+.developer-quest-fields label { display: grid; gap: 0.25rem; margin-block: 0.5rem; }
+.developer-quest-fields :is(input, select, textarea) { width: 100%; }
+.developer-quest-array-item { position: relative; padding-inline-end: 6rem; }
+.developer-quest-array-actions { display: flex; gap: 0.5rem; margin-block: 0.5rem; }
+.developer-quest-remove { position: absolute; inset-block-start: 0; inset-inline-end: 0; }
+.developer-quest-errors { padding: 0.75rem 1rem; color: var(--danger, #ffb5ae); }
+.developer-quest-status { padding: 0.45rem 1rem; color: var(--text-secondary); }
+.developer-quest-override { display: flex; gap: 0.5rem; align-items: center; }
+.developer-quest-override input { width: auto; }
+[data-developer-field-error] { outline: 2px solid var(--danger, #c33); }
+
+@media (max-width: 48rem) {
+  .developer-quest-dialog { width: 100vw; height: 100dvh; max-width: none; max-height: none; }
+  .developer-quest-header, .developer-quest-footer { align-items: stretch; }
+  .developer-quest-footer { flex-direction: column; }
+  .developer-quest-array-item { padding-inline-end: 0; }
+  .developer-quest-remove { position: static; }
+}
+
 .dialogue-source-link {
   display: inline-grid;
   width: 1.05rem;
