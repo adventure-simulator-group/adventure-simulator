@@ -331,7 +331,9 @@
 #strategic-tooltip,
 .strategic-tooltip {
   position: fixed;
-  z-index: 1000;
+  /* The shared tooltip is appended to body, so it must clear every modal
+     overlay, including medical examination (1100). */
+  z-index: 1200;
   width: max-content;
   max-width: min(20rem, calc(100vw - 1rem));
   padding: .42rem .58rem .48rem;
