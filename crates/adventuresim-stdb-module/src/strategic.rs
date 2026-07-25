@@ -3270,8 +3270,16 @@ pub(crate) fn validate_quest_generation_authority(
     {
         return Err("Quest generation context commitment mismatch".into());
     }
-    let context: qg::GenerationContext = serde_json::from_str(&authority.context_snapshot_json)
-        .map_err(|_| "Quest generation context is invalid")?;
+    let developer_context = serde_json::from_str::<
+        adventuresim_core::developer_quest::DeveloperGenerationContext,
+    >(&authority.context_snapshot_json)
+    .ok();
+    let context: qg::GenerationContext = if let Some(developer) = &developer_context {
+        developer.base.clone()
+    } else {
+        serde_json::from_str(&authority.context_snapshot_json)
+            .map_err(|_| "Quest generation context is invalid")?
+    };
     let manifest: qg::GeneratedCase = serde_json::from_str(&authority.manifest_json)
         .map_err(|_| "Quest generation manifest is invalid")?;
     let trace: Vec<qg::FactorTrace> = serde_json::from_str(&authority.factor_trace_json)
@@ -3303,8 +3311,18 @@ pub(crate) fn validate_quest_generation_authority(
             errors.join("; ")
         )
     })?;
-    let regenerated = qg::generate(&context)
-        .map_err(|error| format!("Quest generation replay failed: {error:?}"))?;
+    let regenerated = if let Some(developer) = &developer_context {
+        adventuresim_core::developer_quest::compile(developer).map_err(|diagnostics| {
+            format!(
+                "Developer quest replay failed: {}",
+                serde_json::to_string(&diagnostics)
+                    .unwrap_or_else(|_| "invalid diagnostics".into())
+            )
+        })?
+    } else {
+        qg::generate(&context)
+            .map_err(|error| format!("Quest generation replay failed: {error:?}"))?
+    };
     if regenerated != manifest {
         return Err("Quest generation replay does not match stored manifest".into());
     }
@@ -15761,10 +15779,11 @@ fn transition_case_custody(
 fn seed_case_custody(
     ctx: &ReducerContext,
     case_id: &str,
-    site_id: &str,
     expression: &adventuresim_core::case::ObjectiveExpression,
+    authored_custody: &[(String, adventuresim_core::quest_generation::SiteId)],
 ) -> Result<(), String> {
     use adventuresim_core::case::ObjectiveRequirement as R;
+    let mut kinds = BTreeMap::new();
     for requirement in expression
         .alternatives
         .iter()
@@ -15782,26 +15801,32 @@ fn seed_case_custody(
             | R::Release { subject_id } => (CustodyObjectKind::Subject, subject_id.as_str()),
             _ => continue,
         };
-        if ctx
-            .db
-            .case_custody()
-            .object_id()
-            .find(&object_id.to_string())
-            .is_none()
+        if let Some(existing) = kinds.insert(object_id.to_owned(), kind)
+            && existing != kind
         {
-            transition_case_custody(
-                ctx,
-                &format!("spawn:{case_id}:{object_id}"),
-                case_id,
-                "",
-                kind,
-                object_id,
-                CustodyHolderKind::Site,
-                site_id,
-                0,
-                None,
-            )?;
+            return Err("Generated custody object has ambiguous objective kind".into());
         }
+    }
+    if kinds.len() != authored_custody.len() {
+        return Err("Generated custody does not exactly cover objective custody objects".into());
+    }
+    for (object_id, site_id) in authored_custody {
+        let kind = kinds
+            .get(object_id)
+            .copied()
+            .ok_or("Generated custody object has no typed objective leaf")?;
+        transition_case_custody(
+            ctx,
+            &format!("spawn:{case_id}:{object_id}"),
+            case_id,
+            "",
+            kind,
+            object_id,
+            CustodyHolderKind::Site,
+            &site_id.0,
+            0,
+            None,
+        )?;
     }
     Ok(())
 }
@@ -18108,6 +18133,18 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
     qg::validate(&generated)
         .map_err(|errors| format!("Generated quest manifest is invalid: {}", errors.join("; ")))?;
 
+    materialize_generated_quest(ctx, &settlement, &context, &generated, None)
+}
+
+fn materialize_generated_quest(
+    ctx: &ReducerContext,
+    settlement: &Settlement,
+    context: &adventuresim_core::quest_generation::GenerationContext,
+    generated: &adventuresim_core::quest_generation::GeneratedCase,
+    context_snapshot_override: Option<&str>,
+) -> Result<(), String> {
+    let settlement_id = context.settlement_id.as_str();
+    let seed = context.seed;
     ctx.db.case_authority().insert(CaseAuthority {
         id: generated.canonical_case_id.clone(),
         investigation_case_id: generated.canonical_case_id.clone(),
@@ -18240,14 +18277,8 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
     seed_case_custody(
         ctx,
         &generated.canonical_case_id,
-        &generated
-            .sites
-            .iter()
-            .find(|site| site.role == qg::SiteRole::Finale)
-            .ok_or("Generated case has no finale site")?
-            .id
-            .0,
         &generated.objectives,
+        &generated.custody,
     )?;
     for (path_index, _) in generated.objectives.alternatives.iter().enumerate() {
         ctx.db.case_finale_authority().insert(CaseFinaleAuthority {
@@ -18270,8 +18301,10 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         status: FinaleStatus::Available,
     });
     crate::local_problem::materialize_generated_problem(ctx, &generated, settlement_id)?;
-    let context_snapshot_json =
-        serde_json::to_string(&context).map_err(|_| "Could not encode quest generation context")?;
+    let context_snapshot_json = context_snapshot_override.map(str::to_owned).map_or_else(
+        || serde_json::to_string(&context).map_err(|_| "Could not encode quest generation context"),
+        Ok,
+    )?;
     ctx.db
         .quest_generation_authority()
         .insert(QuestGenerationAuthority {
@@ -18289,4 +18322,148 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
                 .map_err(|_| "Could not encode quest generation trace")?,
         });
     Ok(())
+}
+
+/// Developer-only authoring reducer.
+///
+/// There is intentionally no gameplay authorization in this pre-launch tool:
+/// strategic-web hides the control unless browser-local developer mode is on,
+/// but any caller able to invoke reducers can call this directly. The caller
+/// supplies a character, never a settlement; current location is derived from
+/// authoritative character state.
+#[reducer]
+pub fn spawn_developer_quest(
+    ctx: &ReducerContext,
+    character_id: u64,
+    definition_json: String,
+    allow_implausible: bool,
+) -> Result<(), String> {
+    use adventuresim_core::{developer_quest as dq, quest_generation as qg};
+    require_strategic_character_authority(ctx, character_id)?;
+    let definition = dq::parse_definition_json(&definition_json).map_err(|diagnostics| {
+        serde_json::to_string(&diagnostics).unwrap_or_else(|_| "Invalid developer quest".into())
+    })?;
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    let settlement_id = character
+        .current_settlement_id
+        .clone()
+        .ok_or("Developer quests can only be spawned while the character is in a settlement")?;
+    let settlement = ctx
+        .db
+        .settlement()
+        .id()
+        .find(settlement_id.clone())
+        .ok_or("Current settlement not found")?;
+    let ordinal = ctx
+        .db
+        .quest_generation_authority()
+        .iter()
+        .try_fold(0u16, |count, row| {
+            let validated = validate_quest_generation_authority(&row)?;
+            Ok::<_, String>(count + u16::from(validated.context.settlement_id == settlement_id))
+        })?;
+    let base = qg::GenerationContext {
+        seed: ctx.random(),
+        observer_entropy_hi: ctx.random(),
+        observer_entropy_lo: ctx.random(),
+        settlement_id: settlement_id.clone(),
+        settlement_name: settlement.name.clone(),
+        scope: adventuresim_core::local_problem::Scope::Settlement {
+            settlement_id: settlement_id.clone(),
+        },
+        ordinal,
+        now_minute: crate::time::refresh_clock(ctx)?,
+        requested_family: Some(definition.family),
+        witness_candidates: generated_witness_candidates(ctx, &settlement_id),
+    };
+    let developer_context = dq::DeveloperGenerationContext {
+        base: base.clone(),
+        definition,
+        allow_implausible,
+    };
+    let generated = dq::compile(&developer_context).map_err(|diagnostics| {
+        serde_json::to_string(&diagnostics).unwrap_or_else(|_| "Invalid developer quest".into())
+    })?;
+    let context_snapshot_json = serde_json::to_string(&developer_context)
+        .map_err(|_| "Could not encode developer quest generation context")?;
+    materialize_generated_quest(
+        ctx,
+        &settlement,
+        &base,
+        &generated,
+        Some(&context_snapshot_json),
+    )
+}
+
+#[cfg(test)]
+mod developer_quest_source_tests {
+    #[test]
+    fn debug_and_automatic_generation_share_materialization_without_disclosure() {
+        let source = include_str!("strategic.rs");
+        let automatic = source
+            .split("fn generate_quest_for_settlement")
+            .nth(1)
+            .unwrap()
+            .split("fn materialize_generated_quest")
+            .next()
+            .unwrap();
+        let debug = source
+            .split("pub fn spawn_developer_quest")
+            .nth(1)
+            .unwrap()
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(automatic.contains("materialize_generated_quest"));
+        assert!(debug.contains("materialize_generated_quest"));
+        assert!(debug.contains("current_settlement_id"));
+        assert!(!debug.contains("rumor_receipt"));
+        assert!(!debug.contains("referral"));
+        assert!(!debug.contains("journal"));
+        assert!(!debug.contains("case_site_pin"));
+    }
+
+    #[test]
+    fn replay_compiles_the_persisted_developer_context() {
+        let source = include_str!("strategic.rs");
+        let validator = source
+            .split("pub(crate) fn validate_quest_generation_authority")
+            .nth(1)
+            .unwrap()
+            .split("/// A separately accepted agreement")
+            .next()
+            .unwrap();
+        assert!(validator.contains("DeveloperGenerationContext"));
+        assert!(validator.contains("developer_quest::compile"));
+        assert!(validator.contains("regenerated != manifest"));
+    }
+
+    #[test]
+    fn materializer_uses_exact_authored_custody_tuples() {
+        let source = include_str!("strategic.rs");
+        let custody = source
+            .split("fn seed_case_custody")
+            .nth(1)
+            .unwrap()
+            .split("fn party_strategic_minute")
+            .next()
+            .unwrap();
+        assert!(custody.contains("authored_custody"));
+        assert!(custody.contains("for (object_id, site_id) in authored_custody"));
+        assert!(custody.contains("&site_id.0"));
+        assert!(!custody.contains("SiteRole::Finale"));
+        let materializer = source
+            .split("fn materialize_generated_quest")
+            .nth(1)
+            .unwrap()
+            .split("pub fn spawn_developer_quest")
+            .next()
+            .unwrap();
+        assert!(materializer.contains("&generated.custody"));
+    }
 }

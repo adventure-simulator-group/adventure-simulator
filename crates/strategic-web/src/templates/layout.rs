@@ -195,6 +195,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/service-quests.js?v=apprentice-system-1" defer {}
                     script src="/static/dialogue-client.js?v=counterparty-portraits-1" defer {}
                     script src="/static/physical-evidence.js?v=deterministic-inspection-1" defer {}
+                    script src="/static/developer-quest-editor.js?v=typed-editor-1" defer {}
                     script src="/static/chat-resize.js?v=counterparty-portraits-1" defer {}
                     script src="/static/local-chat.js?v=local-chat-location-authority-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-3" defer {}
@@ -325,7 +326,44 @@ fn settlement_top_bar(
 
             div class="top-bar-right" {
                 @if let Some(name) = logged_in_as {
+                    button type="button" class="developer-quest-button" data-developer-quest-open
+                        data-developer-only aria-label="Spawn a developer quest"
+                        title="Spawn a developer quest" {
+                        span class="developer-quest-button-icon" aria-hidden="true" {}
+                    }
                     (character_switcher(name))
+                }
+            }
+            dialog class="developer-quest-dialog" data-developer-quest-dialog
+                aria-labelledby="developer-quest-title" {
+                form method="dialog" class="developer-quest-shell" data-developer-quest-form {
+                    header class="developer-quest-header" {
+                        div {
+                            h2 id="developer-quest-title" { "Spawn investigation quest" }
+                            p data-developer-quest-settlement {
+                                "Catalog and settlement witnesses load when opened."
+                            }
+                        }
+                        button type="button" class="btn btn-small" data-developer-quest-close
+                            aria-label="Close quest editor" { "Close" }
+                    }
+                    div class="developer-quest-status" role="status" aria-live="polite"
+                        data-developer-quest-status {}
+                    div class="developer-quest-errors" role="alert"
+                        data-developer-quest-errors tabindex="-1" hidden {}
+                    div class="developer-quest-fields" data-developer-quest-fields {}
+                    footer class="developer-quest-footer" {
+                        label class="developer-quest-override" {
+                            input type="checkbox" data-developer-quest-override;
+                            span { "Override compatibility and curation warnings" }
+                        }
+                        span {
+                            button type="button" class="btn" data-developer-quest-close { "Cancel" }
+                            button type="submit" class="btn btn-primary" data-developer-quest-submit {
+                                "Create latent quest"
+                            }
+                        }
+                    }
                 }
             }
         }

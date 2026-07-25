@@ -2,6 +2,7 @@
 
 pub mod characters;
 mod data;
+pub mod developer_quests;
 pub mod dialogue;
 pub mod evidence;
 pub mod home;
@@ -736,6 +737,7 @@ pub fn build_router(state: AppState) -> Router {
                 .merge(home::routes())
                 .merge(investigation::routes())
                 .merge(dialogue::routes())
+                .merge(developer_quests::routes())
                 .merge(evidence::routes())
                 .merge(local_chat::routes())
                 .merge(settlements::routes())

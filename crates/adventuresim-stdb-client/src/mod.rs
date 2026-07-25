@@ -556,6 +556,7 @@ pub mod soil_profile_type;
 pub mod soil_properties_type;
 pub mod soil_substrate_type;
 pub mod soil_water_regime_type;
+pub mod spawn_developer_quest_reducer;
 pub mod stage_investigation_lead_reducer;
 pub mod start_dialogue_reducer;
 pub mod stock_category_type;
@@ -1171,6 +1172,7 @@ pub use soil_profile_type::SoilProfile;
 pub use soil_properties_type::SoilProperties;
 pub use soil_substrate_type::SoilSubstrate;
 pub use soil_water_regime_type::SoilWaterRegime;
+pub use spawn_developer_quest_reducer::spawn_developer_quest;
 pub use stage_investigation_lead_reducer::stage_investigation_lead;
 pub use start_dialogue_reducer::start_dialogue;
 pub use stock_category_type::StockCategory;
@@ -1719,6 +1721,11 @@ pub enum Reducer {
         contract_id: String,
         stage: ContractInteractionStage,
     },
+    SpawnDeveloperQuest {
+        character_id: u64,
+        definition_json: String,
+        allow_implausible: bool,
+    },
     StageInvestigationLead {
         character_id: u64,
         receipt_id: String,
@@ -1958,6 +1965,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::SimulateContractIssuerInteraction { .. } => {
                 "simulate_contract_issuer_interaction"
             }
+            Reducer::SpawnDeveloperQuest { .. } => "spawn_developer_quest",
             Reducer::StageInvestigationLead { .. } => "stage_investigation_lead",
             Reducer::StartDialogue { .. } => "start_dialogue",
             Reducer::StoreBattleLoot { .. } => "store_battle_loot",
@@ -2836,6 +2844,15 @@ Reducer::CancelMissionRequest{
                 character_id: character_id.clone(),
                 contract_id: contract_id.clone(),
                 stage: stage.clone(),
+}),
+            Reducer::SpawnDeveloperQuest{
+                character_id,
+                definition_json,
+                allow_implausible,
+}             => __sats::bsatn::to_vec(&spawn_developer_quest_reducer::SpawnDeveloperQuestArgs {
+                character_id: character_id.clone(),
+                definition_json: definition_json.clone(),
+                allow_implausible: allow_implausible.clone(),
 }),
             Reducer::StageInvestigationLead{
                 character_id,

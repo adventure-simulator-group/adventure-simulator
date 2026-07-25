@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or wiki document before changing a subsystem.
 
-## Files (1213)
+## Files (1218)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -55,6 +55,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/case.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/combat.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/composite.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/developer_quest.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/disease.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/durability.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/encounter.rs` — Rust source module for this component.
@@ -644,6 +645,7 @@ development, or wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/soil_properties_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/soil_substrate_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/soil_water_regime_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/spawn_developer_quest_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/stage_investigation_lead_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/start_dialogue_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/stock_category_type.rs` — Generated SpacetimeDB data type.
@@ -835,6 +837,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/src/medical.rs` — Rust source module for this component.
 - `crates/strategic-web/src/routes/characters.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/data.rs` — Strategic web HTTP route handler.
+- `crates/strategic-web/src/routes/developer_quests.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/dialogue.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/evidence.rs` — Strategic web HTTP route handler.
 - `crates/strategic-web/src/routes/home.rs` — Strategic web HTTP route handler.
@@ -884,6 +887,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/static/css/strategic.css` — Browser UI styling.
 - `crates/strategic-web/static/css/utilities.css` — Browser UI styling.
 - `crates/strategic-web/static/developer-mode.js` — Repository support file.
+- `crates/strategic-web/static/developer-quest-editor.js` — Repository support file.
 - `crates/strategic-web/static/dialogue-client.js` — Repository support file.
 - `crates/strategic-web/static/equipment-toggle.js` — Repository support file.
 - `crates/strategic-web/static/icons/game/ATTRIBUTION.md` — Project documentation.
@@ -1113,6 +1117,7 @@ development, or wiki document before changing a subsystem.
 - `crates/strategic-web/tests/cooking.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/currency-backend-source.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/developer-mode.test.cjs` — Repository support file.
+- `crates/strategic-web/tests/developer-quest-editor.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/dialogue-client.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/environment.test.cjs` — Repository support file.
 - `crates/strategic-web/tests/food-remediation.test.cjs` — Repository support file.
