@@ -510,11 +510,26 @@ fn terrain_skill_rows(skills: &CharacterSkills, aptitude: f32, schedule_context:
         .map(|entry| entry.2.capped_rank_for_aptitude(entry.3, aptitude))
         .sum::<f32>()
         / 4.0;
+    let average_hours = entries
+        .iter()
+        .map(|entry| finite_hours(entry.3))
+        .sum::<f32>()
+        / 4.0;
     html! {
         tr class="party-skill-row terrain-primary-row" data-terrain-primary {
             th scope="row" class="party-skill-name party-skill-icon-cell" { (stat_icon("Terrain", "terrain", "terrain", false)) }
             td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
-                (skill_rank_bar(rank, rank, "Unweighted mean; route previews use the local terrain mixture", skill_rail_bar_options()))
+                (skill_rank_bar_with_tooltip(
+                    rank,
+                    rank,
+                    &SkillTooltip::aggregate(
+                        "Terrain",
+                        "Intelligence",
+                        average_hours,
+                        average_hours,
+                    ),
+                    skill_rail_bar_options(),
+                ))
             }
             td class="religion-expand-cell" {
                 button type="button" class="religion-expand-button" data-terrain-expand aria-expanded="false" aria-label="Expand Terrain skills" title="Expand Terrain" {
@@ -530,7 +545,7 @@ fn terrain_skill_rows(skills: &CharacterSkills, aptitude: f32, schedule_context:
                 td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
                     @let uncapped = skill.training_rank(hours);
                     @let sub_rank = skill.capped_rank_for_aptitude(hours, aptitude);
-                    (skill_rank_bar(uncapped, sub_rank, &format!("{:.1} effective hours stored; rank capped at {aptitude:.1} by Intelligence", hours.max(0.0)), skill_rail_bar_options()))
+                    (skill_rank_bar_with_tooltip(uncapped, sub_rank, &SkillTooltip::direct(skill, hours), skill_rail_bar_options()))
                 }
                 td class="religion-expand-cell" {}
             }
@@ -549,38 +564,96 @@ fn language_skill_rows(
         .into_iter()
         .map(|language| skills.oral_languages.effective(language))
         .fold(0.0, f32::max);
-    let oral_direct = OralLanguage::ALL
-        .into_iter()
-        .map(|language| skills.oral_languages.direct(language).max(0.0))
-        .sum::<f32>();
     let written_effective = WrittenLanguage::ALL
         .into_iter()
         .map(|language| skills.written_languages.effective(language))
         .fold(0.0, f32::max);
-    let written_direct = WrittenLanguage::ALL
-        .into_iter()
-        .map(|language| skills.written_languages.direct(language).max(0.0))
-        .sum::<f32>();
     html! {
-        @for (family, effective, direct, kind) in [("Oral",oral_effective,oral_direct,"oral"),("Written",written_effective,written_direct,"written")] {
+        @for (family, effective, kind) in [("Oral",oral_effective,"oral"),("Written",written_effective,"written")] {
             @if effective.is_finite() && effective > 0.0 {
                 tr class=(format!("party-skill-row language-primary-row language-{kind}")) {
                     th scope="row" class="party-skill-name party-skill-icon-cell" { span class=(format!("language-monogram language-{kind}")) title=(format!("{family} languages")) aria-hidden="true" { (if kind=="oral" {"O"} else {"W"}) } span class="sr-only" { (family) } }
-                    td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let aptitude=if kind=="oral" {oral_aptitude} else {written_aptitude}; @let rank=(effective/1000.0).clamp(0.0,5.0); (skill_rank_bar(rank,rank.min(aptitude.clamp(0.0,5.0)),&format!("{effective:.1} effective hours; {direct:.1} directly studied hours across {family} languages; rank capped at {aptitude:.1} by aptitude"),skill_rail_bar_options())) }
+                    td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let aptitude=if kind=="oral" {oral_aptitude} else {written_aptitude}; @let tooltip=if kind=="oral" { oral_language_family_tooltip(skills) } else { written_language_family_tooltip(skills) }; @let rank=(effective/1000.0).clamp(0.0,5.0); (skill_rank_bar_with_tooltip(rank,rank.min(aptitude.clamp(0.0,5.0)),&tooltip,skill_rail_bar_options())) }
                     td class="religion-expand-cell" { button type="button" class="religion-expand-button" data-language-expand=(kind) aria-expanded="false" aria-label=(format!("Expand {family} languages")) { span class="religion-expand-chevron" aria-hidden="true" { "›" } } }
                 }
                 @if kind=="oral" { @for language in OralLanguage::ALL { @let descriptor=language.descriptor(); @let effective=skills.oral_languages.effective(language);
                     @if effective.is_finite() && effective > 0.0 {
-                        tr class="party-skill-row language-detail-row" data-language-detail="oral" hidden { th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" { span class=(if descriptor.germanic_style {"language-monogram language-oral language-blackletter"} else {"language-monogram language-oral"}) title=(format!("{} — {}",descriptor.english,descriptor.native)) aria-hidden="true" { (descriptor.monogram) } span class="sr-only" { (descriptor.english) } } td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let direct=skills.oral_languages.direct(language).max(0.0); @let rank=(effective/1000.0).clamp(0.0,5.0); (skill_rank_bar(rank,rank.min(oral_aptitude.clamp(0.0,5.0)),&format!("{effective:.1} effective hours; {direct:.1} directly studied hours; rank capped at {oral_aptitude:.1} by Instinct"),skill_rail_bar_options())) } td class="religion-expand-cell" {} }
+                        tr class="party-skill-row language-detail-row" data-language-detail="oral" hidden { th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" { span class=(if descriptor.germanic_style {"language-monogram language-oral language-blackletter"} else {"language-monogram language-oral"}) title=(format!("{} — {}",descriptor.english,descriptor.native)) aria-hidden="true" { (descriptor.monogram) } span class="sr-only" { (descriptor.english) } } td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let rank=(effective/1000.0).clamp(0.0,5.0); (skill_rank_bar_with_tooltip(rank,rank.min(oral_aptitude.clamp(0.0,5.0)),&oral_language_tooltip(skills, language),skill_rail_bar_options())) } td class="religion-expand-cell" {} }
                     }
                 }} @else { @for language in WrittenLanguage::ALL { @let descriptor=language.descriptor(); @let effective=skills.written_languages.effective(language);
                     @if effective.is_finite() && effective > 0.0 {
-                        tr class="party-skill-row language-detail-row" data-language-detail="written" hidden { th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" { span class=(if descriptor.germanic_style {"language-monogram language-written language-blackletter"} else {"language-monogram language-written"}) title=(format!("{} — {}",descriptor.english,descriptor.native)) aria-hidden="true" { (descriptor.monogram) } span class="sr-only" { (descriptor.english) } } td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let direct=skills.written_languages.direct(language).max(0.0); @let rank=(effective/1000.0).clamp(0.0,5.0); (skill_rank_bar(rank,rank.min(written_aptitude.clamp(0.0,5.0)),&format!("{effective:.1} effective hours; {direct:.1} directly studied hours; rank capped at {written_aptitude:.1} by Intelligence"),skill_rail_bar_options())) } td class="religion-expand-cell" {} }
+                        tr class="party-skill-row language-detail-row" data-language-detail="written" hidden { th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" { span class=(if descriptor.germanic_style {"language-monogram language-written language-blackletter"} else {"language-monogram language-written"}) title=(format!("{} — {}",descriptor.english,descriptor.native)) aria-hidden="true" { (descriptor.monogram) } span class="sr-only" { (descriptor.english) } } td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let rank=(effective/1000.0).clamp(0.0,5.0); (skill_rank_bar_with_tooltip(rank,rank.min(written_aptitude.clamp(0.0,5.0)),&written_language_tooltip(skills, language),skill_rail_bar_options())) } td class="religion-expand-cell" {} }
                     }
                 }}
             }
         }
     }
+}
+
+fn oral_language_tooltip(
+    skills: &CharacterSkills,
+    language: adventuresim_world_schema::OralLanguage,
+) -> SkillTooltip {
+    use adventuresim_world_schema::OralLanguage;
+    SkillTooltip::new(
+        language.descriptor().english,
+        "Instinct",
+        skills.oral_languages.direct(language),
+        skills.oral_languages.effective(language),
+        OralLanguage::ALL
+            .into_iter()
+            .filter(move |source| *source != language)
+            .map(move |source| (source.descriptor().english, language.correlation(source))),
+    )
+}
+
+fn oral_language_family_tooltip(skills: &CharacterSkills) -> SkillTooltip {
+    use adventuresim_world_schema::OralLanguage;
+    let strongest = OralLanguage::ALL
+        .into_iter()
+        .max_by(|left, right| {
+            skills
+                .oral_languages
+                .effective(*left)
+                .total_cmp(&skills.oral_languages.effective(*right))
+        })
+        .unwrap_or(OralLanguage::EastCentral);
+    let mut tooltip = oral_language_tooltip(skills, strongest);
+    tooltip.name = "Oral languages".into();
+    tooltip
+}
+
+fn written_language_tooltip(
+    skills: &CharacterSkills,
+    language: adventuresim_world_schema::WrittenLanguage,
+) -> SkillTooltip {
+    use adventuresim_world_schema::WrittenLanguage;
+    SkillTooltip::new(
+        language.descriptor().english,
+        "Intelligence",
+        skills.written_languages.direct(language),
+        skills.written_languages.effective(language),
+        WrittenLanguage::ALL
+            .into_iter()
+            .filter(move |source| *source != language)
+            .map(move |source| (source.descriptor().english, language.correlation(source))),
+    )
+}
+
+fn written_language_family_tooltip(skills: &CharacterSkills) -> SkillTooltip {
+    use adventuresim_world_schema::WrittenLanguage;
+    let strongest = WrittenLanguage::ALL
+        .into_iter()
+        .max_by(|left, right| {
+            skills
+                .written_languages
+                .effective(*left)
+                .total_cmp(&skills.written_languages.effective(*right))
+        })
+        .unwrap_or(WrittenLanguage::German);
+    let mut tooltip = written_language_tooltip(skills, strongest);
+    tooltip.name = "Written languages".into();
+    tooltip
 }
 
 fn religion_skill_rows(
@@ -609,7 +682,6 @@ fn religion_skill_rows(
     });
     let primary_id = primary.religion_id();
     let primary_effective = skills.religion_hours.effective(primary);
-    let primary_direct = skills.religion_hours.direct(primary);
     let has_details = OfficialReligion::ALL.into_iter().any(|religion| {
         let direct = skills.religion_hours.direct(religion);
         religion != primary && direct.is_finite() && direct > 0.0
@@ -622,10 +694,10 @@ fn religion_skill_rows(
                 }
             }
             td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
-                (skill_rank_bar(
+                (skill_rank_bar_with_tooltip(
                     Skill::Religion.training_rank(primary_effective),
                     Skill::Religion.capped_rank_for_aptitude(primary_effective, aptitude) * health.clamp(0.0, 1.0),
-                    &format!("{primary_effective:.1} effective hours; {primary_direct:.1} directly studied hours"),
+                    &religion_tooltip(skills, primary),
                     skill_rail_bar_options(),
                 ))
             }
@@ -647,10 +719,10 @@ fn religion_skill_rows(
                     }
                 }
                 td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
-                    (skill_rank_bar(
+                    (skill_rank_bar_with_tooltip(
                         Skill::Religion.training_rank(effective),
                         Skill::Religion.capped_rank_for_aptitude(effective, aptitude) * health.clamp(0.0, 1.0),
-                        &format!("{effective:.1} effective hours; {direct:.1} directly studied hours"),
+                        &religion_tooltip(skills, religion),
                         skill_rail_bar_options(),
                     ))
                 }
@@ -659,6 +731,19 @@ fn religion_skill_rows(
           }
         }
     }
+}
+
+fn religion_tooltip(skills: &CharacterSkills, religion: OfficialReligion) -> SkillTooltip {
+    SkillTooltip::new(
+        religion.label(),
+        Skill::Religion.governing_aptitude_kind().label(),
+        skills.religion_hours.direct(religion),
+        skills.religion_hours.effective(religion),
+        OfficialReligion::ALL
+            .into_iter()
+            .filter(move |source| *source != religion)
+            .map(move |source| (source.label(), religion.correlation(source))),
+    )
 }
 
 fn bestiary_category_enemies(category: BestiaryCategory) -> (String, String) {
@@ -705,7 +790,6 @@ fn bestiary_skill_rows(
         return html! {};
     }
     let aggregate_effective = skills.bestiary_hours.aggregate_effective();
-    let total_direct = skills.bestiary_hours.total_direct();
     html! {
         tr class="party-skill-row skill-family-primary-row bestiary-primary-row"
             data-skill-family="bestiary" data-bestiary-primary {
@@ -713,10 +797,10 @@ fn bestiary_skill_rows(
                 (stat_icon("Bestiary", "bestiary", "bestiary", false))
             }
             td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
-                (skill_rank_bar(
+                (skill_rank_bar_with_tooltip(
                     Skill::Bestiary.training_rank(aggregate_effective),
                     Skill::Bestiary.capped_rank_for_aptitude(aggregate_effective, aptitude) * health.clamp(0.0, 1.0),
-                    &format!("{aggregate_effective:.1} average effective hours across all Bestiary categories; {total_direct:.1} total directly studied hours"),
+                    &bestiary_family_tooltip(skills),
                     skill_rail_bar_options(),
                 ))
             }
@@ -729,7 +813,6 @@ fn bestiary_skill_rows(
         }
         @for category in BestiaryCategory::ALL {
             @let effective = skills.bestiary_hours.effective(category);
-            @let direct = skills.bestiary_hours.direct(category);
             @if effective.is_finite() && effective > 0.0 {
                 @let (enemies, applies_to) = bestiary_category_enemies(category);
                 tr class="party-skill-row bestiary-detail-row" data-bestiary-detail hidden {
@@ -744,10 +827,10 @@ fn bestiary_skill_rows(
                         }
                     }
                     td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
-                        (skill_rank_bar(
+                        (skill_rank_bar_with_tooltip(
                             Skill::Bestiary.training_rank(effective),
                             Skill::Bestiary.capped_rank_for_aptitude(effective, aptitude) * health.clamp(0.0, 1.0),
-                            &format!("{effective:.1} effective hours; {direct:.1} directly studied hours"),
+                            &bestiary_tooltip(skills, category),
                             skill_rail_bar_options(),
                         ))
                     }
@@ -756,6 +839,28 @@ fn bestiary_skill_rows(
             }
         }
     }
+}
+
+fn bestiary_family_tooltip(skills: &CharacterSkills) -> SkillTooltip {
+    SkillTooltip::aggregate(
+        Skill::Bestiary.label(),
+        Skill::Bestiary.governing_aptitude_kind().label(),
+        skills.bestiary_hours.total_direct() / BestiaryCategory::ALL.len() as f32,
+        skills.bestiary_hours.aggregate_effective(),
+    )
+}
+
+fn bestiary_tooltip(skills: &CharacterSkills, category: BestiaryCategory) -> SkillTooltip {
+    SkillTooltip::new(
+        category.label(),
+        Skill::Bestiary.governing_aptitude_kind().label(),
+        skills.bestiary_hours.direct(category),
+        skills.bestiary_hours.effective(category),
+        BestiaryCategory::ALL
+            .into_iter()
+            .filter(move |source| *source != category)
+            .map(move |source| (source.label(), category.correlation(source))),
+    )
 }
 
 fn social_skill_rows(
@@ -796,13 +901,28 @@ fn social_skill_rows(
         .sum::<f32>()
         / entries.len() as f32;
     let effective_rank = rank * health.clamp(0.0, 1.0);
+    let average_hours = entries
+        .iter()
+        .map(|entry| finite_hours(entry.3))
+        .sum::<f32>()
+        / entries.len() as f32;
     html! {
         tr class="party-skill-row social-primary-row" data-social-primary {
             th scope="row" class="party-skill-name party-skill-icon-cell" {
                 (stat_icon("Social", "skills", "social", false))
             }
             td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
-                (skill_rank_bar(rank, effective_rank, "Average of all six Social skills", skill_rail_bar_options()))
+                (skill_rank_bar_with_tooltip(
+                    rank,
+                    effective_rank,
+                    &SkillTooltip::aggregate(
+                        "Social",
+                        "Instinct",
+                        average_hours,
+                        average_hours,
+                    ),
+                    skill_rail_bar_options(),
+                ))
             }
             td class="religion-expand-cell" {
                 button type="button" class="religion-expand-button" data-social-expand
@@ -819,7 +939,7 @@ fn social_skill_rows(
                 td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
                     @let uncapped = skill.training_rank(hours);
                     @let sub_rank = skill.capped_rank_for_aptitude(hours, aptitude);
-                    (skill_rank_bar(uncapped, sub_rank * health.clamp(0.0, 1.0), &format!("{:.0} effective hours stored; rank capped at {aptitude:.1} by Instinct", hours.max(0.0)), skill_rail_bar_options()))
+                    (skill_rank_bar_with_tooltip(uncapped, sub_rank * health.clamp(0.0, 1.0), &SkillTooltip::direct(skill, hours), skill_rail_bar_options()))
                 }
                 td class="religion-expand-cell" {}
             }
@@ -879,18 +999,31 @@ fn combat_meta_group(
         .map(|entry| entry.2.capped_rank_for_aptitude(entry.3, entry.4) * entry.5.clamp(0.0, 1.0))
         .sum::<f32>()
         / relevant.len().max(1) as f32;
-    let included = relevant
+    let average_hours = relevant
         .iter()
-        .map(|entry| entry.0)
-        .collect::<Vec<_>>()
-        .join(", ");
+        .map(|entry| finite_hours(entry.3))
+        .sum::<f32>()
+        / relevant.len().max(1) as f32;
+    let governed_by = if relevant
+        .iter()
+        .all(|entry| entry.2.governing_aptitude_kind().label() == "Agility")
+    {
+        "Agility"
+    } else {
+        "Agility and Instinct"
+    };
     html! {
         tr class="party-skill-row combat-primary-row" data-combat-primary=(name.to_ascii_lowercase()) {
             th scope="row" class="party-skill-name party-skill-icon-cell" {
                 (stat_icon(name, "skills", icon, false))
             }
             td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
-                (skill_rank_bar(rank, effective_rank, &format!("Relevant skills: {included}"), skill_rail_bar_options()))
+                (skill_rank_bar_with_tooltip(
+                    rank,
+                    effective_rank,
+                    &SkillTooltip::aggregate(name, governed_by, average_hours, average_hours),
+                    skill_rail_bar_options(),
+                ))
             }
             td class="religion-expand-cell" {
                 button type="button" class="religion-expand-button" data-combat-expand=(name.to_ascii_lowercase())
@@ -909,7 +1042,7 @@ fn combat_meta_group(
                 td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
                     @let uncapped = skill.training_rank(hours);
                     @let sub_rank = skill.capped_rank_for_aptitude(hours, aptitude);
-                    (skill_rank_bar(uncapped, sub_rank * health.clamp(0.0, 1.0), &format!("{:.0} effective hours stored; rank capped at {aptitude:.1} by aptitude", hours.max(0.0)), skill_rail_bar_options()))
+                    (skill_rank_bar_with_tooltip(uncapped, sub_rank * health.clamp(0.0, 1.0), &SkillTooltip::direct(skill, hours), skill_rail_bar_options()))
                 }
                 td class="religion-expand-cell" {}
             }
@@ -945,7 +1078,6 @@ fn party_skill_row(
     let uncapped_rank = skill.training_rank(hours);
     let rank = skill.capped_rank_for_aptitude(hours, aptitude);
     let effective_rank = rank * health.clamp(0.0, 1.0);
-    let invested_hours = hours.max(0.0).floor() as u64;
     html! {
         tr class="party-skill-row" {
             th scope="row" class="party-skill-name party-skill-icon-cell" {
@@ -956,10 +1088,105 @@ fn party_skill_row(
                 }
             }
             td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
-                (skill_rank_bar(uncapped_rank, effective_rank, &format!("{invested_hours} effective hours stored; rank capped at {aptitude:.1} by aptitude"), skill_rail_bar_options()))
+                (skill_rank_bar_with_tooltip(
+                    uncapped_rank,
+                    effective_rank,
+                    &SkillTooltip::direct(skill, hours),
+                    skill_rail_bar_options(),
+                ))
             }
             td class="religion-expand-cell" {}
         }
+    }
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+struct SkillCorrelationTooltip {
+    name: String,
+    percent: f32,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+struct SkillTooltip {
+    name: String,
+    governed_by: String,
+    trained_hours: f32,
+    correlated_hours: f32,
+    correlations: Vec<SkillCorrelationTooltip>,
+}
+
+impl SkillTooltip {
+    fn new(
+        name: impl Into<String>,
+        governed_by: impl Into<String>,
+        trained_hours: f32,
+        effective_hours: f32,
+        correlations: impl IntoIterator<Item = (impl Into<String>, f32)>,
+    ) -> Self {
+        let trained_hours = finite_hours(trained_hours);
+        let effective_hours = finite_hours(effective_hours);
+        Self {
+            name: name.into(),
+            governed_by: governed_by.into(),
+            trained_hours,
+            correlated_hours: (effective_hours - trained_hours).max(0.0),
+            correlations: correlations
+                .into_iter()
+                .filter_map(|(name, rate)| {
+                    (rate.is_finite() && rate > 0.0).then(|| SkillCorrelationTooltip {
+                        name: name.into(),
+                        percent: rate * 100.0,
+                    })
+                })
+                .collect(),
+        }
+    }
+
+    fn direct(skill: Skill, trained_hours: f32) -> Self {
+        Self::new(
+            skill.label(),
+            skill.governing_aptitude_kind().label(),
+            trained_hours,
+            trained_hours,
+            std::iter::empty::<(&str, f32)>(),
+        )
+    }
+
+    fn aggregate(
+        name: impl Into<String>,
+        governed_by: impl Into<String>,
+        trained_hours: f32,
+        effective_hours: f32,
+    ) -> Self {
+        Self::new(
+            name,
+            governed_by,
+            trained_hours,
+            effective_hours,
+            std::iter::empty::<(&str, f32)>(),
+        )
+    }
+
+    fn accessible_description(&self) -> String {
+        let mut description = format!(
+            "{}\nGoverned by {}\n{:.1} effective hours trained\n{:.1} hours from correlated skills:",
+            self.name, self.governed_by, self.trained_hours, self.correlated_hours
+        );
+        for correlation in &self.correlations {
+            description.push_str(&format!(
+                "\n{} | {:.0}%",
+                correlation.name, correlation.percent
+            ));
+        }
+        description
+    }
+}
+
+fn finite_hours(hours: f32) -> f32 {
+    if hours.is_finite() {
+        hours.max(0.0)
+    } else {
+        0.0
     }
 }
 
@@ -993,6 +1220,25 @@ pub(super) fn skill_rank_bar(
     title: &str,
     options: SkillRankBarOptions<'_>,
 ) -> Markup {
+    skill_rank_bar_markup(rank, effective_rank, Some(title), None, options)
+}
+
+fn skill_rank_bar_with_tooltip(
+    rank: f32,
+    effective_rank: f32,
+    tooltip: &SkillTooltip,
+    options: SkillRankBarOptions<'_>,
+) -> Markup {
+    skill_rank_bar_markup(rank, effective_rank, None, Some(tooltip), options)
+}
+
+fn skill_rank_bar_markup(
+    rank: f32,
+    effective_rank: f32,
+    title: Option<&str>,
+    skill_tooltip: Option<&SkillTooltip>,
+    options: SkillRankBarOptions<'_>,
+) -> Markup {
     let rank = rank.clamp(0.0, 5.0);
     let effective_rank = effective_rank.clamp(0.0, rank);
     let class = options.extra_class.map_or_else(
@@ -1002,8 +1248,14 @@ pub(super) fn skill_rank_bar(
     let aria_label = options
         .aria_label
         .map_or_else(|| format!("{effective_rank:.1} out of 5"), str::to_owned);
+    let tooltip_description = skill_tooltip.map(SkillTooltip::accessible_description);
+    let tooltip_json = skill_tooltip
+        .map(|tooltip| serde_json::to_string(tooltip).expect("skill tooltip data serializes"));
     html! {
-        div class=(class) title=(title) aria-label=(aria_label)
+        div class=(class) title=[title] aria-label=(aria_label)
+            data-strategic-tooltip=[tooltip_description]
+            data-skill-tooltip=[tooltip_json]
+            tabindex=[skill_tooltip.map(|_| "0")]
             role="meter" aria-valuemin="0" aria-valuemax="5" aria-valuenow=(format!("{effective_rank:.1}")) {
             span class="skill-rank-track" aria-hidden="true" {
                 @for tier in 1..=5 {
@@ -1428,7 +1680,9 @@ mod tests {
         };
         let markup = social_skill_rows(&skills, 5.0, 1.0, None).into_string();
         assert!(markup.contains("data-social-primary"));
-        assert!(markup.contains("Average of all six Social skills"));
+        assert!(markup.contains("data-skill-tooltip"));
+        assert!(markup.contains("Social"));
+        assert!(markup.contains("Governed by Instinct"));
         assert_eq!(markup.matches("data-social-detail").count(), 6);
         for icon in [
             "conversation.svg",
@@ -1570,7 +1824,8 @@ mod tests {
         assert!(!rendered.contains("title=\"Lutheranism\""));
         assert!(!rendered.contains("religion_judaism_minutes"));
         assert!(!rendered.contains("effective /"));
-        assert!(rendered.contains("0.0 effective hours; 0.0 directly studied hours"));
+        assert!(rendered.contains("Governed by Intelligence"));
+        assert!(rendered.contains("0.0 effective hours trained"));
         let primary_icon = rendered
             .find("/static/icons/religion/fontawesome-star-of-david.svg")
             .unwrap();
@@ -1650,14 +1905,11 @@ mod tests {
         let end = will + rendered[will..].find("</tr>").unwrap() + "</tr>".len();
         let will_row = &rendered[start..end];
         let rank = Skill::Will.training_rank(5_000.0);
-        let expected = skill_rank_bar(
-            rank,
-            rank * 0.2,
-            "5000 effective hours stored; rank capped at 5.0 by aptitude",
-            skill_rail_bar_options(),
-        )
-        .into_string();
-        assert!(will_row.contains(&expected));
+        assert!(will_row.contains(&format!("aria-valuenow=\"{:.1}\"", rank * 0.2)));
+        assert!(will_row.contains("data-skill-tooltip"));
+        assert!(will_row.contains("Will"));
+        assert!(will_row.contains("Governed by Instinct"));
+        assert!(will_row.contains("5000.0 effective hours trained"));
     }
 
     #[test]
@@ -1665,6 +1917,7 @@ mod tests {
         let skills = CharacterSkills {
             oral_languages: adventuresim_world_schema::OralLanguageHours {
                 east_central: 5_000.0,
+                west_central: 1_000.0,
                 ..Default::default()
             },
             written_languages: adventuresim_world_schema::WrittenLanguageHours {
@@ -1678,14 +1931,17 @@ mod tests {
         assert!(rendered.contains("Expand Written languages"));
         assert!(rendered.contains("language-oral language-blackletter"));
         assert!(rendered.contains("language-written language-blackletter"));
-        assert!(rendered.contains(
-            "5000.0 effective hours; 5000.0 directly studied hours across Oral languages"
-        ));
-        assert!(rendered.contains(
-            "1000.0 effective hours; 1000.0 directly studied hours across Written languages"
-        ));
+        assert!(rendered.contains("Oral languages"));
+        assert!(rendered.contains("Written languages"));
+        assert!(rendered.contains("Governed by Instinct"));
+        assert!(rendered.contains("Governed by Intelligence"));
         assert!(rendered.contains("title=\"East-central — Ostmitteldeutsch\""));
-        assert!(rendered.contains("5000.0 effective hours; 5000.0 directly studied hours"));
+        assert!(rendered.contains("5000.0 effective hours trained"));
+        assert!(!rendered.contains("6000.0 effective hours trained"));
+        let oral_tooltip = oral_language_family_tooltip(&skills);
+        assert_eq!(oral_tooltip.trained_hours, 5_000.0);
+        assert!(oral_tooltip.correlated_hours > 0.0);
+        assert!(!oral_tooltip.correlations.is_empty());
         assert!(!rendered.contains("title=\"Latin — Latine\""));
         assert!(!rendered.contains("title=\"Romani — Romani\""));
         assert_eq!(rendered.matches("data-language-detail=\"oral\"").count(), 4);
@@ -1997,13 +2253,24 @@ mod tests {
             ..Default::default()
         };
         let rendered = bestiary_skill_rows(&skills, 5.0, 1.0, false).into_string();
+        let family_tooltip = bestiary_family_tooltip(&skills);
+        let expected_direct =
+            skills.bestiary_hours.total_direct() / BestiaryCategory::ALL.len() as f32;
+        assert!((family_tooltip.trained_hours - expected_direct).abs() < f32::EPSILON);
+        assert!(
+            (family_tooltip.trained_hours + family_tooltip.correlated_hours
+                - skills.bestiary_hours.aggregate_effective())
+            .abs()
+                < f32::EPSILON
+        );
         assert!(rendered.contains("data-skill-family=\"bestiary\""));
         assert!(rendered.contains("/static/icons/stats/bestiary/bestiary.png"));
         assert!(rendered.contains("/static/icons/stats/bestiary/wildmen.png"));
         assert!(rendered.contains("data-bestiary-expand"));
         assert!(rendered.contains("Expand Bestiary skills"));
         assert!(rendered.contains("Wildmen"));
-        assert!(rendered.contains("directly studied hours"));
+        assert!(rendered.contains("effective hours trained"));
+        assert!(rendered.contains("hours from correlated skills"));
         assert!(rendered.contains("data-bestiary-enemies"));
         assert!(rendered.contains("data-tooltip-pinnable"));
         assert!(rendered.contains("Wild man"));

@@ -122,7 +122,7 @@ mod tests {
     use crate::{
         body::{BodyPart, BodySide, LimbWeights, PlayerBody},
         prelude::{LimbAttribute, PlayerAttributes, SimpleAttribute},
-        stub::{StubAttributes, StubEquipment, StubEssentials},
+        stub::{StubEquipment, StubEssentials},
     };
 
     #[derive(Clone, Copy)]
@@ -182,6 +182,20 @@ mod tests {
         assert!(!Skill::Anatomy.is_meta_skill());
         assert!(Skill::Bestiary.is_mental());
         assert!(!Skill::Bestiary.is_upper_body());
+    }
+
+    #[test]
+    fn skill_and_aptitude_labels_are_canonical() {
+        assert_eq!(Skill::SelfAwareness.label(), "Self-awareness");
+        assert_eq!(
+            Skill::Anatomy.governing_aptitude_kind().label(),
+            "Intelligence"
+        );
+        assert_eq!(
+            Skill::Physiology.governing_aptitude_kind().label(),
+            "Intelligence"
+        );
+        assert_eq!(Skill::Knife.governing_aptitude_kind().label(), "Agility");
     }
 
     #[test]
@@ -369,6 +383,43 @@ mod tests {
 }
 
 impl Skill {
+    /// Canonical player-facing name used anywhere a skill is described.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Will => "Will",
+            Self::Insight => "Insight",
+            Self::SelfAwareness => "Self-awareness",
+            Self::Humor => "Humor",
+            Self::Command => "Command",
+            Self::Deception => "Deception",
+            Self::Seduction => "Seduction",
+            Self::Physiology => "Physiology",
+            Self::Cooking => "Cooking",
+            Self::Religion => "Religion",
+            Self::Bestiary => "Bestiary",
+            Self::Polearm => "Polearm",
+            Self::Axe => "Axe",
+            Self::Bludgeon => "Bludgeon",
+            Self::Sword => "Sword",
+            Self::Knife => "Knife",
+            Self::Bow => "Bow",
+            Self::Crossbow => "Crossbow",
+            Self::Firearm => "Firearm",
+            Self::Throw => "Throw",
+            Self::Block => "Block",
+            Self::Dodge => "Dodge",
+            Self::Stealth => "Stealth",
+            Self::Balance => "Balance",
+            Self::TerrainPlains => "Plains",
+            Self::TerrainForest => "Forest",
+            Self::TerrainHills => "Hills",
+            Self::TerrainUrban => "Urban",
+            Self::Anatomy => "Anatomy",
+            Self::Tailoring => "Tailoring",
+            Self::Smithing => "Smithing",
+        }
+    }
+
     /// Training-only contribution on the shared five-point curve. `max_hours`
     /// is the documented asymptotic calibration; half of it is the half-rank
     /// point used consistently by simulation, persistence, and UI.
@@ -510,6 +561,16 @@ pub enum GoverningAptitude {
     Intelligence,
     Instinct,
     Agility(LimbWeights),
+}
+
+impl GoverningAptitude {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Intelligence => "Intelligence",
+            Self::Instinct => "Instinct",
+            Self::Agility(_) => "Agility",
+        }
+    }
 }
 
 /// Positive effective learning produced by one real training-hour budget.

@@ -76,8 +76,8 @@ In theory eyesight/hearing should be further subdivided into eyes/ears for damag
 
 ### Intelligence
 The depth at which your character can think. Intelligence governs learning and
-mastery for Medicine, Cooking, Religion, Bestiary, and the Terrain leaves. It
-does not add to their final checks.
+mastery for Physiology, Anatomy, Cooking, Religion, Bestiary, and the Terrain
+leaves. It does not add to their final checks.
 
 0. Not capable of conscious thought
 1. Low-functioning autistic, toddler
@@ -163,8 +163,8 @@ This distinction applies only to correlated training. An intuitive target may
 benefit from correlated hours without formal training in that target. A trained
 target evaluates to zero until it has target-specific direct hours, regardless
 of correlated knowledge. Correlation is derived in one pass, never stored, and
-never produces mastery morale. Religion and Bestiary leaves, Surgery, and
-Written languages are trained; Oral languages are intuitive.
+never produces mastery morale. Physiology, Anatomy, Religion and Bestiary
+leaves, and Written languages are trained; Oral languages are intuitive.
 
 ## Formula
 ```rs
@@ -390,24 +390,16 @@ separate Terrain meta-skill and does not stack with Balance.
 4. Skilled gymnast or martial artist, can walk a tightrope
 5. Graceful elf
 
-### Surgery (physical, upper-body, trained, 5000 hours)
-Surgery is an ordinary leaf skill with its own directly trained hours. Its
-training aptitude uses both arms' healthy Agility, while its check receives the same upper-body injury,
-armor, encumbrance, and fatigue penalties as other upper-body physical skills.
-Herbalist apprenticeship and practice divide their training between Medicine
-(one half), Human Bestiary knowledge (one sixth), and Surgery (one third).
+### Anatomy (mental, trained, 10000 hours)
+Anatomy represents trained knowledge of bodies and wounds. Intelligence governs
+its training speed and mastery cap, while head injury remains a performance
+penalty. Herbalist apprenticeship and practice divide their training between
+Physiology (one half) and Anatomy, Knife, and Tailoring (one sixth each).
 
-Effective Surgery knowledge is calculated in one nonrecursive pass as direct
-Surgery hours plus 25% of direct Knife hours and 25% of direct Tailoring hours,
-but only after Surgery itself has received direct training. Knife and Tailoring are
-trained through their own activities; transferred Surgery knowledge does not
-feed back into either source skill.
-
-Every procedure uses the resulting physical Surgery check. Separately, that
-check is capped by the treating character's effective Bestiary knowledge for
-the patient's species before the self-treatment penalty is applied. Current
-characters are Human, while the category boundary is ready for future playable
-species.
+Surgery is a procedure, not a skill. Projectile extraction averages the
+treating character's Anatomy and Knife checks; stitching averages Anatomy and
+Tailoring. Bandaging and splinting use Anatomy alone. Self-treatment applies
+the shared 2.5-point penalty after the applicable skills are combined.
 
 ### Terrain (computed meta-skill; intuitive subskills, 30000 hours each)
 
@@ -421,7 +413,7 @@ underlying terrain rather than Urban and reduce training in proportion to the
 time they save.
 
 ### Tailoring (trained, 10000 hours)
-Tailoring makes and repairs cloth goods. Settlement tailors and field maintenance use it for clothing durability, and one quarter of direct Tailoring hours transfers to effective Surgery knowledge.
+Tailoring makes and repairs cloth goods. Settlement tailors and field maintenance use it for clothing durability, and stitching combines it with Anatomy.
 
 ### Smithing (trained, 10000 hours)
 Smithing makes and repairs weapons, armor, and shields. It does not repair clothing.
